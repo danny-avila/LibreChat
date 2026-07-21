@@ -15,10 +15,16 @@ const methods = require('~/models');
 async function getLimits() {
   const appConfig = await getAppConfig();
   const config = appConfig?.interfaceConfig?.schedules;
+  // Disabled config is a hard stop: the engine must not keep firing existing
+  // schedules after an admin turns the feature off.
+  if (config === false) {
+    return { ...DEFAULT_SCHEDULE_LIMITS, enabled: false };
+  }
   if (config == null || typeof config === 'boolean') {
     return DEFAULT_SCHEDULE_LIMITS;
   }
   return {
+    enabled: config.use !== false,
     maxPerUser: config.maxPerUser ?? DEFAULT_SCHEDULE_LIMITS.maxPerUser,
     minIntervalMinutes: config.minIntervalMinutes ?? DEFAULT_SCHEDULE_LIMITS.minIntervalMinutes,
     autoDisableAfterFailures:
@@ -26,6 +32,8 @@ async function getLimits() {
     fireConcurrency: config.fireConcurrency ?? DEFAULT_SCHEDULE_LIMITS.fireConcurrency,
   };
 }
+
+const MANUAL_RUN_LEASE_MS = 5 * 60 * 1000;
 
 /** @type {import('@librechat/api').ScheduleEngineDeps} */
 const engineDeps = {
@@ -93,11 +101,26 @@ function initializeScheduleEngine() {
 }
 
 /**
- * Manual run-now fire: bypasses the engine claim (no lease needed) and uses the
- * click instant as `scheduledFor`, so it never collides with cron occurrences.
+ * Manual run-now fire. Acquires the schedule lease to serialize concurrent
+ * run-now clicks (and to block against a background engine claim), then fires
+ * in manual mode so the next automatic occurrence is left untouched. Returns
+ * null when the lease is already held (a run is in progress).
  */
 async function fireScheduleNow(schedule, limits) {
-  return fireSchedule(engineDeps, schedule, limits, new Date());
+  const acquired = await methods.acquireManualRunLease(
+    schedule.id,
+    schedule.user,
+    MANUAL_RUN_LEASE_MS,
+  );
+  if (!acquired) {
+    return null;
+  }
+  try {
+    return await fireSchedule(engineDeps, schedule, limits, new Date(), { manual: true });
+  } catch (err) {
+    await methods.releaseLease(schedule.id).catch(() => undefined);
+    throw err;
+  }
 }
 
 /**

@@ -3,6 +3,7 @@ import * as Ariakit from '@ariakit/react';
 import { useNavigate } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
 import { Play, Trash, Pencil, Ellipsis } from 'lucide-react';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   Label,
   Switch,
@@ -20,11 +21,11 @@ import {
   useUpdateScheduleMutation,
   useRunScheduleNowMutation,
 } from '~/data-provider';
+import { useLocalize, useHasAccess } from '~/hooks';
 import { getMessageTimestamp, cn } from '~/utils';
 import { useAgentsMapContext } from '~/Providers';
 import ScheduleDialog from './ScheduleDialog';
 import { describeCadence } from './cadence';
-import { useLocalize } from '~/hooks';
 
 interface ScheduleCardProps {
   schedule: TSchedule;
@@ -60,6 +61,12 @@ export default function ScheduleCard({ schedule }: ScheduleCardProps) {
   const { i18n } = useTranslation();
   const { showToast } = useToastContext();
   const agentsMap = useAgentsMapContext();
+  // Enable/disable, run-now, edit and delete all hit CREATE-gated routes, so a
+  // USE-only viewer sees a read-only card instead of controls that 403.
+  const canWrite = useHasAccess({
+    permissionType: PermissionTypes.SCHEDULES,
+    permission: Permissions.CREATE,
+  });
 
   const menuId = useId();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -169,32 +176,36 @@ export default function ScheduleCard({ schedule }: ScheduleCardProps) {
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">
           {schedule.name}
         </span>
-        <Switch
-          checked={schedule.enabled}
-          onCheckedChange={handleToggle}
-          disabled={updateSchedule.isLoading}
-          aria-label={localize('com_ui_schedule_enabled')}
-          className="shrink-0"
-        />
-        <DropdownPopup
-          portal={true}
-          menuId={menuId}
-          focusLoop={true}
-          className="z-[125]"
-          unmountOnHide={true}
-          isOpen={menuOpen}
-          setIsOpen={setMenuOpen}
-          trigger={
-            <Ariakit.MenuButton
-              id={`schedule-menu-${schedule.id}`}
-              aria-label={localize('com_ui_schedule_options')}
-              className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
-            >
-              <Ellipsis className="size-4" aria-hidden={true} />
-            </Ariakit.MenuButton>
-          }
-          items={dropdownItems}
-        />
+        {canWrite && (
+          <>
+            <Switch
+              checked={schedule.enabled}
+              onCheckedChange={handleToggle}
+              disabled={updateSchedule.isLoading}
+              aria-label={localize('com_ui_schedule_enabled')}
+              className="shrink-0"
+            />
+            <DropdownPopup
+              portal={true}
+              menuId={menuId}
+              focusLoop={true}
+              className="z-[125]"
+              unmountOnHide={true}
+              isOpen={menuOpen}
+              setIsOpen={setMenuOpen}
+              trigger={
+                <Ariakit.MenuButton
+                  id={`schedule-menu-${schedule.id}`}
+                  aria-label={localize('com_ui_schedule_options')}
+                  className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+                >
+                  <Ellipsis className="size-4" aria-hidden={true} />
+                </Ariakit.MenuButton>
+              }
+              items={dropdownItems}
+            />
+          </>
+        )}
       </div>
       <p className="mt-0.5 truncate text-xs text-text-secondary" title={agentName}>
         {agentName}

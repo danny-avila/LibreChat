@@ -15,7 +15,10 @@ export interface SchedulesHandlersDeps {
   canViewAgent: (agentId: string, req: ServerRequest) => Promise<boolean>;
   /** Filters to file ids owned by the user. */
   filterOwnedFileIds: (fileIds: string[], userId: string) => Promise<string[]>;
-  fireNow: (schedule: FireableSchedule, limits: ScheduleLimits) => Promise<FireResult>;
+  /** Clears the upload TTL on attached files so they survive until the first run. */
+  markFilesUsed: (fileIds: string[], userId: string) => Promise<void>;
+  /** Serialized manual fire (acquires the schedule lease); null if already leased. */
+  fireNow: (schedule: FireableSchedule, limits: ScheduleLimits) => Promise<FireResult | null>;
 }
 
 function toWireSchedule(schedule: ISchedule) {
@@ -127,6 +130,19 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       tenantId: user.tenantId,
       ...(nextRunAt ? { nextRunAt } : {}),
     });
+    // Close the check-then-insert window: parallel creates can both pass the
+    // count guard, so re-count after insert and roll back the overflow.
+    const postCount = await deps.methods.countSchedulesByUser(user.id);
+    if (postCount > limits.maxPerUser) {
+      await deps.methods.deleteScheduleById(id, user.id);
+      res.status(400).json({
+        error: `Schedule limit reached (${limits.maxPerUser}). Delete a schedule to add another.`,
+      });
+      return;
+    }
+    if (parsed.data.file_ids?.length) {
+      await deps.markFilesUsed(parsed.data.file_ids, user.id);
+    }
     logger.info(`[schedules] created ${id} for user ${user.id}`);
     res.status(201).json(toWireSchedule(schedule));
   }
@@ -173,6 +189,9 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(404).json({ error: 'Schedule not found' });
       return;
     }
+    if (parsed.data.file_ids?.length) {
+      await deps.markFilesUsed(parsed.data.file_ids, user.id);
+    }
     res.json(toWireSchedule(schedule));
   }
 
@@ -195,6 +214,10 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     }
     const limits = await deps.getLimits();
     const result = await deps.fireNow(schedule, limits);
+    if (result == null) {
+      res.status(409).json({ error: 'A run for this schedule is already in progress' });
+      return;
+    }
     if (!result.fired) {
       res.status(409).json({
         error: result.error ?? `Run skipped (${result.skipped ?? 'unknown'})`,

@@ -404,3 +404,88 @@ describe('hasActiveRun', () => {
     expect(await methods.hasActiveRun(schedule.id)).toBe(false);
   });
 });
+
+describe('recordRunOutcome — reconciled completions and no-match guard', () => {
+  const scheduledFor = new Date('2026-07-20T12:00:00Z');
+
+  it('finalizes a resumed run from requires_action with full bookkeeping', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor, status: 'requires_action' }));
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'success',
+      conversationId: 'convo-resumed',
+      autoDisableAfterFailures: 3,
+    });
+    expect((await getRun(schedule.id, scheduledFor)).status).toBe('success');
+    const updated = await getSchedule(schedule.id);
+    expect(updated.runCount).toBe(1);
+    expect(updated.lastRun?.status).toBe('success');
+    expect(updated.lastRun?.conversationId).toBe('convo-resumed');
+  });
+
+  it('interrupted records lastRun without touching counters', async () => {
+    const schedule = await methods.createSchedule(scheduleData({ runCount: 4, failureCount: 1 }));
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'interrupted',
+      autoDisableAfterFailures: 3,
+    });
+    expect((await getRun(schedule.id, scheduledFor)).status).toBe('interrupted');
+    const updated = await getSchedule(schedule.id);
+    expect(updated.runCount).toBe(4);
+    expect(updated.failureCount).toBe(1);
+    expect(updated.lastRun?.status).toBe('interrupted');
+  });
+
+  it('does not touch schedule bookkeeping when no matching run row exists', async () => {
+    const schedule = await methods.createSchedule(scheduleData({ runCount: 7 }));
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'success',
+      conversationId: 'spoofed',
+      autoDisableAfterFailures: 3,
+    });
+    const updated = await getSchedule(schedule.id);
+    expect(updated.runCount).toBe(7);
+    expect(updated.lastRun).toBeUndefined();
+  });
+});
+
+describe('acquireManualRunLease / releaseLease', () => {
+  it('serializes concurrent run-now attempts and can be released without advancing', async () => {
+    const schedule = await methods.createSchedule(
+      scheduleData({ nextRunAt: new Date('2026-08-01T12:00:00Z') }),
+    );
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        methods.acquireManualRunLease(schedule.id, schedule.user, 60_000),
+      ),
+    );
+    expect(results.filter(Boolean)).toHaveLength(1);
+
+    await methods.releaseLease(schedule.id);
+    const afterRelease = await getSchedule(schedule.id);
+    expect(afterRelease.leaseUntil).toBeUndefined();
+    expect(afterRelease.leaseBy).toBeUndefined();
+    // release must NOT reschedule the next automatic occurrence
+    expect(afterRelease.nextRunAt?.toISOString()).toBe('2026-08-01T12:00:00.000Z');
+
+    const reacquired = await methods.acquireManualRunLease(schedule.id, schedule.user, 60_000);
+    expect(reacquired).toBe(true);
+  });
+
+  it('blocks against a held engine lease and rejects a non-owner', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const claimed = await methods.claimDueSchedule({ instanceId: 'engine-1', leaseMs: 60_000 });
+    expect(claimed?.id).toBe(schedule.id);
+    expect(await methods.acquireManualRunLease(schedule.id, schedule.user, 60_000)).toBe(false);
+    expect(
+      await methods.acquireManualRunLease(schedule.id, new mongoose.Types.ObjectId(), 60_000),
+    ).toBe(false);
+  });
+});

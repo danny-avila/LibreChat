@@ -112,6 +112,7 @@ jest.mock('@librechat/api', () => ({
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   sanitizeMessageForTransmit: jest.fn((message) => message),
   checkAndIncrementPendingRequest: (...args) => mockCheckAndIncrementPendingRequest(...args),
+  isScheduleFireRequest: jest.fn(() => false),
   isUnpersistedPreliminaryParent: async ({
     userId,
     conversationId,

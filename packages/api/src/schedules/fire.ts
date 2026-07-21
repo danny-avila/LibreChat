@@ -66,6 +66,7 @@ export async function fireSchedule(
   schedule: FireableSchedule,
   limits: ScheduleLimits,
   scheduledFor: Date,
+  options?: { manual?: boolean },
 ): Promise<FireResult> {
   const { methods } = deps;
   const nextRunAt = computeNextRunAt({
@@ -74,7 +75,11 @@ export async function fireSchedule(
     scheduleId: schedule.id,
     after: new Date(Math.max(Date.now(), scheduledFor.getTime())),
   });
-  const advance = () => methods.advanceSchedule(schedule.id, nextRunAt);
+  // A manual run-now must never reschedule the next automatic occurrence; it
+  // only releases the lease it acquired for serialization.
+  const advance = options?.manual
+    ? () => methods.releaseLease(schedule.id)
+    : () => methods.advanceSchedule(schedule.id, nextRunAt);
 
   if (nextRunAt == null) {
     await methods.disableSchedule(schedule.id, 'invalid_schedule');

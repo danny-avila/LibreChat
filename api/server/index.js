@@ -139,7 +139,6 @@ const startServer = async () => {
   initializeFileStorage(appConfig);
   await initializeDeploymentSkills({ projectRoot: path.resolve(__dirname, '../..') });
   initializeGitHubSkillSync(appConfig);
-  initializeScheduleEngine();
   startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
   // Register any programmatic tool-approval policy hooks declared in
   // `endpoints.agents.toolApproval.hooks`. Honor the `enabled` kill switch: when tool
@@ -354,6 +353,10 @@ const startServer = async () => {
         memoryDiagnostics.start();
       }
       serverReady = true;
+      // Arm the scheduler only after readiness: an earlier tick could fire
+      // loopback chats at a server that is not yet listening/accepting starts,
+      // recording spurious errors that could auto-disable valid schedules.
+      initializeScheduleEngine();
       logger.info('Server readiness checks passing.');
     } catch (initErr) {
       serverReady = false;

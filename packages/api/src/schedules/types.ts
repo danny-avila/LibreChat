@@ -2,6 +2,8 @@ import type { ScheduleMethods, ISchedule } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 
 export interface ScheduleLimits {
+  /** Feature-level switch: when false the engine claims/fires nothing. */
+  enabled: boolean;
   maxPerUser: number;
   minIntervalMinutes: number;
   autoDisableAfterFailures: number;
@@ -9,6 +11,7 @@ export interface ScheduleLimits {
 }
 
 export const DEFAULT_SCHEDULE_LIMITS: ScheduleLimits = {
+  enabled: true,
   maxPerUser: 10,
   minIntervalMinutes: 60,
   autoDisableAfterFailures: 5,

@@ -41,6 +41,13 @@ const handlers = createSchedulesHandlers({
     });
     return (files ?? []).map((file) => file.file_id);
   },
+  markFilesUsed: async (fileIds, userId) => {
+    await methods.updateFilesUsage(
+      fileIds.map((file_id) => ({ file_id })),
+      undefined,
+      { user: userId },
+    );
+  },
   fireNow: fireScheduleNow,
 });
 

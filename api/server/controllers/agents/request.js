@@ -13,6 +13,7 @@ const {
   sanitizeMessageForTransmit,
   checkAndIncrementPendingRequest,
   isUnpersistedPreliminaryParent,
+  isScheduleFireRequest,
 } = require('@librechat/api');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const {
@@ -223,9 +224,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     parentMessageId = null,
     overrideParentMessageId = null,
     responseMessageId: editedResponseMessageId = null,
-    scheduleId = null,
-    scheduledFor = null,
+    scheduleId: bodyScheduleId = null,
+    scheduledFor: bodyScheduledFor = null,
   } = req.body;
+
+  // Only honor schedule bookkeeping fields on a server-minted scheduled fire
+  // (scope-claim verified). A normal chat could otherwise pass an arbitrary
+  // scheduleId and corrupt another schedule's lastRun/counters via the hook.
+  const isScheduledFire = isScheduleFireRequest(req);
+  const scheduleId = isScheduledFire ? bodyScheduleId : null;
+  const scheduledFor = isScheduledFire ? bodyScheduledFor : null;
 
   const userId = req.user.id;
 

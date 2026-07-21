@@ -38,6 +38,12 @@ export type ScheduleMethods = {
   getSchedulesByUser: (userId: string | Types.ObjectId) => Promise<ISchedule[]>;
   countSchedulesByUser: (userId: string | Types.ObjectId) => Promise<number>;
   claimDueSchedule: (params: ClaimDueScheduleParams) => Promise<ISchedule | null>;
+  acquireManualRunLease: (
+    id: string,
+    userId: string | Types.ObjectId,
+    leaseMs: number,
+  ) => Promise<boolean>;
+  releaseLease: (id: string) => Promise<void>;
   advanceSchedule: (id: string, nextRunAt: Date | null) => Promise<void>;
   disableSchedule: (id: string, reason: ScheduleDisabledReason) => Promise<void>;
   insertScheduleRun: (data: Partial<IScheduleRun>) => Promise<IScheduleRun | null>;
@@ -146,6 +152,36 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       .lean<ISchedule>();
   }
 
+  /**
+   * Takes the schedule's lease for a manual run-now, serializing concurrent
+   * `POST /:id/run` requests (and blocking against an engine claim) so a
+   * double-click can't start two runs. Owner-scoped. Returns false if leased.
+   */
+  async function acquireManualRunLease(
+    id: string,
+    userId: string | Types.ObjectId,
+    leaseMs: number,
+  ): Promise<boolean> {
+    const now = new Date();
+    const row = await Schedule()
+      .findOneAndUpdate(
+        {
+          id,
+          user: userId,
+          $or: [{ leaseUntil: { $exists: false } }, { leaseUntil: { $lt: now } }],
+        },
+        { $set: { leaseUntil: new Date(now.getTime() + leaseMs), leaseBy: 'manual' } },
+        { new: true },
+      )
+      .lean<ISchedule>();
+    return row != null;
+  }
+
+  /** Releases a lease WITHOUT advancing nextRunAt (manual runs never reschedule). */
+  async function releaseLease(id: string): Promise<void> {
+    await Schedule().updateOne({ id }, { $unset: { leaseUntil: 1, leaseBy: 1 } });
+  }
+
   /** Advances past a fired (or skipped) occurrence and releases the lease. */
   async function advanceSchedule(id: string, nextRunAt: Date | null): Promise<void> {
     await Schedule().updateOne(
@@ -186,11 +222,20 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     return row != null;
   }
 
-  /** Terminal (or pause) transition for a run + lastRun/failure bookkeeping. */
+  /**
+   * Terminal (or pause) transition for a run + lastRun/failure bookkeeping.
+   * Matches a run row still in `started` OR `requires_action` so a run resumed
+   * from a HITL pause (reconciled `requires_action -> success`) records the
+   * same lastRun/counter bookkeeping as an inline completion.
+   */
   async function recordRunOutcome(params: RecordRunOutcomeParams): Promise<void> {
     const firedAt = new Date();
-    await ScheduleRun().updateOne(
-      { scheduleId: params.scheduleId, scheduledFor: params.scheduledFor, status: 'started' },
+    const matched = await ScheduleRun().updateOne(
+      {
+        scheduleId: params.scheduleId,
+        scheduledFor: params.scheduledFor,
+        status: { $in: ['started', 'requires_action'] },
+      },
       {
         $set: {
           status: params.status,
@@ -200,7 +245,17 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
         },
       },
     );
-    if (params.status === 'requires_action') {
+    if (params.status === 'requires_action' || (matched.modifiedCount ?? 0) === 0) {
+      return;
+    }
+    const lastRun = {
+      conversationId: params.conversationId,
+      status: params.status,
+      error: params.error,
+      firedAt,
+    };
+    if (params.status === 'interrupted') {
+      await Schedule().updateOne({ id: params.scheduleId }, { $set: { lastRun } });
       return;
     }
     const isFailure = params.status === 'error';
@@ -208,15 +263,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       .findOneAndUpdate(
         { id: params.scheduleId },
         {
-          $set: {
-            lastRun: {
-              conversationId: params.conversationId,
-              status: params.status,
-              error: params.error,
-              firedAt,
-            },
-            ...(isFailure ? {} : { balanceSkipCount: 0 }),
-          },
+          $set: { lastRun, ...(isFailure ? {} : { balanceSkipCount: 0 }) },
           $inc: isFailure ? { failureCount: 1 } : { runCount: 1 },
           ...(isFailure ? {} : { $unset: { disabledReason: 1 } }),
         },
@@ -300,6 +347,8 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     getSchedulesByUser,
     countSchedulesByUser,
     claimDueSchedule,
+    acquireManualRunLease,
+    releaseLease,
     advanceSchedule,
     disableSchedule,
     insertScheduleRun,
