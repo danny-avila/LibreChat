@@ -58,6 +58,12 @@ describe('areSearchMessagePropsEqual', () => {
     ).toBe(false);
   });
 
+  it('is false when the unfinished flag changes (incomplete-response notice)', () => {
+    expect(
+      areSearchMessagePropsEqual({ message: msg() }, { message: msg({ unfinished: true }) }),
+    ).toBe(false);
+  });
+
   it('is false when exactly one message is nullish', () => {
     expect(areSearchMessagePropsEqual({ message: undefined }, { message: msg() })).toBe(false);
     expect(areSearchMessagePropsEqual({ message: msg() }, { message: undefined })).toBe(false);

@@ -99,10 +99,17 @@ export default function Search() {
     fetchNextPage,
     isFetchingNextPage,
     hasNextPage,
+    isPreviousData,
   } = useMessagesInfiniteQuery(
     { search: searchQuery || undefined },
     { enabled: isAuthenticated && !!searchQuery, staleTime: 30000, cacheTime: 300000 },
   );
+
+  /** Stale-results window: `isTyping` clears the moment the debounce publishes
+   *  the new `debouncedQuery`, but `keepPreviousData` keeps the OLD pages mounted
+   *  until the new request lands (`isPreviousData`). Both must gate the dimming
+   *  and pagination, or the outgoing results look and page like the new search. */
+  const showingStale = search.isTyping || isPreviousData;
 
   const messages = useMemo(
     () =>
@@ -212,16 +219,16 @@ export default function Search() {
 
   const handleRowsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
-      /** Prior results stay mounted while typing; don't page the outgoing query
-       *  before the debounce settles onto the new one. */
-      if (search.isTyping || !hasNextPage || isFetchingNextPage) {
+      /** Don't page while the outgoing results are still mounted (typing, or the
+       *  new query is still fetching and previous data is shown). */
+      if (showingStale || !hasNextPage || isFetchingNextPage) {
         return;
       }
       if (stopIndex >= messages.length - 8) {
         throttledFetchNext();
       }
     },
-    [search.isTyping, hasNextPage, isFetchingNextPage, messages.length, throttledFetchNext],
+    [showingStale, hasNextPage, isFetchingNextPage, messages.length, throttledFetchNext],
   );
 
   const rowRenderer = useCallback(
@@ -329,7 +336,7 @@ export default function Search() {
           onRowsRendered={handleRowsRendered}
           overscanRowCount={10}
           aria-label={localize('com_nav_search_placeholder')}
-          className={cn('outline-none', search.isTyping && 'opacity-70')}
+          className={cn('outline-none', showingStale && 'opacity-70')}
           style={{ outline: 'none' }}
         />
       </div>

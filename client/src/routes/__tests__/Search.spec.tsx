@@ -89,6 +89,7 @@ const queryResult = (over: Record<string, unknown> = {}) => ({
   fetchNextPage: jest.fn(),
   isFetchingNextPage: false,
   hasNextPage: false,
+  isPreviousData: false,
   ...over,
 });
 
@@ -166,6 +167,17 @@ describe('Search route', () => {
     const fetchNextPage = jest.fn();
     mockUseRecoilValue.mockReturnValue(searchState({ isTyping: true }));
     mockUseQuery.mockReturnValue(queryResult({ hasNextPage: true, fetchNextPage }));
+    render(<Search />);
+    (globalThis as unknown as Record<string, () => void>).__triggerRowsRendered();
+    expect(fetchNextPage).not.toHaveBeenCalled();
+  });
+
+  it('does NOT paginate while previous-query results are still mounted (refetch in flight)', () => {
+    const fetchNextPage = jest.fn();
+    mockUseRecoilValue.mockReturnValue(searchState());
+    mockUseQuery.mockReturnValue(
+      queryResult({ hasNextPage: true, isPreviousData: true, fetchNextPage }),
+    );
     render(<Search />);
     (globalThis as unknown as Record<string, () => void>).__triggerRowsRendered();
     expect(fetchNextPage).not.toHaveBeenCalled();
