@@ -51,6 +51,7 @@ export type AgentForm = {
   subagents?: AgentSubagentsConfig;
   [AgentCapabilities.artifacts]?: ArtifactModes | string;
   recursion_limit?: number;
+  eager_execution?: boolean;
   support_contact?: SupportContact;
   category: string;
   // Avatar management fields

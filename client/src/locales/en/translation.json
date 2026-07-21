@@ -781,6 +781,8 @@
   "com_ui_agent_orchestration_hint": "Choose how this agent works with other agents.",
   "com_ui_agent_recursion_limit": "Max Agent Steps",
   "com_ui_agent_recursion_limit_info": "Limits how many steps the agent can take in a run before giving a final response. Default is 25 steps. A step is either an AI API request or a tool usage round. For example, a basic tool interaction takes 3 steps: initial request, tool usage, and follow-up request.",
+  "com_ui_agent_eager_execution": "Eager Tool Execution",
+  "com_ui_agent_eager_execution_info": "When on (the default), a tool starts running as soon as its arguments can be parsed from the model's stream, reducing latency. Turn this off if the agent produces large tool arguments (long queries or scripts) and hits repeated \"Tool call changed after eager execution started\" errors; tools will then only run once the full arguments are assembled.",
   "com_ui_agent_subagents": "Subagents",
   "com_ui_agent_subagents_add": "Add subagent",
   "com_ui_agent_subagents_agents": "Additional subagents",

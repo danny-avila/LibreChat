@@ -40,6 +40,9 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
     recursion_limit: {
       type: Number,
     },
+    eager_execution: {
+      type: Boolean,
+    },
     tools: {
       type: [String],
       default: undefined,

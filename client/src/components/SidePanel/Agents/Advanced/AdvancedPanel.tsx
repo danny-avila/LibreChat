@@ -9,6 +9,7 @@ import { useAgentPanelContext } from '~/Providers';
 import StatefulSessions from './StatefulSessions';
 import OrchestrationHub from './OrchestrationHub';
 import MaxAgentSteps from './MaxAgentSteps';
+import EagerExecution from './EagerExecution';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 
@@ -58,6 +59,7 @@ export default function AdvancedPanel() {
         <section className="flex flex-col gap-3">
           <span className={groupHeadingClass}>{localize('com_ui_essentials')}</span>
           <MaxAgentSteps />
+          <EagerExecution />
           {statefulSessionsEnabled && <StatefulSessions />}
         </section>
 
