@@ -965,6 +965,32 @@ describe('PermissionService', () => {
       expect(publicEntry).toBeNull();
     });
 
+    test('records a malformed revoke entry in errors instead of throwing after grants flush (#14316)', async () => {
+      // A nullish/malformed entry in revokedPrincipals must not throw out of the function after
+      // grants have already been flushed; it is captured in results.errors and processing continues.
+      const results = await bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        updatedPrincipals: [
+          { type: PrincipalType.USER, id: otherUserId, accessRoleId: AccessRoleIds.AGENT_VIEWER },
+        ],
+        revokedPrincipals: [null],
+        grantedBy: grantedById,
+      });
+
+      expect(results.errors).toHaveLength(1);
+      expect(results.granted).toHaveLength(1);
+
+      // The valid grant still landed despite the malformed revoke entry.
+      const grantedEntry = await AclEntry.findOne({
+        principalType: PrincipalType.USER,
+        principalId: otherUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId,
+      });
+      expect(grantedEntry).not.toBeNull();
+    });
+
     test('should handle mixed operations (grant, update, revoke)', async () => {
       const updatedPrincipals = [
         {

@@ -869,13 +869,15 @@ const bulkUpdateResourcePermissions = async ({
 
     const deleteQueries = [];
     for (const principal of revokedPrincipals) {
-      if (
-        principal.type !== PrincipalType.PUBLIC &&
-        grantedPrincipalKeys.has(principalKey(principal))
-      ) {
-        continue;
-      }
       try {
+        // Inside the try so a malformed revoke entry (e.g. a nullish principal) is recorded in
+        // results.errors and skipped, rather than throwing out after grants were already flushed.
+        if (
+          principal.type !== PrincipalType.PUBLIC &&
+          grantedPrincipalKeys.has(principalKey(principal))
+        ) {
+          continue;
+        }
         const query = {
           principalType: principal.type,
           resourceType,
