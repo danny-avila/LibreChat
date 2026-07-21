@@ -288,12 +288,18 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     },
     balanceSkipDisableThreshold?: number,
   ): Promise<void> {
-    const inserted = await insertScheduleRun({ ...data, firedAt: new Date() });
-    if (
-      inserted == null ||
-      data.status !== 'skipped_balance' ||
-      balanceSkipDisableThreshold == null
-    ) {
+    const firedAt = new Date();
+    const inserted = await insertScheduleRun({ ...data, firedAt });
+    if (inserted == null) {
+      return;
+    }
+    // Surface the skip on the card (its chip reads schedule.lastRun); counters
+    // for balance skips are handled below.
+    await Schedule().updateOne(
+      { id: data.scheduleId },
+      { $set: { lastRun: { status: data.status, firedAt } } },
+    );
+    if (data.status !== 'skipped_balance' || balanceSkipDisableThreshold == null) {
       return;
     }
     const schedule = await Schedule()

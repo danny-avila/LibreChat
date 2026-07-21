@@ -34,19 +34,28 @@ export function isValidTimezone(timezone: string): boolean {
   }
 }
 
-/** Approximate minimum minutes between occurrences, for the admin interval floor. */
+/** Minimum minutes between occurrences, for the admin interval floor. */
 export function cadenceIntervalMinutes(cadence: TScheduleCadence): number {
   if (cadence.frequency === 'hourly') {
     return 60;
   }
-  if (cadence.frequency === 'daily') {
+  if (cadence.frequency === 'daily' || cadence.frequency === 'weekdays') {
     return 24 * 60;
   }
-  if (cadence.frequency === 'weekdays') {
-    return 24 * 60;
+  const days = cadence.daysOfWeek?.length ? [...cadence.daysOfWeek] : [WEEKLY_DEFAULT_DAY];
+  if (days.length <= 1) {
+    return 7 * 24 * 60;
   }
-  const dayCount = cadence.daysOfWeek?.length ?? 1;
-  return Math.floor((7 * 24 * 60) / Math.max(1, dayCount));
+  // The interval floor must reflect the SHORTEST gap between selected days
+  // (incl. the week wrap-around), not the average — e.g. [Mon, Tue] fires 24h
+  // apart, so it must be rejected against a >1440-minute floor.
+  const sorted = [...days].sort((a, b) => a - b);
+  let minGapDays = 7;
+  for (let i = 0; i < sorted.length; i++) {
+    const gap = i + 1 < sorted.length ? sorted[i + 1] - sorted[i] : 7 - sorted[i] + sorted[0];
+    minGapDays = Math.min(minGapDays, gap);
+  }
+  return minGapDays * 24 * 60;
 }
 
 /**

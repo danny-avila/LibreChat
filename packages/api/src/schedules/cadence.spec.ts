@@ -259,13 +259,23 @@ describe('cadenceIntervalMinutes', () => {
     expect(cadenceIntervalMinutes(cadence({ frequency: 'weekdays' }))).toBe(24 * 60);
   });
 
-  it('divides the week by the number of weekly days', () => {
+  it('uses the shortest gap between weekly days, incl. the week wrap-around', () => {
+    // single day → full week
     expect(cadenceIntervalMinutes(cadence({ frequency: 'weekly' }))).toBe(7 * 24 * 60);
-    expect(cadenceIntervalMinutes(cadence({ frequency: 'weekly', daysOfWeek: [1, 3, 5] }))).toBe(
-      3360,
+    expect(cadenceIntervalMinutes(cadence({ frequency: 'weekly', daysOfWeek: [3] }))).toBe(
+      7 * 24 * 60,
     );
-    expect(
-      cadenceIntervalMinutes(cadence({ frequency: 'weekly', daysOfWeek: [0, 1, 2, 3, 4, 5, 6] })),
-    ).toBe(24 * 60);
+    // adjacent days fire 24h apart — the floor must reflect that, not the average
+    expect(cadenceIntervalMinutes(cadence({ frequency: 'weekly', daysOfWeek: [1, 2] }))).toBe(
+      24 * 60,
+    );
+    // evenly spaced Mon/Wed/Fri → 2-day min gap
+    expect(cadenceIntervalMinutes(cadence({ frequency: 'weekly', daysOfWeek: [1, 3, 5] }))).toBe(
+      2 * 24 * 60,
+    );
+    // wrap-around: Sun + Sat are 1 day apart across the week boundary
+    expect(cadenceIntervalMinutes(cadence({ frequency: 'weekly', daysOfWeek: [0, 6] }))).toBe(
+      24 * 60,
+    );
   });
 });

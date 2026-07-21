@@ -144,7 +144,11 @@ async function recordScheduleOutcome({ scheduleId, scheduledFor, status, convers
     return;
   }
   try {
-    const limits = await getLimits();
+    // Resolve the owner's limits so auto-disable uses the same per-principal
+    // threshold as the fire path (not the global default).
+    const schedule = await methods.getScheduleById(scheduleId);
+    const owner = schedule ? await engineDeps.getUserContext(schedule.user) : null;
+    const limits = await getLimits(owner ?? undefined);
     await methods.recordRunOutcome({
       scheduleId,
       scheduledFor: new Date(scheduledFor),

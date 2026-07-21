@@ -319,6 +319,8 @@ describe('recordSkippedRun', () => {
     const updated = await getSchedule(schedule.id);
     expect(updated.balanceSkipCount).toBe(0);
     expect(updated.enabled).toBe(true);
+    // the skip surfaces on the card via lastRun
+    expect(updated.lastRun?.status).toBe('skipped_overlap');
   });
 
   it('a subsequent success resets balanceSkipCount', async () => {

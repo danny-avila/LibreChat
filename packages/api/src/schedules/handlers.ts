@@ -105,6 +105,10 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     }
     const user = requestUser(req);
     const limits = await deps.getLimits(user);
+    if (!limits.enabled) {
+      res.status(403).json({ error: 'Scheduled chats are disabled' });
+      return;
+    }
     const count = await deps.methods.countSchedulesByUser(user.id);
     if (count >= limits.maxPerUser) {
       res.status(400).json({
@@ -161,6 +165,12 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       return;
     }
     const limits = await deps.getLimits(user);
+    // When the owner's config disables schedules, block edits that keep the
+    // schedule enabled; still allow turning one OFF.
+    if (!limits.enabled && (parsed.data.enabled ?? existing.enabled)) {
+      res.status(403).json({ error: 'Scheduled chats are disabled' });
+      return;
+    }
     if (!(await validatePayload(req, res, parsed.data, limits))) {
       return;
     }

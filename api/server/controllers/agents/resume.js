@@ -745,6 +745,18 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       } catch (emitErr) {
         logger.error('[ResumeAgentController] Failed to emit resume error', emitErr);
       }
+      // Record the schedule error now: for a scheduled fire that paused and
+      // then failed on resume, this is the terminal point, and the job is about
+      // to be deleted (the reconciler wouldn't see the error).
+      if (job.metadata?.scheduleId) {
+        await recordScheduleOutcome({
+          scheduleId: job.metadata.scheduleId,
+          scheduledFor: job.metadata.scheduledFor,
+          status: 'error',
+          conversationId: streamId,
+          error: err?.message ?? 'Resume failed',
+        });
+      }
       try {
         await GenerationJobManager.completeJob(streamId, err?.message ?? 'Resume failed');
       } catch (completeErr) {
