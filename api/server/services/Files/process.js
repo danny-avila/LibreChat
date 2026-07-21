@@ -17,6 +17,7 @@ const {
   isAssistantsEndpoint,
   getEndpointFileConfig,
   documentParserMimeTypes,
+  isPermissiveMimeConfig,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
@@ -797,8 +798,25 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       appConfig?.ocr != null &&
       fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
 
+    const isDocumentParserEligible = documentParserMimeTypes.some((regex) =>
+      regex.test(file.mimetype),
+    );
+
+    /**
+     * When an admin narrows `fileConfig.text.supportedMimeTypes` to a non-permissive allowlist that
+     * includes a document type and a RAG API is configured, honor that intent by sending the file to
+     * RAG `/text` instead of the built-in document parser. The permissive default catch-all is
+     * excluded via `isPermissiveMimeConfig`, so RAG deployments that never customized text handling
+     * keep the built-in parser introduced in #11900.
+     */
+    const shouldUseConfiguredText =
+      !!process.env.RAG_API_URL &&
+      isDocumentParserEligible &&
+      !isPermissiveMimeConfig(fileConfig.text?.supportedMimeTypes) &&
+      fileConfig.checkType(file.mimetype, fileConfig.text?.supportedMimeTypes || []);
+
     const shouldUseDocumentParser =
-      !shouldUseConfiguredOCR && documentParserMimeTypes.some((regex) => regex.test(file.mimetype));
+      !shouldUseConfiguredOCR && !shouldUseConfiguredText && isDocumentParserEligible;
 
     const shouldUseOCR = shouldUseConfiguredOCR || shouldUseDocumentParser;
 
@@ -859,6 +877,38 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
 
     if (!shouldUseText) {
       throw new Error(`File type ${file.mimetype} is not supported for text parsing.`);
+    }
+
+    /**
+     * A document type the admin routed to configured text extraction: prefer RAG `/text`, but fall
+     * back to the built-in document parser (not raw native text) when RAG is unavailable, so a
+     * transient outage doesn't degrade a docx/pdf to unreadable bytes. Only the RAG extraction is
+     * inside the fallback catch: a downstream persistence failure (size guard, DB, agent-resource
+     * mutation) must surface as itself, not trigger a second extraction attempt.
+     */
+    if (shouldUseConfiguredText) {
+      let configuredText;
+      try {
+        configuredText = await parseText({ req, file, file_id, allowNativeFallback: false });
+      } catch (err) {
+        logger.warn(
+          `[processAgentFileUpload] Configured RAG text extraction unavailable for "${file.originalname}", using built-in document parser:`,
+          err,
+        );
+        const documentText = await resolveDocumentText();
+        if (!documentText) {
+          throw new Error(
+            `Unable to extract text from "${file.originalname}". RAG text extraction was unavailable and the built-in parser produced no result.`,
+          );
+        }
+        const { text, bytes, filepath: docFileURL } = documentText;
+        return await createTextFile({ text, bytes, filepath: docFileURL });
+      }
+      return await createTextFile({
+        text: configuredText.text,
+        bytes: configuredText.bytes,
+        type: file.mimetype,
+      });
     }
 
     const { text, bytes } = await parseText({ req, file, file_id });
