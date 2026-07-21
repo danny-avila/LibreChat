@@ -15,18 +15,17 @@
  *    are never closed — proving the fix is necessary.
  */
 
-import * as http from 'http';
 import * as net from 'net';
+import * as http from 'http';
 import { randomUUID } from 'crypto';
+import { logger } from '@librechat/data-schemas';
 import { Agent, fetch as undiciFetch } from 'undici';
-import { Server as McpServerCore } from '@modelcontextprotocol/sdk/server/index.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { Server as McpServerCore } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { logger } from '@librechat/data-schemas';
-import { MCPConnection } from '~/mcp/connection';
-
 import type { Socket } from 'net';
+import { MCPConnection } from '~/mcp/connection';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -45,7 +44,13 @@ jest.mock('~/auth', () => ({
 }));
 
 jest.mock('~/mcp/mcpConfig', () => ({
-  mcpConfig: { CONNECTION_CHECK_TTL: 0 },
+  mcpConfig: {
+    CONNECTION_CHECK_TTL: 0,
+    TOOLS_LIST_MAX_PAGES: 50,
+    TOOLS_LIST_MAX_TOOLS: 1000,
+    TOOLS_LIST_MAX_BYTES: 5 * 1024 * 1024,
+    TOOLS_LIST_TIMEOUT_MS: 30000,
+  },
 }));
 
 const mockLogger = logger as jest.Mocked<typeof logger>;

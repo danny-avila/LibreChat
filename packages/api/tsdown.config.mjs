@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { defineConfig } from 'tsdown';
 
 export default defineConfig({
@@ -15,6 +16,6 @@ export default defineConfig({
   // only first-party code: relative imports and the `~/*` tsconfig alias (-> src).
   // `neverBundle` is the 0.22 replacement for the deprecated `external` option.
   deps: {
-    neverBundle: (id) => !id.startsWith('.') && !id.startsWith('~') && !id.startsWith('/'),
+    neverBundle: (id) => !id.startsWith('.') && !id.startsWith('~') && !path.isAbsolute(id),
   },
 });

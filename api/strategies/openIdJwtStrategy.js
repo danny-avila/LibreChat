@@ -1,8 +1,7 @@
 const cookies = require('cookie');
 const jwksRsa = require('jwks-rsa');
 const { logger } = require('@librechat/data-schemas');
-const { HttpsProxyAgent } = require('https-proxy-agent');
-const { SystemRoles } = require('librechat-data-provider');
+const { CacheKeys, SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const {
   isEnabled,
@@ -10,9 +9,16 @@ const {
   getOpenIdEmail,
   getOpenIdIssuer,
   normalizeOpenIdIssuer,
+  buildAuthUserDocCacheKey,
+  getAuthUserDocCacheMode,
+  getCachedAuthUserDoc,
+  invalidateCachedAuthUserDoc,
+  setCachedAuthUserDoc,
+  getHttpsProxyAgent,
   math,
 } = require('@librechat/api');
 const { updateUser, findUser } = require('~/models');
+const getLogStores = require('~/cache/getLogStores');
 
 const getOpenIdJwtAudience = () => {
   const parsedAudience = (process.env.OPENID_AUDIENCE ?? '')
@@ -47,6 +53,8 @@ const isOpenIdIssuerAllowed = (payload, openIdConfig) => {
   return actualIssuer === expectedIssuer || issuerMatchesTemplate(expectedIssuer, actualIssuer);
 };
 
+const getAuthUserDocCacheStore = () => getLogStores(CacheKeys.AUTH_USER_DOC);
+
 /**
  * @function openIdJwtLogin
  * @param {import('openid-client').Configuration} openIdConfig - Configuration object for the JWT strategy.
@@ -73,8 +81,9 @@ const openIdJwtLogin = (openIdConfig) => {
     jwksUri: openIdConfig.serverMetadata().jwks_uri,
   };
 
-  if (process.env.PROXY) {
-    jwksRsaOptions.requestAgent = new HttpsProxyAgent(process.env.PROXY);
+  const requestAgent = getHttpsProxyAgent(jwksRsaOptions.jwksUri);
+  if (requestAgent) {
+    jwksRsaOptions.requestAgent = requestAgent;
   }
 
   return new JwtStrategy(
@@ -99,15 +108,31 @@ const openIdJwtLogin = (openIdConfig) => {
         const authHeader = req.headers.authorization;
         const rawToken = authHeader?.replace('Bearer ', '');
         const openidIssuer = getOpenIdIssuer(payload, openIdConfig);
-
-        const { user, error, migration } = await findOpenIDUser({
-          findUser,
-          email: payload ? getOpenIdEmail(payload) : undefined,
-          openidId: payload?.sub,
-          openidIssuer,
-          idOnTheSource: payload?.oid,
-          strategyName: 'openIdJwtLogin',
+        const authUserCacheKey = buildAuthUserDocCacheKey({
+          strategy: 'openid-jwt',
+          subject: payload?.sub,
+          issuer: openidIssuer,
         });
+        const authUserCacheMode = getAuthUserDocCacheMode();
+        const authUserCacheStore =
+          authUserCacheMode !== 'off' && authUserCacheKey ? getAuthUserDocCacheStore() : undefined;
+        const cachedUser =
+          authUserCacheMode !== 'off' && authUserCacheStore && authUserCacheKey
+            ? await getCachedAuthUserDoc(authUserCacheStore, authUserCacheKey)
+            : undefined;
+
+        const servedCachedUser = authUserCacheMode === 'on' && cachedUser;
+        const lookupResult = servedCachedUser
+          ? { user: cachedUser, error: null, migration: false }
+          : await findOpenIDUser({
+              findUser,
+              email: payload ? getOpenIdEmail(payload) : undefined,
+              openidId: payload?.sub,
+              openidIssuer,
+              idOnTheSource: payload?.oid,
+              strategyName: 'openIdJwtLogin',
+            });
+        const { user, error, migration } = lookupResult;
 
         if (error) {
           done(null, false, { message: error });
@@ -116,6 +141,8 @@ const openIdJwtLogin = (openIdConfig) => {
 
         if (user) {
           user.id = user._id.toString();
+          /** Absent on the full doc means local user; null skips getUserPrincipals' fallback lookup */
+          user.idOnTheSource ??= null;
 
           const updateData = {};
           if (migration) {
@@ -132,6 +159,17 @@ const openIdJwtLogin = (openIdConfig) => {
 
           if (Object.keys(updateData).length > 0) {
             await updateUser(user.id, updateData);
+          }
+
+          if (authUserCacheStore && authUserCacheKey) {
+            if (Object.keys(updateData).length > 0) {
+              await invalidateCachedAuthUserDoc(authUserCacheStore, {
+                userId: user.id,
+                cacheKey: authUserCacheKey,
+              });
+            } else if (!servedCachedUser) {
+              await setCachedAuthUserDoc(authUserCacheStore, authUserCacheKey, user);
+            }
           }
 
           /** Read tokens from session (server-side) to avoid large cookie issues */

@@ -1,6 +1,32 @@
 import type { Types } from 'mongoose';
 import type { IMessage } from './message';
 
+/**
+ * Immutable snapshot of a file referenced by a shared chat snapshot. Captured at
+ * share create/update so shared-link viewers can preview/download the file through
+ * the share-scoped routes without consulting the original owner's live file ACL.
+ * References the original stored object (no byte copy); only the metadata needed to
+ * stream/preview is duplicated.
+ */
+export interface SharedFileSnapshot {
+  file_id: string;
+  source?: string;
+  storageKey?: string;
+  filepath?: string;
+  type?: string;
+  filename?: string;
+  bytes?: number;
+  width?: number;
+  height?: number;
+  model?: string;
+  /** Deferred-preview generation marker captured at share time. The share routes
+   * refuse to serve when the live file's revision no longer matches (the file_id
+   * was reused/overwritten by a later turn), so a link can't surface post-share
+   * content. */
+  previewRevision?: string;
+  tenantId?: string;
+}
+
 export interface ISharedLink {
   _id?: Types.ObjectId;
   conversationId: string;
@@ -14,6 +40,15 @@ export interface ISharedLink {
   updatedAt?: Date;
   /** Owning tenant for multi-tenant deployments (read by the shared-link access middleware). */
   tenantId?: string;
+  /**
+   * Per-link choice of whether the conversation's files are included in the share
+   * (the "share files" checkbox). `false` means the viewer sees no files; absent
+   * means a legacy link (treated as included). Distinct from `fileSnapshots` so an
+   * opt-out is never mistaken for a not-yet-backfilled legacy link.
+   */
+  snapshotFiles?: boolean;
+  /** Per-share file snapshot referenced by the share-scoped file routes. */
+  fileSnapshots?: SharedFileSnapshot[];
 }
 
 export interface ShareServiceError extends Error {
@@ -50,6 +85,7 @@ export type SharedMessage = Pick<
   | 'finish_reason'
   | 'manualSkills'
   | 'alwaysAppliedSkills'
+  | 'quotes'
 > & {
   model?: string;
   files?: SharedFile[];
@@ -101,6 +137,7 @@ export interface GetShareLinkResult {
   _id?: string;
   shareId: string | null;
   targetMessageId?: string;
+  snapshotFiles?: boolean;
   success: boolean;
 }
 

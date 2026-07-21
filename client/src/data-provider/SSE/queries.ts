@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiBaseUrl, QueryKeys, request, dataService } from 'librechat-data-provider';
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
-import type { Agents, TConversation } from 'librechat-data-provider';
+import { apiBaseUrl, QueryKeys, request, dataService } from 'librechat-data-provider';
+import type { Agents, TConversation, TPendingSteer } from 'librechat-data-provider';
 import { isNotFoundError, updateConvoInAllQueries } from '~/utils';
 import { useGetStartupConfig } from '../Endpoints';
 
 export interface StreamStatusResponse {
   active: boolean;
   streamId?: string;
-  status?: 'running' | 'complete' | 'error' | 'aborted';
+  status?: 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
   aggregatedContent?: Array<{ type: string; text?: string }>;
   createdAt?: number;
   resumeState?: Agents.ResumeState;
+  /** Live pending approval when `status === 'requires_action'`; mirrors
+   *  `resumeState.pendingAction`, surfaced top-level for the resume-on-load path. */
+  pendingAction?: Agents.PendingAction;
+  /** Acknowledged steers a terminal drain parked because no subscriber was
+   *  live for the final/abort event — claim-on-read; restore as queued chips. */
+  unrecoveredSteers?: TPendingSteer[];
 }
 
 export const streamStatusQueryKey = (conversationId: string) => ['streamStatus', conversationId];

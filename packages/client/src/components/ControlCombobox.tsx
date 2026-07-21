@@ -2,8 +2,9 @@ import { useMemo, useState, useRef, memo, useEffect, MemoExoticComponent } from 
 import * as Ariakit from '@ariakit/react';
 import { matchSorter } from 'match-sorter';
 import { Search, ChevronDown } from 'lucide-react';
-import { SelectRenderer } from '@ariakit/react-core/select/select-renderer';
+import { SelectRenderer } from '@ariakit/react-components/select/select-renderer';
 import type { OptionWithIcon } from '~/common';
+import { usePopoverZIndex } from './OriginalDialog';
 import './AnimatePopover.css';
 import { JSX } from 'react/jsx-runtime';
 import { cn } from '~/utils';
@@ -52,6 +53,7 @@ function ControlCombobox({
   const [searchValue, setSearchValue] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [buttonWidth, setButtonWidth] = useState<number | null>(null);
+  const popoverZIndex = usePopoverZIndex();
 
   const getItem = (option: OptionWithIcon) => ({
     id: `item-${option.value}`,
@@ -142,7 +144,10 @@ function ControlCombobox({
         )}
         {!isCollapsed && (
           <>
-            <span className="flex-grow truncate text-left">
+            <span
+              className="flex-grow truncate text-left"
+              title={(displayValue != null ? displayValue : selectedValue) || undefined}
+            >
               {displayValue != null
                 ? displayValue || selectPlaceholder
                 : selectedValue || selectPlaceholder}
@@ -159,9 +164,9 @@ function ControlCombobox({
         gutter={4}
         portal
         className={cn(
-          'animate-popover z-40 overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-lg',
+          'animate-popover overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-lg',
         )}
-        style={{ width: isCollapsed ? '300px' : (buttonWidth ?? '300px') }}
+        style={{ zIndex: popoverZIndex, width: isCollapsed ? '300px' : (buttonWidth ?? '300px') }}
       >
         <div className="py-1.5">
           <div className="relative">

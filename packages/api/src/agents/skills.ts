@@ -52,6 +52,20 @@ export const MAX_PRIMED_SKILLS_PER_TURN = 30;
 export const MAX_SKILL_NAME_LENGTH = 200;
 
 /**
+ * Canonical namespace prefix for skill files. Single source of truth for
+ * three layers that must agree:
+ * - the `read_file`/`create_file`/`edit_file` authoring namespace shown to
+ *   the model (`skills/{skillName}/...`),
+ * - the `handleReadFileCall` routing + bash-fallback paths in `handlers.ts`,
+ * - the physical mount layout under `/mnt/data` (see `skillFiles.ts`, which
+ *   primes bundled files at `skills/{skillName}/...` so bash and the
+ *   model-facing namespace resolve to the same path on disk).
+ *
+ * Keep the trailing slash — call sites concatenate `${SKILL_FILE_PREFIX}${skillName}/...`.
+ */
+export const SKILL_FILE_PREFIX = 'skills/';
+
+/**
  * Marker tagged onto every skill-primed message (as `additional_kwargs.source`
  * on a LangChain `HumanMessage`, or as `source` on the `InjectedMessage` that
  * `handleSkillToolCall` emits). Downstream filtering/telemetry keys off this,
@@ -320,6 +334,8 @@ export interface InjectSkillCatalogParams {
   listSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'];
   /** When true, registers bash_tool alongside skill + read_file. */
   codeEnvAvailable?: boolean;
+  /** When true, bash_tool registers with the hedged stateful-session description. */
+  statefulSessions?: boolean;
   /** Current user ID — used to determine skill ownership for active-state resolution. */
   userId?: string;
   /** Per-user skill overrides: `{ [skillId]: boolean }`. Missing entries use the default. */
@@ -376,6 +392,7 @@ export async function injectSkillCatalog(
     contextWindowTokens,
     listSkillsByAccess,
     codeEnvAvailable,
+    statefulSessions,
     userId,
     skillStates,
     defaultActiveOnShare = false,
@@ -569,6 +586,7 @@ export async function injectSkillCatalog(
     toolDefinitions: workingDefs,
     includeBash: codeEnvAvailable === true,
     enableToolOutputReferences: codeEnvAvailable === true,
+    statefulSessions: statefulSessions === true,
   });
   workingDefs = codeExecResult.toolDefinitions;
 

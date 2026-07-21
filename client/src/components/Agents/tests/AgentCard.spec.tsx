@@ -1,9 +1,25 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import AgentCard from '../AgentCard';
-import type t from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type t from 'librechat-data-provider';
+import AgentCard from '../AgentCard';
+
+jest.mock('~/utils', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require('react');
+  return {
+    cn: (...classes: string[]) => classes.filter(Boolean).join(' '),
+    renderAgentAvatar: (agent: any) => {
+      const avatar = agent.avatar;
+      const src = typeof avatar === 'string' ? avatar : avatar?.filepath;
+      if (src) {
+        return <img src={src} alt={`${agent.name} avatar`} />;
+      }
+      return <svg className="lucide-feather" />;
+    },
+  };
+});
 
 // Mock useLocalize hook
 jest.mock('~/hooks/useLocalize', () => () => (key: string) => {
@@ -12,7 +28,8 @@ jest.mock('~/hooks/useLocalize', () => () => (key: string) => {
     com_agents_agent_card_label: '{{name}} agent. {{description}}',
     com_agents_category_general: 'General',
     com_agents_category_hr: 'Human Resources',
-    com_ui_by_author: 'by {{0}}',
+    com_agents_contact: 'Contact',
+    com_agents_no_contact_available: 'No contact available',
     com_agents_description_card: '{{description}}',
   };
   return mockTranslations[key] || key;
@@ -26,7 +43,8 @@ jest.mock('~/hooks', () => ({
       com_agents_agent_card_label: '{{name}} agent. {{description}}',
       com_agents_category_general: 'General',
       com_agents_category_hr: 'Human Resources',
-      com_ui_by_author: 'by {{0}}',
+      com_agents_contact: 'Contact',
+      com_agents_no_contact_available: 'No contact available',
       com_agents_description_card: '{{description}}',
     };
     let translation = mockTranslations[key] || key;
@@ -73,46 +91,52 @@ jest.mock('~/Providers', () => ({
 }));
 
 // Mock @librechat/client with proper Dialog behavior
-jest.mock('@librechat/client', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const React = require('react');
-  return {
-    ...jest.requireActual('@librechat/client'),
-    useToastContext: jest.fn(() => ({
-      showToast: jest.fn(),
-    })),
-    OGDialog: ({ children, open, onOpenChange }: any) => {
-      // Store onOpenChange in context for trigger to call
-      return (
-        <div data-testid="dialog-wrapper" data-open={open}>
-          {React.Children.map(children, (child: any) => {
-            if (child?.type?.displayName === 'OGDialogTrigger' || child?.props?.['data-trigger']) {
-              return React.cloneElement(child, { onOpenChange });
-            }
-            // Only render content when open
-            if (child?.type?.displayName === 'OGDialogContent' && !open) {
-              return null;
-            }
-            return child;
-          })}
-        </div>
-      );
-    },
-    OGDialogTrigger: ({ children, asChild, onOpenChange }: any) => {
-      if (asChild && React.isValidElement(children)) {
-        return React.cloneElement(children as React.ReactElement<any>, {
-          onClick: (e: any) => {
-            (children as any).props?.onClick?.(e);
-            onOpenChange?.(true);
-          },
-        });
-      }
-      return <div onClick={() => onOpenChange?.(true)}>{children}</div>;
-    },
-    OGDialogContent: ({ children }: any) => <div data-testid="dialog-content">{children}</div>,
-    Label: ({ children, className }: any) => <span className={className}>{children}</span>,
-  };
-});
+jest.mock(
+  '@librechat/client',
+  () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const React = require('react');
+    return {
+      useToastContext: jest.fn(() => ({
+        showToast: jest.fn(),
+      })),
+      OGDialog: ({ children, open, onOpenChange }: any) => {
+        // Store onOpenChange in context for trigger to call
+        return (
+          <div data-testid="dialog-wrapper" data-open={open}>
+            {React.Children.map(children, (child: any) => {
+              if (
+                child?.type?.displayName === 'OGDialogTrigger' ||
+                child?.props?.['data-trigger']
+              ) {
+                return React.cloneElement(child, { onOpenChange });
+              }
+              // Only render content when open
+              if (child?.type?.displayName === 'OGDialogContent' && !open) {
+                return null;
+              }
+              return child;
+            })}
+          </div>
+        );
+      },
+      OGDialogTrigger: ({ children, asChild, onOpenChange }: any) => {
+        if (asChild && React.isValidElement(children)) {
+          return React.cloneElement(children as React.ReactElement<any>, {
+            onClick: (e: any) => {
+              (children as any).props?.onClick?.(e);
+              onOpenChange?.(true);
+            },
+          });
+        }
+        return <div onClick={() => onOpenChange?.(true)}>{children}</div>;
+      },
+      OGDialogContent: ({ children }: any) => <div data-testid="dialog-content">{children}</div>,
+      Label: ({ children, className }: any) => <span className={className}>{children}</span>,
+    };
+  },
+  { virtual: true },
+);
 
 // Create wrapper with QueryClient
 const createWrapper = () => {
@@ -290,13 +314,18 @@ describe('AgentCard', () => {
 
     expect(screen.getByText('Test Agent')).toBeInTheDocument();
     expect(screen.getByText('A test agent for testing purposes')).toBeInTheDocument();
+    expect(screen.getByText('No contact available')).toBeInTheDocument();
   });
 
-  it('displays authorName when support_contact is missing', () => {
+  it('falls back to owner contact when support_contact is missing', () => {
     const agentWithAuthorName = {
       ...mockAgent,
       support_contact: undefined,
       authorName: 'John Doe',
+      owner_contact: {
+        name: 'Owner User',
+        email: 'owner@example.com',
+      },
     };
 
     render(
@@ -305,7 +334,12 @@ describe('AgentCard', () => {
       </Wrapper>,
     );
 
-    expect(screen.getByText('by John Doe')).toBeInTheDocument();
+    expect(screen.getByText('Contact:')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Owner User' })).toHaveAttribute(
+      'href',
+      'mailto:owner@example.com',
+    );
+    expect(screen.queryByText('by John Doe')).not.toBeInTheDocument();
   });
 
   it('has proper accessibility attributes', () => {

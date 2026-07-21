@@ -1,6 +1,7 @@
 import { startTransition } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { TooltipAnchor, Button, Sidebar } from '@librechat/client';
+import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -11,6 +12,8 @@ export const OPEN_SIDEBAR_ID = 'open-sidebar-button';
 export default function OpenSidebar({ className }: { className?: string }) {
   const localize = useLocalize();
   const setSidebarExpanded = useSetRecoilState(store.sidebarExpanded);
+  const tooltipDescription = useShortcutHint('toggleSidebar', localize('com_nav_open_sidebar'));
+  const ariaKey = useShortcutAriaKey('toggleSidebar');
 
   const handleClick = () => {
     startTransition(() => {
@@ -23,7 +26,7 @@ export default function OpenSidebar({ className }: { className?: string }) {
 
   return (
     <TooltipAnchor
-      description={localize('com_nav_open_sidebar')}
+      description={tooltipDescription}
       render={
         <Button
           id={OPEN_SIDEBAR_ID}
@@ -33,6 +36,7 @@ export default function OpenSidebar({ className }: { className?: string }) {
           aria-label={localize('com_nav_open_sidebar')}
           aria-expanded={false}
           aria-controls="chat-history-nav"
+          aria-keyshortcuts={ariaKey}
           className={cn(
             'rounded-xl bg-presentation duration-0 hover:bg-surface-active-alt',
             className,

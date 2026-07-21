@@ -149,6 +149,7 @@ helm/**/.values.yaml
 /.openai/
 /.tabnine/
 /.codeium
+/.pi/
 *.local.md
 
 # Removed Windows wrapper files per user request
@@ -184,3 +185,4 @@ hive-mind-prompt-*.txt
 CLAUDE.md
 .gsd
 outlook-tokens.json
+codedb.snapshot

@@ -58,12 +58,3 @@ jest.mock('~/config', () => {
     },
   };
 });
-
-jest.mock('~/config/parsers', () => {
-  return {
-    redactMessage: jest.fn(),
-    redactFormat: jest.fn(),
-    debugTraverse: jest.fn(),
-    formatConsoleMeta: jest.fn(() => ''),
-  };
-});

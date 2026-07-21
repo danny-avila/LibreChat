@@ -5,6 +5,7 @@ import { Search, X } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useShortcutAriaKey } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -23,6 +24,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const [showClearIcon, setShowClearIcon] = useState(false);
+  const focusSearchAriaKey = useShortcutAriaKey('focusSearch');
 
   const { newConversation: newConvo } = useNewConvo();
   const [search, setSearchState] = useRecoilState(store.search);
@@ -117,6 +119,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
       />
       <input
         type="text"
+        data-testid="nav-search-input"
         ref={inputRef}
         className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight placeholder-text-secondary placeholder-opacity-100 focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
         value={text}
@@ -125,6 +128,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
           e.code === 'Space' ? e.stopPropagation() : null;
         }}
         aria-label={localize('com_nav_search_placeholder')}
+        aria-keyshortcuts={focusSearchAriaKey}
         placeholder={localize('com_nav_search_placeholder')}
         onKeyUp={handleKeyUp}
         onFocus={() => setSearchState((prev) => ({ ...prev, isSearching: true }))}

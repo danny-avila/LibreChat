@@ -183,12 +183,12 @@ describe('MCP Tool Authorization', () => {
 
     test('should keep system tools without querying MCP registry', async () => {
       const result = await filterAuthorizedTools({
-        tools: ['execute_code', 'file_search', 'web_search'],
+        tools: ['execute_code', 'file_search', 'web_search', 'memory'],
         userId,
         availableTools: {},
       });
 
-      expect(result).toEqual(['execute_code', 'file_search', 'web_search']);
+      expect(result).toEqual(['execute_code', 'file_search', 'web_search', 'memory']);
       expect(mockGetAllServerConfigs).not.toHaveBeenCalled();
     });
 

@@ -124,6 +124,44 @@ describe('InMemoryJobStore - stale running-job failsafe', () => {
     await store.destroy();
   });
 
+  it('parks 202-accepted steers before reaping a stale running job', async () => {
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const store = new InMemoryJobStore({ ttlAfterComplete: 0, staleJobTimeout: 1000 });
+    await store.initialize();
+
+    await store.createJob('s1', 'u1', 's1', 'tenant-1');
+    await store.enqueueSteer('s1', {
+      steerId: 'sp1',
+      text: 'crash survivor',
+      userId: 'u1',
+      createdAt: Date.now(),
+    });
+
+    const base = Date.now();
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(base + 5000);
+    try {
+      const removed = await store.cleanup();
+      expect(removed).toBe(1);
+      expect(await store.hasJob('s1')).toBe(false);
+
+      // No finalization ever ran — the crashed run's queue must be claimable.
+      const claimed = await store.claimParkedSteers('s1', '"userId":"u1"');
+      expect(claimed).toBeDefined();
+      const parsed = JSON.parse(claimed as string) as {
+        userId: string;
+        tenantId?: string;
+        steers: Array<{ steerId: string; text: string }>;
+      };
+      expect(parsed.userId).toBe('u1');
+      expect(parsed.tenantId).toBe('tenant-1');
+      expect(parsed.steers.map((steer) => steer.text)).toEqual(['crash survivor']);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    await store.destroy();
+  });
+
   it('reaps terminal jobs while leaving fresh running jobs intact', async () => {
     const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
     const store = new InMemoryJobStore({ ttlAfterComplete: 0, staleJobTimeout: 60000 });

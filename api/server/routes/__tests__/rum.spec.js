@@ -1,12 +1,12 @@
 const express = require('express');
 const request = require('supertest');
 
-const mockRequireJwtAuth = jest.fn((_req, _res, next) => next());
+const mockRequireRumProxyAuth = jest.fn((_req, _res, next) => next());
 const mockIsRumProxyEnabled = jest.fn();
 const mockProxyRumRequest = jest.fn((_req, res) => res.status(202).send());
 
 jest.mock('~/server/middleware', () => ({
-  requireJwtAuth: (...args) => mockRequireJwtAuth(...args),
+  requireRumProxyAuth: (...args) => mockRequireRumProxyAuth(...args),
 }));
 
 jest.mock('@librechat/api', () => ({
@@ -26,7 +26,7 @@ describe('RUM proxy routes', () => {
   });
 
   beforeEach(() => {
-    mockRequireJwtAuth.mockClear();
+    mockRequireRumProxyAuth.mockClear();
     mockIsRumProxyEnabled.mockReset();
     mockProxyRumRequest.mockClear();
   });
@@ -41,7 +41,7 @@ describe('RUM proxy routes', () => {
 
     expect(response.status).toBe(404);
     expect(response.body).toEqual({ message: 'RUM proxy is not configured' });
-    expect(mockRequireJwtAuth).not.toHaveBeenCalled();
+    expect(mockRequireRumProxyAuth).not.toHaveBeenCalled();
     expect(mockProxyRumRequest).not.toHaveBeenCalled();
   });
 
@@ -54,7 +54,20 @@ describe('RUM proxy routes', () => {
       .send(Buffer.from('payload'));
 
     expect(response.status).toBe(202);
-    expect(mockRequireJwtAuth).toHaveBeenCalledTimes(1);
+    expect(mockRequireRumProxyAuth).toHaveBeenCalledTimes(1);
+    expect(mockProxyRumRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses RUM-specific auth for logs as well as traces', async () => {
+    mockIsRumProxyEnabled.mockReturnValue(true);
+
+    const response = await request(app)
+      .post('/api/rum/v1/logs')
+      .set('Content-Type', 'application/x-protobuf')
+      .send(Buffer.from('payload'));
+
+    expect(response.status).toBe(202);
+    expect(mockRequireRumProxyAuth).toHaveBeenCalledTimes(1);
     expect(mockProxyRumRequest).toHaveBeenCalledTimes(1);
   });
 });

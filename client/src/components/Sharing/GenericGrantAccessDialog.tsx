@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
-import { Share2Icon, Users, Link, CopyCheck, UserX, UserCheck } from 'lucide-react';
+import { Share2Icon, Users, Link, CopyCheck, UserX, UserCheck, AlertCircle } from 'lucide-react';
 import {
   Label,
   Button,
@@ -11,6 +11,7 @@ import {
   OGDialogClose,
   OGDialogContent,
   OGDialogTrigger,
+  TooltipAnchor,
   useToastContext,
 } from '@librechat/client';
 import type { TPrincipal } from 'librechat-data-provider';
@@ -60,7 +61,9 @@ export default function GenericGrantAccessDialog({
     config,
     permissionsData,
     isLoadingPermissions,
+    isFetchingPermissions,
     permissionsError,
+    refetchPermissions,
     updatePermissionsMutation,
     currentShares,
     currentIsPublic,
@@ -237,9 +240,35 @@ export default function GenericGrantAccessDialog({
   const hasPublicChanges = isPublic !== currentIsPublic || publicRole !== currentPublicRole;
   const submitButtonActive = hasChanges || hasPublicChanges;
 
-  // Error handling
+  // On permissions load failure, keep a compact trigger-sized button so the layout holds,
+  // surfacing the error (and a retry on click) through a tooltip.
   if (permissionsError) {
-    return <div className="text-sm text-red-600">{localize('com_ui_permissions_failed_load')}</div>;
+    return (
+      <TooltipAnchor
+        description={localize('com_ui_permissions_failed_load')}
+        render={
+          <Button
+            size="sm"
+            variant="outline"
+            type="button"
+            disabled={disabled}
+            onClick={() => refetchPermissions()}
+            aria-label={localize('com_ui_permissions_failed_load')}
+            className={cn('h-9', buttonClassName)}
+          >
+            <div className="flex min-w-[32px] items-center justify-center text-red-500">
+              <span className="flex h-6 w-6 items-center justify-center">
+                {isFetchingPermissions ? (
+                  <Spinner className="h-4 w-4" />
+                ) : (
+                  <AlertCircle className="icon-md h-4 w-4" aria-hidden="true" />
+                )}
+              </span>
+            </div>
+          </Button>
+        }
+      />
+    );
   }
 
   const TriggerComponent = children ? (

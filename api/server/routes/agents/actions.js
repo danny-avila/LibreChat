@@ -22,6 +22,7 @@ const {
 } = require('librechat-data-provider');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
+const { attachOwnerContacts } = require('~/server/services/Agents/ownerContact');
 const db = require('~/models');
 const { canAccessAgentResource } = require('~/server/middleware');
 
@@ -209,6 +210,7 @@ router.post(
           forceVersion: true,
         },
       );
+      await attachOwnerContacts([updatedAgent]);
 
       // Only update user field for new actions
       const actionUpdateData = {

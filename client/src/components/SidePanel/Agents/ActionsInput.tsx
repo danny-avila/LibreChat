@@ -1,12 +1,23 @@
 import { useState, useEffect } from 'react';
 import debounce from 'lodash/debounce';
+import { Maximize2 } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
-import { Spinner, useToastContext } from '@librechat/client';
 import {
   validateAndParseOpenAPISpec,
   openapiToFunction,
   AuthTypeEnum,
 } from 'librechat-data-provider';
+import {
+  Button,
+  Spinner,
+  Textarea,
+  OGDialog,
+  OGDialogTitle,
+  OGDialogHeader,
+  OGDialogContent,
+  OGDialogDescription,
+  useToastContext,
+} from '@librechat/client';
 import type {
   Action,
   FunctionTool,
@@ -15,8 +26,8 @@ import type {
 } from 'librechat-data-provider';
 import type { ActionAuthForm } from '~/common';
 import type { Spec } from './ActionsTable';
+import { ActionsTable, ActionsTableSkeleton, columns } from './ActionsTable';
 import ActionCallback from '~/components/SidePanel/Builder/ActionCallback';
-import { ActionsTable, columns } from './ActionsTable';
 import { useUpdateAgentAction } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { logger } from '~/utils';
@@ -29,19 +40,25 @@ const debouncedValidation = debounce(
   800,
 );
 
+/** Placeholder rows shaped like the "Available actions" table (Name / Method / Path). */
 export default function ActionsInput({
   action,
   agent_id,
   setAction,
+  onCreated,
+  footerStart,
 }: {
   action?: Action;
   agent_id?: string;
   setAction: React.Dispatch<React.SetStateAction<Action | undefined>>;
+  onCreated?: () => void;
+  footerStart?: React.ReactNode;
 }) {
   const handleResult = (result: ValidationResult) => {
     if (!result.status) {
       setData(null);
       setFunctions(null);
+      setIsValidating(false);
     }
     setValidationResult(result);
   };
@@ -51,6 +68,8 @@ export default function ActionsInput({
   const { handleSubmit, reset } = useFormContext<ActionAuthForm>();
   const [validationResult, setValidationResult] = useState<null | ValidationResult>(null);
   const [inputValue, setInputValue] = useState('');
+  const [isValidating, setIsValidating] = useState(false);
+  const [isSchemaDialogOpen, setIsSchemaDialogOpen] = useState(false);
 
   const [data, setData] = useState<Spec[] | null>(null);
   const [functions, setFunctions] = useState<FunctionTool[] | null>(null);
@@ -61,7 +80,8 @@ export default function ActionsInput({
       return;
     }
     setInputValue(rawSpec);
-    debouncedValidation(rawSpec, handleResult);
+    setIsValidating(true);
+    handleResult(validateAndParseOpenAPISpec(rawSpec));
   }, [action?.metadata.raw_spec]);
 
   useEffect(() => {
@@ -82,16 +102,21 @@ export default function ActionsInput({
     setData(specs);
     setValidationResult(null);
     setFunctions(functionSignatures.map((f) => f.toObjectTool()));
+    setIsValidating(false);
   }, [validationResult]);
 
   const updateAgentAction = useUpdateAgentAction({
     onSuccess(data) {
+      const wasCreate = !action?.action_id;
       showToast({
         message: localize('com_assistants_update_actions_success'),
         status: 'success',
       });
       reset();
       setAction(data[1]);
+      if (wasCreate) {
+        onCreated?.();
+      }
     },
     onError(error) {
       showToast({
@@ -183,8 +208,10 @@ export default function ActionsInput({
     if (!newValue) {
       setData(null);
       setFunctions(null);
+      setIsValidating(false);
       return setValidationResult(null);
     }
+    setIsValidating(true);
     debouncedValidation(newValue, handleResult);
   };
 
@@ -200,72 +227,103 @@ export default function ActionsInput({
     return localize('com_ui_create');
   };
 
+  const validationError =
+    validationResult && validationResult.message !== 'OpenAPI spec is valid.'
+      ? validationResult.message
+      : null;
+  const showSkeleton = isValidating && !data;
+
   return (
     <>
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="mb-1 flex flex-wrap items-center justify-between gap-4">
+      <div className="flex shrink-0 flex-col">
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
           <label
             htmlFor="schemaInput"
-            className="text-token-text-primary whitespace-nowrap text-sm font-medium"
+            className="whitespace-nowrap text-sm font-medium text-text-primary"
           >
             {localize('com_ui_schema')}
           </label>
+          <button
+            type="button"
+            onClick={() => setIsSchemaDialogOpen(true)}
+            aria-label={localize('com_ui_expand_editor')}
+            title={localize('com_ui_expand_editor')}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+          >
+            <Maximize2 className="h-4 w-4" strokeWidth={1.75} aria-hidden={true} />
+          </button>
         </div>
-        <div className="border-token-border-medium bg-token-surface-primary hover:border-token-border-hover mb-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border ring-0">
-          <div className="relative flex min-h-0 flex-1 flex-col">
-            <textarea
-              id="schemaInput"
+        <Textarea
+          id="schemaInput"
+          value={inputValue}
+          onChange={handleInputChange}
+          spellCheck="false"
+          placeholder={localize('com_ui_enter_openapi_schema')}
+          className="block min-h-[12rem] w-full resize-y rounded-lg border border-border-light bg-transparent p-3 font-mono text-xs leading-relaxed transition-colors focus-visible:border-border-heavy focus-visible:ring-0"
+        />
+        {validationError && (
+          <div className="mt-1.5 text-xs text-red-500">
+            {validationError.split('\n').map((line: string, i: number) => (
+              <div key={i}>{line}</div>
+            ))}
+          </div>
+        )}
+      </div>
+      {(data || showSkeleton) && (
+        <div className="mt-4 flex min-h-0 flex-1 flex-col">
+          <label className="mb-1 block shrink-0 text-sm font-medium text-text-primary">
+            {localize('com_assistants_available_actions')}
+          </label>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {data ? <ActionsTable columns={columns} data={data} /> : <ActionsTableSkeleton />}
+          </div>
+        </div>
+      )}
+      <div className="mt-4 shrink-0">
+        <ActionCallback action_id={action?.action_id} />
+      </div>
+      <div className="flex shrink-0 items-center justify-between gap-2 pt-4">
+        <div className="flex items-center">{footerStart}</div>
+        <Button
+          type="button"
+          variant="submit"
+          onClick={saveAction}
+          disabled={!functions || !functions.length}
+          className="min-w-[100px]"
+        >
+          {getButtonContent()}
+        </Button>
+      </div>
+
+      <OGDialog open={isSchemaDialogOpen} onOpenChange={setIsSchemaDialogOpen}>
+        <OGDialogContent className="flex h-[85vh] max-h-[85vh] w-11/12 max-w-5xl flex-col gap-3 p-5">
+          <OGDialogHeader className="space-y-0 pr-10">
+            <OGDialogTitle className="text-left text-sm font-medium text-text-primary">
+              {localize('com_ui_schema')}
+            </OGDialogTitle>
+            <OGDialogDescription className="sr-only">
+              {localize('com_ui_enter_openapi_schema')}
+            </OGDialogDescription>
+          </OGDialogHeader>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border-medium bg-surface-secondary focus-within:border-border-heavy">
+            <Textarea
               value={inputValue}
               onChange={handleInputChange}
               spellCheck="false"
               placeholder={localize('com_ui_enter_openapi_schema')}
-              className="text-token-text-primary block min-h-[12rem] flex-1 resize-y bg-transparent p-2 font-mono text-xs outline-none focus:ring-1 focus:ring-border-light"
+              aria-label={localize('com_ui_schema')}
+              className="min-h-0 flex-1 resize-none border-0 bg-transparent p-4 font-mono text-[13px] leading-relaxed focus-visible:ring-0"
             />
           </div>
-          {validationResult && validationResult.message !== 'OpenAPI spec is valid.' && (
-            <div className="border-token-border-light border-t p-2 text-red-500">
-              {validationResult.message.split('\n').map((line: string, i: number) => (
+          {validationError && (
+            <div className="max-h-24 shrink-0 overflow-y-auto text-xs text-red-500">
+              {validationError.split('\n').map((line: string, i: number) => (
                 <div key={i}>{line}</div>
               ))}
             </div>
           )}
-        </div>
-      </div>
-      {!!data && (
-        <div className="my-2">
-          <div className="flex items-center">
-            <label className="text-token-text-primary block text-sm font-medium">
-              {localize('com_assistants_available_actions')}
-            </label>
-          </div>
-          <ActionsTable columns={columns} data={data} />
-        </div>
-      )}
-      <div className="relative my-1">
-        <ActionCallback action_id={action?.action_id} />
-        <div className="mb-1.5 flex items-center">
-          <label className="text-token-text-primary block text-sm font-medium">
-            {localize('com_ui_privacy_policy_url')}
-          </label>
-        </div>
-        <div className="border-token-border-medium bg-token-surface-primary hover:border-token-border-hover flex h-9 w-full rounded-lg border">
-          <input
-            type="text"
-            placeholder="https://api.example-weather-app.com/privacy"
-            className="flex-1 rounded-lg bg-transparent px-3 py-1.5 text-sm outline-none placeholder:text-text-secondary-alt focus:ring-1 focus:ring-border-light"
-          />
-        </div>
-      </div>
-      <div className="mt-auto flex items-center justify-end pt-2">
-        <button
-          disabled={!functions || !functions.length}
-          onClick={saveAction}
-          className="focus:shadow-outline flex min-w-[100px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0 disabled:bg-green-400"
-          type="button"
-        >
-          {getButtonContent()}
-        </button>
-      </div>
+        </OGDialogContent>
+      </OGDialog>
     </>
   );
 }

@@ -9,6 +9,7 @@ jest.mock('~/hooks', () => ({
       const translations: Record<string, string> = {
         com_ui_created_file: 'Created {{0}}',
         com_ui_creating_file: 'Creating {{0}}',
+        com_ui_updated_file: 'Updated {{0}}',
         com_ui_edited_file: 'Edited {{0}}',
         com_ui_editing_file: 'Editing {{0}}',
         com_ui_cancelled: 'Cancelled',
@@ -102,6 +103,23 @@ describe('FileAuthoringCall', () => {
     expect(screen.getByTestId('code-window-header')).toHaveAttribute('data-language', 'SKILL.md');
     expect(screen.getByText(/Large generated body stays visible/)).toBeInTheDocument();
     expect(screen.getByText('Created skills/demo/SKILL.md (4096 chars).')).toBeInTheDocument();
+  });
+
+  it('labels a create_file overwrite as Updated when the output summary says so', () => {
+    render(
+      <FileAuthoringCall
+        toolName="create_file"
+        initialProgress={1}
+        isSubmitting={false}
+        args={{
+          file_path: 'skills/demo/SKILL.md',
+          content: '# Demo\n\nRevised body.',
+        }}
+        output="Updated skills/demo/SKILL.md (8302 chars)."
+      />,
+    );
+
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Updated SKILL.md');
   });
 
   it('prefers the output diff over the args preview after edit_file completes', () => {

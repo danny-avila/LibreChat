@@ -1,9 +1,9 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { Provider as JotaiProvider } from 'jotai';
-import DataTable from './DataTable';
-import type { TableColumn } from './DataTable.types';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import type { SortingState } from '@tanstack/react-table';
+import type { TableColumn } from './DataTable.types';
+import DataTable from './DataTable';
 
 // Mock utilities
 jest.mock('~/utils', () => ({
@@ -28,6 +28,35 @@ jest.mock('~/hooks', () => ({
     return key;
   },
   useMediaQuery: jest.fn(() => false),
+}));
+
+// jsdom can't measure layout, so @tanstack/react-virtual's measurement-driven re-render loop
+// never converges (infinite "Too many re-renders"). Stub it to render every row deterministically.
+jest.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({
+    count,
+    estimateSize,
+  }: {
+    count: number;
+    estimateSize?: (index: number) => number;
+  }) => {
+    const size = estimateSize ? estimateSize(0) : 56;
+    return {
+      getVirtualItems: () =>
+        Array.from({ length: count }, (_, index) => ({
+          index,
+          key: index,
+          start: index * size,
+          end: (index + 1) * size,
+          size,
+          lane: 0,
+        })),
+      getTotalSize: () => count * size,
+      calculateRange: () => {},
+      measureElement: () => {},
+      scrollToIndex: () => {},
+    };
+  },
 }));
 
 // Mock svgs

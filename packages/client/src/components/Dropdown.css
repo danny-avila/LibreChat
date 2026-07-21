@@ -14,13 +14,12 @@
   box-shadow:
     0 10px 15px -3px rgb(0 0 0 / 0.1),
     0 4px 6px -4px rgb(0 0 0 / 0.1);
-  transform-origin: top;
+  transform-origin: var(--popover-transform-origin, top);
   opacity: 0;
-  transition-property: opacity, scale, translate;
+  transition-property: opacity, scale;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
   scale: 0.95;
-  translate: 0 -0.5rem;
   margin-top: 4px;
   margin-right: -2px;
 }
@@ -74,5 +73,4 @@
 .popover-ui[data-enter] {
   opacity: 1;
   scale: 1;
-  translate: 0;
 }

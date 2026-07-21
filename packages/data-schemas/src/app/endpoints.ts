@@ -1,5 +1,10 @@
 import { EModelEndpoint } from 'librechat-data-provider';
-import type { TCustomConfig, TAgentsEndpoint, TAnthropicEndpoint } from 'librechat-data-provider';
+import type {
+  TEndpoint,
+  TCustomConfig,
+  TAgentsEndpoint,
+  TAnthropicEndpoint,
+} from 'librechat-data-provider';
 import type { AppConfig } from '~/types';
 import { azureAssistantsDefaults, assistantsConfigSetup } from './assistants';
 import { agentsConfigSetup } from './agents';
@@ -88,7 +93,12 @@ export const loadEndpoints = (
   });
 
   if (endpoints?.all) {
-    loadedEndpoints.all = endpoints.all;
+    /**
+     * `DeepPartial<TCustomConfig>` widens record values to `string | undefined`
+     * (e.g. `headers`), so cast to the concrete endpoint type — mirrors the
+     * `anthropicConfig as TAnthropicEndpoint` cast above.
+     */
+    loadedEndpoints.all = endpoints.all as Partial<TEndpoint>;
   }
 
   if (endpoints?.allowedAddresses) {

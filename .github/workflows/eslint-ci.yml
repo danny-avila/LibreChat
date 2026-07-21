@@ -119,6 +119,10 @@ jobs:
             echo ""
             echo "::error::Import order drift detected. Fix locally with:"
             echo "::error::  npm run sort-imports"
+            echo "::error::For specific files:"
+            echo "::error::  npm run sort-imports -- packages/api/src/app/metrics.ts packages/api/src/rum/proxy.ts"
+            echo "::error::To check without writing files:"
+            echo "::error::  npm run sort-imports:check"
             echo "::error::Or rely on the lint-staged pre-commit hook (do not bypass with --no-verify)."
             exit 1
           fi

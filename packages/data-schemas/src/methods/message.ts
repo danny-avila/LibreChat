@@ -9,6 +9,11 @@ import logger from '~/config/winston';
 /** Simple UUID v4 regex to replace zod validation */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+interface MessageQueryOptions {
+  limit?: number;
+  sort?: Record<string, 1 | -1> | false;
+}
+
 export interface MessageMethods {
   saveMessage(
     ctx: { userId: string; isTemporary?: boolean; interfaceConfig?: AppConfig['interfaceConfig'] },
@@ -37,7 +42,11 @@ export interface MessageMethods {
     userId: string,
     params: { messageId: string; conversationId: string },
   ): Promise<DeleteResult>;
-  getMessages(filter: FilterQuery<IMessage>, select?: string): Promise<IMessage[]>;
+  getMessages(
+    filter: FilterQuery<IMessage>,
+    select?: string,
+    options?: MessageQueryOptions,
+  ): Promise<IMessage[]>;
   getMessage(params: { user: string; messageId: string }): Promise<IMessage | null>;
   getMessagesByCursor(
     filter: FilterQuery<IMessage>,
@@ -323,14 +332,25 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   /**
    * Retrieves messages from the database.
    */
-  async function getMessages(filter: FilterQuery<IMessage>, select?: string) {
+  async function getMessages(
+    filter: FilterQuery<IMessage>,
+    select?: string,
+    options: MessageQueryOptions = {},
+  ) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
+      const query = Message.find(filter);
       if (select) {
-        return await Message.find(filter).select(select).sort({ createdAt: 1 }).lean<IMessage[]>();
+        query.select(select);
+      }
+      if (options.sort !== false) {
+        query.sort(options.sort ?? { createdAt: 1 });
+      }
+      if (options.limit != null && options.limit > 0) {
+        query.limit(options.limit);
       }
 
-      return await Message.find(filter).sort({ createdAt: 1 }).lean<IMessage[]>();
+      return await query.lean<IMessage[]>();
     } catch (err) {
       logger.error('Error getting messages:', err);
       throw err;

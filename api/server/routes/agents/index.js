@@ -1,15 +1,28 @@
 const express = require('express');
-const { isEnabled, GenerationJobManager, hasPersistableAbortContent } = require('@librechat/api');
+const {
+  isEnabled,
+  GenerationJobManager,
+  hasPersistableAbortContent,
+  buildAbortedResponseMetadata,
+  isPendingActionStale,
+  toClientPendingAction,
+  isHITLEnabled,
+  deleteAgentCheckpoint,
+  attachAskUserQuestionArgs,
+  createMessageFilterPii,
+} = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
 const {
   uaParser,
   checkBan,
+  moderateText,
   requireJwtAuth,
   messageIpLimiter,
   configMiddleware,
   messageUserLimiter,
 } = require('~/server/middleware');
+const SteerController = require('~/server/controllers/agents/steer');
 const { saveMessage } = require('~/models');
 const responses = require('./responses');
 const openai = require('./openai');
@@ -183,7 +196,18 @@ router.get('/chat/status/:conversationId', async (req, res) => {
   const job = await GenerationJobManager.getJob(conversationId);
 
   if (!job) {
-    return res.json({ active: false });
+    // The default completeJob path deletes the job record immediately, so the
+    // jobless branch IS the common reload-after-terminal case — parked steers
+    // live under their own bounded-TTL key and the claim authorizes against
+    // the payload's stored owner (no job record is left to check).
+    const claimed = await GenerationJobManager.steering.claim(conversationId, {
+      userId: req.user.id,
+      tenantId: req.user.tenantId,
+    });
+    return res.json({
+      active: false,
+      ...(claimed.length > 0 && { unrecoveredSteers: claimed }),
+    });
   }
 
   if (job.metadata.userId !== req.user.id) {
@@ -197,15 +221,44 @@ router.get('/chat/status/:conversationId', async (req, res) => {
   // Get resume state which contains aggregatedContent
   // Avoid calling both getStreamInfo and getResumeState (both fetch content)
   const resumeState = await GenerationJobManager.getResumeState(conversationId);
-  const isActive = job.status === 'running';
+  // A job paused for human review is still active (consistent with /chat/active),
+  // so the client resumes/subscribes rather than treating it as finished — but
+  // only while it has a live, resolvable prompt: a missing/malformed or
+  // past-expiry pendingAction reads as inactive (cleanup/expiry will finalize it).
+  const pendingAction = job.metadata.pendingAction;
+  const pendingLive = job.status === 'requires_action' && !isPendingActionStale({ pendingAction });
+  const isActive = job.status === 'running' || pendingLive;
+
+  /** Acknowledged steers the terminal drains parked because no subscriber was
+   *  live to receive the final/abort event — claim-on-read (cleared once
+   *  returned) so the reloading client restores them as queued follow-ups. */
+  let unrecoveredSteers;
+  if (!isActive) {
+    const claimed = await GenerationJobManager.steering.claim(conversationId, {
+      userId: req.user.id,
+      tenantId: req.user.tenantId,
+    });
+    if (claimed.length > 0) {
+      unrecoveredSteers = claimed;
+    }
+  }
 
   res.json({
     active: isActive,
+    ...(unrecoveredSteers && { unrecoveredSteers }),
     streamId: conversationId,
     status: job.status,
     aggregatedContent: resumeState?.aggregatedContent ?? [],
     createdAt: job.createdAt,
     resumeState,
+    // Surface the live pending approval so a client rebuilding from /chat/status
+    // (reload / cross-replica) has the action id + payload to render and submit
+    // the prompt, not just the knowledge that the stream is paused. Client-safe
+    // projection only — resumeContext/requestFingerprint stay server-side.
+    pendingAction:
+      job.status === 'requires_action' && pendingLive
+        ? toClientPendingAction(pendingAction)
+        : undefined,
   });
 });
 
@@ -215,7 +268,7 @@ router.get('/chat/status/:conversationId', async (req, res) => {
  * @access Private
  * @description Mounted before chatRouter to bypass buildEndpointOption middleware
  */
-router.post('/chat/abort', async (req, res) => {
+router.post('/chat/abort', configMiddleware, async (req, res) => {
   logger.debug(`[AgentStream] ========== ABORT ENDPOINT HIT ==========`);
   logger.debug(`[AgentStream] Method: ${req.method}, Path: ${req.path}`);
   logger.debug(`[AgentStream] Body:`, req.body);
@@ -226,7 +279,10 @@ router.post('/chat/abort', async (req, res) => {
   // streamId === conversationId, so try any of the provided IDs
   // Skip "new" as it's a placeholder for new conversations, not an actual ID
   let jobStreamId =
-    streamId || (conversationId !== 'new' ? conversationId : null) || abortKey?.split(':')[0];
+    streamId ||
+    (conversationId !== 'new' ? conversationId : null) ||
+    abortKey?.split(':')[0] ||
+    null;
   let job = jobStreamId ? await GenerationJobManager.getJob(jobStreamId) : null;
 
   // Fallback: if job not found and we have a userId, look up active jobs for user
@@ -237,11 +293,15 @@ router.post('/chat/abort', async (req, res) => {
       userId,
       req.user.tenantId,
     );
-    if (activeJobIds.length > 0) {
-      // Abort the most recent active job for this user
-      jobStreamId = activeJobIds[0];
-      job = await GenerationJobManager.getJob(jobStreamId);
+    for (const activeJobId of activeJobIds) {
+      const activeJob = await GenerationJobManager.getJob(activeJobId);
+      if (activeJob?.status !== 'running') {
+        continue;
+      }
+      jobStreamId = activeJobId;
+      job = activeJob;
       logger.debug(`[AgentStream] Found active job for user: ${jobStreamId}`);
+      break;
     }
   }
 
@@ -258,12 +318,37 @@ router.post('/chat/abort', async (req, res) => {
     }
 
     logger.debug(`[AgentStream] Job found, aborting: ${jobStreamId}`);
-    const abortResult = await GenerationJobManager.abortJob(jobStreamId);
+    // Re-attach a paused ask_user_question's args to the abort content BEFORE
+    // abortJob emits the final SSE. Redis reconstructs abort content from the
+    // chunk log, which never saw the pause-time stamp applied to the in-process
+    // contentParts — stamping inside abortJob (not after) means the LIVE client
+    // gets the question too, not just the saved message on reload.
+    const abortedAskPayload = job.metadata?.pendingAction?.payload;
+    const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
+      transformAbortContent: (content) =>
+        abortedAskPayload?.type === 'ask_user_question' && Array.isArray(content)
+          ? attachAskUserQuestionArgs(content, abortedAskPayload.question)
+          : content,
+    });
     logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
       abortResultSuccess: abortResult.success,
       abortResultUserMessageId: abortResult.jobData?.userMessage?.messageId,
       abortResultResponseMessageId: abortResult.jobData?.responseMessageId,
     });
+
+    // HITL: prune the durable checkpoint of a run aborted while paused, so a new turn
+    // in this conversation can't rehydrate the stale interrupt before the Mongo TTL
+    // reclaims it (thread_id is the stable conversationId). Idempotent / no-op when
+    // HITL is off or nothing was written. The pendingAction check covers ask-only
+    // pauses (ask_user_question attaches a checkpointer WITHOUT the approval policy):
+    // a job aborted while paused still carries its pendingAction in metadata, which is
+    // exactly the case whose checkpoint would otherwise go stale.
+    const agentsCfg = req.config?.endpoints?.agents;
+    if (isHITLEnabled(agentsCfg?.toolApproval) || job.metadata?.pendingAction != null) {
+      await deleteAgentCheckpoint(jobStreamId, agentsCfg?.checkpointer).catch((err) =>
+        logger.error(`[AgentStream] Failed to prune checkpoint on abort: ${jobStreamId}`, err),
+      );
+    }
 
     // CRITICAL: Save partial response BEFORE returning to prevent race condition.
     // If user sends a follow-up immediately after abort, the parentMessageId must exist in DB.
@@ -274,7 +359,11 @@ router.post('/chat/abort', async (req, res) => {
       abortResult.jobData?.responseMessageId &&
       hasPersistableAbortContent(abortResult.content)
     ) {
-      const { jobData, content, text } = abortResult;
+      const { jobData, text } = abortResult;
+      // `abortResult.content` is already stamped by `transformAbortContent`
+      // above (same content the final SSE carried), so the saved message and
+      // the live client agree.
+      const { content } = abortResult;
       const responseMessage = {
         messageId: jobData.responseMessageId,
         parentMessageId: jobData.userMessage.messageId,
@@ -291,11 +380,23 @@ router.post('/chat/abort', async (req, res) => {
         user: userId,
       };
 
+      /** Persist the usage/cost rollup + context breakdown for the stopped
+       *  response (from the job's tracked tokenUsage/contextUsage) so its
+       *  branch/total cost and granular rows survive a reload — parity with the
+       *  normal completion path. */
+      const abortMetadata = buildAbortedResponseMetadata(jobData);
+      if (abortMetadata) {
+        responseMessage.metadata = abortMetadata;
+      }
+
       try {
         await saveMessage(
           {
             userId: req?.user?.id,
-            isTemporary: req?.body?.isTemporary,
+            // Source from the job, not the request: the stop button posts only the
+            // conversationId, so trusting req.body.isTemporary would persist an aborted
+            // temporary-chat partial as a normal (orphaned) message.
+            isTemporary: jobData?.isTemporary ?? req?.body?.isTemporary,
             interfaceConfig: req?.config?.interfaceConfig,
           },
           responseMessage,
@@ -307,12 +408,57 @@ router.post('/chat/abort', async (req, res) => {
       }
     }
 
-    return res.json({ success: true, aborted: jobStreamId });
+    return res.json({
+      success: true,
+      aborted: jobStreamId,
+      // Steers that never reached an injection boundary — restored client-side
+      // as queued chips so the user's words aren't dropped with the abort.
+      ...(abortResult.pendingSteers?.length > 0 && { pendingSteers: abortResult.pendingSteers }),
+    });
   }
 
   logger.warn(`[AgentStream] Job not found for streamId: ${jobStreamId}`);
   return res.status(404).json({ error: 'Job not found', streamId: jobStreamId });
 });
+
+/**
+ * @route POST /chat/steer
+ * @desc Queue a mid-run user message for injection at the next tool boundary
+ * @access Private
+ * @description Mounted before chatRouter to bypass buildEndpointOption middleware,
+ * but a steer is model-bound user text, so it carries the same guards as a normal
+ * message IN THE SAME ORDER as chat.js: the configured IP/user rate limiters,
+ * the PII filter FIRST (blocked sensitive text must never reach the external
+ * moderation endpoint), then `moderateText`.
+ */
+const steerLimiters = [];
+if (isEnabled(LIMIT_MESSAGE_IP)) {
+  steerLimiters.push(messageIpLimiter);
+}
+if (isEnabled(LIMIT_MESSAGE_USER)) {
+  steerLimiters.push(messageUserLimiter);
+}
+router.post(
+  '/chat/steer',
+  configMiddleware,
+  ...steerLimiters,
+  createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }),
+  moderateText,
+  SteerController,
+);
+
+/**
+ * @route POST /chat/steer/cancel
+ * @desc Remove a still-queued steer before injection (no model-bound content,
+ * so no PII/moderation pass — just the shared rate limiters)
+ * @access Private
+ */
+router.post(
+  '/chat/steer/cancel',
+  configMiddleware,
+  ...steerLimiters,
+  SteerController.SteerCancelController,
+);
 
 router.use('/', v1);
 

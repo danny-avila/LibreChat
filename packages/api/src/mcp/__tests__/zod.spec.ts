@@ -2636,7 +2636,7 @@ describe('sanitizeGeminiSchema', () => {
     expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'string', enum: ['a', 'b'] });
   });
 
-  it('strips unsupported keywords (additionalProperties, default, $schema)', () => {
+  it('strips unsupported keywords (additionalProperties, $schema) but keeps Gemini-supported default', () => {
     const schema = {
       $schema: 'http://json-schema.org/draft-07/schema#',
       type: 'object',
@@ -2649,7 +2649,7 @@ describe('sanitizeGeminiSchema', () => {
     const result = sanitizeGeminiSchema(schema);
     expect(result).not.toHaveProperty('$schema');
     expect(result).not.toHaveProperty('additionalProperties');
-    expect(result.properties.name).toEqual({ type: 'string' });
+    expect(result.properties.name).toEqual({ type: 'string', default: 'anon' });
   });
 
   it('folds exclusive bounds into inclusive minimum/maximum', () => {
@@ -2709,5 +2709,310 @@ describe('sanitizeGeminiSchema', () => {
   it('drops a number enum on an integer field', () => {
     const schema = { type: 'integer', enum: [1, 2, 3] } as any;
     expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'integer' });
+  });
+
+  it('strips annotation keywords Gemini rejects (examples, readOnly, writeOnly, deprecated, $comment)', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        token: {
+          type: 'string',
+          examples: ['abc'],
+          readOnly: true,
+          writeOnly: false,
+          deprecated: true,
+          $comment: 'internal',
+        },
+      },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: { token: { type: 'string' } },
+    });
+  });
+
+  it('strips numeric/array validators Gemini rejects (multipleOf, uniqueItems)', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        count: { type: 'integer', multipleOf: 2 },
+        tags: { type: 'array', items: { type: 'string' }, uniqueItems: true },
+      },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: {
+        count: { type: 'integer' },
+        tags: { type: 'array', items: { type: 'string' } },
+      },
+    });
+  });
+
+  it('strips object-composition keywords Gemini rejects (patternProperties, propertyNames, dependentRequired)', () => {
+    const schema = {
+      type: 'object',
+      properties: { a: { type: 'string' } },
+      patternProperties: { '^x': { type: 'string' } },
+      propertyNames: { pattern: '^[a-z]+$' },
+      dependentRequired: { a: ['b'] },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: { a: { type: 'string' } },
+    });
+  });
+
+  it('strips tuple/array-extension keywords Gemini rejects (prefixItems, additionalItems)', () => {
+    const schema = {
+      type: 'array',
+      items: { type: 'string' },
+      prefixItems: [{ type: 'string' }, { type: 'number' }],
+      additionalItems: false,
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+    });
+  });
+
+  it('synthesizes `items` from `prefixItems` when a tuple array has none (Gemini requires items)', () => {
+    const schema = {
+      type: 'array',
+      prefixItems: [{ type: 'string', readOnly: true }, { type: 'number' }],
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+    });
+  });
+
+  it('preserves an existing `items` over a `prefixItems`-derived one', () => {
+    const schema = {
+      type: 'array',
+      items: { type: 'boolean' },
+      prefixItems: [{ type: 'string' }],
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'boolean' },
+    });
+  });
+
+  it('synthesizes `items` from `prefixItems` when `items` is boolean false (Draft 2020 tuple)', () => {
+    const schema = {
+      type: 'array',
+      prefixItems: [{ type: 'number' }],
+      items: false,
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'number' },
+    });
+  });
+
+  it('falls back to an empty `items` schema for a boolean `items` with no prefixItems', () => {
+    expect(sanitizeGeminiSchema({ type: 'array', items: false } as any)).toEqual({
+      type: 'array',
+      items: {},
+    });
+    expect(sanitizeGeminiSchema({ type: 'array', items: true } as any)).toEqual({
+      type: 'array',
+      items: {},
+    });
+  });
+
+  it('falls back to an empty `items` schema for an array missing items entirely', () => {
+    expect(sanitizeGeminiSchema({ type: 'array' } as any)).toEqual({
+      type: 'array',
+      items: {},
+    });
+  });
+
+  it('drops a tuple-array `items: [...]` form and falls back rather than emit an array items', () => {
+    const schema = { type: 'array', items: [{ type: 'string' }, { type: 'number' }] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'array', items: {} });
+  });
+
+  it('preserves an object `default` verbatim without sanitizing its data keys', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        cfg: {
+          type: 'object',
+          default: { id: 'abc', readOnly: true, deprecated: false, nested: { id: 'x' } },
+          properties: { id: { type: 'string' } },
+        },
+      },
+    } as any;
+    const result = sanitizeGeminiSchema(schema);
+    expect(result.properties.cfg.default).toEqual({
+      id: 'abc',
+      readOnly: true,
+      deprecated: false,
+      nested: { id: 'x' },
+    });
+    expect(result.properties.cfg.properties).toEqual({ id: { type: 'string' } });
+  });
+
+  it('preserves an array `default` verbatim', () => {
+    const schema = {
+      type: 'array',
+      items: { type: 'string' },
+      default: ['id', 'readOnly'],
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+      default: ['id', 'readOnly'],
+    });
+  });
+
+  it('strips content keywords and the bare `id` alias Gemini rejects', () => {
+    const schema = {
+      id: 'urn:example',
+      type: 'object',
+      properties: {
+        blob: { type: 'string', contentEncoding: 'base64', contentMediaType: 'image/png' },
+      },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: { blob: { type: 'string' } },
+    });
+  });
+
+  it('strips deeply nested unsupported keywords through arrays, items, and properties', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        ranges: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { score: { type: 'number', exclusiveMinimum: 0, multipleOf: 0.5 } },
+          },
+        },
+      },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: {
+        ranges: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { score: { type: 'number', minimum: 0 } },
+          },
+        },
+      },
+    });
+  });
+
+  it('strips unresolvable `$ref` keys that survive ref resolution (Gemini rejects them)', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        recurrence: { $ref: 'https://example.com/external.json', description: 'Recurrence rule' },
+      },
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'object',
+      properties: {
+        recurrence: { description: 'Recurrence rule' },
+      },
+    });
+  });
+});
+
+describe('resolveJsonSchemaRefs local pointer refs', () => {
+  it('resolves a `#/properties/...` pointer against the root schema', () => {
+    const schema = {
+      type: 'object' as const,
+      properties: {
+        body: {
+          type: 'object' as const,
+          properties: {
+            start: {
+              type: 'object' as const,
+              properties: {
+                dateTime: { type: 'string' as const },
+                timeZone: { type: 'string' as const },
+              },
+            },
+            end: { $ref: '#/properties/body/properties/start' },
+          },
+        },
+      },
+    };
+
+    const resolved = resolveJsonSchemaRefs(schema);
+    expect(resolved.properties?.body?.properties?.end).toEqual({
+      type: 'object',
+      properties: {
+        dateTime: { type: 'string' },
+        timeZone: { type: 'string' },
+      },
+    });
+    expect(JSON.stringify(resolved)).not.toContain('$ref');
+  });
+
+  it('resolves pointers that traverse array indices (e.g. anyOf members)', () => {
+    const schema = {
+      type: 'object' as const,
+      properties: {
+        daysOfWeek: {
+          type: 'array' as const,
+          items: {
+            anyOf: [{ type: 'string' as const, enum: ['monday', 'tuesday'] }],
+          },
+        },
+        firstDayOfWeek: { $ref: '#/properties/daysOfWeek/items/anyOf/0' },
+      },
+    };
+
+    const resolved = resolveJsonSchemaRefs(schema);
+    expect(resolved.properties?.firstDayOfWeek).toEqual({
+      type: 'string',
+      enum: ['monday', 'tuesday'],
+    });
+  });
+
+  it('breaks mutually circular local pointers without hanging', () => {
+    const schema = {
+      type: 'object' as const,
+      properties: {
+        a: { $ref: '#/properties/b' },
+        b: { $ref: '#/properties/a' },
+      },
+    };
+
+    const resolved = resolveJsonSchemaRefs(schema);
+    expect(resolved.properties?.a).toEqual({ type: 'object' });
+    expect(resolved.properties?.b).toEqual({ type: 'object' });
+  });
+
+  it('keeps dangling local pointers as-is', () => {
+    const schema = {
+      type: 'object' as const,
+      properties: {
+        broken: { $ref: '#/properties/missing/nested' },
+      },
+    };
+
+    const resolved = resolveJsonSchemaRefs(schema);
+    expect(resolved.properties?.broken).toEqual({ $ref: '#/properties/missing/nested' });
+  });
+
+  it('unescapes RFC 6901 tokens (~0 → ~, ~1 → /) in pointer segments', () => {
+    const schema = {
+      type: 'object' as const,
+      properties: {
+        'a/b': { type: 'string' as const },
+        alias: { $ref: '#/properties/a~1b' },
+      },
+    };
+
+    const resolved = resolveJsonSchemaRefs(schema);
+    expect(resolved.properties?.alias).toEqual({ type: 'string' });
   });
 });

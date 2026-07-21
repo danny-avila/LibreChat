@@ -66,10 +66,10 @@ jobs:
       
       - name: Build Subchart Deps
         run: |
-          cd helm/librechat
-          helm dependency build  
-          cd ../librechat-rag-api
-          helm dependency build      
+          cd helm/librechat-rag-api
+          helm dependency build
+          cd ../librechat
+          helm dependency build
 
       # Log in to GitHub Container Registry
       - name: Log in to GitHub Container Registry

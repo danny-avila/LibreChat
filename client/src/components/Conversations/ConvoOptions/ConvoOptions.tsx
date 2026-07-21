@@ -3,6 +3,7 @@ import * as Ariakit from '@ariakit/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DropdownPopup, Spinner, useToastContext } from '@librechat/client';
+import { QueryKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   Ellipsis,
   Share2,
@@ -11,23 +12,24 @@ import {
   FolderInput,
   FolderX,
   Pen,
+  Pin,
   Trash,
 } from 'lucide-react';
-import { QueryKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { MouseEvent } from 'react';
 import type { TMessage } from 'librechat-data-provider';
+import type { MouseEvent } from 'react';
 import {
   useDuplicateConversationMutation,
   useAssignConversationToProjectMutation,
   useDeleteConversationMutation,
   useGetStartupConfig,
   useArchiveConvoMutation,
+  usePinConversationMutation,
 } from '~/data-provider';
 import { useHasAccess, useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useChatContext } from '~/Providers';
-import DeleteButton from './DeleteButton';
 import ProjectButton from './ProjectButton';
+import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { cn } from '~/utils';
 
@@ -35,6 +37,7 @@ function ConvoOptions({
   conversationId,
   chatProjectId,
   title,
+  isPinned = false,
   retainView,
   renameHandler,
   isPopoverActive,
@@ -45,6 +48,7 @@ function ConvoOptions({
   conversationId: string | null;
   chatProjectId?: string | null;
   title: string | null;
+  isPinned?: boolean;
   retainView: () => void;
   renameHandler: (e: MouseEvent) => void;
   isPopoverActive: boolean;
@@ -79,6 +83,7 @@ function ConvoOptions({
 
   const archiveConvoMutation = useArchiveConvoMutation();
   const assignConversationToProject = useAssignConversationToProjectMutation();
+  const pinConvoMutation = usePinConversationMutation();
 
   const deleteMutation = useDeleteConversationMutation({
     onSuccess: () => {
@@ -127,6 +132,7 @@ function ConvoOptions({
 
   const isDuplicateLoading = duplicateConversation.isLoading;
   const isArchiveLoading = archiveConvoMutation.isLoading;
+  const isPinLoading = pinConvoMutation.isLoading;
   const isDeleteLoading = deleteMutation.isLoading;
 
   const shareHandler = useCallback(() => {
@@ -229,6 +235,26 @@ function ConvoOptions({
     ],
   );
 
+  const handlePinClick = useCallback(() => {
+    const convoId = conversationId ?? '';
+    if (!convoId) {
+      return;
+    }
+    pinConvoMutation.mutate(
+      { conversationId: convoId, pinned: !isPinned },
+      {
+        onSuccess: () => setIsPopoverActive(false),
+        onError: () => {
+          showToast({
+            message: localize(isPinned ? 'com_ui_unpin_error' : 'com_ui_pin_error'),
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          });
+        },
+      },
+    );
+  }, [conversationId, isPinned, pinConvoMutation, setIsPopoverActive, showToast, localize]);
+
   const handleDuplicateClick = useCallback(() => {
     duplicateConversation.mutate({
       conversationId: conversationId ?? '',
@@ -248,6 +274,16 @@ function ConvoOptions({
         hideOnClick: false,
         ref: shareButtonRef,
         render: (props) => <button {...props} />,
+      },
+      {
+        label: localize(isPinned ? 'com_ui_unpin' : 'com_ui_pin'),
+        onClick: handlePinClick,
+        hideOnClick: false,
+        icon: isPinLoading ? (
+          <Spinner className="size-4" />
+        ) : (
+          <Pin className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
+        ),
       },
       {
         label: localize('com_ui_rename'),
@@ -309,12 +345,15 @@ function ConvoOptions({
     ],
     [
       localize,
+      isPinned,
+      isPinLoading,
       shareHandler,
       startupConfig,
       renameHandler,
       deleteHandler,
       isArchiveLoading,
       isDuplicateLoading,
+      handlePinClick,
       handleArchiveClick,
       canCreateSharedLinks,
       handleDuplicateClick,
@@ -439,6 +478,7 @@ export default memo(ConvoOptions, (prevProps, nextProps) => {
     prevProps.conversationId === nextProps.conversationId &&
     prevProps.title === nextProps.title &&
     prevProps.chatProjectId === nextProps.chatProjectId &&
+    prevProps.isPinned === nextProps.isPinned &&
     prevProps.isPopoverActive === nextProps.isPopoverActive &&
     prevProps.isActiveConvo === nextProps.isActiveConvo &&
     prevProps.isShiftHeld === nextProps.isShiftHeld

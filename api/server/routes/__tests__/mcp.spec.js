@@ -24,6 +24,11 @@ const mockRegistryInstance = {
   removeServer: jest.fn(),
   getAllowedDomains: jest.fn().mockReturnValue(null),
   getAllowedAddresses: jest.fn().mockReturnValue(null),
+  resolveAllowlists: jest.fn().mockResolvedValue({
+    allowedDomains: null,
+    allowedAddresses: null,
+    useSSRFProtection: true,
+  }),
 };
 let mockMCPUseAllowed = true;
 
@@ -760,6 +765,69 @@ describe('MCP Routes', () => {
         const basePath = getBasePath();
         expect(response.status).toBe(302);
         expect(response.headers.location).toContain(`${basePath}/oauth/success`);
+      });
+
+      it('should forward the merged server config so the tool cache gate sees request-scoped servers', async () => {
+        const flowId = 'test-user-id:test-server';
+        const mockFlowManager = {
+          getFlowState: jest.fn().mockResolvedValue({
+            status: 'PENDING',
+            createdAt: Date.now(),
+          }),
+          completeFlow: jest.fn().mockResolvedValue(true),
+          deleteFlow: jest.fn().mockResolvedValue(true),
+        };
+        const mockFlowState = {
+          serverName: 'test-server',
+          userId: 'test-user-id',
+          metadata: {},
+          clientInfo: {},
+          codeVerifier: 'test-verifier',
+        };
+        const mergedServerConfig = {
+          type: 'streamable-http',
+          url: 'https://override.example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
+          source: 'config',
+        };
+        const fetchedTools = [{ name: 'search', inputSchema: { type: 'object' } }];
+
+        getLogStores.mockReturnValue({});
+        require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+        MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
+        MCPOAuthHandler.completeOAuthFlow.mockResolvedValue({
+          access_token: 'test-token',
+        });
+        MCPTokenStorage.storeTokens.mockResolvedValue();
+        mockRegistryInstance.getServerConfig.mockResolvedValue({});
+        mockResolveAllMcpConfigs.mockResolvedValueOnce({ 'test-server': mergedServerConfig });
+
+        const mockMcpManager = {
+          getUserConnection: jest.fn().mockResolvedValue({
+            fetchTools: jest.fn().mockResolvedValue(fetchedTools),
+          }),
+        };
+        require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
+        require('~/config').getOAuthReconnectionManager.mockReturnValue({
+          clearReconnection: jest.fn(),
+        });
+        const { updateMCPServerTools } = require('~/server/services/Config/mcp');
+        updateMCPServerTools.mockResolvedValue();
+
+        const response = await request(app)
+          .get('/api/mcp/test-server/oauth/callback')
+          .query({ code: 'test-code', state: flowId });
+
+        expect(response.status).toBe(302);
+        expect(mockResolveAllMcpConfigs).toHaveBeenCalledWith('test-user-id');
+        expect(mockMcpManager.getUserConnection).toHaveBeenCalledWith(
+          expect.objectContaining({ serverConfig: mergedServerConfig }),
+        );
+        expect(updateMCPServerTools).toHaveBeenCalledWith({
+          userId: 'test-user-id',
+          serverName: 'test-server',
+          tools: fetchedTools,
+          serverConfig: mergedServerConfig,
+        });
       });
 
       it('should reject when no PENDING flow exists and no cookies are present', async () => {
@@ -2537,11 +2605,13 @@ describe('MCP Routes', () => {
           type: 'sse',
           url: 'http://server1.com/sse',
           title: 'Server 1',
+          source: 'user',
         },
         'server-2': {
           type: 'sse',
           url: 'http://server2.com/sse',
           title: 'Server 2',
+          source: 'user',
         },
       };
 
@@ -2613,7 +2683,7 @@ describe('MCP Routes', () => {
 
       mockRegistryInstance.addServer.mockResolvedValue({
         serverName: 'test-sse-server',
-        config: validConfig,
+        config: { ...validConfig, source: 'user' },
       });
 
       const response = await request(app).post('/api/mcp/servers').send({ config: validConfig });
@@ -3033,6 +3103,7 @@ describe('MCP Routes', () => {
         type: 'sse',
         url: 'https://mcp-server.example.com/sse',
         title: 'Test Server',
+        source: 'user',
       };
 
       mockRegistryInstance.getServerConfig.mockResolvedValue(mockConfig);
@@ -3101,7 +3172,7 @@ describe('MCP Routes', () => {
         description: 'Updated description',
       };
 
-      mockRegistryInstance.updateServer.mockResolvedValue(updatedConfig);
+      mockRegistryInstance.updateServer.mockResolvedValue({ ...updatedConfig, source: 'user' });
 
       const response = await request(app)
         .patch('/api/mcp/servers/test-server')

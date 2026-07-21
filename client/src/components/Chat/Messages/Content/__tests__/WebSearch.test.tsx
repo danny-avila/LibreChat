@@ -205,13 +205,13 @@ describe('WebSearch', () => {
     });
   });
 
-  describe('processedSources scoping', () => {
-    it('shows processed sources only from ownTurn during streaming', () => {
+  describe('streaming favicons', () => {
+    it('renders favicons for all ownTurn sources during streaming, before they are processed', () => {
       const searchResults = makeSearchResults({
         0: {
           organic: [
             { link: 'https://a.com', title: 'A', processed: true } as ValidSource,
-            { link: 'https://b.com', title: 'B', processed: false } as ValidSource,
+            { link: 'https://b.com', title: 'B' } as ValidSource,
           ],
         },
         1: {
@@ -229,11 +229,27 @@ describe('WebSearch', () => {
         initialProgress: 0.5,
       });
 
-      const favicons = screen.queryAllByTestId('stacked-favicons');
-      if (favicons.length > 0) {
-        const count = Number(favicons[0].getAttribute('data-count'));
-        expect(count).toBeLessThanOrEqual(2);
-      }
+      const favicons = screen.getByTestId('stacked-favicons');
+      // Both turn-0 sources show immediately — including the unprocessed one —
+      // while the turn-1 source stays scoped out.
+      expect(Number(favicons.getAttribute('data-count'))).toBe(2);
+      expect(screen.getAllByText('Processing results').length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('stays on "Searching the web" until any source for the turn arrives', () => {
+      const searchResults = makeSearchResults({ 0: { organic: [] } });
+      const attachments = [makeAttachment(0, searchResults['0'])];
+
+      renderWebSearch({
+        searchResults,
+        attachments,
+        isSubmitting: true,
+        isLast: true,
+        initialProgress: 0.5,
+      });
+
+      expect(screen.queryByTestId('stacked-favicons')).not.toBeInTheDocument();
+      expect(screen.getAllByText('Searching the web').length).toBeGreaterThanOrEqual(1);
     });
   });
 

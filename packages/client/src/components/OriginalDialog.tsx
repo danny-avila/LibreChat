@@ -6,6 +6,22 @@ import { cn } from '~/utils';
 
 const DialogDepthContext = React.createContext(0);
 
+/** Current OGDialog nesting depth (0 when rendered outside any dialog). */
+export const useDialogDepth = (): number => React.useContext(DialogDepthContext);
+
+/**
+ * z-index for a portaled popover so it renders above the dialog it lives in.
+ * Outside any dialog (depth 0) it falls back to a low default (50).
+ */
+export const usePopoverZIndex = (): number => {
+  const depth = useDialogDepth();
+  if (depth <= 0) {
+    return 50;
+  }
+  const contentZIndex = 140 + (depth - 1) * 60;
+  return contentZIndex + 10;
+};
+
 interface OGDialogProps extends DialogPrimitive.DialogProps {
   triggerRef?: React.RefObject<HTMLButtonElement | HTMLInputElement | HTMLDivElement | null>;
   triggerRefs?: React.RefObject<HTMLButtonElement | HTMLInputElement | HTMLDivElement | null>[];

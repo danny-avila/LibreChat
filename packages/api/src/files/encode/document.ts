@@ -15,6 +15,7 @@ import type {
 } from '~/types';
 import { validatePdf, validateBedrockDocument } from '~/files/validation';
 import { getFileStream, getConfiguredFileSizeLimit } from './utils';
+import { runGuardedEncode } from './memoryGuard';
 
 const ANTHROPIC_CITATION_TYPES = new Set([
   'application/pdf',
@@ -140,9 +141,11 @@ export async function encodeAndFormatDocuments(
   const configuredFileSizeLimit = getConfiguredFileSizeLimit(req, { provider, endpoint });
 
   const results = await Promise.allSettled(
-    processableFiles.map((file) => {
-      return getFileStream(req, file, encodingMethods, getStrategyFunctions);
-    }),
+    processableFiles.map((file) =>
+      runGuardedEncode(file.bytes ?? 0, () =>
+        getFileStream(req, file, encodingMethods, getStrategyFunctions),
+      ),
+    ),
   );
 
   for (const settledResult of results) {

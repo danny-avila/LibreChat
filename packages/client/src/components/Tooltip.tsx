@@ -9,6 +9,7 @@ import {
 import DOMPurify from 'dompurify';
 import * as Ariakit from '@ariakit/react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useDialogDepth, usePopoverZIndex } from './OriginalDialog';
 import { cn } from '~/utils';
 import './Tooltip.css';
 
@@ -35,6 +36,11 @@ const TooltipPopup = memo(function TooltipPopup({
 }) {
   const mounted = Ariakit.useStoreState(store, (state) => state.mounted);
   const placement = Ariakit.useStoreState(store, (state) => state.placement);
+  /** Tooltips portal to body at z-150, which nested dialogs (z 200+) cover —
+   * inside a dialog, borrow the popover's depth-aware z-index; outside, keep
+   * the stylesheet default so tooltips never outrank freshly opened dialogs. */
+  const dialogDepth = useDialogDepth();
+  const popoverZIndex = usePopoverZIndex();
 
   const sanitizer = useMemo(() => {
     const instance = DOMPurify();
@@ -89,6 +95,7 @@ const TooltipPopup = memo(function TooltipPopup({
           className="tooltip"
           render={
             <motion.div
+              style={dialogDepth > 0 ? { zIndex: popoverZIndex } : undefined}
               initial={{ opacity: 0, x, y }}
               animate={{ opacity: 1, x: 0, y: 0 }}
               exit={{ opacity: 0, x, y }}

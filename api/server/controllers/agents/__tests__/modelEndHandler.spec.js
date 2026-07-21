@@ -150,6 +150,45 @@ describe('ModelEndHandler — Vertex thoughtSignature capture (issue #13006 foll
     expect(collectedThoughtSignatures).toEqual({});
   });
 
+  it('tags the producing agent on collected + emitted usage for per-endpoint pricing', async () => {
+    const collectedUsage = [];
+    const emitUsage = jest.fn();
+    const handler = new ModelEndHandler(collectedUsage, null, emitUsage);
+    const graph = {
+      getAgentContext: () => ({
+        provider: 'openai',
+        agentId: 'agent_sub',
+        clientOptions: { model: 'gpt-4' },
+      }),
+    };
+
+    await handler.handle(
+      'on_chat_model_end',
+      { output: { usage_metadata: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } } },
+      { ls_model_name: 'gpt-4', run_id: 'r1', user_id: 'u1' },
+      graph,
+    );
+
+    expect(collectedUsage[0].agentId).toBe('agent_sub');
+    expect(emitUsage).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'agent_sub' }));
+  });
+
+  it('leaves usage untagged when the graph context has no agentId (single-endpoint)', async () => {
+    const collectedUsage = [];
+    const emitUsage = jest.fn();
+    const handler = new ModelEndHandler(collectedUsage, null, emitUsage);
+
+    await handler.handle(
+      'on_chat_model_end',
+      { output: { usage_metadata: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } } },
+      { ls_model_name: 'gemini-3.1-flash-lite-preview', run_id: 'r1', user_id: 'u1' },
+      buildGraph(),
+    );
+
+    expect(collectedUsage[0].agentId).toBeUndefined();
+    expect(emitUsage).toHaveBeenCalledWith(expect.objectContaining({ agentId: undefined }));
+  });
+
   it('throws when collectedUsage is not an array (existing contract)', () => {
     expect(() => new ModelEndHandler(null)).toThrow('collectedUsage must be an array');
   });

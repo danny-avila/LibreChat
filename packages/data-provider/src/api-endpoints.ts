@@ -71,6 +71,8 @@ export const messagesBranch = () => `${messagesRoot}/branch`;
 
 const shareRoot = `${BASE_URL}/api/share`;
 export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
+export const forkSharedMessages = (shareId: string) => `${shareRoot}/${shareId}/fork`;
+export const sharedStartupConfig = (shareId: string) => `${shareMessages(shareId)}/config`;
 export const getSharedLink = (conversationId: string) => `${shareRoot}/link/${conversationId}`;
 export const getSharedLinks = (
   pageSize: number,
@@ -84,6 +86,13 @@ export const getSharedLinks = (
   }${cursor ? `&cursor=${cursor}` : ''}`;
 export const createSharedLink = (conversationId: string) => `${shareRoot}/${conversationId}`;
 export const updateSharedLink = (shareId: string) => `${shareRoot}/${shareId}`;
+/** Share-scoped file routes: serve snapshotted files via shared-link permission. */
+export const sharedFile = (shareId: string, fileId: string) =>
+  `${shareRoot}/${shareId}/files/${encodeURIComponent(fileId)}`;
+export const sharedFileDownload = (shareId: string, fileId: string) =>
+  `${sharedFile(shareId, fileId)}/download`;
+export const sharedFilePreview = (shareId: string, fileId: string) =>
+  `${sharedFile(shareId, fileId)}/preview`;
 
 const keysEndpoint = `${BASE_URL}/api/keys`;
 
@@ -115,6 +124,7 @@ export const genTitle = (conversationId: string) =>
 export const updateConversation = () => `${conversationsRoot}/update`;
 
 export const archiveConversation = () => `${conversationsRoot}/archive`;
+export const pinConversation = () => `${conversationsRoot}/pin`;
 
 export const deleteConversation = () => `${conversationsRoot}`;
 
@@ -147,6 +157,8 @@ export const presets = () => `${BASE_URL}/api/presets`;
 export const deletePreset = () => `${BASE_URL}/api/presets/delete`;
 
 export const aiEndpoints = () => `${BASE_URL}/api/endpoints`;
+
+export const tokenConfig = () => `${BASE_URL}/api/endpoints/token-config`;
 
 export const models = () => `${BASE_URL}/api/models`;
 
@@ -302,6 +314,8 @@ export const fileDownload = (userId: string, fileId: string) =>
 export const filePreview = (fileId: string) =>
   `${BASE_URL}/api/files/${encodeURIComponent(fileId)}/preview`;
 export const fileConfig = () => `${BASE_URL}/api/files/config`;
+/** Owner-scoped usage touch so queued attachments outlive the upload-window TTL. */
+export const fileUsage = () => `${BASE_URL}/api/files/usage`;
 export const agentFiles = (agentId: string) => `${BASE_URL}/api/files/agent/${agentId}`;
 
 export const images = () => `${files()}/images`;
@@ -426,6 +440,11 @@ export const skillTree = ({ skillId, path = '' }: { skillId: string; path?: stri
 /* Skill active states (per-user overrides) */
 export const skillStates = () => `${BASE_URL}/api/user/settings/skills/active`;
 
+/* Tool favorites (starred marketplace items) */
+export const toolFavorites = () => `${BASE_URL}/api/user/settings/favorites/tools`;
+export const toolFavorite = (itemType: string, itemId: string) =>
+  `${toolFavorites()}/${itemType}/${encodeURIComponent(itemId)}`;
+
 /* Roles */
 export const roles = () => `${BASE_URL}/api/roles`;
 export const adminRoles = () => `${BASE_URL}/api/admin/roles`;
@@ -473,7 +492,8 @@ export const verifyTwoFactorTemp = () => `${BASE_URL}/api/auth/2fa/verify-temp`;
 
 /* Memories */
 export const memories = () => `${BASE_URL}/api/memories`;
-export const memory = (key: string) => `${memories()}/${encodeURIComponent(key)}`;
+export const memory = (key: string, agentId?: string) =>
+  `${memories()}/${encodeURIComponent(key)}${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ''}`;
 export const memoryPreferences = () => `${memories()}/preferences`;
 
 export const searchPrincipals = (params: q.PrincipalSearchParams) => {

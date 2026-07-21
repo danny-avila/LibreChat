@@ -379,6 +379,47 @@ describe('File Methods', () => {
 
       expect(files).toHaveLength(0);
     });
+
+    it('owner-scopes historical tool file lookups', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const victimId = new mongoose.Types.ObjectId();
+      const ownerFileId = uuidv4();
+      const victimFileId = uuidv4();
+
+      await runAsSystem(() =>
+        fileMethods.createFile({
+          file_id: ownerFileId,
+          user: ownerId,
+          tenantId: 'tenant-a',
+          filename: 'owner-embedded.txt',
+          filepath: '/uploads/owner-embedded.txt',
+          type: 'text/plain',
+          bytes: 100,
+          embedded: true,
+        }),
+      );
+      await runAsSystem(() =>
+        fileMethods.createFile({
+          file_id: victimFileId,
+          user: victimId,
+          tenantId: 'tenant-a',
+          filename: 'victim-embedded.txt',
+          filepath: '/uploads/victim-embedded.txt',
+          type: 'text/plain',
+          bytes: 100,
+          embedded: true,
+        }),
+      );
+
+      const toolSet = new Set([EToolResources.file_search]);
+      const files = await fileMethods.getToolFilesByIds([ownerFileId, victimFileId], toolSet, {
+        userId: ownerId.toString(),
+        tenantId: 'tenant-a',
+      });
+
+      expect(files).toHaveLength(1);
+      expect(files[0].file_id).toBe(ownerFileId);
+    });
   });
 
   describe('getCodeGeneratedFiles', () => {
@@ -525,6 +566,160 @@ describe('File Methods', () => {
       });
 
       const files = await fileMethods.getCodeGeneratedFiles(conversationId, [fileId]);
+      expect(files).toEqual([]);
+    });
+
+    it('owner-scopes code-generated file lookups', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const victimId = new mongoose.Types.ObjectId();
+      const conversationId = uuidv4();
+      const ownerFileId = uuidv4();
+      const victimFileId = uuidv4();
+
+      for (const [fileId, userId, filename] of [
+        [ownerFileId, ownerId, 'owner-output.csv'],
+        [victimFileId, victimId, 'victim-output.csv'],
+      ] as const) {
+        await runAsSystem(() =>
+          fileMethods.createFile({
+            file_id: fileId,
+            user: userId,
+            tenantId: 'tenant-a',
+            conversationId,
+            messageId: `msg-${fileId}`,
+            filename,
+            filepath: `/uploads/${filename}`,
+            type: 'text/csv',
+            bytes: 100,
+            context: FileContext.execute_code,
+            metadata: {
+              codeEnvRef: {
+                kind: 'user',
+                id: userId.toString(),
+                storage_session_id: `sess-${fileId}`,
+                file_id: fileId,
+              },
+            },
+          }),
+        );
+      }
+
+      const files = await fileMethods.getCodeGeneratedFiles(
+        conversationId,
+        [ownerFileId, victimFileId],
+        { userId: ownerId.toString(), tenantId: 'tenant-a' },
+      );
+
+      expect(files).toHaveLength(1);
+      expect(files[0].file_id).toBe(ownerFileId);
+    });
+  });
+
+  describe('getUserCodeFiles', () => {
+    it('returns only authenticated owner code-env uploads', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const victimId = new mongoose.Types.ObjectId();
+      const ownerFileId = uuidv4();
+      const victimFileId = uuidv4();
+
+      await runAsSystem(() =>
+        fileMethods.createFile({
+          file_id: ownerFileId,
+          user: ownerId,
+          tenantId: 'tenant-a',
+          conversationId: 'conversation-owner',
+          filename: 'owner.csv',
+          filepath: '/uploads/owner.csv',
+          source: 'local',
+          type: 'text/csv',
+          bytes: 100,
+          context: FileContext.message_attachment,
+          metadata: {
+            codeEnvRef: {
+              kind: 'user',
+              id: ownerId.toString(),
+              storage_session_id: 'owner-session',
+              file_id: ownerFileId,
+            },
+          },
+        }),
+      );
+      await runAsSystem(() =>
+        fileMethods.createFile({
+          file_id: victimFileId,
+          user: victimId,
+          tenantId: 'tenant-a',
+          conversationId: 'conversation-victim',
+          filename: 'victim.csv',
+          filepath: '/uploads/victim.csv',
+          source: 'local',
+          type: 'text/csv',
+          bytes: 100,
+          context: FileContext.message_attachment,
+          metadata: {
+            codeEnvRef: {
+              kind: 'user',
+              id: victimId.toString(),
+              storage_session_id: 'victim-session',
+              file_id: victimFileId,
+            },
+          },
+        }),
+      );
+
+      const files = await fileMethods.getUserCodeFiles([ownerFileId, victimFileId], {
+        userId: ownerId.toString(),
+        tenantId: 'tenant-a',
+      });
+
+      expect(files).toHaveLength(1);
+      expect(files[0]).toMatchObject({
+        file_id: ownerFileId,
+        filename: 'owner.csv',
+        filepath: '/uploads/owner.csv',
+        source: 'local',
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: ownerId.toString(),
+            storage_session_id: 'owner-session',
+            file_id: ownerFileId,
+          },
+        },
+      });
+    });
+
+    it('excludes files outside the authenticated tenant scope', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+
+      await runAsSystem(() =>
+        fileMethods.createFile({
+          file_id: fileId,
+          user: ownerId,
+          tenantId: 'tenant-b',
+          filename: 'tenant-b.csv',
+          filepath: '/uploads/tenant-b.csv',
+          source: 'local',
+          type: 'text/csv',
+          bytes: 100,
+          context: FileContext.message_attachment,
+          metadata: {
+            codeEnvRef: {
+              kind: 'user',
+              id: ownerId.toString(),
+              storage_session_id: 'tenant-b-session',
+              file_id: fileId,
+            },
+          },
+        }),
+      );
+
+      const files = await fileMethods.getUserCodeFiles([fileId], {
+        userId: ownerId.toString(),
+        tenantId: 'tenant-a',
+      });
+
       expect(files).toEqual([]);
     });
   });

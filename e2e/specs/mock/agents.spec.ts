@@ -132,7 +132,7 @@ test.describe('agent builder', () => {
 
       await form.getByLabel('Agent name').fill(agentName);
       await form.getByLabel('Agent description').fill(DESCRIPTION);
-      await form.getByLabel('Agent instructions').fill(INSTRUCTIONS);
+      await form.getByLabel('Instructions').fill(INSTRUCTIONS);
 
       await selectMockModel(page);
       await fillAnthropicStyleModelParameters(page);
@@ -157,7 +157,9 @@ test.describe('agent builder', () => {
       const createdAgent = (await createResponse.json()) as AgentDetail;
       createdAgentId = createdAgent.id;
 
-      await expect(page.getByText(`Successfully created ${agentName}`)).toBeVisible();
+      await expect(
+        page.getByText(`Successfully created ${agentName}`, { exact: true }),
+      ).toBeVisible();
 
       const persistedAgent = await waitForPersistedAgent(page, agentName, DESCRIPTION);
       expect(persistedAgent).toMatchObject({
@@ -177,7 +179,7 @@ test.describe('agent builder', () => {
 
       await expect(form.getByLabel('Agent name')).toHaveValue(agentName);
       await expect(form.getByLabel('Agent description')).toHaveValue(DESCRIPTION);
-      await expect(form.getByLabel('Agent instructions')).toHaveValue(INSTRUCTIONS);
+      await expect(form.getByLabel('Instructions')).toHaveValue(INSTRUCTIONS);
 
       await form.locator('label[for="provider"] + button').click();
       await expectAnthropicStyleModelParameters(page);

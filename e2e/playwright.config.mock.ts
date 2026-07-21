@@ -5,6 +5,9 @@ import { getLocalE2EEnv, getE2EBaseURL } from './setup/env';
 
 const rootPath = path.resolve(__dirname, '..');
 const serverPath = path.resolve(rootPath, 'e2e/setup/start-server.js');
+const mcpHttpServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-http-server.js');
+/** Must match the `e2e-http` server URL in e2e/config/librechat.e2e.yaml. */
+const MCP_HTTP_PORT = process.env.E2E_MCP_HTTP_PORT || '8765';
 const fakeModelHookPath = path.resolve(rootPath, 'e2e/setup/fake-model.js');
 const configTemplatePath = path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml');
 const configPath = path.resolve(rootPath, 'e2e/.generated/librechat.e2e.yaml');
@@ -48,8 +51,12 @@ const preservedCredentialEnvKeys = new Set([
  */
 function writeRuntimeMockConfig() {
   const template = fs.readFileSync(configTemplatePath, 'utf8');
+  const config =
+    process.env.E2E_MODEL_SPECS_ENFORCE === 'true'
+      ? template.replace('\n  enforce: false\n', '\n  enforce: true\n')
+      : template;
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, template);
+  fs.writeFileSync(configPath, config);
 }
 
 function neutralizeCredentialEnv(env: NodeJS.ProcessEnv, keep: Set<string>) {
@@ -127,6 +134,16 @@ export default defineConfig({
       stdout: 'pipe',
       ignoreHTTPSErrors: true,
       timeout: 120_000,
+      reuseExistingServer: false,
+    },
+    {
+      // URL-based MCP fixture for the allowlist-override spec (its health route is GET /).
+      command: `node ${mcpHttpServerPath}`,
+      cwd: rootPath,
+      env: { ...process.env, E2E_MCP_HTTP_PORT: MCP_HTTP_PORT },
+      url: `http://127.0.0.1:${MCP_HTTP_PORT}/`,
+      stdout: 'pipe',
+      timeout: 60_000,
       reuseExistingServer: false,
     },
   ],

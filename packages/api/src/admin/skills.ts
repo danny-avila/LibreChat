@@ -22,6 +22,7 @@ export type AdminSkillsRequest = Request & {
   user?: {
     _id?: Types.ObjectId;
     id?: string;
+    tenantId?: string;
   };
   skillSyncAllowServerCredentials?: boolean;
   skillSyncCanReadCredentials?: boolean;
@@ -151,6 +152,25 @@ function serializeSourceStatus(
     createdAt: toIso(status.createdAt),
     updatedAt: toIso(status.updatedAt),
   };
+}
+
+function getRequestTenantId(req: AdminSkillsRequest): string | undefined {
+  const tenantId = req.user?.tenantId;
+  return typeof tenantId === 'string' && tenantId ? tenantId : undefined;
+}
+
+function getVisibleSourceStatuses<T extends ISkillSyncStatus>(
+  req: AdminSkillsRequest,
+  sources: T[],
+): T[] {
+  if (req.skillSyncCanReadCredentials !== false) {
+    return sources;
+  }
+  const tenantId = getRequestTenantId(req);
+  if (!tenantId) {
+    return [];
+  }
+  return sources.filter((source) => !source.tenantId || source.tenantId === tenantId);
 }
 
 function isCredentialKey(value: unknown): value is string {
@@ -332,7 +352,7 @@ export function createAdminSkillsSyncHandlers(deps: AdminSkillSyncDeps): AdminSk
       enabled: status.enabled,
       intervalMinutes: status.intervalMinutes,
       runOnStartup: status.runOnStartup,
-      sources: status.sources.map((source) =>
+      sources: getVisibleSourceStatuses(req, status.sources).map((source) =>
         serializeSourceStatus(source, { includeCredentialMetadata }),
       ),
       credentials: includeCredentialMetadata ? status.credentials.map(serializeCredential) : [],

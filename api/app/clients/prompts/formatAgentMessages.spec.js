@@ -55,6 +55,7 @@ describe('formatAgentMessages', () => {
               name: 'search',
               args: '{"query":"weather"}',
               output: 'The weather is sunny.',
+              inputValidationError: true,
             },
           },
         ],
@@ -65,6 +66,7 @@ describe('formatAgentMessages', () => {
     expect(result[0]).toBeInstanceOf(AIMessage);
     expect(result[1]).toBeInstanceOf(ToolMessage);
     expect(result[0].tool_calls).toHaveLength(1);
+    expect(result[0].tool_calls[0]).not.toHaveProperty('inputValidationError');
     expect(result[1].tool_call_id).toBe('123');
   });
 
@@ -509,6 +511,115 @@ describe('formatAgentMessages', () => {
       const result = formatAgentMessages(payload);
       const assistant = result.find((m) => m instanceof AIMessage);
       expect(assistant.additional_kwargs?.signatures).toBeUndefined();
+    });
+  });
+
+  describe('steer content parts', () => {
+    it('replays a steer between tool steps as a standalone HumanMessage', () => {
+      const payload = [
+        {
+          role: 'assistant',
+          content: [
+            {
+              type: ContentTypes.TEXT,
+              [ContentTypes.TEXT]: 'Checking the weather.',
+              tool_call_ids: ['t1'],
+            },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't1', name: 'search', args: '{}', output: 'sunny' },
+            },
+            {
+              type: ContentTypes.STEER,
+              [ContentTypes.STEER]: 'also check tomorrow',
+              steerId: 's1',
+            },
+            {
+              type: ContentTypes.TEXT,
+              [ContentTypes.TEXT]: 'Checking tomorrow too.',
+              tool_call_ids: ['t2'],
+            },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { id: 't2', name: 'search', args: '{}', output: 'rain' },
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+      expect(result.map((m) => m.constructor)).toEqual([
+        AIMessage,
+        ToolMessage,
+        HumanMessage,
+        AIMessage,
+        ToolMessage,
+      ]);
+      expect(result[2].content).toBe('also check tomorrow');
+      expect(result[2].additional_kwargs).toEqual({ source: 'steer' });
+      expect(result[3].tool_calls).toHaveLength(1);
+    });
+
+    it('flushes accumulated assistant text before the steer', () => {
+      const payload = [
+        {
+          role: 'assistant',
+          content: [
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Some prose so far.' },
+            { type: ContentTypes.STEER, [ContentTypes.STEER]: 'change direction' },
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'New direction prose.' },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+      expect(result.map((m) => m.constructor)).toEqual([AIMessage, HumanMessage, AIMessage]);
+      expect(result[0].content).toBe('Some prose so far.');
+      expect(result[1].content).toBe('change direction');
+      expect(result[2].content).toEqual([
+        { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'New direction prose.' },
+      ]);
+    });
+
+    it('handles a steer as the final content part', () => {
+      const payload = [
+        {
+          role: 'assistant',
+          content: [
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Answer text.' },
+            { type: ContentTypes.STEER, [ContentTypes.STEER]: 'trailing steer' },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+      expect(result.map((m) => m.constructor)).toEqual([AIMessage, HumanMessage]);
+      expect(result[1].content).toBe('trailing steer');
+    });
+
+    it('prefers stamped media content for multimodal steers', () => {
+      const media = [
+        { type: 'text', text: 'see the chart' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,abc', detail: 'auto' } },
+      ];
+      const payload = [
+        {
+          role: 'assistant',
+          content: [
+            {
+              type: ContentTypes.STEER,
+              [ContentTypes.STEER]: 'see the chart',
+              files: [{ file_id: 'f1' }],
+              media,
+            },
+          ],
+        },
+      ];
+
+      const result = formatAgentMessages(payload);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBeInstanceOf(HumanMessage);
+      expect(result[0].content).toEqual(media);
     });
   });
 });

@@ -8,7 +8,11 @@ import { useLocalize } from '~/hooks';
 
 type FooterProps = {
   className?: string;
-  startupConfig?: TStartupConfig | null;
+  startupConfig?: FooterStartupConfig | null;
+};
+
+type FooterStartupConfig = Pick<Partial<TStartupConfig>, 'analyticsGtmId' | 'customFooter'> & {
+  interface?: Pick<NonNullable<TStartupConfig['interface']>, 'privacyPolicy' | 'termsOfService'>;
 };
 
 function Footer({ className, startupConfig }: FooterProps) {

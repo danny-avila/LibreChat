@@ -1,6 +1,6 @@
 const express = require('express');
 const { getRumProxyBodyLimit, isRumProxyEnabled, proxyRumRequest } = require('@librechat/api');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireRumProxyAuth } = require('~/server/middleware');
 
 const router = express.Router();
 const rawOtlpBody = express.raw({
@@ -16,7 +16,13 @@ function requireRumProxyEnabled(_req, res, next) {
   return next();
 }
 
-router.post('/v1/traces', requireRumProxyEnabled, requireJwtAuth, rawOtlpBody, proxyRumRequest);
-router.post('/v1/logs', requireRumProxyEnabled, requireJwtAuth, rawOtlpBody, proxyRumRequest);
+router.post(
+  '/v1/traces',
+  requireRumProxyEnabled,
+  requireRumProxyAuth,
+  rawOtlpBody,
+  proxyRumRequest,
+);
+router.post('/v1/logs', requireRumProxyEnabled, requireRumProxyAuth, rawOtlpBody, proxyRumRequest);
 
 module.exports = router;

@@ -1,22 +1,22 @@
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
-import { HttpsProxyAgent } from 'https-proxy-agent';
-import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { fetch as undiciFetch } from 'undici';
 import { getTenantId, logger, tenantStorage } from '@librechat/data-schemas';
 import { SystemRoles, isRemoteOidcUrlAllowed } from 'librechat-data-provider';
-import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import type { AppConfig, IUser, RoleMethods, UserMethods } from '@librechat/data-schemas';
+import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import type { Algorithm, JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
 import type { GetAppConfigOptions } from '../app/service';
-import { findOpenIDUser, getOpenIdEmail, normalizeOpenIdIssuer } from '../auth/openid';
 import {
   getLibreChatRolesForOpenIdSync,
   getOpenIdRolesForOpenIdSync,
   getOpenIdRoleSyncOptions,
   selectOpenIdRole,
 } from '../auth/openidRoleSync';
+import { findOpenIDUser, getOpenIdEmail, normalizeOpenIdIssuer } from '../auth/openid';
+import { getEnvProxyDispatcher, getHttpsProxyAgent } from '~/utils/proxy';
 import { isEnabled, math } from '~/utils';
 
 export interface RemoteAgentAuthDeps {
@@ -127,9 +127,10 @@ function getJwksCacheOptions(): JwksCacheOptions {
 
 function buildDiscoveryOptions(controller: AbortController): RequestInit {
   const options: RequestInit = { signal: controller.signal };
+  const dispatcher = getEnvProxyDispatcher();
 
-  if (process.env.PROXY) {
-    options.dispatcher = new ProxyAgent(process.env.PROXY);
+  if (dispatcher) {
+    options.dispatcher = dispatcher;
   }
 
   return options;
@@ -196,8 +197,9 @@ function buildJwksClient(uri: string, cacheOptions: JwksCacheOptions): jwksRsa.J
     jwksUri: uri,
   };
 
-  if (process.env.PROXY) {
-    options.requestAgent = new HttpsProxyAgent(process.env.PROXY);
+  const requestAgent = getHttpsProxyAgent(uri);
+  if (requestAgent) {
+    options.requestAgent = requestAgent;
   }
 
   return jwksRsa(options);

@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import copy from 'copy-to-clipboard';
-import { Check, Copy } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
 import type { TStartupConfig } from 'librechat-data-provider';
+import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -38,9 +38,9 @@ function buildDiagnosticsBlob(
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-1.5">
-      <div className="text-text-secondary">{label}</div>
-      <div className="break-all text-right font-mono text-xs text-text-primary">{value}</div>
+    <div className="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
+      <dt className="text-text-secondary">{label}</dt>
+      <dd className="break-all text-right font-mono text-xs text-text-primary">{value}</dd>
     </div>
   );
 }
@@ -48,7 +48,7 @@ function Row({ label, value }: { label: string; value: string }) {
 function About() {
   const localize = useLocalize();
   const { data: startupConfig } = useGetStartupConfig();
-  const [copied, setCopied] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const buildInfo = startupConfig?.buildInfo;
@@ -68,71 +68,53 @@ function About() {
     [],
   );
 
-  const onCopy = useCallback(() => {
+  const handleCopy = useCallback(() => {
     const succeeded = copy(diagnosticsBlob, { format: 'text/plain' });
     if (!succeeded) {
       return;
     }
-    setCopied(true);
+    setIsCopied(true);
     if (copyResetTimerRef.current) {
       clearTimeout(copyResetTimerRef.current);
     }
-    copyResetTimerRef.current = setTimeout(() => setCopied(false), 2000);
+    copyResetTimerRef.current = setTimeout(() => setIsCopied(false), 2000);
   }, [diagnosticsBlob]);
 
   return (
-    <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
-      <section aria-labelledby="about-version-heading" className="flex flex-col">
-        <h3 id="about-version-heading" className="mb-2 text-sm font-medium text-text-primary">
-          {localize('com_nav_about_version_heading')}
-        </h3>
-        <div className="rounded-lg border border-border-light bg-surface-secondary p-3">
-          <Row label={localize('com_nav_about_version')} value={version} />
-          <Row
-            label={localize('com_nav_about_commit')}
-            value={buildInfo?.commitShort ?? UNKNOWN_PLACEHOLDER}
-          />
-          <Row
-            label={localize('com_nav_about_branch')}
-            value={buildInfo?.branch ?? UNKNOWN_PLACEHOLDER}
-          />
-          <Row
-            label={localize('com_nav_about_build_date')}
-            value={formatBuildDate(buildInfo?.buildDate)}
-          />
-        </div>
-      </section>
+    <div className="flex flex-col text-sm text-text-primary">
+      <dl className="flex flex-col divide-y divide-border-light">
+        <Row label={localize('com_nav_about_version')} value={version} />
+        <Row
+          label={localize('com_nav_about_commit')}
+          value={buildInfo?.commitShort ?? UNKNOWN_PLACEHOLDER}
+        />
+        <Row
+          label={localize('com_nav_about_branch')}
+          value={buildInfo?.branch ?? UNKNOWN_PLACEHOLDER}
+        />
+        <Row
+          label={localize('com_nav_about_build_date')}
+          value={formatBuildDate(buildInfo?.buildDate)}
+        />
+      </dl>
 
-      <section aria-labelledby="about-diagnostics-heading" className="flex flex-col">
-        <h3 id="about-diagnostics-heading" className="mb-2 text-sm font-medium text-text-primary">
-          {localize('com_nav_about_diagnostics_heading')}
-        </h3>
-        <p className="mb-2 text-xs text-text-secondary">
+      <div className="mt-4 flex flex-col items-start gap-3 border-t border-border-light pt-4">
+        <p className="text-xs text-text-secondary">
           {localize('com_nav_about_diagnostics_description')}
         </p>
-        <button
-          type="button"
-          onClick={onCopy}
-          className="inline-flex items-center justify-center gap-2 self-start rounded-md border border-border-light bg-surface-secondary px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
-        >
-          {copied ? (
-            <>
-              <Check className="h-4 w-4" aria-hidden="true" />
-              {localize('com_nav_about_diagnostics_copied')}
-            </>
-          ) : (
-            <>
-              <Copy className="h-4 w-4" aria-hidden="true" />
-              {localize('com_nav_about_diagnostics_copy')}
-            </>
-          )}
-        </button>
+        <CopyButton
+          isCopied={isCopied}
+          onClick={handleCopy}
+          label={localize('com_nav_about_diagnostics_copy')}
+          copiedLabel={localize('com_nav_about_diagnostics_copied')}
+          className="ml-0 gap-2 self-start rounded-lg border border-border-light bg-surface-secondary px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-tertiary"
+        />
         <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-          {copied ? localize('com_nav_about_diagnostics_copied') : ''}
+          {isCopied ? localize('com_nav_about_diagnostics_copied') : ''}
         </span>
-      </section>
+      </div>
     </div>
   );
 }
 
-export default React.memo(About);
+export default memo(About);

@@ -42,6 +42,12 @@ export const SystemCapabilities = {
   /** Reserved — not yet enforced by any middleware. */
   READ_ASSISTANTS: 'read:assistants',
   MANAGE_ASSISTANTS: 'manage:assistants',
+  /**
+   * Required to list, view, and CSV-export the SystemGrant audit log. Append-only
+   * by design, so there is no MANAGE counterpart — modifying historical entries
+   * would defeat the forensic guarantee.
+   */
+  READ_AUDIT_LOG: 'read:audit_log',
 } as const;
 
 /**
@@ -224,6 +230,10 @@ export const CAPABILITY_CATEGORIES: CapabilityCategory[] = [
   {
     key: 'system',
     labelKey: 'com_cap_cat_system',
-    capabilities: [SystemCapabilities.ACCESS_ADMIN, SystemCapabilities.READ_USAGE],
+    capabilities: [
+      SystemCapabilities.ACCESS_ADMIN,
+      SystemCapabilities.READ_USAGE,
+      SystemCapabilities.READ_AUDIT_LOG,
+    ],
   },
 ];

@@ -1,3 +1,8 @@
+jest.mock('~/app/metrics', () => ({
+  recordRumProxyRequest: jest.fn(),
+}));
+
+import { recordRumProxyRequest } from '~/app/metrics';
 import {
   getRumProxyBodyLimit,
   getRumProxyClientUrl,
@@ -24,6 +29,7 @@ describe('RUM proxy configuration', () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
+    jest.mocked(recordRumProxyRequest).mockClear();
   });
 
   afterEach(() => {
@@ -114,6 +120,7 @@ describe('RUM proxy configuration', () => {
     expect(res.set).toHaveBeenCalledWith('content-type', 'application/json');
     expect(res.status).toHaveBeenCalledWith(202);
     expect(res.send).toHaveBeenCalledWith(Buffer.from('ok'));
+    expect(recordRumProxyRequest).toHaveBeenCalledWith('traces', 'success');
 
     fetchMock.mockRestore();
   });
@@ -133,6 +140,8 @@ describe('RUM proxy configuration', () => {
 
     expect(missingBodyRes.status).toHaveBeenCalledWith(400);
     expect(unsupportedPathRes.status).toHaveBeenCalledWith(404);
+    expect(recordRumProxyRequest).toHaveBeenCalledWith('traces', 'bad_request');
+    expect(recordRumProxyRequest).toHaveBeenCalledWith('unknown', 'not_configured');
   });
 
   it('returns 502 when the collector request fails', async () => {
@@ -148,6 +157,26 @@ describe('RUM proxy configuration', () => {
     );
 
     expect(res.status).toHaveBeenCalledWith(502);
+    expect(recordRumProxyRequest).toHaveBeenCalledWith('traces', 'collector_error');
+    fetchMock.mockRestore();
+  });
+
+  it('records collector error status classes', async () => {
+    process.env.RUM_ENABLED = 'true';
+    process.env.RUM_AUTH_MODE = 'proxy';
+    process.env.RUM_PROXY_TARGET_URL = 'http://otel-collector:4318';
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(new Response('nope', { status: 503 }));
+    const res = makeResponse();
+
+    await proxyRumRequest(
+      { path: '/v1/logs', body: Buffer.from('payload'), headers: {} } as never,
+      res as never,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(recordRumProxyRequest).toHaveBeenCalledWith('logs', 'collector_5xx');
     fetchMock.mockRestore();
   });
 });

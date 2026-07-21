@@ -3,8 +3,10 @@ const { logger } = require('@librechat/data-schemas');
 const { Constants, ViolationTypes, isEphemeralAgentId } = require('librechat-data-provider');
 const {
   sendEvent,
+  toPendingSteer,
   getViolationInfo,
   buildMessageFiles,
+  getReferencedQuotes,
   resolveTitleTiming,
   GenerationJobManager,
   filterPersistableAbortContent,
@@ -14,6 +16,10 @@ const {
   isUnpersistedPreliminaryParent,
 } = require('@librechat/api');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
+const {
+  getMCPRequestContext,
+  cleanupMCPRequestContextForReq,
+} = require('~/server/services/MCPRequestContext');
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
 const { saveMessage, getMessages, getConvo } = require('~/models');
@@ -99,16 +105,39 @@ function getPreliminaryResponseMessageId({ messageId, responseMessageId }) {
   return `${messageId.replace(/_+$/, '')}_`;
 }
 
-function getPreliminaryUserMessage({ messageId, parentMessageId, text }, conversationId) {
+function getPreliminaryUserMessage(
+  { messageId, parentMessageId, text, quotes, files, manualSkills, alwaysAppliedSkills },
+  conversationId,
+) {
   if (typeof messageId !== 'string' || messageId.length === 0) {
     return null;
   }
+
+  /**
+   * Seed normalized quotes here too: if the user aborts before `sendMessage`
+   * reaches `onStart` (during init/tool loading), `abortMiddleware` falls back
+   * to this preliminary metadata, which must carry the excerpts so the stopped
+   * turn keeps its `MessageQuotes`.
+   */
+  const referencedQuotes = getReferencedQuotes(quotes);
 
   return {
     messageId,
     parentMessageId,
     conversationId,
     text,
+    ...(referencedQuotes != null && { quotes: referencedQuotes }),
+    // Persist the turn's uploaded files on this AWAITED preliminary write so they land on
+    // job.metadata.userMessage BEFORE the run can reach its first interrupt. onStart's
+    // later writes are fire-and-forget, so a fast approval could otherwise read the job
+    // and resume an approved code/read-file tool without the paused turn's uploads.
+    ...(Array.isArray(files) && files.length > 0 && { files }),
+    // Carry skill selections so a HITL-resumed turn's reconstructed `requestMessage`
+    // keeps its skill pills — the client's final handler replaces the user bubble from
+    // this object, and they'd otherwise vanish until a full reload refetches the row.
+    ...(Array.isArray(manualSkills) && manualSkills.length > 0 && { manualSkills }),
+    ...(Array.isArray(alwaysAppliedSkills) &&
+      alwaysAppliedSkills.length > 0 && { alwaysAppliedSkills }),
   };
 }
 
@@ -149,6 +178,38 @@ function getAgentResponseModel(req, endpointOption) {
   return getEndpointResponseModel(endpointOption);
 }
 
+async function finishResumableRequest(req, userId) {
+  try {
+    await cleanupMCPRequestContextForReq(req);
+  } finally {
+    await decrementPendingRequest(userId);
+  }
+}
+
+const JOB_RECORD_WAIT_ATTEMPTS = 5;
+const JOB_RECORD_WAIT_DELAY_MS = 60;
+
+// A winner writes its job record within a few ms of claiming; if a losing duplicate still
+// sees no job within this window of the claim, the winner is still starting (retry rather
+// than hand back a stream that would 404). Past it, a missing job means the original
+// already completed and was cleaned up (attach and let the client refetch).
+const IDEMPOTENCY_STARTUP_GRACE_MS = 5000;
+
+/**
+ * Poll briefly for a job record to appear. A deduped retry that loses the idempotency
+ * claim must not be handed the winner's stream until its job exists, or the client's
+ * subscribe 404s terminally. The winner writes the record a few ms after claiming.
+ */
+async function waitForJobRecord(streamId) {
+  for (let attempt = 0; attempt < JOB_RECORD_WAIT_ATTEMPTS; attempt++) {
+    if (await GenerationJobManager.hasJob(streamId)) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, JOB_RECORD_WAIT_DELAY_MS));
+  }
+  return GenerationJobManager.hasJob(streamId);
+}
+
 function rejectPreliminaryParentMessageId(res) {
   return res.status(409).json({
     error:
@@ -185,6 +246,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       getMessages,
     })
   ) {
+    agentSpan.end();
     return rejectPreliminaryParentMessageId(res);
   }
 
@@ -193,13 +255,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
    *  `final` defers it until the full response completes (legacy behavior).
    *  Resolved from the agent's actual endpoint once the client is initialized. */
   let titleTiming = 'immediate';
-
-  const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
-  if (!allowed) {
-    const violationInfo = getViolationInfo(pendingRequests, limit);
-    await logViolation(req, res, ViolationTypes.CONCURRENT, violationInfo, violationInfo.score);
-    return res.status(429).json(violationInfo);
-  }
 
   // Generate conversationId upfront if not provided - streamId === conversationId always
   // Treat "new" as a placeholder that needs a real UUID (frontend may send "new" for new convos)
@@ -212,8 +267,103 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     'agent.conversation_id': conversationId,
     'agent.is_new_convo': isNewConvo,
     'agent.endpoint': endpointOption?.endpoint ?? 'unknown',
-    'agent.model': endpointOption?.modelOptions?.model ?? endpointOption?.model_parameters?.model ?? 'unknown',
+    'agent.model':
+      endpointOption?.modelOptions?.model ?? endpointOption?.model_parameters?.model ?? 'unknown',
   });
+
+  // Idempotency: a lost/reset start-generation response makes the client re-POST the
+  // identical payload, which would otherwise start a second fully-billed generation.
+  // Claim the submission's clientRequestId before creating the job so a retry attaches
+  // to the original stream instead of spawning a duplicate. Runs before the concurrency
+  // check so a deduped retry is never counted against the limiter. Fail-open on errors.
+  const clientRequestId = req.body?.clientRequestId;
+  let ownsIdempotencyClaim = false;
+  if (clientRequestId) {
+    let claim = null;
+    try {
+      claim = await GenerationJobManager.claimGeneration(
+        userId,
+        clientRequestId,
+        streamId,
+        conversationId,
+      );
+    } catch (err) {
+      // The claim itself could not be determined (store unavailable): fail open and proceed
+      // as a fresh request rather than blocking the send. This is the ONLY fail-open path —
+      // once a duplicate is confirmed below, an error must never fall through to a second
+      // billed generation.
+      logger.error(
+        '[ResumableAgentController] Idempotency claim failed; proceeding without dedup',
+        err,
+      );
+    }
+
+    if (claim?.claimed) {
+      ownsIdempotencyClaim = true;
+    } else if (claim?.existing) {
+      // A duplicate is confirmed. Attach to the original stream — and never fall through to
+      // a second generation, even if the job lookup hiccups.
+      const existingStreamId = claim.existing.streamId;
+      let jobExists = false;
+      try {
+        // Wait briefly for the winner to write the job record (it does so a few ms after
+        // claiming) so a still-live stream isn't handed back before its job exists.
+        jobExists = await waitForJobRecord(existingStreamId);
+      } catch (err) {
+        // Store hiccup while checking the job: ask the client to retry rather than starting
+        // a second generation for a request we know is a duplicate.
+        logger.error(
+          '[ResumableAgentController] Job lookup failed for an existing claim; asking the client to retry',
+          err,
+        );
+        agentSpan.end();
+        res.set('Retry-After', '1');
+        return res.status(503).json({
+          code: 'SERVER_NOT_READY',
+          error: 'Generation is still starting. Please retry shortly.',
+        });
+      }
+      const claimAgeMs = Date.now() - (claim.existing.claimedAt ?? 0);
+      if (!jobExists && claimAgeMs < IDEMPOTENCY_STARTUP_GRACE_MS) {
+        // The winner claimed but has not written the job yet (still between claim and
+        // createJob). Handing back the stream now would 404 and tear down the client while
+        // the winner goes on to generate and bill with no UI attached — ask the client to
+        // retry via the readiness path instead.
+        agentSpan.end();
+        res.set('Retry-After', '1');
+        return res.status(503).json({
+          code: 'SERVER_NOT_READY',
+          error: 'Generation is still starting. Please retry shortly.',
+        });
+      }
+      // Job exists (live), or the grace elapsed with none (the original already completed
+      // and was cleaned up, or the winner died): attach. A then-missing job recovers via
+      // the client's subscribe 404 handler (refetch persisted messages) rather than an
+      // indefinite readiness loop.
+      logger.debug('[ResumableAgentController] Deduped retried start-generation request', {
+        userId,
+        clientRequestId,
+        streamId: existingStreamId,
+      });
+      agentSpan.end();
+      return res.json({
+        streamId: existingStreamId,
+        conversationId: claim.existing.conversationId,
+        status: 'resumed',
+      });
+    }
+  }
+
+  const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
+  if (!allowed) {
+    if (ownsIdempotencyClaim) {
+      await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
+    }
+    const violationInfo = getViolationInfo(pendingRequests, limit);
+    await logViolation(req, res, ViolationTypes.CONCURRENT, violationInfo, violationInfo.score);
+    agentSpan.end();
+    return res.status(429).json(violationInfo);
+  }
 
   let client = null;
 
@@ -228,6 +378,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
     const jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
     req._resumableStreamId = streamId;
+    getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
 
     // Send JSON response IMMEDIATELY so client can connect to SSE stream
     // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive
@@ -244,6 +395,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       endpoint: endpointOption.endpoint,
       iconURL: endpointIconURL,
       model: responseModel,
+      // Persist the originating agent so a HITL resume can refuse to rebuild this
+      // paused run on a different agent (see resume.js).
+      agent_id: endpointOption.agent_id ?? req.body?.agent_id,
+      // Persist temporary-chat state so a HITL resume keeps the resumed response
+      // non-persisted instead of trusting the resume request to re-send the flag.
+      isTemporary: req.body?.isTemporary,
       responseMessageId: preliminaryResponseMessageId,
       userMessage: preliminaryUserMessage,
     });
@@ -335,11 +492,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     if (job.abortController.signal.aborted) {
       GenerationJobManager.completeJob(streamId, 'Request aborted during initialization');
-      await decrementPendingRequest(userId);
+      await finishResumableRequest(req, userId);
       return;
     }
 
     client = result.client;
+    // Tag the client with THIS generation's identity so HITL terminal side-effects
+    // (pause CAS, checkpoint prune) can tell whether a newer request has since replaced
+    // this job on the same conversationId before acting on it.
+    client.jobCreatedAt = jobCreatedAt;
 
     // Resolve title timing from the public agents endpoint first, then fall
     // back to the agent's actual backing provider/custom endpoint.
@@ -445,12 +606,45 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               parentMessageId: userMsg.parentMessageId,
               conversationId: userMsg.conversationId,
               text: userMsg.text,
+              quotes: userMsg.quotes,
+              // Persist the turn's uploaded files here (authoritative job metadata) so a
+              // HITL resume sources them from the job, not the user DB row — which the
+              // approval prompt can race (the row save may still be in flight when a fast
+              // /resume reads it). Without this an approved tool run can rebuild without the
+              // paused turn's files.
+              ...(Array.isArray(req.body?.files) &&
+                req.body.files.length > 0 && { files: req.body.files }),
+              // Skill selections aren't on `userMsg` yet at onStart (BaseClient adds them
+              // later), so source them from the request — otherwise this update overwrites
+              // the preliminary metadata and a HITL-resumed turn loses its skill pills.
+              ...(Array.isArray(req.body?.manualSkills) &&
+                req.body.manualSkills.length > 0 && { manualSkills: req.body.manualSkills }),
+              ...(Array.isArray(req.body?.alwaysAppliedSkills) &&
+                req.body.alwaysAppliedSkills.length > 0 && {
+                  alwaysAppliedSkills: req.body.alwaysAppliedSkills,
+                }),
             },
           });
 
           GenerationJobManager.emitChunk(streamId, {
             created: true,
-            message: userMessage,
+            // Skill selections aren't on `userMessage` yet at onStart (BaseClient adds
+            // them later), so attach them from the request — this is the message
+            // `trackUserMessage` persists as the authoritative job.metadata.userMessage,
+            // and it's what the live client renders the user bubble from.
+            message: {
+              ...userMessage,
+              // Carry files so trackUserMessage (the authoritative writer) persists them on
+              // job.metadata.userMessage for a HITL resume (see the updateMetadata above).
+              ...(Array.isArray(req.body?.files) &&
+                req.body.files.length > 0 && { files: req.body.files }),
+              ...(Array.isArray(req.body?.manualSkills) &&
+                req.body.manualSkills.length > 0 && { manualSkills: req.body.manualSkills }),
+              ...(Array.isArray(req.body?.alwaysAppliedSkills) &&
+                req.body.alwaysAppliedSkills.length > 0 && {
+                  alwaysAppliedSkills: req.body.alwaysAppliedSkills,
+                }),
+            },
             streamId,
           });
         };
@@ -497,6 +691,99 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
 
         const response = await sendPromise;
+
+        // HITL: the turn paused for human review (see AgentClient.handleRunInterrupt).
+        // The job is already `requires_action` with the pending action persisted and
+        // emitted to the client; the resume route owns finishing this turn. Settle the
+        // in-flight user-message / conversation save, then tear down WITHOUT saving a
+        // partial response, emitting a terminal event, or completing the job.
+        if (client?.pendingApproval) {
+          if (response?.databasePromise) {
+            try {
+              await response.databasePromise;
+            } catch (dbErr) {
+              logger.error(
+                '[ResumableAgentController] Error settling databasePromise on HITL pause',
+                dbErr,
+              );
+            }
+            delete response.databasePromise;
+          }
+          // BaseClient saved the response as completed (unfinished:false), but the turn
+          // is paused awaiting a decision. Re-mark it unfinished so an expired / never-
+          // resumed approval doesn't leave a "finished" response in history; the resume
+          // path overwrites it with the full completed message on success.
+          if (response?.messageId) {
+            // Guard against a fast /resume: the user can approve the instant the
+            // pending-action SSE lands, and resume.js can then claim + finalize — saving
+            // the COMPLETED response — while we're still awaiting `response.databasePromise`
+            // above. Marking the row unfinished now would clobber that completed content
+            // with this stale pre-pause response. Only mark unfinished while the job is
+            // STILL paused on THIS generation's action: a claim transitions it out of
+            // `requires_action`, and a replacement bumps `createdAt`. Fail open on a read
+            // error so a genuinely never-resumed approval isn't left looking "finished".
+            let stillPaused = true;
+            try {
+              const liveJob = await GenerationJobManager.getJob(streamId);
+              stillPaused =
+                !!liveJob &&
+                liveJob.status === 'requires_action' &&
+                (client?.jobCreatedAt == null || liveJob.createdAt === client.jobCreatedAt);
+            } catch (readErr) {
+              logger.warn(
+                '[ResumableAgentController] Pause unfinished-save liveness check failed; proceeding',
+                readErr?.message ?? readErr,
+              );
+            }
+            if (!stillPaused) {
+              logger.debug(
+                `[ResumableAgentController] Skipping pause unfinished-save — ${streamId} already resumed/replaced`,
+              );
+            } else {
+              try {
+                await saveMessage(
+                  {
+                    userId,
+                    isTemporary: req?.body?.isTemporary,
+                    interfaceConfig: req?.config?.interfaceConfig,
+                  },
+                  {
+                    ...response,
+                    endpoint: endpointOption.endpoint,
+                    unfinished: true,
+                    user: userId,
+                  },
+                  {
+                    context:
+                      'api/server/controllers/agents/request.js - HITL pause (mark unfinished)',
+                  },
+                );
+              } catch (saveErr) {
+                logger.error(
+                  '[ResumableAgentController] Failed to mark paused response unfinished',
+                  saveErr,
+                );
+              }
+            }
+          }
+          titleAbortController.abort();
+          acceptsTitleEvents = false;
+          resolveConvoReady();
+          // handleRunInterrupt already released the concurrency slot the moment it paused
+          // (so a fast /resume isn't 429'd); only release here if that didn't happen.
+          // Always run the MCP request-context cleanup.
+          await cleanupMCPRequestContextForReq(req);
+          if (!client?.pendingRequestReleased) {
+            await decrementPendingRequest(userId);
+          }
+          if (client) {
+            disposeClient(client);
+          }
+          logger.debug(
+            `[ResumableAgentController] Turn paused for approval; awaiting resume: ${streamId}`,
+          );
+          return;
+        }
 
         const messageId = response.messageId;
         const endpoint = endpointOption.endpoint;
@@ -571,7 +858,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           acceptsTitleEvents = false;
           resolveConvoReady();
           // Still decrement pending request since we incremented at start
-          await decrementPendingRequest(userId);
+          await finishResumableRequest(req, userId);
           if (immediateTitlePromise) {
             immediateTitlePromise.finally(() => {
               if (client) {
@@ -602,6 +889,32 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           await titleEventPromise;
         }
 
+        // Steers that never reached an injection boundary (queued after the last
+        // tool batch, or the run had none). The close-and-drain atomically stops
+        // new enqueues first — a steer POST racing this finalization gets 404
+        // (client sends it as a normal message) instead of a 202 whose payload
+        // completeJob would then silently clear. Reported on the final event so
+        // the client converts them to queued follow-up messages.
+        let pendingSteers;
+        try {
+          const leftoverSteers = await GenerationJobManager.steering.closeAndDrain(
+            streamId,
+            jobCreatedAt,
+          );
+          if (leftoverSteers.length > 0) {
+            pendingSteers = leftoverSteers.map(toPendingSteer);
+            // Parked BEFORE the final event: a client with no live subscriber
+            // recovers these via /chat/status (claim-on-read) within the
+            // recovery TTL — the SSE copy alone is transient.
+            await GenerationJobManager.steering.park(streamId, pendingSteers, {
+              userId,
+              tenantId: req.user?.tenantId,
+            });
+          }
+        } catch (err) {
+          logger.warn(`[ResumableAgentController] Failed to drain leftover steers`, err);
+        }
+
         if (!wasAbortedBeforeComplete) {
           const finalEvent = {
             final: true,
@@ -609,6 +922,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: { ...response },
+            ...(pendingSteers && { pendingSteers }),
           };
 
           logger.debug(`[ResumableAgentController] Emitting FINAL event`, {
@@ -621,9 +935,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
           await GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId);
-          await decrementPendingRequest(userId);
-          agentRequestCounter.add(1, { status: 'success', endpoint: endpointOption?.endpoint ?? 'unknown' });
-          agentRequestDuration.record(Date.now() - agentRequestStart, { endpoint: endpointOption?.endpoint ?? 'unknown' });
+          await finishResumableRequest(req, userId);
+          agentRequestCounter.add(1, {
+            status: 'success',
+            endpoint: endpointOption?.endpoint ?? 'unknown',
+          });
+          agentRequestDuration.record(Date.now() - agentRequestStart, {
+            endpoint: endpointOption?.endpoint ?? 'unknown',
+          });
           agentSpan.end();
         } else {
           const finalEvent = {
@@ -632,6 +951,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: { ...response, unfinished: true },
+            ...(pendingSteers && { pendingSteers }),
           };
 
           logger.debug(`[ResumableAgentController] Emitting ABORTED FINAL event`, {
@@ -644,9 +964,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
           await GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId, 'Request aborted');
-          await decrementPendingRequest(userId);
-          agentRequestCounter.add(1, { status: 'aborted', endpoint: endpointOption?.endpoint ?? 'unknown' });
-          agentRequestDuration.record(Date.now() - agentRequestStart, { endpoint: endpointOption?.endpoint ?? 'unknown' });
+          await finishResumableRequest(req, userId);
+          agentRequestCounter.add(1, {
+            status: 'aborted',
+            endpoint: endpointOption?.endpoint ?? 'unknown',
+          });
+          agentRequestDuration.record(Date.now() - agentRequestStart, {
+            endpoint: endpointOption?.endpoint ?? 'unknown',
+          });
           agentSpan.end();
         }
 
@@ -701,6 +1026,31 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           agentRequestCounter.add(1, { status: 'aborted', endpoint: endpointOption?.endpoint ?? 'unknown' });
         } else {
           logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
+          // Close the steer queue BEFORE the error event reaches clients: a
+          // steer POST racing this failure gets 404 (client queues or sends it)
+          // instead of a 202 whose payload would vanish with the job. Text
+          // recovery is client-side — acknowledged chips convert to queued.
+          try {
+            const erroredLeftovers = await GenerationJobManager.steering.closeAndDrain(
+              streamId,
+              jobCreatedAt,
+            );
+            if (erroredLeftovers.length > 0) {
+              // The error event is a bare string — park the acknowledged
+              // steers so a reloaded/disconnected client can still recover
+              // them via /chat/status instead of losing them with the queue.
+              await GenerationJobManager.steering.park(
+                streamId,
+                erroredLeftovers.map(toPendingSteer),
+                { userId, tenantId: req.user?.tenantId },
+              );
+            }
+          } catch (drainErr) {
+            logger.warn(
+              `[ResumableAgentController] Failed to close steer queue on error`,
+              drainErr,
+            );
+          }
           await GenerationJobManager.emitError(streamId, error.message || 'Generation failed');
           GenerationJobManager.completeJob(streamId, error.message);
           agentSpan.recordException(error);
@@ -708,10 +1058,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           agentRequestCounter.add(1, { status: 'error', endpoint: endpointOption?.endpoint ?? 'unknown' });
         }
 
-        agentRequestDuration.record(Date.now() - agentRequestStart, { endpoint: endpointOption?.endpoint ?? 'unknown' });
+        agentRequestDuration.record(Date.now() - agentRequestStart, {
+          endpoint: endpointOption?.endpoint ?? 'unknown',
+        });
         agentSpan.end();
 
-        await decrementPendingRequest(userId);
+        await finishResumableRequest(req, userId);
 
         // Defer disposal until any immediate title settles (it holds the run/req).
         if (immediateTitlePromise) {
@@ -735,7 +1087,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         `[ResumableAgentController] Unhandled error in background generation: ${err.message}`,
       );
       GenerationJobManager.completeJob(streamId, err.message);
-      await decrementPendingRequest(userId);
+      await finishResumableRequest(req, userId);
     });
   } catch (error) {
     logger.error('[ResumableAgentController] Initialization error:', error);
@@ -750,8 +1102,23 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       // JSON already sent, emit error to stream so client can receive it
       await GenerationJobManager.emitError(streamId, error.message || 'Failed to start generation');
     }
-    GenerationJobManager.completeJob(streamId, error.message);
-    await decrementPendingRequest(userId);
+    // Finalize THIS failed job before releasing the idempotency claim. Releasing first would
+    // let the client's retry win the same key and createJob() the same streamId while we are
+    // still here — and completeJob() is not guarded by the original createdAt, so it would
+    // abort/error that replacement. A completeJob() rejection (store hiccup) must NOT skip the
+    // release + pending-request decrement below, or the retry stays wedged behind the claim
+    // and the concurrency slot leaks — so swallow its error. (A failed completeJob did not
+    // finalize anything, so releasing afterward can't let it abort a later replacement.)
+    await GenerationJobManager.completeJob(streamId, error.message).catch((completeErr) => {
+      logger.warn(
+        '[ResumableAgentController] completeJob failed during init-error cleanup',
+        completeErr,
+      );
+    });
+    if (ownsIdempotencyClaim) {
+      await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
+    }
+    await finishResumableRequest(req, userId);
     if (client) {
       disposeClient(client);
     }
@@ -953,6 +1320,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
           parentMessageId: userMsg.parentMessageId,
           conversationId,
           text: userMsg.text,
+          quotes: userMsg.quotes,
         },
       });
     };

@@ -52,6 +52,7 @@ jest.mock('~/config', () => ({
 
 const { Calculator } = require('@librechat/agents');
 const { Constants } = require('librechat-data-provider');
+const { ASK_USER_QUESTION_TOOL_NAME } = require('@librechat/api');
 
 const { User } = require('~/db/models');
 const PluginService = require('~/server/services/PluginService');
@@ -304,6 +305,16 @@ describe('Tool Handlers', () => {
       delete process.env.SD_WEBUI_URL;
     });
 
+    it('loads the ask_user_question tool when not returning a map', async () => {
+      const { loadedTools } = await loadTools({
+        user: fakeUser._id,
+        tools: [ASK_USER_QUESTION_TOOL_NAME],
+        useSpecs: true,
+      });
+      expect(loadedTools).toHaveLength(1);
+      expect(loadedTools[0].name).toBe(ASK_USER_QUESTION_TOOL_NAME);
+    });
+
     it('passes request body to chat MCP tool creation and skips stale cache for BODY-scoped servers', async () => {
       const serverName = 'body-scoped';
       const toolKey = `search${Constants.mcp_delimiter}${serverName}`;
@@ -329,7 +340,11 @@ describe('Tool Handlers', () => {
       });
 
       expect(result.loadedTools).toEqual([{ name: 'loaded-mcp-tool' }]);
-      expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+      expect(mockGetMCPServerTools).toHaveBeenCalledWith(
+        fakeUser._id.toString(),
+        serverName,
+        serverConfig,
+      );
       expect(mockCreateMCPTool).toHaveBeenCalledWith(
         expect.objectContaining({
           requestBody,
@@ -435,7 +450,7 @@ describe('Tool Handlers', () => {
       });
 
       expect(result.loadedTools).toEqual([{ name: 'search-tool' }, { name: 'lookup-tool' }]);
-      expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+      expect(mockGetMCPServerTools).toHaveBeenCalledTimes(1);
       expect(mockCreateMCPTool).toHaveBeenCalledTimes(2);
       expect(mockCreateMCPTool).toHaveBeenNthCalledWith(
         2,

@@ -14,14 +14,15 @@ const {
   getOpenIdEmail,
   getOpenIdIssuer,
   getBalanceConfig,
+  selectOpenIdRole,
+  getAvatarSaveParams,
   isEmailDomainAllowed,
   getAvatarFileStrategy,
-  getAvatarSaveParams,
-  selectOpenIdRole,
+  resolveAppConfigForUser,
+  getOpenIdProxyDispatcher,
   getOpenIdRoleSyncOptions,
   getOpenIdRolesForOpenIdSync,
   getLibreChatRolesForOpenIdSync,
-  resolveAppConfigForUser,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
@@ -61,11 +62,12 @@ async function customFetch(url, options) {
   try {
     /** @type {undici.RequestInit} */
     let fetchOptions = options;
-    if (process.env.PROXY) {
-      logger.info(`[openidStrategy] proxy agent configured: ${process.env.PROXY}`);
+    const dispatcher = getOpenIdProxyDispatcher();
+    if (dispatcher) {
+      logger.info('[openidStrategy] proxy dispatcher configured');
       fetchOptions = {
         ...options,
-        dispatcher: new undici.ProxyAgent(process.env.PROXY),
+        dispatcher,
       };
     }
 
@@ -419,9 +421,9 @@ async function resolveGroupsFromOverage(accessToken, sub) {
       body: JSON.stringify({ securityEnabledOnly: false }),
     };
 
-    if (process.env.PROXY) {
-      const { ProxyAgent } = undici;
-      fetchOptions.dispatcher = new ProxyAgent(process.env.PROXY);
+    const dispatcher = getOpenIdProxyDispatcher();
+    if (dispatcher) {
+      fetchOptions.dispatcher = dispatcher;
     }
 
     const response = await undici.fetch(url, fetchOptions);

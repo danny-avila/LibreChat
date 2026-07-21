@@ -6,10 +6,14 @@ const {
   createSafeUser,
   mcpToolPattern,
   loadWebSearchAuth,
+  buildInlineMemoryTool,
   getCodeApiAuthHeaders,
   buildImageToolContext,
+  SET_MEMORY_TOOL_NAME,
   buildWebSearchContext,
-  requiresEphemeralUserConnection,
+  DELETE_MEMORY_TOOL_NAME,
+  createAskUserQuestionTool,
+  ASK_USER_QUESTION_TOOL_NAME,
   buildWebSearchDynamicContext,
 } = require('@librechat/api');
 const {
@@ -18,6 +22,7 @@ const {
   Permissions,
   EToolResources,
   PermissionTypes,
+  AgentCapabilities,
 } = require('librechat-data-provider');
 const {
   availableTools,
@@ -47,9 +52,9 @@ const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSe
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
-const { getMCPServerTools } = require('~/server/services/Config');
+const { getMCPServerTools, checkCapability } = require('~/server/services/Config');
 const { getMCPServersRegistry } = require('~/config');
-const { getRoleByName } = require('~/models');
+const { getRoleByName, setMemory, deleteMemory, getFormattedMemories } = require('~/models');
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -297,10 +302,18 @@ const loadTools = async ({
         if (files?.length) {
           primedCodeFiles = files;
         }
+        /* Hedge the execute_code description toward persistence only when the
+         * admin `stateful_code_sessions` capability is on AND the agent opted
+         * in via the builder (off by default); the matching wire hint is set
+         * in the run config. Older @librechat/agents ignore the param. */
+        const statefulSessions =
+          agent?.stateful_code_sessions === true &&
+          (await checkCapability(options.req, AgentCapabilities.stateful_code_sessions));
         return createCodeExecutionTool({
           user_id: user,
           files,
           authHeaders: () => getCodeApiAuthHeaders(options.req),
+          statefulSessions,
         });
       };
       continue;
@@ -357,6 +370,20 @@ const loadTools = async ({
           logger,
         });
       };
+      continue;
+    } else if (tool === ASK_USER_QUESTION_TOOL_NAME) {
+      requestedTools[tool] = async () => createAskUserQuestionTool();
+      continue;
+    } else if (tool === SET_MEMORY_TOOL_NAME || tool === DELETE_MEMORY_TOOL_NAME) {
+      requestedTools[tool] = () =>
+        buildInlineMemoryTool({
+          toolName: tool,
+          req: options.req,
+          agent,
+          userId: user,
+          memoryMethods: { setMemory, deleteMemory, getFormattedMemories },
+          getRoleByName,
+        });
       continue;
     } else if (tool && mcpToolPattern.test(tool)) {
       if (!canUseMCP) {
@@ -494,9 +521,7 @@ const loadTools = async ({
         }
         if (!availableTools) {
           try {
-            availableTools = requiresEphemeralUserConnection(config.config)
-              ? null
-              : await getMCPServerTools(safeUser.id, serverName);
+            availableTools = await getMCPServerTools(safeUser.id, serverName, config.config);
           } catch (error) {
             logger.error(`Error fetching available tools for MCP server ${serverName}:`, error);
           }

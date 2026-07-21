@@ -213,6 +213,120 @@ describe('getOpenAIConfig - Google Compatibility', () => {
       });
     });
 
+    describe('URL Context Support via addParams', () => {
+      const apiKey = JSON.stringify({ GOOGLE_API_KEY: 'test-google-key' });
+      const endpoint = 'Gemini (Custom)';
+      const reverseProxyUrl = 'https://generativelanguage.googleapis.com/v1beta/openai';
+
+      it('should enable urlContext tool when url_context: true in addParams', () => {
+        const result = getOpenAIConfig(
+          apiKey,
+          {
+            modelOptions: { model: 'gemini-2.5-flash' },
+            customParams: { defaultParamsEndpoint: 'google' },
+            addParams: { url_context: true },
+            reverseProxyUrl,
+          },
+          endpoint,
+        );
+
+        expect(result.tools).toEqual([{ urlContext: {} }]);
+      });
+
+      it('should disable urlContext tool when url_context: false in addParams', () => {
+        const result = getOpenAIConfig(
+          apiKey,
+          {
+            modelOptions: { model: 'gemini-2.5-flash', url_context: true },
+            customParams: { defaultParamsEndpoint: 'google' },
+            addParams: { url_context: false },
+            reverseProxyUrl,
+          },
+          endpoint,
+        );
+
+        expect(result.tools).toEqual([]);
+      });
+
+      it('should disable urlContext when in dropParams', () => {
+        const result = getOpenAIConfig(
+          apiKey,
+          {
+            modelOptions: { model: 'gemini-2.5-flash', url_context: true },
+            customParams: { defaultParamsEndpoint: 'google' },
+            dropParams: ['url_context'],
+            reverseProxyUrl,
+          },
+          endpoint,
+        );
+
+        expect(result.tools).toEqual([]);
+      });
+
+      it('should filter out urlContext when url_context is only in modelOptions', () => {
+        const result = getOpenAIConfig(
+          apiKey,
+          {
+            modelOptions: { model: 'gemini-2.5-flash', url_context: true },
+            customParams: { defaultParamsEndpoint: 'google' },
+            reverseProxyUrl,
+          },
+          endpoint,
+        );
+
+        /** urlContext is filtered since url_context was not explicitly added via addParams/defaultParams */
+        expect(result.tools).toEqual([]);
+      });
+
+      it('should not enable urlContext on a model that does not support it (Gemini < 2.5)', () => {
+        const result = getOpenAIConfig(
+          apiKey,
+          {
+            modelOptions: { model: 'gemini-2.0-flash-exp' },
+            customParams: { defaultParamsEndpoint: 'google' },
+            addParams: { url_context: true },
+            reverseProxyUrl,
+          },
+          endpoint,
+        );
+
+        expect(result.tools).toEqual([]);
+      });
+
+      it('should enable urlContext via defaultParams', () => {
+        const result = getOpenAIConfig(
+          apiKey,
+          {
+            modelOptions: { model: 'gemini-2.5-flash' },
+            customParams: {
+              defaultParamsEndpoint: 'google',
+              paramDefinitions: [{ key: 'url_context', default: true }],
+            },
+            reverseProxyUrl,
+          },
+          endpoint,
+        );
+
+        expect(result.tools).toEqual([{ urlContext: {} }]);
+      });
+
+      it('should preserve both googleSearch and urlContext when both are enabled via addParams', () => {
+        const result = getOpenAIConfig(
+          apiKey,
+          {
+            modelOptions: { model: 'gemini-2.5-flash' },
+            customParams: { defaultParamsEndpoint: 'google' },
+            addParams: { web_search: true, url_context: true },
+            reverseProxyUrl,
+          },
+          endpoint,
+        );
+
+        expect(result.tools).toContainEqual({ googleSearch: {} });
+        expect(result.tools).toContainEqual({ urlContext: {} });
+      });
+    });
+
     describe('defaultParams Support via customParams', () => {
       it('should apply defaultParams when fields are undefined', () => {
         const apiKey = JSON.stringify({ GOOGLE_API_KEY: 'test-google-key' });

@@ -1,5 +1,6 @@
 import { Providers } from '@librechat/agents';
 import { AuthKeys, ThinkingLevel } from 'librechat-data-provider';
+import type { GoogleClientOptions } from '@librechat/agents';
 import type * as t from '~/types';
 import { getGoogleConfig, getSafetySettings, knownGoogleParams } from './llm';
 
@@ -1178,6 +1179,181 @@ describe('getGoogleConfig', () => {
     });
   });
 
+  describe('URL Context Functionality', () => {
+    const credentials = {
+      [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+    };
+
+    it('should enable the urlContext tool when url_context is true', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+          url_context: true,
+        },
+      });
+
+      expect(result.tools).toContainEqual({ urlContext: {} });
+    });
+
+    it('should not include the urlContext tool when url_context is false', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+          url_context: false,
+        },
+      });
+
+      expect(result.tools).not.toContainEqual({ urlContext: {} });
+    });
+
+    it('should not include the urlContext tool when url_context is unset', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+        },
+      });
+
+      expect(result.tools).not.toContainEqual({ urlContext: {} });
+    });
+
+    it('should enable url context via defaultParams', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+        },
+        defaultParams: {
+          url_context: true,
+        },
+      });
+
+      expect(result.tools).toContainEqual({ urlContext: {} });
+    });
+
+    it('should enable url context via addParams', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+        },
+        addParams: {
+          url_context: true,
+        },
+      });
+
+      expect(result.tools).toContainEqual({ urlContext: {} });
+    });
+
+    it('should let addParams override a defaultParams url_context', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+        },
+        defaultParams: {
+          url_context: true,
+        },
+        addParams: {
+          url_context: false,
+        },
+      });
+
+      expect(result.tools).not.toContainEqual({ urlContext: {} });
+    });
+
+    it('should disable url context via dropParams', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+          url_context: true,
+        },
+        dropParams: ['url_context'],
+      });
+
+      expect(result.tools).not.toContainEqual({ urlContext: {} });
+    });
+
+    it('should not leak url_context into the llmConfig', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+          url_context: true,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('url_context');
+    });
+
+    it('should enable both googleSearch and urlContext tools together', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+          web_search: true,
+          url_context: true,
+        },
+      });
+
+      expect(result.tools).toContainEqual({ googleSearch: {} });
+      expect(result.tools).toContainEqual({ urlContext: {} });
+    });
+
+    it('should not include the urlContext tool on models that do not support it (Gemini < 2.5)', () => {
+      for (const model of ['gemini-2.0-flash', 'gemini-1.5-pro']) {
+        const result = getGoogleConfig(credentials, {
+          modelOptions: {
+            model,
+            url_context: true,
+          },
+        });
+        expect(result.tools).not.toContainEqual({ urlContext: {} });
+      }
+    });
+
+    it('should enable the urlContext tool on Gemini 3.x models', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3-pro-preview',
+          url_context: true,
+        },
+      });
+
+      expect(result.tools).toContainEqual({ urlContext: {} });
+    });
+
+    it('should not include the urlContext tool on non-text modality variants', () => {
+      for (const model of [
+        'gemini-2.5-flash-image',
+        'gemini-3-pro-image-preview',
+        'gemini-3.5-flash-live',
+        'gemini-2.5-flash-tts',
+        'gemini-2.5-flash-preview-native-audio-dialog',
+      ]) {
+        const result = getGoogleConfig(credentials, {
+          modelOptions: {
+            model,
+            url_context: true,
+          },
+        });
+        expect(result.tools).not.toContainEqual({ urlContext: {} });
+      }
+    });
+
+    it('should enable the urlContext tool for the Vertex AI provider', () => {
+      const vertexCredentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(vertexCredentials, {
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+          url_context: true,
+        },
+      });
+
+      expect(result.provider).toBe(Providers.VERTEXAI);
+      expect(result.tools).toContainEqual({ urlContext: {} });
+    });
+  });
+
   describe('Default and Add Parameters', () => {
     it('should apply default parameters when fields are undefined', () => {
       const credentials = {
@@ -1505,5 +1681,35 @@ describe('knownGoogleParams', () => {
     expect(knownGoogleParams.has('max_tokens')).toBe(false);
     expect(knownGoogleParams.has('frequency_penalty')).toBe(false);
     expect(knownGoogleParams.has('presence_penalty')).toBe(false);
+  });
+
+  describe('custom headers', () => {
+    const credentials = { [AuthKeys.GOOGLE_API_KEY]: 'test-api-key' };
+
+    it('attaches admin-configured headers to customHeaders, keeping placeholders intact', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: { model: 'gemini-1.5-flash' },
+        headers: {
+          'cf-aig-metadata': '{"user_email":"{{LIBRECHAT_USER_EMAIL}}"}',
+        },
+      });
+
+      expect((result.llmConfig as GoogleClientOptions).customHeaders).toEqual({
+        'cf-aig-metadata': '{"user_email":"{{LIBRECHAT_USER_EMAIL}}"}',
+      });
+    });
+
+    it('does not let custom headers override the provider-managed Authorization header', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: { model: 'gemini-1.5-flash' },
+        authHeader: true,
+        headers: { Authorization: 'Bearer attacker', 'X-Conversation-Id': 'cid' },
+      });
+
+      expect((result.llmConfig as GoogleClientOptions).customHeaders).toEqual({
+        Authorization: 'Bearer test-api-key',
+        'X-Conversation-Id': 'cid',
+      });
+    });
   });
 });

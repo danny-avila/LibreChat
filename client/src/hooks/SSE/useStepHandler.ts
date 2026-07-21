@@ -17,6 +17,7 @@ import type {
   SummaryContentPart,
   TMessageContentParts,
   SubagentUpdateEvent,
+  SandboxStartingEvent,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
@@ -26,7 +27,8 @@ import {
   initSubagentAggregatorState,
   initSubagentTickerState,
 } from '~/utils/subagentContent';
-import { subagentProgressByToolCallId } from '~/store';
+import { isAskUserQuestionPart, isAnsweredAskUserQuestionPart } from '~/utils/approval';
+import { subagentProgressByToolCallId, sandboxStartingByToolCallId } from '~/store';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 
 type TUseStepHandler = {
@@ -36,6 +38,12 @@ type TUseStepHandler = {
   /** @deprecated - isSubmitting should be derived from submission state */
   setIsSubmitting?: SetterOrUpdater<boolean>;
   lastAnnouncementTimeRef: React.MutableRefObject<number>;
+  /**
+   * Fired when a completed `create_file`/`edit_file` call targeted a
+   * `skills/...` path. The caller owns the side effect (skill query cache
+   * invalidation) so this hook stays free of query-client coupling.
+   */
+  onSkillAuthoringComplete?: () => void;
 };
 
 type TStepEvent =
@@ -48,7 +56,8 @@ type TStepEvent =
   | { event: StepEvents.ON_SUMMARIZE_START; data: Agents.SummarizeStartEvent }
   | { event: StepEvents.ON_SUMMARIZE_DELTA; data: Agents.SummarizeDeltaEvent }
   | { event: StepEvents.ON_SUMMARIZE_COMPLETE; data: Agents.SummarizeCompleteEvent }
-  | { event: StepEvents.ON_SUBAGENT_UPDATE; data: SubagentUpdateEvent };
+  | { event: StepEvents.ON_SUBAGENT_UPDATE; data: SubagentUpdateEvent }
+  | { event: StepEvents.ON_SANDBOX_STARTING; data: SandboxStartingEvent };
 
 type MessageDeltaUpdate = { type: ContentTypes.TEXT; text: string; tool_call_ids?: string[] };
 
@@ -62,6 +71,34 @@ type AllContentTypes =
   | ContentTypes.IMAGE_URL
   | ContentTypes.SUMMARY
   | ContentTypes.ERROR;
+
+/** Mirrors `SKILL_FILE_PREFIX` in `@librechat/api` file-authoring handlers. */
+const SKILL_FILE_PREFIX = 'skills/';
+const FILE_AUTHORING_TOOLS = new Set(['create_file', 'edit_file']);
+
+/**
+ * True when a completed tool call authored a skill file (`create_file` /
+ * `edit_file` targeting a `skills/...` path). Skills created or edited
+ * mid-chat must invalidate the cached skill queries, or the Skills panel
+ * and builder keep showing the pre-authoring catalog.
+ */
+function isSkillAuthoringToolCall(toolCall?: Agents.ToolCall): boolean {
+  if (!toolCall?.name || !FILE_AUTHORING_TOOLS.has(toolCall.name)) {
+    return false;
+  }
+  const { args } = toolCall;
+  let filePath: unknown;
+  if (typeof args === 'object' && args !== null) {
+    filePath = (args as { file_path?: unknown }).file_path;
+  } else if (typeof args === 'string') {
+    try {
+      filePath = (JSON.parse(args) as { file_path?: unknown }).file_path;
+    } catch {
+      return false;
+    }
+  }
+  return typeof filePath === 'string' && filePath.startsWith(SKILL_FILE_PREFIX);
+}
 
 const isOAuthToolCallName = (name?: string) =>
   typeof name === 'string' && name.startsWith(`oauth${Constants.mcp_delimiter}`);
@@ -80,6 +117,7 @@ export default function useStepHandler({
   getMessages,
   announcePolite,
   lastAnnouncementTimeRef,
+  onSkillAuthoringComplete,
 }: TUseStepHandler) {
   const toolCallIdMap = useRef(new Map<string, string | undefined>());
   const messageMap = useRef(new Map<string, TMessage>());
@@ -88,6 +126,14 @@ export default function useStepHandler({
   const pendingDeltaBuffer = useRef(new Map<string, TStepEvent[]>());
   /** Coalesces rapid-fire summarize delta renders into a single rAF frame */
   const summarizeDeltaRaf = useRef<number | null>(null);
+  /** Coalesces per-token message/reasoning delta cache writes into one rAF frame.
+   * `deltaFlushScheduled` (not the handle) gates scheduling: the handle is
+   * assigned after `requestAnimationFrame` returns, which would race a
+   * synchronously-invoked callback. */
+  const messageDeltaRaf = useRef<number | null>(null);
+  const deltaFlushScheduled = useRef(false);
+  const pendingDeltaFlushIds = useRef(new Set<string>());
+  const pendingDeltaFlushRef = useRef<(() => void) | null>(null);
   /**
    * Maps `SubagentUpdateEvent.subagentRunId` → parent `tool_call_id`.
    * Preferred source is `payload.parentToolCallId` (threaded through by the
@@ -248,6 +294,41 @@ export default function useStepHandler({
     [],
   );
 
+  /** Tool-call ids whose sandbox-starting atom is set, so completion can clear them. */
+  const knownSandboxAtomKeys = useRef(new Set<string>());
+
+  const setSandboxStarting = useRecoilCallback(
+    ({ set }) =>
+      (toolCallId: string): void => {
+        knownSandboxAtomKeys.current.add(toolCallId);
+        set(sandboxStartingByToolCallId(toolCallId), true);
+      },
+    [],
+  );
+
+  const clearSandboxStarting = useRecoilCallback(
+    ({ reset }) =>
+      (toolCallId?: string | null): void => {
+        if (!toolCallId || !knownSandboxAtomKeys.current.has(toolCallId)) {
+          return;
+        }
+        knownSandboxAtomKeys.current.delete(toolCallId);
+        reset(sandboxStartingByToolCallId(toolCallId));
+      },
+    [],
+  );
+
+  const resetSandboxAtoms = useRecoilCallback(
+    ({ reset }) =>
+      (): void => {
+        for (const toolCallId of knownSandboxAtomKeys.current) {
+          reset(sandboxStartingByToolCallId(toolCallId));
+        }
+        knownSandboxAtomKeys.current.clear();
+      },
+    [],
+  );
+
   /**
    * Calculate content index for a run step.
    * For edited content scenarios, offset by initialContent length.
@@ -302,6 +383,30 @@ export default function useStepHandler({
     const oauthPromptOccupiesSlot = isOAuthToolCallContent(updatedContent[index]);
     if (!incomingOAuthToolCall && oauthPromptOccupiesSlot) {
       updatedContent = updatedContent.filter((part) => !isOAuthToolCallContent(part));
+    }
+
+    /**
+     * The synthetic ask-user-question card is pause-scoped UI appended at the end
+     * of the content — exactly the ABSOLUTE index the resumed segment streams
+     * into. Once real content arrives for that slot the pause is over: displace
+     * the card (same displacement pattern as the OAuth prompt above) instead of
+     * dropping the incoming part as a type mismatch. Covers the streaming
+     * handler's own in-flight message copy, reconnecting tabs, and other devices
+     * — the store-level strip on answer submit can't reach those.
+     */
+    if (isAskUserQuestionPart(updatedContent[index])) {
+      updatedContent = updatedContent.filter((part) => !isAskUserQuestionPart(part));
+    } else if (updatedContent.some(isAnsweredAskUserQuestionPart)) {
+      /**
+       * An ALREADY-ANSWERED card the resumed segment streams around rather than
+       * into: the first event after the resume re-renders the ask tool_call at
+       * ITS OWN index, so the slot test above never fires and this handler's
+       * cached copy — which still holds the card the answer-submit stripped from
+       * the store — gets written back, reopening the popover with its options
+       * locked. Only cards the user actually answered are dropped, so an event
+       * racing a still-live pause can't take its card down.
+       */
+      updatedContent = updatedContent.filter((part) => !isAnsweredAskUserQuestionPart(part));
     }
 
     if (!updatedContent[index] && contentType !== ContentTypes.TOOL_CALL) {
@@ -404,6 +509,12 @@ export default function useStepHandler({
       if (finalUpdate) {
         newToolCall.progress = 1;
         newToolCall.output = contentPart.tool_call.output;
+        if (
+          'inputValidationError' in contentPart.tool_call &&
+          contentPart.tool_call.inputValidationError === true
+        ) {
+          Object.assign(newToolCall, { inputValidationError: true });
+        }
       }
 
       updatedContent[index] = {
@@ -538,6 +649,41 @@ export default function useStepHandler({
               msg.messageId === responseMessageId ? updatedResponse : msg,
             )
           : [...currentMessages, updatedResponse];
+      };
+      /**
+       * Per-token deltas fold into `messageMap` immediately (authoritative), but
+       * the cache write — and the buildTree + message-tree walk it triggers —
+       * flushes at most once per frame. Non-delta events keep writing
+       * synchronously from `messageMap`, so a trailing flush after them merges
+       * the same authoritative state; `clearStepMaps` cancels the flush at run
+       * boundaries (same lifecycle as the summarize coalescing above).
+       */
+      const scheduleCoalescedMessagesFlush = (responseMessageId: string) => {
+        pendingDeltaFlushIds.current.add(responseMessageId);
+        const flush = () => {
+          deltaFlushScheduled.current = false;
+          messageDeltaRaf.current = null;
+          pendingDeltaFlushRef.current = null;
+          const ids = pendingDeltaFlushIds.current;
+          pendingDeltaFlushIds.current = new Set();
+          let candidate = messages;
+          for (const id of ids) {
+            const latest = messageMap.current.get(id);
+            if (!latest) {
+              continue;
+            }
+            candidate = mergeResponseMessage(candidate, latest, id, { ensureUserMessage: true });
+            setMessages(candidate);
+          }
+        };
+        /** Exposed so terminal/read boundaries (abort, error, pending-action)
+         * can apply the queued tokens synchronously via `flushPendingDeltas`. */
+        pendingDeltaFlushRef.current = flush;
+        if (deltaFlushScheduled.current) {
+          return;
+        }
+        deltaFlushScheduled.current = true;
+        messageDeltaRaf.current = requestAnimationFrame(flush);
       };
       let parentMessageId =
         submission.isRegenerate && submission.initialResponse?.parentMessageId
@@ -770,11 +916,7 @@ export default function useStepHandler({
             getStepMetadata(runStep),
           );
           messageMap.current.set(responseMessageId, updatedResponse);
-          setMessages(
-            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
-              ensureUserMessage: true,
-            }),
-          );
+          scheduleCoalescedMessagesFlush(responseMessageId);
         }
       } else if (stepEvent.event === StepEvents.ON_REASONING_DELTA) {
         const reasoningDelta = stepEvent.data;
@@ -816,11 +958,7 @@ export default function useStepHandler({
             getStepMetadata(runStep),
           );
           messageMap.current.set(responseMessageId, updatedResponse);
-          setMessages(
-            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
-              ensureUserMessage: true,
-            }),
-          );
+          scheduleCoalescedMessagesFlush(responseMessageId);
         }
       } else if (stepEvent.event === StepEvents.ON_RUN_STEP_DELTA) {
         const runStepDelta = stepEvent.data;
@@ -885,6 +1023,7 @@ export default function useStepHandler({
         const { result } = stepEvent.data;
 
         const { id: stepId } = result;
+        clearSandboxStarting(result.tool_call?.id);
 
         const runStep = stepMap.current.get(stepId);
         let responseMessageId = runStep?.runId ?? '';
@@ -896,6 +1035,10 @@ export default function useStepHandler({
         if (!runStep || !responseMessageId) {
           console.warn('No run step or runId found for completed tool call event');
           return;
+        }
+
+        if (isSkillAuthoringToolCall(result.tool_call)) {
+          onSkillAuthoringComplete?.();
         }
 
         const response = messageMap.current.get(responseMessageId);
@@ -924,6 +1067,8 @@ export default function useStepHandler({
             }),
           );
         }
+      } else if (stepEvent.event === StepEvents.ON_SANDBOX_STARTING) {
+        setSandboxStarting(stepEvent.data.tool_call_id);
       } else if (stepEvent.event === StepEvents.ON_SUBAGENT_UPDATE) {
         applySubagentUpdate(stepEvent.data);
       } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_START) {
@@ -1029,14 +1174,49 @@ export default function useStepHandler({
       calculateContentIndex,
       getCurrentMessages,
       applySubagentUpdate,
+      setSandboxStarting,
+      clearSandboxStarting,
+      onSkillAuthoringComplete,
     ],
   );
+
+  /** Cancels a queued delta flush so it can't overwrite a terminal write:
+   * once a final handler has written the server's authoritative message, a
+   * trailing frame reading the older streaming copy from `messageMap` must
+   * never land on top of it. */
+  const cancelPendingDeltaFlush = useCallback(() => {
+    if (messageDeltaRaf.current != null) {
+      cancelAnimationFrame(messageDeltaRaf.current);
+      messageDeltaRaf.current = null;
+    }
+    deltaFlushScheduled.current = false;
+    pendingDeltaFlushRef.current = null;
+    pendingDeltaFlushIds.current.clear();
+  }, []);
+
+  /** Applies a queued delta flush synchronously (then cancels the frame).
+   * For boundaries that READ the cache or synthesize from it — abort's
+   * partial-response capture, error cards, pending-action application — the
+   * queued tokens must land first or the stopped/errored message loses them. */
+  const flushPendingDeltas = useCallback(() => {
+    if (messageDeltaRaf.current != null) {
+      cancelAnimationFrame(messageDeltaRaf.current);
+      messageDeltaRaf.current = null;
+    }
+    const flush = pendingDeltaFlushRef.current;
+    pendingDeltaFlushRef.current = null;
+    deltaFlushScheduled.current = false;
+    if (flush) {
+      flush();
+    }
+  }, []);
 
   const clearStepMaps = useCallback(() => {
     if (summarizeDeltaRaf.current != null) {
       cancelAnimationFrame(summarizeDeltaRaf.current);
       summarizeDeltaRaf.current = null;
     }
+    cancelPendingDeltaFlush();
     toolCallIdMap.current.clear();
     messageMap.current.clear();
     stepMap.current.clear();
@@ -1044,6 +1224,11 @@ export default function useStepHandler({
     subagentRunToToolCallId.current.clear();
     claimedSubagentToolCallIds.current.clear();
     pendingSubagentBuffer.current.clear();
+    /** Unlike subagent atoms below, sandbox-starting flags are transient
+     *  status with no audit value — reset them at this boundary so an
+     *  interrupted cold boot can't leak a stale "starting" label onto a
+     *  later tool call that reuses the same id (e.g. `call_0`). */
+    resetSandboxAtoms();
     /** Intentionally NOT calling `resetSubagentAtoms()` here — users need
      *  to be able to reopen the SubagentCall dialog after completion to
      *  audit what the child did. `resetSubagentAtoms` is returned below
@@ -1052,7 +1237,7 @@ export default function useStepHandler({
      *  persisted `subagent_content` takes over for historical messages
      *  once the conversation is saved, and we prevent unbounded
      *  atomFamily growth across multi-conversation sessions. */
-  }, []);
+  }, [cancelPendingDeltaFlush, resetSandboxAtoms]);
 
   /**
    * Sync a message into the step handler's messageMap.
@@ -1065,5 +1250,12 @@ export default function useStepHandler({
     }
   }, []);
 
-  return { stepHandler, clearStepMaps, resetSubagentAtoms, syncStepMessage };
+  return {
+    stepHandler,
+    clearStepMaps,
+    resetSubagentAtoms,
+    syncStepMessage,
+    cancelPendingDeltaFlush,
+    flushPendingDeltas,
+  };
 }

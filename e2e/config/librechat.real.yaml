@@ -1,0 +1,10 @@
+# Real-provider local e2e template. Used only by e2e/playwright.config.real.ts,
+# which requires ANTHROPIC_API_KEY in the invoking environment — the key is
+# passed through process env at runtime and never written to disk. Not wired
+# into CI; the mock workflow only runs playwright.config.mock.ts.
+version: 1.3.11
+cache: true
+
+interface:
+  # Exercise the cost row against real provider usage.
+  contextCost: true

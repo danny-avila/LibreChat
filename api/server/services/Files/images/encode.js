@@ -1,6 +1,6 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
-const { logAxiosError, validateImage } = require('@librechat/api');
+const { logAxiosError, validateImage, runGuardedEncode } = require('@librechat/api');
 const {
   FileSources,
   VisionModes,
@@ -136,9 +136,12 @@ async function encodeAndFormat(req, files, params, mode) {
     if (blobStorageSources.has(source)) {
       try {
         const downloadStream = encodingMethods[source].getDownloadStream;
-        let stream = await downloadStream(req, file.filepath);
-        let base64Data = await streamToBase64(stream);
-        stream = null;
+        let base64Data = await runGuardedEncode(file.bytes ?? 0, async () => {
+          let stream = await downloadStream(req, file.filepath);
+          const data = await streamToBase64(stream);
+          stream = null;
+          return data;
+        });
         promises.push([file, base64Data]);
         base64Data = null;
         continue;
@@ -146,8 +149,11 @@ async function encodeAndFormat(req, files, params, mode) {
         logger.error('Error processing image from blob storage:', error);
       }
     } else if (source !== FileSources.local && base64Only.has(effectiveEndpoint)) {
-      const [_file, imageURL] = await preparePayload(req, file);
-      promises.push([_file, await fetchImageToBase64(imageURL)]);
+      const entry = await runGuardedEncode(file.bytes ?? 0, async () => {
+        const [_file, imageURL] = await preparePayload(req, file);
+        return [_file, await fetchImageToBase64(imageURL)];
+      });
+      promises.push(entry);
       continue;
     }
     promises.push(preparePayload(req, file));

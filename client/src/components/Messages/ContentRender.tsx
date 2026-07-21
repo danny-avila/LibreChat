@@ -3,8 +3,14 @@ import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon, TMessageChatContext } from '~/common';
+import {
+  areMessageFieldsEqual,
+  cn,
+  getHeaderPrefixForScreenReader,
+  getMessageAriaLabel,
+} from '~/utils';
 import { useAttachments, useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
-import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
+import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
@@ -56,32 +62,7 @@ function areContentRenderPropsEqual(prev: ContentRenderProps, next: ContentRende
     return false;
   }
 
-  const prevMsg = prev.message;
-  const nextMsg = next.message;
-  if (prevMsg === nextMsg) {
-    return true;
-  }
-  if (!prevMsg || !nextMsg) {
-    return prevMsg === nextMsg;
-  }
-
-  return (
-    prevMsg.messageId === nextMsg.messageId &&
-    prevMsg.text === nextMsg.text &&
-    prevMsg.error === nextMsg.error &&
-    prevMsg.unfinished === nextMsg.unfinished &&
-    prevMsg.depth === nextMsg.depth &&
-    prevMsg.isCreatedByUser === nextMsg.isCreatedByUser &&
-    (prevMsg.children?.length ?? 0) === (nextMsg.children?.length ?? 0) &&
-    prevMsg.content === nextMsg.content &&
-    prevMsg.model === nextMsg.model &&
-    prevMsg.endpoint === nextMsg.endpoint &&
-    prevMsg.iconURL === nextMsg.iconURL &&
-    prevMsg.feedback?.rating === nextMsg.feedback?.rating &&
-    (prevMsg.attachments?.length ?? 0) === (nextMsg.attachments?.length ?? 0) &&
-    (prevMsg.manualSkills?.length ?? 0) === (nextMsg.manualSkills?.length ?? 0) &&
-    (prevMsg.alwaysAppliedSkills?.length ?? 0) === (nextMsg.alwaysAppliedSkills?.length ?? 0)
-  );
+  return areMessageFieldsEqual(prev.message, next.message);
 }
 
 const ContentRender = memo(function ContentRender({
@@ -205,6 +186,7 @@ const ContentRender = memo(function ContentRender({
           <h2 className={cn('select-none font-semibold', fontSize)}>
             <span className="sr-only">{getHeaderPrefixForScreenReader(msg, localize)}</span>
             {messageLabel}
+            <MessageTimestamp value={msg.createdAt ?? msg.clientTimestamp} />
           </h2>
         )}
 
@@ -223,6 +205,7 @@ const ContentRender = memo(function ContentRender({
               isLatestMessage={isLatestMessage}
               isSubmitting={isSubmitting}
               isCreatedByUser={msg.isCreatedByUser}
+              createdAt={msg.createdAt ?? msg.clientTimestamp}
               conversationId={conversation?.conversationId}
               content={msg.content as Array<TMessageContentParts | undefined>}
             />

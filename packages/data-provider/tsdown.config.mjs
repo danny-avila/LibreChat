@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { createRequire } from 'node:module';
 import replace from '@rollup/plugin-replace';
 import { defineConfig } from 'tsdown';
@@ -20,7 +21,7 @@ export default defineConfig({
     // Match the prior Rollup build: bundle nothing third-party. Externalize every
     // bare import (deps, peers, and node built-ins like `crypto`); bundle only the
     // package's own relative/aliased modules.
-    neverBundle: (id) => !id.startsWith('.') && !id.startsWith('/') && !id.startsWith('src/'),
+    neverBundle: (id) => !id.startsWith('.') && !path.isAbsolute(id) && !id.startsWith('src/'),
     onlyBundle: false,
   },
   plugins: [

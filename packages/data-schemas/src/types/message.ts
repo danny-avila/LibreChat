@@ -1,5 +1,5 @@
-import type { Document } from 'mongoose';
 import type { TFeedbackRating, TFeedbackTag } from 'librechat-data-provider';
+import type { Document } from 'mongoose';
 
 // @ts-ignore
 export interface IMessage extends Document {
@@ -54,6 +54,8 @@ export interface IMessage extends Document {
    * the current catalog says.
    */
   alwaysAppliedSkills?: string[];
+  /** Verbatim excerpts the user quoted to reference on this turn. UI-only metadata for `MessageQuotes`. */
+  quotes?: string[];
   expiredAt?: Date | null;
   createdAt?: Date;
   updatedAt?: Date;

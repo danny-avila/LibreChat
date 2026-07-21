@@ -6,6 +6,7 @@ export type TelemetryStatus = 'disabled' | 'failed' | 'started' | 'starting' | '
 export interface TelemetryConfig {
   enabled: boolean;
   healthPath: string;
+  ioredisTracingEnabled: boolean;
   sdkDisabled: boolean;
   serviceName: string;
   serviceVersion?: string;
@@ -32,10 +33,12 @@ export function getTelemetryConfig(env: NodeJS.ProcessEnv = process.env): Teleme
   const serviceName = normalizeEnvValue(env.OTEL_SERVICE_NAME) ?? DEFAULT_SERVICE_NAME;
   const serviceVersion =
     normalizeEnvValue(env.OTEL_SERVICE_VERSION) ?? normalizeEnvValue(env.npm_package_version);
+  const ioredisTracingEnabled = isTruthy(env.OTEL_IOREDIS_TRACING_ENABLED);
 
   return {
     enabled,
     serviceName,
+    ioredisTracingEnabled,
     sdkDisabled,
     serviceVersion,
     healthPath: DEFAULT_HEALTH_PATH,

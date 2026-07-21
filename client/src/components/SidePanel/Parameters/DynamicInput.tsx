@@ -1,13 +1,15 @@
-import { OptionTypes } from 'librechat-data-provider';
+import { OptionTypes, SettingTypes } from 'librechat-data-provider';
 import { Label, Input, HoverCard, HoverCardTrigger } from '@librechat/client';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
+import { cn, sanitizeIntegerInput } from '~/utils';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
-import { cn } from '~/utils';
 
 function DynamicInput({
+  type,
+  range,
   label = '',
   settingKey,
   defaultValue,
@@ -43,7 +45,20 @@ function DynamicInput({
   });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInputValue(e, !isNaN(Number(e.target.value)));
+    if (type === SettingTypes.Number) {
+      // Integer params: strip thousands separators so "120,000" / "120.000"
+      // become 120000 instead of being truncated to 120 downstream by parseInt.
+      // Keep a leading minus for fields whose range permits negatives (e.g.
+      // Google thinkingBudget, where -1 selects dynamic/auto thinking).
+      const allowNegative = range != null && range.min < 0;
+      const sanitized = sanitizeIntegerInput(e.target.value, allowNegative);
+      // A lone "-" is an in-progress negative; keep it as a string so the field
+      // shows the sign instead of coercing Number("-") to NaN. It resolves to a
+      // number as soon as a digit is typed.
+      setInputValue(sanitized, sanitized !== '-');
+      return;
+    }
+    setInputValue(e, type === SettingTypes.String ? false : !isNaN(Number(e.target.value)));
   };
 
   const placeholderText = placeholderCode
@@ -78,6 +93,7 @@ function DynamicInput({
           <Input
             id={`${settingKey}-dynamic-input`}
             disabled={readonly}
+            inputMode={type === 'number' ? 'numeric' : undefined}
             value={inputValue ?? defaultValue ?? ''}
             onChange={handleInputChange}
             placeholder={placeholderText}

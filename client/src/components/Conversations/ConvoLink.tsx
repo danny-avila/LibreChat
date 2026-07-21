@@ -45,16 +45,16 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
         aria-label={title || localize('com_ui_untitled')}
       >
         {title || localize('com_ui_untitled')}
+        <div
+          className={cn(
+            'pointer-events-none absolute bottom-0 right-0 top-0 w-20 bg-gradient-to-l',
+            isActiveConvo || isPopoverActive
+              ? 'from-surface-active-alt'
+              : 'from-surface-primary-alt from-0% to-transparent group-hover:from-surface-active-alt group-hover:from-0%',
+          )}
+          aria-hidden="true"
+        />
       </div>
-      <div
-        className={cn(
-          'pointer-events-none absolute bottom-0.5 right-0.5 top-0.5 w-20 rounded-r-md bg-gradient-to-l',
-          isActiveConvo || isPopoverActive
-            ? 'from-surface-active-alt'
-            : 'from-surface-primary-alt from-0% to-transparent group-hover:from-surface-active-alt group-hover:from-40%',
-        )}
-        aria-hidden="true"
-      />
     </div>
   );
 };

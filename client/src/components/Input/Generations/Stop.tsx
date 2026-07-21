@@ -7,7 +7,7 @@ export default function Stop({ onClick }: TGenButtonProps) {
   const localize = useLocalize();
 
   return (
-    <Button type="stop" onClick={onClick}>
+    <Button type="stop" onClick={onClick} shortcutId="stopGenerating">
       <StopGeneratingIcon className="text-gray-600/90 dark:text-gray-400" />
       {localize('com_ui_stop')}
     </Button>

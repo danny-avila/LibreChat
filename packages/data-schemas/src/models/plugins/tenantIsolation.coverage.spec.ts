@@ -13,10 +13,12 @@ const TENANT_ISOLATION_APPLIED = Symbol.for('librechat:tenantIsolation');
  * tenant-isolation plugin. SystemGrant scopes tenancy manually inside its
  * methods (see models/systemGrant). SkillSyncStatus stores both app-wide YAML
  * status rows and tenant-scoped override rows, so its methods apply explicit
- * tenant filters instead of ambient ALS scoping. Adding an entry here must be a
- * deliberate, reviewed decision — that is the whole point of this guard.
+ * tenant filters instead of ambient ALS scoping. AuditLog composes its tenant
+ * filter from the JWT-resolved caller and uses `{ tenantId: { $exists: false } }`
+ * for platform-level entries. Adding an entry here must be a deliberate,
+ * reviewed decision — that is the whole point of this guard.
  */
-const MANUAL_TENANT_SCOPING = new Set<string>(['SystemGrant', 'SkillSyncStatus']);
+const MANUAL_TENANT_SCOPING = new Set<string>(['SystemGrant', 'SkillSyncStatus', 'AuditLog']);
 
 function isPluginApplied(schema: mongoose.Schema): boolean {
   return (schema as unknown as { [key: symbol]: boolean })[TENANT_ISOLATION_APPLIED] === true;

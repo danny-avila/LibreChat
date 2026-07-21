@@ -21,6 +21,23 @@ const MAX_REDACTION_STRING_LENGTH = Math.max(
 );
 const MAX_REDACTION_BUFFER_BYTES = MAX_REDACTION_STRING_LENGTH;
 
+const HEAVY_ERROR_KEYS = new Set<string>([
+  'httpsAgent',
+  'httpAgent',
+  'agent',
+  'socket',
+  'sockets',
+  '_httpMessage',
+  '_httpAgent',
+  'parser',
+  '_tlsOptions',
+  '_handle',
+  'ssl',
+]);
+const AXIOS_ONLY_HEAVY_KEYS = new Set<string>(['config', 'request']);
+const MAX_STRIP_DEPTH = 6;
+const PRESERVED_ERROR_PROPS = ['message', 'stack', 'name', 'code'] as const;
+
 const sensitiveKeys: RegExp[] = [
   /\b(sk-)[a-zA-Z0-9_-]+/g, // OpenAI API key pattern
   /\b(Bearer )[^\s"']+/g, // Header: Bearer token pattern
@@ -505,6 +522,154 @@ const debugTraverse: winston.Logform.Format = winston.format.printf(
   },
 );
 
+const isErrorLike = (value: object): boolean => {
+  if (value instanceof Error) {
+    return true;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.isAxiosError === true) {
+    return true;
+  }
+  if (typeof record.stack === 'string') {
+    return true;
+  }
+  return typeof record.name === 'string' && record.name.endsWith('Error');
+};
+
+const compactRequestInfo = (config: unknown): { method?: unknown; url?: unknown } | undefined => {
+  if (config == null || typeof config !== 'object') {
+    return undefined;
+  }
+  const { method, url } = config as Record<string, unknown>;
+  if (method === undefined && url === undefined) {
+    return undefined;
+  }
+  return { method, url };
+};
+
+const compactResponse = (response: unknown): Record<string, unknown> | undefined => {
+  if (response == null || typeof response !== 'object') {
+    return undefined;
+  }
+  const { status, statusText, headers, data } = response as Record<string, unknown>;
+  return { status, statusText, headers, data };
+};
+
+const sanitizeErrorNode = (node: Record<string, unknown>): Record<string, unknown> => {
+  const sanitized: Record<string, unknown> = {};
+  const nodeIsAxios = node.isAxiosError === true;
+
+  for (const key of Object.keys(node)) {
+    if (HEAVY_ERROR_KEYS.has(key) || (nodeIsAxios && AXIOS_ONLY_HEAVY_KEYS.has(key))) {
+      continue;
+    }
+    if (nodeIsAxios && key === 'response') {
+      const response = compactResponse(node.response);
+      if (response !== undefined) {
+        sanitized.response = response;
+      }
+      continue;
+    }
+    sanitized[key] = node[key];
+  }
+
+  if (nodeIsAxios) {
+    const requestInfo = compactRequestInfo(node.config);
+    if (requestInfo !== undefined) {
+      sanitized.requestInfo = requestInfo;
+    }
+  }
+
+  for (const key of PRESERVED_ERROR_PROPS) {
+    const value = (node as Record<string, unknown>)[key];
+    if (value !== undefined) {
+      sanitized[key] = value;
+    }
+  }
+
+  return sanitized;
+};
+
+const stripHeavy = (value: unknown, depth: number, seen: WeakSet<object>): unknown => {
+  if (value == null || typeof value !== 'object') {
+    return value;
+  }
+  if (depth > MAX_STRIP_DEPTH) {
+    return value;
+  }
+  if (seen.has(value)) {
+    return '[Circular]';
+  }
+  // Ancestor-path tracking (added on entry, removed on exit) so genuinely cyclic
+  // references are caught without collapsing benign objects shared between siblings.
+  seen.add(value);
+
+  let result: unknown;
+  if (Array.isArray(value)) {
+    result = value.map((item) => stripHeavy(item, depth + 1, seen));
+  } else if (isErrorLike(value)) {
+    const working = sanitizeErrorNode(value as Record<string, unknown>);
+    for (const key of Object.keys(working)) {
+      working[key] = stripHeavy(working[key], depth + 1, seen);
+    }
+    result = working;
+  } else if (Object.isFrozen(value)) {
+    result = value;
+  } else {
+    const working = { ...(value as Record<string, unknown>) };
+    for (const key of Object.keys(working)) {
+      working[key] = stripHeavy(working[key], depth + 1, seen);
+    }
+    result = working;
+  }
+
+  seen.delete(value);
+  return result;
+};
+
+/**
+ * Strips heavy, non-serializable fields (e.g. AxiosError `config`/`httpsAgent`,
+ * sockets, TLS internals) from error-like log nodes before serialization, while
+ * preserving a compact `requestInfo`, a compact `response`, and the error's
+ * message/stack/name/code. Operates on copies and never mutates caller-owned objects.
+ */
+const stripHeavyErrorFields: winston.Logform.FormatWrap = winston.format(
+  (info: winston.Logform.TransformableInfo) => {
+    if (info.level !== 'error' && info.level !== 'warn') {
+      return info;
+    }
+    try {
+      const seen = new WeakSet<object>();
+      // Winston merges a logged error's enumerable props (config/httpsAgent/...) onto
+      // the top-level info object when the message has no format token, so the info
+      // node itself must be sanitized as an error-like node, not just its values.
+      const base = isErrorLike(info)
+        ? sanitizeErrorNode(info as unknown as Record<string, unknown>)
+        : { ...(info as Record<string, unknown>) };
+      const result = base as Record<string | symbol, unknown>;
+
+      for (const key of Object.keys(result)) {
+        result[key] = stripHeavy(result[key], 0, seen);
+      }
+
+      // sanitizeErrorNode rebuilds from enumerable string keys only; re-attach the
+      // reserved winston symbols (LEVEL/MESSAGE) that downstream transports read.
+      for (const sym of Object.getOwnPropertySymbols(info)) {
+        result[sym] = (info as Record<string | symbol, unknown>)[sym];
+      }
+
+      const splat = (info as Record<string | symbol, unknown>)[SPLAT_SYMBOL];
+      if (Array.isArray(splat)) {
+        result[SPLAT_SYMBOL] = splat.map((item) => stripHeavy(item, 0, seen));
+      }
+
+      return result as winston.Logform.TransformableInfo;
+    } catch {
+      return info;
+    }
+  },
+);
+
 /**
  * Truncates long string values in JSON log objects.
  * Prevents outputting extremely long values (e.g., base64, blobs).
@@ -548,4 +713,4 @@ const jsonTruncateFormat: winston.Logform.FormatWrap = winston.format(
   },
 );
 
-export { redactFormat, redactMessage, debugTraverse, jsonTruncateFormat };
+export { redactFormat, redactMessage, debugTraverse, jsonTruncateFormat, stripHeavyErrorFields };

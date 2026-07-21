@@ -70,6 +70,14 @@ export async function enableSkills(page: Page) {
   await expect(page.getByRole('button', { name: 'Skills' })).toBeVisible();
 }
 
+/** Enable the ephemeral Memory capability from the composer tool menu. */
+export async function enableMemory(page: Page) {
+  await page.getByRole('button', { name: 'Tools Options' }).click();
+  await page.getByTestId('tools-menu-memory').click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('checkbox', { name: 'Memory' })).toBeVisible();
+}
+
 /** The conversation messages container. */
 export const messagesView = (page: Page) => page.getByTestId('messages-view');
 

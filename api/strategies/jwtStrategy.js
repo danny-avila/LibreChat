@@ -15,6 +15,8 @@ const jwtLogin = () =>
         const user = await getUserById(payload?.id, '-password -__v -totpSecret -backupCodes');
         if (user) {
           user.id = user._id.toString();
+          /** Absent on the full doc means local user; null skips getUserPrincipals' fallback lookup */
+          user.idOnTheSource ??= null;
           if (!user.role) {
             user.role = SystemRoles.USER;
             await updateUser(user.id, { role: user.role });

@@ -1013,4 +1013,39 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
       expect(result.files).toHaveLength(0);
     });
   });
+
+  describe('concurrency guard', () => {
+    it('bounds parallel getFileStream calls and returns all documents unchanged', async () => {
+      const req = createMockRequest(50) as ServerRequest;
+      const files = Array.from({ length: 6 }, (_, i) =>
+        createMockDocFile(1, 'text/plain', `doc-${i}.txt`),
+      );
+
+      let active = 0;
+      let peak = 0;
+      mockedGetFileStream.mockImplementation(async (_req, file) => {
+        active++;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => setImmediate(resolve));
+        active--;
+        return {
+          file,
+          content: Buffer.from(`content-${file.filename}`).toString('base64'),
+          metadata: file,
+        };
+      });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        files,
+        { provider: Providers.OPENAI, useResponsesApi: true },
+        mockStrategyFunctions,
+      );
+
+      expect(peak).toBe(3);
+      expect(result.documents).toHaveLength(6);
+      expect(result.files).toHaveLength(6);
+    });
+  });
 });

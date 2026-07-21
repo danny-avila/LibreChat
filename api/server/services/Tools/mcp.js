@@ -1,5 +1,9 @@
 const { logger } = require('@librechat/data-schemas');
-const { getMissingCustomUserVars, requiresEphemeralUserConnection } = require('@librechat/api');
+const {
+  getMissingCustomUserVars,
+  requiresEphemeralUserConnection,
+  getMissingRuntimeBodyPlaceholderFields,
+} = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
 const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
 const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
@@ -121,6 +125,32 @@ async function reinitMCPServer({
       };
     }
 
+    /** `{{LIBRECHAT_BODY_*}}` placeholders only resolve during a chat turn; connecting
+     *  without them would fail, so defer the connection instead of reporting a failure. */
+    const missingBodyFields = serverConfig
+      ? getMissingRuntimeBodyPlaceholderFields(serverConfig, requestBody)
+      : [];
+    if (missingBodyFields.length > 0) {
+      logger.info(
+        `[MCP Reinitialize] Server '${serverName}' requires request body field(s) [${missingBodyFields.join(
+          ', ',
+        )}] for runtime placeholders; connection deferred to first use in a chat turn`,
+      );
+      return {
+        availableTools: null,
+        success: true,
+        /** Lets clients distinguish "connection deferred to a chat turn" from a
+         *  plain success with no tools, e.g. to attach the server at the server
+         *  level instead of waiting for a tool list that never arrives. */
+        connectionDeferred: true,
+        message: `MCP server '${serverName}' uses request-scoped placeholders; connection will be established on first use in a chat turn`,
+        oauthRequired: false,
+        serverName,
+        oauthUrl: null,
+        tools: null,
+      };
+    }
+
     const flowManager = _flowManager ?? getFlowStateManager(getLogStores(CacheKeys.FLOWS));
     const mcpManager = getMCPManager();
     const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
@@ -219,7 +249,7 @@ async function reinitMCPServer({
         userId: user.id,
         serverName,
         tools,
-        skipCache: ephemeralServer,
+        serverConfig,
       });
     }
 

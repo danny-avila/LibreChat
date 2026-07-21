@@ -1,10 +1,12 @@
 import { EventEmitter } from 'node:events';
+import { CacheKeys } from 'librechat-data-provider';
 import { SpanStatusCode, trace } from '@opentelemetry/api';
 import type { NextFunction, Response } from 'express';
 import type { Span } from '@opentelemetry/api';
 import type { ServerRequest } from '~/types';
-import { getTelemetryRequestSpan } from './sdk';
 import { telemetryErrorMiddleware, telemetryMiddleware } from './middleware';
+import { observeRedisOperation } from '~/cache/redisTelemetry';
+import { getTelemetryRequestSpan } from './sdk';
 
 jest.mock('./sdk', () => ({
   getTelemetryRequestSpan: jest.fn(),
@@ -114,6 +116,33 @@ describe('telemetryMiddleware', () => {
         'http.route': '/api/messages/:conversationId',
       }),
     );
+  });
+
+  it('adds aggregated Redis activity to the stored request span', async () => {
+    const requestSpan = createSpan();
+    const res = createResponse(200);
+    let operation: Promise<string> | undefined;
+    mockGetTelemetryRequestSpan.mockReturnValue(requestSpan);
+
+    telemetryMiddleware(createRequest(), res as Response, () => {
+      operation = observeRedisOperation('keyv', CacheKeys.AUTH_USER_DOC, 'get', async () =>
+        Promise.resolve('cached-user'),
+      );
+    });
+    await operation;
+    res.emit('finish');
+
+    const attributes = Object.assign(
+      {},
+      ...requestSpan.setAttributes.mock.calls.map(([value]) => value),
+    );
+    expect(attributes).toMatchObject({
+      'librechat.redis.calls': 1,
+      'librechat.redis.errors': 0,
+      'librechat.redis.operations': ['get'],
+      'librechat.redis.use_cases': ['auth_user_doc'],
+      'librechat.redis.auth_user_doc.calls': 1,
+    });
   });
 
   it('records safe route and identity attributes without body content', () => {

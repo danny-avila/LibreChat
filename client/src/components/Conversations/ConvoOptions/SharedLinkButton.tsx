@@ -37,6 +37,7 @@ export default function SharedLinkButton({
   showQR,
   setShowQR,
   setSharedLink,
+  snapshotFiles,
 }: {
   share: TSharedLinkGetResponse | undefined;
   conversationId: string;
@@ -44,6 +45,7 @@ export default function SharedLinkButton({
   showQR: boolean;
   setShowQR: (showQR: boolean) => void;
   setSharedLink: (sharedLink: string) => void;
+  snapshotFiles?: boolean;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -99,7 +101,7 @@ export default function SharedLinkButton({
     if (!shareId) {
       return;
     }
-    const updateShare = await mutateAsync({ shareId, targetMessageId });
+    const updateShare = await mutateAsync({ shareId, targetMessageId, snapshotFiles });
     const newLink = generateShareLink(updateShare.shareId);
     setSharedLink(newLink);
     setAnnouncement(localize('com_ui_link_refreshed'));
@@ -109,7 +111,7 @@ export default function SharedLinkButton({
   };
 
   const createShareLink = async () => {
-    const share = await mutate({ conversationId, targetMessageId });
+    const share = await mutate({ conversationId, targetMessageId, snapshotFiles });
     const newLink = generateShareLink(share.shareId);
     setSharedLink(newLink);
   };

@@ -1,4 +1,4 @@
-import { Providers } from '@librechat/agents';
+import { Providers, WebSearchToolDefinition } from '@librechat/agents';
 import type {
   LoadToolDefinitionsParams,
   LoadToolDefinitionsDeps,
@@ -8,12 +8,26 @@ import { toolkitExpansion, toolkitParent } from './toolkits/mapping';
 import { getToolDefinition } from './registry/definitions';
 import { loadToolDefinitions } from './definitions';
 
+const MAX_PROVIDER_TOOL_DESCRIPTION_LENGTH = 1024;
+
 describe('definitions.ts', () => {
   const mockGetOrFetchMCPServerTools = jest.fn().mockResolvedValue(null);
   const mockIsBuiltInTool = jest.fn().mockReturnValue(false);
 
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('keeps the registered web_search description within common API limits', () => {
+    const definition = getToolDefinition(WebSearchToolDefinition.name);
+
+    if (definition == null) {
+      throw new Error('Expected web_search tool definition to be registered');
+    }
+
+    expect(definition.description).toBe(WebSearchToolDefinition.description);
+    expect(definition.description).toMatch(/search/i);
+    expect(definition.description.length).toBeLessThanOrEqual(MAX_PROVIDER_TOOL_DESCRIPTION_LENGTH);
   });
 
   describe('loadToolDefinitions', () => {
