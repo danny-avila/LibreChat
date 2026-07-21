@@ -1,7 +1,8 @@
-import { memo, useRef, useMemo, useState, useEffect, useCallback } from 'react';
+import { memo, useId, useRef, useMemo, useState, useEffect, useCallback } from 'react';
+import { useSetAtom } from 'jotai';
 import { useToastContext } from '@librechat/client';
-import { X, Zap, Clock, Pencil } from 'lucide-react';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
+import { X, Zap, Clock, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { PendingSteer } from '~/store/families';
@@ -12,6 +13,7 @@ import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { useSteerCancel, useSteerReclaim, useLocalize } from '~/hooks';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
 import { RowMenu, useDefaultToggleEntry } from './SteerMenu';
+import { steerOverlayHeightFamily } from '~/store/steer';
 import { carriedSteerContext, cn } from '~/utils';
 import store from '~/store';
 
@@ -33,6 +35,13 @@ const splitFiles = (files?: TMessage['files']) => {
   }
   return { images, others };
 };
+
+/** Collapsed preview height (px) for a long steer before "Show more". Matched
+ *  to the JS overflow check below so the toggle appears exactly when clipped;
+ *  the tolerance absorbs the trailing markdown margin so content that fits but
+ *  for its own bottom margin does not trip a pointless toggle. */
+const STEER_COLLAPSED_MAX_HEIGHT = 128;
+const STEER_OVERFLOW_TOLERANCE = 8;
 
 /**
  * One steer on its way into the run, anchored above the composer as a message
@@ -77,6 +86,31 @@ const InFlightSteer = memo(function InFlightSteer({
 
   const { images, others } = useMemo(() => splitFiles(steer.files), [steer.files]);
   const sending = steer.status === 'sending';
+
+  /** Long steers (several paragraphs) collapse to a preview so the stack stays
+   *  scannable; the toggle is offered only once the content actually overflows
+   *  the cap. `scrollHeight` reports the full height even while clamped, so the
+   *  same check holds whether expanded or not, and the observer re-measures on
+   *  the width reflows that change wrapped-line count. */
+  const contentRef = useRef<HTMLDivElement>(null);
+  const contentId = useId();
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  useEffect(() => {
+    const el = contentRef.current;
+    if (el == null) {
+      return;
+    }
+    const measure = () =>
+      setOverflowing(el.scrollHeight - STEER_COLLAPSED_MAX_HEIGHT > STEER_OVERFLOW_TOLERANCE);
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   /** Whether the words have already been re-homed by a terminal conversion (a
    *  run that ended/errored mid-reclaim queues the still-present chip). The
@@ -198,7 +232,10 @@ const InFlightSteer = memo(function InFlightSteer({
       role="listitem"
       data-testid="in-flight-steer"
       data-steer-status={steer.status}
-      className="group flex flex-col items-start gap-1.5"
+      /* pointer-events-auto: the overlay container disables events so wheeling
+       * over the gaps reaches the messages behind; each bubble re-enables them
+       * for its own controls and internal scroll. */
+      className="group pointer-events-auto flex flex-col items-start gap-1.5"
     >
       {(images.length > 0 || others.length > 0) && (
         <div className="flex flex-wrap items-center gap-2">
@@ -222,7 +259,8 @@ const InFlightSteer = memo(function InFlightSteer({
           ))}
         </div>
       )}
-      <div className="flex max-w-full items-center gap-1.5">
+      {/* items-start so the sticky controls have room to travel — see below. */}
+      <div className="flex max-w-full items-start gap-1.5">
         <div
           className={cn(
             /* Outlined, not just filled: an in-flight steer is provisional —
@@ -234,19 +272,50 @@ const InFlightSteer = memo(function InFlightSteer({
         >
           <Zap className="mt-1 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden="true" />
           <span className="sr-only">{localize('com_ui_steer_in_flight')}</span>
-          <div
-            className={cn(
-              'markdown prose message-content dark:prose-invert light min-w-0 break-words',
-              'dark:text-gray-20',
-              !enableUserMsgMarkdown && 'whitespace-pre-wrap',
-            )}
-          >
-            {/* No code execution: this bubble sits outside MessageContext, so
-             *  Run Code would fire with no message/part to target. */}
-            {enableUserMsgMarkdown ? (
-              <MarkdownLite content={steer.text} codeExecution={false} />
-            ) : (
-              steer.text
+          <div className="flex min-w-0 flex-col items-start gap-1">
+            <div
+              ref={contentRef}
+              id={contentId}
+              className={cn('relative w-full', !expanded && 'overflow-hidden')}
+              style={!expanded ? { maxHeight: STEER_COLLAPSED_MAX_HEIGHT } : undefined}
+            >
+              <div
+                className={cn(
+                  'markdown prose message-content dark:prose-invert light min-w-0 break-words',
+                  'dark:text-gray-20',
+                  !enableUserMsgMarkdown && 'whitespace-pre-wrap',
+                )}
+              >
+                {/* No code execution: this bubble sits outside MessageContext, so
+                 *  Run Code would fire with no message/part to target. */}
+                {enableUserMsgMarkdown ? (
+                  <MarkdownLite content={steer.text} codeExecution={false} />
+                ) : (
+                  steer.text
+                )}
+              </div>
+              {!expanded && overflowing && (
+                <div
+                  className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-surface-secondary to-transparent"
+                  aria-hidden="true"
+                />
+              )}
+            </div>
+            {overflowing && (
+              <button
+                type="button"
+                onClick={() => setExpanded((prev) => !prev)}
+                aria-expanded={expanded}
+                aria-controls={contentId}
+                className="inline-flex items-center gap-1 rounded text-xs font-medium text-text-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
+              >
+                {expanded ? (
+                  <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
+                {expanded ? localize('com_ui_show_less') : localize('com_ui_show_more')}
+              </button>
             )}
           </div>
         </div>
@@ -254,8 +323,10 @@ const InFlightSteer = memo(function InFlightSteer({
           /* One always-visible affordance: a label-less menu hidden until hover
            * is undiscoverable, and edit/queue/cancel all live inside it now, so
            * the menu shows at rest on every pointer (matching the always-on
-           * controls on the queued rows). */
-          <div data-testid="steer-controls" className="flex shrink-0 items-center">
+           * controls on the queued rows). `sticky` keeps it in view while the
+           * user scrolls through a tall, expanded steer (the stack scrolls once
+           * it passes 35vh). */
+          <div data-testid="steer-controls" className="sticky top-2 flex shrink-0 items-center">
             <RowMenu label={localize('com_ui_more_options')} entries={entries} />
           </div>
         )}
@@ -293,6 +364,7 @@ const InFlightSteers = memo(function InFlightSteers({
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const inFlight = useMemo(() => steers.filter((steer) => steer.status !== 'failed'), [steers]);
+  const setOverlayHeight = useSetAtom(steerOverlayHeightFamily(conversationId));
 
   /** Steers append newest-last, so an overflowing stack would sit scrolled to
    *  the oldest — the steer just submitted (and its cancel) would be below the
@@ -306,6 +378,31 @@ const InFlightSteers = memo(function InFlightSteers({
     }
   }, [newestId]);
 
+  /** The overlay is pulled out of flow (absolute), so the messages no longer
+   *  shrink to fit it. Publish its rendered height so the message scroll area
+   *  can reserve an equal band of bottom padding — keeping the newest message
+   *  clear of the overlay at rest while older ones scroll behind it. */
+  useEffect(() => {
+    const list = listRef.current;
+    if (list == null) {
+      setOverlayHeight(0);
+      return;
+    }
+    const publish = () => setOverlayHeight(list.offsetHeight);
+    publish();
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(publish);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [setOverlayHeight, inFlight.length]);
+
+  /** Drop the reserved band when the overlay leaves (run ends while steers are
+   *  still in flight, or conversation switch) — the measure effect above only
+   *  resets when it re-runs, which unmount does not do. */
+  useEffect(() => () => setOverlayHeight(0), [setOverlayHeight]);
+
   if (inFlight.length === 0) {
     return null;
   }
@@ -316,10 +413,12 @@ const InFlightSteers = memo(function InFlightSteers({
       role="list"
       aria-label={localize('com_ui_steer_in_flight')}
       data-testid="in-flight-steers"
-      /* Capped: a steer runs to 16k chars and a run takes up to 10 of them.
-       * Unbounded, the stack would push the composer off-screen — the old
-       * in-thread slot could grow freely because it scrolled with the thread. */
-      className="flex max-h-[35vh] flex-col items-start gap-2 overflow-y-auto px-2 pb-2"
+      /* Floats above the composer over the bottom of the thread instead of
+       * displacing it, so scrolling up reveals the messages behind. Capped: a
+       * steer runs to 16k chars and a run takes up to 10 of them; unbounded it
+       * would cover the whole thread. pointer-events-none lets wheeling over
+       * the gaps reach those messages (each bubble opts back in). */
+      className="pointer-events-none absolute inset-x-0 bottom-full flex max-h-[35vh] flex-col items-start gap-2 overflow-y-auto px-2 pb-2"
     >
       {inFlight.map((steer) => (
         <InFlightSteer
