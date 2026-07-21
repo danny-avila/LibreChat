@@ -160,6 +160,27 @@ function getGeminiFlashDefaultThinkingLevel(model: string): GoogleThinkingLevel 
   return undefined;
 }
 
+/**
+ * Removes the parameters a Gemini Flash model rejects (see
+ * {@link geminiFlashLegacyParams}) from a params object. Used by the
+ * Google-compatible custom-endpoint path (`getOpenAIConfig`), where `addParams`
+ * is re-applied by `transformToOpenAIConfig` after `getGoogleConfig` has already
+ * stripped `llmConfig` — without this the strip is undone and the deprecated
+ * sampling / rejected penalty params reach the provider again. No-op for
+ * non-Flash models and when there is nothing to strip.
+ */
+export function stripGeminiFlashBlockedParams<T extends Record<string, unknown> | undefined>(
+  params: T,
+  model: string | undefined,
+): T {
+  if (params == null || getGeminiFlashDefaultThinkingLevel(model ?? '') == null) {
+    return params;
+  }
+  const sanitized = { ...params };
+  geminiFlashLegacyParams.forEach((key) => delete sanitized[key]);
+  return sanitized as T;
+}
+
 const urlContextModelRegex = /gemini-(\d+)(?:\.(\d+))?/i;
 const urlContextExcludedModalityRegex = /(?:^|-)(?:image|live|tts|audio)(?:-|$)/;
 
