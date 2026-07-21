@@ -26,6 +26,10 @@ const vanillaOverrides = {
   ALLOW_SOCIAL_LOGIN: 'false',
   ALLOW_SOCIAL_REGISTRATION: 'false',
   STREAM_KEEP_COMPLETED_JOBS: 'true',
+  /* A developer's local `.env` can enable balance enforcement (dotenv fills
+   * any var the harness leaves unset); e2e users are created with no funds,
+   * so every send would fail with "Insufficient funds". */
+  CHECK_BALANCE: 'false',
 };
 
 const baseEnv = {
