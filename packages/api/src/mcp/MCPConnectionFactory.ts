@@ -433,6 +433,13 @@ export class MCPConnectionFactory {
       if (cleanupOAuthHandlers) {
         cleanupOAuthHandlers();
       }
+      try {
+        await connection.dispose();
+      } catch (disconnectError) {
+        logger.warn(`${this.logPrefix} Failed to clean up rejected MCP connection`, {
+          error: disconnectError,
+        });
+      }
       throw error;
     }
   }
@@ -1075,24 +1082,61 @@ export class MCPConnectionFactory {
     // The grace covers the reconnect after `oauthHandled` (retry backoff + transport connect),
     // which happens *after* the handling wait, so a user who authorizes near the deadline still
     // gets a connection instead of a timeout.
+    const oauthHandlingTimeout = Number.isFinite(mcpConfig.OAUTH_HANDLING_TIMEOUT)
+      ? mcpConfig.OAUTH_HANDLING_TIMEOUT
+      : 10 * 60 * 1000;
     const connectTimeout = this.useOAuth
-      ? Math.max(baseTimeout, mcpConfig.OAUTH_HANDLING_TIMEOUT + 60000)
+      ? Math.max(baseTimeout, oauthHandlingTimeout + 60000)
       : baseTimeout;
-    await withTimeout(
-      this.connectTo(connection),
-      connectTimeout,
-      `Connection timeout after ${connectTimeout}ms`,
-    );
+    const retryController = new AbortController();
+    let timeoutId: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        retryController.abort();
+        reject(new Error(`Connection timeout after ${connectTimeout}ms`));
+      }, connectTimeout);
+    });
+
+    try {
+      await Promise.race([this.connectTo(connection, retryController.signal), timeout]);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      retryController.abort();
+    }
 
     if (await connection.isConnected()) return;
     logger.error(`${this.logPrefix} Failed to establish connection.`);
   }
 
-  private async connectTo(connection: MCPConnection): Promise<void> {
+  private waitForRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      if (signal.aborted) {
+        reject(new Error('Connection retry cancelled'));
+        return;
+      }
+
+      const onAbort = () => {
+        clearTimeout(timeoutId);
+        reject(new Error('Connection retry cancelled'));
+      };
+      const timeoutId = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, delayMs);
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  private async connectTo(connection: MCPConnection, signal: AbortSignal): Promise<void> {
     const maxAttempts = 3;
     let attempts = 0;
 
     while (attempts < maxAttempts) {
+      if (signal.aborted) {
+        throw new Error('Connection retry cancelled');
+      }
       try {
         await connection.connect();
         if (await connection.isConnected()) {
@@ -1101,6 +1145,10 @@ export class MCPConnectionFactory {
         throw new Error('Connection attempt succeeded but status is not connected');
       } catch (error) {
         attempts++;
+
+        if (signal.aborted) {
+          throw error;
+        }
 
         if (this.useOAuth && this.isOAuthError(error)) {
           logger.info(`${this.logPrefix} OAuth required, stopping connection attempts`);
@@ -1111,7 +1159,7 @@ export class MCPConnectionFactory {
           logger.error(`${this.logPrefix} Failed to connect after ${maxAttempts} attempts`, error);
           throw error;
         }
-        await new Promise((resolve) => setTimeout(resolve, 2000 * attempts));
+        await this.waitForRetry(2000 * attempts, signal);
       }
     }
   }
