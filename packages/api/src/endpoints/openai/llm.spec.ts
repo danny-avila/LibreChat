@@ -729,7 +729,7 @@ describe('getOpenAILLMConfig', () => {
       },
     );
 
-    it('should NOT default to Responses API without reasoning params', () => {
+    it('should default to Responses API for gpt-5.6 even without explicit reasoning params', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',
         streaming: true,
@@ -739,8 +739,7 @@ describe('getOpenAILLMConfig', () => {
         },
       });
 
-      expect(result.llmConfig).not.toHaveProperty('useResponsesApi');
-      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig).toHaveProperty('useResponsesApi', true);
     });
 
     it('should NOT default to Responses API when reasoning_effort is none', () => {
