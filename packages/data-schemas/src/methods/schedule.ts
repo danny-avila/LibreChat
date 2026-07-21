@@ -53,6 +53,7 @@ export type ScheduleMethods = {
     details: { conversationId: string; droppedFileIds?: string[] },
   ) => Promise<void>;
   hasActiveRun: (scheduleId: string) => Promise<boolean>;
+  countActiveRuns: () => Promise<number>;
   recordRunOutcome: (params: RecordRunOutcomeParams) => Promise<void>;
   recordSkippedRun: (
     data: Partial<IScheduleRun> & {
@@ -222,6 +223,11 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     return row != null;
   }
 
+  /** Count of in-flight scheduled runs (across all schedules) for the fire cap. */
+  async function countActiveRuns(): Promise<number> {
+    return ScheduleRun().countDocuments({ status: 'started' });
+  }
+
   /**
    * Terminal (or pause) transition for a run + lastRun/failure bookkeeping.
    * Matches a run row still in `started` OR `requires_action` so a run resumed
@@ -362,6 +368,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     insertScheduleRun,
     setRunFireDetails,
     hasActiveRun,
+    countActiveRuns,
     recordRunOutcome,
     recordSkippedRun,
     getRunsForReconciliation,

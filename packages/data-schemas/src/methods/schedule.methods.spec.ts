@@ -391,6 +391,25 @@ describe('transitionRunStatus', () => {
   });
 });
 
+describe('countActiveRuns', () => {
+  it('counts started runs across all schedules for the fire cap', async () => {
+    expect(await methods.countActiveRuns()).toBe(0);
+    const a = await methods.createSchedule(scheduleData());
+    const b = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(runData(a, { scheduledFor: new Date('2026-07-20T12:00:00Z') }));
+    await methods.insertScheduleRun(runData(b, { scheduledFor: new Date('2026-07-20T13:00:00Z') }));
+    expect(await methods.countActiveRuns()).toBe(2);
+    // terminal + skipped runs don't count as active
+    await methods.recordRunOutcome({
+      scheduleId: a.id,
+      scheduledFor: new Date('2026-07-20T12:00:00Z'),
+      status: 'success',
+      autoDisableAfterFailures: 3,
+    });
+    expect(await methods.countActiveRuns()).toBe(1);
+  });
+});
+
 describe('hasActiveRun', () => {
   it('is true only while a started run exists', async () => {
     const schedule = await methods.createSchedule(scheduleData());

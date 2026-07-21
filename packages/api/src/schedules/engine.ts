@@ -43,6 +43,10 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
         for (const run of runs) {
           const jobStatus = run.conversationId ? await deps.getJobStatus(run.conversationId) : null;
           const ageMs = Date.now() - (run.firedAt?.getTime() ?? 0);
+          // Resolve the run owner's limits so crash-reconciled auto-disable uses
+          // the same per-principal threshold as an inline completion.
+          const owner = await deps.getUserContext(run.user);
+          const runLimits = owner ? await deps.getLimits(owner) : limits;
           // All transitions go through recordRunOutcome so the schedule's lastRun
           // (and the card's status chip) tracks the run, including the pause.
           const finalize = (
@@ -55,7 +59,7 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
               status,
               conversationId: run.conversationId,
               error,
-              autoDisableAfterFailures: limits.autoDisableAfterFailures,
+              autoDisableAfterFailures: runLimits.autoDisableAfterFailures,
             });
           if (jobStatus === 'running') {
             continue;
@@ -109,10 +113,13 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
       return 0;
     }
     let fired = 0;
-    // Cap per-tick starts at the configured concurrency: the loopback chat
-    // endpoint returns as soon as a resumable generation starts, so an
-    // unbounded loop would launch far more concurrent runs than intended.
-    for (let i = 0; i < limits.fireConcurrency; i++) {
+    // Cap on ACTIVE scheduled runs, not just per-tick starts: the loopback chat
+    // endpoint returns as soon as the generation starts and scheduled fires
+    // bypass the interactive limiter, so without this the in-flight count would
+    // grow by fireConcurrency every tick. Only claim up to the free headroom.
+    const active = await runAsSystem(() => deps.methods.countActiveRuns());
+    const budget = Math.max(0, limits.fireConcurrency - active);
+    for (let i = 0; i < budget; i++) {
       // Claim + the fire's pre-owner-context bookkeeping (disable/advance,
       // cross-tenant reads) run as system; fireSchedule re-enters owner context
       // internally for the run-specific work.

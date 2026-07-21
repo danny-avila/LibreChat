@@ -1,10 +1,18 @@
 const mongoose = require('mongoose');
-const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const {
+  ResourceType,
+  Permissions,
+  PermissionBits,
+  PermissionTypes,
+} = require('librechat-data-provider');
 const { tenantStorage, logger } = require('@librechat/data-schemas');
+const { checkPermission } = require('~/server/services/PermissionService');
 const {
   fireSchedule,
+  getBalanceConfig,
   startScheduleEngine,
   generateShortLivedToken,
+  buildBalanceUpdateFields,
   getAppConfigOptionsFromUser,
   DEFAULT_SCHEDULE_LIMITS,
   SCHEDULE_FIRE_TOKEN_TTL,
@@ -59,18 +67,46 @@ const engineDeps = {
     return role?.permissions?.[PermissionTypes.SCHEDULES]?.[Permissions.USE] === true;
   },
   isOutOfBalance: async (user) => {
-    const appConfig = await getAppConfig({ userId: user.id, tenantId: user.tenantId });
-    if (appConfig?.balance?.enabled !== true) {
+    const appConfig = await getAppConfig(getAppConfigOptionsFromUser(user));
+    const balanceConfig = getBalanceConfig(appConfig);
+    if (balanceConfig?.enabled !== true) {
       return false;
     }
-    const balance = await mongoose.models.Balance.findOne({ user: user.id })
-      .select('tokenCredits')
-      .lean();
-    return (balance?.tokenCredits ?? 0) <= 0;
+    const Balance = mongoose.models.Balance;
+    let record = await Balance.findOne({ user: user.id }).lean();
+    // Initialize/sync the record exactly as the chat's balance middleware would,
+    // so a new user's startBalance is applied before we read it (avoids skipping
+    // a schedule that an interactive chat would have allowed).
+    if (balanceConfig.startBalance != null) {
+      const updateFields = buildBalanceUpdateFields(balanceConfig, record, user.id);
+      if (Object.keys(updateFields).length > 0) {
+        record = await Balance.findOneAndUpdate(
+          { user: user.id },
+          { $set: updateFields },
+          { upsert: true, new: true },
+        ).lean();
+      }
+    }
+    // Auto-refill users are topped up by the run's own balance check; never
+    // pre-skip them here.
+    if (balanceConfig.autoRefillEnabled === true) {
+      return false;
+    }
+    return (record?.tokenCredits ?? 0) <= 0;
   },
-  agentExists: async (agentId) => {
+  agentAccess: async (agentId, user) => {
     const agent = await mongoose.models.Agent.findOne({ id: agentId }).select('_id').lean();
-    return agent != null;
+    if (agent == null) {
+      return 'missing';
+    }
+    const allowed = await checkPermission({
+      userId: user.id,
+      role: user.role,
+      resourceType: ResourceType.AGENT,
+      resourceId: agent._id,
+      requiredPermission: PermissionBits.VIEW,
+    });
+    return allowed ? 'ok' : 'forbidden';
   },
   resolveFiles: async (fileIds, user) => {
     const files = await methods.getFiles(

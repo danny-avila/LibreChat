@@ -42,8 +42,11 @@ export interface ScheduleEngineDeps {
   getUserContext: (userId: string | Types.ObjectId) => Promise<ScheduleUserContext | null>;
   /** Whether the balance feature gates this user and they are out of credits. */
   isOutOfBalance: (user: ScheduleUserContext) => Promise<boolean>;
-  /** Whether the schedule's agent still exists (VIEW enforcement happens in the fire request). */
-  agentExists: (agentId: string, user: ScheduleUserContext) => Promise<boolean>;
+  /** Live agent access for the owner: 'missing' (deleted) vs 'forbidden' (ACL revoked). */
+  agentAccess: (
+    agentId: string,
+    user: ScheduleUserContext,
+  ) => Promise<'ok' | 'missing' | 'forbidden'>;
   /** Whether the owning user's current role still grants SCHEDULES access. */
   hasScheduleAccess: (user: ScheduleUserContext) => Promise<boolean>;
   /** Re-resolves stored file_ids to attachment payloads; missing files are simply absent. */

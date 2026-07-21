@@ -968,6 +968,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
           await GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId, 'Request aborted');
+          if (scheduleId) {
+            // Record the abort so the run doesn't linger as `started` (which would
+            // block run-now/overlap until the 30-minute orphan cutoff).
+            await recordScheduleOutcome({
+              scheduleId,
+              scheduledFor,
+              status: 'interrupted',
+              conversationId: conversation?.conversationId,
+            });
+          }
           await finishResumableRequest(req, userId);
         }
 

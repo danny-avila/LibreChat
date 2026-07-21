@@ -119,10 +119,15 @@ export async function fireSchedule(
       scheduledFor,
     };
 
-    if (!(await deps.agentExists(schedule.agent_id, user))) {
-      await methods.disableSchedule(schedule.id, 'agent_deleted');
+    const agentAccess = await deps.agentAccess(schedule.agent_id, user);
+    if (agentAccess !== 'ok') {
+      // 'missing' → deleted; 'forbidden' → the owner's VIEW access was revoked.
+      // Disable immediately instead of letting the loopback chat reject the run
+      // and burn attempts toward the failure threshold.
+      const reason = agentAccess === 'missing' ? 'agent_deleted' : 'permission_revoked';
+      await methods.disableSchedule(schedule.id, reason);
       await advance();
-      return { fired: false, skipped: 'agent_deleted' as const };
+      return { fired: false, skipped: reason };
     }
 
     if (await methods.hasActiveRun(schedule.id)) {
