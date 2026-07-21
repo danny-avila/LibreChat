@@ -148,6 +148,10 @@ jest.mock('~/cache', () => ({
   logViolation: jest.fn(),
 }));
 
+jest.mock('~/server/services/Schedules', () => ({
+  recordScheduleOutcome: jest.fn(() => Promise.resolve()),
+}));
+
 jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
   getMessages: (...args) => mockGetMessages(...args),
