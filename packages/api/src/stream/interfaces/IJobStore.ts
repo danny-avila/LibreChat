@@ -43,6 +43,10 @@ export interface SerializableJobData {
   /** Response message ID for reconnection */
   responseMessageId?: string;
 
+  /** Schedule bookkeeping for a scheduled fire, so a HITL resume can record its outcome. */
+  scheduleId?: string;
+  scheduledFor?: string;
+
   /**
    * Deferred-tool names discovered (via `tool_search`) before a HITL pause, captured
    * so a resume can replay them into `createRun` — the rebuilt graph uses `messages: []`

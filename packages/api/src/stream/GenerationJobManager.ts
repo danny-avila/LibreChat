@@ -532,6 +532,8 @@ class GenerationJobManagerClass {
         conversationId: jobData.conversationId,
         userMessage: jobData.userMessage,
         responseMessageId: jobData.responseMessageId,
+        scheduleId: jobData.scheduleId,
+        scheduledFor: jobData.scheduledFor,
         sender: jobData.sender,
         endpoint: jobData.endpoint,
         iconURL: jobData.iconURL,
@@ -1642,6 +1644,12 @@ class GenerationJobManagerClass {
     }
     if (metadata.isTemporary !== undefined) {
       updates.isTemporary = metadata.isTemporary;
+    }
+    if (metadata.scheduleId) {
+      updates.scheduleId = metadata.scheduleId;
+    }
+    if (metadata.scheduledFor) {
+      updates.scheduledFor = metadata.scheduledFor;
     }
     if (metadata.promptTokens !== undefined) {
       updates.promptTokens = metadata.promptTokens;

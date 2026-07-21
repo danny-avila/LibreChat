@@ -24,6 +24,9 @@ export interface GenerationJobMetadata {
   agent_id?: string;
   /** Whether the originating turn was a temporary chat; a HITL resume keeps it so. */
   isTemporary?: boolean;
+  /** Schedule bookkeeping for a scheduled fire, so a HITL resume can record its outcome. */
+  scheduleId?: string;
+  scheduledFor?: string;
   /**
    * Deferred-tool names discovered (via `tool_search`) before a HITL pause. A resume
    * replays these into `createRun` because the rebuilt graph uses `messages: []`, so

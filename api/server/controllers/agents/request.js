@@ -174,7 +174,11 @@ async function finishResumableRequest(req, userId) {
   try {
     await cleanupMCPRequestContextForReq(req);
   } finally {
-    await decrementPendingRequest(userId);
+    // Scheduled fires never incremented the concurrent-request counter (they are
+    // governed by the scheduler's own caps), so they must not decrement it.
+    if (!isScheduleFireRequest(req)) {
+      await decrementPendingRequest(userId);
+    }
   }
 }
 
@@ -341,14 +345,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
   }
 
-  const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
-  if (!allowed) {
-    if (ownsIdempotencyClaim) {
-      await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
+  // Scheduled fires bypass the interactive concurrent-request limiter (like the
+  // message-rate limiters): a user with active chats or several schedules due at
+  // once would otherwise get 429s recorded as schedule errors, walking valid
+  // schedules toward auto-disable. Scheduler caps govern their concurrency.
+  if (!isScheduledFire) {
+    const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
+    if (!allowed) {
+      if (ownsIdempotencyClaim) {
+        await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
+      }
+      const violationInfo = getViolationInfo(pendingRequests, limit);
+      await logViolation(req, res, ViolationTypes.CONCURRENT, violationInfo, violationInfo.score);
+      return res.status(429).json(violationInfo);
     }
-    const violationInfo = getViolationInfo(pendingRequests, limit);
-    await logViolation(req, res, ViolationTypes.CONCURRENT, violationInfo, violationInfo.score);
-    return res.status(429).json(violationInfo);
   }
 
   let client = null;
@@ -387,6 +397,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       // Persist temporary-chat state so a HITL resume keeps the resumed response
       // non-persisted instead of trusting the resume request to re-send the flag.
       isTemporary: req.body?.isTemporary,
+      // Persist schedule bookkeeping so a HITL resume can record the outcome
+      // (the resume request carries no scheduleId). Only set for verified fires.
+      ...(scheduleId ? { scheduleId, scheduledFor } : {}),
       responseMessageId: preliminaryResponseMessageId,
       userMessage: preliminaryUserMessage,
     });
@@ -759,7 +772,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // (so a fast /resume isn't 429'd); only release here if that didn't happen.
           // Always run the MCP request-context cleanup.
           await cleanupMCPRequestContextForReq(req);
-          if (!client?.pendingRequestReleased) {
+          if (!isScheduledFire && !client?.pendingRequestReleased) {
             await decrementPendingRequest(userId);
           }
           if (client) {

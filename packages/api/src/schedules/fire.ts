@@ -95,6 +95,23 @@ export async function fireSchedule(
   }
 
   return deps.runInTenantContext(user, async () => {
+    // Re-resolve limits INSIDE the owner's tenant context: a tenant-specific
+    // config (disabled schedules, different auto-disable threshold) must win
+    // over the base config the engine read before the claim.
+    const ownerLimits = await deps.getLimits();
+    if (!ownerLimits.enabled) {
+      await advance();
+      return { fired: false, skipped: 'disabled' as const };
+    }
+
+    // Re-check the owner's live schedule permission: a role that lost
+    // SCHEDULES access after the schedule was created must stop firing.
+    if (!(await deps.hasScheduleAccess(user))) {
+      await methods.disableSchedule(schedule.id, 'permission_revoked');
+      await advance();
+      return { fired: false, skipped: 'permission_revoked' as const };
+    }
+
     const baseRun = {
       scheduleId: schedule.id,
       user: schedule.user,
@@ -139,28 +156,12 @@ export async function fireSchedule(
       (id) => !files.some((file) => file.file_id === id),
     );
 
+    let conversationId: string;
     try {
-      const { conversationId } = await postChatMessage(
-        deps,
-        schedule,
-        user.id,
-        scheduledFor,
-        files,
-      );
-      await advance();
-      if (droppedFileIds.length > 0) {
-        await methods.setRunFireDetails(schedule.id, scheduledFor, {
-          conversationId,
-          droppedFileIds,
-        });
-        logger.warn(
-          `[schedules] ${schedule.id} fired without ${droppedFileIds.length} missing attachment(s)`,
-        );
-      } else {
-        await methods.setRunFireDetails(schedule.id, scheduledFor, { conversationId });
-      }
-      return { fired: true, conversationId };
+      ({ conversationId } = await postChatMessage(deps, schedule, user.id, scheduledFor, files));
     } catch (error) {
+      // Failure BEFORE the chat was accepted: the generation never started, so
+      // record the error and count it toward auto-disable.
       const message = error instanceof Error ? error.message : String(error);
       logger.error(`[schedules] fire failed for ${schedule.id}:`, error);
       await methods.recordRunOutcome({
@@ -168,10 +169,32 @@ export async function fireSchedule(
         scheduledFor,
         status: 'error',
         error: message,
-        autoDisableAfterFailures: limits.autoDisableAfterFailures,
+        autoDisableAfterFailures: ownerLimits.autoDisableAfterFailures,
       });
       await advance();
       return { fired: false, error: message };
     }
+
+    // Chat accepted: it will report its own terminal outcome via the completion
+    // hook. Post-accept bookkeeping failures must NOT flip the run to `error`
+    // (that would block the real completion, which only matches started/paused).
+    try {
+      await advance();
+      await methods.setRunFireDetails(schedule.id, scheduledFor, {
+        conversationId,
+        ...(droppedFileIds.length > 0 ? { droppedFileIds } : {}),
+      });
+      if (droppedFileIds.length > 0) {
+        logger.warn(
+          `[schedules] ${schedule.id} fired without ${droppedFileIds.length} missing attachment(s)`,
+        );
+      }
+    } catch (bookkeepingError) {
+      logger.error(
+        `[schedules] post-accept bookkeeping failed for ${schedule.id} (run continues):`,
+        bookkeepingError,
+      );
+    }
+    return { fired: true, conversationId };
   });
 }

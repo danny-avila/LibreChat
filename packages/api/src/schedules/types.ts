@@ -21,6 +21,7 @@ export const DEFAULT_SCHEDULE_LIMITS: ScheduleLimits = {
 export interface ScheduleUserContext {
   id: string;
   tenantId?: string;
+  role?: string;
 }
 
 export interface ScheduleFileRef {
@@ -43,6 +44,8 @@ export interface ScheduleEngineDeps {
   isOutOfBalance: (user: ScheduleUserContext) => Promise<boolean>;
   /** Whether the schedule's agent still exists (VIEW enforcement happens in the fire request). */
   agentExists: (agentId: string, user: ScheduleUserContext) => Promise<boolean>;
+  /** Whether the owning user's current role still grants SCHEDULES access. */
+  hasScheduleAccess: (user: ScheduleUserContext) => Promise<boolean>;
   /** Re-resolves stored file_ids to attachment payloads; missing files are simply absent. */
   resolveFiles: (fileIds: string[], user: ScheduleUserContext) => Promise<ScheduleFileRef[]>;
   /** Mints the schedule-scoped short-lived JWT accepted by requireJwtAuth. */
@@ -58,7 +61,14 @@ export interface ScheduleEngineDeps {
 export interface FireResult {
   fired: boolean;
   conversationId?: string;
-  skipped?: 'overlap' | 'balance' | 'duplicate' | 'agent_deleted' | 'user_missing';
+  skipped?:
+    | 'overlap'
+    | 'balance'
+    | 'duplicate'
+    | 'agent_deleted'
+    | 'user_missing'
+    | 'permission_revoked'
+    | 'disabled';
   error?: string;
 }
 

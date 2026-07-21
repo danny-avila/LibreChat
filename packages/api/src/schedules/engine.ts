@@ -1,6 +1,7 @@
 import { logger, runAsSystem } from '@librechat/data-schemas';
 import type { ScheduleEngineDeps } from './types';
 import { registerShutdownTask } from '~/app/shutdown';
+import { computeNextRunAt } from './cadence';
 import { fireSchedule } from './fire';
 
 const TICK_MS = 30_000;
@@ -117,8 +118,21 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             fired += 1;
           }
         } catch (error) {
+          // A transient preflight throw must not unset nextRunAt (which would
+          // leave the schedule enabled but never due again). Reschedule to the
+          // next occurrence so it retries; only disable if it is uncomputable.
           logger.error(`[schedules] unexpected fire error for ${schedule.id}:`, error);
-          await deps.methods.advanceSchedule(schedule.id, null).catch(() => undefined);
+          const next = computeNextRunAt({
+            cadence: schedule.cadence,
+            timezone: schedule.timezone,
+            scheduleId: schedule.id,
+          });
+          if (next == null) {
+            await deps.methods
+              .disableSchedule(schedule.id, 'invalid_schedule')
+              .catch(() => undefined);
+          }
+          await deps.methods.advanceSchedule(schedule.id, next).catch(() => undefined);
         }
         return false;
       });

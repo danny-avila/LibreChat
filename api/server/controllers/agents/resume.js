@@ -23,6 +23,7 @@ const {
   getMCPRequestContext,
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
+const { recordScheduleOutcome } = require('~/server/services/Schedules');
 const { saveMessage, getConvo, getMessages } = require('~/models');
 
 /**
@@ -392,6 +393,17 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
   };
 
   await GenerationJobManager.emitDone(streamId, finalEvent);
+  // Record the schedule outcome from the paused job's metadata BEFORE completeJob
+  // deletes the job: for a scheduled fire that paused for approval, this resume is
+  // the completion point, and the reconciler can't see it (the job record is gone).
+  if (meta.scheduleId) {
+    await recordScheduleOutcome({
+      scheduleId: meta.scheduleId,
+      scheduledFor: meta.scheduledFor,
+      status: 'success',
+      conversationId,
+    });
+  }
   // Awaited (not fire-and-forget) so the job's terminal write lands before the
   // checkpoint prune, and so a failure here doesn't race the controller's error path.
   try {

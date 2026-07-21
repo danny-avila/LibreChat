@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const { tenantStorage, logger } = require('@librechat/data-schemas');
 const {
   fireSchedule,
@@ -40,11 +41,15 @@ const engineDeps = {
   methods,
   getLimits,
   getUserContext: async (userId) => {
-    const user = await mongoose.models.User.findById(userId).select('_id tenantId').lean();
+    const user = await mongoose.models.User.findById(userId).select('_id tenantId role').lean();
     if (user == null) {
       return null;
     }
-    return { id: user._id.toString(), tenantId: user.tenantId };
+    return { id: user._id.toString(), tenantId: user.tenantId, role: user.role };
+  },
+  hasScheduleAccess: async (user) => {
+    const role = await methods.getRoleByName(user.role);
+    return role?.permissions?.[PermissionTypes.SCHEDULES]?.[Permissions.USE] === true;
   },
   isOutOfBalance: async (user) => {
     const appConfig = await getAppConfig({ userId: user.id, tenantId: user.tenantId });
