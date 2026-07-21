@@ -454,10 +454,13 @@ const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
   default: 0,
 });
 
-function useCreateConversationAtom(key: string | number) {
+/** Setter-only access to the conversation atom: registers the key like
+ * `useCreateConversationAtom` but never subscribes to the value, so callers
+ * that only write (navigation, per-row actions) don't re-render on every
+ * conversation update. */
+function useSetConversationAtom(key: string | number) {
   const hasSetConversation = useSetConvoContext();
   const setKeys = useSetRecoilState(conversationKeysAtom);
-  const conversation = useRecoilValue(conversationByIndex(key));
   const setConversation = useSetRecoilState(conversationByIndex(key));
 
   useEffect(() => {
@@ -469,12 +472,14 @@ function useCreateConversationAtom(key: string | number) {
     });
   }, [key, setKeys]);
 
-  return { hasSetConversation, conversation, setConversation };
+  return { hasSetConversation, setConversation };
 }
 
-function useSetConversationAtom(key: string | number) {
-  const { setConversation } = useCreateConversationAtom(key);
-  return { setConversation };
+function useCreateConversationAtom(key: string | number) {
+  const { hasSetConversation, setConversation } = useSetConversationAtom(key);
+  const conversation = useRecoilValue(conversationByIndex(key));
+
+  return { hasSetConversation, conversation, setConversation };
 }
 
 function useClearConvoState() {
