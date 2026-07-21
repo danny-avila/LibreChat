@@ -8,7 +8,7 @@ const {
   agentUpdateSchema,
   refreshListAvatars,
   collectEdgeAgentIds,
-  getDeploymentSkillIds,
+  mergeDeploymentSkillIds,
   mergeAgentOcrConversion,
   sanitizeModelParameters,
   MAX_AVATAR_REFRESH_AGENTS,
@@ -1100,7 +1100,7 @@ const getListAgentsHandler = async (req, res) => {
         requiredPermissions: PermissionBits.VIEW,
       });
       accessibleSkillSet = new Set(
-        [...accessibleSkillIds, ...getDeploymentSkillIds()].map((oid) => oid.toString()),
+        mergeDeploymentSkillIds(accessibleSkillIds).map((oid) => oid.toString()),
       );
     }
 

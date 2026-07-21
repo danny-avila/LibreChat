@@ -38,7 +38,7 @@ jest.mock('sharp', () =>
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
-  getDeploymentSkillIds: jest.fn().mockReturnValue([]),
+  mergeDeploymentSkillIds: jest.fn((ids) => ids),
   refreshS3Url: jest.fn(),
 }));
 
@@ -93,7 +93,7 @@ const {
   getResourcePermissionsMap,
 } = require('~/server/services/PermissionService');
 
-const { getDeploymentSkillIds, refreshS3Url } = require('@librechat/api');
+const { mergeDeploymentSkillIds, refreshS3Url } = require('@librechat/api');
 
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
@@ -156,7 +156,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
     // Reset all mocks
     jest.clearAllMocks();
-    getDeploymentSkillIds.mockReturnValue([]);
+    mergeDeploymentSkillIds.mockImplementation((ids) => ids);
 
     // Setup mock request and response objects
     mockReq = {
@@ -1868,7 +1868,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         return Promise.resolve([]);
       });
       findPubliclyAccessibleResources.mockResolvedValue([]);
-      getDeploymentSkillIds.mockReturnValue([deploymentSkillId]);
+      mergeDeploymentSkillIds.mockImplementation((ids) => [...ids, deploymentSkillId]);
 
       await getListAgentsHandler(mockReq, mockRes);
 
