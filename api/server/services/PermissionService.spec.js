@@ -894,6 +894,103 @@ describe('PermissionService', () => {
       expect(remainingEntries[0].principalId.toString()).toBe(userId.toString());
     });
 
+    test('grant wins over revoke when a principal is in both lists (prevents owner lockout, #14316)', async () => {
+      // Simulates the share dialog sending the owner in both updatedPrincipals (grant OWNER) and
+      // revokedPrincipals (e.g. from a client id/idOnTheSource mismatch). Grants flush before
+      // deletes, so without the guard the owner would be upserted and then deleted. The owner
+      // must keep access.
+      const results = await bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        updatedPrincipals: [
+          {
+            type: PrincipalType.USER,
+            id: userId,
+            accessRoleId: AccessRoleIds.AGENT_OWNER,
+          },
+        ],
+        revokedPrincipals: [
+          {
+            type: PrincipalType.USER,
+            id: userId,
+          },
+        ],
+        grantedBy: grantedById,
+      });
+
+      expect(results.granted).toHaveLength(1);
+      // The revoke for the same principal is skipped, not applied, so it is absent from results.
+      expect(results.revoked).toHaveLength(0);
+      expect(results.errors).toHaveLength(0);
+
+      const userEntry = await AclEntry.findOne({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId,
+      }).populate('roleId', 'accessRoleId');
+      expect(userEntry).not.toBeNull();
+      expect(userEntry.roleId.accessRoleId).toBe(AccessRoleIds.AGENT_OWNER);
+    });
+
+    test('revoke wins for PUBLIC so an explicit public disable is honored (#14316)', async () => {
+      // A contradictory payload that both grants public and disables it puts the public principal
+      // in both lists. Unlike user/group principals, disabling public access must win so the
+      // resource is never left public when the caller asked to make it private.
+      const results = await bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        updatedPrincipals: [
+          {
+            type: PrincipalType.PUBLIC,
+            accessRoleId: AccessRoleIds.AGENT_VIEWER,
+          },
+        ],
+        revokedPrincipals: [
+          {
+            type: PrincipalType.PUBLIC,
+          },
+        ],
+        grantedBy: grantedById,
+      });
+
+      expect(results.revoked).toHaveLength(1);
+      expect(results.errors).toHaveLength(0);
+
+      const publicEntry = await AclEntry.findOne({
+        principalType: PrincipalType.PUBLIC,
+        resourceType: ResourceType.AGENT,
+        resourceId,
+      });
+      expect(publicEntry).toBeNull();
+    });
+
+    test('records a malformed revoke entry in errors instead of throwing after grants flush (#14316)', async () => {
+      // A nullish/malformed entry in revokedPrincipals must not throw out of the function after
+      // grants have already been flushed; it is captured in results.errors and processing continues.
+      const results = await bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        updatedPrincipals: [
+          { type: PrincipalType.USER, id: otherUserId, accessRoleId: AccessRoleIds.AGENT_VIEWER },
+        ],
+        revokedPrincipals: [null],
+        grantedBy: grantedById,
+      });
+
+      expect(results.errors).toHaveLength(1);
+      expect(results.granted).toHaveLength(1);
+
+      // The valid grant still landed despite the malformed revoke entry.
+      const grantedEntry = await AclEntry.findOne({
+        principalType: PrincipalType.USER,
+        principalId: otherUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId,
+      });
+      expect(grantedEntry).not.toBeNull();
+    });
+
     test('should handle mixed operations (grant, update, revoke)', async () => {
       const updatedPrincipals = [
         {
