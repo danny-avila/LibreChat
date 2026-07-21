@@ -947,6 +947,8 @@ describe('getGoogleConfig', () => {
         topK: 40,
         top_p: 0.9,
         top_k: 40,
+        presencePenalty: 0.5,
+        frequencyPenalty: 0.5,
         thinking_budget: 5000,
       } as unknown as t.GoogleParameters;
 
@@ -957,7 +959,30 @@ describe('getGoogleConfig', () => {
       expect(result.llmConfig).not.toHaveProperty('topK');
       expect(result.llmConfig).not.toHaveProperty('top_p');
       expect(result.llmConfig).not.toHaveProperty('top_k');
+      expect(result.llmConfig).not.toHaveProperty('presencePenalty');
+      expect(result.llmConfig).not.toHaveProperty('frequencyPenalty');
       expect(result.llmConfig).not.toHaveProperty('thinking_budget');
+    });
+
+    it('should remove unsupported penalty params for Gemini 3.5 Flash-Lite', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.5-flash-lite',
+          presencePenalty: 0.5,
+          frequencyPenalty: 0.5,
+        } as unknown as t.GoogleParameters,
+        addParams: {
+          presencePenalty: 0.3,
+          frequencyPenalty: 0.3,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('presencePenalty');
+      expect(result.llmConfig).not.toHaveProperty('frequencyPenalty');
     });
 
     it('should default Gemini 3.5 Flash-Lite to minimal thinkingLevel', () => {

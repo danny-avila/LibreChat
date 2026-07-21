@@ -14,11 +14,12 @@ type GoogleThinkingConfig = {
 };
 
 /**
- * Gemini Flash models (3.5+) that drop the numeric sampling parameters
+ * Gemini Flash models (3.5+) that drop the deprecated sampling parameters
  * (`temperature`/`topP`/`topK`) and `thinkingBudget` in favor of the qualitative
- * `thinkingLevel`. Google ignores the deprecated params today and returns HTTP 400
- * for them on newer model generations, so we strip them and apply each model's
- * documented default thinking level when the request doesn't set one. Ordered
+ * `thinkingLevel`, and that reject the penalty parameters
+ * (`presencePenalty`/`frequencyPenalty`) with HTTP 400 ("Penalty is not enabled
+ * for this model"). We strip all of these and apply each model's documented
+ * default thinking level when the request doesn't set one. Ordered
  * most-specific-first so `gemini-3.5-flash-lite` resolves before the
  * `gemini-3.5-flash` prefix.
  * @see https://ai.google.dev/gemini-api/docs/latest-model#api-changes-and-parameter-updates
@@ -35,6 +36,10 @@ const geminiFlashLegacyParams = [
   'topK',
   'top_p',
   'top_k',
+  'presencePenalty',
+  'presence_penalty',
+  'frequencyPenalty',
+  'frequency_penalty',
   'thinkingBudget',
   'thinking_budget',
 ] as const;
