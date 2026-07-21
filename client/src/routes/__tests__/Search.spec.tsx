@@ -170,4 +170,12 @@ describe('Search route', () => {
     (globalThis as unknown as Record<string, () => void>).__triggerRowsRendered();
     expect(fetchNextPage).not.toHaveBeenCalled();
   });
+
+  it('renders a trailing spacer row so the last result clears the bottom overlay', () => {
+    mockUseRecoilValue.mockReturnValue(searchState());
+    mockUseQuery.mockReturnValue(queryResult());
+    render(<Search />);
+    expect(screen.getByText('row one')).toBeInTheDocument();
+    expect(screen.getByTestId('search-footer')).toBeInTheDocument();
+  });
 });

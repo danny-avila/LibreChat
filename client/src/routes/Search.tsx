@@ -19,33 +19,67 @@ type MeasuredCellParent = {
   recomputeGridSize?: (cell: { columnIndex: number; rowIndex: number }) => void;
 };
 
-/** Virtualized row wrapper that reports its measured height back to the cache. */
+/** Fixed trailing spacer so the last result clears the bottom gradient/spinner
+ *  overlay instead of sitting underneath it. */
+const FOOTER_HEIGHT = 64;
+
+/** Virtualized row wrapper that reports its measured height back to the cache.
+ *  A ResizeObserver on the content re-measures when a row later grows or shrinks
+ *  (a tool/code output expands, a late image loads), so the cached height that
+ *  the List now lays out from never goes stale. */
 const MeasuredRow: FC<{
   cache: CellMeasurerCache;
   rowKey: string;
   parent: MeasuredCellParent;
   index: number;
   style: React.CSSProperties;
+  onResize: (index: number) => void;
   children: React.ReactNode;
-}> = memo(({ cache, rowKey, parent, index, style, children }) => (
-  <CellMeasurer
-    cache={cache}
-    columnIndex={0}
-    key={rowKey}
-    parent={parent as ListRowProps['parent']}
-    rowIndex={index}
-  >
-    {({ registerChild }) => (
-      <div
-        ref={registerChild as React.LegacyRef<HTMLDivElement>}
-        style={style}
-        data-testid="search-result-row"
-      >
-        {children}
-      </div>
-    )}
-  </CellMeasurer>
-));
+}> = memo(({ cache, rowKey, parent, index, style, onResize, children }) => {
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const lastHeightRef = useRef(0);
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver((entries) => {
+      const height = entries[0]?.contentRect.height ?? 0;
+      /** First callback is the initial size CellMeasurer already recorded. */
+      if (lastHeightRef.current === 0) {
+        lastHeightRef.current = height;
+        return;
+      }
+      if (height > 0 && Math.abs(height - lastHeightRef.current) > 1) {
+        lastHeightRef.current = height;
+        onResize(index);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [index, onResize]);
+
+  return (
+    <CellMeasurer
+      cache={cache}
+      columnIndex={0}
+      key={rowKey}
+      parent={parent as ListRowProps['parent']}
+      rowIndex={index}
+    >
+      {({ registerChild }) => (
+        <div
+          ref={registerChild as React.LegacyRef<HTMLDivElement>}
+          style={style}
+          data-testid="search-result-row"
+        >
+          <div ref={contentRef}>{children}</div>
+        </div>
+      )}
+    </CellMeasurer>
+  );
+});
 
 MeasuredRow.displayName = 'SearchMeasuredRow';
 
@@ -118,11 +152,22 @@ export default function Search() {
     [cache],
   );
 
-  /** A new query or a font-size change invalidates every measured height. */
+  /** A new query reseeds the list: prior results stay mounted (keepPreviousData)
+   *  so the List keeps its old scrollTop — drop measured heights AND scroll back
+   *  to the top, or the next search can open mid-list and hide the top matches. */
+  useEffect(() => {
+    const frameId = requestAnimationFrame(() => {
+      recompute(true);
+      listRef.current?.scrollToPosition(0);
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [searchQuery, recompute]);
+
+  /** A font-size change alters every row's height but keeps the user's place. */
   useEffect(() => {
     const frameId = requestAnimationFrame(() => recompute(true));
     return () => cancelAnimationFrame(frameId);
-  }, [searchQuery, fontSize, recompute]);
+  }, [fontSize, recompute]);
 
   /** Appending a page keeps existing measures; any other content change at the
    *  same row count (a file preview resolving, a refetch) can alter a row's
@@ -146,10 +191,24 @@ export default function Search() {
     return () => cancelAnimationFrame(frameId);
   }, [listWidth, recompute]);
 
+  /** Row-local size change (tool output expands, image loads): drop that row's
+   *  cached height and recompute from it so the layout below stays correct. */
+  const invalidateRowHeight = useCallback(
+    (index: number) => {
+      cache.clear(index, 0);
+      listRef.current?.recomputeRowHeights(index);
+    },
+    [cache],
+  );
+
+  /** `trailing: false` so a burst near the bottom can't queue a fetch that fires
+   *  after the guard passed; cancel on query change so a pending page can't land
+   *  on a new search. */
   const throttledFetchNext = useMemo(
-    () => throttle(() => fetchNextPage(), 500, { leading: true }),
+    () => throttle(() => fetchNextPage(), 500, { leading: true, trailing: false }),
     [fetchNextPage],
   );
+  useEffect(() => () => throttledFetchNext.cancel(), [throttledFetchNext]);
 
   const handleRowsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
@@ -168,10 +227,16 @@ export default function Search() {
   const rowRenderer = useCallback(
     ({ index, key, parent, style }: ListRowProps) => {
       const message = messages[index];
+      if (!message) {
+        /** Trailing spacer row (see FOOTER_HEIGHT). */
+        return (
+          <div key="search-footer" style={style} data-testid="search-footer" aria-hidden="true" />
+        );
+      }
       /** react-virtualized's `key` is positional; key by messageId so React
        *  reconciles rows by message, not slot — otherwise a scroll reuses a row
        *  instance for a different result and re-parses/reruns its subtree. */
-      const rowKey = message?.messageId ?? key;
+      const rowKey = message.messageId ?? key;
       return (
         <MeasuredRow
           key={rowKey}
@@ -180,15 +245,19 @@ export default function Search() {
           parent={parent as MeasuredCellParent}
           index={index}
           style={style}
+          onResize={invalidateRowHeight}
         >
           <SearchMessage message={message} />
         </MeasuredRow>
       );
     },
-    [cache, messages],
+    [cache, messages, invalidateRowHeight],
   );
 
-  const getRowHeight = useCallback(({ index }: Index) => cache.getHeight(index, 0), [cache]);
+  const getRowHeight = useCallback(
+    ({ index }: Index) => (index >= messages.length ? FOOTER_HEIGHT : cache.getHeight(index, 0)),
+    [cache, messages.length],
+  );
 
   useEffect(() => {
     if (isError && searchQuery) {
@@ -254,7 +323,7 @@ export default function Search() {
           width={listWidth}
           height={listHeight}
           deferredMeasurementCache={cache}
-          rowCount={resultsCount}
+          rowCount={resultsCount + 1}
           rowHeight={getRowHeight}
           rowRenderer={rowRenderer}
           onRowsRendered={handleRowsRendered}
