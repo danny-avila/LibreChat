@@ -1,8 +1,8 @@
 import { getTenantId, logger } from '@librechat/data-schemas';
 import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import type { AppConfig, IUser, UserMethods } from '@librechat/data-schemas';
-import type { JwtPayload } from 'jsonwebtoken';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
+import type { JwtPayload } from 'jsonwebtoken';
 import type { OAuthJwtIssuerConfig } from '../auth/oauthJwt';
 import type { GetAppConfigOptions } from '../app/service';
 import { extractBearer, hasRequiredScopes, verifyOAuthJwtBearer } from '../auth/oauthJwt';

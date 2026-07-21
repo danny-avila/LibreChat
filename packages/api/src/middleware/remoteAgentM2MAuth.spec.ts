@@ -1,6 +1,6 @@
 import type { AppConfig, IUser, UserMethods } from '@librechat/data-schemas';
-import type { JwtPayload } from 'jsonwebtoken';
 import type { Request, Response } from 'express';
+import type { JwtPayload } from 'jsonwebtoken';
 import { createRemoteAgentM2MAuth } from './remoteAgentM2MAuth';
 
 jest.mock('@librechat/data-schemas', () => {
