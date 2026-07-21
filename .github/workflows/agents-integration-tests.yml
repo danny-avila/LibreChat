@@ -15,6 +15,7 @@ on:
       - 'packages/api/src/agents/**'
       - 'packages/api/package.json'
       - '.github/workflows/agents-integration-tests.yml'
+      - '!**.md'
 
 permissions:
   contents: read
