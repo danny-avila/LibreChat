@@ -37,7 +37,6 @@ const MeasuredRow: FC<{
   children: React.ReactNode;
 }> = memo(({ cache, rowKey, parent, index, style, onResize, children }) => {
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const lastHeightRef = useRef(0);
 
   useEffect(() => {
     const el = contentRef.current;
@@ -46,19 +45,16 @@ const MeasuredRow: FC<{
     }
     const observer = new ResizeObserver((entries) => {
       const height = entries[0]?.contentRect.height ?? 0;
-      /** First callback is the initial size CellMeasurer already recorded. */
-      if (lastHeightRef.current === 0) {
-        lastHeightRef.current = height;
-        return;
-      }
-      if (height > 0 && Math.abs(height - lastHeightRef.current) > 1) {
-        lastHeightRef.current = height;
+      /** Invalidate whenever the content differs from the height the List is
+       *  laying out from — including the first callback, since a cached/fast
+       *  image can already be taller than what CellMeasurer recorded at mount. */
+      if (height > 0 && Math.abs(height - cache.getHeight(index, 0)) > 1) {
         onResize(index);
       }
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [index, onResize]);
+  }, [cache, index, onResize]);
 
   return (
     <CellMeasurer

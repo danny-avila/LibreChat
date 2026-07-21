@@ -64,6 +64,12 @@ describe('areSearchMessagePropsEqual', () => {
     ).toBe(false);
   });
 
+  it('is false when only clientTimestamp changes (createdAt-less timestamp fallback)', () => {
+    const a = msg({ createdAt: undefined, clientTimestamp: '2026-07-20T00:00:00.000Z' });
+    const b = msg({ createdAt: undefined, clientTimestamp: '2026-07-20T01:00:00.000Z' });
+    expect(areSearchMessagePropsEqual({ message: a }, { message: b })).toBe(false);
+  });
+
   it('is false when exactly one message is nullish', () => {
     expect(areSearchMessagePropsEqual({ message: undefined }, { message: msg() })).toBe(false);
     expect(areSearchMessagePropsEqual({ message: msg() }, { message: undefined })).toBe(false);

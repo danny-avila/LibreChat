@@ -75,6 +75,8 @@ export function areSearchMessagePropsEqual(
     a.text === b.text &&
     a.content === b.content &&
     a.createdAt === b.createdAt &&
+    /** Timestamp falls back to `clientTimestamp` when `createdAt` is absent. */
+    a.clientTimestamp === b.clientTimestamp &&
     a.isCreatedByUser === b.isCreatedByUser &&
     a.sender === b.sender &&
     a.model === b.model &&
