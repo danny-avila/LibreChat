@@ -3,6 +3,7 @@ import type { TFileConfig } from './file-config';
 import type * as t from './types';
 import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
+import { uploadEventStream } from './upload';
 import * as mcp from './types/mcpServers';
 import * as a from './types/assistants';
 import * as m from './types/mutations';
@@ -12,7 +13,6 @@ import * as sk from './types/skills';
 import * as f from './types/files';
 import * as config from './config';
 import request from './request';
-import { uploadEventStream } from './upload';
 import * as s from './schemas';
 import * as r from './roles';
 
