@@ -541,6 +541,25 @@ endpoints:
       titleModel: 'claude-sonnet-4-5'
       modelDisplayLabel: 'Claude (Compatible)'
 
+    # BaseRT Example — local LLM runtime for Apple Silicon (https://docs.basecompute.co)
+    # Start the server first, e.g.:
+    #   basert serve Qwen/Qwen3-4B --api-key "$BASERT_API_KEY" --port 8080
+    # If serving without --api-key, set `apiKey` to any placeholder value (e.g. 'basert').
+    # `fetch: true` auto-discovers all served models via /v1/models, including
+    # multi-model setups (`basert serve` with repeated --model flags).
+    # The static localhost baseURL below needs no SSRF exemption; only
+    # `baseURL: 'user_provided'` is validated against `endpoints.allowedAddresses`
+    # (see the exemption list above), e.g. '127.0.0.1:8080'.
+    - name: 'basert'
+      apiKey: '${BASERT_API_KEY}'
+      baseURL: 'http://localhost:8080/v1'
+      models:
+        default: ['Qwen/Qwen3-4B']
+        fetch: true
+      titleConvo: true
+      titleModel: 'current_model'
+      modelDisplayLabel: 'BaseRT'
+
     # Groq Example
     - name: 'groq'
       apiKey: '${GROQ_API_KEY}'

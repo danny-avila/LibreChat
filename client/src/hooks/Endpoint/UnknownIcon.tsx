@@ -7,6 +7,7 @@ import { cn } from '~/utils';
 const knownEndpointAssets: Record<string, string> = {
   [KnownEndpoints.anyscale]: 'assets/anyscale.png',
   [KnownEndpoints.apipie]: 'assets/apipie.png',
+  [KnownEndpoints.basert]: 'assets/basert.svg',
   [KnownEndpoints.cohere]: 'assets/cohere.png',
   [KnownEndpoints.deepseek]: 'assets/deepseek.svg',
   [KnownEndpoints.fireworks]: 'assets/fireworks.png',

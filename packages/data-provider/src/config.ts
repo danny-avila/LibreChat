@@ -1961,6 +1961,7 @@ export type TProviderSchema =
 export enum KnownEndpoints {
   anyscale = 'anyscale',
   apipie = 'apipie',
+  basert = 'basert',
   cohere = 'cohere',
   fireworks = 'fireworks',
   deepseek = 'deepseek',
@@ -2007,6 +2008,7 @@ export const alternateName = {
   [EModelEndpoint.anthropic]: 'Anthropic',
   [EModelEndpoint.custom]: 'Custom',
   [EModelEndpoint.bedrock]: 'AWS Bedrock',
+  [KnownEndpoints.basert]: 'BaseRT',
   [KnownEndpoints.ollama]: 'Ollama',
   [KnownEndpoints.deepseek]: 'DeepSeek',
   [KnownEndpoints.moonshot]: 'Moonshot',
