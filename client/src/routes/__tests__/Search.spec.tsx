@@ -138,7 +138,7 @@ describe('Search route', () => {
     mockUseRecoilValue.mockReturnValue(searchState());
     mockUseQuery.mockReturnValue(queryResult({ hasNextPage: true, fetchNextPage }));
     render(<Search />);
-    (globalThis as Record<string, () => void>).__triggerRowsRendered();
+    (globalThis as unknown as Record<string, () => void>).__triggerRowsRendered();
     expect(fetchNextPage).toHaveBeenCalled();
   });
 });
