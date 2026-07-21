@@ -10,7 +10,7 @@ import { isValidTimezone, cadenceIntervalMinutes, computeNextRunAt } from './cad
 
 export interface SchedulesHandlersDeps {
   methods: ScheduleMethods;
-  getLimits: () => Promise<ScheduleLimits>;
+  getLimits: (user?: ScheduleUserContext) => Promise<ScheduleLimits>;
   /** Agent existence + VIEW access for the requesting user. */
   canViewAgent: (agentId: string, req: ServerRequest) => Promise<boolean>;
   /** Filters to file ids owned by the user. */
@@ -26,9 +26,9 @@ function toWireSchedule(schedule: ISchedule) {
   return rest;
 }
 
-function requestUser(req: ServerRequest): { id: string; tenantId?: string } {
-  const user = req.user as { id: string; tenantId?: string };
-  return { id: user.id, tenantId: user.tenantId };
+function requestUser(req: ServerRequest): { id: string; tenantId?: string; role?: string } {
+  const user = req.user as { id: string; tenantId?: string; role?: string };
+  return { id: user.id, tenantId: user.tenantId, role: user.role };
 }
 
 type ScheduleHandler = (req: ServerRequest, res: Response) => Promise<void>;
@@ -79,7 +79,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
   async function listSchedules(req: ServerRequest, res: Response): Promise<void> {
     const [schedules, limits] = await Promise.all([
       deps.methods.getSchedulesByUser(requestUser(req).id),
-      deps.getLimits(),
+      deps.getLimits(requestUser(req)),
     ]);
     res.json({
       schedules: schedules.map(toWireSchedule),
@@ -103,8 +103,8 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(400).json({ error: 'Invalid schedule payload', issues: parsed.error.issues });
       return;
     }
-    const limits = await deps.getLimits();
     const user = requestUser(req);
+    const limits = await deps.getLimits(user);
     const count = await deps.methods.countSchedulesByUser(user.id);
     if (count >= limits.maxPerUser) {
       res.status(400).json({
@@ -160,7 +160,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(404).json({ error: 'Schedule not found' });
       return;
     }
-    const limits = await deps.getLimits();
+    const limits = await deps.getLimits(user);
     if (!(await validatePayload(req, res, parsed.data, limits))) {
       return;
     }
@@ -212,7 +212,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(404).json({ error: 'Schedule not found' });
       return;
     }
-    const limits = await deps.getLimits();
+    const limits = await deps.getLimits(requestUser(req));
     const result = await deps.fireNow(schedule, limits);
     if (result == null) {
       res.status(409).json({ error: 'A run for this schedule is already in progress' });

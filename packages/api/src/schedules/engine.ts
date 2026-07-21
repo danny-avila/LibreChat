@@ -43,30 +43,40 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
         for (const run of runs) {
           const jobStatus = run.conversationId ? await deps.getJobStatus(run.conversationId) : null;
           const ageMs = Date.now() - (run.firedAt?.getTime() ?? 0);
-          // Terminal reconciliation goes through recordRunOutcome so a resumed
-          // run records the same lastRun/counter bookkeeping as an inline finish.
-          const finalize = (status: 'success' | 'interrupted') =>
+          // All transitions go through recordRunOutcome so the schedule's lastRun
+          // (and the card's status chip) tracks the run, including the pause.
+          const finalize = (
+            status: 'success' | 'interrupted' | 'error' | 'requires_action',
+            error?: string,
+          ) =>
             deps.methods.recordRunOutcome({
               scheduleId: run.scheduleId,
               scheduledFor: run.scheduledFor,
               status,
               conversationId: run.conversationId,
+              error,
               autoDisableAfterFailures: limits.autoDisableAfterFailures,
             });
           if (jobStatus === 'running') {
             continue;
           }
+          // Surface a pause on the card (lastRun → requires_action).
           if (run.status === 'started' && jobStatus === 'requires_action') {
-            await deps.methods.transitionRunStatus(
-              run.scheduleId,
-              run.scheduledFor,
-              'started',
-              'requires_action',
-            );
+            await finalize('requires_action');
             continue;
           }
           if (run.status === 'requires_action' && jobStatus === 'complete') {
             await finalize('success');
+            continue;
+          }
+          // Terminal error/abort while the job record is still retained — don't
+          // leave the run stuck as requires_action/started.
+          if (jobStatus === 'error') {
+            await finalize('error', 'Run ended in error');
+            continue;
+          }
+          if (jobStatus === 'aborted') {
+            await finalize('interrupted');
             continue;
           }
           if (run.status === 'started' && jobStatus == null && ageMs > ORPHAN_RUN_AGE_MS) {

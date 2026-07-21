@@ -5,6 +5,7 @@ const {
   fireSchedule,
   startScheduleEngine,
   generateShortLivedToken,
+  getAppConfigOptionsFromUser,
   DEFAULT_SCHEDULE_LIMITS,
   SCHEDULE_FIRE_TOKEN_TTL,
   SCHEDULE_FIRE_SCOPE,
@@ -12,9 +13,15 @@ const {
 const { getAppConfig } = require('~/server/services/Config/app');
 const methods = require('~/models');
 
-/** @returns {Promise<import('@librechat/api').ScheduleLimits>} */
-async function getLimits() {
-  const appConfig = await getAppConfig();
+/**
+ * Resolves schedule limits, honoring per-principal (role/user) config overrides
+ * when a user is supplied (routes pass req.user, the fire path passes the owner).
+ * @returns {Promise<import('@librechat/api').ScheduleLimits>}
+ */
+async function getLimits(user) {
+  const appConfig = user
+    ? await getAppConfig(getAppConfigOptionsFromUser(user))
+    : await getAppConfig();
   const config = appConfig?.interfaceConfig?.schedules;
   // Disabled config is a hard stop: the engine must not keep firing existing
   // schedules after an admin turns the feature off.

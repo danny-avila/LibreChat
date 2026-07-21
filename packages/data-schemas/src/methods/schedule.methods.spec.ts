@@ -253,13 +253,14 @@ describe('recordRunOutcome', () => {
     expect(updated.leaseBy).toBeUndefined();
   });
 
-  it('requires_action pauses the run without touching schedule counters', async () => {
+  it('requires_action surfaces lastRun for the card without touching counters', async () => {
     const schedule = await methods.createSchedule(scheduleData({ failureCount: 1 }));
     await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
     await methods.recordRunOutcome({
       scheduleId: schedule.id,
       scheduledFor,
       status: 'requires_action',
+      conversationId: 'convo-paused',
       autoDisableAfterFailures: 3,
     });
     const run = await getRun(schedule.id, scheduledFor);
@@ -267,7 +268,9 @@ describe('recordRunOutcome', () => {
     const updated = await getSchedule(schedule.id);
     expect(updated.runCount).toBe(0);
     expect(updated.failureCount).toBe(1);
-    expect(updated.lastRun).toBeUndefined();
+    // lastRun now reflects the pause so the card can show "Needs approval".
+    expect(updated.lastRun?.status).toBe('requires_action');
+    expect(updated.lastRun?.conversationId).toBe('convo-paused');
   });
 });
 

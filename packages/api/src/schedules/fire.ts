@@ -95,10 +95,10 @@ export async function fireSchedule(
   }
 
   return deps.runInTenantContext(user, async () => {
-    // Re-resolve limits INSIDE the owner's tenant context: a tenant-specific
-    // config (disabled schedules, different auto-disable threshold) must win
-    // over the base config the engine read before the claim.
-    const ownerLimits = await deps.getLimits();
+    // Re-resolve limits for the OWNER (per-principal role/user + tenant config):
+    // a tenant- or role-specific config (disabled schedules, different
+    // auto-disable threshold) must win over the base config the engine read.
+    const ownerLimits = await deps.getLimits(user);
     if (!ownerLimits.enabled) {
       await advance();
       return { fired: false, skipped: 'disabled' as const };

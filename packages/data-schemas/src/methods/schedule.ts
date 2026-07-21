@@ -245,7 +245,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
         },
       },
     );
-    if (params.status === 'requires_action' || (matched.modifiedCount ?? 0) === 0) {
+    if ((matched.modifiedCount ?? 0) === 0) {
       return;
     }
     const lastRun = {
@@ -254,7 +254,9 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       error: params.error,
       firedAt,
     };
-    if (params.status === 'interrupted') {
+    // A pause surfaces on the schedule card (lastRun) but touches no counters,
+    // so the "Needs approval" chip renders while the run waits.
+    if (params.status === 'requires_action' || params.status === 'interrupted') {
       await Schedule().updateOne({ id: params.scheduleId }, { $set: { lastRun } });
       return;
     }

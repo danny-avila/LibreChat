@@ -175,8 +175,9 @@ async function finishResumableRequest(req, userId) {
     await cleanupMCPRequestContextForReq(req);
   } finally {
     // Scheduled fires never incremented the concurrent-request counter (they are
-    // governed by the scheduler's own caps), so they must not decrement it.
-    if (!isScheduleFireRequest(req)) {
+    // governed by the scheduler's own caps), so they must not decrement it. Use
+    // the decision captured at request start, not a re-check of the expiring token.
+    if (!req._isScheduledFire) {
       await decrementPendingRequest(userId);
     }
   }
@@ -236,6 +237,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   // (scope-claim verified). A normal chat could otherwise pass an arbitrary
   // scheduleId and corrupt another schedule's lastRun/counters via the hook.
   const isScheduledFire = isScheduleFireRequest(req);
+  // Capture the decision on req: the short-lived fire token expires mid-run, so
+  // cleanup must not re-verify it (an expired token would read as non-scheduled
+  // and wrongly decrement the concurrent-request counter it never incremented).
+  req._isScheduledFire = isScheduledFire;
   const scheduleId = isScheduledFire ? bodyScheduleId : null;
   const scheduledFor = isScheduledFire ? bodyScheduledFor : null;
 

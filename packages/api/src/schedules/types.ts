@@ -36,8 +36,8 @@ export interface ScheduleFileRef {
 
 export interface ScheduleEngineDeps {
   methods: ScheduleMethods;
-  /** Resolves interface.schedules limits from the base app config. */
-  getLimits: () => Promise<ScheduleLimits>;
+  /** Resolves interface.schedules limits, per-principal when a user is given. */
+  getLimits: (user?: ScheduleUserContext) => Promise<ScheduleLimits>;
   /** Loads the owning user (id + tenant) or null when deleted/disabled. */
   getUserContext: (userId: string | Types.ObjectId) => Promise<ScheduleUserContext | null>;
   /** Whether the balance feature gates this user and they are out of credits. */
