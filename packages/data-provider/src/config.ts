@@ -1578,6 +1578,7 @@ export type TStartupConfig = {
     branch?: string | null;
     buildDate?: string | null;
   };
+  fileUploadSseEnabled?: boolean;
 };
 
 export type TSharedLinkStartupInterface = Pick<
