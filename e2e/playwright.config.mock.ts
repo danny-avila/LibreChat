@@ -127,6 +127,14 @@ const vanillaOverrides = {
   CHECK_BALANCE: 'false',
 };
 
+const externalCodeBaseUrl = process.env.E2E_CODE_BASEURL?.trim();
+const codeApiKeyEnv: Record<string, string> = {};
+if (!externalCodeBaseUrl) {
+  codeApiKeyEnv.LIBRECHAT_CODE_API_KEY = 'e2e-code-key';
+} else if (process.env.E2E_CODE_API_KEY) {
+  codeApiKeyEnv.LIBRECHAT_CODE_API_KEY = process.env.E2E_CODE_API_KEY;
+}
+
 const baseEnv = {
   ...getLocalE2EEnv(),
   CONFIG_PATH: configPath,
@@ -149,8 +157,9 @@ const baseEnv = {
     ? { E2E_CODE_BRIDGE_ADMIN_TOKEN: process.env.E2E_CODE_BRIDGE_ADMIN_TOKEN }
     : {}),
   /** Point code-env + RAG provisioning at the local fakes started below. */
-  LIBRECHAT_CODE_BASEURL: `http://127.0.0.1:${CODE_API_PORT}/v1`,
-  LIBRECHAT_CODE_API_KEY: 'e2e-code-key',
+  LIBRECHAT_CODE_BASEURL: externalCodeBaseUrl || `http://127.0.0.1:${CODE_API_PORT}/v1`,
+  ...(externalCodeBaseUrl ? { LIBRECHAT_CODE_BASEURL_STATEFUL: externalCodeBaseUrl } : {}),
+  ...codeApiKeyEnv,
   RAG_API_URL: `http://127.0.0.1:${RAG_API_PORT}`,
   ...vanillaOverrides,
 };

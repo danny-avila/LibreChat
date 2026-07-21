@@ -104,6 +104,8 @@ const APPROVAL_TOOL_CALL_PREFIX = 'call_e2e_approval_';
 const BACKGROUND_DISPATCH_TOOL_CALL_ID = 'call_e2e_background_dispatch';
 const BACKGROUND_COLLECT_TOOL_CALL_ID = 'call_e2e_background_collect';
 const EXECUTE_CODE_MARKER = 'E2E_EXECUTE_CODE:';
+const EXEC_UPLOADED_MARKER = 'E2E_EXEC_UPLOADED:';
+const EXEC_PERSIST_MARKER = 'E2E_EXEC_PERSIST:';
 const FILE_SEARCH_MARKER = 'E2E_FILE_SEARCH:';
 /** Code Interpreter advertises bash_tool/read_file at runtime (execute_code is legacy);
  *  emit whichever the agent actually exposes so the tool batch — and provisioning — fires. */
@@ -116,6 +118,11 @@ const FILE_SEARCH_TOOL_NAME = 'file_search';
 const EXECUTE_CODE_FINAL_TEXT = 'E2E execute_code complete';
 const FILE_SEARCH_FINAL_TEXT = 'E2E file_search complete';
 const EXECUTE_CODE_TOOL_CALL_ID = 'call_e2e_execute_code';
+const EXEC_UPLOADED_TOOL_CALL_ID = 'call_e2e_exec_uploaded';
+const EXEC_PERSIST_TOOL_CALL_ID = 'call_e2e_exec_persist';
+const EXEC_UPLOADED_FINAL_TEXT = 'E2E code exec complete';
+const EXEC_PERSIST_FINAL_TEXT = 'E2E code persistence complete';
+const EXEC_TURN_MARKER_FILE = 'e2e-turn1-marker.txt';
 const FILE_SEARCH_TOOL_CALL_ID = 'call_e2e_file_search';
 const MODEL_SPEC_ACCESSIBLE_SKILL = 'e2e-model-spec-allowed';
 const DEPLOYMENT_SKILL_NAME = 'e2e-deployment-skill';
@@ -187,6 +194,15 @@ function getRequestedSkillName(text, marker) {
   }
   const afterMarker = text.slice(markerIndex + marker.length);
   return afterMarker.match(/[a-z0-9][a-z0-9-]*/)?.[0] ?? '';
+}
+
+function getRequestedSandboxFilename(text, marker) {
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex === -1) {
+    return '';
+  }
+  const afterMarker = text.slice(markerIndex + marker.length);
+  return afterMarker.match(/[A-Za-z0-9][A-Za-z0-9._-]*/)?.[0] ?? '';
 }
 
 function getMarkerValue(text, marker) {
@@ -2304,6 +2320,32 @@ function buildHandoffResponses(graph, parsed) {
  * batch to fire. Guards assert the resource tool was actually advertised.
  */
 function provisioningToolResponses({ text, toolNames }) {
+  const uploadedFilename = getRequestedSandboxFilename(text, EXEC_UPLOADED_MARKER);
+  if (uploadedFilename) {
+    return codeExecResponses(
+      {
+        filename: uploadedFilename,
+        toolCallId: EXEC_UPLOADED_TOOL_CALL_ID,
+        finalText: EXEC_UPLOADED_FINAL_TEXT,
+        code: `cat "/mnt/data/${uploadedFilename}" && printf 'turn1-proof-%s\\n' "$((40 + 2))" > "/mnt/data/${EXEC_TURN_MARKER_FILE}"`,
+      },
+      toolNames,
+    );
+  }
+
+  const persistedFilename = getRequestedSandboxFilename(text, EXEC_PERSIST_MARKER);
+  if (persistedFilename) {
+    return codeExecResponses(
+      {
+        filename: persistedFilename,
+        toolCallId: EXEC_PERSIST_TOOL_CALL_ID,
+        finalText: EXEC_PERSIST_FINAL_TEXT,
+        code: `printf 'LINES=%s\\n' "$(wc -l < "/mnt/data/${persistedFilename}")" && cat "/mnt/data/${EXEC_TURN_MARKER_FILE}"`,
+      },
+      toolNames,
+    );
+  }
+
   const codeLabel = getMarkerValue(text, EXECUTE_CODE_MARKER);
   if (codeLabel) {
     const codeTool = CODE_EXEC_TOOLS.find((tool) => toolNames.has(tool.name));
@@ -2350,6 +2392,25 @@ function provisioningToolResponses({ text, toolNames }) {
   }
 
   return null;
+}
+
+function codeExecResponses({ filename, toolCallId, finalText, code }, toolNames) {
+  if (!toolNames.has(BASH_TOOL_NAME)) {
+    return {
+      responses: [`E2E code exec unavailable: ${BASH_TOOL_NAME} was not advertised.`],
+    };
+  }
+  return {
+    responses: ['', `${finalText}: ${filename}`],
+    toolCalls: [
+      {
+        id: toolCallId,
+        name: BASH_TOOL_NAME,
+        args: { command: code },
+        type: 'tool_call',
+      },
+    ],
+  };
 }
 
 function resolveResponses({ graph, messages, text, toolNames }) {
