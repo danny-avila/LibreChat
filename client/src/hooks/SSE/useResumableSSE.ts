@@ -625,6 +625,7 @@ export default function useResumableSSE(
     syncStepMessage,
     attachmentHandler,
     resetContentHandler,
+    flushPendingDeltas,
   } = useEventHandlers({
     setMessages,
     getMessages,
@@ -697,6 +698,11 @@ export default function useResumableSSE(
             );
           }
         };
+        /** The pause card must attach to the same message state the stream
+         * produced — apply any queued delta before reading the cache, or the
+         * later flush would clobber the card (and `syncStepMessage` below
+         * would sync a pre-delta copy). */
+        flushPendingDeltas();
         const messages = getMessages() ?? [];
         const index = findPendingActionMessageIndex(messages, pendingAction);
         if (index < 0) {
@@ -741,6 +747,9 @@ export default function useResumableSSE(
             );
           }
         };
+        /** Same boundary as pending actions: land queued deltas before the
+         * steer part is placed and synced. */
+        flushPendingDeltas();
         const messages = getMessages() ?? [];
         const index = findSteerMessageIndex(messages, event);
         if (index < 0) {
@@ -1281,6 +1290,10 @@ export default function useResumableSSE(
         if (responseCode == null && e.data) {
           logger.log('ResumableSSE', 'Server-sent error event received:', e.data);
           sse.close();
+          /** FLUSH (not cancel): the error card below is built from the cache
+           * tail, so queued tokens must land first — and a stale trailing
+           * frame must never overwrite the error write. */
+          flushPendingDeltas();
           removeActiveJob(currentStreamId);
           resetLive({ ...currentSubmission, userMessage });
           if (
@@ -1377,6 +1390,7 @@ export default function useResumableSSE(
         } else {
           logger.error('ResumableSSE', 'Max reconnect attempts reached');
           sse.close();
+          flushPendingDeltas();
           errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
           /** Terminal: clear the in-flight live estimate like the other
            *  stop-reconnecting paths so the gauge doesn't show stale tokens */
@@ -1478,6 +1492,7 @@ export default function useResumableSSE(
       clearStepMaps,
       messageHandler,
       errorHandler,
+      flushPendingDeltas,
       setIsSubmitting,
       getMessages,
       setMessages,
