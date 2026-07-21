@@ -58,6 +58,16 @@ async function idempotencyCheck(req, res, next) {
 
   if (claim?.claimed) {
     req._ownsIdempotencyClaim = true;
+    // If a downstream middleware (rate limiter, moderation, access check) ends
+    // the response before the controller creates the job, release the claim so
+    // the client can retry without waiting for the TTL. The controller sets
+    // `req._resumableStreamId` right before createJob — if it's absent when
+    // the response closes, the job was never started.
+    res.on('close', () => {
+      if (!req._resumableStreamId) {
+        GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
+      }
+    });
     return next();
   }
 
