@@ -952,10 +952,11 @@ const DEFAULT_SSE_READ_TIMEOUT = FIVE_MINUTES;
 
 /**
  * Error message prefixes emitted by the MCP SDK's StreamableHTTPClientTransport
- * (client/streamableHttp.ts → _handleSseStream / _scheduleReconnection).
+ * (client/streamableHttp.ts → _startOrAuthSse / _handleSseStream / _scheduleReconnection).
  * These are SDK-internal strings, not part of a public API. If the SDK changes
  * them, suppression in setupTransportErrorHandlers will silently stop working.
  */
+const SDK_STREAMABLE_HTTP_SSE_OPEN_FAILED = 'Streamable HTTP error: Failed to open SSE stream:';
 const SDK_SSE_STREAM_DISCONNECTED = 'SSE stream disconnected';
 const SDK_SSE_RECONNECT_FAILED = 'Failed to reconnect SSE stream';
 
@@ -2124,26 +2125,26 @@ export class MCPConnection extends EventEmitter {
         isTransient,
       } = extractSSEErrorMessage(error);
 
-      const hasSession =
+      const hasSessionId =
         'sessionId' in transport &&
         (transport as { sessionId?: string }).sessionId != null &&
         (transport as { sessionId?: string }).sessionId !== '';
       const isOptionalSseGetFailure =
         transport instanceof StreamableHTTPClientTransport &&
         ((errorObject != null && optionalStreamableHttpSseGetErrors.has(errorObject)) ||
-          rawMessage.toLowerCase().includes('failed to open sse stream'));
+          rawMessage.startsWith(SDK_STREAMABLE_HTTP_SSE_OPEN_FAILED));
 
       /**
-       * A standalone Streamable HTTP GET is optional and a sessionless server can
-       * remain fully usable through POST responses. Do not rebuild that working
-       * POST transport when only the optional GET fails. Authentication failures
-       * are excluded so the existing OAuth recovery path still runs.
+       * A standalone Streamable HTTP GET is optional, and a server that did not
+       * assign a session ID can remain usable through POST responses. Do not
+       * rebuild that working POST transport when only the optional GET fails.
+       * Authentication failures are excluded so the existing OAuth recovery path runs.
        */
-      if (isOptionalSseGetFailure && !hasSession && !this.isOAuthError(error)) {
+      if (isOptionalSseGetFailure && !hasSessionId && !this.isOAuthError(error)) {
         if (errorObject == null || !handledOptionalStreamableHttpSseGetErrors.has(errorObject)) {
           const status = errorCode != null ? ` (${errorCode})` : '';
           logger.warn(
-            `${this.getLogPrefix()} Optional SSE GET unavailable${status}, no session; keeping Streamable HTTP POST channel active.`,
+            `${this.getLogPrefix()} Optional SSE GET unavailable${status}, no server-assigned session ID; keeping Streamable HTTP POST channel active.`,
           );
           if (errorObject != null) {
             handledOptionalStreamableHttpSseGetErrors.add(errorObject);
@@ -2153,16 +2154,16 @@ export class MCPConnection extends EventEmitter {
       }
 
       if (errorCode === 400 || errorCode === 404 || errorCode === 405 || errorCode === 406) {
-        if (!hasSession && errorMessage.toLowerCase().includes('failed to open sse stream')) {
+        if (!hasSessionId && rawMessage.startsWith(SDK_STREAMABLE_HTTP_SSE_OPEN_FAILED)) {
           logger.warn(
-            `${this.getLogPrefix()} SSE stream not available (${errorCode}), no session. Ignoring.`,
+            `${this.getLogPrefix()} SSE stream not available (${errorCode}), no server-assigned session ID. Ignoring.`,
           );
           return;
         }
 
-        if (hasSession) {
+        if (hasSessionId) {
           logger.warn(
-            `${this.getLogPrefix()} ${errorCode} with active session — session lost, triggering reconnection.`,
+            `${this.getLogPrefix()} ${errorCode} with active session ID — session lost, triggering reconnection.`,
           );
         }
       }
