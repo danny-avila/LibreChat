@@ -15,6 +15,32 @@
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png" />
     <link rel="apple-touch-icon" href="assets/apple-touch-icon-180x180.png" />
+    <script>
+      (function () {
+        if (typeof window.matchMedia !== 'function') {
+          return;
+        }
+        var darkScheme = window.matchMedia('(prefers-color-scheme: dark)');
+        var setFavicons = function () {
+          var links = document.querySelectorAll('link[rel="icon"][sizes]');
+          for (var i = 0; i < links.length; i++) {
+            var sizes = links[i].getAttribute('sizes');
+            var href = darkScheme.matches
+              ? 'assets/favicon-' + sizes + '-dark.png'
+              : 'assets/favicon-' + sizes + '.png';
+            if (links[i].getAttribute('href') !== href) {
+              links[i].setAttribute('href', href);
+            }
+          }
+        };
+        if (typeof darkScheme.addEventListener === 'function') {
+          darkScheme.addEventListener('change', setFavicons);
+        } else if (typeof darkScheme.addListener === 'function') {
+          darkScheme.addListener(setFavicons);
+        }
+        setFavicons();
+      })();
+    </script>
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, interactive-widget=resizes-content"
