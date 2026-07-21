@@ -16,6 +16,9 @@ const mockGenerationJobManager = {
   claimGeneration: jest.fn(),
   releaseGeneration: jest.fn(),
   hasJob: jest.fn(),
+  getJobStore: jest.fn(() => ({
+    getJob: jest.fn().mockResolvedValue(null),
+  })),
 };
 
 const mockCheckAndIncrementPendingRequest = jest.fn();
@@ -199,6 +202,9 @@ describe('ResumableAgentController resume metadata', () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue({ claimed: true });
     mockGenerationJobManager.releaseGeneration.mockResolvedValue(undefined);
     mockGenerationJobManager.hasJob.mockResolvedValue(true);
+    mockGenerationJobManager.getJobStore.mockReturnValue({
+      getJob: jest.fn().mockResolvedValue(null),
+    });
     mockSaveMessage.mockResolvedValue({});
   });
 
@@ -662,6 +668,39 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
     expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
     expect(initializeClient).not.toHaveBeenCalled();
+  });
+
+  it('returns 409 when the deduped job belongs to a different submission', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue({
+      claimed: false,
+      existing: { streamId: 'orig-stream', conversationId: 'orig-convo' },
+    });
+    mockGenerationJobManager.hasJob.mockResolvedValue(true);
+    mockGenerationJobManager.getJobStore.mockReturnValue({
+      getJob: jest.fn().mockResolvedValue({
+        clientRequestId: 'req-other',
+      }),
+    });
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Retry that lost the race.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = { json: jest.fn(), status: jest.fn(() => res), set: jest.fn() };
+
+    await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'This generation was superseded. Please reload.' }),
+    );
+    expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
   });
 
   it('resumes when the job is missing but the claim is old (original completed and was cleaned up)', async () => {

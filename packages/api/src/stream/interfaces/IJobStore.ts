@@ -82,6 +82,13 @@ export interface SerializableJobData {
   promptTokens?: number;
 
   /**
+   * The clientRequestId that originated this generation. Set once at creation so a
+   * deduped retry can verify the job at the claimed streamId belongs to the same
+   * submission rather than a newer generation that replaced it (#14348).
+   */
+  clientRequestId?: string;
+
+  /**
    * Agent that initiated the run. Persisted so a HITL resume can verify it rebuilds
    * the SAME agent that paused — resuming Agent A's checkpoint on Agent B's graph
    * would mis-execute the paused tool calls.

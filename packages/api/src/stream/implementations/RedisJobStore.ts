@@ -1801,6 +1801,7 @@ export class RedisJobStore implements IJobStore {
       pendingAction: this.parsePendingAction(data.pendingAction),
       pendingActionId: data.pendingActionId || undefined,
       lastActiveAt: data.lastActiveAt ? parseInt(data.lastActiveAt, 10) : undefined,
+      clientRequestId: data.clientRequestId || undefined,
     };
   }
 
