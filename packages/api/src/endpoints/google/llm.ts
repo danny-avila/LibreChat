@@ -13,9 +13,23 @@ type GoogleThinkingConfig = {
   thinkingLevel?: GoogleThinkingLevel;
 };
 
-const GEMINI_3_5_FLASH = 'gemini-3.5-flash';
-const GEMINI_3_5_FLASH_DEFAULT_THINKING_LEVEL: GoogleThinkingLevel = 'MEDIUM';
-const gemini35FlashLegacyParams = [
+/**
+ * Gemini Flash models (3.5+) that drop the numeric sampling parameters
+ * (`temperature`/`topP`/`topK`) and `thinkingBudget` in favor of the qualitative
+ * `thinkingLevel`. Google ignores the deprecated params today and returns HTTP 400
+ * for them on newer model generations, so we strip them and apply each model's
+ * documented default thinking level when the request doesn't set one. Ordered
+ * most-specific-first so `gemini-3.5-flash-lite` resolves before the
+ * `gemini-3.5-flash` prefix.
+ * @see https://ai.google.dev/gemini-api/docs/latest-model#api-changes-and-parameter-updates
+ */
+const geminiFlashThinkingDefaults: ReadonlyArray<readonly [string, GoogleThinkingLevel]> = [
+  ['gemini-3.6-flash', 'MEDIUM'],
+  ['gemini-3.5-flash-lite', 'MINIMAL'],
+  ['gemini-3.5-flash', 'MEDIUM'],
+];
+
+const geminiFlashLegacyParams = [
   'temperature',
   'topP',
   'topK',
@@ -130,10 +144,15 @@ function normalizeGoogleThinkingLevel(value: unknown): GoogleThinkingLevel | und
   return normalized;
 }
 
-function isGemini35Flash(model: string) {
+function getGeminiFlashDefaultThinkingLevel(model: string): GoogleThinkingLevel | undefined {
   const normalized = model.toLowerCase();
   const modelId = normalized.split('/').pop() ?? normalized;
-  return modelId === GEMINI_3_5_FLASH || modelId.startsWith(`${GEMINI_3_5_FLASH}-`);
+  for (const [id, level] of geminiFlashThinkingDefaults) {
+    if (modelId === id || modelId.startsWith(`${id}-`)) {
+      return level;
+    }
+  }
+  return undefined;
 }
 
 const urlContextModelRegex = /gemini-(\d+)(?:\.(\d+))?/i;
@@ -172,7 +191,7 @@ function sanitizeModelOptions(modelOptions: Partial<t.GoogleParameters> | undefi
   return sanitizedOptions;
 }
 
-function applyGemini35FlashOverrides({
+function applyGeminiFlashOverrides({
   config,
   provider,
   thinking,
@@ -185,11 +204,15 @@ function applyGemini35FlashOverrides({
 }) {
   const mutableConfig = config as Record<string, unknown>;
   const model = mutableConfig.model;
-  if (typeof model !== 'string' || !isGemini35Flash(model)) {
+  if (typeof model !== 'string') {
+    return;
+  }
+  const defaultThinkingLevel = getGeminiFlashDefaultThinkingLevel(model);
+  if (!defaultThinkingLevel) {
     return;
   }
 
-  gemini35FlashLegacyParams.forEach((param) => {
+  geminiFlashLegacyParams.forEach((param) => {
     delete mutableConfig[param];
   });
 
@@ -220,7 +243,7 @@ function applyGemini35FlashOverrides({
   }
 
   if (!shouldDropThinkingLevel && !thinkingConfig.thinkingLevel) {
-    thinkingConfig.thinkingLevel = GEMINI_3_5_FLASH_DEFAULT_THINKING_LEVEL;
+    thinkingConfig.thinkingLevel = defaultThinkingLevel;
   }
 
   if (Object.keys(thinkingConfig).length > 0) {
@@ -634,7 +657,7 @@ export function getGoogleConfig(
       googleSettings.maxOutputTokens.reset(resolvedModel);
   }
 
-  applyGemini35FlashOverrides({
+  applyGeminiFlashOverrides({
     config: llmConfig,
     provider,
     thinking,

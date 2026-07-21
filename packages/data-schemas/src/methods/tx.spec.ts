@@ -1526,7 +1526,9 @@ describe('Google Model Tests', () => {
     'gemini-3.1-pro-preview',
     'gemini-3.1-pro-preview-customtools',
     'gemini-3.1-flash-lite-preview',
+    'gemini-3.6-flash',
     'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
     'gemini-2.5-pro',
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
@@ -1574,7 +1576,9 @@ describe('Google Model Tests', () => {
       'gemini-3.1-pro-preview': 'gemini-3.1',
       'gemini-3.1-pro-preview-customtools': 'gemini-3.1',
       'gemini-3.1-flash-lite-preview': 'gemini-3.1-flash-lite',
+      'gemini-3.6-flash': 'gemini-3.6-flash',
       'gemini-3.5-flash': 'gemini-3.5-flash',
+      'gemini-3.5-flash-lite': 'gemini-3.5-flash-lite',
       'gemini-2.5-pro': 'gemini-2.5-pro',
       'gemini-2.5-flash': 'gemini-2.5-flash',
       'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',
@@ -1690,6 +1694,38 @@ describe('Google Model Tests', () => {
     );
     expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
       cacheTokenValues['gemini-3.5-flash'].read,
+    );
+  });
+
+  it('should return correct rates for Gemini 3.6 Flash', () => {
+    const model = 'gemini-3.6-flash';
+    expect(getMultiplier({ model, tokenType: 'prompt', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.6-flash'].prompt,
+    );
+    expect(getMultiplier({ model, tokenType: 'completion', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.6-flash'].completion,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(
+      cacheTokenValues['gemini-3.6-flash'].write,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
+      cacheTokenValues['gemini-3.6-flash'].read,
+    );
+  });
+
+  it('should return correct rates for Gemini 3.5 Flash-Lite', () => {
+    const model = 'gemini-3.5-flash-lite';
+    expect(getMultiplier({ model, tokenType: 'prompt', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.5-flash-lite'].prompt,
+    );
+    expect(getMultiplier({ model, tokenType: 'completion', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.5-flash-lite'].completion,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(
+      cacheTokenValues['gemini-3.5-flash-lite'].write,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
+      cacheTokenValues['gemini-3.5-flash-lite'].read,
     );
   });
 });
