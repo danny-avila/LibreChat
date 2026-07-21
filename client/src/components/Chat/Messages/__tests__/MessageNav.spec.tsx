@@ -476,6 +476,56 @@ describe('MessageNav', () => {
       expect(steerRib?.getAttribute('aria-label')).not.toContain('Danny');
     });
 
+    it('places a nested steer at its content-space position, not its offset-parent-local offset', () => {
+      // A steer renders inside the response's `relative` content column, so its
+      // raw offsetTop is local to that column, not its true position in the
+      // thread. The rail must sum the offsetParent chain — otherwise the steer's
+      // small local offset reads as the topmost row and hijacks the current
+      // indicator (and, with it, the up/down chevrons) whenever it is on screen.
+      const messages = [
+        buildMessage({ messageId: 'u1', text: 'first ask', isCreatedByUser: true }),
+        buildMessage({ messageId: 'a1', text: 'long tool run' }),
+        buildMessage({ messageId: 'u2', text: 'follow-up', isCreatedByUser: true }),
+        buildMessage({ messageId: 'a2', text: 'second reply' }),
+      ];
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messages });
+      const { scrollable } = buildDom(messages);
+      const response = scrollable.querySelector('#a1') as HTMLElement;
+
+      // Nest the steer in a positioned column of its own; the steer's offsetTop
+      // (40) is local to that column (380), so its content-space top is 420 —
+      // below a1 (300) and above u2 (500). jsdom leaves offsetParent null, so
+      // the nesting has to be declared for the chain-walk to have anything to
+      // sum.
+      const column = document.createElement('div');
+      column.className = 'relative';
+      Object.defineProperty(column, 'offsetTop', { value: 380, configurable: true });
+      response.appendChild(column);
+      const steer = appendSteerNode(column, 's1', 'steer mid-run words', 40);
+      Object.defineProperty(steer, 'offsetParent', { value: column, configurable: true });
+
+      const scrollableRef = { current: scrollable } as RefObject<HTMLDivElement>;
+      const { container } = render(<MessageNav scrollableRef={scrollableRef} />);
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      const io = MockIntersectionObserver.last();
+      act(() => {
+        io!.trigger([
+          { target: document.getElementById('a1')!, isIntersecting: true },
+          { target: document.getElementById('steer-s1')!, isIntersecting: true },
+        ]);
+        jest.advanceTimersByTime(32);
+      });
+
+      // Topmost-by-content-space is the response, not the steer with the smaller
+      // local offset. Before the chain-walk this landed on 'steer-s1'.
+      const current = container.querySelectorAll('[aria-current="true"]');
+      expect(current).toHaveLength(1);
+      expect(current[0]).toHaveAttribute('data-msg-id', 'a1');
+    });
+
     it('un-lights a steer rib when its DOM node is replaced (pending → applied swap)', async () => {
       const messages = [
         buildMessage({ messageId: 'u1', text: 'first ask', isCreatedByUser: true }),
