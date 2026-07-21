@@ -102,21 +102,10 @@ librechat:
     mcpSettings:
       allowedDomains:
         - http://ms365-mcp-server.billechat.svc.cluster.local:3000
-        - http://billeprezi-mcp-server.billechat.svc.cluster.local:3091
         - https://mcp.atlassian.com
         - https://auth.atlassian.com
         - https://api.atlassian.com
     mcpServers:
-      # BillePreziBot — presentation-assembly MCP (search/get/assemble governed slides).
-      # Deployed as a sidecar service in the cluster (deploy/k8s-manifests.yaml in the
-      # billeprezibot-mcp repo). Transport stays internal via cluster DNS; assembled
-      # decks are served publicly at https://billechat.135-225-229-32.nip.io/billeprezi/downloads/...
-      billeprezi:
-        type: streamable-http
-        url: http://billeprezi-mcp-server.billechat.svc.cluster.local:3091/mcp
-        timeout: 120000
-        chatMenu: true
-        serverInstructions: true
       # Microsoft 365 MCP — Outlook, Calendar, Teams, OneDrive, SharePoint, etc.
       # Uses OAuth 2.1 (browser-based login). Deployed as a sidecar service in the cluster.
       # Public URL: https://ms365-mcp.135-225-229-32.nip.io
