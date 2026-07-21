@@ -45,6 +45,11 @@ const {
 } = require('./skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
+const {
+  isSystemGlobalId,
+  resolveSystemGlobalAgent,
+  authorizeSystemGlobalAgent,
+} = require('~/server/services/Agents/systemGlobal');
 const AgentClient = require('~/server/controllers/agents/client');
 const { processAddedConvo } = require('./addedConvo');
 const { logViolation } = require('~/cache');
@@ -500,6 +505,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     {
       getAgent: db.getAgent,
       checkPermission,
+      authorizeSystemGlobalAgent,
       logViolation,
       db: {
         getFiles: db.getFiles,
@@ -630,7 +636,14 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     if (existing) return existing;
 
     try {
-      const agent = await db.getAgent({ id: agentId });
+      // A subagent referenced only via `subagents.agent_ids` may be a tenantless `tenants: 'system'`
+      // global; resolve + authorize it under the system context (a tenant-scoped read/check misses it).
+      let agent = await db.getAgent({ id: agentId });
+      let viaSystemFallback = false;
+      if (!agent && isSystemGlobalId(agentId)) {
+        agent = await resolveSystemGlobalAgent(agentId);
+        viaSystemFallback = agent != null;
+      }
       if (!agent) {
         skippedAgentIds.add(agentId);
         return null;
@@ -640,13 +653,21 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         skippedAgentIds.add(agentId);
         return null;
       }
-      const hasAccess = await checkPermission({
-        userId,
-        role: req.user?.role,
-        resourceType: ResourceType.AGENT,
-        resourceId: agent._id,
-        requiredPermission: PermissionBits.VIEW,
-      });
+      const hasAccess = viaSystemFallback
+        ? (
+            await authorizeSystemGlobalAgent({
+              agentId,
+              requiredPermission: PermissionBits.VIEW,
+              req,
+            })
+          ).status === 'ok'
+        : await checkPermission({
+            userId,
+            role: req.user?.role,
+            resourceType: ResourceType.AGENT,
+            resourceId: agent._id,
+            requiredPermission: PermissionBits.VIEW,
+          });
       if (!hasAccess) {
         logger.warn(
           `[processAgent] User ${userId} lacks VIEW access to subagent ${agentId}, skipping`,

@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, runAsSystem } from '@librechat/data-schemas';
 import { ResourceType, PermissionBits, EModelEndpoint } from 'librechat-data-provider';
 import type { Agent, GraphEdge, TModelsConfig, TEndpointOption } from 'librechat-data-provider';
 import type { Response as ServerResponse } from 'express';
@@ -13,6 +13,7 @@ import { validateAgentModel as defaultValidateAgentModel } from './validation';
 import { initializeAgent as defaultInitializeAgent } from './initialize';
 import { createEdgeCollector, filterOrphanedEdges } from './edges';
 import { createSequentialChainEdges } from './chain';
+import { isSystemGlobalId } from './systemGlobal';
 
 /**
  * Callback invoked after a sub-agent is successfully initialized.
@@ -107,9 +108,19 @@ export interface DiscoverConnectedAgentsParams {
 
 export interface DiscoverConnectedAgentsDeps {
   /** Fetch an agent by string id from the database. */
-  getAgent: (filter: { id: string }) => Promise<Agent | null>;
+  getAgent: (filter: { id: string; tenantId?: { $exists: boolean } }) => Promise<Agent | null>;
   /** Permission check (typically a wrapper around PermissionService.checkPermission). */
   checkPermission: CheckAgentPermission;
+  /**
+   * Authorize a tenantless `tenants: 'system'` global connected agent — principals built in the
+   * request tenant context, ACL lookup under the system context. Optional: when absent, such agents
+   * fall back to the tenant-scoped `checkPermission` and are skipped if their grants are tenantless.
+   */
+  authorizeSystemGlobalAgent?: (params: {
+    agentId: string;
+    requiredPermission: number;
+    req: { user: { id: string; role: string; tenantId?: string } };
+  }) => Promise<{ status: 'ok' | 'not_found' | 'forbidden'; agent?: Agent }>;
   /** Violation logger passed through to validateAgentModel. */
   logViolation: ValidateAgentModelParams['logViolation'];
   /** DB methods consumed by initializeAgent for each sub-agent. */
@@ -180,6 +191,7 @@ export async function discoverConnectedAgents(
   const {
     getAgent,
     checkPermission,
+    authorizeSystemGlobalAgent,
     logViolation,
     db,
     onAgentInitialized,
@@ -201,7 +213,16 @@ export async function discoverConnectedAgents(
   };
 
   const processAgent = async (agentId: string): Promise<Agent | null> => {
-    const agent = await getAgent({ id: agentId });
+    /* A connected agent (edge/subagent target) may be a `tenants: 'system'` global — a tenantless
+     * row a tenant-scoped read misses. Resolve it under the system context (pinned tenantless) and
+     * flag it so its authorization runs there too; its grants are tenantless and a tenant-scoped
+     * permission check would wrongly deny access. */
+    let agent = await getAgent({ id: agentId });
+    let viaSystemFallback = false;
+    if (!agent && isSystemGlobalId(agentId)) {
+      agent = await runAsSystem(() => getAgent({ id: agentId, tenantId: { $exists: false } }));
+      viaSystemFallback = agent != null;
+    }
     if (!agent) {
       logger.warn(
         `[discoverConnectedAgents] Handoff agent ${agentId} not found, skipping (orphaned reference)`,
@@ -219,13 +240,29 @@ export async function discoverConnectedAgents(
       return null;
     }
 
-    const hasAccess = await checkPermission({
-      userId,
-      role: req.user?.role,
-      resourceType,
-      resourceId: agent._id,
-      requiredPermission: PermissionBits.VIEW,
-    });
+    /* The system-global authorizer only checks AGENT ACL grants. Restrict it to `resourceType: AGENT`
+     * so REMOTE_AGENT callers (OpenAI/Responses controllers) still enforce their remote sharing
+     * boundary via `checkPermission` — a global agent isn't remote-accessible unless granted so. */
+    const hasAccess =
+      viaSystemFallback && authorizeSystemGlobalAgent && resourceType === ResourceType.AGENT
+        ? (
+            await authorizeSystemGlobalAgent({
+              agentId,
+              requiredPermission: PermissionBits.VIEW,
+              // Preserve tenantId: hasCapability keys its cache/principals on it, so dropping it
+              // would skip tenant-scoped managers/admins relying on the MANAGE_AGENTS bypass.
+              req: {
+                user: { id: userId, role: req.user?.role ?? '', tenantId: req.user?.tenantId },
+              },
+            })
+          ).status === 'ok'
+        : await checkPermission({
+            userId,
+            role: req.user?.role,
+            resourceType,
+            resourceId: agent._id,
+            requiredPermission: PermissionBits.VIEW,
+          });
 
     if (!hasAccess) {
       logger.warn(

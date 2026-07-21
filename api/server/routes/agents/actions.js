@@ -160,6 +160,12 @@ router.post(
         return res.status(404).json({ message: 'Agent not found for adding action' });
       }
 
+      if (agent.isSystem) {
+        return res.status(403).json({
+          message: 'Global agents are managed by server configuration and cannot be modified.',
+        });
+      }
+
       const storedAction = actions_result?.[0];
       if (storedAction) {
         if (storedAction.agent_id !== agent_id) {
@@ -267,6 +273,12 @@ router.delete(
       const agent = await db.getAgent({ id: agent_id });
       if (!agent) {
         return res.status(404).json({ message: 'Agent not found for deleting action' });
+      }
+
+      if (agent.isSystem) {
+        return res.status(403).json({
+          message: 'Global agents are managed by server configuration and cannot be modified.',
+        });
       }
 
       const { tools = [], actions = [] } = agent;

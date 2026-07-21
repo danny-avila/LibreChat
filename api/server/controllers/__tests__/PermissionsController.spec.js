@@ -6,6 +6,7 @@ const mockGetTenantId = jest.fn();
 jest.mock('@librechat/data-schemas', () => ({
   logger: mockLogger,
   getTenantId: mockGetTenantId,
+  runAsSystem: (fn) => fn(),
   SYSTEM_TENANT_ID: '__SYSTEM__',
 }));
 
@@ -40,6 +41,7 @@ jest.mock('~/models', () => ({
   searchPrincipals: jest.fn(),
   sortPrincipalsByRelevance: jest.fn(),
   calculateRelevanceScore: jest.fn(),
+  getAgent: jest.fn().mockResolvedValue(null),
   removeAgentFromUserFavorites: (...args) => mockRemoveAgentFromUserFavorites(...args),
 }));
 
@@ -282,6 +284,42 @@ describe('PermissionsController', () => {
 
       expect(res.status).toHaveBeenCalledWith(200);
       expect(mockRemoveAgentFromUserFavorites).toHaveBeenCalledWith(agentObjectId, [revokedUserId]);
+    });
+
+    it('rejects permission edits for a config-managed (isSystem) agent', async () => {
+      db.getAgent.mockResolvedValueOnce({ _id: agentObjectId, isSystem: true });
+      const req = createMockReq({
+        params: { resourceType: ResourceType.AGENT, resourceId: agentObjectId },
+        body: {
+          updated: [{ type: PrincipalType.USER, id: revokedUserId, accessRoleId: 'agent_viewer' }],
+          removed: [],
+          public: false,
+        },
+      });
+      const res = createMockRes();
+
+      await updateResourcePermissions(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(mockBulkUpdateResourcePermissions).not.toHaveBeenCalled();
+    });
+
+    it('rejects remote-agent permission edits for a config-managed (isSystem) agent', async () => {
+      db.getAgent.mockResolvedValueOnce({ _id: agentObjectId, isSystem: true });
+      const req = createMockReq({
+        params: { resourceType: ResourceType.REMOTE_AGENT, resourceId: agentObjectId },
+        body: {
+          updated: [{ type: PrincipalType.USER, id: revokedUserId, accessRoleId: 'agent_viewer' }],
+          removed: [],
+          public: false,
+        },
+      });
+      const res = createMockRes();
+
+      await updateResourcePermissions(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(mockBulkUpdateResourcePermissions).not.toHaveBeenCalled();
     });
 
     it('removes agent from revoked users favorites on REMOTE_AGENT resource type', async () => {

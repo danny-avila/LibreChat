@@ -30,6 +30,7 @@ const { fileAccess } = require('~/server/middleware/accessResources/fileAccess')
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
+const { withSystemGlobalFallback } = require('~/server/services/Agents/systemGlobal');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { cleanFileName, getContentDisposition } = require('~/server/utils/files');
 const { getLogStores } = require('~/cache');
@@ -198,6 +199,12 @@ router.delete('/', async (req, res) => {
 
       if (!agent) {
         return res.status(404).json({ message: 'Agent not found' });
+      }
+
+      if (agent.isSystem) {
+        return res.status(403).json({
+          message: 'Global agents are managed by server configuration and cannot be modified.',
+        });
       }
 
       const hasAgentEditAccess =
@@ -660,6 +667,23 @@ router.post('/', async (req, res) => {
       });
       if (denied) {
         return;
+      }
+    }
+
+    /* Only agent-resource uploads mutate the agent; per-message attachments (message_file) reuse the
+     * conversation's agent_id but don't touch agent resources, so they must stay allowed for globals.
+     * Multipart sends the flag as the string 'true', so normalize both forms (matches upload auth). */
+    const isMessageAttachment = metadata.message_file === true || metadata.message_file === 'true';
+    if (metadata.agent_id && !isMessageAttachment) {
+      const targetAgent = await withSystemGlobalFallback(
+        metadata.agent_id,
+        () => db.getAgent({ id: metadata.agent_id }),
+        () => db.getAgent({ id: metadata.agent_id, tenantId: { $exists: false } }),
+      );
+      if (targetAgent?.isSystem) {
+        return res.status(403).json({
+          message: 'Global agents are managed by server configuration and cannot be modified.',
+        });
       }
     }
 

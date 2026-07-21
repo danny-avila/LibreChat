@@ -878,6 +878,34 @@ export const checkpointerSchema = z
 
 export type TCheckpointerConfig = z.infer<typeof checkpointerSchema>;
 
+/** Visibility spec for a config-defined global agent, mirroring the ACL principal model. */
+export const globalAgentAccessSchema = z.object({
+  public: z.boolean().optional(),
+  roles: z.array(z.string()).optional(),
+  groups: z.array(z.string()).optional(),
+  users: z.array(z.string()).optional(),
+  level: z.enum(['viewer', 'editor']).optional(),
+});
+
+export type TGlobalAgentAccess = z.infer<typeof globalAgentAccessSchema>;
+
+/**
+ * A global agent declared in `librechat.yaml`. Only the control fields (`id`, `access`,
+ * `tenants`) are pinned here; the agent body is the same payload the UI sends to
+ * `POST /agents` and passes through untouched — an entry may be minimal (`id` + `provider`
+ * + `model`) or extensively override any field. The body is validated with `agentCreateSchema`
+ * in the boot-time reconciler, the single source of truth for the agent shape.
+ */
+export const globalAgentSchema = z
+  .object({
+    id: z.string().regex(/^agent_global_[A-Za-z0-9_-]+$/),
+    access: globalAgentAccessSchema.optional(),
+    tenants: z.union([z.literal('system'), z.array(z.string().trim().min(1))]).optional(),
+  })
+  .passthrough();
+
+export type TGlobalAgent = z.infer<typeof globalAgentSchema>;
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
@@ -900,6 +928,8 @@ export const agentsEndpointSchema = baseEndpointSchema
         })
         .optional(),
       remoteApi: remoteApiSchema.optional(),
+      /** Config-defined global agents, seeded to stable ids at startup and immutable in the app. */
+      globalAgents: z.array(globalAgentSchema).optional(),
       /** Human-in-the-loop tool approval policy. Off by default. */
       toolApproval: toolApprovalPolicySchema,
       /** Durable checkpointer backing HITL resume. Defaults to the app's MongoDB
@@ -2730,6 +2760,8 @@ export enum Constants {
   LC_TRANSFER_TO_ = 'lc_transfer_to_',
   /** Placeholder Agent ID for Ephemeral Agents */
   EPHEMERAL_AGENT_ID = 'ephemeral',
+  /** Reserved id prefix marking a config-defined global agent. Still `agent_`-prefixed so it is treated as a real, persisted agent. */
+  GLOBAL_AGENT_PREFIX = 'agent_global_',
   /** Programmatic Tool Calling tool name */
   PROGRAMMATIC_TOOL_CALLING = 'run_tools_with_code',
   /** Bash Programmatic Tool Calling tool name */

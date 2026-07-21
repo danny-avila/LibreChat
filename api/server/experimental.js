@@ -41,6 +41,7 @@ const {
   sweepOrphanedPreviews,
 } = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
+const { seedGlobalAgents } = require('./services/start/globalAgents');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const createSpaFallback = require('./utils/fallback');
@@ -333,6 +334,9 @@ if (cluster.isMaster) {
     startExpiredFileSweepOnce();
     await performStartupChecks(appConfig);
     await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
+
+    /* Materialize config-defined global agents (mirrors server/index.js) before accepting requests. */
+    await seedGlobalAgents(appConfig);
 
     /** Load index.html for SPA serving */
     const indexPath = path.join(appConfig.paths.dist, 'index.html');

@@ -46,6 +46,8 @@ export interface IAgent extends Omit<Document, 'model'> {
   category: string;
   support_contact?: ISupportContact;
   is_promoted?: boolean;
+  /** Config-defined global agent, seeded at boot and immutable in the app. */
+  isSystem?: boolean;
   /** MCP server names extracted from tools for efficient querying */
   mcpServerNames?: string[];
   /** Per-tool configuration (defer_loading, allowed_callers) */

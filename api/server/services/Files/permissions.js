@@ -1,6 +1,10 @@
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId, runAsSystem } = require('@librechat/data-schemas');
 const { PermissionBits, ResourceType, isEphemeralAgentId } = require('librechat-data-provider');
 const { checkPermission } = require('~/server/services/PermissionService');
+const {
+  withSystemGlobalFallback,
+  authorizeSystemGlobalAgent,
+} = require('~/server/services/Agents/systemGlobal');
 const { getAgent, getFiles } = require('~/models');
 
 /**
@@ -49,20 +53,55 @@ const hasAccessToFilesViaAgent = async ({ userId, role, fileIds, agentId, isDele
   fileIds.forEach((fileId) => accessMap.set(fileId, false));
 
   try {
-    const agent = await getAgent({ id: agentId });
+    const agent = await withSystemGlobalFallback(
+      agentId,
+      () => getAgent({ id: agentId }),
+      () => getAgent({ id: agentId, tenantId: { $exists: false } }),
+    );
 
     if (!agent) {
       return accessMap;
     }
 
+    /* A tenantless `tenants: 'system'` global's ACL grants are invisible to a tenant-scoped check;
+     * authorize it under the system context so its admin-provided context/OCR files aren't filtered
+     * out at runtime. In-tenant agents (incl. explicit-tenant globals) keep the normal check. */
+    const viaSystemGlobal = agent.isSystem === true && agent.tenantId == null;
+    const hasAgentPermission = (requiredPermission) =>
+      viaSystemGlobal
+        ? authorizeSystemGlobalAgent({
+            agentId,
+            requiredPermission,
+            req: { user: { id: userId, role, tenantId: getTenantId() } },
+          }).then((result) => result.status === 'ok')
+        : checkPermission({
+            userId,
+            role,
+            resourceType: ResourceType.AGENT,
+            resourceId: agent._id,
+            requiredPermission,
+          });
+
     const attachedFileIds = getAttachedFileIds(agent);
     const agentAuthorId = agent.author?.toString();
-    const filesById =
-      files != null
-        ? getFilesById(files)
-        : getFilesById(
-            await getFiles({ file_id: { $in: fileIds } }, null, { file_id: 1, user: 1 }),
-          );
+    /* A tenantless system global's admin-provided files are invisible to the caller's tenant-scoped
+     * `files`/getFiles lookup, so load their metadata under the system context (the ids are already
+     * scoped to this authorized agent's tool_resources). */
+    let fileMetadata;
+    if (viaSystemGlobal) {
+      fileMetadata = await runAsSystem(async () => {
+        const systemFiles = await getFiles({ file_id: { $in: fileIds } }, null, {
+          file_id: 1,
+          user: 1,
+        });
+        return systemFiles;
+      });
+    } else if (files != null) {
+      fileMetadata = files;
+    } else {
+      fileMetadata = await getFiles({ file_id: { $in: fileIds } }, null, { file_id: 1, user: 1 });
+    }
+    const filesById = getFilesById(fileMetadata);
     const canInheritFromAgent = (fileId) =>
       attachedFileIds.has(fileId) && filesById.get(fileId)?.user != null;
 
@@ -75,26 +114,14 @@ const hasAccessToFilesViaAgent = async ({ userId, role, fileIds, agentId, isDele
       return accessMap;
     }
 
-    const hasViewPermission = await checkPermission({
-      userId,
-      role,
-      resourceType: ResourceType.AGENT,
-      resourceId: agent._id,
-      requiredPermission: PermissionBits.VIEW,
-    });
+    const hasViewPermission = await hasAgentPermission(PermissionBits.VIEW);
 
     if (!hasViewPermission) {
       return accessMap;
     }
 
     if (isDelete) {
-      const hasEditPermission = await checkPermission({
-        userId,
-        role,
-        resourceType: ResourceType.AGENT,
-        resourceId: agent._id,
-        requiredPermission: PermissionBits.EDIT,
-      });
+      const hasEditPermission = await hasAgentPermission(PermissionBits.EDIT);
 
       if (!hasEditPermission) {
         return accessMap;

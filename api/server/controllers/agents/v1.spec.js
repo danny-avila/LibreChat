@@ -83,6 +83,7 @@ const {
   duplicateAgent: duplicateAgentHandler,
   revertAgentVersion: revertAgentVersionHandler,
   updateAgent: updateAgentHandler,
+  deleteAgent: deleteAgentHandler,
   getListAgents: getListAgentsHandler,
 } = require('./v1');
 
@@ -1389,6 +1390,67 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
     });
   });
 
+  describe('Global (system) agent immutability', () => {
+    let systemAgentId;
+
+    beforeEach(async () => {
+      const agent = await Agent.create({
+        id: `agent_global_${nanoid()}`,
+        name: 'Global Agent',
+        provider: 'openai',
+        model: 'gpt-4o',
+        author: new mongoose.Types.ObjectId('000000000000000000000000'),
+        isSystem: true,
+      });
+      systemAgentId = agent.id;
+      mockReq.user.id = new mongoose.Types.ObjectId().toString();
+    });
+
+    test('updateAgentHandler returns 403 for a system agent', async () => {
+      mockReq.params.id = systemAgentId;
+      mockReq.body = { name: 'Hijacked' };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      const agentInDb = await Agent.findOne({ id: systemAgentId });
+      expect(agentInDb.name).toBe('Global Agent');
+    });
+
+    test('deleteAgentHandler returns 403 for a system agent', async () => {
+      mockReq.params.id = systemAgentId;
+
+      await deleteAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(await Agent.countDocuments({ id: systemAgentId })).toBe(1);
+    });
+
+    test('duplicateAgentHandler is allowed and produces a non-system, user-owned copy', async () => {
+      const db = require('~/models');
+      jest.spyOn(db, 'getActions').mockResolvedValueOnce([]);
+      mockReq.params.id = systemAgentId;
+
+      await duplicateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      const { agent } = mockRes.json.mock.calls[0][0];
+      expect(agent.id).not.toBe(systemAgentId);
+      expect(agent.id.startsWith('agent_global_')).toBe(false);
+      expect(agent.isSystem).toBeFalsy();
+      expect(agent.author.toString()).toBe(mockReq.user.id);
+    });
+
+    test('revertAgentVersionHandler returns 403 for a system agent', async () => {
+      mockReq.params.id = systemAgentId;
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+    });
+  });
+
   describe('getListAgentsHandler - Security Tests', () => {
     let userA, userB;
     let agentA1, agentA2, agentA3, agentB1;
@@ -1650,6 +1712,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
           'description',
           'id',
           'is_promoted',
+          'isSystem',
           'name',
           'support_contact',
           'updatedAt',

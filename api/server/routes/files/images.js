@@ -10,6 +10,7 @@ const {
   filterFile,
 } = require('~/server/services/Files/process');
 const { checkPermission } = require('~/server/services/PermissionService');
+const { withSystemGlobalFallback } = require('~/server/services/Agents/systemGlobal');
 const db = require('~/models');
 
 const router = express.Router();
@@ -34,6 +35,20 @@ router.post('/', async (req, res) => {
       });
       if (denied) {
         return;
+      }
+      /* This path mutates the agent's tool_resources; reject config-managed globals with a clean 403
+       * before writing to storage (otherwise addAgentResourceFile throws 500 + orphans the upload). */
+      if (metadata.agent_id) {
+        const targetAgent = await withSystemGlobalFallback(
+          metadata.agent_id,
+          () => db.getAgent({ id: metadata.agent_id }),
+          () => db.getAgent({ id: metadata.agent_id, tenantId: { $exists: false } }),
+        );
+        if (targetAgent?.isSystem) {
+          return res.status(403).json({
+            message: 'Global agents are managed by server configuration and cannot be modified.',
+          });
+        }
       }
       return await processAgentFileUpload({ req, res, metadata });
     }

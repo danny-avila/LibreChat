@@ -30,6 +30,7 @@ import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
 import { Panel, isEphemeralAgent } from '~/common';
+import DuplicateAgent from './DuplicateAgent';
 import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';
@@ -485,9 +486,15 @@ export default function AgentPanel() {
     }
   }, [agent_id, onSelectAgent]);
 
+  const isSystemAgent = agentQuery.data?.isSystem === true;
+
   const canEditAgent = useMemo(() => {
     if (!agentQuery.data?.id) {
       return true;
+    }
+
+    if (agentQuery.data?.isSystem === true) {
+      return false;
     }
 
     if (user?.role === SystemRoles.ADMIN) {
@@ -495,7 +502,7 @@ export default function AgentPanel() {
     }
 
     return canEdit;
-  }, [agentQuery.data?.id, user?.role, canEdit]);
+  }, [agentQuery.data?.id, agentQuery.data?.isSystem, user?.role, canEdit]);
 
   return (
     <FormProvider {...methods}>
@@ -549,9 +556,18 @@ export default function AgentPanel() {
             <div className="flex h-[30vh] w-full items-center justify-center">
               <div className="text-center">
                 <h2 className="text-token-text-primary m-2 text-xl font-semibold">
-                  {localize('com_agents_not_available')}
+                  {localize(isSystemAgent ? 'com_agents_global_title' : 'com_agents_not_available')}
                 </h2>
-                <p className="text-token-text-secondary">{localize('com_agents_no_access')}</p>
+                <p className="text-token-text-secondary">
+                  {localize(isSystemAgent ? 'com_agents_global_readonly' : 'com_agents_no_access')}
+                </p>
+                {isSystemAgent &&
+                  agentQuery.data?.id &&
+                  (canEdit || user?.role === SystemRoles.ADMIN) && (
+                    <div className="mt-4 flex justify-center">
+                      <DuplicateAgent agent_id={agentQuery.data.id} />
+                    </div>
+                  )}
               </div>
             </div>
           )}

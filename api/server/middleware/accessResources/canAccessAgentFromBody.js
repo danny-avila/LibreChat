@@ -8,11 +8,32 @@ const {
   isAgentsEndpoint,
   isEphemeralAgentId,
 } = require('librechat-data-provider');
+const {
+  isSystemGlobalId,
+  resolveSystemGlobalAgent,
+  authorizeSystemGlobalAgent,
+} = require('~/server/services/Agents/systemGlobal');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { canAccessResource } = require('./canAccessResource');
 const db = require('~/models');
 
 const { getRoleByName, getAgent } = db;
+
+/** Write a 404/403 for a system-global authorization result; returns true when handled. */
+const respondSystemGlobalDenied = (result, res) => {
+  if (result.status === 'not_found') {
+    res.status(404).json({ error: 'Not Found', message: `${ResourceType.AGENT} not found` });
+    return true;
+  }
+  if (result.status === 'forbidden') {
+    res.status(403).json({
+      error: 'Forbidden',
+      message: `Insufficient permissions to access this ${ResourceType.AGENT}`,
+    });
+    return true;
+  }
+  return false;
+};
 
 /**
  * Resolves custom agent ID (e.g., "agent_abc123") to a MongoDB document.
@@ -89,6 +110,29 @@ const checkAddedConvoAccess = (requiredPermission) => async (req, res, next) => 
 
     const addedAgentId = addedConvo.agent_id;
     if (!addedAgentId || typeof addedAgentId !== 'string' || isEphemeralAgentId(addedAgentId)) {
+      return next();
+    }
+
+    /* Tenantless system-scope globals: resolve/authorize under the system context and cache the doc
+     * (admins included) so loadAddedAgent doesn't re-fetch via the tenant-scoped path, which misses
+     * the row. Regular agents and in-tenant globals fall through to the original flow below. */
+    if (isSystemGlobalId(addedAgentId) && !(await resolveAgentIdFromBody(addedAgentId))) {
+      if (req.user.role === SystemRoles.ADMIN) {
+        const agent = await resolveSystemGlobalAgent(addedAgentId);
+        if (agent) {
+          req.resolvedAddedAgent = agent;
+        }
+        return next();
+      }
+      const result = await authorizeSystemGlobalAgent({
+        agentId: addedAgentId,
+        requiredPermission,
+        req,
+      });
+      if (respondSystemGlobalDenied(result, res)) {
+        return;
+      }
+      req.resolvedAddedAgent = result.agent;
       return next();
     }
 
@@ -174,6 +218,14 @@ const canAccessAgentFromBody = (options) => {
       const afterPrimaryCheck = () => addedConvoMiddleware(req, res, next);
 
       if (isEphemeralAgentId(agentId)) {
+        return afterPrimaryCheck();
+      }
+
+      if (isSystemGlobalId(agentId) && !(await getAgent({ id: agentId }))) {
+        const result = await authorizeSystemGlobalAgent({ agentId, requiredPermission, req });
+        if (respondSystemGlobalDenied(result, res)) {
+          return;
+        }
         return afterPrimaryCheck();
       }
 

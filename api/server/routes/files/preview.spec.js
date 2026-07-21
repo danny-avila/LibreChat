@@ -12,6 +12,7 @@
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), debug: jest.fn(), error: jest.fn(), info: jest.fn() },
+  runAsSystem: (fn) => fn(),
   SystemCapabilities: {},
 }));
 

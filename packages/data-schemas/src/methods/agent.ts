@@ -47,7 +47,7 @@ export interface AgentDeps {
  * Extracts unique MCP server names from tools array.
  * Tools format: "toolName_mcp_serverName" or "sys__server__sys_mcp_serverName"
  */
-function extractMCPServerNames(tools: string[] | undefined | null): string[] {
+export function extractMCPServerNames(tools: string[] | undefined | null): string[] {
   if (!tools || !Array.isArray(tools)) {
     return [];
   }
@@ -611,6 +611,9 @@ export function createAgentMethods(
     if (!agent) {
       throw new Error('Agent not found for adding resource file');
     }
+    if (agent.isSystem) {
+      throw new Error('Global agents are managed by server configuration and cannot be modified');
+    }
     const fileIdsPath = `tool_resources.${tool_resource}.file_ids`;
     await Agent.updateOne(
       {
@@ -653,6 +656,11 @@ export function createAgentMethods(
   }): Promise<IAgent> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
     const searchParameter = { id: agent_id };
+
+    const targetAgent = await getAgent(searchParameter);
+    if (targetAgent?.isSystem) {
+      throw new Error('Global agents are managed by server configuration and cannot be modified');
+    }
 
     const filesByResource = files.reduce(
       (acc: Record<string, string[]>, { tool_resource, file_id }) => {
@@ -910,6 +918,7 @@ export function createAgentMethods(
       category: 1,
       support_contact: 1,
       is_promoted: 1,
+      isSystem: 1,
     };
 
     if (includeSkillConfig) {

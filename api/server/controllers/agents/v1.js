@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId, runAsSystem } = require('@librechat/data-schemas');
 const {
   refreshS3Url,
   agentCreateSchema,
@@ -50,6 +50,11 @@ const {
   userCanUseMCPServers,
 } = require('~/server/services/MCP');
 const { attachOwnerContacts } = require('~/server/services/Agents/ownerContact');
+const {
+  isSystemGlobalId,
+  withSystemGlobalFallback,
+  authorizeSystemGlobalAgent,
+} = require('~/server/services/Agents/systemGlobal');
 const { getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
@@ -68,6 +73,30 @@ const getSafeModelParameters = (modelParameters) => {
   return typeof useResponsesApi === 'boolean' ? { useResponsesApi } : {};
 };
 const hasEditBit = (permission) => (permission & PermissionBits.EDIT) === PermissionBits.EDIT;
+
+/**
+ * Rejects mutations of config-defined global agents. Enforced in every mutating handler (not the
+ * route middleware) because admins/managers bypass the ACL via the MANAGE_AGENTS capability.
+ * @returns {boolean} true when the response was written (caller should return).
+ */
+const rejectImmutableSystemAgent = (agent, res) => {
+  if (agent?.isSystem) {
+    res
+      .status(403)
+      .json({ error: 'Global agents are managed by server configuration and cannot be modified.' });
+    return true;
+  }
+  return false;
+};
+
+/** Load an agent by id, falling back to the tenantless system-global row on a tenant-scoped miss, so
+ *  mutating handlers reach the isSystem immutability guard (403) instead of returning 404. */
+const loadAgentWithSystemFallback = (searchId) =>
+  withSystemGlobalFallback(
+    searchId,
+    () => db.getAgent({ id: searchId }),
+    () => db.getAgent({ id: searchId, tenantId: { $exists: false } }),
+  );
 
 const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
   const skillScopeEnabled = agent.skills_enabled === true;
@@ -120,9 +149,31 @@ const classifyAgentReferences = async (agentIds, userId, userRole) => {
 
   const agents = await db.getAgents({ id: { $in: ids } });
   const foundIds = new Set(agents.map((a) => a.id));
-  const missing = ids.filter((id) => !foundIds.has(id));
+  let missing = ids.filter((id) => !foundIds.has(id));
 
-  if (agents.length === 0) return { missing, unauthorized: [] };
+  /* Tenantless `tenants: 'system'` globals are invisible to the tenant-scoped query above; resolve
+   * and authorize any global-prefixed missing id under the system context so a normal agent can
+   * reference a global agent as a subagent/edge without a false 400. */
+  const systemUnauthorized = [];
+  const globalMissing = missing.filter((id) => isSystemGlobalId(id));
+  if (globalMissing.length > 0) {
+    const stillMissing = new Set(missing);
+    for (const id of globalMissing) {
+      const result = await authorizeSystemGlobalAgent({
+        agentId: id,
+        requiredPermission: PermissionBits.VIEW,
+        /* Preserve the request tenant so hasCapability's tenant-keyed MANAGE_AGENTS bypass applies
+         * (read here in the request context — inside authorize it runs under the system context). */
+        req: { user: { id: userId, role: userRole, tenantId: getTenantId() } },
+      });
+      if (result.status === 'not_found') continue;
+      stillMissing.delete(id);
+      if (result.status !== 'ok') systemUnauthorized.push(id);
+    }
+    missing = [...stillMissing];
+  }
+
+  if (agents.length === 0) return { missing, unauthorized: systemUnauthorized };
 
   const permissionsMap = await getResourcePermissionsMap({
     userId,
@@ -138,7 +189,7 @@ const classifyAgentReferences = async (agentIds, userId, userRole) => {
     })
     .map((a) => a.id);
 
-  return { missing, unauthorized };
+  return { missing, unauthorized: [...unauthorized, ...systemUnauthorized] };
 };
 
 /**
@@ -503,7 +554,11 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
     // Permissions are validated by middleware before calling this function.
     // Load the agent with a `version` count but without the heavy `versions`
     // array; version history is fetched lazily via GET /agents/:id/versions.
-    const agent = await db.getAgentWithVersionCount({ id });
+    const agent = await withSystemGlobalFallback(
+      id,
+      () => db.getAgentWithVersionCount({ id }),
+      () => db.getAgentWithVersionCount({ id, tenantId: { $exists: false } }),
+    );
 
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -550,6 +605,7 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         model: agent.model,
         model_parameters: getSafeModelParameters(agent.model_parameters),
         isPublic: agent.isPublic,
+        isSystem: agent.isSystem ?? false,
         version: agent.version,
         // Safe metadata
         createdAt: agent.createdAt,
@@ -587,7 +643,11 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
 const getAgentVersionsHandler = async (req, res) => {
   try {
     const id = req.params.id;
-    const versions = await db.getAgentVersions({ id });
+    const versions = await withSystemGlobalFallback(
+      id,
+      () => db.getAgentVersions({ id }),
+      () => db.getAgentVersions({ id, tenantId: { $exists: false } }),
+    );
 
     if (versions == null) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -674,10 +734,14 @@ const updateAgentHandler = async (req, res) => {
     // Convert OCR to context in incoming updateData
     convertOcrToContextInPlace(updateData);
 
-    const existingAgent = await db.getAgent({ id });
+    const existingAgent = await loadAgentWithSystemFallback(id);
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    if (rejectImmutableSystemAgent(existingAgent, res)) {
+      return;
     }
 
     // Convert legacy OCR tool resource to context format in existing agent
@@ -805,7 +869,11 @@ const duplicateAgentHandler = async (req, res) => {
   const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
 
   try {
-    const agent = await db.getAgent({ id });
+    const agent = await withSystemGlobalFallback(
+      id,
+      () => db.getAgent({ id }),
+      () => db.getAgent({ id, tenantId: { $exists: false } }),
+    );
     if (!agent) {
       return res.status(404).json({
         error: 'Agent not found',
@@ -821,6 +889,7 @@ const duplicateAgentHandler = async (req, res) => {
       updatedAt: _updatedAt,
       tool_resources: _tool_resources = {},
       versions: _versions,
+      isSystem: _isSystem,
       __v: _v,
       ...cloneData
     } = agent;
@@ -975,9 +1044,14 @@ const duplicateAgentHandler = async (req, res) => {
 const deleteAgentHandler = async (req, res) => {
   try {
     const id = req.params.id;
-    const agent = await db.getAgent({ id });
+    const agent = await loadAgentWithSystemFallback(id);
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
+    }
+    if (agent.isSystem) {
+      return res.status(403).json({
+        error: 'Global agents are managed by server configuration and cannot be deleted.',
+      });
     }
     await db.deleteAgent({ id });
     return res.json({ message: 'Agent deleted' });
@@ -986,6 +1060,51 @@ const deleteAgentHandler = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+/**
+ * Resolve the `tenants: 'system'` global agents this user is entitled to. Their rows and ACL
+ * grants are tenantless, so a tenant-scoped list query can't see them — we read under the system
+ * context and intersect the user's accessible ids with the known tenantless system agents (so no
+ * other tenant's agents can leak in). The user's principals are built in the request tenant context
+ * first (so group memberships reflect this tenant, not every tenant); only the agent/ACL lookup runs
+ * as system. Single-tenant deployments never call this; the tenantless rows already surface normally.
+ */
+async function getEntitledSystemGlobalAgents({
+  userId,
+  role,
+  filter,
+  includeSkillConfig,
+  requiredPermission,
+}) {
+  const principals = await db.getUserPrincipals({ userId, role });
+  if (!principals.length) {
+    return [];
+  }
+  return runAsSystem(async () => {
+    const systemAgents = await db.getAgents({ isSystem: true, tenantId: { $exists: false } });
+    if (!systemAgents.length) {
+      return [];
+    }
+    const systemIdSet = new Set(systemAgents.map((agent) => agent._id.toString()));
+    const entitledIds = await db.findAccessibleResources(
+      principals,
+      ResourceType.AGENT,
+      requiredPermission,
+    );
+    const accessibleIds = entitledIds.filter((oid) => systemIdSet.has(oid.toString()));
+    if (!accessibleIds.length) {
+      return [];
+    }
+    const list = await db.getListAgentsByAccess({
+      accessibleIds,
+      otherParams: filter,
+      limit: null,
+      after: null,
+      includeSkillConfig,
+    });
+    return list?.data ?? [];
+  });
+}
 
 /**
  * Lists agents using ACL-aware permissions (ownership + explicit shares).
@@ -1086,6 +1205,30 @@ const getListAgentsHandler = async (req, res) => {
     });
 
     const agents = data?.data ?? [];
+
+    /* Multi-tenant only: surface `tenants: 'system'` global agents (tenantless rows/grants the
+     * tenant-scoped query above can't see) on the first page. Single-tenant deployments have no
+     * active tenant context and resolve these through the normal query. */
+    if (getTenantId() && !cursor) {
+      try {
+        const systemGlobals = await getEntitledSystemGlobalAgents({
+          userId,
+          role: req.user.role,
+          filter,
+          includeSkillConfig: canReturnSkillConfig,
+          requiredPermission,
+        });
+        const seen = new Set(agents.map((agent) => agent.id));
+        for (const systemAgent of systemGlobals) {
+          if (!seen.has(systemAgent.id)) {
+            agents.push(systemAgent);
+          }
+        }
+      } catch (err) {
+        logger.error('[/Agents] Error merging system global agents: %o', err);
+      }
+    }
+
     if (!agents.length) {
       return res.json(data);
     }
@@ -1158,10 +1301,14 @@ const uploadAgentAvatarHandler = async (req, res) => {
       return res.status(400).json({ message: 'Agent ID is required' });
     }
 
-    const existingAgent = await db.getAgent({ id: agent_id });
+    const existingAgent = await loadAgentWithSystemFallback(agent_id);
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    if (rejectImmutableSystemAgent(existingAgent, res)) {
+      return;
     }
 
     const buffer = await fs.readFile(req.file.path);
@@ -1265,10 +1412,14 @@ const revertAgentVersionHandler = async (req, res) => {
       return res.status(400).json({ error: 'version_index is required' });
     }
 
-    const existingAgent = await db.getAgent({ id });
+    const existingAgent = await loadAgentWithSystemFallback(id);
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    if (rejectImmutableSystemAgent(existingAgent, res)) {
+      return;
     }
 
     // Permissions are enforced via route middleware (ACL EDIT)
