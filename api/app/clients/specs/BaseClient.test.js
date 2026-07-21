@@ -1,5 +1,5 @@
 const { Constants } = require('librechat-data-provider');
-const { initializeFakeClient } = require('./FakeClient');
+const { FakeClient, initializeFakeClient } = require('./FakeClient');
 
 jest.mock('~/db/connect');
 jest.mock('~/server/services/Config', () => ({
@@ -38,7 +38,7 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
 }));
 
-const { getConvo, saveConvo } = require('~/models');
+const { getConvo, getFiles, getMessages, saveConvo, saveMessage } = require('~/models');
 
 jest.mock('@librechat/agents', () => {
   const actual = jest.requireActual('@librechat/agents');
@@ -355,7 +355,8 @@ describe('BaseClient', () => {
           id: '3',
           parentMessageId: '2',
           role: 'system',
-          text: 'Summary for Message 3',
+          text: 'Message 3',
+          content: [{ type: 'text', text: 'Summary for Message 3' }],
           summary: 'Summary for Message 3',
         },
         { id: '4', parentMessageId: '3', text: 'Message 4' },
@@ -380,7 +381,8 @@ describe('BaseClient', () => {
           id: '4',
           parentMessageId: '3',
           role: 'system',
-          text: 'Summary for Message 4',
+          text: 'Message 4',
+          content: [{ type: 'text', text: 'Summary for Message 4' }],
           summary: 'Summary for Message 4',
         },
         { id: '5', parentMessageId: '4', text: 'Message 5' },
@@ -405,11 +407,122 @@ describe('BaseClient', () => {
           id: '4',
           parentMessageId: '3',
           role: 'system',
-          text: 'Summary for Message 4',
+          text: 'Message 4',
+          content: [{ type: 'text', text: 'Summary for Message 4' }],
           summary: 'Summary for Message 4',
         },
         { id: '5', parentMessageId: '4', text: 'Message 5' },
       ]);
+    });
+
+    it('should detect summary content block and use it over legacy fields (summary mode)', () => {
+      const messagesWithContentBlock = [
+        { id: '3', parentMessageId: '2', text: 'Message 3' },
+        {
+          id: '2',
+          parentMessageId: '1',
+          text: 'Message 2',
+          content: [
+            { type: 'text', text: 'Original text' },
+            { type: 'summary', text: 'Content block summary', tokenCount: 42 },
+          ],
+        },
+        { id: '1', parentMessageId: null, text: 'Message 1' },
+      ];
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: messagesWithContentBlock,
+        parentMessageId: '3',
+        summary: true,
+      });
+      expect(result).toHaveLength(2);
+      expect(result[0].role).toBe('system');
+      expect(result[0].content).toEqual([{ type: 'text', text: 'Content block summary' }]);
+      expect(result[0].tokenCount).toBe(42);
+    });
+
+    it('should prefer content block summary over legacy summary field', () => {
+      const messagesWithBoth = [
+        { id: '2', parentMessageId: '1', text: 'Message 2' },
+        {
+          id: '1',
+          parentMessageId: null,
+          text: 'Message 1',
+          summary: 'Legacy summary',
+          summaryTokenCount: 10,
+          content: [{ type: 'summary', text: 'Content block summary', tokenCount: 20 }],
+        },
+      ];
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: messagesWithBoth,
+        parentMessageId: '2',
+        summary: true,
+      });
+      expect(result).toHaveLength(2);
+      expect(result[0].content).toEqual([{ type: 'text', text: 'Content block summary' }]);
+      expect(result[0].tokenCount).toBe(20);
+    });
+
+    it('should fallback to legacy summary when no content block exists', () => {
+      const messagesWithLegacy = [
+        { id: '2', parentMessageId: '1', text: 'Message 2' },
+        {
+          id: '1',
+          parentMessageId: null,
+          text: 'Message 1',
+          summary: 'Legacy summary only',
+          summaryTokenCount: 15,
+        },
+      ];
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: messagesWithLegacy,
+        parentMessageId: '2',
+        summary: true,
+      });
+      expect(result).toHaveLength(2);
+      expect(result[0].content).toEqual([{ type: 'text', text: 'Legacy summary only' }]);
+      expect(result[0].tokenCount).toBe(15);
+    });
+  });
+
+  describe('findSummaryContentBlock', () => {
+    it('should find a summary block in the content array', () => {
+      const message = {
+        content: [
+          { type: 'text', text: 'some text' },
+          { type: 'summary', text: 'Summary of conversation', tokenCount: 50 },
+        ],
+      };
+      const result = TestClient.constructor.findSummaryContentBlock(message);
+      expect(result).toBeTruthy();
+      expect(result.text).toBe('Summary of conversation');
+      expect(result.tokenCount).toBe(50);
+    });
+
+    it('should return null when no summary block exists', () => {
+      const message = {
+        content: [
+          { type: 'text', text: 'some text' },
+          { type: 'tool_call', tool_call: {} },
+        ],
+      };
+      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
+    });
+
+    it('should return null for string content', () => {
+      const message = { content: 'just a string' };
+      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
+    });
+
+    it('should return null for missing content', () => {
+      expect(TestClient.constructor.findSummaryContentBlock({})).toBeNull();
+      expect(TestClient.constructor.findSummaryContentBlock(null)).toBeNull();
+    });
+
+    it('should skip summary blocks with no text', () => {
+      const message = {
+        content: [{ type: 'summary', tokenCount: 10 }],
+      };
+      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
     });
   });
 
@@ -507,6 +620,27 @@ describe('BaseClient', () => {
       const chatMessages2 = await TestClient.loadHistory(conversationId, '3');
       expect(TestClient.currentMessages).toHaveLength(3);
       expect(chatMessages2[chatMessages2.length - 1].text).toEqual("What's up");
+    });
+
+    test('loadHistory should scope database reads to the current user', async () => {
+      const user = 'user-123';
+      TestClient = new FakeClient(apiKey, options);
+      TestClient.user = user;
+      getMessages.mockResolvedValueOnce([
+        {
+          role: 'user',
+          isCreatedByUser: true,
+          text: 'Hello',
+          messageId: '1',
+          conversationId,
+        },
+      ]);
+
+      const chatMessages = await TestClient.loadHistory(conversationId, '1');
+
+      expect(getMessages).toHaveBeenCalledWith({ conversationId, user });
+      expect(chatMessages).toHaveLength(1);
+      expect(chatMessages[0].text).toBe('Hello');
     });
 
     /* Most of the new sendMessage logic revolving around edited/continued AI messages
@@ -789,6 +923,91 @@ describe('BaseClient', () => {
           messageId: expect.any(String),
           parentMessageId: expect.any(String),
           conversationId: expect.any(String),
+        }),
+      );
+    });
+
+    test('saveMessageToDatabase returns early when this.options is null (client disposed)', async () => {
+      const savedOptions = TestClient.options;
+      TestClient.options = null;
+      saveMessage.mockClear();
+
+      const result = await TestClient.saveMessageToDatabase(
+        { messageId: 'msg-1', conversationId: 'conv-1', isCreatedByUser: true, text: 'hi' },
+        {},
+        null,
+      );
+
+      expect(result).toEqual({});
+      expect(saveMessage).not.toHaveBeenCalled();
+
+      TestClient.options = savedOptions;
+    });
+
+    test('saveMessageToDatabase uses snapshot of options, immune to mid-await disposal', async () => {
+      const savedOptions = TestClient.options;
+      saveMessage.mockClear();
+      saveConvo.mockClear();
+
+      // Make db.saveMessage yield, simulating I/O suspension during which disposal occurs
+      saveMessage.mockImplementation(async (_reqCtx, msgData) => {
+        // Simulate disposeClient nullifying client.options while awaiting
+        TestClient.options = null;
+        return msgData;
+      });
+      saveConvo.mockResolvedValue({ conversationId: 'conv-1' });
+
+      const result = await TestClient.saveMessageToDatabase(
+        { messageId: 'msg-1', conversationId: 'conv-1', isCreatedByUser: true, text: 'hi' },
+        { endpoint: 'openAI' },
+        null,
+      );
+
+      // Should complete without TypeError, using the snapshotted options
+      expect(result).toHaveProperty('message');
+      expect(result).toHaveProperty('conversation');
+      expect(saveMessage).toHaveBeenCalled();
+
+      TestClient.options = savedOptions;
+      saveMessage.mockReset();
+      saveConvo.mockReset();
+    });
+
+    test('saveMessageToDatabase reuses conversation resolved on the request', async () => {
+      const existingConvo = {
+        conversationId: 'cached-convo-id',
+        endpoint: 'openai',
+        endpointType: 'openai',
+        temperature: 0.7,
+      };
+      const user = { id: 'user-id' };
+      const req = { user, resolvedConversation: existingConvo };
+
+      getConvo.mockClear();
+      saveMessage.mockResolvedValue({ messageId: 'msg-1' });
+      saveConvo.mockResolvedValue(existingConvo);
+
+      TestClient = initializeFakeClient(apiKey, { ...options, endpoint: 'openai', req }, []);
+
+      await TestClient.saveMessageToDatabase(
+        {
+          messageId: 'msg-1',
+          conversationId: existingConvo.conversationId,
+          isCreatedByUser: true,
+          text: 'hi',
+        },
+        { endpoint: 'openai' },
+        user,
+      );
+
+      expect(getConvo).not.toHaveBeenCalled();
+      expect(req).not.toHaveProperty('resolvedConversation');
+      expect(TestClient.fetchedConvo).toBe(true);
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ conversationId: existingConvo.conversationId }),
+        expect.objectContaining({
+          unsetFields: expect.objectContaining({ temperature: 1 }),
         }),
       );
     });
@@ -1095,6 +1314,298 @@ describe('BaseClient', () => {
       );
       expect(userSave[0].files).toHaveLength(1);
       expect(userSave[0].files[0].file_id).toBe('file-abc');
+    });
+  });
+
+  describe('addPreviousAttachments authorization', () => {
+    const ownerFile = {
+      file_id: 'owner-file',
+      filename: 'owner.txt',
+      filepath: '/uploads/owner.txt',
+      source: 'local',
+      type: 'text/plain',
+      bytes: 100,
+      object: 'file',
+      user: 'user-1',
+      embedded: false,
+      usage: 0,
+      text: 'authorized owner text',
+      _id: 'owner-mongo-id',
+      metadata: {
+        codeEnvRef: {
+          kind: 'user',
+          id: 'user-1',
+          storage_session_id: 'owner-session',
+          file_id: 'owner-code-file',
+        },
+      },
+    };
+
+    beforeEach(() => {
+      getFiles.mockReset();
+      TestClient.options.resendFiles = true;
+      TestClient.options.attachments = undefined;
+      TestClient.options.req = {
+        user: {
+          id: 'user-1',
+          tenantId: 'tenant-a',
+        },
+      };
+      TestClient.addFileContextToMessage = jest.fn(async (message, files) => {
+        const text = files
+          .map((file) => file.text)
+          .filter(Boolean)
+          .join('\n');
+        if (text) {
+          message.fileContext = text;
+        }
+      });
+      TestClient.processAttachments = jest.fn(async (_message, files) => files);
+      TestClient.checkVisionRequest = jest.fn();
+    });
+
+    test('rehydrates historical file refs from owner-scoped DB rows only', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-1',
+          text: 'Use the attachment',
+          files: [
+            {
+              file_id: 'owner-file',
+              filename: 'attacker-controlled-owner-name.txt',
+              filepath: '/forged/owner.txt',
+              text: 'forged owner text',
+            },
+            {
+              file_id: 'victim-file',
+              filename: 'victim.txt',
+              filepath: '/victim/private.txt',
+              text: 'victim private text',
+            },
+          ],
+          attachments: [
+            {
+              file_id: 'victim-file',
+              filename: 'victim-output.csv',
+              text: 'victim output text',
+            },
+          ],
+          fileContext: 'stale victim private text',
+        },
+      ]);
+
+      expect(getFiles).toHaveBeenCalledWith(
+        {
+          file_id: { $in: ['owner-file', 'victim-file'] },
+          user: 'user-1',
+          tenantId: 'tenant-a',
+        },
+        {},
+        {},
+      );
+      expect(TestClient.addFileContextToMessage).toHaveBeenCalledWith(message, [ownerFile]);
+      expect(TestClient.processAttachments).toHaveBeenCalledWith(message, [ownerFile]);
+      expect(message.fileContext).toBe('authorized owner text');
+      expect(message.files).toEqual([
+        expect.objectContaining({
+          file_id: 'owner-file',
+          filename: 'owner.txt',
+          filepath: '/uploads/owner.txt',
+          source: 'local',
+          metadata: ownerFile.metadata,
+        }),
+      ]);
+      expect(message.files[0].text).toBeUndefined();
+      expect(message.files[0]._id).toBeUndefined();
+      expect(message.attachments).toBeUndefined();
+      expect(JSON.stringify(message)).not.toContain('victim');
+      expect(JSON.stringify(message)).not.toContain('forged owner text');
+    });
+
+    test('strips historical file context when no authenticated owner scope is available', async () => {
+      TestClient.options.req = {};
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-2',
+          files: [{ file_id: 'victim-file', filename: 'victim.txt' }],
+          fileContext: 'stale victim private text',
+        },
+      ]);
+
+      expect(getFiles).not.toHaveBeenCalled();
+      expect(message.files).toBeUndefined();
+      expect(message.fileContext).toBeUndefined();
+    });
+
+    test('preserves repeated owner-authorized historical file refs after the first context use', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+
+      const [firstMessage, secondMessage] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-repeat-1',
+          files: [{ file_id: 'owner-file', filename: 'first-forged.txt' }],
+        },
+        {
+          messageId: 'msg-repeat-2',
+          files: [{ file_id: 'owner-file', filename: 'second-forged.txt' }],
+        },
+      ]);
+
+      expect(getFiles).toHaveBeenCalledTimes(1);
+      expect(getFiles).toHaveBeenCalledWith(
+        {
+          file_id: { $in: ['owner-file'] },
+          user: 'user-1',
+          tenantId: 'tenant-a',
+        },
+        {},
+        {},
+      );
+      expect(TestClient.addFileContextToMessage).toHaveBeenCalledTimes(1);
+      expect(TestClient.addFileContextToMessage).toHaveBeenCalledWith(firstMessage, [ownerFile]);
+      expect(secondMessage.fileContext).toBeUndefined();
+      expect(firstMessage.files).toEqual([
+        expect.objectContaining({ file_id: 'owner-file', filename: 'owner.txt' }),
+      ]);
+      expect(secondMessage.files).toEqual([
+        expect.objectContaining({ file_id: 'owner-file', filename: 'owner.txt' }),
+      ]);
+      expect(JSON.stringify(secondMessage)).not.toContain('second-forged');
+    });
+
+    test('preserves download-only historical attachments without trusting file fields', async () => {
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-download-only',
+          attachments: [
+            {
+              filename: 'report.csv',
+              filepath: '/api/files/code/download/session/file',
+              expiresAt: 123456,
+              conversationId: 'conversation-1',
+              messageId: 'assistant-message',
+              toolCallId: 'tool-call-1',
+              text: 'untrusted text should not survive',
+              source: 'forged-source',
+              metadata: { codeEnvRef: { id: 'victim' } },
+            },
+          ],
+          fileContext: 'stale context',
+        },
+      ]);
+
+      expect(getFiles).not.toHaveBeenCalled();
+      expect(message.fileContext).toBeUndefined();
+      expect(message.attachments).toEqual([
+        {
+          filename: 'report.csv',
+          filepath: '/api/files/code/download/session/file',
+          expiresAt: 123456,
+          conversationId: 'conversation-1',
+          messageId: 'assistant-message',
+          toolCallId: 'tool-call-1',
+        },
+      ]);
+      expect(JSON.stringify(message)).not.toContain('untrusted text');
+      expect(JSON.stringify(message)).not.toContain('forged-source');
+      expect(JSON.stringify(message)).not.toContain('victim');
+    });
+
+    test('merges safe per-message metadata onto authorized DB-backed attachments', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-artifact',
+          attachments: [
+            {
+              file_id: 'owner-file',
+              filename: 'forged-artifact.csv',
+              filepath: '/forged/artifact.csv',
+              source: 'forged-source',
+              metadata: { codeEnvRef: { id: 'victim' } },
+              text: 'forged artifact text',
+              messageId: 'assistant-message',
+              toolCallId: 'tool-call-2',
+            },
+          ],
+        },
+      ]);
+
+      expect(message.attachments).toEqual([
+        expect.objectContaining({
+          file_id: 'owner-file',
+          filename: 'owner.txt',
+          filepath: '/uploads/owner.txt',
+          source: 'local',
+          metadata: ownerFile.metadata,
+          messageId: 'assistant-message',
+          toolCallId: 'tool-call-2',
+        }),
+      ]);
+      expect(message.attachments[0].text).toBeUndefined();
+      expect(message.attachments[0]._id).toBeUndefined();
+      expect(JSON.stringify(message)).not.toContain('forged-artifact');
+      expect(JSON.stringify(message)).not.toContain('forged artifact text');
+    });
+  });
+
+  describe('sendMessage quote references', () => {
+    // The blockquote merge itself lives in AgentClient.buildMessages / prependQuotes
+    // (covered by packages/api specs). BaseClient's job is to attach the normalized
+    // quotes onto the user message early and keep the stored text clean.
+    test('attaches normalized quotes before getReqData fires and keeps stored text clean', async () => {
+      TestClient.options.req = { body: { quotes: ['  the selected text  ', '', 42] } };
+      TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+      let captured;
+      await TestClient.sendMessage('What does this mean?', {
+        getReqData: (data) => {
+          if (data.userMessage) {
+            captured = { text: data.userMessage.text, quotes: data.userMessage.quotes };
+          }
+        },
+      });
+
+      // Quotes are present (trimmed, non-strings dropped) at getReqData time, and
+      // the user text is never mutated by the merge.
+      expect(captured).toBeDefined();
+      expect(captured.quotes).toEqual(['the selected text']);
+      expect(captured.text).toBe('What does this mean?');
+
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg.isCreatedByUser,
+      );
+      expect(userSave[0].text).toBe('What does this mean?');
+      expect(userSave[0].quotes).toEqual(['the selected text']);
+    });
+
+    test('persists multiple quotes in order on the saved message', async () => {
+      TestClient.options.req = { body: { quotes: ['first excerpt', 'second excerpt'] } };
+      TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+
+      await TestClient.sendMessage('Compare these');
+
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg.isCreatedByUser,
+      );
+      expect(userSave[0].text).toBe('Compare these');
+      expect(userSave[0].quotes).toEqual(['first excerpt', 'second excerpt']);
+    });
+
+    test('leaves the message untouched when no quotes are provided', async () => {
+      TestClient.options.req = { body: {} };
+      TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+
+      await TestClient.sendMessage('Just a question');
+
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg.isCreatedByUser,
+      );
+      expect(userSave[0].text).toBe('Just a question');
+      expect(userSave[0].quotes).toBeUndefined();
     });
   });
 });

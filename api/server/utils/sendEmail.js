@@ -124,11 +124,20 @@ const sendEmail = async ({ email, subject, payload, template, throwError = true 
         // Whether to accept unsigned certificates
         rejectUnauthorized: !isEnabled(process.env.EMAIL_ALLOW_SELFSIGNED),
       },
-      auth: {
+    };
+
+    const hasUsername = !!process.env.EMAIL_USERNAME;
+    const hasPassword = !!process.env.EMAIL_PASSWORD;
+    if (hasUsername && hasPassword) {
+      transporterOptions.auth = {
         user: process.env.EMAIL_USERNAME,
         pass: process.env.EMAIL_PASSWORD,
-      },
-    };
+      };
+    } else if (hasUsername !== hasPassword) {
+      logger.warn(
+        '[sendEmail] EMAIL_USERNAME and EMAIL_PASSWORD must both be set for authenticated SMTP, or both omitted for unauthenticated SMTP. Proceeding without authentication.',
+      );
+    }
 
     if (process.env.EMAIL_ENCRYPTION_HOSTNAME) {
       // Check the certificate against this name explicitly

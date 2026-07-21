@@ -1,11 +1,11 @@
+import { Model } from 'mongoose';
 import type * as t from '~/types';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
 import mongoMeili from '~/models/plugins/mongoMeili';
 import messageSchema from '~/schema/message';
 
-/**
- * Creates or returns the Message model using the provided mongoose instance and schema
- */
-export function createMessageModel(mongoose: typeof import('mongoose')) {
+export function createMessageModel(mongoose: typeof import('mongoose')): Model<t.IMessage> {
+  applyTenantIsolation(messageSchema);
   if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
     messageSchema.plugin(mongoMeili, {
       mongoose,

@@ -1,21 +1,22 @@
 const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
+const { Readable } = require('stream');
 const { v4: uuidv4 } = require('uuid');
-const { createMethods } = require('@librechat/data-schemas');
+const { createMethods, tenantStorage } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   SystemRoles,
   ResourceType,
   AccessRoleIds,
   PrincipalType,
+  FileSources,
 } = require('librechat-data-provider');
-const { createAgent } = require('~/models/Agent');
-const { createFile } = require('~/models');
+const { createAgent, createFile } = require('~/models');
 
 // Only mock the external dependencies that we don't want to test
 jest.mock('~/server/services/Files/process', () => ({
-  processDeleteRequest: jest.fn().mockResolvedValue({}),
+  processDeleteRequest: jest.fn().mockResolvedValue({ deletedFileIds: [], failedFileIds: [] }),
   filterFile: jest.fn(),
   processFileUpload: jest.fn(),
   processAgentFileUpload: jest.fn(),
@@ -33,7 +34,16 @@ jest.mock('~/server/services/Tools/credentials', () => ({
   loadAuthValues: jest.fn(),
 }));
 
-jest.mock('~/server/services/Files/S3/crud', () => ({
+jest.mock('sharp', () =>
+  jest.fn(() => ({
+    metadata: jest.fn().mockResolvedValue({}),
+    toFormat: jest.fn().mockReturnThis(),
+    toBuffer: jest.fn().mockResolvedValue(Buffer.alloc(0)),
+  })),
+);
+
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   refreshS3FileUrls: jest.fn(),
 }));
 
@@ -53,6 +63,7 @@ jest.mock('~/config', () => ({
 }));
 
 const { processDeleteRequest } = require('~/server/services/Files/process');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 
 // Import the router after mocks
 const router = require('./files');
@@ -102,10 +113,10 @@ describe('File Routes - Delete with Agent Access', () => {
 
     app.use((req, res, next) => {
       req.user = {
-        id: otherUserId || 'default-user',
+        id: otherUserId?.toString() || 'default-user',
         role: SystemRoles.USER,
       };
-      req.app = { locals: {} };
+      req.app.locals = {};
       next();
     });
 
@@ -211,13 +222,12 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(fileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
 
-    it('should allow deleting files accessible through shared agent', async () => {
-      // Create an agent with the file attached
+    it('should prevent physically deleting non-owned files accessible through shared agent', async () => {
       const agent = await createAgent({
         id: uuidv4(),
         name: 'Test Agent',
@@ -231,7 +241,6 @@ describe('File Routes - Delete with Agent Access', () => {
         },
       });
 
-      // Grant EDIT permission to user on the agent
       const { grantPermission } = require('~/server/services/PermissionService');
       await grantPermission({
         principalType: PrincipalType.USER,
@@ -254,12 +263,196 @@ describe('File Routes - Delete with Agent Access', () => {
           ],
         });
 
-      expect(response.status).toBe(200);
-      expect(response.body.message).toBe('Files deleted successfully');
-      expect(processDeleteRequest).toHaveBeenCalled();
+      expect(response.status).toBe(403);
+      expect(response.body.message).toBe('You can only delete files you own');
+      expect(response.body.unauthorizedFiles).toContain(fileId);
+      expect(processDeleteRequest).not.toHaveBeenCalled();
     });
 
-    it('should prevent deleting files not attached to the specified agent', async () => {
+    it('unlinks attached agent files without invoking storage deletion', async () => {
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [fileId],
+          },
+        },
+      });
+
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: authorId,
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search',
+          files: [
+            {
+              file_id: fileId,
+              filepath: '/uploads/test.txt',
+            },
+          ],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('File associations removed successfully from agent');
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([]);
+    });
+
+    it('rejects invalid agent tool_resource values before unlinking', async () => {
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: otherUserId,
+        tool_resources: {
+          file_search: {
+            file_ids: [fileId],
+          },
+        },
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search.$pullAll',
+          files: [{ file_id: fileId, filepath: '/uploads/test.txt' }],
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid agent tool resource');
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([fileId]);
+    });
+
+    it('allows an agent author to unlink an editor-owned attached file', async () => {
+      const editorFileId = uuidv4();
+      await createFile({
+        user: otherUserId,
+        file_id: editorFileId,
+        filename: 'editor-file.txt',
+        filepath: '/uploads/editor-file.txt',
+        bytes: 300,
+        type: 'text/plain',
+      });
+
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [editorFileId],
+          },
+        },
+      });
+
+      const authorApp = express();
+      authorApp.use(express.json());
+      authorApp.use((req, res, next) => {
+        req.user = {
+          id: authorId.toString(),
+          role: SystemRoles.USER,
+        };
+        req.app.locals = {};
+        next();
+      });
+      authorApp.use('/files', router);
+
+      const response = await request(authorApp)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search',
+          files: [{ file_id: editorFileId, filepath: '/uploads/editor-file.txt' }],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('File associations removed successfully from agent');
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([]);
+
+      const retainedFile = await File.findOne({ file_id: editorFileId }).lean();
+      expect(retainedFile).toBeTruthy();
+    });
+
+    it('should prevent physically deleting attached files owned by another user', async () => {
+      const thirdUserId = new mongoose.Types.ObjectId();
+      const thirdUserFileId = uuidv4();
+      await createFile({
+        user: thirdUserId,
+        file_id: thirdUserFileId,
+        filename: 'third-user-file.txt',
+        filepath: '/uploads/third-user-file.txt',
+        bytes: 300,
+        type: 'text/plain',
+      });
+
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [thirdUserFileId],
+          },
+        },
+      });
+
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: authorId,
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          files: [
+            {
+              file_id: thirdUserFileId,
+              filepath: '/uploads/third-user-file.txt',
+            },
+          ],
+        });
+
+      expect(response.status).toBe(403);
+      expect(response.body.message).toBe('You can only delete files you own');
+      expect(response.body.unauthorizedFiles).toContain(thirdUserFileId);
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+    });
+
+    it('should prevent physically deleting non-owned files not attached to the specified agent', async () => {
       // Create another file not attached to the agent
       const unattachedFileId = uuidv4();
       await createFile({
@@ -309,7 +502,7 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(unattachedFileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
@@ -374,12 +567,12 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(unauthorizedFileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
 
-    it('should prevent deleting files when user lacks EDIT permission on agent', async () => {
+    it('should prevent unlinking attached files when user lacks EDIT permission on agent', async () => {
       // Create an agent with the file attached
       const agent = await createAgent({
         id: uuidv4(),
@@ -409,6 +602,7 @@ describe('File Routes - Delete with Agent Access', () => {
         .delete('/files')
         .send({
           agent_id: agent.id,
+          tool_resource: 'file_search',
           files: [
             {
               file_id: fileId,
@@ -421,6 +615,398 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(response.body.message).toBe('You can only delete files you have access to');
       expect(response.body.unauthorizedFiles).toContain(fileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
+    });
+
+    it('unlinks missing agent resource files without invoking storage deletion', async () => {
+      const missingFileId = uuidv4();
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: otherUserId,
+        tool_resources: {
+          file_search: {
+            file_ids: [missingFileId],
+          },
+        },
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search',
+          files: [{ file_id: missingFileId, filepath: '/uploads/missing.txt' }],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('File associations removed successfully from agent');
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([]);
+    });
+
+    it('prevents unlinking missing agent resource files without agent edit access', async () => {
+      const missingFileId = uuidv4();
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [missingFileId],
+          },
+        },
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search',
+          files: [{ file_id: missingFileId, filepath: '/uploads/missing.txt' }],
+        });
+
+      expect(response.status).toBe(403);
+      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.unauthorizedFiles).toContain(missingFileId);
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([missingFileId]);
+    });
+  });
+
+  describe('GET /files/download-url/:userId/:file_id', () => {
+    it('returns a direct signed download URL when the strategy supports it', async () => {
+      const userFileId = uuidv4();
+      const getDownloadURL = jest.fn().mockResolvedValue('https://cdn.example.com/file.pdf?signed');
+      getStrategyFunctions.mockReturnValue({ getDownloadURL });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'file.pdf',
+        filepath: 'uploads/user/file.pdf',
+        storageKey: 'r/us-east-2/uploads/user/file.pdf',
+        storageRegion: 'us-east-2',
+        bytes: 200,
+        type: 'application/pdf',
+        source: FileSources.s3,
+        text: 'private extracted text',
+      });
+
+      const response = await request(app).get(`/files/download-url/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        url: 'https://cdn.example.com/file.pdf?signed',
+        filename: 'file.pdf',
+        type: 'application/pdf',
+      });
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.body.metadata).toMatchObject({
+        file_id: userFileId,
+        filename: 'file.pdf',
+        filepath: 'uploads/user/file.pdf',
+        storageKey: 'r/us-east-2/uploads/user/file.pdf',
+        storageRegion: 'us-east-2',
+        source: FileSources.s3,
+      });
+      expect(response.body.metadata).not.toHaveProperty('_id');
+      expect(response.body.metadata).not.toHaveProperty('__v');
+      expect(response.body.metadata).not.toHaveProperty('user');
+      expect(response.body.metadata).not.toHaveProperty('tenantId');
+      expect(response.body.metadata).not.toHaveProperty('text');
+      expect(getDownloadURL).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file: expect.objectContaining({ file_id: userFileId }),
+          customFilename: 'file.pdf',
+          contentType: 'application/pdf',
+        }),
+      );
+    });
+
+    it('returns 501 when the strategy does not support direct URLs', async () => {
+      const userFileId = uuidv4();
+      getStrategyFunctions.mockReturnValue({});
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'file.txt',
+        filepath: 'uploads/user/file.txt',
+        bytes: 200,
+        type: 'text/plain',
+        source: FileSources.local,
+      });
+
+      const response = await request(app).get(`/files/download-url/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(501);
+    });
+
+    it('denies tenant-scoped files before issuing a signed URL', async () => {
+      const userFileId = uuidv4();
+      const getDownloadURL = jest.fn().mockResolvedValue('https://cdn.example.com/file.pdf?signed');
+      getStrategyFunctions.mockReturnValue({ getDownloadURL });
+
+      await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        createFile({
+          user: otherUserId,
+          file_id: userFileId,
+          filename: 'file.pdf',
+          filepath: 'uploads/user/file.pdf',
+          bytes: 200,
+          type: 'application/pdf',
+          source: FileSources.s3,
+          tenantId: 'tenant-a',
+        }),
+      );
+
+      const response = await request(app).get(`/files/download-url/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(403);
+      expect(getDownloadURL).not.toHaveBeenCalled();
+    });
+
+    it('returns 500 when direct URL generation fails', async () => {
+      const userFileId = uuidv4();
+      const getDownloadURL = jest.fn().mockRejectedValue(new Error('signing failed'));
+      getStrategyFunctions.mockReturnValue({ getDownloadURL });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'file.pdf',
+        filepath: 'uploads/user/file.pdf',
+        storageKey: 'r/us-east-2/uploads/user/file.pdf',
+        storageRegion: 'us-east-2',
+        bytes: 200,
+        type: 'application/pdf',
+        source: FileSources.s3,
+      });
+
+      const response = await request(app).get(`/files/download-url/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('Error generating file download URL');
+    });
+  });
+
+  describe('GET /files/download/:userId/:file_id', () => {
+    it('streams proxied downloads by default when a direct URL is available', async () => {
+      const userFileId = uuidv4();
+      const getDownloadURL = jest.fn().mockResolvedValue('https://cdn.example.com/file.pdf?signed');
+      const getDownloadStream = jest.fn().mockResolvedValue(Readable.from(['file content']));
+      getStrategyFunctions.mockReturnValue({ getDownloadURL, getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'file.pdf',
+        filepath: 'uploads/user/file.pdf',
+        storageKey: 'r/us-east-2/uploads/user/file.pdf',
+        storageRegion: 'us-east-2',
+        bytes: 200,
+        type: 'application/pdf',
+        source: FileSources.cloudfront,
+        text: 'private extracted text',
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.toString()).toBe('file content');
+      expect(response.headers.location).toBeUndefined();
+      const metadata = JSON.parse(decodeURIComponent(response.headers['x-file-metadata']));
+      expect(metadata).toMatchObject({
+        file_id: userFileId,
+        filename: 'file.pdf',
+        filepath: 'uploads/user/file.pdf',
+        storageKey: 'r/us-east-2/uploads/user/file.pdf',
+        storageRegion: 'us-east-2',
+        source: FileSources.cloudfront,
+      });
+      expect(metadata).not.toHaveProperty('_id');
+      expect(metadata).not.toHaveProperty('__v');
+      expect(metadata).not.toHaveProperty('user');
+      expect(metadata).not.toHaveProperty('tenantId');
+      expect(metadata).not.toHaveProperty('text');
+      expect(getDownloadURL).not.toHaveBeenCalled();
+      expect(getDownloadStream).toHaveBeenCalledWith(
+        expect.any(Object),
+        'r/us-east-2/uploads/user/file.pdf',
+      );
+    });
+
+    it('redirects to a direct signed download URL when explicitly requested', async () => {
+      const userFileId = uuidv4();
+      const getDownloadURL = jest.fn().mockResolvedValue('https://cdn.example.com/file.pdf?signed');
+      const getDownloadStream = jest.fn();
+      getStrategyFunctions.mockReturnValue({ getDownloadURL, getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'file.pdf',
+        filepath: 'uploads/user/file.pdf',
+        bytes: 200,
+        type: 'application/pdf',
+        source: FileSources.cloudfront,
+      });
+
+      const response = await request(app).get(
+        `/files/download/${otherUserId}/${userFileId}?direct=true`,
+      );
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe('https://cdn.example.com/file.pdf?signed');
+      expect(response.headers['x-file-metadata']).toBeUndefined();
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(getDownloadStream).not.toHaveBeenCalled();
+    });
+
+    it('falls back to streaming when direct URL generation fails', async () => {
+      const userFileId = uuidv4();
+      const getDownloadURL = jest.fn().mockRejectedValue(new Error('missing signing keys'));
+      const getDownloadStream = jest.fn().mockResolvedValue(Readable.from(['file content']));
+      getStrategyFunctions.mockReturnValue({ getDownloadURL, getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'file.txt',
+        filepath: 'uploads/user/file.txt',
+        bytes: 200,
+        type: 'text/plain',
+        source: FileSources.s3,
+      });
+
+      const response = await request(app).get(
+        `/files/download/${otherUserId}/${userFileId}?direct=true`,
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.toString()).toBe('file content');
+      expect(response.headers.location).toBeUndefined();
+      expect(response.headers['cache-control']).toBeUndefined();
+      expect(getDownloadURL).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file: expect.objectContaining({ file_id: userFileId }),
+          customFilename: 'file.txt',
+          contentType: 'text/plain',
+        }),
+      );
+      expect(getDownloadStream).toHaveBeenCalledWith(expect.any(Object), 'uploads/user/file.txt');
+    });
+
+    it('returns 501 when direct URL generation fails and no stream fallback exists', async () => {
+      const userFileId = uuidv4();
+      const getDownloadURL = jest.fn().mockRejectedValue(new Error('missing signing keys'));
+      getStrategyFunctions.mockReturnValue({ getDownloadURL });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'file.txt',
+        filepath: 'uploads/user/file.txt',
+        bytes: 200,
+        type: 'text/plain',
+        source: FileSources.cloudfront,
+      });
+
+      const response = await request(app).get(
+        `/files/download/${otherUserId}/${userFileId}?direct=true`,
+      );
+
+      expect(response.status).toBe(501);
+      expect(response.text).toBe('Not Implemented');
+      expect(response.headers.location).toBeUndefined();
+      expect(getDownloadURL).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file: expect.objectContaining({ file_id: userFileId }),
+          customFilename: 'file.txt',
+          contentType: 'text/plain',
+        }),
+      );
+    });
+  });
+
+  describe('POST /files/usage', () => {
+    it('marks owned files used and clears the upload TTL', async () => {
+      const ownFileId = uuidv4();
+      await createFile({
+        user: otherUserId,
+        file_id: ownFileId,
+        filename: 'queued.png',
+        filepath: '/uploads/queued.png',
+        bytes: 10,
+        type: 'image/png',
+      });
+      await File.updateOne({ file_id: ownFileId }, { $set: { expiresAt: new Date() } });
+
+      const response = await request(app)
+        .post('/files/usage')
+        .send({ file_ids: [ownFileId] });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ marked: 1 });
+      const marked = await File.findOne({ file_id: ownFileId }).lean();
+      expect(marked.usage).toBe(1);
+      expect(marked.expiresAt).toBeUndefined();
+    });
+
+    it("is owner-scoped: another user's file stays untouched (best-effort 200)", async () => {
+      await File.updateOne({ file_id: fileId }, { $set: { expiresAt: new Date() } });
+
+      const response = await request(app)
+        .post('/files/usage')
+        .send({ file_ids: [fileId] });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ marked: 0 });
+      const untouched = await File.findOne({ file_id: fileId }).lean();
+      expect(untouched.usage).toBe(0);
+      expect(untouched.expiresAt).toBeDefined();
+    });
+
+    it('rejects a list over the cap', async () => {
+      const file_ids = Array.from({ length: 11 }, () => uuidv4());
+      const response = await request(app).post('/files/usage').send({ file_ids });
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe('TOO_MANY_FILES');
+    });
+
+    it('rejects invalid bodies', async () => {
+      expect((await request(app).post('/files/usage').send({})).status).toBe(400);
+      expect((await request(app).post('/files/usage').send({ file_ids: 'f1' })).status).toBe(400);
+      expect(
+        (
+          await request(app)
+            .post('/files/usage')
+            .send({ file_ids: [1] })
+        ).status,
+      ).toBe(400);
+    });
+
+    it('rejects unauthenticated requests', async () => {
+      const bareApp = express();
+      bareApp.use(express.json());
+      bareApp.use((req, res, next) => {
+        req.app.locals = {};
+        next();
+      });
+      bareApp.use('/files', router);
+
+      const response = await request(bareApp)
+        .post('/files/usage')
+        .send({ file_ids: [fileId] });
+      expect(response.status).toBe(401);
     });
   });
 });

@@ -58,22 +58,17 @@ const createTestRouter = (initialEntry: string, isAuthenticated: boolean) =>
   );
 
 describe('StartupLayout — redirect race condition', () => {
-  const originalLocation = window.location;
-
   beforeEach(() => {
     sessionStorage.clear();
   });
 
   afterEach(() => {
-    Object.defineProperty(window, 'location', { value: originalLocation, writable: true });
+    window.history.replaceState({}, '', '/');
     jest.restoreAllMocks();
   });
 
   it('navigates to /c/new when authenticated with no pending redirect', async () => {
-    Object.defineProperty(window, 'location', {
-      value: { ...originalLocation, search: '' },
-      writable: true,
-    });
+    window.history.replaceState({}, '', '/login');
 
     const router = createTestRouter('/login', true);
     render(<RouterProvider router={router} />);
@@ -84,10 +79,7 @@ describe('StartupLayout — redirect race condition', () => {
   });
 
   it('does NOT navigate to /c/new when redirect_to URL param is present', async () => {
-    Object.defineProperty(window, 'location', {
-      value: { ...originalLocation, search: '?redirect_to=%2Fc%2Fabc123' },
-      writable: true,
-    });
+    window.history.replaceState({}, '', '/login?redirect_to=%2Fc%2Fabc123');
 
     const router = createTestRouter('/login?redirect_to=%2Fc%2Fabc123', true);
     render(<RouterProvider router={router} />);
@@ -98,10 +90,7 @@ describe('StartupLayout — redirect race condition', () => {
   });
 
   it('does NOT navigate to /c/new when sessionStorage redirect is present', async () => {
-    Object.defineProperty(window, 'location', {
-      value: { ...originalLocation, search: '' },
-      writable: true,
-    });
+    window.history.replaceState({}, '', '/login');
     sessionStorage.setItem(SESSION_KEY, '/c/abc123');
 
     const router = createTestRouter('/login', true);
@@ -113,10 +102,7 @@ describe('StartupLayout — redirect race condition', () => {
   });
 
   it('does NOT navigate when not authenticated', async () => {
-    Object.defineProperty(window, 'location', {
-      value: { ...originalLocation, search: '' },
-      writable: true,
-    });
+    window.history.replaceState({}, '', '/login');
 
     const router = createTestRouter('/login', false);
     render(<RouterProvider router={router} />);

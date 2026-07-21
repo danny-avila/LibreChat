@@ -1,13 +1,16 @@
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc.js';
+import timezonePlugin from 'dayjs/plugin/timezone.js';
 import type { ZodIssue } from 'zod';
 import type * as a from './types/assistants';
 import type * as s from './schemas';
 import type * as t from './types';
-import { ContentTypes } from './types/runs';
 import {
   openAISchema,
+  openRouterSchema,
   googleSchema,
   EModelEndpoint,
+  Providers,
   anthropicSchema,
   assistantSchema,
   // agentsSchema,
@@ -16,10 +19,15 @@ import {
   compactAssistantSchema,
 } from './schemas';
 import { bedrockInputSchema } from './bedrock';
+import { ContentTypes } from './types/runs';
 import { alternateName } from './config';
+
+dayjs.extend(utc);
+dayjs.extend(timezonePlugin);
 
 type EndpointSchema =
   | typeof openAISchema
+  | typeof openRouterSchema
   | typeof googleSchema
   | typeof anthropicSchema
   | typeof assistantSchema
@@ -27,17 +35,37 @@ type EndpointSchema =
   | typeof bedrockInputSchema;
 
 export type EndpointSchemaKey = EModelEndpoint;
+type EndpointSchemaLookupKey = EModelEndpoint | Providers.OPENROUTER;
 
-const endpointSchemas: Record<EndpointSchemaKey, EndpointSchema> = {
+const endpointSchemas: Record<EndpointSchemaLookupKey, EndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
   [EModelEndpoint.azureOpenAI]: openAISchema,
   [EModelEndpoint.custom]: openAISchema,
+  [Providers.OPENROUTER]: openRouterSchema,
   [EModelEndpoint.google]: googleSchema,
   [EModelEndpoint.anthropic]: anthropicSchema,
   [EModelEndpoint.assistants]: assistantSchema,
   [EModelEndpoint.azureAssistants]: assistantSchema,
   [EModelEndpoint.agents]: compactAgentsSchema,
   [EModelEndpoint.bedrock]: bedrockInputSchema,
+};
+
+const isEndpointSchemaLookupKey = (value?: string | null): value is EndpointSchemaLookupKey =>
+  value != null && Object.prototype.hasOwnProperty.call(endpointSchemas, value);
+
+const getFallbackEndpointSchema = <TSchema>(
+  schemas: Record<EndpointSchemaLookupKey, TSchema>,
+  endpointType?: EndpointSchemaKey | null,
+  defaultParamsEndpoint?: string | null,
+): TSchema | undefined => {
+  if (!endpointType) {
+    return undefined;
+  }
+
+  const overrideSchema = isEndpointSchemaLookupKey(defaultParamsEndpoint)
+    ? schemas[defaultParamsEndpoint]
+    : undefined;
+  return overrideSchema ?? schemas[endpointType];
 };
 
 // const schemaCreators: Record<EModelEndpoint, (customSchema: DefaultSchemaValues) => EndpointSchema> = {
@@ -152,17 +180,15 @@ export const parseConvo = ({
   possibleValues?: TPossibleValues;
   defaultParamsEndpoint?: string | null;
 }) => {
-  let schema = endpointSchemas[endpoint] as EndpointSchema | undefined;
+  const primarySchema = endpointSchemas[endpoint] as EndpointSchema | undefined;
 
-  if (!schema && !endpointType) {
+  if (!primarySchema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
-  } else if (!schema) {
-    const overrideSchema = defaultParamsEndpoint
-      ? endpointSchemas[defaultParamsEndpoint as EndpointSchemaKey]
-      : undefined;
-    schema = overrideSchema ?? (endpointType ? endpointSchemas[endpointType] : undefined);
   }
 
+  const schema =
+    primarySchema ??
+    getFallbackEndpointSchema(endpointSchemas, endpointType, defaultParamsEndpoint);
   const convo = schema?.parse(conversation) as s.TConversation | undefined;
   const { models } = possibleValues ?? {};
 
@@ -289,13 +315,15 @@ type CompactEndpointSchema =
   | typeof compactAssistantSchema
   | typeof compactAgentsSchema
   | typeof compactGoogleSchema
+  | typeof openRouterSchema
   | typeof anthropicSchema
   | typeof bedrockInputSchema;
 
-const compactEndpointSchemas: Record<EndpointSchemaKey, CompactEndpointSchema> = {
+const compactEndpointSchemas: Record<EndpointSchemaLookupKey, CompactEndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
   [EModelEndpoint.azureOpenAI]: openAISchema,
   [EModelEndpoint.custom]: openAISchema,
+  [Providers.OPENROUTER]: openRouterSchema,
   [EModelEndpoint.assistants]: compactAssistantSchema,
   [EModelEndpoint.azureAssistants]: compactAssistantSchema,
   [EModelEndpoint.agents]: compactAgentsSchema,
@@ -321,16 +349,15 @@ export const parseCompactConvo = ({
     throw new Error(`undefined endpoint: ${endpoint}`);
   }
 
-  let schema = compactEndpointSchemas[endpoint] as CompactEndpointSchema | undefined;
+  const primarySchema = compactEndpointSchemas[endpoint] as CompactEndpointSchema | undefined;
 
-  if (!schema && !endpointType) {
+  if (!primarySchema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
-  } else if (!schema) {
-    const overrideSchema = defaultParamsEndpoint
-      ? compactEndpointSchemas[defaultParamsEndpoint as EndpointSchemaKey]
-      : undefined;
-    schema = overrideSchema ?? (endpointType ? compactEndpointSchemas[endpointType] : undefined);
   }
+
+  const schema =
+    primarySchema ??
+    getFallbackEndpointSchema(compactEndpointSchemas, endpointType, defaultParamsEndpoint);
 
   if (!schema) {
     throw new Error(`Unknown endpointType: ${endpointType}`);
@@ -353,36 +380,34 @@ export const parseCompactConvo = ({
 export function parseTextParts(
   contentParts: Array<a.TMessageContentParts | undefined>,
   skipReasoning: boolean = false,
+  options?: { includeSteer?: boolean },
 ): string {
   let result = '';
+  const append = (textValue: string) => {
+    if (
+      result.length > 0 &&
+      textValue.length > 0 &&
+      result[result.length - 1] !== ' ' &&
+      textValue[0] !== ' '
+    ) {
+      result += ' ';
+    }
+    result += textValue;
+  };
 
   for (const part of contentParts) {
     if (!part?.type) {
       continue;
     }
     if (part.type === ContentTypes.TEXT) {
-      const textValue = (typeof part.text === 'string' ? part.text : part.text?.value) || '';
-
-      if (
-        result.length > 0 &&
-        textValue.length > 0 &&
-        result[result.length - 1] !== ' ' &&
-        textValue[0] !== ' '
-      ) {
-        result += ' ';
-      }
-      result += textValue;
+      append((typeof part.text === 'string' ? part.text : part.text?.value) || '');
+    } else if (part.type === ContentTypes.STEER && options?.includeSteer === true) {
+      /** Mid-run user speech: excluded by default so generic extraction (TTS
+       *  reading assistant output) never speaks the user's own words — the
+       *  full-record surfaces (search indexing, persisted abort text) opt in. */
+      append(typeof part.steer === 'string' ? part.steer : '');
     } else if (part.type === ContentTypes.THINK && !skipReasoning) {
-      const textValue = typeof part.think === 'string' ? part.think : '';
-      if (
-        result.length > 0 &&
-        textValue.length > 0 &&
-        result[result.length - 1] !== ' ' &&
-        textValue[0] !== ' '
-      ) {
-        result += ' ';
-      }
-      result += textValue;
+      append(typeof part.think === 'string' ? part.think : '');
     }
   }
 
@@ -402,26 +427,53 @@ export function findLastSeparatorIndex(text: string, separators = SEPARATORS): n
   return lastIndex;
 }
 
-export function replaceSpecialVars({ text, user }: { text: string; user?: t.TUser | null }) {
+/**
+ * Anchors a dayjs instant to the user's IANA timezone when one is supplied,
+ * so local-time special vars reflect the user's wall clock rather than the
+ * server's. Falls back to the original instant for missing or invalid zones.
+ */
+function applyTimezone(value: dayjs.Dayjs, timezone?: string): dayjs.Dayjs {
+  if (!timezone) {
+    return value;
+  }
+  try {
+    const zoned = value.tz(timezone);
+    return zoned.isValid() ? zoned : value;
+  } catch {
+    return value;
+  }
+}
+
+export function replaceSpecialVars({
+  text,
+  user,
+  now: inputNow,
+  timezone,
+}: {
+  text: string;
+  user?: t.TUser | null;
+  now?: string | number | Date;
+  timezone?: string;
+}) {
   let result = text;
   if (!result) {
     return result;
   }
 
-  const now = dayjs();
+  const now = applyTimezone(inputNow != null ? dayjs(inputNow) : dayjs(), timezone);
   const weekdayName = now.format('dddd');
 
   const currentDate = now.format('YYYY-MM-DD');
-  result = result.replace(/{{current_date}}/gi, `${currentDate} (${weekdayName})`);
+  result = result.replace(/{{\s*current_date\s*}}/gi, `${currentDate} (${weekdayName})`);
 
   const currentDatetime = now.format('YYYY-MM-DD HH:mm:ss Z');
-  result = result.replace(/{{current_datetime}}/gi, `${currentDatetime} (${weekdayName})`);
+  result = result.replace(/{{\s*current_datetime\s*}}/gi, `${currentDatetime} (${weekdayName})`);
 
   const isoDatetime = now.toISOString();
-  result = result.replace(/{{iso_datetime}}/gi, isoDatetime);
+  result = result.replace(/{{\s*iso_datetime\s*}}/gi, isoDatetime);
 
   if (user && user.name) {
-    result = result.replace(/{{current_user}}/gi, user.name);
+    result = result.replace(/{{\s*current_user\s*}}/gi, user.name);
   }
 
   return result;

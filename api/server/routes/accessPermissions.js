@@ -1,5 +1,11 @@
+const mongoose = require('mongoose');
 const express = require('express');
-const { ResourceType, PermissionBits } = require('librechat-data-provider');
+const {
+  AccessRoleIds,
+  PrincipalType,
+  ResourceType,
+  PermissionBits,
+} = require('librechat-data-provider');
 const {
   getUserEffectivePermissions,
   getAllEffectivePermissions,
@@ -8,10 +14,13 @@ const {
   getResourceRoles,
   searchPrincipals,
 } = require('~/server/controllers/PermissionsController');
+const {
+  checkShareAccess,
+  checkSharePublicAccess,
+} = require('~/server/middleware/checkSharePublicAccess');
 const { requireJwtAuth, checkBan, uaParser, canAccessResource } = require('~/server/middleware');
 const { checkPeoplePickerAccess } = require('~/server/middleware/checkPeoplePickerAccess');
-const { checkSharePublicAccess } = require('~/server/middleware/checkSharePublicAccess');
-const { findMCPServerByObjectId } = require('~/models');
+const { findMCPServerByObjectId, getSkillById } = require('~/models');
 
 const router = express.Router();
 
@@ -72,6 +81,19 @@ const checkResourcePermissionAccess = (requiredPermission) => (req, res, next) =
       resourceIdParam: 'resourceId',
       idResolver: findMCPServerByObjectId,
     });
+  } else if (resourceType === ResourceType.SKILL) {
+    middleware = canAccessResource({
+      resourceType: ResourceType.SKILL,
+      requiredPermission,
+      resourceIdParam: 'resourceId',
+      idResolver: getSkillById,
+    });
+  } else if (resourceType === ResourceType.SHARED_LINK) {
+    middleware = canAccessResource({
+      resourceType: ResourceType.SHARED_LINK,
+      requiredPermission,
+      resourceIdParam: 'resourceId',
+    });
   } else {
     return res.status(400).json({
       error: 'Bad Request',
@@ -81,6 +103,57 @@ const checkResourcePermissionAccess = (requiredPermission) => (req, res, next) =
 
   // Execute the middleware
   middleware(req, res, next);
+};
+
+const rejectSharedLinkOwnerPermissionChanges = async (req, res, next) => {
+  if (req.params.resourceType !== ResourceType.SHARED_LINK) {
+    return next();
+  }
+
+  const updated = Array.isArray(req.body?.updated) ? req.body.updated : [];
+  const removed = Array.isArray(req.body?.removed) ? req.body.removed : [];
+  const grantsOwner = updated.some(
+    (principal) => principal?.accessRoleId === AccessRoleIds.SHARED_LINK_OWNER,
+  );
+  const grantsPublicOwner = req.body?.publicAccessRoleId === AccessRoleIds.SHARED_LINK_OWNER;
+
+  if (grantsOwner || grantsPublicOwner) {
+    return res.status(400).json({
+      error: 'Bad Request',
+      message: 'Shared link owner permissions cannot be changed',
+    });
+  }
+
+  const userMutations = [...updated, ...removed].filter(
+    (principal) => principal?.type === PrincipalType.USER && principal?.id,
+  );
+
+  if (userMutations.length === 0) {
+    return next();
+  }
+
+  try {
+    const SharedLink = mongoose.models.SharedLink;
+    const link = await SharedLink.findById(req.params.resourceId, 'user').lean();
+    const ownerId = link?.user?.toString();
+    const touchesOwner = ownerId
+      ? userMutations.some((principal) => principal.id?.toString() === ownerId)
+      : false;
+
+    if (touchesOwner) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Shared link owner permissions cannot be changed',
+      });
+    }
+  } catch (_error) {
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to validate shared link owner permissions',
+    });
+  }
+
+  return next();
 };
 
 /**
@@ -97,13 +170,15 @@ router.get(
 /**
  * PUT /api/permissions/{resourceType}/{resourceId}
  * Bulk update permissions for a specific resource
- * SECURITY: Requires SHARE permission to modify resource permissions
+ * SECURITY: Requires resource ACL SHARE and role SHARE to modify resource permissions
  * SECURITY: Requires SHARE_PUBLIC permission to enable public sharing
  */
 router.put(
   '/:resourceType/:resourceId',
   checkResourcePermissionAccess(PermissionBits.SHARE),
+  checkShareAccess,
   checkSharePublicAccess,
+  rejectSharedLinkOwnerPermissionChanges,
   updateResourcePermissions,
 );
 

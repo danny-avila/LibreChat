@@ -81,6 +81,8 @@ describe('initializeMCPs', () => {
       expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(
         expect.anything(), // mongoose
         ['localhost'],
+        undefined,
+        expect.any(Function), // per-request allowlist resolver
       );
     });
 
@@ -93,7 +95,12 @@ describe('initializeMCPs', () => {
 
       await initializeMCPs();
 
-      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(expect.anything(), allowedDomains);
+      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(
+        expect.anything(),
+        allowedDomains,
+        undefined,
+        expect.any(Function),
+      );
     });
 
     it('should handle undefined mcpSettings gracefully', async () => {
@@ -104,7 +111,36 @@ describe('initializeMCPs', () => {
 
       await initializeMCPs();
 
-      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(expect.anything(), undefined);
+      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(
+        expect.anything(),
+        undefined,
+        undefined,
+        expect.any(Function),
+      );
+    });
+
+    it('wires a per-request resolver that reads the merged (non-baseOnly) config', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        mcpConfig: null,
+        mcpSettings: { allowedDomains: ['yaml.com'] },
+      });
+
+      await initializeMCPs();
+
+      const resolver = mockCreateMCPServersRegistry.mock.calls[0][3];
+      expect(typeof resolver).toBe('function');
+
+      // The resolver resolves the request's merged allowlists — not the boot YAML base.
+      mockGetAppConfig.mockResolvedValue({
+        mcpSettings: { allowedDomains: ['merged.com'], allowedAddresses: ['10.0.0.0/8'] },
+      });
+      const resolved = await resolver({ userId: 'u1', role: 'ADMIN' });
+
+      expect(mockGetAppConfig).toHaveBeenLastCalledWith({ role: 'ADMIN', userId: 'u1' });
+      expect(resolved).toEqual({
+        allowedDomains: ['merged.com'],
+        allowedAddresses: ['10.0.0.0/8'],
+      });
     });
 
     it('should throw and log error if MCPServersRegistry initialization fails', async () => {

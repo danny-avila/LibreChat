@@ -1,60 +1,63 @@
-import { useState, useRef } from 'react';
-import { Folder } from 'lucide-react';
+import { memo, useMemo, useRef, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
-import {
-  EModelEndpoint,
-  EToolResources,
-  mergeFileConfig,
-  getEndpointFileConfig,
-} from 'librechat-data-provider';
-import {
-  HoverCard,
-  DropdownPopup,
-  AttachmentIcon,
-  CircleHelpIcon,
-  SharePointIcon,
-  HoverCardPortal,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '@librechat/client';
+import { Folder, Plus, Info } from 'lucide-react';
+import { EModelEndpoint, EToolResources } from 'librechat-data-provider';
+import { DropdownPopup, SharePointIcon, TooltipAnchor } from '@librechat/client';
 import type { ExtendedFile } from '~/common';
-import { useFileHandling, useLocalize, useLazyEffect, useSharePointFileHandling } from '~/hooks';
-import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';
+import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
+import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
+import { useAgentFileConfig, useLocalize, useLazyEffect } from '~/hooks';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
-import { ESide, isEphemeralAgent } from '~/common';
-import { useChatContext } from '~/Providers';
+import { useGetStartupConfig } from '~/data-provider';
+import { isEphemeralAgent } from '~/common';
+import { cn } from '~/utils';
 
-export default function FileContext({
+const addButtonClassName = cn(
+  'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-text-secondary transition-colors',
+  'hover:bg-surface-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+  'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-text-secondary',
+);
+
+function FileContext({
   agent_id,
   files: _files,
+  showHeader = true,
 }: {
   agent_id: string;
   files?: [string, ExtendedFile][];
+  showHeader?: boolean;
 }) {
   const localize = useLocalize();
-  const { setFilesLoading } = useChatContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
+  const fileHandlingState = useMemo(() => ({ files, setFiles, conversation: null }), [files]);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
+  const { endpointFileConfig, providerValue, endpointType } = useAgentFileConfig();
+  const endpointOverride = providerValue || EModelEndpoint.agents;
 
-  const { data: fileConfig = null } = useGetFileConfig({
-    select: (data) => mergeFileConfig(data),
-  });
-
-  const { handleFileChange } = useFileHandling({
-    additionalMetadata: { agent_id, tool_resource: EToolResources.context },
-    endpointOverride: EModelEndpoint.agents,
-    fileSetter: setFiles,
-  });
-  const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
-    additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
-    endpointOverride: EModelEndpoint.agents,
-    fileSetter: setFiles,
-  });
+  const { handleFileChange } = useFileHandlingNoChatContext(
+    {
+      additionalMetadata: { agent_id, tool_resource: EToolResources.context },
+      endpointOverride,
+      endpointTypeOverride: endpointType,
+      fileSetter: setFiles,
+    },
+    fileHandlingState,
+  );
+  const { handleSharePointFiles, isProcessing, downloadProgress } =
+    useSharePointFileHandlingNoChatContext(
+      {
+        additionalMetadata: { agent_id, tool_resource: EToolResources.context },
+        endpointOverride,
+        endpointTypeOverride: endpointType,
+        fileSetter: setFiles,
+      },
+      fileHandlingState,
+    );
   useLazyEffect(
     () => {
       if (_files) {
@@ -64,13 +67,8 @@ export default function FileContext({
     [_files],
     750,
   );
-
-  const endpointFileConfig = getEndpointFileConfig({
-    fileConfig,
-    endpoint: EModelEndpoint.agents,
-    endpointType: EModelEndpoint.agents,
-  });
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
+  const disabledUploadButton = isEphemeralAgent(agent_id);
   const handleSharePointFilesSelected = async (sharePointFiles: any[]) => {
     try {
       await handleSharePointFiles(sharePointFiles);
@@ -102,92 +100,98 @@ export default function FileContext({
       icon: <SharePointIcon className="icon-md" />,
     },
   ];
-  const menuTrigger = (
-    <Ariakit.MenuButton className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium">
-      <div className="flex w-full items-center justify-center gap-1">
-        <AttachmentIcon className="text-token-text-primary h-4 w-4" />
-        {localize('com_ui_upload_file_context')}
-      </div>
-    </Ariakit.MenuButton>
+
+  const addLabel = localize('com_ui_upload_file_context');
+  const fileCount = files.size;
+
+  const addControl = sharePointEnabled ? (
+    <DropdownPopup
+      gutter={2}
+      menuId="file-context-upload-menu"
+      isOpen={isPopoverActive}
+      setIsOpen={setIsPopoverActive}
+      trigger={
+        <Ariakit.MenuButton
+          disabled={disabledUploadButton}
+          aria-label={addLabel}
+          className={addButtonClassName}
+        >
+          <Plus className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+          {localize('com_ui_add')}
+        </Ariakit.MenuButton>
+      }
+      items={dropdownItems}
+      modal={true}
+      unmountOnHide={true}
+    />
+  ) : (
+    <button
+      type="button"
+      disabled={disabledUploadButton}
+      aria-label={addLabel}
+      className={addButtonClassName}
+      onClick={handleLocalFileClick}
+    >
+      <Plus className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+      {localize('com_ui_add')}
+    </button>
   );
+
   return (
-    <div className="w-full">
-      <HoverCard openDelay={50}>
-        <div className="mb-2 flex items-center gap-2">
-          <HoverCardTrigger asChild>
-            <span className="flex items-center gap-2">
-              <label className="text-token-text-primary block font-medium">
-                {localize('com_agents_file_context_label')}
-              </label>
-              <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        {showHeader ? (
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-[11px] font-medium uppercase tracking-wide text-text-secondary">
+              {localize('com_agents_file_context_label')}
             </span>
-          </HoverCardTrigger>
-          <HoverCardPortal>
-            <HoverCardContent side={ESide.Top} className="w-80">
-              <div className="space-y-2">
-                <p className="text-sm text-text-secondary">
-                  {localize('com_agents_file_context_description')}
-                </p>
-              </div>
-            </HoverCardContent>
-          </HoverCardPortal>
-        </div>
-      </HoverCard>
-      <div className="flex flex-col gap-3">
-        {/* File Context Files */}
+            <TooltipAnchor
+              description={localize('com_agents_file_context_description')}
+              side="top"
+              render={
+                <button
+                  type="button"
+                  aria-label={localize('com_agents_file_context_description')}
+                  className="flex size-4 shrink-0 items-center justify-center rounded text-text-tertiary transition-colors hover:text-text-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+                >
+                  <Info className="size-3.5" aria-hidden="true" />
+                </button>
+              }
+            />
+            {fileCount > 0 && (
+              <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-surface-tertiary px-1.5 text-[10px] font-medium text-text-secondary">
+                {fileCount}
+              </span>
+            )}
+          </div>
+        ) : (
+          <span />
+        )}
+        {addControl}
+      </div>
+      {fileCount > 0 && (
         <FileRow
           files={files}
           setFiles={setFiles}
-          setFilesLoading={setFilesLoading}
           agent_id={agent_id}
           tool_resource={EToolResources.context}
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
         />
-        <div>
-          {sharePointEnabled ? (
-            <>
-              <DropdownPopup
-                gutter={2}
-                menuId="file-search-upload-menu"
-                isOpen={isPopoverActive}
-                setIsOpen={setIsPopoverActive}
-                trigger={menuTrigger}
-                items={dropdownItems}
-                modal={true}
-                unmountOnHide={true}
-              />
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isEphemeralAgent(agent_id)}
-              className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg font-medium"
-              onClick={handleLocalFileClick}
-            >
-              <div className="flex w-full items-center justify-center gap-1">
-                <AttachmentIcon className="text-token-text-primary h-4 w-4" />
-
-                {localize('com_ui_upload_file_context')}
-              </div>
-            </button>
-          )}
-          <input
-            multiple={true}
-            type="file"
-            style={{ display: 'none' }}
-            tabIndex={-1}
-            ref={fileInputRef}
-            disabled={isEphemeralAgent(agent_id)}
-            onChange={handleFileChange}
-          />
-        </div>
-        {/* Disabled Message */}
-        {agent_id ? null : (
-          <div className="text-xs text-text-secondary">
-            {localize('com_agents_file_context_disabled')}
-          </div>
-        )}
-      </div>
+      )}
+      {!agent_id && (
+        <p className="text-[11px] leading-snug text-text-secondary">
+          {localize('com_agents_file_context_disabled')}
+        </p>
+      )}
+      <input
+        multiple={true}
+        type="file"
+        style={{ display: 'none' }}
+        tabIndex={-1}
+        ref={fileInputRef}
+        disabled={disabledUploadButton}
+        onChange={handleFileChange}
+      />
       <SharePointPickerDialog
         isOpen={isSharePointDialogOpen}
         onOpenChange={setIsSharePointDialogOpen}
@@ -199,3 +203,8 @@ export default function FileContext({
     </div>
   );
 }
+
+const MemoizedFileContext = memo(FileContext);
+MemoizedFileContext.displayName = 'FileContext';
+
+export default MemoizedFileContext;

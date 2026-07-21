@@ -81,28 +81,9 @@ async function invalidateCachedTools(options = {}) {
   await Promise.all(keysToDelete.map((key) => cache.delete(key)));
 }
 
-/**
- * Gets MCP tools for a specific server from cache
- * @function getMCPServerTools
- * @param {string} userId - The user ID
- * @param {string} serverName - The MCP server name
- * @returns {Promise<LCAvailableTools|null>} The available tools for the server
- */
-async function getMCPServerTools(userId, serverName) {
-  const cache = getLogStores(CacheKeys.TOOL_CACHE);
-  const serverTools = await cache.get(ToolCacheKeys.MCP_SERVER(userId, serverName));
-
-  if (serverTools) {
-    return serverTools;
-  }
-
-  return null;
-}
-
 module.exports = {
   ToolCacheKeys,
   getCachedTools,
   setCachedTools,
-  getMCPServerTools,
   invalidateCachedTools,
 };

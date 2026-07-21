@@ -17,6 +17,10 @@ const mockBuildOptions = jest.fn((_endpoint, parsedBody) => ({
   ...parsedBody,
   endpoint: _endpoint,
 }));
+const mockAgentBuildOptions = jest.fn((_req, endpoint, parsedBody) => ({
+  ...parsedBody,
+  endpoint,
+}));
 
 jest.mock('~/server/services/Endpoints/azureAssistants', () => ({
   buildOptions: mockBuildOptions,
@@ -25,12 +29,13 @@ jest.mock('~/server/services/Endpoints/assistants', () => ({
   buildOptions: mockBuildOptions,
 }));
 jest.mock('~/server/services/Endpoints/agents', () => ({
-  buildOptions: mockBuildOptions,
+  buildOptions: mockAgentBuildOptions,
 }));
 
 jest.mock('~/models', () => ({
   updateFilesUsage: jest.fn(),
 }));
+const { updateFilesUsage } = require('~/models');
 
 const mockGetEndpointsConfig = jest.fn();
 jest.mock('~/server/services/Config', () => ({
@@ -38,6 +43,7 @@ jest.mock('~/server/services/Config', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   handleError: jest.fn(),
 }));
 
@@ -183,6 +189,9 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
         endpointType: EModelEndpoint.custom,
         spec: 'claude-opus-4.5',
         model: 'anthropic/claude-opus-4.5',
+        temperature: 0.1,
+        topP: 0.2,
+        chatProjectId: 'project-1',
       },
       {
         modelSpecs: {
@@ -191,6 +200,7 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
         },
       },
     );
+    req.baseUrl = '/api/agents/chat';
 
     await buildEndpointOption(req, createRes(), jest.fn());
 
@@ -204,7 +214,227 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     const enforcedResult = parseCompactConvo.mock.results[1].value;
     expect(enforcedResult.maxOutputTokens).toBe(8192);
     expect(enforcedResult.temperature).toBe(0.7);
+    expect(enforcedResult.topP).toBeUndefined();
     expect(enforcedResult.maxContextTokens).toBe(50000);
+    expect(enforcedResult.chatProjectId).toBe('project-1');
+    expect(req.body.endpointOption.chatProjectId).toBe('project-1');
+  });
+
+  it('should rebuild enforced custom specs from the backend preset when compact parsing drops raw fields', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const modelSpec = {
+      name: 'approved-custom',
+      preset: {
+        endpoint: 'Mock Provider A',
+        endpointType: EModelEndpoint.custom,
+        model: 'mock-model-a',
+        promptPrefix: 'Use the approved custom model spec.',
+      },
+    };
+
+    const req = createReq(
+      {
+        endpoint: 'Mock Provider A',
+        endpointType: EModelEndpoint.custom,
+        spec: 'approved-custom',
+        model: { stale: 'cached-client-value' },
+        agent_id: 'agent_from_cached_client_state',
+        chatProjectId: 'project-1',
+      },
+      {
+        modelSpecs: {
+          enforce: true,
+          list: [modelSpec],
+        },
+      },
+    );
+    req.baseUrl = '/api/agents/chat';
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(parseCompactConvo.mock.results[0].value).toEqual({});
+    expect(req.body.endpointOption.spec).toBe('approved-custom');
+    expect(req.body.endpointOption.model).toBe('mock-model-a');
+    expect(req.body.endpointOption.promptPrefix).toBe('Use the approved custom model spec.');
+    expect(req.body.endpointOption.chatProjectId).toBe('project-1');
+  });
+
+  it('should restore private model spec preset fields in non-enforced mode', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const modelSpec = {
+      name: 'guarded-openai',
+      iconURL: 'openAI',
+      preset: {
+        endpoint: EModelEndpoint.openAI,
+        model: 'gpt-4o',
+        promptPrefix: 'private prompt prefix',
+        instructions: 'private instructions',
+        additional_instructions: 'private additional instructions',
+        temperature: 0.2,
+        maxContextTokens: 10000,
+      },
+    };
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.openAI,
+        spec: 'guarded-openai',
+        model: 'gpt-4o',
+        temperature: 0.8,
+      },
+      {
+        modelSpecs: {
+          enforce: false,
+          list: [modelSpec],
+        },
+      },
+    );
+    req.baseUrl = '/api/agents/chat';
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(req.body.endpointOption.promptPrefix).toBe('private prompt prefix');
+    expect(req.body.endpointOption.instructions).toBeUndefined();
+    expect(req.body.endpointOption.additional_instructions).toBeUndefined();
+    expect(req.body.endpointOption.temperature).toBe(0.8);
+    expect(req.body.endpointOption.maxContextTokens).toBeUndefined();
+    expect(req.body.endpointOption.iconURL).toBe('openAI');
+  });
+
+  it('should reject non-enforced model specs for a different endpoint', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.openAI,
+        spec: 'guarded-google',
+        model: 'gpt-4o',
+      },
+      {
+        modelSpecs: {
+          enforce: false,
+          list: [
+            {
+              name: 'guarded-google',
+              preset: {
+                endpoint: EModelEndpoint.google,
+                model: 'gemini-pro',
+                promptPrefix: 'private google prompt',
+              },
+            },
+          ],
+        },
+      },
+    );
+    const res = createRes();
+    const next = jest.fn();
+    const { handleError } = require('@librechat/api');
+
+    await buildEndpointOption(req, res, next);
+
+    expect(handleError).toHaveBeenCalledWith(res, { text: 'Model spec mismatch' });
+    expect(mockAgentBuildOptions).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('should restore private model spec examples when the parser supplies an empty default', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const examples = [{ input: { content: 'hello' }, output: { content: 'world' } }];
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.google,
+        spec: 'guarded-google',
+        model: 'gemini-pro',
+      },
+      {
+        modelSpecs: {
+          enforce: false,
+          list: [
+            {
+              name: 'guarded-google',
+              preset: {
+                endpoint: EModelEndpoint.google,
+                model: 'gemini-pro',
+                examples,
+              },
+            },
+          ],
+        },
+      },
+    );
+    req.baseUrl = '/api/agents/chat';
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(req.body.endpointOption.examples).toEqual(examples);
+  });
+
+  it('should resolve special variables for restored non-agent promptPrefix', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.assistants,
+        spec: 'guarded-assistant',
+        assistant_id: 'asst_123',
+      },
+      {
+        modelSpecs: {
+          enforce: false,
+          list: [
+            {
+              name: 'guarded-assistant',
+              preset: {
+                endpoint: EModelEndpoint.assistants,
+                assistant_id: 'asst_123',
+                promptPrefix: 'Help {{current_user}}.',
+              },
+            },
+          ],
+        },
+      },
+    );
+    req.user = { name: 'Ada' };
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(req.body.endpointOption.promptPrefix).toBe('Help Ada.');
+  });
+
+  it('should leave restored agent promptPrefix variables for agent initialization', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.openAI,
+        spec: 'guarded-openai',
+        model: 'gpt-4o',
+      },
+      {
+        modelSpecs: {
+          enforce: false,
+          list: [
+            {
+              name: 'guarded-openai',
+              preset: {
+                endpoint: EModelEndpoint.openAI,
+                model: 'gpt-4o',
+                promptPrefix: 'Help {{current_user}}.',
+              },
+            },
+          ],
+        },
+      },
+    );
+    req.baseUrl = '/api/agents/chat';
+    req.user = { name: 'Ada' };
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(req.body.endpointOption.promptPrefix).toBe('Help {{current_user}}.');
   });
 
   it('should fall back to OpenAI schema when getEndpointsConfig fails', async () => {
@@ -233,5 +463,59 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     const parsedResult = parseCompactConvo.mock.results[0].value;
     expect(parsedResult.maxOutputTokens).toBeUndefined();
     expect(parsedResult.max_tokens).toBe(4096);
+  });
+
+  it('should scope non-agent chat attachment usage updates to the authenticated user', async () => {
+    const attachments = Promise.resolve([]);
+    updateFilesUsage.mockReturnValueOnce(attachments);
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.assistants,
+        assistant_id: 'asst_123',
+        files: [{ file_id: 'forged-file-id' }],
+      },
+      { modelSpecs: null },
+    );
+    req.user = { id: 'user-1' };
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(updateFilesUsage).toHaveBeenCalledWith(req.body.files, undefined, {
+      user: 'user-1',
+      tenantId: undefined,
+    });
+    expect(req.body.endpointOption.attachments).toBe(attachments);
+  });
+
+  it('should not enter the enforce branch when modelSpecs.list is empty', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.openAI,
+        model: 'gpt-4',
+      },
+      {
+        modelSpecs: {
+          enforce: true,
+          list: [],
+        },
+      },
+    );
+    const res = createRes();
+    const { handleError } = require('@librechat/api');
+
+    await buildEndpointOption(req, res, jest.fn());
+
+    expect(handleError).not.toHaveBeenCalledWith(
+      res,
+      expect.objectContaining({ text: 'No model spec selected' }),
+    );
+    expect(handleError).not.toHaveBeenCalledWith(
+      res,
+      expect.objectContaining({ text: 'Invalid model spec' }),
+    );
   });
 });

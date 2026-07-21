@@ -15,9 +15,13 @@ const { getAppConfig } = require('~/server/services/Config');
  */
 async function getCustomConfigSpeech(req, res) {
   try {
-    const appConfig = await getAppConfig({
-      role: req.user?.role,
-    });
+    const appConfig =
+      req.config ??
+      (await getAppConfig({
+        role: req.user?.role,
+        userId: req.user?.id,
+        tenantId: req.user?.tenantId,
+      }));
 
     if (!appConfig) {
       return res.status(200).send({

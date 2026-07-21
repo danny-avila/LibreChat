@@ -1,10 +1,22 @@
-import { anthropicSettings } from './schemas';
+import {
+  AnthropicEffort,
+  ReasoningEffort,
+  ReasoningMode,
+  ReasoningContext,
+  googleSettings,
+  anthropicSettings,
+  compactGoogleSchema,
+  eAnthropicEffortSchema,
+  eReasoningEffortSchema,
+  eReasoningModeSchema,
+  eReasoningContextSchema,
+} from './schemas';
 
 describe('anthropicSettings', () => {
   describe('maxOutputTokens.reset()', () => {
     const { reset } = anthropicSettings.maxOutputTokens;
 
-    describe('Claude Sonnet models', () => {
+    describe('Claude Sonnet 4/4.5 models (64K limit)', () => {
       it('should return 64K for claude-sonnet-4', () => {
         expect(reset('claude-sonnet-4')).toBe(64000);
       });
@@ -13,12 +25,45 @@ describe('anthropicSettings', () => {
         expect(reset('claude-sonnet-4-5')).toBe(64000);
       });
 
-      it('should return 64K for claude-sonnet-5', () => {
-        expect(reset('claude-sonnet-5')).toBe(64000);
+      it('should return 64K for dated claude-sonnet-4', () => {
+        expect(reset('claude-sonnet-4-20250514')).toBe(64000);
+      });
+    });
+
+    describe('Claude Sonnet 4.6+ models (128K limit)', () => {
+      it('should return 128K for claude-sonnet-4-6', () => {
+        expect(reset('claude-sonnet-4-6')).toBe(128000);
       });
 
-      it('should return 64K for future versions like claude-sonnet-9', () => {
-        expect(reset('claude-sonnet-9')).toBe(64000);
+      it('should return 128K for claude-sonnet-4.6', () => {
+        expect(reset('claude-sonnet-4.6')).toBe(128000);
+      });
+
+      it('should return 128K for claude-sonnet-4-7', () => {
+        expect(reset('claude-sonnet-4-7')).toBe(128000);
+      });
+
+      it('should return 128K for claude-sonnet-4-9', () => {
+        expect(reset('claude-sonnet-4-9')).toBe(128000);
+      });
+
+      it('should return 128K for double-digit claude-sonnet-4 minors', () => {
+        expect(reset('claude-sonnet-4-10')).toBe(128000);
+        expect(reset('claude-sonnet-4.10')).toBe(128000);
+      });
+    });
+
+    describe('Claude Sonnet 5+ models (128K limit)', () => {
+      it('should return 128K for claude-sonnet-5', () => {
+        expect(reset('claude-sonnet-5')).toBe(128000);
+      });
+
+      it('should return 128K for future versions like claude-sonnet-9', () => {
+        expect(reset('claude-sonnet-9')).toBe(128000);
+      });
+
+      it('should return 128K for double-digit minor versions like claude-sonnet-5-10', () => {
+        expect(reset('claude-sonnet-5-10')).toBe(128000);
       });
     });
 
@@ -245,9 +290,13 @@ describe('anthropicSettings', () => {
   describe('maxOutputTokens.set()', () => {
     const { set } = anthropicSettings.maxOutputTokens;
 
-    describe('Claude Sonnet and Haiku 4+ models (64K cap)', () => {
+    describe('Claude Sonnet 4/4.5 and Haiku 4+ models (64K cap)', () => {
       it('should cap at 64K for claude-sonnet-4 when value exceeds', () => {
         expect(set(100000, 'claude-sonnet-4')).toBe(64000);
+      });
+
+      it('should cap at 64K for dated claude-sonnet-4 when value exceeds', () => {
+        expect(set(100000, 'claude-sonnet-4-20250514')).toBe(64000);
       });
 
       it('should allow 50K for claude-sonnet-4', () => {
@@ -256,6 +305,41 @@ describe('anthropicSettings', () => {
 
       it('should cap at 64K for claude-haiku-4-5 when value exceeds', () => {
         expect(set(80000, 'claude-haiku-4-5')).toBe(64000);
+      });
+    });
+
+    describe('Claude Sonnet 4.6+ models (128K cap)', () => {
+      it('should allow 100K for claude-sonnet-4-6', () => {
+        expect(set(100000, 'claude-sonnet-4-6')).toBe(100000);
+      });
+
+      it('should cap at 128K for claude-sonnet-4-6 when value exceeds', () => {
+        expect(set(150000, 'claude-sonnet-4-6')).toBe(128000);
+      });
+
+      it('should allow 100K for claude-sonnet-4.6', () => {
+        expect(set(100000, 'claude-sonnet-4.6')).toBe(100000);
+      });
+
+      it('should cap at 128K for claude-sonnet-4.6 when value exceeds', () => {
+        expect(set(150000, 'claude-sonnet-4.6')).toBe(128000);
+      });
+
+      it('should cap at 128K for double-digit claude-sonnet-4 minors', () => {
+        expect(set(100000, 'claude-sonnet-4-10')).toBe(100000);
+        expect(set(150000, 'claude-sonnet-4.10')).toBe(128000);
+      });
+
+      it('should allow 100K for claude-sonnet-5', () => {
+        expect(set(100000, 'claude-sonnet-5')).toBe(100000);
+      });
+
+      it('should cap at 128K for claude-sonnet-5 when value exceeds', () => {
+        expect(set(150000, 'claude-sonnet-5')).toBe(128000);
+      });
+
+      it('should cap at 128K for future versions like claude-sonnet-9', () => {
+        expect(set(150000, 'claude-sonnet-9')).toBe(128000);
       });
     });
 
@@ -351,5 +435,189 @@ describe('anthropicSettings', () => {
         expect(set(128000, 'claude-3-opus')).toBe(128000);
       });
     });
+  });
+});
+
+describe('googleSettings', () => {
+  describe('maxOutputTokens.reset()', () => {
+    const { reset } = googleSettings.maxOutputTokens;
+
+    describe('current Gemini text models (64K, Vertex-safe)', () => {
+      it.each([
+        'gemini-2.5-pro',
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite',
+        'gemini-2.5-pro-preview-05-06',
+        'gemini-3',
+        'gemini-3-pro',
+        'gemini-3.1',
+        'gemini-3.1-flash-lite',
+        'gemini-3.5-flash',
+        'models/gemini-3.5-flash',
+        'gemini-4-pro',
+        'gemini-10-flash',
+      ])('returns 65535 for %s', (model) => {
+        expect(reset(model)).toBe(65535);
+      });
+    });
+
+    describe('Gemini image models (32K)', () => {
+      it.each(['gemini-2.5-flash-image', 'gemini-3-pro-image'])('returns 32768 for %s', (model) => {
+        expect(reset(model)).toBe(32768);
+      });
+    });
+
+    describe('legacy/deprecated Gemini and Gemma models (8K)', () => {
+      it.each([
+        'gemini',
+        'gemini-pro',
+        'gemini-pro-vision',
+        'gemini-1.0-pro',
+        'gemini-1.5-pro',
+        'gemini-1.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-flash-8b',
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite',
+        'gemini-2.0-flash-preview-image-generation',
+        'gemini-exp-1206',
+        'gemma-3-27b',
+      ])('returns 8192 for %s', (model) => {
+        expect(reset(model)).toBe(8192);
+      });
+    });
+  });
+
+  describe('maxOutputTokens.set()', () => {
+    const { set } = googleSettings.maxOutputTokens;
+
+    it('caps current Gemini models at 65535', () => {
+      expect(set(100000, 'gemini-2.5-pro')).toBe(65535);
+      expect(set(100000, 'gemini-3.5-flash')).toBe(65535);
+    });
+
+    it('allows values within the current 64K limit', () => {
+      expect(set(32000, 'gemini-2.5-flash')).toBe(32000);
+      expect(set(65535, 'gemini-3.5-flash')).toBe(65535);
+    });
+
+    it('caps Gemini image models at 32768', () => {
+      expect(set(65535, 'gemini-2.5-flash-image')).toBe(32768);
+      expect(set(32768, 'gemini-2.5-flash-image')).toBe(32768);
+    });
+
+    it('caps legacy Gemini models at 8192', () => {
+      expect(set(65535, 'gemini-2.0-flash')).toBe(8192);
+      expect(set(20000, 'gemini-1.5-flash')).toBe(8192);
+    });
+
+    it('allows values within the legacy 8K limit', () => {
+      expect(set(4096, 'gemini-1.5-flash')).toBe(4096);
+      expect(set(8192, 'gemini-2.0-flash')).toBe(8192);
+    });
+  });
+
+  describe('compactGoogleSchema (model-aware maxOutputTokens)', () => {
+    it('strips the model default for current Gemini models', () => {
+      const result = compactGoogleSchema.parse({
+        model: 'gemini-2.5-pro',
+        maxOutputTokens: 65535,
+      });
+      expect(result.maxOutputTokens).toBeUndefined();
+    });
+
+    it('preserves a deliberate below-default value for current Gemini models', () => {
+      const result = compactGoogleSchema.parse({
+        model: 'gemini-2.5-pro',
+        maxOutputTokens: 8192,
+      });
+      expect(result.maxOutputTokens).toBe(8192);
+    });
+
+    it('strips the legacy default for legacy Gemini models', () => {
+      const result = compactGoogleSchema.parse({
+        model: 'gemini-1.5-flash',
+        maxOutputTokens: 8192,
+      });
+      expect(result.maxOutputTokens).toBeUndefined();
+    });
+
+    it('preserves chat project membership metadata', () => {
+      const result = compactGoogleSchema.parse({
+        model: 'gemini-2.5-pro',
+        chatProjectId: 'project-1',
+      });
+      expect(result.chatProjectId).toBe('project-1');
+    });
+  });
+});
+
+describe('AnthropicEffort', () => {
+  it('exposes xhigh between high and max in the enum', () => {
+    expect(AnthropicEffort.xhigh).toBe('xhigh');
+    const keys = Object.keys(AnthropicEffort);
+    expect(keys.indexOf('xhigh')).toBeGreaterThan(keys.indexOf('high'));
+    expect(keys.indexOf('xhigh')).toBeLessThan(keys.indexOf('max'));
+  });
+
+  it('includes xhigh in anthropicSettings.effort.options', () => {
+    expect(anthropicSettings.effort.options).toContain(AnthropicEffort.xhigh);
+  });
+
+  it('accepts xhigh through the zod schema', () => {
+    expect(eAnthropicEffortSchema.parse('xhigh')).toBe('xhigh');
+    expect(eAnthropicEffortSchema.parse(AnthropicEffort.xhigh)).toBe('xhigh');
+  });
+
+  it('rejects unknown effort values', () => {
+    expect(() => eAnthropicEffortSchema.parse('ultra')).toThrow();
+  });
+});
+
+describe('ReasoningEffort', () => {
+  it('exposes max as the highest OpenAI reasoning effort, after xhigh', () => {
+    expect(ReasoningEffort.max).toBe('max');
+    const keys = Object.keys(ReasoningEffort);
+    expect(keys.indexOf('max')).toBeGreaterThan(keys.indexOf('xhigh'));
+  });
+
+  it('accepts max through the zod schema', () => {
+    expect(eReasoningEffortSchema.parse('max')).toBe('max');
+    expect(eReasoningEffortSchema.parse(ReasoningEffort.max)).toBe('max');
+  });
+
+  it('still rejects unknown effort values', () => {
+    expect(() => eReasoningEffortSchema.parse('ultra')).toThrow();
+  });
+});
+
+describe('ReasoningMode', () => {
+  it('exposes standard and pro plus an unset sentinel', () => {
+    expect(ReasoningMode.unset).toBe('');
+    expect(ReasoningMode.standard).toBe('standard');
+    expect(ReasoningMode.pro).toBe('pro');
+  });
+
+  it('accepts its values through the zod schema and rejects unknowns', () => {
+    expect(eReasoningModeSchema.parse('standard')).toBe('standard');
+    expect(eReasoningModeSchema.parse('pro')).toBe('pro');
+    expect(eReasoningModeSchema.parse('')).toBe('');
+    expect(() => eReasoningModeSchema.parse('turbo')).toThrow();
+  });
+});
+
+describe('ReasoningContext', () => {
+  it('exposes auto, current_turn, and all_turns plus an unset sentinel', () => {
+    expect(ReasoningContext.unset).toBe('');
+    expect(ReasoningContext.auto).toBe('auto');
+    expect(ReasoningContext.current_turn).toBe('current_turn');
+    expect(ReasoningContext.all_turns).toBe('all_turns');
+  });
+
+  it('accepts its values through the zod schema and rejects unknowns', () => {
+    expect(eReasoningContextSchema.parse('auto')).toBe('auto');
+    expect(eReasoningContextSchema.parse('current_turn')).toBe('current_turn');
+    expect(eReasoningContextSchema.parse('all_turns')).toBe('all_turns');
+    expect(() => eReasoningContextSchema.parse('next_turn')).toThrow();
   });
 });

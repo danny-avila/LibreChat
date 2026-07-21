@@ -1,5 +1,5 @@
 import type { OpenAPIV3 } from 'openapi-types';
-import type { AssistantsEndpoint, AgentProvider } from 'src/schemas';
+import type { AssistantsEndpoint, AgentProvider, MemoryScope } from 'src/schemas';
 import type { Agents, GraphEdge } from './agents';
 import type { ContentTypes } from './runs';
 import type { TFile } from './files';
@@ -24,6 +24,9 @@ export enum Tools {
   function = 'function',
   memory = 'memory',
   ui_resources = 'ui_resources',
+  skill = 'skill',
+  read_file = 'read_file',
+  bash_tool = 'bash_tool',
 }
 
 export enum EToolResources {
@@ -206,6 +209,11 @@ export type SupportContact = {
   email?: string;
 };
 
+export type AgentOwnerContact = {
+  name?: string;
+  email?: string;
+};
+
 /**
  * Specifies who can invoke a tool.
  * - 'direct': LLM can call directly
@@ -230,6 +238,13 @@ export type ToolOptions = {
    * @default ['direct']
    */
   allowed_callers?: AllowedCaller[];
+  /**
+   * If true (and the `run_in_background` capability is enabled), the tool's
+   * schema gains a `run_in_background` boolean so the model can dispatch the
+   * call detached and poll its result via `check_background_task`.
+   * @default false
+   */
+  run_in_background?: boolean;
 };
 
 /**
@@ -237,6 +252,19 @@ export type ToolOptions = {
  * Used to customize tool behavior per agent.
  */
 export type AgentToolOptions = Record<string, ToolOptions>;
+
+/**
+ * Configuration for spawning subagents (isolated-context child agents) from an agent.
+ * When `enabled` is true, the agent gets a subagent-spawn tool that can delegate work
+ * to either itself (when `allowSelf` is true) and/or the listed `agent_ids`.
+ */
+export type AgentSubagentsConfig = {
+  enabled?: boolean;
+  /** When true (default), the agent may spawn itself in an isolated context. */
+  allowSelf?: boolean;
+  /** Specific agents that may be spawned as subagents. */
+  agent_ids?: string[];
+};
 
 export type Agent = {
   _id?: string;
@@ -252,29 +280,38 @@ export type Agent = {
   instructions?: string | null;
   additional_instructions?: string | null;
   tools?: string[];
-  projectIds?: string[];
   tool_kwargs?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   provider: AgentProvider;
   model: string | null;
   model_parameters: AgentModelParameters;
   conversation_starters?: string[];
-  /** @deprecated Use ACL permissions instead */
-  isCollaborative?: boolean;
   tool_resources?: AgentToolResources;
   /** @deprecated Use edges instead */
   agent_ids?: string[];
   edges?: GraphEdge[];
   end_after_tools?: boolean;
   hide_sequential_outputs?: boolean;
+  /** Per-agent opt-in for stateful code sessions (requires the app-level capability). */
+  stateful_code_sessions?: boolean;
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;
   version?: number;
   category?: string;
   support_contact?: SupportContact;
+  owner_contact?: AgentOwnerContact;
   /** Per-tool configuration options (deferred loading, allowed callers, etc.) */
   tool_options?: AgentToolOptions;
+  /** Optional allowlist of skill ObjectIds. Only applies when `skills_enabled`. */
+  skills?: string[];
+  /** Master toggle for skill use on this agent. `true` = active (full catalog unless
+   *  `skills` narrows it). `false`/undefined = inactive (no skills available). */
+  skills_enabled?: boolean;
+  /** Subagent spawning configuration — isolated-context child agents. */
+  subagents?: AgentSubagentsConfig;
+  /** Memory partition: `agent` isolates memories per (user, agent); default shared pool */
+  memory_scope?: MemoryScope;
 };
 
 export type TAgentsMap = Record<string, Agent | undefined>;
@@ -295,11 +332,16 @@ export type AgentCreateParams = {
   | 'edges'
   | 'end_after_tools'
   | 'hide_sequential_outputs'
+  | 'stateful_code_sessions'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
   | 'support_contact'
   | 'tool_options'
+  | 'skills'
+  | 'skills_enabled'
+  | 'subagents'
+  | 'memory_scope'
 >;
 
 export type AgentUpdateParams = {
@@ -313,20 +355,22 @@ export type AgentUpdateParams = {
   provider?: AgentProvider;
   model?: string | null;
   model_parameters?: AgentModelParameters;
-  projectIds?: string[];
-  removeProjectIds?: string[];
-  isCollaborative?: boolean;
 } & Pick<
   Agent,
   | 'agent_ids'
   | 'edges'
   | 'end_after_tools'
   | 'hide_sequential_outputs'
+  | 'stateful_code_sessions'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
   | 'support_contact'
   | 'tool_options'
+  | 'skills'
+  | 'skills_enabled'
+  | 'subagents'
+  | 'memory_scope'
 >;
 
 export type AgentListParams = {
@@ -527,6 +571,37 @@ export type ContentPart = (
 
 export type TextData = (Text & PartMetadata) | undefined;
 
+export type SummaryContentPart = {
+  type: ContentTypes.SUMMARY;
+  content?: Array<{ type: ContentTypes.TEXT; text: string }>;
+  tokenCount?: number;
+  summarizing?: boolean;
+  summaryVersion?: number;
+  model?: string;
+  provider?: string;
+  createdAt?: string;
+  boundary?: {
+    messageId: string;
+    contentIndex: number;
+  };
+};
+
+/**
+ * A user steering message injected mid-run at a tool-batch boundary.
+ * Persisted inline in the response message's content array (keyed by the
+ * type name like `text`/`think` so token counting reads it for free);
+ * replayed as a user message on subsequent turns by `formatAgentMessages`.
+ */
+export type SteerContentPart = {
+  type: ContentTypes.STEER;
+  steer: string;
+  steerId?: string;
+  createdAt?: number;
+  /** Attachments steered with the message; re-encoded per turn on replay
+   *  like any other user-message media (refs only, never encoded data). */
+  files?: Partial<TFile>[];
+};
+
 export type TMessageContentParts =
   | ({
       type: ContentTypes.ERROR;
@@ -534,6 +609,7 @@ export type TMessageContentParts =
       error?: string;
     } & ContentMetadata)
   | ({ type: ContentTypes.THINK; think?: string | TextData } & ContentMetadata)
+  | (SteerContentPart & ContentMetadata)
   | ({
       type: ContentTypes.TEXT;
       text?: string | TextData;
@@ -551,6 +627,7 @@ export type TMessageContentParts =
         PartMetadata;
     } & ContentMetadata)
   | ({ type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata } & ContentMetadata)
+  | (SummaryContentPart & ContentMetadata)
   | (Agents.AgentUpdate & ContentMetadata)
   | (Agents.MessageContentImageUrl & ContentMetadata)
   | (Agents.MessageContentVideoUrl & ContentMetadata)
@@ -573,6 +650,35 @@ export type TContentData = StreamContentData & {
 
 export const actionDelimiter = '_action_';
 export const actionDomainSeparator = '---';
+/** Mirrors `Constants.mcp_delimiter`; duplicated here to avoid a circular import from `config.ts`. */
+const mcpDelimiter = '_mcp_';
+
+/**
+ * Checks whether a tool name is an OpenAPI action tool.
+ *
+ * Action format: `operationId_action_normalizedDomain`
+ * MCP format:    `toolName_mcp_serverName`
+ *
+ * Cross-delimiter collision: an MCP tool like `get_action_mcp_srv` contains
+ * `_action_` as a false positive. Guarded by checking whether `_mcp_` appears
+ * after `_action_`. In the collision case the `_mcp_` suffix always follows
+ * `_action_`; in a valid action tool whose operationId contains `_mcp_`, the
+ * `_mcp_` precedes `_action_`.
+ *
+ * Theoretical limitation: a non-RFC-compliant domain containing literal
+ * underscores that form `_mcp_` (e.g. `api_mcp_internal.com`) would produce
+ * a false negative. RFC 952/1123 prohibit underscores in hostnames, so this
+ * is not expected in practice.
+ */
+export function isActionTool(toolName: string): boolean {
+  const actionIdx = toolName.indexOf(actionDelimiter);
+  if (actionIdx < 0) {
+    return false;
+  }
+  const mcpIdx = toolName.indexOf(mcpDelimiter);
+  return mcpIdx < 0 || mcpIdx < actionIdx;
+}
+
 export const hostImageIdSuffix = '_host_copy';
 export const hostImageNamePrefix = 'host_copy_';
 

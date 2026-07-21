@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useCallback, useRef } from 'react';
+import React, { memo, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
@@ -6,62 +6,55 @@ import { TooltipAnchor } from '@librechat/client';
 import MCPServerMenuItem from '~/components/MCP/MCPServerMenuItem';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import StackedMCPIcons from '~/components/MCP/StackedMCPIcons';
+import { useHasAccess, useLocalize } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
-import { useHasAccess } from '~/hooks';
 import { cn } from '~/utils';
 
 function MCPSelectContent() {
-  const { conversationId, storageContextKey, mcpServerManager } = useBadgeRowContext();
-  const {
-    localize,
-    isPinned,
-    mcpValues,
-    placeholderText,
-    selectableServers,
-    connectionStatus,
-    isInitializing,
-    getConfigDialogProps,
-    toggleServerSelection,
-    getServerStatusIconProps,
-  } = mcpServerManager;
+  const localize = useLocalize();
+  const context = useBadgeRowContext();
+  const { conversationId, storageContextKey, mcpServerManager: manager } = context ?? {};
 
   const menuStore = Ariakit.useMenuStore({ focusLoop: true });
   const isOpen = menuStore.useState('open');
-  const focusedElementRef = useRef<HTMLElement | null>(null);
-
-  const selectedCount = mcpValues?.length ?? 0;
-
-  // Wrap toggleServerSelection to preserve focus after state update
-  const handleToggle = useCallback(
-    (serverName: string) => {
-      // Save currently focused element
-      focusedElementRef.current = document.activeElement as HTMLElement;
-      toggleServerSelection(serverName);
-      // Restore focus after React re-renders
-      requestAnimationFrame(() => {
-        focusedElementRef.current?.focus();
-      });
-    },
-    [toggleServerSelection],
-  );
 
   const selectedServers = useMemo(() => {
-    if (!mcpValues || mcpValues.length === 0) {
+    if (!manager?.mcpValues || manager.mcpValues.length === 0) {
       return [];
     }
-    return selectableServers.filter((s) => mcpValues.includes(s.serverName));
-  }, [selectableServers, mcpValues]);
+    const selectedSet = new Set(manager.mcpValues);
+    return manager.selectableServers?.filter((s) => selectedSet.has(s.serverName));
+  }, [manager?.selectableServers, manager?.mcpValues]);
 
   const displayText = useMemo(() => {
+    const selectedCount = manager?.mcpValues?.length ?? 0;
     if (selectedCount === 0) {
       return null;
     }
     if (selectedCount === 1) {
-      const server = selectableServers.find((s) => s.serverName === mcpValues?.[0]);
-      return server?.config?.title || mcpValues?.[0];
+      const server = manager?.selectableServers?.find(
+        (s) => s.serverName === manager?.mcpValues?.[0],
+      );
+      return server?.config?.title || manager?.mcpValues?.[0];
     }
     return localize('com_ui_x_selected', { 0: selectedCount });
-  }, [selectedCount, selectableServers, mcpValues, localize]);
+  }, [manager?.selectableServers, manager?.mcpValues, localize]);
+
+  if (!manager) {
+    return null;
+  }
+
+  const {
+    isPinned,
+    mcpValues,
+    isInitializing,
+    placeholderText,
+    connectionStatus,
+    selectableServers,
+    getConfigDialogProps,
+    toggleServerSelection,
+    getServerStatusIconProps,
+  } = manager;
 
   if (!isPinned && mcpValues?.length === 0) {
     return null;
@@ -103,6 +96,8 @@ function MCPSelectContent() {
         <Ariakit.Menu
           portal={true}
           gutter={8}
+          modal={true}
+          unmountOnHide={true}
           aria-label={localize('com_ui_mcp_servers')}
           className={cn(
             'z-50 flex min-w-[260px] max-w-[320px] flex-col rounded-xl',
@@ -121,7 +116,7 @@ function MCPSelectContent() {
                 connectionStatus={connectionStatus}
                 isInitializing={isInitializing}
                 statusIconProps={getServerStatusIconProps(server.serverName)}
-                onToggle={handleToggle}
+                onToggle={toggleServerSelection}
               />
             ))}
           </div>
@@ -139,8 +134,8 @@ function MCPSelectContent() {
 }
 
 function MCPSelect() {
-  const { mcpServerManager } = useBadgeRowContext();
-  const { selectableServers } = mcpServerManager;
+  const context = useBadgeRowContext();
+  const { selectableServers } = context?.mcpServerManager ?? {};
   const canUseMcp = useHasAccess({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.USE,

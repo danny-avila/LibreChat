@@ -8,8 +8,7 @@ const {
   EModelEndpoint,
   PermissionTypes,
 } = require('librechat-data-provider');
-const { getRoleByName } = require('~/models/Role');
-const { Files } = require('~/models');
+const { getRoleByName, getFiles } = require('~/models');
 
 /**
  * Process file search results from tool calls
@@ -48,7 +47,10 @@ async function processFileCitations({ user, appConfig, toolArtifact, toolCallId,
         logger.error(
           `[processFileCitations] Permission check failed for FILE_CITATIONS: ${error.message}`,
         );
-        logger.debug(`[processFileCitations] Proceeding with citations due to permission error`);
+        logger.warn(
+          '[processFileCitations] Returning null citations due to permission check error — citations will not be shown for this message',
+        );
+        return null;
       }
     }
 
@@ -127,7 +129,7 @@ async function enhanceSourcesWithMetadata(sources, appConfig) {
 
   let fileMetadataMap = {};
   try {
-    const files = await Files.find({ file_id: { $in: fileIds } });
+    const files = await getFiles({ file_id: { $in: fileIds } });
     fileMetadataMap = files.reduce((map, file) => {
       map[file.file_id] = file;
       return map;
@@ -146,6 +148,8 @@ async function enhanceSourcesWithMetadata(sources, appConfig) {
       metadata: {
         ...source.metadata,
         storageType: configuredStorageType,
+        fileType: fileRecord.type || undefined,
+        fileBytes: fileRecord.bytes || undefined,
       },
     };
   });

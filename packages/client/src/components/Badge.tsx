@@ -1,8 +1,9 @@
-import type React from 'react';
 import { X, Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { JSX } from 'react/jsx-runtime';
 import type { ButtonHTMLAttributes } from 'react';
 import type { LucideIcon } from 'lucide-react';
+import type React from 'react';
 import { cn } from '~/utils';
 
 interface BadgeProps
@@ -35,7 +36,7 @@ export default function Badge({
   onToggle,
   className,
   ...props
-}: BadgeProps) {
+}: BadgeProps): JSX.Element {
   const isMoveable = isEditing && isAvailable;
   const isDisabled = id === '1' && isInChat;
 

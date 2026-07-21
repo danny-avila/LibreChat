@@ -1,5 +1,5 @@
 {
-  "$schema": "https://turbo.build/schema.json",
+  "$schema": "https://v2-9-17.turborepo.dev/schema.json",
   "globalDependencies": ["package-lock.json"],
   "tasks": {
     "build": {
@@ -13,6 +13,7 @@
         "scripts/**",
         "rollup.config.js",
         "server-rollup.config.js",
+        "tsdown.config.mjs",
         "tsconfig.json",
         "tsconfig.build.json",
         "vite.config.ts",
@@ -28,6 +29,9 @@
     },
     "@librechat/api#build": {
       "dependsOn": ["^build", "librechat-data-provider#build", "@librechat/data-schemas#build"]
+    },
+    "@librechat/client#build": {
+      "dependsOn": ["^build", "librechat-data-provider#build"]
     }
   }
 }

@@ -1,30 +1,34 @@
 import { useRef, useEffect } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react/unstyled';
-import type { CodeEditorRef } from '@codesandbox/sandpack-react';
+import type { editor } from 'monaco-editor';
 import type { Artifact } from '~/common';
-import { useCodeState } from '~/Providers/EditorContext';
-import { useArtifactsContext } from '~/Providers';
+import { useGetSharedStartupConfig, useGetStartupConfig } from '~/data-provider';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
-import { useAutoScroll } from '~/hooks/Artifacts/useAutoScroll';
 import { ArtifactCodeEditor } from './ArtifactCodeEditor';
-import { useGetStartupConfig } from '~/data-provider';
+import { useCodeState } from '~/Providers/EditorContext';
 import { ArtifactPreview } from './ArtifactPreview';
+import { useShareContext } from '~/Providers';
 
 export default function ArtifactTabs({
   artifact,
-  editorRef,
   previewRef,
   isSharedConvo,
 }: {
   artifact: Artifact;
-  editorRef: React.MutableRefObject<CodeEditorRef>;
   previewRef: React.MutableRefObject<SandpackPreviewRef>;
   isSharedConvo?: boolean;
 }) {
-  const { isSubmitting } = useArtifactsContext();
   const { currentCode, setCurrentCode } = useCodeState();
-  const { data: startupConfig } = useGetStartupConfig();
+  const { shareId } = useShareContext();
+  const shouldUseSharedConfig =
+    isSharedConvo === true && typeof shareId === 'string' && shareId.length > 0;
+  const { data: startupConfig } = useGetStartupConfig({ enabled: !shouldUseSharedConfig });
+  const { data: sharedStartupConfig } = useGetSharedStartupConfig(shareId, {
+    enabled: shouldUseSharedConfig,
+  });
+  const resolvedStartupConfig = shouldUseSharedConfig ? sharedStartupConfig : startupConfig;
+  const monacoRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const lastIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -34,33 +38,24 @@ export default function ArtifactTabs({
     lastIdRef.current = artifact.id;
   }, [setCurrentCode, artifact.id]);
 
-  const content = artifact.content ?? '';
-  const contentRef = useRef<HTMLDivElement>(null);
-  useAutoScroll({ ref: contentRef, content, isSubmitting });
-
   const { files, fileKey, template, sharedProps } = useArtifactProps({ artifact });
 
   return (
     <div className="flex h-full w-full flex-col">
       <Tabs.Content
-        ref={contentRef}
         value="code"
         id="artifacts-code"
         className="h-full w-full flex-grow overflow-auto"
         tabIndex={-1}
       >
-        <ArtifactCodeEditor
-          files={files}
-          fileKey={fileKey}
-          template={template}
-          artifact={artifact}
-          editorRef={editorRef}
-          sharedProps={sharedProps}
-          readOnly={isSharedConvo}
-        />
+        <ArtifactCodeEditor artifact={artifact} monacoRef={monacoRef} readOnly={isSharedConvo} />
       </Tabs.Content>
 
-      <Tabs.Content value="preview" className="h-full w-full flex-grow overflow-auto" tabIndex={-1}>
+      <Tabs.Content
+        value="preview"
+        className="h-full w-full flex-grow overflow-hidden"
+        tabIndex={-1}
+      >
         <ArtifactPreview
           files={files}
           fileKey={fileKey}
@@ -68,7 +63,7 @@ export default function ArtifactTabs({
           previewRef={previewRef}
           sharedProps={sharedProps}
           currentCode={currentCode}
-          startupConfig={startupConfig}
+          startupConfig={resolvedStartupConfig}
         />
       </Tabs.Content>
     </div>

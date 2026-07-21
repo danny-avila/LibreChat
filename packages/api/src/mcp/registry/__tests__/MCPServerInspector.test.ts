@@ -1,9 +1,9 @@
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
-import { detectOAuthRequirement } from '~/mcp/oauth';
-import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { createMockConnection } from './mcpConnectionsMock.helper';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { detectOAuthRequirement } from '~/mcp/oauth';
 
 // Mock external dependencies
 jest.mock('../../oauth/detectOAuth');
@@ -98,6 +98,145 @@ describe('MCPServerInspector', () => {
         requiresOAuth: false,
         initDuration: expect.any(Number),
       });
+    });
+
+    it('should skip capabilities fetch when customUserVars is defined', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@test/mcp-stdio-server'],
+        env: { API_KEY: '{{MY_KEY}}' },
+        customUserVars: {
+          MY_KEY: { title: 'API Key', description: 'Your API key' },
+        },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
+
+      expect(result).toEqual({
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@test/mcp-stdio-server'],
+        env: { API_KEY: '{{MY_KEY}}' },
+        customUserVars: {
+          MY_KEY: { title: 'API Key', description: 'Your API key' },
+        },
+        requiresOAuth: false,
+        initDuration: expect.any(Number),
+      });
+
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+      expect(mockConnection.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('should NOT create a temp connection when customUserVars is defined and no connection is provided', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@test/mcp-stdio-server'],
+        env: { API_KEY: '{{MY_KEY}}' },
+        customUserVars: {
+          MY_KEY: { title: 'API Key', description: 'Your API key' },
+        },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
+
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+      expect(result.requiresOAuth).toBe(false);
+      expect(result.capabilities).toBeUndefined();
+      expect(result.toolFunctions).toBeUndefined();
+    });
+
+    it('should skip capabilities fetch when trusted config needs runtime user context', async () => {
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: false,
+        method: 'no-metadata-found',
+      });
+
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        headers: {
+          'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
+
+      expect(result).toEqual({
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        headers: {
+          'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+        requiresOAuth: false,
+        oauthMetadata: undefined,
+        initDuration: expect.any(Number),
+      });
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+    });
+
+    it('should skip OAuth detection when trusted URL needs runtime user context', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/users/{{LIBRECHAT_USER_USERNAME}}/mcp',
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
+
+      expect(result).toEqual({
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/users/{{LIBRECHAT_USER_USERNAME}}/mcp',
+        initDuration: expect.any(Number),
+      });
+      expect(mockDetectOAuthRequirement).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+    });
+
+    it('should skip capabilities fetch when obo is configured', async () => {
+      // OBO servers mint per-user delegated tokens at tool-call time; an
+      // unauthenticated probe at inspection has no valid bearer to attach,
+      // so the upstream rejects the MCP `initialize` handshake and the
+      // create/update fails with MCP_INSPECTION_FAILED. Treat `obo` as
+      // user-scoped auth alongside requiresOAuth and customUserVars.
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: false,
+        method: 'no-metadata-found',
+      });
+
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
+
+      expect(result.obo).toEqual({ scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' });
+      expect(result.requiresOAuth).toBe(false);
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+      expect(mockConnection.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('should NOT create a temp connection when obo is configured and no connection is provided', async () => {
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: false,
+        method: 'no-metadata-found',
+      });
+
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
+
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+      expect(result.requiresOAuth).toBe(false);
+      expect(result.capabilities).toBeUndefined();
+      expect(result.toolFunctions).toBeUndefined();
     });
 
     it('should keep custom serverInstructions string and not fetch from server', async () => {
@@ -202,13 +341,46 @@ describe('MCPServerInspector', () => {
       expect(result.apiKey?.source).toBe('admin');
     });
 
-    it('should still detect OAuth when apiKey.source is user', async () => {
+    it('should set requiresOAuth to false and skip probing when apiKey.source is user', async () => {
       const rawConfig: t.MCPOptions = {
         type: 'sse',
         url: 'https://api.example.com/sse',
         apiKey: {
           source: 'user',
           authorization_type: 'bearer',
+        },
+      };
+
+      // A credential-less probe of a bearer server returns the same 401 challenge as
+      // an OAuth server. Detection must be skipped so the user's API key is honored
+      // instead of forcing an OAuth flow.
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: true, // This would be returned if called, but it shouldn't be
+        method: 'protected-resource-metadata',
+      });
+
+      // No connection provided: the user's key is supplied per-user at connect time, so
+      // inspection must NOT open an unauthenticated connection (it would 401 and fail save).
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
+
+      expect(mockDetectOAuthRequirement).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+      expect(result.requiresOAuth).toBe(false);
+      expect(result.apiKey?.source).toBe('user');
+    });
+
+    it('should honor an explicit oauth block even when a user apiKey is present', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'sse',
+        url: 'https://api.example.com/sse',
+        apiKey: {
+          source: 'user',
+          authorization_type: 'bearer',
+        },
+        oauth: {
+          authorization_url: 'https://api.example.com/oauth/authorize',
+          token_url: 'https://api.example.com/oauth/token',
+          scope: 'read',
         },
       };
 
@@ -219,7 +391,7 @@ describe('MCPServerInspector', () => {
 
       const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
 
-      // Should call OAuth detection for user-provided API key
+      // An explicit oauth config must take precedence over the apiKey short-circuit.
       expect(mockDetectOAuthRequirement).toHaveBeenCalled();
       expect(result.requiresOAuth).toBe(true);
     });
@@ -237,7 +409,7 @@ describe('MCPServerInspector', () => {
       });
 
       // Mock server with no tools
-      mockConnection.client.listTools = jest.fn().mockResolvedValue({ tools: [] });
+      mockConnection.fetchTools = jest.fn().mockResolvedValue([]);
 
       const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
 
@@ -273,11 +445,12 @@ describe('MCPServerInspector', () => {
       const result = await MCPServerInspector.inspect('test_server', rawConfig);
 
       // Verify factory was called to create connection
-      expect(MCPConnectionFactory.create).toHaveBeenCalledWith({
-        serverName: 'test_server',
-        serverConfig: expect.objectContaining({ type: 'stdio', command: 'node' }),
-        useSSRFProtection: true,
-      });
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'test_server',
+          serverConfig: expect.objectContaining({ type: 'stdio', command: 'node' }),
+        }),
+      );
 
       // Verify temporary connection was disconnected
       expect(tempMockConnection.disconnect).toHaveBeenCalled();
@@ -322,29 +495,27 @@ describe('MCPServerInspector', () => {
 
   describe('getToolFunctions()', () => {
     it('should convert MCP tools to LibreChat tool functions format', async () => {
-      mockConnection.client.listTools = jest.fn().mockResolvedValue({
-        tools: [
-          {
-            name: 'file_read',
-            description: 'Read a file',
-            inputSchema: {
-              type: 'object',
-              properties: { path: { type: 'string' } },
+      mockConnection.fetchTools = jest.fn().mockResolvedValue([
+        {
+          name: 'file_read',
+          description: 'Read a file',
+          inputSchema: {
+            type: 'object',
+            properties: { path: { type: 'string' } },
+          },
+        },
+        {
+          name: 'file_write',
+          description: 'Write a file',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: { type: 'string' },
+              content: { type: 'string' },
             },
           },
-          {
-            name: 'file_write',
-            description: 'Write a file',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                path: { type: 'string' },
-                content: { type: 'string' },
-              },
-            },
-          },
-        ],
-      });
+        },
+      ]);
 
       const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
 
@@ -378,7 +549,7 @@ describe('MCPServerInspector', () => {
     });
 
     it('should handle empty tools list', async () => {
-      mockConnection.client.listTools = jest.fn().mockResolvedValue({ tools: [] });
+      mockConnection.fetchTools = jest.fn().mockResolvedValue([]);
 
       const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
 

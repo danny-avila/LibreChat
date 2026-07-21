@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
+import type { SharedFileSnapshot } from '~/types';
 
 export interface ISharedLink extends Document {
   conversationId: string;
@@ -7,10 +8,37 @@ export interface ISharedLink extends Document {
   messages?: Types.ObjectId[];
   shareId?: string;
   targetMessageId?: string;
-  isPublic: boolean;
+  expiredAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
+  tenantId?: string;
+  snapshotFiles?: boolean;
+  fileSnapshots?: SharedFileSnapshot[];
 }
+
+/**
+ * Immutable file snapshot embedded on a shared link. Captures the metadata the
+ * share-scoped file routes need to stream/preview each referenced file without
+ * consulting the original owner's live file ACL. References the original stored
+ * object (no byte copy).
+ */
+const fileSnapshotSchema = new Schema<SharedFileSnapshot>(
+  {
+    file_id: { type: String, required: true },
+    source: { type: String },
+    storageKey: { type: String },
+    filepath: { type: String },
+    type: { type: String },
+    filename: { type: String },
+    bytes: { type: Number },
+    width: { type: Number },
+    height: { type: Number },
+    model: { type: String },
+    previewRevision: { type: String },
+    tenantId: { type: String },
+  },
+  { _id: false },
+);
 
 const shareSchema: Schema<ISharedLink> = new Schema(
   {
@@ -36,14 +64,26 @@ const shareSchema: Schema<ISharedLink> = new Schema(
       required: false,
       index: true,
     },
-    isPublic: {
+    tenantId: {
+      type: String,
+      index: true,
+    },
+    expiredAt: {
+      type: Date,
+    },
+    snapshotFiles: {
       type: Boolean,
-      default: true,
+    },
+    fileSnapshots: {
+      type: [fileSnapshotSchema],
+      default: undefined,
     },
   },
   { timestamps: true },
 );
 
-shareSchema.index({ conversationId: 1, user: 1, targetMessageId: 1 });
+shareSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
+shareSchema.index({ conversationId: 1, user: 1, targetMessageId: 1, tenantId: 1 });
+shareSchema.index({ updatedAt: -1 });
 
 export default shareSchema;

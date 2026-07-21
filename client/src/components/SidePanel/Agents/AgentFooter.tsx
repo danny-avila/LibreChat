@@ -57,27 +57,32 @@ export default function AgentFooter({
     useResourcePermissions(ResourceType.REMOTE_AGENT, agent?._id || '');
 
   const canShareThisAgent = hasPermission(PermissionBits.SHARE);
+  const canEditThisAgent = hasPermission(PermissionBits.EDIT);
   const canDeleteThisAgent = hasPermission(PermissionBits.DELETE);
   const canShareRemoteAgent = hasRemoteAgentPermission(PermissionBits.SHARE);
   const isSaving = createMutation.isLoading || updateMutation.isLoading || isAvatarUploading;
-  const renderSaveButton = () => {
-    if (isSaving) {
-      return <Spinner className="icon-md" aria-hidden="true" />;
-    }
-
-    if (agent_id) {
-      return localize('com_ui_save');
-    }
-
-    return localize('com_ui_create');
-  };
+  const saveLabel = agent_id ? localize('com_ui_save') : localize('com_ui_create');
+  const renderSaveButton = () => (
+    <span className="t-icon-swap" data-state={isSaving ? 'b' : 'a'} aria-hidden={false}>
+      <span className="t-icon" data-icon="a">
+        {saveLabel}
+      </span>
+      <span className="t-icon" data-icon="b">
+        <Spinner className="icon-md" aria-hidden="true" />
+      </span>
+    </span>
+  );
 
   const showButtons = activePanel === Panel.builder;
 
   return (
     <div className="mb-1 flex w-full flex-col gap-2">
-      {showButtons && <AdvancedButton setActivePanel={setActivePanel} />}
-      {showButtons && agent_id && <VersionButton setActivePanel={setActivePanel} />}
+      {showButtons && (
+        <div className={`grid gap-2 ${agent_id ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          <AdvancedButton setActivePanel={setActivePanel} />
+          {!!agent_id && <VersionButton setActivePanel={setActivePanel} />}
+        </div>
+      )}
       {user?.role === SystemRoles.ADMIN && showButtons && <AdminSettings />}
       {/* Context Button */}
       <div className="flex items-center justify-end gap-2">
@@ -118,7 +123,8 @@ export default function AgentFooter({
               </button>
             </GenericGrantAccessDialog>
           )}
-        {agent && agent.author === user?.id && <DuplicateAgent agent_id={agent_id} />}
+        {(agent?.author === user?.id || user?.role === SystemRoles.ADMIN || canEditThisAgent) &&
+          !permissionsLoading && <DuplicateAgent agent_id={agent_id} />}
         {/* Submit Button */}
         <button
           className="btn btn-primary focus:shadow-outline flex h-9 w-full items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"

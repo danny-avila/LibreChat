@@ -1,14 +1,15 @@
+import { memo, useEffect, useCallback } from 'react';
 import { useRecoilState } from 'recoil';
-import { useEffect, useCallback } from 'react';
 import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
+import type { ReactElement } from 'react';
 import type { TMessageProps } from '~/common';
 import MessageContent from '~/components/Messages/MessageContent';
 import MessageParts from './MessageParts';
 import Message from './Message';
 import store from '~/store';
 
-export default function MultiMessage({
+function MultiMessage({
   // messageId is used recursively here
   messageId,
   messagesTree,
@@ -39,47 +40,65 @@ export default function MultiMessage({
     return null;
   }
 
-  const message = messagesTree[messagesTree.length - siblingIdx - 1] as TMessage | undefined;
+  const currentSiblingIdx = messagesTree.length - siblingIdx - 1;
+  const message = messagesTree[currentSiblingIdx] as TMessage | undefined;
 
   if (!message) {
     return null;
   }
 
+  /**
+   * No explicit key — React uses positional reconciliation since MultiMessage
+   * always renders exactly one row at this position.
+   *
+   * Both messageId and parentMessageId change during the SSE lifecycle
+   * (client UUID → createdHandler ID → server ID), so neither can serve as a
+   * stable key. Using either caused React to unmount/remount the entire subtree
+   * on each SSE event, destroying memoized state and causing visible flickering.
+   *
+   * Without a key, React reuses the component instance and updates props in place.
+   * The row wrappers and MessageRender/ContentRender are memoized with field-level
+   * comparators, and sibling switches work correctly because the message prop
+   * changes entirely.
+   */
+  const sharedProps = {
+    message,
+    currentEditId,
+    setCurrentEditId,
+    siblingIdx: currentSiblingIdx,
+    siblingCount: messagesTree.length,
+    setSiblingIdx: setSiblingIdxRev,
+  };
+
+  let row: ReactElement;
   if (isAssistantsEndpoint(message.endpoint) && message.content) {
-    return (
-      <MessageParts
-        key={message.messageId}
-        message={message}
-        currentEditId={currentEditId}
-        setCurrentEditId={setCurrentEditId}
-        siblingIdx={messagesTree.length - siblingIdx - 1}
-        siblingCount={messagesTree.length}
-        setSiblingIdx={setSiblingIdxRev}
-      />
-    );
+    row = <MessageParts {...sharedProps} />;
   } else if (message.content) {
-    return (
-      <MessageContent
-        key={message.messageId}
-        message={message}
-        currentEditId={currentEditId}
-        setCurrentEditId={setCurrentEditId}
-        siblingIdx={messagesTree.length - siblingIdx - 1}
-        siblingCount={messagesTree.length}
-        setSiblingIdx={setSiblingIdxRev}
-      />
-    );
+    row = <MessageContent {...sharedProps} />;
+  } else {
+    row = <Message {...sharedProps} />;
   }
 
+  /**
+   * The child recursion is a sibling of the row (not rendered inside it), so a
+   * row that bails via its memo comparator never severs the walk that delivers
+   * streaming updates to descendants: `buildTree` mints fresh `children` arrays
+   * on every streaming write, which re-renders exactly this spine while settled
+   * rows skip their subtrees.
+   */
   return (
-    <Message
-      key={message.messageId}
-      message={message}
-      currentEditId={currentEditId}
-      setCurrentEditId={setCurrentEditId}
-      siblingIdx={messagesTree.length - siblingIdx - 1}
-      siblingCount={messagesTree.length}
-      setSiblingIdx={setSiblingIdxRev}
-    />
+    <>
+      {row}
+      <MemoizedMultiMessage
+        messageId={message.messageId}
+        messagesTree={message.children ?? []}
+        currentEditId={currentEditId}
+        setCurrentEditId={setCurrentEditId}
+      />
+    </>
   );
 }
+
+const MemoizedMultiMessage = memo(MultiMessage);
+
+export default MemoizedMultiMessage;

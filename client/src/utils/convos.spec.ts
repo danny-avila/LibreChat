@@ -10,6 +10,7 @@ import {
   groupConversationsByDate,
   updateConvoFieldsInfinite,
   addConvoToAllQueries,
+  upsertConvoInAllQueries,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
   addConversationToAllConversationsQueries,
@@ -142,6 +143,23 @@ describe('Conversation Utilities', () => {
       expect(grouped[0][1].length).toBe(2);
       expect(grouped[1][0]).toBe(' 2023');
       expect(grouped[1][1].length).toBe(1);
+    });
+
+    it('excludes pinned conversations from date groups', () => {
+      const conversations = [
+        { conversationId: '1', updatedAt: new Date().toISOString(), pinned: true },
+        { conversationId: '2', updatedAt: new Date().toISOString() },
+        { conversationId: '3', updatedAt: '2023-06-01T12:00:00Z', pinned: true },
+        { conversationId: '4', updatedAt: '2023-06-01T12:00:00Z' },
+      ];
+
+      const grouped = groupConversationsByDate(conversations as TConversation[]);
+
+      const allGroupedIds = grouped.flatMap(([, convs]) => convs.map((c) => c.conversationId));
+      expect(allGroupedIds).not.toContain('1');
+      expect(allGroupedIds).not.toContain('3');
+      expect(allGroupedIds).toContain('2');
+      expect(allGroupedIds).toContain('4');
     });
 
     it('correctly groups and sorts conversations for every month of the year', () => {
@@ -588,6 +606,47 @@ describe('Conversation Utilities', () => {
         addConvoToAllQueries(queryClient, convoA);
         const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
         expect(data!.pages[0].conversations.filter((c) => c.conversationId === 'a').length).toBe(1);
+      });
+
+      it('upsertConvoInAllQueries adds missing conversations to the top', () => {
+        upsertConvoInAllQueries(queryClient, convoB);
+        const data = queryClient.getQueryData<InfiniteData<{ conversations: TConversation[] }>>([
+          'allConversations',
+        ]);
+
+        expect(data!.pages[0].conversations[0].conversationId).toBe('b');
+        expect(data!.pages[0].conversations[1].conversationId).toBe('a');
+      });
+
+      it('upsertConvoInAllQueries updates existing conversations without duplicating them', () => {
+        upsertConvoInAllQueries(queryClient, {
+          ...convoA,
+          title: 'Updated Conversation A',
+        });
+        const data = queryClient.getQueryData<InfiniteData<{ conversations: TConversation[] }>>([
+          'allConversations',
+        ]);
+
+        expect(data!.pages[0].conversations).toHaveLength(1);
+        expect(data!.pages[0].conversations[0].title).toBe('Updated Conversation A');
+      });
+
+      it('upsertConvoInAllQueries moves an existing conversation to the top once', () => {
+        const convoC = { conversationId: 'c', updatedAt: '2024-01-03T12:00:00Z' } as TConversation;
+        queryClient.setQueryData(['allConversations'], {
+          pages: [{ conversations: [convoC, convoA], nextCursor: null }],
+          pageParams: [],
+        });
+
+        upsertConvoInAllQueries(queryClient, {
+          ...convoA,
+          title: 'Updated Conversation A',
+        });
+        const data = queryClient.getQueryData<InfiniteData<{ conversations: TConversation[] }>>([
+          'allConversations',
+        ]);
+
+        expect(data!.pages[0].conversations.map((c) => c.conversationId)).toEqual(['a', 'c']);
       });
 
       it('updateConvoInAllQueries updates correct convo', () => {

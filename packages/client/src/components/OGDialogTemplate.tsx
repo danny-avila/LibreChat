@@ -1,4 +1,11 @@
-import { forwardRef, isValidElement, ReactNode, Ref } from 'react';
+import {
+  forwardRef,
+  ForwardRefExoticComponent,
+  isValidElement,
+  ReactNode,
+  Ref,
+  RefAttributes,
+} from 'react';
 import {
   OGDialogTitle,
   OGDialogClose,
@@ -62,7 +69,9 @@ type DialogTemplateProps = {
   onClose?: () => void;
 };
 
-const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivElement>) => {
+const OGDialogTemplate: ForwardRefExoticComponent<
+  DialogTemplateProps & RefAttributes<HTMLDivElement>
+> = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivElement>) => {
   const localize = useLocalize();
   const {
     title,
@@ -80,9 +89,8 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
     showCancelButton = true,
   } = props;
   const isLegacySelection = isSelectionProps(selection);
-  const { selectHandler, selectClasses, selectText, isLoading } = isLegacySelection
-    ? selection
-    : {};
+  const legacySelection = isLegacySelection ? selection : null;
+  const { selectHandler, selectClasses, selectText, isLoading } = legacySelection ?? {};
 
   const defaultSelect =
     'bg-gray-800 text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-200 dark:text-gray-800 dark:hover:bg-gray-200';

@@ -4,8 +4,10 @@ import { Spinner, useCombobox } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
-import VariableDialog from '~/components/Prompts/Groups/VariableDialog';
+import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
 import { removeCharIfLast, detectVariables } from '~/utils';
+import { useRecordPromptUsage } from '~/data-provider';
+import { VariableDialog } from '~/components/Prompts';
 import { usePromptGroupsContext } from '~/Providers';
 import MentionItem from './MentionItem';
 import { useLocalize } from '~/hooks';
@@ -60,8 +62,10 @@ function PromptsCommand({
   submitPrompt: (textPrompt: string) => void;
 }) {
   const localize = useLocalize();
-  const { allPromptGroups, hasAccess } = usePromptGroupsContext();
-  const { data, isLoading } = allPromptGroups;
+  const { mutate: recordUsage } = useRecordPromptUsage();
+  const promptGroupsContext = usePromptGroupsContext();
+  const { allPromptGroups, hasAccess } = promptGroupsContext ?? {};
+  const { data, isLoading } = allPromptGroups ?? {};
 
   const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -76,6 +80,14 @@ function PromptsCommand({
   const { open, setOpen, searchValue, setSearchValue, matches } = useCombobox({
     value: '',
     options: prompts ?? [],
+  });
+
+  const initInputRef = useInitPopoverInput({
+    inputRef,
+    textAreaRef,
+    commandChar,
+    setSearchValue,
+    setOpen,
   });
 
   const handleSelect = useCallback(
@@ -107,18 +119,34 @@ function PromptsCommand({
         return;
       } else {
         submitPrompt(group.productionPrompt?.prompt ?? '');
+        if (group._id) {
+          recordUsage(group._id);
+        }
       }
     },
-    [setSearchValue, setOpen, setShowPromptsPopover, textAreaRef, promptsMap, submitPrompt],
+    [
+      setSearchValue,
+      setOpen,
+      setShowPromptsPopover,
+      textAreaRef,
+      promptsMap,
+      submitPrompt,
+      recordUsage,
+    ],
   );
 
   useEffect(() => {
     if (!open) {
       setActiveIndex(0);
+      setSearchValue('');
     } else {
       setVariableGroup(null);
     }
-  }, [open]);
+  }, [open, setSearchValue]);
+
+  useEffect(() => {
+    setActiveIndex((prev) => Math.min(prev, Math.max(matches.length - 1, 0)));
+  }, [matches.length]);
 
   useEffect(() => {
     return () => {
@@ -179,10 +207,7 @@ function PromptsCommand({
       <div className="absolute bottom-28 z-10 w-full space-y-2">
         <div className="popover border-token-border-light rounded-2xl border bg-surface-tertiary-alt p-2 shadow-lg">
           <input
-            // The user expects focus to transition to the input field when the popover is opened
-            // eslint-disable-next-line jsx-a11y/no-autofocus
-            autoFocus
-            ref={inputRef}
+            ref={initInputRef}
             placeholder={localize('com_ui_command_usage_placeholder')}
             className="mb-1 w-full border-0 bg-surface-tertiary-alt p-2 text-sm focus:outline-none dark:text-gray-200"
             autoComplete="off"
@@ -194,10 +219,23 @@ function PromptsCommand({
                 textAreaRef.current?.focus();
               }
               if (e.key === 'ArrowDown') {
+                if (matches.length === 0) {
+                  return;
+                }
                 setActiveIndex((prevIndex) => (prevIndex + 1) % matches.length);
               } else if (e.key === 'ArrowUp') {
+                if (matches.length === 0) {
+                  return;
+                }
                 setActiveIndex((prevIndex) => (prevIndex - 1 + matches.length) % matches.length);
               } else if (e.key === 'Enter' || e.key === 'Tab') {
+                if (matches.length === 0) {
+                  e.preventDefault();
+                  setOpen(false);
+                  setShowPromptsPopover(false);
+                  textAreaRef.current?.focus();
+                  return;
+                }
                 if (e.key === 'Enter') {
                   e.preventDefault();
                 }
@@ -217,38 +255,28 @@ function PromptsCommand({
               }, 150);
             }}
           />
-          <div className="max-h-40 overflow-y-auto">
-            {(() => {
-              if (isLoading && open) {
-                return (
-                  <div className="flex h-32 items-center justify-center text-text-primary">
-                    <Spinner />
-                  </div>
-                );
-              }
-
-              if (!isLoading && open) {
-                return (
-                  <div className="max-h-40">
-                    <AutoSizer disableHeight>
-                      {({ width }) => (
-                        <List
-                          width={width}
-                          overscanRowCount={5}
-                          rowHeight={ROW_HEIGHT}
-                          rowCount={matches.length}
-                          rowRenderer={rowRenderer}
-                          scrollToIndex={activeIndex}
-                          height={Math.min(matches.length * ROW_HEIGHT, 160)}
-                        />
-                      )}
-                    </AutoSizer>
-                  </div>
-                );
-              }
-              return null;
-            })()}
-          </div>
+          {open && isLoading && matches.length === 0 && (
+            <div className="flex h-32 items-center justify-center text-text-primary">
+              <Spinner />
+            </div>
+          )}
+          {open && matches.length > 0 && (
+            <div className="max-h-40">
+              <AutoSizer disableHeight>
+                {({ width }) => (
+                  <List
+                    width={width}
+                    overscanRowCount={5}
+                    rowHeight={ROW_HEIGHT}
+                    rowCount={matches.length}
+                    rowRenderer={rowRenderer}
+                    scrollToIndex={activeIndex}
+                    height={Math.min(matches.length * ROW_HEIGHT, 160)}
+                  />
+                )}
+              </AutoSizer>
+            </div>
+          )}
         </div>
       </div>
     </PopoverContainer>

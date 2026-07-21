@@ -16,14 +16,18 @@ export default {
   //     lines: 57,
   //   },
   // },
+  maxWorkers: '50%',
   restoreMocks: true,
   testTimeout: 15000,
   // React component testing requires jsdom environment
   testEnvironment: 'jsdom',
   testEnvironmentOptions: { url: 'http://localhost:3080' },
+  resolver: '<rootDir>/jest.resolver.cjs',
   transform: {
     '^.+\\.(ts|tsx|js|jsx)$': 'babel-jest',
   },
-  transformIgnorePatterns: ['node_modules/(?!(@tanstack|lucide-react|@dicebear)/)'],
+  transformIgnorePatterns: [
+    'node_modules/(?!(@tanstack|lucide-react|@dicebear|@ariakit/react-components|@ariakit/react-utils|@ariakit/react-store|@ariakit/components|@ariakit/store|@ariakit/utils)/)',
+  ],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
 };

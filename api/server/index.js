@@ -1,4 +1,4 @@
-require('dotenv').config();
+const telemetry = require('./telemetry');
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
@@ -8,31 +8,49 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
+const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const {
   isEnabled,
   apiNotFound,
+  createMetrics,
   ErrorController,
   memoryDiagnostics,
   performStartupChecks,
   handleJsonParseError,
   GenerationJobManager,
+  QUERY_DEVTOOLS_HEADER,
   createStreamServices,
+  deleteAgentCheckpoint,
   initializeFileStorage,
+  initializeDeploymentSkills,
+  loadToolApprovalHooks,
+  maybeInjectQueryDevtoolsBootstrap,
+  preAuthTenantMiddleware,
+  setupGracefulShutdown,
+  updateInterfacePermissions,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
+const {
+  updateAccessPermissions,
+  sweepOrphanedPreviews,
+  getRoleByName,
+  seedDatabase,
+} = require('~/models');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
+const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
+const { startExpiredFileSweep } = require('./services/Files/process');
+const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
-const { updateInterfacePermissions } = require('~/models/interface');
 const { checkMigrations } = require('./services/start/migration');
+const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
+const createSpaFallback = require('./utils/fallback');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
-const { seedDatabase } = require('~/models');
 const routes = require('./routes');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
@@ -43,8 +61,51 @@ const host = HOST || 'localhost';
 const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
 
 const app = express();
+let serverReady = false;
+
+const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
+const CHAT_START_RETRY_AFTER_SECONDS = '1';
+
+const rejectChatStartsUntilReady = (req, res, next) => {
+  if (serverReady || req.method !== 'POST' || req.path === '/abort') {
+    return next();
+  }
+
+  res.set('Retry-After', CHAT_START_RETRY_AFTER_SECONDS);
+  return res.status(503).json({
+    code: SERVER_NOT_READY_CODE,
+    error: 'Server is still starting. Please retry shortly.',
+  });
+};
+
+const configureGenerationStreams = () => {
+  const streamServices = createStreamServices();
+  GenerationJobManager.configure({
+    ...streamServices,
+    cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
+  });
+  GenerationJobManager.initialize();
+  // Prune the paused run's durable checkpoint when its approval EXPIRES (periodic sweeper
+  // or a stale submit) instead of leaving it until the Mongo TTL. streamId === conversationId
+  // === the LangGraph thread_id. Config is resolved lazily per expiry so the prune always
+  // targets the currently configured checkpoint collections.
+  GenerationJobManager.setApprovalExpiredHandler(async (conversationId, job) => {
+    // Resolve config in the PAUSED JOB's tenant/user scope — the expiry runs outside any
+    // request context. Passing ids to getAppConfig only keys the cache; the Config query
+    // itself is ALS-scoped by the tenant-isolation plugin, so ENTER the tenant context.
+    await tenantStorage.run({ tenantId: job?.tenantId, userId: job?.userId }, async () => {
+      const appConfig = await getAppConfig({ userId: job?.userId, tenantId: job?.tenantId });
+      await deleteAgentCheckpoint(conversationId, appConfig?.endpoints?.agents?.checkpointer);
+    });
+  });
+};
 
 const startServer = async () => {
+  const { metricsMiddleware, metricsRouter } = createMetrics();
+  if (!process.env.METRICS_SECRET) {
+    logger.warn('[metrics] METRICS_SECRET is not set - /metrics will return 401 for all requests');
+  }
+
   if (typeof Bun !== 'undefined') {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
   }
@@ -58,11 +119,40 @@ const startServer = async () => {
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
 
-  await seedDatabase();
-  const appConfig = await getAppConfig();
+  if (isEnabled(process.env.TENANT_ISOLATION_STRICT)) {
+    logger.warn(
+      '[Security] TENANT_ISOLATION_STRICT is active. Ensure your reverse proxy strips or sets ' +
+        'the X-Tenant-Id header — untrusted clients must not be able to set it directly.',
+    );
+  }
+
+  await runAsSystem(seedDatabase);
+  /* Recover stuck `status: 'pending'` records from a crash mid-render.
+   * `runAsSystem` is required — `File` is tenant-isolated and strict
+   * mode rejects unscoped queries. Lazy sweep in the preview endpoint
+   * covers anything younger than the boot cutoff. */
+  runAsSystem(sweepOrphanedPreviews).catch((err) => {
+    logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
+  });
+  const appConfig = await getAppConfig({ baseOnly: true });
   initializeFileStorage(appConfig);
-  await performStartupChecks(appConfig);
-  await updateInterfacePermissions(appConfig);
+  await initializeDeploymentSkills({ projectRoot: path.resolve(__dirname, '../..') });
+  initializeGitHubSkillSync(appConfig);
+  startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
+  // Register any programmatic tool-approval policy hooks declared in
+  // `endpoints.agents.toolApproval.hooks`. Honor the `enabled` kill switch: when tool
+  // approval is off we pass no hooks, so a disabled endpoint imports/runs nothing (and any
+  // previously loaded batch is unregistered). Hooks are read from the BASE config only —
+  // they register once, process-wide; per-user/tenant differences belong inside the hook
+  // (via its context), not in per-override module lists.
+  const toolApproval = appConfig?.endpoints?.agents?.toolApproval;
+  await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
+    basePath: path.resolve(__dirname, '../..'),
+  });
+  await runAsSystem(async () => {
+    await performStartupChecks(appConfig);
+    await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
+  });
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');
@@ -80,9 +170,34 @@ const startServer = async () => {
     }
   }
 
+  const sendIndexHtml = (req, res) => {
+    res.set({
+      'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
+      Pragma: process.env.INDEX_PRAGMA || 'no-cache',
+      Expires: process.env.INDEX_EXPIRES || '0',
+    });
+    res.vary(QUERY_DEVTOOLS_HEADER);
+
+    const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
+    const saneLang = lang.replace(/"/g, '&quot;');
+    let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+    updatedIndexHtml = maybeInjectQueryDevtoolsBootstrap(updatedIndexHtml, req);
+
+    res.type('html');
+    res.send(updatedIndexHtml);
+  };
+
   app.get('/health', (_req, res) => res.status(200).send('OK'));
+  app.get('/livez', (_req, res) => res.status(200).send('OK'));
+  app.get('/readyz', (_req, res) => {
+    if (!serverReady) {
+      return res.status(503).send('NOT_READY');
+    }
+    return res.status(200).send('OK');
+  });
 
   /* Middleware */
+  app.use(metricsMiddleware);
   app.use(noIndex);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
@@ -111,9 +226,14 @@ const startServer = async () => {
     console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
   }
 
+  app.get('/index.html', sendIndexHtml);
   app.use(staticCache(appConfig.paths.dist));
   app.use(staticCache(appConfig.paths.fonts));
   app.use(staticCache(appConfig.paths.assets));
+
+  if (telemetry.enabled) {
+    app.use(telemetry.telemetryMiddleware);
+  }
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
@@ -133,10 +253,22 @@ const startServer = async () => {
     await configureSocialLogins(app);
   }
 
-  app.use('/oauth', routes.oauth);
+  /* Per-request capability cache — must be registered before any route that calls hasCapability */
+  app.use(capabilityContextMiddleware);
+
+  /* Pre-auth tenant context for unauthenticated routes that need tenant scoping.
+   * The reverse proxy / auth gateway sets `X-Tenant-Id` header for multi-tenant deployments. */
+  app.use('/oauth', preAuthTenantMiddleware, routes.oauth);
   /* API Endpoints */
-  app.use('/api/auth', routes.auth);
+  app.use('/api/auth', preAuthTenantMiddleware, routes.auth);
   app.use('/api/admin', routes.adminAuth);
+  app.use('/api/admin/config', routes.adminConfig);
+  app.use('/api/admin/grants', routes.adminGrants);
+  app.use('/api/admin/groups', routes.adminGroups);
+  app.use('/api/admin/roles', routes.adminRoles);
+  app.use('/api/admin/skills', routes.adminSkills);
+  app.use('/api/admin/users', routes.adminUsers);
+  app.use('/api/admin/audit-log', routes.adminAuditLog);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/api-keys', routes.apiKeys);
@@ -145,17 +277,20 @@ const startServer = async () => {
   app.use('/api/messages', routes.messages);
   app.use('/api/convos', routes.convos);
   app.use('/api/presets', routes.presets);
+  app.use('/api/projects', routes.projects);
   app.use('/api/prompts', routes.prompts);
+  app.use('/api/skills', routes.skills);
   app.use('/api/categories', routes.categories);
   app.use('/api/endpoints', routes.endpoints);
   app.use('/api/balance', routes.balance);
   app.use('/api/models', routes.models);
-  app.use('/api/config', routes.config);
+  app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
   app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
-  app.use('/api/share', routes.share);
+  app.use('/api/share', preAuthTenantMiddleware, routes.share);
   app.use('/api/roles', routes.roles);
+  app.use('/api/agents/chat', rejectChatStartsUntilReady);
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
   app.use('/api/memories', routes.memories);
@@ -163,30 +298,26 @@ const startServer = async () => {
 
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
+  app.use('/api/rum', routes.rum);
+
+  app.use('/metrics', metricsRouter);
 
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);
 
   /** SPA fallback - serve index.html for all unmatched routes */
-  app.use((req, res) => {
-    res.set({
-      'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
-      Pragma: process.env.INDEX_PRAGMA || 'no-cache',
-      Expires: process.env.INDEX_EXPIRES || '0',
-    });
+  app.use(createSpaFallback(sendIndexHtml));
 
-    const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
-    const saneLang = lang.replace(/"/g, '&quot;');
-    let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
-
-    res.type('html');
-    res.send(updatedIndexHtml);
-  });
-
+  /** Record trace errors before the final error controller. */
+  if (telemetry.enabled) {
+    app.use(telemetry.telemetryErrorMiddleware);
+  }
   /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
   app.use(ErrorController);
 
-  app.listen(port, host, async (err) => {
+  configureGenerationStreams();
+
+  const server = app.listen(port, host, async (err) => {
     if (err) {
       logger.error('Failed to start server:', err);
       process.exit(1);
@@ -200,23 +331,49 @@ const startServer = async () => {
       logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
 
-    await initializeMCPs();
-    await initializeOAuthReconnectManager();
-    await checkMigrations();
+    /**
+     * The listen callback is async, so any rejection from these awaits would
+     * otherwise be detached from `startServer().catch(...)` (which only
+     * catches errors that happen before `app.listen`). Without explicit
+     * handling, the global `unhandledRejection` handler would swallow init
+     * failures and leave the server listening but only partially
+     * initialized — passing liveness checks while serving broken requests.
+     */
+    try {
+      await runAsSystem(async () => {
+        await initializeMCPs();
+        await initializeOAuthReconnectManager();
+      });
+      await checkMigrations();
 
-    // Configure stream services (auto-detects Redis from USE_REDIS env var)
-    const streamServices = createStreamServices();
-    GenerationJobManager.configure(streamServices);
-    GenerationJobManager.initialize();
-
-    const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
-    if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
-      memoryDiagnostics.start();
+      const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
+      if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
+        memoryDiagnostics.start();
+      }
+      serverReady = true;
+      logger.info('Server readiness checks passing.');
+    } catch (initErr) {
+      serverReady = false;
+      logger.error('Post-listen initialization failed:', initErr);
+      process.exit(1);
     }
   });
+
+  setupGracefulShutdown(server);
 };
 
-startServer();
+/**
+ * Boot rejections (e.g. `connectDb`, `getAppConfig`, `performStartupChecks`)
+ * must remain fail-fast: a half-initialized process with no listening HTTP
+ * server should die immediately so the orchestrator restarts it, instead of
+ * being kept alive by the `unhandledRejection` handler below until the
+ * liveness probe eventually times out. Mirrors the pattern in
+ * `experimental.js`.
+ */
+startServer().catch((err) => {
+  logger.error('Failed to start server:', err);
+  process.exit(1);
+});
 
 let messageCount = 0;
 process.on('uncaughtException', (err) => {
@@ -273,6 +430,32 @@ process.on('uncaughtException', (err) => {
   }
 
   process.exit(1);
+});
+
+/**
+ * Unhandled promise rejection handler.
+ *
+ * Node 15+ terminates the process by default when a promise rejection is
+ * unhandled. MCP OAuth reconnect storms and streamable-HTTP transport resets
+ * can produce transient fire-and-forget rejections (ECONNRESET, token refresh
+ * races) that are recoverable — the server should log and keep serving other
+ * requests rather than silently crash under load.
+ *
+ * Non-Error reasons are forwarded as-is so structured payloads (e.g.
+ * `{ code: "ECONNRESET", errno: -104 }`) survive instead of being collapsed to
+ * "[object Object]" by `String()`.
+ */
+process.on('unhandledRejection', (reason) => {
+  if (reason instanceof Error) {
+    logger.error('Unhandled promise rejection. The app will continue running.', {
+      name: reason.name,
+      message: reason.message,
+      stack: reason.stack,
+      cause: reason.cause,
+    });
+    return;
+  }
+  logger.error('Unhandled promise rejection. The app will continue running.', { reason });
 });
 
 /** Export app for easier testing purposes */

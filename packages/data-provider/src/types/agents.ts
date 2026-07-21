@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-namespace */
-import { StepTypes, ContentTypes, ToolCallTypes } from './runs';
+import type { TTokenUsageEvent, TContextUsageEvent, TPendingSteer } from './runs';
+import type { FunctionToolCall, SummaryContentPart } from './assistants';
 import type { TAttachment, TPlugin } from 'src/schemas';
-import type { FunctionToolCall } from './assistants';
+import { StepTypes, ContentTypes, ToolCallTypes } from './runs';
 
 export namespace Agents {
   export type MessageType = 'human' | 'ai' | 'generic' | 'system' | 'function' | 'tool' | 'remove';
@@ -53,6 +54,8 @@ export namespace Agents {
     | MessageContentImageUrl
     | MessageContentVideoUrl
     | MessageContentInputAudio
+    | SummaryContentPart
+    | ToolCallContent
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     | (Record<string, any> & { type?: ContentTypes | string })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -77,10 +80,22 @@ export namespace Agents {
     id?: string;
     /** If provided, the output of the tool call */
     output?: string;
+    /** The tool call was rejected before execution because its input failed schema validation. */
+    inputValidationError?: true;
     /** Auth URL */
     auth?: string;
     /** Expiration time */
     expires_at?: number;
+    /**
+     * When set, this tool call is paused for human review.
+     * The presence of this field signals the UI to render approval controls
+     * instead of the in-flight tool execution state.
+     */
+    approval?: {
+      actionId: string;
+      allowed_decisions: ToolApprovalDecisionType[];
+      description?: string;
+    };
   };
 
   export type ToolEndEvent = {
@@ -187,6 +202,7 @@ export namespace Agents {
     /** Group ID for parallel content - parts with same groupId are displayed in columns */
     groupId?: number; // #new
     stepDetails: StepDetails;
+    summary?: SummaryContentPart;
     usage: null | object;
   };
 
@@ -203,6 +219,11 @@ export namespace Agents {
     parentMessageId?: string;
     conversationId?: string;
     text?: string;
+    /** Skill selections on the turn, carried so a HITL-resumed turn's reconstructed
+     *  requestMessage keeps its skill pills (they aren't on the DB row the client refetches
+     *  until reload). */
+    manualSkills?: string[];
+    alwaysAppliedSkills?: string[];
   }
 
   /** State data sent to reconnecting clients */
@@ -214,6 +235,36 @@ export namespace Agents {
     responseMessageId?: string;
     conversationId?: string;
     sender?: string;
+    iconURL?: string;
+    model?: string;
+    titleEvent?: {
+      event: 'title';
+      data?: {
+        conversationId?: string;
+        title?: string;
+      };
+    };
+    replayEvents?: Array<{
+      event: string;
+      data?: unknown;
+      [key: string]: unknown;
+    }>;
+    /** Cumulative provider-reported usage for the run; backfills usage totals on resume */
+    collectedUsage?: TTokenUsageEvent[];
+    /** Latest context window snapshot; restores the usage gauge on resume */
+    contextUsage?: TContextUsageEvent;
+    /**
+     * Live pending approval when the run is paused for human review. Carried in
+     * the resume contract (not just /chat/status) so a reloading or
+     * cross-replica client can rebuild and render the prompt from `resumeState`.
+     */
+    pendingAction?: PendingAction;
+    /**
+     * Steers queued server-side but not yet injected into the run. Injected
+     * steers already live inside `aggregatedContent`; these are the remainder,
+     * so a reconnecting client can rebuild its pending-steer chips.
+     */
+    pendingSteers?: TPendingSteer[];
   }
   /**
    * Represents a run step delta i.e. any changed fields on a run step during
@@ -245,8 +296,178 @@ export namespace Agents {
     tool_calls?: ToolCallChunk[];
     auth?: string;
     expires_at?: number;
+    /** Approval metadata, set when a tool call is paused for human review. */
+    approval?: {
+      actionId: string;
+      allowed_decisions: ToolApprovalDecisionType[];
+      description?: string;
+    };
   };
   export type AgentToolCall = FunctionToolCall | ToolCall;
+
+  /**
+   * Human-in-the-loop interrupt categories. The discriminator on
+   * {@link HumanInterruptPayload}.
+   *
+   * - `tool_approval`: agent paused before executing one or more tools; user
+   *   approves / rejects / edits each call.
+   * - `ask_user_question`: agent invoked the `AskUserQuestion` tool to gather
+   *   clarification; user replies with free-form text (or selects an option).
+   *
+   * `tool_approval` is a permission gate; `ask_user_question` is a clarification
+   * channel — they share the {@link PendingAction} envelope but have different
+   * UI affordances and resume payloads.
+   */
+  export type HumanInterruptType = 'tool_approval' | 'ask_user_question';
+
+  /** String enum of decision kinds the user can make on a paused tool call. */
+  export type ToolApprovalDecisionType = 'approve' | 'reject' | 'edit' | 'respond';
+
+  /**
+   * One pending tool execution awaiting user review.
+   * Field naming mirrors LangChain HumanInterrupt's `ActionRequest`.
+   */
+  export interface ToolApprovalRequest {
+    /** Tool name as registered with the agent */
+    name: string;
+    /** Sanitized arguments (no auth tokens / file blobs). May be string or parsed object. */
+    arguments: string | Record<string, unknown>;
+    /** Provider tool_call_id linking this request to the model's tool_use block */
+    tool_call_id: string;
+    /** Optional human-readable description shown alongside the prompt */
+    description?: string;
+  }
+
+  /**
+   * Per-call review configuration: which decisions the user is allowed to make.
+   *
+   * `tool_call_id` (NOT `action_name`) is the join key against
+   * {@link ToolApprovalRequest.tool_call_id}. By-position mapping breaks the
+   * moment a single batch contains the same tool called twice — e.g. a model
+   * fanning out two `mcp:server:search` calls in parallel — so always join
+   * by `tool_call_id`. `action_name` is retained for display only.
+   */
+  export interface ToolReviewConfig {
+    action_name: string;
+    tool_call_id: string;
+    allowed_decisions: ToolApprovalDecisionType[];
+  }
+
+  /** Interrupt payload for a tool-approval pause. */
+  export interface ToolApprovalInterruptPayload {
+    type: 'tool_approval';
+    action_requests: ToolApprovalRequest[];
+    review_configs: ToolReviewConfig[];
+  }
+
+  /** A selectable answer for an ask-user-question prompt. */
+  export interface AskUserQuestionOption {
+    label: string;
+    value: string;
+  }
+
+  /** The question itself: free-form prompt with optional curated answers. */
+  export interface AskUserQuestionRequest {
+    question: string;
+    /** Optional descriptive context for the prompt; mirrors the SDK field. */
+    description?: string;
+    options?: AskUserQuestionOption[];
+    /** When true the user may pick several options; the answer is their
+     *  selected option values joined with ", ". */
+    multiSelect?: boolean;
+  }
+
+  /** Interrupt payload for an ask-user-question pause. */
+  export interface AskUserQuestionInterruptPayload {
+    type: 'ask_user_question';
+    question: AskUserQuestionRequest;
+  }
+
+  /**
+   * Discriminated by `type`. Mirrors `@librechat/agents`'s `HumanInterruptPayload`
+   * so the SDK's `Run.getInterrupt()` output can be embedded directly.
+   */
+  export type HumanInterruptPayload =
+    | ToolApprovalInterruptPayload
+    | AskUserQuestionInterruptPayload;
+
+  /**
+   * Server-side record of a job that is waiting for user input.
+   * Persisted with the job; consumed by approval routes and the status endpoint.
+   */
+  export interface PendingAction {
+    /** Stable identifier used in approval URLs */
+    actionId: string;
+    streamId: string;
+    conversationId?: string;
+    /** Stable per-turn identifier (LangGraph checkpoint_ns) when available */
+    runId?: string;
+    responseMessageId?: string;
+    payload: HumanInterruptPayload;
+    createdAt: number;
+    /** Optional expiry; clients should treat past `expiresAt` as stale */
+    expiresAt?: number;
+    /**
+     * SDK interrupt id (`RunInterruptResult.interruptId`). Persisted so a
+     * cross-process resume can correlate the decision with the LangGraph
+     * interrupt after the original `Run` object is gone.
+     */
+    interruptId?: string;
+    /**
+     * LangGraph `thread_id` the run was bound to (`RunInterruptResult.threadId`).
+     * Required, with the checkpointer, to rebuild `Command({ resume })` on a
+     * worker that didn't originate the run.
+     */
+    threadId?: string;
+    /**
+     * Fingerprint of the request fields that determine the agent/graph + tool set
+     * (endpoint, agent_id, model, spec, ephemeralAgent), captured at pause time. The
+     * resume route recomputes it from the resume request and rejects a mismatch — the
+     * guard that catches an ephemeral-agent config swap, where `agent_id` is undefined
+     * so the id check can't.
+     */
+    requestFingerprint?: string;
+    /**
+     * Graph-determining request fields (endpoint, agent_id, model, spec, promptPrefix,
+     * ephemeralAgent) captured at pause. The resume route REPLAYS these onto the request
+     * before rebuilding the run, so a reload/cross-replica resume — where the client can
+     * no longer reconstruct the ephemeral config — still rebuilds the same agent/graph.
+     */
+    resumeContext?: Record<string, unknown>;
+  }
+
+  /**
+   * Scope of a tool-approval decision — drives the "remember this" persistence
+   * envelope. Storage of session/always decisions is a Slice B+ concern; the
+   * field is on the wire today so route signatures don't break later.
+   */
+  export type DecisionScope = 'once' | 'session' | 'always';
+
+  /**
+   * Per-tool decision returned from the approval UI.
+   * Wire format. The host adapts each entry to the SDK's discriminated
+   * `ToolApprovalDecision` (e.g. `{ type: 'edit', updatedInput }`) at the resume route.
+   *
+   * Constraints:
+   * - `editedArguments` is required when `decision === 'edit'`.
+   * - `responseText` is required when `decision === 'respond'`.
+   * - `reason` is optional metadata; useful for reject/edit audit trails.
+   * - `scope` defaults to `'once'`.
+   */
+  export interface ToolApprovalResolution {
+    tool_call_id: string;
+    decision: ToolApprovalDecisionType;
+    editedArguments?: Record<string, unknown>;
+    responseText?: string;
+    reason?: string;
+    scope?: DecisionScope;
+  }
+
+  /** Wire format for an ask-user-question response. */
+  export interface AskUserQuestionResolution {
+    answer: string;
+  }
+
   export interface ExtendedMessageContent {
     type?: string;
     text?: string;
@@ -313,6 +534,28 @@ export namespace Agents {
     | ContentTypes.VIDEO_URL
     | ContentTypes.INPUT_AUDIO
     | string;
+
+  export interface SummarizeStartEvent {
+    agentId: string;
+    provider: string;
+    model?: string;
+    messagesToRefineCount: number;
+    summaryVersion: number;
+  }
+
+  export interface SummarizeDeltaEvent {
+    id: string;
+    delta: {
+      summary: SummaryContentPart;
+    };
+  }
+
+  export interface SummarizeCompleteEvent {
+    id: string;
+    agentId: string;
+    summary?: SummaryContentPart;
+    error?: string;
+  }
 }
 
 export type ToolCallResult = {

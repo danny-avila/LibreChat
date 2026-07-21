@@ -26,8 +26,6 @@ mockUseWatch.mockImplementation(({ name }) => {
       _id: 'agent-db-123',
       name: 'Test Agent',
       author: 'user-123',
-      projectIds: ['project-1'],
-      isCollaborative: false,
     };
   }
   if (name === 'id') {
@@ -237,8 +235,6 @@ describe('AgentFooter', () => {
           _id: 'agent-db-123',
           name: 'Test Agent',
           author: 'user-123',
-          projectIds: ['project-1'],
-          isCollaborative: false,
         };
       }
       if (name === 'id') {
@@ -268,7 +264,7 @@ describe('AgentFooter', () => {
 
   describe('Main Functionality', () => {
     test('renders with standard components based on default state', () => {
-      render(<AgentFooter {...defaultProps} />);
+      const { container } = render(<AgentFooter {...defaultProps} />);
       expect(screen.getByText('Save')).toBeInTheDocument();
       expect(screen.getByTestId('advanced-button')).toBeInTheDocument();
       expect(screen.getByTestId('version-button')).toBeInTheDocument();
@@ -276,15 +272,17 @@ describe('AgentFooter', () => {
       expect(screen.queryByTestId('admin-settings')).not.toBeInTheDocument();
       expect(screen.getByTestId('grant-access-dialog-agent')).toBeInTheDocument();
       expect(screen.getByTestId('duplicate-button')).toBeInTheDocument();
-      expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
+      // The icon-swap always renders both label and spinner; the visible state
+      // is driven by data-state ('a' = idle/label, 'b' = saving/spinner).
+      expect(container.querySelector('.t-icon-swap')).toHaveAttribute('data-state', 'a');
     });
 
     test('handles loading states for createMutation', () => {
-      const { unmount } = render(
+      const { container, unmount } = render(
         <AgentFooter {...defaultProps} createMutation={createBaseMutation(true)} />,
       );
       expect(screen.getByTestId('spinner')).toBeInTheDocument();
-      expect(screen.queryByText('Save')).not.toBeInTheDocument();
+      expect(container.querySelector('.t-icon-swap')).toHaveAttribute('data-state', 'b');
       // Find the submit button (the one with aria-busy attribute)
       const buttons = screen.getAllByRole('button');
       const submitButton = buttons.find((button) => button.getAttribute('type') === 'submit');
@@ -294,9 +292,11 @@ describe('AgentFooter', () => {
     });
 
     test('handles loading states for updateMutation', () => {
-      render(<AgentFooter {...defaultProps} updateMutation={createBaseMutation(true)} />);
+      const { container } = render(
+        <AgentFooter {...defaultProps} updateMutation={createBaseMutation(true)} />,
+      );
       expect(screen.getByTestId('spinner')).toBeInTheDocument();
-      expect(screen.queryByText('Save')).not.toBeInTheDocument();
+      expect(container.querySelector('.t-icon-swap')).toHaveAttribute('data-state', 'b');
     });
 
     test('handles loading state when avatar upload is in progress', () => {
@@ -362,9 +362,15 @@ describe('AgentFooter', () => {
         }
         return undefined;
       });
+      mockUseHasAccess.mockReturnValue(true);
+      mockUseResourcePermissions.mockReturnValue({
+        hasPermission: () => false,
+        isLoading: false,
+        permissionBits: 0,
+      });
       render(<AgentFooter {...defaultProps} />);
-      expect(screen.queryByTestId('grant-access-dialog-agent')).toBeInTheDocument(); // Still shows because hasAccess is true
-      expect(screen.queryByTestId('duplicate-agent')).not.toBeInTheDocument(); // Should not show for different author
+      expect(screen.queryByTestId('grant-access-dialog-agent')).not.toBeInTheDocument(); // No share permission
+      expect(screen.queryByTestId('duplicate-button')).not.toBeInTheDocument(); // No edit permission
     });
 
     test('adjusts UI based on permissions', () => {
@@ -376,8 +382,6 @@ describe('AgentFooter', () => {
             _id: 'agent-db-123',
             name: 'Test Agent',
             author: 'different-user', // Different author
-            projectIds: ['project-1'],
-            isCollaborative: false,
           };
         }
         if (name === 'id') {
@@ -403,8 +407,6 @@ describe('AgentFooter', () => {
             _id: 'agent-db-123',
             name: 'Test Agent',
             author: 'user-123', // Same as current user
-            projectIds: ['project-1'],
-            isCollaborative: false,
           };
         }
         if (name === 'id') {
@@ -420,7 +422,84 @@ describe('AgentFooter', () => {
       render(<AgentFooter {...defaultProps} />);
       expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();
       expect(screen.queryByTestId('grant-access-dialog-agent')).not.toBeInTheDocument();
-      // Duplicate button should still show as it doesn't depend on permissions loading
+      expect(screen.queryByTestId('duplicate-button')).not.toBeInTheDocument();
+    });
+
+    test('shows duplicate button for non-owner with EDIT permission', () => {
+      mockUseAuthContext.mockReturnValue(createAuthContext(mockUsers.different));
+      mockUseWatch.mockImplementation(({ name }) => {
+        if (name === 'agent') {
+          return {
+            _id: 'agent-db-123',
+            name: 'Test Agent',
+            author: 'user-123',
+            projectIds: ['project-1'],
+            isCollaborative: false,
+          };
+        }
+        if (name === 'id') {
+          return 'agent-123';
+        }
+        return undefined;
+      });
+      mockUseResourcePermissions.mockReturnValue({
+        hasPermission: (bit: number) => bit === 2,
+        isLoading: false,
+        permissionBits: 2,
+      });
+      render(<AgentFooter {...defaultProps} />);
+      expect(screen.getByTestId('duplicate-button')).toBeInTheDocument();
+    });
+
+    test('hides duplicate button for non-owner with only VIEW permission', () => {
+      mockUseAuthContext.mockReturnValue(createAuthContext(mockUsers.different));
+      mockUseWatch.mockImplementation(({ name }) => {
+        if (name === 'agent') {
+          return {
+            _id: 'agent-db-123',
+            name: 'Test Agent',
+            author: 'user-123',
+            projectIds: ['project-1'],
+            isCollaborative: false,
+          };
+        }
+        if (name === 'id') {
+          return 'agent-123';
+        }
+        return undefined;
+      });
+      mockUseResourcePermissions.mockReturnValue({
+        hasPermission: () => false,
+        isLoading: false,
+        permissionBits: 1,
+      });
+      render(<AgentFooter {...defaultProps} />);
+      expect(screen.queryByTestId('duplicate-button')).not.toBeInTheDocument();
+    });
+
+    test('shows duplicate button for admin who is not the author', () => {
+      mockUseAuthContext.mockReturnValue(createAuthContext(mockUsers.admin));
+      mockUseWatch.mockImplementation(({ name }) => {
+        if (name === 'agent') {
+          return {
+            _id: 'agent-db-123',
+            name: 'Test Agent',
+            author: 'user-123',
+            projectIds: ['project-1'],
+            isCollaborative: false,
+          };
+        }
+        if (name === 'id') {
+          return 'agent-123';
+        }
+        return undefined;
+      });
+      mockUseResourcePermissions.mockReturnValue({
+        hasPermission: () => false,
+        isLoading: false,
+        permissionBits: 0,
+      });
+      render(<AgentFooter {...defaultProps} />);
       expect(screen.getByTestId('duplicate-button')).toBeInTheDocument();
     });
   });

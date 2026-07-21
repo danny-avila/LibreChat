@@ -60,6 +60,27 @@ export const RESOURCE_CONFIGS: Record<ResourceType, ResourceConfig> = {
       `Manage API access for ${name && name !== '' ? `"${name}"` : 'agent'}`,
     getCopyUrlMessage: () => 'API endpoint copied',
   },
+  [ResourceType.SKILL]: {
+    resourceType: ResourceType.SKILL,
+    defaultViewerRoleId: AccessRoleIds.SKILL_VIEWER,
+    defaultEditorRoleId: AccessRoleIds.SKILL_EDITOR,
+    defaultOwnerRoleId: AccessRoleIds.SKILL_OWNER,
+    getResourceName: (name?: string) => (name && name !== '' ? name : 'skill'),
+    getShareMessage: (name?: string) => (name && name !== '' ? name : 'skill'),
+    getManageMessage: (name?: string) =>
+      `Manage permissions for ${name && name !== '' ? name : 'skill'}`,
+    getCopyUrlMessage: () => 'Skill URL copied',
+  },
+  [ResourceType.SHARED_LINK]: {
+    resourceType: ResourceType.SHARED_LINK,
+    defaultViewerRoleId: AccessRoleIds.SHARED_LINK_VIEWER,
+    defaultEditorRoleId: AccessRoleIds.SHARED_LINK_VIEWER,
+    defaultOwnerRoleId: AccessRoleIds.SHARED_LINK_OWNER,
+    getResourceName: (name?: string) => name || 'shared link',
+    getShareMessage: (name?: string) => name || 'shared link',
+    getManageMessage: (name?: string) => `Manage access for ${name || 'shared link'}`,
+    getCopyUrlMessage: () => 'Share link copied',
+  },
 };
 
 export const getResourceConfig = (resourceType: ResourceType): ResourceConfig | undefined => {

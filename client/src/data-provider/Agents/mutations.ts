@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService, MutationKeys, PermissionBits, QueryKeys } from 'librechat-data-provider';
-import type * as t from 'librechat-data-provider';
 import type { QueryClient, UseMutationResult } from '@tanstack/react-query';
+import type * as t from 'librechat-data-provider';
 
 /**
  * AGENTS
@@ -10,6 +10,7 @@ export const allAgentViewAndEditQueryKeys: t.AgentListParams[] = [
   { requiredPermission: PermissionBits.VIEW },
   { requiredPermission: PermissionBits.EDIT },
 ];
+
 /**
  * Create a new agent
  */
@@ -378,6 +379,11 @@ export const useRevertAgentVersionMutation = (
       onError: (error, variables, context) => options?.onError?.(error, variables, context),
       onSuccess: (revertedAgent, variables, context) => {
         queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], revertedAgent);
+        queryClient.setQueryData<t.Agent>(
+          [QueryKeys.agent, variables.agent_id, 'expanded'],
+          revertedAgent,
+        );
+        queryClient.invalidateQueries([QueryKeys.agent, variables.agent_id, 'versions']);
 
         ((keys: t.AgentListParams[]) => {
           keys.forEach((key) => {

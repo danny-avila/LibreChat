@@ -1,13 +1,12 @@
 import { Schema } from 'mongoose';
 import type { IAccessRole } from '~/types';
 
-const accessRoleSchema = new Schema<IAccessRole>(
+const accessRoleSchema: Schema<IAccessRole> = new Schema<IAccessRole>(
   {
     accessRoleId: {
       type: String,
       required: true,
       index: true,
-      unique: true,
     },
     name: {
       type: String,
@@ -16,7 +15,16 @@ const accessRoleSchema = new Schema<IAccessRole>(
     description: String,
     resourceType: {
       type: String,
-      enum: ['agent', 'project', 'file', 'promptGroup', 'mcpServer', 'remoteAgent'],
+      enum: [
+        'agent',
+        'project',
+        'file',
+        'promptGroup',
+        'mcpServer',
+        'remoteAgent',
+        'skill',
+        'sharedLink',
+      ],
       required: true,
       default: 'agent',
     },
@@ -24,8 +32,14 @@ const accessRoleSchema = new Schema<IAccessRole>(
       type: Number,
       required: true,
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   { timestamps: true },
 );
+
+accessRoleSchema.index({ accessRoleId: 1, tenantId: 1 }, { unique: true });
 
 export default accessRoleSchema;

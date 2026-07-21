@@ -38,7 +38,6 @@ const PAGE_SIZE = 25;
 
 const DEFAULT_PARAMS: SharedLinksListParams = {
   pageSize: PAGE_SIZE,
-  isPublic: true,
   sortBy: 'createdAt',
   sortDirection: 'desc',
   search: '',
@@ -333,6 +332,7 @@ export default function SharedLinks() {
           <DataTable
             columns={columns}
             data={allLinks}
+            className="scrollbar-gutter-stable"
             onDelete={handleDelete}
             filterColumn="title"
             hasNextPage={hasNextPage}

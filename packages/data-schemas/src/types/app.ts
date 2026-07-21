@@ -1,6 +1,6 @@
 import type {
   TEndpoint,
-  FileSources,
+  FileStorage,
   TFileConfig,
   TAzureConfig,
   TCustomConfig,
@@ -8,9 +8,12 @@ import type {
   EModelEndpoint,
   TVertexAIConfig,
   TAgentsEndpoint,
+  CloudFrontConfig,
   TCustomEndpoints,
   TAssistantEndpoint,
   TAnthropicEndpoint,
+  SummarizationConfig,
+  SkillSyncConfig,
 } from 'librechat-data-provider';
 
 export type JsonSchemaType = {
@@ -56,12 +59,22 @@ export interface AppConfig {
   };
   /** Memory configuration */
   memory?: TMemoryConfig;
+  /** Summarization configuration */
+  summarization?: SummarizationConfig;
   /** Web search configuration */
   webSearch?: TCustomConfig['webSearch'];
-  /** File storage strategy ('local', 's3', 'firebase', 'azure_blob') */
-  fileStrategy: FileSources.local | FileSources.s3 | FileSources.firebase | FileSources.azure_blob;
+  /** Message filter configuration (PII and future filter types) */
+  messageFilter?: TCustomConfig['messageFilter'];
+  /** Langfuse tracing configuration */
+  langfuse?: TCustomConfig['langfuse'];
+  /** Skill sync configuration */
+  skillSync?: SkillSyncConfig;
+  /** File storage strategy ('local', 's3', 'firebase', 'azure_blob', 'cloudfront') */
+  fileStrategy: FileStorage;
   /** File strategies configuration */
   fileStrategies?: TCustomConfig['fileStrategies'];
+  /** CloudFront CDN configuration */
+  cloudfront?: CloudFrontConfig;
   /** Registration configurations */
   registration?: TCustomConfig['registration'];
   /** Actions configurations */
@@ -95,6 +108,8 @@ export interface AppConfig {
   /** Available tools */
   availableTools?: Record<string, FunctionTool>;
   endpoints?: {
+    /** Admin exemption list of host:port pairs that bypass the SSRF private-IP block */
+    allowedAddresses?: string[];
     /** OpenAI endpoint configuration */
     openAI?: Partial<TEndpoint>;
     /** Google endpoint configuration */

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo, useCallback } from 'react';
 import { useRecoilState } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import {
@@ -19,19 +19,27 @@ import {
   Providers,
   EToolResources,
   EModelEndpoint,
+  getConfiguredMimeAccept,
+  bedrockDocumentMimeTypes,
   defaultAgentCapabilities,
   bedrockDocumentExtensions,
   isDocumentSupportedProvider,
 } from 'librechat-data-provider';
-import type { EndpointFileConfig } from 'librechat-data-provider';
+import type {
+  TConversation,
+  EndpointFileConfig,
+  MimeUploadCapability,
+} from 'librechat-data-provider';
+import type { ExtendedFile, FileSetter } from '~/common';
 import {
   useAgentToolPermissions,
   useAgentCapabilities,
   useGetAgentsConfig,
-  useFileHandling,
+  useFileHandlingNoChatContext,
   useLocalize,
 } from '~/hooks';
-import useSharePointFileHandling from '~/hooks/Files/useSharePointFileHandling';
+import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
+import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
@@ -45,14 +53,34 @@ type FileUploadType =
   | 'image_document_extended'
   | 'image_document_video_audio';
 
+/** What each provider upload path can actually send, used to scope the picker filter to selectable files. */
+const fileTypeCapabilities: Record<FileUploadType, MimeUploadCapability> = {
+  image: { categories: ['image'] },
+  document: { categories: ['document'] },
+  image_document: { categories: ['image', 'document'] },
+  image_document_extended: {
+    categories: ['image', 'document'],
+    documentMimeTypes: bedrockDocumentMimeTypes,
+  },
+  /** Google/Vertex/OpenRouter media path: documents are limited to PDF (see isProviderAttachType). */
+  image_document_video_audio: {
+    categories: ['image', 'document', 'audio', 'video'],
+    documentMimeTypes: ['application/pdf'],
+  },
+};
+
 interface AttachFileMenuProps {
   agentId?: string | null;
   endpoint?: string | null;
   disabled?: boolean | null;
   conversationId: string;
-  endpointType?: EModelEndpoint;
+  endpointType?: EModelEndpoint | string;
   endpointFileConfig?: EndpointFileConfig;
   useResponsesApi?: boolean;
+  files: Map<string, ExtendedFile>;
+  setFiles: FileSetter;
+  setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  conversation: TConversation | null;
 }
 
 const AttachFileMenu = ({
@@ -63,19 +91,32 @@ const AttachFileMenu = ({
   conversationId,
   endpointFileConfig,
   useResponsesApi,
+  files,
+  setFiles,
+  setFilesLoading,
+  conversation,
 }: AttachFileMenuProps) => {
   const localize = useLocalize();
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
+  const uploadFileTooltip = useShortcutHint('uploadFile', localize('com_sidepanel_attach_files'));
+  const uploadFileAriaKey = useShortcutAriaKey('uploadFile');
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(
     ephemeralAgentByConvoId(conversationId),
   );
-  const [toolResource, setToolResource] = useState<EToolResources | undefined>();
-  const { handleFileChange } = useFileHandling();
-  const { handleSharePointFiles, isProcessing, downloadProgress } = useSharePointFileHandling({
-    toolResource,
+  const toolResourceRef = useRef<EToolResources | undefined>();
+  const { handleFileChange } = useFileHandlingNoChatContext(undefined, {
+    files,
+    setFiles,
+    setFilesLoading,
+    conversation,
   });
+  const { handleSharePointFiles, isProcessing, downloadProgress } =
+    useSharePointFileHandlingNoChatContext(
+      { toolResource: toolResourceRef.current },
+      { files, setFiles, setFilesLoading, conversation },
+    );
 
   const { agentsConfig } = useGetAgentsConfig();
   const { data: startupConfig } = useGetStartupConfig();
@@ -94,29 +135,45 @@ const AttachFileMenu = ({
     ephemeralAgent,
   );
 
-  const handleUploadClick = (fileType?: FileUploadType) => {
-    if (!inputRef.current) {
-      return;
-    }
-    inputRef.current.value = '';
-    if (fileType === 'image') {
-      inputRef.current.accept = 'image/*,.heif,.heic';
-    } else if (fileType === 'document') {
-      inputRef.current.accept = '.pdf,application/pdf';
-    } else if (fileType === 'image_document') {
-      inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf';
-    } else if (fileType === 'image_document_extended') {
-      inputRef.current.accept = `image/*,.heif,.heic,${bedrockDocumentExtensions}`;
-    } else if (fileType === 'image_document_video_audio') {
-      inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf,video/*,audio/*';
-    } else {
+  const handleUploadClick = useCallback(
+    (fileType?: FileUploadType) => {
+      if (!inputRef.current) {
+        return;
+      }
+      inputRef.current.value = '';
+      const configuredAccept =
+        fileType !== undefined
+          ? getConfiguredMimeAccept(
+              endpointFileConfig?.supportedMimeTypes,
+              fileTypeCapabilities[fileType],
+            )
+          : undefined;
+      if (configuredAccept != null) {
+        inputRef.current.accept = configuredAccept;
+      } else if (fileType === 'image') {
+        inputRef.current.accept = 'image/*,.heif,.heic';
+      } else if (fileType === 'document') {
+        inputRef.current.accept = '.pdf,application/pdf';
+      } else if (fileType === 'image_document') {
+        inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf';
+      } else if (fileType === 'image_document_extended') {
+        inputRef.current.accept = `image/*,.heif,.heic,${bedrockDocumentExtensions}`;
+      } else if (fileType === 'image_document_video_audio') {
+        inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf,video/*,audio/*';
+      } else {
+        inputRef.current.accept = '';
+      }
+      inputRef.current.click();
       inputRef.current.accept = '';
-    }
-    inputRef.current.click();
-    inputRef.current.accept = '';
-  };
+    },
+    [endpointFileConfig?.supportedMimeTypes],
+  );
 
   const dropdownItems = useMemo(() => {
+    const setToolResource = (value: EToolResources | undefined) => {
+      toolResourceRef.current = value;
+    };
+
     const createMenuItems = (onAction: (fileType?: FileUploadType) => void) => {
       const items: MenuItemProps[] = [];
 
@@ -128,7 +185,9 @@ const AttachFileMenu = ({
       }
 
       const isAzureWithResponsesApi =
-        currentProvider === EModelEndpoint.azureOpenAI && useResponsesApi;
+        (currentProvider === EModelEndpoint.azureOpenAI ||
+          endpointType === EModelEndpoint.azureOpenAI) &&
+        useResponsesApi === true;
 
       if (
         isDocumentSupportedProvider(endpointType) ||
@@ -191,7 +250,7 @@ const AttachFileMenu = ({
 
       if (capabilities.codeEnabled && codeAllowedByAgent) {
         items.push({
-          label: localize('com_ui_upload_code_files'),
+          label: localize('com_ui_upload_code_environment'),
           onClick: () => {
             setToolResource(EToolResources.execute_code);
             setEphemeralAgent((prev) => ({
@@ -231,7 +290,7 @@ const AttachFileMenu = ({
     endpointType,
     capabilities,
     useResponsesApi,
-    setToolResource,
+    handleUploadClick,
     setEphemeralAgent,
     sharePointEnabled,
     codeAllowedByAgent,
@@ -246,6 +305,7 @@ const AttachFileMenu = ({
           disabled={isUploadDisabled}
           id="attach-file-menu-button"
           aria-label="Attach File Options"
+          aria-keyshortcuts={uploadFileAriaKey}
           className={cn(
             'flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
             isPopoverActive && 'bg-surface-hover',
@@ -257,7 +317,7 @@ const AttachFileMenu = ({
         </Ariakit.MenuButton>
       }
       id="attach-file-menu-button"
-      description={localize('com_sidepanel_attach_files')}
+      description={uploadFileTooltip}
       disabled={isUploadDisabled}
     />
   );
@@ -275,7 +335,8 @@ const AttachFileMenu = ({
       <FileUpload
         ref={inputRef}
         handleFileChange={(e) => {
-          handleFileChange(e, toolResource);
+          handleFileChange(e, toolResourceRef.current);
+          toolResourceRef.current = undefined;
         }}
       >
         <DropdownPopup

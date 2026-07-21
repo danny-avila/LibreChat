@@ -30,10 +30,13 @@ import {
   getDefaultModelSpec,
   getDefaultEndpoint,
   getModelSpecPreset,
+  hasModelSelection,
   buildDefaultConvo,
+  requestChatFocus,
   logger,
 } from '~/utils';
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
+import useGetConversation from './Conversations/useGetConversation';
 import useAssistantListMap from './Assistants/useAssistantListMap';
 import { useResetChatBadges } from './useChatBadges';
 import { useApplyModelSpecEffects } from './Agents';
@@ -45,13 +48,13 @@ const useNewConvo = (index = 0) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { data: startupConfig } = useGetStartupConfig();
+  const getConversation = useGetConversation(index);
   const applyModelSpecEffects = useApplyModelSpecEffects();
   const clearAllConversations = store.useClearConvoState();
   const defaultPreset = useRecoilValue(store.defaultPreset);
-  const { setConversation } = store.useCreateConversationAtom(index);
+  const { setConversation } = store.useSetConversationAtom(index);
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const saveBadgesState = useRecoilValue<boolean>(store.saveBadgesState);
-  const clearAllLatestMessages = store.useClearLatestMessages(`useNewConvo ${index}`);
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
 
@@ -82,7 +85,6 @@ const useNewConvo = (index = 0) => {
         preset: Partial<TPreset> | null = null,
         modelsData?: TModelsConfig,
         buildDefault?: boolean,
-        keepLatestMessage?: boolean,
         keepAddedConvos?: boolean,
         disableFocus?: boolean,
         _disableParams?: boolean,
@@ -90,6 +92,11 @@ const useNewConvo = (index = 0) => {
         const modelsConfig = modelsData ?? modelsQuery.data;
         const { endpoint = null } = conversation;
         const buildDefaultConversation = (endpoint === null || buildDefault) ?? false;
+        const hasExplicitChatProjectId = Object.prototype.hasOwnProperty.call(
+          conversation,
+          'chatProjectId',
+        );
+        const explicitChatProjectId = conversation.chatProjectId;
         const activePreset =
           // use default preset only when it's defined,
           // preset is not provided,
@@ -200,6 +207,12 @@ const useNewConvo = (index = 0) => {
             models,
             defaultParamsEndpoint,
           });
+
+          if (hasExplicitChatProjectId) {
+            conversation.chatProjectId = explicitChatProjectId ?? null;
+          } else {
+            delete conversation.chatProjectId;
+          }
         }
 
         if (disableParams === true) {
@@ -225,34 +238,54 @@ const useNewConvo = (index = 0) => {
           setConversation(conversation);
         }
         setSubmission({} as TSubmission);
-        if (!(keepLatestMessage ?? false)) {
-          logger.log('latest_message', 'Clearing all latest messages');
-          clearAllLatestMessages();
-        }
         if (isCancelled) {
           return;
         }
 
-        const searchParamsString = searchParams?.toString();
-        const getParams = () => (searchParamsString ? `?${searchParamsString}` : '');
+        const getParams = (nextConversation: TConversation) => {
+          const nextParams = new URLSearchParams(searchParams);
+          nextParams.delete('projectId');
+          if (
+            nextConversation.conversationId === Constants.NEW_CONVO &&
+            nextConversation.chatProjectId
+          ) {
+            nextParams.set('projectId', nextConversation.chatProjectId);
+          }
+
+          const searchParamsString = nextParams.toString();
+          return searchParamsString ? `?${searchParamsString}` : '';
+        };
 
         if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
           const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE) ?? '';
           if (appTitle) {
             document.title = appTitle;
           }
-          const path = `/c/${Constants.NEW_CONVO}${getParams()}`;
-          navigate(path, { state: { focusChat: true } });
+          const path = `/c/${Constants.NEW_CONVO}${getParams(conversation)}`;
+          /** Honor disableFocus here too: the transient focus intent survives
+           * follow-up navigations (unlike the old location.state), so e.g.
+           * SearchBar's clear-search must not have focus stolen back. */
+          if (!disableFocus) {
+            requestChatFocus();
+          }
+          navigate(path);
           return;
         }
 
-        const path = `/c/${conversation.conversationId}${getParams()}`;
-        navigate(path, {
-          replace: true,
-          state: disableFocus ? {} : { focusChat: true },
-        });
+        const path = `/c/${conversation.conversationId}${getParams(conversation)}`;
+        if (!disableFocus) {
+          requestChatFocus();
+        }
+        navigate(path, { replace: true });
       },
-    [endpointsConfig, defaultPreset, assistantsListMap, modelsQuery.data, hasAgentAccess],
+    [
+      endpointsConfig,
+      defaultPreset,
+      assistantsListMap,
+      modelsQuery.data,
+      hasAgentAccess,
+      searchParams,
+    ],
   );
 
   const newConversation = useCallback(
@@ -262,7 +295,6 @@ const useNewConvo = (index = 0) => {
       modelsData,
       disableFocus,
       buildDefault = true,
-      keepLatestMessage = false,
       keepAddedConvos = false,
       disableParams,
     }: {
@@ -271,7 +303,6 @@ const useNewConvo = (index = 0) => {
       modelsData?: TModelsConfig;
       buildDefault?: boolean;
       disableFocus?: boolean;
-      keepLatestMessage?: boolean;
       keepAddedConvos?: boolean;
       disableParams?: boolean;
     } = {}) {
@@ -286,7 +317,7 @@ const useNewConvo = (index = 0) => {
         isParamEndpoint(_preset?.endpoint ?? '', _preset?.endpointType ?? '');
       const template =
         paramEndpoint === true && templateConvoId && templateConvoId === Constants.NEW_CONVO
-          ? { endpoint: _template.endpoint }
+          ? { endpoint: _template.endpoint, chatProjectId: _template.chatProjectId }
           : _template;
 
       const conversation = {
@@ -299,23 +330,26 @@ const useNewConvo = (index = 0) => {
       };
 
       let preset = _preset;
-      const result = getDefaultModelSpec(startupConfig);
-      const defaultModelSpec = result?.default ?? result?.last;
-      if (
-        !preset &&
-        startupConfig &&
-        (startupConfig.modelSpecs?.prioritize === true ||
-          (startupConfig.interface?.modelSelect ?? true) !== true ||
-          (result?.last != null && Object.keys(_template).length === 0)) &&
-        defaultModelSpec
-      ) {
+      const result = getDefaultModelSpec(startupConfig, endpointsConfig);
+      const defaultModelSpec = result?.default ?? result?.last ?? result?.softDefault;
+      const shouldApplyModelSpec =
+        result?.softDefault != null
+          ? !hasModelSelection(_template)
+          : startupConfig?.modelSpecs?.prioritize === true ||
+            (startupConfig?.interface?.modelSelect ?? true) !== true ||
+            (result?.last != null &&
+              Object.keys(_template).filter((key) => key !== 'chatProjectId').length === 0);
+      if (!preset && startupConfig && shouldApplyModelSpec && defaultModelSpec) {
         preset = getModelSpecPreset(defaultModelSpec);
       }
 
+      const prevConversation = getConversation();
       applyModelSpecEffects({
         startupConfig,
         specName: preset?.spec,
         convoId: conversation.conversationId,
+        prevConvoId: prevConversation?.conversationId,
+        prevSpecName: prevConversation?.spec,
       });
 
       if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
@@ -348,7 +382,6 @@ const useNewConvo = (index = 0) => {
         preset,
         modelsData,
         buildDefault,
-        keepLatestMessage,
         keepAddedConvos,
         disableFocus,
         disableParams,
@@ -362,6 +395,8 @@ const useNewConvo = (index = 0) => {
       resetBadges,
       startupConfig,
       saveBadgesState,
+      endpointsConfig,
+      getConversation,
       pauseGlobalAudio,
       switchToConversation,
       applyModelSpecEffects,

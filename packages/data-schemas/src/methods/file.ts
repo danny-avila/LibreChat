@@ -1,10 +1,88 @@
-import logger from '../config/winston';
 import { EToolResources, FileContext } from 'librechat-data-provider';
 import type { FilterQuery, SortOrder, Model } from 'mongoose';
 import type { IMongoFile } from '~/types/file';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import logger from '../config/winston';
+
+export type FileOwnerScope = {
+  userId: string;
+  tenantId?: string | null;
+};
+
+function withOwnerScope<T extends FilterQuery<IMongoFile>>(
+  filter: T,
+  ownerScope?: FileOwnerScope,
+): T & FilterQuery<IMongoFile> {
+  if (!ownerScope) {
+    return filter;
+  }
+
+  const scopedFilter: T & FilterQuery<IMongoFile> = {
+    ...filter,
+    user: ownerScope.userId,
+  };
+  if (ownerScope.tenantId) {
+    scopedFilter.tenantId = ownerScope.tenantId;
+  }
+  return scopedFilter;
+}
 
 /** Factory function that takes mongoose instance and returns the file methods */
-export function createFileMethods(mongoose: typeof import('mongoose')) {
+export function createFileMethods(mongoose: typeof import('mongoose')): {
+  findFileById: (file_id: string, options?: Record<string, unknown>) => Promise<IMongoFile | null>;
+  getFiles: (
+    filter: FilterQuery<IMongoFile>,
+    _sortOptions?: Record<string, SortOrder> | null,
+    selectFields?: Record<string, 0 | 1> | string | null,
+  ) => Promise<IMongoFile[] | null>;
+  getExpiredFiles: (limit?: number, now?: Date) => Promise<IMongoFile[]>;
+  getToolFilesByIds: (
+    fileIds: string[],
+    toolResourceSet?: Set<EToolResources>,
+    ownerScope?: FileOwnerScope,
+  ) => Promise<IMongoFile[]>;
+  getCodeGeneratedFiles: (
+    conversationId: string,
+    threadFileIds?: string[],
+    ownerScope?: FileOwnerScope,
+  ) => Promise<IMongoFile[]>;
+  getUserCodeFiles: (fileIds: string[], ownerScope: FileOwnerScope) => Promise<IMongoFile[]>;
+  claimCodeFile: (data: {
+    filename: string;
+    conversationId: string;
+    file_id: string;
+    user: string;
+    tenantId?: string | null;
+  }) => Promise<IMongoFile>;
+  createFile: (data: Partial<IMongoFile>, disableTTL?: boolean) => Promise<IMongoFile | null>;
+  updateFile: (
+    data: Partial<IMongoFile> & { file_id: string },
+    extraFilter?: FilterQuery<IMongoFile>,
+  ) => Promise<IMongoFile | null>;
+  updateFileUsage: (data: {
+    file_id: string;
+    inc?: number;
+    user?: string;
+    tenantId?: string | null;
+  }) => Promise<IMongoFile | null>;
+  deleteFile: (file_id: string) => Promise<IMongoFile | null>;
+  deleteFiles: (file_ids: string[], user?: string) => Promise<{ deletedCount?: number }>;
+  deleteFileByFilter: (filter: FilterQuery<IMongoFile>) => Promise<IMongoFile | null>;
+  batchUpdateFiles: (
+    updates: Array<{
+      file_id: string;
+      filepath: string;
+      storageKey?: string;
+      storageRegion?: string;
+    }>,
+  ) => Promise<void>;
+  updateFilesUsage: (
+    files: Array<{ file_id: string }>,
+    fileIds?: string[],
+    options?: { user?: string; tenantId?: string | null },
+  ) => Promise<IMongoFile[]>;
+  sweepOrphanedPreviews: (maxAgeMs?: number) => Promise<number>;
+} {
   /**
    * Finds a file by its file_id with additional query options.
    * @param file_id - The unique identifier of the file
@@ -16,7 +94,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     options: Record<string, unknown> = {},
   ): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return File.findOne({ file_id, ...options }).lean();
+    return File.findOne({ file_id, ...options }).lean<IMongoFile>();
   }
 
   /** Select fields for query projection - 0 to exclude, 1 to include */
@@ -33,7 +111,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   async function getFiles(
     filter: FilterQuery<IMongoFile>,
     _sortOptions?: Record<string, SortOrder> | null,
-    selectFields?: SelectProjection | string | null,
+    selectFields?: string | Record<string, 0 | 1> | null | undefined,
   ): Promise<IMongoFile[] | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
     const sortOptions = { updatedAt: -1 as SortOrder, ..._sortOptions };
@@ -43,7 +121,15 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     } else {
       query.select({ text: 0 });
     }
-    return await query.sort(sortOptions).lean();
+    return await query.sort(sortOptions).lean<IMongoFile[]>();
+  }
+
+  async function getExpiredFiles(limit = 100, now: Date = new Date()): Promise<IMongoFile[]> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    return await File.find({ expiredAt: { $ne: null, $lte: now } })
+      .sort({ expiredAt: 1 })
+      .limit(limit)
+      .lean<IMongoFile[]>();
   }
 
   /**
@@ -56,6 +142,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   async function getToolFilesByIds(
     fileIds: string[],
     toolResourceSet?: Set<EToolResources>,
+    ownerScope?: FileOwnerScope,
   ): Promise<IMongoFile[]> {
     if (!fileIds || !fileIds.length || !toolResourceSet?.size) {
       return [];
@@ -76,11 +163,14 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
         return [];
       }
 
-      const filter: FilterQuery<IMongoFile> = {
-        file_id: { $in: fileIds },
-        context: { $ne: FileContext.execute_code },
-        $or: orConditions,
-      };
+      const filter = withOwnerScope(
+        {
+          file_id: { $in: fileIds },
+          context: { $ne: FileContext.execute_code },
+          $or: orConditions,
+        },
+        ownerScope,
+      );
 
       const selectFields: SelectProjection = { text: 0 };
       const sortOptions = { updatedAt: -1 as SortOrder };
@@ -95,40 +185,67 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Retrieves files generated by code execution for a given conversation.
-   * These files are stored locally with fileIdentifier metadata for code env re-upload.
+   * These files are stored locally with `metadata.codeEnvRef` for code env re-upload.
+   *
+   * Filtered by `file_id IN threadFileIds` (the file_ids referenced from
+   * messages in the current thread's `files` arrays) rather than by
+   * `messageId IN threadMessageIds` (the File record's own creator id).
+   * This mirrors `getUserCodeFiles` and fixes the branched-conversation
+   * case where:
+   *   1. Sibling A creates `output.csv` via processCodeOutput → File
+   *      record persists with `messageId = A`.
+   *   2. Sibling N (a regeneration of A's parent) recreates `output.csv`.
+   *      `claimCodeFile` is keyed by `(filename, conversationId, context)`
+   *      and finds A's record; `processCodeOutput` deliberately preserves
+   *      A's `messageId` to keep file→original-creator provenance intact.
+   *   3. Turn N+1's user message has `parentMessageId = N` (sibling of A).
+   *      `getThreadData` walks back from N: thread = [N, root]. A is
+   *      NOT in that thread, so a `messageId IN [N, root]` filter
+   *      excludes the file.
+   * The message at N references the file via `messages.files = [...]`,
+   * so `threadFileIds` (collected from that array during thread walk)
+   * DOES include the file_id. Filtering by that key reaches the right
+   * file regardless of which sibling first created it.
    *
    * @param conversationId - The conversation ID to search for
-   * @param messageIds - Array of messageIds to filter by (for linear thread filtering).
-   *   While technically optional, this function returns empty if not provided.
-   *   This is intentional: code-generated files must be filtered by thread to avoid
-   *   including files from other branches of a conversation.
-   * @returns Files generated by code execution in the conversation, filtered by messageIds
+   * @param threadFileIds - Array of file_ids referenced by messages in
+   *   the current thread (collected from `messages.files[].file_id`).
+   *   While technically optional, this function returns empty if not
+   *   provided — code-generated files must be filtered by thread to
+   *   avoid pulling in files from other branches of a conversation.
+   * @returns Files generated by code execution in the conversation,
+   *   filtered to those referenced by the current thread.
    */
   async function getCodeGeneratedFiles(
     conversationId: string,
-    messageIds?: string[],
+    threadFileIds?: string[],
+    ownerScope?: FileOwnerScope,
   ): Promise<IMongoFile[]> {
     if (!conversationId) {
       return [];
     }
 
     /**
-     * Return early if messageIds not provided - this is intentional behavior.
-     * Code-generated files must be filtered by thread messageIds to ensure we only
-     * return files relevant to the current conversation branch, not orphaned files
-     * from other branches or deleted messages.
+     * Return early if threadFileIds not provided — same rationale as
+     * the messageIds-based predecessor: code-generated files must be
+     * filtered by thread to ensure we only return files relevant to
+     * the current conversation branch, not orphaned files from other
+     * branches or deleted messages.
      */
-    if (!messageIds || messageIds.length === 0) {
+    if (!threadFileIds || threadFileIds.length === 0) {
       return [];
     }
 
     try {
-      const filter: FilterQuery<IMongoFile> = {
-        conversationId,
-        context: FileContext.execute_code,
-        messageId: { $exists: true, $in: messageIds },
-        'metadata.fileIdentifier': { $exists: true },
-      };
+      const filter = withOwnerScope(
+        {
+          conversationId,
+          context: FileContext.execute_code,
+          file_id: { $in: threadFileIds },
+          'metadata.codeEnvRef': { $exists: true },
+        },
+        ownerScope,
+      );
 
       const selectFields: SelectProjection = { text: 0 };
       const sortOptions = { createdAt: 1 as SortOrder };
@@ -146,19 +263,26 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
    * These are files with fileIdentifier metadata but context is NOT execute_code (e.g., agents or message_attachment).
    * File IDs should be collected from message.files arrays in the current thread.
    * @param fileIds - Array of file IDs to fetch (from message.files in the thread)
+   * @param ownerScope - Authenticated owner scope used to constrain historical refs
    * @returns User-uploaded execute_code files
    */
-  async function getUserCodeFiles(fileIds?: string[]): Promise<IMongoFile[]> {
+  async function getUserCodeFiles(
+    fileIds: string[],
+    ownerScope: FileOwnerScope,
+  ): Promise<IMongoFile[]> {
     if (!fileIds || fileIds.length === 0) {
       return [];
     }
 
     try {
-      const filter: FilterQuery<IMongoFile> = {
-        file_id: { $in: fileIds },
-        context: { $ne: FileContext.execute_code },
-        'metadata.fileIdentifier': { $exists: true },
-      };
+      const filter = withOwnerScope(
+        {
+          file_id: { $in: fileIds },
+          context: { $ne: FileContext.execute_code },
+          'metadata.codeEnvRef': { $exists: true },
+        },
+        ownerScope,
+      );
 
       const selectFields: SelectProjection = { text: 0 };
       const sortOptions = { createdAt: 1 as SortOrder };
@@ -181,23 +305,29 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     conversationId: string;
     file_id: string;
     user: string;
+    tenantId?: string | null;
   }): Promise<IMongoFile> {
     const File = mongoose.models.File as Model<IMongoFile>;
+    const tenantFilter = data.tenantId ? { tenantId: data.tenantId } : { tenantId: null };
+    const insertData = data.tenantId
+      ? { file_id: data.file_id, user: data.user, tenantId: data.tenantId }
+      : { file_id: data.file_id, user: data.user };
     const result = await File.findOneAndUpdate(
       {
         filename: data.filename,
         conversationId: data.conversationId,
         context: FileContext.execute_code,
+        ...tenantFilter,
       },
-      { $setOnInsert: { file_id: data.file_id, user: data.user } },
+      { $setOnInsert: insertData },
       { upsert: true, new: true },
-    ).lean();
+    ).lean<IMongoFile>();
     if (!result) {
       throw new Error(
         `[claimCodeFile] Failed to claim file "${data.filename}" for conversation ${data.conversationId}`,
       );
     }
-    return result as IMongoFile;
+    return result;
   }
 
   /**
@@ -223,16 +353,29 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     return File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
       new: true,
       upsert: true,
-    }).lean();
+    }).lean<IMongoFile>();
   }
 
   /**
    * Updates a file identified by file_id with new data and removes the TTL.
+   *
+   * `extraFilter` extends the by-id query with additional conditions
+   * (e.g. `{ previewRevision: '<expected uuid>' }`). When provided, the
+   * update is conditional — it commits only if the document still
+   * matches the extra filter, returning `null` otherwise. Used by the
+   * deferred-preview render to guard against an older render of the
+   * same `file_id` overwriting a newer turn's record on cross-turn
+   * filename reuse.
+   *
    * @param data - The data to update, must contain file_id
-   * @returns A promise that resolves to the updated file document
+   * @param extraFilter - Optional extra equality filter merged into the query.
+   * @returns A promise that resolves to the updated file document, or
+   *   null if the conditional filter excluded it (or the file was
+   *   deleted).
    */
   async function updateFile(
     data: Partial<IMongoFile> & { file_id: string },
+    extraFilter?: FilterQuery<IMongoFile>,
   ): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
     const { file_id, ...update } = data;
@@ -240,9 +383,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
       $set: update,
       $unset: { expiresAt: '' },
     };
-    return File.findOneAndUpdate({ file_id }, updateOperation, {
+    const query: FilterQuery<IMongoFile> = extraFilter ? { file_id, ...extraFilter } : { file_id };
+    return File.findOneAndUpdate(query, updateOperation, {
       new: true,
-    }).lean();
+    }).lean<IMongoFile>();
   }
 
   /**
@@ -253,16 +397,22 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   async function updateFileUsage(data: {
     file_id: string;
     inc?: number;
+    user?: string;
+    tenantId?: string | null;
   }): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    const { file_id, inc = 1 } = data;
+    const { file_id, inc = 1, user, tenantId } = data;
     const updateOperation = {
       $inc: { usage: inc },
       $unset: { expiresAt: '', temp_file_id: '' },
     };
-    return File.findOneAndUpdate({ file_id }, updateOperation, {
+    // Owner scoping is fail-closed: mismatches leave usage and TTL metadata unchanged.
+    const query: FilterQuery<IMongoFile> = user
+      ? withOwnerScope({ file_id }, { userId: user, tenantId })
+      : { file_id };
+    return File.findOneAndUpdate(query, updateOperation, {
       new: true,
-    }).lean();
+    }).lean<IMongoFile>();
   }
 
   /**
@@ -272,7 +422,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
    */
   async function deleteFile(file_id: string): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return File.findOneAndDelete({ file_id }).lean();
+    return File.findOneAndDelete({ file_id }).lean<IMongoFile>();
   }
 
   /**
@@ -282,7 +432,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
    */
   async function deleteFileByFilter(filter: FilterQuery<IMongoFile>): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return File.findOneAndDelete(filter).lean();
+    return File.findOneAndDelete(filter).lean<IMongoFile>();
   }
 
   /**
@@ -305,10 +455,15 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
 
   /**
    * Batch updates files with new signed URLs in MongoDB
-   * @param updates - Array of updates in the format { file_id, filepath }
+   * @param updates - Array of updates in the format { file_id, filepath, storageKey?, storageRegion? }
    */
   async function batchUpdateFiles(
-    updates: Array<{ file_id: string; filepath: string }>,
+    updates: Array<{
+      file_id: string;
+      filepath: string;
+      storageKey?: string;
+      storageRegion?: string;
+    }>,
   ): Promise<void> {
     if (!updates || updates.length === 0) {
       return;
@@ -318,11 +473,17 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     const bulkOperations = updates.map((update) => ({
       updateOne: {
         filter: { file_id: update.file_id },
-        update: { $set: { filepath: update.filepath } },
+        update: {
+          $set: {
+            filepath: update.filepath,
+            ...(update.storageKey ? { storageKey: update.storageKey } : {}),
+            ...(update.storageRegion ? { storageRegion: update.storageRegion } : {}),
+          },
+        },
       },
     }));
 
-    const result = await File.bulkWrite(bulkOperations);
+    const result = await tenantSafeBulkWrite(File, bulkOperations);
     logger.info(`Updated ${result.modifiedCount} files with new S3 URLs`);
   }
 
@@ -337,9 +498,13 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   async function updateFilesUsage(
     files: Array<{ file_id: string }>,
     fileIds?: string[],
+    options?: { user?: string; tenantId?: string | null },
   ): Promise<IMongoFile[]> {
     const promises: Promise<IMongoFile | null>[] = [];
     const seen = new Set<string>();
+    // Preserve the same owner scope for every deduped ID in this batch.
+    const user = options?.user;
+    const tenantId = options?.tenantId;
 
     for (const file of files) {
       const { file_id } = file;
@@ -347,7 +512,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
         continue;
       }
       seen.add(file_id);
-      promises.push(updateFileUsage({ file_id }));
+      promises.push(updateFileUsage({ file_id, user, tenantId }));
     }
 
     if (!fileIds) {
@@ -360,16 +525,49 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
         continue;
       }
       seen.add(file_id);
-      promises.push(updateFileUsage({ file_id }));
+      promises.push(updateFileUsage({ file_id, user, tenantId }));
     }
 
     const results = await Promise.all(promises);
     return results.filter((result): result is IMongoFile => result != null);
   }
 
+  /**
+   * Mark stale `status: 'pending'` file records as `'failed'` with
+   * `previewError: 'orphaned'`. Recovers from the one case the
+   * in-process deferred-preview render can't handle on its own: a
+   * backend restart mid-render loses the in-memory promise, leaving
+   * the record stuck pending forever.
+   *
+   * Cheap to run on boot — the `status` field is indexed and the typical
+   * cutoff (5 min) bounds the candidate set to whatever was in flight at
+   * the prior shutdown. The 60s render timeout means anything older
+   * than a few minutes that's still pending is definitively orphaned.
+   *
+   * @param maxAgeMs - Cutoff in milliseconds; records whose `updatedAt`
+   *   is older than `now - maxAgeMs` are marked failed. Defaults to 5
+   *   minutes (well above the 60s render ceiling).
+   * @returns Number of records updated.
+   */
+  async function sweepOrphanedPreviews(maxAgeMs: number = 5 * 60 * 1000): Promise<number> {
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const cutoff = new Date(Date.now() - maxAgeMs);
+    const result = await File.updateMany(
+      { status: 'pending', updatedAt: { $lt: cutoff } },
+      { $set: { status: 'failed', previewError: 'orphaned' } },
+    );
+    if (result.modifiedCount > 0) {
+      logger.info(
+        `[sweepOrphanedPreviews] Marked ${result.modifiedCount} stale 'pending' files as 'failed' (cutoff: ${cutoff.toISOString()})`,
+      );
+    }
+    return result.modifiedCount ?? 0;
+  }
+
   return {
     findFileById,
     getFiles,
+    getExpiredFiles,
     getToolFilesByIds,
     getCodeGeneratedFiles,
     getUserCodeFiles,
@@ -382,6 +580,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     deleteFileByFilter,
     batchUpdateFiles,
     updateFilesUsage,
+    sweepOrphanedPreviews,
   };
 }
 

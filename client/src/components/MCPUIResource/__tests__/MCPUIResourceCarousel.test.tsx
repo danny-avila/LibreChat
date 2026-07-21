@@ -2,7 +2,11 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
 import { MCPUIResourceCarousel } from '../MCPUIResourceCarousel';
-import { useMessageContext, useMessagesConversation, useMessagesOperations } from '~/Providers';
+import {
+  useMessageContext,
+  useOptionalMessagesConversation,
+  useOptionalMessagesOperations,
+} from '~/Providers';
 
 // Mock dependencies
 jest.mock('~/Providers');
@@ -19,11 +23,11 @@ jest.mock('../../Chat/Messages/Content/UIResourceCarousel', () => ({
 }));
 
 const mockUseMessageContext = useMessageContext as jest.MockedFunction<typeof useMessageContext>;
-const mockUseMessagesConversation = useMessagesConversation as jest.MockedFunction<
-  typeof useMessagesConversation
+const mockUseMessagesConversation = useOptionalMessagesConversation as jest.MockedFunction<
+  typeof useOptionalMessagesConversation
 >;
-const mockUseMessagesOperations = useMessagesOperations as jest.MockedFunction<
-  typeof useMessagesOperations
+const mockUseMessagesOperations = useOptionalMessagesOperations as jest.MockedFunction<
+  typeof useOptionalMessagesOperations
 >;
 
 describe('MCPUIResourceCarousel', () => {

@@ -8,13 +8,12 @@
 import { logger } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
 import {
-  EnvVar,
+  Providers,
   createToolSearch,
   ToolSearchToolDefinition,
-  createProgrammaticToolCallingTool,
-  ProgrammaticToolCallingDefinition,
+  BashProgrammaticToolCallingDefinition,
+  createBashProgrammaticToolCallingTool,
 } from '@librechat/agents';
-import type { AgentToolOptions } from 'librechat-data-provider';
 import type {
   LCToolRegistry,
   JsonSchemaType,
@@ -22,6 +21,8 @@ import type {
   GenericTool,
   LCTool,
 } from '@librechat/agents';
+import type { AgentToolOptions } from 'librechat-data-provider';
+import { sanitizeGeminiSchema } from '~/mcp/zod';
 
 export type { LCTool, LCToolRegistry, AllowedCaller, JsonSchemaType };
 
@@ -186,13 +187,16 @@ export interface BuildToolClassificationParams {
   agentToolOptions?: AgentToolOptions;
   /** Whether the deferred_tools capability is enabled (from agent config) */
   deferredToolsEnabled?: boolean;
+  /** Whether the programmatic_tools capability is enabled (from agent config) */
+  programmaticToolsEnabled?: boolean;
+  /** Whether code execution is enabled and requested by this agent */
+  codeExecutionEnabled?: boolean;
   /** When true, skip creating tool instances (for event-driven mode) */
   definitionsOnly?: boolean;
-  /** Function to load auth values (dependency injection) */
-  loadAuthValues: (params: {
-    userId: string;
-    authFields: string[];
-  }) => Promise<Record<string, string>>;
+  /** Agent provider — Gemini/Vertex rejects union types, so injected tool schemas get sanitized */
+  provider?: Providers | string;
+  /** Optional host-supplied Code API auth headers for remote programmatic execution. */
+  authHeaders?: () => Promise<Record<string, string>> | Record<string, string>;
 }
 
 /** Result from building tool classification */
@@ -242,7 +246,7 @@ export function agentHasDeferredTools(toolRegistry: LCToolRegistry): boolean {
  * 1. Filters loaded tools for MCP tools
  * 2. Extracts tool definitions and builds the registry from agent's tool_options
  * 3. Cleans up temporary mcpJsonSchema properties
- * 4. Creates PTC tool only if agent has tools configured for programmatic calling
+ * 4. Creates PTC tool only if capabilities allow the agent's programmatic tools
  * 5. Creates tool search tool only if agent has deferred tools
  *
  * @param params - Parameters including loaded tools, userId, agentId, agentToolOptions, and dependencies
@@ -252,14 +256,17 @@ export async function buildToolClassification(
   params: BuildToolClassificationParams,
 ): Promise<BuildToolClassificationResult> {
   const {
-    userId,
     agentId,
+    provider,
     loadedTools,
     agentToolOptions,
     definitionsOnly = false,
     deferredToolsEnabled = true,
-    loadAuthValues,
+    programmaticToolsEnabled = false,
+    codeExecutionEnabled = false,
+    authHeaders,
   } = params;
+  const isGoogle = provider === Providers.GOOGLE || provider === Providers.VERTEXAI;
   const additionalTools: GenericTool[] = [];
 
   const mcpTools = loadedTools.filter(isMCPTool);
@@ -280,10 +287,11 @@ export async function buildToolClassification(
 
   /**
    * Check if this agent actually has tools configured for these features.
-   * Only enable PTC if the agent has programmatic tools.
+   * Only enable PTC if code/programmatic capabilities allow the agent's programmatic tools.
    * Only enable tool search if the agent has deferred tools AND the capability is enabled.
    */
-  const hasProgrammaticTools = agentHasProgrammaticTools(toolRegistry);
+  const hasProgrammaticTools =
+    programmaticToolsEnabled && codeExecutionEnabled && agentHasProgrammaticTools(toolRegistry);
   const hasDeferredTools = deferredToolsEnabled && agentHasDeferredTools(toolRegistry);
 
   /** Clear defer_loading if capability disabled */
@@ -309,11 +317,22 @@ export async function buildToolClassification(
 
   /** Tool search uses local mode (no API key needed) */
   if (hasDeferredTools) {
+    /**
+     * The ToolSearch schema declares `mcp_server` as a string/array union, which
+     * `zod_to_gemini_parameters` rejects — collapse it for Gemini/Vertex agents.
+     */
+    const toolSearchParameters = (isGoogle
+      ? sanitizeGeminiSchema(ToolSearchToolDefinition.schema as Record<string, unknown>)
+      : ToolSearchToolDefinition.schema) as unknown as LCTool['parameters'];
+
     if (!definitionsOnly) {
       const toolSearchTool = createToolSearch({
         mode: 'local',
         toolRegistry,
       });
+      if (isGoogle) {
+        toolSearchTool.schema = toolSearchParameters as typeof toolSearchTool.schema;
+      }
       additionalTools.push(toolSearchTool);
     }
 
@@ -321,7 +340,7 @@ export async function buildToolClassification(
     toolDefinitions.push({
       name: ToolSearchToolDefinition.name,
       description: ToolSearchToolDefinition.description,
-      parameters: ToolSearchToolDefinition.schema as unknown as LCTool['parameters'],
+      parameters: toolSearchParameters,
     });
     toolRegistry.set(ToolSearchToolDefinition.name, {
       name: ToolSearchToolDefinition.name,
@@ -331,7 +350,6 @@ export async function buildToolClassification(
     logger.debug(`[buildToolClassification] Tool Search enabled for agent ${agentId}`);
   }
 
-  /** PTC requires CODE_API_KEY for sandbox execution */
   if (!hasProgrammaticTools) {
     return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools };
   }
@@ -339,12 +357,12 @@ export async function buildToolClassification(
   /** In definitions-only mode, add PTC definition without creating the tool instance */
   if (definitionsOnly) {
     toolDefinitions.push({
-      name: ProgrammaticToolCallingDefinition.name,
-      description: ProgrammaticToolCallingDefinition.description,
-      parameters: ProgrammaticToolCallingDefinition.schema as unknown as LCTool['parameters'],
+      name: BashProgrammaticToolCallingDefinition.name,
+      description: BashProgrammaticToolCallingDefinition.description,
+      parameters: BashProgrammaticToolCallingDefinition.schema as unknown as LCTool['parameters'],
     });
-    toolRegistry.set(ProgrammaticToolCallingDefinition.name, {
-      name: ProgrammaticToolCallingDefinition.name,
+    toolRegistry.set(BashProgrammaticToolCallingDefinition.name, {
+      name: BashProgrammaticToolCallingDefinition.name,
       allowed_callers: ['direct'],
     });
     logger.debug(
@@ -354,28 +372,19 @@ export async function buildToolClassification(
   }
 
   try {
-    const authValues = await loadAuthValues({
-      userId,
-      authFields: [EnvVar.CODE_API_KEY],
-    });
-    const codeApiKey = authValues[EnvVar.CODE_API_KEY];
-
-    if (!codeApiKey) {
-      logger.warn('[buildToolClassification] PTC configured but CODE_API_KEY not available');
-      return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools };
-    }
-
-    const ptcTool = createProgrammaticToolCallingTool({ apiKey: codeApiKey });
+    const ptcTool = createBashProgrammaticToolCallingTool({ authHeaders } as Parameters<
+      typeof createBashProgrammaticToolCallingTool
+    >[0] & { authHeaders?: BuildToolClassificationParams['authHeaders'] });
     additionalTools.push(ptcTool);
 
     /** Add PTC definition for event-driven mode */
     toolDefinitions.push({
-      name: ProgrammaticToolCallingDefinition.name,
-      description: ProgrammaticToolCallingDefinition.description,
-      parameters: ProgrammaticToolCallingDefinition.schema as unknown as LCTool['parameters'],
+      name: BashProgrammaticToolCallingDefinition.name,
+      description: BashProgrammaticToolCallingDefinition.description,
+      parameters: BashProgrammaticToolCallingDefinition.schema as unknown as LCTool['parameters'],
     });
-    toolRegistry.set(ProgrammaticToolCallingDefinition.name, {
-      name: ProgrammaticToolCallingDefinition.name,
+    toolRegistry.set(BashProgrammaticToolCallingDefinition.name, {
+      name: BashProgrammaticToolCallingDefinition.name,
       allowed_callers: ['direct'],
     });
 

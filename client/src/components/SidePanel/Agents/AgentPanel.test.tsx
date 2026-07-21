@@ -2,7 +2,6 @@
  * @jest-environment jsdom
  */
 import * as React from 'react';
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { render, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Agent } from 'librechat-data-provider';
@@ -255,7 +254,6 @@ const mockAgentQuery = (
     data: {
       id: 'agent-123',
       author: 'user-123',
-      isCollaborative: false,
       ...agent,
     } as Agent,
     isInitialLoading: false,

@@ -1,5 +1,7 @@
-import type { Redis, Cluster } from 'ioredis';
+/* eslint jest/expect-expect: ["warn", { "assertFunctionNames": ["expect", "testRedisOperations"] }] */
 import type { RedisClientType, RedisClusterType } from '@redis/client';
+import type { Redis, Cluster } from 'ioredis';
+import { closeRedisClients } from './redisClients.helper';
 
 type RedisClient = RedisClientType | RedisClusterType | Redis | Cluster;
 
@@ -59,32 +61,15 @@ describe('redisClients Integration Tests', () => {
         if (keys.length > 0) {
           await ioredisClient.del(...keys);
         }
-      } catch (error: any) {
-        console.warn('Error cleaning up test keys:', error.message);
+      } catch (error) {
+        console.warn('Error cleaning up test keys:', (error as Error).message);
       }
     }
 
-    // Cleanup Redis connections
-    if (ioredisClient) {
-      try {
-        if (ioredisClient.status === 'ready') {
-          ioredisClient.disconnect();
-        }
-      } catch (error: any) {
-        console.warn('Error disconnecting ioredis client:', error.message);
-      }
-      ioredisClient = null;
-    }
-
-    if (keyvRedisClient) {
-      try {
-        // Try to disconnect - keyv/redis client doesn't have an isReady property
-        await keyvRedisClient.disconnect();
-      } catch (error: any) {
-        console.warn('Error disconnecting keyv redis client:', error.message);
-      }
-      keyvRedisClient = null;
-    }
+    // Close BOTH clients created by the module import, not just the one the test exercised
+    await closeRedisClients();
+    ioredisClient = null;
+    keyvRedisClient = null;
 
     process.env = originalEnv;
     jest.resetModules();
@@ -138,7 +123,11 @@ describe('redisClients Integration Tests', () => {
       test('should connect and perform set/get/delete operations', async () => {
         const clients = await import('../redisClients');
         keyvRedisClient = clients.keyvRedisClient;
-        await testRedisOperations(keyvRedisClient!, 'keyv-single', clients.keyvRedisClientReady!);
+        await testRedisOperations(
+          keyvRedisClient!,
+          'keyv-single',
+          clients.keyvRedisClientReady!.then(() => undefined),
+        );
       });
     });
 
@@ -150,7 +139,11 @@ describe('redisClients Integration Tests', () => {
 
         const clients = await import('../redisClients');
         keyvRedisClient = clients.keyvRedisClient;
-        await testRedisOperations(keyvRedisClient!, 'keyv-cluster', clients.keyvRedisClientReady!);
+        await testRedisOperations(
+          keyvRedisClient!,
+          'keyv-cluster',
+          clients.keyvRedisClientReady!.then(() => undefined),
+        );
       });
     });
   });

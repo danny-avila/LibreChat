@@ -1,22 +1,40 @@
-import React, { useRef, useCallback, useMemo, useEffect } from 'react';
+import React, { useRef, useCallback, useMemo, useEffect, memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { LayoutGrid } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
-import { Skeleton } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
-import { QueryKeys, dataService } from 'librechat-data-provider';
-import type t from 'librechat-data-provider';
-import { useFavorites, useLocalize, useShowMarketplace, useNewConvo } from '~/hooks';
+import { Skeleton, useMediaQuery } from '@librechat/client';
+import { QueryKeys, EModelEndpoint, dataService } from 'librechat-data-provider';
+import type { Agent, TEndpointsConfig, TModelSpec } from 'librechat-data-provider';
+import {
+  useGetConversation,
+  useFavorites,
+  useLocalize,
+  useShowMarketplace,
+  useNewConvo,
+} from '~/hooks';
+import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
-import type { AgentQueryResult } from '~/common';
 import useSelectMention from '~/hooks/Input/useSelectMention';
-import { useGetEndpointsQuery } from '~/data-provider';
 import FavoriteItem from './FavoriteItem';
 import store from '~/store';
 
+/** A 404/403 from getAgentById means the agent is gone or inaccessible; other errors are transient. */
+const isMissingAgentError = (error: unknown): boolean => {
+  if (error && typeof error === 'object' && 'response' in error) {
+    const status = (error as { response?: { status?: number } }).response?.status;
+    return status === 404 || status === 403;
+  }
+  return false;
+};
+
+/** Height intentionally matches FavoriteItem (px-3 py-2 + h-5 icon) to keep the CellMeasurerCache valid across the isAgentsLoading transition. */
 const FavoriteItemSkeleton = () => (
-  <div className="flex w-full items-center rounded-lg px-3 py-2">
+  <div
+    className="flex w-full items-center rounded-lg px-3 py-2"
+    data-testid="favorite-item-skeleton"
+  >
     <Skeleton className="mr-2 h-5 w-5 rounded-full" />
     <Skeleton className="h-4 w-24" />
   </div>
@@ -45,6 +63,13 @@ const DraggableFavoriteItem = ({
   children,
 }: DraggableFavoriteItemProps) => {
   const ref = useRef<HTMLDivElement>(null);
+  /**
+   * HTML5 drag needs a hover-capable pointer. Connecting the drag source on touch would
+   * stamp `draggable="true"` on this wrapper, and iOS Safari hands a touch on a draggable
+   * element to the drag recognizer instead of synthesizing a click, so the row underneath
+   * only selects on the second tap.
+   */
+  const canDrag = useMediaQuery('(hover: hover)');
   const [{ handlerId }, drop] = useDrop<{ index: number; id: string }, unknown, { handlerId: any }>(
     {
       accept: 'favorite-item',
@@ -100,7 +125,8 @@ const DraggableFavoriteItem = ({
   });
 
   const opacity = isDragging ? 0 : 1;
-  drag(drop(ref));
+  drop(ref);
+  drag(canDrag ? ref : null);
 
   return (
     <div ref={ref} style={{ opacity }} data-handler-id={handlerId}>
@@ -109,36 +135,68 @@ const DraggableFavoriteItem = ({
   );
 };
 
-export default function FavoritesList({
+function FavoritesList({
   isSmallScreen,
   toggleNav,
-  onHeightChange,
 }: {
   isSmallScreen?: boolean;
   toggleNav?: () => void;
-  /** Callback when the list height might have changed (e.g., agents finished loading) */
-  onHeightChange?: () => void;
 }) {
   const navigate = useNavigate();
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
+  const getConversation = useGetConversation(0);
   const { favorites, reorderFavorites, isLoading: isFavoritesLoading } = useFavorites();
   const showAgentMarketplace = useShowMarketplace();
 
   const { newConversation } = useNewConvo();
   const assistantsMap = useAssistantsMapContext();
   const agentsMap = useAgentsMapContext();
-  const conversation = useRecoilValue(store.conversationByIndex(0));
-  const { data: endpointsConfig = {} as t.TEndpointsConfig } = useGetEndpointsQuery();
+  const { data: endpointsConfig = {} as TEndpointsConfig, isLoading: isEndpointsLoading } =
+    useGetEndpointsQuery();
+  const { data: startupConfig } = useGetStartupConfig();
 
-  const { onSelectEndpoint } = useSelectMention({
-    modelSpecs: [],
-    conversation,
+  const modelSpecs = useMemo(
+    () => startupConfig?.modelSpecs?.list ?? [],
+    [startupConfig?.modelSpecs?.list],
+  );
+
+  const specsMap = useMemo(() => {
+    const map: Record<string, TModelSpec> = {};
+    for (const spec of modelSpecs) {
+      map[spec.name] = spec;
+    }
+    return map;
+  }, [modelSpecs]);
+
+  const { onSelectEndpoint: _onSelectEndpoint, onSelectSpec: _onSelectSpec } = useSelectMention({
+    modelSpecs,
     assistantsMap,
     endpointsConfig,
+    getConversation,
     newConversation,
     returnHandlers: true,
   });
+
+  const onSelectEndpoint = useCallback(
+    (...args: Parameters<NonNullable<typeof _onSelectEndpoint>>) => {
+      _onSelectEndpoint?.(...args);
+      if (isSmallScreen && toggleNav) {
+        toggleNav();
+      }
+    },
+    [_onSelectEndpoint, isSmallScreen, toggleNav],
+  );
+
+  const onSelectSpec = useCallback(
+    (...args: Parameters<NonNullable<typeof _onSelectSpec>>) => {
+      _onSelectSpec?.(...args);
+      if (isSmallScreen && toggleNav) {
+        toggleNav();
+      }
+    },
+    [_onSelectSpec, isSmallScreen, toggleNav],
+  );
 
   const marketplaceRef = useRef<HTMLDivElement>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
@@ -175,62 +233,107 @@ export default function FavoritesList({
     [safeFavorites],
   );
 
-  const missingAgentIds = useMemo(() => {
-    if (agentsMap === undefined) {
+  const agentsEndpointEnabled = !!endpointsConfig?.[EModelEndpoint.agents];
+
+  const agentIdsToFetch = useMemo(() => {
+    if (!agentsEndpointEnabled) {
       return [];
     }
+    if (agentsMap === undefined) {
+      return allAgentIds;
+    }
     return allAgentIds.filter((id) => !agentsMap[id]);
-  }, [allAgentIds, agentsMap]);
+  }, [allAgentIds, agentsMap, agentsEndpointEnabled]);
 
-  const missingAgentQueries = useQueries({
-    queries: missingAgentIds.map((agentId) => ({
+  const agentQueries = useQueries({
+    queries: agentIdsToFetch.map((agentId) => ({
       queryKey: [QueryKeys.agent, agentId],
-      queryFn: async (): Promise<AgentQueryResult> => {
-        try {
-          const agent = await dataService.getAgentById({ agent_id: agentId });
-          return { found: true, agent };
-        } catch (error) {
-          if (error && typeof error === 'object' && 'response' in error) {
-            const axiosError = error as { response?: { status?: number } };
-            if (axiosError.response?.status === 404) {
-              return { found: false };
-            }
-          }
-          throw error;
-        }
-      },
+      queryFn: (): Promise<Agent> => dataService.getAgentById({ agent_id: agentId }),
       staleTime: 1000 * 60 * 5,
-      enabled: missingAgentIds.length > 0,
+      retry: (failureCount: number, error: unknown) =>
+        !isMissingAgentError(error) && failureCount < 3,
     })),
   });
 
-  const combinedAgentsMap = useMemo(() => {
+  const staleAgentIdsKey = useMemo(() => {
+    // Only persist cleanup once the global map has loaded. A revoked AGENTS.USE role
+    // makes every getAgentById return a global 403, which must not delete favorites.
     if (agentsMap === undefined) {
-      return undefined;
+      return '';
     }
-    const combined: Record<string, t.Agent> = {};
-    for (const [key, value] of Object.entries(agentsMap)) {
-      if (value) {
-        combined[key] = value;
+    const ids: string[] = [];
+    for (let i = 0; i < agentIdsToFetch.length; i++) {
+      const query = agentQueries[i];
+      if (query.isError && isMissingAgentError(query.error)) {
+        ids.push(agentIdsToFetch[i]);
       }
     }
-    missingAgentQueries.forEach((query) => {
-      if (query.data?.found) {
-        combined[query.data.agent.id] = query.data.agent;
+    return ids.sort().join(',');
+  }, [agentIdsToFetch, agentQueries, agentsMap]);
+
+  const cleanupAttemptedRef = useRef('');
+
+  useEffect(() => {
+    if (!staleAgentIdsKey || cleanupAttemptedRef.current === staleAgentIdsKey) {
+      return;
+    }
+    const staleSet = new Set(staleAgentIdsKey.split(','));
+    const cleaned = safeFavorites.filter((f) => !f.agentId || !staleSet.has(f.agentId));
+    if (cleaned.length < safeFavorites.length) {
+      cleanupAttemptedRef.current = staleAgentIdsKey;
+      reorderFavorites(cleaned, true);
+    }
+  }, [staleAgentIdsKey, safeFavorites, reorderFavorites]);
+
+  const staleSpecNamesKey = useMemo(() => {
+    if (startupConfig === undefined) {
+      return '';
+    }
+    return safeFavorites
+      .filter((f) => f.spec && !specsMap[f.spec])
+      .map((f) => f.spec as string)
+      .sort()
+      .join(',');
+  }, [safeFavorites, specsMap, startupConfig]);
+
+  const specCleanupAttemptedRef = useRef('');
+
+  useEffect(() => {
+    if (!staleSpecNamesKey || specCleanupAttemptedRef.current === staleSpecNamesKey) {
+      return;
+    }
+    const staleSet = new Set(staleSpecNamesKey.split(','));
+    const cleaned = safeFavorites.filter((f) => !f.spec || !staleSet.has(f.spec));
+    if (cleaned.length < safeFavorites.length) {
+      specCleanupAttemptedRef.current = staleSpecNamesKey;
+      reorderFavorites(cleaned, true);
+    }
+  }, [staleSpecNamesKey, safeFavorites, reorderFavorites]);
+
+  const combinedAgentsMap = useMemo(() => {
+    const combined: Record<string, Agent> = {};
+    if (agentsMap) {
+      for (const [key, value] of Object.entries(agentsMap)) {
+        if (value) {
+          combined[key] = value;
+        }
+      }
+    }
+    agentQueries.forEach((query) => {
+      if (query.data) {
+        combined[query.data.id] = query.data;
       }
     });
     return combined;
-  }, [agentsMap, missingAgentQueries]);
+  }, [agentsMap, agentQueries]);
 
   const isAgentsLoading =
-    (allAgentIds.length > 0 && agentsMap === undefined) ||
-    (missingAgentIds.length > 0 && missingAgentQueries.some((q) => q.isLoading));
-
-  useEffect(() => {
-    if (!isAgentsLoading && onHeightChange) {
-      onHeightChange();
-    }
-  }, [isAgentsLoading, onHeightChange]);
+    allAgentIds.length > 0 &&
+    (isEndpointsLoading ||
+      agentQueries.some(
+        (q) =>
+          q.isLoading || (agentsMap === undefined && q.isError && !isMissingAgentError(q.error)),
+      ));
 
   const draggedFavoritesRef = useRef(safeFavorites);
 
@@ -336,6 +439,28 @@ export default function FavoritesList({
                     />
                   </DraggableFavoriteItem>
                 );
+              } else if (fav.spec) {
+                const spec = specsMap[fav.spec];
+                if (!spec) {
+                  return null;
+                }
+                return (
+                  <DraggableFavoriteItem
+                    key={`spec-${fav.spec}`}
+                    id={`spec-${fav.spec}`}
+                    index={index}
+                    moveItem={moveItem}
+                    onDrop={handleDrop}
+                  >
+                    <FavoriteItem
+                      item={spec}
+                      type="spec"
+                      onSelectSpec={onSelectSpec}
+                      onRemoveFocus={handleRemoveFocus}
+                      endpointsConfig={endpointsConfig}
+                    />
+                  </DraggableFavoriteItem>
+                );
               } else if (fav.model && fav.endpoint) {
                 return (
                   <DraggableFavoriteItem
@@ -362,3 +487,7 @@ export default function FavoritesList({
     </div>
   );
 }
+
+FavoritesList.displayName = 'FavoritesList';
+
+export default memo(FavoritesList);

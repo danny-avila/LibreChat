@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import type { TMessage } from 'librechat-data-provider';
-import { MessagesViewContext } from '~/Providers/MessagesViewContext';
 import type { MessagesViewContextValue } from '~/Providers/MessagesViewContext';
+import { MessagesViewContext } from '~/Providers/MessagesViewContext';
 
 interface ShareMessagesProviderProps {
   messages: TMessage[];
@@ -22,15 +22,15 @@ export function ShareMessagesProvider({ messages, children }: ShareMessagesProvi
       conversation: null,
       conversationId: undefined,
       // These are required by the context but not used in share view
-      ask: () => Promise.resolve(),
+      ask: () => {},
       regenerate: () => {},
       handleContinue: () => {},
-      latestMessage: messages[messages.length - 1] ?? null,
+      latestMessageId: messages[messages.length - 1]?.messageId,
+      latestMessageDepth: messages[messages.length - 1]?.depth,
       isSubmitting: false,
       abortScroll: false,
       setAbortScroll: () => {},
       index: 0,
-      setLatestMessage: () => {},
       getMessages: () => messages,
       setMessages: () => {},
     }),

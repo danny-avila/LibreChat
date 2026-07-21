@@ -41,6 +41,7 @@ export default function AddedConvo({
           <EndpointIcon
             conversation={addedConvo}
             endpointsConfig={endpointsConfig}
+            agentsMap={agentsMap}
             containerClassName="shadow-stroke overflow-hidden rounded-full"
             context="menu-item"
             size={20}

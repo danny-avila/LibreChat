@@ -1,12 +1,10 @@
 import { Schema } from 'mongoose';
 import type { IAgent } from '~/types';
 
-const agentSchema = new Schema<IAgent>(
+const agentSchema: Schema<IAgent> = new Schema<IAgent>(
   {
     id: {
       type: String,
-      index: true,
-      unique: true,
       required: true,
     },
     name: {
@@ -46,6 +44,14 @@ const agentSchema = new Schema<IAgent>(
       type: [String],
       default: undefined,
     },
+    skills: {
+      type: [String],
+      default: undefined,
+    },
+    skills_enabled: {
+      type: Boolean,
+      default: undefined,
+    },
     tool_kwargs: {
       type: [{ type: Schema.Types.Mixed }],
     },
@@ -68,6 +74,9 @@ const agentSchema = new Schema<IAgent>(
     end_after_tools: {
       type: Boolean,
     },
+    stateful_code_sessions: {
+      type: Boolean,
+    },
     /** @deprecated Use edges instead */
     agent_ids: {
       type: [String],
@@ -76,10 +85,6 @@ const agentSchema = new Schema<IAgent>(
       type: [{ type: Schema.Types.Mixed }],
       default: [],
     },
-    isCollaborative: {
-      type: Boolean,
-      default: undefined,
-    },
     conversation_starters: {
       type: [String],
       default: [],
@@ -87,11 +92,6 @@ const agentSchema = new Schema<IAgent>(
     tool_resources: {
       type: Schema.Types.Mixed,
       default: {},
-    },
-    projectIds: {
-      type: [Schema.Types.ObjectId],
-      ref: 'Project',
-      index: true,
     },
     versions: {
       type: [Schema.Types.Mixed],
@@ -123,12 +123,28 @@ const agentSchema = new Schema<IAgent>(
       type: Schema.Types.Mixed,
       default: undefined,
     },
+    /** Subagent spawning configuration — isolated-context child agents. */
+    subagents: {
+      type: Schema.Types.Mixed,
+      default: undefined,
+    },
+    /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
+    memory_scope: {
+      type: String,
+      enum: ['user', 'agent'],
+      default: undefined,
+    },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   {
     timestamps: true,
   },
 );
 
+agentSchema.index({ id: 1, tenantId: 1 }, { unique: true });
 agentSchema.index({ updatedAt: -1, _id: 1 });
 agentSchema.index({ 'edges.to': 1 });
 

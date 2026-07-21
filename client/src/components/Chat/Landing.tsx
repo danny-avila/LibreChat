@@ -2,14 +2,27 @@ import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
 import { easings } from '@react-spring/web';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { BirthdayIcon, TooltipAnchor, SplitText } from '@librechat/client';
+import {
+  getIconEndpoint,
+  getEntity,
+  getModelSpec,
+  createConfigHtmlSanitizer,
+  CONFIG_HTML_MEDIA_TAGS,
+  CONFIG_HTML_MEDIA_ATTR,
+} from '~/utils';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
+import AgentContact from '~/components/Agents/AgentContact';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { useLocalize, useAuthContext } from '~/hooks';
-import { getIconEndpoint, getEntity } from '~/utils';
 
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
+
+/** Stable references: fresh literals re-initialized SplitText's springs and
+ * re-rendered every grapheme span on each Landing render. */
+const greetingAnimationFrom = { opacity: 0, transform: 'translate3d(0,50px,0)' };
+const greetingAnimationTo = { opacity: 1, transform: 'translate3d(0,0,0)' };
 
 function getTextSizeClass(text: string | undefined | null) {
   if (!text) {
@@ -61,8 +74,28 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     assistant_id: conversation?.assistant_id,
   });
 
-  const name = entity?.name ?? '';
-  const description = (entity?.description || conversation?.greeting) ?? '';
+  const modelSpec = useMemo(
+    () => getModelSpec({ specName: conversation?.spec, startupConfig }),
+    [conversation?.spec, startupConfig],
+  );
+
+  const brandedSpecLabel = modelSpec?.showOnLanding ? modelSpec.label : '';
+  const brandedSpecDescription = (modelSpec?.showOnLanding && modelSpec.description) || '';
+  const name = entity?.name ?? brandedSpecLabel;
+  const description =
+    (entity?.description || brandedSpecDescription || conversation?.greeting) ?? '';
+  const descriptionIsHTML = description.trim().startsWith('<');
+
+  const sanitizeDescription = useMemo(
+    () =>
+      createConfigHtmlSanitizer({
+        allowedTags: CONFIG_HTML_MEDIA_TAGS,
+        allowedAttr: CONFIG_HTML_MEDIA_ATTR,
+      }),
+    [],
+  );
+  const selectedAgent =
+    isAgent && conversation?.agent_id != null ? agentsMap?.[conversation.agent_id] : undefined;
 
   const getGreeting = useCallback(() => {
     if (typeof startupConfig?.interface?.customWelcome === 'string') {
@@ -110,7 +143,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     if (contentRef.current) {
       setContentHeight(contentRef.current.offsetHeight);
     }
-  }, [lineCount, description]);
+  }, [lineCount, description, selectedAgent]);
 
   const getDynamicMargin = useMemo(() => {
     let margin = 'mb-0';
@@ -174,8 +207,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
                 className={`${getTextSizeClass(name)} font-medium text-text-primary`}
                 delay={50}
                 textAlign="center"
-                animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
-                animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
+                animationFrom={greetingAnimationFrom}
+                animationTo={greetingAnimationTo}
                 easing={easings.easeOutCubic}
                 threshold={0}
                 rootMargin="0px"
@@ -189,8 +222,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               className={`${getTextSizeClass(greetingText)} font-medium text-text-primary`}
               delay={50}
               textAlign="center"
-              animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
-              animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
+              animationFrom={greetingAnimationFrom}
+              animationTo={greetingAnimationTo}
               easing={easings.easeOutCubic}
               threshold={0}
               rootMargin="0px"
@@ -198,10 +231,22 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             />
           )}
         </div>
-        {description && (
-          <div className="animate-fadeIn mt-4 max-w-md text-center text-sm font-normal text-text-primary">
-            {description}
-          </div>
+        {description &&
+          (descriptionIsHTML ? (
+            <div
+              className="animate-fadeIn mt-4 flex max-w-md items-center justify-center gap-2 text-center text-sm font-normal text-text-primary [&_img]:inline-block [&_img]:h-4 [&_img]:w-4"
+              dangerouslySetInnerHTML={{ __html: sanitizeDescription(description) }}
+            />
+          ) : (
+            <div className="animate-fadeIn mt-4 max-w-md text-center text-sm font-normal text-text-primary">
+              {description}
+            </div>
+          ))}
+        {selectedAgent && (
+          <AgentContact
+            agent={selectedAgent}
+            className="animate-fadeIn mt-2 max-w-md justify-center text-center text-sm"
+          />
         )}
       </div>
     </div>

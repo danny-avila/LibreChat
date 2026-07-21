@@ -3,9 +3,11 @@ import type { TCustomConfig, TTransactionsConfig } from 'librechat-data-provider
 import type { TransactionData } from '@librechat/data-schemas';
 import type { EndpointTokenConfig } from '~/types/tokens';
 
+type TokenType = 'prompt' | 'completion';
+
 interface GetMultiplierParams {
   valueKey?: string;
-  tokenType?: string;
+  tokenType?: TokenType;
   model?: string;
   endpointTokenConfig?: EndpointTokenConfig;
   inputTokenCount?: number;
@@ -15,6 +17,7 @@ interface GetCacheMultiplierParams {
   cacheType: 'write' | 'read';
   model?: string;
   endpointTokenConfig?: EndpointTokenConfig;
+  inputTokenCount?: number;
 }
 
 export interface PricingFns {
@@ -34,14 +37,14 @@ interface BaseTxData {
 }
 
 interface StandardTxData extends BaseTxData {
-  tokenType: string;
+  tokenType: TokenType;
   rawAmount: number;
   inputTokenCount?: number;
   valueKey?: string;
 }
 
 interface StructuredTxData extends BaseTxData {
-  tokenType: string;
+  tokenType: TokenType;
   inputTokens?: number;
   writeTokens?: number;
   readTokens?: number;
@@ -122,11 +125,19 @@ function calculateStructuredTokenValue(
       inputTokenCount,
     });
     const writeMultiplier =
-      pricing.getCacheMultiplier({ cacheType: 'write', model, endpointTokenConfig }) ??
-      inputMultiplier;
+      pricing.getCacheMultiplier({
+        cacheType: 'write',
+        model,
+        endpointTokenConfig,
+        inputTokenCount,
+      }) ?? inputMultiplier;
     const readMultiplier =
-      pricing.getCacheMultiplier({ cacheType: 'read', model, endpointTokenConfig }) ??
-      inputMultiplier;
+      pricing.getCacheMultiplier({
+        cacheType: 'read',
+        model,
+        endpointTokenConfig,
+        inputTokenCount,
+      }) ?? inputMultiplier;
 
     const inputAbs = Math.abs(txData.inputTokens ?? 0);
     const writeAbs = Math.abs(txData.writeTokens ?? 0);

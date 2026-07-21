@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { memo, useState, useRef, useEffect } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { CSSTransition } from 'react-transition-group';
@@ -8,8 +8,75 @@ import ScrollToBottom from '~/components/Messages/ScrollToBottom';
 import { MessagesViewProvider } from '~/Providers';
 import { fontSizeAtom } from '~/store/fontSize';
 import MultiMessage from './MultiMessage';
+import MessageNav from './MessageNav';
 import { cn } from '~/utils';
 import store from '~/store';
+
+const intersectionThreshold = 0.85;
+const visibilityDebounceRate = 150;
+
+/**
+ * Owns the messages-end IntersectionObserver and the button visibility state,
+ * so scroll-position flips re-render only this component instead of the whole
+ * message tree host. Intersection is reported up through `onNearBottomChange`
+ * for the resize-follow logic in `useMessageScrolling`.
+ */
+const ScrollButton = memo(function ScrollButton({
+  scrollableRef,
+  messagesEndRef,
+  scrollHandler,
+  onNearBottomChange,
+}: {
+  scrollableRef: React.RefObject<HTMLDivElement | null>;
+  messagesEndRef: React.RefObject<HTMLDivElement | null>;
+  scrollHandler: (event: React.MouseEvent<HTMLButtonElement, MouseEvent>) => void;
+  onNearBottomChange: (isNearBottom: boolean) => void;
+}) {
+  const scrollButtonPreference = useRecoilValue(store.showScrollButton);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const scrollToBottomRef = useRef<HTMLDivElement>(null);
+  const timeoutIdRef = useRef<NodeJS.Timeout>();
+
+  useEffect(() => {
+    if (!messagesEndRef.current || !scrollableRef.current) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        onNearBottomChange(entry.isIntersecting);
+        clearTimeout(timeoutIdRef.current);
+        timeoutIdRef.current = setTimeout(() => {
+          setShowScrollButton(!entry.isIntersecting);
+        }, visibilityDebounceRate);
+      },
+      { root: scrollableRef.current, threshold: intersectionThreshold },
+    );
+
+    observer.observe(messagesEndRef.current);
+
+    return () => {
+      observer.disconnect();
+      clearTimeout(timeoutIdRef.current);
+    };
+  }, [messagesEndRef, scrollableRef, onNearBottomChange]);
+
+  return (
+    <CSSTransition
+      in={showScrollButton && scrollButtonPreference}
+      timeout={{
+        enter: 300,
+        exit: 250,
+      }}
+      classNames="scroll-animation"
+      unmountOnExit={true}
+      appear={true}
+      nodeRef={scrollToBottomRef}
+    >
+      <ScrollToBottom ref={scrollToBottomRef} scrollHandler={scrollHandler} />
+    </CSSTransition>
+  );
+});
 
 function MessagesViewContent({
   messagesTree: _messagesTree,
@@ -19,17 +86,16 @@ function MessagesViewContent({
   const localize = useLocalize();
   const fontSize = useAtomValue(fontSizeAtom);
   const { screenshotTargetRef } = useScreenshot();
-  const scrollButtonPreference = useRecoilValue(store.showScrollButton);
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
-  const scrollToBottomRef = useRef<HTMLButtonElement>(null);
 
   const {
     conversation,
+    contentRef,
     scrollableRef,
     messagesEndRef,
-    showScrollButton,
     handleSmoothToRef,
     debouncedHandleScroll,
+    handleNearBottomChange,
   } = useMessageScrolling(_messagesTree);
 
   const { conversationId } = conversation ?? {};
@@ -48,7 +114,7 @@ function MessagesViewContent({
               width: '100%',
             }}
           >
-            <div className="flex flex-col pb-9 pt-14 dark:bg-transparent">
+            <div ref={contentRef} className="flex flex-col pb-9 pt-14 dark:bg-transparent">
               {(_messagesTree && _messagesTree.length == 0) || _messagesTree === null ? (
                 <div
                   className={cn(
@@ -62,7 +128,6 @@ function MessagesViewContent({
                 <>
                   <div ref={screenshotTargetRef}>
                     <MultiMessage
-                      key={conversationId}
                       messagesTree={_messagesTree}
                       messageId={conversationId ?? null}
                       setCurrentEditId={setCurrentEditId}
@@ -79,19 +144,14 @@ function MessagesViewContent({
             </div>
           </div>
 
-          <CSSTransition
-            in={showScrollButton && scrollButtonPreference}
-            timeout={{
-              enter: 550,
-              exit: 700,
-            }}
-            classNames="scroll-animation"
-            unmountOnExit={true}
-            appear={true}
-            nodeRef={scrollToBottomRef}
-          >
-            <ScrollToBottom ref={scrollToBottomRef} scrollHandler={handleSmoothToRef} />
-          </CSSTransition>
+          <ScrollButton
+            scrollableRef={scrollableRef}
+            messagesEndRef={messagesEndRef}
+            scrollHandler={handleSmoothToRef}
+            onNearBottomChange={handleNearBottomChange}
+          />
+
+          <MessageNav scrollableRef={scrollableRef} />
         </div>
       </div>
     </>

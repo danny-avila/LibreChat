@@ -20,6 +20,11 @@ const MemoryEntrySchema: Schema<IMemoryEntry> = new Schema({
     type: String,
     required: true,
   },
+  /** Agent partition; null/absent = shared personal pool */
+  agentId: {
+    type: String,
+    default: undefined,
+  },
   tokenCount: {
     type: Number,
     default: 0,
@@ -28,6 +33,12 @@ const MemoryEntrySchema: Schema<IMemoryEntry> = new Schema({
     type: Date,
     default: Date.now,
   },
+  tenantId: {
+    type: String,
+    index: true,
+  },
 });
+
+MemoryEntrySchema.index({ userId: 1, agentId: 1, key: 1 });
 
 export default MemoryEntrySchema;

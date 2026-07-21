@@ -5,6 +5,7 @@ import { CursorPaginationParams } from '~/common';
 
 export interface IRole extends Document {
   name: string;
+  description?: string;
   permissions: {
     [PermissionTypes.BOOKMARKS]?: {
       [Permissions.USE]?: boolean;
@@ -65,7 +66,19 @@ export interface IRole extends Document {
       [Permissions.SHARE]?: boolean;
       [Permissions.SHARE_PUBLIC]?: boolean;
     };
+    [PermissionTypes.SKILLS]?: {
+      [Permissions.USE]?: boolean;
+      [Permissions.CREATE]?: boolean;
+      [Permissions.SHARE]?: boolean;
+      [Permissions.SHARE_PUBLIC]?: boolean;
+    };
+    [PermissionTypes.SHARED_LINKS]?: {
+      [Permissions.CREATE]?: boolean;
+      [Permissions.SHARE]?: boolean;
+      [Permissions.SHARE_PUBLIC]?: boolean;
+    };
   };
+  tenantId?: string;
 }
 
 export type RolePermissions = IRole['permissions'];
@@ -73,11 +86,13 @@ export type RolePermissionsInput = DeepPartial<RolePermissions>;
 
 export interface CreateRoleRequest {
   name: string;
+  description?: string;
   permissions: RolePermissionsInput;
 }
 
 export interface UpdateRoleRequest {
   name?: string;
+  description?: string;
   permissions?: RolePermissionsInput;
 }
 

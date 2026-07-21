@@ -1,21 +1,23 @@
 import { useEffect, useMemo, useCallback, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import type { MCPServerCreateParams } from 'librechat-data-provider';
+import { useToastContext } from '@librechat/client';
+import type { MCPServerCreateParams, TokenExchangeMethodEnum } from 'librechat-data-provider';
+import type { MCPServerDefinition } from '~/hooks';
 import {
   useCreateMCPServerMutation,
   useUpdateMCPServerMutation,
   useDeleteMCPServerMutation,
 } from '~/data-provider/MCP';
-import { useToastContext } from '@librechat/client';
-import { useLocalize } from '~/hooks';
 import { extractServerNameFromUrl, isValidUrl, normalizeUrl } from '../utils/urlUtils';
-import type { MCPServerDefinition } from '~/hooks';
+import { getOAuthConfig } from '../utils/oauth';
+import { useLocalize } from '~/hooks';
 
 // Auth type enum
 export enum AuthTypeEnum {
   None = 'none',
   ServiceHttp = 'service_http',
   OAuth = 'oauth',
+  OBO = 'obo',
 }
 
 // Authorization type enum
@@ -37,6 +39,8 @@ export interface AuthConfig {
   oauth_authorization_url?: string;
   oauth_token_url?: string;
   oauth_scope?: string;
+  oauth_token_exchange_method?: TokenExchangeMethodEnum;
+  obo_scopes?: string;
   server_id?: string;
 }
 
@@ -77,7 +81,9 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
   const defaultValues = useMemo<MCPServerFormData>(() => {
     if (server) {
       let authType = AuthTypeEnum.None;
-      if (server.config.oauth) {
+      if ('obo' in server.config && server.config.obo) {
+        authType = AuthTypeEnum.OBO;
+      } else if (server.config.oauth) {
         authType = AuthTypeEnum.OAuth;
       } else if ('apiKey' in server.config && server.config.apiKey) {
         authType = AuthTypeEnum.ServiceHttp;
@@ -104,6 +110,8 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
           oauth_authorization_url: server.config.oauth?.authorization_url || '',
           oauth_token_url: server.config.oauth?.token_url || '',
           oauth_scope: server.config.oauth?.scope || '',
+          oauth_token_exchange_method: server.config.oauth?.token_exchange_method,
+          obo_scopes: 'obo' in server.config && server.config.obo ? server.config.obo.scopes : '',
           server_id: server.serverName,
         },
         trust: true, // Pre-checked for existing servers
@@ -127,6 +135,8 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
         oauth_authorization_url: '',
         oauth_token_url: '',
         oauth_scope: '',
+        oauth_token_exchange_method: undefined,
+        obo_scopes: '',
       },
       trust: false,
     };
@@ -142,7 +152,6 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
 
   // Watch URL for auto-fill
   const watchedUrl = watch('url');
-  const watchedTitle = watch('title');
 
   // Auto-fill title from URL when title is empty
   const handleUrlChange = useCallback(
@@ -184,25 +193,9 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
       };
 
       // Add OAuth configuration
-      if (
-        formData.auth.auth_type === AuthTypeEnum.OAuth &&
-        (formData.auth.oauth_client_id ||
-          formData.auth.oauth_client_secret ||
-          formData.auth.oauth_authorization_url ||
-          formData.auth.oauth_token_url ||
-          formData.auth.oauth_scope)
-      ) {
-        config.oauth = {
-          ...(formData.auth.oauth_client_id && { client_id: formData.auth.oauth_client_id }),
-          ...(formData.auth.oauth_client_secret && {
-            client_secret: formData.auth.oauth_client_secret,
-          }),
-          ...(formData.auth.oauth_authorization_url && {
-            authorization_url: formData.auth.oauth_authorization_url,
-          }),
-          ...(formData.auth.oauth_token_url && { token_url: formData.auth.oauth_token_url }),
-          ...(formData.auth.oauth_scope && { scope: formData.auth.oauth_scope }),
-        };
+      const oauthConfig = getOAuthConfig(formData.auth);
+      if (oauthConfig) {
+        config.oauth = oauthConfig;
       }
 
       // Add API Key configuration
@@ -219,6 +212,10 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
               custom_header: formData.auth.api_key_custom_header,
             }),
         };
+      }
+
+      if (formData.auth.auth_type === AuthTypeEnum.OBO && formData.auth.obo_scopes) {
+        config.obo = { scopes: formData.auth.obo_scopes };
       }
 
       const params: MCPServerCreateParams = { config };

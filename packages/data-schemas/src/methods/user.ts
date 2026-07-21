@@ -1,12 +1,129 @@
 import mongoose, { FilterQuery } from 'mongoose';
+import {
+  AUTH_USER_DOC_BY_ID_PREFIX,
+  CacheKeys,
+  type RefillIntervalUnit,
+} from 'librechat-data-provider';
 import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
+import type { CacheStore } from '~/types';
+import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
-export const DEFAULT_SESSION_EXPIRY = 1000 * 60 * 15;
+export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
+
+interface UserMethodDeps {
+  getCache?: (key: string) => CacheStore | undefined;
+}
+
+function isAuthUserDocCacheEnabled(): boolean {
+  return process.env.AUTH_USER_CACHE_MODE === 'on';
+}
 
 /** Factory function that takes mongoose instance and returns the methods */
-export function createUserMethods(mongoose: typeof import('mongoose')) {
+export function createUserMethods(
+  mongoose: typeof import('mongoose'),
+  deps: UserMethodDeps = {},
+): {
+  findUser: (
+    searchCriteria: FilterQuery<IUser>,
+    fieldsToSelect?: string | string[] | null,
+  ) => Promise<IUser | null>;
+  findUsers: (
+    searchCriteria: FilterQuery<IUser>,
+    fieldsToSelect?: string | string[] | null,
+    options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
+  ) => Promise<IUser[]>;
+  countUsers: (filter?: FilterQuery<IUser>) => Promise<number>;
+  createUser: (
+    data: CreateUserRequest,
+    balanceConfig?: BalanceConfig,
+    disableTTL?: boolean,
+    returnUser?: boolean,
+  ) => Promise<mongoose.Types.ObjectId | Partial<IUser>>;
+  updateUser: (userId: string, updateData: Partial<IUser>) => Promise<IUser | null>;
+  acceptTerms: (userId: string) => Promise<IUser | null>;
+  searchUsers: ({
+    searchPattern,
+    limit,
+    fieldsToSelect,
+  }: {
+    searchPattern: string;
+    limit?: number;
+    fieldsToSelect?: string | string[] | null;
+  }) => Promise<
+    {
+      _id: mongoose.Types.ObjectId;
+      id: string;
+      name?: string;
+      username?: string;
+      email: string;
+      emailVerified: boolean;
+      password?: string;
+      avatar?: string;
+      provider: string;
+      role?: string;
+      googleId?: string;
+      facebookId?: string;
+      openidId?: string;
+      samlId?: string;
+      ldapId?: string;
+      githubId?: string;
+      discordId?: string;
+      appleId?: string;
+      plugins?: string[];
+      openidIssuer?: string;
+      twoFactorEnabled?: boolean;
+      totpSecret?: string;
+      backupCodes?: Array<{
+        codeHash: string;
+        used: boolean;
+        usedAt?: Date | null;
+      }>;
+      pendingTotpSecret?: string;
+      pendingBackupCodes?: Array<{
+        codeHash: string;
+        used: boolean;
+        usedAt?: Date | null;
+      }>;
+      refreshToken?: Array<{
+        refreshToken: string;
+      }>;
+      expiresAt?: Date;
+      termsAccepted?: boolean;
+      personalization?: {
+        memories?: boolean;
+      };
+      favorites?: import('librechat-data-provider').TUserFavorite[];
+      skillStates?: Record<string, boolean>;
+      createdAt?: Date;
+      updatedAt?: Date;
+      idOnTheSource?: string;
+      tenantId?: string;
+      federatedTokens?: import('~/types').OIDCTokens;
+      openidTokens?: import('~/types').OIDCTokens;
+      $locals: Record<string, unknown>;
+      $op: 'save' | 'validate' | 'remove' | null;
+      $where: Record<string, unknown>;
+      baseModelName?: string;
+      collection: mongoose.Collection;
+      db: mongoose.Connection;
+      errors?: mongoose.Error.ValidationError;
+      isNew: boolean;
+      schema: mongoose.Schema;
+    }[]
+  >;
+  getUserById: (userId: string, fieldsToSelect?: string | string[] | null) => Promise<IUser | null>;
+  generateToken: (user: IUser, expiresIn?: number) => Promise<string>;
+  deleteUserById: (userId: string) => Promise<UserDeleteResult>;
+  updateUserPlugins: (
+    userId: string,
+    plugins: string[] | undefined,
+    pluginKey: string,
+    action: 'install' | 'uninstall',
+  ) => Promise<IUser | null>;
+  toggleUserMemories: (userId: string, memoriesEnabled: boolean) => Promise<IUser | null>;
+} {
   /**
    * Normalizes email fields in search criteria to lowercase and trimmed.
    * Handles both direct email fields and $or arrays containing email conditions.
@@ -35,13 +152,36 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
   ): Promise<IUser | null> {
-    const User = mongoose.models.User;
+    const User = mongoose.models.User as mongoose.Model<IUser>;
     const normalizedCriteria = normalizeEmailInCriteria(searchCriteria);
     const query = User.findOne(normalizedCriteria);
     if (fieldsToSelect) {
       query.select(fieldsToSelect);
     }
-    return (await query.lean()) as IUser | null;
+    return await query.lean<IUser>();
+  }
+
+  async function findUsers(
+    searchCriteria: FilterQuery<IUser>,
+    fieldsToSelect?: string | string[] | null,
+    options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
+  ): Promise<IUser[]> {
+    const User = mongoose.models.User as mongoose.Model<IUser>;
+    const normalizedCriteria = normalizeEmailInCriteria(searchCriteria);
+    const query = User.find(normalizedCriteria);
+    if (fieldsToSelect) {
+      query.select(fieldsToSelect);
+    }
+    if (options?.sort != null) {
+      query.sort(options.sort);
+    }
+    if (options?.offset != null) {
+      query.skip(options.offset);
+    }
+    if (options?.limit != null && options.limit > 0) {
+      query.limit(options.limit);
+    }
+    return await query.lean<IUser[]>();
   }
 
   /**
@@ -82,7 +222,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
         $set?: {
           autoRefillEnabled: boolean;
           refillIntervalValue: number;
-          refillIntervalUnit: string;
+          refillIntervalUnit: RefillIntervalUnit;
           refillAmount: number;
         };
       } = {
@@ -124,10 +264,60 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       $set: updateData,
       $unset: { expiresAt: '' }, // Remove the expiresAt field to prevent TTL
     };
-    return (await User.findByIdAndUpdate(userId, updateOperation, {
+    const updated = await User.findByIdAndUpdate(userId, updateOperation, {
       new: true,
       runValidators: true,
-    }).lean()) as IUser | null;
+    }).lean<IUser>();
+    await invalidateAuthUserDocCache(userId);
+    return updated;
+  }
+
+  async function invalidateAuthUserDocCache(userId: string): Promise<void> {
+    if (!isAuthUserDocCacheEnabled()) {
+      return;
+    }
+    const cache = deps.getCache?.(CacheKeys.AUTH_USER_DOC);
+    if (!cache?.get || !cache?.delete) {
+      return;
+    }
+    try {
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
+      const cachedKeys = await cache.get(indexKey);
+      if (Array.isArray(cachedKeys)) {
+        await Promise.all(
+          cachedKeys.map((key) => (typeof key === 'string' ? cache.delete?.(key) : undefined)),
+        );
+      }
+      await cache.delete(indexKey);
+    } catch {
+      // Cache invalidation must not make a user update fail.
+    }
+  }
+
+  /**
+   * Atomically records terms acceptance for a user.
+   * Sets termsAccepted and, only when no timestamp is already stored, stamps
+   * termsAcceptedAt with the server time so the first acceptance within a terms
+   * cycle is preserved across concurrent or repeated requests.
+   */
+  async function acceptTerms(userId: string): Promise<IUser | null> {
+    const User = mongoose.models.User;
+    const updated = await User.findByIdAndUpdate(
+      userId,
+      [
+        {
+          $set: {
+            termsAccepted: true,
+            termsAcceptedAt: { $ifNull: ['$termsAcceptedAt', '$$NOW'] },
+          },
+        },
+      ],
+      { new: true, runValidators: true },
+    ).lean<IUser>();
+    if (updated) {
+      await invalidateAuthUserDocCache(userId);
+    }
+    return updated;
   }
 
   /**
@@ -142,7 +332,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     if (fieldsToSelect) {
       query.select(fieldsToSelect);
     }
-    return (await query.lean()) as IUser | null;
+    return await query.lean<IUser>();
   }
 
   /**
@@ -155,6 +345,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       if (result.deletedCount === 0) {
         return { deletedCount: 0, message: 'No user found with that ID.' };
       }
+      await invalidateAuthUserDocCache(userId);
       return { deletedCount: result.deletedCount, message: 'User was deleted successfully.' };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -209,10 +400,14 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       },
     };
 
-    return (await User.findByIdAndUpdate(userId, updateOperation, {
+    const updated = await User.findByIdAndUpdate(userId, updateOperation, {
       new: true,
       runValidators: true,
-    }).lean()) as IUser | null;
+    }).lean<IUser>();
+    if (updated) {
+      await invalidateAuthUserDocCache(userId);
+    }
+    return updated;
   }
 
   /**
@@ -230,12 +425,74 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     searchPattern: string;
     limit?: number;
     fieldsToSelect?: string | string[] | null;
-  }) {
+  }): Promise<
+    {
+      _id: mongoose.Types.ObjectId;
+      id: string;
+      name?: string;
+      username?: string;
+      email: string;
+      emailVerified: boolean;
+      password?: string;
+      avatar?: string;
+      provider: string;
+      role?: string;
+      googleId?: string;
+      facebookId?: string;
+      openidId?: string;
+      samlId?: string;
+      ldapId?: string;
+      githubId?: string;
+      discordId?: string;
+      appleId?: string;
+      plugins?: string[];
+      openidIssuer?: string;
+      twoFactorEnabled?: boolean;
+      totpSecret?: string;
+      backupCodes?: Array<{
+        codeHash: string;
+        used: boolean;
+        usedAt?: Date | null;
+      }>;
+      pendingTotpSecret?: string;
+      pendingBackupCodes?: Array<{
+        codeHash: string;
+        used: boolean;
+        usedAt?: Date | null;
+      }>;
+      refreshToken?: Array<{
+        refreshToken: string;
+      }>;
+      expiresAt?: Date;
+      termsAccepted?: boolean;
+      personalization?: {
+        memories?: boolean;
+      };
+      favorites?: import('librechat-data-provider').TUserFavorite[];
+      skillStates?: Record<string, boolean>;
+      createdAt?: Date;
+      updatedAt?: Date;
+      idOnTheSource?: string;
+      tenantId?: string;
+      federatedTokens?: import('~/types').OIDCTokens;
+      openidTokens?: import('~/types').OIDCTokens;
+      $locals: Record<string, unknown>;
+      $op: 'save' | 'validate' | 'remove' | null;
+      $where: Record<string, unknown>;
+      baseModelName?: string;
+      collection: mongoose.Collection;
+      db: mongoose.Connection;
+      errors?: mongoose.Error.ValidationError;
+      isNew: boolean;
+      schema: mongoose.Schema;
+    }[]
+  > {
     if (!searchPattern || searchPattern.trim().length === 0) {
       return [];
     }
 
-    const regex = new RegExp(searchPattern.trim(), 'i');
+    const trimmedPattern = searchPattern.trim();
+    const regex = new RegExp(escapeRegExp(trimmedPattern), 'i');
     const User = mongoose.models.User;
 
     const query = User.find({
@@ -246,14 +503,15 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       query.select(fieldsToSelect);
     }
 
-    const users = await query.lean();
+    const users = await query.lean<IUser[]>();
 
     // Score results by relevance
-    const exactRegex = new RegExp(`^${searchPattern.trim()}$`, 'i');
-    const startsWithPattern = searchPattern.trim().toLowerCase();
+    const startsWithPattern = trimmedPattern.toLowerCase();
 
     const scoredUsers = users.map((user) => {
-      const searchableFields = [user.name, user.email, user.username].filter(Boolean);
+      const searchableFields = [user.name, user.email, user.username].filter(
+        (field): field is string => typeof field === 'string' && field.length > 0,
+      );
       let maxScore = 0;
 
       for (const field of searchableFields) {
@@ -261,7 +519,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
         let score = 0;
 
         // Exact match gets highest score
-        if (exactRegex.test(field)) {
+        if (fieldLower === startsWithPattern) {
           score = 100;
         }
         // Starts with query gets high score
@@ -272,7 +530,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
         else if (fieldLower.includes(startsWithPattern)) {
           score = 50;
         }
-        // Default score for regex match
+        // Default score for database match
         else {
           score = 10;
         }
@@ -288,8 +546,6 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       .sort((a, b) => b._searchScore - a._searchScore)
       .slice(0, limit)
       .map((user) => {
-        // Remove the search score from final results
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { _searchScore, ...userWithoutScore } = user;
         return userWithoutScore;
       });
@@ -323,9 +579,11 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
 
   return {
     findUser,
+    findUsers,
     countUsers,
     createUser,
     updateUser,
+    acceptTerms,
     searchUsers,
     getUserById,
     generateToken,

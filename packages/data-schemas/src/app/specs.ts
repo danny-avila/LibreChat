@@ -37,6 +37,11 @@ export function processModelSpecs(
   }
 
   if (!list || list.length === 0) {
+    if (_modelSpecs.enforce) {
+      logger.warn(
+        'modelSpecs.enforce is true but list is empty — enforcement disabled at runtime.',
+      );
+    }
     return undefined;
   }
 

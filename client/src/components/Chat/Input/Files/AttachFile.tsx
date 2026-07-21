@@ -1,25 +1,48 @@
 import React, { useRef } from 'react';
 import { FileUpload, TooltipAnchor, AttachmentIcon } from '@librechat/client';
-import { useLocalize, useFileHandling } from '~/hooks';
+import type { TConversation } from 'librechat-data-provider';
+import type { ExtendedFile, FileSetter } from '~/common';
+import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
+import { useFileHandlingNoChatContext, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-const AttachFile = ({ disabled }: { disabled?: boolean | null }) => {
+const AttachFile = ({
+  disabled,
+  files,
+  setFiles,
+  setFilesLoading,
+  conversation,
+}: {
+  disabled?: boolean | null;
+  files: Map<string, ExtendedFile>;
+  setFiles: FileSetter;
+  setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  conversation: TConversation | null;
+}) => {
   const localize = useLocalize();
   const inputRef = useRef<HTMLInputElement>(null);
   const isUploadDisabled = disabled ?? false;
+  const tooltipDescription = useShortcutHint('uploadFile', localize('com_sidepanel_attach_files'));
+  const ariaKey = useShortcutAriaKey('uploadFile');
 
-  const { handleFileChange } = useFileHandling();
+  const { handleFileChange } = useFileHandlingNoChatContext(undefined, {
+    files,
+    setFiles,
+    setFilesLoading,
+    conversation,
+  });
 
   return (
     <FileUpload ref={inputRef} handleFileChange={handleFileChange}>
       <TooltipAnchor
-        description={localize('com_sidepanel_attach_files')}
+        description={tooltipDescription}
         id="attach-file"
         disabled={isUploadDisabled}
         render={
           <button
             type="button"
             aria-label={localize('com_sidepanel_attach_files')}
+            aria-keyshortcuts={ariaKey}
             disabled={isUploadDisabled}
             className={cn(
               'flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',

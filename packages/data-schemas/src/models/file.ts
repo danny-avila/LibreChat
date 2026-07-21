@@ -1,9 +1,9 @@
-import fileSchema from '~/schema/file';
+import { Model } from 'mongoose';
 import type { IMongoFile } from '~/types';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
+import fileSchema from '~/schema/file';
 
-/**
- * Creates or returns the File model using the provided mongoose instance and schema
- */
-export function createFileModel(mongoose: typeof import('mongoose')) {
+export function createFileModel(mongoose: typeof import('mongoose')): Model<IMongoFile> {
+  applyTenantIsolation(fileSchema);
   return mongoose.models.File || mongoose.model<IMongoFile>('File', fileSchema);
 }

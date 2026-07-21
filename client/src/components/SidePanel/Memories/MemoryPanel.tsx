@@ -4,8 +4,9 @@ import { matchSorter } from 'match-sorter';
 import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   Button,
-  Switch,
+  Checkbox,
   Spinner,
+  Dropdown,
   FilterInput,
   TooltipAnchor,
   OGDialogTrigger,
@@ -25,6 +26,10 @@ import MemoryList from './MemoryList';
 
 const pageSize = 10;
 
+/** Partition filter sentinels; any other value is an agent id */
+const PARTITION_ALL = 'all';
+const PARTITION_PERSONAL = 'personal';
+
 export default function MemoryPanel() {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -33,6 +38,7 @@ export default function MemoryPanel() {
   const { showToast } = useToastContext();
   const [pageIndex, setPageIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [partitionFilter, setPartitionFilter] = useState(PARTITION_ALL);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [referenceSavedMemories, setReferenceSavedMemories] = useState(true);
 
@@ -85,20 +91,57 @@ export default function MemoryPanel() {
 
   const memories: TUserMemory[] = useMemo(() => memData?.memories ?? [], [memData]);
 
+  const partitionOptions = useMemo(() => {
+    const agentsById = new Map<string, string>();
+    for (const memory of memories) {
+      if (memory.agentId != null && !agentsById.has(memory.agentId)) {
+        agentsById.set(memory.agentId, memory.agentName ?? memory.agentId);
+      }
+    }
+    if (agentsById.size === 0) {
+      return null;
+    }
+    return [
+      { value: PARTITION_ALL, label: localize('com_ui_memories_all') },
+      { value: PARTITION_PERSONAL, label: localize('com_ui_memories_personal') },
+      ...[...agentsById.entries()].map(([value, label]) => ({ value, label })),
+    ];
+  }, [memories, localize]);
+
+  /** Falls back to "all" when the selected partition no longer exists
+   *  (e.g. the last memory of that agent was deleted), so the panel never
+   *  gets stuck filtering on a removed partition. */
+  const activePartition = useMemo(() => {
+    if (partitionFilter === PARTITION_ALL || partitionFilter === PARTITION_PERSONAL) {
+      return partitionFilter;
+    }
+    return partitionOptions?.some((option) => option.value === partitionFilter)
+      ? partitionFilter
+      : PARTITION_ALL;
+  }, [partitionOptions, partitionFilter]);
+
   const filteredMemories = useMemo(() => {
-    return matchSorter(memories, searchQuery, {
+    const partitionMemories =
+      activePartition === PARTITION_ALL
+        ? memories
+        : memories.filter((memory) =>
+            activePartition === PARTITION_PERSONAL
+              ? memory.agentId == null
+              : memory.agentId === activePartition,
+          );
+    return matchSorter(partitionMemories, searchQuery, {
       keys: ['key', 'value'],
     });
-  }, [memories, searchQuery]);
+  }, [memories, searchQuery, activePartition]);
 
   const currentRows = useMemo(() => {
     return filteredMemories.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
   }, [filteredMemories, pageIndex]);
 
-  // Reset page when search changes
+  // Reset page when search or partition changes
   useEffect(() => {
     setPageIndex(0);
-  }, [searchQuery]);
+  }, [searchQuery, activePartition]);
 
   if (isLoading) {
     return (
@@ -121,8 +164,8 @@ export default function MemoryPanel() {
   const totalPages = Math.ceil(filteredMemories.length / pageSize);
 
   return (
-    <div className="flex h-full w-full flex-col">
-      <div role="region" aria-label={localize('com_ui_memories')} className="mt-2 space-y-3">
+    <div className="flex h-auto w-full flex-col px-3 pb-3 pt-2">
+      <div role="region" aria-label={localize('com_ui_memories')} className="space-y-2">
         {/* Header: Filter + Create Button */}
         <div className="flex items-center gap-2">
           <FilterInput
@@ -142,7 +185,7 @@ export default function MemoryPanel() {
                     <Button
                       variant="outline"
                       size="icon"
-                      className="shrink-0 bg-transparent"
+                      className="size-9 shrink-0 bg-transparent"
                       aria-label={localize('com_ui_create_memory')}
                       onClick={() => setCreateDialogOpen(true)}
                     >
@@ -154,6 +197,18 @@ export default function MemoryPanel() {
             </MemoryCreateDialog>
           )}
         </div>
+
+        {/* Partition filter (only when agent-scoped memories exist) */}
+        {partitionOptions && (
+          <Dropdown
+            value={activePartition}
+            onChange={setPartitionFilter}
+            options={partitionOptions}
+            className="w-full"
+            ariaLabel={localize('com_ui_memories_partition_filter')}
+            testId="memory-partition-filter"
+          />
+        )}
 
         {/* Controls: Usage Badge + Memory Toggle */}
         {(memData?.tokenLimit != null || hasOptOutAccess) && (
@@ -169,15 +224,24 @@ export default function MemoryPanel() {
 
             {/* Memory Toggle */}
             {hasOptOutAccess && (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-text-secondary">{localize('com_ui_use_memory')}</span>
-                <Switch
+              <Button
+                size="sm"
+                variant="outline"
+                className={`ml-auto ${referenceSavedMemories ? 'bg-surface-hover hover:bg-surface-hover' : ''}`}
+                onClick={() => handleMemoryToggle(!referenceSavedMemories)}
+                aria-label={localize('com_ui_use_memory')}
+                aria-pressed={referenceSavedMemories}
+                disabled={updateMemoryPreferencesMutation.isLoading}
+              >
+                <Checkbox
                   checked={referenceSavedMemories}
-                  onCheckedChange={handleMemoryToggle}
+                  tabIndex={-1}
+                  aria-hidden="true"
                   aria-label={localize('com_ui_use_memory')}
-                  disabled={updateMemoryPreferencesMutation.isLoading}
+                  className="pointer-events-none mr-2"
                 />
-              </div>
+                {localize('com_ui_use_memory')}
+              </Button>
             )}
           </div>
         )}

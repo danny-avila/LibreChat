@@ -1,7 +1,7 @@
 import { Schema } from 'mongoose';
 import type { IAssistant } from '~/types';
 
-const assistantSchema = new Schema<IAssistant>(
+const assistantSchema: Schema<IAssistant> = new Schema<IAssistant>(
   {
     user: {
       type: Schema.Types.ObjectId,
@@ -29,6 +29,10 @@ const assistantSchema = new Schema<IAssistant>(
     append_current_datetime: {
       type: Boolean,
       default: false,
+    },
+    tenantId: {
+      type: String,
+      index: true,
     },
   },
   {

@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback } from 'react';
-import { useForm } from 'react-hook-form';
 import { useRecoilValue } from 'recoil';
+import { useForm } from 'react-hook-form';
 import { TextareaAutosize, TooltipAnchor } from '@librechat/client';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
@@ -61,6 +61,13 @@ const EditMessage = ({
         },
         {
           overrideFiles: message.files,
+          /** Pills on the edited user message stay visible after save-and-submit;
+           *  carry the picks forward so the new turn primes the same skills
+           *  instead of running unprimed. */
+          overrideManualSkills: message.manualSkills,
+          /** Carry the edited user message's quoted excerpts forward so the new
+           *  turn sends the same referenced context the pills still show. */
+          overrideQuotes: message.quotes,
           addedConvo: getAddedConvo() || undefined,
         },
       );
@@ -80,6 +87,13 @@ const EditMessage = ({
           editedMessageId: messageId,
           isRegenerate: true,
           isEdited: true,
+          /** Edit-assistant-response flow replays the parent user turn; keep
+           *  the same manual skills so the regenerated response is primed
+           *  identically. */
+          overrideManualSkills: parentMessage.manualSkills,
+          /** Replaying the parent user turn: keep its quoted excerpts so the
+           *  regenerated response is sent the same referenced context. */
+          overrideQuotes: parentMessage.quotes,
           addedConvo: getAddedConvo() || undefined,
         },
       );

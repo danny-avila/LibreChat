@@ -1,12 +1,59 @@
 const cookies = require('cookie');
 const jwksRsa = require('jwks-rsa');
 const { logger } = require('@librechat/data-schemas');
-const { HttpsProxyAgent } = require('https-proxy-agent');
-const { SystemRoles } = require('librechat-data-provider');
-const { isEnabled, findOpenIDUser, math } = require('@librechat/api');
+const { CacheKeys, SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
-const { getOpenIdEmail } = require('./openidStrategy');
+const {
+  isEnabled,
+  findOpenIDUser,
+  getOpenIdEmail,
+  getOpenIdIssuer,
+  normalizeOpenIdIssuer,
+  buildAuthUserDocCacheKey,
+  getAuthUserDocCacheMode,
+  getCachedAuthUserDoc,
+  invalidateCachedAuthUserDoc,
+  setCachedAuthUserDoc,
+  getHttpsProxyAgent,
+  math,
+} = require('@librechat/api');
 const { updateUser, findUser } = require('~/models');
+const getLogStores = require('~/cache/getLogStores');
+
+const getOpenIdJwtAudience = () => {
+  const parsedAudience = (process.env.OPENID_AUDIENCE ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const audiences = [process.env.OPENID_CLIENT_ID, ...parsedAudience].filter(Boolean);
+  const uniqueAudiences = [...new Set(audiences)];
+
+  return uniqueAudiences.length > 1 ? uniqueAudiences : uniqueAudiences[0];
+};
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const issuerMatchesTemplate = (expectedIssuer, actualIssuer) => {
+  if (!expectedIssuer.includes('{tenantid}')) {
+    return false;
+  }
+
+  const escapedTemplate = expectedIssuer.split('{tenantid}').map(escapeRegExp).join('[^/]+');
+  return new RegExp(`^${escapedTemplate}$`).test(actualIssuer);
+};
+
+const isOpenIdIssuerAllowed = (payload, openIdConfig) => {
+  const actualIssuer = normalizeOpenIdIssuer(payload?.iss);
+  const expectedIssuer = normalizeOpenIdIssuer(openIdConfig.serverMetadata().issuer);
+
+  if (!actualIssuer || !expectedIssuer) {
+    return false;
+  }
+
+  return actualIssuer === expectedIssuer || issuerMatchesTemplate(expectedIssuer, actualIssuer);
+};
+
+const getAuthUserDocCacheStore = () => getLogStores(CacheKeys.AUTH_USER_DOC);
 
 /**
  * @function openIdJwtLogin
@@ -27,19 +74,23 @@ const { updateUser, findUser } = require('~/models');
  */
 const openIdJwtLogin = (openIdConfig) => {
   let jwksRsaOptions = {
-    cache: isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED) || true,
+    cache: process.env.OPENID_JWKS_URL_CACHE_ENABLED
+      ? isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED)
+      : true,
     cacheMaxAge: math(process.env.OPENID_JWKS_URL_CACHE_TIME, 60000),
     jwksUri: openIdConfig.serverMetadata().jwks_uri,
   };
 
-  if (process.env.PROXY) {
-    jwksRsaOptions.requestAgent = new HttpsProxyAgent(process.env.PROXY);
+  const requestAgent = getHttpsProxyAgent(jwksRsaOptions.jwksUri);
+  if (requestAgent) {
+    jwksRsaOptions.requestAgent = requestAgent;
   }
 
   return new JwtStrategy(
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKeyProvider: jwksRsa.passportJwtSecret(jwksRsaOptions),
+      audience: getOpenIdJwtAudience(),
       passReqToCallback: true,
     },
     /**
@@ -49,16 +100,39 @@ const openIdJwtLogin = (openIdConfig) => {
      */
     async (req, payload, done) => {
       try {
+        if (!isOpenIdIssuerAllowed(payload, openIdConfig)) {
+          done(null, false, { message: 'Invalid issuer' });
+          return;
+        }
+
         const authHeader = req.headers.authorization;
         const rawToken = authHeader?.replace('Bearer ', '');
-
-        const { user, error, migration } = await findOpenIDUser({
-          findUser,
-          email: payload ? getOpenIdEmail(payload) : undefined,
-          openidId: payload?.sub,
-          idOnTheSource: payload?.oid,
-          strategyName: 'openIdJwtLogin',
+        const openidIssuer = getOpenIdIssuer(payload, openIdConfig);
+        const authUserCacheKey = buildAuthUserDocCacheKey({
+          strategy: 'openid-jwt',
+          subject: payload?.sub,
+          issuer: openidIssuer,
         });
+        const authUserCacheMode = getAuthUserDocCacheMode();
+        const authUserCacheStore =
+          authUserCacheMode !== 'off' && authUserCacheKey ? getAuthUserDocCacheStore() : undefined;
+        const cachedUser =
+          authUserCacheMode !== 'off' && authUserCacheStore && authUserCacheKey
+            ? await getCachedAuthUserDoc(authUserCacheStore, authUserCacheKey)
+            : undefined;
+
+        const servedCachedUser = authUserCacheMode === 'on' && cachedUser;
+        const lookupResult = servedCachedUser
+          ? { user: cachedUser, error: null, migration: false }
+          : await findOpenIDUser({
+              findUser,
+              email: payload ? getOpenIdEmail(payload) : undefined,
+              openidId: payload?.sub,
+              openidIssuer,
+              idOnTheSource: payload?.oid,
+              strategyName: 'openIdJwtLogin',
+            });
+        const { user, error, migration } = lookupResult;
 
         if (error) {
           done(null, false, { message: error });
@@ -67,11 +141,16 @@ const openIdJwtLogin = (openIdConfig) => {
 
         if (user) {
           user.id = user._id.toString();
+          /** Absent on the full doc means local user; null skips getUserPrincipals' fallback lookup */
+          user.idOnTheSource ??= null;
 
           const updateData = {};
           if (migration) {
             updateData.provider = 'openid';
             updateData.openidId = payload?.sub;
+            if (openidIssuer) {
+              updateData.openidIssuer = openidIssuer;
+            }
           }
           if (!user.role) {
             user.role = SystemRoles.USER;
@@ -80,6 +159,17 @@ const openIdJwtLogin = (openIdConfig) => {
 
           if (Object.keys(updateData).length > 0) {
             await updateUser(user.id, updateData);
+          }
+
+          if (authUserCacheStore && authUserCacheKey) {
+            if (Object.keys(updateData).length > 0) {
+              await invalidateCachedAuthUserDoc(authUserCacheStore, {
+                userId: user.id,
+                cacheKey: authUserCacheKey,
+              });
+            } else if (!servedCachedUser) {
+              await setCachedAuthUserDoc(authUserCacheStore, authUserCacheKey, user);
+            }
           }
 
           /** Read tokens from session (server-side) to avoid large cookie issues */

@@ -1,15 +1,87 @@
-import { ProxyAgent } from 'undici';
+import { Agent } from 'undici';
 import { Providers } from '@librechat/agents';
-import { KnownEndpoints, EModelEndpoint } from 'librechat-data-provider';
+import { KnownEndpoints, EModelEndpoint, ReasoningParameterFormat } from 'librechat-data-provider';
+import type { Dispatcher } from 'undici';
 import type * as t from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
+import { createSSRFSafeAgents, createSSRFSafeUndiciConnect } from '~/auth';
 import { getOpenAILLMConfig, extractDefaultParams } from './llm';
 import { getGoogleConfig } from '~/endpoints/google/llm';
 import { transformToOpenAIConfig } from './transform';
+import { getProxyDispatcher } from '~/utils/proxy';
 import { constructAzureURL } from '~/utils/azure';
 import { createFetch } from '~/utils/generators';
+import { mergeHeaders } from '~/utils/headers';
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+type FetchOptions = RequestInit & { dispatcher?: Dispatcher };
+type OpenAIConfiguration = NonNullable<t.OpenAIConfiguration>;
+
+const OPENROUTER_DEFAULT_PARAMS = { promptCache: true };
+
+function includesOpenRouter(value?: string | null): boolean {
+  return typeof value === 'string' && value.toLowerCase().includes(KnownEndpoints.openrouter);
+}
+
+function getDefaultParams({
+  customDefaultParams,
+  useOpenRouter,
+}: {
+  customDefaultParams?: Record<string, unknown>;
+  useOpenRouter: boolean;
+}): Record<string, unknown> | undefined {
+  if (!useOpenRouter) {
+    return customDefaultParams;
+  }
+
+  return {
+    ...OPENROUTER_DEFAULT_PARAMS,
+    ...customDefaultParams,
+  };
+}
+
+function getReasoningFormat({
+  customFormat,
+  isVercel,
+}: {
+  customFormat?: ReasoningParameterFormat;
+  isVercel: boolean;
+}): ReasoningParameterFormat | undefined {
+  if (customFormat) {
+    return customFormat;
+  }
+  if (isVercel) {
+    return ReasoningParameterFormat.reasoningObject;
+  }
+  return undefined;
+}
+
+function getEffectiveURLPort(baseURL: string): string | null {
+  try {
+    const parsed = new URL(baseURL);
+    if (parsed.port) {
+      return parsed.port;
+    }
+    if (parsed.protocol === 'http:') {
+      return '80';
+    }
+    if (parsed.protocol === 'https:') {
+      return '443';
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function mergeFetchOptions(configOptions: OpenAIConfiguration, options: FetchOptions): void {
+  const currentOptions = (configOptions.fetchOptions ?? {}) as FetchOptions;
+  configOptions.fetchOptions = {
+    ...currentOptions,
+    ...options,
+  } as OpenAIConfiguration['fetchOptions'];
+}
 
 /**
  * Generates configuration options for creating a language model (LLM) instance.
@@ -33,25 +105,30 @@ export function getOpenAIConfig(
     modelOptions = {},
     reverseProxyUrl: baseURL,
   } = options;
-
-  /** Extract default params from customParams.paramDefinitions */
-  const defaultParams = extractDefaultParams(options.customParams?.paramDefinitions);
+  const shouldProtectUserBaseURL = options.baseURLIsUserProvided === true && !!baseURL;
+  const ssrfAgents = shouldProtectUserBaseURL
+    ? createSSRFSafeAgents(options.allowedAddresses)
+    : undefined;
 
   let llmConfig: t.OAIClientOptions;
   let tools: t.LLMConfigResult['tools'];
   const isAnthropic = options.customParams?.defaultParamsEndpoint === EModelEndpoint.anthropic;
   const isGoogle = options.customParams?.defaultParamsEndpoint === EModelEndpoint.google;
+  const isOpenRouter = options.customParams?.defaultParamsEndpoint === KnownEndpoints.openrouter;
 
   const useOpenRouter =
     !isAnthropic &&
     !isGoogle &&
-    ((baseURL && baseURL.includes(KnownEndpoints.openrouter)) ||
-      (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.openrouter)));
+    (isOpenRouter || includesOpenRouter(baseURL) || includesOpenRouter(endpoint));
   const isVercel =
     !isAnthropic &&
     !isGoogle &&
     ((baseURL && baseURL.includes('ai-gateway.vercel.sh')) ||
       (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.vercel)));
+  const defaultParams = getDefaultParams({
+    customDefaultParams: extractDefaultParams(options.customParams?.paramDefinitions),
+    useOpenRouter: Boolean(useOpenRouter),
+  });
 
   let azure = options.azure;
   let headers = options.headers;
@@ -74,7 +151,10 @@ export function getOpenAIConfig(
     llmConfig = transformed.llmConfig;
     tools = anthropicResult.tools;
     if (transformed.configOptions?.defaultHeaders) {
-      headers = Object.assign(headers ?? {}, transformed.configOptions?.defaultHeaders);
+      headers = mergeHeaders(
+        headers,
+        transformed.configOptions.defaultHeaders as Record<string, string>,
+      );
     }
   } else if (isGoogle) {
     const googleResult = getGoogleConfig(
@@ -112,10 +192,27 @@ export function getOpenAIConfig(
       defaultParams,
       modelOptions,
       useOpenRouter,
+      reasoningFormat: getReasoningFormat({
+        customFormat: options.customParams?.reasoningFormat,
+        isVercel: Boolean(isVercel),
+      }),
     });
     llmConfig = openaiResult.llmConfig;
     azure = openaiResult.azure;
     tools = openaiResult.tools;
+  }
+
+  /**
+   * Within-run `reasoning_content` replay applies across every param-format
+   * branch above (OpenAI / Anthropic / Google gateway modes all resolve to the
+   * OpenAI client). `includeReasoningHistory` implies it, since reconstructed
+   * history reasoning is only sent when the within-run flag is set.
+   */
+  if (
+    options.customParams?.includeReasoningContent === true ||
+    options.customParams?.includeReasoningHistory === true
+  ) {
+    llmConfig.includeReasoningContent = true;
   }
 
   const configOptions: t.OpenAIConfiguration = {};
@@ -127,6 +224,8 @@ export function getOpenAIConfig(
       {
         'HTTP-Referer': 'https://librechat.ai',
         'X-Title': 'LibreChat',
+        'X-OpenRouter-Title': 'LibreChat',
+        'X-OpenRouter-Categories': 'general-chat,personal-agent',
       },
       headers,
     );
@@ -138,11 +237,21 @@ export function getOpenAIConfig(
     configOptions.defaultQuery = defaultQuery;
   }
 
-  if (proxy) {
-    const proxyAgent = new ProxyAgent(proxy);
-    configOptions.fetchOptions = {
-      dispatcher: proxyAgent,
-    };
+  if (shouldProtectUserBaseURL) {
+    mergeFetchOptions(configOptions, {
+      dispatcher: new Agent({
+        connect: createSSRFSafeUndiciConnect(
+          options.allowedAddresses,
+          getEffectiveURLPort(baseURL),
+        ),
+      }),
+      redirect: 'error',
+    });
+  }
+
+  const proxyDispatcher = getProxyDispatcher(proxy);
+  if (proxyDispatcher && !shouldProtectUserBaseURL) {
+    mergeFetchOptions(configOptions, { dispatcher: proxyDispatcher });
   }
 
   if (azure && !isAnthropic) {
@@ -179,6 +288,8 @@ export function getOpenAIConfig(
     configOptions.fetch = createFetch({
       directEndpoint: directEndpoint,
       reverseProxyUrl: configOptions?.baseURL,
+      ssrfAgents,
+      redirect: shouldProtectUserBaseURL ? 'error' : undefined,
     }) as unknown as Fetch;
   }
 

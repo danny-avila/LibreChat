@@ -1,8 +1,15 @@
+import { memo } from 'react';
 import { TooltipAnchor } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-export default function StopButton({ stop, setShowStopButton }) {
+export default memo(function StopButton({
+  stop,
+  setShowStopButton,
+}: {
+  stop: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  setShowStopButton: (value: boolean) => void;
+}) {
   const localize = useLocalize();
 
   return (
@@ -11,6 +18,7 @@ export default function StopButton({ stop, setShowStopButton }) {
       render={
         <button
           type="button"
+          data-testid="stop-generation-button"
           className={cn(
             'rounded-full bg-text-primary p-1.5 text-text-primary outline-offset-4 transition-all duration-200 disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10',
           )}
@@ -34,4 +42,4 @@ export default function StopButton({ stop, setShowStopButton }) {
       }
     ></TooltipAnchor>
   );
-}
+});

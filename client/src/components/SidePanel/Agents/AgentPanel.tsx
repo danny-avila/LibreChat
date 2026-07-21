@@ -5,6 +5,7 @@ import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Tools,
+  MemoryScope,
   SystemRoles,
   ResourceType,
   EModelEndpoint,
@@ -69,14 +70,24 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
     provider: _provider,
     agent_ids,
     edges,
+    subagents,
     end_after_tools,
     hide_sequential_outputs,
+    stateful_code_sessions,
     recursion_limit,
     category,
     support_contact,
     tool_options,
+    skills,
+    skills_enabled,
+    memory_scope,
     avatar_action: avatarActionState,
   } = data;
+
+  /* stateful_code_sessions requires Code Interpreter; force it off on save when
+   * execute_code is disabled so a stale opt-in can't silently reactivate later. */
+  const normalizedStatefulCodeSessions =
+    data.execute_code === true ? stateful_code_sessions : false;
 
   const shouldResetAvatar =
     avatarActionState === 'reset' && Boolean(agent_id) && !isEphemeralAgent(agent_id);
@@ -95,12 +106,19 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       model_parameters,
       agent_ids,
       edges,
+      subagents,
       end_after_tools,
       hide_sequential_outputs,
+      stateful_code_sessions: normalizedStatefulCodeSessions,
       recursion_limit,
       category,
       support_contact,
       tool_options,
+      skills,
+      skills_enabled,
+      /** A hidden stale 'agent' scope must not survive disabling memory —
+       *  runtime partitioning keys off memory_scope alone. */
+      memory_scope: data.memory === true ? memory_scope : MemoryScope.user,
       ...(shouldResetAvatar ? { avatar: null } : {}),
     },
     provider,
@@ -414,6 +432,9 @@ export default function AgentPanel() {
       if (data.web_search === true) {
         tools.push(Tools.web_search);
       }
+      if (data.memory === true) {
+        tools.push(Tools.memory);
+      }
 
       const { payload: basePayload, provider, model } = composeAgentUpdatePayload(data, agent_id);
 
@@ -480,71 +501,70 @@ export default function AgentPanel() {
     <FormProvider {...methods}>
       <form
         onSubmit={handleSubmit(onSubmit)}
-        className="scrollbar-gutter-stable h-auto w-full flex-shrink-0 overflow-y-hidden overflow-x-visible"
+        className="scrollbar-gutter-stable flex flex-1 flex-col px-3 pb-3 pt-2"
         aria-label="Agent configuration form"
       >
-        <div className="mx-1 mt-2 flex w-full flex-wrap gap-2">
-          <div className="w-full">
-            <AgentSelect
-              createMutation={create}
-              agentQuery={agentQuery}
-              setCurrentAgentId={setCurrentAgentId}
-              // The following is required to force re-render the component when the form's agent ID changes
-              // Also maintains ComboBox Focus for Accessibility
-              selectedAgentId={agentQuery.isInitialLoading ? null : (current_agent_id ?? null)}
-            />
+        <div className="flex-1">
+          <div className="flex w-full flex-wrap gap-2">
+            <div className="w-full">
+              <AgentSelect
+                createMutation={create}
+                agentQuery={agentQuery}
+                setCurrentAgentId={setCurrentAgentId}
+                selectedAgentId={agentQuery.isInitialLoading ? null : (current_agent_id ?? null)}
+              />
+            </div>
+            {agent_id && (
+              <div className="flex w-full gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-center"
+                  onClick={() => {
+                    reset(getDefaultAgentFormValues());
+                    setCurrentAgentId(undefined);
+                  }}
+                  disabled={agentQuery.isInitialLoading}
+                  aria-label={localize('com_ui_create_new_agent')}
+                >
+                  <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
+                  {localize('com_ui_create_new_agent')}
+                </Button>
+                <Button
+                  variant="submit"
+                  disabled={isEphemeralAgent(agent_id) || agentQuery.isInitialLoading}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleSelectAgent();
+                  }}
+                  aria-label={localize('com_ui_select_agent')}
+                >
+                  {localize('com_ui_select')}
+                </Button>
+              </div>
+            )}
           </div>
-          {/* Create + Select Button */}
-          {agent_id && (
-            <div className="flex w-full gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full justify-center"
-                onClick={() => {
-                  reset(getDefaultAgentFormValues());
-                  setCurrentAgentId(undefined);
-                }}
-                disabled={agentQuery.isInitialLoading}
-                aria-label={localize('com_ui_create_new_agent')}
-              >
-                <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
-                {localize('com_ui_create_new_agent')}
-              </Button>
-              <Button
-                variant="submit"
-                disabled={isEphemeralAgent(agent_id) || agentQuery.isInitialLoading}
-                onClick={(e) => {
-                  e.preventDefault();
-                  handleSelectAgent();
-                }}
-                aria-label={localize('com_ui_select_agent')}
-              >
-                {localize('com_ui_select')}
-              </Button>
+          {agentQuery.isInitialLoading && <AgentPanelSkeleton />}
+          {!canEditAgent && !agentQuery.isInitialLoading && (
+            <div className="flex h-[30vh] w-full items-center justify-center">
+              <div className="text-center">
+                <h2 className="text-token-text-primary m-2 text-xl font-semibold">
+                  {localize('com_agents_not_available')}
+                </h2>
+                <p className="text-token-text-secondary">{localize('com_agents_no_access')}</p>
+              </div>
             </div>
           )}
+          {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.model && (
+            <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
+          )}
+          {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
+            <AgentConfig />
+          )}
+          {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.advanced && (
+            <AdvancedPanel />
+          )}
         </div>
-        {agentQuery.isInitialLoading && <AgentPanelSkeleton />}
-        {!canEditAgent && !agentQuery.isInitialLoading && (
-          <div className="flex h-[30vh] w-full items-center justify-center">
-            <div className="text-center">
-              <h2 className="text-token-text-primary m-2 text-xl font-semibold">
-                {localize('com_agents_not_available')}
-              </h2>
-              <p className="text-token-text-secondary">{localize('com_agents_no_access')}</p>
-            </div>
-          </div>
-        )}
-        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.model && (
-          <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
-        )}
-        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
-          <AgentConfig />
-        )}
-        {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.advanced && (
-          <AdvancedPanel />
-        )}
         {canEditAgent && !agentQuery.isInitialLoading && (
           <AgentFooter
             createMutation={create}

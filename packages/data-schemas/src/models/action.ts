@@ -1,9 +1,9 @@
-import actionSchema from '~/schema/action';
+import { Model } from 'mongoose';
 import type { IAction } from '~/types';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
+import actionSchema from '~/schema/action';
 
-/**
- * Creates or returns the Action model using the provided mongoose instance and schema
- */
-export function createActionModel(mongoose: typeof import('mongoose')) {
+export function createActionModel(mongoose: typeof import('mongoose')): Model<IAction> {
+  applyTenantIsolation(actionSchema);
   return mongoose.models.Action || mongoose.model<IAction>('Action', actionSchema);
 }

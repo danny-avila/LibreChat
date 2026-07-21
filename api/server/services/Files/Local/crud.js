@@ -1,7 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-const { deleteRagFile } = require('@librechat/api');
+const {
+  deleteRagFile,
+  assertRemoteFileURL,
+  getRemoteFileFetchMaxBytes,
+  getRemoteFileFetchTimeoutMs,
+  assertRemoteFileContentLength,
+} = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { resizeImageBuffer } = require('~/server/services/Files/images/resize');
@@ -78,7 +84,13 @@ async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images' }
       fs.mkdirSync(directoryPath, { recursive: true });
     }
 
-    fs.writeFileSync(path.join(directoryPath, fileName), buffer);
+    const resolvedDir = path.resolve(directoryPath);
+    const resolvedPath = path.resolve(resolvedDir, fileName);
+    const rel = path.relative(resolvedDir, resolvedPath);
+    if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
+      throw new Error('Path traversal detected in filename');
+    }
+    fs.writeFileSync(resolvedPath, buffer);
 
     const filePath = path.posix.join('/', basePath, userId, fileName);
 
@@ -109,12 +121,21 @@ async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images' }
  */
 async function saveFileFromURL({ userId, URL, fileName, basePath = 'images' }) {
   try {
+    const maxBytes = getRemoteFileFetchMaxBytes();
     const response = await axios({
-      url: URL,
+      url: assertRemoteFileURL(URL),
       responseType: 'arraybuffer',
+      timeout: getRemoteFileFetchTimeoutMs(),
+      maxContentLength: maxBytes,
+      maxBodyLength: maxBytes,
     });
+    assertRemoteFileContentLength(response.headers, maxBytes);
 
     const buffer = Buffer.from(response.data, 'binary');
+    if (buffer.length > maxBytes) {
+      throw new Error(`Remote file response too large: ${buffer.length} bytes`);
+    }
+
     const { bytes, type, dimensions, extension } = await getBufferMetadata(buffer);
 
     // Construct the outputPath based on the basePath and userId
@@ -165,9 +186,8 @@ async function getLocalFileURL({ fileName, basePath = 'images' }) {
 }
 
 /**
- * Validates if a given filepath is within a specified subdirectory under a base path. This function constructs
- * the expected base path using the base, subfolder, and user id from the request, and then checks if the
- * provided filepath starts with this constructed base path.
+ * Validates that a filepath is strictly contained within a subdirectory under a base path,
+ * using path.relative to prevent prefix-collision bypasses.
  *
  * @param {ServerRequest} req - The request object from Express. It should contain a `user` property with an `id`.
  * @param {string} base - The base directory path.
@@ -180,7 +200,8 @@ async function getLocalFileURL({ fileName, basePath = 'images' }) {
 const isValidPath = (req, base, subfolder, filepath) => {
   const normalizedBase = path.resolve(base, subfolder, req.user.id);
   const normalizedFilepath = path.resolve(filepath);
-  return normalizedFilepath.startsWith(normalizedBase);
+  const rel = path.relative(normalizedBase, normalizedFilepath);
+  return !rel.startsWith('..') && !path.isAbsolute(rel) && !rel.includes(`..${path.sep}`);
 };
 
 /**

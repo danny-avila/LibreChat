@@ -18,7 +18,7 @@ describe('User Methods', () => {
 
   describe('generateToken', () => {
     const mockUser = {
-      _id: 'user123',
+      _id: new mongoose.Types.ObjectId('aaaaaaaaaaaaaaaaaaaaaaaa'),
       username: 'testuser',
       provider: 'local',
       email: 'test@example.com',

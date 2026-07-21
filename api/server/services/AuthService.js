@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
 const {
   logger,
+  getTenantId,
   DEFAULT_SESSION_EXPIRY,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
 } = require('@librechat/data-schemas');
@@ -11,8 +12,13 @@ const {
   math,
   isEnabled,
   checkEmailConfig,
+  setCloudFrontCookies,
+  getCloudFrontConfig,
+  parseCloudFrontCookieScope,
+  CLOUDFRONT_SCOPE_COOKIE,
   isEmailDomainAllowed,
   shouldUseSecureCookie,
+  resolveAppConfigForUser,
 } = require('@librechat/api');
 const {
   findUser,
@@ -39,7 +45,128 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
+const AuthTokenTypes = Object.freeze({
+  EMAIL_VERIFICATION: 'email_verification',
+  PASSWORD_RESET: 'password_reset',
+});
+
+const latestAuthTokenOptions = Object.freeze({ sort: { createdAt: -1 } });
 const genericVerificationMessage = 'Please check your email to verify your email address.';
+const invalidEmailVerificationMessage = 'Invalid or expired email verification token';
+const OPENID_SESSION_ID_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
+
+const findPasswordResetToken = async (userId) => {
+  const typedToken = await findToken(
+    {
+      userId,
+      type: AuthTokenTypes.PASSWORD_RESET,
+    },
+    latestAuthTokenOptions,
+  );
+
+  if (typedToken) {
+    return typedToken;
+  }
+
+  return await findToken(
+    {
+      userId,
+      email: null,
+      identifier: null,
+      type: null,
+    },
+    latestAuthTokenOptions,
+  );
+};
+
+const findEmailVerificationToken = async (user) => {
+  const typedToken = await findToken(
+    {
+      userId: user._id,
+      email: user.email,
+      type: AuthTokenTypes.EMAIL_VERIFICATION,
+    },
+    latestAuthTokenOptions,
+  );
+
+  if (typedToken) {
+    return typedToken;
+  }
+
+  return await findToken(
+    {
+      userId: user._id,
+      email: user.email,
+      identifier: null,
+      type: null,
+    },
+    latestAuthTokenOptions,
+  );
+};
+
+const deleteEmailVerificationTokens = (user) =>
+  Promise.all([
+    deleteTokens({
+      userId: user._id,
+      email: user.email,
+      type: AuthTokenTypes.EMAIL_VERIFICATION,
+    }),
+    deleteTokens({
+      userId: user._id,
+      email: user.email,
+      identifier: null,
+      type: null,
+    }),
+  ]);
+
+const getEmailVerificationTokenDeleteQuery = (emailVerificationToken) => {
+  if (!emailVerificationToken.identifier && !emailVerificationToken.type) {
+    return {
+      token: emailVerificationToken.token,
+      userId: emailVerificationToken.userId,
+      email: emailVerificationToken.email,
+      identifier: null,
+      type: null,
+    };
+  }
+
+  return {
+    token: emailVerificationToken.token,
+    type: AuthTokenTypes.EMAIL_VERIFICATION,
+  };
+};
+
+const getPasswordResetTokenDeleteQuery = (passwordResetToken) => {
+  if (!passwordResetToken.email && !passwordResetToken.type) {
+    return {
+      token: passwordResetToken.token,
+      email: null,
+      identifier: null,
+      type: null,
+    };
+  }
+
+  return {
+    token: passwordResetToken.token,
+    type: AuthTokenTypes.PASSWORD_RESET,
+  };
+};
+
+const getUnexpiredOpenIDSessionIdToken = (idToken) => {
+  if (!idToken) {
+    return;
+  }
+
+  const decoded = jwt.decode(idToken);
+  const now = Math.floor(Date.now() / 1000);
+  if (
+    decoded &&
+    typeof decoded === 'object' &&
+    decoded.exp > now + OPENID_SESSION_ID_TOKEN_EXPIRY_BUFFER_SECONDS
+  ) {
+    return idToken;
+  }
+};
 
 /**
  * Logout user
@@ -91,16 +218,17 @@ const createTokenHash = () => {
  */
 const sendVerificationEmail = async (user) => {
   const [verifyToken, hash] = createTokenHash();
+  const email = user.email.toLowerCase();
 
   const verificationLink = `${
     domains.client
-  }/verify?token=${verifyToken}&email=${encodeURIComponent(user.email)}`;
+  }/verify?token=${verifyToken}&email=${encodeURIComponent(email)}`;
   await sendEmail({
-    email: user.email,
+    email,
     subject: 'Verify your email',
     payload: {
       appName: process.env.APP_TITLE || 'LibreChat',
-      name: user.name || user.username || user.email,
+      name: user.name || user.username || email,
       verificationLink: verificationLink,
       year: new Date().getFullYear(),
     },
@@ -109,13 +237,14 @@ const sendVerificationEmail = async (user) => {
 
   await createToken({
     userId: user._id,
-    email: user.email,
+    email,
+    type: AuthTokenTypes.EMAIL_VERIFICATION,
     token: hash,
     createdAt: Date.now(),
     expiresIn: 900,
   });
 
-  logger.info(`[sendVerificationEmail] Verification link issued. [Email: ${user.email}]`);
+  logger.info(`[sendVerificationEmail] Verification link issued. [Email: ${email}]`);
 };
 
 /**
@@ -124,25 +253,46 @@ const sendVerificationEmail = async (user) => {
  */
 const verifyEmail = async (req) => {
   const { email, token } = req.body;
-  const decodedEmail = decodeURIComponent(email);
+
+  if (typeof email !== 'string' || typeof token !== 'string' || !email || !token) {
+    logger.warn('[verifyEmail] [Invalid email verification request]');
+    return new Error(invalidEmailVerificationMessage);
+  }
+
+  let decodedEmail;
+  try {
+    decodedEmail = decodeURIComponent(email);
+  } catch {
+    logger.warn(`[verifyEmail] [Invalid email encoding] [Email: ${email}]`);
+    return new Error(invalidEmailVerificationMessage);
+  }
 
   const user = await findUser({ email: decodedEmail }, 'email _id emailVerified');
 
   if (!user) {
     logger.warn(`[verifyEmail] [User not found] [Email: ${decodedEmail}]`);
-    return new Error('User not found');
+    return new Error(invalidEmailVerificationMessage);
   }
 
-  if (user.emailVerified) {
-    logger.info(`[verifyEmail] Email already verified [Email: ${decodedEmail}]`);
-    return { message: 'Email already verified', status: 'success' };
-  }
-
-  let emailVerificationData = await findToken({ email: decodedEmail }, { sort: { createdAt: -1 } });
+  const emailVerificationData = await findEmailVerificationToken(user);
 
   if (!emailVerificationData) {
     logger.warn(`[verifyEmail] [No email verification data found] [Email: ${decodedEmail}]`);
-    return new Error('Invalid or expired password reset token');
+    return new Error(invalidEmailVerificationMessage);
+  }
+
+  if (!emailVerificationData.token) {
+    logger.warn(
+      `[verifyEmail] [Email verification token data is invalid] [Email: ${decodedEmail}]`,
+    );
+    return new Error(invalidEmailVerificationMessage);
+  }
+
+  const tokenUserId = emailVerificationData.userId?.toString();
+  const userId = user._id?.toString();
+  if (!tokenUserId || tokenUserId !== userId) {
+    logger.warn(`[verifyEmail] [Email verification token user mismatch] [Email: ${decodedEmail}]`);
+    return new Error(invalidEmailVerificationMessage);
   }
 
   const isValid = bcrypt.compareSync(token, emailVerificationData.token);
@@ -151,17 +301,23 @@ const verifyEmail = async (req) => {
     logger.warn(
       `[verifyEmail] [Invalid or expired email verification token] [Email: ${decodedEmail}]`,
     );
-    return new Error('Invalid or expired email verification token');
+    return new Error(invalidEmailVerificationMessage);
+  }
+
+  if (user.emailVerified) {
+    await deleteTokens(getEmailVerificationTokenDeleteQuery(emailVerificationData));
+    logger.info(`[verifyEmail] Email already verified [Email: ${decodedEmail}]`);
+    return { message: 'Email verification was successful', status: 'success' };
   }
 
   const updatedUser = await updateUser(emailVerificationData.userId, { emailVerified: true });
 
   if (!updatedUser) {
     logger.warn(`[verifyEmail] [User update failed] [Email: ${decodedEmail}]`);
-    return new Error('Failed to update user verification status');
+    return new Error(invalidEmailVerificationMessage);
   }
 
-  await deleteTokens({ token: emailVerificationData.token });
+  await deleteTokens(getEmailVerificationTokenDeleteQuery(emailVerificationData));
   logger.info(`[verifyEmail] Email verification successful [Email: ${decodedEmail}]`);
   return { message: 'Email verification was successful', status: 'success' };
 };
@@ -169,13 +325,13 @@ const verifyEmail = async (req) => {
 /**
  * Register a new user.
  * @param {IUser} user <email, password, name, username>
- * @param {Partial<IUser>} [additionalData={}]
+ * @param {Partial<IUser>} [additionalData={}] Trusted server-provided fields, such as CLI overrides.
  * @returns {Promise<{status: number, message: string, user?: IUser}>}
  */
 const registerUser = async (user, additionalData = {}) => {
-  const { error } = registerSchema.safeParse(user);
-  if (error) {
-    const errorMessage = errorsToString(error.errors);
+  const result = registerSchema.safeParse(user);
+  if (!result.success) {
+    const errorMessage = errorsToString(result.error.errors);
     logger.info(
       'Route: register - Validation Error',
       { name: 'Request params:', value: user },
@@ -185,11 +341,13 @@ const registerUser = async (user, additionalData = {}) => {
     return { status: 404, message: errorMessage };
   }
 
-  const { email, password, name, username, provider } = user;
+  const { email, password, name, username } = result.data;
+  const { provider, ...trustedAdditionalData } = additionalData ?? {};
 
   let newUserId;
   try {
-    const appConfig = await getAppConfig();
+    const tenantId = getTenantId();
+    const appConfig = await getAppConfig(tenantId ? { tenantId } : {});
     if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
       const errorMessage =
         'The email address provided cannot be used. Please use a different email address.';
@@ -223,7 +381,7 @@ const registerUser = async (user, additionalData = {}) => {
       avatar: null,
       role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
       password: bcrypt.hashSync(password, salt),
-      ...additionalData,
+      ...trustedAdditionalData,
     };
 
     const emailEnabled = checkEmailConfig();
@@ -255,19 +413,52 @@ const registerUser = async (user, additionalData = {}) => {
 };
 
 /**
- * Request password reset
+ * Request password reset.
+ *
+ * Uses a two-phase domain check: fast-fail with the memory-cached base config
+ * (zero DB queries) to block globally denied domains before user lookup, then
+ * re-check with tenant-scoped config after user lookup so tenant-specific
+ * restrictions are enforced.
+ *
+ * Phase 1 (base check) returns an Error (HTTP 400) — this intentionally reveals
+ * that the domain is globally blocked, but fires before any DB lookup so it
+ * cannot confirm user existence. Phase 2 (tenant check) returns the generic
+ * success message (HTTP 200) to prevent user-enumeration via status codes.
+ *
  * @param {ServerRequest} req
  */
 const requestPasswordReset = async (req) => {
   const { email } = req.body;
-  const appConfig = await getAppConfig();
-  if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+
+  const baseConfig = await getAppConfig({ baseOnly: true });
+  if (!isEmailDomainAllowed(email, baseConfig?.registration?.allowedDomains)) {
+    logger.warn(
+      `[requestPasswordReset] Blocked - email domain not allowed [Email: ${email}] [IP: ${req.ip}]`,
+    );
     const error = new Error(ErrorTypes.AUTH_FAILED);
     error.code = ErrorTypes.AUTH_FAILED;
     error.message = 'Email domain not allowed';
     return error;
   }
-  const user = await findUser({ email }, 'email _id');
+
+  const user = await findUser({ email }, 'email _id role tenantId');
+  let appConfig = baseConfig;
+  if (user?.tenantId) {
+    try {
+      appConfig = await resolveAppConfigForUser(getAppConfig, user);
+    } catch (err) {
+      logger.error('[requestPasswordReset] Failed to resolve tenant config, using base:', err);
+    }
+  }
+
+  if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+    logger.warn(
+      `[requestPasswordReset] Tenant config blocked domain [Email: ${email}] [IP: ${req.ip}]`,
+    );
+    return {
+      message: 'If an account with that email exists, a password reset link has been sent to it.',
+    };
+  }
   const emailEnabled = checkEmailConfig();
 
   logger.warn(`[requestPasswordReset] [Password reset request initiated] [Email: ${email}]`);
@@ -279,12 +470,16 @@ const requestPasswordReset = async (req) => {
     };
   }
 
-  await deleteTokens({ userId: user._id });
+  await Promise.all([
+    deleteTokens({ userId: user._id, type: AuthTokenTypes.PASSWORD_RESET }),
+    deleteTokens({ userId: user._id, email: null, identifier: null, type: null }),
+  ]);
 
   const [resetToken, hash] = createTokenHash();
 
   await createToken({
     userId: user._id,
+    type: AuthTokenTypes.PASSWORD_RESET,
     token: hash,
     createdAt: Date.now(),
     expiresIn: 900,
@@ -328,12 +523,7 @@ const requestPasswordReset = async (req) => {
  * @returns
  */
 const resetPassword = async (userId, token, password) => {
-  let passwordResetToken = await findToken(
-    {
-      userId,
-    },
-    { sort: { createdAt: -1 } },
-  );
+  const passwordResetToken = await findPasswordResetToken(userId);
 
   if (!passwordResetToken) {
     return new Error('Invalid or expired password reset token');
@@ -361,19 +551,106 @@ const resetPassword = async (userId, token, password) => {
     });
   }
 
-  await deleteTokens({ token: passwordResetToken.token });
+  await deleteTokens(getPasswordResetTokenDeleteQuery(passwordResetToken));
   logger.info(`[resetPassword] Password reset successful. [Email: ${user.email}]`);
   return { message: 'Password reset was successful' };
+};
+
+/**
+ * Reads the previously issued CloudFront cookie scope used for stale cookie cleanup.
+ * @param {ServerRequest | null} [req=null]
+ * @returns {import('@librechat/api').CloudFrontCookieScope | null}
+ */
+const getPreviousCloudFrontScope = (req) =>
+  parseCloudFrontCookieScope(req?.cookies?.[CLOUDFRONT_SCOPE_COOKIE]);
+
+const normalizeCloudFrontScopeValue = (value) => (value == null ? undefined : String(value));
+
+const getCloudFrontScopeValue = (optionsValue, userValue, requestValue) =>
+  normalizeCloudFrontScopeValue(optionsValue ?? userValue ?? requestValue);
+
+const getCloudFrontAuthCookieSkipReason = (scope) => {
+  const config = getCloudFrontConfig();
+  if (!config || config.imageSigning !== 'cookies' || !config.privateKey || !config.keyPairId) {
+    return 'cloudfront_disabled';
+  }
+  if (!config.cookieDomain) {
+    return 'missing_cookie_domain';
+  }
+  if (!scope.userId) {
+    return 'missing_user_id';
+  }
+  return null;
+};
+
+const shouldLogCloudFrontAuthCookieSkip = (reason) => reason !== 'cloudfront_disabled';
+
+/**
+ * Refreshes CloudFront signed cookies for authenticated image/avatar access.
+ * @param {ServerRequest | null} req
+ * @param {ServerResponse} res
+ * @param {Partial<IUser> | null} user
+ * @param {import('@librechat/api').CloudFrontCookieScope & { orgId?: string }} [options={}]
+ * @returns {boolean}
+ */
+const setCloudFrontAuthCookies = (req, res, user, options = {}) => {
+  const storageRegion = getCloudFrontScopeValue(
+    options.storageRegion,
+    user?.storageRegion,
+    req?.user?.storageRegion,
+  );
+  const scope = {
+    userId: getCloudFrontScopeValue(
+      options.userId,
+      user?._id ?? user?.id,
+      req?.user?._id ?? req?.user?.id,
+    ),
+    tenantId: getCloudFrontScopeValue(
+      options.tenantId ?? options.orgId,
+      user?.tenantId ?? user?.orgId,
+      req?.user?.tenantId ?? req?.user?.orgId,
+    ),
+    ...(storageRegion ? { storageRegion } : {}),
+  };
+  const skipReason = getCloudFrontAuthCookieSkipReason(scope);
+  if (skipReason) {
+    if (shouldLogCloudFrontAuthCookieSkip(skipReason)) {
+      logger.debug('[setCloudFrontAuthCookies] CloudFront auth cookies skipped', {
+        attempted: false,
+        set: false,
+        reason: skipReason,
+        has_user_id: Boolean(scope.userId),
+        has_tenant_scope: Boolean(scope.tenantId),
+        has_storage_region: Boolean(scope.storageRegion),
+        has_previous_scope: Boolean(getPreviousCloudFrontScope(req)?.userId),
+      });
+    }
+    return false;
+  }
+
+  const previousScope = getPreviousCloudFrontScope(req);
+  const cookiesSet = setCloudFrontCookies(res, scope, previousScope);
+  logger.debug('[setCloudFrontAuthCookies] CloudFront auth cookies refreshed', {
+    attempted: true,
+    set: cookiesSet,
+    reason: cookiesSet ? undefined : 'set_failed',
+    has_user_id: true,
+    has_tenant_scope: Boolean(scope.tenantId),
+    has_storage_region: Boolean(scope.storageRegion),
+    has_previous_scope: Boolean(previousScope?.userId),
+  });
+  return cookiesSet;
 };
 
 /**
  * Set Auth Tokens
  * @param {String | ObjectId} userId
  * @param {ServerResponse} res
- * @param {ISession | null} [session=null]
+ * @param {ISession | null} [_session=null]
+ * @param {ServerRequest | null} [req=null]
  * @returns
  */
-const setAuthTokens = async (userId, res, _session = null) => {
+const setAuthTokens = async (userId, res, _session = null, req = null) => {
   try {
     let session = _session;
     let refreshToken;
@@ -406,11 +683,29 @@ const setAuthTokens = async (userId, res, _session = null) => {
       secure: shouldUseSecureCookie(),
       sameSite: 'strict',
     });
+
+    setCloudFrontAuthCookies(req, res, user, { userId: user?._id ?? userId });
+
     return token;
   } catch (error) {
     logger.error('[setAuthTokens] Error in setting authentication tokens:', error);
     throw error;
   }
+};
+
+const resolveOpenIDAuthTokenOptions = (optionsOrUserId, existingRefreshToken, tenantId) => {
+  if (optionsOrUserId != null && typeof optionsOrUserId === 'object') {
+    if (
+      'userId' in optionsOrUserId ||
+      'existingRefreshToken' in optionsOrUserId ||
+      'tenantId' in optionsOrUserId
+    ) {
+      return optionsOrUserId;
+    }
+    return {};
+  }
+
+  return { userId: optionsOrUserId, existingRefreshToken, tenantId };
 };
 
 /**
@@ -423,11 +718,27 @@ const setAuthTokens = async (userId, res, _session = null) => {
  * - The tokenset object containing access and refresh tokens
  * @param {Object} req - request object (for session access)
  * @param {Object} res - response object
- * @param {string} [userId] - Optional MongoDB user ID for image path validation
+ * @param {Object} [options] - Optional token/cookie context
+ * @param {string} [options.userId] - Optional MongoDB user ID for image path validation
+ * @param {string} [options.existingRefreshToken] - Optional existing refresh token to preserve
+ * @param {string} [options.tenantId] - Optional tenant identifier for CloudFront cookie scoping
  * @returns {String} - id_token (preferred) or access_token as the app auth token
  */
-const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) => {
+const setOpenIDAuthTokens = (
+  tokenset,
+  req,
+  res,
+  optionsOrUserId = null,
+  existingRefreshTokenArg,
+  tenantIdArg,
+) => {
   try {
+    const { userId, existingRefreshToken, tenantId } = resolveOpenIDAuthTokenOptions(
+      optionsOrUserId,
+      existingRefreshTokenArg,
+      tenantIdArg,
+    );
+
     if (!tokenset) {
       logger.error('[setOpenIDAuthTokens] No tokenset found in request');
       return;
@@ -437,10 +748,6 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
       DEFAULT_REFRESH_TOKEN_EXPIRY,
     );
     const expirationDate = new Date(Date.now() + expiryInMilliseconds);
-    if (tokenset == null) {
-      logger.error('[setOpenIDAuthTokens] No tokenset found in request');
-      return;
-    }
     if (!tokenset.access_token) {
       logger.error('[setOpenIDAuthTokens] No access token found in tokenset');
       return;
@@ -460,7 +767,12 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
      * audience (e.g., Microsoft Graph API), which fails JWKS validation.
      * Falls back to access_token for providers where id_token is not available.
      */
-    const appAuthToken = tokenset.id_token || tokenset.access_token;
+    const sessionIdToken = req.session?.openidTokens?.idToken;
+    const appAuthToken =
+      tokenset.id_token ||
+      getUnexpiredOpenIDSessionIdToken(sessionIdToken) ||
+      tokenset.access_token;
+    const logoutIdToken = tokenset.id_token || sessionIdToken;
 
     /**
      * Always set refresh token cookie so it survives express session expiry.
@@ -482,9 +794,10 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
     if (req.session) {
       req.session.openidTokens = {
         accessToken: tokenset.access_token,
-        idToken: tokenset.id_token,
+        idToken: logoutIdToken,
         refreshToken: refreshToken,
         expiresAt: expirationDate.getTime(),
+        lastRefreshedAt: Date.now(),
       };
     } else {
       logger.warn('[setOpenIDAuthTokens] No session available, falling back to cookies');
@@ -523,6 +836,9 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
         sameSite: 'strict',
       });
     }
+
+    setCloudFrontAuthCookies(req, res, req.user, { userId, tenantId });
+
     return appAuthToken;
   } catch (error) {
     logger.error('[setOpenIDAuthTokens] Error in setting authentication tokens:', error);
@@ -540,13 +856,14 @@ const setOpenIDAuthTokens = (tokenset, req, res, userId, existingRefreshToken) =
 const resendVerificationEmail = async (req) => {
   try {
     const { email } = req.body;
-    await deleteTokens({ email });
     const user = await findUser({ email }, 'email _id name');
 
     if (!user) {
       logger.warn(`[resendVerificationEmail] [No user found] [Email: ${email}]`);
       return { status: 200, message: genericVerificationMessage };
     }
+
+    await deleteEmailVerificationTokens(user);
 
     const [verifyToken, hash] = createTokenHash();
 
@@ -569,6 +886,7 @@ const resendVerificationEmail = async (req) => {
     await createToken({
       userId: user._id,
       email: user.email,
+      type: AuthTokenTypes.EMAIL_VERIFICATION,
       token: hash,
       createdAt: Date.now(),
       expiresIn: 900,
@@ -596,6 +914,7 @@ module.exports = {
   setAuthTokens,
   resetPassword,
   setOpenIDAuthTokens,
+  setCloudFrontAuthCookies,
   requestPasswordReset,
   resendVerificationEmail,
 };

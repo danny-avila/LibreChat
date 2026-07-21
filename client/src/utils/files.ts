@@ -8,10 +8,17 @@ import {
 } from '@librechat/client';
 import {
   megabyte,
+  Providers,
   QueryKeys,
   inferMimeType,
   excelMimeTypes,
   EToolResources,
+  EModelEndpoint,
+  retrievalMimeTypes,
+  isBedrockDocumentType,
+  isPermissiveMimeConfig,
+  codeInterpreterMimeTypes,
+  isDocumentSupportedProvider,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import type { TFile, EndpointFileConfig, FileConfig } from 'librechat-data-provider';
@@ -251,7 +258,7 @@ export const validateFiles = ({
   const currentTotalSize = existingFiles.reduce((total, file) => total + file.size, 0);
 
   if (fileLimit && fileList.length + files.size > fileLimit) {
-    setError(`You can only upload up to ${fileLimit} files at a time.`);
+    setError(`File limit reached: ${fileLimit} files`);
     return false;
   }
 
@@ -282,19 +289,18 @@ export const validateFiles = ({
     }
 
     if (!checkType(originalFile.type, mimeTypesToCheck)) {
-      console.log(originalFile);
-      setError('Currently, unsupported file type: ' + originalFile.type);
+      setError(`Unsupported file type: ${originalFile.type}`);
       return false;
     }
 
     if (fileSizeLimit && originalFile.size >= fileSizeLimit) {
-      setError(`File size exceeds ${fileSizeLimit / megabyte} MB.`);
+      setError(`File size limit exceeded: ${fileSizeLimit / megabyte} MB`);
       return false;
     }
   }
 
   if (totalSizeLimit && currentTotalSize + incomingTotalSize > totalSizeLimit) {
-    setError(`The total size of the files cannot exceed ${totalSizeLimit / megabyte} MB.`);
+    setError(`Total file size limit exceeded: ${totalSizeLimit / megabyte} MB`);
     return false;
   }
 
@@ -318,3 +324,118 @@ export const validateFiles = ({
 
   return true;
 };
+
+export type UploadOptionContext = {
+  provider?: string | null;
+  endpoint?: string | null;
+  endpointType?: string | null;
+  useResponsesApi?: boolean;
+  fileSearchEnabled: boolean;
+  codeEnabled: boolean;
+  contextEnabled: boolean;
+  fileSearchAllowedByAgent: boolean;
+  codeAllowedByAgent: boolean;
+  fileConfig: FileConfig | null;
+  endpointSupportedMimeTypes?: RegExp[];
+};
+
+const isProviderAttachType = (type: string, ctx: UploadOptionContext): boolean => {
+  let currentProvider = (ctx.provider || ctx.endpoint) ?? '';
+  if (currentProvider.toLowerCase() === Providers.OPENROUTER) {
+    currentProvider = Providers.OPENROUTER;
+  }
+  const isAzureWithResponsesApi =
+    (currentProvider === EModelEndpoint.azureOpenAI ||
+      ctx.endpointType === EModelEndpoint.azureOpenAI) &&
+    ctx.useResponsesApi === true;
+
+  if (
+    isDocumentSupportedProvider(ctx.endpointType) ||
+    isDocumentSupportedProvider(currentProvider) ||
+    isAzureWithResponsesApi
+  ) {
+    /** Custom endpoints that the admin opened up (permissive config) honor that allowlist,
+     * matching the file picker; an inherited default config is not treated as opened up. */
+    if (
+      ctx.endpointType === EModelEndpoint.custom &&
+      ctx.endpointSupportedMimeTypes != null &&
+      isPermissiveMimeConfig(ctx.endpointSupportedMimeTypes)
+    ) {
+      return checkType(type, ctx.endpointSupportedMimeTypes);
+    }
+    if (currentProvider === EModelEndpoint.google || currentProvider === Providers.OPENROUTER) {
+      return (
+        type.startsWith('image/') ||
+        type.startsWith('video/') ||
+        type.startsWith('audio/') ||
+        type === 'application/pdf'
+      );
+    }
+    if (currentProvider === Providers.BEDROCK || ctx.endpointType === EModelEndpoint.bedrock) {
+      return type.startsWith('image/') || isBedrockDocumentType(type);
+    }
+    return type.startsWith('image/') || type === 'application/pdf';
+  }
+  return type.startsWith('image/');
+};
+
+const isContextType = (type: string, fileConfig: FileConfig | null): boolean =>
+  checkType(type, [
+    ...(fileConfig?.text?.supportedMimeTypes || []),
+    ...(fileConfig?.ocr?.supportedMimeTypes || []),
+    ...(fileConfig?.stt?.supportedMimeTypes || []),
+  ]);
+
+/**
+ * Upload destinations a file set can be routed to, given the active endpoint and agent
+ * capabilities. `undefined` is direct provider attachment; the rest are tool resources.
+ * Each option requires every file to be valid for it, so the caller can decide between
+ * auto-routing (one option), prompting (multiple), or rejecting (none).
+ */
+export const getViableUploadOptions = (
+  fileList: File[],
+  ctx: UploadOptionContext,
+): (EToolResources | undefined)[] => {
+  if (fileList.length === 0) {
+    return [];
+  }
+  const types = fileList.map((file) => inferMimeType(file.name, file.type));
+  if (types.some((type) => !type)) {
+    return [];
+  }
+  const every = (predicate: (type: string) => boolean) =>
+    types.every((type) => predicate(type as string));
+
+  const options: (EToolResources | undefined)[] = [];
+  if (every((type) => isProviderAttachType(type, ctx))) {
+    options.push(undefined);
+  }
+  if (
+    ctx.fileSearchEnabled &&
+    ctx.fileSearchAllowedByAgent &&
+    every((type) => !type.startsWith('image/') && checkType(type, retrievalMimeTypes))
+  ) {
+    options.push(EToolResources.file_search);
+  }
+  if (
+    ctx.codeEnabled &&
+    ctx.codeAllowedByAgent &&
+    every((type) => checkType(type, codeInterpreterMimeTypes))
+  ) {
+    options.push(EToolResources.execute_code);
+  }
+  if (ctx.contextEnabled && every((type) => isContextType(type, ctx.fileConfig))) {
+    options.push(EToolResources.context);
+  }
+  return options;
+};
+
+export function sortPagesByRelevance(
+  pages: number[],
+  pageRelevance: Record<number, number>,
+): number[] {
+  if (!pageRelevance || Object.keys(pageRelevance).length === 0) {
+    return pages;
+  }
+  return [...pages].sort((a, b) => (pageRelevance[b] || 0) - (pageRelevance[a] || 0));
+}

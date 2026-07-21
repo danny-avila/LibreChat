@@ -1,116 +1,32 @@
 const express = require('express');
 const request = require('supertest');
 
-jest.mock('@librechat/agents', () => ({
-  sleep: jest.fn(),
-}));
+const MOCKS = '../__test-utils__/convos-route-mocks';
 
-jest.mock('@librechat/api', () => ({
-  isEnabled: jest.fn(),
-  createAxiosInstance: jest.fn(() => ({
-    get: jest.fn(),
-    post: jest.fn(),
-    put: jest.fn(),
-    delete: jest.fn(),
-  })),
-  logAxiosError: jest.fn(),
-}));
-
-jest.mock('@librechat/data-schemas', () => ({
-  logger: {
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  },
-  createModels: jest.fn(() => ({
-    User: {},
-    Conversation: {},
-    Message: {},
-    SharedLink: {},
-  })),
-}));
-
-jest.mock('~/models/Conversation', () => ({
-  getConvosByCursor: jest.fn(),
-  getConvo: jest.fn(),
-  deleteConvos: jest.fn(),
-  saveConvo: jest.fn(),
-}));
-
-jest.mock('~/models/ToolCall', () => ({
-  deleteToolCalls: jest.fn(),
-}));
-
-jest.mock('~/models', () => ({
-  deleteAllSharedLinks: jest.fn(),
-  deleteConvoSharedLink: jest.fn(),
-}));
-
-jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
-
-jest.mock('~/server/middleware', () => ({
-  createImportLimiters: jest.fn(() => ({
-    importIpLimiter: (req, res, next) => next(),
-    importUserLimiter: (req, res, next) => next(),
-  })),
-  createForkLimiters: jest.fn(() => ({
-    forkIpLimiter: (req, res, next) => next(),
-    forkUserLimiter: (req, res, next) => next(),
-  })),
-  configMiddleware: (req, res, next) => next(),
-  validateConvoAccess: (req, res, next) => next(),
-}));
-
-jest.mock('~/server/utils/import/fork', () => ({
-  forkConversation: jest.fn(),
-  duplicateConversation: jest.fn(),
-}));
-
-jest.mock('~/server/utils/import', () => ({
-  importConversations: jest.fn(),
-}));
-
-jest.mock('~/cache/getLogStores', () => jest.fn());
-
-jest.mock('~/server/routes/files/multer', () => ({
-  storage: {},
-  importFileFilter: jest.fn(),
-}));
-
-jest.mock('multer', () => {
-  return jest.fn(() => ({
-    single: jest.fn(() => (req, res, next) => {
-      req.file = { path: '/tmp/test-file.json' };
-      next();
-    }),
-  }));
-});
-
-jest.mock('librechat-data-provider', () => ({
-  CacheKeys: {
-    GEN_TITLE: 'GEN_TITLE',
-  },
-  EModelEndpoint: {
-    azureAssistants: 'azureAssistants',
-    assistants: 'assistants',
-  },
-}));
-
-jest.mock('~/server/services/Endpoints/azureAssistants', () => ({
-  initializeClient: jest.fn(),
-}));
-
-jest.mock('~/server/services/Endpoints/assistants', () => ({
-  initializeClient: jest.fn(),
-}));
+jest.mock('@librechat/agents', () => require(MOCKS).agents());
+jest.mock('@librechat/api', () => require(MOCKS).api());
+jest.mock('@librechat/data-schemas', () => require(MOCKS).dataSchemas());
+jest.mock('librechat-data-provider', () => require(MOCKS).dataProvider());
+jest.mock('~/models', () => require(MOCKS).sharedModels());
+jest.mock('~/server/middleware/requireJwtAuth', () => require(MOCKS).requireJwtAuth());
+jest.mock('~/server/middleware', () => require(MOCKS).middlewarePassthrough());
+jest.mock('~/server/utils/import/fork', () => require(MOCKS).forkUtils());
+jest.mock('~/server/utils/import', () => require(MOCKS).importUtils());
+jest.mock('~/cache/getLogStores', () => require(MOCKS).logStores());
+jest.mock('~/server/routes/files/multer', () => require(MOCKS).multerSetup());
+jest.mock('multer', () => require(MOCKS).multerLib());
+jest.mock('~/server/services/Endpoints/azureAssistants', () => require(MOCKS).assistantEndpoint());
+jest.mock('~/server/services/Endpoints/assistants', () => require(MOCKS).assistantEndpoint());
 
 describe('Convos Routes', () => {
   let app;
   let convosRouter;
-  const { deleteAllSharedLinks, deleteConvoSharedLink } = require('~/models');
-  const { deleteConvos, saveConvo } = require('~/models/Conversation');
-  const { deleteToolCalls } = require('~/models/ToolCall');
+  const { deleteToolCalls, deleteConvos, saveConvo } = require('~/models');
+  const {
+    deleteAgentCheckpoints,
+    deleteAllSharedLinksWithCleanup,
+    deleteConvoSharedLinksWithCleanup,
+  } = require('@librechat/api');
 
   beforeAll(() => {
     convosRouter = require('../convos');
@@ -132,6 +48,20 @@ describe('Convos Routes', () => {
   });
 
   describe('DELETE /all', () => {
+    it('prunes the deleted conversations’ agent checkpoints (bulk, ids from deleteConvos)', async () => {
+      // HITL: a paused conversation's durable checkpoint must not outlive the conversation.
+      const conversationIds = ['conv-a', 'conv-b'];
+      deleteConvos.mockResolvedValue({ deletedCount: 2, conversationIds });
+      deleteToolCalls.mockResolvedValue({ deletedCount: 0 });
+      deleteAllSharedLinksWithCleanup.mockResolvedValue({ deletedCount: 0 });
+
+      const response = await request(app).delete('/api/convos/all');
+
+      expect(response.status).toBe(201);
+      expect(deleteAgentCheckpoints).toHaveBeenCalledTimes(1);
+      expect(deleteAgentCheckpoints.mock.calls[0][0]).toEqual(conversationIds);
+    });
+
     it('should delete all conversations, tool calls, and shared links for a user', async () => {
       const mockDbResponse = {
         deletedCount: 5,
@@ -140,7 +70,7 @@ describe('Convos Routes', () => {
 
       deleteConvos.mockResolvedValue(mockDbResponse);
       deleteToolCalls.mockResolvedValue({ deletedCount: 10 });
-      deleteAllSharedLinks.mockResolvedValue({
+      deleteAllSharedLinksWithCleanup.mockResolvedValue({
         message: 'All shared links deleted successfully',
         deletedCount: 3,
       });
@@ -158,12 +88,12 @@ describe('Convos Routes', () => {
       expect(deleteToolCalls).toHaveBeenCalledWith('test-user-123');
       expect(deleteToolCalls).toHaveBeenCalledTimes(1);
 
-      /** Verify deleteAllSharedLinks was called with correct userId */
-      expect(deleteAllSharedLinks).toHaveBeenCalledWith('test-user-123');
-      expect(deleteAllSharedLinks).toHaveBeenCalledTimes(1);
+      /** Verify deleteAllSharedLinksWithCleanup was called with correct userId */
+      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledWith('test-user-123');
+      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledTimes(1);
     });
 
-    it('should call deleteAllSharedLinks even when no conversations exist', async () => {
+    it('should call deleteAllSharedLinksWithCleanup even when no conversations exist', async () => {
       const mockDbResponse = {
         deletedCount: 0,
         message: 'No conversations to delete',
@@ -171,7 +101,7 @@ describe('Convos Routes', () => {
 
       deleteConvos.mockResolvedValue(mockDbResponse);
       deleteToolCalls.mockResolvedValue({ deletedCount: 0 });
-      deleteAllSharedLinks.mockResolvedValue({
+      deleteAllSharedLinksWithCleanup.mockResolvedValue({
         message: 'All shared links deleted successfully',
         deletedCount: 0,
       });
@@ -179,7 +109,7 @@ describe('Convos Routes', () => {
       const response = await request(app).delete('/api/convos/all');
 
       expect(response.status).toBe(201);
-      expect(deleteAllSharedLinks).toHaveBeenCalledWith('test-user-123');
+      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledWith('test-user-123');
     });
 
     it('should return 500 if deleteConvos fails', async () => {
@@ -206,10 +136,10 @@ describe('Convos Routes', () => {
       expect(response.text).toBe('Error clearing conversations');
     });
 
-    it('should return 500 if deleteAllSharedLinks fails', async () => {
+    it('should return 500 if deleteAllSharedLinksWithCleanup fails', async () => {
       deleteConvos.mockResolvedValue({ deletedCount: 5 });
       deleteToolCalls.mockResolvedValue({ deletedCount: 10 });
-      deleteAllSharedLinks.mockRejectedValue(new Error('Shared links deletion failed'));
+      deleteAllSharedLinksWithCleanup.mockRejectedValue(new Error('Shared links deletion failed'));
 
       const response = await request(app).delete('/api/convos/all');
 
@@ -221,12 +151,12 @@ describe('Convos Routes', () => {
       /** First user */
       deleteConvos.mockResolvedValue({ deletedCount: 3 });
       deleteToolCalls.mockResolvedValue({ deletedCount: 5 });
-      deleteAllSharedLinks.mockResolvedValue({ deletedCount: 2 });
+      deleteAllSharedLinksWithCleanup.mockResolvedValue({ deletedCount: 2 });
 
       let response = await request(app).delete('/api/convos/all');
 
       expect(response.status).toBe(201);
-      expect(deleteAllSharedLinks).toHaveBeenCalledWith('test-user-123');
+      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledWith('test-user-123');
 
       jest.clearAllMocks();
 
@@ -241,12 +171,12 @@ describe('Convos Routes', () => {
 
       deleteConvos.mockResolvedValue({ deletedCount: 7 });
       deleteToolCalls.mockResolvedValue({ deletedCount: 12 });
-      deleteAllSharedLinks.mockResolvedValue({ deletedCount: 4 });
+      deleteAllSharedLinksWithCleanup.mockResolvedValue({ deletedCount: 4 });
 
       response = await request(app2).delete('/api/convos/all');
 
       expect(response.status).toBe(201);
-      expect(deleteAllSharedLinks).toHaveBeenCalledWith('test-user-456');
+      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledWith('test-user-456');
     });
 
     it('should execute deletions in correct sequence', async () => {
@@ -262,15 +192,19 @@ describe('Convos Routes', () => {
         return Promise.resolve({ deletedCount: 10 });
       });
 
-      deleteAllSharedLinks.mockImplementation(() => {
-        executionOrder.push('deleteAllSharedLinks');
+      deleteAllSharedLinksWithCleanup.mockImplementation(() => {
+        executionOrder.push('deleteAllSharedLinksWithCleanup');
         return Promise.resolve({ deletedCount: 3 });
       });
 
       await request(app).delete('/api/convos/all');
 
       /** Verify all three functions were called */
-      expect(executionOrder).toEqual(['deleteConvos', 'deleteToolCalls', 'deleteAllSharedLinks']);
+      expect(executionOrder).toEqual([
+        'deleteConvos',
+        'deleteToolCalls',
+        'deleteAllSharedLinksWithCleanup',
+      ]);
     });
 
     it('should maintain data integrity by cleaning up shared links when conversations are deleted', async () => {
@@ -284,17 +218,17 @@ describe('Convos Routes', () => {
 
       deleteConvos.mockResolvedValue(mockConvosDeleted);
       deleteToolCalls.mockResolvedValue(mockToolCallsDeleted);
-      deleteAllSharedLinks.mockResolvedValue(mockSharedLinksDeleted);
+      deleteAllSharedLinksWithCleanup.mockResolvedValue(mockSharedLinksDeleted);
 
       const response = await request(app).delete('/api/convos/all');
 
       expect(response.status).toBe(201);
 
       /** Verify that shared links cleanup was called for the same user */
-      expect(deleteAllSharedLinks).toHaveBeenCalledWith('test-user-123');
+      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledWith('test-user-123');
 
       /** Verify no shared links remain for deleted conversations */
-      expect(deleteAllSharedLinks).toHaveBeenCalledAfter(deleteConvos);
+      expect(deleteAllSharedLinksWithCleanup).toHaveBeenCalledAfter(deleteConvos);
     });
   });
 
@@ -308,7 +242,7 @@ describe('Convos Routes', () => {
 
       deleteConvos.mockResolvedValue(mockDbResponse);
       deleteToolCalls.mockResolvedValue({ deletedCount: 3 });
-      deleteConvoSharedLink.mockResolvedValue({
+      deleteConvoSharedLinksWithCleanup.mockResolvedValue({
         message: 'Shared links deleted successfully',
         deletedCount: 1,
       });
@@ -332,11 +266,14 @@ describe('Convos Routes', () => {
       /** Verify deleteToolCalls was called */
       expect(deleteToolCalls).toHaveBeenCalledWith('test-user-123', mockConversationId);
 
-      /** Verify deleteConvoSharedLink was called */
-      expect(deleteConvoSharedLink).toHaveBeenCalledWith('test-user-123', mockConversationId);
+      /** Verify deleteConvoSharedLinksWithCleanup was called */
+      expect(deleteConvoSharedLinksWithCleanup).toHaveBeenCalledWith(
+        'test-user-123',
+        mockConversationId,
+      );
     });
 
-    it('should not call deleteConvoSharedLink when no conversationId provided', async () => {
+    it('should not call deleteConvoSharedLinksWithCleanup when no conversationId provided', async () => {
       deleteConvos.mockResolvedValue({ deletedCount: 0 });
       deleteToolCalls.mockResolvedValue({ deletedCount: 0 });
 
@@ -349,7 +286,7 @@ describe('Convos Routes', () => {
         });
 
       expect(response.status).toBe(200);
-      expect(deleteConvoSharedLink).not.toHaveBeenCalled();
+      expect(deleteConvoSharedLinksWithCleanup).not.toHaveBeenCalled();
     });
 
     it('should handle deletion of conversation without shared links', async () => {
@@ -357,7 +294,7 @@ describe('Convos Routes', () => {
 
       deleteConvos.mockResolvedValue({ deletedCount: 1 });
       deleteToolCalls.mockResolvedValue({ deletedCount: 0 });
-      deleteConvoSharedLink.mockResolvedValue({
+      deleteConvoSharedLinksWithCleanup.mockResolvedValue({
         message: 'Shared links deleted successfully',
         deletedCount: 0,
       });
@@ -371,7 +308,10 @@ describe('Convos Routes', () => {
         });
 
       expect(response.status).toBe(201);
-      expect(deleteConvoSharedLink).toHaveBeenCalledWith('test-user-123', mockConversationId);
+      expect(deleteConvoSharedLinksWithCleanup).toHaveBeenCalledWith(
+        'test-user-123',
+        mockConversationId,
+      );
     });
 
     it('should return 400 when no parameters provided', async () => {
@@ -382,7 +322,7 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ error: 'no parameters provided' });
       expect(deleteConvos).not.toHaveBeenCalled();
-      expect(deleteConvoSharedLink).not.toHaveBeenCalled();
+      expect(deleteConvoSharedLinksWithCleanup).not.toHaveBeenCalled();
     });
 
     it('should return 400 when request body is empty (DoS prevention)', async () => {
@@ -419,12 +359,14 @@ describe('Convos Routes', () => {
       expect(deleteConvos).not.toHaveBeenCalled();
     });
 
-    it('should return 500 if deleteConvoSharedLink fails', async () => {
+    it('should return 500 if deleteConvoSharedLinksWithCleanup fails', async () => {
       const mockConversationId = 'conv-error';
 
       deleteConvos.mockResolvedValue({ deletedCount: 1 });
       deleteToolCalls.mockResolvedValue({ deletedCount: 2 });
-      deleteConvoSharedLink.mockRejectedValue(new Error('Failed to delete shared links'));
+      deleteConvoSharedLinksWithCleanup.mockRejectedValue(
+        new Error('Failed to delete shared links'),
+      );
 
       const response = await request(app)
         .delete('/api/convos')
@@ -452,8 +394,8 @@ describe('Convos Routes', () => {
         return Promise.resolve({ deletedCount: 2 });
       });
 
-      deleteConvoSharedLink.mockImplementation(() => {
-        executionOrder.push('deleteConvoSharedLink');
+      deleteConvoSharedLinksWithCleanup.mockImplementation(() => {
+        executionOrder.push('deleteConvoSharedLinksWithCleanup');
         return Promise.resolve({ deletedCount: 1 });
       });
 
@@ -465,7 +407,11 @@ describe('Convos Routes', () => {
           },
         });
 
-      expect(executionOrder).toEqual(['deleteConvos', 'deleteToolCalls', 'deleteConvoSharedLink']);
+      expect(executionOrder).toEqual([
+        'deleteConvos',
+        'deleteToolCalls',
+        'deleteConvoSharedLinksWithCleanup',
+      ]);
     });
 
     it('should prevent orphaned shared links when deleting single conversation', async () => {
@@ -473,7 +419,7 @@ describe('Convos Routes', () => {
 
       deleteConvos.mockResolvedValue({ deletedCount: 1 });
       deleteToolCalls.mockResolvedValue({ deletedCount: 4 });
-      deleteConvoSharedLink.mockResolvedValue({
+      deleteConvoSharedLinksWithCleanup.mockResolvedValue({
         message: 'Shared links deleted successfully',
         deletedCount: 2,
       });
@@ -489,10 +435,13 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(201);
 
       /** Verify shared links were deleted for the specific conversation */
-      expect(deleteConvoSharedLink).toHaveBeenCalledWith('test-user-123', mockConversationId);
+      expect(deleteConvoSharedLinksWithCleanup).toHaveBeenCalledWith(
+        'test-user-123',
+        mockConversationId,
+      );
 
       /** Verify it was called after the conversation was deleted */
-      expect(deleteConvoSharedLink).toHaveBeenCalledAfter(deleteConvos);
+      expect(deleteConvoSharedLinksWithCleanup).toHaveBeenCalledAfter(deleteConvos);
     });
   });
 
@@ -520,7 +469,7 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockArchivedConvo);
       expect(saveConvo).toHaveBeenCalledWith(
-        expect.objectContaining({ user: { id: 'test-user-123' } }),
+        expect.objectContaining({ userId: 'test-user-123' }),
         { conversationId: mockConversationId, isArchived: true },
         { context: `POST /api/convos/archive ${mockConversationId}` },
       );
@@ -549,7 +498,7 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockUnarchivedConvo);
       expect(saveConvo).toHaveBeenCalledWith(
-        expect.objectContaining({ user: { id: 'test-user-123' } }),
+        expect.objectContaining({ userId: 'test-user-123' }),
         { conversationId: mockConversationId, isArchived: false },
         { context: `POST /api/convos/archive ${mockConversationId}` },
       );
@@ -625,6 +574,80 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ error: 'conversationId is required' });
+    });
+  });
+
+  describe('POST /convos/pin', () => {
+    const mockConversationId = 'conv-123';
+
+    it('should pin a conversation', async () => {
+      const mockPinnedConvo = { conversationId: mockConversationId, pinned: true };
+      saveConvo.mockResolvedValue(mockPinnedConvo);
+
+      const response = await request(app).post('/api/convos/pin').send({ arg: mockPinnedConvo });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(mockPinnedConvo);
+      expect(saveConvo).toHaveBeenCalledWith(
+        { userId: 'test-user-123' },
+        { conversationId: mockConversationId, pinned: true },
+        { context: `POST /api/convos/pin ${mockConversationId}` },
+      );
+    });
+
+    it('should unpin a conversation', async () => {
+      const mockUnpinnedConvo = { conversationId: mockConversationId, pinned: false };
+      saveConvo.mockResolvedValue(mockUnpinnedConvo);
+
+      const response = await request(app).post('/api/convos/pin').send({ arg: mockUnpinnedConvo });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(mockUnpinnedConvo);
+      expect(saveConvo).toHaveBeenCalledWith(
+        { userId: 'test-user-123' },
+        { conversationId: mockConversationId, pinned: false },
+        { context: `POST /api/convos/pin ${mockConversationId}` },
+      );
+    });
+
+    it('should return 400 when conversationId is missing', async () => {
+      const response = await request(app)
+        .post('/api/convos/pin')
+        .send({ arg: { pinned: true } });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'conversationId is required' });
+      expect(saveConvo).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when pinned is not a boolean', async () => {
+      const response = await request(app)
+        .post('/api/convos/pin')
+        .send({ arg: { conversationId: mockConversationId, pinned: 'yes' } });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'pinned must be a boolean' });
+      expect(saveConvo).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when pinned is missing', async () => {
+      const response = await request(app)
+        .post('/api/convos/pin')
+        .send({ arg: { conversationId: mockConversationId } });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'pinned is required' });
+      expect(saveConvo).not.toHaveBeenCalled();
+    });
+
+    it('should return 500 when saveConvo fails', async () => {
+      saveConvo.mockRejectedValue(new Error('Database error'));
+
+      const response = await request(app)
+        .post('/api/convos/pin')
+        .send({ arg: { conversationId: mockConversationId, pinned: true } });
+
+      expect(response.status).toBe(500);
     });
   });
 });

@@ -1,3 +1,6 @@
+/**
+ * @jest-environment @happy-dom/jest-environment
+ */
 import React from 'react';
 import { render, act } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
@@ -15,9 +18,12 @@ jest.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
 }));
 
+const mockApiBaseUrl = jest.fn(() => '');
+
 jest.mock('librechat-data-provider', () => ({
   ...jest.requireActual('librechat-data-provider'),
   setTokenHeader: jest.fn(),
+  apiBaseUrl: () => mockApiBaseUrl(),
 }));
 
 let mockCapturedLoginOptions: {
@@ -58,13 +64,20 @@ jest.mock('~/data-provider', () => ({
     error: null,
   })),
   useGetRole: jest.fn(() => ({ data: null })),
+  useListRoles: jest.fn(() => ({ data: undefined })),
 }));
 
 const authConfig: TAuthConfig = { loginRedirect: '/login', test: true };
 
 function TestConsumer() {
   const ctx = useAuthContext();
-  return <div data-testid="consumer" data-authenticated={ctx.isAuthenticated} />;
+  return (
+    <div
+      data-testid="consumer"
+      data-authenticated={ctx.isAuthenticated}
+      data-roles={JSON.stringify(ctx.roles ?? {})}
+    />
+  );
 }
 
 function renderProvider() {
@@ -105,31 +118,17 @@ function renderProviderLive() {
 }
 
 describe('AuthContextProvider — login onError redirect handling', () => {
-  const originalLocation = window.location;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    Object.defineProperty(window, 'location', {
-      value: { ...originalLocation, pathname: '/login', search: '', hash: '' },
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/login');
   });
 
   afterEach(() => {
-    Object.defineProperty(window, 'location', {
-      value: originalLocation,
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/');
   });
 
   it('preserves a valid redirect_to param across login failure', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/login', search: '?redirect_to=%2Fc%2Fabc123', hash: '' },
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/login?redirect_to=%2Fc%2Fabc123');
 
     renderProvider();
 
@@ -143,11 +142,7 @@ describe('AuthContextProvider — login onError redirect handling', () => {
   });
 
   it('drops redirect_to when it contains an absolute URL (open-redirect prevention)', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/login', search: '?redirect_to=https%3A%2F%2Fevil.com', hash: '' },
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/login?redirect_to=https%3A%2F%2Fevil.com');
 
     renderProvider();
 
@@ -159,11 +154,7 @@ describe('AuthContextProvider — login onError redirect handling', () => {
   });
 
   it('drops redirect_to when it points to /login (recursive redirect prevention)', () => {
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/login', search: '?redirect_to=%2Flogin', hash: '' },
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/login?redirect_to=%2Flogin');
 
     renderProvider();
 
@@ -186,15 +177,7 @@ describe('AuthContextProvider — login onError redirect handling', () => {
 
   it('preserves redirect_to with query params and hash', () => {
     const target = '/c/abc123?model=gpt-4#section';
-    Object.defineProperty(window, 'location', {
-      value: {
-        pathname: '/login',
-        search: `?redirect_to=${encodeURIComponent(target)}`,
-        hash: '',
-      },
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', `/login?redirect_to=${encodeURIComponent(target)}`);
 
     renderProvider();
 
@@ -209,33 +192,20 @@ describe('AuthContextProvider — login onError redirect handling', () => {
 });
 
 describe('AuthContextProvider — logout onSuccess/onError handling', () => {
-  const originalLocation = window.location;
   const mockSetTokenHeader = jest.requireMock('librechat-data-provider').setTokenHeader;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    Object.defineProperty(window, 'location', {
-      value: {
-        ...originalLocation,
-        pathname: '/c/some-chat',
-        search: '',
-        hash: '',
-        replace: jest.fn(),
-      },
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/c/some-chat');
   });
 
   afterEach(() => {
-    Object.defineProperty(window, 'location', {
-      value: originalLocation,
-      writable: true,
-      configurable: true,
-    });
+    window.history.replaceState({}, '', '/');
   });
 
   it('calls window.location.replace and setTokenHeader(undefined) when redirect is present', () => {
+    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
+
     renderProvider();
 
     act(() => {
@@ -245,23 +215,25 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
       });
     });
 
-    expect(window.location.replace).toHaveBeenCalledWith(
-      'https://idp.example.com/logout?id_token_hint=abc',
-    );
+    expect(replaceSpy).toHaveBeenCalledWith('https://idp.example.com/logout?id_token_hint=abc');
     expect(mockSetTokenHeader).toHaveBeenCalledWith(undefined);
   });
 
   it('does not call window.location.replace when redirect is absent', async () => {
+    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
+
     renderProvider();
 
     act(() => {
       mockCapturedLogoutOptions.onSuccess({ message: 'Logout successful' });
     });
 
-    expect(window.location.replace).not.toHaveBeenCalled();
+    expect(replaceSpy).not.toHaveBeenCalled();
   });
 
   it('does not trigger silentRefresh after OIDC redirect', () => {
+    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
+
     renderProviderLive();
     mockRefreshMutate.mockClear();
 
@@ -272,7 +244,7 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
       });
     });
 
-    expect(window.location.replace).toHaveBeenCalled();
+    expect(replaceSpy).toHaveBeenCalled();
     expect(mockRefreshMutate).not.toHaveBeenCalled();
   });
 });
@@ -285,6 +257,7 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
 
   afterEach(() => {
     sessionStorage.clear();
+    window.history.replaceState({}, '', '/');
   });
 
   it('navigates to stored sessionStorage redirect after successful token refresh', () => {
@@ -315,10 +288,7 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
 
   it('navigates to current URL when no stored redirect exists', () => {
     jest.useFakeTimers();
-    Object.defineProperty(window, 'location', {
-      value: { ...window.location, pathname: '/c/new', search: '' },
-      writable: true,
-    });
+    window.history.replaceState({}, '', '/c/new');
 
     renderProviderLive();
 
@@ -367,10 +337,7 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
 
   it('falls back to current URL for unsafe stored redirect', () => {
     jest.useFakeTimers();
-    Object.defineProperty(window, 'location', {
-      value: { ...window.location, pathname: '/c/new', search: '' },
-      writable: true,
-    });
+    window.history.replaceState({}, '', '/c/new');
     sessionStorage.setItem(SESSION_KEY, 'https://evil.com/steal');
 
     renderProviderLive();
@@ -395,34 +362,82 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
   });
 });
 
-describe('AuthContextProvider — logout error handling', () => {
-  const originalLocation = window.location;
-
+describe('AuthContextProvider — silentRefresh subdirectory deployment', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    Object.defineProperty(window, 'location', {
-      value: {
-        ...originalLocation,
-        pathname: '/c/some-chat',
-        search: '',
-        hash: '',
-        replace: jest.fn(),
-      },
-      writable: true,
-      configurable: true,
-    });
+    sessionStorage.clear();
+    mockApiBaseUrl.mockReturnValue('/chat');
   });
 
   afterEach(() => {
-    Object.defineProperty(window, 'location', {
-      value: originalLocation,
-      writable: true,
-      configurable: true,
+    mockApiBaseUrl.mockReturnValue('');
+    sessionStorage.clear();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('strips base path from window.location.pathname before navigating (prevents /chat/chat doubling)', () => {
+    jest.useFakeTimers();
+    window.history.replaceState({}, '', '/chat/c/abc123?model=gpt-4');
+
+    renderProviderLive();
+
+    expect(mockRefreshMutate).toHaveBeenCalledTimes(1);
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'new-token' });
     });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/c/abc123?model=gpt-4', { replace: true });
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      expect.stringContaining('/chat/c/'),
+      expect.anything(),
+    );
+    jest.useRealTimers();
+  });
+
+  it('falls back to root when window.location.pathname equals the base path', () => {
+    jest.useFakeTimers();
+    window.history.replaceState({}, '', '/chat');
+
+    renderProviderLive();
+
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'new-token' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
+    jest.useRealTimers();
+  });
+});
+
+describe('AuthContextProvider — logout error handling', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    window.history.replaceState({}, '', '/c/some-chat');
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
   });
 
   it('clears auth state on logout error without external redirect', () => {
     jest.useFakeTimers();
+    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
     const { getByTestId } = renderProvider();
 
     act(() => {
@@ -432,8 +447,135 @@ describe('AuthContextProvider — logout error handling', () => {
       jest.advanceTimersByTime(100);
     });
 
-    expect(window.location.replace).not.toHaveBeenCalled();
+    expect(replaceSpy).not.toHaveBeenCalled();
     expect(getByTestId('consumer').getAttribute('data-authenticated')).toBe('false');
+    jest.useRealTimers();
+  });
+});
+
+describe('AuthContextProvider — custom role detection and fetching', () => {
+  const mockUseGetRole = jest.requireMock('~/data-provider').useGetRole;
+  const staffPermissions = {
+    name: 'STAFF',
+    permissions: { PROMPTS: { USE: true, CREATE: false } },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    sessionStorage.clear();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('calls useGetRole with the custom role name and enabled: true for custom role users', () => {
+    jest.useFakeTimers();
+
+    renderProviderLive();
+
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'STAFF' }, token: 'tok' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    const staffCalls = mockUseGetRole.mock.calls.filter(([name]: [string]) => name === 'STAFF');
+    expect(staffCalls.length).toBeGreaterThan(0);
+    const lastStaffCall = staffCalls[staffCalls.length - 1];
+    expect(lastStaffCall[1]).toEqual(expect.objectContaining({ enabled: true }));
+
+    jest.useRealTimers();
+  });
+
+  it('calls useGetRole with enabled: false for USER role users', () => {
+    jest.useFakeTimers();
+
+    renderProviderLive();
+
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'tok' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    const sentinelCalls = mockUseGetRole.mock.calls.filter(([name]: [string]) => name === '_');
+    expect(sentinelCalls.length).toBeGreaterThan(0);
+    for (const call of sentinelCalls) {
+      expect(call[1]).toEqual(expect.objectContaining({ enabled: false }));
+    }
+
+    jest.useRealTimers();
+  });
+
+  it('calls useGetRole with enabled: false for ADMIN role users', () => {
+    jest.useFakeTimers();
+
+    renderProviderLive();
+
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'ADMIN' }, token: 'tok' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    const sentinelCalls = mockUseGetRole.mock.calls.filter(([name]: [string]) => name === '_');
+    expect(sentinelCalls.length).toBeGreaterThan(0);
+    for (const call of sentinelCalls) {
+      expect(call[1]).toEqual(expect.objectContaining({ enabled: false }));
+    }
+
+    jest.useRealTimers();
+  });
+
+  it('includes custom role data in the roles context map when loaded', () => {
+    jest.useFakeTimers();
+    mockUseGetRole.mockImplementation((name: string, opts?: { enabled?: boolean }) => {
+      if (name === 'STAFF' && opts?.enabled) {
+        return { data: staffPermissions };
+      }
+      return { data: null };
+    });
+
+    const { getByTestId } = renderProviderLive();
+
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'STAFF' }, token: 'tok' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    const rolesAttr = getByTestId('consumer').getAttribute('data-roles') ?? '{}';
+    const roles = JSON.parse(rolesAttr);
+    expect(roles).toHaveProperty('STAFF');
+    expect(roles.STAFF).toEqual(staffPermissions);
+
+    mockUseGetRole.mockReturnValue({ data: null });
     jest.useRealTimers();
   });
 });

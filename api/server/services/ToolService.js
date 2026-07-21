@@ -1,18 +1,15 @@
-const { logger } = require('@librechat/data-schemas');
-const { tool: toolFn, DynamicStructuredTool } = require('@langchain/core/tools');
+const { logger, redactMessage } = require('@librechat/data-schemas');
+const { tool: toolFn, DynamicStructuredTool } = require('@librechat/agents/langchain/tools');
 const {
   sleep,
-  EnvVar,
-  StepTypes,
-  GraphEvents,
   createToolSearch,
+  createBashExecutionTool,
   Constants: AgentConstants,
-  createProgrammaticToolCallingTool,
+  createBashProgrammaticToolCallingTool,
 } = require('@librechat/agents');
 const {
   sendEvent,
   getToolkitKey,
-  hasCustomUserVars,
   getUserMCPAuthMap,
   loadToolDefinitions,
   GenerationJobManager,
@@ -20,6 +17,18 @@ const {
   buildWebSearchContext,
   buildImageToolContext,
   buildToolClassification,
+  getMissingCustomUserVars,
+  buildWebSearchDynamicContext,
+  getCodeApiAuthHeaders,
+  getReplayablePendingMCPOAuthStart,
+  getMCPServerNamesFromTools,
+  buildMCPAuthToolCall,
+  buildMCPAuthStepId,
+  buildMCPAuthRunStepEvent,
+  buildMCPAuthRunStepDeltaEvent,
+  buildMCPAuthRunStepCompletedEvent,
+  isFileAuthoringToolDefinition,
+  ASK_USER_QUESTION_TOOL_NAME,
 } = require('@librechat/api');
 const {
   Time,
@@ -31,6 +40,7 @@ const {
   imageGenTools,
   EModelEndpoint,
   EToolResources,
+  isActionTool,
   actionDelimiter,
   ImageVisionTool,
   openapiToFunction,
@@ -43,6 +53,7 @@ const {
 } = require('librechat-data-provider');
 const {
   createActionTool,
+  legacyDomainEncode,
   decryptMetadata,
   loadActionSets,
   domainParser,
@@ -57,14 +68,113 @@ const { primeFiles: primeSearchFiles } = require('~/app/clients/tools/util/fileS
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
-const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
+const { createMCPPermissionContext, resolveConfigServers } = require('~/server/services/MCP');
+const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
-const { redactMessage } = require('~/config/parsers');
 const { findPluginAuthsByKeys } = require('~/models');
-const { getFlowStateManager } = require('~/config');
+const { getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
+
+const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
+
+/**
+ * Collapse every `actionDomainSeparator` sequence in the encoded-domain
+ * suffix of a fully-qualified action tool name to an underscore. Agents
+ * can store tool names in the raw `domainParser(..., true)` output,
+ * which for short hostnames is a `---`-separated string (e.g.
+ * `medium---com`). The lookup maps below are always keyed with the
+ * `_`-collapsed domain, so every read must normalize that suffix or
+ * short-hostname tools silently fail to resolve.
+ *
+ * The operationId portion (everything before the last `actionDelimiter`)
+ * is deliberately left untouched: `openapiToFunction` preserves hyphens
+ * in generated operationIds, so two specs can legitimately produce
+ * operationIds that differ only in hyphens-vs-underscores (e.g.
+ * `get_foo---bar` vs `get_foo_bar`). Collapsing the operationId would
+ * merge those into a single map slot and silently drop one tool.
+ */
+const normalizeActionToolName = (toolName) => {
+  const delimiterIndex = toolName.lastIndexOf(actionDelimiter);
+  if (delimiterIndex === -1) {
+    return toolName;
+  }
+  const prefixEnd = delimiterIndex + actionDelimiter.length;
+  const encodedDomain = toolName.slice(prefixEnd);
+  return toolName.slice(0, prefixEnd) + encodedDomain.replace(domainSeparatorRegex, '_');
+};
+
+/**
+ * Populate a `toolToAction` map with one slot per fully-qualified tool
+ * name (`<operationId><actionDelimiter><encoded-domain>`). Both the new
+ * and the legacy encodings of the domain are registered for every
+ * function so agents whose stored tool names predate the current
+ * encoding still resolve correctly.
+ *
+ * Indexing on the full tool name instead of the encoded domain alone is
+ * what makes multi-action agents work when two actions share a hostname:
+ * the operationId disambiguates them, so neither overwrites the other.
+ *
+ * Two actions that additionally share the same operationId still
+ * collide (nothing in the key distinguishes them). That case is
+ * pathological — `sanitizeOperationId` plus OpenAPI's own uniqueness
+ * requirement make it very unlikely — but when it does happen we log
+ * a warning so the silent-overwrite mode from the original bug cannot
+ * reappear under a different disguise.
+ */
+const registerActionTools = ({
+  toolToAction,
+  functionSignatures,
+  normalizedDomain,
+  legacyNormalized,
+  makeEntry,
+}) => {
+  const setKey = (key, entry) => {
+    if (toolToAction.has(key)) {
+      logger.warn(
+        `[Actions] operationId collision: "${key}" already registered; ` +
+          `action "${entry.action?.action_id}" overwrites the previous entry. ` +
+          `Two actions share both the operationId and the encoded hostname.`,
+      );
+    }
+    toolToAction.set(key, entry);
+  };
+
+  for (const sig of functionSignatures) {
+    const entry = makeEntry(sig);
+    // Use `sig.name` verbatim: `openapiToFunction` keeps hyphens in
+    // generated operationIds, so `get_foo---bar` and `get_foo_bar` are
+    // distinct operations on the same spec. `normalizeActionToolName`
+    // only touches the encoded-domain suffix at lookup time, so map
+    // keys and lookups stay consistent without merging distinct
+    // operationIds into the same slot.
+    setKey(`${sig.name}${actionDelimiter}${normalizedDomain}`, entry);
+    if (legacyNormalized !== normalizedDomain) {
+      setKey(`${sig.name}${actionDelimiter}${legacyNormalized}`, entry);
+    }
+  }
+};
+
+/**
+ * Resolves the set of enabled agent capabilities from endpoints config,
+ * falling back to app-level or default capabilities for ephemeral agents.
+ * @param {ServerRequest} req
+ * @param {Object} appConfig
+ * @param {string} agentId
+ * @returns {Promise<Set<string>>}
+ */
+async function resolveAgentCapabilities(req, appConfig, agentId) {
+  const endpointsConfig = await getEndpointsConfig(req);
+  let capabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
+  if (capabilities.size === 0 && isEphemeralAgentId(agentId)) {
+    capabilities = new Set(
+      appConfig.endpoints?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
+    );
+  }
+  return capabilities;
+}
+
 /**
  * Processes the required actions by calling the appropriate tools and returning the outputs.
  * @param {OpenAIClient} client - OpenAI or StreamRunManager Client.
@@ -153,8 +263,7 @@ async function processRequiredActions(client, requiredActions) {
 
   const promises = [];
 
-  /** @type {Action[]} */
-  let actionSets = [];
+  let actionSetsData = null;
   let isActionTool = false;
   const ActionToolMap = {};
   const ActionBuildersMap = {};
@@ -240,25 +349,26 @@ async function processRequiredActions(client, requiredActions) {
     if (!tool) {
       // throw new Error(`Tool ${currentAction.tool} not found.`);
 
-      // Load all action sets once if not already loaded
-      if (!actionSets.length) {
-        actionSets =
+      if (!actionSetsData) {
+        /** @type {Action[]} */
+        const actionSets =
           (await loadActionSets({
             assistant_id: client.req.body.assistant_id,
           })) ?? [];
 
-        // Process all action sets once
-        // Map domains to their processed action sets
-        const processedDomains = new Map();
-        const domainMap = new Map();
+        // See registerActionTools for the key-shape rationale.
+        const toolToAction = new Map();
 
         for (const action of actionSets) {
           const domain = await domainParser(action.metadata.domain, true);
-          domainMap.set(domain, action);
+          const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
+          const legacyDomain = legacyDomainEncode(action.metadata.domain);
+          const legacyNormalized = legacyDomain.replace(domainSeparatorRegex, '_');
 
           const isDomainAllowed = await isActionDomainAllowed(
             action.metadata.domain,
             appConfig?.actions?.allowedDomains,
+            appConfig?.actions?.allowedAddresses,
           );
           if (!isDomainAllowed) {
             continue;
@@ -287,7 +397,7 @@ async function processRequiredActions(client, requiredActions) {
           }
 
           // Process the OpenAPI spec
-          const { requestBuilders } = openapiToFunction(validationResult.spec);
+          const { requestBuilders, functionSignatures } = openapiToFunction(validationResult.spec);
 
           // Store encrypted values for OAuth flow
           const encrypted = {
@@ -299,46 +409,35 @@ async function processRequiredActions(client, requiredActions) {
           const decryptedAction = { ...action };
           decryptedAction.metadata = await decryptMetadata(action.metadata);
 
-          processedDomains.set(domain, {
-            action: decryptedAction,
-            requestBuilders,
-            encrypted,
+          registerActionTools({
+            toolToAction,
+            functionSignatures,
+            normalizedDomain,
+            legacyNormalized,
+            makeEntry: (sig) => ({
+              action: decryptedAction,
+              requestBuilder: requestBuilders[sig.name],
+              encrypted,
+            }),
           });
 
           // Store builders for reuse
           ActionBuildersMap[action.metadata.domain] = requestBuilders;
         }
 
-        // Update actionSets reference to use the domain map
-        actionSets = { domainMap, processedDomains };
+        actionSetsData = toolToAction;
       }
 
-      // Find the matching domain for this tool
-      let currentDomain = '';
-      for (const domain of actionSets.domainMap.keys()) {
-        if (currentAction.tool.includes(domain)) {
-          currentDomain = domain;
-          break;
-        }
-      }
-
-      if (!currentDomain || !actionSets.processedDomains.has(currentDomain)) {
-        // TODO: try `function` if no action set is found
-        // throw new Error(`Tool ${currentAction.tool} not found.`);
+      const entry = actionSetsData.get(normalizeActionToolName(currentAction.tool));
+      if (!entry) {
         continue;
       }
 
-      const { action, requestBuilders, encrypted } = actionSets.processedDomains.get(currentDomain);
-      const functionName = currentAction.tool.replace(`${actionDelimiter}${currentDomain}`, '');
-      const requestBuilder = requestBuilders[functionName];
-
-      if (!requestBuilder) {
-        // throw new Error(`Tool ${currentAction.tool} not found.`);
-        continue;
-      }
+      const { action, requestBuilder, encrypted } = entry;
 
       // We've already decrypted the metadata, so we can pass it directly
       const _allowedDomains = appConfig?.actions?.allowedDomains;
+      const _allowedAddresses = appConfig?.actions?.allowedAddresses;
       tool = await createActionTool({
         userId: client.req.user.id,
         res: client.res,
@@ -347,6 +446,7 @@ async function processRequiredActions(client, requiredActions) {
         // Note: intentionally not passing zodSchema, name, and description for assistants API
         encrypted, // Pass the encrypted values for OAuth flow
         useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,
+        allowedAddresses: _allowedAddresses,
       });
       if (!tool) {
         logger.warn(
@@ -401,13 +501,19 @@ async function processRequiredActions(client, requiredActions) {
  * @returns {Promise<{
  *   tools?: StructuredTool[];
  *   toolContextMap?: Record<string, unknown>;
+ *   dynamicToolContextMap?: Record<string, unknown>;
  *   userMCPAuthMap?: Record<string, Record<string, string>>;
  *   toolRegistry?: Map<string, import('~/utils/toolClassification').LCTool>;
  *   hasDeferredTools?: boolean;
  * }>} The agent tools and registry.
  */
 /** Native LibreChat tools that are not in the manifest */
-const nativeTools = new Set([Tools.execute_code, Tools.file_search, Tools.web_search]);
+const nativeTools = new Set([
+  Tools.execute_code,
+  Tools.file_search,
+  Tools.web_search,
+  Tools.memory,
+]);
 
 /** Checks if a tool name is a known built-in tool */
 const isBuiltInTool = (toolName) =>
@@ -429,6 +535,7 @@ const isBuiltInTool = (toolName) =>
  * @returns {Promise<{
  *   toolDefinitions?: import('@librechat/api').LCTool[];
  *   toolRegistry?: Map<string, import('@librechat/api').LCTool>;
+ *   mcpAvailableTools?: Record<string, import('@librechat/api').LCAvailableTools>;
  *   userMCPAuthMap?: Record<string, Record<string, string>>;
  *   hasDeferredTools?: boolean;
  * }>}
@@ -446,18 +553,19 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   }
 
   const appConfig = req.config;
-  const endpointsConfig = await getEndpointsConfig(req);
-  let enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
-
-  if (enabledCapabilities.size === 0 && isEphemeralAgentId(agent.id)) {
-    enabledCapabilities = new Set(
-      appConfig.endpoints?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
-    );
-  }
+  const enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent.id);
 
   const checkCapability = (capability) => enabledCapabilities.has(capability);
   const areToolsEnabled = checkCapability(AgentCapabilities.tools);
+  const actionsEnabled = checkCapability(AgentCapabilities.actions);
   const deferredToolsEnabled = checkCapability(AgentCapabilities.deferred_tools);
+  const programmaticToolsEnabled = enabledCapabilities.has(AgentCapabilities.programmatic_tools);
+  const codeExecutionEnabled =
+    agent.tools?.includes(Tools.execute_code) === true &&
+    enabledCapabilities.has(AgentCapabilities.execute_code);
+  const hasMCPTools = agent.tools?.some((tool) => tool?.includes(Constants.mcp_delimiter));
+  const mcpPermissionContext = createMCPPermissionContext(req);
+  const canUseMCP = hasMCPTools ? await mcpPermissionContext.canUseServers(req.user) : true;
 
   const filteredTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
@@ -469,7 +577,19 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     if (tool === Tools.web_search) {
       return checkCapability(AgentCapabilities.web_search);
     }
-    if (!areToolsEnabled && !tool.includes(actionDelimiter)) {
+    if (tool === Tools.memory) {
+      return checkCapability(AgentCapabilities.memory);
+    }
+    if (tool === ASK_USER_QUESTION_TOOL_NAME) {
+      return checkCapability(AgentCapabilities.ask_user_question);
+    }
+    if (isActionTool(tool)) {
+      return actionsEnabled;
+    }
+    if (tool?.includes(Constants.mcp_delimiter)) {
+      return areToolsEnabled && canUseMCP;
+    }
+    if (!areToolsEnabled) {
       return false;
     }
     return true;
@@ -481,9 +601,9 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
-  if (hasCustomUserVars(req.config)) {
+  if (filteredTools?.some((t) => t.includes(Constants.mcp_delimiter))) {
     userMCPAuthMap = await getUserMCPAuthMap({
-      tools: agent.tools,
+      tools: filteredTools,
       userId: req.user.id,
       findPluginAuthsByKeys,
     });
@@ -491,41 +611,46 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
   const flowsCache = getLogStores(CacheKeys.FLOWS);
   const flowManager = getFlowStateManager(flowsCache);
+  const configServers = await resolveConfigServers(req);
   const pendingOAuthServers = new Set();
+  const pendingOAuthStarts = new Map();
+  const emittedOAuthStarts = new Map();
+  const oauthToolCallIds = new Map();
+  const oauthStepIndexes = new Map();
+  /** @type {Record<string, import('@librechat/api').LCAvailableTools>} */
+  const mcpAvailableTools = {};
+  const requestScopedConnections = getMCPRequestContext(req, res);
+  const rememberMCPAvailableTools = (serverName, availableTools) => {
+    if (!availableTools || Object.keys(availableTools).length === 0) {
+      return;
+    }
+    mcpAvailableTools[serverName] = availableTools;
+  };
 
-  const createOAuthEmitter = (serverName) => {
-    return async (authURL) => {
-      const flowId = `${req.user.id}:${serverName}:${Date.now()}`;
-      const stepId = 'step_oauth_login_' + serverName;
-      const toolCall = {
+  const createOAuthEmitter = (serverName, index) => {
+    return async (authURL, options) => {
+      if (emittedOAuthStarts.get(serverName) === authURL) {
+        return;
+      }
+      emittedOAuthStarts.set(serverName, authURL);
+
+      const flowId =
+        oauthToolCallIds.get(serverName) ?? `${req.user.id}:${serverName}:${Date.now()}`;
+      const stepId = buildMCPAuthStepId(serverName);
+      oauthToolCallIds.set(serverName, flowId);
+      oauthStepIndexes.set(serverName, index);
+      const toolCall = buildMCPAuthToolCall({
         id: flowId,
-        name: serverName,
-        type: 'tool_call_chunk',
-      };
+        serverName,
+      });
 
-      const runStepData = {
-        runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
-        id: stepId,
-        type: StepTypes.TOOL_CALLS,
-        index: 0,
-        stepDetails: {
-          type: StepTypes.TOOL_CALLS,
-          tool_calls: [toolCall],
-        },
-      };
-
-      const runStepDeltaData = {
-        id: stepId,
-        delta: {
-          type: StepTypes.TOOL_CALLS,
-          tool_calls: [{ ...toolCall, args: '' }],
-          auth: authURL,
-          expires_at: Date.now() + Time.TWO_MINUTES,
-        },
-      };
-
-      const runStepEvent = { event: GraphEvents.ON_RUN_STEP, data: runStepData };
-      const runStepDeltaEvent = { event: GraphEvents.ON_RUN_STEP_DELTA, data: runStepDeltaData };
+      const runStepEvent = buildMCPAuthRunStepEvent({ stepId, toolCall, index });
+      const runStepDeltaEvent = buildMCPAuthRunStepDeltaEvent({
+        authURL,
+        stepId,
+        toolCall,
+        options,
+      });
 
       if (streamId) {
         await GenerationJobManager.emitChunk(streamId, runStepEvent);
@@ -541,14 +666,125 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     };
   };
 
+  const createOAuthEndEmitter = (serverName) => {
+    return async () => {
+      const stepId = buildMCPAuthStepId(serverName);
+      const toolCall = buildMCPAuthToolCall({
+        id: oauthToolCallIds.get(serverName),
+        args: '',
+        output: 'OAuth authentication completed',
+        serverName,
+        type: 'tool_call',
+      });
+      const runStepCompletedEvent = buildMCPAuthRunStepCompletedEvent({
+        stepId,
+        toolCall,
+        index: oauthStepIndexes.get(serverName) ?? 0,
+      });
+
+      if (streamId) {
+        await GenerationJobManager.emitChunk(streamId, runStepCompletedEvent);
+      } else if (res && !res.writableEnded) {
+        sendEvent(res, runStepCompletedEvent);
+      } else {
+        logger.warn(
+          `[Tool Definitions] Cannot emit OAuth completion for ${serverName}: no streamId and res not available`,
+        );
+      }
+    };
+  };
+
+  const getPendingOAuthStartForEmit = async (serverName) => {
+    const cachedOAuthStart = pendingOAuthStarts.get(serverName);
+    if (cachedOAuthStart?.options?.expiresAt != null) {
+      return cachedOAuthStart;
+    }
+
+    const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
+      flowManager,
+      userId: req.user.id,
+      serverName,
+    });
+    if (!pendingOAuthStart) {
+      return cachedOAuthStart;
+    }
+
+    if (!cachedOAuthStart || pendingOAuthStart.authURL === cachedOAuthStart.authURL) {
+      pendingOAuthStarts.set(serverName, pendingOAuthStart);
+      return pendingOAuthStart;
+    }
+
+    return cachedOAuthStart;
+  };
+
   const getOrFetchMCPServerTools = async (userId, serverName) => {
-    const cached = await getMCPServerTools(userId, serverName);
+    const addPendingOAuthServer = async () => {
+      const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
+        flowManager,
+        userId,
+        serverName,
+      });
+      if (!pendingOAuthStart) {
+        return false;
+      }
+
+      pendingOAuthServers.add(serverName);
+      pendingOAuthStarts.set(serverName, pendingOAuthStart);
+      return true;
+    };
+
+    let serverConfig;
+    try {
+      serverConfig =
+        configServers?.[serverName] ??
+        (await getMCPServersRegistry().getServerConfig(serverName, userId, configServers));
+    } catch (err) {
+      logger.warn(
+        `[Tool Definitions] MCP registry unavailable while resolving '${serverName}': ${
+          err?.message ?? err
+        }. Skipping MCP tool exposure for this lookup.`,
+      );
+      return null;
+    }
+
+    if (!serverConfig) {
+      logger.warn(
+        `[Tool Definitions] Skipping MCP server '${serverName}': no server config found (server may have been removed).`,
+      );
+      return null;
+    }
+
+    const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+    const missingUserVars = getMissingCustomUserVars(serverConfig, customUserVars);
+    if (missingUserVars.length > 0) {
+      logger.warn(
+        `[Tool Definitions] Skipping MCP server '${serverName}': required user-provided variable(s) not set: ${missingUserVars.join(
+          ', ',
+        )}. Tools will not be exposed until the user configures them.`,
+      );
+      return null;
+    }
+
+    if (mcpAvailableTools[serverName]) {
+      return mcpAvailableTools[serverName];
+    }
+
+    const cached = await getMCPServerTools(userId, serverName, serverConfig);
     if (cached) {
+      rememberMCPAvailableTools(serverName, cached);
+      await addPendingOAuthServer();
       return cached;
     }
 
-    const oauthStart = async () => {
+    if (await addPendingOAuthServer()) {
+      return null;
+    }
+
+    const oauthStart = async (authURL, options) => {
       pendingOAuthServers.add(serverName);
+      if (typeof authURL === 'string' && authURL.length > 0) {
+        pendingOAuthStarts.set(serverName, { authURL, options });
+      }
     };
 
     const result = await reinitMCPServer({
@@ -556,9 +792,13 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       oauthStart,
       flowManager,
       serverName,
+      configServers,
       userMCPAuthMap,
+      requestBody: req.body,
+      requestScopedConnections,
     });
 
+    rememberMCPAvailableTools(serverName, result?.availableTools);
     return result?.availableTools || null;
   };
 
@@ -570,13 +810,23 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
     const definitions = [];
     const allowedDomains = appConfig?.actions?.allowedDomains;
-    const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
+    const allowedAddresses = appConfig?.actions?.allowedAddresses;
+    const normalizedToolNames = new Set(
+      actionToolNames.map((n) => n.replace(domainSeparatorRegex, '_')),
+    );
 
     for (const action of actionSets) {
       const domain = await domainParser(action.metadata.domain, true);
       const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
 
-      const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain, allowedDomains);
+      const legacyDomain = legacyDomainEncode(action.metadata.domain);
+      const legacyNormalized = legacyDomain.replace(domainSeparatorRegex, '_');
+
+      const isDomainAllowed = await isActionDomainAllowed(
+        action.metadata.domain,
+        allowedDomains,
+        allowedAddresses,
+      );
       if (!isDomainAllowed) {
         logger.warn(
           `[Actions] Domain "${action.metadata.domain}" not in allowedDomains. ` +
@@ -595,7 +845,8 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
       for (const sig of functionSignatures) {
         const toolName = `${sig.name}${actionDelimiter}${normalizedDomain}`;
-        if (!actionToolNames.some((name) => name.replace(domainSeparatorRegex, '_') === toolName)) {
+        const legacyToolName = `${sig.name}${actionDelimiter}${legacyNormalized}`;
+        if (!normalizedToolNames.has(toolName) && !normalizedToolNames.has(legacyToolName)) {
           continue;
         }
 
@@ -617,14 +868,32 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       tools: filteredTools,
       toolOptions: agent.tool_options,
       deferredToolsEnabled,
+      programmaticToolsEnabled,
+      codeExecutionEnabled,
+      provider: agent.provider,
     },
     {
       isBuiltInTool,
-      loadAuthValues,
       getOrFetchMCPServerTools,
       getActionToolDefinitions,
     },
   );
+
+  for (const serverName of getMCPServerNamesFromTools(filteredTools)) {
+    if (pendingOAuthServers.has(serverName)) {
+      continue;
+    }
+
+    const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
+      flowManager,
+      userId: req.user.id,
+      serverName,
+    });
+    if (pendingOAuthStart) {
+      pendingOAuthServers.add(serverName);
+      pendingOAuthStarts.set(serverName, pendingOAuthStart);
+    }
+  }
 
   if (pendingOAuthServers.size > 0 && (res || streamId)) {
     const serverNames = Array.from(pendingOAuthServers);
@@ -632,19 +901,29 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       `[Tool Definitions] OAuth required for ${serverNames.length} server(s): ${serverNames.join(', ')}. Emitting events and waiting.`,
     );
 
-    const oauthWaitPromises = serverNames.map(async (serverName) => {
+    const oauthWaitPromises = serverNames.map(async (serverName, index) => {
       try {
+        const pendingOAuthStart = await getPendingOAuthStartForEmit(serverName);
+        const oauthStart = createOAuthEmitter(serverName, index);
+        if (pendingOAuthStart) {
+          await oauthStart(pendingOAuthStart.authURL, pendingOAuthStart.options);
+        }
+
         const result = await reinitMCPServer({
           user: req.user,
           serverName,
+          configServers,
           userMCPAuthMap,
           flowManager,
+          requestBody: req.body,
           returnOnOAuth: false,
-          oauthStart: createOAuthEmitter(serverName),
+          oauthStart,
+          oauthEnd: createOAuthEndEmitter(serverName),
           connectionTimeout: Time.TWO_MINUTES,
         });
 
         if (result?.availableTools) {
+          rememberMCPAvailableTools(serverName, result.availableTools);
           logger.info(`[Tool Definitions] OAuth completed for ${serverName}, tools available`);
           return { serverName, success: true };
         }
@@ -671,10 +950,12 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           tools: filteredTools,
           toolOptions: agent.tool_options,
           deferredToolsEnabled,
+          programmaticToolsEnabled,
+          codeExecutionEnabled,
+          provider: agent.provider,
         },
         {
           isBuiltInTool,
-          loadAuthValues,
           getOrFetchMCPServerTools,
           getActionToolDefinitions,
         },
@@ -687,30 +968,39 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
   /** @type {Record<string, string>} */
   const toolContextMap = {};
+  /** @type {Record<string, string>} */
+  const dynamicToolContextMap = {};
   const hasWebSearch = filteredTools.includes(Tools.web_search);
   const hasFileSearch = filteredTools.includes(Tools.file_search);
   const hasExecuteCode = filteredTools.includes(Tools.execute_code);
 
   if (hasWebSearch) {
     toolContextMap[Tools.web_search] = buildWebSearchContext();
+    dynamicToolContextMap[Tools.web_search] = buildWebSearchDynamicContext(
+      req.conversationCreatedAt,
+    );
   }
 
+  /**
+   * `files` carry the upload session_ids; we surface them so client.js can
+   * seed `Graph.sessions[EXECUTE_CODE]` before run start. Without that seed,
+   * the agents-side `ToolNode.getCodeSessionContext` returns undefined on
+   * call #1, `_injected_files` is never set on the tool call, and the
+   * sandbox can't see the prior turn's generated artifacts on first read.
+   */
+  let primedCodeFiles;
   if (hasExecuteCode && tool_resources) {
     try {
-      const authValues = await loadAuthValues({
-        userId: req.user.id,
-        authFields: [EnvVar.CODE_API_KEY],
+      const { toolContext, files } = await primeCodeFiles({
+        req,
+        tool_resources,
+        agentId: agent.id,
       });
-      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
-
-      if (codeApiKey) {
-        const { toolContext } = await primeCodeFiles(
-          { req, tool_resources, agentId: agent.id },
-          codeApiKey,
-        );
-        if (toolContext) {
-          toolContextMap[Tools.execute_code] = toolContext;
-        }
+      if (toolContext) {
+        dynamicToolContextMap[Tools.execute_code] = toolContext;
+      }
+      if (files?.length) {
+        primedCodeFiles = files;
       }
     } catch (error) {
       logger.error('[loadToolDefinitionsWrapper] Error priming code files:', error);
@@ -725,7 +1015,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         agentId: agent.id,
       });
       if (toolContext) {
-        toolContextMap[Tools.file_search] = toolContext;
+        dynamicToolContextMap[Tools.file_search] = toolContext;
       }
     } catch (error) {
       logger.error('[loadToolDefinitionsWrapper] Error priming search files:', error);
@@ -744,7 +1034,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         contextDescription: 'image editing',
       });
       if (toolContext) {
-        toolContextMap.image_edit_oai = toolContext;
+        dynamicToolContextMap.image_edit_oai = toolContext;
       }
     }
 
@@ -755,17 +1045,22 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         contextDescription: 'image context',
       });
       if (toolContext) {
-        toolContextMap.gemini_image_gen = toolContext;
+        dynamicToolContextMap.gemini_image_gen = toolContext;
       }
     }
   }
 
   return {
     toolRegistry,
+    mcpAvailableTools,
+    requestScopedConnections,
     userMCPAuthMap,
     toolContextMap,
+    dynamicToolContextMap,
     toolDefinitions,
     hasDeferredTools,
+    actionsEnabled,
+    primedCodeFiles,
   };
 }
 
@@ -809,14 +1104,7 @@ async function loadAgentTools({
   }
 
   const appConfig = req.config;
-  const endpointsConfig = await getEndpointsConfig(req);
-  let enabledCapabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
-  /** Edge case: use defined/fallback capabilities when the "agents" endpoint is not enabled */
-  if (enabledCapabilities.size === 0 && isEphemeralAgentId(agent.id)) {
-    enabledCapabilities = new Set(
-      appConfig.endpoints?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
-    );
-  }
+  const enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent.id);
   const checkCapability = (capability) => {
     const enabled = enabledCapabilities.has(capability);
     if (!enabled) {
@@ -833,6 +1121,10 @@ async function loadAgentTools({
     return enabled;
   };
   const areToolsEnabled = checkCapability(AgentCapabilities.tools);
+  const actionsEnabled = checkCapability(AgentCapabilities.actions);
+  const hasMCPTools = agent.tools?.some((tool) => tool?.includes(Constants.mcp_delimiter));
+  const mcpPermissionContext = createMCPPermissionContext(req);
+  const canUseMCP = hasMCPTools ? await mcpPermissionContext.canUseServers(req.user) : true;
 
   let includesWebSearch = false;
   const _agentTools = agent.tools?.filter((tool) => {
@@ -843,7 +1135,15 @@ async function loadAgentTools({
     } else if (tool === Tools.web_search) {
       includesWebSearch = checkCapability(AgentCapabilities.web_search);
       return includesWebSearch;
-    } else if (!areToolsEnabled && !tool.includes(actionDelimiter)) {
+    } else if (tool === Tools.memory) {
+      return checkCapability(AgentCapabilities.memory);
+    } else if (tool === ASK_USER_QUESTION_TOOL_NAME) {
+      return checkCapability(AgentCapabilities.ask_user_question);
+    } else if (isActionTool(tool)) {
+      return actionsEnabled;
+    } else if (tool?.includes(Constants.mcp_delimiter)) {
+      return areToolsEnabled && canUseMCP;
+    } else if (!areToolsEnabled) {
       return false;
     }
     return true;
@@ -860,16 +1160,15 @@ async function loadAgentTools({
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
-  //TODO pass config from registry
-  if (hasCustomUserVars(req.config)) {
+  if (_agentTools?.some((t) => t.includes(Constants.mcp_delimiter))) {
     userMCPAuthMap = await getUserMCPAuthMap({
-      tools: agent.tools,
+      tools: _agentTools,
       userId: req.user.id,
       findPluginAuthsByKeys,
     });
   }
 
-  const { loadedTools, toolContextMap } = await loadTools({
+  const { loadedTools, toolContextMap, dynamicToolContextMap, primedCodeFiles } = await loadTools({
     agent,
     signal,
     userMCPAuthMap,
@@ -884,6 +1183,8 @@ async function loadAgentTools({
       processFileURL,
       uploadImageBuffer,
       returnMetadata: true,
+      mcpPermissionContext,
+      requestScopedConnections: getMCPRequestContext(req, res),
       [Tools.web_search]: webSearchCallbacks,
     },
     webSearch: appConfig.webSearch,
@@ -893,14 +1194,21 @@ async function loadAgentTools({
 
   /** Build tool registry from MCP tools and create PTC/tool search tools if configured */
   const deferredToolsEnabled = checkCapability(AgentCapabilities.deferred_tools);
+  const programmaticToolsEnabled = enabledCapabilities.has(AgentCapabilities.programmatic_tools);
+  const codeExecutionEnabled =
+    agent.tools?.includes(Tools.execute_code) === true &&
+    enabledCapabilities.has(AgentCapabilities.execute_code);
   const { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools } =
     await buildToolClassification({
       loadedTools,
       userId: req.user.id,
       agentId: agent.id,
+      provider: agent.provider,
       agentToolOptions: agent.tool_options,
       deferredToolsEnabled,
-      loadAuthValues,
+      programmaticToolsEnabled,
+      codeExecutionEnabled,
+      authHeaders: () => getCodeApiAuthHeaders(req),
     });
 
   const agentTools = [];
@@ -949,14 +1257,19 @@ async function loadAgentTools({
 
   agentTools.push(...additionalTools);
 
-  if (!checkCapability(AgentCapabilities.actions)) {
+  const hasActionTools = _agentTools.some((t) => isActionTool(t));
+  if (!hasActionTools) {
     return {
       toolRegistry,
+      requestScopedConnections: getMCPRequestContext(req, res),
       userMCPAuthMap,
       toolContextMap,
+      dynamicToolContextMap,
       toolDefinitions,
       hasDeferredTools,
+      actionsEnabled,
       tools: agentTools,
+      primedCodeFiles,
     };
   }
 
@@ -967,26 +1280,31 @@ async function loadAgentTools({
     }
     return {
       toolRegistry,
+      requestScopedConnections: getMCPRequestContext(req, res),
       userMCPAuthMap,
       toolContextMap,
+      dynamicToolContextMap,
       toolDefinitions,
       hasDeferredTools,
+      actionsEnabled,
       tools: agentTools,
+      primedCodeFiles,
     };
   }
 
-  // Process each action set once (validate spec, decrypt metadata)
-  const processedActionSets = new Map();
-  const domainMap = new Map();
+  // See registerActionTools for the key-shape rationale.
+  const toolToAction = new Map();
 
   for (const action of actionSets) {
     const domain = await domainParser(action.metadata.domain, true);
-    domainMap.set(domain, action);
+    const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
+    const legacyDomain = legacyDomainEncode(action.metadata.domain);
+    const legacyNormalized = legacyDomain.replace(domainSeparatorRegex, '_');
 
-    // Check if domain is allowed (do this once per action set)
     const isDomainAllowed = await isActionDomainAllowed(
       action.metadata.domain,
       appConfig?.actions?.allowedDomains,
+      appConfig?.actions?.allowedAddresses,
     );
     if (!isDomainAllowed) {
       continue;
@@ -1028,12 +1346,18 @@ async function loadAgentTools({
       true,
     );
 
-    processedActionSets.set(domain, {
-      action: decryptedAction,
-      requestBuilders,
+    registerActionTools({
+      toolToAction,
       functionSignatures,
-      zodSchemas,
-      encrypted,
+      normalizedDomain,
+      legacyNormalized,
+      makeEntry: (sig) => ({
+        action: decryptedAction,
+        requestBuilder: requestBuilders[sig.name],
+        zodSchema: zodSchemas[sig.name],
+        functionSignature: sig,
+        encrypted,
+      }),
     });
   }
 
@@ -1045,51 +1369,37 @@ async function loadAgentTools({
       continue;
     }
 
-    // Find the matching domain for this tool
-    let currentDomain = '';
-    for (const domain of domainMap.keys()) {
-      if (toolName.includes(domain)) {
-        currentDomain = domain;
-        break;
-      }
-    }
-
-    if (!currentDomain || !processedActionSets.has(currentDomain)) {
+    const entry = toolToAction.get(normalizeActionToolName(toolName));
+    if (!entry) {
       continue;
     }
 
-    const { action, encrypted, zodSchemas, requestBuilders, functionSignatures } =
-      processedActionSets.get(currentDomain);
-    const functionName = toolName.replace(`${actionDelimiter}${currentDomain}`, '');
-    const functionSig = functionSignatures.find((sig) => sig.name === functionName);
-    const requestBuilder = requestBuilders[functionName];
-    const zodSchema = zodSchemas[functionName];
+    const { action, encrypted, zodSchema, requestBuilder, functionSignature } = entry;
+    const _allowedDomains = appConfig?.actions?.allowedDomains;
+    const _allowedAddresses = appConfig?.actions?.allowedAddresses;
+    const tool = await createActionTool({
+      userId: req.user.id,
+      res,
+      action,
+      requestBuilder,
+      zodSchema,
+      encrypted,
+      name: toolName,
+      description: functionSignature.description,
+      streamId,
+      useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,
+      allowedAddresses: _allowedAddresses,
+    });
 
-    if (requestBuilder) {
-      const _allowedDomains = appConfig?.actions?.allowedDomains;
-      const tool = await createActionTool({
-        userId: req.user.id,
-        res,
-        action,
-        requestBuilder,
-        zodSchema,
-        encrypted,
-        name: toolName,
-        description: functionSig.description,
-        streamId,
-        useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,
-      });
-
-      if (!tool) {
-        logger.warn(
-          `Invalid action: user: ${req.user.id} | agent_id: ${agent.id} | toolName: ${toolName}`,
-        );
-        throw new Error(`{"type":"${ErrorTypes.INVALID_ACTION}"}`);
-      }
-
-      agentTools.push(tool);
-      ActionToolMap[toolName] = tool;
+    if (!tool) {
+      logger.warn(
+        `Invalid action: user: ${req.user.id} | agent_id: ${agent.id} | toolName: ${toolName}`,
+      );
+      throw new Error(`{"type":"${ErrorTypes.INVALID_ACTION}"}`);
     }
+
+    agentTools.push(tool);
+    ActionToolMap[toolName] = tool;
   }
 
   if (_agentTools.length > 0 && agentTools.length === 0) {
@@ -1099,11 +1409,15 @@ async function loadAgentTools({
 
   return {
     toolRegistry,
+    requestScopedConnections: getMCPRequestContext(req, res),
     toolContextMap,
+    dynamicToolContextMap,
     userMCPAuthMap,
     toolDefinitions,
     hasDeferredTools,
+    actionsEnabled,
     tools: agentTools,
+    primedCodeFiles,
   };
 }
 
@@ -1120,9 +1434,13 @@ async function loadAgentTools({
  * @param {AbortSignal} [params.signal] - Abort signal
  * @param {Object} params.agent - The agent object
  * @param {string[]} params.toolNames - Names of tools to load
+ * @param {Map} [params.toolRegistry] - Tool registry
+ * @param {Record<string, import('@librechat/api').LCAvailableTools>} [params.mcpAvailableTools] - Run-scoped MCP tool definitions
+ * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections] - Run-scoped MCP connections
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap] - User MCP auth map
  * @param {Object} [params.tool_resources] - Tool resources
  * @param {string|null} [params.streamId] - Stream ID for web search callbacks
+ * @param {boolean} [params.actionsEnabled] - Whether the actions capability is enabled
  * @returns {Promise<{ loadedTools: Array, configurable: Object }>}
  */
 async function loadToolsForExecution({
@@ -1132,16 +1450,62 @@ async function loadToolsForExecution({
   agent,
   toolNames,
   toolRegistry,
+  backgroundToolNames,
+  mcpAvailableTools,
+  requestScopedConnections,
   userMCPAuthMap,
   tool_resources,
   streamId = null,
+  actionsEnabled,
 }) {
   const appConfig = req.config;
   const allLoadedTools = [];
-  const configurable = { userMCPAuthMap };
+  const mcpRequestScopedConnections = requestScopedConnections ?? getMCPRequestContext(req, res);
+  const configurable = { userMCPAuthMap, requestScopedConnections: mcpRequestScopedConnections };
+  /** Per-agent set of tools that received the injected `run_in_background`
+   *  param; the event-driven executor gates background dispatch and the
+   *  `check_background_task` poll tool on this reliable per-agent channel. */
+  if (backgroundToolNames?.length) {
+    configurable.backgroundToolNames = backgroundToolNames;
+  }
 
   const isToolSearch = toolNames.includes(AgentConstants.TOOL_SEARCH);
-  const isPTC = toolNames.includes(AgentConstants.PROGRAMMATIC_TOOL_CALLING);
+  const ptcToolNames = [
+    AgentConstants.BASH_PROGRAMMATIC_TOOL_CALLING,
+    AgentConstants.PROGRAMMATIC_TOOL_CALLING,
+  ].filter((name) => toolNames.includes(name));
+  const isPTCRequested = ptcToolNames.length > 0;
+  const isBashToolRequested = toolNames.includes(AgentConstants.BASH_TOOL);
+  const isLegacyExecuteCodeRequested = toolNames.includes(Tools.execute_code);
+  const isCodeExecutionToolRequested = isBashToolRequested || isLegacyExecuteCodeRequested;
+
+  let enabledCapabilities;
+  if (actionsEnabled === undefined || isPTCRequested || isCodeExecutionToolRequested) {
+    enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent?.id);
+  }
+  if (actionsEnabled === undefined) {
+    actionsEnabled = enabledCapabilities.has(AgentCapabilities.actions);
+  }
+  const codeExecutionEnabled =
+    enabledCapabilities?.has(AgentCapabilities.execute_code) === true &&
+    agent?.tools?.includes(Tools.execute_code) === true;
+
+  /**
+   * Opt bash_tool into the hedged stateful-session description. Gated on code
+   * execution being enabled AND the admin `stateful_code_sessions` capability
+   * AND the agent's own builder opt-in; off by default. Sets prompt text only
+   * (the wire hint is set at run config). PTC keeps its stateless prompt in
+   * v1. Older @librechat/agents ignore the param.
+   */
+  const statefulCodeSessions =
+    codeExecutionEnabled &&
+    enabledCapabilities?.has(AgentCapabilities.stateful_code_sessions) === true &&
+    agent?.stateful_code_sessions === true;
+
+  const isPTC =
+    isPTCRequested &&
+    enabledCapabilities.has(AgentCapabilities.programmatic_tools) &&
+    codeExecutionEnabled;
 
   logger.debug(
     `[loadToolsForExecution] isToolSearch: ${isToolSearch}, toolRegistry: ${toolRegistry?.size ?? 'undefined'}`,
@@ -1159,26 +1523,59 @@ async function loadToolsForExecution({
   if (isPTC && toolRegistry) {
     configurable.toolRegistry = toolRegistry;
     try {
-      const authValues = await loadAuthValues({
-        userId: req.user.id,
-        authFields: [EnvVar.CODE_API_KEY],
-      });
-      const codeApiKey = authValues[EnvVar.CODE_API_KEY];
-
-      if (codeApiKey) {
-        const ptcTool = createProgrammaticToolCallingTool({ apiKey: codeApiKey });
+      /**
+       * LibreChat threads per-request Code API auth through the agents
+       * library so PTC calls share the same managed auth context.
+       */
+      for (const name of ptcToolNames) {
+        const ptcTool = createBashProgrammaticToolCallingTool({
+          authHeaders: () => getCodeApiAuthHeaders(req),
+        });
+        ptcTool.name = name;
         allLoadedTools.push(ptcTool);
-      } else {
-        logger.warn('[loadToolsForExecution] PTC requested but CODE_API_KEY not available');
       }
     } catch (error) {
       logger.error('[loadToolsForExecution] Error creating PTC tool:', error);
     }
   }
 
+  const isBashTool =
+    isBashToolRequested &&
+    codeExecutionEnabled &&
+    toolRegistry?.has(AgentConstants.BASH_TOOL) === true;
+  if (isBashToolRequested && !isBashTool) {
+    logger.warn(
+      `[loadToolsForExecution] Skipping unregistered or unauthorized ${AgentConstants.BASH_TOOL}. ` +
+        `User: ${req.user.id} | Agent: ${agent?.id ?? 'unknown'}`,
+    );
+  }
+  if (isBashTool) {
+    try {
+      const bashTool = createBashExecutionTool({
+        authHeaders: () => getCodeApiAuthHeaders(req),
+        statefulSessions: statefulCodeSessions,
+      });
+      allLoadedTools.push(bashTool);
+    } catch (error) {
+      logger.error('[loadToolsForExecution] Failed to create bash_tool', error);
+    }
+  }
+
+  const fileAuthoringToolNames = new Set(
+    toolRegistry
+      ? Array.from(toolRegistry.values())
+          .filter((definition) => isFileAuthoringToolDefinition(definition))
+          .map((definition) => definition.name)
+      : [],
+  );
   const specialToolNames = new Set([
     AgentConstants.TOOL_SEARCH,
     AgentConstants.PROGRAMMATIC_TOOL_CALLING,
+    AgentConstants.BASH_PROGRAMMATIC_TOOL_CALLING,
+    AgentConstants.BASH_TOOL,
+    AgentConstants.SKILL_TOOL,
+    AgentConstants.READ_FILE,
+    ...fileAuthoringToolNames,
   ]);
 
   let ptcOrchestratedToolNames = [];
@@ -1189,14 +1586,29 @@ async function loadToolsForExecution({
   }
 
   const requestedNonSpecialToolNames = toolNames.filter((name) => !specialToolNames.has(name));
+  const allowedNonSpecialToolNames = requestedNonSpecialToolNames.filter((name) => {
+    if (name !== Tools.execute_code) {
+      return true;
+    }
+    const allowed = codeExecutionEnabled && toolRegistry?.has(Tools.execute_code) === true;
+    if (!allowed) {
+      logger.warn(
+        `[loadToolsForExecution] Skipping unregistered or unauthorized ${Tools.execute_code}. ` +
+          `User: ${req.user.id} | Agent: ${agent?.id ?? 'unknown'}`,
+      );
+    }
+    return allowed;
+  });
   const allToolNamesToLoad = isPTC
-    ? [...new Set([...requestedNonSpecialToolNames, ...ptcOrchestratedToolNames])]
-    : requestedNonSpecialToolNames;
+    ? [...new Set([...allowedNonSpecialToolNames, ...ptcOrchestratedToolNames])]
+    : allowedNonSpecialToolNames;
 
-  const actionToolNames = allToolNamesToLoad.filter((name) => name.includes(actionDelimiter));
-  const regularToolNames = allToolNamesToLoad.filter((name) => !name.includes(actionDelimiter));
+  const actionToolNames = [];
+  const regularToolNames = [];
+  for (const name of allToolNamesToLoad) {
+    (isActionTool(name) ? actionToolNames : regularToolNames).push(name);
+  }
 
-  /** @type {Record<string, unknown>} */
   if (regularToolNames.length > 0) {
     const includesWebSearch = regularToolNames.includes(Tools.web_search);
     const webSearchCallbacks = includesWebSearch ? createOnSearchResults(res, streamId) : undefined;
@@ -1215,6 +1627,8 @@ async function loadToolsForExecution({
         processFileURL,
         uploadImageBuffer,
         returnMetadata: true,
+        mcpAvailableTools,
+        requestScopedConnections: mcpRequestScopedConnections,
         [Tools.web_search]: webSearchCallbacks,
       },
       webSearch: appConfig?.webSearch,
@@ -1227,7 +1641,7 @@ async function loadToolsForExecution({
     }
   }
 
-  if (actionToolNames.length > 0 && agent) {
+  if (actionToolNames.length > 0 && agent && actionsEnabled) {
     const actionTools = await loadActionToolsForExecution({
       req,
       res,
@@ -1237,12 +1651,21 @@ async function loadToolsForExecution({
       actionToolNames,
     });
     allLoadedTools.push(...actionTools);
+  } else if (actionToolNames.length > 0 && agent && !actionsEnabled) {
+    logger.warn(
+      `[loadToolsForExecution] Capability "${AgentCapabilities.actions}" disabled. ` +
+        `Skipping action tool execution. User: ${req.user.id} | Agent: ${agent.id} | Tools: ${actionToolNames.join(', ')}`,
+    );
   }
 
   if (isPTC && allLoadedTools.length > 0) {
     const ptcToolMap = new Map();
     for (const tool of allLoadedTools) {
-      if (tool.name && tool.name !== AgentConstants.PROGRAMMATIC_TOOL_CALLING) {
+      if (
+        tool.name &&
+        tool.name !== AgentConstants.PROGRAMMATIC_TOOL_CALLING &&
+        tool.name !== AgentConstants.BASH_PROGRAMMATIC_TOOL_CALLING
+      ) {
         ptcToolMap.set(tool.name, tool);
       }
     }
@@ -1281,15 +1704,22 @@ async function loadActionToolsForExecution({
     return loadedActionTools;
   }
 
-  const processedActionSets = new Map();
-  const domainMap = new Map();
+  // See registerActionTools for the key-shape rationale.
+  const toolToAction = new Map();
   const allowedDomains = appConfig?.actions?.allowedDomains;
+  const allowedAddresses = appConfig?.actions?.allowedAddresses;
 
   for (const action of actionSets) {
     const domain = await domainParser(action.metadata.domain, true);
-    domainMap.set(domain, action);
+    const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
+    const legacyDomain = legacyDomainEncode(action.metadata.domain);
+    const legacyNormalized = legacyDomain.replace(domainSeparatorRegex, '_');
 
-    const isDomainAllowed = await isActionDomainAllowed(action.metadata.domain, allowedDomains);
+    const isDomainAllowed = await isActionDomainAllowed(
+      action.metadata.domain,
+      allowedDomains,
+      allowedAddresses,
+    );
     if (!isDomainAllowed) {
       logger.warn(
         `[Actions] Domain "${action.metadata.domain}" not in allowedDomains. ` +
@@ -1330,42 +1760,28 @@ async function loadActionToolsForExecution({
       true,
     );
 
-    processedActionSets.set(domain, {
-      action: decryptedAction,
-      requestBuilders,
+    registerActionTools({
+      toolToAction,
       functionSignatures,
-      zodSchemas,
-      encrypted,
+      normalizedDomain,
+      legacyNormalized,
+      makeEntry: (sig) => ({
+        action: decryptedAction,
+        requestBuilder: requestBuilders[sig.name],
+        zodSchema: zodSchemas[sig.name],
+        functionSignature: sig,
+        encrypted,
+      }),
     });
   }
 
-  const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
   for (const toolName of actionToolNames) {
-    let currentDomain = '';
-    for (const domain of domainMap.keys()) {
-      const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
-      if (toolName.includes(normalizedDomain)) {
-        currentDomain = domain;
-        break;
-      }
-    }
-
-    if (!currentDomain || !processedActionSets.has(currentDomain)) {
+    const entry = toolToAction.get(normalizeActionToolName(toolName));
+    if (!entry) {
       continue;
     }
 
-    const { action, encrypted, zodSchemas, requestBuilders, functionSignatures } =
-      processedActionSets.get(currentDomain);
-    const normalizedDomain = currentDomain.replace(domainSeparatorRegex, '_');
-    const functionName = toolName.replace(`${actionDelimiter}${normalizedDomain}`, '');
-    const functionSig = functionSignatures.find((sig) => sig.name === functionName);
-    const requestBuilder = requestBuilders[functionName];
-    const zodSchema = zodSchemas[functionName];
-
-    if (!requestBuilder) {
-      continue;
-    }
-
+    const { action, encrypted, zodSchema, requestBuilder, functionSignature } = entry;
     const tool = await createActionTool({
       userId: req.user.id,
       res,
@@ -1375,8 +1791,9 @@ async function loadActionToolsForExecution({
       encrypted,
       requestBuilder,
       name: toolName,
-      description: functionSig?.description ?? '',
+      description: functionSignature.description,
       useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
+      allowedAddresses,
     });
 
     if (!tool) {
@@ -1397,4 +1814,5 @@ module.exports = {
   loadAgentTools,
   loadToolsForExecution,
   processRequiredActions,
+  resolveAgentCapabilities,
 };

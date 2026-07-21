@@ -15,18 +15,17 @@
  *    are never closed — proving the fix is necessary.
  */
 
-import * as http from 'http';
 import * as net from 'net';
+import * as http from 'http';
 import { randomUUID } from 'crypto';
+import { logger } from '@librechat/data-schemas';
 import { Agent, fetch as undiciFetch } from 'undici';
-import { Server as McpServerCore } from '@modelcontextprotocol/sdk/server/index.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { Server as McpServerCore } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { logger } from '@librechat/data-schemas';
-import { MCPConnection } from '~/mcp/connection';
-
 import type { Socket } from 'net';
+import { MCPConnection } from '~/mcp/connection';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -39,11 +38,19 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('~/auth', () => ({
   createSSRFSafeUndiciConnect: jest.fn(() => undefined),
+  isOAuthUrlAllowed: jest.fn(() => false),
+  isSSRFTarget: jest.fn(() => false),
   resolveHostnameSSRF: jest.fn(async () => false),
 }));
 
 jest.mock('~/mcp/mcpConfig', () => ({
-  mcpConfig: { CONNECTION_CHECK_TTL: 0 },
+  mcpConfig: {
+    CONNECTION_CHECK_TTL: 0,
+    TOOLS_LIST_MAX_PAGES: 50,
+    TOOLS_LIST_MAX_TOOLS: 1000,
+    TOOLS_LIST_MAX_BYTES: 5 * 1024 * 1024,
+    TOOLS_LIST_TIMEOUT_MS: 30000,
+  },
 }));
 
 const mockLogger = logger as jest.Mocked<typeof logger>;
@@ -207,6 +214,7 @@ describe('MCPConnection Agent lifecycle – streamable-http', () => {
   });
 
   afterEach(async () => {
+    MCPConnection.clearCooldown('test');
     await safeDisconnect(conn);
     conn = null;
     jest.restoreAllMocks();
@@ -366,6 +374,7 @@ describe('MCPConnection Agent lifecycle – SSE', () => {
   });
 
   afterEach(async () => {
+    MCPConnection.clearCooldown('test-sse');
     await safeDisconnect(conn);
     conn = null;
     jest.restoreAllMocks();
@@ -375,7 +384,7 @@ describe('MCPConnection Agent lifecycle – SSE', () => {
   it('reuses the same Agents across multiple requests instead of creating one per request', async () => {
     conn = new MCPConnection({
       serverName: 'test-sse',
-      serverConfig: { url: server.url },
+      serverConfig: { url: server.url, type: 'sse' },
       useSSRFProtection: false,
     });
 
@@ -400,7 +409,7 @@ describe('MCPConnection Agent lifecycle – SSE', () => {
   it('calls Agent.close() on every registered Agent when disconnect() is called', async () => {
     conn = new MCPConnection({
       serverName: 'test-sse',
-      serverConfig: { url: server.url },
+      serverConfig: { url: server.url, type: 'sse' },
       useSSRFProtection: false,
     });
 
@@ -415,7 +424,7 @@ describe('MCPConnection Agent lifecycle – SSE', () => {
   it('closes at least two Agents for SSE transport (eventSourceInit + fetch)', async () => {
     conn = new MCPConnection({
       serverName: 'test-sse',
-      serverConfig: { url: server.url },
+      serverConfig: { url: server.url, type: 'sse' },
       useSSRFProtection: false,
     });
 
@@ -429,7 +438,7 @@ describe('MCPConnection Agent lifecycle – SSE', () => {
   it('does not double-close Agents when disconnect() is called twice', async () => {
     conn = new MCPConnection({
       serverName: 'test-sse',
-      serverConfig: { url: server.url },
+      serverConfig: { url: server.url, type: 'sse' },
       useSSRFProtection: false,
     });
 
@@ -453,6 +462,7 @@ describe('Regression: old per-request Agent pattern leaks agents', () => {
   });
 
   afterEach(async () => {
+    MCPConnection.clearCooldown('test-regression');
     await safeDisconnect(conn);
     conn = null;
     jest.restoreAllMocks();
@@ -530,16 +540,20 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
   function makeConn() {
     return new MCPConnection({
       serverName: 'test-404',
-      serverConfig: { url: 'http://127.0.0.1:1/sse' },
+      serverConfig: { url: 'http://127.0.0.1:1/sse', type: 'sse' },
       useSSRFProtection: false,
     });
   }
 
-  function fire404(conn: MCPConnection, transport: ReturnType<typeof makeTransportStub>) {
+  function fireSSEError(
+    conn: MCPConnection,
+    transport: ReturnType<typeof makeTransportStub>,
+    code = 404,
+  ) {
     (
       conn as unknown as { setupTransportErrorHandlers: (t: unknown) => void }
     ).setupTransportErrorHandlers(transport);
-    const sseError = Object.assign(new Error('Failed to open SSE stream'), { code: 404 });
+    const sseError = Object.assign(new Error('Failed to open SSE stream'), { code });
     transport.onerror?.(sseError);
   }
 
@@ -553,7 +567,7 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
     const transport = makeTransportStub();
     const emitSpy = jest.spyOn(conn, 'emit');
 
-    fire404(conn, transport);
+    fireSSEError(conn, transport);
 
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('no session'));
     expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
@@ -564,7 +578,7 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
     const transport = makeTransportStub('existing-session-id');
     const emitSpy = jest.spyOn(conn, 'emit');
 
-    fire404(conn, transport);
+    fireSSEError(conn, transport);
 
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('session lost'));
     expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
@@ -575,9 +589,31 @@ describe('MCPConnection SSE 404 handling – session-aware', () => {
     const transport = makeTransportStub('');
     const emitSpy = jest.spyOn(conn, 'emit');
 
-    fire404(conn, transport);
+    fireSSEError(conn, transport);
 
     expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
+  });
+
+  it('treats a 406 before session establishment as an unsupported optional SSE stream', () => {
+    const conn = makeConn();
+    const transport = makeTransportStub();
+    const emitSpy = jest.spyOn(conn, 'emit');
+
+    fireSSEError(conn, transport, 406);
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('no session'));
+    expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
+  });
+
+  it('falls through on a 406 when a session already exists', () => {
+    const conn = makeConn();
+    const transport = makeTransportStub('existing-session-id');
+    const emitSpy = jest.spyOn(conn, 'emit');
+
+    fireSSEError(conn, transport, 406);
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('session lost'));
+    expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
   });
 });
 
@@ -596,7 +632,7 @@ describe('MCPConnection SSE stream disconnect handling', () => {
   function makeConn() {
     return new MCPConnection({
       serverName: 'test-sse-disconnect',
-      serverConfig: { url: 'http://127.0.0.1:1/sse' },
+      serverConfig: { url: 'http://127.0.0.1:1/sse', type: 'sse' },
       useSSRFProtection: false,
     });
   }
@@ -675,6 +711,7 @@ describe('MCPConnection SSE GET stream recovery – integration', () => {
   });
 
   afterEach(async () => {
+    MCPConnection.clearCooldown('test-sse-recovery');
     await safeDisconnect(conn);
     conn = null;
     jest.restoreAllMocks();

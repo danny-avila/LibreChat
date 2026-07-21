@@ -16,6 +16,8 @@ export function isEphemeralAgent(agentId: string | null | undefined): boolean {
 export interface ConfigFieldDetail {
   title: string;
   description: string;
+  /** Whether the field holds a secret and should be masked (defaults to masked when omitted). */
+  sensitive?: boolean;
 }
 
 export type CodeBarProps = {
@@ -132,13 +134,6 @@ export type NavLink = {
   id: string;
 };
 
-export interface NavProps {
-  isCollapsed: boolean;
-  links: NavLink[];
-  resize?: (size: number) => void;
-  defaultActive?: string;
-}
-
 export interface DataColumnMeta {
   meta:
     | {
@@ -238,6 +233,9 @@ export type AgentPanelContextType = {
   endpointsConfig?: t.TEndpointsConfig | null;
   /** Pre-computed MCP server information indexed by server key */
   mcpServersMap: Map<string, MCPServerInfo>;
+  /** True while the MCP tools list is being fetched and no data has arrived yet,
+   * so consumers can show a skeleton instead of an empty "no tools" state. */
+  mcpToolsLoading: boolean;
   availableMCPServers: MCPServerDefinition[];
   availableMCPServersMap: t.MCPServersListResponse | undefined;
 };
@@ -356,11 +354,54 @@ export type TOptions = {
   isResubmission?: boolean;
   /** Currently only utilized when `isResubmission === true`, uses that message's currently attached files */
   overrideFiles?: t.TMessage['files'];
+  /**
+   * Assistant message being regenerated. Used to derive the optimistic response
+   * id for non-tail regenerations without accidentally keying the stream to the
+   * conversation tail.
+   */
+  targetResponseMessageId?: string | null;
+  /**
+   * Carry forward a user message's manually-invoked skills when the caller
+   * is resubmitting / regenerating that same message — the compose-time
+   * atom has already been drained on the original submit, so without this
+   * the second turn would run without any manual priming even though the
+   * pills are still visible on the user bubble.
+   */
+  overrideManualSkills?: string[];
+  /**
+   * Carry forward a user message's quoted excerpts when resubmitting /
+   * regenerating that same message — the compose-time atom is drained on the
+   * original submit, so without this the second turn would lose the quoted
+   * context even though the references still show on the user bubble.
+   */
+  overrideQuotes?: string[];
   /** Added conversation for multi-convo feature - sent to server as part of submission payload */
   addedConvo?: t.TConversation;
 };
 
-export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
+export type TAskFunction = (props: TAskProps, options?: TOptions) => false | void;
+
+/**
+ * Stable context object passed from non-memo'd wrapper components (Message, MessageContent)
+ * to memo'd inner components (MessageRender, ContentRender) via props.
+ *
+ * This avoids subscribing to ChatContext inside memo'd components, which would bypass React.memo
+ * and cause unnecessary re-renders when `isSubmitting` changes during streaming.
+ *
+ * The `isSubmitting` property should use a getter backed by a ref so it returns the current
+ * value at call-time (for callback guards) without being a reactive dependency.
+ */
+export type TMessageChatContext = {
+  ask: (...args: Parameters<TAskFunction>) => void;
+  index: number;
+  regenerate: (message: t.TMessage, options?: { addedConvo?: t.TConversation | null }) => void;
+  conversation: t.TConversation | null;
+  latestMessageId: string | undefined;
+  latestMessageDepth: number | undefined;
+  handleContinue: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  /** Should be a getter backed by a ref — reads current value without triggering re-renders */
+  readonly isSubmitting: boolean;
+};
 
 export type TMessageProps = {
   conversation?: t.TConversation | null;
@@ -561,11 +602,6 @@ export interface ModelItemProps {
   className?: string;
 }
 
-export type ContextType = {
-  navVisible: boolean;
-  setNavVisible: React.Dispatch<React.SetStateAction<boolean>>;
-};
-
 export interface SwitcherProps {
   endpoint?: t.EModelEndpoint | null;
   endpointKeyProvided: boolean;
@@ -586,7 +622,6 @@ export type NewConversationParams = {
   preset?: Partial<t.TPreset>;
   modelsData?: t.TModelsConfig;
   buildDefault?: boolean;
-  keepLatestMessage?: boolean;
   keepAddedConvos?: boolean;
   disableParams?: boolean;
 };
@@ -633,5 +668,8 @@ export type TThread = { id: string; createdAt: string };
 declare global {
   interface Window {
     google_tag_manager?: unknown;
+    __LIBRECHAT_CONFIG__?: {
+      enableQueryDevtools?: boolean;
+    };
   }
 }

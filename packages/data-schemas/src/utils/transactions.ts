@@ -18,10 +18,16 @@ export const supportsTransactions = async (
 
       await mongoose.connection.db?.collection('__transaction_test__').findOne({}, { session });
 
-      await session.abortTransaction();
+      await session.commitTransaction();
       logger.debug('MongoDB transactions are supported');
       return true;
     } catch (transactionError: unknown) {
+      try {
+        await session.abortTransaction();
+      } catch (transactionError) {
+        /** best-effort abort */
+        logger.error(`[supportsTransactions] Error aborting transaction:`, transactionError);
+      }
       logger.debug(
         'MongoDB transactions not supported (transaction error):',
         (transactionError as Error)?.message || 'Unknown error',
@@ -49,9 +55,8 @@ export const getTransactionSupport = async (
   mongoose: typeof import('mongoose'),
   transactionSupportCache: boolean | null,
 ): Promise<boolean> => {
-  let transactionsSupported = false;
-  if (transactionSupportCache === null) {
-    transactionsSupported = await supportsTransactions(mongoose);
+  if (transactionSupportCache !== null) {
+    return transactionSupportCache;
   }
-  return transactionsSupported;
+  return await supportsTransactions(mongoose);
 };

@@ -32,6 +32,7 @@ jest.mock('~/hooks', () => ({
     isFavoriteAgent: () => false,
     toggleFavoriteAgent: jest.fn(),
   }),
+  useIsActiveItem: () => ({ ref: { current: null }, isActive: false }),
 }));
 
 const baseEndpoint: Endpoint = {
