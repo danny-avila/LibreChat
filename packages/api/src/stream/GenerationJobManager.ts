@@ -21,6 +21,7 @@ import type {
   UsageMetadata,
   AbortResult,
   IJobStore,
+  IdempotencyClaimResult,
 } from './interfaces/IJobStore';
 import type { SteerOwner, SteerContentView } from './SteeringLifecycle';
 import type { GenerationJobStore } from '~/app/metrics';
@@ -48,6 +49,10 @@ const APPROVAL_EXPIRED_ERROR = 'Approval expired before a decision was made';
 
 /** Error surfaced to any client still attached when a stale/hung job is reaped. */
 const REAPED_JOB_ERROR = 'Generation timed out';
+
+/** Lifetime of a start-generation idempotency claim (matches the running-job TTL: 20 min),
+ *  so a late retry still dedups for the whole generation window. */
+const IDEMPOTENCY_TTL_SECONDS = 1200;
 const OAUTH_TOOL_CALL_PREFIX = `oauth${Constants.mcp_delimiter}`;
 
 function getToolCallName(toolCall: unknown): unknown {
@@ -688,6 +693,33 @@ class GenerationJobManagerClass {
    */
   async hasJob(streamId: string): Promise<boolean> {
     return this.jobStore.hasJob(streamId);
+  }
+
+  /**
+   * Atomically claim a start-generation request for `(userId, clientRequestId)`.
+   * The first caller wins (`claimed: true`) and should create the job; a retried
+   * request for the same submission loses and receives the original stream so it
+   * can attach to it instead of starting a second billed generation.
+   */
+  async claimGeneration(
+    userId: string,
+    clientRequestId: string,
+    streamId: string,
+    conversationId: string,
+  ): Promise<IdempotencyClaimResult> {
+    return this.jobStore.claimIdempotencyKey(
+      `${userId}:${clientRequestId}`,
+      { streamId, conversationId, claimedAt: Date.now() },
+      IDEMPOTENCY_TTL_SECONDS,
+    );
+  }
+
+  /**
+   * Release a start-generation claim so the submission can be retried (e.g. the
+   * start failed before generation began).
+   */
+  async releaseGeneration(userId: string, clientRequestId: string): Promise<void> {
+    await this.jobStore.releaseIdempotencyKey(`${userId}:${clientRequestId}`);
   }
 
   /**
