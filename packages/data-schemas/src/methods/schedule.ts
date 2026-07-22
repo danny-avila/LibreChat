@@ -330,9 +330,20 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
         $push: { countedFor: { $each: [params.scheduledFor], $slice: -COUNTED_FOR_WINDOW } },
         ...(isSuccess ? { $inc: { runCount: 1 } } : {}),
         ...(isFailure ? { $inc: { failureCount: 1 } } : {}),
-        ...(isSuccess ? { $unset: { disabledReason: 1 } } : {}),
       },
     );
+    // A success clears a transient disable reason ONLY while the schedule is still
+    // enabled. An older run (e.g. a resumed pause) can succeed AFTER newer outcomes
+    // already auto-disabled the schedule — since `requires_action` runs don't block
+    // later occurrences — and must not wipe the reason that explains why it's off.
+    // Predicated on `enabled` separately so it can't leak into the count-guarded
+    // update above (which must run regardless of enabled state).
+    if (isSuccess) {
+      await Schedule().updateOne(
+        { id: params.scheduleId, enabled: true },
+        { $unset: { disabledReason: 1 } },
+      );
+    }
     // Auto-disable is a POLICY re-evaluated on EVERY call (idempotent), NOT gated
     // on the count guard — so if a crash landed the $inc but not the disable, the
     // reconciler's replay still disables. Reads current state after the count.
@@ -440,7 +451,13 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
         { new: true },
       )
       .lean<ISchedule>();
-    if (schedule != null && schedule.balanceSkipCount >= balanceSkipDisableThreshold) {
+    // Auto-disable is a POLICY re-evaluated on EVERY call (idempotent), NOT gated on
+    // the count guard — mirroring applyTerminalBookkeeping. If a crash landed the
+    // $inc/$push but not the disable, the guarded update above no-ops to null on the
+    // replay, so re-read the current counter and still disable when at/over threshold.
+    const current =
+      schedule ?? (await Schedule().findOne({ id: data.scheduleId }).lean<ISchedule>());
+    if (current?.enabled && current.balanceSkipCount >= balanceSkipDisableThreshold) {
       await disableSchedule(data.scheduleId, 'insufficient_balance');
     }
   }

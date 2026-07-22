@@ -76,6 +76,7 @@ export interface SchedulesService {
     limits: ScheduleLimits,
   ) => Promise<FireResult | null>;
   recordScheduleOutcome: (input: RecordScheduleOutcomeInput) => Promise<boolean>;
+  hasActiveScheduledRun: (scheduleId: string) => Promise<boolean>;
   markScheduleRunActive: (scheduleId: string, scheduledFor: string | Date) => Promise<void>;
   initializeScheduleEngine: (options?: {
     isJobStoreShared?: boolean;
@@ -347,6 +348,16 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
    * concurrently. Best-effort: a failure just leaves it `requires_action` (the
    * terminal hook still records the outcome).
    */
+  /**
+   * Whether another occurrence of this schedule is already running (`started`).
+   * A paused run being resumed is `requires_action`, not `started`, so a true here
+   * means a NEWER occurrence is active — the resume must defer/reject, or promoting
+   * this paused row to `started` would bypass per-schedule overlap serialization.
+   */
+  async function hasActiveScheduledRun(scheduleId: string): Promise<boolean> {
+    return methods.hasActiveRun(scheduleId);
+  }
+
   async function markScheduleRunActive(
     scheduleId: string,
     scheduledFor: string | Date,
@@ -371,6 +382,7 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     engineDeps,
     fireScheduleNow,
     recordScheduleOutcome,
+    hasActiveScheduledRun,
     markScheduleRunActive,
     initializeScheduleEngine,
   };

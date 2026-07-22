@@ -23,7 +23,11 @@ const {
   getMCPRequestContext,
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
-const { recordScheduleOutcome, markScheduleRunActive } = require('~/server/services/Schedules');
+const {
+  recordScheduleOutcome,
+  hasActiveScheduledRun,
+  markScheduleRunActive,
+} = require('~/server/services/Schedules');
 const { saveMessage, getConvo, getMessages } = require('~/models');
 
 /**
@@ -534,6 +538,20 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   const { allowed } = await checkAndIncrementPendingRequest(userId);
   if (!allowed) {
     return res.status(429).json({ error: 'Too many concurrent requests' });
+  }
+
+  // A scheduled fire's paused run must not resume OVER a newer occurrence that is
+  // already running: overlap checks only count `started`, so promoting this paused
+  // row would create two concurrent runs for one schedule. Defer the resume BEFORE
+  // claiming the approval (so it stays claimable) when another occurrence is active.
+  if (job.metadata?.scheduleId && (await hasActiveScheduledRun(job.metadata.scheduleId))) {
+    await decrementPendingRequest(userId);
+    logger.debug(
+      `[ResumeAgentController] Deferring scheduled resume; another run active: ${streamId}`,
+    );
+    return res
+      .status(409)
+      .json({ error: 'Another run for this schedule is in progress; try again shortly' });
   }
 
   // Atomically claim the resume. The single winner drives the run; a racing second

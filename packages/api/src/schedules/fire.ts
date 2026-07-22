@@ -108,14 +108,20 @@ export async function fireSchedule(
   schedule: FireableSchedule,
   limits: ScheduleLimits,
   scheduledFor: Date,
-  options?: { manual?: boolean },
+  options?: { manual?: boolean; dbNow?: Date },
 ): Promise<FireResult> {
   const { methods } = deps;
+  // Compute the NEXT occurrence relative to DB time (the engine passes the claim
+  // time derived from leaseUntil), not this worker's clock: a clock-ahead worker
+  // would otherwise advance past valid future occurrences. Falls back to the
+  // process clock when no DB time is provided (e.g. manual run-now, which never
+  // reschedules and so ignores the result anyway).
+  const now = options?.dbNow ?? new Date();
   const nextRunAt = computeNextRunAt({
     cadence: schedule.cadence,
     timezone: schedule.timezone,
     scheduleId: schedule.id,
-    after: new Date(Math.max(Date.now(), scheduledFor.getTime())),
+    after: new Date(Math.max(now.getTime(), scheduledFor.getTime())),
   });
   // A manual run-now must never reschedule the next automatic occurrence; it
   // only releases the lease it acquired for serialization.

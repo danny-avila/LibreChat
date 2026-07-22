@@ -36,20 +36,19 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
   async function reconcile() {
     try {
       const limits = await deps.getLimits();
-      // The job-status pass can only be trusted when every replica sees the same
-      // jobs (Redis-backed or single-process). With private per-worker in-memory
-      // stores a non-owning worker reads jobStatus == null for a peer's live run
-      // and would wrongly interrupt it, so skip this pass there and let each run's
-      // owning worker finalize it inline. The bookkeeping-catch pass below is
-      // job-status-independent and always runs.
-      const runs = deps.isJobStoreShared()
-        ? await runAsSystem(() =>
-            deps.methods.getRunsForReconciliation(
-              new Date(Date.now() - RECONCILE_MIN_RUN_AGE_MS),
-              RECONCILE_BATCH,
-            ),
-          )
-        : [];
+      // When every replica shares the job store (Redis-backed or single-process), a
+      // jobStatus == null genuinely means the job is gone. With private per-worker
+      // in-memory stores it can instead mean the run's job lives on a PEER worker, so
+      // a non-owning worker must not treat null as orphaned. We still process runs
+      // this worker owns (non-null jobStatus = this worker's job) on every replica;
+      // only the jobStatus == null orphan/abandoned reaping below is gated on sharing.
+      const jobStoreShared = deps.isJobStoreShared();
+      const runs = await runAsSystem(() =>
+        deps.methods.getRunsForReconciliation(
+          new Date(Date.now() - RECONCILE_MIN_RUN_AGE_MS),
+          RECONCILE_BATCH,
+        ),
+      );
       await runAsSystem(async () => {
         for (const run of runs) {
           const jobStatus = run.conversationId ? await deps.getJobStatus(run.conversationId) : null;
@@ -110,12 +109,20 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           // run records its conversationId up front (fire.ts pre-generates it), so
           // getJobStatus above already liveness-checked it: a live long-running fire
           // reads as `running` and is left alone; only one whose job is genuinely
-          // gone reaches here, so the standard orphan cutoff applies.
-          if (run.status === 'started' && jobStatus == null && ageMs > ORPHAN_RUN_AGE_MS) {
+          // gone reaches here, so the standard orphan cutoff applies. Gated on
+          // jobStoreShared: with private per-worker stores a null could be a peer's
+          // live job, so a non-owning worker must not interrupt it (its owner does).
+          if (
+            jobStoreShared &&
+            run.status === 'started' &&
+            jobStatus == null &&
+            ageMs > ORPHAN_RUN_AGE_MS
+          ) {
             await finalize('interrupted');
             continue;
           }
           if (
+            jobStoreShared &&
             run.status === 'requires_action' &&
             jobStatus == null &&
             ageMs > ABANDONED_PAUSE_AGE_MS
@@ -208,7 +215,9 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           return false;
         }
         try {
-          const result = await fireSchedule(deps, schedule, limits, scheduledFor);
+          const result = await fireSchedule(deps, schedule, limits, scheduledFor, {
+            dbNow: new Date(dbNow),
+          });
           if (result.fired) {
             fired += 1;
           }
