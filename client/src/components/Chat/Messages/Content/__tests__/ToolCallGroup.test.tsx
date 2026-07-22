@@ -59,6 +59,11 @@ jest.mock('~/utils', () => ({
     ['execute_code', 'bash_tool', 'run_tools_with_code', 'run_tools_with_bash'].includes(name)
       ? 'Code'
       : name,
+  /** Real implementations: the group header renders the activity label (or
+   *  its deterministic counts fallback) through these, so stubbing them out
+   *  would hide the header logic under test. */
+  getActivityLabelPart: jest.requireActual('~/utils/activityLabels').getActivityLabelPart,
+  getActivityLabelText: jest.requireActual('~/utils/activityLabels').getActivityLabelText,
 }));
 
 jest.mock('../Parts', () => ({

@@ -1,7 +1,9 @@
 import { Providers } from '@librechat/agents';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
-import type { AppConfig, TEndpoint } from 'librechat-data-provider';
+import type { AppConfig, IUser } from '@librechat/data-schemas';
+import type { TEndpoint } from 'librechat-data-provider';
 import type { ClientOptions } from '@librechat/agents';
+import type { EndpointDbMethods, OpenAIConfiguration, ServerRequest } from '~/types';
 import type { ActivityLabelLLM } from './runtime';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveConfigHeaders } from '~/utils/headers';
@@ -51,21 +53,27 @@ export function mapCollectedMetadataToUsage(
   });
 }
 
+/** The agent fields the label model resolution needs. */
+export interface ActivityLabelAgent {
+  endpoint?: string;
+  provider?: string;
+  model?: string;
+  model_parameters?: { model?: string };
+}
+
 export interface ResolveActivityLabelModelParams {
-  req: {
-    config?: AppConfig;
-    user?: Record<string, unknown>;
-  };
-  agent: {
-    endpoint?: string;
-    provider?: string;
-    model?: string;
-    model_parameters?: { model?: string };
-  };
+  req: ServerRequest;
+  agent: ActivityLabelAgent;
   /** Request-scoped ids for header placeholder resolution. */
   ids: { messageId?: string; conversationId?: string; parentMessageId?: string };
-  db: { getUserKey: unknown; getUserKeyValues: unknown };
+  db: EndpointDbMethods;
 }
+
+/** Azure resolution reads an instance name that only some configs carry. */
+type MaybeAzureConfig = ClientOptions & {
+  azureOpenAIApiInstanceName?: string;
+  configuration?: OpenAIConfiguration;
+};
 
 /**
  * Resolves provider + client options for the label model, mirroring
@@ -79,13 +87,14 @@ export async function resolveActivityLabelModel({
   ids,
   db,
 }: ResolveActivityLabelModelParams): Promise<ActivityLabelLLM> {
-  const appConfig = req.config as AppConfig;
-  const endpoint = agent.endpoint as string;
+  const appConfig = req.config as AppConfig | undefined;
+  const endpoint = agent.endpoint ?? '';
   const providerConfig = getProviderConfig({ provider: endpoint, appConfig });
-  const endpointConfig: TEndpoint | undefined =
-    appConfig?.endpoints?.all ??
-    appConfig?.endpoints?.[endpoint as keyof typeof appConfig.endpoints] ??
-    providerConfig.customEndpointConfig;
+  const endpoints = appConfig?.endpoints as
+    | (Record<string, TEndpoint | undefined> & { all?: TEndpoint })
+    | undefined;
+  const endpointConfig: Partial<TEndpoint> | undefined =
+    endpoints?.all ?? endpoints?.[endpoint] ?? providerConfig.customEndpointConfig;
   const model =
     process.env.ACTIVITY_LABEL_MODEL ||
     (endpointConfig?.titleModel != null && endpointConfig.titleModel !== Constants.CURRENT_MODEL
@@ -97,24 +106,20 @@ export async function resolveActivityLabelModel({
     model_parameters: { model },
     db,
   });
+  const llmConfig = options.llmConfig as MaybeAzureConfig | undefined;
   let provider = (options.provider ??
     providerConfig.overrideProvider ??
     agent.provider) as Providers;
-  if (
-    endpoint === EModelEndpoint.azureOpenAI &&
-    options.llmConfig?.azureOpenAIApiInstanceName == null
-  ) {
+  if (endpoint === EModelEndpoint.azureOpenAI && llmConfig?.azureOpenAIApiInstanceName == null) {
     provider = Providers.OPENAI;
   } else if (
     endpoint === EModelEndpoint.azureOpenAI &&
-    options.llmConfig?.azureOpenAIApiInstanceName != null &&
+    llmConfig?.azureOpenAIApiInstanceName != null &&
     provider !== Providers.AZURE
   ) {
     provider = Providers.AZURE;
   }
-  const clientOptions = { ...options.llmConfig } as ClientOptions & {
-    configuration?: unknown;
-  };
+  const clientOptions = { ...(llmConfig ?? {}) } as MaybeAzureConfig;
   if (options.configOptions) {
     clientOptions.configuration = options.configOptions;
   }
@@ -123,10 +128,10 @@ export async function resolveActivityLabelModel({
    *  conversation/user metadata need them on label calls too. */
   resolveConfigHeaders({
     llmConfig: clientOptions,
-    user: createSafeUser(req.user),
+    user: createSafeUser(req.user as IUser | undefined),
     body: ids,
   });
-  return { provider, clientOptions };
+  return { provider, clientOptions: clientOptions as ClientOptions };
 }
 
 /**

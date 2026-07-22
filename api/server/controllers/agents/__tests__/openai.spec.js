@@ -78,6 +78,10 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  /** Pass-through: the controller strips UI-only activity-label parts
+   *  before SDK formatting; the mock must expose it like any other used
+   *  export or the call throws before the assertions run. */
+  stripActivityLabelParts: jest.fn((payload) => payload),
   writeSSE: jest.fn(),
   createRun: jest.fn().mockResolvedValue({
     processStream: mockProcessStream,
