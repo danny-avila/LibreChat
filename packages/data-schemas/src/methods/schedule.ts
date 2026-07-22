@@ -529,12 +529,12 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
 
   /** Cascade for account deletion: removes a user's schedules and their runs. */
   async function deleteSchedulesByUser(userId: string | Types.ObjectId): Promise<void> {
-    const schedules = await Schedule().find({ user: userId }).select('id').lean<{ id: string }[]>();
-    const ids = schedules.map((s) => s.id);
+    // Delete RUNS before SCHEDULES so a partial failure is retryable: both are
+    // user-scoped and idempotent, so a crash after the runs delete leaves the
+    // schedules for a retry to re-delete (deleting schedules first would orphan the
+    // runs — a re-run finds no schedules and never removes the leftover run rows).
+    await ScheduleRun().deleteMany({ user: userId });
     await Schedule().deleteMany({ user: userId });
-    if (ids.length > 0) {
-      await ScheduleRun().deleteMany({ scheduleId: { $in: ids } });
-    }
   }
 
   async function transitionRunStatus(

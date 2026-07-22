@@ -37,6 +37,27 @@ async function postChatMessage(
 ): Promise<{ conversationId: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FIRE_REQUEST_TIMEOUT_MS);
+  // The timeout must cover the BODY reads below, not just the headers: a server
+  // that sends headers then stalls the body would otherwise hang this tick forever
+  // (the abort signal is passed to fetch, so firing it aborts an in-flight read).
+  try {
+    return await postChatMessageInner(deps, schedule, userId, scheduledFor, files, conversationId, {
+      controller,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function postChatMessageInner(
+  deps: ScheduleEngineDeps,
+  schedule: FireableSchedule,
+  userId: string,
+  scheduledFor: Date,
+  files: Awaited<ReturnType<ScheduleEngineDeps['resolveFiles']>>,
+  conversationId: string,
+  { controller }: { controller: AbortController },
+): Promise<{ conversationId: string }> {
   let response: Response;
   try {
     response = await fetch(`${deps.getSelfUrl()}/api/agents/chat/${EModelEndpoint.agents}`, {
@@ -80,8 +101,6 @@ async function postChatMessage(
     // been processed — ambiguous, so don't terminalize as a definite error.
     const message = error instanceof Error ? error.message : String(error);
     throw new ScheduleFireError(`Fire POST network failure: ${message}`, true);
-  } finally {
-    clearTimeout(timeout);
   }
   if (!response.ok) {
     const body = await response.text().catch(() => '');

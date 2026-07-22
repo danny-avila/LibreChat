@@ -202,6 +202,9 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             cadence: schedule.cadence,
             timezone: schedule.timezone,
             scheduleId: schedule.id,
+            // DB claim time, not this worker's clock: a clock-behind worker would
+            // otherwise compute another DB-past occurrence and reclaim the same row.
+            after: new Date(dbNow),
           });
           if (next == null) {
             await deps.methods
@@ -230,6 +233,9 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             cadence: schedule.cadence,
             timezone: schedule.timezone,
             scheduleId: schedule.id,
+            // DB claim time (see the misfire branch) so a skewed worker doesn't
+            // reschedule to a DB-past occurrence and reclaim the same row.
+            after: new Date(dbNow),
           });
           if (next == null) {
             await deps.methods

@@ -1,6 +1,5 @@
 const mongoose = require('mongoose');
 const {
-  SystemRoles,
   ResourceType,
   Permissions,
   PermissionBits,
@@ -29,11 +28,13 @@ async function resolveAgentFireAccess(agentId, user) {
   if (agent == null) {
     return 'missing';
   }
-  if (user.role !== SystemRoles.ADMIN) {
-    const role = await getRoleByName(user.role);
-    if (!role?.permissions?.[PermissionTypes.AGENTS]?.[Permissions.USE]) {
-      return 'forbidden';
-    }
+  // Mirror the chat route's checkAgentAccess (generateCheckAccess → checkAccess),
+  // which does NOT special-case admins: it reads the role's AGENTS:USE permission
+  // directly. An admin whose role has AGENTS:USE disabled is rejected there, so the
+  // precheck must reject too — otherwise every fire 403s and burns failures.
+  const role = await getRoleByName(user.role);
+  if (!role?.permissions?.[PermissionTypes.AGENTS]?.[Permissions.USE]) {
+    return 'forbidden';
   }
   const cap = ResourceCapabilityMap[ResourceType.AGENT];
   try {
