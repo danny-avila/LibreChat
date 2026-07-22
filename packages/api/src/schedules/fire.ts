@@ -52,6 +52,10 @@ async function postChatMessage(
         parentMessageId: Constants.NO_PARENT,
         isContinued: false,
         isRegenerate: false,
+        // The agent resolves {{current_date}}/{{current_datetime}} from req.body.timezone;
+        // without this it falls back to the server tz, wrong for a schedule whose
+        // timezone differs even though the fire lands at the right local wall-clock time.
+        timezone: schedule.timezone,
         scheduleId: schedule.id,
         scheduledFor: scheduledFor.toISOString(),
         clientRequestId: buildFireClientRequestId(schedule.id, scheduledFor),

@@ -1,19 +1,7 @@
 const mongoose = require('mongoose');
-const {
-  SystemRoles,
-  ResourceType,
-  Permissions,
-  PermissionBits,
-  PermissionTypes,
-} = require('librechat-data-provider');
-const {
-  logger,
-  runAsSystem,
-  tenantStorage,
-  ResourceCapabilityMap,
-} = require('@librechat/data-schemas');
-const { checkPermission } = require('~/server/services/PermissionService');
-const { hasCapability } = require('~/server/middleware/roles/capabilities');
+const { Permissions, PermissionTypes } = require('librechat-data-provider');
+const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
+const { resolveAgentFireAccess } = require('./access');
 const {
   fireSchedule,
   getBalanceConfig,
@@ -101,43 +89,10 @@ const engineDeps = {
     }
     return (record?.tokenCredits ?? 0) <= 0;
   },
-  agentAccess: async (agentId, user) => {
-    const agent = await mongoose.models.Agent.findOne({ id: agentId }).select('_id').lean();
-    if (agent == null) {
-      return 'missing';
-    }
-    // Mirror the loopback chat route's authorization so the precheck disables a
-    // schedule exactly when the fire would be rejected, and never disables one the
-    // fire would allow.
-    // 1) Role-level AGENTS:USE (generateCheckAccess on the route). Admins bypass.
-    if (user.role !== SystemRoles.ADMIN) {
-      const role = await methods.getRoleByName(user.role);
-      const canUseAgents = role?.permissions?.[PermissionTypes.AGENTS]?.[Permissions.USE];
-      if (!canUseAgents) {
-        return 'forbidden';
-      }
-    }
-    // 2) Resource VIEW with the manage:agents capability bypass (canAccessResource
-    //    on the route). Deny the bypass on a check error, like the middleware.
-    const cap = ResourceCapabilityMap[ResourceType.AGENT];
-    let hasManageAgents = false;
-    try {
-      hasManageAgents = cap != null && (await hasCapability(user, cap));
-    } catch (err) {
-      logger.warn(`[schedules] agent capability check failed, denying bypass: ${err.message}`);
-    }
-    if (hasManageAgents) {
-      return 'ok';
-    }
-    const allowed = await checkPermission({
-      userId: user.id,
-      role: user.role,
-      resourceType: ResourceType.AGENT,
-      resourceId: agent._id,
-      requiredPermission: PermissionBits.VIEW,
-    });
-    return allowed ? 'ok' : 'forbidden';
-  },
+  // Mirrors the loopback chat route's authorization (role AGENTS:USE + resource
+  // VIEW with the manage:agents bypass); shared with the create/update precheck
+  // so the two never diverge.
+  agentAccess: (agentId, user) => resolveAgentFireAccess(agentId, user),
   resolveFiles: async (fileIds, user) => {
     const files = await methods.getFiles(
       { file_id: { $in: fileIds }, user: user.id },

@@ -1,15 +1,9 @@
 const express = require('express');
-const mongoose = require('mongoose');
-const {
-  ResourceType,
-  PermissionBits,
-  Permissions,
-  PermissionTypes,
-} = require('librechat-data-provider');
+const { Permissions, PermissionTypes } = require('librechat-data-provider');
 const { createSchedulesHandlers, generateCheckAccess } = require('@librechat/api');
-const { checkPermission } = require('~/server/services/PermissionService');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
 const { getLimits, fireScheduleNow } = require('~/server/services/Schedules');
+const { resolveAgentFireAccess } = require('~/server/services/Schedules/access');
 const methods = require('~/models');
 
 const { getRoleByName } = methods;
@@ -32,22 +26,12 @@ const checkSchedulesCreate = generateCheckAccess({
 const handlers = createSchedulesHandlers({
   methods,
   getLimits,
-  // Real VIEW-access check (not mere existence): the body-based agent middleware
-  // is a no-op for schedule payloads (no `endpoint: 'agents'`), so enforce here
-  // to stop a user from scheduling against a private agent they cannot view.
-  canViewAgent: async (agentId, req) => {
-    const agent = await mongoose.models.Agent.findOne({ id: agentId }).select('_id').lean();
-    if (agent == null) {
-      return false;
-    }
-    return checkPermission({
-      userId: req.user.id,
-      role: req.user.role,
-      resourceType: ResourceType.AGENT,
-      resourceId: agent._id,
-      requiredPermission: PermissionBits.VIEW,
-    });
-  },
+  // Full fire-equivalent access check (not mere existence): the body-based agent
+  // middleware is a no-op for schedule payloads (no `endpoint: 'agents'`), so
+  // enforce the same role AGENTS:USE + resource VIEW (with manage:agents bypass)
+  // the actual fire requires — otherwise a role without AGENTS:USE could schedule
+  // runs the chat route rejects and walks toward auto-disable.
+  canViewAgent: async (agentId, req) => (await resolveAgentFireAccess(agentId, req.user)) === 'ok',
   filterOwnedFileIds: async (fileIds, userId) => {
     const files = await methods.getFiles({ file_id: { $in: fileIds }, user: userId }, null, {
       file_id: 1,

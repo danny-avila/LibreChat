@@ -464,6 +464,12 @@ export class RedisJobStore implements IJobStore {
       // A replacement must start with an open steer channel — the closed flag
       // belongs to the finalized run this hash is being reused from.
       'steersClosed',
+      // updateMetadata only writes these for a verified scheduled fire, so a
+      // reused hash from a prior scheduled run would otherwise leak its schedule
+      // identity onto a later normal turn — whose pause/resume would then record
+      // a bogus success/error against the old schedule occurrence.
+      'scheduleId',
+      'scheduledFor',
     ];
 
     // For cluster mode, we can't pipeline keys on different slots

@@ -396,8 +396,12 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
   // Record the schedule outcome from the paused job's metadata BEFORE completeJob
   // deletes the job: for a scheduled fire that paused for approval, this resume is
   // the completion point, and the reconciler can't see it (the job record is gone).
+  // If the write fails (transient Mongo outage across its retries), preserve the
+  // completed job so reconcile finalizes success instead of the paused run being
+  // mislabeled interrupted once its job is gone.
+  let scheduleOutcomeRecorded = true;
   if (meta.scheduleId) {
-    await recordScheduleOutcome({
+    scheduleOutcomeRecorded = await recordScheduleOutcome({
       scheduleId: meta.scheduleId,
       scheduledFor: meta.scheduledFor,
       status: 'success',
@@ -407,7 +411,9 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
   // Awaited (not fire-and-forget) so the job's terminal write lands before the
   // checkpoint prune, and so a failure here doesn't race the controller's error path.
   try {
-    await GenerationJobManager.completeJob(streamId);
+    await GenerationJobManager.completeJob(streamId, undefined, {
+      preserveForReconcile: Boolean(meta.scheduleId) && !scheduleOutcomeRecorded,
+    });
   } catch (completeErr) {
     logger.error('[ResumeAgentController] Failed to complete resumed turn', completeErr);
   }
