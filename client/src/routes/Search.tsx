@@ -225,16 +225,18 @@ export default function Search() {
       return;
     }
     if (messages.length === 0) {
-      throttledFetchNext();
+      /**
+       * Deliberately NOT the throttled fetch. That one debounces bursts of
+       * `onRowsRendered` and is `trailing: false`, so a sub-500ms empty page
+       * would land inside its cooldown and be dropped — and with `messages`
+       * still empty and `hasNextPage` still set, nothing would change to
+       * re-trigger this effect, leaving the search stuck on the spinner. This
+       * drain is already self-limiting: `isFetchingNextPage` gates it to one
+       * request at a time, and it stops as soon as a row arrives.
+       */
+      fetchNextPage();
     }
-  }, [
-    searchQuery,
-    showingStale,
-    hasNextPage,
-    isFetchingNextPage,
-    messages.length,
-    throttledFetchNext,
-  ]);
+  }, [searchQuery, showingStale, hasNextPage, isFetchingNextPage, messages.length, fetchNextPage]);
 
   const handleRowsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
