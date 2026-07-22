@@ -96,7 +96,8 @@ export type ScheduleMethods = {
   ) => Promise<ISchedule | null>;
   releaseLease: (id: string, expectedClaimToken?: string) => Promise<void>;
   revalidateClaim: (id: string, claimToken: string, requireEnabled?: boolean) => Promise<boolean>;
-  holdsClaim: (id: string, claimToken: string) => Promise<boolean>;
+  holdsLease: (id: string, leaseBy: string) => Promise<boolean>;
+  hasOtherActiveRun: (scheduleId: string, scheduledFor: Date) => Promise<boolean>;
   advanceSchedule: (
     id: string,
     nextRunAt: Date | null,
@@ -384,20 +385,35 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   }
 
   /**
-   * Whether this worker STILL holds the lease it claimed (same claim token, lease
-   * unexpired) — regardless of enabled/deleting state. Used to fence a rollback
-   * delete of a reserved run row against a lease TAKEOVER: if the lease expired and
-   * another worker re-claimed the occurrence (rotating the token) and advanced past
-   * it, deleting the reserved row would erase the only evidence, so the loser must
-   * leave the row for the reconciler instead.
+   * Whether this worker STILL owns the lease it took (same `leaseBy` holder, lease
+   * unexpired). Fences a rollback delete of a reserved run row against a lease
+   * TAKEOVER while NOT skipping it on an owner edit: a takeover changes `leaseBy`
+   * (another worker re-claimed and may have advanced past the occurrence — deleting
+   * would erase the only evidence, so leave it for the reconciler), whereas an owner
+   * edit only rotates `claimToken` and leaves `leaseBy` intact, so the worker still
+   * owns the lease and should delete its own unposted reservation.
    */
-  async function holdsClaim(id: string, claimToken: string): Promise<boolean> {
+  async function holdsLease(id: string, leaseBy: string): Promise<boolean> {
     const row = await Schedule()
       .findOne({
         id,
-        claimToken,
+        leaseBy,
         $expr: { $gt: [{ $ifNull: ['$leaseUntil', new Date(0)] }, '$$NOW'] },
       })
+      .select('_id')
+      .lean();
+    return row != null;
+  }
+
+  /**
+   * Whether a DIFFERENT occurrence of the schedule is currently `started`. Used by
+   * the HITL resume overlap check so a paused run whose own row is still `started`
+   * (e.g. its pause bookkeeping failed transiently) is not mistaken for an overlap
+   * with itself — only a truly concurrent occurrence blocks the resume.
+   */
+  async function hasOtherActiveRun(scheduleId: string, scheduledFor: Date): Promise<boolean> {
+    const row = await ScheduleRun()
+      .findOne({ scheduleId, status: 'started', scheduledFor: { $ne: scheduledFor } })
       .select('_id')
       .lean();
     return row != null;
@@ -892,7 +908,8 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     acquireManualRunLease,
     releaseLease,
     revalidateClaim,
-    holdsClaim,
+    holdsLease,
+    hasOtherActiveRun,
     advanceSchedule,
     disableSchedule,
     insertScheduleRun,

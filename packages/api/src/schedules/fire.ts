@@ -154,13 +154,15 @@ export async function fireSchedule(
       // concurrent owner edit or a lease-expiry re-claim isn't clobbered.
       () => methods.advanceSchedule(schedule.id, nextRunAt, scheduledFor, claimToken);
 
-  // Rolls back a reserved `started` run row — but ONLY if we still hold the claim.
-  // If our lease expired and another worker re-claimed this occurrence (rotating the
-  // token) and advanced past it, deleting the row would erase the only evidence for
-  // an occurrence that is then neither fired nor reconcilable, so leave it for the
-  // reconciler's orphan sweep instead.
+  // Rolls back a reserved `started` run row — but ONLY if we still OWN the lease.
+  // Fenced on the lease HOLDER (`leaseBy`), not the claim token: a lease takeover by
+  // another worker changes `leaseBy` (that worker may have advanced past this
+  // occurrence, so deleting the row would erase the only evidence — leave it for the
+  // reconciler); an owner edit only rotates the token and keeps `leaseBy`, so this
+  // worker still owns the lease and must delete its own unposted reservation (else a
+  // ghost `started` row consumes capacity/overlap until the orphan sweep).
   const rollbackReservation = async () => {
-    if (claimToken != null && (await methods.holdsClaim(schedule.id, claimToken))) {
+    if (schedule.leaseBy != null && (await methods.holdsLease(schedule.id, schedule.leaseBy))) {
       await methods.deleteScheduleRun(schedule.id, scheduledFor, 'started');
     }
   };

@@ -43,11 +43,22 @@ const handlers = createSchedulesHandlers({
     return (files ?? []).map((file) => file.file_id);
   },
   markFilesUsed: async (fileIds, userId) => {
-    await methods.updateFilesUsage(
+    // Verify EVERY requested file was actually marked used (TTL cleared). A file can
+    // be deleted/expire between the ownership check and here; updateFilesUsage then
+    // returns fewer docs without throwing, and a silent success would persist a
+    // schedule whose attachments the first fire drops. Throw so retainFiles retries /
+    // fails, rather than committing a schedule with unretained files.
+    const requested = new Set(fileIds).size;
+    // updateFilesUsage dedupes and returns only the docs it actually updated.
+    const updated = await methods.updateFilesUsage(
       fileIds.map((file_id) => ({ file_id })),
       undefined,
       { user: userId },
     );
+    const cleared = Array.isArray(updated) ? updated.length : 0;
+    if (cleared !== requested) {
+      throw new Error(`attachment retention incomplete: ${cleared}/${requested} files marked used`);
+    }
   },
   fireNow: fireScheduleNow,
   // Quiesce-then-erase delete: stops new claims, aborts in-flight loopback runs,

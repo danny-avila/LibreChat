@@ -863,6 +863,39 @@ describe('claim-token fencing (stale worker cannot mutate an edited/deleted sche
   });
 });
 
+describe('holdsLease (owner-edit vs lease-takeover discriminator)', () => {
+  it('stays true across an owner edit (token rotates, leaseBy kept) and false on takeover', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const claim = await methods.claimDueSchedule({ instanceId: 'engine-1', leaseMs: 60_000 });
+    expect(claim?.leaseBy).toBe('engine-1');
+    // Owner edit rotates the claim token but does NOT touch leaseBy -> this worker
+    // still owns the lease, so a rollback of its own reservation is safe.
+    await methods.updateScheduleById(schedule.id, schedule.user, { name: 'edited' });
+    expect(await methods.holdsLease(schedule.id, 'engine-1')).toBe(true);
+    // A different worker re-claiming (after expiry) changes leaseBy -> takeover.
+    await methods.releaseLease(schedule.id);
+    await methods.claimDueSchedule({ instanceId: 'engine-2', leaseMs: 60_000 });
+    expect(await methods.holdsLease(schedule.id, 'engine-1')).toBe(false);
+  });
+});
+
+describe('hasOtherActiveRun (excludes the run itself)', () => {
+  it('excludes the checked occurrence and detects a different active one', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const paused = new Date('2026-07-20T12:00:00Z');
+    const active = new Date('2026-07-21T12:00:00Z');
+    // A paused occurrence coexists with a different, active (started) occurrence.
+    await ScheduleRun.create(
+      runData(schedule, { scheduledFor: paused, status: 'requires_action' }),
+    );
+    await methods.reserveStartedRun(runData(schedule, { scheduledFor: active }));
+    // Resuming the paused occurrence: the OTHER started occurrence is an overlap.
+    expect(await methods.hasOtherActiveRun(schedule.id, paused)).toBe(true);
+    // Checking the active occurrence itself: its own started row is excluded.
+    expect(await methods.hasOtherActiveRun(schedule.id, active)).toBe(false);
+  });
+});
+
 describe('deletion quiescing (soft-delete, drain, erase)', () => {
   it('markScheduleDeleting hides + un-claims; erase waits for active runs to drain', async () => {
     const schedule = await methods.createScheduleWithSlot(scheduleData(), 10);

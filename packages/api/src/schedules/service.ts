@@ -275,21 +275,24 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     abortScheduledJob: async (conversationId, identity, options) => {
       const store = GenerationJobManager.getJobStore();
       if (store == null) {
-        return;
+        return false;
       }
       const job = await store.getJob(conversationId);
-      // Identity guard: never abort a replacement turn that reused the
-      // conversationId, and never re-terminalize (clobber) an already-settled
-      // job — its evidence must survive for the reconciler.
+      // A null/identity-mismatched job is NOT reachable from this replica: it may be
+      // a live generation on a peer worker's private in-memory store (unshared
+      // topology). Report false so the caller knows the abort was NOT delivered.
       if (job == null || !jobMatchesIdentity(job, identity)) {
-        return;
+        return false;
       }
+      // Already terminal — nothing to abort, and its evidence must survive: treat as
+      // delivered (the run is no longer generating).
       if (job.status !== 'running' && job.status !== 'requires_action') {
-        return;
+        return true;
       }
       await GenerationJobManager.abortJob(conversationId, {
         preserveForReconcile: options?.preserve ?? true,
       });
+      return true;
     },
     clearReconciledJob: async (conversationId, identity) => {
       const store = GenerationJobManager.getJobStore();
@@ -473,9 +476,10 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     if (schedule == null) {
       return 'gone';
     }
-    // A paused run is `requires_action`, so another `started` run for the schedule is
-    // a DIFFERENT active occurrence — resuming over it would break per-schedule overlap.
-    if (await methods.hasActiveRun(scheduleId)) {
+    // Overlap = a DIFFERENT occurrence is currently `started`. Exclude this run's own
+    // row: if its pause bookkeeping failed transiently the row can still be `started`,
+    // and treating that as an overlap would wrongly reject resuming THIS same occurrence.
+    if (await methods.hasOtherActiveRun(scheduleId, new Date(scheduledFor))) {
       return 'overlap';
     }
     // Read-only capacity gate BEFORE promoting, so we never mutate a row a concurrent
@@ -499,21 +503,26 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     return 'ok';
   }
 
-  /** Aborts an active run's loopback job (identity-guarded). */
+  /** Aborts an active run's loopback job (identity-guarded). Returns whether the
+   * abort was delivered (false when the job wasn't reachable — e.g. a peer worker's
+   * private store, or a transient error). */
   async function abortActiveRun(
     run: { scheduleId: string; scheduledFor: Date; conversationId?: string },
     preserve: boolean,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (!run.conversationId) {
-      return;
+      return false;
     }
-    await engineDeps
+    return engineDeps
       .abortScheduledJob(
         run.conversationId,
         { scheduleId: run.scheduleId, scheduledFor: run.scheduledFor },
         { preserve },
       )
-      .catch((err) => logger.warn('[schedules] failed to abort run job on quiesce:', err));
+      .catch((err) => {
+        logger.warn('[schedules] failed to abort run job on quiesce:', err);
+        return false;
+      });
   }
 
   /**
@@ -548,11 +557,26 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
   async function quiesceUserSchedules(userId: string): Promise<void> {
     await methods.disableUserSchedulesForDeletion(userId);
     const active = await methods.getActiveRunsForUser(userId);
+    const unconfirmed: string[] = [];
     for (const run of active) {
       // Do NOT preserve for reconcile: account deletion hard-deletes these run
       // rows, so no reconcile pass will ever finalize/clear a retained job — a
       // preserved job would leak in the store. Let the abort settle it directly.
-      await abortActiveRun(run, false);
+      const aborted = await abortActiveRun(run, false);
+      if (!aborted && run.conversationId) {
+        unconfirmed.push(run.conversationId);
+      }
+    }
+    // Surface any abort that could not be confirmed: in a clustered deployment
+    // without a shared stream store the run's generation may live on a peer worker
+    // and keep persisting messages for the now-deleted account. This is the unshared
+    // topology's known limitation (see the init warning); make it visible per run.
+    if (unconfirmed.length > 0) {
+      logger.warn(
+        `[schedules] account-deletion quiesce could not confirm abort for ${unconfirmed.length} ` +
+          `in-flight scheduled run(s) [${unconfirmed.join(', ')}] — a peer worker's generation may ` +
+          'still persist data. Guaranteed quiescing requires a shared stream store (USE_REDIS_STREAMS).',
+      );
     }
   }
 

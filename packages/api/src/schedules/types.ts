@@ -76,7 +76,7 @@ export interface ScheduleEngineDeps {
     conversationId: string,
     identity: JobIdentity,
     options?: { preserve?: boolean },
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   /**
    * Whether every engine replica can observe the SAME jobs (Redis-backed, or a
    * single process). When false — e.g. clustered workers each with a private

@@ -24,6 +24,7 @@ function makeSchedule(overrides: Partial<FireableSchedule> = {}): FireableSchedu
     target: 'new',
     enabled: true,
     claimToken: 'ct-1',
+    leaseBy: 'inst-1',
     runCount: 0,
     failureCount: 0,
     balanceSkipCount: 0,
@@ -88,7 +89,7 @@ function makeMethods() {
       },
     ),
     revalidateClaim: jest.fn(async () => true),
-    holdsClaim: jest.fn(async () => true),
+    holdsLease: jest.fn(async () => true),
     deleteScheduleRun: jest.fn(async (id: string, when: Date, _status?: string) => {
       runs.delete(key(id, when));
     }),
@@ -268,7 +269,7 @@ describe('fireSchedule', () => {
       runs.set(`other-${i}:x`, { status: 'started' });
     }
     // Simulate a lease takeover: this worker no longer holds the claim.
-    (methods.holdsClaim as jest.Mock).mockResolvedValue(false);
+    (methods.holdsLease as jest.Mock).mockResolvedValue(false);
     mockFetch(async () => okResponse());
     const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
     expect(result.skipped).toBe('capacity');

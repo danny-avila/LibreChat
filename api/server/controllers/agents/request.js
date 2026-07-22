@@ -408,13 +408,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         logger.info(
           `[AgentController] Scheduled fire aborted before start; schedule ${scheduleId} no longer active`,
         );
-        await recordScheduleOutcome({
+        const outcomeRecorded = await recordScheduleOutcome({
           scheduleId,
           scheduledFor,
           status: 'interrupted',
           conversationId: streamId,
         });
-        await GenerationJobManager.completeJob(streamId).catch(() => undefined);
+        // If the outcome write failed (transient Mongo across its retries), preserve
+        // the job so the reconciler can finalize this run instead of deleting the
+        // only evidence while the run row is still `started` (which would leave a
+        // deleted schedule draining until the orphan cutoff). Mirrors the other
+        // scheduled terminal paths.
+        await GenerationJobManager.completeJob(streamId, undefined, {
+          preserveForReconcile: !outcomeRecorded,
+        }).catch(() => undefined);
         return res.json({ streamId, conversationId, status: 'aborted' });
       }
     }
