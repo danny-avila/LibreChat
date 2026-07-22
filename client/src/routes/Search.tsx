@@ -346,9 +346,13 @@ export default function Search() {
    *  results are stale — `showingStale` covers the case where the previous
    *  search was empty and `keepPreviousData` holds those empty pages during the
    *  new request, which would otherwise flash a false "nothing found".
-   *  `hasNextPage` covers a page that filtered down to zero rows: the effect
-   *  above is following the cursor, so this is still loading, not "no results". */
-  if ((isLoading || showingStale || hasNextPage) && !hasResults) {
+   *  `hasNextPage` covers a page that filtered down to zero rows: the drain is
+   *  following the cursor, so that is still loading, not "no results" — but only
+   *  while the drain can actually progress. Once it has errored out, the cached
+   *  empty page keeps `hasNextPage` true forever, and spinning on that would
+   *  strand the user on a loading screen after the error toast. */
+  const drainInFlight = hasNextPage && !isError;
+  if ((isLoading || showingStale || drainInFlight) && !hasResults) {
     return loadingSpinner;
   }
 
