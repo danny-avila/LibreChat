@@ -20,8 +20,10 @@ export function splitBackgroundAttachments(attachments?: TAttachment[]): {
   if (!attachments || attachments.length === 0) {
     return { fileAttachments: attachments, backgroundSettled: false };
   }
+  /** The marker's `type` is host-defined, outside the `Tools` union. */
   const fileAttachments = attachments.filter(
-    (attachment) => attachment?.type !== BACKGROUND_STATUS_ATTACHMENT_TYPE,
+    (attachment) =>
+      (attachment as { type?: string } | undefined)?.type !== BACKGROUND_STATUS_ATTACHMENT_TYPE,
   );
   return {
     fileAttachments,
