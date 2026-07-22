@@ -1,25 +1,41 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { getAccessToken, requestJson } from './helpers';
 
 const uniqueName = (prefix: string) => `${prefix} ${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
 
+type AgentSummary = { id: string; name?: string };
+type AgentList = { data?: AgentSummary[] };
+
 /**
- * Seeds a minimal agent via the authenticated API (storageState) so the schedule
- * dialog's required agent picker has something to select. Returns the agent name.
+ * Ensures an agent exists for the schedule dialog's required picker. Reuses an
+ * existing accessible agent when present; otherwise creates one via the API with
+ * a real Bearer token (the app authenticates with an access token, not a plain
+ * cookie, so page.request alone is unauthenticated). Requires the page to already
+ * be on the app origin. Returns the agent name to select by.
  */
-async function seedAgent(page: Page): Promise<string> {
+async function ensureAgent(page: Page): Promise<string> {
+  const token = await getAccessToken(page);
+  const list = await requestJson<AgentList>(page, { path: '/api/agents?limit=1', token }).catch(
+    () => ({}) as AgentList,
+  );
+  const existing = list.data?.[0];
+  if (existing?.name) {
+    return existing.name;
+  }
   const name = uniqueName('E2E Agent');
-  const response = await page.request.post('/api/agents', {
-    data: { name, provider: 'Mock Provider A', model: 'mock-model-a' },
+  const agent = await requestJson<AgentSummary>(page, {
+    path: '/api/agents',
+    token,
+    method: 'POST',
+    body: { name, provider: 'Mock Provider A', model: 'mock-model-a' },
   });
-  expect(response.ok()).toBeTruthy();
-  const agent = await response.json();
   expect(agent.id).toBeTruthy();
   return name;
 }
 
 async function openSchedulesPanel(page: Page) {
-  await page.getByTestId('nav-panel-scheduled').click();
+  await page.getByRole('button', { name: 'Scheduled chats' }).click();
   const panel = page.getByRole('region', { name: 'Scheduled chats' });
   await expect(panel).toBeVisible();
   return panel;
@@ -28,10 +44,10 @@ async function openSchedulesPanel(page: Page) {
 test.describe('scheduled chats', () => {
   test('creates, persists, toggles, and deletes a schedule', async ({ page }) => {
     test.setTimeout(120000);
-    const agentName = await seedAgent(page);
-    const scheduleName = uniqueName('E2E Schedule');
+    await page.goto('/c/new', { timeout: 15000 });
 
-    await page.goto('/c/new', { timeout: 10000 });
+    const agentName = await ensureAgent(page);
+    const scheduleName = uniqueName('E2E Schedule');
 
     // Create a schedule through the dialog.
     let panel = await openSchedulesPanel(page);
@@ -41,9 +57,9 @@ test.describe('scheduled chats', () => {
     await dialog.getByLabel('Name').fill(scheduleName);
     await dialog.getByLabel('Prompt').fill('Summarize what happened today');
 
-    // Pick the seeded agent (the picker shows the placeholder until one is chosen).
+    // Pick the agent (the picker shows the placeholder until one is chosen).
     await dialog.getByText('Select Agent').click();
-    await page.getByRole('option', { name: agentName }).click();
+    await page.getByRole('option', { name: agentName }).first().click();
 
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
 
