@@ -290,6 +290,41 @@ describe('Message Operations', () => {
       expect(result.matched).toBe(false);
     });
 
+    it('scopes the patch by agentId when provider ids repeat across agents', async () => {
+      /* Handoff runs append multiple agents' parts to ONE response message,
+       * and provider ids like call_0 repeat per model response. */
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          {
+            type: 'tool_call',
+            agentId: 'agent_a',
+            tool_call: { id: 'call_0', name: 'execute_code', output: 'handle-a' },
+          },
+          {
+            type: 'tool_call',
+            agentId: 'agent_b',
+            tool_call: { id: 'call_0', name: 'execute_code', output: 'handle-b' },
+          },
+        ],
+      });
+
+      const result = await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_0',
+        agentId: 'agent_b',
+        output: 'stdout-b',
+      });
+      expect(result.matched).toBe(true);
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      const content = saved?.content as Array<{ tool_call?: { output?: string } }>;
+      expect(content[0].tool_call?.output).toBe('handle-a');
+      expect(content[1].tool_call?.output).toBe('stdout-b');
+    });
+
     it('flags unfinished partial rows so callers keep re-applying until finalize', async () => {
       await saveMessage(mockCtx, {
         ...mockMessageData,

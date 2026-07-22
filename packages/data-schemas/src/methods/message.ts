@@ -38,6 +38,7 @@ export interface MessageMethods {
     messageId: string;
     conversationId: string;
     toolCallId: string;
+    agentId?: string;
     output?: string;
     attachments?: unknown[];
   }): Promise<{ matched: boolean; unfinished: boolean }>;
@@ -294,6 +295,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     messageId,
     conversationId,
     toolCallId,
+    agentId,
     output,
     attachments,
   }: {
@@ -301,6 +303,10 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     messageId: string;
     conversationId: string;
     toolCallId: string;
+    /** Scopes the part match when provider tool-call ids repeat across
+     *  agents in one response message (e.g. `call_0` per response); a part
+     *  without agent identity matches any caller (single-agent runs). */
+    agentId?: string;
     output?: string;
     attachments?: unknown[];
   }): Promise<{ matched: boolean; unfinished: boolean }> {
@@ -318,6 +324,16 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                     $and: [
                       { $eq: ['$$part.type', 'tool_call'] },
                       { $eq: ['$$part.tool_call.id', toolCallId] },
+                      ...(agentId != null
+                        ? [
+                            {
+                              $in: [
+                                { $ifNull: ['$$part.agentId', '$$part.tool_call.agentId'] },
+                                [null, agentId],
+                              ],
+                            },
+                          ]
+                        : []),
                     ],
                   },
                   {

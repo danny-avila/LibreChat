@@ -37,6 +37,7 @@ export interface CodeHarvestDeps {
     messageId: string;
     conversationId: string;
     toolCallId: string;
+    agentId?: string;
     output?: string;
     attachments?: unknown[];
   }) => Promise<{ matched: boolean; unfinished: boolean }>;
@@ -64,6 +65,9 @@ export interface CodeHarvestParams {
   toolCallId: string;
   messageId?: string;
   conversationId?: string;
+  /** Dispatching agent — scopes the part patch when provider tool-call ids
+   *  repeat across agents in one response message. */
+  agentId?: string;
   /** When the background task was DISPATCHED — the ordering anchor for the
    *  stale-output guard. A slow task settling after a newer run wrote the
    *  same filename must not overwrite it, so harvest wall-clock is wrong. */
@@ -102,6 +106,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
     toolCallId,
     messageId,
     conversationId,
+    agentId,
     dispatchedAt,
     output,
     artifact,
@@ -119,6 +124,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
         messageId,
         conversationId,
         toolCallId,
+        agentId,
         output,
         attachments: knownAttachments ?? [],
       });
@@ -174,6 +180,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
         messageId,
         conversationId,
         toolCallId,
+        agentId,
         output,
         attachments,
       });

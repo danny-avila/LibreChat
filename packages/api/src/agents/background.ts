@@ -458,6 +458,9 @@ export interface BackgroundTask {
   toolCallId: string;
   /** The dispatch turn's response messageId, for post-hoc result anchoring. */
   messageId?: string;
+  /** The dispatching agent, disambiguating repeated provider tool-call ids
+   *  (e.g. `call_0`) across agents when patching the dispatch turn. */
+  agentId?: string;
   status: BackgroundTaskStatus;
   /** Tool result content once completed. */
   result?: string;
@@ -679,6 +682,7 @@ export class BackgroundTaskRegistryClass {
       toolName: params.toolName,
       toolCallId: params.toolCallId,
       messageId: params.messageId,
+      agentId: params.agentId,
       ...(params.harvestStarted === true ? { harvestStarted: true } : {}),
       status: 'running',
       createdAt: now,
@@ -1029,6 +1033,7 @@ export function getBackgroundCodeDelivery(params: {
       toolName: string;
       toolCallId: string;
       messageId?: string;
+      agentId?: string;
       harvestStarted?: boolean;
       result?: string;
       error?: string;
@@ -1050,6 +1055,7 @@ export function getBackgroundCodeDelivery(params: {
     toolName: task.toolName,
     toolCallId: task.toolCallId,
     messageId: task.messageId,
+    agentId: task.agentId,
     harvestStarted: task.harvestStarted,
     result: task.result,
     error: task.error,

@@ -33,7 +33,13 @@ const {
   getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
+const {
+  createFile,
+  getFiles,
+  updateFile,
+  claimCodeFile,
+  confirmCodeFileOwnership,
+} = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
@@ -460,6 +466,28 @@ const processCodeOutput = async ({
     }
 
     /**
+     * Atomic re-check immediately before the final DB write (background
+     * harvests on shared rows only): an overlapping NEWER harvest may have
+     * claimed ownership since the read guard above. The loser skips its
+     * attachment; bytes it may have already uploaded to the same storage key
+     * are a narrow residual that full per-file locking would be needed to
+     * close.
+     */
+    const commitCodeFile = async (fileData) => {
+      if (isUpdate && freshClaimAfter != null) {
+        const stillOwner = await confirmCodeFileOwnership({ file_id, sourceDispatchedAt });
+        if (!stillOwner) {
+          logger.warn(
+            `[processCodeOutput] Skipping stale background output "${safeName}" (${file_id}): ownership changed before write`,
+          );
+          return false;
+        }
+      }
+      await createFile(fileData, true);
+      return true;
+    };
+
+    /**
      * Preserve the original `messageId` on update. Each `processCodeOutput`
      * call would otherwise overwrite it with the current run's run id, which
      * decouples the file from the assistant message that originally created
@@ -498,7 +526,9 @@ const processCodeOutput = async ({
         metadata: { codeEnvRef, sourceDispatchedAt },
         ...(await getRetentionExpiry(req)),
       };
-      await createFile(file, true);
+      if (!(await commitCodeFile(file))) {
+        return null;
+      }
       return { file: Object.assign(file, { messageId, toolCallId }) };
     }
 
@@ -624,7 +654,9 @@ const processCodeOutput = async ({
         previewError: null,
         previewRevision,
       };
-      await createFile(file, true);
+      if (!(await commitCodeFile(file))) {
+        return null;
+      }
       return {
         file: Object.assign(file, { messageId, toolCallId }),
         finalize: () =>
@@ -662,7 +694,9 @@ const processCodeOutput = async ({
       previewRevision: null,
     };
 
-    await createFile(file, true);
+    if (!(await commitCodeFile(file))) {
+      return null;
+    }
     return { file: Object.assign(file, { messageId, toolCallId }) };
   } catch (error) {
     if (error?.message === 'Path traversal detected in filename') {

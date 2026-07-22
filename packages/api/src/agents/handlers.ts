@@ -90,6 +90,7 @@ export interface ToolExecuteOptions {
     toolCallId: string;
     messageId?: string;
     conversationId?: string;
+    agentId?: string;
     dispatchedAt?: number;
     output?: string;
     artifact?: unknown;
@@ -3743,6 +3744,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         toolCallId: tc.id,
                         messageId: backgroundRunId,
                         conversationId: backgroundConversationId,
+                        /** Disambiguates repeated provider ids (e.g. `call_0`)
+                         *  across agents sharing one response message. */
+                        agentId,
                         /** Stale-output ordering is decided by DISPATCH order,
                          *  not harvest wall-clock: a slow old task settling
                          *  after a newer run wrote the same filename must not
@@ -3976,6 +3980,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         toolCallId: delivery.toolCallId,
                         messageId: delivery.messageId,
                         conversationId: backgroundConversationId,
+                        agentId: delivery.agentId,
                         output: reapplyOutput,
                         attachments: delivery.attachments,
                         reapply: true,

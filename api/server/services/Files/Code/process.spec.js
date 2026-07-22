@@ -115,11 +115,13 @@ jest.mock('@librechat/agents', () => ({
 
 // Mock models
 const mockClaimCodeFile = jest.fn();
+const mockConfirmCodeFileOwnership = jest.fn().mockResolvedValue(true);
 jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({}),
   getFiles: jest.fn(),
   updateFile: jest.fn(),
   claimCodeFile: (...args) => mockClaimCodeFile(...args),
+  confirmCodeFileOwnership: (...args) => mockConfirmCodeFileOwnership(...args),
 }));
 
 // Mock permissions (must be before process.js import)
@@ -303,6 +305,29 @@ describe('Code Process', () => {
       });
 
       expect(result).toBeNull();
+    });
+
+    it('skips the write when ownership is lost between the read guard and the commit', async () => {
+      /* A newer harvest CAS-claimed ownership while this one was
+       * downloading/converting: the final write must not commit. */
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      });
+      mockConfirmCodeFileOwnership.mockResolvedValueOnce(false);
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const result = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-02T00:00:00.000Z').getTime(),
+      });
+
+      expect(result).toBeNull();
+      expect(mockConfirmCodeFileOwnership).toHaveBeenCalledWith({
+        file_id: 'existing-file-id',
+        sourceDispatchedAt: new Date('2024-01-02T00:00:00.000Z').getTime(),
+      });
     });
 
     it('lets a newer task overwrite an OLDER task that wrote late (writer dispatch order wins)', async () => {

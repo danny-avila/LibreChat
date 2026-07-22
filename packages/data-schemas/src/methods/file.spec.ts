@@ -179,6 +179,26 @@ describe('File Methods', () => {
       ).toBe(111);
     });
 
+    it('confirmCodeFileOwnership is an atomic check-and-stamp (older writers rejected)', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      await fileMethods.claimCodeFile({
+        filename: 'cas.csv',
+        conversationId: 'conversation-cas',
+        file_id: 'cas-file',
+        user: userId,
+        sourceDispatchedAt: 100,
+      });
+
+      /** Same-or-newer writer: succeeds and stamps its own order. */
+      await expect(
+        fileMethods.confirmCodeFileOwnership({ file_id: 'cas-file', sourceDispatchedAt: 200 }),
+      ).resolves.toBe(true);
+      /** Older writer arriving after the newer stamp: rejected. */
+      await expect(
+        fileMethods.confirmCodeFileOwnership({ file_id: 'cas-file', sourceDispatchedAt: 150 }),
+      ).resolves.toBe(false);
+    });
+
     it('keeps non-tenant code output claims in the legacy namespace', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
 
