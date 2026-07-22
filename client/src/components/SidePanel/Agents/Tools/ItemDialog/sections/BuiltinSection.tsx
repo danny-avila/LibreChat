@@ -5,6 +5,7 @@ import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentForm, ExtendedFile } from '~/common';
 import type { BuiltinId } from '../../items/types';
 import { useVerifyAgentToolAuth } from '~/data-provider';
+import CodeBackground from '../../../Code/Background';
 import SearchAction from '../../../Search/Action';
 import FileContext from '../../../FileContext';
 import FileSearch from '../../../FileSearch';
@@ -133,7 +134,12 @@ export default function BuiltinSection({
   let body: React.ReactNode = null;
 
   if (builtinId === 'execute_code') {
-    body = <CodeFiles agent_id={agentId} files={codeFiles} />;
+    body = (
+      <div className="flex flex-col gap-4">
+        <CodeBackground />
+        <CodeFiles agent_id={agentId} files={codeFiles} />
+      </div>
+    );
   } else if (builtinId === 'web_search') {
     body = <WebSearchConfig />;
   } else if (builtinId === 'file_search') {

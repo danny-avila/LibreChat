@@ -7,6 +7,7 @@ import { sandboxStartingByToolCallId } from '~/store';
 import useLazyHighlight from './useLazyHighlight';
 import useToolCallState from './useToolCallState';
 import CodeWindowHeader from './CodeWindowHeader';
+import { parseBackgroundHandle } from './handle';
 import { AttachmentGroup } from './Attachment';
 import { useLocalize } from '~/hooks';
 import Stdout from './Stdout';
@@ -80,6 +81,17 @@ export default function ExecuteCode({
 
   const highlighted = useLazyHighlight(code, lang);
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
+  /** A backgrounded call's persisted output stays the dispatch handle until
+   *  the detached run settles and patches it; render a background state
+   *  instead of the handle JSON. Attachments arriving mean the run finished. */
+  const backgroundHandle = useMemo(() => parseBackgroundHandle(output), [output]);
+  const backgroundFinishedText = backgroundHandle
+    ? localize(
+        attachments && attachments.length > 0
+          ? 'com_ui_background_finished'
+          : 'com_ui_background_running',
+      )
+    : null;
 
   return (
     <>
@@ -91,7 +103,9 @@ export default function ExecuteCode({
             sandboxStarting ? localize('com_ui_sandbox_starting') : localize('com_ui_analyzing')
           }
           finishedText={
-            cancelled ? localize('com_ui_cancelled') : localize('com_ui_analyzing_finished')
+            cancelled
+              ? localize('com_ui_cancelled')
+              : (backgroundFinishedText ?? localize('com_ui_analyzing_finished'))
           }
           errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
@@ -117,7 +131,7 @@ export default function ExecuteCode({
                 <code className={`hljs language-${lang} !whitespace-pre`}>{highlighted}</code>
               </pre>
             )}
-            {hasOutput && (
+            {hasOutput && backgroundHandle == null && (
               <div
                 className={cn(
                   'bg-surface-primary-alt p-4 text-xs dark:bg-transparent',

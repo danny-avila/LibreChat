@@ -9,6 +9,7 @@ import LangIcon from '~/components/Messages/Content/LangIcon';
 import { sandboxStartingByToolCallId } from '~/store';
 import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
+import { parseBackgroundHandle } from './handle';
 import { ERROR_PATTERNS } from './ExecuteCode';
 import { AttachmentGroup } from './Attachment';
 import { useLocalize } from '~/hooks';
@@ -45,6 +46,17 @@ export default function BashCall({
 
   const highlighted = useLazyHighlight(command || undefined, 'bash');
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
+  /** A backgrounded call's persisted output stays the dispatch handle until
+   *  the detached run settles and patches it; render a background state
+   *  instead of the handle JSON. Attachments arriving mean the run finished. */
+  const backgroundHandle = useMemo(() => parseBackgroundHandle(output), [output]);
+  const backgroundFinishedText = backgroundHandle
+    ? localize(
+        attachments && attachments.length > 0
+          ? 'com_ui_background_finished'
+          : 'com_ui_background_running',
+      )
+    : null;
 
   const [isCopied, setIsCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -75,7 +87,9 @@ export default function BashCall({
           onClick={toggleCode}
           inProgressText={inProgressText}
           finishedText={
-            cancelled ? localize('com_ui_cancelled') : localize('com_ui_command_finished')
+            cancelled
+              ? localize('com_ui_cancelled')
+              : (backgroundFinishedText ?? localize('com_ui_command_finished'))
           }
           errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
@@ -112,7 +126,7 @@ export default function BashCall({
                 </pre>
               </div>
             )}
-            {hasOutput && (
+            {hasOutput && backgroundHandle == null && (
               <div className={cn(command && 'border-t border-border-light')}>
                 <pre
                   className={cn(

@@ -22,6 +22,7 @@ let Message: mongoose.Model<IMessage>;
 let saveMessage: ReturnType<typeof createMessageMethods>['saveMessage'];
 let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
+let updateToolCallResult: ReturnType<typeof createMessageMethods>['updateToolCallResult'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
 let bulkSaveMessages: ReturnType<typeof createMessageMethods>['bulkSaveMessages'];
 let updateMessageText: ReturnType<typeof createMessageMethods>['updateMessageText'];
@@ -40,6 +41,7 @@ beforeAll(async () => {
   saveMessage = methods.saveMessage;
   getMessages = methods.getMessages;
   updateMessage = methods.updateMessage;
+  updateToolCallResult = methods.updateToolCallResult;
   deleteMessages = methods.deleteMessages;
   bulkSaveMessages = methods.bulkSaveMessages;
   updateMessageText = methods.updateMessageText;
@@ -162,6 +164,116 @@ describe('Message Operations', () => {
       await expect(
         updateMessage(mockCtx.userId, { messageId: 'nonexistent', text: 'Test' }),
       ).rejects.toThrow('Message not found or user not authorized.');
+    });
+  });
+
+  describe('updateToolCallResult', () => {
+    const toolCallContent = () => [
+      { type: 'text', text: 'intro' },
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'call_bg',
+          name: 'execute_code',
+          args: '{"lang":"py","code":"print(1)"}',
+          output: '{"background_task_id":"task-1"}',
+          progress: 1,
+        },
+      },
+      {
+        type: 'tool_call',
+        tool_call: { id: 'call_other', name: 'execute_code', args: '{}', output: 'untouched' },
+      },
+    ];
+
+    it('patches only the matching tool_call part and appends attachments atomically', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      const matched = await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        output: 'stdout:\nhello',
+        attachments: [{ file_id: 'f1', toolCallId: 'call_bg' }],
+      });
+      expect(matched).toBe(true);
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      const content = saved?.content as Array<{
+        type: string;
+        tool_call?: { id: string; output?: string };
+      }>;
+      expect(content[1].tool_call?.output).toBe('stdout:\nhello');
+      expect(content[2].tool_call?.output).toBe('untouched');
+      expect(saved?.attachments).toEqual([{ file_id: 'f1', toolCallId: 'call_bg' }]);
+    });
+
+    it('appends to existing attachments instead of replacing them', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: toolCallContent(),
+        attachments: [{ file_id: 'existing' }] as unknown as IMessage['attachments'],
+      });
+
+      await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        attachments: [{ file_id: 'f2' }],
+      });
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(saved?.attachments).toEqual([{ file_id: 'existing' }, { file_id: 'f2' }]);
+    });
+
+    it('is idempotent: re-applying the same patch does not duplicate attachments', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      const patch = {
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        output: 'stdout:\nhello',
+        attachments: [{ file_id: 'f1', toolCallId: 'call_bg' }],
+      };
+      await updateToolCallResult(patch);
+      await updateToolCallResult(patch);
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(saved?.attachments).toEqual([{ file_id: 'f1', toolCallId: 'call_bg' }]);
+      const content = saved?.content as Array<{ tool_call?: { output?: string } }>;
+      expect(content[1].tool_call?.output).toBe('stdout:\nhello');
+    });
+
+    it('returns false when the message row does not exist yet (caller retries)', async () => {
+      const matched = await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'missing-msg',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        output: 'stdout',
+      });
+      expect(matched).toBe(false);
+    });
+
+    it('does not match another user’s message', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      const matched = await updateToolCallResult({
+        userId: 'someone-else',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        output: 'hijacked',
+      });
+      expect(matched).toBe(false);
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      const content = saved?.content as Array<{ tool_call?: { output?: string } }>;
+      expect(content[1].tool_call?.output).toBe('{"background_task_id":"task-1"}');
     });
   });
 

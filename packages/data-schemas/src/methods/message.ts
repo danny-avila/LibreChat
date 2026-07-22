@@ -33,6 +33,14 @@ export interface MessageMethods {
     [key: string]: unknown;
   }): Promise<IMessage | null>;
   updateMessageText(userId: string, params: { messageId: string; text: string }): Promise<void>;
+  updateToolCallResult(params: {
+    userId: string;
+    messageId: string;
+    conversationId: string;
+    toolCallId: string;
+    output?: string;
+    attachments?: unknown[];
+  }): Promise<boolean>;
   updateMessage(
     userId: string,
     message: Partial<IMessage> & { newMessageId?: string },
@@ -267,6 +275,99 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }
 
   /**
+   * Patches a persisted tool_call content part in place and appends attachments,
+   * for results that settle after the turn's message was finalized (background
+   * tool calls). Atomic single update so two tasks completing concurrently on
+   * the same message cannot lose each other's attachments, and IDEMPOTENT
+   * (attachments dedupe by `file_id`) so it can be re-applied to heal a later
+   * full-row save that reverted the patch. Returns `false` when the message row
+   * does not exist yet (the dispatch turn has not finalized) so the caller can
+   * retry.
+   */
+  async function updateToolCallResult({
+    userId,
+    messageId,
+    conversationId,
+    toolCallId,
+    output,
+    attachments,
+  }: {
+    userId: string;
+    messageId: string;
+    conversationId: string;
+    toolCallId: string;
+    output?: string;
+    attachments?: unknown[];
+  }): Promise<boolean> {
+    const stages: Record<string, unknown>[] = [];
+    if (output !== undefined) {
+      stages.push({
+        $set: {
+          content: {
+            $map: {
+              input: { $ifNull: ['$content', []] },
+              as: 'part',
+              in: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$$part.type', 'tool_call'] },
+                      { $eq: ['$$part.tool_call.id', toolCallId] },
+                    ],
+                  },
+                  {
+                    $mergeObjects: [
+                      '$$part',
+                      {
+                        tool_call: {
+                          $mergeObjects: ['$$part.tool_call', { output: { $literal: output } }],
+                        },
+                      },
+                    ],
+                  },
+                  '$$part',
+                ],
+              },
+            },
+          },
+        },
+      });
+    }
+    if (attachments !== undefined && attachments.length > 0) {
+      const fileIds = attachments
+        .map((attachment) => (attachment as { file_id?: unknown }).file_id)
+        .filter((id): id is string => typeof id === 'string');
+      stages.push({
+        $set: {
+          attachments: {
+            $concatArrays: [
+              {
+                $filter: {
+                  input: { $ifNull: ['$attachments', []] },
+                  as: 'existing',
+                  cond: { $not: [{ $in: ['$$existing.file_id', { $literal: fileIds }] }] },
+                },
+              },
+              { $literal: attachments },
+            ],
+          },
+        },
+      });
+    }
+    if (stages.length === 0) {
+      return false;
+    }
+    try {
+      const Message = mongoose.models.Message as Model<IMessage>;
+      const result = await Message.updateOne({ messageId, user: userId, conversationId }, stages);
+      return result.matchedCount > 0;
+    } catch (err) {
+      logger.error('Error updating tool call result:', err);
+      throw err;
+    }
+  }
+
+  /**
    * Updates a message and returns sanitized fields.
    */
   async function updateMessage(
@@ -440,6 +541,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     bulkSaveMessages,
     recordMessage,
     updateMessageText,
+    updateToolCallResult,
     updateMessage,
     deleteMessagesSince,
     getMessages,

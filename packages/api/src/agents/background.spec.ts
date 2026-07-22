@@ -11,6 +11,7 @@ import {
   registerBackgroundTaskTool,
   buildBackgroundHandleContent,
   runCheckBackgroundTask,
+  getBackgroundCodeDelivery,
   backgroundTaskRegistry,
   BackgroundTaskRegistryClass,
   CHECK_BACKGROUND_TASK_NAME,
@@ -26,10 +27,8 @@ const mcpDef = (name: string): LCTool =>
   }) as unknown as LCTool;
 
 describe('isBackgroundEligibleToolName', () => {
-  it('excludes direct-path, host-special, code-session, and machinery tools', () => {
+  it('excludes direct-path, host-special, and machinery tools', () => {
     for (const name of [
-      'execute_code',
-      'bash_tool',
       'read_file',
       'skill',
       'tool_search',
@@ -61,6 +60,11 @@ describe('isBackgroundEligibleToolName', () => {
     for (const name of ['search_mcp_docs', 'lookup_customer', 'fetch_weather']) {
       expect(isBackgroundEligibleToolName(name)).toBe(true);
     }
+  });
+
+  it('allows the code-execution pair (natively backgroundable)', () => {
+    expect(isBackgroundEligibleToolName('execute_code')).toBe(true);
+    expect(isBackgroundEligibleToolName('bash_tool')).toBe(true);
   });
 });
 
@@ -297,20 +301,21 @@ describe('synthesizeBackgroundToolOptions', () => {
     ).toBeUndefined();
   });
 
-  it('marks only eligible tools (excludes code/HITL/attachment built-ins)', () => {
+  it('marks only eligible tools (excludes HITL/attachment built-ins; code tools are eligible)', () => {
     const options = synthesizeBackgroundToolOptions(
       ['search_mcp_docs', 'execute_code', 'ask_user_question', 'web_search', 'lookup_customer'],
       { ephemeralAgent: { run_in_background: true } },
     );
     expect(options).toEqual({
       search_mcp_docs: { run_in_background: true },
+      execute_code: { run_in_background: true },
       lookup_customer: { run_in_background: true },
     });
   });
 
   it('returns undefined when nothing is eligible', () => {
     expect(
-      synthesizeBackgroundToolOptions(['execute_code', 'skill'], {
+      synthesizeBackgroundToolOptions(['read_file', 'skill'], {
         modelSpec: { runInBackground: true },
       }),
     ).toBeUndefined();
@@ -446,12 +451,49 @@ describe('BackgroundTaskRegistryClass', () => {
     const claimed = registry.claimArtifact('u1', 'c1', created.task.id);
     expect(claimed).toEqual({
       toolName: 'search_mcp_docs',
+      toolCallId: 'call_art',
       artifact: { files: ['a.png'] },
       content: 'DONE',
     });
     // second claim yields nothing (delivered once), and the artifact is freed
     expect(registry.claimArtifact('u1', 'c1', created.task.id)).toBeUndefined();
     expect(registry.get('u1', 'c1', created.task.id)?.artifact).toBeUndefined();
+  });
+
+  it('keeps harvest state (messageId, attachments) independent of the one-shot artifact claim', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_code',
+      toolName: 'execute_code',
+      messageId: 'dispatch-msg',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u1', 'c1', created.task.id, {
+      content: 'stdout',
+      artifact: { session_id: 'exec-1', files: [{ id: 'f1' }] },
+      harvestStarted: true,
+    });
+
+    const claimed = registry.claimArtifact('u1', 'c1', created.task.id);
+    expect(claimed).toEqual({
+      toolName: 'execute_code',
+      toolCallId: 'call_code',
+      messageId: 'dispatch-msg',
+      harvestStarted: true,
+      artifact: { session_id: 'exec-1', files: [{ id: 'f1' }] },
+      content: 'stdout',
+    });
+    expect(registry.claimArtifact('u1', 'c1', created.task.id)).toBeUndefined();
+
+    /** Attachments can land AFTER the artifact was claimed (harvest is
+     *  detached) and stay retrievable on every later poll. */
+    const attachments = [{ file_id: 'f1', toolCallId: 'call_code' }];
+    registry.attachHarvest('u1', 'c1', created.task.id, attachments);
+    expect(registry.get('u1', 'c1', created.task.id)?.attachments).toEqual(attachments);
   });
 
   it('truncates an oversized stored result with an explicit marker (not a silent cut)', () => {
@@ -493,6 +535,7 @@ describe('BackgroundTaskRegistryClass', () => {
     registry.restoreArtifact('u1', 'c1', created.task.id, claimed?.artifact);
     expect(registry.claimArtifact('u1', 'c1', created.task.id)).toEqual({
       toolName: 'search_mcp_docs',
+      toolCallId: 'call_art_retry',
       artifact: { files: ['a.png'] },
       content: 'DONE',
     });
@@ -601,6 +644,95 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.get('u2', 'c1', created.task.id)).toBeUndefined();
     expect(registry.get('u1', 'c2', created.task.id)).toBeUndefined();
     expect(registry.list('u2', 'c1')).toHaveLength(0);
+  });
+});
+
+describe('applyBackgroundToolCalls — code-pair expansion', () => {
+  it('an execute_code opt-in covers the runtime bash_tool definition', () => {
+    const defs = [mcpDef('bash_tool')];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: { execute_code: { run_in_background: true } },
+    });
+    expect(result.backgroundToolNames).toEqual(['bash_tool']);
+    const bashDef = result.toolDefinitions.find((d) => d.name === 'bash_tool');
+    expect(
+      (bashDef?.parameters as { properties: Record<string, unknown> }).properties[
+        RUN_IN_BACKGROUND_ARG
+      ],
+    ).toBeDefined();
+  });
+});
+
+describe('getBackgroundCodeDelivery (singleton)', () => {
+  it('exposes harvest state for a settled task and stays available across polls', () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'delivery_user',
+      conversationId: 'delivery_convo',
+      toolCallId: 'call_code',
+      toolName: 'execute_code',
+      messageId: 'dispatch-msg',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('delivery_user', 'delivery_convo', created.task.id, {
+      content: 'stdout',
+      artifact: { session_id: 'exec-1' },
+      harvestStarted: true,
+    });
+    backgroundTaskRegistry.attachHarvest('delivery_user', 'delivery_convo', created.task.id, [
+      { file_id: 'f1' },
+    ]);
+
+    const args = { background_task_id: created.task.id };
+    const first = getBackgroundCodeDelivery({
+      userId: 'delivery_user',
+      conversationId: 'delivery_convo',
+      args,
+    });
+    expect(first).toEqual(
+      expect.objectContaining({
+        status: 'completed',
+        toolName: 'execute_code',
+        toolCallId: 'call_code',
+        messageId: 'dispatch-msg',
+        result: 'stdout',
+        attachments: [{ file_id: 'f1' }],
+      }),
+    );
+    /** Not one-shot: a later poll can still re-emit / re-anchor. */
+    expect(
+      getBackgroundCodeDelivery({
+        userId: 'delivery_user',
+        conversationId: 'delivery_convo',
+        args,
+      })?.attachments,
+    ).toEqual([{ file_id: 'f1' }]);
+  });
+
+  it('returns undefined for tasks without a harvest (non-code tools)', () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'delivery_user',
+      conversationId: 'delivery_convo2',
+      toolCallId: 'call_mcp',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('delivery_user', 'delivery_convo2', created.task.id, {
+      content: 'RESULT',
+    });
+    expect(
+      getBackgroundCodeDelivery({
+        userId: 'delivery_user',
+        conversationId: 'delivery_convo2',
+        args: { background_task_id: created.task.id },
+      }),
+    ).toBeUndefined();
   });
 });
 

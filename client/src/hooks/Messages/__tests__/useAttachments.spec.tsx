@@ -118,17 +118,21 @@ describe('useAttachments', () => {
     expect(merged.filename).toBe('data.xlsx');
   });
 
-  it('leaves DB attachments untouched when no live entry shares the file_id', () => {
+  it('keeps live-only entries alongside DB attachments (background harvest delivery)', () => {
     const db = makeAttachment({ file_id: 'fid-A', status: 'pending' });
     const live = makeAttachment({ file_id: 'fid-B', status: 'ready' });
     const { result } = setup({
       attachments: [db],
       liveMap: { [messageId]: [live] },
     });
-    /* DB attachments are the authoritative list for THIS message — a
-     * live entry without a matching file_id must NOT bleed in. */
-    expect(result.current.attachments).toHaveLength(1);
+    /* Attachments are only emitted after successful persistence, so a
+     * live-only entry is a real file whose message-row snapshot predates
+     * it — e.g. a background code task's harvested files, SSE-delivered
+     * on a poll turn after the dispatch message was saved. Dropping it
+     * would hide the files until a full reload. */
+    expect(result.current.attachments).toHaveLength(2);
     expect((result.current.attachments[0] as AttachmentFixture).file_id).toBe('fid-A');
     expect((result.current.attachments[0] as AttachmentFixture).status).toBe('pending');
+    expect((result.current.attachments[1] as AttachmentFixture).file_id).toBe('fid-B');
   });
 });

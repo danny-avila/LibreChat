@@ -40,7 +40,7 @@ interface UseMCPToolOptionsReturn {
  * previous objects (react-hook-form still holds them); dropping the last flag
  * removes the tool's entry entirely.
  */
-function withBooleanOption(
+export function withBooleanOption(
   options: AgentToolOptions,
   toolId: string,
   key: BooleanToolOptionKey,

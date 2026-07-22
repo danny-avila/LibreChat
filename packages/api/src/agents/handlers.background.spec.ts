@@ -4,7 +4,15 @@ import { CHECK_BACKGROUND_TASK_NAME } from './background';
 import { createToolExecuteHandler } from './handlers';
 
 interface BatchInput {
-  toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }>;
+  toolCalls: Array<{
+    id: string;
+    name: string;
+    args: Record<string, unknown>;
+    stepId?: string;
+    turn?: number;
+    codeSessionContext?: { session_id: string; files?: Array<Record<string, unknown>> };
+    runtimeSessionHint?: string;
+  }>;
   agentId: string;
   configurable: Record<string, unknown>;
   metadata: Record<string, unknown>;
@@ -522,5 +530,295 @@ describe('createToolExecuteHandler — background tool calls', () => {
     });
     expect(toolEndCalls).toHaveLength(1);
     expect(toolEndCalls[0]).toEqual({ name: 'search_mcp_docs', artifact: { files: ['a.png'] } });
+  });
+});
+
+describe('createToolExecuteHandler — backgrounded code execution', () => {
+  interface CodeToolState {
+    calls: number;
+    throwError?: boolean;
+    lastInput?: Record<string, unknown>;
+    lastConfig?: { toolCall?: Record<string, unknown> };
+  }
+
+  const CODE_ARTIFACT = {
+    session_id: 'exec-sess',
+    files: [{ id: 'f1', name: 'plot.png', storage_session_id: 'store-1' }],
+  };
+
+  const makeCodeTool = (state: CodeToolState) =>
+    ({
+      name: 'execute_code',
+      description: 'run code',
+      schema: z.object({ lang: z.string(), code: z.string() }),
+      invoke: async (
+        input: Record<string, unknown>,
+        config: { toolCall?: Record<string, unknown> },
+      ) => {
+        state.calls += 1;
+        state.lastInput = input;
+        state.lastConfig = config;
+        if (state.throwError) {
+          throw new Error('Execution error:\n\nboom');
+        }
+        return { content: 'stdout:\nhello', artifact: CODE_ARTIFACT };
+      },
+    }) as unknown as StructuredToolInterface;
+
+  const codeCall = (overrides: Record<string, unknown> = {}) => ({
+    id: 'call_code',
+    name: 'execute_code',
+    args: { lang: 'py', code: 'print(1)', run_in_background: true },
+    stepId: 'step_1',
+    turn: 2,
+    codeSessionContext: {
+      session_id: 'sess-prev',
+      files: [{ id: 'in1', name: 'data.csv', storage_session_id: 'store-0', resource_id: 'r1' }],
+    },
+    runtimeSessionHint: 'convo-hint',
+    ...overrides,
+  });
+
+  it('carries full code-session config into the detached invoke, harvests onto the dispatch turn, and re-emits on poll', async () => {
+    const state: CodeToolState = { calls: 0 };
+    const persistCalls: Array<Record<string, unknown>> = [];
+    const emitted: unknown[] = [];
+    const toolEndCalls: unknown[] = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      toolEndCallback: (async (data: { output?: unknown }) => {
+        toolEndCalls.push(data.output);
+      }) as unknown as Parameters<typeof createToolExecuteHandler>[0]['toolEndCallback'],
+      persistBackgroundCodeResult: async (params) => {
+        persistCalls.push(params as unknown as Record<string, unknown>);
+        return { attachments: [{ file_id: 'f1', toolCallId: params.toolCallId }] };
+      },
+      emitAttachment: (attachment) => {
+        emitted.push(attachment);
+      },
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = { thread_id: 'exec_convo_code', run_id: 'msg-dispatch' };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall()],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    const handle = JSON.parse(dispatch[0].content);
+    expect(handle.status).toBe('running');
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    // detached invoke received the same session/file config a foreground call gets
+    expect(state.calls).toBe(1);
+    expect(state.lastInput).toEqual({ lang: 'py', code: 'print(1)' });
+    const toolCall = state.lastConfig?.toolCall ?? {};
+    expect(toolCall.session_id).toBe('sess-prev');
+    expect(toolCall._injected_files).toEqual([
+      { id: 'in1', name: 'data.csv', storage_session_id: 'store-0', resource_id: 'r1' },
+    ]);
+    expect(toolCall._runtime_session_hint).toBe('convo-hint');
+    expect(toolCall.id).toBe('call_code');
+    expect(toolCall.stepId).toBe('step_1');
+
+    // completion-time harvest anchored to the ORIGINAL dispatch identity
+    expect(persistCalls).toHaveLength(1);
+    expect(persistCalls[0]).toEqual(
+      expect.objectContaining({
+        toolName: 'execute_code',
+        toolCallId: 'call_code',
+        messageId: 'msg-dispatch',
+        conversationId: 'exec_convo_code',
+        output: 'stdout:\nhello',
+        artifact: CODE_ARTIFACT,
+      }),
+    );
+    // nothing rode the finalized dispatch turn's callback
+    expect(toolEndCalls).toHaveLength(0);
+
+    const poll = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: handle.background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_code', run_id: 'msg-poll' },
+    })) as Array<{ content: string; artifact?: unknown }>;
+    await flushMicrotasks();
+
+    const polled = JSON.parse(poll[0].content);
+    expect(polled.status).toBe('completed');
+    expect(polled.result).toContain('hello');
+    expect(polled.note).toContain('attached to the tool call');
+    // harvested attachments re-emitted on the live poll stream, not re-processed
+    expect(emitted).toEqual([{ file_id: 'f1', toolCallId: 'call_code' }]);
+    expect(toolEndCalls).toHaveLength(0);
+    // the claimed artifact rides the poll result so the SDK folds the exec session
+    expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
+    // the poll also re-anchors the row patch (idempotent heal after full-row saves)
+    expect(persistCalls).toHaveLength(2);
+    expect(persistCalls[1]).toEqual(
+      expect.objectContaining({
+        reapply: true,
+        toolCallId: 'call_code',
+        messageId: 'msg-dispatch',
+        output: 'stdout:\nhello',
+        attachments: [{ file_id: 'f1', toolCallId: 'call_code' }],
+      }),
+    );
+  });
+
+  it('does not gate task completion on the harvest (same-turn polls see completed)', async () => {
+    const state: CodeToolState = { calls: 0 };
+    const toolEndCalls: unknown[] = [];
+    const emitted: unknown[] = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      toolEndCallback: (async (data: { output?: unknown }) => {
+        toolEndCalls.push(data.output);
+      }) as unknown as Parameters<typeof createToolExecuteHandler>[0]['toolEndCallback'],
+      /** The dispatch turn's row does not exist until that turn finalizes, so
+       *  the real persister can block for a long time — completion must not. */
+      persistBackgroundCodeResult: () => new Promise(() => undefined),
+      emitAttachment: (attachment) => {
+        emitted.push(attachment);
+      },
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = { thread_id: 'exec_convo_code_slow', run_id: 'msg-slow' };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_slow' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const poll = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll_slow',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: JSON.parse(dispatch[0].content).background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_code_slow', run_id: 'msg-slow-poll' },
+    })) as Array<{ content: string; artifact?: unknown }>;
+
+    const polled = JSON.parse(poll[0].content);
+    expect(polled.status).toBe('completed');
+    expect(polled.result).toContain('hello');
+    expect(polled.note).toContain('being attached');
+    // harvest hasn't landed: nothing to emit yet, and no poll-identity fallback
+    expect(emitted).toEqual([]);
+    expect(toolEndCalls).toHaveLength(0);
+    expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
+  });
+
+  it('patches the dispatch turn with the error message when a backgrounded code call fails', async () => {
+    const state: CodeToolState = { calls: 0, throwError: true };
+    const persistCalls: Array<Record<string, unknown>> = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      persistBackgroundCodeResult: async (params) => {
+        persistCalls.push(params as unknown as Record<string, unknown>);
+        return { attachments: [] };
+      },
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = { thread_id: 'exec_convo_code_err', run_id: 'msg-err' };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_err' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(persistCalls).toHaveLength(1);
+    expect(String(persistCalls[0].output)).toContain('boom');
+    expect(persistCalls[0].artifact).toBeUndefined();
+
+    const poll = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll_err',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: JSON.parse(dispatch[0].content).background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_code_err', run_id: 'msg-err-poll' },
+    });
+    const polled = JSON.parse(poll[0].content);
+    expect(polled.status).toBe('error');
+    expect(polled.error).toContain('boom');
+  });
+
+  it('falls back to toolEndCallback delivery when no persister is wired, still folding the session', async () => {
+    const state: CodeToolState = { calls: 0 };
+    const toolEndCalls: Array<{ name?: string; tool_call_id?: string; artifact?: unknown }> = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      toolEndCallback: (async (data: {
+        output?: { name?: string; tool_call_id?: string; artifact?: unknown };
+      }) => {
+        toolEndCalls.push({
+          name: data.output?.name,
+          tool_call_id: data.output?.tool_call_id,
+          artifact: data.output?.artifact,
+        });
+      }) as unknown as Parameters<typeof createToolExecuteHandler>[0]['toolEndCallback'],
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = { thread_id: 'exec_convo_code_fb', run_id: 'msg-fb' };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_fb' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const poll = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll_fb',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: JSON.parse(dispatch[0].content).background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_code_fb', run_id: 'msg-fb-poll' },
+    })) as Array<{ content: string; artifact?: unknown }>;
+
+    // degraded path (no harvest): the poll turn's callback processes the files
+    expect(toolEndCalls).toHaveLength(1);
+    expect(toolEndCalls[0]).toEqual({
+      name: 'execute_code',
+      tool_call_id: 'call_poll_fb',
+      artifact: CODE_ARTIFACT,
+    });
+    // the session fold still happens via the poll result's artifact
+    expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
   });
 });

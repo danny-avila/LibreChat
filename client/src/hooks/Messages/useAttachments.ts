@@ -40,14 +40,26 @@ export default function useAttachments({
         liveByFileId.set(id, a);
       }
     }
-    return attachments.map((db) => {
+    const dbFileIds = new Set<string>();
+    const merged = attachments.map((db) => {
       const id = (db as Partial<TFile>).file_id;
       if (!id) {
         return db;
       }
+      dbFileIds.add(id);
       const liveEntry = liveByFileId.get(id);
       return liveEntry ? ({ ...db, ...liveEntry } as TAttachment) : db;
     });
+    /* Live-only entries are kept, not discarded: a background code task's
+     * harvested files arrive via SSE anchored to a message whose DB
+     * `attachments` snapshot predates them (the row is patched
+     * post-finalize), so treating the DB list as exhaustive would make
+     * those files vanish until a full reload. */
+    const liveOnly = live.filter((a) => {
+      const id = (a as Partial<TFile>).file_id;
+      return !id || !dbFileIds.has(id);
+    });
+    return liveOnly.length > 0 ? [...merged, ...liveOnly] : merged;
   }, [attachments, messageAttachmentsMap, messageId]);
 
   const searchResults = useSearchResultsByTurn(messageAttachments);

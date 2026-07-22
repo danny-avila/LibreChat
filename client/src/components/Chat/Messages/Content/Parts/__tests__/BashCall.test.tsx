@@ -13,6 +13,8 @@ jest.mock('~/hooks', () => ({
         com_ui_command_finished: 'Finished running',
         com_ui_cancelled: 'Cancelled',
         com_ui_copy_code: 'Copy code',
+        com_ui_background_running: 'Running in background',
+        com_ui_background_finished: 'Finished in background',
       };
       return translations[key] ?? key;
     },
@@ -110,4 +112,52 @@ describe('BashCall status text', () => {
       expect(screen.getByText(/echo hi/)).toBeInTheDocument();
     },
   );
+});
+
+describe('BashCall backgrounded calls', () => {
+  const HANDLE_OUTPUT = JSON.stringify({
+    background_task_id: 'task-1',
+    tool: 'bash_tool',
+    status: 'running',
+    message: 'Started "bash_tool" in the background.',
+  });
+
+  const renderBackgrounded = (attachments?: Array<Record<string, unknown>>) =>
+    render(
+      <RecoilRoot>
+        <BashCall
+          initialProgress={1}
+          isSubmitting={false}
+          args={{ command: 'sleep 600' }}
+          output={HANDLE_OUTPUT}
+          attachments={attachments as never}
+        />
+      </RecoilRoot>,
+    );
+
+  it('shows a background-running state instead of rendering the handle JSON as stdout', () => {
+    renderBackgrounded();
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Running in background');
+    expect(screen.queryByText(/background_task_id/)).not.toBeInTheDocument();
+  });
+
+  it('flips to finished once attachments arrive for the call', () => {
+    renderBackgrounded([{ file_id: 'f1' }]);
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Finished in background');
+  });
+
+  it('renders real stdout normally after the background result patches the output', () => {
+    render(
+      <RecoilRoot>
+        <BashCall
+          initialProgress={1}
+          isSubmitting={false}
+          args={{ command: 'echo hi' }}
+          output="hi"
+        />
+      </RecoilRoot>,
+    );
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Finished running');
+    expect(screen.getByText('hi')).toBeInTheDocument();
+  });
 });

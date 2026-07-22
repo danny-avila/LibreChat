@@ -6,7 +6,11 @@ import type { ReactNode } from 'react';
 import type { AgentForm } from '~/common';
 import BuiltinSection from '../sections/BuiltinSection';
 
-jest.mock('~/hooks', () => ({ useLocalize: () => (key: string) => key }));
+jest.mock('~/hooks', () => ({
+  useLocalize: () => (key: string) => key,
+  useGetAgentsConfig: () => ({ agentsConfig: undefined }),
+  useAgentCapabilities: () => ({ backgroundToolsEnabled: false }),
+}));
 jest.mock('~/data-provider', () => ({ useVerifyAgentToolAuth: () => ({ data: undefined }) }));
 jest.mock('../../../Search/Action', () => ({ __esModule: true, default: () => <div /> }));
 jest.mock('../../../FileContext', () => ({ __esModule: true, default: () => <div /> }));
