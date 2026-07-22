@@ -35,6 +35,7 @@ const {
   resolveAgentScopedSkillIds,
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
+  stripActivityLabelParts,
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
@@ -524,7 +525,7 @@ const OpenAIChatCompletionController = async (req, res) => {
     const openaiMessages = convertMessages(request.messages);
 
     const toolSet = buildToolSet(primaryConfig);
-    const formatted = formatAgentMessages(openaiMessages, {}, toolSet);
+    const formatted = formatAgentMessages(stripActivityLabelParts(openaiMessages), {}, toolSet);
     const formattedMessages = formatted.messages;
     const initialSummary = formatted.summary;
     let indexTokenCountMap = formatted.indexTokenCountMap;

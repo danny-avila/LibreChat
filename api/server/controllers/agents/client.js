@@ -52,6 +52,7 @@ const {
   stampSteerPartMedia,
   createActivityLabelWiring,
   isActivityLabelPocEnabled,
+  stripActivityLabelParts,
   getRequestMemories,
   getMemoryAgentId,
   createMemoryProcessor,
@@ -117,33 +118,6 @@ const db = require('~/models');
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
-
-/**
- * ACTIVITY_LABEL parts are UI-only progress notes. The SDK's
- * `formatAgentMessages` catch-all would fold unknown part types into the
- * assistant's provider content, so they must be stripped from any payload
- * before formatting (see PoC notes; the real feature teaches the SDK the
- * type instead).
- * @param {Array<{ content?: Array<{ type?: string }> }>} payload
- */
-function stripActivityLabelParts(payload) {
-  if (!Array.isArray(payload)) {
-    return payload;
-  }
-  let changed = false;
-  const result = payload.map((message) => {
-    if (!Array.isArray(message?.content)) {
-      return message;
-    }
-    const content = message.content.filter((part) => part?.type !== ContentTypes.ACTIVITY_LABEL);
-    if (content.length === message.content.length) {
-      return message;
-    }
-    changed = true;
-    return { ...message, content };
-  });
-  return changed ? result : payload;
-}
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -1622,6 +1596,9 @@ class AgentClient extends BaseClient {
         // Steer parts are user speech, not intermediate agent output — dropping
         // one would erase the user's words from the persisted turn.
         part.type === ContentTypes.STEER ||
+        // Activity labels summarize the hidden intermediate outputs — exactly
+        // the affordance hide_sequential_outputs wants to keep visible.
+        part.type === ContentTypes.ACTIVITY_LABEL ||
         part.tool_call_ids,
     );
   }

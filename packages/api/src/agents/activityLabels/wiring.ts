@@ -81,6 +81,35 @@ export function captureActivityBlockContext(
   return { thinkingExcerpts, lastAssistantText };
 }
 
+/**
+ * Removes UI-only activity-label parts from a message payload before any
+ * `formatAgentMessages` call. Published SDK versions without the formatter
+ * skip would otherwise fold the label text into provider-facing content via
+ * the formatter's catch-all. Non-mutating; returns the same reference when
+ * nothing needed stripping.
+ */
+export function stripActivityLabelParts<T extends { content?: unknown }>(payload: T[]): T[] {
+  if (!Array.isArray(payload)) {
+    return payload;
+  }
+  let changed = false;
+  const result = payload.map((message) => {
+    const content = message?.content;
+    if (!Array.isArray(content)) {
+      return message;
+    }
+    const filtered = content.filter(
+      (part) => (part as LooseContentPart | null | undefined)?.type !== ContentTypes.ACTIVITY_LABEL,
+    );
+    if (filtered.length === content.length) {
+      return message;
+    }
+    changed = true;
+    return { ...message, content: filtered };
+  });
+  return changed ? result : payload;
+}
+
 /** Host closures the wiring needs; each is a thin bridge into the caller. */
 export interface ActivityLabelHostDeps {
   abortSignal?: AbortSignal;
@@ -131,6 +160,10 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
             groupId = prior.groupId;
           }
         }
+        /** Context is captured BEFORE the label part is pushed — the scan
+         *  stops at ACTIVITY_LABEL parts, so capturing after the push would
+         *  hit the just-inserted label at the tail and collect nothing. */
+        const context = captureActivityBlockContext(parts, meta.executingAgentId);
         const part: LooseContentPart = {
           type: ContentTypes.ACTIVITY_LABEL,
           [ContentTypes.ACTIVITY_LABEL]: '',
@@ -156,7 +189,7 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
         deps.trackPendingFill(fillDone);
         return {
           index,
-          context: captureActivityBlockContext(parts, meta.executingAgentId),
+          context,
           fill: async (text) => {
             try {
               part.pending = false;

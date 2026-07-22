@@ -1169,6 +1169,8 @@ class BaseClient {
             !item.type ||
             item.type === ContentTypes.THINK ||
             item.type === ContentTypes.ERROR ||
+            // UI-only progress headers — never model input, never billed output
+            item.type === ContentTypes.ACTIVITY_LABEL ||
             item.type === ContentTypes.IMAGE_URL
           ) {
             continue;
