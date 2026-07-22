@@ -2,8 +2,11 @@ name: Playwright E2E Tests
 
 on:
   pull_request:
-    paths-ignore:
-      - '**.md'
+    paths:
+      - '**'
+      - '!**.md'
+      - '!.github/workflows/**'
+      - '.github/workflows/playwright-mock.yml'
   workflow_dispatch:
     inputs:
       reason:
