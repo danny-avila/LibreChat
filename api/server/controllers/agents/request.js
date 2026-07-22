@@ -938,7 +938,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           });
 
           await GenerationJobManager.emitDone(streamId, finalEvent);
-          GenerationJobManager.completeJob(streamId);
+          // Record the schedule success BEFORE completeJob: the default job
+          // manager deletes completed jobs immediately, so if this write ran
+          // after and the process died in between, reconciliation would see no
+          // job for the still-`started` run and mislabel a success as interrupted.
           if (scheduleId) {
             await recordScheduleOutcome({
               scheduleId,
@@ -947,6 +950,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               conversationId: conversation?.conversationId,
             });
           }
+          GenerationJobManager.completeJob(streamId);
           await finishResumableRequest(req, userId);
         } else {
           const finalEvent = {
@@ -1104,6 +1108,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     } else {
       // JSON already sent, emit error to stream so client can receive it
       await GenerationJobManager.emitError(streamId, error.message || 'Failed to start generation');
+    }
+    // A scheduled fire whose run row is already `started` (inserted before the
+    // early 200) must be terminalized here — an init failure after acceptance
+    // would otherwise leave it running until orphan reconciliation. Before
+    // completeJob deletes the job (same ordering rationale as the success path).
+    if (scheduleId) {
+      await recordScheduleOutcome({
+        scheduleId,
+        scheduledFor,
+        status: 'error',
+        error: error.message,
+        conversationId: streamId,
+      });
     }
     // Finalize THIS failed job before releasing the idempotency claim. Releasing first would
     // let the client's retry win the same key and createJob() the same streamId while we are

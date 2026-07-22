@@ -11,6 +11,9 @@ const RECONCILE_MIN_RUN_AGE_MS = 2 * 60_000;
 const ORPHAN_RUN_AGE_MS = 30 * 60_000;
 const ABANDONED_PAUSE_AGE_MS = 25 * 60 * 60_000;
 const RECONCILE_BATCH = 100;
+// Occurrences due more than this long ago (server downtime / paused engine) are
+// skipped forward instead of fired, so a restart doesn't burst stale chats.
+const MISFIRE_GRACE_MS = 15 * 60_000;
 
 export type ScheduleEngine = {
   stop: () => void;
@@ -73,7 +76,10 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             await finalize('requires_action');
             continue;
           }
-          if (run.status === 'requires_action' && jobStatus === 'complete') {
+          // A retained completed job whose inline completion hook failed
+          // transiently — finalize either a paused OR a still-started run as
+          // success so it stops consuming capacity / blocking overlap.
+          if (jobStatus === 'complete') {
             await finalize('success');
             continue;
           }
@@ -158,6 +164,24 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           return true;
         }
         const scheduledFor = schedule.nextRunAt ?? new Date();
+        // Misfire skip-forward: an occurrence overdue past the grace window (the
+        // engine was down/paused) is advanced to the next FUTURE occurrence
+        // without firing, so a restart doesn't launch stale or bursty chats.
+        if (Date.now() - scheduledFor.getTime() > MISFIRE_GRACE_MS) {
+          const next = computeNextRunAt({
+            cadence: schedule.cadence,
+            timezone: schedule.timezone,
+            scheduleId: schedule.id,
+          });
+          if (next == null) {
+            await deps.methods
+              .disableSchedule(schedule.id, 'invalid_schedule')
+              .catch(() => undefined);
+          }
+          await deps.methods.advanceSchedule(schedule.id, next).catch(() => undefined);
+          logger.info(`[schedules] skipped stale occurrence for ${schedule.id} (misfire grace)`);
+          return false;
+        }
         try {
           const result = await fireSchedule(deps, schedule, limits, scheduledFor);
           if (result.fired) {

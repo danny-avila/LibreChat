@@ -59,6 +59,8 @@ export interface ScheduleEngineDeps {
   runInTenantContext: <T>(user: ScheduleUserContext, fn: () => Promise<T>) => Promise<T>;
   /** Job-store status for a run's conversation, or null when the job is gone. */
   getJobStatus: (conversationId: string) => Promise<string | null>;
+  /** Global in-flight scheduled-run count (system tenant scope) for the fire cap. */
+  countActiveRunsGlobal: () => Promise<number>;
 }
 
 export interface FireResult {

@@ -200,9 +200,10 @@ export async function fireSchedule(
     }
 
     // Reserve-then-verify capacity: the insert above is the atomic reservation.
-    // If the global in-flight count now exceeds the cap, roll it back and retry
-    // next tick. Never over-admits; may briefly over-reject under contention.
-    const active = await methods.countActiveRuns();
+    // The count is GLOBAL (system tenant) — under the owner's tenant context it
+    // would only see this tenant's runs and multiple tenants could collectively
+    // exceed the cap. Roll back and retry next tick if over. Never over-admits.
+    const active = await deps.countActiveRunsGlobal();
     if (active > limits.fireConcurrency) {
       await methods.deleteScheduleRun(schedule.id, scheduledFor);
       await methods.releaseLease(schedule.id);
@@ -215,17 +216,25 @@ export async function fireSchedule(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const ambiguous = error instanceof ScheduleFireError && error.ambiguous;
-      // Ambiguous (network/timeout after send): the generation may have started
-      // and been billed, so record `interrupted` (no failure count / auto-disable)
-      // and let reconciliation settle it. Definite rejection: record `error`.
-      logger.error(
-        `[schedules] fire ${ambiguous ? 'ambiguously failed' : 'rejected'} for ${schedule.id}:`,
-        error,
-      );
+      if (ambiguous) {
+        // The request may have been accepted and started a billed generation that
+        // will later call recordScheduleOutcome. Leave the run `started` (a
+        // reconcilable, non-terminal state) so that completion can finalize it and
+        // overlap/capacity keep seeing it; the orphan sweep settles it otherwise.
+        // Do NOT terminalize here — `interrupted` would block the real outcome.
+        logger.warn(
+          `[schedules] fire ambiguously failed for ${schedule.id} (left reconcilable):`,
+          error,
+        );
+        await advance();
+        return { fired: false, error: message };
+      }
+      // Definite rejection (an error response was received): nothing started.
+      logger.error(`[schedules] fire rejected for ${schedule.id}:`, error);
       await methods.recordRunOutcome({
         scheduleId: schedule.id,
         scheduledFor,
-        status: ambiguous ? 'interrupted' : 'error',
+        status: 'error',
         error: message,
         autoDisableAfterFailures: ownerLimits.autoDisableAfterFailures,
       });

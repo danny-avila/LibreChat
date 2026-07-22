@@ -135,6 +135,9 @@ const engineDeps = {
     const job = await GenerationJobManager.getJobStore()?.getJob(conversationId);
     return job?.status ?? null;
   },
+  // Counted in system scope so the cap is GLOBAL — a per-owner (tenant-scoped)
+  // count would let multiple tenants collectively exceed fireConcurrency.
+  countActiveRunsGlobal: () => runAsSystem(() => methods.countActiveRuns()),
 };
 
 /** @type {ReturnType<typeof startScheduleEngine> | undefined} */
@@ -146,11 +149,18 @@ async function initializeScheduleEngine() {
   }
   // Explicitly build the Schedule/ScheduleRun indexes first — the unique
   // idempotency index and TTL retention index would otherwise never exist when
-  // MONGO_AUTO_INDEX is disabled (the production default).
+  // MONGO_AUTO_INDEX is disabled (the production default). If this fails the
+  // unique {scheduleId, scheduledFor} guard may be absent, so leave the engine
+  // DISABLED rather than firing without duplicate protection — the app still
+  // runs; schedules simply don't fire until an operator resolves the index.
   try {
     await runAsSystem(() => methods.ensureScheduleIndexes());
   } catch (err) {
-    logger.error('[schedules] failed to ensure indexes:', err);
+    logger.error(
+      '[schedules] index creation failed — scheduler NOT started (fires need the unique idempotency index):',
+      err,
+    );
+    return undefined;
   }
   engine = startScheduleEngine(engineDeps);
   return engine;
