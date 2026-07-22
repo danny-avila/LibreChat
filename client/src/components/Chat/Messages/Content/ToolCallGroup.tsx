@@ -135,25 +135,31 @@ export default function ToolCallGroup({
   const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
   const retainedForPendingApprovalRef = useRef(false);
 
-  const toolMetadata = useMemo(() => parts.map((p) => getToolMeta(p.part)), [parts]);
-  /** Labeled activity blocks also contain THINK parts (meta null) — those
-   *  never have output; only tool entries participate in completion. Counting
-   *  `parts.length` would inflate the verb ("Used 3 tools" for two calls plus
-   *  reasoning), so the count is derived from tool entries only. */
-  const count = useMemo(() => toolMetadata.filter(Boolean).length, [toolMetadata]);
+  /** Labeled activity blocks also contain THINK parts, which yield null
+   *  metadata. Narrow to tool entries once: they alone drive the count, the
+   *  completion check, and the icon strip — passing a null-derived empty
+   *  name to StackedToolIcons would render a phantom generic tool icon. */
+  const toolMetadata = useMemo(
+    () => parts.map((p) => getToolMeta(p.part)).filter((m): m is ToolMeta => m != null),
+    [parts],
+  );
+  const count = toolMetadata.length;
+  /** Approval state is read from the RAW parts, not `toolMetadata`: a pending
+   *  call can be nested inside a subagent's content, which never surfaces as
+   *  a tool entry here. */
   const hasPendingApproval = useMemo(
     () => parts.some(({ part }) => hasPendingApprovalInPart(part)),
     [parts],
   );
   const allCompleted = useMemo(
-    () => toolMetadata.every((m) => m == null || m.hasOutput === true),
+    () => toolMetadata.every((m) => m.hasOutput === true),
     [toolMetadata],
   );
   const activityLabel = getActivityLabelPart(labelPart?.part);
   const activityLabelText = getActivityLabelText(activityLabel, localize);
   const activityFailed = activityLabel?.status === 'failed' || activityLabel?.status === 'partial';
-  const toolNames = useMemo(() => toolMetadata.map((m) => m?.name ?? ''), [toolMetadata]);
-  const iconToolNames = useMemo(() => toolMetadata.map((m) => m?.iconName ?? ''), [toolMetadata]);
+  const toolNames = useMemo(() => toolMetadata.map((m) => m.name), [toolMetadata]);
+  const iconToolNames = useMemo(() => toolMetadata.map((m) => m.iconName), [toolMetadata]);
 
   /** Subagent tool calls get their own label verb ("Running/Ran N agents")
    *  since "Used N tools" reads oddly when the "tools" are actually child
