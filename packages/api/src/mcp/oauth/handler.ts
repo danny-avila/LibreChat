@@ -236,9 +236,9 @@ export class MCPOAuthHandler {
      * other way round — or a split deployment can serve stale/wrong metadata at the
      * path-aware endpoint and strand the flow at a defunct authorization server.
      *
-     * Reuse `fetchFn` so admin-configured `oauthHeaders` (e.g. a gateway API key
-     * required to reach the MCP endpoint at all) are attached to the probe — without
-     * them, the probe would 401 for the wrong reason and never see the real challenge.
+     * Reuse the caller's `fetchFn` so discovery shares its hardened transport and timeout.
+     * Auto-discovery callers may attach gateway headers, while pre-configured discovery
+     * deliberately uses a headerless fetch because these URLs are not trusted yet.
      */
     const hint = await probeResourceMetadataHint(serverUrl, fetchFn);
     /**
@@ -368,7 +368,6 @@ export class MCPOAuthHandler {
     serverUrl: string,
     authorizationUrl: string,
     discoverCapabilities: boolean,
-    oauthHeaders: Record<string, string>,
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
   ): Promise<PreconfiguredOAuthDiscoveryResult> {
@@ -385,7 +384,7 @@ export class MCPOAuthHandler {
       }, PRECONFIGURED_DISCOVERY_TIMEOUT_MS);
 
       const fetchFn = this.createOAuthFetch(
-        oauthHeaders,
+        {},
         undefined,
         allowedDomains,
         allowedAddresses,
@@ -652,7 +651,6 @@ export class MCPOAuthHandler {
             serverUrl,
             config.authorization_url,
             shouldDiscoverCapabilities,
-            oauthHeaders,
             allowedDomains,
             allowedAddresses,
           );
