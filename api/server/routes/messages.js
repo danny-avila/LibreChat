@@ -34,7 +34,13 @@ router.get('/', async (req, res) => {
       messageId,
       search,
     } = req.query;
-    const pageSize = parseInt(pageSizeRaw, 10) || 25;
+    /**
+     * Clamped: `pageSize` reaches Meili as `hitsPerPage`, so an unbounded value
+     * from the query string would fetch an oversized raw page and then hydrate
+     * that many conversations/messages — once per empty-page scan.
+     */
+    const MAX_PAGE_SIZE = 100;
+    const pageSize = Math.min(Math.max(parseInt(pageSizeRaw, 10) || 25, 1), MAX_PAGE_SIZE);
 
     let response;
     const sortField = ['endpoint', 'createdAt', 'updatedAt'].includes(sortBy)
@@ -140,6 +146,16 @@ router.get('/', async (req, res) => {
           break;
         }
         page += 1;
+      }
+
+      /**
+       * Exhausting the scan with nothing to show must not advertise another
+       * page: an empty result set renders the no-results state and leaves
+       * nothing to scroll, so a live cursor is a promise the client can never
+       * follow. Report the end of the line instead of stranding it.
+       */
+      if (activeMessages.length === 0) {
+        nextCursor = null;
       }
 
       response = { messages: activeMessages, nextCursor };
