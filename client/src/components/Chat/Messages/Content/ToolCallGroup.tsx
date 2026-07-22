@@ -112,19 +112,24 @@ export default function ToolCallGroup({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
 
-  const toolMetadata = useMemo(() => parts.map((p) => getToolMeta(p.part)), [parts]);
-  /** Labeled activity blocks also contain THINK parts (meta null) — those
-   *  never have output; only tool entries participate in completion. */
-  const count = useMemo(() => toolMetadata.filter(Boolean).length, [toolMetadata]);
+  /** Labeled activity blocks also contain THINK parts, which yield null
+   *  metadata. Narrow to tool entries once: they alone drive the count, the
+   *  completion check, and the icon strip — passing a null-derived empty
+   *  name to StackedToolIcons would render a phantom generic tool icon. */
+  const toolMetadata = useMemo(
+    () => parts.map((p) => getToolMeta(p.part)).filter((m): m is ToolMeta => m != null),
+    [parts],
+  );
+  const count = toolMetadata.length;
   const allCompleted = useMemo(
-    () => toolMetadata.every((m) => m == null || m.hasOutput === true),
+    () => toolMetadata.every((m) => m.hasOutput === true),
     [toolMetadata],
   );
   const activityLabel = getActivityLabelPart(labelPart?.part);
   const activityLabelText = getActivityLabelText(activityLabel, localize);
   const activityFailed = activityLabel?.status === 'failed' || activityLabel?.status === 'partial';
-  const toolNames = useMemo(() => toolMetadata.map((m) => m?.name ?? ''), [toolMetadata]);
-  const iconToolNames = useMemo(() => toolMetadata.map((m) => m?.iconName ?? ''), [toolMetadata]);
+  const toolNames = useMemo(() => toolMetadata.map((m) => m.name), [toolMetadata]);
+  const iconToolNames = useMemo(() => toolMetadata.map((m) => m.iconName), [toolMetadata]);
 
   /** Subagent tool calls get their own label verb ("Running/Ran N agents")
    *  since "Used N tools" reads oddly when the "tools" are actually child

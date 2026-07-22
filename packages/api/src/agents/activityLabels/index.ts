@@ -16,3 +16,13 @@ export {
   synthesizeActivityLabelGapEvents,
 } from './wiring';
 export type { ActivityLabelHostDeps, LooseContentPart } from './wiring';
+export {
+  mapCollectedMetadataToUsage,
+  resolveActivityLabelModel,
+  settlePendingLabelFills,
+} from './host';
+export type {
+  ActivityLabelUsage,
+  CollectedMetadataEntry,
+  ResolveActivityLabelModelParams,
+} from './host';

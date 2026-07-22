@@ -52,6 +52,9 @@ const {
   stampSteerPartMedia,
   createActivityLabelWiring,
   isActivityLabelPocEnabled,
+  mapCollectedMetadataToUsage,
+  resolveActivityLabelModel,
+  settlePendingLabelFills,
   stripActivityLabelParts,
   getRequestMemories,
   getMemoryAgentId,
@@ -347,89 +350,39 @@ class AgentClient extends BaseClient {
    * provider as the agent).
    */
   async resolveActivityLabelLLM() {
-    const { req, agent } = this.options;
-    const appConfig = req.config;
-    const endpoint = agent.endpoint;
-    const providerConfig = getProviderConfig({ provider: endpoint, appConfig });
-    /** @type {TEndpoint | undefined} */
-    const endpointConfig =
-      appConfig.endpoints?.all ??
-      appConfig.endpoints?.[endpoint] ??
-      providerConfig.customEndpointConfig;
-    const model =
-      process.env.ACTIVITY_LABEL_MODEL ||
-      (endpointConfig?.titleModel && endpointConfig.titleModel !== Constants.CURRENT_MODEL
-        ? endpointConfig.titleModel
-        : agent.model || agent.model_parameters.model);
-    const options = await providerConfig.getOptions({
-      req,
-      endpoint,
-      model_parameters: { model },
-      db: {
-        getUserKey: db.getUserKey,
-        getUserKeyValues: db.getUserKeyValues,
-      },
-    });
-    let provider = options.provider ?? providerConfig.overrideProvider ?? agent.provider;
-    if (
-      endpoint === EModelEndpoint.azureOpenAI &&
-      options.llmConfig?.azureOpenAIApiInstanceName == null
-    ) {
-      provider = Providers.OPENAI;
-    } else if (
-      endpoint === EModelEndpoint.azureOpenAI &&
-      options.llmConfig?.azureOpenAIApiInstanceName != null &&
-      provider !== Providers.AZURE
-    ) {
-      provider = Providers.AZURE;
-    }
-    const clientOptions = { ...options.llmConfig };
-    if (options.configOptions) {
-      clientOptions.configuration = options.configOptions;
-    }
-    /** Resolve request-based header placeholders across provider-specific
-     *  header locations, mirroring titleConvo — proxies that key on
-     *  conversation/user metadata need them on label calls too. */
-    resolveConfigHeaders({
-      llmConfig: clientOptions,
-      user: createSafeUser(this.options.req?.user),
-      body: {
+    return resolveActivityLabelModel({
+      req: this.options.req,
+      agent: this.options.agent,
+      ids: {
         messageId: this.responseMessageId,
         conversationId: this.conversationId,
         parentMessageId: this.parentMessageId,
       },
+      db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
     });
-    return { provider, clientOptions };
   }
 
   /**
-   * Captures the current activity block's context for the label payload:
-   * reasoning excerpts since the last text part, plus the assistant's last
-   * text (~200 chars) as intent. Deliberately NO human messages — see the
-   * activity-label design notes. Called synchronously at claim time so the
-   * snapshot can't include parts from the next block.
+   * Bills the label call and folds its usage into the response rollup with
+   * an `activity-label` tag (subagent precedent) so `metadata.usage` and the
+   * live cost gauge reflect it. Tagged, so it is not a PRIMARY usage event
+   * and cannot disturb the context-snapshot pairing in buildResponseMetadata.
    */
-  /** Maps aggregated LLM metadata into recorded usage, mirroring titleConvo. */
   async recordActivityLabelUsage(collectedMetadata, model) {
     const appConfig = this.options.req?.config;
-    const collectedUsage = collectedMetadata.map((item) => {
-      let input_tokens, output_tokens;
-      if (item.usage) {
-        input_tokens =
-          item.usage.prompt_tokens || item.usage.input_tokens || item.usage.inputTokens;
-        output_tokens =
-          item.usage.completion_tokens || item.usage.output_tokens || item.usage.outputTokens;
-      } else if (item.tokenUsage) {
-        input_tokens = item.tokenUsage.promptTokens;
-        output_tokens = item.tokenUsage.completionTokens;
-      } else if (item.usage_metadata) {
-        input_tokens = item.usage_metadata.input_tokens;
-        output_tokens = item.usage_metadata.output_tokens;
-      }
-      return { input_tokens, output_tokens };
-    });
+    const collectedUsage = mapCollectedMetadataToUsage(collectedMetadata);
     if (collectedUsage.length === 0) {
       return;
+    }
+    for (const usage of collectedUsage) {
+      this.usageEmitSink?.push({
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        model,
+        usage_type: 'activity-label',
+        runId: this.responseMessageId,
+        seq: this.collectedUsage.length,
+      });
     }
     await this.recordCollectedUsage({
       collectedUsage,
@@ -488,24 +441,14 @@ class AgentClient extends BaseClient {
     }
   }
 
-  /**
-   * Bounded wait for in-flight label fills so a label resolving during the
-   * final batch still reaches the durable log and the saved message before
-   * the job completes. Never delays finalization past the bound; fills that
-   * lose the race leave the counts-only placeholder, which renders fine.
-   */
+  /** Bounded settle for in-flight label fills before finalization. */
   async settleActivityLabels(timeoutMs = 3000) {
     const pending = this.pendingActivityLabelFills;
     if (!pending || pending.length === 0) {
       return;
     }
     this.pendingActivityLabelFills = [];
-    let timerId;
-    const timeout = new Promise((resolve) => {
-      timerId = setTimeout(resolve, timeoutMs);
-    });
-    await Promise.race([Promise.allSettled(pending), timeout]);
-    clearTimeout(timerId);
+    await settlePendingLabelFills(pending, timeoutMs);
   }
 
   /**

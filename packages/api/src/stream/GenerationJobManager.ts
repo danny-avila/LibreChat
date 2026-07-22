@@ -37,10 +37,11 @@ import {
   toPendingSteer,
   synthesizeAppliedSteerEvents,
 } from './SteeringLifecycle';
-import {
-  isActivityLabelPocEnabled,
-  synthesizeActivityLabelGapEvents,
-} from '~/agents/activityLabels';
+/** Deep imports (not the package barrel): the barrel pulls provider-config
+ *  and cache modules that import back into the stream layer, and the cycle
+ *  breaks module initialization at load time. */
+import { isActivityLabelPocEnabled } from '~/agents/activityLabels/runtime';
+import { synthesizeActivityLabelGapEvents } from '~/agents/activityLabels/wiring';
 import { isPendingActionStale, isPendingActionExpired } from './interfaces/IJobStore';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
