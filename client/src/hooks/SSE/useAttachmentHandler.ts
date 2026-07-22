@@ -86,22 +86,36 @@ export default function useAttachmentHandler(queryClient?: QueryClient) {
         const { file_id, filepath } = a as Partial<TFile>;
         return file_id ?? filepath;
       };
+      const agentIdOf = (a: TAttachment): string | undefined => (a as { agentId?: string }).agentId;
       const upsertKey = fileKeyOf(data);
       const incomingToolCallId = (data as { toolCallId?: string }).toolCallId;
+      const incomingAgentId = agentIdOf(data);
       if (upsertKey) {
         /** A missing toolCallId on either side is a wildcard (deferred-preview
          *  updates emit bare `{file_id, status}` payloads); only DISTINCT
          *  toolCallIds keep entries separate — sibling code calls can share a
-         *  claimed file_id and each card anchors its own attachment. */
+         *  claimed file_id and each card anchors its own attachment. The same
+         *  wildcard applies to agentId: handoff agents can repeat provider
+         *  tool ids (`call_0`) AND share a claimed file_id, so distinct
+         *  non-null agentIds must stay separate entries or the second agent's
+         *  event would merge over (and re-badge) the first's. */
         const existingIndex = messageAttachments.findIndex((a) => {
           if (fileKeyOf(a) !== upsertKey) {
             return false;
           }
           const existingToolCallId = (a as { toolCallId?: string }).toolCallId;
+          if (
+            existingToolCallId != null &&
+            incomingToolCallId != null &&
+            existingToolCallId !== incomingToolCallId
+          ) {
+            return false;
+          }
+          const existingAgentId = agentIdOf(a);
           return (
-            existingToolCallId == null ||
-            incomingToolCallId == null ||
-            existingToolCallId === incomingToolCallId
+            existingAgentId == null ||
+            incomingAgentId == null ||
+            existingAgentId === incomingAgentId
           );
         });
         if (existingIndex > -1) {

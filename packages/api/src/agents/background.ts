@@ -511,6 +511,19 @@ const MAX_RESULT_CHARS = 100_000;
 const MAX_ARTIFACT_CHARS = 10_000_000;
 const GLOBAL_SWEEP_INTERVAL_MS = 60 * 1000;
 
+let lastDispatchStamp = 0;
+/**
+ * Strictly-increasing dispatch stamp. `createdAt` orders writers in the
+ * stale-output guard (`sourceDispatchedAt`), which accepts equal stamps so
+ * idempotent re-commits of the SAME task pass — two same-millisecond
+ * dispatches would tie on raw `Date.now()` and let the older task overwrite
+ * the newer one's committed file. Process-local, like the registry itself.
+ */
+function nextDispatchStamp(now: number): number {
+  lastDispatchStamp = lastDispatchStamp < now ? now : lastDispatchStamp + 1;
+  return lastDispatchStamp;
+}
+
 function toStoredContent(content: unknown): string {
   const asString = typeof content === 'string' ? content : JSON.stringify(content ?? '');
   return truncateMiddle(asString, MAX_RESULT_CHARS);
@@ -685,7 +698,7 @@ export class BackgroundTaskRegistryClass {
       agentId: params.agentId,
       ...(params.harvestStarted === true ? { harvestStarted: true } : {}),
       status: 'running',
-      createdAt: now,
+      createdAt: nextDispatchStamp(now),
       updatedAt: now,
     };
     bucket.tasks.set(task.id, task);

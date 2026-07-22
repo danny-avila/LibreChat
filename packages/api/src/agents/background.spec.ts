@@ -344,6 +344,35 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(task?.result).toBe('DONE');
   });
 
+  it('stamps strictly-increasing createdAt even for same-millisecond dispatches', () => {
+    /* `createdAt` orders writers in the stale-output guard, which accepts
+     * equal stamps for idempotent re-commits — a wall-clock tie between two
+     * DIFFERENT dispatches would let the older one overwrite the newer. */
+    const registry = new BackgroundTaskRegistryClass();
+    const frozenNow = Date.now();
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(frozenNow);
+    try {
+      const first = registry.create({
+        userId: 'u1',
+        conversationId: 'c1',
+        toolCallId: 'call_a',
+        toolName: 'execute_code',
+      });
+      const second = registry.create({
+        userId: 'u1',
+        conversationId: 'c1',
+        toolCallId: 'call_b',
+        toolName: 'execute_code',
+      });
+      if ('atCapacity' in first || 'atCapacity' in second) {
+        throw new Error('unexpected capacity');
+      }
+      expect(second.task.createdAt).toBeGreaterThan(first.task.createdAt);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it('is idempotent within the same run (never double-dispatches on replay)', () => {
     const registry = new BackgroundTaskRegistryClass();
     const first = registry.create({

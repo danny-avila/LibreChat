@@ -13,19 +13,28 @@ function toolCallIdOf(attachment: TAttachment): string | undefined {
   return (attachment as { toolCallId?: string }).toolCallId;
 }
 
+function agentIdOf(attachment: TAttachment): string | undefined {
+  return (attachment as { agentId?: string }).agentId;
+}
+
 /**
  * Stable identity for merging DB and live attachments: `file_id ?? filepath`
- * scoped by `toolCallId` (sibling code calls can share a claimed file_id for
- * the same filename, each anchoring its own card), else `type:toolCallId`
- * for unkeyed tool artifacts like file_search citations. Undefined = no
- * stable identity.
+ * scoped by `toolCallId` and `agentId` (sibling code calls can share a
+ * claimed file_id for the same filename, and handoff agents can repeat
+ * provider tool ids — each combination anchors its own card), else
+ * `type:toolCallId` for unkeyed tool artifacts like file_search citations.
+ * Undefined = no stable identity.
  */
 function attachmentKey(attachment: TAttachment): string | undefined {
   const { type } = attachment as { type?: string };
   const toolCallId = toolCallIdOf(attachment);
   const fileKey = fileKeyOf(attachment);
   if (fileKey) {
-    return toolCallId ? `${fileKey}::${toolCallId}` : fileKey;
+    if (toolCallId == null) {
+      return fileKey;
+    }
+    const agentId = agentIdOf(attachment);
+    return agentId ? `${fileKey}::${toolCallId}::${agentId}` : `${fileKey}::${toolCallId}`;
   }
   if (type != null && toolCallId != null) {
     return `${type}:${toolCallId}`;
@@ -35,8 +44,8 @@ function attachmentKey(attachment: TAttachment): string | undefined {
 
 /**
  * Wildcard-tolerant match for the lifecycle overlay: a missing `toolCallId`
- * on either side matches (preview-sync records are bare `{file_id, ...}`);
- * only DISTINCT toolCallIds keep same-file entries separate.
+ * or `agentId` on either side matches (preview-sync records are bare
+ * `{file_id, ...}`); only DISTINCT values keep same-file entries separate.
  */
 function matchesLiveEntry(db: TAttachment, live: TAttachment): boolean {
   const key = fileKeyOf(db);
@@ -45,7 +54,12 @@ function matchesLiveEntry(db: TAttachment, live: TAttachment): boolean {
   }
   const dbToolCallId = toolCallIdOf(db);
   const liveToolCallId = toolCallIdOf(live);
-  return dbToolCallId == null || liveToolCallId == null || dbToolCallId === liveToolCallId;
+  if (dbToolCallId != null && liveToolCallId != null && dbToolCallId !== liveToolCallId) {
+    return false;
+  }
+  const dbAgentId = agentIdOf(db);
+  const liveAgentId = agentIdOf(live);
+  return dbAgentId == null || liveAgentId == null || dbAgentId === liveAgentId;
 }
 
 export default function useAttachments({
@@ -84,11 +98,17 @@ export default function useAttachments({
         return db;
       }
       dbKeys.add(key);
-      /** Bare live records (no toolCallId) must still be reachable by their
-       *  plain file key so an overlaid entry isn't re-appended below. */
+      /** Partial live records must still be reachable by their less-specific
+       *  keys so an overlaid entry isn't re-appended below: bare records (no
+       *  toolCallId) key by plain file key, agent-less records by
+       *  fileKey::toolCallId. */
       const fileKey = fileKeyOf(db);
       if (fileKey) {
         dbKeys.add(fileKey);
+        const toolCallId = toolCallIdOf(db);
+        if (toolCallId != null) {
+          dbKeys.add(`${fileKey}::${toolCallId}`);
+        }
       }
       const liveEntry = live.find((a) => matchesLiveEntry(db, a));
       return liveEntry ? ({ ...db, ...liveEntry } as TAttachment) : db;
