@@ -42,8 +42,10 @@ const textFixture: UploadFixture = {
   buffer: Buffer.from('This text attachment should be available to the mock model.\n'),
 };
 
-// 16x16 PNG. A 1x1 PNG trips a libpng edge case in sharp's resize+encode path
-// (server-side image processing), so keep this at a normal size.
+// Valid 16x16 PNG. The previous 1x1 fixture had a corrupt IDAT CRC that older
+// libpng silently accepted but sharp 0.35.3's newer libpng rejects during
+// server-side image processing ("vipspng: libpng read error"). Keep this a
+// spec-conformant PNG (correct chunk CRCs).
 const imageFixture: UploadFixture = {
   name: 'provider-context.png',
   mimeType: 'image/png',
