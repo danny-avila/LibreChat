@@ -34,13 +34,15 @@ router.get('/', async (req, res) => {
       messageId,
       search,
     } = req.query;
+    const pageSize = parseInt(pageSizeRaw, 10) || 25;
     /**
-     * Clamped: `pageSize` reaches Meili as `hitsPerPage`, so an unbounded value
-     * from the query string would fetch an oversized raw page and then hydrate
-     * that many conversations/messages — once per empty-page scan.
+     * Search-only cap: this value reaches Meili as `hitsPerPage`, so an unbounded
+     * one would fetch an oversized raw page and hydrate that many
+     * conversations/messages — once per empty-page scan. Conversation paging
+     * keeps its own unclamped `pageSize`, whose limit this cap doesn't justify.
      */
-    const MAX_PAGE_SIZE = 100;
-    const pageSize = Math.min(Math.max(parseInt(pageSizeRaw, 10) || 25, 1), MAX_PAGE_SIZE);
+    const MAX_SEARCH_PAGE_SIZE = 100;
+    const searchPageSize = Math.min(Math.max(pageSize, 1), MAX_SEARCH_PAGE_SIZE);
 
     let response;
     const sortField = ['endpoint', 'createdAt', 'updatedAt'].includes(sortBy)
@@ -78,7 +80,7 @@ router.get('/', async (req, res) => {
       for (let scan = 0; scan < MAX_EMPTY_PAGE_SCANS; scan++) {
         const searchResults = await db.searchMessages(
           search,
-          { filter: `user = "${user}"`, page, hitsPerPage: pageSize },
+          { filter: `user = "${user}"`, page, hitsPerPage: searchPageSize },
           true,
         );
 
@@ -139,7 +141,8 @@ router.get('/', async (req, res) => {
         const totalPages = Number.isFinite(searchResults.totalPages)
           ? searchResults.totalPages
           : null;
-        const hasNextPage = totalPages != null ? page < totalPages : messages.length >= pageSize;
+        const hasNextPage =
+          totalPages != null ? page < totalPages : messages.length >= searchPageSize;
         nextCursor = hasNextPage ? String(page + 1) : null;
 
         if (activeMessages.length > 0 || !hasNextPage) {

@@ -383,6 +383,19 @@ describe('message route conversation ownership filters', () => {
       );
     });
 
+    it('leaves conversation paging unclamped — the Meili cap is search-only', async () => {
+      const { getMessagesByCursor } = require('~/models');
+      getMessagesByCursor.mockResolvedValue({ messages: [], nextCursor: null });
+
+      await request(app).get('/api/messages?conversationId=convo-1&pageSize=500');
+
+      expect(getMessagesByCursor).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 'convo-1' }),
+        expect.objectContaining({ limit: 500 }),
+      );
+      expect(searchMessages).not.toHaveBeenCalled();
+    });
+
     it('does not scan past the last page when the final page filters out entirely', async () => {
       searchMessages.mockResolvedValue({
         hits: [{ messageId: 'm1', conversationId: 'gone' }],
