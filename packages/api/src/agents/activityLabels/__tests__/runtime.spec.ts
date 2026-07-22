@@ -1,3 +1,4 @@
+import { Providers } from '@librechat/agents';
 import type { PostToolBatchHookInput } from '@librechat/agents';
 
 const mockInvoke = jest.fn();
@@ -9,7 +10,7 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { classifyBatch, createActivityLabelHook } from '../runtime';
-import type { ActivityLabelSlot } from '../runtime';
+import type { ActivityLabelBatchMeta, ActivityLabelSlot } from '../runtime';
 
 /** Flushes the hook's detached generation chain. */
 async function flushDetached(): Promise<void> {
@@ -67,7 +68,7 @@ describe('createActivityLabelHook', () => {
   let slots: Array<{ index: number; filled: Array<string | null> }>;
   let claimSlot: () => ActivityLabelSlot;
   const resolveLLM = jest.fn(async () => ({
-    provider: 'openAI',
+    provider: Providers.OPENAI,
     clientOptions: { model: 'small-model' },
   }));
 
@@ -93,7 +94,7 @@ describe('createActivityLabelHook', () => {
     expect(slots[0].filled).toEqual(['Searched the web for LibreChat docs.']);
     expect(mockInitializeModel).toHaveBeenCalledWith(
       expect.objectContaining({
-        provider: 'openAI',
+        provider: Providers.OPENAI,
         clientOptions: expect.objectContaining({ model: 'small-model', streaming: false }),
       }),
     );
@@ -132,10 +133,10 @@ describe('createActivityLabelHook', () => {
   });
 
   it('passes executingAgentId through to the claimed slot metadata', async () => {
-    const captured: Array<Record<string, unknown>> = [];
+    const captured: ActivityLabelBatchMeta[] = [];
     const hook = createActivityLabelHook({
       claimSlot: (meta) => {
-        captured.push(meta as unknown as Record<string, unknown>);
+        captured.push(meta);
         return { index: 0, fill: () => undefined };
       },
       resolveLLM,

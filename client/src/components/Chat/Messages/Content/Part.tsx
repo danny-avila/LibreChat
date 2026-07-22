@@ -33,6 +33,7 @@ import RetrievalCall from './RetrievalCall';
 import ToolApproval from './ToolApproval';
 import AgentHandoff from './AgentHandoff';
 import CodeAnalyze from './CodeAnalyze';
+import { useLocalize } from '~/hooks';
 import Container from './Container';
 import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
@@ -59,6 +60,7 @@ const Part = memo(function Part({
   hideAttachments,
   onToolExpand,
 }: PartProps) {
+  const localize = useLocalize();
   if (!part) {
     return null;
   }
@@ -157,7 +159,7 @@ const Part = memo(function Part({
     /** Orphan label (its block's parts were filtered/hidden): renders as a
      *  standalone line. Labeled blocks normally render via ToolCallGroup,
      *  which consumes the label part as the group header instead. */
-    const display = getActivityLabelText(getActivityLabelPart(part));
+    const display = getActivityLabelText(getActivityLabelPart(part), localize);
     if (!display) {
       return null;
     }

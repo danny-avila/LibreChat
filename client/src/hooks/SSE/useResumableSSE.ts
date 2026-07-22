@@ -549,6 +549,7 @@ export default function useResumableSSE(
    *  bounded next-frame retry as pending actions, on its own handle so the
    *  two retries can't cancel each other. */
   const steerRetryRef = useRef<number | null>(null);
+  const activityLabelRetryRef = useRef<number | null>(null);
 
   /** Removes the pending chip once its steer is injected (the inline content
    *  part becomes the durable record), and records the id so a 202 ACK that
@@ -788,7 +789,7 @@ export default function useResumableSSE(
       const applyActivityLabelToMessages = (event: TActivityLabelEvent, attempt = 0) => {
         const retryNextFrame = () => {
           if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
-            steerRetryRef.current = requestAnimationFrame(() =>
+            activityLabelRetryRef.current = requestAnimationFrame(() =>
               applyActivityLabelToMessages(event, attempt + 1),
             );
           }
@@ -1792,6 +1793,10 @@ export default function useResumableSSE(
       if (pendingActionRetryRef.current != null) {
         cancelAnimationFrame(pendingActionRetryRef.current);
         pendingActionRetryRef.current = null;
+      }
+      if (activityLabelRetryRef.current != null) {
+        cancelAnimationFrame(activityLabelRetryRef.current);
+        activityLabelRetryRef.current = null;
       }
       if (steerRetryRef.current != null) {
         cancelAnimationFrame(steerRetryRef.current);
