@@ -991,6 +991,8 @@ function buildSubagentConfigs(
         child.description ??
         `Delegate a subtask to the ${child.name ?? child.id} agent in an isolated context.`,
       agentInputs: childInputs,
+      /** Preserve the child's resolved subagent configs when the SDK builds its isolated graph. */
+      allowNested: true,
       /** Honor each child agent's own resolved recursion limit. */
       maxTurns: resolveSubagentMaxTurns(agentsEConfig, child),
     });
@@ -1350,6 +1352,8 @@ export async function createRun({
     );
     if (subagentConfigs.length > 0) {
       agentInput.subagentConfigs = subagentConfigs;
+      /** Seed the SDK countdown that bounds nested delegation across isolated child graphs. */
+      agentInput.maxSubagentDepth = MAX_SUBAGENT_DEPTH;
     }
     agentInputs.push(agentInput);
   }
