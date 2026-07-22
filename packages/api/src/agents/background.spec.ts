@@ -525,6 +525,43 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.claimArtifact('u1', 'c1', created.task.id)?.harvestStarted).toBeUndefined();
   });
 
+  it('exposes reaped (timed-out) tasks to the heal path when harvest was armed at dispatch', () => {
+    jest.useFakeTimers();
+    try {
+      const created = backgroundTaskRegistry.create({
+        userId: 'reap_user',
+        conversationId: 'reap_convo',
+        toolCallId: 'call_reaped',
+        toolName: 'execute_code',
+        messageId: 'dispatch-msg',
+        harvestStarted: true,
+      });
+      if ('atCapacity' in created) {
+        throw new Error('unexpected capacity');
+      }
+
+      /** Past the running TTL the sweeper reaps the task to an error; the
+       *  dispatch-time harvest flag keeps it visible to marker/re-anchor
+       *  delivery so the original card doesn't stay on "running" forever. */
+      jest.advanceTimersByTime(31 * 60 * 1000);
+      const delivery = getBackgroundCodeDelivery({
+        userId: 'reap_user',
+        conversationId: 'reap_convo',
+        args: { background_task_id: created.task.id },
+      });
+      expect(delivery).toEqual(
+        expect.objectContaining({
+          status: 'error',
+          toolCallId: 'call_reaped',
+          messageId: 'dispatch-msg',
+          error: 'Background task timed out',
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('fail() can mark a task harvested so failed code tasks join the heal path', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({

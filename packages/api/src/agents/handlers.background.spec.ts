@@ -852,6 +852,11 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
 
     expect(persistCalls).toHaveLength(1);
     expect(String(persistCalls[0].output)).toContain('boom');
+    /** Parity with foreground CodeExecutor failures so the patched output
+     *  reads as an error, not clean stdout. */
+    expect(String(persistCalls[0].output)).toMatch(
+      /^(Traceback|Execution error:|Error:|Exception:)/m,
+    );
     expect(persistCalls[0].artifact).toBeUndefined();
 
     const poll = await runBatch(handler, {

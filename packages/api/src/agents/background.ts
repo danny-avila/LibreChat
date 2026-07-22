@@ -627,6 +627,10 @@ export class BackgroundTaskRegistryClass {
     messageId?: string;
     runId?: string;
     agentId?: string;
+    /** Set at dispatch when a settle-time harvest WILL run, so tasks that
+     *  never settle (reaped as timed out) still take the marker/heal path
+     *  instead of leaving the original card on "running" forever. */
+    harvestStarted?: boolean;
   }): { task: BackgroundTask; isNew: boolean } | { atCapacity: true } {
     const now = Date.now();
     this.sweep(now);
@@ -675,6 +679,7 @@ export class BackgroundTaskRegistryClass {
       toolName: params.toolName,
       toolCallId: params.toolCallId,
       messageId: params.messageId,
+      ...(params.harvestStarted === true ? { harvestStarted: true } : {}),
       status: 'running',
       createdAt: now,
       updatedAt: now,

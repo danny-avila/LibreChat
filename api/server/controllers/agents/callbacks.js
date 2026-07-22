@@ -20,6 +20,7 @@ const {
   GenerationJobManager,
   writeAttachmentEvent,
   createToolExecuteHandler,
+  createBackgroundCodeResultHandler: createCodeHarvestHandler,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
   shouldSignalSandboxStart,
@@ -999,22 +1000,9 @@ function createAttachmentEmitter({ res, streamId = null }) {
  * immediate follow-up turn should find the attachments already anchored.
  * The long tail covers dispatch turns that keep running for minutes.
  */
-const BACKGROUND_PATCH_RETRY_DELAYS_MS = [
-  250, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000, 60_000, 120_000, 180_000, 240_000, 300_000,
-];
-
 /**
- * Handles a backgrounded code-execution result once the detached call settles:
- * persists generated files (same `processCodeOutput` path as the foreground
- * callback, anchored to the ORIGINAL messageId/toolCallId), then patches the
- * dispatch turn's tool-call part output and appends the attachments to that
- * message row — so the backgrounded call reads like a foreground one on reload
- * and in later model turns, and next-turn file priming picks the outputs up.
- *
- * The dispatch turn may still be streaming when a fast task settles (its
- * response message is only saved at turn end), so the row patch retries on a
- * backoff schedule before giving up; files are already persisted either way,
- * and the poll turn still delivers content/attachments live.
+ * Thin wrapper binding the host file services into the TS harvest
+ * implementation (`@librechat/api` `createBackgroundCodeResultHandler`).
  *
  * @param {Object} params
  * @param {ServerRequest} params.req
@@ -1028,99 +1016,12 @@ const BACKGROUND_PATCH_RETRY_DELAYS_MS = [
  * }) => Promise<boolean>} params.updateToolCallResult
  */
 function createBackgroundCodeResultHandler({ req, updateToolCallResult }) {
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  return async ({
-    toolCallId,
-    messageId,
-    conversationId,
-    output,
-    artifact,
-    attachments: knownAttachments,
-    reapply,
-  }) => {
-    const userId = req.user?.id;
-    if (!userId || !messageId || !conversationId) {
-      return null;
-    }
-
-    if (reapply) {
-      /* Heal-only mode: the files were already persisted by the original
-       * harvest; a later full-row save (HITL pause/resume) may have reverted
-       * the patched output / attachments, and re-applying is idempotent. */
-      const reapplied = await updateToolCallResult({
-        userId,
-        messageId,
-        conversationId,
-        toolCallId,
-        output,
-        attachments: knownAttachments ?? [],
-      });
-      if (!reapplied) {
-        logger.debug(
-          `[background] Re-anchor found no row for message ${messageId} (tool call ${toolCallId}).`,
-        );
-      }
-      return { attachments: knownAttachments ?? [] };
-    }
-
-    const attachments = [];
-    /** Ordering guard: a filename claim updated after this instant belongs to
-     *  a NEWER run — the harvest must not overwrite it with stale bytes. */
-    const freshClaimAfter = Date.now();
-    const files = Array.isArray(artifact?.files) ? artifact.files : [];
-    for (const file of files) {
-      if (file.inherited) {
-        continue;
-      }
-      try {
-        const result = await processCodeOutput({
-          req,
-          id: file.id,
-          name: file.name,
-          messageId,
-          toolCallId,
-          conversationId,
-          session_id: file.storage_session_id ?? artifact.session_id,
-          freshClaimAfter,
-        });
-        if (result?.file) {
-          attachments.push(result.file);
-          /* No live stream at completion time; the client's preview polling
-           * (or the poll turn's re-emit) surfaces the finalized preview. */
-          runPreviewFinalize({
-            finalize: result.finalize,
-            fileId: result.file.file_id,
-            previewRevision: result.previewRevision,
-          });
-        }
-      } catch (error) {
-        logger.error('[background] Error processing code output file:', error);
-      }
-    }
-
-    let patched = false;
-    for (let attempt = 0; attempt <= BACKGROUND_PATCH_RETRY_DELAYS_MS.length; attempt++) {
-      patched = await updateToolCallResult({
-        userId,
-        messageId,
-        conversationId,
-        toolCallId,
-        output,
-        attachments,
-      });
-      if (patched || attempt === BACKGROUND_PATCH_RETRY_DELAYS_MS.length) {
-        break;
-      }
-      await sleep(BACKGROUND_PATCH_RETRY_DELAYS_MS[attempt]);
-    }
-    if (!patched) {
-      logger.warn(
-        `[background] Could not anchor code result onto message ${messageId} (tool call ${toolCallId}); ` +
-          'the dispatch turn never persisted. Poll delivery still returns the result.',
-      );
-    }
-    return { attachments };
-  };
+  return createCodeHarvestHandler({
+    req,
+    updateToolCallResult,
+    processCodeOutput,
+    runPreviewFinalize,
+  });
 }
 
 /**

@@ -320,7 +320,11 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         ...tenantFilter,
       },
       { $setOnInsert: insertData },
-      { upsert: true, new: true },
+      /** `timestamps: false`: a claim is an id reservation, not a content
+       *  write — bumping `updatedAt` here would make the row look freshly
+       *  written to the background harvest's out-of-order guard, which
+       *  compares `updatedAt` against the harvest's start time. */
+      { upsert: true, new: true, timestamps: false },
     ).lean<IMongoFile>();
     if (!result) {
       throw new Error(

@@ -248,9 +248,10 @@ describe('Code Process', () => {
       expect(getRetentionExpiry).toHaveBeenCalledWith(baseParams.req);
     });
 
-    it('writes under a fresh file_id when the claim is newer than the background run', async () => {
-      /* Stale-harvest guard: a newer run owns the filename slot — the
-       * detached harvest must not overwrite its contents. */
+    it('skips the file when the claim is newer than the background run (stale-harvest guard)', async () => {
+      /* A newer run owns the filename slot and the (filename, conversationId)
+       * unique index leaves stale bytes nowhere to live — the detached
+       * harvest must not overwrite fresh content. */
       mockClaimCodeFile.mockResolvedValue({
         file_id: 'existing-file-id',
         filename: 'test-file.txt',
@@ -259,13 +260,12 @@ describe('Code Process', () => {
       });
       mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
 
-      const { file: result } = await processCodeOutput({
+      const result = await processCodeOutput({
         ...baseParams,
         freshClaimAfter: new Date('2024-01-01T00:00:00.000Z').getTime(),
       });
 
-      expect(result.file_id).toBe('mock-uuid-1234');
-      expect(result.messageId).toBe(baseParams.messageId);
+      expect(result).toBeNull();
     });
 
     it('still reuses the claim when it predates the background run', async () => {

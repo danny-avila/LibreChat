@@ -3487,6 +3487,19 @@ function getFileAuthoringQueueKey(
  * executes them in parallel, and resolves with the results.
  */
 /**
+ * Foreground code failures ship the `Execution error:` shape from the SDK's
+ * CodeExecutor; wrap detached failures whose message carries no recognizable
+ * error shape the same way, so a patched background error never reads as
+ * clean stdout on reload or in later model turns.
+ */
+function toCodeExecutionError(message: string): string {
+  if (/^(Traceback|Execution error:|Error:|Exception:|.*Error:)/m.test(message)) {
+    return message;
+  }
+  return `Execution error:\n\n${message}`;
+}
+
+/**
  * Invoke-time `toolCall` config for a call: identity plus the stateful
  * runtime-session hint and code-session context (`session_id` +
  * `_injected_files`) for sandbox-bound tools. Shared by the foreground path
@@ -3681,12 +3694,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   errorMessage: `Tool ${tc.name} not found`,
                 };
               }
+              const isCodeCall = isCodeSessionAwareToolCall(tc.name, mergedConfigurable);
+              const harvestEnabled = isCodeCall && persistBackgroundCodeResult != null;
               const created = backgroundTaskRegistry.create({
                 userId: backgroundUserId,
                 conversationId: backgroundConversationId,
                 toolCallId: tc.id,
                 toolName: tc.name,
                 messageId: backgroundRunId,
+                harvestStarted: harvestEnabled,
                 /** Scope idempotency to the agent + run + turn so a later turn's
                  *  or a second agent's repeated provider id (e.g. `call_0`)
                  *  starts a fresh task instead of colliding. */
@@ -3703,8 +3719,6 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               const { task, isNew } = created;
               if (isNew) {
                 const strippedArgs = stripRunInBackgroundArg(tc.args);
-                const isCodeCall = isCodeSessionAwareToolCall(tc.name, mergedConfigurable);
-                const harvestEnabled = isCodeCall && persistBackgroundCodeResult != null;
                 /** Persists the settled result onto the dispatch turn's message
                  *  (patch the tool-call part's output, persist generated files,
                  *  append attachments), so a backgrounded code call reads like a
@@ -3802,17 +3816,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     });
                   } catch (toolError) {
                     const { message } = getSafeToolError(toolError);
+                    const errorOutput = isCodeCall ? toCodeExecutionError(message) : message;
                     backgroundTaskRegistry.fail(
                       backgroundUserId,
                       backgroundConversationId,
                       task.id,
-                      message,
+                      errorOutput,
                       /** Failed code tasks join the heal path too: without this,
                        *  a full-row save reverting the error patch would leave
                        *  the dispatch card on the handle JSON forever. */
                       { harvestStarted: harvestEnabled },
                     );
-                    harvestCodeResult({ output: message });
+                    harvestCodeResult({ output: errorOutput });
                   }
                 })();
               }

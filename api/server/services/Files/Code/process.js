@@ -419,15 +419,17 @@ const processCodeOutput = async ({
       user: req.user.id,
       tenantId: req.user.tenantId,
     });
-    let file_id = claimed.file_id;
-    let isUpdate = file_id !== newFileId;
+    const file_id = claimed.file_id;
+    const isUpdate = file_id !== newFileId;
 
     /**
      * Out-of-order guard for detached (background) harvests: when the claimed
-     * row was updated AFTER the background run settled (`freshClaimAfter`), a
-     * newer run owns this filename slot — overwriting it would replace fresh
-     * content with stale bytes and re-home its attachments. Write this
-     * harvest under its own fresh file_id instead of reusing the claim.
+     * row was REALLY written (createFile/updateFile — the claim itself is
+     * timestamp-neutral) after the background run settled (`freshClaimAfter`),
+     * a newer run owns this filename slot. The `(filename, conversationId)`
+     * unique index means the stale bytes have nowhere else to live, so skip
+     * this file rather than overwrite fresh content — the harvest's stdout
+     * patch still lands, only the superseded attachment is omitted.
      */
     if (
       isUpdate &&
@@ -435,11 +437,10 @@ const processCodeOutput = async ({
       claimed.updatedAt != null &&
       new Date(claimed.updatedAt).getTime() > freshClaimAfter
     ) {
-      logger.debug(
-        `[processCodeOutput] Claim for "${safeName}" (${file_id}) is newer than the background run; writing under a fresh file_id`,
+      logger.warn(
+        `[processCodeOutput] Skipping stale background output "${safeName}" (${file_id}): a newer run owns this filename`,
       );
-      file_id = newFileId;
-      isUpdate = false;
+      return null;
     }
 
     if (isUpdate) {
