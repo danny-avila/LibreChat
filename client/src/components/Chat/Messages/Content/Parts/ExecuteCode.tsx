@@ -87,8 +87,8 @@ export default function ExecuteCode({
    *  attachment (also covers stdout-only runs) or as harvested files. */
   const backgroundHandle = useMemo(() => parseBackgroundHandle(output), [output]);
   const { fileAttachments, backgroundStatus } = useMemo(
-    () => splitBackgroundAttachments(attachments),
-    [attachments],
+    () => splitBackgroundAttachments(attachments, toolCallId),
+    [attachments, toolCallId],
   );
   const backgroundFailed = backgroundHandle != null && backgroundStatus === 'error';
   const backgroundFinishedText = backgroundHandle

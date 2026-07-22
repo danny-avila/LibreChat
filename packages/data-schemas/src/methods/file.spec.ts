@@ -151,6 +151,34 @@ describe('File Methods', () => {
       expect(new Date(reclaimed.updatedAt as unknown as string).getTime()).toBe(written.getTime());
     });
 
+    it('stamps sourceDispatchedAt on claim INSERT only (existing claims untouched)', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      const inserted = await fileMethods.claimCodeFile({
+        filename: 'stamped.csv',
+        conversationId: 'conversation-stamp',
+        file_id: 'stamped-file',
+        user: userId,
+        sourceDispatchedAt: 111,
+      });
+      expect(
+        (inserted.metadata as { sourceDispatchedAt?: number } | undefined)?.sourceDispatchedAt,
+      ).toBe(111);
+
+      /** A later claimant's stamp must not overwrite the owner's. */
+      const reclaimed = await fileMethods.claimCodeFile({
+        filename: 'stamped.csv',
+        conversationId: 'conversation-stamp',
+        file_id: 'stamped-file-second',
+        user: userId,
+        sourceDispatchedAt: 222,
+      });
+      expect(reclaimed.file_id).toBe('stamped-file');
+      expect(
+        (reclaimed.metadata as { sourceDispatchedAt?: number } | undefined)?.sourceDispatchedAt,
+      ).toBe(111);
+    });
+
     it('keeps non-tenant code output claims in the legacy namespace', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
 

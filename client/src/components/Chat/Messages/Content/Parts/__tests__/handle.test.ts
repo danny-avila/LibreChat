@@ -1,4 +1,4 @@
-import { parseBackgroundHandle } from '../handle';
+import { parseBackgroundHandle, splitBackgroundAttachments } from '../handle';
 
 describe('parseBackgroundHandle', () => {
   const handle = JSON.stringify({
@@ -56,6 +56,19 @@ describe('parseBackgroundHandle', () => {
         }),
       ),
     ).toBeNull();
+  });
+
+  it('ignores a sibling call’s status marker (defense in depth)', () => {
+    const marker = {
+      type: 'background_task_status',
+      file_id: 'bg-tc-other',
+      toolCallId: 'tc-other',
+      status: 'error',
+    } as never;
+    const { backgroundStatus, fileAttachments } = splitBackgroundAttachments([marker], 'tc-mine');
+    expect(backgroundStatus).toBeUndefined();
+    /** Still filtered out of file rendering regardless of ownership. */
+    expect(fileAttachments).toHaveLength(0);
   });
 
   it('returns null for oversized payloads (real output, not a handle)', () => {

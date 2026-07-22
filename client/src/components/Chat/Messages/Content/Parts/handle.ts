@@ -13,8 +13,16 @@ export const BACKGROUND_STATUS_ATTACHMENT_TYPE = 'background_task_status';
  * `backgroundStatus` carries the settled task's status (`completed` | `error`)
  * when the marker is present — the backgrounded call has finished even if it
  * generated no files, and failures must not render as clean completions.
+ *
+ * Attachments reach each card pre-routed by `toolCallId` (`ContentParts`'
+ * `mapAttachments`), but the marker is additionally scoped to `toolCallId`
+ * here as defense in depth — a sibling call's marker must never flip this
+ * card's status. A missing id on either side is a wildcard.
  */
-export function splitBackgroundAttachments(attachments?: TAttachment[]): {
+export function splitBackgroundAttachments(
+  attachments?: TAttachment[],
+  toolCallId?: string,
+): {
   fileAttachments?: TAttachment[];
   backgroundStatus?: string;
 } {
@@ -24,11 +32,15 @@ export function splitBackgroundAttachments(attachments?: TAttachment[]): {
   /** The marker's `type`/`status` are host-defined, outside the `Tools` union. */
   let backgroundStatus: string | undefined;
   const fileAttachments = attachments.filter((attachment) => {
-    const marker = attachment as { type?: string; status?: string } | undefined;
+    const marker = attachment as
+      | { type?: string; status?: string; toolCallId?: string }
+      | undefined;
     if (marker?.type !== BACKGROUND_STATUS_ATTACHMENT_TYPE) {
       return true;
     }
-    backgroundStatus = typeof marker.status === 'string' ? marker.status : 'completed';
+    if (toolCallId == null || marker.toolCallId == null || marker.toolCallId === toolCallId) {
+      backgroundStatus = typeof marker.status === 'string' ? marker.status : 'completed';
+    }
     return false;
   });
   return { fileAttachments, backgroundStatus };

@@ -225,6 +225,7 @@ describe('Code Process', () => {
         conversationId: 'conv-123',
         file_id: 'mock-uuid-1234',
         user: 'user-123',
+        sourceDispatchedAt: expect.any(Number),
       });
 
       expect(result.file_id).toBe('existing-file-id');
@@ -282,6 +283,26 @@ describe('Code Process', () => {
       });
 
       expect(result.file_id).toBe('existing-file-id');
+    });
+
+    it('skips when a newer task holds an unwritten claim (insert stamp, no updatedAt yet)', async () => {
+      /* A newer task claimed the filename but its content write is still in
+       * flight: the claim-insert stamp alone must trip the guard. */
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        metadata: {
+          sourceDispatchedAt: new Date('2024-01-02T00:00:00.000Z').getTime(),
+        },
+      });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const result = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-01T00:00:00.000Z').getTime(),
+      });
+
+      expect(result).toBeNull();
     });
 
     it('lets a newer task overwrite an OLDER task that wrote late (writer dispatch order wins)', async () => {

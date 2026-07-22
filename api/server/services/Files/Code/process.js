@@ -411,6 +411,16 @@ const processCodeOutput = async ({
      * (e.g. `"proj name/file@v1.txt"`) would claim under the raw name and
      * then write under the sanitized one, leaving the claim row orphaned.
      */
+    /**
+     * Dispatch-order stamp persisted with every write AND every claim insert
+     * (foreground writes dispatch ≈ now): the out-of-order guard below
+     * compares WRITER dispatch order, not wall-clock write time — an older
+     * task writing late must not make a newer task's harvest look stale, and
+     * a freshly claimed row must carry its claimant's stamp before the
+     * content write lands.
+     */
+    const sourceDispatchedAt = freshClaimAfter ?? Date.now();
+
     const newFileId = v4();
     const claimed = await claimCodeFile({
       filename: safeName,
@@ -418,17 +428,10 @@ const processCodeOutput = async ({
       file_id: newFileId,
       user: req.user.id,
       tenantId: req.user.tenantId,
+      sourceDispatchedAt,
     });
     const file_id = claimed.file_id;
     const isUpdate = file_id !== newFileId;
-
-    /**
-     * Dispatch-order stamp persisted with every write (foreground writes
-     * dispatch ≈ now): the out-of-order guard below compares WRITER dispatch
-     * order, not wall-clock write time — an older task writing late must not
-     * make a newer task's harvest look stale.
-     */
-    const sourceDispatchedAt = freshClaimAfter ?? Date.now();
 
     /**
      * Out-of-order guard for detached (background) harvests: when the claimed
