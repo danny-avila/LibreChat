@@ -282,7 +282,7 @@ change — locked in with a new CustomGroup characterization test."
 
 **Interfaces:**
 - Consumes: `TUserFavorite` (from `librechat-data-provider`, shape `{ agentId?: string; model?: string; endpoint?: string; spec?: string }`), `TModelSpec` (from `librechat-data-provider`), `Endpoint` (from `~/common`, has at minimum `value: string`, `label: string`, `models?: Array<{name: string}>`), `TAgentsMap` (from `librechat-data-provider`, a `Record<string, {name?: string} | undefined>`).
-- Produces: `resolveFavoriteGroups(input): FavoriteGroup[]` and the `FavoriteGroup`/`ResolvedFavoriteItem` types, both exported from `resolveFavorites.ts`. Task 3 (`FavoritesSection`) imports and calls this directly.
+- Produces: `resolveFavoriteGroups(input): FavoriteGroup[]`, the `FavoriteGroup`/`ResolvedFavoriteItem` types, and the exported `AGENTS_GROUP_KEY`/`OTHER_GROUP_KEY` string constants — all exported from `resolveFavorites.ts`. Task 3 (`FavoritesSection`) imports and calls/compares against all of these directly (the two key constants are needed there to decide when a group's displayed label must be localized instead of used as-is).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -463,9 +463,17 @@ export interface FavoriteGroup {
   items: ResolvedFavoriteItem[];
 }
 
-const OTHER_GROUP_KEY = '__other__';
+/**
+ * Keys for the two synthetic (non-provider) buckets. The `label` this module
+ * assigns them is an internal fallback only — components rendering these
+ * groups must localize the displayed text via `useLocalize()` when the key
+ * matches one of these two constants, since "Agents"/"Other" are UI copy,
+ * not provider-name data (unlike every other group's label, which comes
+ * from `endpoint.label` or the admin-configured `spec.group` string).
+ */
+export const OTHER_GROUP_KEY = '__other__';
 const OTHER_GROUP_LABEL = 'Other';
-const AGENTS_GROUP_KEY = '__agents__';
+export const AGENTS_GROUP_KEY = '__agents__';
 const AGENTS_GROUP_LABEL = 'Agents';
 
 export function resolveFavoriteGroups({
@@ -566,14 +574,23 @@ silently dropped rather than rendered broken."
 - Consumes: `resolveFavoriteGroups` (Task 2), `GroupMenu` (Task 1), existing `ModelSpecItem`/`EndpointModelItem` components, `useFavorites`/`useLocalize` from `~/hooks`, `useModelSelectorContext` from `../ModelSelectorContext`.
 - Produces: `FavoritesSection`, default export from `FavoritesSection.tsx`, no props (reads everything from hooks/context). Task 4 (`ModelSelector.tsx`) renders `<FavoritesSection />` directly.
 
-- [ ] **Step 1: Check for an existing "favorites" localization key before adding a new one**
+- [ ] **Step 1: Check for existing "favorites"/"agents"/"other" localization keys before adding new ones**
 
-Run: `cd client && grep -n "com_ui_my_favorites\|\"com_ui_favorites\":" src/locales/en/translation.json`
-Expected: no match (confirms no existing key already covers this exact label — `com_ui_tools_view_favorites` exists but is scoped to the unrelated tools-marketplace view, and `com_ui_favorite`/`com_ui_unfavorite` are per-item action labels, not a section heading).
+Run: `cd client && grep -n "com_ui_my_favorites\|\"com_ui_favorites\":\|com_ui_favorites_agents_group\|com_ui_favorites_other_group" src/locales/en/translation.json`
+Expected: no match (confirms none of these three keys already exist — `com_ui_tools_view_favorites` exists but is scoped to the unrelated tools-marketplace view, and `com_ui_favorite`/`com_ui_unfavorite` are per-item action labels, not section headings; a generic `com_ui_agents`/`com_ui_other` may exist for unrelated contexts but not scoped to this favorites grouping, so dedicated keys avoid coupling this feature's copy to an unrelated feature's wording).
 
-- [ ] **Step 2: Add the new localization key**
+- [ ] **Step 2: Add the three new localization keys**
 
-Modify `client/src/locales/en/translation.json` — add this line alphabetically near the other `com_ui_favorite*` keys (immediately after the `"com_ui_favorite": "Add to favorites",` line):
+Modify `client/src/locales/en/translation.json` — this file is a flat JSON object (key order doesn't affect behavior), but for readability, keep it roughly alphabetical like the surrounding keys:
+
+Immediately after the `"com_ui_favorite": "Add to favorites",` line, add:
+
+```json
+  "com_ui_favorites_agents_group": "Agents",
+  "com_ui_favorites_other_group": "Other",
+```
+
+Then, near the other `"com_ui_m*"` keys, add:
 
 ```json
   "com_ui_my_favorites": "My Favorites",
@@ -648,6 +665,33 @@ const modelItem: FavoriteGroup = {
   ],
 };
 
+const agentItem: FavoriteGroup = {
+  key: '__agents__',
+  label: 'Agents',
+  items: [
+    {
+      type: 'model',
+      endpoint: { value: 'agents', label: 'Agents', models: [{ name: 'agent-1' }] } as never,
+      modelId: 'agent-1',
+    },
+  ],
+};
+
+const otherItem: FavoriteGroup = {
+  key: '__other__',
+  label: 'Other',
+  items: [
+    {
+      type: 'spec',
+      spec: {
+        name: 'ungrouped-spec',
+        label: 'Ungrouped Spec',
+        preset: { endpoint: 'openAI', model: 'gpt-5' },
+      },
+    },
+  ],
+};
+
 describe('FavoritesSection', () => {
   beforeEach(() => {
     mockGroups = [];
@@ -680,6 +724,20 @@ describe('FavoritesSection', () => {
     expect(screen.getByText('OpenAI')).toBeInTheDocument();
     expect(screen.getByText('gpt-4o')).toBeInTheDocument();
   });
+
+  it('renders the localized label for the Agents bucket, not the raw "Agents" string', () => {
+    mockGroups = [agentItem];
+    render(<FavoritesSection />);
+    expect(screen.getByText('com_ui_favorites_agents_group')).toBeInTheDocument();
+    expect(screen.queryByText('Agents')).not.toBeInTheDocument();
+  });
+
+  it('renders the localized label for the Other bucket, not the raw "Other" string', () => {
+    mockGroups = [otherItem];
+    render(<FavoritesSection />);
+    expect(screen.getByText('com_ui_favorites_other_group')).toBeInTheDocument();
+    expect(screen.queryByText('Other')).not.toBeInTheDocument();
+  });
 });
 ```
 
@@ -696,10 +754,35 @@ Create `client/src/components/Chat/Menus/Endpoints/components/FavoritesSection.t
 import React from 'react';
 import { useFavorites, useLocalize } from '~/hooks';
 import { useModelSelectorContext } from '../ModelSelectorContext';
-import { resolveFavoriteGroups } from '../resolveFavorites';
+import {
+  resolveFavoriteGroups,
+  AGENTS_GROUP_KEY,
+  OTHER_GROUP_KEY,
+  type FavoriteGroup,
+} from '../resolveFavorites';
 import { ModelSpecItem } from './ModelSpecItem';
 import { EndpointModelItem } from './EndpointModelItem';
 import GroupMenu from './GroupMenu';
+
+/**
+ * `group.label` is raw provider-name data (e.g. `endpoint.label`, or the
+ * admin-configured `spec.group` string) for every real provider bucket, so
+ * it's rendered as-is. The two synthetic buckets ("Agents"/"Other") are UI
+ * copy this feature introduces, not data, so those two specifically must
+ * go through localization instead of using `group.label` verbatim.
+ */
+function getGroupDisplayLabel(
+  group: FavoriteGroup,
+  localize: ReturnType<typeof useLocalize>,
+): string {
+  if (group.key === AGENTS_GROUP_KEY) {
+    return localize('com_ui_favorites_agents_group');
+  }
+  if (group.key === OTHER_GROUP_KEY) {
+    return localize('com_ui_favorites_other_group');
+  }
+  return group.label;
+}
 
 export function FavoritesSection() {
   const localize = useLocalize();
@@ -721,7 +804,9 @@ export function FavoritesSection() {
     <GroupMenu id="favorites-menu" groupName={localize('com_ui_my_favorites')}>
       {groups.map((group) => (
         <div key={group.key} className="px-2 py-1">
-          <div className="px-1 py-1 text-xs font-medium text-text-secondary">{group.label}</div>
+          <div className="px-1 py-1 text-xs font-medium text-text-secondary">
+            {getGroupDisplayLabel(group, localize)}
+          </div>
           {group.items.map((item) =>
             item.type === 'spec' ? (
               <ModelSpecItem
@@ -747,7 +832,7 @@ export function FavoritesSection() {
 - [ ] **Step 6: Run the test to verify it passes**
 
 Run: `cd client && npx jest components/Chat/Menus/Endpoints/components/__tests__/FavoritesSection.test.tsx`
-Expected: PASS (all 4 tests)
+Expected: PASS (all 6 tests)
 
 - [ ] **Step 7: Commit**
 
