@@ -843,14 +843,15 @@ describe('deletion quiescing (soft-delete, drain, erase)', () => {
     expect(await methods.getSchedulesByUser(sched.user)).toHaveLength(0);
     expect(await methods.claimDueSchedule({ instanceId: 'w1', leaseMs: 60_000 })).toBeNull();
 
-    // Erase is blocked while a run is still active (evidence preserved).
+    // Erase is blocked while a run is still active (evidence preserved). The raw
+    // doc still exists (getScheduleById hides `deleting` schedules by design).
     expect(await methods.eraseScheduleIfDrained(sched.id)).toBe(false);
-    expect(await methods.getScheduleById(sched.id)).not.toBeNull();
+    expect(await Schedule.findOne({ id: sched.id }).lean()).not.toBeNull();
 
     // Once the run terminalizes, the schedule and its runs erase.
     await methods.transitionRunStatus(sched.id, when, 'started', 'interrupted');
     expect(await methods.eraseScheduleIfDrained(sched.id)).toBe(true);
-    expect(await methods.getScheduleById(sched.id)).toBeNull();
+    expect(await Schedule.findOne({ id: sched.id }).lean()).toBeNull();
     expect(await ScheduleRun.countDocuments({ scheduleId: sched.id })).toBe(0);
     // Its slot is freed for reuse.
     const replacement = await methods.createScheduleWithSlot(
@@ -858,6 +859,23 @@ describe('deletion quiescing (soft-delete, drain, erase)', () => {
       10,
     );
     expect(replacement).not.toBe('limit');
+  });
+
+  it('a deleting schedule is hidden, non-mutable, and non-claimable (no re-enable)', async () => {
+    const schedule = await methods.createScheduleWithSlot(scheduleData(), 10);
+    const sched = schedule as ISchedule;
+    await methods.markScheduleDeleting(sched.id, sched.user);
+    // Hidden and unreadable through the owner-facing read.
+    expect(await methods.getScheduleById(sched.id)).toBeNull();
+    expect(await methods.getScheduleById(sched.id, sched.user)).toBeNull();
+    // A stale/concurrent re-enable PATCH is refused (returns null -> handler 404).
+    const reEnabled = await methods.updateScheduleById(sched.id, sched.user, {
+      enabled: true,
+      nextRunAt: new Date(Date.now() - 60_000),
+    });
+    expect(reEnabled).toBeNull();
+    // Even if a nextRunAt/enabled somehow lingered, the engine won't claim it.
+    expect(await methods.claimDueSchedule({ instanceId: 'w1', leaseMs: 60_000 })).toBeNull();
   });
 
   it('frees the slot immediately on soft-delete so a new create can take it under the cap', async () => {

@@ -26,14 +26,12 @@ import { startScheduleEngine } from './engine';
 type ScheduleRunOutcomeStatus = Parameters<ScheduleMethods['recordRunOutcome']>[0]['status'];
 
 /**
- * Outcome of atomically reserving the active slot for a HITL resume.
- * - `reserved`: this caller promoted the run to `started` and OWNS the slot (it
- *   must release on a subsequent failure/lost approval claim).
- * - `noop`: proceed, but this caller did not promote (row already active/terminal),
- *   so it must NOT release — a concurrent same-pause resume owns it.
- * - `overlap` / `capacity`: defer the resume (approval left unconsumed).
+ * Outcome of the read-only pre-claim overlap/capacity check for a HITL resume.
+ * `overlap`/`capacity` defer the resume with the approval left unconsumed; `ok`
+ * lets the claim proceed. The actual slot promotion happens AFTER the approval
+ * claim is won (promoteScheduledResume), so only the run's driver ever owns it.
  */
-export type ResumeReservation = 'reserved' | 'noop' | 'overlap' | 'capacity';
+export type ResumeCheck = 'ok' | 'overlap' | 'capacity';
 
 /** Whether a persisted job still carries a given scheduled occurrence's identity. */
 function jobMatchesIdentity(job: SerializableJobData, identity: JobIdentity): boolean {
@@ -97,17 +95,21 @@ export interface SchedulesService {
   ) => Promise<FireResult | null>;
   recordScheduleOutcome: (input: RecordScheduleOutcomeInput) => Promise<boolean>;
   /**
-   * Atomically reserves the single active slot for a HITL resume BEFORE the
-   * approval is consumed: promotes the paused run to `started` (the partial unique
-   * index makes per-schedule overlap atomic) and verifies global fireConcurrency.
-   * Returns 'overlap'/'capacity' when the resume must defer (approval untouched).
+   * Read-only overlap/capacity pre-check for a HITL resume, run BEFORE the
+   * approval claim so a deferral leaves the approval claimable. 'overlap' = another
+   * occurrence of the schedule is already active; 'capacity' = global
+   * fireConcurrency is saturated. Does NOT mutate — the promotion happens after the
+   * claim is won, so the run's driver (not a losing racer) owns the slot.
    */
-  reserveScheduledResume: (
-    scheduleId: string,
-    scheduledFor: string | Date,
-  ) => Promise<ResumeReservation>;
-  /** Releases a resume reservation (rolls `started` back to `requires_action`). */
-  releaseScheduledResume: (scheduleId: string, scheduledFor: string | Date) => Promise<void>;
+  checkScheduledResume: (scheduleId: string, scheduledFor: string | Date) => Promise<ResumeCheck>;
+  /**
+   * Promotes a resumed run into the single active slot AFTER its approval claim is
+   * won. Best-effort: the driver owns the slot, and its terminal/re-pause outcome
+   * moves the row back out of `started`. An 'overlap' at this point (a newer
+   * occurrence started since the pre-check) is logged, not fatal — the run still
+   * drives; the accounting self-heals when it settles.
+   */
+  promoteScheduledResume: (scheduleId: string, scheduledFor: string | Date) => Promise<void>;
   /** Soft-deletes an owner's schedule: stop claims, abort active runs, drain, erase. */
   deleteScheduleForOwner: (scheduleId: string, userId: string) => Promise<boolean>;
   /** Quiesces all of a user's schedules ahead of account deletion (stop + abort). */
@@ -267,7 +269,7 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       }
       return { status: job.status, scheduleId: job.scheduleId, scheduledFor: job.scheduledFor };
     },
-    abortScheduledJob: async (conversationId, identity) => {
+    abortScheduledJob: async (conversationId, identity, options) => {
       const store = GenerationJobManager.getJobStore();
       if (store == null) {
         return;
@@ -282,7 +284,9 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       if (job.status !== 'running' && job.status !== 'requires_action') {
         return;
       }
-      await GenerationJobManager.abortJob(conversationId, { preserveForReconcile: true });
+      await GenerationJobManager.abortJob(conversationId, {
+        preserveForReconcile: options?.preserve ?? true,
+      });
     },
     clearReconciledJob: async (conversationId, identity) => {
       const store = GenerationJobManager.getJobStore();
@@ -416,47 +420,42 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
   }
 
   /**
-   * Atomically reserves the schedule's single active slot for a HITL resume,
-   * called BEFORE the approval is consumed so a lost reservation leaves the
-   * approval claimable. Promotes the paused run `requires_action -> started`; the
-   * single-active partial index makes per-schedule overlap atomic (a newer
-   * occurrence already active -> 'overlap'). Then reserve-then-verifies the global
-   * fireConcurrency cap against the OWNER's limit, rolling back on 'capacity'. A
-   * row that is no longer `requires_action` ('missing') is treated as 'ok' so a
-   * legitimate resume is never blocked on stale run-row bookkeeping.
+   * Read-only overlap/capacity pre-check for a HITL resume, run BEFORE the approval
+   * claim so a deferral leaves the approval claimable. A paused run is
+   * `requires_action`, so another `started` run for the schedule (hasActiveRun) is
+   * a DIFFERENT, active occurrence — resuming over it would break per-schedule
+   * overlap. Capacity is checked against the OWNER's fireConcurrency. No mutation:
+   * the actual promotion happens only after the claim is won, so the slot is owned
+   * by the run's driver, never by a losing racer.
    */
-  async function reserveScheduledResume(
+  async function checkScheduledResume(
     scheduleId: string,
     scheduledFor: string | Date,
-  ): Promise<ResumeReservation> {
+  ): Promise<ResumeCheck> {
     if (!scheduleId || !scheduledFor) {
-      return 'noop';
+      return 'ok';
     }
-    const when = new Date(scheduledFor);
-    const promoted = await methods.promoteRunToStarted(scheduleId, when);
-    if (promoted === 'overlap') {
+    if (await methods.hasActiveRun(scheduleId)) {
       return 'overlap';
-    }
-    // A row that is no longer `requires_action` ('missing') is already active
-    // (a concurrent same-pause resume promoted it) or terminal — proceed without
-    // owning the slot so we never release a slot we didn't reserve.
-    if (promoted === 'missing') {
-      return 'noop';
     }
     const schedule = await methods.getScheduleById(scheduleId);
     const owner = schedule ? await engineDeps.getUserContext(schedule.user) : null;
     const limits = await getLimits(owner ?? undefined);
     const active = await engineDeps.countActiveRunsGlobal();
-    if (active > limits.fireConcurrency) {
-      await methods
-        .transitionRunStatus(scheduleId, when, 'started', 'requires_action')
-        .catch(() => undefined);
+    if (active >= limits.fireConcurrency) {
       return 'capacity';
     }
-    return 'reserved';
+    return 'ok';
   }
 
-  async function releaseScheduledResume(
+  /**
+   * Promotes a resumed run into the single active slot after its approval claim is
+   * won (the caller IS the driver). Best-effort: an 'overlap' here means a newer
+   * occurrence started since the pre-check — the run still drives, and its
+   * terminal/re-pause outcome moves the row back out of `started`, so accounting
+   * self-heals without ever letting a non-driver hold or release the slot.
+   */
+  async function promoteScheduledResume(
     scheduleId: string,
     scheduledFor: string | Date,
   ): Promise<void> {
@@ -464,31 +463,31 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       return;
     }
     try {
-      await methods.transitionRunStatus(
-        scheduleId,
-        new Date(scheduledFor),
-        'started',
-        'requires_action',
-      );
+      const promoted = await methods.promoteRunToStarted(scheduleId, new Date(scheduledFor));
+      if (promoted === 'overlap') {
+        logger.warn(
+          `[schedules] resumed run could not reserve the active slot (overlap): ${scheduleId}`,
+        );
+      }
     } catch (err) {
-      logger.error('[schedules] failed to release resume reservation:', err);
+      logger.error('[schedules] failed to promote resumed run:', err);
     }
   }
 
-  /** Aborts an active run's loopback job (identity-guarded, evidence-preserving). */
-  async function abortActiveRun(run: {
-    scheduleId: string;
-    scheduledFor: Date;
-    conversationId?: string;
-  }): Promise<void> {
+  /** Aborts an active run's loopback job (identity-guarded). */
+  async function abortActiveRun(
+    run: { scheduleId: string; scheduledFor: Date; conversationId?: string },
+    preserve: boolean,
+  ): Promise<void> {
     if (!run.conversationId) {
       return;
     }
     await engineDeps
-      .abortScheduledJob(run.conversationId, {
-        scheduleId: run.scheduleId,
-        scheduledFor: run.scheduledFor,
-      })
+      .abortScheduledJob(
+        run.conversationId,
+        { scheduleId: run.scheduleId, scheduledFor: run.scheduledFor },
+        { preserve },
+      )
       .catch((err) => logger.warn('[schedules] failed to abort run job on quiesce:', err));
   }
 
@@ -507,7 +506,9 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     }
     const active = await methods.getActiveRunsForSchedule(scheduleId);
     for (const run of active) {
-      await abortActiveRun(run);
+      // Preserve the aborted job for the reconciler: the run row survives (erase
+      // waits for it to drain), so reconcile finalizes it and clears the job.
+      await abortActiveRun(run, true);
     }
     await methods.eraseScheduleIfDrained(scheduleId).catch(() => undefined);
     return true;
@@ -523,7 +524,10 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     await methods.disableUserSchedulesForDeletion(userId);
     const active = await methods.getActiveRunsForUser(userId);
     for (const run of active) {
-      await abortActiveRun(run);
+      // Do NOT preserve for reconcile: account deletion hard-deletes these run
+      // rows, so no reconcile pass will ever finalize/clear a retained job — a
+      // preserved job would leak in the store. Let the abort settle it directly.
+      await abortActiveRun(run, false);
     }
   }
 
@@ -532,8 +536,8 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     engineDeps,
     fireScheduleNow,
     recordScheduleOutcome,
-    reserveScheduledResume,
-    releaseScheduledResume,
+    checkScheduledResume,
+    promoteScheduledResume,
     deleteScheduleForOwner,
     quiesceUserSchedules,
     initializeScheduleEngine,

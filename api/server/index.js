@@ -357,7 +357,11 @@ const startServer = async () => {
       // loopback chats at a server that is not yet listening/accepting starts,
       // recording spurious errors that could auto-disable valid schedules.
       // Ensures indexes before the first tick; failures are logged, not fatal.
-      await initializeScheduleEngine();
+      // Pass whether this may be a multi-instance deployment (USE_REDIS is the
+      // proxy — horizontal replicas share a Redis cache/session store): combined
+      // with the LIVE stream backend it decides whether cross-instance job-status
+      // reconciliation is safe (a replica must not reap a peer's live run).
+      await initializeScheduleEngine({ clustered: isEnabled(process.env.USE_REDIS) });
       logger.info('Server readiness checks passing.');
     } catch (initErr) {
       serverReady = false;

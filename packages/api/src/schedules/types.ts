@@ -67,9 +67,16 @@ export interface ScheduleEngineDeps {
   /**
    * Aborts the loopback generation for a scheduled occurrence, identity-guarded so
    * it never signals/clobbers a replacement turn that reused the conversationId.
-   * Used by deletion quiescing to stop an in-flight run before its evidence is erased.
+   * Used by deletion quiescing to stop an in-flight run before its evidence is
+   * erased. `preserve` keeps the terminal job for the reconciler (per-schedule
+   * delete, whose run row survives to drive cleanup); account deletion passes false
+   * since it hard-deletes the run rows, so a preserved job would leak in the store.
    */
-  abortScheduledJob: (conversationId: string, identity: JobIdentity) => Promise<void>;
+  abortScheduledJob: (
+    conversationId: string,
+    identity: JobIdentity,
+    options?: { preserve?: boolean },
+  ) => Promise<void>;
   /**
    * Whether every engine replica can observe the SAME jobs (Redis-backed, or a
    * single process). When false — e.g. clustered workers each with a private

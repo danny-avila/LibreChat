@@ -95,7 +95,7 @@ export type ScheduleMethods = {
     leaseMs: number,
   ) => Promise<string | null>;
   releaseLease: (id: string, expectedClaimToken?: string) => Promise<void>;
-  revalidateClaim: (id: string, claimToken: string) => Promise<boolean>;
+  revalidateClaim: (id: string, claimToken: string, requireEnabled?: boolean) => Promise<boolean>;
   advanceSchedule: (
     id: string,
     nextRunAt: Date | null,
@@ -229,7 +229,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   ): Promise<ISchedule | null> {
     return Schedule()
       .findOneAndUpdate(
-        { id, user: userId },
+        { id, user: userId, deleting: { $ne: true } },
         { $set: { ...update, claimToken: randomUUID() }, ...(unset ? { $unset: unset } : {}) },
         { new: true },
       )
@@ -249,7 +249,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     id: string,
     userId?: string | Types.ObjectId,
   ): Promise<ISchedule | null> {
-    const filter: Record<string, unknown> = { id };
+    const filter: Record<string, unknown> = { id, deleting: { $ne: true } };
     if (userId != null) {
       filter.user = userId;
     }
@@ -288,6 +288,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       .findOneAndUpdate(
         {
           enabled: true,
+          deleting: { $ne: true },
           nextRunAt: { $exists: true, $ne: null },
           $expr: {
             $and: [
@@ -355,18 +356,24 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
 
   /**
    * Whether the caller still holds an authoritative claim on the schedule: it is
-   * still enabled, not being deleted, its claim token is unchanged, and its lease
-   * has not expired (Mongo `$$NOW`). Called as the last check before the loopback
-   * POST so an owner disable/delete/edit or a lease-expiry re-claim between claim
-   * and fire aborts the fire instead of dispatching a stale occurrence.
+   * not being deleted, its claim token is unchanged, and its lease has not expired
+   * (Mongo `$$NOW`). Called as the last check before the loopback POST so an owner
+   * delete/edit or a lease-expiry re-claim between claim and fire aborts the fire
+   * instead of dispatching a stale occurrence. `requireEnabled` additionally checks
+   * `enabled` (automatic fires must stop once disabled); a manual run-now passes
+   * false since the user explicitly triggered it, but delete/edit still fence it.
    */
-  async function revalidateClaim(id: string, claimToken: string): Promise<boolean> {
+  async function revalidateClaim(
+    id: string,
+    claimToken: string,
+    requireEnabled = true,
+  ): Promise<boolean> {
     const row = await Schedule()
       .findOne({
         id,
         claimToken,
-        enabled: true,
         deleting: { $ne: true },
+        ...(requireEnabled ? { enabled: true } : {}),
         $expr: { $gt: [{ $ifNull: ['$leaseUntil', new Date(0)] }, '$$NOW'] },
       })
       .select('_id')

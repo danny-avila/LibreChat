@@ -290,17 +290,17 @@ export async function fireSchedule(
       return { fired: false, skipped: 'capacity' as const };
     }
 
-    // Last check before the point of no return: an automatic fire re-verifies it
-    // still holds an authoritative claim (schedule still enabled, not deleted, same
-    // claim token, lease unexpired). An owner disable/delete/edit or a lease-expiry
-    // re-claim between claim and here supersedes this fire — roll the reservation
-    // back (status-fenced) and skip WITHOUT dispatching a billed generation. Manual
-    // run-now skips this: it took a fresh lease synchronously with the user's click
-    // and acquireManualRunLease already rejects a `deleting` schedule.
+    // Last check before the point of no return: re-verify this fire still holds an
+    // authoritative claim (same claim token, lease unexpired, not deleting; and for
+    // an automatic fire, still enabled). An owner delete/edit or a lease-expiry
+    // re-claim landing AFTER the lease was taken but before here supersedes this
+    // fire — roll the reservation back (status-fenced) and skip WITHOUT dispatching
+    // a billed generation. Manual run-now still revalidates (a delete/edit can land
+    // after acquireManualRunLease); it only relaxes the `enabled` check since the
+    // user explicitly triggered it.
     if (
-      !options?.manual &&
       claimToken != null &&
-      !(await methods.revalidateClaim(schedule.id, claimToken))
+      !(await methods.revalidateClaim(schedule.id, claimToken, !options?.manual))
     ) {
       await methods.deleteScheduleRun(schedule.id, scheduledFor, 'started');
       await advance();
