@@ -354,21 +354,22 @@ describe('message route conversation ownership filters', () => {
       expect(response.body.nextCursor).toBe('3');
     });
 
-    it('does not advertise another page when the scan budget is exhausted with no rows', async () => {
+    it('keeps a cursor when the scan budget is exhausted so later matches stay reachable', async () => {
       // Every scanned page filters out entirely while Meili keeps reporting more.
       searchMessages.mockResolvedValue({
         hits: [{ messageId: 'm', conversationId: 'gone' }],
-        totalPages: 50,
+        totalPages: 500,
       });
       getConvosQueried.mockResolvedValue({ convoMap: {}, conversations: [], nextCursor: null });
       getMessages.mockResolvedValue([]);
 
       const response = await request(app).get('/api/messages?search=beacon');
 
-      expect(searchMessages).toHaveBeenCalledTimes(10); // MAX_EMPTY_PAGE_SCANS
+      expect(searchMessages).toHaveBeenCalledTimes(25); // MAX_EMPTY_PAGE_SCANS
       expect(response.body.messages).toEqual([]);
-      // A live cursor here would strand the client: nothing renders, so nothing scrolls.
-      expect(response.body.nextCursor).toBeNull();
+      // Nulling here would mark the search exhausted and silently drop the
+      // accessible matches that still sit past the filtered run.
+      expect(response.body.nextCursor).toBe('26');
     });
 
     it('clamps an oversized pageSize before asking Meili for a raw page', async () => {

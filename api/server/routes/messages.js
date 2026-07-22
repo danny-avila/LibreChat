@@ -66,13 +66,18 @@ router.get('/', async (req, res) => {
        */
       /**
        * A page whose hits ALL belong to deleted/inaccessible conversations
-       * filters down to zero rows. Returning that empty page with a cursor
-       * strands the client: it renders the no-results state and never scrolls,
-       * so later pages holding real hits are unreachable. Walk forward until a
-       * page yields a row (or the pages run out), bounded so a long filtered
-       * run can't hold the request open.
+       * filters down to zero rows. Returning that empty page strands the client:
+       * it renders the no-results state, so there are no rows to drive the next
+       * fetch and later pages holding real hits are unreachable. Walk forward
+       * until a page yields a row (or the pages run out).
+       *
+       * The bound only stops a pathological corpus from holding the request
+       * open; it is deliberately high enough that reaching it means there are no
+       * accessible hits in ~625 raw results. If it IS reached, the cursor is
+       * still returned rather than nulled — claiming the search is exhausted
+       * would silently drop real matches past the filtered run.
        */
-      const MAX_EMPTY_PAGE_SCANS = 10;
+      const MAX_EMPTY_PAGE_SCANS = 25;
       let page = Math.max(1, parseInt(cursor, 10) || 1);
       let activeMessages = [];
       let nextCursor = null;
@@ -149,16 +154,6 @@ router.get('/', async (req, res) => {
           break;
         }
         page += 1;
-      }
-
-      /**
-       * Exhausting the scan with nothing to show must not advertise another
-       * page: an empty result set renders the no-results state and leaves
-       * nothing to scroll, so a live cursor is a promise the client can never
-       * follow. Report the end of the line instead of stranding it.
-       */
-      if (activeMessages.length === 0) {
-        nextCursor = null;
       }
 
       response = { messages: activeMessages, nextCursor };
