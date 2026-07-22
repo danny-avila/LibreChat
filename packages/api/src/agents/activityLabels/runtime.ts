@@ -58,6 +58,14 @@ export interface GenerateLabelPayload {
   /** Deterministic Langfuse trace seed, unique per slot. */
   traceSeed: string;
   signal: AbortSignal;
+  /** Effective per-entry truncation, forwarded so host and SDK prompts agree. */
+  charLimit: number;
+}
+
+/** Per-generation LLM callbacks for usage accounting on the fallback path. */
+export interface ActivityLabelInvokeCallbacks {
+  callbacks: Array<Record<string, unknown>>;
+  collect: () => void | Promise<void>;
 }
 
 export interface ActivityLabelHookOptions {
@@ -83,6 +91,12 @@ export interface ActivityLabelHookOptions {
   resolveLLM: () => Promise<ActivityLabelLLM>;
   /** Run abort signal; in-flight label calls are also bounded by a timeout. */
   signal?: AbortSignal;
+  /**
+   * Factory for per-generation LLM callbacks (fallback path only): fresh
+   * aggregator per call, `collect()` invoked after a successful response so
+   * label calls participate in usage accounting like titles do.
+   */
+  getInvokeCallbacks?: () => ActivityLabelInvokeCallbacks;
   /** Cap on labels per run (cost guard). Default 20. */
   maxPerRun?: number;
   /** Per-entry output truncation for the prompt. Default 600 chars. */
@@ -209,10 +223,11 @@ function extractText(content: unknown): string {
   return '';
 }
 
-function buildSignal(runSignal?: AbortSignal): AbortSignal {
+function buildSignal(runSignal?: AbortSignal, hookSignal?: AbortSignal): AbortSignal {
   const timeout = AbortSignal.timeout(SUMMARY_TIMEOUT_MS);
-  if (runSignal && typeof AbortSignal.any === 'function') {
-    return AbortSignal.any([runSignal, timeout]);
+  const signals = [runSignal, hookSignal].filter((signal): signal is AbortSignal => signal != null);
+  if (signals.length > 0 && typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([...signals, timeout]);
   }
   return timeout;
 }
@@ -237,14 +252,18 @@ export function createActivityLabelHook(
   };
 
   return async (input: PostToolBatchInput, hookSignal?: AbortSignal) => {
-    const runSignal = hookSignal ?? opts.signal;
     /** Subagent scopes are skipped (`input.agentId` set), mirroring the steer
      *  drain: subagent content is buffered per spawning tool call, so a slot
      *  claimed here would land in the WRONG transcript (the main message). */
     if (input.agentId != null) {
       return {};
     }
-    if (generated >= maxPerRun || input.entries.length === 0 || runSignal?.aborted === true) {
+    if (
+      generated >= maxPerRun ||
+      input.entries.length === 0 ||
+      opts.signal?.aborted === true ||
+      hookSignal?.aborted === true
+    ) {
       return {};
     }
     generated += 1;
@@ -255,7 +274,10 @@ export function createActivityLabelHook(
 
     void (async () => {
       try {
-        const signal = buildSignal(runSignal);
+        /** Host run-abort signal AND the dispatch signal both cancel the
+         *  label call — a user abort must not keep paying for generation
+         *  until the timeout. */
+        const signal = buildSignal(opts.signal, hookSignal);
         let text: string | null = null;
         if (opts.generateLabel != null) {
           /** SDK-backed path: session-grouped Langfuse tracing via
@@ -265,6 +287,7 @@ export function createActivityLabelHook(
             context: slot.context ?? {},
             traceSeed: `${input.runId}-activity-${slot.index}`,
             signal,
+            charLimit,
           });
         } else {
           const { provider, clientOptions } = await getLLM();
@@ -272,10 +295,15 @@ export function createActivityLabelHook(
             provider,
             clientOptions: { ...clientOptions, streaming: false } as ClientOptions,
           });
+          const invokeCallbacks = opts.getInvokeCallbacks?.();
           const response = await (
             model as { invoke: (input: string, config?: object) => Promise<{ content?: unknown }> }
-          ).invoke(buildPrompt(input.entries, charLimit, slot.context), { signal });
+          ).invoke(buildPrompt(input.entries, charLimit, slot.context), {
+            signal,
+            ...(invokeCallbacks && { callbacks: invokeCallbacks.callbacks }),
+          });
           text = extractText(response?.content);
+          await invokeCallbacks?.collect();
         }
         await slot.fill(text != null && text.length > 0 ? text : null);
       } catch (error) {

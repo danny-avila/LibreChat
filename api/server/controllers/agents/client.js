@@ -423,12 +423,22 @@ class AgentClient extends BaseClient {
    * activity-label design notes. Called synchronously at claim time so the
    * snapshot can't include parts from the next block.
    */
-  captureActivityBlockContext() {
+  captureActivityBlockContext(executingAgentId) {
     const thinkingExcerpts = [];
     let lastAssistantText;
+    /** Reasoning collection stops at the previous block's label part —
+     *  labels delimit blocks, so scanning past one would bleed another
+     *  batch's reasoning into this payload. `lastAssistantText` (intent)
+     *  keeps scanning: with consecutive batches and no interleaved text,
+     *  the assistant's last words remain the current intent. */
+    let collectThinking = true;
     for (let i = this.contentParts.length - 1; i >= 0; i--) {
       const part = this.contentParts[i];
       if (part == null) {
+        continue;
+      }
+      if (part.type === ContentTypes.ACTIVITY_LABEL) {
+        collectThinking = false;
         continue;
       }
       if (part.type === ContentTypes.TEXT) {
@@ -439,7 +449,12 @@ class AgentClient extends BaseClient {
         }
         continue;
       }
-      if (part.type === ContentTypes.THINK && thinkingExcerpts.length < 4) {
+      if (
+        collectThinking &&
+        part.type === ContentTypes.THINK &&
+        thinkingExcerpts.length < 4 &&
+        (executingAgentId == null || part.agentId == null || part.agentId === executingAgentId)
+      ) {
         const think = typeof part.think === 'string' ? part.think : (part.think?.value ?? '');
         if (think.trim().length > 0) {
           thinkingExcerpts.unshift(think.trim().slice(0, 300));
@@ -449,39 +464,83 @@ class AgentClient extends BaseClient {
     return { thinkingExcerpts, lastAssistantText };
   }
 
+  /** Maps aggregated LLM metadata into recorded usage, mirroring titleConvo. */
+  async recordActivityLabelUsage(collectedMetadata, model) {
+    const appConfig = this.options.req?.config;
+    const collectedUsage = collectedMetadata.map((item) => {
+      let input_tokens, output_tokens;
+      if (item.usage) {
+        input_tokens =
+          item.usage.prompt_tokens || item.usage.input_tokens || item.usage.inputTokens;
+        output_tokens =
+          item.usage.completion_tokens || item.usage.output_tokens || item.usage.outputTokens;
+      } else if (item.tokenUsage) {
+        input_tokens = item.tokenUsage.promptTokens;
+        output_tokens = item.tokenUsage.completionTokens;
+      } else if (item.usage_metadata) {
+        input_tokens = item.usage_metadata.input_tokens;
+        output_tokens = item.usage_metadata.output_tokens;
+      }
+      return { input_tokens, output_tokens };
+    });
+    if (collectedUsage.length === 0) {
+      return;
+    }
+    await this.recordCollectedUsage({
+      collectedUsage,
+      context: 'activity-label',
+      model,
+      balance: getBalanceConfig(appConfig),
+      transactions: getTransactionsConfig(appConfig),
+      messageId: this.responseMessageId,
+    }).catch((err) => {
+      logger.error(
+        '[api/server/controllers/agents/client.js #recordActivityLabelUsage] Error recording usage',
+        err,
+      );
+    });
+  }
+
   /**
    * Bridges label generation to the SDK's `run.generateActivityLabel()` so
    * the fast-model call is Langfuse-traced under the conversation's session
    * (thread_id) with its own tags — never as an orphan trace. Returns null
    * when the label could not be generated.
    */
-  async generateActivityLabelViaRun({ entries, context, traceSeed, signal }) {
+  async generateActivityLabelViaRun({ entries, context, traceSeed, signal, charLimit }) {
     if (typeof this.run?.generateActivityLabel !== 'function') {
       return null;
     }
     const { provider, clientOptions } = await this.resolveActivityLabelLLM();
-    const { label } = await this.run.generateActivityLabel({
-      provider,
-      clientOptions,
-      entries: entries.map(({ toolName, toolInput, toolOutput, error, status }) => ({
-        toolName,
-        toolInput,
-        toolOutput,
-        error,
-        status,
-      })),
-      thinkingExcerpts: context.thinkingExcerpts,
-      lastAssistantText: context.lastAssistantText,
-      traceSeed,
-      chainOptions: {
-        signal,
-        configurable: {
-          thread_id: this.conversationId,
-          user_id: this.user ?? this.options.req?.user?.id,
+    const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
+    try {
+      const { label } = await this.run.generateActivityLabel({
+        provider,
+        clientOptions,
+        entries: entries.map(({ toolName, toolInput, toolOutput, error, status }) => ({
+          toolName,
+          toolInput,
+          toolOutput,
+          error,
+          status,
+        })),
+        thinkingExcerpts: context.thinkingExcerpts,
+        lastAssistantText: context.lastAssistantText,
+        traceSeed,
+        charLimit,
+        chainOptions: {
+          signal,
+          callbacks: [{ handleLLMEnd }],
+          configurable: {
+            thread_id: this.conversationId,
+            user_id: this.user ?? this.options.req?.user?.id,
+          },
         },
-      },
-    });
-    return label ?? null;
+      });
+      return label ?? null;
+    } finally {
+      await this.recordActivityLabelUsage(collectedMetadata, clientOptions.model);
+    }
   }
 
   /**
@@ -513,7 +572,7 @@ class AgentClient extends BaseClient {
    * `on_activity_label` event; failures leave the counts-only part.
    * @param {string | undefined} streamId
    */
-  buildActivityLabelWiring(streamId) {
+  buildActivityLabelWiring(streamId, abortSignal) {
     if (!isActivityLabelPocEnabled() || !streamId) {
       return undefined;
     }
@@ -537,6 +596,21 @@ class AgentClient extends BaseClient {
     return {
       hook: createActivityLabelHook({
         resolveLLM: () => this.resolveActivityLabelLLM(),
+        /** Run abort propagates into label calls: without it, cancelled
+         *  turns keep paying for label generation until the timeout. */
+        signal: abortSignal,
+        /** Per-generation usage accounting for the direct fallback path;
+         *  the SDK bridge records its own via chainOptions callbacks. */
+        getInvokeCallbacks: () => {
+          const { handleLLMEnd, collected } = createMetadataAggregator();
+          return {
+            callbacks: [{ handleLLMEnd }],
+            collect: async () => {
+              const { clientOptions } = await this.resolveActivityLabelLLM();
+              await this.recordActivityLabelUsage(collected, clientOptions.model);
+            },
+          };
+        },
         ...(sdkCapable && {
           generateLabel: (payload) => this.generateActivityLabelViaRun(payload),
         }),
@@ -585,7 +659,7 @@ class AgentClient extends BaseClient {
           this.pendingActivityLabelFills.push(fillDone);
           return {
             index,
-            context: this.captureActivityBlockContext(),
+            context: this.captureActivityBlockContext(meta.executingAgentId),
             fill: async (text) => {
               try {
                 part.pending = false;
@@ -2047,7 +2121,7 @@ class AgentClient extends BaseClient {
           // boundary and inject them into graph state. The offset wrapper
           // shifts SDK content indices past any spliced steer parts.
           steering: this.buildSteerWiring(streamId),
-          activityLabel: this.buildActivityLabelWiring(streamId),
+          activityLabel: this.buildActivityLabelWiring(streamId, abortController.signal),
           indexTokenCountMap,
           initialSummary,
           initialSessions,
@@ -2388,7 +2462,7 @@ class AgentClient extends BaseClient {
         steering: this.buildSteerWiring(streamId),
         // Activity labels likewise survive pause/resume: post-resume tool
         // batches keep claiming slots and generating group headers.
-        activityLabel: this.buildActivityLabelWiring(streamId),
+        activityLabel: this.buildActivityLabelWiring(streamId, abortController.signal),
         // Replay deferred tools discovered before the pause. With `messages: []` the
         // discovery scan finds nothing, so a deferred tool the paused call targets
         // would be absent from the rebuilt toolMap; these names (captured at pause)

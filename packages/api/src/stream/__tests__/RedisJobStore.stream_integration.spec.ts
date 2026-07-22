@@ -2306,6 +2306,90 @@ describe('RedisJobStore Integration Tests', () => {
 
       await store.destroy();
     });
+
+    test('getContentParts reconstructs the LAST on_activity_label chunk per index', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `activity-recon-${Date.now()}`;
+      await store.createJob(streamId, 'label-user', streamId);
+
+      const chunks = [
+        {
+          event: 'on_run_step',
+          data: {
+            id: 'step-1',
+            index: 0,
+            stepDetails: { type: 'tool_calls', tool_calls: [] },
+          },
+        },
+        /** Claim-time placeholder (counts only) at index 1 … */
+        {
+          event: 'on_activity_label',
+          data: {
+            index: 1,
+            part: {
+              type: 'activity_label',
+              activity_label: '',
+              counts: { searches: 1, reads: 0, writes: 0, commands: 0, other: 0 },
+              status: 'ok',
+              pending: true,
+            },
+          },
+        },
+        /** … then the resolved label for the same slot: last write wins. */
+        {
+          event: 'on_activity_label',
+          data: {
+            index: 1,
+            part: {
+              type: 'activity_label',
+              activity_label: 'Searched runtime release notes',
+              counts: { searches: 1, reads: 0, writes: 0, commands: 0, other: 0 },
+              status: 'ok',
+              pending: false,
+            },
+          },
+        },
+        {
+          event: 'on_run_step',
+          data: {
+            id: 'step-2',
+            // Emitted with the already-shifted index (offset wrapper)
+            index: 2,
+            stepDetails: { type: 'message_creation', message_creation: {} },
+          },
+        },
+        {
+          event: 'on_message_delta',
+          data: { id: 'step-2', delta: { content: { type: 'text', text: 'After batch.' } } },
+        },
+      ];
+      for (const chunk of chunks) {
+        await store.appendChunk(streamId, chunk);
+      }
+
+      const result = await store.getContentParts(streamId);
+      expect(result).not.toBeNull();
+      const parts = result!.content as Array<{
+        type?: string;
+        activity_label?: string;
+        pending?: boolean;
+      }>;
+      expect(parts[1]).toMatchObject({
+        type: 'activity_label',
+        activity_label: 'Searched runtime release notes',
+        pending: false,
+      });
+      expect(parts[2]?.type).toBe('text');
+
+      await store.destroy();
+    });
   });
 
   describe('Idempotency claims (#14339 duplicate-billing guard)', () => {

@@ -155,6 +155,7 @@ describe('createActivityLabelHook', () => {
     expect(generateLabel).toHaveBeenCalledWith(
       expect.objectContaining({
         traceSeed: 'run-1-activity-0',
+        charLimit: 600,
         entries: expect.any(Array),
         context: expect.any(Object),
         signal: expect.any(AbortSignal),
@@ -162,6 +163,31 @@ describe('createActivityLabelHook', () => {
     );
     expect(mockInitializeModel).not.toHaveBeenCalled();
     expect(slots[0].filled).toEqual(['Searched runtime release notes']);
+  });
+
+  it('claims nothing when the host abort signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const hook = createActivityLabelHook({ claimSlot, resolveLLM, signal: controller.signal });
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    expect(slots).toHaveLength(0);
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('runs per-generation invoke callbacks and collects usage on the fallback path', async () => {
+    const collect = jest.fn();
+    const handleLLMEnd = jest.fn();
+    const getInvokeCallbacks = jest.fn(() => ({ callbacks: [{ handleLLMEnd }], collect }));
+    const hook = createActivityLabelHook({ claimSlot, resolveLLM, getInvokeCallbacks });
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    expect(getInvokeCallbacks).toHaveBeenCalledTimes(1);
+    expect(mockInvoke).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ callbacks: [{ handleLLMEnd }] }),
+    );
+    expect(collect).toHaveBeenCalledTimes(1);
   });
 
   it('memoizes LLM resolution and enforces maxPerRun', async () => {
