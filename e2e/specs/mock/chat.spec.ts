@@ -42,11 +42,13 @@ const textFixture: UploadFixture = {
   buffer: Buffer.from('This text attachment should be available to the mock model.\n'),
 };
 
+// 16x16 PNG. A 1x1 PNG trips a libpng edge case in sharp's resize+encode path
+// (server-side image processing), so keep this at a normal size.
 const imageFixture: UploadFixture = {
   name: 'provider-context.png',
   mimeType: 'image/png',
   buffer: Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+    'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHUlEQVQ4jWNwaDjwnxLMMGrA/9EwODAaBg3DIgwACY9/HwbtciYAAAAASUVORK5CYII=',
     'base64',
   ),
 };
