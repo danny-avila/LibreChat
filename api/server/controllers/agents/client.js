@@ -50,6 +50,8 @@ const {
   isSteeringSupported,
   buildSteerMedia,
   stampSteerPartMedia,
+  createActivityLabelHook,
+  isActivityLabelPocEnabled,
   getRequestMemories,
   getMemoryAgentId,
   createMemoryProcessor,
@@ -78,6 +80,7 @@ const {
   maybePrewarmCodeSandbox,
 } = require('@librechat/api');
 const {
+  Run,
   Callback,
   Providers,
   TitleMethod,
@@ -88,6 +91,7 @@ const {
 const {
   Constants,
   SteerEvents,
+  ActivityLabelEvents,
   UsageEvents,
   Permissions,
   VisionModes,
@@ -113,6 +117,33 @@ const db = require('~/models');
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
+
+/**
+ * ACTIVITY_LABEL parts are UI-only progress notes. The SDK's
+ * `formatAgentMessages` catch-all would fold unknown part types into the
+ * assistant's provider content, so they must be stripped from any payload
+ * before formatting (see PoC notes; the real feature teaches the SDK the
+ * type instead).
+ * @param {Array<{ content?: Array<{ type?: string }> }>} payload
+ */
+function stripActivityLabelParts(payload) {
+  if (!Array.isArray(payload)) {
+    return payload;
+  }
+  let changed = false;
+  const result = payload.map((message) => {
+    if (!Array.isArray(message?.content)) {
+      return message;
+    }
+    const content = message.content.filter((part) => part?.type !== ContentTypes.ACTIVITY_LABEL);
+    if (content.length === message.content.length) {
+      return message;
+    }
+    changed = true;
+    return { ...message, content };
+  });
+  return changed ? result : payload;
+}
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -332,6 +363,196 @@ class AgentClient extends BaseClient {
   }
 
   setOptions(_options) {}
+
+  /**
+   * PoC (ACTIVITY_LABELS_POC=true): resolve provider + client options for the
+   * tool-batch summary model. Same resolution path as titleConvo minus the
+   * title-specific branches. Model precedence: ACTIVITY_LABEL_MODEL env >
+   * endpoint titleModel > the agent's own model, on the agent's endpoint
+   * credentials (PoC constraint: summary model must live on the same
+   * provider as the agent).
+   */
+  async resolveActivityLabelLLM() {
+    const { req, agent } = this.options;
+    const appConfig = req.config;
+    const endpoint = agent.endpoint;
+    const providerConfig = getProviderConfig({ provider: endpoint, appConfig });
+    /** @type {TEndpoint | undefined} */
+    const endpointConfig =
+      appConfig.endpoints?.all ??
+      appConfig.endpoints?.[endpoint] ??
+      providerConfig.customEndpointConfig;
+    const model =
+      process.env.ACTIVITY_LABEL_MODEL ||
+      (endpointConfig?.titleModel && endpointConfig.titleModel !== Constants.CURRENT_MODEL
+        ? endpointConfig.titleModel
+        : agent.model || agent.model_parameters.model);
+    const options = await providerConfig.getOptions({
+      req,
+      endpoint,
+      model_parameters: { model },
+      db: {
+        getUserKey: db.getUserKey,
+        getUserKeyValues: db.getUserKeyValues,
+      },
+    });
+    let provider = options.provider ?? providerConfig.overrideProvider ?? agent.provider;
+    if (
+      endpoint === EModelEndpoint.azureOpenAI &&
+      options.llmConfig?.azureOpenAIApiInstanceName == null
+    ) {
+      provider = Providers.OPENAI;
+    } else if (
+      endpoint === EModelEndpoint.azureOpenAI &&
+      options.llmConfig?.azureOpenAIApiInstanceName != null &&
+      provider !== Providers.AZURE
+    ) {
+      provider = Providers.AZURE;
+    }
+    const clientOptions = { ...options.llmConfig };
+    if (options.configOptions) {
+      clientOptions.configuration = options.configOptions;
+    }
+    return { provider, clientOptions };
+  }
+
+  /**
+   * Captures the current activity block's context for the label payload:
+   * reasoning excerpts since the last text part, plus the assistant's last
+   * text (~200 chars) as intent. Deliberately NO human messages — see the
+   * activity-label design notes. Called synchronously at claim time so the
+   * snapshot can't include parts from the next block.
+   */
+  captureActivityBlockContext() {
+    const thinkingExcerpts = [];
+    let lastAssistantText;
+    for (let i = this.contentParts.length - 1; i >= 0; i--) {
+      const part = this.contentParts[i];
+      if (part == null) {
+        continue;
+      }
+      if (part.type === ContentTypes.TEXT) {
+        const text = typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
+        if (text.trim().length > 0) {
+          lastAssistantText = text.trim().slice(-200);
+          break;
+        }
+        continue;
+      }
+      if (part.type === ContentTypes.THINK && thinkingExcerpts.length < 4) {
+        const think = typeof part.think === 'string' ? part.think : (part.think?.value ?? '');
+        if (think.trim().length > 0) {
+          thinkingExcerpts.unshift(think.trim().slice(0, 300));
+        }
+      }
+    }
+    return { thinkingExcerpts, lastAssistantText };
+  }
+
+  /**
+   * Bridges label generation to the SDK's `run.generateActivityLabel()` so
+   * the fast-model call is Langfuse-traced under the conversation's session
+   * (thread_id) with its own tags — never as an orphan trace. Returns null
+   * when the label could not be generated.
+   */
+  async generateActivityLabelViaRun({ entries, context, traceSeed, signal }) {
+    if (typeof this.run?.generateActivityLabel !== 'function') {
+      return null;
+    }
+    const { provider, clientOptions } = await this.resolveActivityLabelLLM();
+    const { label } = await this.run.generateActivityLabel({
+      provider,
+      clientOptions,
+      entries: entries.map(({ toolName, toolInput, toolOutput, error, status }) => ({
+        toolName,
+        toolInput,
+        toolOutput,
+        error,
+        status,
+      })),
+      thinkingExcerpts: context.thinkingExcerpts,
+      lastAssistantText: context.lastAssistantText,
+      traceSeed,
+      chainOptions: {
+        signal,
+        configurable: {
+          thread_id: this.conversationId,
+          user_id: this.user ?? this.options.req?.user?.id,
+        },
+      },
+    });
+    return label ?? null;
+  }
+
+  /**
+   * Activity-label wiring. At each batch boundary the hook synchronously
+   * claims a live content slot (steering's index-offset pattern: push
+   * placeholder with deterministic counts, bump the shared offset so
+   * subsequent SDK indices land past it) and fills it when the fast-model
+   * label resolves. Both states reach the live client via the dedicated
+   * `on_activity_label` event; failures leave the counts-only part.
+   * @param {string | undefined} streamId
+   */
+  buildActivityLabelWiring(streamId) {
+    if (!isActivityLabelPocEnabled() || !streamId) {
+      return undefined;
+    }
+    /** SDK support probe (steering-style): the Run method and the formatter
+     *  replay skip ship together, so method presence is the capability. */
+    const sdkCapable = typeof Run?.prototype?.generateActivityLabel === 'function';
+    const emitLabelEvent = (index, part, { durable = true } = {}) =>
+      GenerationJobManager.emitChunk(
+        streamId,
+        {
+          event: ActivityLabelEvents.ON_ACTIVITY_LABEL,
+          data: {
+            index,
+            part,
+            responseMessageId: this.responseMessageId,
+            conversationId: this.conversationId,
+          },
+        },
+        { durable },
+      );
+    return {
+      hook: createActivityLabelHook({
+        resolveLLM: () => this.resolveActivityLabelLLM(),
+        ...(sdkCapable && {
+          generateLabel: (payload) => this.generateActivityLabelViaRun(payload),
+        }),
+        claimSlot: (meta) => {
+          const index = this.contentParts.length;
+          const part = {
+            type: ContentTypes.ACTIVITY_LABEL,
+            [ContentTypes.ACTIVITY_LABEL]: '',
+            tool_call_ids: meta.toolCallIds,
+            counts: meta.counts,
+            status: meta.status,
+            ...(meta.executingAgentId && { agentId: meta.executingAgentId }),
+            pending: true,
+          };
+          this.contentParts.push(part);
+          this.steerOffsetState.offset += 1;
+          /** Claim-time emit: the counts phrase renders in the live UI
+           *  immediately at batch end. Fire-and-forget — claimSlot runs
+           *  inside the awaited hook, so it must not block on the emit. */
+          void emitLabelEvent(index, { ...part }).catch(() => {});
+          return {
+            index,
+            context: this.captureActivityBlockContext(),
+            fill: async (text) => {
+              part.pending = false;
+              if (!text) {
+                return;
+              }
+              part[ContentTypes.ACTIVITY_LABEL] = text;
+              await emitLabelEvent(index, part);
+            },
+          };
+        },
+      }),
+    };
+  }
 
   /**
    * `AgentClient` is not opinionated about vision requests, so we don't do anything here
@@ -1623,7 +1844,7 @@ class AgentClient extends BaseClient {
         summary: initialSummary,
         boundaryTokenAdjustment,
       } = formatAgentMessages(
-        payload,
+        stripActivityLabelParts(payload),
         this.indexTokenCountMap,
         toolSet,
         skillPrimeResult?.skills,
@@ -1697,7 +1918,7 @@ class AgentClient extends BaseClient {
       const memoryMessages =
         this.processMemory && this.memoryPayload
           ? formatAgentMessages(
-              this.memoryPayload,
+              stripActivityLabelParts(this.memoryPayload),
               undefined,
               toolSet,
               skillPrimeResult?.skills,
@@ -1775,6 +1996,7 @@ class AgentClient extends BaseClient {
           // boundary and inject them into graph state. The offset wrapper
           // shifts SDK content indices past any spliced steer parts.
           steering: this.buildSteerWiring(streamId),
+          activityLabel: this.buildActivityLabelWiring(streamId),
           indexTokenCountMap,
           initialSummary,
           initialSessions,

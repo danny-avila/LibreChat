@@ -430,6 +430,7 @@ const ContentParts = memo(function ContentParts({
               groupAttachments={group.groupAttachments}
               initialExpansionState={toolGroupExpansionRef.current.get(groupId)}
               onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
+              labelPart={group.labelPart}
             />
           );
         })}

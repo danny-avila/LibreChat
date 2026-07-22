@@ -10,9 +10,9 @@ import type {
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
+import { cn, getToolDisplayLabel, getActivityLabelPart, getActivityLabelText } from '~/utils';
 import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
-import { cn, getToolDisplayLabel } from '~/utils';
 import { StackedToolIcons } from './ToolOutput';
 import { useMCPIconMap } from '~/hooks/MCP';
 import { AttachmentGroup } from './Parts';
@@ -86,6 +86,9 @@ interface ToolCallGroupProps {
   groupAttachments?: TAttachment[];
   initialExpansionState?: ToolCallGroupExpansionState;
   onExpansionChange?: (state: ToolCallGroupExpansionState) => void;
+  /** Activity-label part terminating this block; when present the header
+   *  shows the fast-model label (or its deterministic counts fallback). */
+  labelPart?: PartWithIndex;
 }
 
 export type ToolCallGroupExpansionState = {
@@ -102,18 +105,24 @@ export default function ToolCallGroup({
   groupAttachments,
   initialExpansionState,
   onExpansionChange,
+  labelPart,
 }: ToolCallGroupProps) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
-  const count = parts.length;
 
   const toolMetadata = useMemo(() => parts.map((p) => getToolMeta(p.part)), [parts]);
+  /** Labeled activity blocks also contain THINK parts (meta null) — those
+   *  never have output; only tool entries participate in completion. */
+  const count = useMemo(() => toolMetadata.filter(Boolean).length, [toolMetadata]);
   const allCompleted = useMemo(
-    () => toolMetadata.every((m) => m?.hasOutput === true),
+    () => toolMetadata.every((m) => m == null || m.hasOutput === true),
     [toolMetadata],
   );
+  const activityLabel = getActivityLabelPart(labelPart?.part);
+  const activityLabelText = getActivityLabelText(activityLabel);
+  const activityFailed = activityLabel?.status === 'failed' || activityLabel?.status === 'partial';
   const toolNames = useMemo(() => toolMetadata.map((m) => m?.name ?? ''), [toolMetadata]);
   const iconToolNames = useMemo(() => toolMetadata.map((m) => m?.iconName ?? ''), [toolMetadata]);
 
@@ -247,7 +256,9 @@ export default function ToolCallGroup({
     }
     return localize('com_ui_used_n_tools', { 0: String(count) });
   };
-  const groupLabel = resolveGroupLabel();
+  /** Fast-model activity label (or its counts fallback) wins over the
+   *  generic category verb when this block carries a label part. */
+  const groupLabel = activityLabelText.length > 0 ? activityLabelText : resolveGroupLabel();
   /** Single category glyph for homogeneous groups (else StackedToolIcons). */
   const CategoryIcon = allSubagents ? Users : MessageCircleQuestion;
 
@@ -295,7 +306,15 @@ export default function ToolCallGroup({
             isAnimating={!allCompleted && isSubmitting}
           />
         )}
-        <span className="tool-status-text font-medium">{groupLabel}</span>
+        <span
+          className={cn(
+            'tool-status-text font-medium',
+            activityFailed && 'text-amber-600 dark:text-amber-400',
+          )}
+          role="status"
+        >
+          {groupLabel}
+        </span>
         {/** Hide the tool-name summary for pure-category groups (subagents /
          *   questions) — every entry deduplicates to the same token, which
          *   adds noise without info. Mixed groups keep the summary. */}
