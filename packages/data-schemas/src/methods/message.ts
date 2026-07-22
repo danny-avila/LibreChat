@@ -40,7 +40,7 @@ export interface MessageMethods {
     toolCallId: string;
     output?: string;
     attachments?: unknown[];
-  }): Promise<boolean>;
+  }): Promise<{ matched: boolean; unfinished: boolean }>;
   updateMessage(
     userId: string,
     message: Partial<IMessage> & { newMessageId?: string },
@@ -279,10 +279,15 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
    * for results that settle after the turn's message was finalized (background
    * tool calls). Atomic single update so two tasks completing concurrently on
    * the same message cannot lose each other's attachments, and IDEMPOTENT
-   * (attachments dedupe by `file_id`) so it can be re-applied to heal a later
-   * full-row save that reverted the patch. Returns `false` when the message row
-   * does not exist yet (the dispatch turn has not finalized) so the caller can
-   * retry.
+   * (attachments dedupe by `file_id ?? filepath`, scoped to this tool call so
+   * sibling calls sharing a filename keep their own entries) so it can be
+   * re-applied to heal a later full-row save that reverted the patch.
+   *
+   * Returns `matched: false` when the message row does not exist yet (the
+   * dispatch turn has not finalized) and surfaces `unfinished` when the
+   * matched row is a mid-turn partial save (client disconnect) — the eventual
+   * finalize will overwrite the patch with in-memory content, so callers
+   * should keep re-applying until a finalized row is patched.
    */
   async function updateToolCallResult({
     userId,
@@ -298,7 +303,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     toolCallId: string;
     output?: string;
     attachments?: unknown[];
-  }): Promise<boolean> {
+  }): Promise<{ matched: boolean; unfinished: boolean }> {
     const stages: Record<string, unknown>[] = [];
     if (output !== undefined) {
       stages.push({
@@ -351,12 +356,21 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                 $filter: {
                   input: { $ifNull: ['$attachments', []] },
                   as: 'existing',
+                  /** Replace only THIS tool call's prior entries: sibling calls
+                   *  can legitimately share a `file_id` (the filename claim is
+                   *  per-conversation), and the client anchors attachments to
+                   *  cards by `toolCallId`. */
                   cond: {
                     $not: [
                       {
-                        $in: [
-                          { $ifNull: ['$$existing.file_id', '$$existing.filepath'] },
-                          { $literal: attachmentKeys },
+                        $and: [
+                          {
+                            $in: [
+                              { $ifNull: ['$$existing.file_id', '$$existing.filepath'] },
+                              { $literal: attachmentKeys },
+                            ],
+                          },
+                          { $eq: ['$$existing.toolCallId', toolCallId] },
                         ],
                       },
                     ],
@@ -370,12 +384,16 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       });
     }
     if (stages.length === 0) {
-      return false;
+      return { matched: false, unfinished: false };
     }
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const result = await Message.updateOne({ messageId, user: userId, conversationId }, stages);
-      return result.matchedCount > 0;
+      const result = await Message.findOneAndUpdate(
+        { messageId, user: userId, conversationId },
+        stages,
+        { new: true, projection: { unfinished: 1 } },
+      ).lean<{ unfinished?: boolean } | null>();
+      return { matched: result != null, unfinished: result?.unfinished === true };
     } catch (err) {
       logger.error('Error updating tool call result:', err);
       throw err;

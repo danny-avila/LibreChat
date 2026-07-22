@@ -35,7 +35,7 @@ describe('createBackgroundCodeResultHandler', () => {
       file: { file_id: 'f1', filename: 'plot.png', toolCallId: 'call_code' },
       finalize: undefined,
     });
-    const updateToolCallResult = jest.fn().mockResolvedValue(true);
+    const updateToolCallResult = jest.fn().mockResolvedValue({ matched: true, unfinished: false });
     const handler = createBackgroundCodeResultHandler({ req, updateToolCallResult });
 
     const result = await handler(baseParams);
@@ -71,7 +71,7 @@ describe('createBackgroundCodeResultHandler', () => {
     processCodeOutput.mockResolvedValue({ file: { file_id: 'f1' } });
     const handler = createBackgroundCodeResultHandler({
       req,
-      updateToolCallResult: jest.fn().mockResolvedValue(true),
+      updateToolCallResult: jest.fn().mockResolvedValue({ matched: true, unfinished: false }),
     });
 
     await handler({ ...baseParams, dispatchedAt: 12345 });
@@ -90,7 +90,7 @@ describe('createBackgroundCodeResultHandler', () => {
     });
     const handler = createBackgroundCodeResultHandler({
       req,
-      updateToolCallResult: jest.fn().mockResolvedValue(true),
+      updateToolCallResult: jest.fn().mockResolvedValue({ matched: true, unfinished: false }),
     });
 
     await handler(baseParams);
@@ -104,9 +104,9 @@ describe('createBackgroundCodeResultHandler', () => {
       processCodeOutput.mockResolvedValue({ file: { file_id: 'f1' } });
       const updateToolCallResult = jest
         .fn()
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(false)
-        .mockResolvedValue(true);
+        .mockResolvedValueOnce({ matched: false, unfinished: false })
+        .mockResolvedValueOnce({ matched: false, unfinished: false })
+        .mockResolvedValue({ matched: true, unfinished: false });
       const handler = createBackgroundCodeResultHandler({ req, updateToolCallResult });
 
       const promise = handler(baseParams);
@@ -121,9 +121,33 @@ describe('createBackgroundCodeResultHandler', () => {
     }
   });
 
+  it('keeps re-applying past unfinished partial rows until a finalized row is patched', async () => {
+    jest.useFakeTimers();
+    try {
+      processCodeOutput.mockResolvedValue({ file: { file_id: 'f1' } });
+      /* A disconnect mid-turn persists an unfinished partial row; the later
+       * finalize save overwrites it with the in-memory handle JSON, so a
+       * patch that settled on the partial row must not stop the loop. */
+      const updateToolCallResult = jest
+        .fn()
+        .mockResolvedValueOnce({ matched: true, unfinished: true })
+        .mockResolvedValue({ matched: true, unfinished: false });
+      const handler = createBackgroundCodeResultHandler({ req, updateToolCallResult });
+
+      const promise = handler(baseParams);
+      await jest.advanceTimersByTimeAsync(250);
+      const result = await promise;
+
+      expect(updateToolCallResult).toHaveBeenCalledTimes(2);
+      expect(result?.attachments).toHaveLength(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('still patches output when a file download fails (files are best-effort)', async () => {
     processCodeOutput.mockRejectedValue(new Error('download failed'));
-    const updateToolCallResult = jest.fn().mockResolvedValue(true);
+    const updateToolCallResult = jest.fn().mockResolvedValue({ matched: true, unfinished: false });
     const handler = createBackgroundCodeResultHandler({ req, updateToolCallResult });
 
     const result = await handler(baseParams);
@@ -135,7 +159,7 @@ describe('createBackgroundCodeResultHandler', () => {
   });
 
   it('reapply mode re-applies the row patch without reprocessing files', async () => {
-    const updateToolCallResult = jest.fn().mockResolvedValue(true);
+    const updateToolCallResult = jest.fn().mockResolvedValue({ matched: true, unfinished: false });
     const handler = createBackgroundCodeResultHandler({ req, updateToolCallResult });
 
     const result = await handler({

@@ -39,7 +39,7 @@ export interface CodeHarvestDeps {
     toolCallId: string;
     output?: string;
     attachments?: unknown[];
-  }) => Promise<boolean>;
+  }) => Promise<{ matched: boolean; unfinished: boolean }>;
   /** Host file service: downloads and persists one code output file. */
   processCodeOutput: (params: {
     req: ServerRequest;
@@ -122,7 +122,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
         output,
         attachments: knownAttachments ?? [],
       });
-      if (!reapplied) {
+      if (!reapplied.matched) {
         logger.debug(
           `[background] Re-anchor found no row for message ${messageId} (tool call ${toolCallId}).`,
         );
@@ -169,7 +169,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
 
     let patched = false;
     for (let attempt = 0; attempt <= BACKGROUND_PATCH_RETRY_DELAYS_MS.length; attempt++) {
-      patched = await updateToolCallResult({
+      const result = await updateToolCallResult({
         userId,
         messageId,
         conversationId,
@@ -177,7 +177,15 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
         output,
         attachments,
       });
-      if (patched || attempt === BACKGROUND_PATCH_RETRY_DELAYS_MS.length) {
+      patched = result.matched;
+      /** An `unfinished` match is a mid-turn partial save (client disconnect):
+       *  the eventual finalize overwrites it with in-memory content — the
+       *  handle JSON — so keep re-applying (idempotent) until a finalized row
+       *  holds the patch. */
+      if (
+        (result.matched && !result.unfinished) ||
+        attempt === BACKGROUND_PATCH_RETRY_DELAYS_MS.length
+      ) {
         break;
       }
       await sleep(BACKGROUND_PATCH_RETRY_DELAYS_MS[attempt]);
