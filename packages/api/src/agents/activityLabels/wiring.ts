@@ -175,6 +175,12 @@ export interface ActivityLabelHostDeps {
   emitLabelEvent: (index: number, part: LooseContentPart) => Promise<unknown>;
   /** Registers a fill-completion promise for bounded settle at finalization. */
   trackPendingFill: (fillDone: Promise<void>) => void;
+  /**
+   * True once the response has finalized (settle timed out). A late fill
+   * must then neither mutate persisted content nor emit chunks for a job
+   * whose runtime is gone.
+   */
+  isClosed?: () => boolean;
   resolveLLM: () => Promise<ActivityLabelLLM>;
   generateLabel?: (payload: GenerateLabelPayload) => Promise<string | null>;
   getInvokeCallbacks?: () => ActivityLabelInvokeCallbacks;
@@ -246,12 +252,20 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
           context,
           fill: async (text) => {
             try {
+              /** Finalization already passed: drop the result rather than
+               *  mutating a saved response or emitting into a closed job. */
+              if (deps.isClosed?.() === true) {
+                return;
+              }
               part.pending = false;
               if (text == null || text.length === 0) {
                 return;
               }
               part[ContentTypes.ACTIVITY_LABEL] = text;
               await claimEmit;
+              if (deps.isClosed?.() === true) {
+                return;
+              }
               await deps.emitLabelEvent(index, part);
             } finally {
               resolveFill();
