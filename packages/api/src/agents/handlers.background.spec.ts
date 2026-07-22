@@ -828,6 +828,59 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     expect(String(persistCalls[1].output)).toContain('boom');
   });
 
+  it('re-anchors reaped (timed-out) tasks with the client-recognized failure wrapper', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+    try {
+      const persistCalls: Array<Record<string, unknown>> = [];
+      const hangingTool = {
+        name: 'execute_code',
+        description: 'never settles',
+        schema: z.object({ lang: z.string(), code: z.string() }),
+        invoke: () => new Promise(() => undefined),
+      } as unknown as StructuredToolInterface;
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({ loadedTools: [hangingTool] }),
+        persistBackgroundCodeResult: async (params) => {
+          persistCalls.push(params as unknown as Record<string, unknown>);
+          return { attachments: [] };
+        },
+      });
+      const configurable = buildConfig(['execute_code']);
+
+      const dispatch = await runBatch(handler, {
+        toolCalls: [codeCall({ id: 'call_code_reap' })],
+        agentId: 'a',
+        configurable,
+        metadata: { thread_id: 'exec_convo_reap', run_id: 'msg-reap' },
+      });
+
+      /** Past the running TTL the registry reaps the never-settling task. */
+      jest.advanceTimersByTime(31 * 60 * 1000);
+
+      const poll = await runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call_poll_reap',
+            name: CHECK_BACKGROUND_TASK_NAME,
+            args: { background_task_id: JSON.parse(dispatch[0].content).background_task_id },
+          },
+        ],
+        agentId: 'a',
+        configurable,
+        metadata: { thread_id: 'exec_convo_reap', run_id: 'msg-reap-poll' },
+      });
+      await flushMicrotasks();
+
+      expect(JSON.parse(poll[0].content).status).toBe('error');
+      const reapply = persistCalls.find((call) => call.reapply === true);
+      expect(reapply).toBeDefined();
+      expect(String(reapply?.output)).toMatch(/^Error:\s*\[execute_code\]\s*tool call failed:/);
+      expect(String(reapply?.output)).toContain('timed out');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('patches the dispatch turn with the error message when a backgrounded code call fails', async () => {
     const state: CodeToolState = { calls: 0, throwError: true };
     const persistCalls: Array<Record<string, unknown>> = [];

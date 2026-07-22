@@ -283,6 +283,31 @@ describe('Code Process', () => {
 
       expect(result.file_id).toBe('existing-file-id');
     });
+
+    it('lets a newer task overwrite an OLDER task that wrote late (writer dispatch order wins)', async () => {
+      /* Old task (dispatched Jan 1) settled late and wrote at Jan 3;
+       * this task was dispatched Jan 2. Wall-clock updatedAt is newer
+       * than our dispatch, but the WRITER is older — overwrite. */
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        updatedAt: '2024-01-03T00:00:00.000Z',
+        metadata: {
+          sourceDispatchedAt: new Date('2024-01-01T00:00:00.000Z').getTime(),
+        },
+      });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const { file: result } = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-02T00:00:00.000Z').getTime(),
+      });
+
+      expect(result.file_id).toBe('existing-file-id');
+      expect(result.metadata.sourceDispatchedAt).toBe(
+        new Date('2024-01-02T00:00:00.000Z').getTime(),
+      );
+    });
   });
 
   describe('processCodeOutput', () => {
@@ -804,6 +829,7 @@ describe('Code Process', () => {
             storage_session_id: 'session-123',
             file_id: 'file-id-123',
           },
+          sourceDispatchedAt: expect.any(Number),
         });
       });
 

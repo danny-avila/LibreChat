@@ -5,19 +5,19 @@ import { useSearchResultsByTurn } from './useSearchResultsByTurn';
 import store from '~/store';
 
 /**
- * Stable identity for merging DB and live attachments: `file_id`, else
- * `filepath` (download fallbacks), else `type:toolCallId` (unkeyed tool
- * artifacts like file_search citations). Undefined = no stable identity.
+ * Stable identity for merging DB and live attachments: `file_id ?? filepath`
+ * scoped by `toolCallId` (sibling code calls can share a claimed file_id for
+ * the same filename, each anchoring its own card), else `type:toolCallId`
+ * for unkeyed tool artifacts like file_search citations. Undefined = no
+ * stable identity.
  */
 function attachmentKey(attachment: TAttachment): string | undefined {
   const { file_id, filepath } = attachment as Partial<TFile>;
-  if (file_id) {
-    return file_id;
-  }
-  if (filepath) {
-    return filepath;
-  }
   const { type, toolCallId } = attachment as { type?: string; toolCallId?: string };
+  const fileKey = file_id ?? filepath;
+  if (fileKey) {
+    return toolCallId ? `${fileKey}::${toolCallId}` : fileKey;
+  }
   if (type != null && toolCallId != null) {
     return `${type}:${toolCallId}`;
   }
@@ -53,24 +53,21 @@ export default function useAttachments({
      * resolved record into `messageAttachmentsMap`; merging here lets
      * `artifactTypeForAttachment` see the resolved text/textFormat
      * and route through the proper PanelArtifact card. */
-    const liveByFileId = new Map<string, TAttachment>();
+    const liveByKey = new Map<string, TAttachment>();
     for (const a of live) {
-      const id = (a as Partial<TFile>).file_id;
-      if (id) {
-        liveByFileId.set(id, a);
+      const key = attachmentKey(a);
+      if (key) {
+        liveByKey.set(key, a);
       }
     }
     const dbKeys = new Set<string>();
     const merged = attachments.map((db) => {
       const key = attachmentKey(db);
-      if (key) {
-        dbKeys.add(key);
-      }
-      const id = (db as Partial<TFile>).file_id;
-      if (!id) {
+      if (!key) {
         return db;
       }
-      const liveEntry = liveByFileId.get(id);
+      dbKeys.add(key);
+      const liveEntry = liveByKey.get(key);
       return liveEntry ? ({ ...db, ...liveEntry } as TAttachment) : db;
     });
     /* Live-only entries with a stable identity are kept, not discarded: a

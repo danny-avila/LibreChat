@@ -72,18 +72,29 @@ export default function useAttachmentHandler(queryClient?: QueryClient) {
         (prevMap as Record<string, TAttachment[] | undefined>)[messageId] || [];
       /* Upsert by `file_id` (falling back to `filepath` for keyed entries
        * without one, e.g. code download fallbacks a background poll
-       * re-emits) rather than always appending. The deferred-preview flow
-       * emits the same attachment twice: first with `status: 'pending'`
-       * and `text: null`, then again with `status: 'ready'` (and
-       * text/textFormat) or `'failed'` (with previewError). The second
-       * event must merge over the first in place — appending would render
-       * the artifact card twice, once stuck pending and once resolved.
-       * Attachments with neither key (lightweight types like web_search /
-       * file_search citations) keep the legacy append behavior. */
-      const upsertKey = fileId ?? (data as Partial<TFile>).filepath;
+       * re-emits), SCOPED by toolCallId — sibling code calls can share a
+       * claimed file_id for the same filename, and each card anchors its
+       * own attachment. The deferred-preview flow emits the same
+       * attachment twice: first with `status: 'pending'` and `text:
+       * null`, then again with `status: 'ready'` (and text/textFormat) or
+       * `'failed'` (with previewError). The second event must merge over
+       * the first in place — appending would render the artifact card
+       * twice, once stuck pending and once resolved. Attachments with no
+       * file key (lightweight types like web_search / file_search
+       * citations) keep the legacy append behavior. */
+      const attachmentUpsertKey = (a: TAttachment): string | undefined => {
+        const { file_id, filepath } = a as Partial<TFile>;
+        const key = file_id ?? filepath;
+        if (!key) {
+          return undefined;
+        }
+        const { toolCallId } = a as { toolCallId?: string };
+        return toolCallId ? `${key}::${toolCallId}` : key;
+      };
+      const upsertKey = attachmentUpsertKey(data);
       if (upsertKey) {
         const existingIndex = messageAttachments.findIndex(
-          (a) => ((a as Partial<TFile>).file_id ?? (a as Partial<TFile>).filepath) === upsertKey,
+          (a) => attachmentUpsertKey(a) === upsertKey,
         );
         if (existingIndex > -1) {
           const existing = messageAttachments[existingIndex] as Partial<TFile>;

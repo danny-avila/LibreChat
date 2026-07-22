@@ -423,20 +423,27 @@ const processCodeOutput = async ({
     const isUpdate = file_id !== newFileId;
 
     /**
-     * Out-of-order guard for detached (background) harvests: when the claimed
-     * row was REALLY written (createFile/updateFile — the claim itself is
-     * timestamp-neutral) after the background run settled (`freshClaimAfter`),
-     * a newer run owns this filename slot. The `(filename, conversationId)`
-     * unique index means the stale bytes have nowhere else to live, so skip
-     * this file rather than overwrite fresh content — the harvest's stdout
-     * patch still lands, only the superseded attachment is omitted.
+     * Dispatch-order stamp persisted with every write (foreground writes
+     * dispatch ≈ now): the out-of-order guard below compares WRITER dispatch
+     * order, not wall-clock write time — an older task writing late must not
+     * make a newer task's harvest look stale.
      */
-    if (
-      isUpdate &&
-      freshClaimAfter != null &&
-      claimed.updatedAt != null &&
-      new Date(claimed.updatedAt).getTime() > freshClaimAfter
-    ) {
+    const sourceDispatchedAt = freshClaimAfter ?? Date.now();
+
+    /**
+     * Out-of-order guard for detached (background) harvests: when the claimed
+     * row's last writer was dispatched AFTER this task (`freshClaimAfter` =
+     * this task's dispatch time), a newer run owns this filename slot. The
+     * `(filename, conversationId)` unique index means the stale bytes have
+     * nowhere else to live, so skip this file rather than overwrite fresh
+     * content — the harvest's stdout patch still lands, only the superseded
+     * attachment is omitted. Falls back to `updatedAt` for rows written
+     * before the stamp existed (the claim itself is timestamp-neutral).
+     */
+    const lastWriterDispatchedAt =
+      claimed.metadata?.sourceDispatchedAt ??
+      (claimed.updatedAt != null ? new Date(claimed.updatedAt).getTime() : null);
+    if (isUpdate && freshClaimAfter != null && lastWriterDispatchedAt > freshClaimAfter) {
       logger.warn(
         `[processCodeOutput] Skipping stale background output "${safeName}" (${file_id}): a newer run owns this filename`,
       );
@@ -485,7 +492,7 @@ const processCodeOutput = async ({
         updatedAt: formattedDate,
         source: appConfig.fileStrategy,
         context: FileContext.execute_code,
-        metadata: { codeEnvRef },
+        metadata: { codeEnvRef, sourceDispatchedAt },
         ...(await getRetentionExpiry(req)),
       };
       await createFile(file, true);
@@ -584,7 +591,7 @@ const processCodeOutput = async ({
       tenantId: req.user.tenantId,
       bytes: buffer.length,
       updatedAt: formattedDate,
-      metadata: { codeEnvRef },
+      metadata: { codeEnvRef, sourceDispatchedAt },
       source: appConfig.fileStrategy,
       context: FileContext.execute_code,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,

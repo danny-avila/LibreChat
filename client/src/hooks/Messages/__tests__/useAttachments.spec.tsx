@@ -136,6 +136,19 @@ describe('useAttachments', () => {
     expect((result.current.attachments[1] as AttachmentFixture).file_id).toBe('fid-B');
   });
 
+  it('keeps sibling tool calls’ live attachments when file ids repeat across calls', () => {
+    /* Two background code calls regenerated the same filename — same
+     * claimed file_id, different toolCallId. Each card anchors its own
+     * attachment, so the second must not displace the first. */
+    const db = makeAttachment({ file_id: 'shared' });
+    const sibling = { ...makeAttachment({ file_id: 'shared' }), toolCallId: 'tc-2' };
+    const { result } = setup({
+      attachments: [db],
+      liveMap: { [messageId]: [sibling] },
+    });
+    expect(result.current.attachments).toHaveLength(2);
+  });
+
   it('dedupes unkeyed live entries against DB copies by type + toolCallId', () => {
     const citation = {
       type: 'file_search',

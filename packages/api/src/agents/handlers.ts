@@ -3960,14 +3960,23 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       }
                     }
                     if (persistBackgroundCodeResult && delivery.messageId) {
+                      /** Error tasks carry their message in `error`, not
+                       *  `result`; reaped (timed-out) tasks store it raw, so
+                       *  wrap here — `toCodeToolFailure` is a no-op for
+                       *  already-wrapped detached failures. */
+                      const reapplyOutput =
+                        delivery.status === 'error'
+                          ? toCodeToolFailure(
+                              delivery.toolName,
+                              delivery.error ?? delivery.result ?? 'Background task failed',
+                            )
+                          : delivery.result;
                       void persistBackgroundCodeResult({
                         toolName: delivery.toolName,
                         toolCallId: delivery.toolCallId,
                         messageId: delivery.messageId,
                         conversationId: backgroundConversationId,
-                        /** Error tasks carry their message in `error`, not
-                         *  `result`; both re-anchor the same patched part. */
-                        output: delivery.result ?? delivery.error,
+                        output: reapplyOutput,
                         attachments: delivery.attachments,
                         reapply: true,
                       }).catch((reapplyError) => {
