@@ -128,6 +128,12 @@ export default function Search() {
   const itemsRef = useRef<TMessage[]>(messages);
   itemsRef.current = messages;
 
+  /** Each page-state is drained at most once. A failed request leaves the page
+   *  count unchanged, so the empty-page drain below can't re-fire and hammer an
+   *  endpoint that is persistently failing (401/500/offline) — the error
+   *  surfaces instead. */
+  const drainedPageCountRef = useRef(-1);
+
   const listRef = useRef<List>(null);
   const {
     ref: listContainerRef,
@@ -159,6 +165,9 @@ export default function Search() {
    *  so the List keeps its old scrollTop — drop measured heights AND scroll back
    *  to the top, or the next search can open mid-list and hide the top matches. */
   useEffect(() => {
+    /** A new query restarts paging at page 1, so the empty-page drain must not
+     *  inherit the previous search's marker and skip its first drain. */
+    drainedPageCountRef.current = -1;
     const frameId = requestAnimationFrame(() => {
       recompute(true);
       listRef.current?.scrollToPosition(0);
@@ -220,23 +229,38 @@ export default function Search() {
    * the search would settle on "nothing found" with results still behind it.
    * Follow it here instead.
    */
+  const pageCount = searchMessages?.pages.length ?? 0;
+  /** Keyed on the LAST page, not the aggregate: a page can come back empty after
+   *  results are already rendered, and then the total stays nonzero while the
+   *  row count is unchanged, so nothing re-fires `handleRowsRendered`. */
+  const lastPageEmpty =
+    pageCount > 0 && (searchMessages?.pages[pageCount - 1]?.messages?.length ?? 0) === 0;
   useEffect(() => {
-    if (!searchQuery || showingStale || !hasNextPage || isFetchingNextPage) {
+    if (!searchQuery || showingStale || !hasNextPage || isFetchingNextPage || isError) {
       return;
     }
-    if (messages.length === 0) {
-      /**
-       * Deliberately NOT the throttled fetch. That one debounces bursts of
-       * `onRowsRendered` and is `trailing: false`, so a sub-500ms empty page
-       * would land inside its cooldown and be dropped — and with `messages`
-       * still empty and `hasNextPage` still set, nothing would change to
-       * re-trigger this effect, leaving the search stuck on the spinner. This
-       * drain is already self-limiting: `isFetchingNextPage` gates it to one
-       * request at a time, and it stops as soon as a row arrives.
-       */
-      fetchNextPage();
+    if (!lastPageEmpty || drainedPageCountRef.current === pageCount) {
+      return;
     }
-  }, [searchQuery, showingStale, hasNextPage, isFetchingNextPage, messages.length, fetchNextPage]);
+    drainedPageCountRef.current = pageCount;
+    /**
+     * Deliberately NOT the throttled fetch. That one debounces bursts of
+     * `onRowsRendered` and is `trailing: false`, so a sub-500ms empty page would
+     * land inside its cooldown and be dropped, leaving the drain stuck. This
+     * walk is already self-limiting: `isFetchingNextPage` gates it to one
+     * request at a time and it stops as soon as a page brings rows.
+     */
+    fetchNextPage();
+  }, [
+    searchQuery,
+    showingStale,
+    hasNextPage,
+    isFetchingNextPage,
+    isError,
+    lastPageEmpty,
+    pageCount,
+    fetchNextPage,
+  ]);
 
   const handleRowsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
