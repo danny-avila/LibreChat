@@ -58,7 +58,6 @@ export type ScheduleMethods = {
   advanceSchedule: (id: string, nextRunAt: Date | null) => Promise<void>;
   disableSchedule: (id: string, reason: ScheduleDisabledReason) => Promise<void>;
   insertScheduleRun: (data: Partial<IScheduleRun>) => Promise<IScheduleRun | null>;
-  markRunPostAttempted: (scheduleId: string, scheduledFor: Date) => Promise<void>;
   setRunFireDetails: (
     scheduleId: string,
     scheduledFor: Date,
@@ -417,11 +416,6 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     }
   }
 
-  /** Marks that the loopback fire POST has been attempted for this occurrence. */
-  async function markRunPostAttempted(scheduleId: string, scheduledFor: Date): Promise<void> {
-    await ScheduleRun().updateOne({ scheduleId, scheduledFor }, { $set: { postAttempted: true } });
-  }
-
   async function setRunFireDetails(
     scheduleId: string,
     scheduledFor: Date,
@@ -525,7 +519,6 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     advanceSchedule,
     disableSchedule,
     insertScheduleRun,
-    markRunPostAttempted,
     setRunFireDetails,
     hasActiveRun,
     countActiveRuns,

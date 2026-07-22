@@ -481,16 +481,29 @@ router.post(
 router.use('/', v1);
 
 const chatRouter = express.Router();
+// Verify the scheduled-fire token identity as EARLY as possible — right after the
+// global auth middleware, before configMiddleware, the interactive limiters, and
+// the slower chat chain can outlast the short-lived fire token. Everything
+// downstream (limiter exemption, the controller) reads this captured flag instead
+// of re-verifying a token that may have expired in-flight, which would otherwise
+// throttle/limit a legitimate fire and record schedule errors toward auto-disable.
+chatRouter.use((req, _res, next) => {
+  req._isScheduledFire = isScheduleFireRequest(req);
+  next();
+});
 chatRouter.use(configMiddleware);
 
 /**
  * Scheduled fires are exempt from interactive message limiters (the token's
  * scope claim is signature-verified): the scheduler's own caps govern them,
  * and stacking both throttles would record legitimate fires as errors that
- * walk schedules toward auto-disable.
+ * walk schedules toward auto-disable. Reads the flag captured above so a token
+ * that expired during config/middleware still exempts a valid fire.
  */
 const skipScheduledFires = (limiter) => (req, res, next) =>
-  isScheduleFireRequest(req) ? next() : limiter(req, res, next);
+  (typeof req._isScheduledFire === 'boolean' ? req._isScheduledFire : isScheduleFireRequest(req))
+    ? next()
+    : limiter(req, res, next);
 
 if (isEnabled(LIMIT_MESSAGE_IP)) {
   chatRouter.use(skipScheduledFires(messageIpLimiter));

@@ -59,15 +59,6 @@ const scheduleRunSchema: Schema<IScheduleRunDocument> = new Schema(
     bookkept: {
       type: Boolean,
     },
-    /**
-     * True once the loopback fire POST has been attempted. Distinguishes a
-     * pre-dispatch crash (never generated, safe to reap at the orphan cutoff) from
-     * an ambiguous accept whose generation may still be running (wait the longer
-     * abandonment window). Only meaningful on a conversationId-less `started` run.
-     */
-    postAttempted: {
-      type: Boolean,
-    },
   },
   {
     timestamps: true,

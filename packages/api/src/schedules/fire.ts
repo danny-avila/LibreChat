@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import type { ScheduleEngineDeps, ScheduleLimits, FireResult, FireableSchedule } from './types';
@@ -32,6 +33,7 @@ async function postChatMessage(
   userId: string,
   scheduledFor: Date,
   files: Awaited<ReturnType<ScheduleEngineDeps['resolveFiles']>>,
+  conversationId: string,
 ): Promise<{ conversationId: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FIRE_REQUEST_TIMEOUT_MS);
@@ -58,6 +60,11 @@ async function postChatMessage(
         timezone: schedule.timezone,
         scheduleId: schedule.id,
         scheduledFor: scheduledFor.toISOString(),
+        // A durable, pre-generated new-conversation id (kept isNewConvo so the
+        // chat still auto-titles): the run row records it BEFORE the POST, so even
+        // if the post-accept detail write fails the reconciler can still locate the
+        // conversation's job by this id instead of mislabeling the run an orphan.
+        newConversationId: conversationId,
         clientRequestId: buildFireClientRequestId(schedule.id, scheduledFor),
         ...(files.length > 0 ? { files } : {}),
       }),
@@ -202,9 +209,15 @@ export async function fireSchedule(
       (id) => !files.some((file) => file.file_id === id),
     );
 
+    // Pre-generate the conversation id and record it on the run row up front. The
+    // loopback POST reuses it (streamId === conversationId), so reconciliation can
+    // ALWAYS locate this occurrence's job — even if the post-accept detail write
+    // fails — instead of mislabeling an accepted (or preserved) run as an orphan.
+    const conversationId = randomUUID();
     const run = await methods.insertScheduleRun({
       ...baseRun,
       status: 'started',
+      conversationId,
       firedAt: new Date(),
     });
     if (run == null) {
@@ -221,22 +234,19 @@ export async function fireSchedule(
     const active = await deps.countActiveRunsGlobal();
     if (active > ownerLimits.fireConcurrency) {
       await methods.deleteScheduleRun(schedule.id, scheduledFor);
-      // Do NOT release the lease: keep the claim's lease as a backoff so the
-      // nextRunAt-sorted claimer doesn't immediately re-pick this capacity-blocked
-      // row and starve other due schedules (including ones whose owners could
-      // fire). nextRunAt is untouched, so the occurrence retries once the lease
-      // expires and capacity has had a chance to free up.
+      // Automatic claims keep the claim's lease as a backoff so the nextRunAt-sorted
+      // claimer doesn't immediately re-pick this row and starve others; nextRunAt is
+      // untouched, so the occurrence retries once the lease expires. A manual run-now
+      // MUST release its lease, or repeated Run-now clicks hit a misleading "already
+      // in progress" 409 for the full manual-lease TTL even after capacity frees.
+      if (options?.manual) {
+        await methods.releaseLease(schedule.id);
+      }
       return { fired: false, skipped: 'capacity' as const };
     }
 
-    // Mark the POST as attempted just before sending it: a crash BEFORE this point
-    // left a reservation that never generated (reconcile reaps it at the orphan
-    // cutoff), whereas one after may be an accepted-but-lost generation (reconcile
-    // waits the longer abandonment window). Distinguishes the two on the run row.
-    await methods.markRunPostAttempted(schedule.id, scheduledFor);
-    let conversationId: string;
     try {
-      ({ conversationId } = await postChatMessage(deps, schedule, user.id, scheduledFor, files));
+      await postChatMessage(deps, schedule, user.id, scheduledFor, files, conversationId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const ambiguous = error instanceof ScheduleFireError && error.ambiguous;

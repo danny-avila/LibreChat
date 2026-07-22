@@ -63,16 +63,20 @@ function isRefillEligible(record) {
   if (!(typeof record.refillAmount === 'number' && record.refillAmount > 0)) {
     return false;
   }
-  if (record.refillIntervalValue == null || record.refillIntervalUnit == null) {
-    return false;
-  }
   const lastRefillDate = new Date(record.lastRefill ?? 0);
   if (Number.isNaN(lastRefillDate.getTime())) {
     return true;
   }
+  // Mirror checkBalanceRecord's fallbacks exactly (interval 0 / 'days' when a
+  // partially-synced record is missing them) so we never pre-skip a record the
+  // interactive chat balance check would have refilled.
   return (
     new Date() >=
-    getRefillEligibilityDate(lastRefillDate, record.refillIntervalValue, record.refillIntervalUnit)
+    getRefillEligibilityDate(
+      lastRefillDate,
+      record.refillIntervalValue ?? 0,
+      record.refillIntervalUnit ?? 'days',
+    )
   );
 }
 

@@ -270,7 +270,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   // Generate conversationId upfront if not provided - streamId === conversationId always
   // Treat "new" as a placeholder that needs a real UUID (frontend may send "new" for new convos)
   const isNewConvo = !reqConversationId || reqConversationId === 'new';
-  const conversationId = isNewConvo ? crypto.randomUUID() : reqConversationId;
+  // A verified scheduled fire may supply its own new-conversation id so its run row
+  // can record the id BEFORE the request runs (making the occurrence's job findable
+  // by reconciliation even if the post-accept detail write fails). Gated on the fire
+  // flag so an ordinary chat can't pin an arbitrary conversation id.
+  const scheduledNewConversationId =
+    req._isScheduledFire && typeof req.body?.newConversationId === 'string'
+      ? req.body.newConversationId
+      : null;
+  const conversationId = isNewConvo
+    ? (scheduledNewConversationId ?? crypto.randomUUID())
+    : reqConversationId;
   const streamId = conversationId;
   req.body.conversationId = conversationId;
 

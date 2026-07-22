@@ -98,19 +98,13 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             await deps.clearReconciledJob(run.conversationId as string);
             continue;
           }
-          // A `started` run whose job is gone (jobStatus null) is an orphan. Use the
-          // 30-min cutoff when we can be sure it isn't a live long-running fire: it
-          // recorded a conversationId (so getJobStatus already liveness-checked it),
-          // OR it never attempted the loopback POST (a pre-dispatch crash that never
-          // generated). Only a conversationId-less run whose POST WAS attempted might
-          // be an accepted-but-lost generation whose scheduleId-matched completion
-          // hook is still pending — wait the far longer abandonment window for it.
-          if (run.status === 'started' && jobStatus == null) {
-            const mayBeLiveGeneration = !run.conversationId && run.postAttempted === true;
-            const cutoff = mayBeLiveGeneration ? ABANDONED_PAUSE_AGE_MS : ORPHAN_RUN_AGE_MS;
-            if (ageMs > cutoff) {
-              await finalize('interrupted');
-            }
+          // A `started` run whose job is gone (jobStatus null) is an orphan. Every
+          // run records its conversationId up front (fire.ts pre-generates it), so
+          // getJobStatus above already liveness-checked it: a live long-running fire
+          // reads as `running` and is left alone; only one whose job is genuinely
+          // gone reaches here, so the standard orphan cutoff applies.
+          if (run.status === 'started' && jobStatus == null && ageMs > ORPHAN_RUN_AGE_MS) {
+            await finalize('interrupted');
             continue;
           }
           if (

@@ -287,12 +287,19 @@ export class InMemoryJobStore implements IJobStore {
         // deleting the job would silently drop them otherwise.
         this.parkQueuedSteers(streamId, job, now);
         job.status = 'aborted';
-        job.completedAt = now;
         job.error = 'Approval expired before a decision was made';
         delete job.pendingAction;
         delete job.pendingActionId;
-        if (this.ttlAfterComplete === 0) {
-          toDelete.push(streamId);
+        if (job.scheduleId) {
+          // Scheduled fire: retain the aborted job WITHOUT completedAt so the
+          // schedules reconciler can observe it and settle the requires_action run
+          // promptly (it deletes the job afterward), instead of the run waiting out
+          // the 25-hour abandonment window once this terminal job is reaped here.
+        } else {
+          job.completedAt = now;
+          if (this.ttlAfterComplete === 0) {
+            toDelete.push(streamId);
+          }
         }
       } else if (this.staleJobTimeout > 0 && job.status === 'running') {
         // Failsafe: reap jobs stuck in "running" with no generation activity for
