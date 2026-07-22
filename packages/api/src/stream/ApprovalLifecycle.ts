@@ -112,13 +112,22 @@ export class ApprovalLifecycle {
    * `expectedActionId` for the same stale-decision protection as `resolve`.
    */
   async expire(streamId: string, expectedActionId?: string): Promise<boolean> {
+    // A scheduled fire's expired approval must be RETAINED so the schedules
+    // reconciler can read `jobStatus === 'aborted'` and settle its `requires_action`
+    // run within ~2 min. Omitting completedAt is the cross-store preserve signal
+    // (Redis keeps it on the running TTL; the in-memory finished-job sweep keys on
+    // completedAt), so it isn't reaped before reconciliation — unlike a normal
+    // expired approval, which sets completedAt so terminal-cleanup can reclaim it.
+    const job = await this.store.getJob(streamId).catch(() => null);
+    const preserveForSchedule = job?.scheduleId != null;
     const ok = await this.store.transitionStatus(streamId, {
       from: 'requires_action',
       to: 'aborted',
       clear: ['pendingAction', 'pendingActionId'],
-      // completedAt lets the stores' terminal-cleanup reclaim the job; without
-      // it an expired approval lingers in the in-memory map indefinitely.
-      patch: { error: 'Approval expired before a decision was made', completedAt: Date.now() },
+      patch: {
+        error: 'Approval expired before a decision was made',
+        ...(preserveForSchedule ? {} : { completedAt: Date.now() }),
+      },
       expectActionId: expectedActionId,
     });
     if (ok) {

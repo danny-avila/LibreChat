@@ -21,7 +21,6 @@ const COUNTED_FOR_WINDOW = 64;
 export interface ClaimDueScheduleParams {
   instanceId: string;
   leaseMs: number;
-  now?: Date;
 }
 
 export interface RecordRunOutcomeParams {
@@ -172,20 +171,32 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
    * due schedule regardless of replica count, with or without Redis.
    */
   async function claimDueSchedule(params: ClaimDueScheduleParams): Promise<ISchedule | null> {
-    const now = params.now ?? new Date();
+    // Compare due-ness and lease expiry against MongoDB's own clock (`$$NOW`), not
+    // each worker's process clock: all replicas race on the persisted nextRunAt /
+    // leaseUntil, so a skewed worker must not claim future occurrences early or set
+    // a mis-timed lease. `nextRunAt` existence is gated by the plain filter (a bare
+    // $expr $lte would match a missing field as null); a missing leaseUntil is
+    // treated as epoch so it's always claimable.
     return Schedule()
       .findOneAndUpdate(
         {
           enabled: true,
-          nextRunAt: { $lte: now },
-          $or: [{ leaseUntil: { $exists: false } }, { leaseUntil: { $lt: now } }],
-        },
-        {
-          $set: {
-            leaseUntil: new Date(now.getTime() + params.leaseMs),
-            leaseBy: params.instanceId,
+          nextRunAt: { $exists: true, $ne: null },
+          $expr: {
+            $and: [
+              { $lte: ['$nextRunAt', '$$NOW'] },
+              { $lt: [{ $ifNull: ['$leaseUntil', new Date(0)] }, '$$NOW'] },
+            ],
           },
         },
+        [
+          {
+            $set: {
+              leaseUntil: { $add: ['$$NOW', params.leaseMs] },
+              leaseBy: params.instanceId,
+            },
+          },
+        ],
         { new: true, sort: { nextRunAt: 1 } },
       )
       .lean<ISchedule>();
