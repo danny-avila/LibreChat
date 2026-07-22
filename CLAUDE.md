@@ -1,5 +1,70 @@
 # LibreChat
 
+## Deployment (Render)
+
+This fork runs as a production instance on Render — treat work here as
+"operate my instance," not "contribute a PR upstream." Auto-deploys from
+`main` on every push.
+
+### Services (all Virginia region — must stay same region for private networking)
+
+| Service | Type | Purpose |
+|---|---|---|
+| `LibreChat` (main web) | Web Service | The app — https://librechat-i0xh.onrender.com |
+| `LibreChat Official` | PostgreSQL (Basic-256mb) | pgvector store for `rag_api` only — **not** chat storage |
+| `librechat-rag-api` | Private Service (`registry.librechat.ai/danny-avila/librechat-rag-api-dev-lite:latest`) | Document embeddings/retrieval for file uploads |
+| `librechat-meilisearch` | Private Service (`getmeili/meilisearch:v1.35.1`) | In-app conversation search |
+
+Chat/message storage is **MongoDB** (`MONGO_URI`), unrelated to the Postgres above.
+
+### Config loading — the one non-obvious gotcha
+
+Upstream's `.dockerignore` excludes `librechat*` by default (it assumes you
+bind-mount the file via local docker-compose). **This fork removed that
+exclusion** so `librechat.yaml` bakes into the image normally — changing
+config is just edit → commit → push to `main`. Do not reintroduce the
+`librechat*` dockerignore line or fall back to a Render "Secret File"; that
+was tried and deliberately undone because it required manually re-pasting
+the file into the dashboard on every change.
+
+`CONFIG_PATH` should stay **unset** on the main service — the default path
+resolution (relative to `__dirname`, not cwd) correctly finds
+`/app/librechat.yaml` in the built image on its own.
+
+### Config schema notes (post upstream-merge, 2026-07)
+
+- `fileStrategies` (plural) is the correct top-level key for per-file-type
+  storage backends — `fileStrategy` (singular) is a different field
+  expecting a single string enum, not an object.
+- Built-in endpoints (e.g. `anthropic`) want `models:` as a flat array of
+  strings. Only `custom` endpoints use the `{default: [...], fetch: bool}`
+  object form.
+- `assistants.capabilities` valid values are
+  `code_interpreter | image_vision | retrieval | actions | tools` — no
+  `file_search` (that one's valid under `agents.capabilities` instead).
+- A fully-commented-out top-level `mcpServers:` block parses as YAML
+  `null`, which fails schema validation — use `mcpServers: {}` if nothing's
+  configured.
+
+### Known env var name mismatches
+
+Render env var names don't always match the `${VAR}` reference in the
+yaml — check both sides whenever adding a new custom endpoint:
+- Google Gemini's key is `GOOGLE_KEY` on Render, referenced as
+  `${GOOGLE_KEY}` in the yaml (not the more obvious `GOOGLE_API_KEY`).
+- `RAG_API_URL` and `MEILI_HOST` must include the `http://` scheme —
+  without it, `fetch()` throws immediately and gets logged as "not running
+  or not reachable" even when the service is healthy.
+
+### OpenRouter
+
+`OPENROUTER_KEY` is set, and `fetch: true` on the OpenRouter custom
+endpoint means it pulls OpenRouter's full live catalog at runtime — the
+`models.default` list and `modelSpecs` presets are just pinned/labeled
+shortcuts, not the complete available set.
+
+---
+
 ## Project Overview
 
 LibreChat is a monorepo with the following key workspaces:
