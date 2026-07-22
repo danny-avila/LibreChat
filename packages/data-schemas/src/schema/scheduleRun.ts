@@ -66,6 +66,14 @@ const scheduleRunSchema: Schema<IScheduleRunDocument> = new Schema(
 );
 
 scheduleRunSchema.index({ scheduleId: 1, scheduledFor: 1 }, { unique: true });
+// At most ONE active (`started`) run per schedule, enforced by the DB rather than
+// a read-then-write check. Makes both the fire-path overlap skip and the HITL
+// resume promotion atomic: a second occurrence inserting/promoting to `started`
+// while one is already active fails with a duplicate-key error instead of racing.
+scheduleRunSchema.index(
+  { scheduleId: 1 },
+  { unique: true, partialFilterExpression: { status: 'started' } },
+);
 scheduleRunSchema.index({ scheduleId: 1, firedAt: -1 });
 // Reconciliation sweeps by status; keeps `started` (capacity) fetch cheap and
 // prevents long-lived `requires_action` rows from starving the scan.

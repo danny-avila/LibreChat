@@ -496,10 +496,12 @@ if (cluster.isMaster) {
         await checkMigrations();
         // Arm the scheduler in each worker: the Mongo lease-claim CAS guarantees
         // exactly one worker fires each due schedule, so multi-worker arming is safe.
-        // The job store is only SHARED across these workers when Redis-backed; with
-        // private per-worker in-memory stores a worker can't observe a peer's jobs,
-        // so mark it unshared to skip job-status reconciliation it would misread.
-        await initializeScheduleEngine({ isJobStoreShared: isEnabled(process.env.USE_REDIS) });
+        // Pass whether this is a clustered deployment (USE_REDIS is the proxy). The
+        // service combines it with the LIVE stream backend (GenerationJobManager.isRedis)
+        // to decide isJobStoreShared: a clustered deployment whose stream store is
+        // in-memory (USE_REDIS_STREAMS off / fell back) is NOT shared, so cross-worker
+        // job-status reconciliation is skipped instead of misreading a peer's live run.
+        await initializeScheduleEngine({ clustered: isEnabled(process.env.USE_REDIS) });
       } catch (initErr) {
         logger.error(`Worker ${process.pid} post-listen initialization failed:`, initErr);
         process.exit(1);

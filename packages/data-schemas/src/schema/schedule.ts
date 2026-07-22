@@ -87,6 +87,36 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
     leaseBy: {
       type: String,
     },
+    /**
+     * Per-claim fencing token. Set fresh on every lease acquisition (engine or
+     * manual) and rotated on every owner edit, so a stale/expired-lease worker's
+     * writes (disable/advance/release) and its pre-dispatch revalidation no-op
+     * once the schedule was re-claimed, edited, re-enabled, or deleted.
+     */
+    claimToken: {
+      type: String,
+    },
+    /**
+     * Soft-delete marker. A delete disables + marks the schedule `deleting` (so
+     * it is hidden from the owner and never re-claimed) and aborts in-flight
+     * runs; the reconciler erases it only once no run is still active, so a live
+     * loopback generation's evidence is never destroyed out from under it.
+     * Defaults false so the per-user `slot` partial unique index covers it.
+     */
+    deleting: {
+      type: Boolean,
+      default: false,
+    },
+    /**
+     * Per-user occupancy slot in [0, maxPerUser). Assigned atomically via the
+     * partial unique index below so concurrent creates cannot exceed the cap: two
+     * racers claiming the same slot collide on the index and one retries the next
+     * free slot. Freed (excluded from the index) when the schedule is `deleting`.
+     */
+    slot: {
+      type: Number,
+      min: 0,
+    },
     lastRun: {
       type: {
         conversationId: { type: String },
@@ -130,5 +160,13 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
 
 scheduleSchema.index({ id: 1, tenantId: 1 }, { unique: true });
 scheduleSchema.index({ enabled: 1, nextRunAt: 1 });
+// Atomic per-user create cap: a live (non-deleting) schedule occupies a unique
+// slot, so concurrent creates cannot collectively exceed maxPerUser — a second
+// claimant of the same slot collides and retries the next free one. Scoped to
+// slot-bearing docs so the (non-user-facing) slotless create path is unaffected.
+scheduleSchema.index(
+  { user: 1, slot: 1 },
+  { unique: true, partialFilterExpression: { deleting: false, slot: { $exists: true } } },
+);
 
 export default scheduleSchema;

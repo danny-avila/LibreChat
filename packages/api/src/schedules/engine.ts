@@ -1,5 +1,6 @@
 import { logger, runAsSystem } from '@librechat/data-schemas';
-import type { ScheduleEngineDeps } from './types';
+import type { IScheduleRun } from '@librechat/data-schemas';
+import type { ScheduleEngineDeps, JobState } from './types';
 import { registerShutdownTask } from '~/app/shutdown';
 import { computeNextRunAt } from './cadence';
 import { fireSchedule } from './fire';
@@ -14,6 +15,21 @@ const RECONCILE_BATCH = 100;
 // Occurrences due more than this long ago (server downtime / paused engine) are
 // skipped forward instead of fired, so a restart doesn't burst stale chats.
 const MISFIRE_GRACE_MS = 15 * 60_000;
+
+/**
+ * Whether the job currently at a run's conversationId is THIS occurrence's
+ * generation. A replacement turn reuses the conversationId but strips the
+ * scheduleId/scheduledFor metadata, so an identity mismatch means the original
+ * job is gone and its status must not be attributed to (or its hash deleted for)
+ * this scheduled run.
+ */
+function jobIdentityMatches(jobState: JobState | null, run: IScheduleRun): boolean {
+  if (jobState == null || jobState.scheduleId !== run.scheduleId || jobState.scheduledFor == null) {
+    return false;
+  }
+  const jobFor = new Date(jobState.scheduledFor).getTime();
+  return jobFor === run.scheduledFor.getTime();
+}
 
 export type ScheduleEngine = {
   stop: () => void;
@@ -51,7 +67,13 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
       );
       await runAsSystem(async () => {
         for (const run of runs) {
-          const jobStatus = run.conversationId ? await deps.getJobStatus(run.conversationId) : null;
+          // Identity-fence the job lookup: a replacement user turn reuses this
+          // conversationId but sheds the scheduleId/scheduledFor metadata. Only
+          // trust the job's status when it still carries THIS occurrence's identity;
+          // otherwise treat the job as gone (null) so a replacement generation's
+          // status can never finalize — or its hash be deleted for — this run.
+          const jobState = run.conversationId ? await deps.getJobStatus(run.conversationId) : null;
+          const jobStatus = jobIdentityMatches(jobState, run) ? jobState!.status : null;
           const ageMs = Date.now() - (run.firedAt?.getTime() ?? 0);
           // Resolve the run owner's limits so crash-reconciled auto-disable uses
           // the same per-principal threshold as an inline completion. Must run in
@@ -92,17 +114,26 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             // Finalize either a paused OR a still-started run as success so it
             // stops consuming capacity / blocking overlap.
             await finalize('success');
-            await deps.clearReconciledJob(run.conversationId as string);
+            await deps.clearReconciledJob(run.conversationId as string, {
+              scheduleId: run.scheduleId,
+              scheduledFor: run.scheduledFor,
+            });
             continue;
           }
           if (jobStatus === 'error') {
             await finalize('error', 'Run ended in error');
-            await deps.clearReconciledJob(run.conversationId as string);
+            await deps.clearReconciledJob(run.conversationId as string, {
+              scheduleId: run.scheduleId,
+              scheduledFor: run.scheduledFor,
+            });
             continue;
           }
           if (jobStatus === 'aborted') {
             await finalize('interrupted');
-            await deps.clearReconciledJob(run.conversationId as string);
+            await deps.clearReconciledJob(run.conversationId as string, {
+              scheduleId: run.scheduleId,
+              scheduledFor: run.scheduledFor,
+            });
             continue;
           }
           // A `started` run whose job is gone (jobStatus null) is an orphan. Every
@@ -154,6 +185,18 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             error: run.error,
             autoDisableAfterFailures: runLimits.autoDisableAfterFailures,
           });
+        }
+      });
+
+      // Erase soft-deleted schedules once their active runs have drained. Delete
+      // disabled + marked them `deleting` and aborted in-flight jobs; the run
+      // reconciliation above finalizes those runs, so here we erase only the
+      // schedules with no run still active — their evidence is preserved until
+      // settled. eraseScheduleIfDrained is idempotent, so concurrent workers are safe.
+      await runAsSystem(async () => {
+        const deleting = await deps.methods.getDeletingSchedules(RECONCILE_BATCH);
+        for (const schedule of deleting) {
+          await deps.methods.eraseScheduleIfDrained(schedule.id).catch(() => undefined);
         }
       });
     } catch (error) {
@@ -208,11 +251,11 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           });
           if (next == null) {
             await deps.methods
-              .disableSchedule(schedule.id, 'invalid_schedule')
+              .disableSchedule(schedule.id, 'invalid_schedule', schedule.claimToken)
               .catch(() => undefined);
           }
           await deps.methods
-            .advanceSchedule(schedule.id, next, scheduledFor)
+            .advanceSchedule(schedule.id, next, scheduledFor, schedule.claimToken)
             .catch(() => undefined);
           logger.info(`[schedules] skipped stale occurrence for ${schedule.id} (misfire grace)`);
           return false;
@@ -239,11 +282,11 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           });
           if (next == null) {
             await deps.methods
-              .disableSchedule(schedule.id, 'invalid_schedule')
+              .disableSchedule(schedule.id, 'invalid_schedule', schedule.claimToken)
               .catch(() => undefined);
           }
           await deps.methods
-            .advanceSchedule(schedule.id, next, scheduledFor)
+            .advanceSchedule(schedule.id, next, scheduledFor, schedule.claimToken)
             .catch(() => undefined);
         }
         return false;

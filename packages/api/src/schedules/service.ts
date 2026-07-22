@@ -8,7 +8,9 @@ import type {
   ScheduleUserContext,
   FireableSchedule,
   FireResult,
+  JobIdentity,
 } from './types';
+import type { SerializableJobData } from '../stream/interfaces/IJobStore';
 import type { BalanceUpdateFields } from '../types/balance';
 import type { GetAppConfigOptions } from '../app/service';
 import { generateShortLivedToken, SCHEDULE_FIRE_SCOPE } from '../crypto/jwt';
@@ -22,6 +24,24 @@ import { startScheduleEngine } from './engine';
 
 /** Recordable terminal/paused run outcome, as accepted by `recordRunOutcome`. */
 type ScheduleRunOutcomeStatus = Parameters<ScheduleMethods['recordRunOutcome']>[0]['status'];
+
+/**
+ * Outcome of atomically reserving the active slot for a HITL resume.
+ * - `reserved`: this caller promoted the run to `started` and OWNS the slot (it
+ *   must release on a subsequent failure/lost approval claim).
+ * - `noop`: proceed, but this caller did not promote (row already active/terminal),
+ *   so it must NOT release — a concurrent same-pause resume owns it.
+ * - `overlap` / `capacity`: defer the resume (approval left unconsumed).
+ */
+export type ResumeReservation = 'reserved' | 'noop' | 'overlap' | 'capacity';
+
+/** Whether a persisted job still carries a given scheduled occurrence's identity. */
+function jobMatchesIdentity(job: SerializableJobData, identity: JobIdentity): boolean {
+  if (job.scheduleId !== identity.scheduleId || job.scheduledFor == null) {
+    return false;
+  }
+  return new Date(job.scheduledFor).getTime() === new Date(identity.scheduledFor).getTime();
+}
 
 export interface RecordScheduleOutcomeInput {
   scheduleId?: string;
@@ -76,10 +96,24 @@ export interface SchedulesService {
     limits: ScheduleLimits,
   ) => Promise<FireResult | null>;
   recordScheduleOutcome: (input: RecordScheduleOutcomeInput) => Promise<boolean>;
-  hasActiveScheduledRun: (scheduleId: string) => Promise<boolean>;
-  markScheduleRunActive: (scheduleId: string, scheduledFor: string | Date) => Promise<void>;
+  /**
+   * Atomically reserves the single active slot for a HITL resume BEFORE the
+   * approval is consumed: promotes the paused run to `started` (the partial unique
+   * index makes per-schedule overlap atomic) and verifies global fireConcurrency.
+   * Returns 'overlap'/'capacity' when the resume must defer (approval untouched).
+   */
+  reserveScheduledResume: (
+    scheduleId: string,
+    scheduledFor: string | Date,
+  ) => Promise<ResumeReservation>;
+  /** Releases a resume reservation (rolls `started` back to `requires_action`). */
+  releaseScheduledResume: (scheduleId: string, scheduledFor: string | Date) => Promise<void>;
+  /** Soft-deletes an owner's schedule: stop claims, abort active runs, drain, erase. */
+  deleteScheduleForOwner: (scheduleId: string, userId: string) => Promise<boolean>;
+  /** Quiesces all of a user's schedules ahead of account deletion (stop + abort). */
+  quiesceUserSchedules: (userId: string) => Promise<void>;
   initializeScheduleEngine: (options?: {
-    isJobStoreShared?: boolean;
+    clustered?: boolean;
   }) => Promise<ReturnType<typeof startScheduleEngine> | undefined>;
 }
 
@@ -120,11 +154,12 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
 
   const MANUAL_RUN_LEASE_MS = 5 * 60 * 1000;
 
-  // Whether every engine replica observes the same jobs. The standard backend is a
-  // single process (its one engine sees all its jobs), so it defaults true and keeps
-  // full reconciliation; a clustered backend with private in-memory stores passes
-  // false unless Redis-backed (see initializeScheduleEngine / experimental.js).
-  let jobStoreShared = true;
+  // Whether this deployment runs multiple engine replicas. Combined with the live
+  // job-store backend (GenerationJobManager.isRedis), this decides isJobStoreShared:
+  // a clustered deployment whose stream store is in-memory (each worker private) is
+  // NOT shared and must skip cross-worker orphan reaping. Set from USE_REDIS (the
+  // clustering proxy) via initializeScheduleEngine; single-process defaults false.
+  let clustered = false;
 
   /**
    * Whether a refill would top up this zero-credit balance record right now,
@@ -227,12 +262,47 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       tenantStorage.run({ tenantId: user.tenantId, userId: user.id }, fn),
     getJobStatus: async (conversationId) => {
       const job = await GenerationJobManager.getJobStore()?.getJob(conversationId);
-      return job?.status ?? null;
+      if (job == null) {
+        return null;
+      }
+      return { status: job.status, scheduleId: job.scheduleId, scheduledFor: job.scheduledFor };
     },
-    clearReconciledJob: async (conversationId) => {
-      await GenerationJobManager.getJobStore()?.deleteJob(conversationId);
+    abortScheduledJob: async (conversationId, identity) => {
+      const store = GenerationJobManager.getJobStore();
+      if (store == null) {
+        return;
+      }
+      const job = await store.getJob(conversationId);
+      // Identity guard: never abort a replacement turn that reused the
+      // conversationId, and never re-terminalize (clobber) an already-settled
+      // job — its evidence must survive for the reconciler.
+      if (job == null || !jobMatchesIdentity(job, identity)) {
+        return;
+      }
+      if (job.status !== 'running' && job.status !== 'requires_action') {
+        return;
+      }
+      await GenerationJobManager.abortJob(conversationId, { preserveForReconcile: true });
     },
-    isJobStoreShared: () => jobStoreShared,
+    clearReconciledJob: async (conversationId, identity) => {
+      const store = GenerationJobManager.getJobStore();
+      if (store == null) {
+        return;
+      }
+      const job = await store.getJob(conversationId);
+      // Only delete when the job still carries THIS run's identity, so a
+      // replacement generation occupying the same conversationId is never destroyed.
+      if (job == null || !jobMatchesIdentity(job, identity)) {
+        return;
+      }
+      await store.deleteJob(conversationId);
+    },
+    // Whether every engine replica observes the SAME jobs: a Redis-backed job
+    // store is shared across workers, and a single-process (non-clustered)
+    // deployment sees all its own jobs. Only a CLUSTERED in-memory store (each
+    // worker private) is unshared — and would wrongly reap a peer's live run.
+    // Read live so a stream-store that fell back to in-memory is reflected.
+    isJobStoreShared: () => GenerationJobManager.isRedis || !clustered,
     // Counted in system scope so the cap is GLOBAL — a per-owner (tenant-scoped)
     // count would let multiple tenants collectively exceed fireConcurrency.
     countActiveRunsGlobal: () => runAsSystem(() => methods.countActiveRuns()),
@@ -241,15 +311,16 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
   let engine: ReturnType<typeof startScheduleEngine> | undefined;
 
   async function initializeScheduleEngine(options?: {
-    isJobStoreShared?: boolean;
+    clustered?: boolean;
   }): Promise<ReturnType<typeof startScheduleEngine> | undefined> {
     if (engine != null) {
       return engine;
     }
-    // A clustered backend passes isJobStoreShared=false (unless Redis-backed) so the
-    // reconciler skips job-status checks it can't trust across workers.
-    if (options?.isJobStoreShared != null) {
-      jobStoreShared = options.isJobStoreShared;
+    // A clustered deployment (multiple replicas) that is NOT Redis-backed has
+    // private per-worker job stores, so isJobStoreShared reads false and the
+    // reconciler skips cross-worker orphan reaping it can't trust.
+    if (options?.clustered != null) {
+      clustered = options.clustered;
     }
     // Explicitly build the Schedule/ScheduleRun indexes first — the unique
     // idempotency index and TTL retention index would otherwise never exist when
@@ -280,18 +351,21 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     schedule: FireableSchedule,
     limits: ScheduleLimits,
   ): Promise<FireResult | null> {
-    const acquired = await methods.acquireManualRunLease(
+    const claimToken = await methods.acquireManualRunLease(
       schedule.id,
       schedule.user,
       MANUAL_RUN_LEASE_MS,
     );
-    if (!acquired) {
+    if (claimToken == null) {
       return null;
     }
     try {
-      return await fireSchedule(engineDeps, schedule, limits, new Date(), { manual: true });
+      // Carry the fresh claim token so the manual fire's lease release is fenced.
+      return await fireSchedule(engineDeps, { ...schedule, claimToken }, limits, new Date(), {
+        manual: true,
+      });
     } catch (err) {
-      await methods.releaseLease(schedule.id).catch(() => undefined);
+      await methods.releaseLease(schedule.id, claimToken).catch(() => undefined);
       throw err;
     }
   }
@@ -342,23 +416,47 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
   }
 
   /**
-   * Moves a paused scheduled run back to `started` when its HITL resume claim
-   * succeeds, so overlap/capacity (which key on `started`) count the resuming
-   * generation as active and a second run for the same schedule can't start
-   * concurrently. Best-effort: a failure just leaves it `requires_action` (the
-   * terminal hook still records the outcome).
+   * Atomically reserves the schedule's single active slot for a HITL resume,
+   * called BEFORE the approval is consumed so a lost reservation leaves the
+   * approval claimable. Promotes the paused run `requires_action -> started`; the
+   * single-active partial index makes per-schedule overlap atomic (a newer
+   * occurrence already active -> 'overlap'). Then reserve-then-verifies the global
+   * fireConcurrency cap against the OWNER's limit, rolling back on 'capacity'. A
+   * row that is no longer `requires_action` ('missing') is treated as 'ok' so a
+   * legitimate resume is never blocked on stale run-row bookkeeping.
    */
-  /**
-   * Whether another occurrence of this schedule is already running (`started`).
-   * A paused run being resumed is `requires_action`, not `started`, so a true here
-   * means a NEWER occurrence is active — the resume must defer/reject, or promoting
-   * this paused row to `started` would bypass per-schedule overlap serialization.
-   */
-  async function hasActiveScheduledRun(scheduleId: string): Promise<boolean> {
-    return methods.hasActiveRun(scheduleId);
+  async function reserveScheduledResume(
+    scheduleId: string,
+    scheduledFor: string | Date,
+  ): Promise<ResumeReservation> {
+    if (!scheduleId || !scheduledFor) {
+      return 'noop';
+    }
+    const when = new Date(scheduledFor);
+    const promoted = await methods.promoteRunToStarted(scheduleId, when);
+    if (promoted === 'overlap') {
+      return 'overlap';
+    }
+    // A row that is no longer `requires_action` ('missing') is already active
+    // (a concurrent same-pause resume promoted it) or terminal — proceed without
+    // owning the slot so we never release a slot we didn't reserve.
+    if (promoted === 'missing') {
+      return 'noop';
+    }
+    const schedule = await methods.getScheduleById(scheduleId);
+    const owner = schedule ? await engineDeps.getUserContext(schedule.user) : null;
+    const limits = await getLimits(owner ?? undefined);
+    const active = await engineDeps.countActiveRunsGlobal();
+    if (active > limits.fireConcurrency) {
+      await methods
+        .transitionRunStatus(scheduleId, when, 'started', 'requires_action')
+        .catch(() => undefined);
+      return 'capacity';
+    }
+    return 'reserved';
   }
 
-  async function markScheduleRunActive(
+  async function releaseScheduledResume(
     scheduleId: string,
     scheduledFor: string | Date,
   ): Promise<void> {
@@ -369,11 +467,63 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       await methods.transitionRunStatus(
         scheduleId,
         new Date(scheduledFor),
-        'requires_action',
         'started',
+        'requires_action',
       );
     } catch (err) {
-      logger.error('[schedules] failed to mark resumed run active:', err);
+      logger.error('[schedules] failed to release resume reservation:', err);
+    }
+  }
+
+  /** Aborts an active run's loopback job (identity-guarded, evidence-preserving). */
+  async function abortActiveRun(run: {
+    scheduleId: string;
+    scheduledFor: Date;
+    conversationId?: string;
+  }): Promise<void> {
+    if (!run.conversationId) {
+      return;
+    }
+    await engineDeps
+      .abortScheduledJob(run.conversationId, {
+        scheduleId: run.scheduleId,
+        scheduledFor: run.scheduledFor,
+      })
+      .catch((err) => logger.warn('[schedules] failed to abort run job on quiesce:', err));
+  }
+
+  /**
+   * Soft-deletes a schedule for its owner: disables + marks it `deleting` (so the
+   * engine can no longer claim it and it disappears from the owner's list), rotates
+   * the claim token to fence any in-flight worker, aborts the loopback jobs of its
+   * active runs (evidence preserved for the reconciler), and erases immediately
+   * when already drained. Any still-active runs are erased by the reconciler once
+   * they settle. Returns false when the schedule doesn't exist / already deleting.
+   */
+  async function deleteScheduleForOwner(scheduleId: string, userId: string): Promise<boolean> {
+    const schedule = await methods.markScheduleDeleting(scheduleId, userId);
+    if (schedule == null) {
+      return false;
+    }
+    const active = await methods.getActiveRunsForSchedule(scheduleId);
+    for (const run of active) {
+      await abortActiveRun(run);
+    }
+    await methods.eraseScheduleIfDrained(scheduleId).catch(() => undefined);
+    return true;
+  }
+
+  /**
+   * Quiesces every schedule of a user ahead of account deletion: marks them all
+   * non-claimable (so no new occurrence fires while the cascade runs) and aborts
+   * the loopback jobs of any in-flight runs, so a scheduled generation cannot keep
+   * persisting messages after the account's messages/conversations are deleted.
+   */
+  async function quiesceUserSchedules(userId: string): Promise<void> {
+    await methods.disableUserSchedulesForDeletion(userId);
+    const active = await methods.getActiveRunsForUser(userId);
+    for (const run of active) {
+      await abortActiveRun(run);
     }
   }
 
@@ -382,8 +532,10 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     engineDeps,
     fireScheduleNow,
     recordScheduleOutcome,
-    hasActiveScheduledRun,
-    markScheduleRunActive,
+    reserveScheduledResume,
+    releaseScheduledResume,
+    deleteScheduleForOwner,
+    quiesceUserSchedules,
     initializeScheduleEngine,
   };
 }

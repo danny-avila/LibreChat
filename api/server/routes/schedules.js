@@ -2,7 +2,11 @@ const express = require('express');
 const { Permissions, PermissionTypes } = require('librechat-data-provider');
 const { createSchedulesHandlers, generateCheckAccess } = require('@librechat/api');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
-const { getLimits, fireScheduleNow } = require('~/server/services/Schedules');
+const {
+  getLimits,
+  fireScheduleNow,
+  deleteScheduleForOwner,
+} = require('~/server/services/Schedules');
 const { resolveAgentFireAccess } = require('~/server/services/Schedules/access');
 const methods = require('~/models');
 
@@ -46,6 +50,9 @@ const handlers = createSchedulesHandlers({
     );
   },
   fireNow: fireScheduleNow,
+  // Quiesce-then-erase delete: stops new claims, aborts in-flight loopback runs,
+  // and erases once drained (reconciler completes drain) so evidence is preserved.
+  deleteSchedule: deleteScheduleForOwner,
 });
 
 router.get('/', checkSchedulesAccess, handlers.listSchedules);

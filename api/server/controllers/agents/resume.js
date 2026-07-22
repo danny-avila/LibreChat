@@ -25,8 +25,8 @@ const {
 } = require('~/server/services/MCPRequestContext');
 const {
   recordScheduleOutcome,
-  hasActiveScheduledRun,
-  markScheduleRunActive,
+  reserveScheduledResume,
+  releaseScheduledResume,
 } = require('~/server/services/Schedules');
 const { saveMessage, getConvo, getMessages } = require('~/models');
 
@@ -540,19 +540,36 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     return res.status(429).json({ error: 'Too many concurrent requests' });
   }
 
-  // A scheduled fire's paused run must not resume OVER a newer occurrence that is
-  // already running: overlap checks only count `started`, so promoting this paused
-  // row would create two concurrent runs for one schedule. Defer the resume BEFORE
-  // claiming the approval (so it stays claimable) when another occurrence is active.
-  if (job.metadata?.scheduleId && (await hasActiveScheduledRun(job.metadata.scheduleId))) {
-    await decrementPendingRequest(userId);
-    logger.debug(
-      `[ResumeAgentController] Deferring scheduled resume; another run active: ${streamId}`,
+  // Atomically reserve the schedule's single active slot BEFORE consuming the
+  // approval, so a lost reservation leaves the approval claimable. This promotes
+  // the paused run requires_action -> started (the single-active partial index
+  // makes per-schedule overlap atomic) and enforces global fireConcurrency —
+  // replacing a non-atomic check-then-promote that could start two concurrent runs
+  // for one schedule. Only a slot we actually reserved is released on later failure.
+  let scheduledReservation = 'noop';
+  if (job.metadata?.scheduleId) {
+    scheduledReservation = await reserveScheduledResume(
+      job.metadata.scheduleId,
+      job.metadata.scheduledFor,
     );
-    return res
-      .status(409)
-      .json({ error: 'Another run for this schedule is in progress; try again shortly' });
+    if (scheduledReservation === 'overlap' || scheduledReservation === 'capacity') {
+      await decrementPendingRequest(userId);
+      logger.debug(
+        `[ResumeAgentController] Deferring scheduled resume (${scheduledReservation}): ${streamId}`,
+      );
+      return res.status(409).json({
+        error:
+          scheduledReservation === 'capacity'
+            ? 'Scheduled run capacity reached; try again shortly'
+            : 'Another run for this schedule is in progress; try again shortly',
+      });
+    }
   }
+  const releaseReservation = async () => {
+    if (scheduledReservation === 'reserved') {
+      await releaseScheduledResume(job.metadata.scheduleId, job.metadata.scheduledFor);
+    }
+  };
 
   // Atomically claim the resume. The single winner drives the run; a racing second
   // submit (double-click, two tabs) gets false and must not re-drive — that would
@@ -561,26 +578,21 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   // The claim runs AFTER the slot increment above but BEFORE the run's own try/finally
   // that releases it, so a store/Redis error here (unlike the clean `!claimed` branch)
   // would leak the concurrency slot until the counter TTL expires — spuriously 429'ing
-  // the user when they retry the still-paused approval. Release the slot on that path too.
+  // the user when they retry the still-paused approval. Release the slot (and the
+  // scheduled reservation) on that path too.
   let claimed;
   try {
     claimed = await GenerationJobManager.approvals.resolve(streamId, pendingAction.actionId);
   } catch (err) {
+    await releaseReservation();
     await decrementPendingRequest(userId);
     logger.error('[ResumeAgentController] Failed to claim resume', err);
     return res.status(500).json({ error: 'Failed to resume' });
   }
   if (!claimed) {
+    await releaseReservation();
     await decrementPendingRequest(userId);
     return res.status(409).json({ error: 'This action was already resolved or has expired' });
-  }
-
-  // A scheduled fire's run sat `requires_action` while paused, so overlap/capacity
-  // (which count only `started`) ignored it. Now that the resume claim won, it's
-  // generating again — move it back to `started` so a second run for the same
-  // schedule can't start concurrently while this one runs.
-  if (job.metadata?.scheduleId) {
-    await markScheduleRunActive(job.metadata.scheduleId, job.metadata.scheduledFor);
   }
 
   // Seed the run-scoped MCP request-context store BEFORE the ACK: once `res.json`

@@ -42,6 +42,10 @@ jest.mock('@librechat/api', () => ({
   deleteAllSharedLinksWithCleanup: (...args) => mockDeleteAllSharedLinksWithCleanup(...args),
 }));
 
+jest.mock('~/server/services/Schedules', () => ({
+  quiesceUserSchedules: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('~/models', () => ({
   deleteAllUserSessions: (...args) => mockDeleteAllUserSessions(...args),
   deleteAllSharedLinks: (...args) => mockDeleteAllSharedLinks(...args),

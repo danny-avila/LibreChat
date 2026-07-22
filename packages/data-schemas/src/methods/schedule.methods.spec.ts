@@ -163,12 +163,14 @@ describe('insertScheduleRun idempotency', () => {
   });
 
   it('inserts distinct occurrences for different scheduledFor values', async () => {
+    // Terminal status so the single-active partial index (one `started` per
+    // schedule) doesn't interfere — this asserts occurrence-level distinctness.
     const schedule = await methods.createSchedule(scheduleData());
     const first = await methods.insertScheduleRun(
-      runData(schedule, { scheduledFor: new Date('2026-07-20T12:00:00Z') }),
+      runData(schedule, { scheduledFor: new Date('2026-07-20T12:00:00Z'), status: 'success' }),
     );
     const second = await methods.insertScheduleRun(
-      runData(schedule, { scheduledFor: new Date('2026-07-21T12:00:00Z') }),
+      runData(schedule, { scheduledFor: new Date('2026-07-21T12:00:00Z'), status: 'success' }),
     );
     expect(first).not.toBeNull();
     expect(second).not.toBeNull();
@@ -176,21 +178,66 @@ describe('insertScheduleRun idempotency', () => {
   });
 });
 
-describe('countSchedulesAheadOf (deterministic create-limit winner)', () => {
-  it("ranks a user's schedules by the total _id order", async () => {
+describe('reserveStartedRun (single-active overlap guard)', () => {
+  it('reserves the slot, then rejects a concurrent occurrence as overlap', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const first = await methods.reserveStartedRun(
+      runData(schedule, { scheduledFor: new Date('2026-07-20T12:00:00Z') }),
+    );
+    const second = await methods.reserveStartedRun(
+      runData(schedule, { scheduledFor: new Date('2026-07-21T12:00:00Z') }),
+    );
+    expect('run' in first).toBe(true);
+    expect(second).toEqual({ conflict: 'overlap' });
+    // Once the first terminalizes it leaves the active index, so the next occurrence reserves.
+    await methods.transitionRunStatus(
+      schedule.id,
+      new Date('2026-07-20T12:00:00Z'),
+      'started',
+      'success',
+    );
+    const third = await methods.reserveStartedRun(
+      runData(schedule, { scheduledFor: new Date('2026-07-21T12:00:00Z') }),
+    );
+    expect('run' in third).toBe(true);
+  });
+
+  it('reports a re-fired same occurrence as duplicate', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const when = new Date('2026-07-20T12:00:00Z');
+    await methods.reserveStartedRun(runData(schedule, { scheduledFor: when }));
+    await methods.transitionRunStatus(schedule.id, when, 'started', 'success');
+    const again = await methods.reserveStartedRun(runData(schedule, { scheduledFor: when }));
+    expect(again).toEqual({ conflict: 'duplicate' });
+  });
+});
+
+describe('createScheduleWithSlot (atomic per-user cap)', () => {
+  it('allows exactly maxPerUser and reports limit under concurrency', async () => {
     const user = new mongoose.Types.ObjectId();
-    const a = await methods.createSchedule(scheduleData({ user }));
-    const b = await methods.createSchedule(scheduleData({ user }));
-    const c = await methods.createSchedule(scheduleData({ user }));
-    // Each row's rank = (# strictly ahead) + 1, so exactly the first N survive a
-    // limit of N regardless of which racer re-counts first.
-    expect(await methods.countSchedulesAheadOf(user, a._id!)).toBe(0);
-    expect(await methods.countSchedulesAheadOf(user, b._id!)).toBe(1);
-    expect(await methods.countSchedulesAheadOf(user, c._id!)).toBe(2);
-    // Scoped to the owner: another user's schedules never count toward the rank.
-    const other = await methods.createSchedule(scheduleData());
-    expect(await methods.countSchedulesAheadOf(user, c._id!)).toBe(2);
-    expect(await methods.countSchedulesAheadOf(other.user, other._id!)).toBe(0);
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => methods.createScheduleWithSlot(scheduleData({ user }), 3)),
+    );
+    const created = results.filter((r) => r !== 'limit');
+    expect(created).toHaveLength(3);
+    expect(results.filter((r) => r === 'limit')).toHaveLength(5);
+    // Distinct slots [0,3) were assigned — the partial unique index is the arbiter.
+    const slots = new Set(
+      (created as ISchedule[]).map((s) => s.slot).filter((s) => typeof s === 'number'),
+    );
+    expect(slots.size).toBe(3);
+    expect(await methods.countSchedulesByUser(user)).toBe(3);
+  });
+
+  it('frees a slot on delete so a new create can take it', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const a = (await methods.createScheduleWithSlot(scheduleData({ user }), 2)) as ISchedule;
+    await methods.createScheduleWithSlot(scheduleData({ user }), 2);
+    expect(await methods.createScheduleWithSlot(scheduleData({ user }), 2)).toBe('limit');
+    await methods.deleteScheduleById(a.id, user);
+    const c = await methods.createScheduleWithSlot(scheduleData({ user }), 2);
+    expect(c).not.toBe('limit');
+    expect(await methods.countSchedulesByUser(user)).toBe(2);
   });
 });
 
@@ -733,16 +780,93 @@ describe('acquireManualRunLease / releaseLease', () => {
     expect(afterRelease.nextRunAt?.toISOString()).toBe('2026-08-01T12:00:00.000Z');
 
     const reacquired = await methods.acquireManualRunLease(schedule.id, schedule.user, 60_000);
-    expect(reacquired).toBe(true);
+    // Returns the fresh claim token (truthy) rather than a boolean.
+    expect(reacquired).toBeTruthy();
   });
 
   it('blocks against a held engine lease and rejects a non-owner', async () => {
     const schedule = await methods.createSchedule(scheduleData());
     const claimed = await methods.claimDueSchedule({ instanceId: 'engine-1', leaseMs: 60_000 });
     expect(claimed?.id).toBe(schedule.id);
-    expect(await methods.acquireManualRunLease(schedule.id, schedule.user, 60_000)).toBe(false);
+    expect(await methods.acquireManualRunLease(schedule.id, schedule.user, 60_000)).toBeNull();
     expect(
       await methods.acquireManualRunLease(schedule.id, new mongoose.Types.ObjectId(), 60_000),
-    ).toBe(false);
+    ).toBeNull();
+  });
+});
+
+describe('claim-token fencing (stale worker cannot mutate an edited/deleted schedule)', () => {
+  it('an owner edit rotates the token so a stale disable/advance no-ops and revalidate fails', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const claim = await methods.claimDueSchedule({ instanceId: 'w1', leaseMs: 60_000 });
+    const staleToken = claim!.claimToken!;
+    expect(staleToken).toBeTruthy();
+    // The stale worker still holds a valid claim until the owner edits.
+    expect(await methods.revalidateClaim(schedule.id, staleToken)).toBe(true);
+
+    // Owner edits (re-enable / rename) — updateScheduleById rotates the claim token.
+    await methods.updateScheduleById(schedule.id, schedule.user, { name: 'renamed' });
+
+    // The stale worker's fenced writes now match nothing.
+    await methods.disableSchedule(schedule.id, 'too_many_failures', staleToken);
+    await methods.advanceSchedule(
+      schedule.id,
+      new Date('2030-01-01T00:00:00Z'),
+      claim!.nextRunAt,
+      staleToken,
+    );
+    const after = await methods.getScheduleById(schedule.id);
+    expect(after!.enabled).toBe(true); // stale disable no-op'd
+    expect(after!.disabledReason).toBeUndefined();
+    expect(after!.nextRunAt?.getTime()).toBe(claim!.nextRunAt?.getTime()); // stale advance no-op'd
+    expect(await methods.revalidateClaim(schedule.id, staleToken)).toBe(false);
+  });
+
+  it('revalidateClaim fails once the lease expires (a re-claim could be imminent)', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const claim = await methods.claimDueSchedule({ instanceId: 'w1', leaseMs: -1 }); // already expired
+    expect(await methods.revalidateClaim(schedule.id, claim!.claimToken!)).toBe(false);
+  });
+});
+
+describe('deletion quiescing (soft-delete, drain, erase)', () => {
+  it('markScheduleDeleting hides + un-claims; erase waits for active runs to drain', async () => {
+    const schedule = await methods.createScheduleWithSlot(scheduleData(), 10);
+    const sched = schedule as ISchedule;
+    const when = new Date('2026-07-20T12:00:00Z');
+    await methods.reserveStartedRun(runData(sched, { scheduledFor: when }));
+
+    const marked = await methods.markScheduleDeleting(sched.id, sched.user);
+    expect(marked!.deleting).toBe(true);
+    expect(marked!.enabled).toBe(false);
+    // Hidden from the owner and no longer claimable by the engine.
+    expect(await methods.getSchedulesByUser(sched.user)).toHaveLength(0);
+    expect(await methods.claimDueSchedule({ instanceId: 'w1', leaseMs: 60_000 })).toBeNull();
+
+    // Erase is blocked while a run is still active (evidence preserved).
+    expect(await methods.eraseScheduleIfDrained(sched.id)).toBe(false);
+    expect(await methods.getScheduleById(sched.id)).not.toBeNull();
+
+    // Once the run terminalizes, the schedule and its runs erase.
+    await methods.transitionRunStatus(sched.id, when, 'started', 'interrupted');
+    expect(await methods.eraseScheduleIfDrained(sched.id)).toBe(true);
+    expect(await methods.getScheduleById(sched.id)).toBeNull();
+    expect(await ScheduleRun.countDocuments({ scheduleId: sched.id })).toBe(0);
+    // Its slot is freed for reuse.
+    const replacement = await methods.createScheduleWithSlot(
+      scheduleData({ user: sched.user }),
+      10,
+    );
+    expect(replacement).not.toBe('limit');
+  });
+
+  it('frees the slot immediately on soft-delete so a new create can take it under the cap', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const a = (await methods.createScheduleWithSlot(scheduleData({ user }), 1)) as ISchedule;
+    expect(await methods.createScheduleWithSlot(scheduleData({ user }), 1)).toBe('limit');
+    await methods.markScheduleDeleting(a.id, user);
+    // The deleting schedule no longer occupies the cap, so a replacement fits.
+    const b = await methods.createScheduleWithSlot(scheduleData({ user }), 1);
+    expect(b).not.toBe('limit');
   });
 });

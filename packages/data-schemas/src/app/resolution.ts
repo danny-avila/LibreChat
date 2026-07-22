@@ -172,6 +172,18 @@ function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0,
         depth,
         currentPath,
       );
+    } else if (
+      typeof sourceVal === 'boolean' &&
+      targetVal != null &&
+      typeof targetVal === 'object' &&
+      !Array.isArray(targetVal) &&
+      RUNTIME_CONFIG_INTERFACE_FIELDS.has(key)
+    ) {
+      // A runtime-config interface field (e.g. schedules) toggled by a boolean
+      // override is a runtime enable/disable, not a replacement of its config. Fold
+      // the boolean into the `use` flag so inherited object-form limits (maxPerUser,
+      // minIntervalMinutes, ...) survive instead of collapsing to global defaults.
+      result[key] = { ...(targetVal as AnyObject), use: sourceVal };
     } else {
       result[key] = sourceVal;
     }

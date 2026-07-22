@@ -57,8 +57,19 @@ export interface ScheduleEngineDeps {
   getSelfUrl: () => string;
   /** Runs fn inside the owner's tenant ALS context. */
   runInTenantContext: <T>(user: ScheduleUserContext, fn: () => Promise<T>) => Promise<T>;
-  /** Job-store status for a run's conversation, or null when the job is gone. */
-  getJobStatus: (conversationId: string) => Promise<string | null>;
+  /**
+   * Job-store state for a run's conversation, or null when the job is gone. Carries
+   * the job's scheduled identity so reconciliation can verify the job at this
+   * conversationId is THIS occurrence's generation (a replacement user turn reuses
+   * the conversationId but strips scheduleId/scheduledFor) before trusting the status.
+   */
+  getJobStatus: (conversationId: string) => Promise<JobState | null>;
+  /**
+   * Aborts the loopback generation for a scheduled occurrence, identity-guarded so
+   * it never signals/clobbers a replacement turn that reused the conversationId.
+   * Used by deletion quiescing to stop an in-flight run before its evidence is erased.
+   */
+  abortScheduledJob: (conversationId: string, identity: JobIdentity) => Promise<void>;
   /**
    * Whether every engine replica can observe the SAME jobs (Redis-backed, or a
    * single process). When false — e.g. clustered workers each with a private
@@ -69,12 +80,28 @@ export interface ScheduleEngineDeps {
   isJobStoreShared: () => boolean;
   /**
    * Deletes a retained terminal job after the reconciler has finalized its run.
-   * Gives `preserveForReconcile` jobs (kept without `completedAt` so the store's
-   * finished-job sweep can't reap them early) a definitive cleanup path.
+   * Identity-guarded: only deletes when the job still carries this run's
+   * scheduleId/scheduledFor, so a replacement generation occupying the same
+   * conversationId is never destroyed. Gives `preserveForReconcile` jobs (kept
+   * without `completedAt` so the finished-job sweep can't reap them early) a
+   * definitive cleanup path.
    */
-  clearReconciledJob: (conversationId: string) => Promise<void>;
+  clearReconciledJob: (conversationId: string, identity: JobIdentity) => Promise<void>;
   /** Global in-flight scheduled-run count (system tenant scope) for the fire cap. */
   countActiveRunsGlobal: () => Promise<number>;
+}
+
+/** The immutable scheduled identity of a generation job, for reconcile/abort fencing. */
+export interface JobIdentity {
+  scheduleId: string;
+  scheduledFor: string | Date;
+}
+
+/** Job-store state plus the job's scheduled identity (absent on a replacement turn). */
+export interface JobState {
+  status: string;
+  scheduleId?: string;
+  scheduledFor?: string;
 }
 
 export interface FireResult {
@@ -85,6 +112,7 @@ export interface FireResult {
     | 'balance'
     | 'capacity'
     | 'duplicate'
+    | 'superseded'
     | 'agent_deleted'
     | 'user_missing'
     | 'permission_revoked'

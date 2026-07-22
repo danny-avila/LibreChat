@@ -24,6 +24,9 @@ export interface ISchedule {
   nextRunAt?: Date;
   leaseUntil?: Date;
   leaseBy?: string;
+  claimToken?: string;
+  deleting?: boolean;
+  slot?: number;
   lastRun?: {
     conversationId?: string;
     status: ScheduleRunStatus;

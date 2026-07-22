@@ -24,7 +24,9 @@ module.exports = {
   engineDeps: service.engineDeps,
   fireScheduleNow: service.fireScheduleNow,
   recordScheduleOutcome: service.recordScheduleOutcome,
-  hasActiveScheduledRun: service.hasActiveScheduledRun,
-  markScheduleRunActive: service.markScheduleRunActive,
+  reserveScheduledResume: service.reserveScheduledResume,
+  releaseScheduledResume: service.releaseScheduledResume,
+  deleteScheduleForOwner: service.deleteScheduleForOwner,
+  quiesceUserSchedules: service.quiesceUserSchedules,
   initializeScheduleEngine: service.initializeScheduleEngine,
 };

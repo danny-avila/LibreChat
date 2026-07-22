@@ -44,6 +44,27 @@ describe('mergeConfigOverrides', () => {
     expect(iface.parameters).toBe(true);
   });
 
+  it('folds a boolean schedules override onto inherited limits (does not collapse them)', () => {
+    const base = {
+      interfaceConfig: {
+        schedules: { use: true, maxPerUser: 50, minIntervalMinutes: 5 },
+      },
+    } as unknown as AppConfig;
+    // Enabling the feature for a role via the natural boolean toggle must PRESERVE
+    // the deployment's configured limits rather than reverting them to defaults.
+    const enabled = mergeConfigOverrides(base, [
+      fakeConfig({ interface: { schedules: true } }, 10),
+    ]) as unknown as Record<string, unknown>;
+    const iface = enabled.interfaceConfig as Record<string, Record<string, unknown>>;
+    expect(iface.schedules).toEqual({ use: true, maxPerUser: 50, minIntervalMinutes: 5 });
+    // A boolean-false override disables while still preserving the limit values.
+    const disabled = mergeConfigOverrides(base, [
+      fakeConfig({ interface: { schedules: false } }, 10),
+    ]) as unknown as Record<string, unknown>;
+    const dIface = disabled.interfaceConfig as Record<string, Record<string, unknown>>;
+    expect(dIface.schedules).toEqual({ use: false, maxPerUser: 50, minIntervalMinutes: 5 });
+  });
+
   it('sorts by priority — higher priority wins', () => {
     const configs = [
       fakeConfig({ registration: { enabled: false } }, 100),

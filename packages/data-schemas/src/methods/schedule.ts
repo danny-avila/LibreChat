@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { ScheduleRunStatus, ScheduleDisabledReason } from 'librechat-data-provider';
 import type { Model, Types } from 'mongoose';
 import type {
@@ -18,6 +19,31 @@ const DUPLICATE_KEY = 11000;
  */
 const COUNTED_FOR_WINDOW = 64;
 
+/** Statuses that occupy a schedule's live capacity / block a concurrent occurrence. */
+const ACTIVE_RUN_STATUSES: ScheduleRunStatus[] = ['started', 'requires_action'];
+
+type DuplicateKeyError = { code?: number; keyPattern?: Record<string, unknown> };
+
+/** A duplicate-key error whose conflict is the {scheduleId, scheduledFor} occurrence index. */
+function isOccurrenceDuplicate(error: unknown): boolean {
+  const err = error as DuplicateKeyError;
+  return err?.code === DUPLICATE_KEY && err.keyPattern != null && 'scheduledFor' in err.keyPattern;
+}
+
+/** A duplicate-key error whose conflict is the single-active-run partial index. */
+function isActiveRunConflict(error: unknown): boolean {
+  const err = error as DuplicateKeyError;
+  return (
+    err?.code === DUPLICATE_KEY && err.keyPattern != null && !('scheduledFor' in err.keyPattern)
+  );
+}
+
+/** A duplicate-key error whose conflict is the per-user {user, slot} cap index. */
+function isSlotConflict(error: unknown): boolean {
+  const err = error as DuplicateKeyError;
+  return err?.code === DUPLICATE_KEY && err.keyPattern != null && 'slot' in err.keyPattern;
+}
+
 export interface ClaimDueScheduleParams {
   instanceId: string;
   leaseMs: number;
@@ -33,9 +59,25 @@ export interface RecordRunOutcomeParams {
   autoDisableAfterFailures: number;
 }
 
+/** Result of claiming/leasing a schedule: the snapshot plus the fencing token to carry. */
+export interface ScheduleClaim {
+  schedule: ISchedule;
+  claimToken: string;
+}
+
+/** Outcome of reserving the single-active-run slot for a fired occurrence. */
+export type StartedRunReservation = { run: IScheduleRun } | { conflict: 'duplicate' | 'overlap' };
+
+/** Outcome of promoting a paused occurrence back into the single active slot. */
+export type PromoteRunResult = 'promoted' | 'overlap' | 'missing';
+
 export type ScheduleMethods = {
   ensureScheduleIndexes: () => Promise<void>;
   createSchedule: (data: Partial<ISchedule>) => Promise<ISchedule>;
+  createScheduleWithSlot: (
+    data: Partial<ISchedule>,
+    maxPerUser: number,
+  ) => Promise<ISchedule | 'limit'>;
   updateScheduleById: (
     id: string,
     userId: string | Types.ObjectId,
@@ -46,21 +88,28 @@ export type ScheduleMethods = {
   getScheduleById: (id: string, userId?: string | Types.ObjectId) => Promise<ISchedule | null>;
   getSchedulesByUser: (userId: string | Types.ObjectId) => Promise<ISchedule[]>;
   countSchedulesByUser: (userId: string | Types.ObjectId) => Promise<number>;
-  countSchedulesAheadOf: (userId: string | Types.ObjectId, id: Types.ObjectId) => Promise<number>;
   claimDueSchedule: (params: ClaimDueScheduleParams) => Promise<ISchedule | null>;
   acquireManualRunLease: (
     id: string,
     userId: string | Types.ObjectId,
     leaseMs: number,
-  ) => Promise<boolean>;
-  releaseLease: (id: string) => Promise<void>;
+  ) => Promise<string | null>;
+  releaseLease: (id: string, expectedClaimToken?: string) => Promise<void>;
+  revalidateClaim: (id: string, claimToken: string) => Promise<boolean>;
   advanceSchedule: (
     id: string,
     nextRunAt: Date | null,
     expectedNextRunAt?: Date | null,
+    expectedClaimToken?: string,
   ) => Promise<void>;
-  disableSchedule: (id: string, reason: ScheduleDisabledReason) => Promise<void>;
+  disableSchedule: (
+    id: string,
+    reason: ScheduleDisabledReason,
+    expectedClaimToken?: string,
+  ) => Promise<void>;
   insertScheduleRun: (data: Partial<IScheduleRun>) => Promise<IScheduleRun | null>;
+  reserveStartedRun: (data: Partial<IScheduleRun>) => Promise<StartedRunReservation>;
+  promoteRunToStarted: (scheduleId: string, scheduledFor: Date) => Promise<PromoteRunResult>;
   setRunFireDetails: (
     scheduleId: string,
     scheduledFor: Date,
@@ -68,7 +117,17 @@ export type ScheduleMethods = {
   ) => Promise<void>;
   hasActiveRun: (scheduleId: string) => Promise<boolean>;
   countActiveRuns: () => Promise<number>;
-  deleteScheduleRun: (scheduleId: string, scheduledFor: Date) => Promise<void>;
+  deleteScheduleRun: (
+    scheduleId: string,
+    scheduledFor: Date,
+    expectedStatus?: ScheduleRunStatus,
+  ) => Promise<void>;
+  markScheduleDeleting: (id: string, userId: string | Types.ObjectId) => Promise<ISchedule | null>;
+  getActiveRunsForSchedule: (scheduleId: string) => Promise<IScheduleRun[]>;
+  getActiveRunsForUser: (userId: string | Types.ObjectId) => Promise<IScheduleRun[]>;
+  disableUserSchedulesForDeletion: (userId: string | Types.ObjectId) => Promise<void>;
+  getDeletingSchedules: (limit: number) => Promise<ISchedule[]>;
+  eraseScheduleIfDrained: (id: string) => Promise<boolean>;
   deleteSchedulesByUser: (userId: string | Types.ObjectId) => Promise<void>;
   getUnbookkeptRuns: (olderThan: Date, limit: number) => Promise<IScheduleRun[]>;
   finalizeBookkeeping: (params: RecordRunOutcomeParams) => Promise<void>;
@@ -110,6 +169,58 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     return doc.toObject();
   }
 
+  /**
+   * Creates a schedule in the lowest free per-user slot, enforcing maxPerUser
+   * ATOMICALLY: the {user, slot} partial unique index is the sole arbiter, so
+   * concurrent creates that pick the same slot collide (duplicate key) and one
+   * retries the next free slot — no read-then-count window, no drift. Returns
+   * 'limit' when all slots in [0, maxPerUser) are held by the user's live schedules.
+   */
+  async function createScheduleWithSlot(
+    data: Partial<ISchedule>,
+    maxPerUser: number,
+  ): Promise<ISchedule | 'limit'> {
+    const userId = data.user;
+    // Bound the retries by maxPerUser+1: each collision advances to a distinct
+    // slot, so a caller can lose at most (slots occupied) races before it either
+    // wins a free slot or finds every slot taken.
+    for (let attempt = 0; attempt <= maxPerUser; attempt++) {
+      const used = await Schedule()
+        .find({ user: userId, deleting: { $ne: true } })
+        .select('slot')
+        .lean<Array<{ slot?: number }>>();
+      const taken = new Set(
+        used.map((s) => s.slot).filter((s): s is number => typeof s === 'number'),
+      );
+      if (taken.size >= maxPerUser) {
+        return 'limit';
+      }
+      let slot = 0;
+      while (taken.has(slot)) {
+        slot++;
+      }
+      if (slot >= maxPerUser) {
+        return 'limit';
+      }
+      try {
+        const doc = await Schedule().create({ ...data, slot, deleting: false });
+        return doc.toObject();
+      } catch (error) {
+        if (isSlotConflict(error)) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    return 'limit';
+  }
+
+  /**
+   * Owner edit. Rotates `claimToken` on every update so an in-flight engine claim
+   * (which captured the prior token) is fenced off: its disable/advance/release
+   * writes and its pre-dispatch revalidation no-op, and it cannot fire an edited
+   * or re-enabled schedule. Delete removes the row, so those writes no-op too.
+   */
   async function updateScheduleById(
     id: string,
     userId: string | Types.ObjectId,
@@ -119,7 +230,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     return Schedule()
       .findOneAndUpdate(
         { id, user: userId },
-        { $set: update, ...(unset ? { $unset: unset } : {}) },
+        { $set: { ...update, claimToken: randomUUID() }, ...(unset ? { $unset: unset } : {}) },
         { new: true },
       )
       .lean<ISchedule>();
@@ -146,33 +257,24 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   }
 
   async function getSchedulesByUser(userId: string | Types.ObjectId): Promise<ISchedule[]> {
+    // Hide schedules pending erasure (soft-deleted, draining their active runs)
+    // so a deleted schedule disappears immediately for the owner.
     return Schedule()
-      .find({ user: userId })
+      .find({ user: userId, deleting: { $ne: true } })
       .sort({ updatedAt: -1 })
-      .select('-leaseUntil -leaseBy')
+      .select('-leaseUntil -leaseBy -claimToken')
       .lean<ISchedule[]>();
   }
 
   async function countSchedulesByUser(userId: string | Types.ObjectId): Promise<number> {
-    return Schedule().countDocuments({ user: userId });
-  }
-
-  /**
-   * Count of the user's schedules ordered strictly before `id` (by the total,
-   * monotonic `_id` order). Used to resolve a deterministic per-limit rank so
-   * racing creates converge on the same winner instead of all self-deleting.
-   */
-  async function countSchedulesAheadOf(
-    userId: string | Types.ObjectId,
-    id: Types.ObjectId,
-  ): Promise<number> {
-    return Schedule().countDocuments({ user: userId, _id: { $lt: id } });
+    return Schedule().countDocuments({ user: userId, deleting: { $ne: true } });
   }
 
   /**
    * Atomically claims one due schedule by taking a lease. The per-document CAS
    * is the sole multi-instance dispatch arbiter: exactly one caller wins each
-   * due schedule regardless of replica count, with or without Redis.
+   * due schedule regardless of replica count, with or without Redis. Stamps a
+   * fresh `claimToken` the winner carries through every subsequent write.
    */
   async function claimDueSchedule(params: ClaimDueScheduleParams): Promise<ISchedule | null> {
     // Compare due-ness and lease expiry against MongoDB's own clock (`$$NOW`), not
@@ -181,6 +283,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // a mis-timed lease. `nextRunAt` existence is gated by the plain filter (a bare
     // $expr $lte would match a missing field as null); a missing leaseUntil is
     // treated as epoch so it's always claimable.
+    const claimToken = randomUUID();
     return Schedule()
       .findOneAndUpdate(
         {
@@ -198,6 +301,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
             $set: {
               leaseUntil: { $add: ['$$NOW', params.leaseMs] },
               leaseBy: params.instanceId,
+              claimToken,
             },
           },
         ],
@@ -209,51 +313,87 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   /**
    * Takes the schedule's lease for a manual run-now, serializing concurrent
    * `POST /:id/run` requests (and blocking against an engine claim) so a
-   * double-click can't start two runs. Owner-scoped. Returns false if leased.
+   * double-click can't start two runs. Owner-scoped. Returns the fresh
+   * `claimToken` (to carry through the fire), or null if already leased.
    */
   async function acquireManualRunLease(
     id: string,
     userId: string | Types.ObjectId,
     leaseMs: number,
-  ): Promise<boolean> {
+  ): Promise<string | null> {
     // Compare/expire the lease against Mongo's `$$NOW` (same CAS shape as
     // claimDueSchedule), not this worker's clock: a skewed replica must not read a
     // Mongo-written automatic-fire lease as expired early and start a second run.
+    const claimToken = randomUUID();
     const row = await Schedule()
       .findOneAndUpdate(
         {
           id,
           user: userId,
+          deleting: { $ne: true },
           $expr: { $lt: [{ $ifNull: ['$leaseUntil', new Date(0)] }, '$$NOW'] },
         },
-        [{ $set: { leaseUntil: { $add: ['$$NOW', leaseMs] }, leaseBy: 'manual' } }],
+        [{ $set: { leaseUntil: { $add: ['$$NOW', leaseMs] }, leaseBy: 'manual', claimToken } }],
         { new: true },
       )
       .lean<ISchedule>();
-    return row != null;
+    return row != null ? claimToken : null;
   }
 
-  /** Releases a lease WITHOUT advancing nextRunAt (manual runs never reschedule). */
-  async function releaseLease(id: string): Promise<void> {
-    await Schedule().updateOne({ id }, { $unset: { leaseUntil: 1, leaseBy: 1 } });
+  /**
+   * Releases a lease WITHOUT advancing nextRunAt (manual runs never reschedule).
+   * Fenced on the claim token when provided so a stale worker cannot strip a lease
+   * a different claimer now holds.
+   */
+  async function releaseLease(id: string, expectedClaimToken?: string): Promise<void> {
+    const filter: Record<string, unknown> = { id };
+    if (expectedClaimToken !== undefined) {
+      filter.claimToken = expectedClaimToken;
+    }
+    await Schedule().updateOne(filter, { $unset: { leaseUntil: 1, leaseBy: 1 } });
+  }
+
+  /**
+   * Whether the caller still holds an authoritative claim on the schedule: it is
+   * still enabled, not being deleted, its claim token is unchanged, and its lease
+   * has not expired (Mongo `$$NOW`). Called as the last check before the loopback
+   * POST so an owner disable/delete/edit or a lease-expiry re-claim between claim
+   * and fire aborts the fire instead of dispatching a stale occurrence.
+   */
+  async function revalidateClaim(id: string, claimToken: string): Promise<boolean> {
+    const row = await Schedule()
+      .findOne({
+        id,
+        claimToken,
+        enabled: true,
+        deleting: { $ne: true },
+        $expr: { $gt: [{ $ifNull: ['$leaseUntil', new Date(0)] }, '$$NOW'] },
+      })
+      .select('_id')
+      .lean();
+    return row != null;
   }
 
   /**
    * Advances past a fired (or skipped) occurrence and releases the lease. When
-   * `expectedNextRunAt` is given, the whole update is predicated on the schedule
-   * still sitting on the claimed occurrence — so a concurrent owner edit (or
-   * re-enable) that recomputed `nextRunAt` between the claim and here is NOT
-   * clobbered by a value derived from the stale cadence snapshot; the stale
-   * claimer's lease then simply expires on its own.
+   * `expectedNextRunAt` is given, the update is predicated on the schedule still
+   * sitting on the claimed occurrence; when `expectedClaimToken` is given it is
+   * additionally fenced on the claim, so a stale worker (whose lease expired and
+   * was re-claimed, or whose schedule the owner edited) cannot clobber a newer
+   * claimer's nextRunAt/lease. A predicate miss simply no-ops the stale write.
    */
   async function advanceSchedule(
     id: string,
     nextRunAt: Date | null,
     expectedNextRunAt?: Date | null,
+    expectedClaimToken?: string,
   ): Promise<void> {
     const filter: Record<string, unknown> = { id };
     if (expectedNextRunAt !== undefined) {
       filter.nextRunAt = expectedNextRunAt;
+    }
+    if (expectedClaimToken !== undefined) {
+      filter.claimToken = expectedClaimToken;
     }
     await Schedule().updateOne(filter, {
       $set: { ...(nextRunAt ? { nextRunAt } : {}) },
@@ -261,17 +401,32 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     });
   }
 
-  async function disableSchedule(id: string, reason: ScheduleDisabledReason): Promise<void> {
-    await Schedule().updateOne(
-      { id },
-      { $set: { enabled: false, disabledReason: reason }, $unset: { leaseUntil: 1, leaseBy: 1 } },
-    );
+  /**
+   * Disables a schedule. Preflight disables from the leased worker pass their
+   * `expectedClaimToken` so a stale worker cannot flip a schedule the owner just
+   * re-enabled/edited (rotating the token) back to disabled or clear a newer
+   * claimer's lease. Policy disables (auto-disable, account quiesce) pass none.
+   */
+  async function disableSchedule(
+    id: string,
+    reason: ScheduleDisabledReason,
+    expectedClaimToken?: string,
+  ): Promise<void> {
+    const filter: Record<string, unknown> = { id };
+    if (expectedClaimToken !== undefined) {
+      filter.claimToken = expectedClaimToken;
+    }
+    await Schedule().updateOne(filter, {
+      $set: { enabled: false, disabledReason: reason },
+      $unset: { leaseUntil: 1, leaseBy: 1 },
+    });
   }
 
   /**
    * Inserts the run row BEFORE firing. The unique {scheduleId, scheduledFor}
    * index makes this the durable idempotency claim: null means this occurrence
    * was already fired (or is in flight) by another claimer or a prior life.
+   * Used for non-`started` rows (skips); started rows go through reserveStartedRun.
    */
   async function insertScheduleRun(data: Partial<IScheduleRun>): Promise<IScheduleRun | null> {
     try {
@@ -280,6 +435,53 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     } catch (error) {
       if ((error as { code?: number }).code === DUPLICATE_KEY) {
         return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Reserves the single active-run slot for a fired occurrence by inserting a
+   * `started` run. Two distinct duplicate-key outcomes: the {scheduleId,
+   * scheduledFor} index means this occurrence already fired ('duplicate'); the
+   * single-active partial index means another occurrence of the same schedule is
+   * already active ('overlap'). The DB enforces both atomically — no read-then-insert.
+   */
+  async function reserveStartedRun(data: Partial<IScheduleRun>): Promise<StartedRunReservation> {
+    try {
+      const doc = await ScheduleRun().create({ ...data, status: 'started' });
+      return { run: doc.toObject() };
+    } catch (error) {
+      if (isOccurrenceDuplicate(error)) {
+        return { conflict: 'duplicate' };
+      }
+      if (isActiveRunConflict(error)) {
+        return { conflict: 'overlap' };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Promotes a paused occurrence back into the single active slot on HITL resume.
+   * The partial unique index makes overlap atomic: if a newer occurrence is
+   * already `started`, the update raises a duplicate key and returns 'overlap'
+   * rather than creating a second concurrent active run. 'missing' means the row
+   * is no longer `requires_action` (already terminalized/reconciled).
+   */
+  async function promoteRunToStarted(
+    scheduleId: string,
+    scheduledFor: Date,
+  ): Promise<PromoteRunResult> {
+    try {
+      const result = await ScheduleRun().updateOne(
+        { scheduleId, scheduledFor, status: 'requires_action' },
+        { $set: { status: 'started' } },
+      );
+      return (result.matchedCount ?? 0) > 0 ? 'promoted' : 'missing';
+    } catch (error) {
+      if (isActiveRunConflict(error)) {
+        return 'overlap';
       }
       throw error;
     }
@@ -522,9 +724,96 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     );
   }
 
-  /** Deletes a run row (used to roll back a capacity reservation). */
-  async function deleteScheduleRun(scheduleId: string, scheduledFor: Date): Promise<void> {
-    await ScheduleRun().deleteOne({ scheduleId, scheduledFor });
+  /**
+   * Deletes a run row (used to roll back a capacity reservation). Status-fenced
+   * when `expectedStatus` is provided so a rollback cannot delete a row a
+   * concurrent process already advanced (e.g. to a terminal outcome).
+   */
+  async function deleteScheduleRun(
+    scheduleId: string,
+    scheduledFor: Date,
+    expectedStatus?: ScheduleRunStatus,
+  ): Promise<void> {
+    const filter: Record<string, unknown> = { scheduleId, scheduledFor };
+    if (expectedStatus !== undefined) {
+      filter.status = expectedStatus;
+    }
+    await ScheduleRun().deleteOne(filter);
+  }
+
+  /**
+   * Soft-deletes a schedule for the owner: disables it (so the engine can no
+   * longer claim it), rotates the claim token (fencing any in-flight worker), and
+   * marks it `deleting` so it is hidden and awaits erasure once its active runs
+   * drain. Returns the updated row (for aborting its in-flight jobs) or null.
+   */
+  async function markScheduleDeleting(
+    id: string,
+    userId: string | Types.ObjectId,
+  ): Promise<ISchedule | null> {
+    return Schedule()
+      .findOneAndUpdate(
+        { id, user: userId, deleting: { $ne: true } },
+        {
+          $set: { enabled: false, deleting: true, claimToken: randomUUID() },
+          $unset: { leaseUntil: 1, leaseBy: 1, nextRunAt: 1 },
+        },
+        { new: true },
+      )
+      .lean<ISchedule>();
+  }
+
+  /** In-flight (non-terminal) runs of a schedule — the jobs a delete must abort. */
+  async function getActiveRunsForSchedule(scheduleId: string): Promise<IScheduleRun[]> {
+    return ScheduleRun()
+      .find({ scheduleId, status: { $in: ACTIVE_RUN_STATUSES } })
+      .lean<IScheduleRun[]>();
+  }
+
+  /** In-flight runs across all of a user's schedules — for account-deletion quiescing. */
+  async function getActiveRunsForUser(userId: string | Types.ObjectId): Promise<IScheduleRun[]> {
+    return ScheduleRun()
+      .find({ user: userId, status: { $in: ACTIVE_RUN_STATUSES } })
+      .lean<IScheduleRun[]>();
+  }
+
+  /**
+   * Marks all of a user's schedules non-claimable ahead of account deletion, so
+   * the engine cannot fire a new occurrence while the cascade runs. Rotates each
+   * claim token to fence any in-flight worker.
+   */
+  async function disableUserSchedulesForDeletion(userId: string | Types.ObjectId): Promise<void> {
+    await Schedule().updateMany(
+      { user: userId, deleting: { $ne: true } },
+      {
+        $set: { enabled: false, deleting: true, claimToken: randomUUID() },
+        $unset: { nextRunAt: 1 },
+      },
+    );
+  }
+
+  /** Soft-deleted schedules awaiting erasure (drained of active runs). */
+  async function getDeletingSchedules(limit: number): Promise<ISchedule[]> {
+    return Schedule().find({ deleting: true }).limit(limit).lean<ISchedule[]>();
+  }
+
+  /**
+   * Erases a soft-deleted schedule and its runs ONLY once no active run remains,
+   * so a live loopback generation's evidence is never destroyed out from under
+   * it. The schedule is already disabled + `deleting`, so no new run can start;
+   * once none are active none will become active. Returns whether it erased.
+   */
+  async function eraseScheduleIfDrained(id: string): Promise<boolean> {
+    const active = await ScheduleRun()
+      .findOne({ scheduleId: id, status: { $in: ACTIVE_RUN_STATUSES } })
+      .select('_id')
+      .lean();
+    if (active != null) {
+      return false;
+    }
+    await ScheduleRun().deleteMany({ scheduleId: id });
+    await Schedule().deleteOne({ id, deleting: true });
+    return true;
   }
 
   /** Cascade for account deletion: removes a user's schedules and their runs. */
@@ -553,22 +842,31 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   return {
     ensureScheduleIndexes,
     createSchedule,
+    createScheduleWithSlot,
     updateScheduleById,
     deleteScheduleById,
     getScheduleById,
     getSchedulesByUser,
     countSchedulesByUser,
-    countSchedulesAheadOf,
     claimDueSchedule,
     acquireManualRunLease,
     releaseLease,
+    revalidateClaim,
     advanceSchedule,
     disableSchedule,
     insertScheduleRun,
+    reserveStartedRun,
+    promoteRunToStarted,
     setRunFireDetails,
     hasActiveRun,
     countActiveRuns,
     deleteScheduleRun,
+    markScheduleDeleting,
+    getActiveRunsForSchedule,
+    getActiveRunsForUser,
+    disableUserSchedulesForDeletion,
+    getDeletingSchedules,
+    eraseScheduleIfDrained,
     deleteSchedulesByUser,
     getUnbookkeptRuns,
     finalizeBookkeeping,

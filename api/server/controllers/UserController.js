@@ -24,6 +24,7 @@ const { verifyEmail, resendVerificationEmail } = require('~/server/services/Auth
 const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
 const { processDeleteRequest } = require('~/server/services/Files/process');
+const { quiesceUserSchedules } = require('~/server/services/Schedules');
 const { getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
@@ -342,6 +343,15 @@ const deleteUserController = async (req, res) => {
         return res.status(result.status ?? 400).json({ message: msg });
       }
     }
+
+    // Quiesce scheduled chats FIRST: mark all the user's schedules non-claimable
+    // (so the engine can't fire a new occurrence mid-cascade) and abort any
+    // in-flight loopback runs, so a scheduled generation can't persist messages
+    // after the messages/conversations below are deleted. Best-effort — a failure
+    // here must not block account deletion (deleteSchedulesByUser still erases rows).
+    await quiesceUserSchedules(user.id).catch((error) =>
+      logger.error('[deleteUserController] Failed to quiesce scheduled chats', error),
+    );
 
     await db.deleteMessages({ user: user.id });
     await db.deleteAllUserSessions({ userId: user.id });

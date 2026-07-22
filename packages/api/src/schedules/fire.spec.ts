@@ -23,6 +23,7 @@ function makeSchedule(overrides: Partial<FireableSchedule> = {}): FireableSchedu
     timezone: 'America/New_York',
     target: 'new',
     enabled: true,
+    claimToken: 'ct-1',
     runCount: 0,
     failureCount: 0,
     balanceSkipCount: 0,
@@ -68,7 +69,26 @@ function makeMethods() {
         return { scheduleId: data.scheduleId, scheduledFor: data.scheduledFor };
       },
     ),
-    deleteScheduleRun: jest.fn(async (id: string, when: Date) => {
+    // Mirrors the partial-unique-index semantics: same-occurrence row => 'duplicate';
+    // any OTHER started run for the schedule => 'overlap'; else reserve the slot.
+    reserveStartedRun: jest.fn(
+      async (data: { scheduleId: string; scheduledFor: Date; conversationId?: string }) => {
+        const k = key(data.scheduleId, data.scheduledFor);
+        if (runs.has(k)) {
+          return { conflict: 'duplicate' as const };
+        }
+        const overlap = [...runs.entries()].some(
+          ([rk, r]) => rk.startsWith(`${data.scheduleId}:`) && r.status === 'started',
+        );
+        if (overlap) {
+          return { conflict: 'overlap' as const };
+        }
+        runs.set(k, { status: 'started', conversationId: data.conversationId });
+        return { run: { scheduleId: data.scheduleId, scheduledFor: data.scheduledFor } };
+      },
+    ),
+    revalidateClaim: jest.fn(async () => true),
+    deleteScheduleRun: jest.fn(async (id: string, when: Date, _status?: string) => {
       runs.delete(key(id, when));
     }),
     setRunFireDetails: jest.fn(async () => {
@@ -106,6 +126,7 @@ function makeDeps(
     getSelfUrl: () => 'http://self',
     runInTenantContext: (_user, fn) => fn(),
     getJobStatus: async () => null,
+    abortScheduledJob: async () => undefined,
     clearReconciledJob: async () => undefined,
     isJobStoreShared: () => true,
     countActiveRunsGlobal: async () => methods.countActiveRuns(),
@@ -232,7 +253,7 @@ describe('fireSchedule', () => {
     // Tick 2: same occurrence re-claimed → now fires, exactly one live run.
     const second = await fireSchedule(makeDeps(methods), schedule, LIMITS, when);
     expect(second.fired).toBe(true);
-    expect(methods.insertScheduleRun).toHaveBeenCalledTimes(2); // reserve, rollback, reserve
+    expect(methods.reserveStartedRun).toHaveBeenCalledTimes(2); // reserve, rollback, reserve
     expect(
       [...runs.entries()].filter(([k, r]) => k.startsWith('sched-1:') && r.status === 'started'),
     ).toHaveLength(1);

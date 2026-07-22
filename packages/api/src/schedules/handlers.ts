@@ -19,10 +19,25 @@ export interface SchedulesHandlersDeps {
   markFilesUsed: (fileIds: string[], userId: string) => Promise<void>;
   /** Serialized manual fire (acquires the schedule lease); null if already leased. */
   fireNow: (schedule: FireableSchedule, limits: ScheduleLimits) => Promise<FireResult | null>;
+  /**
+   * Soft-deletes a schedule with quiescing: stops new claims, aborts in-flight
+   * runs, and erases once drained. Returns false when not found / already deleting.
+   */
+  deleteSchedule: (id: string, userId: string) => Promise<boolean>;
 }
 
+/** Bounded attempts to clear the upload TTL on a schedule's attachments. */
+const FILE_RETAIN_ATTEMPTS = 3;
+
 function toWireSchedule(schedule: ISchedule) {
-  const { leaseUntil: _leaseUntil, leaseBy: _leaseBy, ...rest } = schedule;
+  const {
+    leaseUntil: _leaseUntil,
+    leaseBy: _leaseBy,
+    claimToken: _claimToken,
+    slot: _slot,
+    deleting: _deleting,
+    ...rest
+  } = schedule;
   return rest;
 }
 
@@ -76,6 +91,27 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     return true;
   }
 
+  /**
+   * Clears the upload TTL on attached files (so they survive to the first fire),
+   * with bounded retry. Returns false when it exhausts retries — the caller then
+   * compensates (roll back the create / revert the edit) so a persisted schedule
+   * never references files the upload sweep is about to reap.
+   */
+  async function retainFiles(fileIds: string[], userId: string): Promise<boolean> {
+    for (let attempt = 1; attempt <= FILE_RETAIN_ATTEMPTS; attempt++) {
+      try {
+        await deps.markFilesUsed(fileIds, userId);
+        return true;
+      } catch (err) {
+        logger.error(
+          `[schedules] attachment retention failed (attempt ${attempt}/${FILE_RETAIN_ATTEMPTS}):`,
+          err,
+        );
+      }
+    }
+    return false;
+  }
+
   async function listSchedules(req: ServerRequest, res: Response): Promise<void> {
     const [schedules, limits] = await Promise.all([
       deps.methods.getSchedulesByUser(requestUser(req).id),
@@ -109,13 +145,6 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(403).json({ error: 'Scheduled chats are disabled' });
       return;
     }
-    const count = await deps.methods.countSchedulesByUser(user.id);
-    if (count >= limits.maxPerUser) {
-      res.status(400).json({
-        error: `Schedule limit reached (${limits.maxPerUser}). Delete a schedule to add another.`,
-      });
-      return;
-    }
     if (!(await validatePayload(req, res, parsed.data, limits))) {
       return;
     }
@@ -127,33 +156,34 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
           scheduleId: id,
         })
       : undefined;
-    const schedule = await deps.methods.createSchedule({
-      ...parsed.data,
-      id,
-      user: user.id as never,
-      tenantId: user.tenantId,
-      ...(nextRunAt ? { nextRunAt } : {}),
-    });
-    // Close the check-then-insert window: parallel creates can both pass the
-    // count guard. Resolve a deterministic rank by the total `_id` order — a row
-    // survives iff at most `maxPerUser - 1` of the user's schedules precede it —
-    // so exactly `maxPerUser` win instead of every racer self-deleting (which
-    // would leave the user below the limit).
-    if (schedule._id != null) {
-      const ahead = await deps.methods.countSchedulesAheadOf(user.id, schedule._id);
-      if (ahead >= limits.maxPerUser) {
-        await deps.methods.deleteScheduleById(id, user.id);
-        res.status(400).json({
-          error: `Schedule limit reached (${limits.maxPerUser}). Delete a schedule to add another.`,
-        });
-        return;
-      }
+    // Atomic cap: createScheduleWithSlot claims a free per-user slot via the
+    // {user, slot} partial unique index, so concurrent creates can never exceed
+    // maxPerUser (no check-then-insert window). 'limit' means all slots are taken.
+    const created = await deps.methods.createScheduleWithSlot(
+      {
+        ...parsed.data,
+        id,
+        user: user.id as never,
+        tenantId: user.tenantId,
+        ...(nextRunAt ? { nextRunAt } : {}),
+      },
+      limits.maxPerUser,
+    );
+    if (created === 'limit') {
+      res.status(400).json({
+        error: `Schedule limit reached (${limits.maxPerUser}). Delete a schedule to add another.`,
+      });
+      return;
     }
-    if (parsed.data.file_ids?.length) {
-      await deps.markFilesUsed(parsed.data.file_ids, user.id);
+    // Retain attachments; on total failure roll the schedule back so a persisted
+    // schedule never outlives its attachments (which the upload TTL would reap).
+    if (parsed.data.file_ids?.length && !(await retainFiles(parsed.data.file_ids, user.id))) {
+      await deps.methods.deleteScheduleById(id, user.id).catch(() => undefined);
+      res.status(500).json({ error: 'Failed to retain schedule attachments' });
+      return;
     }
     logger.info(`[schedules] created ${id} for user ${user.id}`);
-    res.status(201).json(toWireSchedule(schedule));
+    res.status(201).json(toWireSchedule(created));
   }
 
   async function updateSchedule(req: ServerRequest, res: Response): Promise<void> {
@@ -226,15 +256,26 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(404).json({ error: 'Schedule not found' });
       return;
     }
-    if (parsed.data.file_ids?.length) {
-      await deps.markFilesUsed(parsed.data.file_ids, user.id);
+    if (parsed.data.file_ids?.length && !(await retainFiles(parsed.data.file_ids, user.id))) {
+      // Revert to the prior attachments so the schedule doesn't reference files
+      // whose upload TTL wasn't cleared and would be reaped before the next fire.
+      await deps.methods
+        .updateScheduleById(existing.id, user.id, {
+          file_ids: existing.file_ids ?? [],
+        } as Partial<ISchedule>)
+        .catch(() => undefined);
+      res.status(500).json({ error: 'Failed to retain schedule attachments' });
+      return;
     }
     res.json(toWireSchedule(schedule));
   }
 
   async function deleteSchedule(req: ServerRequest, res: Response): Promise<void> {
     const { id } = req.params as { id: string };
-    const deleted = await deps.methods.deleteScheduleById(id, requestUser(req).id);
+    // Quiesce-then-erase: disable + mark deleting (stops new claims, hides it),
+    // abort in-flight loopback jobs, and erase once drained — so a live run's
+    // evidence is never destroyed out from under it.
+    const deleted = await deps.deleteSchedule(id, requestUser(req).id);
     if (!deleted) {
       res.status(404).json({ error: 'Schedule not found' });
       return;

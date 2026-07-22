@@ -142,23 +142,27 @@ export async function fireSchedule(
     scheduleId: schedule.id,
     after: new Date(Math.max(now.getTime(), scheduledFor.getTime())),
   });
+  // Every worker-side schedule write is fenced on the claim token so a stale
+  // worker (lease expired + re-claimed, or the schedule edited/re-enabled/deleted
+  // — all of which rotate the token) cannot clobber the newer authoritative state.
+  const claimToken = schedule.claimToken;
   // A manual run-now must never reschedule the next automatic occurrence; it
   // only releases the lease it acquired for serialization.
   const advance = options?.manual
-    ? () => methods.releaseLease(schedule.id)
-    : // Predicate the advance on the claimed occurrence so a concurrent owner edit
-      // that recomputed nextRunAt between claim and fire isn't clobbered.
-      () => methods.advanceSchedule(schedule.id, nextRunAt, scheduledFor);
+    ? () => methods.releaseLease(schedule.id, claimToken)
+    : // Predicate the advance on the claimed occurrence AND the claim token so a
+      // concurrent owner edit or a lease-expiry re-claim isn't clobbered.
+      () => methods.advanceSchedule(schedule.id, nextRunAt, scheduledFor, claimToken);
 
   if (nextRunAt == null) {
-    await methods.disableSchedule(schedule.id, 'invalid_schedule');
+    await methods.disableSchedule(schedule.id, 'invalid_schedule', claimToken);
     await advance();
     return { fired: false, error: 'No next occurrence computable' };
   }
 
   const user = await deps.getUserContext(schedule.user);
   if (user == null) {
-    await methods.disableSchedule(schedule.id, 'permission_revoked');
+    await methods.disableSchedule(schedule.id, 'permission_revoked', claimToken);
     await advance();
     return { fired: false, skipped: 'user_missing' };
   }
@@ -177,7 +181,7 @@ export async function fireSchedule(
     // cadences, but an admin raising the floor later must also stop an already-enabled
     // schedule that now runs more often than policy allows.
     if (cadenceIntervalMinutes(schedule.cadence) < ownerLimits.minIntervalMinutes) {
-      await methods.disableSchedule(schedule.id, 'invalid_schedule');
+      await methods.disableSchedule(schedule.id, 'invalid_schedule', claimToken);
       await advance();
       return { fired: false, skipped: 'disabled' as const };
     }
@@ -185,7 +189,7 @@ export async function fireSchedule(
     // Re-check the owner's live schedule permission: a role that lost
     // SCHEDULES access after the schedule was created must stop firing.
     if (!(await deps.hasScheduleAccess(user))) {
-      await methods.disableSchedule(schedule.id, 'permission_revoked');
+      await methods.disableSchedule(schedule.id, 'permission_revoked', claimToken);
       await advance();
       return { fired: false, skipped: 'permission_revoked' as const };
     }
@@ -203,15 +207,9 @@ export async function fireSchedule(
       // Disable immediately instead of letting the loopback chat reject the run
       // and burn attempts toward the failure threshold.
       const reason = agentAccess === 'missing' ? 'agent_deleted' : 'permission_revoked';
-      await methods.disableSchedule(schedule.id, reason);
+      await methods.disableSchedule(schedule.id, reason, claimToken);
       await advance();
       return { fired: false, skipped: reason };
-    }
-
-    if (await methods.hasActiveRun(schedule.id)) {
-      await methods.recordSkippedRun({ ...baseRun, status: 'skipped_overlap' });
-      await advance();
-      return { fired: false, skipped: 'overlap' as const };
     }
 
     if (await deps.isOutOfBalance(user)) {
@@ -239,7 +237,7 @@ export async function fireSchedule(
       // re-pick this failing row every tick and starve others / hammer the file
       // lookup); manual run-now releases so the user can retry immediately.
       if (options?.manual) {
-        await methods.releaseLease(schedule.id);
+        await methods.releaseLease(schedule.id, claimToken);
       }
       return { fired: false, error: 'File resolution failed' };
     }
@@ -247,40 +245,66 @@ export async function fireSchedule(
       (id) => !files.some((file) => file.file_id === id),
     );
 
-    // Pre-generate the conversation id and record it on the run row up front. The
+    // Pre-generate the conversation id and reserve the run row up front. The
     // loopback POST reuses it (streamId === conversationId), so reconciliation can
     // ALWAYS locate this occurrence's job — even if the post-accept detail write
     // fails — instead of mislabeling an accepted (or preserved) run as an orphan.
+    // reserveStartedRun is the atomic overlap guard: the single-active partial index
+    // rejects a second `started` run for the schedule, so a concurrent occurrence
+    // surfaces as 'overlap' with no read-then-insert race.
     const conversationId = randomUUID();
-    const run = await methods.insertScheduleRun({
+    const reservation = await methods.reserveStartedRun({
       ...baseRun,
-      status: 'started',
       conversationId,
       firedAt: new Date(),
     });
-    if (run == null) {
+    if ('conflict' in reservation) {
+      if (reservation.conflict === 'overlap') {
+        // Another occurrence of this schedule is already active. Record the skip
+        // (its own occurrence row) and advance past this one.
+        await methods.recordSkippedRun({ ...baseRun, status: 'skipped_overlap' });
+        await advance();
+        return { fired: false, skipped: 'overlap' as const };
+      }
       await advance();
       return { fired: false, skipped: 'duplicate' as const };
     }
 
-    // Reserve-then-verify capacity: the insert above is the atomic reservation.
-    // The count is GLOBAL (system tenant) — under the owner's tenant context it
-    // would only see this tenant's runs and multiple tenants could collectively
-    // exceed the cap. Compare against the OWNER-resolved fireConcurrency (matching
-    // run-now's request-scoped check) so a lowered per-principal override is
-    // honored for automatic fires, not just the base cap. Roll back if over.
+    // Reserve-then-verify GLOBAL capacity: the reservation above is atomic per
+    // schedule, but the cross-schedule fireConcurrency cap is a count. The count is
+    // GLOBAL (system tenant) — under the owner's tenant context it would only see
+    // this tenant's runs and multiple tenants could collectively exceed the cap.
+    // Compare against the OWNER-resolved fireConcurrency (matching run-now's
+    // request-scoped check). Roll back (status-fenced) if over.
     const active = await deps.countActiveRunsGlobal();
     if (active > ownerLimits.fireConcurrency) {
-      await methods.deleteScheduleRun(schedule.id, scheduledFor);
+      await methods.deleteScheduleRun(schedule.id, scheduledFor, 'started');
       // Automatic claims keep the claim's lease as a backoff so the nextRunAt-sorted
       // claimer doesn't immediately re-pick this row and starve others; nextRunAt is
       // untouched, so the occurrence retries once the lease expires. A manual run-now
       // MUST release its lease, or repeated Run-now clicks hit a misleading "already
       // in progress" 409 for the full manual-lease TTL even after capacity frees.
       if (options?.manual) {
-        await methods.releaseLease(schedule.id);
+        await methods.releaseLease(schedule.id, claimToken);
       }
       return { fired: false, skipped: 'capacity' as const };
+    }
+
+    // Last check before the point of no return: an automatic fire re-verifies it
+    // still holds an authoritative claim (schedule still enabled, not deleted, same
+    // claim token, lease unexpired). An owner disable/delete/edit or a lease-expiry
+    // re-claim between claim and here supersedes this fire — roll the reservation
+    // back (status-fenced) and skip WITHOUT dispatching a billed generation. Manual
+    // run-now skips this: it took a fresh lease synchronously with the user's click
+    // and acquireManualRunLease already rejects a `deleting` schedule.
+    if (
+      !options?.manual &&
+      claimToken != null &&
+      !(await methods.revalidateClaim(schedule.id, claimToken))
+    ) {
+      await methods.deleteScheduleRun(schedule.id, scheduledFor, 'started');
+      await advance();
+      return { fired: false, skipped: 'superseded' as const };
     }
 
     try {
