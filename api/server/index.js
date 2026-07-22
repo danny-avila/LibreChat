@@ -63,9 +63,12 @@ const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default 
 
 const app = express();
 let serverReady = false;
+let schedulesReady = false;
 
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
+const SCHEDULES_NOT_READY_CODE = 'SCHEDULES_NOT_READY';
 const CHAT_START_RETRY_AFTER_SECONDS = '1';
+const READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 const rejectChatStartsUntilReady = (req, res, next) => {
   if (serverReady || req.method !== 'POST' || req.path === '/abort') {
@@ -76,6 +79,25 @@ const rejectChatStartsUntilReady = (req, res, next) => {
   return res.status(503).json({
     code: SERVER_NOT_READY_CODE,
     error: 'Server is still starting. Please retry shortly.',
+  });
+};
+
+/**
+ * Reject schedule WRITES until the engine (and thus its unique idempotency + TTL
+ * indexes) is up. With MONGO_AUTO_INDEX disabled those indexes are created only by
+ * initializeScheduleEngine, which runs after the server starts listening — so a
+ * create/run-now that lands in that window would persist without duplicate
+ * protection. Reads stay open; writers get a 503 + Retry-After.
+ */
+const rejectScheduleWritesUntilReady = (req, res, next) => {
+  if (schedulesReady || READ_ONLY_METHODS.has(req.method)) {
+    return next();
+  }
+
+  res.set('Retry-After', CHAT_START_RETRY_AFTER_SECONDS);
+  return res.status(503).json({
+    code: SCHEDULES_NOT_READY_CODE,
+    error: 'Scheduler is still starting. Please retry shortly.',
   });
 };
 
@@ -295,7 +317,7 @@ const startServer = async () => {
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
   app.use('/api/memories', routes.memories);
-  app.use('/api/schedules', routes.schedules);
+  app.use('/api/schedules', rejectScheduleWritesUntilReady, routes.schedules);
   app.use('/api/permissions', routes.accessPermissions);
 
   app.use('/api/tags', routes.tags);
@@ -362,7 +384,17 @@ const startServer = async () => {
       // here. Horizontal scaling of this entrypoint requires a SHARED stream store
       // (USE_REDIS_STREAMS) — which makes GenerationJobManager.isRedis true and
       // isJobStoreShared true anyway — so USE_REDIS is the wrong signal to gate on.
-      await initializeScheduleEngine({ clustered: false });
+      const scheduleEngine = await initializeScheduleEngine({ clustered: false });
+      // Only accept schedule writes once the engine confirmed its unique idempotency
+      // + TTL indexes exist. If index creation failed the engine is left undefined and
+      // schedule writes keep returning 503 (the app otherwise runs normally).
+      schedulesReady = scheduleEngine != null;
+      if (!schedulesReady) {
+        logger.warn(
+          '[schedules] engine not initialized (index creation failed) — schedule writes will ' +
+            'be rejected with 503 until an operator resolves the index and restarts.',
+        );
+      }
       logger.info('Server readiness checks passing.');
     } catch (initErr) {
       serverReady = false;

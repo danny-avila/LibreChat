@@ -108,6 +108,25 @@ describe('Startup readiness wiring', () => {
     expect(agentsRouteIndex).toBeGreaterThan(-1);
     expect(readinessGateIndex).toBeLessThan(agentsRouteIndex);
   });
+
+  it('guards schedule writes with a readiness gate on the schedules route', () => {
+    expect(source).toContain(
+      "app.use('/api/schedules', rejectScheduleWritesUntilReady, routes.schedules);",
+    );
+  });
+
+  it('flips schedulesReady only from the engine-init result (indexes must exist first)', () => {
+    const engineInitIndex = source.indexOf(
+      'const scheduleEngine = await initializeScheduleEngine(',
+    );
+    const readyFlipIndex = source.indexOf('schedulesReady = scheduleEngine != null;');
+
+    expect(engineInitIndex).toBeGreaterThan(-1);
+    expect(readyFlipIndex).toBeGreaterThan(-1);
+    // The write gate must open only AFTER the engine (and thus its unique idempotency
+    // + TTL indexes) is confirmed up, never merely on serverReady.
+    expect(engineInitIndex).toBeLessThan(readyFlipIndex);
+  });
 });
 
 describe('Server Configuration', () => {

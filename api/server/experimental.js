@@ -254,6 +254,26 @@ if (cluster.isMaster) {
   let shouldStartExpiredFileSweep = false;
   let expiredFileSweepOptions = null;
   let expiredFileSweepStarted = false;
+  let schedulesReady = false;
+  const SCHEDULE_WRITE_READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+  /**
+   * Reject schedule WRITES until this worker's engine (and thus its unique
+   * idempotency + TTL indexes) is up. With MONGO_AUTO_INDEX disabled those indexes
+   * are created only by initializeScheduleEngine, which runs after the worker starts
+   * listening — a create/run-now that lands in that window would persist without
+   * duplicate protection. Reads stay open; writers get a 503 + Retry-After.
+   */
+  const rejectScheduleWritesUntilReady = (req, res, next) => {
+    if (schedulesReady || SCHEDULE_WRITE_READ_ONLY_METHODS.has(req.method)) {
+      return next();
+    }
+    res.set('Retry-After', '1');
+    return res.status(503).json({
+      code: 'SCHEDULES_NOT_READY',
+      error: 'Scheduler is still starting. Please retry shortly.',
+    });
+  };
 
   const startExpiredFileSweepOnce = () => {
     if (!shouldStartExpiredFileSweep || expiredFileSweepStarted || !expiredFileSweepOptions) {
@@ -455,7 +475,7 @@ if (cluster.isMaster) {
     app.use('/api/agents', routes.agents);
     app.use('/api/banner', routes.banner);
     app.use('/api/memories', routes.memories);
-    app.use('/api/schedules', routes.schedules);
+    app.use('/api/schedules', rejectScheduleWritesUntilReady, routes.schedules);
     app.use('/api/permissions', routes.accessPermissions);
     app.use('/api/tags', routes.tags);
     app.use('/api/mcp', routes.mcp);
@@ -502,7 +522,17 @@ if (cluster.isMaster) {
         // (GenerationJobManager.isRedis) to decide isJobStoreShared: a multi-worker
         // deployment whose stream store is in-memory is NOT shared, so cross-worker
         // job-status reconciliation is skipped instead of misreading a peer's live run.
-        await initializeScheduleEngine({ clustered: workers > 1 });
+        const scheduleEngine = await initializeScheduleEngine({ clustered: workers > 1 });
+        // Only accept schedule writes once the engine confirmed its unique idempotency
+        // + TTL indexes exist. If index creation failed the engine is left undefined and
+        // schedule writes keep returning 503 (the worker otherwise runs normally).
+        schedulesReady = scheduleEngine != null;
+        if (!schedulesReady) {
+          logger.warn(
+            `[schedules] worker ${process.pid} engine not initialized (index creation failed) — ` +
+              'schedule writes will be rejected with 503 until an operator resolves the index.',
+          );
+        }
       } catch (initErr) {
         logger.error(`Worker ${process.pid} post-listen initialization failed:`, initErr);
         process.exit(1);

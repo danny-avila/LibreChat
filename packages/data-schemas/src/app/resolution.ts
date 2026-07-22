@@ -184,6 +184,18 @@ function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0,
       // the boolean into the `use` flag so inherited object-form limits (maxPerUser,
       // minIntervalMinutes, ...) survive instead of collapsing to global defaults.
       result[key] = { ...(targetVal as AnyObject), use: sourceVal };
+    } else if (
+      typeof targetVal === 'boolean' &&
+      sourceVal != null &&
+      typeof sourceVal === 'object' &&
+      !Array.isArray(sourceVal) &&
+      RUNTIME_CONFIG_INTERFACE_FIELDS.has(key)
+    ) {
+      // Symmetric case: an OBJECT override (e.g. tuning maxPerUser) on top of a
+      // BOOLEAN base must inherit the base's enable state unless it sets `use`
+      // explicitly — otherwise setting a limit on a globally-disabled feature
+      // (`schedules: false`) would silently re-enable it.
+      result[key] = { use: targetVal, ...(sourceVal as AnyObject) };
     } else {
       result[key] = sourceVal;
     }

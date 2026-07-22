@@ -546,7 +546,25 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     });
 
     if (job.abortController.signal.aborted) {
-      GenerationJobManager.completeJob(streamId, 'Request aborted during initialization');
+      if (scheduleId) {
+        // A scheduled fire aborted during initialization (e.g. a delete/quiesce now
+        // identity-matches this job) must record its terminal outcome and preserve
+        // the aborted job when that write fails — otherwise the `started` ScheduleRun
+        // row consumes global capacity until the orphan sweep and the aborted
+        // evidence can be reaped before the reconciler sees it. Mirror the
+        // liveness-abort path (abortJob -> reconcile 'interrupted', not 'success').
+        const recorded = await recordScheduleOutcome({
+          scheduleId,
+          scheduledFor,
+          status: 'interrupted',
+          conversationId: streamId,
+        });
+        await GenerationJobManager.abortJob(streamId, {
+          preserveForReconcile: !recorded,
+        }).catch(() => undefined);
+      } else {
+        GenerationJobManager.completeJob(streamId, 'Request aborted during initialization');
+      }
       await finishResumableRequest(req, userId);
       return;
     }

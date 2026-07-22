@@ -65,6 +65,36 @@ describe('mergeConfigOverrides', () => {
     expect(dIface.schedules).toEqual({ use: false, maxPerUser: 50, minIntervalMinutes: 5 });
   });
 
+  it('folds an object schedules override onto a boolean base, inheriting the enable state', () => {
+    // Enabled base, object override that only TUNES a limit (no `use`): the enable
+    // state must be inherited from the boolean base, not silently dropped.
+    const enabledBase = {
+      interfaceConfig: { schedules: true },
+    } as unknown as AppConfig;
+    const tuned = mergeConfigOverrides(enabledBase, [
+      fakeConfig({ interface: { schedules: { maxPerUser: 3 } } }, 10),
+    ]) as unknown as Record<string, Record<string, unknown>>;
+    expect(tuned.interfaceConfig.schedules).toEqual({ use: true, maxPerUser: 3 });
+
+    // Disabled base, same object override: tuning a limit must NOT re-enable the
+    // globally-disabled feature.
+    const disabledBase = {
+      interfaceConfig: { schedules: false },
+    } as unknown as AppConfig;
+    const stillOff = mergeConfigOverrides(disabledBase, [
+      fakeConfig({ interface: { schedules: { maxPerUser: 3 } } }, 10),
+    ]) as unknown as Record<string, Record<string, unknown>>;
+    expect(stillOff.interfaceConfig.schedules).toEqual({ use: false, maxPerUser: 3 });
+
+    // A config override cannot flip the enable state: `use` is a permission sub-key,
+    // stripped from interface overrides before merge (enable is permission-managed),
+    // so an override attempting `use: true` on a disabled base stays disabled.
+    const cannotReEnable = mergeConfigOverrides(disabledBase, [
+      fakeConfig({ interface: { schedules: { use: true, maxPerUser: 3 } } }, 10),
+    ]) as unknown as Record<string, Record<string, unknown>>;
+    expect(cannotReEnable.interfaceConfig.schedules).toEqual({ use: false, maxPerUser: 3 });
+  });
+
   it('sorts by priority — higher priority wins', () => {
     const configs = [
       fakeConfig({ registration: { enabled: false } }, 100),

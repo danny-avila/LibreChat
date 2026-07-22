@@ -158,6 +158,12 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
   }
 
   const MANUAL_RUN_LEASE_MS = 5 * 60 * 1000;
+  // Bounded wait for aborted scheduled runs to settle during account-deletion quiesce,
+  // before the message/conversation cascade runs. Long enough to cover a generation that
+  // already returned from the model finishing its persistence; capped so account deletion
+  // never blocks indefinitely on an unreachable peer-worker run.
+  const QUIESCE_DRAIN_TIMEOUT_MS = 10 * 1000;
+  const QUIESCE_DRAIN_POLL_MS = 250;
 
   // Whether this deployment runs multiple engine replicas. Combined with the live
   // job-store backend (GenerationJobManager.isRedis), this decides isJobStoreShared:
@@ -284,9 +290,15 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       if (job == null || !jobMatchesIdentity(job, identity)) {
         return false;
       }
-      // Already terminal — nothing to abort, and its evidence must survive: treat as
-      // delivered (the run is no longer generating).
+      // Already terminal — the run is no longer generating. For a per-schedule delete
+      // (preserve) leave the job as reconcile evidence; for account deletion
+      // (preserve:false) this may be a PRESERVED terminal job from a prior failed
+      // outcome write, and since its ScheduleRun rows are about to be hard-deleted no
+      // reconciler will ever clear it — delete it now so the job hash doesn't leak.
       if (job.status !== 'running' && job.status !== 'requires_action') {
+        if (options?.preserve === false) {
+          await store.deleteJob(conversationId);
+        }
         return true;
       }
       await GenerationJobManager.abortJob(conversationId, {
@@ -571,15 +583,28 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
         unconfirmed.push(run.conversationId);
       }
     }
-    // Surface any abort that could not be confirmed: in a clustered deployment
-    // without a shared stream store the run's generation may live on a peer worker
-    // and keep persisting messages for the now-deleted account. This is the unshared
-    // topology's known limitation (see the init warning); make it visible per run.
-    if (unconfirmed.length > 0) {
+    // WAIT (bounded) for the aborted generations to actually settle before the
+    // account-deletion cascade deletes messages/conversations: a run that already
+    // returned from the model can observe the abort but still persist its messages,
+    // which would otherwise resurrect data for the deleted account after the cascade
+    // ran. Poll the run rows (they leave the active set once their outcome is
+    // recorded) until drained or the deadline.
+    const deadline = Date.now() + QUIESCE_DRAIN_TIMEOUT_MS;
+    let remaining = active.length;
+    while (remaining > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, QUIESCE_DRAIN_POLL_MS));
+      remaining = (await methods.getActiveRunsForUser(userId)).length;
+    }
+    // Surface anything that did not drain / could not be confirmed: in a clustered
+    // deployment without a shared stream store the run's generation may live on a
+    // peer worker and keep persisting for the now-deleted account. Known unshared-
+    // topology limitation (see the init warning); make it visible.
+    if (remaining > 0 || unconfirmed.length > 0) {
       logger.warn(
-        `[schedules] account-deletion quiesce could not confirm abort for ${unconfirmed.length} ` +
-          `in-flight scheduled run(s) [${unconfirmed.join(', ')}] — a peer worker's generation may ` +
-          'still persist data. Guaranteed quiescing requires a shared stream store (USE_REDIS_STREAMS).',
+        `[schedules] account-deletion quiesce did not confirm ${Math.max(remaining, unconfirmed.length)} ` +
+          `in-flight scheduled run(s) settled${unconfirmed.length ? ` [${unconfirmed.join(', ')}]` : ''} ` +
+          '— a peer worker generation may still persist data. Guaranteed quiescing requires a ' +
+          'shared stream store (USE_REDIS_STREAMS).',
       );
     }
   }
