@@ -541,7 +541,10 @@ export class RedisJobStore implements IJobStore {
     }
 
     if (updates.status && ['complete', 'error', 'aborted'].includes(updates.status)) {
-      await this.applyTerminalContentCleanup(streamId);
+      // A terminal write WITHOUT completedAt is the preserveForReconcile signal
+      // (see GenerationJobManager.completeJob/abortJob) — retain the job hash on
+      // the longer running TTL so reconcile can still observe it.
+      await this.applyTerminalContentCleanup(streamId, updates.completedAt == null);
     }
   }
 
@@ -553,14 +556,19 @@ export class RedisJobStore implements IJobStore {
    * the configured after-complete TTLs. Without sharing this, an expired
    * approval left Redis stream contents around for the full running TTL.
    */
-  private async applyTerminalContentCleanup(streamId: string): Promise<void> {
+  private async applyTerminalContentCleanup(streamId: string, preserve = false): Promise<void> {
     const key = KEYS.job(streamId);
+    // A preserved terminal job (kept WITHOUT completedAt for reconciliation) must
+    // outlive the short completed TTL, or the retained evidence expires before the
+    // scheduler's reconcile window; use the longer running TTL. The reconciler
+    // deletes it after finalizing, so this is a bounded upper limit, not a leak.
+    const jobKeyTtl = preserve ? this.ttl.running : this.ttl.completed;
     // Proactively remove from user's job set (requires reading userId from the job hash)
     const job = await this.getJob(streamId);
     const userJobsKey = job?.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
 
     if (this.isCluster) {
-      await this.redis.expire(key, this.ttl.completed);
+      await this.redis.expire(key, jobKeyTtl);
       await this.redis.srem(KEYS.runningJobs, streamId);
       await this.redis.srem(KEYS.requiresActionJobs, streamId);
       await this.redis.del(KEYS.steers(streamId));
@@ -582,7 +590,7 @@ export class RedisJobStore implements IJobStore {
       }
     } else {
       const pipeline = this.redis.pipeline();
-      pipeline.expire(key, this.ttl.completed);
+      pipeline.expire(key, jobKeyTtl);
       pipeline.srem(KEYS.runningJobs, streamId);
       pipeline.srem(KEYS.requiresActionJobs, streamId);
       pipeline.del(KEYS.steers(streamId));

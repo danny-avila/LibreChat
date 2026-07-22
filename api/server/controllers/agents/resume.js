@@ -753,9 +753,12 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       }
       // Record the schedule error now: for a scheduled fire that paused and
       // then failed on resume, this is the terminal point, and the job is about
-      // to be deleted (the reconciler wouldn't see the error).
+      // to be deleted (the reconciler wouldn't see the error). If the write fails
+      // (Mongo down across its retries), preserve the completed job so reconcile
+      // records the failure instead of the run lingering to the abandonment sweep.
+      let scheduleOutcomeRecorded = true;
       if (job.metadata?.scheduleId) {
-        await recordScheduleOutcome({
+        scheduleOutcomeRecorded = await recordScheduleOutcome({
           scheduleId: job.metadata.scheduleId,
           scheduledFor: job.metadata.scheduledFor,
           status: 'error',
@@ -764,7 +767,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         });
       }
       try {
-        await GenerationJobManager.completeJob(streamId, err?.message ?? 'Resume failed');
+        await GenerationJobManager.completeJob(streamId, err?.message ?? 'Resume failed', {
+          preserveForReconcile: Boolean(job.metadata?.scheduleId) && !scheduleOutcomeRecorded,
+        });
       } catch (completeErr) {
         logger.error('[ResumeAgentController] Failed to finalize failed resume', completeErr);
         // Last resort: force a terminal state so the job isn't orphaned in `running`.

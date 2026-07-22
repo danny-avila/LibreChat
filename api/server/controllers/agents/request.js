@@ -793,6 +793,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           if (client) {
             disposeClient(client);
           }
+          // Record a scheduled fire's pause as `requires_action` NOW (not on the
+          // next reconcile sweep): overlap/capacity checks key on `started`, so a
+          // run left `started` while paused would wrongly block a run-now or the
+          // next occurrence. A failed write just falls back to reconcile marking it.
+          if (scheduleId) {
+            await recordScheduleOutcome({
+              scheduleId,
+              scheduledFor,
+              status: 'requires_action',
+              conversationId: streamId,
+            });
+          }
           logger.debug(
             `[ResumableAgentController] Turn paused for approval; awaiting resume: ${streamId}`,
           );
@@ -987,16 +999,23 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           });
 
           await GenerationJobManager.emitDone(streamId, finalEvent);
-          GenerationJobManager.completeJob(streamId, 'Request aborted');
+          // Record the abort BEFORE completeJob so the run doesn't linger as
+          // `started` (blocking run-now/overlap until the 30-minute orphan cutoff).
+          let abortOutcomeRecorded = true;
           if (scheduleId) {
-            // Record the abort so the run doesn't linger as `started` (which would
-            // block run-now/overlap until the 30-minute orphan cutoff).
-            await recordScheduleOutcome({
+            abortOutcomeRecorded = await recordScheduleOutcome({
               scheduleId,
               scheduledFor,
               status: 'interrupted',
               conversationId: conversation?.conversationId,
             });
+          }
+          // Only finalize/clean the job when the outcome is recorded. When it isn't
+          // (Mongo down), leave any reconcile evidence the abort route preserved
+          // (an `aborted` job) intact — overwriting it here as an `error` job would
+          // make reconcile count a user stop toward failure auto-disable.
+          if (abortOutcomeRecorded) {
+            GenerationJobManager.completeJob(streamId, 'Request aborted');
           }
           await finishResumableRequest(req, userId);
         }

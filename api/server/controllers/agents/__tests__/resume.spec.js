@@ -1104,7 +1104,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await flush();
 
       expect(mockGenerationJobManager.emitError).toHaveBeenCalledWith(CONVO_ID, 'boom');
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, 'boom');
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, 'boom', {
+        preserveForReconcile: false,
+      });
       expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(CONVO_ID, { type: 'mongo' });
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
       expect(mockSaveMessage).not.toHaveBeenCalled();
