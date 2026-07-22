@@ -6,5 +6,6 @@ export type {
   ActivityLabelHookOptions,
   ActivityLabelLLM,
   ActivityLabelSlot,
+  ActivityLabelInvokeCallbacks,
   GenerateLabelPayload,
 } from './runtime';
