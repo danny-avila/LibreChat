@@ -1,9 +1,8 @@
 import React from 'react';
 import type { TModelSpec } from 'librechat-data-provider';
-import { CustomMenu as Menu } from '../CustomMenu';
 import { ModelSpecItem } from './ModelSpecItem';
 import { useModelSelectorContext } from '../ModelSelectorContext';
-import GroupIcon from './GroupIcon';
+import GroupMenu from './GroupMenu';
 
 interface CustomGroupProps {
   groupName: string;
@@ -20,27 +19,11 @@ export function CustomGroup({ groupName, specs, groupIcon }: CustomGroupProps) {
   }
 
   return (
-    <Menu
-      id={`custom-group-${groupName}-menu`}
-      key={`custom-group-${groupName}`}
-      className="transition-opacity duration-200 ease-in-out"
-      label={
-        <div className="group flex w-full flex-shrink cursor-pointer items-center justify-between rounded-xl px-1 py-1 text-sm">
-          <div className="flex items-center gap-2">
-            {groupIcon && (
-              <div className="flex-shrink-0">
-                <GroupIcon iconURL={groupIcon} groupName={groupName} />
-              </div>
-            )}
-            <span className="truncate text-left">{groupName}</span>
-          </div>
-        </div>
-      }
-    >
+    <GroupMenu id={`custom-group-${groupName}-menu`} groupName={groupName} groupIcon={groupIcon}>
       {specs.map((spec: TModelSpec) => (
         <ModelSpecItem key={spec.name} spec={spec} isSelected={selectedSpec === spec.name} />
       ))}
-    </Menu>
+    </GroupMenu>
   );
 }
 
