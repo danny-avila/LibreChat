@@ -5,6 +5,10 @@ export type Meridiem = 'AM' | 'PM';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Mirrors the server's default weekly day (Monday) when a weekly cadence omits
+ *  daysOfWeek, so an API-created/migrated `frequency: 'weekly'` renders as weekly. */
+const WEEKLY_DEFAULT_DAY = 1;
+
 /** August 1st, 2021 was a Sunday; anchors day-of-week indices 0-6 to real dates */
 const SUNDAY_UTC = Date.UTC(2021, 7, 1);
 
@@ -42,8 +46,12 @@ export const describeCadence = (
   if (frequency === 'weekdays') {
     return localize('com_ui_schedule_runs_weekdays', { time });
   }
-  if (frequency === 'weekly' && daysOfWeek != null && daysOfWeek.length > 0) {
-    const days = daysOfWeek.map((day) => formatScheduleDay(day, locale)).join(', ');
+  if (frequency === 'weekly') {
+    // A weekly cadence with no daysOfWeek is valid — the server fires it on the
+    // default weekly day — so render it as weekly (not daily) using that same day.
+    const effectiveDays =
+      daysOfWeek != null && daysOfWeek.length > 0 ? daysOfWeek : [WEEKLY_DEFAULT_DAY];
+    const days = effectiveDays.map((day) => formatScheduleDay(day, locale)).join(', ');
     return localize('com_ui_schedule_runs_weekly', { days, time });
   }
   return localize('com_ui_schedule_runs_daily', { time });

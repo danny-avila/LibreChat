@@ -476,18 +476,22 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     if (schedule == null) {
       return 'gone';
     }
+    const when = new Date(scheduledFor);
     // Overlap = a DIFFERENT occurrence is currently `started`. Exclude this run's own
     // row: if its pause bookkeeping failed transiently the row can still be `started`,
     // and treating that as an overlap would wrongly reject resuming THIS same occurrence.
-    if (await methods.hasOtherActiveRun(scheduleId, new Date(scheduledFor))) {
+    if (await methods.hasOtherActiveRun(scheduleId, when)) {
       return 'overlap';
     }
     // Read-only capacity gate BEFORE promoting, so we never mutate a row a concurrent
-    // same-pause resume may already be driving (no rollback path exists).
+    // same-pause resume may already be driving (no rollback path exists). Discount
+    // this occurrence's OWN `started` row when present (a transient pause-bookkeeping
+    // failure): resuming it adds no new active run, so the global count already
+    // includes it and must not block the resume.
     const owner = await engineDeps.getUserContext(schedule.user);
     const limits = await getLimits(owner ?? undefined);
-    const active = await engineDeps.countActiveRunsGlobal();
-    if (active >= limits.fireConcurrency) {
+    const selfActive = await methods.isOccurrenceStarted(scheduleId, when);
+    if (!selfActive && (await engineDeps.countActiveRunsGlobal()) >= limits.fireConcurrency) {
       return 'capacity';
     }
     // Reserve the single active slot. If a different occurrence won the slot since
@@ -496,7 +500,7 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     // occurrence with the paused row still `requires_action` (which overlap/capacity
     // accounting would miss). 'missing' means a concurrent same-pause resume already
     // promoted it — proceed. Never rolled back.
-    const promoted = await methods.promoteRunToStarted(scheduleId, new Date(scheduledFor));
+    const promoted = await methods.promoteRunToStarted(scheduleId, when);
     if (promoted === 'overlap') {
       return 'overlap';
     }

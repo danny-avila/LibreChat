@@ -90,6 +90,7 @@ function makeMethods() {
     ),
     revalidateClaim: jest.fn(async () => true),
     holdsLease: jest.fn(async () => true),
+    releaseLeaseByHolder: jest.fn(async () => undefined),
     deleteScheduleRun: jest.fn(async (id: string, when: Date, _status?: string) => {
       runs.delete(key(id, when));
     }),

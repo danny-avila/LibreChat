@@ -95,9 +95,11 @@ export type ScheduleMethods = {
     leaseMs: number,
   ) => Promise<ISchedule | null>;
   releaseLease: (id: string, expectedClaimToken?: string) => Promise<void>;
+  releaseLeaseByHolder: (id: string, leaseBy: string) => Promise<void>;
   revalidateClaim: (id: string, claimToken: string, requireEnabled?: boolean) => Promise<boolean>;
   holdsLease: (id: string, leaseBy: string) => Promise<boolean>;
   hasOtherActiveRun: (scheduleId: string, scheduledFor: Date) => Promise<boolean>;
+  isOccurrenceStarted: (scheduleId: string, scheduledFor: Date) => Promise<boolean>;
   advanceSchedule: (
     id: string,
     nextRunAt: Date | null,
@@ -358,6 +360,18 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   }
 
   /**
+   * Releases a lease fenced on the lease HOLDER (`leaseBy`) rather than the claim
+   * token. Used when a fire is superseded by an owner edit that rotated the token
+   * (so a token-fenced release would no-op): the worker still owns the lease, so it
+   * must clear it — otherwise the edited schedule (and Run now) is reported "already
+   * in progress" until the lease TTL, even though no run was dispatched. A takeover
+   * changed `leaseBy`, so this correctly no-ops and never strips the new holder's lease.
+   */
+  async function releaseLeaseByHolder(id: string, leaseBy: string): Promise<void> {
+    await Schedule().updateOne({ id, leaseBy }, { $unset: { leaseUntil: 1, leaseBy: 1 } });
+  }
+
+  /**
    * Whether the caller still holds an authoritative claim on the schedule: it is
    * not being deleted, its claim token is unchanged, and its lease has not expired
    * (Mongo `$$NOW`). Called as the last check before the loopback POST so an owner
@@ -414,6 +428,20 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   async function hasOtherActiveRun(scheduleId: string, scheduledFor: Date): Promise<boolean> {
     const row = await ScheduleRun()
       .findOne({ scheduleId, status: 'started', scheduledFor: { $ne: scheduledFor } })
+      .select('_id')
+      .lean();
+    return row != null;
+  }
+
+  /**
+   * Whether THIS occurrence's own run row is already `started`. Lets the HITL resume
+   * capacity gate discount a self-active row (e.g. one whose pause bookkeeping failed
+   * transiently): resuming it adds no new active run, so it must not be blocked by a
+   * global count that already includes it.
+   */
+  async function isOccurrenceStarted(scheduleId: string, scheduledFor: Date): Promise<boolean> {
+    const row = await ScheduleRun()
+      .findOne({ scheduleId, scheduledFor, status: 'started' })
       .select('_id')
       .lean();
     return row != null;
@@ -807,12 +835,18 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     id: string,
     userId: string | Types.ObjectId,
   ): Promise<ISchedule | null> {
+    // Keep leaseUntil/leaseBy: a fire that already leased/reserved this occurrence
+    // must be able to prove (holdsLease) it still owns the lease so it can roll back
+    // its own unposted `started` row on the superseded revalidation. Unsetting the
+    // lease here would fail that check and strand a ghost `started` row. Only clear
+    // nextRunAt (belt-and-suspenders atop enabled:false to stop new claims); the
+    // lease releases itself when the fire finishes its rollback, or via TTL.
     return Schedule()
       .findOneAndUpdate(
         { id, user: userId, deleting: { $ne: true } },
         {
           $set: { enabled: false, deleting: true, claimToken: randomUUID() },
-          $unset: { leaseUntil: 1, leaseBy: 1, nextRunAt: 1 },
+          $unset: { nextRunAt: 1 },
         },
         { new: true },
       )
@@ -854,12 +888,27 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   }
 
   /**
-   * Erases a soft-deleted schedule and its runs ONLY once no active run remains,
-   * so a live loopback generation's evidence is never destroyed out from under
-   * it. The schedule is already disabled + `deleting`, so no new run can start;
-   * once none are active none will become active. Returns whether it erased.
+   * Erases a soft-deleted schedule and its runs ONLY once it has fully drained, so a
+   * live loopback generation's evidence is never destroyed out from under it. Drained
+   * means BOTH: (a) no run is active, and (b) no LIVE lease is held. The lease check
+   * is essential — a worker can have CLAIMED the schedule but not yet inserted its
+   * `started` reservation (or be mid-rollback of one); erasing in that window would
+   * let the worker then insert a ghost row against a gone schedule that it can no
+   * longer prove it owns. Returns whether it erased.
    */
   async function eraseScheduleIfDrained(id: string): Promise<boolean> {
+    // A live lease (leaseUntil > $$NOW) means a worker still holds the claim.
+    const leased = await Schedule()
+      .findOne({
+        id,
+        deleting: true,
+        $expr: { $gt: [{ $ifNull: ['$leaseUntil', new Date(0)] }, '$$NOW'] },
+      })
+      .select('_id')
+      .lean();
+    if (leased != null) {
+      return false;
+    }
     const active = await ScheduleRun()
       .findOne({ scheduleId: id, status: { $in: ACTIVE_RUN_STATUSES } })
       .select('_id')
@@ -907,9 +956,11 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     claimDueSchedule,
     acquireManualRunLease,
     releaseLease,
+    releaseLeaseByHolder,
     revalidateClaim,
     holdsLease,
     hasOtherActiveRun,
+    isOccurrenceStarted,
     advanceSchedule,
     disableSchedule,
     insertScheduleRun,

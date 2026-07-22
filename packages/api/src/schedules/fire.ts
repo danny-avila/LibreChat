@@ -316,6 +316,15 @@ export async function fireSchedule(
       !(await methods.revalidateClaim(schedule.id, claimToken, !options?.manual))
     ) {
       await rollbackReservation();
+      // This fire is superseded (owner edit/delete). advance() is fenced on the OLD
+      // claim token, which the edit rotated, so it no-ops and would leave this
+      // worker's lease held until its TTL — reporting the edited schedule / Run now
+      // as "already in progress" though no run was dispatched. Release our own lease
+      // by holder (leaseBy) so it's immediately re-claimable; a takeover changed
+      // leaseBy, so this correctly no-ops there and never strips the new holder's lease.
+      if (schedule.leaseBy != null) {
+        await methods.releaseLeaseByHolder(schedule.id, schedule.leaseBy);
+      }
       await advance();
       return { fired: false, skipped: 'superseded' as const };
     }

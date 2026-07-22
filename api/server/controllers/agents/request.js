@@ -414,12 +414,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           status: 'interrupted',
           conversationId: streamId,
         });
-        // If the outcome write failed (transient Mongo across its retries), preserve
-        // the job so the reconciler can finalize this run instead of deleting the
-        // only evidence while the run row is still `started` (which would leave a
-        // deleted schedule draining until the orphan cutoff). Mirrors the other
-        // scheduled terminal paths.
-        await GenerationJobManager.completeJob(streamId, undefined, {
+        // Terminalize as ABORTED, not complete: if the outcome write failed a
+        // preserved `complete` job would be mapped to `success` by the schedules
+        // reconciler, mislabeling this pre-start abort as a successful run. abortJob
+        // stores it as `aborted` (reconcile -> interrupted), and preserves it for
+        // reconcile only when the outcome write failed so the evidence survives.
+        await GenerationJobManager.abortJob(streamId, {
           preserveForReconcile: !outcomeRecorded,
         }).catch(() => undefined);
         return res.json({ streamId, conversationId, status: 'aborted' });

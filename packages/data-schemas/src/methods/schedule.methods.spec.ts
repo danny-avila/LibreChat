@@ -945,6 +945,24 @@ describe('deletion quiescing (soft-delete, drain, erase)', () => {
     expect(await methods.claimDueSchedule({ instanceId: 'w1', leaseMs: 60_000 })).toBeNull();
   });
 
+  it('keeps a live lease and does not erase until it is released (worker mid-claim)', async () => {
+    const schedule = await methods.createScheduleWithSlot(scheduleData(), 10);
+    const sched = schedule as ISchedule;
+    // A worker has CLAIMED the schedule (live lease) but not yet inserted a run row.
+    const claim = await methods.claimDueSchedule({ instanceId: 'w1', leaseMs: 60_000 });
+    expect(claim?.id).toBe(sched.id);
+    const marked = await methods.markScheduleDeleting(sched.id, sched.user);
+    // The lease is PRESERVED so the worker can prove ownership on its rollback.
+    expect(marked?.leaseBy).toBe('w1');
+    // Erase is blocked while the lease is live, even with no active run row.
+    expect(await methods.eraseScheduleIfDrained(sched.id)).toBe(false);
+    expect(await Schedule.findOne({ id: sched.id }).lean()).not.toBeNull();
+    // Once the worker releases its own lease (by holder), it drains and erases.
+    await methods.releaseLeaseByHolder(sched.id, 'w1');
+    expect(await methods.eraseScheduleIfDrained(sched.id)).toBe(true);
+    expect(await Schedule.findOne({ id: sched.id }).lean()).toBeNull();
+  });
+
   it('frees the slot immediately on soft-delete so a new create can take it under the cap', async () => {
     const user = new mongoose.Types.ObjectId();
     const a = (await methods.createScheduleWithSlot(scheduleData({ user }), 1)) as ISchedule;
