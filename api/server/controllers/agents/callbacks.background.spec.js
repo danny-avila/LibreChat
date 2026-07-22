@@ -67,6 +67,20 @@ describe('createBackgroundCodeResultHandler', () => {
     });
   });
 
+  it('anchors the stale-output guard to dispatch time when provided', async () => {
+    processCodeOutput.mockResolvedValue({ file: { file_id: 'f1' } });
+    const handler = createBackgroundCodeResultHandler({
+      req,
+      updateToolCallResult: jest.fn().mockResolvedValue(true),
+    });
+
+    await handler({ ...baseParams, dispatchedAt: 12345 });
+
+    expect(processCodeOutput).toHaveBeenCalledWith(
+      expect.objectContaining({ freshClaimAfter: 12345 }),
+    );
+  });
+
   it('runs deferred preview finalization without a live stream callback', async () => {
     const finalize = jest.fn();
     processCodeOutput.mockResolvedValue({

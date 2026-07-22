@@ -633,6 +633,7 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
         toolCallId: 'call_code',
         messageId: 'msg-dispatch',
         conversationId: 'exec_convo_code',
+        dispatchedAt: expect.any(Number),
         output: 'stdout:\nhello',
         artifact: CODE_ARTIFACT,
       }),
@@ -852,10 +853,10 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
 
     expect(persistCalls).toHaveLength(1);
     expect(String(persistCalls[0].output)).toContain('boom');
-    /** Parity with foreground CodeExecutor failures so the patched output
-     *  reads as an error, not clean stdout. */
+    /** Parity with foreground failures (the graph's error wrapper) so the
+     *  client's `isError` detection flags the patched output on reload. */
     expect(String(persistCalls[0].output)).toMatch(
-      /^(Traceback|Execution error:|Error:|Exception:)/m,
+      /^Error:\s*\[execute_code\]\s*tool call failed:/,
     );
     expect(persistCalls[0].artifact).toBeUndefined();
 
@@ -876,54 +877,28 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     expect(polled.error).toContain('boom');
   });
 
-  it('falls back to toolEndCallback delivery when no persister is wired, still folding the session', async () => {
+  it('downgrades code calls to foreground when the host wires no persister (OpenAI-compat routes)', async () => {
     const state: CodeToolState = { calls: 0 };
-    const toolEndCalls: Array<{ name?: string; tool_call_id?: string; artifact?: unknown }> = [];
     const handler = createToolExecuteHandler({
       loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
-      toolEndCallback: (async (data: {
-        output?: { name?: string; tool_call_id?: string; artifact?: unknown };
-      }) => {
-        toolEndCalls.push({
-          name: data.output?.name,
-          tool_call_id: data.output?.tool_call_id,
-          artifact: data.output?.artifact,
-        });
-      }) as unknown as Parameters<typeof createToolExecuteHandler>[0]['toolEndCallback'],
+      /** No persistBackgroundCodeResult: generated files could only anchor
+       *  via a later poll (or never) — safer to run the call foreground. */
     });
     const configurable = buildConfig(['execute_code']);
-    const metadata = { thread_id: 'exec_convo_code_fb', run_id: 'msg-fb' };
+    const metadata = { thread_id: 'exec_convo_code_fg', run_id: 'msg-fg' };
 
-    const dispatch = await runBatch(handler, {
-      toolCalls: [codeCall({ id: 'call_code_fb' })],
+    const results = (await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_fg' })],
       agentId: 'a',
       configurable,
       metadata,
-    });
-    await flushMicrotasks();
-    await flushMicrotasks();
-
-    const poll = (await runBatch(handler, {
-      toolCalls: [
-        {
-          id: 'call_poll_fb',
-          name: CHECK_BACKGROUND_TASK_NAME,
-          args: { background_task_id: JSON.parse(dispatch[0].content).background_task_id },
-        },
-      ],
-      agentId: 'a',
-      configurable,
-      metadata: { thread_id: 'exec_convo_code_fb', run_id: 'msg-fb-poll' },
     })) as Array<{ content: string; artifact?: unknown }>;
 
-    // degraded path (no harvest): the poll turn's callback processes the files
-    expect(toolEndCalls).toHaveLength(1);
-    expect(toolEndCalls[0]).toEqual({
-      name: 'execute_code',
-      tool_call_id: 'call_poll_fb',
-      artifact: CODE_ARTIFACT,
-    });
-    // the session fold still happens via the poll result's artifact
-    expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
+    expect(state.calls).toBe(1);
+    expect(results[0].content).not.toContain('background_task_id');
+    expect(results[0].content).toContain('hello');
+    expect(results[0].artifact).toEqual(CODE_ARTIFACT);
+    /** The injected flag never reaches the real tool. */
+    expect(state.lastInput).toEqual({ lang: 'py', code: 'print(1)' });
   });
 });

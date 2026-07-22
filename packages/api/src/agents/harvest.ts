@@ -64,6 +64,10 @@ export interface CodeHarvestParams {
   toolCallId: string;
   messageId?: string;
   conversationId?: string;
+  /** When the background task was DISPATCHED — the ordering anchor for the
+   *  stale-output guard. A slow task settling after a newer run wrote the
+   *  same filename must not overwrite it, so harvest wall-clock is wrong. */
+  dispatchedAt?: number;
   output?: string;
   artifact?: unknown;
   attachments?: unknown[];
@@ -98,6 +102,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
     toolCallId,
     messageId,
     conversationId,
+    dispatchedAt,
     output,
     artifact,
     attachments: knownAttachments,
@@ -127,9 +132,9 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
 
     const attachments: unknown[] = [];
     /** Ordering guard: a filename claim whose row was really written after
-     *  this instant belongs to a NEWER run — the harvest must not overwrite
-     *  it with stale bytes. */
-    const freshClaimAfter = Date.now();
+     *  this task was DISPATCHED belongs to a newer run — the harvest must
+     *  not overwrite it with stale bytes, no matter how late it settles. */
+    const freshClaimAfter = dispatchedAt ?? Date.now();
     const codeArtifact = (artifact ?? {}) as HarvestArtifact;
     const files = Array.isArray(codeArtifact.files) ? codeArtifact.files : [];
     for (const file of files) {

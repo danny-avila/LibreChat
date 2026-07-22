@@ -1,5 +1,4 @@
 import { useSetRecoilState } from 'recoil';
-import type { QueryClient } from '@tanstack/react-query';
 import { QueryKeys, Tools } from 'librechat-data-provider';
 import type {
   MemoriesResponse,
@@ -7,6 +6,7 @@ import type {
   TAttachment,
   TFile,
 } from 'librechat-data-provider';
+import type { QueryClient } from '@tanstack/react-query';
 import { handleMemoryArtifact } from '~/utils/memory';
 import store from '~/store';
 
@@ -70,18 +70,20 @@ export default function useAttachmentHandler(queryClient?: QueryClient) {
     setAttachmentsMap((prevMap) => {
       const messageAttachments =
         (prevMap as Record<string, TAttachment[] | undefined>)[messageId] || [];
-      /* Upsert by `file_id` rather than always appending. The
-       * deferred-preview flow emits the same attachment twice: first
-       * with `status: 'pending'` and `text: null`, then again with
-       * `status: 'ready'` (and text/textFormat) or `'failed'` (with
-       * previewError). The second event must merge over the first in
-       * place — appending would render the artifact card twice, once
-       * stuck pending and once resolved. Attachments without a
-       * `file_id` (lightweight types like web_search / file_search
-       * citations) keep the legacy append behavior. */
-      if (fileId) {
+      /* Upsert by `file_id` (falling back to `filepath` for keyed entries
+       * without one, e.g. code download fallbacks a background poll
+       * re-emits) rather than always appending. The deferred-preview flow
+       * emits the same attachment twice: first with `status: 'pending'`
+       * and `text: null`, then again with `status: 'ready'` (and
+       * text/textFormat) or `'failed'` (with previewError). The second
+       * event must merge over the first in place — appending would render
+       * the artifact card twice, once stuck pending and once resolved.
+       * Attachments with neither key (lightweight types like web_search /
+       * file_search citations) keep the legacy append behavior. */
+      const upsertKey = fileId ?? (data as Partial<TFile>).filepath;
+      if (upsertKey) {
         const existingIndex = messageAttachments.findIndex(
-          (a) => (a as Partial<TFile>).file_id === fileId,
+          (a) => ((a as Partial<TFile>).file_id ?? (a as Partial<TFile>).filepath) === upsertKey,
         );
         if (existingIndex > -1) {
           const existing = messageAttachments[existingIndex] as Partial<TFile>;

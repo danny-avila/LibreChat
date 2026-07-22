@@ -90,6 +90,7 @@ export interface ToolExecuteOptions {
     toolCallId: string;
     messageId?: string;
     conversationId?: string;
+    dispatchedAt?: number;
     output?: string;
     artifact?: unknown;
     attachments?: unknown[];
@@ -3487,16 +3488,17 @@ function getFileAuthoringQueueKey(
  * executes them in parallel, and resolves with the results.
  */
 /**
- * Foreground code failures ship the `Execution error:` shape from the SDK's
- * CodeExecutor; wrap detached failures whose message carries no recognizable
- * error shape the same way, so a patched background error never reads as
- * clean stdout on reload or in later model turns.
+ * Foreground tool failures reach persisted parts wrapped by the graph as
+ * `Error: [toolName] tool call failed: <message>` — the exact shape the
+ * client's `isError` detection keys on. Detached failures bypass the graph,
+ * so wrap them identically before patching the dispatch row, or a reloaded
+ * failed background run renders as clean stdout.
  */
-function toCodeExecutionError(message: string): string {
-  if (/^(Traceback|Execution error:|Error:|Exception:|.*Error:)/m.test(message)) {
+function toCodeToolFailure(toolName: string, message: string): string {
+  if (/^Error:\s*(\[.*?\]\s*)*tool call failed:/i.test(message)) {
     return message;
   }
-  return `Execution error:\n\n${message}`;
+  return `Error: [${toolName}] tool call failed: ${message}`;
 }
 
 /**
@@ -3741,6 +3743,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         toolCallId: tc.id,
                         messageId: backgroundRunId,
                         conversationId: backgroundConversationId,
+                        /** Stale-output ordering is decided by DISPATCH order,
+                         *  not harvest wall-clock: a slow old task settling
+                         *  after a newer run wrote the same filename must not
+                         *  overwrite it. */
+                        dispatchedAt: task.createdAt,
                         ...params,
                       });
                       if (persisted == null) {
@@ -3816,7 +3823,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     });
                   } catch (toolError) {
                     const { message } = getSafeToolError(toolError);
-                    const errorOutput = isCodeCall ? toCodeExecutionError(message) : message;
+                    const errorOutput = isCodeCall ? toCodeToolFailure(tc.name, message) : message;
                     backgroundTaskRegistry.fail(
                       backgroundUserId,
                       backgroundConversationId,
@@ -3982,7 +3989,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 if (
                   backgroundToolSet.has(tc.name) &&
                   isBackgroundRequested(tc.args) &&
-                  !toolRequiresEphemeralConnection(toolMap.get(tc.name))
+                  !toolRequiresEphemeralConnection(toolMap.get(tc.name)) &&
+                  /** Code tools depend on the completion-time harvest to anchor
+                   *  results; hosts that don't wire the persister (OpenAI-compat
+                   *  and Responses controllers) downgrade code calls to
+                   *  foreground rather than losing generated files. */
+                  !(
+                    isCodeSessionAwareToolCall(tc.name, mergedConfigurable) &&
+                    persistBackgroundCodeResult == null
+                  )
                 ) {
                   return reportResult(dispatchBackgroundToolCall(tc));
                 }
