@@ -115,7 +115,13 @@ export default function ScheduleDialog({
   const { showToast } = useToastContext();
   const locale = i18n.language;
 
-  const { control, register, watch, handleSubmit } = useForm<ScheduleFormValues>({
+  const {
+    control,
+    register,
+    watch,
+    handleSubmit,
+    formState: { dirtyFields },
+  } = useForm<ScheduleFormValues>({
     defaultValues: getDefaultValues(schedule),
   });
   const name = watch('name');
@@ -199,13 +205,22 @@ export default function ScheduleDialog({
   const onSubmit = (values: ScheduleFormValues) => {
     const cadence = buildCadence(values);
     if (schedule) {
+      // Preserve the stored cadence (incl. multi-day weekly `daysOfWeek`, which
+      // this single-day picker can't represent) unless the user actually touched
+      // a cadence control — otherwise a rename would silently collapse it.
+      const cadenceTouched =
+        dirtyFields.frequency ||
+        dirtyFields.hour12 ||
+        dirtyFields.minute ||
+        dirtyFields.meridiem ||
+        dirtyFields.dayOfWeek;
       updateSchedule.mutate({
         id: schedule.id,
         payload: {
           name: values.name.trim(),
           prompt: values.prompt.trim(),
           agent_id: values.agent_id,
-          cadence,
+          ...(cadenceTouched ? { cadence } : {}),
         },
       });
       return;

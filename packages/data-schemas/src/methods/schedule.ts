@@ -6,6 +6,7 @@ import type {
   IScheduleRun,
   IScheduleRunDocument,
 } from '~/types/schedule';
+import { createIndexesWithRetry } from '~/utils/retry';
 
 const DUPLICATE_KEY = 11000;
 
@@ -26,6 +27,7 @@ export interface RecordRunOutcomeParams {
 }
 
 export type ScheduleMethods = {
+  ensureScheduleIndexes: () => Promise<void>;
   createSchedule: (data: Partial<ISchedule>) => Promise<ISchedule>;
   updateScheduleById: (
     id: string,
@@ -54,6 +56,10 @@ export type ScheduleMethods = {
   ) => Promise<void>;
   hasActiveRun: (scheduleId: string) => Promise<boolean>;
   countActiveRuns: () => Promise<number>;
+  deleteScheduleRun: (scheduleId: string, scheduledFor: Date) => Promise<void>;
+  deleteSchedulesByUser: (userId: string | Types.ObjectId) => Promise<void>;
+  getUnbookkeptRuns: (olderThan: Date, limit: number) => Promise<IScheduleRun[]>;
+  finalizeBookkeeping: (params: RecordRunOutcomeParams) => Promise<void>;
   recordRunOutcome: (params: RecordRunOutcomeParams) => Promise<void>;
   recordSkippedRun: (
     data: Partial<IScheduleRun> & {
@@ -75,6 +81,17 @@ export type ScheduleMethods = {
 export function createScheduleMethods(mongoose: typeof import('mongoose')): ScheduleMethods {
   const Schedule = () => mongoose.models.Schedule as Model<IScheduleDocument>;
   const ScheduleRun = () => mongoose.models.ScheduleRun as Model<IScheduleRunDocument>;
+
+  /**
+   * Explicitly builds the Schedule/ScheduleRun indexes. Required because the
+   * standard production setting `MONGO_AUTO_INDEX=` (empty) disables Mongoose's
+   * automatic index creation — without this the unique idempotency index and the
+   * TTL retention index would never exist. Called once before the engine starts.
+   */
+  async function ensureScheduleIndexes(): Promise<void> {
+    await createIndexesWithRetry(Schedule());
+    await createIndexesWithRetry(ScheduleRun());
+  }
 
   async function createSchedule(data: Partial<ISchedule>): Promise<ISchedule> {
     const doc = await Schedule().create(data);
@@ -229,13 +246,67 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   }
 
   /**
+   * Applies the schedule-side bookkeeping (lastRun + counters + auto-disable) for
+   * a terminal occurrence. Idempotent via the `lastCountedFor` guard: the $inc
+   * lands at most once per occurrence no matter how many times it is retried
+   * (inline finish, reconciler catch of an un-`bookkept` run, crash-replay).
+   */
+  async function applyTerminalBookkeeping(
+    params: RecordRunOutcomeParams & { firedAt: Date },
+  ): Promise<void> {
+    const lastRun = {
+      conversationId: params.conversationId,
+      status: params.status,
+      error: params.error,
+      firedAt: params.firedAt,
+    };
+    if (params.status === 'interrupted') {
+      // Not a success or failure — surface on the card, count nothing, but still
+      // claim the occurrence so a retry doesn't re-run counters.
+      await Schedule().updateOne(
+        { id: params.scheduleId, lastCountedFor: { $ne: params.scheduledFor } },
+        { $set: { lastRun, lastCountedFor: params.scheduledFor } },
+      );
+      return;
+    }
+    const isFailure = params.status === 'error';
+    const schedule = await Schedule()
+      .findOneAndUpdate(
+        { id: params.scheduleId, lastCountedFor: { $ne: params.scheduledFor } },
+        {
+          $set: {
+            lastRun,
+            lastCountedFor: params.scheduledFor,
+            ...(isFailure ? {} : { balanceSkipCount: 0 }),
+          },
+          $inc: isFailure ? { failureCount: 1 } : { runCount: 1 },
+          ...(isFailure ? {} : { $unset: { disabledReason: 1 } }),
+        },
+        { new: true },
+      )
+      .lean<ISchedule>();
+    // schedule == null means this occurrence was already counted (idempotent retry).
+    if (schedule == null) {
+      return;
+    }
+    if (!isFailure && schedule.failureCount > 0) {
+      await Schedule().updateOne({ id: params.scheduleId }, { $set: { failureCount: 0 } });
+    }
+    if (isFailure && schedule.failureCount >= params.autoDisableAfterFailures) {
+      await disableSchedule(params.scheduleId, 'too_many_failures');
+    }
+  }
+
+  /**
    * Terminal (or pause) transition for a run + lastRun/failure bookkeeping.
-   * Matches a run row still in `started` OR `requires_action` so a run resumed
-   * from a HITL pause (reconciled `requires_action -> success`) records the
-   * same lastRun/counter bookkeeping as an inline completion.
+   * Matches a run row still in `started` OR `requires_action`. Crash-retryable:
+   * the run row is marked `bookkept:false` at terminalization and only flipped
+   * to `true` after bookkeeping lands, so a crash in between is re-applied by the
+   * reconciler (`getUnbookkeptRuns`), while `lastCountedFor` keeps it idempotent.
    */
   async function recordRunOutcome(params: RecordRunOutcomeParams): Promise<void> {
     const firedAt = new Date();
+    const isTerminal = params.status !== 'requires_action';
     const matched = await ScheduleRun().updateOne(
       {
         scheduleId: params.scheduleId,
@@ -245,45 +316,35 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       {
         $set: {
           status: params.status,
+          ...(isTerminal ? { bookkept: false } : {}),
           ...(params.conversationId ? { conversationId: params.conversationId } : {}),
           ...(params.error ? { error: params.error } : {}),
           ...(params.durationMs != null ? { durationMs: params.durationMs } : {}),
         },
       },
     );
+    // No-match guard: never touch schedule bookkeeping without a matching run
+    // (protects against a spoofed scheduleId on a normal chat).
     if ((matched.modifiedCount ?? 0) === 0) {
       return;
     }
-    const lastRun = {
-      conversationId: params.conversationId,
-      status: params.status,
-      error: params.error,
-      firedAt,
-    };
-    // A pause surfaces on the schedule card (lastRun) but touches no counters,
-    // so the "Needs approval" chip renders while the run waits.
-    if (params.status === 'requires_action' || params.status === 'interrupted') {
-      await Schedule().updateOne({ id: params.scheduleId }, { $set: { lastRun } });
-      return;
-    }
-    const isFailure = params.status === 'error';
-    const schedule = await Schedule()
-      .findOneAndUpdate(
+    if (params.status === 'requires_action') {
+      // Pause surfaces on the card (lastRun) but touches no counters.
+      await Schedule().updateOne(
         { id: params.scheduleId },
         {
-          $set: { lastRun, ...(isFailure ? {} : { balanceSkipCount: 0 }) },
-          $inc: isFailure ? { failureCount: 1 } : { runCount: 1 },
-          ...(isFailure ? {} : { $unset: { disabledReason: 1 } }),
+          $set: {
+            lastRun: { conversationId: params.conversationId, status: params.status, firedAt },
+          },
         },
-        { new: true },
-      )
-      .lean<ISchedule>();
-    if (!isFailure && schedule != null && schedule.failureCount > 0) {
-      await Schedule().updateOne({ id: params.scheduleId }, { $set: { failureCount: 0 } });
+      );
+      return;
     }
-    if (isFailure && schedule != null && schedule.failureCount >= params.autoDisableAfterFailures) {
-      await disableSchedule(params.scheduleId, 'too_many_failures');
-    }
+    await applyTerminalBookkeeping({ ...params, firedAt });
+    await ScheduleRun().updateOne(
+      { scheduleId: params.scheduleId, scheduledFor: params.scheduledFor },
+      { $set: { bookkept: true } },
+    );
   }
 
   async function recordSkippedRun(
@@ -332,12 +393,63 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     );
   }
 
-  /** Non-terminal runs old enough to need a job-store status check. */
+  /**
+   * Non-terminal runs old enough to need a job-store status check. Fetches
+   * `started` (capacity-consuming) and `requires_action` (paused) in separate
+   * budgeted, firedAt-ordered buckets so a backlog of long-lived paused rows
+   * can't starve orphaned `started` runs out of every sweep.
+   */
   async function getRunsForReconciliation(olderThan: Date, limit: number): Promise<IScheduleRun[]> {
+    const [started, paused] = await Promise.all([
+      ScheduleRun()
+        .find({ status: 'started', firedAt: { $lt: olderThan } })
+        .sort({ firedAt: 1 })
+        .limit(limit)
+        .lean<IScheduleRun[]>(),
+      ScheduleRun()
+        .find({ status: 'requires_action', firedAt: { $lt: olderThan } })
+        .sort({ firedAt: 1 })
+        .limit(limit)
+        .lean<IScheduleRun[]>(),
+    ]);
+    return [...started, ...paused];
+  }
+
+  /** Terminal runs whose schedule bookkeeping never landed (crash between the two writes). */
+  async function getUnbookkeptRuns(olderThan: Date, limit: number): Promise<IScheduleRun[]> {
     return ScheduleRun()
-      .find({ status: { $in: ['started', 'requires_action'] }, firedAt: { $lt: olderThan } })
+      .find({
+        status: { $in: ['success', 'error', 'interrupted'] },
+        bookkept: false,
+        firedAt: { $lt: olderThan },
+      })
+      .sort({ firedAt: 1 })
       .limit(limit)
       .lean<IScheduleRun[]>();
+  }
+
+  /** Re-applies (idempotent) bookkeeping for a terminal run and marks it bookkept. */
+  async function finalizeBookkeeping(params: RecordRunOutcomeParams): Promise<void> {
+    await applyTerminalBookkeeping({ ...params, firedAt: new Date() });
+    await ScheduleRun().updateOne(
+      { scheduleId: params.scheduleId, scheduledFor: params.scheduledFor },
+      { $set: { bookkept: true } },
+    );
+  }
+
+  /** Deletes a run row (used to roll back a capacity reservation). */
+  async function deleteScheduleRun(scheduleId: string, scheduledFor: Date): Promise<void> {
+    await ScheduleRun().deleteOne({ scheduleId, scheduledFor });
+  }
+
+  /** Cascade for account deletion: removes a user's schedules and their runs. */
+  async function deleteSchedulesByUser(userId: string | Types.ObjectId): Promise<void> {
+    const schedules = await Schedule().find({ user: userId }).select('id').lean<{ id: string }[]>();
+    const ids = schedules.map((s) => s.id);
+    await Schedule().deleteMany({ user: userId });
+    if (ids.length > 0) {
+      await ScheduleRun().deleteMany({ scheduleId: { $in: ids } });
+    }
   }
 
   async function transitionRunStatus(
@@ -354,6 +466,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   }
 
   return {
+    ensureScheduleIndexes,
     createSchedule,
     updateScheduleById,
     deleteScheduleById,
@@ -369,6 +482,10 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     setRunFireDetails,
     hasActiveRun,
     countActiveRuns,
+    deleteScheduleRun,
+    deleteSchedulesByUser,
+    getUnbookkeptRuns,
+    finalizeBookkeeping,
     recordRunOutcome,
     recordSkippedRun,
     getRunsForReconciliation,

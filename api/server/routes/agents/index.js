@@ -24,6 +24,7 @@ const {
   messageUserLimiter,
 } = require('~/server/middleware');
 const SteerController = require('~/server/controllers/agents/steer');
+const { recordScheduleOutcome } = require('~/server/services/Schedules');
 const { saveMessage } = require('~/models');
 const responses = require('./responses');
 const openai = require('./openai');
@@ -336,6 +337,17 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
       abortResultUserMessageId: abortResult.jobData?.userMessage?.messageId,
       abortResultResponseMessageId: abortResult.jobData?.responseMessageId,
     });
+
+    // Finalize the schedule side of an aborted scheduled run (incl. a paused one)
+    // so it doesn't linger as requires_action/started until the abandonment sweep.
+    if (job.metadata?.scheduleId) {
+      await recordScheduleOutcome({
+        scheduleId: job.metadata.scheduleId,
+        scheduledFor: job.metadata.scheduledFor,
+        status: 'interrupted',
+        conversationId: jobStreamId,
+      });
+    }
 
     // HITL: prune the durable checkpoint of a run aborted while paused, so a new turn
     // in this conversation can't rehydrate the stale interrupt before the Mongo TTL

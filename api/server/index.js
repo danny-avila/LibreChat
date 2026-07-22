@@ -356,7 +356,8 @@ const startServer = async () => {
       // Arm the scheduler only after readiness: an earlier tick could fire
       // loopback chats at a server that is not yet listening/accepting starts,
       // recording spurious errors that could auto-disable valid schedules.
-      initializeScheduleEngine();
+      // Ensures indexes before the first tick; failures are logged, not fatal.
+      await initializeScheduleEngine();
       logger.info('Server readiness checks passing.');
     } catch (initErr) {
       serverReady = false;

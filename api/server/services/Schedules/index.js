@@ -5,7 +5,7 @@ const {
   PermissionBits,
   PermissionTypes,
 } = require('librechat-data-provider');
-const { tenantStorage, logger } = require('@librechat/data-schemas');
+const { tenantStorage, runAsSystem, logger } = require('@librechat/data-schemas');
 const { checkPermission } = require('~/server/services/PermissionService');
 const {
   fireSchedule,
@@ -140,9 +140,17 @@ const engineDeps = {
 /** @type {ReturnType<typeof startScheduleEngine> | undefined} */
 let engine;
 
-function initializeScheduleEngine() {
+async function initializeScheduleEngine() {
   if (engine != null) {
     return engine;
+  }
+  // Explicitly build the Schedule/ScheduleRun indexes first — the unique
+  // idempotency index and TTL retention index would otherwise never exist when
+  // MONGO_AUTO_INDEX is disabled (the production default).
+  try {
+    await runAsSystem(() => methods.ensureScheduleIndexes());
+  } catch (err) {
+    logger.error('[schedules] failed to ensure indexes:', err);
   }
   engine = startScheduleEngine(engineDeps);
   return engine;

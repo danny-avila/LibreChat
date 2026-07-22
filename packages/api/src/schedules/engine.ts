@@ -44,9 +44,13 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           const jobStatus = run.conversationId ? await deps.getJobStatus(run.conversationId) : null;
           const ageMs = Date.now() - (run.firedAt?.getTime() ?? 0);
           // Resolve the run owner's limits so crash-reconciled auto-disable uses
-          // the same per-principal threshold as an inline completion.
+          // the same per-principal threshold as an inline completion. Must run in
+          // the OWNER's tenant context: getLimits resolves config via the ALS
+          // tenant, and this loop is under runAsSystem (system tenant).
           const owner = await deps.getUserContext(run.user);
-          const runLimits = owner ? await deps.getLimits(owner) : limits;
+          const runLimits = owner
+            ? await deps.runInTenantContext(owner, () => deps.getLimits(owner))
+            : limits;
           // All transitions go through recordRunOutcome so the schedule's lastRun
           // (and the card's status chip) tracks the run, including the pause.
           const finalize = (
@@ -94,6 +98,31 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           ) {
             await finalize('interrupted');
           }
+        }
+      });
+
+      // Catch terminal runs whose schedule bookkeeping never landed (a crash
+      // between the run-row terminalization and the schedule counter update).
+      const unbookkept = await runAsSystem(() =>
+        deps.methods.getUnbookkeptRuns(
+          new Date(Date.now() - RECONCILE_MIN_RUN_AGE_MS),
+          RECONCILE_BATCH,
+        ),
+      );
+      await runAsSystem(async () => {
+        for (const run of unbookkept) {
+          const owner = await deps.getUserContext(run.user);
+          const runLimits = owner
+            ? await deps.runInTenantContext(owner, () => deps.getLimits(owner))
+            : limits;
+          await deps.methods.finalizeBookkeeping({
+            scheduleId: run.scheduleId,
+            scheduledFor: run.scheduledFor,
+            status: run.status as 'success' | 'error' | 'interrupted',
+            conversationId: run.conversationId,
+            error: run.error,
+            autoDisableAfterFailures: runLimits.autoDisableAfterFailures,
+          });
         }
       });
     } catch (error) {

@@ -11,6 +11,21 @@ export function buildFireClientRequestId(scheduleId: string, scheduledFor: Date)
   return `sched:${scheduleId}:${scheduledFor.toISOString()}`;
 }
 
+/**
+ * `ambiguous` = the request may already have been accepted and started a billed
+ * generation (network error / timeout after send). Those must NOT be recorded as
+ * a definite failure. `ambiguous: false` = the server returned an error response,
+ * a genuine rejection safe to count.
+ */
+class ScheduleFireError extends Error {
+  constructor(
+    message: string,
+    readonly ambiguous: boolean,
+  ) {
+    super(message);
+  }
+}
+
 async function postChatMessage(
   deps: ScheduleEngineDeps,
   schedule: FireableSchedule,
@@ -20,8 +35,9 @@ async function postChatMessage(
 ): Promise<{ conversationId: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FIRE_REQUEST_TIMEOUT_MS);
+  let response: Response;
   try {
-    const response = await fetch(`${deps.getSelfUrl()}/api/agents/chat/${EModelEndpoint.agents}`, {
+    response = await fetch(`${deps.getSelfUrl()}/api/agents/chat/${EModelEndpoint.agents}`, {
       method: 'POST',
       signal: controller.signal,
       headers: {
@@ -42,18 +58,27 @@ async function postChatMessage(
         ...(files.length > 0 ? { files } : {}),
       }),
     });
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new Error(`Fire POST failed (${response.status}): ${body.slice(0, 300)}`);
-    }
-    const payload = (await response.json()) as { conversationId?: string };
-    if (!payload.conversationId) {
-      throw new Error('Fire POST returned no conversationId');
-    }
-    return { conversationId: payload.conversationId };
+  } catch (error) {
+    // fetch threw: no response was received. The request may or may not have
+    // been processed — ambiguous, so don't terminalize as a definite error.
+    const message = error instanceof Error ? error.message : String(error);
+    throw new ScheduleFireError(`Fire POST network failure: ${message}`, true);
   } finally {
     clearTimeout(timeout);
   }
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    // A received error response is a definite rejection (nothing started).
+    throw new ScheduleFireError(
+      `Fire POST failed (${response.status}): ${body.slice(0, 300)}`,
+      false,
+    );
+  }
+  const payload = (await response.json().catch(() => ({}))) as { conversationId?: string };
+  if (!payload.conversationId) {
+    throw new ScheduleFireError('Fire POST returned no conversationId', true);
+  }
+  return { conversationId: payload.conversationId };
 }
 
 /**
@@ -145,6 +170,25 @@ export async function fireSchedule(
       return { fired: false, skipped: 'balance' as const };
     }
 
+    // Resolve attachments BEFORE claiming the run row: a transient file-query
+    // failure here must not orphan a `started` run that consumes capacity.
+    const requestedFileIds = schedule.file_ids ?? [];
+    let files: Awaited<ReturnType<ScheduleEngineDeps['resolveFiles']>>;
+    try {
+      files = requestedFileIds.length ? await deps.resolveFiles(requestedFileIds, user) : [];
+    } catch (fileError) {
+      logger.error(
+        `[schedules] file resolution failed for ${schedule.id} (will retry):`,
+        fileError,
+      );
+      // Leave nextRunAt/lease so the next tick retries; no run row was created.
+      await methods.releaseLease(schedule.id);
+      return { fired: false, error: 'File resolution failed' };
+    }
+    const droppedFileIds = requestedFileIds.filter(
+      (id) => !files.some((file) => file.file_id === id),
+    );
+
     const run = await methods.insertScheduleRun({
       ...baseRun,
       status: 'started',
@@ -155,24 +199,33 @@ export async function fireSchedule(
       return { fired: false, skipped: 'duplicate' as const };
     }
 
-    const requestedFileIds = schedule.file_ids ?? [];
-    const files = requestedFileIds.length ? await deps.resolveFiles(requestedFileIds, user) : [];
-    const droppedFileIds = requestedFileIds.filter(
-      (id) => !files.some((file) => file.file_id === id),
-    );
+    // Reserve-then-verify capacity: the insert above is the atomic reservation.
+    // If the global in-flight count now exceeds the cap, roll it back and retry
+    // next tick. Never over-admits; may briefly over-reject under contention.
+    const active = await methods.countActiveRuns();
+    if (active > limits.fireConcurrency) {
+      await methods.deleteScheduleRun(schedule.id, scheduledFor);
+      await methods.releaseLease(schedule.id);
+      return { fired: false, skipped: 'capacity' as const };
+    }
 
     let conversationId: string;
     try {
       ({ conversationId } = await postChatMessage(deps, schedule, user.id, scheduledFor, files));
     } catch (error) {
-      // Failure BEFORE the chat was accepted: the generation never started, so
-      // record the error and count it toward auto-disable.
       const message = error instanceof Error ? error.message : String(error);
-      logger.error(`[schedules] fire failed for ${schedule.id}:`, error);
+      const ambiguous = error instanceof ScheduleFireError && error.ambiguous;
+      // Ambiguous (network/timeout after send): the generation may have started
+      // and been billed, so record `interrupted` (no failure count / auto-disable)
+      // and let reconciliation settle it. Definite rejection: record `error`.
+      logger.error(
+        `[schedules] fire ${ambiguous ? 'ambiguously failed' : 'rejected'} for ${schedule.id}:`,
+        error,
+      );
       await methods.recordRunOutcome({
         scheduleId: schedule.id,
         scheduledFor,
-        status: 'error',
+        status: ambiguous ? 'interrupted' : 'error',
         error: message,
         autoDisableAfterFailures: ownerLimits.autoDisableAfterFailures,
       });

@@ -480,6 +480,102 @@ describe('recordRunOutcome — reconciled completions and no-match guard', () =>
   });
 });
 
+describe('recordRunOutcome idempotency + crash-retry (bookkeeping)', () => {
+  const scheduledFor = new Date('2026-07-20T12:00:00Z');
+
+  it('counts an occurrence at most once across repeated invocations', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+    const outcome = {
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'success' as const,
+      conversationId: 'convo-1',
+      autoDisableAfterFailures: 3,
+    };
+    await methods.recordRunOutcome(outcome);
+    // A second call (e.g. reconciler racing the inline finish) must not re-count.
+    await methods.recordRunOutcome(outcome);
+    const updated = await getSchedule(schedule.id);
+    expect(updated.runCount).toBe(1);
+    expect((updated as { lastCountedFor?: Date }).lastCountedFor?.toISOString()).toBe(
+      scheduledFor.toISOString(),
+    );
+    expect((await getRun(schedule.id, scheduledFor)).bookkept).toBe(true);
+  });
+
+  it('finalizeBookkeeping recovers a terminalized-but-uncounted run (crash between writes)', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+    // Simulate a crash after the run row was terminalized but before bookkeeping.
+    await ScheduleRun.updateOne(
+      { scheduleId: schedule.id, scheduledFor },
+      { $set: { status: 'success', bookkept: false } },
+    );
+    expect((await getSchedule(schedule.id)).runCount).toBe(0);
+
+    const unbookkept = await methods.getUnbookkeptRuns(new Date(Date.now() + 1000), 100);
+    expect(unbookkept.map((r) => r.scheduleId)).toContain(schedule.id);
+    await methods.finalizeBookkeeping({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'success',
+      autoDisableAfterFailures: 3,
+    });
+    const updated = await getSchedule(schedule.id);
+    expect(updated.runCount).toBe(1);
+    expect((await getRun(schedule.id, scheduledFor)).bookkept).toBe(true);
+    // No longer surfaced as needing bookkeeping.
+    expect(await methods.getUnbookkeptRuns(new Date(Date.now() + 1000), 100)).toHaveLength(0);
+  });
+});
+
+describe('getRunsForReconciliation fairness', () => {
+  it('always includes started runs even behind a backlog of paused rows', async () => {
+    const s = await methods.createSchedule(scheduleData());
+    // Older paused rows + a newer started row; started must still be returned.
+    for (let i = 0; i < 3; i++) {
+      await methods.insertScheduleRun(
+        runData(s, {
+          scheduledFor: new Date(`2026-07-1${i}T12:00:00Z`),
+          status: 'requires_action',
+          firedAt: new Date('2020-01-01T00:00:00Z'),
+        }),
+      );
+    }
+    await methods.insertScheduleRun(
+      runData(s, {
+        scheduledFor: new Date('2026-07-25T12:00:00Z'),
+        status: 'started',
+        firedAt: new Date('2020-06-01T00:00:00Z'),
+      }),
+    );
+    const runs = await methods.getRunsForReconciliation(new Date('2026-01-01T00:00:00Z'), 2);
+    expect(runs.some((r) => r.status === 'started')).toBe(true);
+  });
+});
+
+describe('deleteSchedulesByUser', () => {
+  it('removes the user’s schedules and their runs', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const a = await methods.createSchedule(scheduleData({ user: userId }));
+    await methods.createSchedule(scheduleData({ user: userId }));
+    const other = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(runData(a, { scheduledFor: new Date('2026-07-20T12:00:00Z') }));
+    await methods.insertScheduleRun(
+      runData(other, { scheduledFor: new Date('2026-07-20T12:00:00Z') }),
+    );
+
+    await methods.deleteSchedulesByUser(userId);
+
+    expect(await methods.getSchedulesByUser(userId)).toHaveLength(0);
+    expect(await getSchedule(other.id)).not.toBeNull();
+    // The other user's run survives; the deleted user's runs are gone.
+    expect(await ScheduleRun.countDocuments({ scheduleId: a.id })).toBe(0);
+    expect(await ScheduleRun.countDocuments({ scheduleId: other.id })).toBe(1);
+  });
+});
+
 describe('acquireManualRunLease / releaseLease', () => {
   it('serializes concurrent run-now attempts and can be released without advancing', async () => {
     const schedule = await methods.createSchedule(

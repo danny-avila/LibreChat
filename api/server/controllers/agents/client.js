@@ -1485,7 +1485,12 @@ class AgentClient extends BaseClient {
     // teardown (request.js pause branch / resume.js finally) that would otherwise
     // release it, and `/resume` 429s under LIMIT_CONCURRENT_MESSAGES. Idempotent via
     // the flag; if it fails here, the teardown still releases (it checks the flag).
-    if (!this.pendingRequestReleased) {
+    // A scheduled fire never acquired an interactive concurrency slot, so it must
+    // not release one on pause (that would clear a real user's counter). Mark it
+    // released so downstream teardown skips the decrement too.
+    if (this.options.req?._isScheduledFire) {
+      this.pendingRequestReleased = true;
+    } else if (!this.pendingRequestReleased) {
       try {
         await decrementPendingRequest(this.options.req?.user?.id);
         this.pendingRequestReleased = true;

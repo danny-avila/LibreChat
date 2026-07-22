@@ -8,8 +8,11 @@ export const useSchedulesQuery = (
   config?: UseQueryOptions<TSchedulesResponse>,
 ): QueryObserverResult<TSchedulesResponse> => {
   return useQuery<TSchedulesResponse>([QueryKeys.schedules], () => dataService.getSchedules(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    // Automatic runs mutate nextRunAt/lastRun/auto-disable server-side while the
+    // panel is open; refresh on focus and on a modest interval so it stays current.
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: 60_000,
     ...config,
   });
 };

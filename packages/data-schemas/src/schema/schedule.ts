@@ -102,6 +102,10 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
       default: 0,
       min: 0,
     },
+    /** Guards `recordRunOutcome` counter increments against double-counting on retry. */
+    lastCountedFor: {
+      type: Date,
+    },
     failureCount: {
       type: Number,
       default: 0,

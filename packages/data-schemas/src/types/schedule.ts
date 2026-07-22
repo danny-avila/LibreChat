@@ -32,6 +32,7 @@ export interface ISchedule {
   runCount: number;
   failureCount: number;
   balanceSkipCount: number;
+  lastCountedFor?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -51,6 +52,7 @@ export interface IScheduleRun {
   error?: string;
   droppedFileIds?: string[];
   durationMs?: number;
+  bookkept?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }

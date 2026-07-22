@@ -177,6 +177,15 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     const cadence = parsed.data.cadence ?? existing.cadence;
     const timezone = parsed.data.timezone ?? existing.timezone;
     const enabled = parsed.data.enabled ?? existing.enabled;
+    // Re-validate the EFFECTIVE (possibly stored) cadence against the current
+    // floor whenever this edit leaves the schedule enabled — otherwise a bare
+    // {enabled:true} could re-enable an existing schedule that now runs too often.
+    if (enabled && cadenceIntervalMinutes(cadence) < limits.minIntervalMinutes) {
+      res.status(400).json({
+        error: `Schedule interval must be at least ${limits.minIntervalMinutes} minutes`,
+      });
+      return;
+    }
     const cadenceChanged =
       parsed.data.cadence != null || parsed.data.timezone != null || parsed.data.enabled != null;
     const reEnabled = parsed.data.enabled === true && existing.enabled === false;

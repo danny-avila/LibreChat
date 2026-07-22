@@ -67,6 +67,7 @@ export interface FireResult {
   skipped?:
     | 'overlap'
     | 'balance'
+    | 'capacity'
     | 'duplicate'
     | 'agent_deleted'
     | 'user_missing'

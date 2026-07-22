@@ -55,6 +55,10 @@ const scheduleRunSchema: Schema<IScheduleRunDocument> = new Schema(
       type: Number,
       min: 0,
     },
+    /** False on a terminal run whose schedule bookkeeping hasn't landed yet (crash-retry marker). */
+    bookkept: {
+      type: Boolean,
+    },
   },
   {
     timestamps: true,
@@ -63,5 +67,8 @@ const scheduleRunSchema: Schema<IScheduleRunDocument> = new Schema(
 
 scheduleRunSchema.index({ scheduleId: 1, scheduledFor: 1 }, { unique: true });
 scheduleRunSchema.index({ scheduleId: 1, firedAt: -1 });
+// Reconciliation sweeps by status; keeps `started` (capacity) fetch cheap and
+// prevents long-lived `requires_action` rows from starving the scan.
+scheduleRunSchema.index({ status: 1, firedAt: 1 });
 
 export default scheduleRunSchema;

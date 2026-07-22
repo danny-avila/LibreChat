@@ -1792,6 +1792,9 @@ export class RedisJobStore implements IJobStore {
       promptTokens: data.promptTokens ? parseInt(data.promptTokens, 10) : undefined,
       agent_id: data.agent_id || undefined,
       isTemporary: data.isTemporary != null ? data.isTemporary === '1' : undefined,
+      // Scheduled-fire bookkeeping so a Redis-backed HITL resume can record outcome.
+      scheduleId: data.scheduleId || undefined,
+      scheduledFor: data.scheduledFor || undefined,
       // Deferred tools discovered before a HITL pause; replayed into createRun on resume.
       discoveredTools: data.discoveredTools ? JSON.parse(data.discoveredTools) : undefined,
       titleEvent: data.titleEvent || undefined,
