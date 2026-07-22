@@ -175,6 +175,27 @@ describe('fireSchedule', () => {
     const result = await fireSchedule(deps, makeSchedule({ file_ids: ['f1'] }), LIMITS, dueAt());
     expect(result.fired).toBe(false);
     expect(runs.size).toBe(0); // no run row created
+    // Automatic fire KEEPS the claim lease as a backoff (nextRunAt untouched → the
+    // occurrence retries when the lease expires) so a transient file error can't get
+    // this row re-claimed every tick and starve others.
+    expect(calls.releaseLease).toBe(0);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('releases the lease on a manual run-now when file resolution fails', async () => {
+    const { methods, runs, calls } = makeMethods();
+    mockFetch(async () => okResponse());
+    const deps = makeDeps(methods, {
+      resolveFiles: async () => {
+        throw new Error('db down');
+      },
+    });
+    const result = await fireSchedule(deps, makeSchedule({ file_ids: ['f1'] }), LIMITS, dueAt(), {
+      manual: true,
+    });
+    expect(result.fired).toBe(false);
+    expect(runs.size).toBe(0);
+    // Run-now releases so the user can retry immediately (no misleading lease-held 409).
     expect(calls.releaseLease).toBe(1);
     expect(global.fetch).not.toHaveBeenCalled();
   });

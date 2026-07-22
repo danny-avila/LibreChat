@@ -46,6 +46,12 @@ async function postChatMessage(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${deps.mintFireToken(userId)}`,
         'x-lc-scheduled': '1',
+        // The agents router runs uaParser (rejects non-browser requests as
+        // "Illegal request") before the scheduled-fire exemption, and Node/undici
+        // fetch sends no User-Agent — so a loopback fire would be rejected before
+        // it starts. Present a browser-like UA so uaParser recognizes it.
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       },
       body: JSON.stringify({
         text: schedule.prompt,
@@ -201,8 +207,13 @@ export async function fireSchedule(
         `[schedules] file resolution failed for ${schedule.id} (will retry):`,
         fileError,
       );
-      // Leave nextRunAt/lease so the next tick retries; no run row was created.
-      await methods.releaseLease(schedule.id);
+      // nextRunAt is untouched so the occurrence retries. Automatic claims keep the
+      // lease as a backoff (releasing it would let the nextRunAt-sorted claimer
+      // re-pick this failing row every tick and starve others / hammer the file
+      // lookup); manual run-now releases so the user can retry immediately.
+      if (options?.manual) {
+        await methods.releaseLease(schedule.id);
+      }
       return { fired: false, error: 'File resolution failed' };
     }
     const droppedFileIds = requestedFileIds.filter(

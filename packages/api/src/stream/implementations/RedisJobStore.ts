@@ -658,7 +658,12 @@ export class RedisJobStore implements IJobStore {
     const remSet = this.statusSetKey(from);
     const addSet = this.statusSetKey(to);
     const terminal = addSet === null;
-    let ttl = terminal ? this.ttl.completed : this.ttl.running;
+    // A terminal transition WITHOUT completedAt is the preserveForReconcile signal
+    // (mirrors updateJob): keep it on the longer running TTL and skip the
+    // completed-sweep, so an out-of-band reconciler can still observe it (e.g. a
+    // scheduled fire's expired approval settled promptly instead of after 25 h).
+    const preserveTerminal = terminal && patch?.completedAt == null;
+    let ttl = terminal && !preserveTerminal ? this.ttl.completed : this.ttl.running;
     if (to === 'requires_action') {
       // A paused job must outlive its approval window, even when that window is
       // longer than the running TTL — otherwise Redis evicts it before a
@@ -689,7 +694,7 @@ export class RedisJobStore implements IJobStore {
     //    safe. A terminal target (e.g. approval expiry → aborted) gets the same
     //    content cleanup as updateJob's terminal path.
     if (terminal) {
-      await this.applyTerminalContentCleanup(streamId);
+      await this.applyTerminalContentCleanup(streamId, preserveTerminal);
       return true;
     }
     if (this.isCluster) {
@@ -959,7 +964,11 @@ export class RedisJobStore implements IJobStore {
               clear: ['pendingAction', 'pendingActionId'],
               patch: {
                 error: 'Approval expired before a decision was made',
-                completedAt: Date.now(),
+                // Scheduled fires: omit completedAt so the aborted job is preserved
+                // (running TTL, no completed-sweep) and the schedules reconciler can
+                // read jobStatus === 'aborted' and settle the requires_action run
+                // promptly, instead of it waiting the 25-h abandoned-pause cutoff.
+                ...(job.scheduleId ? {} : { completedAt: Date.now() }),
               },
               // Scope the CAS to the action we observed as stale: if the user resolved it
               // and the run re-paused on a fresh action between the read and here, the
