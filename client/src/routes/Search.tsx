@@ -213,6 +213,29 @@ export default function Search() {
   );
   useEffect(() => () => throttledFetchNext.cancel(), [throttledFetchNext]);
 
+  /**
+   * A page can filter down to zero rows server-side while later pages still
+   * hold matches. With nothing rendered there is no row range to report, so
+   * `handleRowsRendered` never runs and the cursor would never be followed —
+   * the search would settle on "nothing found" with results still behind it.
+   * Follow it here instead.
+   */
+  useEffect(() => {
+    if (!searchQuery || showingStale || !hasNextPage || isFetchingNextPage) {
+      return;
+    }
+    if (messages.length === 0) {
+      throttledFetchNext();
+    }
+  }, [
+    searchQuery,
+    showingStale,
+    hasNextPage,
+    isFetchingNextPage,
+    messages.length,
+    throttledFetchNext,
+  ]);
+
   const handleRowsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
       /** Don't page while the outgoing results are still mounted (typing, or the
@@ -296,8 +319,10 @@ export default function Search() {
   /** Spinner while there is nothing to show AND we're loading or the current
    *  results are stale — `showingStale` covers the case where the previous
    *  search was empty and `keepPreviousData` holds those empty pages during the
-   *  new request, which would otherwise flash a false "nothing found". */
-  if ((isLoading || showingStale) && !hasResults) {
+   *  new request, which would otherwise flash a false "nothing found".
+   *  `hasNextPage` covers a page that filtered down to zero rows: the effect
+   *  above is following the cursor, so this is still loading, not "no results". */
+  if ((isLoading || showingStale || hasNextPage) && !hasResults) {
     return loadingSpinner;
   }
 

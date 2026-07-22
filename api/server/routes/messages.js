@@ -98,22 +98,28 @@ router.get('/', async (req, res) => {
          * default limit (25) would truncate conversations out of a page — pass a
          * limit covering every conversation the page's hits could belong to.
          */
-        const result = await db.getConvosQueried(req.user.id, messages, null, messages.length || 1);
+        /**
+         * Both reads are independent and scoped to the authenticated user, so
+         * they start together: the message lookup only needs ids, which come
+         * straight off the Meili hits, and waiting for `convoMap` first added a
+         * serial round trip to every scanned page. Hits whose conversation is
+         * later filtered out just leave unused entries in the map.
+         */
+        const hitMessageIds = messages.map((message) => message.messageId);
+        const [result, dbMessages] = await Promise.all([
+          db.getConvosQueried(req.user.id, messages, null, messages.length || 1),
+          hitMessageIds.length
+            ? db.getMessages({ user, messageId: { $in: hitMessageIds } })
+            : Promise.resolve([]),
+        ]);
 
-        const messageIds = [];
         const cleanedMessages = [];
         for (let i = 0; i < messages.length; i++) {
           const message = messages[i];
           if (result.convoMap[message.conversationId]) {
-            messageIds.push(message.messageId);
             cleanedMessages.push(message);
           }
         }
-
-        const dbMessages = await db.getMessages({
-          user,
-          messageId: { $in: messageIds },
-        });
 
         const dbMessageMap = {};
         for (const dbMessage of dbMessages) {

@@ -372,6 +372,42 @@ describe('message route conversation ownership filters', () => {
       expect(response.body.nextCursor).toBe('26');
     });
 
+    it('starts the convo and message hydration reads in parallel', async () => {
+      let convosResolved = false;
+      let messagesStartedBeforeConvos = false;
+      searchMessages.mockResolvedValue({
+        hits: [{ messageId: 'm1', conversationId: 'c1' }],
+        totalPages: 1,
+      });
+      getConvosQueried.mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(() => {
+              convosResolved = true;
+              resolve({
+                convoMap: { c1: { title: 'T', model: 'gpt' } },
+                conversations: [],
+                nextCursor: null,
+              });
+            }, 20),
+          ),
+      );
+      getMessages.mockImplementation(() => {
+        // If this runs before convoMap resolves, the two reads overlap.
+        messagesStartedBeforeConvos = !convosResolved;
+        return Promise.resolve([{ messageId: 'm1', isCreatedByUser: false, endpoint: 'openAI' }]);
+      });
+
+      const response = await request(app).get('/api/messages?search=beacon');
+
+      expect(messagesStartedBeforeConvos).toBe(true);
+      // Ids come off the raw Meili hits, not the post-filter list.
+      expect(getMessages).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: { $in: ['m1'] } }),
+      );
+      expect(response.body.messages).toHaveLength(1);
+    });
+
     it('clamps an oversized pageSize before asking Meili for a raw page', async () => {
       primeSearch({ hits: [{ messageId: 'm1', conversationId: 'c1' }], totalPages: 1 });
 
