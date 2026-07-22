@@ -271,7 +271,12 @@ const formatAgentMessages = (payload) => {
          *  attaching to the pre-steer one would emit its ToolMessage after
          *  the HumanMessage while the call sat before it (invalid order). */
         lastAIMessage = null;
-      } else if (part.type === ContentTypes.ERROR || part.type === ContentTypes.AGENT_UPDATE) {
+      } else if (
+        part.type === ContentTypes.ERROR ||
+        part.type === ContentTypes.AGENT_UPDATE ||
+        part.type === ContentTypes.ACTIVITY_LABEL
+      ) {
+        // ACTIVITY_LABEL parts are UI-only progress notes — never model input.
         continue;
       } else {
         currentContent.push(part);

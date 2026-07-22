@@ -4,7 +4,7 @@ import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelC
 
 export type GroupedPart =
   | { type: 'single'; part: PartWithIndex }
-  | { type: 'tool-group'; parts: PartWithIndex[] };
+  | { type: 'tool-group'; parts: PartWithIndex[]; labelPart?: PartWithIndex };
 
 function isGroupableToolCall(part: TMessageContentParts): boolean {
   if (part.type !== ContentTypes.TOOL_CALL) {
@@ -22,30 +22,66 @@ function isGroupableToolCall(part: TMessageContentParts): boolean {
   return true;
 }
 
+/**
+ * Groups message content for rendering.
+ *
+ * Activity blocks: reasoning (THINK) parts are absorbed tentatively; when an
+ * ACTIVITY_LABEL part terminates the run, the whole block (thinking + tool
+ * calls) becomes one labeled group — the claude.ai-style hierarchy. Any
+ * other part type breaks the block.
+ *
+ * Legacy behavior is preserved exactly when no ACTIVITY_LABEL part arrives
+ * (feature off, older conversations): the tentative block is re-split so
+ * THINK parts render standalone in their original positions and only runs
+ * of >= 2 tool calls group.
+ */
 export function groupSequentialToolCalls(parts: PartWithIndex[]): GroupedPart[] {
   const result: GroupedPart[] = [];
-  let currentGroup: PartWithIndex[] = [];
+  let currentBlock: PartWithIndex[] = [];
 
-  const flushGroup = () => {
-    if (currentGroup.length >= 2) {
-      result.push({ type: 'tool-group', parts: [...currentGroup] });
-    } else {
-      for (const p of currentGroup) {
+  const flushWithoutLabel = () => {
+    let toolRun: PartWithIndex[] = [];
+    const flushToolRun = () => {
+      if (toolRun.length >= 2) {
+        result.push({ type: 'tool-group', parts: [...toolRun] });
+      } else {
+        for (const p of toolRun) {
+          result.push({ type: 'single', part: p });
+        }
+      }
+      toolRun = [];
+    };
+    for (const p of currentBlock) {
+      if (isGroupableToolCall(p.part)) {
+        toolRun.push(p);
+      } else {
+        flushToolRun();
         result.push({ type: 'single', part: p });
       }
     }
-    currentGroup = [];
+    flushToolRun();
+    currentBlock = [];
   };
 
   for (const item of parts) {
-    if (isGroupableToolCall(item.part)) {
-      currentGroup.push(item);
-    } else {
-      flushGroup();
-      result.push({ type: 'single', part: item });
+    if (isGroupableToolCall(item.part) || item.part.type === ContentTypes.THINK) {
+      currentBlock.push(item);
+      continue;
     }
+    if (item.part.type === ContentTypes.ACTIVITY_LABEL) {
+      if (currentBlock.length > 0) {
+        result.push({ type: 'tool-group', parts: [...currentBlock], labelPart: item });
+        currentBlock = [];
+      } else {
+        /** Orphan label (block parts hidden/filtered): renders standalone. */
+        result.push({ type: 'single', part: item });
+      }
+      continue;
+    }
+    flushWithoutLabel();
+    result.push({ type: 'single', part: item });
   }
-  flushGroup();
+  flushWithoutLabel();
 
   return result;
 }

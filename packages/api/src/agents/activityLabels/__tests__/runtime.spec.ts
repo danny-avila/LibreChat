@@ -1,0 +1,175 @@
+import type { PostToolBatchHookInput } from '@librechat/agents';
+
+const mockInvoke = jest.fn();
+const mockInitializeModel = jest.fn(() => ({ invoke: mockInvoke }));
+
+jest.mock('@librechat/agents', () => ({
+  ...jest.requireActual('@librechat/agents'),
+  initializeModel: (...args: unknown[]) => mockInitializeModel(...(args as [])),
+}));
+
+import { classifyBatch, createActivityLabelHook } from '../runtime';
+import type { ActivityLabelSlot } from '../runtime';
+
+/** Flushes the hook's detached generation chain. */
+async function flushDetached(): Promise<void> {
+  for (let i = 0; i < 4; i += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
+function batchInput(overrides: Partial<PostToolBatchHookInput> = {}): PostToolBatchHookInput {
+  return {
+    hook_event_name: 'PostToolBatch',
+    runId: 'run-1',
+    entries: [
+      {
+        toolName: 'web_search',
+        toolInput: { query: 'librechat' },
+        toolUseId: 'tool-1',
+        status: 'success',
+        toolOutput: 'ten results about librechat',
+      },
+    ],
+    ...overrides,
+  } as PostToolBatchHookInput;
+}
+
+describe('classifyBatch', () => {
+  it('classifies tool names deterministically and derives batch status', () => {
+    const meta = classifyBatch([
+      { toolName: 'web_search', toolInput: {}, toolUseId: 'a', status: 'success', toolOutput: '' },
+      { toolName: 'read_file', toolInput: {}, toolUseId: 'b', status: 'success', toolOutput: '' },
+      { toolName: 'edit_file', toolInput: {}, toolUseId: 'c', status: 'error', error: 'denied' },
+      {
+        toolName: 'search_mcp_github',
+        toolInput: {},
+        toolUseId: 'd',
+        status: 'success',
+        toolOutput: '',
+      },
+    ]);
+    expect(meta.counts).toEqual({ searches: 1, reads: 1, writes: 1, commands: 0, other: 1 });
+    expect(meta.toolCallIds).toEqual(['a', 'b', 'c', 'd']);
+    expect(meta.status).toBe('partial');
+  });
+
+  it('reports failed when every tool errors', () => {
+    const meta = classifyBatch([
+      { toolName: 'bash_tool', toolInput: {}, toolUseId: 'x', status: 'error', error: 'boom' },
+    ]);
+    expect(meta.counts.commands).toBe(1);
+    expect(meta.status).toBe('failed');
+  });
+});
+
+describe('createActivityLabelHook', () => {
+  let slots: Array<{ index: number; filled: Array<string | null> }>;
+  let claimSlot: () => ActivityLabelSlot;
+  const resolveLLM = jest.fn(async () => ({
+    provider: 'openAI',
+    clientOptions: { model: 'small-model' },
+  }));
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    slots = [];
+    claimSlot = () => {
+      const record = { index: slots.length, filled: [] as Array<string | null> };
+      slots.push(record);
+      return { index: record.index, fill: (text) => void record.filled.push(text) };
+    };
+    mockInvoke.mockResolvedValue({ content: ' Searched the web for LibreChat docs. ' });
+  });
+
+  it('returns {} synchronously and fills the claimed slot when the model resolves', async () => {
+    const hook = createActivityLabelHook({ claimSlot, resolveLLM });
+    const result = await hook(batchInput(), new AbortController().signal);
+    expect(result).toEqual({});
+    expect(slots).toHaveLength(1);
+    expect(slots[0].filled).toHaveLength(0);
+
+    await flushDetached();
+    expect(slots[0].filled).toEqual(['Searched the web for LibreChat docs.']);
+    expect(mockInitializeModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'openAI',
+        clientOptions: expect.objectContaining({ model: 'small-model', streaming: false }),
+      }),
+    );
+  });
+
+  it('claims no slot for an empty batch', async () => {
+    const hook = createActivityLabelHook({ claimSlot, resolveLLM });
+    await hook(batchInput({ entries: [] }), new AbortController().signal);
+    await flushDetached();
+    expect(slots).toHaveLength(0);
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('fills null when generation fails, without rejecting', async () => {
+    mockInvoke.mockRejectedValue(new Error('provider down'));
+    const hook = createActivityLabelHook({ claimSlot, resolveLLM });
+    await expect(hook(batchInput(), new AbortController().signal)).resolves.toEqual({});
+    await flushDetached();
+    expect(slots[0].filled).toEqual([null]);
+  });
+
+  it('fills null for blank model output', async () => {
+    mockInvoke.mockResolvedValue({ content: '   ' });
+    const hook = createActivityLabelHook({ claimSlot, resolveLLM });
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    expect(slots[0].filled).toEqual([null]);
+  });
+
+  it('skips subagent scopes entirely', async () => {
+    const hook = createActivityLabelHook({ claimSlot, resolveLLM });
+    await hook(batchInput({ agentId: 'subagent-1' }), new AbortController().signal);
+    await flushDetached();
+    expect(slots).toHaveLength(0);
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('passes executingAgentId through to the claimed slot metadata', async () => {
+    const captured: Array<Record<string, unknown>> = [];
+    const hook = createActivityLabelHook({
+      claimSlot: (meta) => {
+        captured.push(meta as unknown as Record<string, unknown>);
+        return { index: 0, fill: () => undefined };
+      },
+      resolveLLM,
+    });
+    await hook(batchInput({ executingAgentId: 'agent-a' }), new AbortController().signal);
+    await flushDetached();
+    expect(captured[0].executingAgentId).toBe('agent-a');
+    expect(captured[0].status).toBe('ok');
+  });
+
+  it('prefers the SDK-backed generateLabel path with a per-slot trace seed', async () => {
+    const generateLabel = jest.fn(async () => 'Searched runtime release notes');
+    const hook = createActivityLabelHook({ claimSlot, resolveLLM, generateLabel });
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    expect(generateLabel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        traceSeed: 'run-1-activity-0',
+        entries: expect.any(Array),
+        context: expect.any(Object),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(mockInitializeModel).not.toHaveBeenCalled();
+    expect(slots[0].filled).toEqual(['Searched runtime release notes']);
+  });
+
+  it('memoizes LLM resolution and enforces maxPerRun', async () => {
+    const hook = createActivityLabelHook({ claimSlot, resolveLLM, maxPerRun: 2 });
+    await hook(batchInput(), new AbortController().signal);
+    await hook(batchInput(), new AbortController().signal);
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    expect(slots).toHaveLength(2);
+    expect(resolveLLM).toHaveBeenCalledTimes(1);
+  });
+});

@@ -1037,6 +1037,7 @@ export async function createRun({
   appConfig,
   subagentUsageSink,
   steering,
+  activityLabel,
   hitlCapable = false,
   toolInputValidationErrors,
   streaming = true,
@@ -1095,6 +1096,12 @@ export async function createRun({
    * OpenAI-compatible and Responses controllers have no job/SSE surface.
    */
   steering?: { hook: HookCallback<'PostToolBatch'> };
+  /**
+   * Run-scoped tool-batch summary hook (PostToolBatch). Like steering, it
+   * registers independently of the approval policy and needs no checkpointer;
+   * the hook returns immediately and generates off the critical path.
+   */
+  activityLabel?: { hook: HookCallback<'PostToolBatch'> };
   /**
    * Whether the caller implements the HITL pause/resume lifecycle (inspects
    * `run.getInterrupt()`, persists a pending action, exposes a resume route). Gates the
@@ -1457,6 +1464,10 @@ export async function createRun({
   if (steering != null && isSteeringSupported()) {
     hooks = hooks ?? new HookRegistry();
     hooks.register('PostToolBatch', { hooks: [steering.hook] });
+  }
+  if (activityLabel != null) {
+    hooks = hooks ?? new HookRegistry();
+    hooks.register('PostToolBatch', { hooks: [activityLabel.hook] });
   }
 
   /**

@@ -12,6 +12,7 @@ export enum ContentTypes {
   INPUT_AUDIO = 'input_audio',
   AGENT_UPDATE = 'agent_update',
   SUMMARY = 'summary',
+  ACTIVITY_LABEL = 'activity_label',
   STEER = 'steer',
   ERROR = 'error',
 }
@@ -77,6 +78,39 @@ export enum ApprovalEvents {
 export enum SteerEvents {
   ON_STEER_APPLIED = 'on_steer_applied',
 }
+
+/**
+ * Activity-label event names. `on_activity_label` streams to live clients
+ * when a tool-batch label part is claimed (deterministic counts) and again
+ * when the fast-model label resolves; reconnecting clients recover applied
+ * labels from `aggregatedContent` like any other content part.
+ */
+export enum ActivityLabelEvents {
+  ON_ACTIVITY_LABEL = 'on_activity_label',
+}
+
+/** Payload of the `on_activity_label` SSE event. */
+export type TActivityLabelEvent = {
+  /** Absolute content index the label part occupies. */
+  index: number;
+  part: {
+    type: ContentTypes.ACTIVITY_LABEL;
+    [ContentTypes.ACTIVITY_LABEL]: string;
+    tool_call_ids?: string[];
+    counts?: {
+      searches: number;
+      reads: number;
+      writes: number;
+      commands: number;
+      other: number;
+    };
+    status?: 'ok' | 'partial' | 'failed';
+    agentId?: string;
+    pending?: boolean;
+  };
+  responseMessageId?: string;
+  conversationId?: string;
+};
 
 /** A steer message queued server-side but not yet injected into the run. */
 export type TPendingSteer = {
