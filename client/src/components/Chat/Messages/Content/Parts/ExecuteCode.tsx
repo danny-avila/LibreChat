@@ -86,13 +86,14 @@ export default function ExecuteCode({
    *  instead of the handle JSON. Completion arrives live as the status marker
    *  attachment (also covers stdout-only runs) or as harvested files. */
   const backgroundHandle = useMemo(() => parseBackgroundHandle(output), [output]);
-  const { fileAttachments, backgroundSettled } = useMemo(
+  const { fileAttachments, backgroundStatus } = useMemo(
     () => splitBackgroundAttachments(attachments),
     [attachments],
   );
+  const backgroundFailed = backgroundHandle != null && backgroundStatus === 'error';
   const backgroundFinishedText = backgroundHandle
     ? localize(
-        backgroundSettled || (fileAttachments?.length ?? 0) > 0
+        backgroundStatus != null || (fileAttachments?.length ?? 0) > 0
           ? 'com_ui_background_finished'
           : 'com_ui_background_running',
       )
@@ -112,7 +113,11 @@ export default function ExecuteCode({
               ? localize('com_ui_cancelled')
               : (backgroundFinishedText ?? localize('com_ui_analyzing_finished'))
           }
-          errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
+          errorSuffix={
+            (hasError && !cancelled) || backgroundFailed
+              ? localize('com_ui_tool_failed')
+              : undefined
+          }
           icon={
             <SquareTerminal
               className={cn(

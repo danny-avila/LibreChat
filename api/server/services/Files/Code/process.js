@@ -321,6 +321,7 @@ const processCodeOutput = async ({
   conversationId,
   messageId,
   session_id,
+  freshClaimAfter,
 }) => {
   const appConfig = req.config;
   const currentDate = new Date();
@@ -418,8 +419,28 @@ const processCodeOutput = async ({
       user: req.user.id,
       tenantId: req.user.tenantId,
     });
-    const file_id = claimed.file_id;
-    const isUpdate = file_id !== newFileId;
+    let file_id = claimed.file_id;
+    let isUpdate = file_id !== newFileId;
+
+    /**
+     * Out-of-order guard for detached (background) harvests: when the claimed
+     * row was updated AFTER the background run settled (`freshClaimAfter`), a
+     * newer run owns this filename slot — overwriting it would replace fresh
+     * content with stale bytes and re-home its attachments. Write this
+     * harvest under its own fresh file_id instead of reusing the claim.
+     */
+    if (
+      isUpdate &&
+      freshClaimAfter != null &&
+      claimed.updatedAt != null &&
+      new Date(claimed.updatedAt).getTime() > freshClaimAfter
+    ) {
+      logger.debug(
+        `[processCodeOutput] Claim for "${safeName}" (${file_id}) is newer than the background run; writing under a fresh file_id`,
+      );
+      file_id = newFileId;
+      isUpdate = false;
+    }
 
     if (isUpdate) {
       logger.debug(

@@ -10,25 +10,28 @@ export const BACKGROUND_STATUS_ATTACHMENT_TYPE = 'background_task_status';
 
 /**
  * Separates real file attachments from the synthetic background status marker.
- * `backgroundSettled` is true when the marker is present — the backgrounded
- * call has finished even if it generated no files.
+ * `backgroundStatus` carries the settled task's status (`completed` | `error`)
+ * when the marker is present — the backgrounded call has finished even if it
+ * generated no files, and failures must not render as clean completions.
  */
 export function splitBackgroundAttachments(attachments?: TAttachment[]): {
   fileAttachments?: TAttachment[];
-  backgroundSettled: boolean;
+  backgroundStatus?: string;
 } {
   if (!attachments || attachments.length === 0) {
-    return { fileAttachments: attachments, backgroundSettled: false };
+    return { fileAttachments: attachments };
   }
-  /** The marker's `type` is host-defined, outside the `Tools` union. */
-  const fileAttachments = attachments.filter(
-    (attachment) =>
-      (attachment as { type?: string } | undefined)?.type !== BACKGROUND_STATUS_ATTACHMENT_TYPE,
-  );
-  return {
-    fileAttachments,
-    backgroundSettled: fileAttachments.length !== attachments.length,
-  };
+  /** The marker's `type`/`status` are host-defined, outside the `Tools` union. */
+  let backgroundStatus: string | undefined;
+  const fileAttachments = attachments.filter((attachment) => {
+    const marker = attachment as { type?: string; status?: string } | undefined;
+    if (marker?.type !== BACKGROUND_STATUS_ATTACHMENT_TYPE) {
+      return true;
+    }
+    backgroundStatus = typeof marker.status === 'string' ? marker.status : 'completed';
+    return false;
+  });
+  return { fileAttachments, backgroundStatus };
 }
 
 export interface BackgroundHandle {

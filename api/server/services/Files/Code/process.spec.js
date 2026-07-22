@@ -247,6 +247,42 @@ describe('Code Process', () => {
       expect(result.usage).toBe(1);
       expect(getRetentionExpiry).toHaveBeenCalledWith(baseParams.req);
     });
+
+    it('writes under a fresh file_id when the claim is newer than the background run', async () => {
+      /* Stale-harvest guard: a newer run owns the filename slot — the
+       * detached harvest must not overwrite its contents. */
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        messageId: 'newer-run-msg',
+        updatedAt: '2024-01-02T00:00:00.000Z',
+      });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const { file: result } = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-01T00:00:00.000Z').getTime(),
+      });
+
+      expect(result.file_id).toBe('mock-uuid-1234');
+      expect(result.messageId).toBe(baseParams.messageId);
+    });
+
+    it('still reuses the claim when it predates the background run', async () => {
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const { file: result } = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-02T00:00:00.000Z').getTime(),
+      });
+
+      expect(result.file_id).toBe('existing-file-id');
+    });
   });
 
   describe('processCodeOutput', () => {

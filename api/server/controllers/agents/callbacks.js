@@ -993,8 +993,14 @@ function createAttachmentEmitter({ res, streamId = null }) {
   };
 }
 
+/**
+ * Leading sub-second retries cover the common case of a fast background task
+ * settling moments before the dispatch turn finalizes its message row — an
+ * immediate follow-up turn should find the attachments already anchored.
+ * The long tail covers dispatch turns that keep running for minutes.
+ */
 const BACKGROUND_PATCH_RETRY_DELAYS_MS = [
-  2_000, 5_000, 10_000, 20_000, 30_000, 60_000, 120_000, 180_000, 240_000, 300_000,
+  250, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000, 60_000, 120_000, 180_000, 240_000, 300_000,
 ];
 
 /**
@@ -1058,6 +1064,9 @@ function createBackgroundCodeResultHandler({ req, updateToolCallResult }) {
     }
 
     const attachments = [];
+    /** Ordering guard: a filename claim updated after this instant belongs to
+     *  a NEWER run — the harvest must not overwrite it with stale bytes. */
+    const freshClaimAfter = Date.now();
     const files = Array.isArray(artifact?.files) ? artifact.files : [];
     for (const file of files) {
       if (file.inherited) {
@@ -1072,6 +1081,7 @@ function createBackgroundCodeResultHandler({ req, updateToolCallResult }) {
           toolCallId,
           conversationId,
           session_id: file.storage_session_id ?? artifact.session_id,
+          freshClaimAfter,
         });
         if (result?.file) {
           attachments.push(result.file);

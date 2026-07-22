@@ -15,6 +15,7 @@ jest.mock('~/hooks', () => ({
         com_ui_copy_code: 'Copy code',
         com_ui_background_running: 'Running in background',
         com_ui_background_finished: 'Finished in background',
+        com_ui_tool_failed: 'tool failed',
       };
       return translations[key] ?? key;
     },
@@ -35,11 +36,18 @@ jest.mock('~/components/Chat/Messages/Content/ProgressText', () => ({
     progress,
     inProgressText,
     finishedText,
+    errorSuffix,
   }: {
     progress: number;
     inProgressText: string;
     finishedText: string;
-  }) => <div data-testid="progress-text">{progress < 1 ? inProgressText : finishedText}</div>,
+    errorSuffix?: string;
+  }) => (
+    <div data-testid="progress-text">
+      {progress < 1 ? inProgressText : finishedText}
+      {errorSuffix != null ? ` — ${errorSuffix}` : ''}
+    </div>
+  ),
 }));
 
 jest.mock('~/components/Messages/Content/CopyButton', () => ({
@@ -153,6 +161,14 @@ describe('BashCall backgrounded calls', () => {
     ]);
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Finished in background');
     expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
+  });
+
+  it('surfaces failure when the marker carries an error status', () => {
+    renderBackgrounded([
+      { type: 'background_task_status', file_id: 'bg-tc-1', toolCallId: 'tc-1', status: 'error' },
+    ]);
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Finished in background');
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('tool failed');
   });
 
   it('renders real stdout normally after the background result patches the output', () => {

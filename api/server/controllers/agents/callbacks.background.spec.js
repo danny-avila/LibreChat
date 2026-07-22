@@ -50,6 +50,7 @@ describe('createBackgroundCodeResultHandler', () => {
         toolCallId: 'call_code',
         conversationId: 'convo-1',
         session_id: 'store-1',
+        freshClaimAfter: expect.any(Number),
       }),
     );
     expect(updateToolCallResult).toHaveBeenCalledTimes(1);
@@ -95,8 +96,8 @@ describe('createBackgroundCodeResultHandler', () => {
       const handler = createBackgroundCodeResultHandler({ req, updateToolCallResult });
 
       const promise = handler(baseParams);
-      await jest.advanceTimersByTimeAsync(2_000);
-      await jest.advanceTimersByTimeAsync(5_000);
+      await jest.advanceTimersByTimeAsync(250);
+      await jest.advanceTimersByTimeAsync(500);
       const result = await promise;
 
       expect(updateToolCallResult).toHaveBeenCalledTimes(3);
