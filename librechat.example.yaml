@@ -484,6 +484,7 @@ endpoints:
   #   capabilities: ["deferred_tools", "execute_code", "file_search", "web_search", "artifacts", "subagents", "actions", "context", "skills", "memory", "ask_user_question", "tools", "chain", "ocr"]
   #   # The following capabilities are opt-in and must be added explicitly:
   #   # "programmatic_tools", "stateful_code_sessions", "run_in_background", "tool_intents"
+  #   # "stateful_code_sessions" is highly experimental and may change substantially.
   #   # "tool_intents" lets opted-in tools expose a model-written intent as their live status label.
   #   # (optional) Require user approval before matching tool calls. Disabled by default.
   #   toolApproval:
