@@ -1,10 +1,11 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
 import { ContentTypes } from 'librechat-data-provider';
+import { render, screen } from '@testing-library/react';
 import type { TMessageContentParts } from 'librechat-data-provider';
 
 jest.mock('~/utils', () => ({
   mapAttachments: () => ({}),
+  filterAttachmentsForPart: (attachments: unknown) => attachments,
   groupSequentialToolCalls: (parts: Array<{ part: unknown; idx: number }>) =>
     parts.map((p) => ({ type: 'single' as const, part: p })),
 }));

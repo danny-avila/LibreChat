@@ -49,6 +49,7 @@ export interface CodeHarvestDeps {
     messageId: string;
     toolCallId: string;
     conversationId: string;
+    agentId?: string;
     session_id?: string;
     freshClaimAfter?: number;
   }) => Promise<ProcessedCodeOutput | null>;
@@ -155,6 +156,9 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
           messageId,
           toolCallId,
           conversationId,
+          /** Rides the attachment so the client can route it to the right
+           *  card when provider ids repeat across agents. */
+          agentId,
           session_id: file.storage_session_id ?? codeArtifact.session_id,
           freshClaimAfter,
         });

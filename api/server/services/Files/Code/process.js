@@ -327,6 +327,7 @@ const processCodeOutput = async ({
   conversationId,
   messageId,
   session_id,
+  agentId,
   freshClaimAfter,
 }) => {
   const appConfig = req.config;
@@ -466,15 +467,16 @@ const processCodeOutput = async ({
     }
 
     /**
-     * Atomic re-check immediately before the final DB write (background
-     * harvests on shared rows only): an overlapping NEWER harvest may have
-     * claimed ownership since the read guard above. The loser skips its
-     * attachment; bytes it may have already uploaded to the same storage key
-     * are a narrow residual that full per-file locking would be needed to
-     * close.
+     * Atomic re-check immediately before the final DB write (ALL background
+     * harvests — including the claim's inserter, who may have been overtaken
+     * by a newer task while downloading/converting): an overlapping NEWER
+     * harvest may have claimed ownership since the read guard above. The
+     * loser skips its attachment; bytes it may have already uploaded to the
+     * same storage key are a narrow residual that full per-file locking
+     * would be needed to close.
      */
     const commitCodeFile = async (fileData) => {
-      if (isUpdate && freshClaimAfter != null) {
+      if (freshClaimAfter != null) {
         const stillOwner = await confirmCodeFileOwnership({ file_id, sourceDispatchedAt });
         if (!stillOwner) {
           logger.warn(
@@ -529,7 +531,7 @@ const processCodeOutput = async ({
       if (!(await commitCodeFile(file))) {
         return null;
       }
-      return { file: Object.assign(file, { messageId, toolCallId }) };
+      return { file: Object.assign(file, { messageId, toolCallId, agentId }) };
     }
 
     const { saveBuffer } = getStrategyFunctions(appConfig.fileStrategy);
@@ -658,7 +660,7 @@ const processCodeOutput = async ({
         return null;
       }
       return {
-        file: Object.assign(file, { messageId, toolCallId }),
+        file: Object.assign(file, { messageId, toolCallId, agentId }),
         finalize: () =>
           finalizePreview({ buffer, leafName, mimeType, category, file_id, previewRevision }),
         previewRevision,
@@ -697,7 +699,7 @@ const processCodeOutput = async ({
     if (!(await commitCodeFile(file))) {
       return null;
     }
-    return { file: Object.assign(file, { messageId, toolCallId }) };
+    return { file: Object.assign(file, { messageId, toolCallId, agentId }) };
   } catch (error) {
     if (error?.message === 'Path traversal detected in filename') {
       logger.warn(

@@ -307,6 +307,28 @@ describe('Code Process', () => {
       expect(result).toBeNull();
     });
 
+    it('re-checks ownership even for the claim inserter (older inserter overtaken mid-flight)', async () => {
+      /* This task INSERTED the claim, then a newer task reclaimed and wrote
+       * while this one was still downloading — the commit must not land. */
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'mock-uuid-1234',
+        user: 'user-123',
+      });
+      mockConfirmCodeFileOwnership.mockResolvedValueOnce(false);
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const result = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-01T00:00:00.000Z').getTime(),
+      });
+
+      expect(result).toBeNull();
+      expect(mockConfirmCodeFileOwnership).toHaveBeenCalledWith({
+        file_id: 'mock-uuid-1234',
+        sourceDispatchedAt: new Date('2024-01-01T00:00:00.000Z').getTime(),
+      });
+    });
+
     it('skips the write when ownership is lost between the read guard and the commit', async () => {
       /* A newer harvest CAS-claimed ownership while this one was
        * downloading/converting: the final write must not commit. */

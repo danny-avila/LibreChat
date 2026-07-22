@@ -15,6 +15,7 @@ const baseParams = {
   toolCallId: 'call_code',
   messageId: 'msg-dispatch',
   conversationId: 'convo-1',
+  agentId: 'agent_a',
   output: 'stdout:\nhello',
   artifact: {
     session_id: 'exec-sess',
@@ -49,6 +50,7 @@ describe('createBackgroundCodeResultHandler', () => {
         messageId: 'msg-dispatch',
         toolCallId: 'call_code',
         conversationId: 'convo-1',
+        agentId: 'agent_a',
         session_id: 'store-1',
         freshClaimAfter: expect.any(Number),
       }),
@@ -59,6 +61,7 @@ describe('createBackgroundCodeResultHandler', () => {
       messageId: 'msg-dispatch',
       conversationId: 'convo-1',
       toolCallId: 'call_code',
+      agentId: 'agent_a',
       output: 'stdout:\nhello',
       attachments: [{ file_id: 'f1', filename: 'plot.png', toolCallId: 'call_code' }],
     });

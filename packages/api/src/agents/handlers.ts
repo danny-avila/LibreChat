@@ -3954,6 +3954,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           messageId: delivery.messageId,
                           conversationId: backgroundConversationId,
                           toolCallId: delivery.toolCallId,
+                          agentId: delivery.agentId,
                           status: delivery.status,
                         });
                       } catch (emitError) {
