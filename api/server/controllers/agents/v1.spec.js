@@ -38,6 +38,7 @@ jest.mock('sharp', () =>
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
+  mergeDeploymentSkillIds: jest.fn((ids) => ids),
   refreshS3Url: jest.fn(),
 }));
 
@@ -92,7 +93,7 @@ const {
   getResourcePermissionsMap,
 } = require('~/server/services/PermissionService');
 
-const { refreshS3Url } = require('@librechat/api');
+const { mergeDeploymentSkillIds, refreshS3Url } = require('@librechat/api');
 
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
@@ -155,6 +156,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
     // Reset all mocks
     jest.clearAllMocks();
+    mergeDeploymentSkillIds.mockImplementation((ids) => ids);
 
     // Setup mock request and response objects
     mockReq = {
@@ -1848,6 +1850,32 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(response.data).toHaveLength(1);
       expect(response.data[0].skills).toBeUndefined();
       expect(response.data[0].skills_enabled).toBeUndefined();
+    });
+
+    test('should preserve deployment skill scope for VIEW list callers', async () => {
+      const deploymentSkillId = new mongoose.Types.ObjectId();
+      await Agent.findByIdAndUpdate(agentA1._id, {
+        skills_enabled: true,
+        skills: [deploymentSkillId.toString()],
+      });
+
+      mockReq.user.id = userB.toString();
+      mockReq.query.requiredPermission = String(PermissionBits.VIEW);
+      findAccessibleResources.mockImplementation(({ resourceType }) => {
+        if (resourceType === ResourceType.AGENT) {
+          return Promise.resolve([agentA1._id]);
+        }
+        return Promise.resolve([]);
+      });
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+      mergeDeploymentSkillIds.mockImplementation((ids) => [...ids, deploymentSkillId]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].skills_enabled).toBe(true);
+      expect(response.data[0].skills).toEqual([deploymentSkillId.toString()]);
     });
 
     test('should preserve enabled skill scope for VIEW list callers with an empty allowlist', async () => {

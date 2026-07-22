@@ -158,6 +158,7 @@ jest.mock('~/hooks/SSE/useEventHandlers', () => {
       resetContentHandler: jest.fn(),
       syncStepMessage: jest.fn(),
       clearStepMaps: mockClearStepMaps,
+      flushPendingDeltas: jest.fn(),
       messageHandler: jest.fn(),
       setIsSubmitting: mockSetIsSubmitting,
       setShowStopButton: jest.fn(),
@@ -426,6 +427,50 @@ describe('useResumableSSE', () => {
       pageParams: [],
     });
     expect(result.pages[0].conversations).toEqual([{ conversationId: 'other' }]);
+    unmount();
+  });
+
+  it('reconciles conversations via refetch instead of removing them on a resume 404', async () => {
+    mockFindAll.mockReturnValue([{ queryKey: [QueryKeys.allConversations] }]);
+    // A deduped start returns status: 'resumed', so the client subscribes with resume=true.
+    (request.post as jest.Mock).mockResolvedValue({ streamId: 'stream-123', status: 'resumed' });
+    const submission = buildSubmission({
+      conversation: {},
+      userMessage: {
+        messageId: 'msg-1',
+        conversationId: null,
+        text: 'Hello',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: Constants.NO_PARENT,
+      },
+      initialResponse: {
+        messageId: 'msg-1_',
+        conversationId: null,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('error', { responseCode: 404 });
+    });
+
+    // Reconcile against the server (refetch) rather than dropping a possibly-persisted
+    // conversation. The handler is a mutually-exclusive isResume ? invalidate : remove, so
+    // asserting the invalidate proves the immediate removal did not run.
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.allConversations],
+    });
     unmount();
   });
 

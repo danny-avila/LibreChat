@@ -20,6 +20,7 @@ jest.mock('react-router-dom', () => ({
 jest.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({
     getQueryData: mockGetQueryData,
+    getQueryState: jest.fn(() => undefined),
   }),
 }));
 
@@ -63,6 +64,7 @@ jest.mock('~/utils', () => ({
   },
   createDualMessageContent: jest.fn(() => []),
   getRouteChatProjectId: jest.fn(() => null),
+  requestChatFocus: jest.fn(),
 }));
 
 const userMessage = (messageId: string, parentMessageId = '00000000-0000-0000-0000-000000000000') =>

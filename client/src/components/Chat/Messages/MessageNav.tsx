@@ -146,6 +146,31 @@ function computeTargetScroll(
   return Math.max(0, Math.min(target, max));
 }
 
+/**
+ * An entry's top edge in the scroll container's content space — the same space
+ * as `container.scrollTop`. A single `offsetTop` is measured from the nearest
+ * positioned ancestor, which for an in-thread steer is the response's `relative`
+ * content column, not the scroll content. Mixing that local value with the
+ * content-space `offsetTop` of top-level rows compares different origins and
+ * breaks every rail decision (jump targets, current row, fisheye centering) the
+ * moment the viewport reaches a steer. Summing `offsetTop` up the offsetParent
+ * chain until it leaves the container folds any nesting back into one origin;
+ * top-level rows collapse to a single hop.
+ */
+function entryTop(el: HTMLElement, container: HTMLElement): number {
+  let top = 0;
+  let node: Element | null = el;
+  while (node instanceof HTMLElement) {
+    top += node.offsetTop;
+    const parent = node.offsetParent;
+    if (!(parent instanceof HTMLElement) || parent === container || !container.contains(parent)) {
+      break;
+    }
+    node = parent;
+  }
+  return top;
+}
+
 type RibDims = { baseW: number; baseH: number; peakW: number; peakH: number };
 
 const RIB_END: RibDims = { baseW: 3, baseH: 3, peakW: 4.5, peakH: 4.5 };
@@ -289,18 +314,26 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   }, [entries]);
 
   const getCurrentVisibleId = useCallback((): string | null => {
+    const container = scrollableRef.current;
+    if (!container) {
+      return null;
+    }
     let nextId: string | null = null;
     let nextTop = Number.POSITIVE_INFINITY;
     for (const id of visibleSetRef.current) {
       const el = observedRef.current.get(id);
-      if (!el || el.offsetTop >= nextTop) {
+      if (!el) {
+        continue;
+      }
+      const top = entryTop(el, container);
+      if (top >= nextTop) {
         continue;
       }
       nextId = id;
-      nextTop = el.offsetTop;
+      nextTop = top;
     }
     return nextId;
-  }, []);
+  }, [scrollableRef]);
 
   useEffect(() => {
     messagesByIdRef.current = messagesById;
@@ -862,8 +895,14 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     const recomputeOffsets = () => {
       for (let i = 0; i < entries.length; i++) {
         const el = resolveEntryEl(entries[i].id);
-        offsetsTop[i] = el ? el.offsetTop : Number.POSITIVE_INFINITY;
-        offsetsBottom[i] = el ? el.offsetTop + el.offsetHeight : Number.POSITIVE_INFINITY;
+        if (!el) {
+          offsetsTop[i] = Number.POSITIVE_INFINITY;
+          offsetsBottom[i] = Number.POSITIVE_INFINITY;
+          continue;
+        }
+        const top = entryTop(el, container);
+        offsetsTop[i] = top;
+        offsetsBottom[i] = top + el.offsetHeight;
       }
     };
     recomputeOffsets();
@@ -1128,7 +1167,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (!el) {
         continue;
       }
-      if (el.offsetTop - scrollMargin < scrollTop - JUMP_EPS) {
+      if (entryTop(el, container) - scrollMargin < scrollTop - JUMP_EPS) {
         scrollToStart(entries[i].id);
         return;
       }
@@ -1151,7 +1190,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (!el) {
         continue;
       }
-      if (el.offsetTop - scrollMargin > scrollTop + JUMP_EPS) {
+      if (entryTop(el, container) - scrollMargin > scrollTop + JUMP_EPS) {
         scrollToStart(entries[i].id);
         return;
       }

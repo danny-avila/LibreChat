@@ -40,7 +40,6 @@
   "com_agents_description_card": "Apraksts: {{description}}",
   "com_agents_description_placeholder": "Pēc izvēles: aprakstiet savu aģentu šeit",
   "com_agents_empty_state_heading": "Nav atrasts neviens aģents",
-  "com_agents_enable_memory": "Ieslēgt atmiņu",
   "com_agents_error_bad_request_message": "Pieprasījumu nevarēja apstrādāt.",
   "com_agents_error_bad_request_suggestion": "Lūdzu, pārbaudiet ievadītos datus un mēģiniet vēlreiz.",
   "com_agents_error_category_title": "Kategorija Kļūda",

@@ -28,6 +28,7 @@ import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import {
   logger,
+  requestChatFocus,
   hasStreamStartFailed,
   createDualMessageContent,
   getRouteChatProjectId,
@@ -39,6 +40,11 @@ import store, { useGetEphemeralAgent } from '~/store';
 import { startupConfigKey } from '~/data-provider';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { useAuthContext } from '~/hooks';
+
+/** A revalidating cache younger than this is locally authoritative (the run
+ * that just streamed wrote it) and stays sendable; older ones wait for the
+ * refetch so a send can't fork from an outdated tail. */
+const STALE_SEND_REVALIDATION_MS = 5_000;
 
 const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
@@ -309,6 +315,29 @@ export default function useChatFunctions({
       return false;
     }
 
+    /**
+     * Warm-switch revalidation guard: a navigation invalidates the target's
+     * cache and renders it while a background refetch reconciles. Deriving
+     * parentMessageId from that cache could fork from an outdated tail, so
+     * refuse (composer keeps the text) until the refetch settles — but only
+     * when the cache is actually old: a just-streamed cache (fresh
+     * `dataUpdatedAt`) is locally authoritative, and gating it would block
+     * rapid follow-ups during the post-run reconcile.
+     */
+    if (isExistingConversation && overrideMessages == null) {
+      const messagesQueryState = queryClient.getQueryState<TMessage[]>([
+        QueryKeys.messages,
+        conversationId,
+      ]);
+      const isRevalidating =
+        messagesQueryState?.isInvalidated === true && messagesQueryState.fetchStatus === 'fetching';
+      const cacheAgeMs = Date.now() - (messagesQueryState?.dataUpdatedAt ?? 0);
+      if (isRevalidating && cacheAgeMs > STALE_SEND_REVALIDATION_MS) {
+        logger.warn('[useChatFunctions] Refusing to send while conversation history revalidates');
+        return false;
+      }
+    }
+
     if (isContinued && !latestMessage) {
       console.error('cannot continue AI message without latestMessage!');
       return;
@@ -383,6 +412,10 @@ export default function useChatFunctions({
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
     const intermediateId = overrideUserMessageId ?? v4();
+    /** Stable idempotency key for this submission: fresh per `ask()` (so regenerate differs)
+     *  but reused across the client's start-generation network retries, letting the server
+     *  dedup a retried request instead of starting a second billed generation. */
+    const clientRequestId = v4();
     if (parentMessageId == null) {
       parentMessageId = getAppendParentMessageId({ latestMessage, currentMessages });
     }
@@ -402,7 +435,8 @@ export default function useChatFunctions({
       currentMessages = [];
       conversationId = null;
       const projectSearch = chatProjectId ? `?projectId=${encodeURIComponent(chatProjectId)}` : '';
-      navigate(`/c/new${projectSearch}`, { state: { focusChat: true } });
+      requestChatFocus();
+      navigate(`/c/new${projectSearch}`);
     }
 
     const targetParentMessageId = isRegenerate ? messageId : latestMessage?.parentMessageId;
@@ -635,6 +669,7 @@ export default function useChatFunctions({
       editedContent,
       addedConvo,
       manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
+      clientRequestId,
     };
 
     if (isRegenerate) {

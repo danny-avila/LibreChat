@@ -8,6 +8,7 @@ const {
   agentUpdateSchema,
   refreshListAvatars,
   collectEdgeAgentIds,
+  mergeDeploymentSkillIds,
   mergeAgentOcrConversion,
   sanitizeModelParameters,
   MAX_AVATAR_REFRESH_AGENTS,
@@ -1098,7 +1099,9 @@ const getListAgentsHandler = async (req, res) => {
         resourceType: ResourceType.SKILL,
         requiredPermissions: PermissionBits.VIEW,
       });
-      accessibleSkillSet = new Set(accessibleSkillIds.map((oid) => oid.toString()));
+      accessibleSkillSet = new Set(
+        mergeDeploymentSkillIds(accessibleSkillIds).map((oid) => oid.toString()),
+      );
     }
 
     const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));

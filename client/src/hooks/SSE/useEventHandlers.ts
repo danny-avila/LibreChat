@@ -27,6 +27,7 @@ import {
   logger,
   setDraft,
   scrollToEnd,
+  requestChatFocus,
   getAllContentText,
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
@@ -309,7 +310,14 @@ export default function useEventHandlers({
       queryClient.invalidateQueries({ queryKey: [key], refetchType: 'all' });
     }
   }, [queryClient]);
-  const { stepHandler, clearStepMaps, resetSubagentAtoms, syncStepMessage } = useStepHandler({
+  const {
+    stepHandler,
+    clearStepMaps,
+    resetSubagentAtoms,
+    syncStepMessage,
+    cancelPendingDeltaFlush,
+    flushPendingDeltas,
+  } = useStepHandler({
     setMessages,
     getMessages,
     announcePolite,
@@ -751,7 +759,8 @@ export default function useEventHandlers({
           setDraft({ id: currentConvoId, value: requestMessage?.text });
           restorePendingQuotes(currentConvoId, requestMessage?.quotes);
           if (isNewChat) {
-            navigate(`/c/${Constants.NEW_CONVO}`, { replace: true, state: { focusChat: true } });
+            requestChatFocus();
+            navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
           }
           return;
         }
@@ -1117,6 +1126,8 @@ export default function useEventHandlers({
     createdHandler,
     titleHandler,
     syncStepMessage,
+    cancelPendingDeltaFlush,
+    flushPendingDeltas,
     attachmentHandler,
     abortConversation,
     resetContentHandler,

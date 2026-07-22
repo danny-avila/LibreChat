@@ -1,6 +1,6 @@
-import { Radio } from '@librechat/client';
+import { Radio, Checkbox } from '@librechat/client';
 import { useFormContext, useWatch } from 'react-hook-form';
-import { Tools, ArtifactModes, AgentCapabilities } from 'librechat-data-provider';
+import { Tools, MemoryScope, ArtifactModes, AgentCapabilities } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentForm, ExtendedFile } from '~/common';
 import type { BuiltinId } from '../../items/types';
@@ -74,6 +74,43 @@ function ArtifactsConfig({ value, onChange }: ArtifactsConfigProps) {
   );
 }
 
+interface MemoryConfigProps {
+  value: string;
+  onChange: (next: MemoryScope) => void;
+}
+
+function MemoryConfig({ value, onChange }: MemoryConfigProps) {
+  const localize = useLocalize();
+  const isolated = value === MemoryScope.agent;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center">
+        <Checkbox
+          id="memory-scope-checkbox"
+          checked={isolated}
+          onCheckedChange={(checked) =>
+            onChange(checked === true ? MemoryScope.agent : MemoryScope.user)
+          }
+          className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
+          value={isolated.toString()}
+          aria-labelledby="memory-scope-label"
+        />
+        <label
+          id="memory-scope-label"
+          htmlFor="memory-scope-checkbox"
+          className="cursor-pointer text-sm font-medium text-text-primary"
+        >
+          {localize('com_agents_memory_scope')}
+        </label>
+      </div>
+      <p className="text-sm leading-relaxed text-text-secondary">
+        {localize('com_agents_memory_scope_info')}
+      </p>
+    </div>
+  );
+}
+
 function WebSearchConfig() {
   const { data } = useVerifyAgentToolAuth({ toolId: Tools.web_search }, { retry: 1 });
   return <SearchAction authTypes={data?.authTypes} isToolAuthenticated={data?.authenticated} />;
@@ -91,6 +128,7 @@ export default function BuiltinSection({
   const { control, setValue } = useFormContext<AgentForm>();
 
   const artifactsValue = (useWatch({ control, name: AgentCapabilities.artifacts }) ?? '') as string;
+  const memoryScope = (useWatch({ control, name: 'memory_scope' }) ?? MemoryScope.user) as string;
 
   let body: React.ReactNode = null;
 
@@ -109,6 +147,13 @@ export default function BuiltinSection({
     );
   } else if (builtinId === 'context') {
     body = <FileContext agent_id={agentId} files={contextFiles} showHeader={false} />;
+  } else if (builtinId === 'memory') {
+    body = (
+      <MemoryConfig
+        value={memoryScope}
+        onChange={(next) => setValue('memory_scope', next, { shouldDirty: true })}
+      />
+    );
   }
 
   const localizedDescription = description ? localize(description as TranslationKeys) : '';
