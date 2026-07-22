@@ -3950,7 +3950,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       try {
                         emitAttachment({
                           type: BACKGROUND_STATUS_ATTACHMENT_TYPE,
-                          file_id: `bg-${delivery.toolCallId}`,
+                          /** Provider ids repeat across agents in handoffs;
+                           *  the agent suffix keeps sibling markers from
+                           *  upserting over each other client-side. */
+                          file_id: `bg-${delivery.toolCallId}${
+                            delivery.agentId != null ? `-${delivery.agentId}` : ''
+                          }`,
                           messageId: delivery.messageId,
                           conversationId: backgroundConversationId,
                           toolCallId: delivery.toolCallId,

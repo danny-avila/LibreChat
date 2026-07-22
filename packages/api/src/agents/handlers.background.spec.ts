@@ -665,7 +665,9 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
       { file_id: 'f1', toolCallId: 'call_code' },
       expect.objectContaining({
         type: 'background_task_status',
-        file_id: 'bg-call_code',
+        /** Agent-suffixed: sibling agents' `call_0` markers must not upsert
+         *  over each other client-side. */
+        file_id: 'bg-call_code-a',
         messageId: 'msg-dispatch',
         toolCallId: 'call_code',
         status: 'completed',

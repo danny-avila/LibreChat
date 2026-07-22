@@ -387,6 +387,17 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                             ],
                           },
                           { $eq: ['$$existing.toolCallId', toolCallId] },
+                          /** Provider tool-call ids repeat across agents in
+                           *  handoff messages; a sibling agent's attachment
+                           *  under the same id/key must survive (missing
+                           *  agent identity = legacy wildcard). */
+                          ...(agentId != null
+                            ? [
+                                {
+                                  $in: [{ $ifNull: ['$$existing.agentId', null] }, [null, agentId]],
+                                },
+                              ]
+                            : []),
                         ],
                       },
                     ],

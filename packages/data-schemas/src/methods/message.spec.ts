@@ -344,6 +344,36 @@ describe('Message Operations', () => {
       expect(result).toEqual({ matched: true, unfinished: true });
     });
 
+    it('keeps a sibling AGENT’s attachment when both id and file key collide', async () => {
+      /* Handoff agents can share a provider tool-call id AND a claimed
+       * file_id (same filename in one conversation); the second agent's
+       * anchor must not evict the first agent's card-scoped attachment. */
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        agentId: 'agent_a',
+        attachments: [{ file_id: 'shared', toolCallId: 'call_bg', agentId: 'agent_a' }],
+      });
+      await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        agentId: 'agent_b',
+        attachments: [{ file_id: 'shared', toolCallId: 'call_bg', agentId: 'agent_b' }],
+      });
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(saved?.attachments).toEqual([
+        { file_id: 'shared', toolCallId: 'call_bg', agentId: 'agent_a' },
+        { file_id: 'shared', toolCallId: 'call_bg', agentId: 'agent_b' },
+      ]);
+    });
+
     it('keeps a sibling tool call’s attachment when file ids repeat across calls', async () => {
       await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
 
