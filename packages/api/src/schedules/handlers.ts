@@ -191,6 +191,19 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       });
       return;
     }
+    // A supplied agent_id is validated in validatePayload; when an edit omits it
+    // but leaves the schedule enabled (e.g. toggling `enabled` back on after an
+    // agent_deleted/permission_revoked auto-disable), re-validate the STORED
+    // agent too. Otherwise re-enabling clears disabledReason for a target the
+    // next fire would immediately reject and disable again.
+    if (
+      enabled &&
+      parsed.data.agent_id == null &&
+      !(await deps.canViewAgent(existing.agent_id, req))
+    ) {
+      res.status(400).json({ error: 'Agent not found or not accessible' });
+      return;
+    }
     const cadenceChanged =
       parsed.data.cadence != null || parsed.data.timezone != null || parsed.data.enabled != null;
     const reEnabled = parsed.data.enabled === true && existing.enabled === false;
