@@ -54,8 +54,13 @@ async function seedSchedule(page: Page, token: string, agentId: string): Promise
 }
 
 async function openSchedulesPanel(page: Page) {
-  await page.getByRole('button', { name: 'Scheduled chats' }).click();
   const panel = page.getByRole('region', { name: 'Scheduled chats' });
+  // The active side panel persists to localStorage, so after a reload the
+  // schedules panel may already be open — clicking again would toggle it CLOSED.
+  // Only click to open when it isn't already visible.
+  if (!(await panel.isVisible().catch(() => false))) {
+    await page.getByRole('button', { name: 'Scheduled chats' }).click();
+  }
   await expect(panel).toBeVisible();
   return panel;
 }
