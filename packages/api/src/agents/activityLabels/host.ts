@@ -138,16 +138,26 @@ export async function resolveActivityLabelModel({
 export async function settlePendingLabelFills(
   pending: Array<Promise<void>>,
   timeoutMs = 3000,
+  onTimeout?: () => void,
 ): Promise<void> {
   if (pending.length === 0) {
     return;
   }
   let timerId: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
   const timeout = new Promise<void>((resolve) => {
-    timerId = setTimeout(resolve, timeoutMs);
+    timerId = setTimeout(() => {
+      timedOut = true;
+      resolve();
+    }, timeoutMs);
   });
   await Promise.race([Promise.allSettled(pending), timeout]);
   if (timerId != null) {
     clearTimeout(timerId);
+  }
+  if (timedOut) {
+    /** Stragglers must not mutate or emit for a response that is already
+     *  finalizing: the caller aborts them and closes the slot gate. */
+    onTimeout?.();
   }
 }

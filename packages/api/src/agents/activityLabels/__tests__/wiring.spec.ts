@@ -141,3 +141,47 @@ describe('synthesizeActivityLabelGapEvents', () => {
     expect(synthesizeActivityLabelGapEvents(parts, parts, meta)).toEqual([]);
   });
 });
+
+describe('createActivityLabelWiring close gate', () => {
+  it('drops a late fill once the response has finalized', async () => {
+    const parts: Array<LooseContentPart | null | undefined> = [
+      { type: 'tool_call', tool_call: { id: 'tool-1' } },
+    ];
+    const emitLabelEvent = jest.fn(async () => undefined);
+    let closed = false;
+    let releaseLabel: (value: string) => void = () => undefined;
+    const generateLabel = jest.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          releaseLabel = resolve;
+        }),
+    );
+    const { hook } = createActivityLabelWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent,
+      trackPendingFill: jest.fn(),
+      isClosed: () => closed,
+      resolveLLM: jest.fn(async () => ({
+        provider: Providers.OPENAI,
+        clientOptions: { model: 'm' },
+      })),
+      generateLabel,
+    });
+
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    /** Claim-time placeholder emitted; label still in flight. */
+    expect(emitLabelEvent).toHaveBeenCalledTimes(1);
+
+    /** Settle timed out: the scope closes, then the straggler resolves. */
+    closed = true;
+    releaseLabel('Late label that must not land');
+    await flushDetached();
+
+    expect(emitLabelEvent).toHaveBeenCalledTimes(1);
+    const labelPart = parts[1] as LooseContentPart;
+    expect(labelPart.activity_label).toBe('');
+    expect(labelPart.pending).toBe(true);
+  });
+});

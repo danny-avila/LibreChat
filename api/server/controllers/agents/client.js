@@ -374,15 +374,30 @@ class AgentClient extends BaseClient {
     if (collectedUsage.length === 0) {
       return;
     }
+    const streamId = this.options.req?._resumableStreamId || null;
     for (const usage of collectedUsage) {
-      this.usageEmitSink?.push({
+      const data = {
         input_tokens: usage.input_tokens,
         output_tokens: usage.output_tokens,
         model,
         usage_type: 'activity-label',
         runId: this.responseMessageId,
         seq: this.collectedUsage.length,
-      });
+      };
+      /** Fold into the response rollup synchronously, then stream it like
+       *  primary/subagent usage so the live session gauge stays honest.
+       *  Retained and flushed with the subagent emits so job cleanup cannot
+       *  race the persist. */
+      this.usageEmitSink?.push(data);
+      if (streamId) {
+        const emit = GenerationJobManager.emitChunk(streamId, {
+          event: UsageEvents.ON_TOKEN_USAGE,
+          data,
+        }).catch((err) => {
+          logger.warn(`[AgentClient] Failed to emit activity-label usage: ${err?.message ?? err}`);
+        });
+        this.pendingSubagentEmits.push(emit);
+      }
     }
     await this.recordCollectedUsage({
       collectedUsage,
@@ -441,14 +456,19 @@ class AgentClient extends BaseClient {
     }
   }
 
-  /** Bounded settle for in-flight label fills before finalization. */
+  /** Bounded settle for in-flight label fills before finalization. On
+   *  timeout the label scope is closed and its abort controller fired, so a
+   *  straggler cannot mutate the saved response or emit into a dead job. */
   async settleActivityLabels(timeoutMs = 3000) {
     const pending = this.pendingActivityLabelFills;
     if (!pending || pending.length === 0) {
       return;
     }
     this.pendingActivityLabelFills = [];
-    await settlePendingLabelFills(pending, timeoutMs);
+    await settlePendingLabelFills(pending, timeoutMs, () => {
+      this.activityLabelsClosed = true;
+      this.activityLabelAbort?.abort();
+    });
   }
 
   /**
@@ -467,10 +487,25 @@ class AgentClient extends BaseClient {
     /** SDK support probe (steering-style): the Run method and the formatter
      *  replay skip ship together, so method presence is the capability. */
     const sdkCapable = typeof Run?.prototype?.generateActivityLabel === 'function';
+    /** Label-scoped abort: fired when settle times out so a straggling
+     *  generation stops burning provider time for a finalized response.
+     *  Chained to the run signal so a user abort still cancels labels. */
+    this.activityLabelsClosed = false;
+    this.activityLabelAbort = new AbortController();
+    if (abortSignal != null) {
+      if (abortSignal.aborted) {
+        this.activityLabelAbort.abort();
+      } else {
+        abortSignal.addEventListener('abort', () => this.activityLabelAbort?.abort(), {
+          once: true,
+        });
+      }
+    }
     /** Thin wrapper: slot claiming, lane stamping, emit ordering, and settle
      *  tracking live in `createActivityLabelWiring` (packages/api, TS). */
     return createActivityLabelWiring({
-      abortSignal,
+      abortSignal: this.activityLabelAbort.signal,
+      isClosed: () => this.activityLabelsClosed === true,
       getContentParts: () => this.contentParts,
       bumpIndexOffset: () => {
         this.steerOffsetState.offset += 1;
