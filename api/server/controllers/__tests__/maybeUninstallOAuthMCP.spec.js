@@ -15,6 +15,10 @@ const mockLoggerWarn = jest.fn();
 const mockLoggerError = jest.fn();
 const mockGetTenantId = jest.fn();
 
+jest.mock('~/server/services/Schedules', () => ({
+  quiesceUserSchedules: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('@librechat/data-schemas', () => ({
   logger: { info: mockLoggerInfo, warn: mockLoggerWarn, error: mockLoggerError },
   getTenantId: (...args) => mockGetTenantId(...args),

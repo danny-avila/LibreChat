@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
+jest.mock('~/server/services/Schedules', () => ({
+  quiesceUserSchedules: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
   return {
