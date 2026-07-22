@@ -82,20 +82,28 @@ export default function useAttachmentHandler(queryClient?: QueryClient) {
        * twice, once stuck pending and once resolved. Attachments with no
        * file key (lightweight types like web_search / file_search
        * citations) keep the legacy append behavior. */
-      const attachmentUpsertKey = (a: TAttachment): string | undefined => {
+      const fileKeyOf = (a: TAttachment): string | undefined => {
         const { file_id, filepath } = a as Partial<TFile>;
-        const key = file_id ?? filepath;
-        if (!key) {
-          return undefined;
-        }
-        const { toolCallId } = a as { toolCallId?: string };
-        return toolCallId ? `${key}::${toolCallId}` : key;
+        return file_id ?? filepath;
       };
-      const upsertKey = attachmentUpsertKey(data);
+      const upsertKey = fileKeyOf(data);
+      const incomingToolCallId = (data as { toolCallId?: string }).toolCallId;
       if (upsertKey) {
-        const existingIndex = messageAttachments.findIndex(
-          (a) => attachmentUpsertKey(a) === upsertKey,
-        );
+        /** A missing toolCallId on either side is a wildcard (deferred-preview
+         *  updates emit bare `{file_id, status}` payloads); only DISTINCT
+         *  toolCallIds keep entries separate — sibling code calls can share a
+         *  claimed file_id and each card anchors its own attachment. */
+        const existingIndex = messageAttachments.findIndex((a) => {
+          if (fileKeyOf(a) !== upsertKey) {
+            return false;
+          }
+          const existingToolCallId = (a as { toolCallId?: string }).toolCallId;
+          return (
+            existingToolCallId == null ||
+            incomingToolCallId == null ||
+            existingToolCallId === incomingToolCallId
+          );
+        });
         if (existingIndex > -1) {
           const existing = messageAttachments[existingIndex] as Partial<TFile>;
           const incoming = data as Partial<TFile>;

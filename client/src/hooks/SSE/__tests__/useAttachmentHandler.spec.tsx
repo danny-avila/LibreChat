@@ -144,6 +144,17 @@ describe('useAttachmentHandler upsert-by-file_id', () => {
     expect(ctx.list).toHaveLength(2);
   });
 
+  it('keeps sibling tool calls separate when they share a file_id (distinct toolCallIds)', () => {
+    /* Two background code calls regenerated the same filename — same
+     * claimed file_id, different toolCallId. Each card anchors its own
+     * attachment, so the second emit must append, not replace. A bare
+     * update (no toolCallId) still merges by file key (wildcard). */
+    const ctx = setup();
+    ctx.handle(makeAttachment({ status: 'ready' }));
+    ctx.handle(makeAttachment({ status: 'ready', toolCallId: 'tc-2' }));
+    expect(ctx.list).toHaveLength(2);
+  });
+
   it('preserves fields from the first event when the second omits them', () => {
     /* The deferred preview update only carries the deltas (text, status,
      * textFormat). Fields set in the initial emit (filename, type, etc.)

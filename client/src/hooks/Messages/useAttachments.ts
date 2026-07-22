@@ -4,6 +4,15 @@ import type { TAttachment, TFile } from 'librechat-data-provider';
 import { useSearchResultsByTurn } from './useSearchResultsByTurn';
 import store from '~/store';
 
+function fileKeyOf(attachment: TAttachment): string | undefined {
+  const { file_id, filepath } = attachment as Partial<TFile>;
+  return file_id ?? filepath;
+}
+
+function toolCallIdOf(attachment: TAttachment): string | undefined {
+  return (attachment as { toolCallId?: string }).toolCallId;
+}
+
 /**
  * Stable identity for merging DB and live attachments: `file_id ?? filepath`
  * scoped by `toolCallId` (sibling code calls can share a claimed file_id for
@@ -12,9 +21,9 @@ import store from '~/store';
  * stable identity.
  */
 function attachmentKey(attachment: TAttachment): string | undefined {
-  const { file_id, filepath } = attachment as Partial<TFile>;
-  const { type, toolCallId } = attachment as { type?: string; toolCallId?: string };
-  const fileKey = file_id ?? filepath;
+  const { type } = attachment as { type?: string };
+  const toolCallId = toolCallIdOf(attachment);
+  const fileKey = fileKeyOf(attachment);
   if (fileKey) {
     return toolCallId ? `${fileKey}::${toolCallId}` : fileKey;
   }
@@ -22,6 +31,21 @@ function attachmentKey(attachment: TAttachment): string | undefined {
     return `${type}:${toolCallId}`;
   }
   return undefined;
+}
+
+/**
+ * Wildcard-tolerant match for the lifecycle overlay: a missing `toolCallId`
+ * on either side matches (preview-sync records are bare `{file_id, ...}`);
+ * only DISTINCT toolCallIds keep same-file entries separate.
+ */
+function matchesLiveEntry(db: TAttachment, live: TAttachment): boolean {
+  const key = fileKeyOf(db);
+  if (!key || fileKeyOf(live) !== key) {
+    return false;
+  }
+  const dbToolCallId = toolCallIdOf(db);
+  const liveToolCallId = toolCallIdOf(live);
+  return dbToolCallId == null || liveToolCallId == null || dbToolCallId === liveToolCallId;
 }
 
 export default function useAttachments({
@@ -53,13 +77,6 @@ export default function useAttachments({
      * resolved record into `messageAttachmentsMap`; merging here lets
      * `artifactTypeForAttachment` see the resolved text/textFormat
      * and route through the proper PanelArtifact card. */
-    const liveByKey = new Map<string, TAttachment>();
-    for (const a of live) {
-      const key = attachmentKey(a);
-      if (key) {
-        liveByKey.set(key, a);
-      }
-    }
     const dbKeys = new Set<string>();
     const merged = attachments.map((db) => {
       const key = attachmentKey(db);
@@ -67,7 +84,13 @@ export default function useAttachments({
         return db;
       }
       dbKeys.add(key);
-      const liveEntry = liveByKey.get(key);
+      /** Bare live records (no toolCallId) must still be reachable by their
+       *  plain file key so an overlaid entry isn't re-appended below. */
+      const fileKey = fileKeyOf(db);
+      if (fileKey) {
+        dbKeys.add(fileKey);
+      }
+      const liveEntry = live.find((a) => matchesLiveEntry(db, a));
       return liveEntry ? ({ ...db, ...liveEntry } as TAttachment) : db;
     });
     /* Live-only entries with a stable identity are kept, not discarded: a

@@ -136,6 +136,21 @@ describe('useAttachments', () => {
     expect((result.current.attachments[1] as AttachmentFixture).file_id).toBe('fid-B');
   });
 
+  it('overlays bare live records (no toolCallId) onto DB entries that carry one', () => {
+    /* Preview-sync polling inserts the resolved FILE record, which has no
+     * toolCallId; the DB attachment does. The lifecycle overlay must still
+     * match (wildcard), or reloaded office previews stick on pending. */
+    const db = makeAttachment({ status: 'pending', text: undefined });
+    const live = { ...makeAttachment({ status: 'ready', text: 'resolved' }) };
+    delete (live as { toolCallId?: string }).toolCallId;
+    const { result } = setup({
+      attachments: [db],
+      liveMap: { [messageId]: [live as AttachmentFixture] },
+    });
+    expect(result.current.attachments).toHaveLength(1);
+    expect((result.current.attachments[0] as AttachmentFixture).status).toBe('ready');
+  });
+
   it('keeps sibling tool calls’ live attachments when file ids repeat across calls', () => {
     /* Two background code calls regenerated the same filename — same
      * claimed file_id, different toolCallId. Each card anchors its own
