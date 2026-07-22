@@ -251,20 +251,18 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       update.balanceSkipCount = 0;
     }
     const unset = reEnabled ? { disabledReason: 1 as const } : undefined;
+    // Retain the new attachments BEFORE committing the edit, so a retention failure
+    // leaves the ENTIRE schedule unchanged rather than persisting prompt/cadence/
+    // agent/enabled changes while only reverting file_ids. A file whose TTL was
+    // cleared before the edit failed simply persists unreferenced (the user's own
+    // upload) — a minor leak, not a partial config change future runs would use.
+    if (parsed.data.file_ids?.length && !(await retainFiles(parsed.data.file_ids, user.id))) {
+      res.status(500).json({ error: 'Failed to retain schedule attachments' });
+      return;
+    }
     const schedule = await deps.methods.updateScheduleById(existing.id, user.id, update, unset);
     if (schedule == null) {
       res.status(404).json({ error: 'Schedule not found' });
-      return;
-    }
-    if (parsed.data.file_ids?.length && !(await retainFiles(parsed.data.file_ids, user.id))) {
-      // Revert to the prior attachments so the schedule doesn't reference files
-      // whose upload TTL wasn't cleared and would be reaped before the next fire.
-      await deps.methods
-        .updateScheduleById(existing.id, user.id, {
-          file_ids: existing.file_ids ?? [],
-        } as Partial<ISchedule>)
-        .catch(() => undefined);
-      res.status(500).json({ error: 'Failed to retain schedule attachments' });
       return;
     }
     res.json(toWireSchedule(schedule));

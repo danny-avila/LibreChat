@@ -329,6 +329,18 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     if (options?.clustered != null) {
       clustered = options.clustered;
     }
+    // A clustered deployment without a SHARED stream backend cannot signal a peer
+    // worker's in-memory job (emitAbort is cross-replica only over Redis), so
+    // deletion quiescing can't abort a scheduled run whose generation lives on
+    // another worker, and orphan reaping is disabled. This is unsupported for
+    // scheduled chats — warn the operator to enable USE_REDIS_STREAMS.
+    if (clustered && !GenerationJobManager.isRedis) {
+      logger.warn(
+        '[schedules] clustered deployment without a shared stream store (USE_REDIS_STREAMS): ' +
+          'scheduled-run peer aborts (deletion/account-deletion quiescing) and cross-worker ' +
+          'orphan recovery are NOT available. Enable USE_REDIS_STREAMS for safe multi-worker scheduling.',
+      );
+    }
     // Explicitly build the Schedule/ScheduleRun indexes first — the unique
     // idempotency index and TTL retention index would otherwise never exist when
     // MONGO_AUTO_INDEX is disabled (the production default). If this fails the
@@ -422,15 +434,6 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     return false;
   }
 
-  /**
-   * Read-only overlap/capacity pre-check for a HITL resume, run BEFORE the approval
-   * claim so a deferral leaves the approval claimable. A paused run is
-   * `requires_action`, so another `started` run for the schedule (hasActiveRun) is
-   * a DIFFERENT, active occurrence — resuming over it would break per-schedule
-   * overlap. Capacity is checked against the OWNER's fireConcurrency. No mutation:
-   * the actual promotion happens only after the claim is won, so the slot is owned
-   * by the run's driver, never by a losing racer.
-   */
   async function isScheduleLive(scheduleId: string): Promise<boolean> {
     if (!scheduleId) {
       return false;
@@ -438,6 +441,21 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     return (await methods.getScheduleById(scheduleId)) != null;
   }
 
+  /**
+   * Reservation for a HITL resume, run BEFORE the approval claim so a deferral
+   * leaves the approval claimable. Checks existence/overlap/capacity READ-ONLY
+   * first (a null schedule -> 'gone'; another `started` occurrence -> 'overlap'; the
+   * owner's fireConcurrency saturated -> 'capacity'), then promotes the run into the
+   * single active slot WITHOUT any rollback. No rollback is the key correctness
+   * property: whichever request wins the approval drives whatever is `started`, so a
+   * losing racer can never flip the winner's active row back to requires_action.
+   * Per-schedule overlap is hard-enforced by the partial unique index; the global
+   * cap is a best-effort soft cap here (concurrent resumes of DIFFERENT schedules
+   * can transiently overshoot by the number racing, self-healing when they settle) —
+   * the fire path remains the hard-enforced cap for new load, and enforcing it
+   * atomically here would require either a rollback that races the claim takeover or
+   * a drift-prone global counter.
+   */
   async function reserveScheduledResume(
     scheduleId: string,
     scheduledFor: string | Date,
@@ -452,31 +470,28 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     if (schedule == null) {
       return 'gone';
     }
-    const when = new Date(scheduledFor);
-    // Promote requires_action -> started. The single-active partial index makes
-    // per-schedule overlap atomic (a newer occurrence already active -> 'overlap').
-    // 'missing' means a concurrent same-pause resume already promoted this row: it
-    // is already active, so proceed WITHOUT rolling it back (that racer owns it) and
-    // without re-counting capacity (we did not add to the population).
-    const promoted = await methods.promoteRunToStarted(scheduleId, when);
-    if (promoted === 'overlap') {
+    // A paused run is `requires_action`, so another `started` run for the schedule is
+    // a DIFFERENT active occurrence — resuming over it would break per-schedule overlap.
+    if (await methods.hasActiveRun(scheduleId)) {
       return 'overlap';
     }
-    if (promoted === 'missing') {
-      return 'ok';
-    }
-    // We added this run to the started population — reserve-then-verify the global
-    // cap against the OWNER's limit, rolling back OUR OWN promotion if over. Doing
-    // this BEFORE the approval claim keeps the approval claimable on a capacity
-    // deferral, and rolling back only our own row avoids the claim-owner race.
+    // Read-only capacity gate BEFORE promoting, so we never mutate a row a concurrent
+    // same-pause resume may already be driving (no rollback path exists).
     const owner = await engineDeps.getUserContext(schedule.user);
     const limits = await getLimits(owner ?? undefined);
     const active = await engineDeps.countActiveRunsGlobal();
-    if (active > limits.fireConcurrency) {
-      await methods
-        .transitionRunStatus(scheduleId, when, 'started', 'requires_action')
-        .catch(() => undefined);
+    if (active >= limits.fireConcurrency) {
       return 'capacity';
+    }
+    // Reserve the single active slot. Best-effort: 'overlap' (a different occurrence
+    // won the slot since the check above) leaves the row paused and the resume runs
+    // undercounted until it settles; 'missing' means a concurrent same-pause resume
+    // already promoted it. Never rolled back.
+    const promoted = await methods.promoteRunToStarted(scheduleId, new Date(scheduledFor));
+    if (promoted === 'overlap') {
+      logger.warn(
+        `[schedules] resumed run could not reserve the active slot (overlap): ${scheduleId}`,
+      );
     }
     return 'ok';
   }

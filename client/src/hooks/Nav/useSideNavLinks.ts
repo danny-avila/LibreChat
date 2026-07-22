@@ -166,7 +166,19 @@ export default function useSideNavLinks({
       });
     }
 
-    if (hasAccessToSchedules && interfaceConfig.schedules !== false) {
+    // Hide the panel when schedules are disabled by EITHER the boolean form
+    // (`false`) or the runtime-config object form (`{ use: false, ... }`) — the
+    // server treats both as disabled, so the nav gate must match to avoid showing
+    // an entry whose create/run operations the backend rejects.
+    const schedulesConfig = interfaceConfig.schedules;
+    const schedulesEnabled =
+      schedulesConfig !== false &&
+      !(
+        typeof schedulesConfig === 'object' &&
+        schedulesConfig != null &&
+        schedulesConfig.use === false
+      );
+    if (hasAccessToSchedules && schedulesEnabled) {
       links.push({
         title: 'com_ui_schedules',
         label: '',

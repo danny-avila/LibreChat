@@ -70,9 +70,14 @@ export const useRunScheduleNowMutation = (
     (id: string) => dataService.runScheduleNow(id),
     {
       ...options,
-      onSuccess: (...args) => {
+      // Invalidate on SETTLED, not just success: several run-now 409 paths are still
+      // server-side mutations (a balance skip updates lastRun/counters and can
+      // auto-disable; agent/permission/invalid-schedule skips disable the schedule
+      // before returning), so the card must refresh on those errors too rather than
+      // wait for the polling interval.
+      onSettled: (...args) => {
         queryClient.invalidateQueries([QueryKeys.schedules]);
-        options?.onSuccess?.(...args);
+        options?.onSettled?.(...args);
       },
     },
   );

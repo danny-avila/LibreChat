@@ -211,10 +211,13 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
    * owner's context via `runInTenantContext`.
    */
   async function runTick(): Promise<number> {
+    // Do NOT gate claims on the BASE config's `enabled`: schedules can be enabled
+    // per user/role/tenant even when the base config disables them, so gating here
+    // would silently never fire those users' occurrences. The fire path re-resolves
+    // the OWNER's limits and skips ('disabled') any occurrence whose owner has the
+    // feature off, so an owner-scoped disable is still honored. The base config only
+    // supplies the per-tick claim budget (a global throttle).
     const limits = await deps.getLimits();
-    if (!limits.enabled) {
-      return 0;
-    }
     let fired = 0;
     // Cap on ACTIVE scheduled runs, not just per-tick starts: the loopback chat
     // endpoint returns as soon as the generation starts and scheduled fires
