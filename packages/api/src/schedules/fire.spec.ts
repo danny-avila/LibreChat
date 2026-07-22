@@ -32,7 +32,7 @@ function makeSchedule(overrides: Partial<FireableSchedule> = {}): FireableSchedu
 
 /** In-memory run store exercising the real insert/count/delete/idempotency interplay. */
 function makeMethods() {
-  const runs = new Map<string, { status: string }>();
+  const runs = new Map<string, { status: string; postAttempted?: boolean }>();
   const calls = {
     advance: 0,
     releaseLease: 0,
@@ -40,6 +40,7 @@ function makeMethods() {
     recordOutcome: [] as { status: string }[],
     skipped: [] as string[],
     setFireDetails: 0,
+    markPostAttempted: 0,
   };
   const key = (id: string, when: Date) => `${id}:${when.toISOString()}`;
   const methods = {
@@ -68,6 +69,13 @@ function makeMethods() {
     }),
     deleteScheduleRun: jest.fn(async (id: string, when: Date) => {
       runs.delete(key(id, when));
+    }),
+    markRunPostAttempted: jest.fn(async (id: string, when: Date) => {
+      const r = runs.get(key(id, when));
+      if (r) {
+        r.postAttempted = true;
+      }
+      calls.markPostAttempted += 1;
     }),
     setRunFireDetails: jest.fn(async () => {
       calls.setFireDetails += 1;

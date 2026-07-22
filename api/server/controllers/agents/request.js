@@ -236,7 +236,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   // Only honor schedule bookkeeping fields on a server-minted scheduled fire
   // (scope-claim verified). A normal chat could otherwise pass an arbitrary
   // scheduleId and corrupt another schedule's lastRun/counters via the hook.
-  const isScheduledFire = isScheduleFireRequest(req);
+  // Prefer the decision the chat route captured right after auth: the short-lived
+  // fire token can expire during the slower chat middleware, so re-verifying here
+  // would wrongly demote a valid fire to an ordinary chat and orphan its run.
+  const isScheduledFire =
+    typeof req._isScheduledFire === 'boolean' ? req._isScheduledFire : isScheduleFireRequest(req);
   // Capture the decision on req: the short-lived fire token expires mid-run, so
   // cleanup must not re-verify it (an expired token would read as non-scheduled
   // and wrongly decrement the concurrent-request counter it never incremented).

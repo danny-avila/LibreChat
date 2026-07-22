@@ -54,6 +54,7 @@ export interface IScheduleRun {
   droppedFileIds?: string[];
   durationMs?: number;
   bookkept?: boolean;
+  postAttempted?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }

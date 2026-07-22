@@ -23,7 +23,7 @@ const {
   getMCPRequestContext,
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
-const { recordScheduleOutcome } = require('~/server/services/Schedules');
+const { recordScheduleOutcome, markScheduleRunActive } = require('~/server/services/Schedules');
 const { saveMessage, getConvo, getMessages } = require('~/models');
 
 /**
@@ -557,6 +557,14 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     return res.status(409).json({ error: 'This action was already resolved or has expired' });
   }
 
+  // A scheduled fire's run sat `requires_action` while paused, so overlap/capacity
+  // (which count only `started`) ignored it. Now that the resume claim won, it's
+  // generating again — move it back to `started` so a second run for the same
+  // schedule can't start concurrently while this one runs.
+  if (job.metadata?.scheduleId) {
+    await markScheduleRunActive(job.metadata.scheduleId, job.metadata.scheduledFor);
+  }
+
   // Seed the run-scoped MCP request-context store BEFORE the ACK: once `res.json`
   // finishes the response, a later `getMCPRequestContext(req, res)` (from tool loading)
   // sees `res` as ended and returns undefined, leaving the resumed run without its MCP
@@ -696,6 +704,16 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       // resume) drops them, so an expiring re-pause doesn't lose them; finalize later
       // overwrites content and merges attachments onto the saved message.
       await persistRePauseProgress({ req, client, job, streamId, conversationId });
+      // Move the scheduled run back to `requires_action`: it paused again, so it
+      // should stop counting as active (started) for overlap/capacity.
+      if (job.metadata?.scheduleId) {
+        await recordScheduleOutcome({
+          scheduleId: job.metadata.scheduleId,
+          scheduledFor: job.metadata.scheduledFor,
+          status: 'requires_action',
+          conversationId,
+        });
+      }
       return;
     }
 

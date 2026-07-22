@@ -58,6 +58,7 @@ export type ScheduleMethods = {
   advanceSchedule: (id: string, nextRunAt: Date | null) => Promise<void>;
   disableSchedule: (id: string, reason: ScheduleDisabledReason) => Promise<void>;
   insertScheduleRun: (data: Partial<IScheduleRun>) => Promise<IScheduleRun | null>;
+  markRunPostAttempted: (scheduleId: string, scheduledFor: Date) => Promise<void>;
   setRunFireDetails: (
     scheduleId: string,
     scheduledFor: Date,
@@ -342,8 +343,11 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       },
     );
     // No-match guard: never touch schedule bookkeeping without a matching run
-    // (protects against a spoofed scheduleId on a normal chat).
-    if ((matched.modifiedCount ?? 0) === 0) {
+    // (protects against a spoofed scheduleId on a normal chat). Keyed on MATCHED,
+    // not modified: a retried `requires_action` write leaves the row already in
+    // that status (modifiedCount 0), and using modifiedCount would skip the pause
+    // card (lastRun) update and leave the pause invisible until it terminates.
+    if ((matched.matchedCount ?? 0) === 0) {
       return;
     }
     if (params.status === 'requires_action') {
@@ -374,10 +378,12 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     balanceSkipDisableThreshold?: number,
   ): Promise<void> {
     const firedAt = new Date();
-    const inserted = await insertScheduleRun({ ...data, firedAt });
-    if (inserted == null) {
-      return;
-    }
+    // A duplicate {scheduleId, scheduledFor} row means a prior attempt inserted it
+    // but may have crashed before the bookkeeping below landed — proceed as a
+    // retry rather than a no-op. The lastRun write is idempotent and the streak
+    // increment is guarded per occurrence by `countedFor`, so a retry can't
+    // double-count or lose the skip from the card / the insufficient_balance path.
+    await insertScheduleRun({ ...data, firedAt });
     // Surface the skip on the card (its chip reads schedule.lastRun). An overlap
     // skip is an intervening non-balance outcome, so it BREAKS the balance-skip
     // streak (the counter is for CONSECUTIVE balance skips).
@@ -393,12 +399,27 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     if (data.status !== 'skipped_balance' || balanceSkipDisableThreshold == null) {
       return;
     }
+    // Per-occurrence guard: increment the consecutive-balance-skip streak at most
+    // once for this occurrence even across crash retries (same `countedFor` set the
+    // terminal counters use; an occurrence is only ever skipped OR fired, never both).
     const schedule = await Schedule()
-      .findOneAndUpdate({ id: data.scheduleId }, { $inc: { balanceSkipCount: 1 } }, { new: true })
+      .findOneAndUpdate(
+        { id: data.scheduleId, countedFor: { $ne: data.scheduledFor } },
+        {
+          $inc: { balanceSkipCount: 1 },
+          $push: { countedFor: { $each: [data.scheduledFor], $slice: -COUNTED_FOR_WINDOW } },
+        },
+        { new: true },
+      )
       .lean<ISchedule>();
     if (schedule != null && schedule.balanceSkipCount >= balanceSkipDisableThreshold) {
       await disableSchedule(data.scheduleId, 'insufficient_balance');
     }
+  }
+
+  /** Marks that the loopback fire POST has been attempted for this occurrence. */
+  async function markRunPostAttempted(scheduleId: string, scheduledFor: Date): Promise<void> {
+    await ScheduleRun().updateOne({ scheduleId, scheduledFor }, { $set: { postAttempted: true } });
   }
 
   async function setRunFireDetails(
@@ -504,6 +525,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     advanceSchedule,
     disableSchedule,
     insertScheduleRun,
+    markRunPostAttempted,
     setRunFireDetails,
     hasActiveRun,
     countActiveRuns,

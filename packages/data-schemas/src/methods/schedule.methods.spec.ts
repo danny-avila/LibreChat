@@ -325,6 +325,25 @@ describe('recordSkippedRun', () => {
     expect(updated.disabledReason).toBe('insufficient_balance');
   });
 
+  it('is retryable: a duplicate skipped_balance occurrence does not double-count the streak', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scheduledFor = new Date('2026-07-20T12:00:00Z');
+    const data = {
+      scheduleId: schedule.id,
+      user: schedule.user,
+      scheduledFor,
+      status: 'skipped_balance' as const,
+    };
+    // First attempt inserts the row + increments the streak.
+    await methods.recordSkippedRun(data, 3);
+    // Retry of the SAME occurrence (a crash before the counter landed on the first
+    // try): the row already exists, but the bookkeeping must still run — exactly once.
+    await methods.recordSkippedRun(data, 3);
+    const updated = await getSchedule(schedule.id);
+    expect(updated.balanceSkipCount).toBe(1);
+    expect(updated.lastRun?.status).toBe('skipped_balance');
+  });
+
   it('skipped_overlap records the run without counter changes', async () => {
     const schedule = await methods.createSchedule(scheduleData());
     const scheduledFor = new Date('2026-07-20T12:00:00Z');

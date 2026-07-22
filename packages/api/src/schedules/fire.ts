@@ -221,10 +221,19 @@ export async function fireSchedule(
     const active = await deps.countActiveRunsGlobal();
     if (active > ownerLimits.fireConcurrency) {
       await methods.deleteScheduleRun(schedule.id, scheduledFor);
-      await methods.releaseLease(schedule.id);
+      // Do NOT release the lease: keep the claim's lease as a backoff so the
+      // nextRunAt-sorted claimer doesn't immediately re-pick this capacity-blocked
+      // row and starve other due schedules (including ones whose owners could
+      // fire). nextRunAt is untouched, so the occurrence retries once the lease
+      // expires and capacity has had a chance to free up.
       return { fired: false, skipped: 'capacity' as const };
     }
 
+    // Mark the POST as attempted just before sending it: a crash BEFORE this point
+    // left a reservation that never generated (reconcile reaps it at the orphan
+    // cutoff), whereas one after may be an accepted-but-lost generation (reconcile
+    // waits the longer abandonment window). Distinguishes the two on the run row.
+    await methods.markRunPostAttempted(schedule.id, scheduledFor);
     let conversationId: string;
     try {
       ({ conversationId } = await postChatMessage(deps, schedule, user.id, scheduledFor, files));

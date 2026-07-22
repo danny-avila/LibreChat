@@ -41,6 +41,7 @@ const {
   sweepOrphanedPreviews,
 } = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
+const { initializeScheduleEngine } = require('./services/Schedules');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const createSpaFallback = require('./utils/fallback');
@@ -454,6 +455,7 @@ if (cluster.isMaster) {
     app.use('/api/agents', routes.agents);
     app.use('/api/banner', routes.banner);
     app.use('/api/memories', routes.memories);
+    app.use('/api/schedules', routes.schedules);
     app.use('/api/permissions', routes.accessPermissions);
     app.use('/api/tags', routes.tags);
     app.use('/api/mcp', routes.mcp);
@@ -492,6 +494,9 @@ if (cluster.isMaster) {
         await initializeMCPs();
         await initializeOAuthReconnectManager();
         await checkMigrations();
+        // Arm the scheduler in each worker: the Mongo lease-claim CAS guarantees
+        // exactly one worker fires each due schedule, so multi-worker arming is safe.
+        await initializeScheduleEngine();
       } catch (initErr) {
         logger.error(`Worker ${process.pid} post-listen initialization failed:`, initErr);
         process.exit(1);

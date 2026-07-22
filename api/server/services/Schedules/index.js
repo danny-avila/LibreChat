@@ -1,5 +1,9 @@
 const mongoose = require('mongoose');
-const { Permissions, PermissionTypes } = require('librechat-data-provider');
+const {
+  Permissions,
+  PermissionTypes,
+  getRefillEligibilityDate,
+} = require('librechat-data-provider');
 const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const { resolveAgentFireAccess } = require('./access');
 const {
@@ -46,6 +50,32 @@ async function getLimits(user) {
 
 const MANUAL_RUN_LEASE_MS = 5 * 60 * 1000;
 
+/**
+ * Whether a refill would top up this zero-credit balance record right now,
+ * mirroring the chat balance check's auto-refill eligibility (record-based).
+ * @param {{ autoRefillEnabled?: boolean, refillAmount?: number, refillIntervalValue?: number, refillIntervalUnit?: import('librechat-data-provider').RefillIntervalUnit, lastRefill?: Date } | null | undefined} record
+ * @returns {boolean}
+ */
+function isRefillEligible(record) {
+  if (record?.autoRefillEnabled !== true) {
+    return false;
+  }
+  if (!(typeof record.refillAmount === 'number' && record.refillAmount > 0)) {
+    return false;
+  }
+  if (record.refillIntervalValue == null || record.refillIntervalUnit == null) {
+    return false;
+  }
+  const lastRefillDate = new Date(record.lastRefill ?? 0);
+  if (Number.isNaN(lastRefillDate.getTime())) {
+    return true;
+  }
+  return (
+    new Date() >=
+    getRefillEligibilityDate(lastRefillDate, record.refillIntervalValue, record.refillIntervalUnit)
+  );
+}
+
 /** @type {import('@librechat/api').ScheduleEngineDeps} */
 const engineDeps = {
   methods,
@@ -82,12 +112,20 @@ const engineDeps = {
         ).lean();
       }
     }
-    // Auto-refill users are topped up by the run's own balance check; never
-    // pre-skip them here.
-    if (balanceConfig.autoRefillEnabled === true) {
+    const credits = record?.tokenCredits ?? 0;
+    if (credits > 0) {
       return false;
     }
-    return (record?.tokenCredits ?? 0) <= 0;
+    // At/below zero: an auto-refill user is only spared a pre-skip when a refill
+    // would actually fire now (mirrors the chat balance check's eligibility). If
+    // they aren't eligible yet, or the refill settings are incomplete, pre-skip as
+    // a balance skip — otherwise the zero-credit fire reaches the chat, is rejected
+    // there, and records a generic error that walks the schedule toward
+    // too_many_failures instead of skipped_balance/insufficient_balance.
+    if (balanceConfig.autoRefillEnabled === true && isRefillEligible(record)) {
+      return false;
+    }
+    return true;
   },
   // Mirrors the loopback chat route's authorization (role AGENTS:USE + resource
   // VIEW with the manage:agents bypass); shared with the create/update precheck
@@ -218,10 +256,35 @@ async function recordScheduleOutcome({ scheduleId, scheduledFor, status, convers
   return false;
 }
 
+/**
+ * Moves a paused scheduled run back to `started` when its HITL resume claim
+ * succeeds, so overlap/capacity (which key on `started`) count the resuming
+ * generation as active and a second run for the same schedule can't start
+ * concurrently. Best-effort: a failure just leaves it `requires_action` (the
+ * terminal hook still records the outcome).
+ * @returns {Promise<void>}
+ */
+async function markScheduleRunActive(scheduleId, scheduledFor) {
+  if (!scheduleId || !scheduledFor) {
+    return;
+  }
+  try {
+    await methods.transitionRunStatus(
+      scheduleId,
+      new Date(scheduledFor),
+      'requires_action',
+      'started',
+    );
+  } catch (err) {
+    logger.error('[schedules] failed to mark resumed run active:', err);
+  }
+}
+
 module.exports = {
   getLimits,
   engineDeps,
   fireScheduleNow,
   recordScheduleOutcome,
+  markScheduleRunActive,
   initializeScheduleEngine,
 };

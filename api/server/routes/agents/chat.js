@@ -5,6 +5,7 @@ const {
   generateCheckAccess,
   skipAgentCheck,
   applyResumeContext,
+  isScheduleFireRequest,
   GenerationJobManager,
 } = require('@librechat/api');
 const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
@@ -71,6 +72,15 @@ const restoreResumeContext = async (req, res, next) => {
   next();
 };
 
+// Verify the scheduled-fire token identity as EARLY as possible — right after
+// auth, before the slower chat middleware (PII, moderation, access checks,
+// buildEndpointOption) can outlast the short-lived fire token. Re-checking at the
+// controller could fail if the token expired in-flight, silently demoting the fire
+// to an ordinary chat with no schedule metadata and orphaning its ScheduleRun.
+router.use((req, _res, next) => {
+  req._isScheduledFire = isScheduleFireRequest(req);
+  next();
+});
 router.use(restoreResumeContext);
 router.use(createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }));
 router.use(moderateText);
