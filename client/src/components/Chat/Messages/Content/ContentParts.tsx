@@ -323,7 +323,9 @@ const ContentParts = memo(function ContentParts({
         }
         const groupId = getToolGroupId(group.parts, fallbackScope);
         const groupAttachments = group.parts.flatMap(
-          ({ part }) => attachmentMap[getToolCallId(part)] ?? [],
+          ({ part }) =>
+            filterAttachmentsForPart(attachmentMap[getToolCallId(part)], getPartAgentId(part)) ??
+            [],
         );
         return { ...group, groupId, groupAttachments };
       }),

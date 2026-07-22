@@ -55,10 +55,6 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     tenantId?: string | null;
     sourceDispatchedAt?: number;
   }) => Promise<IMongoFile>;
-  confirmCodeFileOwnership: (data: {
-    file_id: string;
-    sourceDispatchedAt: number;
-  }) => Promise<boolean>;
   createFile: (data: Partial<IMongoFile>, disableTTL?: boolean) => Promise<IMongoFile | null>;
   updateFile: (
     data: Partial<IMongoFile> & { file_id: string },
@@ -349,34 +345,6 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
-   * Atomic ownership check-and-stamp for a code-output write: succeeds only
-   * when the row's `metadata.sourceDispatchedAt` is unset or not newer than
-   * the caller's, stamping the caller's dispatch order in the same operation.
-   * A background harvest calls this immediately before its final write so an
-   * overlapping same-filename harvest from an OLDER task cannot commit over a
-   * newer task's already-recorded ownership (the read-only guard alone leaves
-   * a guard-then-write window).
-   */
-  async function confirmCodeFileOwnership(data: {
-    file_id: string;
-    sourceDispatchedAt: number;
-  }): Promise<boolean> {
-    const File = mongoose.models.File as Model<IMongoFile>;
-    const result = await File.findOneAndUpdate(
-      {
-        file_id: data.file_id,
-        $or: [
-          { 'metadata.sourceDispatchedAt': { $exists: false } },
-          { 'metadata.sourceDispatchedAt': { $lte: data.sourceDispatchedAt } },
-        ],
-      },
-      { $set: { 'metadata.sourceDispatchedAt': data.sourceDispatchedAt } },
-      { new: true, timestamps: false },
-    ).lean<IMongoFile | null>();
-    return result != null;
-  }
-
-  /**
    * Creates a new file with a TTL of 1 hour.
    * @param data - The file data to be created, must contain file_id
    * @param disableTTL - Whether to disable the TTL
@@ -618,7 +586,6 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     getCodeGeneratedFiles,
     getUserCodeFiles,
     claimCodeFile,
-    confirmCodeFileOwnership,
     createFile,
     updateFile,
     updateFileUsage,

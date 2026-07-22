@@ -115,13 +115,12 @@ jest.mock('@librechat/agents', () => ({
 
 // Mock models
 const mockClaimCodeFile = jest.fn();
-const mockConfirmCodeFileOwnership = jest.fn().mockResolvedValue(true);
+const mockUpdateFile = jest.fn();
 jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({}),
   getFiles: jest.fn(),
-  updateFile: jest.fn(),
+  updateFile: mockUpdateFile,
   claimCodeFile: (...args) => mockClaimCodeFile(...args),
-  confirmCodeFileOwnership: (...args) => mockConfirmCodeFileOwnership(...args),
 }));
 
 // Mock permissions (must be before process.js import)
@@ -277,6 +276,7 @@ describe('Code Process', () => {
         filename: 'test-file.txt',
         updatedAt: '2024-01-01T00:00:00.000Z',
       });
+      mockUpdateFile.mockResolvedValue({ file_id: 'existing-file-id' });
       mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
 
       const { file: result } = await processCodeOutput({
@@ -307,14 +307,15 @@ describe('Code Process', () => {
       expect(result).toBeNull();
     });
 
-    it('re-checks ownership even for the claim inserter (older inserter overtaken mid-flight)', async () => {
-      /* This task INSERTED the claim, then a newer task reclaimed and wrote
-       * while this one was still downloading — the commit must not land. */
+    it('commits background writes conditionally: an inserter overtaken mid-flight misses', async () => {
+      /* This task INSERTED the claim, then a newer task stamped and wrote
+       * while this one was still downloading — the ownership predicate is in
+       * the write's own filter, so the commit atomically misses. */
       mockClaimCodeFile.mockResolvedValue({
         file_id: 'mock-uuid-1234',
         user: 'user-123',
       });
-      mockConfirmCodeFileOwnership.mockResolvedValueOnce(false);
+      mockUpdateFile.mockResolvedValueOnce(null);
       mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
 
       const result = await processCodeOutput({
@@ -323,33 +324,36 @@ describe('Code Process', () => {
       });
 
       expect(result).toBeNull();
-      expect(mockConfirmCodeFileOwnership).toHaveBeenCalledWith({
-        file_id: 'mock-uuid-1234',
-        sourceDispatchedAt: new Date('2024-01-01T00:00:00.000Z').getTime(),
-      });
+      expect(mockUpdateFile).toHaveBeenCalledWith(
+        expect.objectContaining({ file_id: 'mock-uuid-1234' }),
+        {
+          $or: [
+            { 'metadata.sourceDispatchedAt': { $exists: false } },
+            {
+              'metadata.sourceDispatchedAt': {
+                $lte: new Date('2024-01-01T00:00:00.000Z').getTime(),
+              },
+            },
+          ],
+        },
+      );
     });
 
-    it('skips the write when ownership is lost between the read guard and the commit', async () => {
-      /* A newer harvest CAS-claimed ownership while this one was
-       * downloading/converting: the final write must not commit. */
+    it('commits when the conditional write matches (ownership held through the write)', async () => {
       mockClaimCodeFile.mockResolvedValue({
         file_id: 'existing-file-id',
         filename: 'test-file.txt',
         updatedAt: '2024-01-01T00:00:00.000Z',
       });
-      mockConfirmCodeFileOwnership.mockResolvedValueOnce(false);
+      mockUpdateFile.mockResolvedValueOnce({ file_id: 'existing-file-id' });
       mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
 
-      const result = await processCodeOutput({
+      const { file: result } = await processCodeOutput({
         ...baseParams,
         freshClaimAfter: new Date('2024-01-02T00:00:00.000Z').getTime(),
       });
 
-      expect(result).toBeNull();
-      expect(mockConfirmCodeFileOwnership).toHaveBeenCalledWith({
-        file_id: 'existing-file-id',
-        sourceDispatchedAt: new Date('2024-01-02T00:00:00.000Z').getTime(),
-      });
+      expect(result.file_id).toBe('existing-file-id');
     });
 
     it('lets a newer task overwrite an OLDER task that wrote late (writer dispatch order wins)', async () => {
@@ -364,6 +368,7 @@ describe('Code Process', () => {
           sourceDispatchedAt: new Date('2024-01-01T00:00:00.000Z').getTime(),
         },
       });
+      mockUpdateFile.mockResolvedValue({ file_id: 'existing-file-id' });
       mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
 
       const { file: result } = await processCodeOutput({

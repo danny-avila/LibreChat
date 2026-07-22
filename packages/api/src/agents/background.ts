@@ -794,7 +794,9 @@ export class BackgroundTaskRegistryClass {
     if (!task || task.artifact != null) {
       return;
     }
-    task.artifact = artifact;
+    /** Same size bound as `complete()` — a restore path must not resurrect
+     *  an artifact the memory cap already discarded. */
+    task.artifact = toStoredArtifact(taskId, artifact);
     task.artifactDelivered = false;
   }
 

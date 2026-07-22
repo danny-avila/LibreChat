@@ -33,13 +33,7 @@ const {
   getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const {
-  createFile,
-  getFiles,
-  updateFile,
-  claimCodeFile,
-  confirmCodeFileOwnership,
-} = require('~/models');
+const { createFile, getFiles, updateFile, claimCodeFile } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
@@ -63,6 +57,7 @@ const axios = createAxiosInstance();
 const createDownloadFallback = ({
   id,
   name,
+  agentId,
   messageId,
   expiresAt,
   session_id,
@@ -77,6 +72,7 @@ const createDownloadFallback = ({
     conversationId,
     toolCallId,
     messageId,
+    agentId,
   };
 };
 
@@ -376,6 +372,7 @@ const processCodeOutput = async ({
         file: createDownloadFallback({
           id,
           name,
+          agentId,
           messageId,
           toolCallId,
           session_id,
@@ -467,25 +464,33 @@ const processCodeOutput = async ({
     }
 
     /**
-     * Atomic re-check immediately before the final DB write (ALL background
-     * harvests — including the claim's inserter, who may have been overtaken
-     * by a newer task while downloading/converting): an overlapping NEWER
-     * harvest may have claimed ownership since the read guard above. The
-     * loser skips its attachment; bytes it may have already uploaded to the
-     * same storage key are a narrow residual that full per-file locking
-     * would be needed to close.
+     * Background harvests commit through a CONDITIONAL write: the ownership
+     * predicate (last writer's dispatch stamp not newer than ours) is part of
+     * the update's filter, so check and write are one atomic operation — a
+     * stale harvest's commit simply misses and its attachment is skipped.
+     * The row always exists here (the claim inserted it), so the non-upsert
+     * `updateFile` matches `createFile(data, true)` semantics ($set + TTL
+     * unset). Bytes a loser may have already uploaded to the shared storage
+     * key are a narrow residual that per-file locking would be needed to
+     * close. Foreground writes keep the unconditional `createFile` path.
      */
     const commitCodeFile = async (fileData) => {
-      if (freshClaimAfter != null) {
-        const stillOwner = await confirmCodeFileOwnership({ file_id, sourceDispatchedAt });
-        if (!stillOwner) {
-          logger.warn(
-            `[processCodeOutput] Skipping stale background output "${safeName}" (${file_id}): ownership changed before write`,
-          );
-          return false;
-        }
+      if (freshClaimAfter == null) {
+        await createFile(fileData, true);
+        return true;
       }
-      await createFile(fileData, true);
+      const committed = await updateFile(fileData, {
+        $or: [
+          { 'metadata.sourceDispatchedAt': { $exists: false } },
+          { 'metadata.sourceDispatchedAt': { $lte: sourceDispatchedAt } },
+        ],
+      });
+      if (!committed) {
+        logger.warn(
+          `[processCodeOutput] Skipping stale background output "${safeName}" (${file_id}): a newer run owns this filename`,
+        );
+        return false;
+      }
       return true;
     };
 
@@ -543,6 +548,7 @@ const processCodeOutput = async ({
         file: createDownloadFallback({
           id,
           name,
+          agentId,
           messageId,
           toolCallId,
           session_id,
@@ -719,6 +725,7 @@ const processCodeOutput = async ({
       file: createDownloadFallback({
         id,
         name,
+        agentId,
         messageId,
         toolCallId,
         session_id,
