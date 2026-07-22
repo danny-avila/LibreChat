@@ -794,6 +794,11 @@ export default function useResumableSSE(
             );
           }
         };
+        /** Same boundary as pending actions and steers: land queued deltas
+         * before the label part is placed and synced, or the later flush
+         * would clobber it (and `syncStepMessage` would sync a pre-delta
+         * copy back into the step handler's authoritative map). */
+        flushPendingDeltas();
         const messages = getMessages() ?? [];
         const index = findActivityLabelMessageIndex(messages, event);
         if (index < 0) {

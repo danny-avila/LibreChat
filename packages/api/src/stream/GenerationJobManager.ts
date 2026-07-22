@@ -37,6 +37,10 @@ import {
   toPendingSteer,
   synthesizeAppliedSteerEvents,
 } from './SteeringLifecycle';
+import {
+  isActivityLabelPocEnabled,
+  synthesizeActivityLabelGapEvents,
+} from '~/agents/activityLabels';
 import { isPendingActionStale, isPendingActionExpired } from './interfaces/IJobStore';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
@@ -2285,6 +2289,32 @@ class GenerationJobManagerClass {
           );
           if (gapEvents.length > 0) {
             pendingEvents.push(...gapEvents);
+          }
+        }
+      }
+
+      // Same snapshot→subscribe race for activity labels: the label publish
+      // is fire-and-forget, so a slot claimed (or filled) in the window is in
+      // neither the snapshot nor the chunk replay the client already applied.
+      // Gated on the job flag so the default path adds no content re-read.
+      // Compare the snapshot content view against a fresh read and re-emit any
+      // label whose text/pending state moved; the client applier is idempotent
+      // and refuses stale pending placeholders.
+      if (resumeState != null && jobActive && liveJob?.activityLabels === true) {
+        const labelContent = await this.jobStore.getContentParts(streamId, liveJob.createdAt);
+        if (options?.signal?.aborted || this.detachSubscriptionDuringShutdown(subscription)) {
+          return cancelResumeSubscription();
+        }
+        if (labelContent?.content != null) {
+          const labelGapEvents = synthesizeActivityLabelGapEvents(
+            (resumeState.aggregatedContent ?? []) as Parameters<
+              typeof synthesizeActivityLabelGapEvents
+            >[0],
+            labelContent.content as Parameters<typeof synthesizeActivityLabelGapEvents>[1],
+            { conversationId: streamId, responseMessageId: resumeState.responseMessageId },
+          );
+          if (labelGapEvents.length > 0) {
+            pendingEvents.push(...(labelGapEvents as t.ServerSentEvent[]));
           }
         }
       }

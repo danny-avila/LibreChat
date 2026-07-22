@@ -5,6 +5,7 @@ import {
   captureActivityBlockContext,
   createActivityLabelWiring,
   stripActivityLabelParts,
+  synthesizeActivityLabelGapEvents,
 } from '../wiring';
 
 async function flushDetached(): Promise<void> {
@@ -93,5 +94,50 @@ describe('stripActivityLabelParts', () => {
 
     const clean = [{ content: [{ type: 'text', text: 'hi' }] }];
     expect(stripActivityLabelParts(clean)).toBe(clean);
+  });
+});
+
+describe('captureActivityBlockContext intent filtering', () => {
+  it("skips another agent's tail text when resolving intent", () => {
+    const parts: LooseContentPart[] = [
+      { type: 'text', text: 'Agent A plan for this batch', agentId: 'agent-a' },
+      { type: 'text', text: 'Agent B unrelated narration', agentId: 'agent-b' },
+    ];
+    const context = captureActivityBlockContext(parts, 'agent-a');
+    expect(context.lastAssistantText).toBe('Agent A plan for this batch');
+  });
+});
+
+describe('synthesizeActivityLabelGapEvents', () => {
+  const meta = { conversationId: 'c1', responseMessageId: 'm1' };
+
+  it('re-emits a label filled during the snapshot gap', () => {
+    const snapshot: LooseContentPart[] = [
+      { type: 'tool_call', tool_call: { id: 't1' } },
+      { type: 'activity_label', activity_label: '', pending: true },
+    ];
+    const fresh: LooseContentPart[] = [
+      { type: 'tool_call', tool_call: { id: 't1' } },
+      { type: 'activity_label', activity_label: 'Searched release notes', pending: false },
+    ];
+    const events = synthesizeActivityLabelGapEvents(snapshot, fresh, meta);
+    expect(events).toHaveLength(1);
+    expect(events[0].event).toBe('on_activity_label');
+    expect(events[0].data).toMatchObject({ index: 1, conversationId: 'c1' });
+  });
+
+  it('re-emits a label claimed entirely within the gap', () => {
+    const fresh: LooseContentPart[] = [
+      { type: 'tool_call', tool_call: { id: 't1' } },
+      { type: 'activity_label', activity_label: '', pending: true },
+    ];
+    expect(synthesizeActivityLabelGapEvents([fresh[0]], fresh, meta)).toHaveLength(1);
+  });
+
+  it('emits nothing when the snapshot already matches', () => {
+    const parts: LooseContentPart[] = [
+      { type: 'activity_label', activity_label: 'Same label', pending: false },
+    ];
+    expect(synthesizeActivityLabelGapEvents(parts, parts, meta)).toEqual([]);
   });
 });

@@ -13,5 +13,6 @@ export {
   captureActivityBlockContext,
   createActivityLabelWiring,
   stripActivityLabelParts,
+  synthesizeActivityLabelGapEvents,
 } from './wiring';
 export type { ActivityLabelHostDeps, LooseContentPart } from './wiring';
