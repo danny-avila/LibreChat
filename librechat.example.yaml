@@ -440,6 +440,7 @@ endpoints:
   #   capabilities: ["deferred_tools", "execute_code", "file_search", "web_search", "artifacts", "subagents", "actions", "context", "skills", "memory", "ask_user_question", "tools", "chain", "ocr"]
   #   # The following capabilities are opt-in and must be added explicitly:
   #   # "programmatic_tools", "stateful_code_sessions", "run_in_background"
+  #   # "stateful_code_sessions" is highly experimental and may change substantially.
   #   # (optional) Require user approval before matching tool calls. Disabled by default.
   #   toolApproval:
   #     enabled: true
