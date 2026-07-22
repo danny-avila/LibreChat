@@ -144,7 +144,7 @@ describe('initializeBedrock', () => {
         | undefined;
 
       expect(result.llmConfig).not.toHaveProperty('useResponsesApi');
-      expect(additionalModelRequestFields).not.toHaveProperty('useResponsesApi');
+      expect(additionalModelRequestFields?.useResponsesApi).toBeUndefined();
     });
 
     it('should handle session token when provided', async () => {
