@@ -24,7 +24,11 @@ export default function Background() {
   const { backgroundToolsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
   const { control, getValues, setValue } = useFormContext<AgentForm>();
   const toolOptions = useWatch({ control, name: 'tool_options' });
-  const enabled = toolOptions?.[Tools.execute_code]?.run_in_background === true;
+  /** Either key enables the pair at runtime (the backend expands the code
+   *  opt-in across both), so the switch must reflect either. */
+  const enabled = CODE_BACKGROUND_TOOL_IDS.some(
+    (toolId) => toolOptions?.[toolId]?.run_in_background === true,
+  );
 
   const handleChange = useCallback(
     (value: boolean) => {

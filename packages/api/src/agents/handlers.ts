@@ -3728,7 +3728,20 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         conversationId: backgroundConversationId,
                         ...params,
                       });
-                      const attachments = persisted?.attachments;
+                      if (persisted == null) {
+                        /** Harvest never persisted anything (missing anchor
+                         *  identity): hand delivery back to the legacy poll-turn
+                         *  callback, restoring the artifact if a poll already
+                         *  claimed it while the harvest was in flight. */
+                        backgroundTaskRegistry.revokeHarvest(
+                          backgroundUserId,
+                          backgroundConversationId,
+                          task.id,
+                          params.artifact,
+                        );
+                        return;
+                      }
+                      const attachments = persisted.attachments;
                       if (attachments != null && attachments.length > 0) {
                         backgroundTaskRegistry.attachHarvest(
                           backgroundUserId,
@@ -3741,6 +3754,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       logger.warn(
                         `[background] Failed to persist code result for task ${task.id}:`,
                         persistError,
+                      );
+                      backgroundTaskRegistry.revokeHarvest(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        params.artifact,
                       );
                     }
                   })();
@@ -3787,6 +3806,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       backgroundConversationId,
                       task.id,
                       message,
+                      /** Failed code tasks join the heal path too: without this,
+                       *  a full-row save reverting the error patch would leave
+                       *  the dispatch card on the handle JSON forever. */
+                      { harvestStarted: harvestEnabled },
                     );
                     harvestCodeResult({ output: message });
                   }
@@ -3879,7 +3902,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   });
                   if (
                     delivery &&
-                    delivery.status === 'completed' &&
+                    delivery.status !== 'running' &&
                     isCodeSessionAwareToolCall(delivery.toolName, mergedConfigurable)
                   ) {
                     for (const attachment of delivery.attachments ?? []) {
@@ -3898,7 +3921,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         toolCallId: delivery.toolCallId,
                         messageId: delivery.messageId,
                         conversationId: backgroundConversationId,
-                        output: delivery.result,
+                        /** Error tasks carry their message in `error`, not
+                         *  `result`; both re-anchor the same patched part. */
+                        output: delivery.result ?? delivery.error,
                         attachments: delivery.attachments,
                         reapply: true,
                       }).catch((reapplyError) => {

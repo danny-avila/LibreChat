@@ -119,7 +119,8 @@ describe('BashCall backgrounded calls', () => {
     background_task_id: 'task-1',
     tool: 'bash_tool',
     status: 'running',
-    message: 'Started "bash_tool" in the background.',
+    message:
+      'Started "bash_tool" in the background. Call check_background_task with background_task_id "task-1" to check progress and retrieve the result.',
   });
 
   const renderBackgrounded = (attachments?: Array<Record<string, unknown>>) =>

@@ -496,6 +496,55 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.get('u1', 'c1', created.task.id)?.attachments).toEqual(attachments);
   });
 
+  it('revokeHarvest hands delivery back to the fallback path, restoring a claimed artifact', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_code',
+      toolName: 'execute_code',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    const artifact = { session_id: 'exec-1', files: [{ id: 'f1' }] };
+    registry.complete('u1', 'c1', created.task.id, {
+      content: 'stdout',
+      artifact,
+      harvestStarted: true,
+    });
+
+    /** Poll claimed the artifact while the harvest was in flight… */
+    expect(registry.claimArtifact('u1', 'c1', created.task.id)?.harvestStarted).toBe(true);
+    /** …then the harvest failed: revoke restores the artifact for the
+     *  legacy fallback and clears the suppression flag. */
+    registry.revokeHarvest('u1', 'c1', created.task.id, artifact);
+    const task = registry.get('u1', 'c1', created.task.id);
+    expect(task?.harvestStarted).toBeUndefined();
+    expect(task?.artifact).toEqual(artifact);
+    expect(registry.claimArtifact('u1', 'c1', created.task.id)?.harvestStarted).toBeUndefined();
+  });
+
+  it('fail() can mark a task harvested so failed code tasks join the heal path', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_code_err',
+      toolName: 'execute_code',
+      messageId: 'dispatch-msg',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    registry.fail('u1', 'c1', created.task.id, 'Execution error:\n\nboom', {
+      harvestStarted: true,
+    });
+    const task = registry.get('u1', 'c1', created.task.id);
+    expect(task?.status).toBe('error');
+    expect(task?.harvestStarted).toBe(true);
+  });
+
   it('truncates an oversized stored result with an explicit marker (not a silent cut)', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({

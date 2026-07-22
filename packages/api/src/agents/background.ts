@@ -779,8 +779,38 @@ export class BackgroundTaskRegistryClass {
     task.artifactDelivered = false;
   }
 
-  fail(userId: string, conversationId: string, taskId: string, error: string): void {
-    this.update(userId, conversationId, taskId, { status: 'error', error });
+  fail(
+    userId: string,
+    conversationId: string,
+    taskId: string,
+    error: string,
+    options?: { harvestStarted?: boolean },
+  ): void {
+    this.update(userId, conversationId, taskId, {
+      status: 'error',
+      error,
+      ...(options?.harvestStarted === true ? { harvestStarted: true } : {}),
+    });
+  }
+
+  /**
+   * Reverses `harvestStarted` after the detached harvest failed to persist
+   * anything, restoring the artifact if a poll already claimed it, so the
+   * legacy poll-turn `toolEndCallback` delivery takes over on a later poll
+   * instead of the files being silently lost.
+   */
+  revokeHarvest(userId: string, conversationId: string, taskId: string, artifact?: unknown): void {
+    const bucket = this.buckets.get(this.key(userId, conversationId));
+    const task = bucket?.tasks.get(taskId);
+    if (!task) {
+      return;
+    }
+    task.harvestStarted = undefined;
+    if (task.artifact == null && artifact != null) {
+      task.artifact = artifact;
+      task.artifactDelivered = false;
+    }
+    task.updatedAt = Date.now();
   }
 
   get(userId: string, conversationId: string, taskId: string): BackgroundTask | undefined {
@@ -986,6 +1016,7 @@ export function getBackgroundCodeDelivery(params: {
       messageId?: string;
       harvestStarted?: boolean;
       result?: string;
+      error?: string;
       attachments?: unknown[];
     }
   | undefined {
@@ -1006,6 +1037,7 @@ export function getBackgroundCodeDelivery(params: {
     messageId: task.messageId,
     harvestStarted: task.harvestStarted,
     result: task.result,
+    error: task.error,
     attachments: task.attachments,
   };
 }

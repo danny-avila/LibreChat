@@ -727,6 +727,93 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
   });
 
+  it('falls back to poll-turn delivery when the harvest fails (files not lost)', async () => {
+    const state: CodeToolState = { calls: 0 };
+    const toolEndCalls: Array<{ name?: string; artifact?: unknown }> = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      toolEndCallback: (async (data: { output?: { name?: string; artifact?: unknown } }) => {
+        toolEndCalls.push({ name: data.output?.name, artifact: data.output?.artifact });
+      }) as unknown as Parameters<typeof createToolExecuteHandler>[0]['toolEndCallback'],
+      persistBackgroundCodeResult: async () => {
+        throw new Error('mongo down');
+      },
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = { thread_id: 'exec_convo_code_hfail', run_id: 'msg-hfail' };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_hfail' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const poll = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll_hfail',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: JSON.parse(dispatch[0].content).background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_code_hfail', run_id: 'msg-hfail-poll' },
+    })) as Array<{ content: string; artifact?: unknown }>;
+
+    /** Harvest revoked: the poll turn's callback processes the files instead. */
+    expect(toolEndCalls).toHaveLength(1);
+    expect(toolEndCalls[0].artifact).toEqual(CODE_ARTIFACT);
+    expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
+  });
+
+  it('re-anchors failed code tasks on poll (error output heals like success)', async () => {
+    const state: CodeToolState = { calls: 0, throwError: true };
+    const persistCalls: Array<Record<string, unknown>> = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      persistBackgroundCodeResult: async (params) => {
+        persistCalls.push(params as unknown as Record<string, unknown>);
+        return { attachments: [] };
+      },
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = { thread_id: 'exec_convo_code_errheal', run_id: 'msg-errheal' };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_errheal' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll_errheal',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: JSON.parse(dispatch[0].content).background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_code_errheal', run_id: 'msg-errheal-poll' },
+    });
+    await flushMicrotasks();
+
+    expect(persistCalls).toHaveLength(2);
+    expect(persistCalls[1]).toEqual(
+      expect.objectContaining({ reapply: true, toolCallId: 'call_code_errheal' }),
+    );
+    expect(String(persistCalls[1].output)).toContain('boom');
+  });
+
   it('patches the dispatch turn with the error message when a backgrounded code call fails', async () => {
     const state: CodeToolState = { calls: 0, throwError: true };
     const persistCalls: Array<Record<string, unknown>> = [];

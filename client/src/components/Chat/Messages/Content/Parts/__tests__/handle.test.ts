@@ -5,7 +5,8 @@ describe('parseBackgroundHandle', () => {
     background_task_id: 'task-1',
     tool: 'execute_code',
     status: 'running',
-    message: 'Started "execute_code" in the background.',
+    message:
+      'Started "execute_code" in the background. Call check_background_task with background_task_id "task-1" to check progress and retrieve the result.',
   });
 
   it('parses a dispatch handle', () => {
@@ -28,6 +29,33 @@ describe('parseBackgroundHandle', () => {
     '{"background_task_id": "t"',
   ])('returns null for non-handle output: %s', (output) => {
     expect(parseBackgroundHandle(output)).toBeNull();
+  });
+
+  it('returns null for real stdout that mimics the handle without the poll instruction', () => {
+    expect(
+      parseBackgroundHandle(
+        JSON.stringify({
+          background_task_id: 'task-1',
+          tool: 'execute_code',
+          status: 'running',
+          message: 'user code printed this',
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it('returns null when extra keys are present (patched real output)', () => {
+    expect(
+      parseBackgroundHandle(
+        JSON.stringify({
+          background_task_id: 'task-1',
+          tool: 'execute_code',
+          status: 'done',
+          message: 'mentions check_background_task',
+          data: [1, 2, 3],
+        }),
+      ),
+    ).toBeNull();
   });
 
   it('returns null for oversized payloads (real output, not a handle)', () => {

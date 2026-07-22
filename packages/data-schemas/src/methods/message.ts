@@ -334,9 +334,15 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       });
     }
     if (attachments !== undefined && attachments.length > 0) {
-      const fileIds = attachments
-        .map((attachment) => (attachment as { file_id?: unknown }).file_id)
-        .filter((id): id is string => typeof id === 'string');
+      /** Dedupe key mirrors the resume merge: `file_id ?? filepath`, so
+       *  download-fallback attachments (no `file_id`, only a filepath) stay
+       *  idempotent across re-applications instead of duplicating per poll. */
+      const attachmentKeys = attachments
+        .map((attachment) => {
+          const { file_id, filepath } = attachment as { file_id?: unknown; filepath?: unknown };
+          return typeof file_id === 'string' ? file_id : filepath;
+        })
+        .filter((key): key is string => typeof key === 'string');
       stages.push({
         $set: {
           attachments: {
@@ -345,7 +351,16 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                 $filter: {
                   input: { $ifNull: ['$attachments', []] },
                   as: 'existing',
-                  cond: { $not: [{ $in: ['$$existing.file_id', { $literal: fileIds }] }] },
+                  cond: {
+                    $not: [
+                      {
+                        $in: [
+                          { $ifNull: ['$$existing.file_id', '$$existing.filepath'] },
+                          { $literal: attachmentKeys },
+                        ],
+                      },
+                    ],
+                  },
                 },
               },
               { $literal: attachments },

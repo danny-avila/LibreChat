@@ -248,6 +248,29 @@ describe('Message Operations', () => {
       expect(content[1].tool_call?.output).toBe('stdout:\nhello');
     });
 
+    it('dedupes download-fallback attachments (no file_id) by filepath on re-apply', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      const patch = {
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        attachments: [
+          { filepath: '/api/files/code/download/sess-1/f1', filename: 'big.zip' },
+          { file_id: 'f2', toolCallId: 'call_bg' },
+        ],
+      };
+      await updateToolCallResult(patch);
+      await updateToolCallResult(patch);
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(saved?.attachments).toEqual([
+        { filepath: '/api/files/code/download/sess-1/f1', filename: 'big.zip' },
+        { file_id: 'f2', toolCallId: 'call_bg' },
+      ]);
+    });
+
     it('returns false when the message row does not exist yet (caller retries)', async () => {
       const matched = await updateToolCallResult({
         userId: 'user123',
