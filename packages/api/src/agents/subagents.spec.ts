@@ -1,7 +1,7 @@
 import { ResourceType, PermissionBits } from 'librechat-data-provider';
-import { createSubagentLoader, buildRemoteAgentSubagentAccessCheck } from './subagents';
-import type { SubagentConfigLike } from './subagents';
 import type { Agent } from 'librechat-data-provider';
+import type { SubagentConfigLike } from './subagents';
+import { createSubagentLoader, buildRemoteAgentSubagentAccessCheck } from './subagents';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
