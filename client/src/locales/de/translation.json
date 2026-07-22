@@ -41,7 +41,6 @@
   "com_agents_description_card": "Beschreibung: {{description}}",
   "com_agents_description_placeholder": "Was dieser Agent macht",
   "com_agents_empty_state_heading": "Keine Agenten gefunden",
-  "com_agents_enable_memory": "Erinnerungen aktivieren",
   "com_agents_error_bad_request_message": "Die Anfrage konnte nicht verarbeitet werden.",
   "com_agents_error_bad_request_suggestion": "Bitte überprüfe deine Eingabe und versuche es erneut.",
   "com_agents_error_category_title": "Kategorienfehler",
