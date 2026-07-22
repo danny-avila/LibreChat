@@ -27,6 +27,43 @@ class ScheduleFireError extends Error {
   }
 }
 
+/** Node/undici error codes for failures that occur BEFORE any request byte is sent
+ *  (DNS, connection refused/unreachable, connect timeout). Nothing could have started,
+ *  so these are DEFINITE fire failures, not ambiguous mid-flight ones. */
+const PRE_CONNECT_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'UND_ERR_CONNECT_TIMEOUT',
+]);
+
+/** Extract a Node error `code` from a thrown fetch error or its undici `cause`. */
+function fetchErrorCode(error: unknown): string | undefined {
+  const read = (value: unknown): string | undefined => {
+    if (value != null && typeof value === 'object' && 'code' in value) {
+      const code = (value as { code?: unknown }).code;
+      return typeof code === 'string' ? code : undefined;
+    }
+    return undefined;
+  };
+  if (error != null && typeof error === 'object') {
+    return read((error as { cause?: unknown }).cause) ?? read(error);
+  }
+  return undefined;
+}
+
+/** Whether a thrown fetch error definitely means nothing was sent/started: a
+ *  pre-connect failure or a TLS handshake failure (both precede any request bytes). */
+function isDefiniteConnectFailure(error: unknown): boolean {
+  const code = fetchErrorCode(error);
+  if (code == null) {
+    return false;
+  }
+  return PRE_CONNECT_ERROR_CODES.has(code) || code.startsWith('ERR_TLS') || code.includes('CERT');
+}
+
 async function postChatMessage(
   deps: ScheduleEngineDeps,
   schedule: FireableSchedule,
@@ -97,10 +134,17 @@ async function postChatMessageInner(
       }),
     });
   } catch (error) {
-    // fetch threw: no response was received. The request may or may not have
-    // been processed — ambiguous, so don't terminalize as a definite error.
+    // fetch threw before a response. A PRE-CONNECT failure (bad SCHEDULES_SELF_URL:
+    // DNS/connection refused/connect-timeout/TLS) means the request never reached this
+    // server, so nothing could have started — a DEFINITE rejection that terminalizes as
+    // `error` (countable, can auto-disable the broken schedule). A mid-flight failure
+    // (reset after send, request timeout) is genuinely ambiguous: the generation may
+    // already be running, so leave the run reconcilable.
     const message = error instanceof Error ? error.message : String(error);
-    throw new ScheduleFireError(`Fire POST network failure: ${message}`, true);
+    throw new ScheduleFireError(
+      `Fire POST network failure: ${message}`,
+      !isDefiniteConnectFailure(error),
+    );
   }
   if (!response.ok) {
     const body = await response.text().catch(() => '');
@@ -174,6 +218,16 @@ export async function fireSchedule(
   // ghost `started` row consumes capacity/overlap until the orphan sweep).
   const rollbackReservation = async () => {
     if (schedule.leaseBy != null && (await methods.holdsLease(schedule.id, schedule.leaseBy))) {
+      await methods.deleteScheduleRun(schedule.id, scheduledFor, 'started');
+      return;
+    }
+    // The schedule was HARD-deleted out from under this fire (account deletion racing
+    // the claim -> reserve window): holdsLease is false because the schedule is GONE,
+    // not because the lease was taken over. The reserved row is now an orphan no
+    // reconciler will own (its schedule no longer exists), so delete it. Guarded on
+    // actual absence so a lease TAKEOVER (schedule still present, different holder)
+    // still leaves the row for whoever now holds the lease.
+    if (!(await methods.scheduleExists(schedule.id))) {
       await methods.deleteScheduleRun(schedule.id, scheduledFor, 'started');
     }
   };

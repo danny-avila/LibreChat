@@ -90,6 +90,7 @@ function makeMethods() {
     ),
     revalidateClaim: jest.fn(async () => true),
     holdsLease: jest.fn(async () => true),
+    scheduleExists: jest.fn(async () => true),
     releaseLeaseByHolder: jest.fn(async () => undefined),
     deleteScheduleRun: jest.fn(async (id: string, when: Date, _status?: string) => {
       runs.delete(key(id, when));
@@ -300,6 +301,39 @@ describe('fireSchedule', () => {
     // it's left for the reconciler so the occurrence stays reconcilable.
     expect(methods.deleteScheduleRun).not.toHaveBeenCalled();
     expect([...runs.entries()].some(([k]) => k.startsWith('sched-1:'))).toBe(true);
+  });
+
+  it('deletes the reserved run when the schedule was hard-deleted mid-fire', async () => {
+    const { methods, runs } = makeMethods();
+    // At capacity, so this fire rolls back its reservation.
+    for (let i = 0; i < 5; i++) {
+      runs.set(`other-${i}:x`, { status: 'started' });
+    }
+    // Account deletion hard-deleted the schedule after this fire reserved its run:
+    // the lease is not held AND the schedule no longer exists.
+    (methods.holdsLease as jest.Mock).mockResolvedValue(false);
+    (methods.scheduleExists as jest.Mock).mockResolvedValue(false);
+    mockFetch(async () => okResponse());
+    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
+    expect(result.skipped).toBe('capacity');
+    // The orphaned reservation (no schedule left to own it) is deleted, not leaked.
+    expect(methods.deleteScheduleRun).toHaveBeenCalledWith('sched-1', expect.any(Date), 'started');
+    expect([...runs.entries()].some(([k]) => k.startsWith('sched-1:'))).toBe(false);
+  });
+
+  it('records a pre-connect fetch failure (bad self URL) as a definite error', async () => {
+    const { methods, runs, calls } = makeMethods();
+    // A DNS/connection failure before the request reaches the server: nothing started,
+    // so it must terminalize as `error` (countable) rather than stay reconcilable.
+    mockFetch(async () => {
+      const err = new TypeError('fetch failed');
+      (err as unknown as { cause: { code: string } }).cause = { code: 'ECONNREFUSED' };
+      throw err;
+    });
+    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
+    expect(result.fired).toBe(false);
+    expect(calls.recordOutcome).toEqual([{ status: 'error' }]);
+    expect([...runs.values()][0].status).toBe('error');
   });
 
   it('skips overlap when a prior run is still active', async () => {

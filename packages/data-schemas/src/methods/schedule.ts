@@ -86,6 +86,7 @@ export type ScheduleMethods = {
   ) => Promise<ISchedule | null>;
   deleteScheduleById: (id: string, userId: string | Types.ObjectId) => Promise<boolean>;
   getScheduleById: (id: string, userId?: string | Types.ObjectId) => Promise<ISchedule | null>;
+  scheduleExists: (id: string) => Promise<boolean>;
   getSchedulesByUser: (userId: string | Types.ObjectId) => Promise<ISchedule[]>;
   countSchedulesByUser: (userId: string | Types.ObjectId) => Promise<number>;
   claimDueSchedule: (params: ClaimDueScheduleParams) => Promise<ISchedule | null>;
@@ -260,6 +261,12 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     return Schedule().findOne(filter).lean<ISchedule>();
   }
 
+  /** Raw existence check, ignoring the `deleting` soft-delete flag. Distinguishes a
+   *  HARD-deleted schedule (gone) from a lease takeover (schedule still present). */
+  async function scheduleExists(id: string): Promise<boolean> {
+    return (await Schedule().exists({ id })) != null;
+  }
+
   async function getSchedulesByUser(userId: string | Types.ObjectId): Promise<ISchedule[]> {
     // Hide schedules pending erasure (soft-deleted, draining their active runs)
     // so a deleted schedule disappears immediately for the owner.
@@ -332,6 +339,11 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // claimDueSchedule), not this worker's clock: a skewed replica must not read a
     // Mongo-written automatic-fire lease as expired early and start a second run.
     const claimToken = randomUUID();
+    // A UNIQUE per-lease holder (not the constant 'manual'): the superseded-fire
+    // cleanup releases by holder (leaseBy), so a stale run-now that stalled past its
+    // lease must not match — and strip — the fresh lease a newer run-now acquired.
+    // The claimToken already fences the lease, so reuse it as the holder discriminator.
+    const leaseBy = `manual:${claimToken}`;
     return Schedule()
       .findOneAndUpdate(
         {
@@ -340,7 +352,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
           deleting: { $ne: true },
           $expr: { $lt: [{ $ifNull: ['$leaseUntil', new Date(0)] }, '$$NOW'] },
         },
-        [{ $set: { leaseUntil: { $add: ['$$NOW', leaseMs] }, leaseBy: 'manual', claimToken } }],
+        [{ $set: { leaseUntil: { $add: ['$$NOW', leaseMs] }, leaseBy, claimToken } }],
         { new: true },
       )
       .lean<ISchedule>();
@@ -980,6 +992,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     updateScheduleById,
     deleteScheduleById,
     getScheduleById,
+    scheduleExists,
     getSchedulesByUser,
     countSchedulesByUser,
     claimDueSchedule,

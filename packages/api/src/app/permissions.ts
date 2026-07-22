@@ -50,16 +50,17 @@ function hasExplicitConfig(
     case PermissionTypes.SHARED_LINKS:
       return interfaceConfig?.sharedLinks !== undefined;
     case PermissionTypes.SCHEDULES: {
-      // `schedules` is dual-purpose: a boolean, or an object carrying use/create,
-      // is a permission config — but runtime-only limits (maxPerUser,
-      // fireConcurrency, …) are NOT. Treating their mere presence as a permission
-      // config would re-apply the USE default below and silently re-enable a
-      // DB-disabled schedules permission whenever an operator tunes the limits.
+      // `schedules` is dual-purpose. The BOOLEAN form is the RUNTIME kill switch read
+      // by getLimits, NOT a permission config: treating it as explicit would write
+      // SCHEDULES.USE into the role docs, and removing the kill switch later would
+      // leave that disabled permission stuck (forbidden) until manual repair. Only an
+      // OBJECT carrying explicit use/create is permission intent; runtime-only limits
+      // (maxPerUser, fireConcurrency, …) are not.
       const schedules = interfaceConfig?.schedules;
-      if (typeof schedules === 'boolean') {
-        return true;
+      if (typeof schedules !== 'object' || schedules == null) {
+        return false;
       }
-      return schedules?.use !== undefined || schedules?.create !== undefined;
+      return schedules.use !== undefined || schedules.create !== undefined;
     }
     default:
       return false;
@@ -546,7 +547,12 @@ export async function updateInterfacePermissions({
       },
       [PermissionTypes.SCHEDULES]: {
         [Permissions.USE]: getPermissionValue(
-          getConfigUse(loadedInterface.schedules),
+          // Only an OBJECT `use` drives the permission; the boolean form is the runtime
+          // kill switch and must not seed SCHEDULES.USE (see hasExplicitConfig), so a
+          // removed kill switch can never leave USE stuck false.
+          typeof loadedInterface.schedules === 'object'
+            ? loadedInterface.schedules?.use
+            : undefined,
           defaultPerms[PermissionTypes.SCHEDULES]?.[Permissions.USE],
           schedulesDefaultUse,
         ),

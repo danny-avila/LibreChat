@@ -868,6 +868,38 @@ describe('acquireManualRunLease / releaseLease', () => {
       await methods.acquireManualRunLease(schedule.id, new mongoose.Types.ObjectId(), 60_000),
     ).toBeNull();
   });
+
+  it('uses a unique per-lease holder so a stale run-now cannot strip a replacement lease', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const first = await methods.acquireManualRunLease(schedule.id, schedule.user, 60_000);
+    expect(first?.leaseBy).toMatch(/^manual:/);
+    // Release and re-acquire (a fresh run-now): the replacement lease has a DIFFERENT holder.
+    await methods.releaseLease(schedule.id);
+    const second = await methods.acquireManualRunLease(schedule.id, schedule.user, 60_000);
+    expect(second?.leaseBy).toMatch(/^manual:/);
+    expect(second?.leaseBy).not.toBe(first?.leaseBy);
+    // A stalled fire from the FIRST lease releasing by its (old) holder must NOT clear the
+    // second lease — the unique holder makes releaseLeaseByHolder no-op there.
+    await methods.releaseLeaseByHolder(schedule.id, first!.leaseBy!);
+    const afterStale = await getSchedule(schedule.id);
+    expect(afterStale.leaseBy).toBe(second?.leaseBy);
+    expect(afterStale.leaseUntil).toBeDefined();
+    // Releasing by the CURRENT holder does clear it.
+    await methods.releaseLeaseByHolder(schedule.id, second!.leaseBy!);
+    const cleared = await getSchedule(schedule.id);
+    expect(cleared.leaseBy).toBeUndefined();
+  });
+
+  it('scheduleExists distinguishes a hard-deleted schedule from a soft-deleting one', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    expect(await methods.scheduleExists(schedule.id)).toBe(true);
+    // Soft-delete (deleting:true) still EXISTS — its run drains via the reconciler.
+    await methods.markScheduleDeleting(schedule.id, schedule.user);
+    expect(await methods.scheduleExists(schedule.id)).toBe(true);
+    // A hard delete makes it truly gone.
+    await methods.deleteScheduleById(schedule.id, schedule.user);
+    expect(await methods.scheduleExists(schedule.id)).toBe(false);
+  });
 });
 
 describe('claim-token fencing (stale worker cannot mutate an edited/deleted schedule)', () => {

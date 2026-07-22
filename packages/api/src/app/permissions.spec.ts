@@ -2936,4 +2936,36 @@ describe('updateInterfacePermissions - permissions', () => {
       expect(call[1][PermissionTypes.SCHEDULES]).toBeUndefined();
     }
   });
+
+  it('treats a boolean schedules kill switch as runtime-only (does not touch the permission)', async () => {
+    // The role currently has schedules enabled.
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.SCHEDULES]: { [Permissions.USE]: true, [Permissions.CREATE]: true },
+      },
+    });
+    // `schedules: false` is the RUNTIME kill switch read by getLimits, NOT a permission
+    // config: it must not write SCHEDULES into the role docs, so removing it later can
+    // never leave USE stuck false (forbidden) until manual repair.
+    const config = {
+      interface: {
+        schedules: false,
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    // The kill switch is runtime-only: SCHEDULES is omitted from every role update,
+    // leaving the existing USE:true untouched.
+    for (const call of mockUpdateAccessPermissions.mock.calls) {
+      expect(call[1][PermissionTypes.SCHEDULES]).toBeUndefined();
+    }
+  });
 });
