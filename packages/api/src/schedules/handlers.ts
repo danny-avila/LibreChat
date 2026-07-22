@@ -29,16 +29,50 @@ export interface SchedulesHandlersDeps {
 /** Bounded attempts to clear the upload TTL on a schedule's attachments. */
 const FILE_RETAIN_ATTEMPTS = 3;
 
-function toWireSchedule(schedule: ISchedule) {
-  const {
-    leaseUntil: _leaseUntil,
-    leaseBy: _leaseBy,
-    claimToken: _claimToken,
-    slot: _slot,
-    deleting: _deleting,
-    ...rest
-  } = schedule;
-  return rest;
+/** Public projection of a schedule — an allowlist of the `TSchedule` fields, so internal
+ *  bookkeeping (_id, tenantId, __v, claimToken, lease*, slot, deleting, countedFor,
+ *  balanceSkipCount, bookkept, ...) never reaches the browser. */
+export type WireSchedule = Pick<
+  ISchedule,
+  | 'id'
+  | 'user'
+  | 'name'
+  | 'prompt'
+  | 'agent_id'
+  | 'cadence'
+  | 'timezone'
+  | 'target'
+  | 'file_ids'
+  | 'enabled'
+  | 'disabledReason'
+  | 'nextRunAt'
+  | 'lastRun'
+  | 'runCount'
+  | 'failureCount'
+  | 'createdAt'
+  | 'updatedAt'
+>;
+
+export function toWireSchedule(schedule: ISchedule): WireSchedule {
+  return {
+    id: schedule.id,
+    user: schedule.user,
+    name: schedule.name,
+    prompt: schedule.prompt,
+    agent_id: schedule.agent_id,
+    cadence: schedule.cadence,
+    timezone: schedule.timezone,
+    target: schedule.target,
+    file_ids: schedule.file_ids,
+    enabled: schedule.enabled,
+    disabledReason: schedule.disabledReason,
+    nextRunAt: schedule.nextRunAt,
+    lastRun: schedule.lastRun,
+    runCount: schedule.runCount,
+    failureCount: schedule.failureCount,
+    createdAt: schedule.createdAt,
+    updatedAt: schedule.updatedAt,
+  };
 }
 
 function requestUser(req: ServerRequest): { id: string; tenantId?: string; role?: string } {

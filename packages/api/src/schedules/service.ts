@@ -1,6 +1,7 @@
 import { logger, runAsSystem, tenantStorage } from '@librechat/data-schemas';
 import { getRefillEligibilityDate, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { ScheduleMethods, AppConfig, IBalance } from '@librechat/data-schemas';
+import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
 import type {
   ScheduleEngineDeps,
@@ -16,6 +17,7 @@ import type { GetAppConfigOptions } from '../app/service';
 import { generateShortLivedToken, SCHEDULE_FIRE_SCOPE } from '../crypto/jwt';
 import { GenerationJobManager } from '../stream/GenerationJobManager';
 import { buildBalanceUpdateFields } from '../middleware/balance';
+import { deleteAgentCheckpoint } from '../agents/checkpointer';
 import { fireSchedule, SCHEDULE_FIRE_TOKEN_TTL } from './fire';
 import { getAppConfigOptionsFromUser } from '../app/service';
 import { DEFAULT_SCHEDULE_LIMITS } from './types';
@@ -541,6 +543,21 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       });
   }
 
+  /** Resolve the owner's durable-checkpointer config (in their tenant context) so a
+   *  paused-run checkpoint can be pruned on delete, mirroring the interactive abort. */
+  async function resolveOwnerCheckpointer(
+    ownerId: string | Types.ObjectId,
+  ): Promise<TCheckpointerConfig | undefined> {
+    const owner = await engineDeps.getUserContext(ownerId);
+    if (owner == null) {
+      return undefined;
+    }
+    const appConfig = await engineDeps.runInTenantContext(owner, () =>
+      deps.getAppConfig(getAppConfigOptionsFromUser(owner)),
+    );
+    return appConfig?.endpoints?.agents?.checkpointer;
+  }
+
   /**
    * Soft-deletes a schedule for its owner: disables + marks it `deleting` (so the
    * engine can no longer claim it and it disappears from the owner's list), rotates
@@ -555,10 +572,22 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       return false;
     }
     const active = await methods.getActiveRunsForSchedule(scheduleId);
+    // Resolve the checkpointer config once (only when a paused run needs pruning) in
+    // the owner's tenant context, matching the interactive abort endpoint's prune.
+    const hasPausedRun = active.some(
+      (run) => run.status === 'requires_action' && run.conversationId != null,
+    );
+    const checkpointer = hasPausedRun ? await resolveOwnerCheckpointer(schedule.user) : undefined;
     for (const run of active) {
       // Preserve the aborted job for the reconciler: the run row survives (erase
       // waits for it to drain), so reconcile finalizes it and clears the job.
       await abortActiveRun(run, true);
+      // HITL: prune the durable checkpoint of a run aborted while paused so a new turn
+      // in this conversation can't rehydrate the stale interrupt before the Mongo TTL
+      // reclaims it (thread_id === conversationId). Idempotent / no-op otherwise.
+      if (run.status === 'requires_action' && run.conversationId) {
+        await deleteAgentCheckpoint(run.conversationId, checkpointer).catch(() => undefined);
+      }
     }
     await methods.eraseScheduleIfDrained(scheduleId).catch(() => undefined);
     return true;

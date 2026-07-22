@@ -639,7 +639,51 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
    */
   async function recordRunOutcome(params: RecordRunOutcomeParams): Promise<void> {
     const firedAt = new Date();
-    const isTerminal = params.status !== 'requires_action';
+    if (params.status === 'requires_action') {
+      // PAUSE (HITL): write the card BEFORE flipping the run row so the transition is
+      // crash-recoverable. If the process dies between the two writes the row is still
+      // `started`, and the reconciler's started+requires_action path re-invokes this to
+      // re-surface the pause; flipping the row first (as terminal outcomes do) would
+      // instead hide the pause from the card until some later terminal outcome. Guard on
+      // a matching active run first so a spoofed scheduleId can't write a card. Keyed on
+      // existence, not modification, so a retried pause still re-affirms the card.
+      const activeRun = await ScheduleRun()
+        .findOne({
+          scheduleId: params.scheduleId,
+          scheduledFor: params.scheduledFor,
+          status: { $in: ['started', 'requires_action'] },
+        })
+        .select('_id')
+        .lean();
+      if (activeRun == null) {
+        return;
+      }
+      await Schedule().updateOne(
+        { id: params.scheduleId },
+        {
+          $set: {
+            lastRun: { conversationId: params.conversationId, status: params.status, firedAt },
+          },
+        },
+      );
+      await ScheduleRun().updateOne(
+        {
+          scheduleId: params.scheduleId,
+          scheduledFor: params.scheduledFor,
+          status: { $in: ['started', 'requires_action'] },
+        },
+        {
+          $set: {
+            status: 'requires_action',
+            ...(params.conversationId ? { conversationId: params.conversationId } : {}),
+          },
+        },
+      );
+      return;
+    }
+    // TERMINAL: flip the run row (match-guarded), then apply bookkeeping. `bookkept` is
+    // set false at the flip and true only after bookkeeping lands, so a crash between is
+    // re-applied by the reconciler (getUnbookkeptRuns) while countedFor keeps counters idempotent.
     const matched = await ScheduleRun().updateOne(
       {
         scheduleId: params.scheduleId,
@@ -649,7 +693,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       {
         $set: {
           status: params.status,
-          ...(isTerminal ? { bookkept: false } : {}),
+          bookkept: false,
           ...(params.conversationId ? { conversationId: params.conversationId } : {}),
           ...(params.error ? { error: params.error } : {}),
           ...(params.durationMs != null ? { durationMs: params.durationMs } : {}),
@@ -657,23 +701,8 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       },
     );
     // No-match guard: never touch schedule bookkeeping without a matching run
-    // (protects against a spoofed scheduleId on a normal chat). Keyed on MATCHED,
-    // not modified: a retried `requires_action` write leaves the row already in
-    // that status (modifiedCount 0), and using modifiedCount would skip the pause
-    // card (lastRun) update and leave the pause invisible until it terminates.
+    // (protects against a spoofed scheduleId on a normal chat).
     if ((matched.matchedCount ?? 0) === 0) {
-      return;
-    }
-    if (params.status === 'requires_action') {
-      // Pause surfaces on the card (lastRun) but touches no counters.
-      await Schedule().updateOne(
-        { id: params.scheduleId },
-        {
-          $set: {
-            lastRun: { conversationId: params.conversationId, status: params.status, firedAt },
-          },
-        },
-      );
       return;
     }
     await applyTerminalBookkeeping({ ...params, firedAt });

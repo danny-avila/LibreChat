@@ -379,12 +379,16 @@ const startServer = async () => {
       // loopback chats at a server that is not yet listening/accepting starts,
       // recording spurious errors that could auto-disable valid schedules.
       // Ensures indexes before the first tick; failures are logged, not fatal.
-      // This is a single process, so it is NOT clustered: its in-memory job store
-      // is local and complete, so orphan/abandoned reconciliation is always safe
-      // here. Horizontal scaling of this entrypoint requires a SHARED stream store
-      // (USE_REDIS_STREAMS) — which makes GenerationJobManager.isRedis true and
-      // isJobStoreShared true anyway — so USE_REDIS is the wrong signal to gate on.
-      const scheduleEngine = await initializeScheduleEngine({ clustered: false });
+      // A SINGLE process is not clustered: its in-memory job store is local and
+      // complete, so orphan/abandoned reconciliation is safe. But this entrypoint can
+      // still be scaled horizontally (multiple pods) without the node cluster module,
+      // which we cannot auto-detect — so an operator running >1 replica MUST declare it
+      // via SCHEDULES_CLUSTERED (or use USE_REDIS_STREAMS for a shared store). Without
+      // that, a peer replica's in-memory job would be misread as gone and its live run
+      // wrongly interrupted after the orphan cutoff.
+      const scheduleEngine = await initializeScheduleEngine({
+        clustered: isEnabled(process.env.SCHEDULES_CLUSTERED),
+      });
       // Only accept schedule writes once the engine confirmed its unique idempotency
       // + TTL indexes exist. If index creation failed the engine is left undefined and
       // schedule writes keep returning 503 (the app otherwise runs normally).

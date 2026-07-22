@@ -361,6 +361,47 @@ describe('recordRunOutcome', () => {
     expect(updated.lastRun?.status).toBe('requires_action');
     expect(updated.lastRun?.conversationId).toBe('convo-paused');
   });
+
+  it('does not write a pause card when no active run matches (spoof guard)', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    // No run row for this occurrence: the card is written only after a matching active
+    // run is confirmed, so a spoofed scheduleId can never stamp a pause onto a schedule.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-spoof',
+      autoDisableAfterFailures: 3,
+    });
+    const updated = await getSchedule(schedule.id);
+    expect(updated.lastRun).toBeUndefined();
+  });
+
+  it('re-affirms the pause card on a retried requires_action (already-paused row)', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-1',
+      autoDisableAfterFailures: 3,
+    });
+    // The row is already `requires_action`; a crash-replay retry must still write the
+    // card (keyed on existence, not modification) so the pause never goes invisible.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-2',
+      autoDisableAfterFailures: 3,
+    });
+    const run = await getRun(schedule.id, scheduledFor);
+    expect(run.status).toBe('requires_action');
+    const updated = await getSchedule(schedule.id);
+    expect(updated.lastRun?.status).toBe('requires_action');
+    expect(updated.lastRun?.conversationId).toBe('convo-2');
+  });
 });
 
 describe('recordSkippedRun', () => {

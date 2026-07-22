@@ -145,8 +145,16 @@ const okResponse = (conversationId = 'convo-1') =>
   ({
     ok: true,
     status: 200,
-    json: async () => ({ conversationId }),
-    text: async () => '',
+    // The accept path answers with JSON; fire reads the body as text and JSON-parses it.
+    text: async () => JSON.stringify({ conversationId }),
+  }) as Response;
+
+// A 200 whose body is a denyRequest SSE stream (moderation/ban) rather than JSON.
+const sseDenyResponse = () =>
+  ({
+    ok: true,
+    status: 200,
+    text: async () => 'event: message\ndata: {"message":"denied"}\n\n',
   }) as Response;
 
 const dueAt = () => new Date(Date.now() - 60_000);
@@ -187,6 +195,20 @@ describe('fireSchedule', () => {
     expect(calls.recordOutcome).toHaveLength(0);
     expect([...runs.values()][0].status).toBe('started');
     expect(calls.advance).toBe(1);
+  });
+
+  it('records a pre-controller SSE denial as a definite error (not ambiguous)', async () => {
+    const { methods, runs, calls } = makeMethods();
+    // denyRequest (moderation/ban) streams an SSE error with HTTP 200 before the
+    // controller starts — a definite rejection with nothing billed/started. It must
+    // terminalize as `error` (so failures count toward auto-disable), NOT be left
+    // reconcilable and later swept to `interrupted`.
+    mockFetch(async () => sseDenyResponse());
+    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
+    expect(result.fired).toBe(false);
+    expect(calls.recordOutcome).toEqual([{ status: 'error' }]);
+    // The reserved run row is terminalized, not left `started` for the orphan sweep.
+    expect([...runs.values()][0].status).toBe('error');
   });
 
   it('does not orphan a run when file resolution fails', async () => {

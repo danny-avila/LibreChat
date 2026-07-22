@@ -110,7 +110,18 @@ async function postChatMessageInner(
       false,
     );
   }
-  const payload = (await response.json().catch(() => ({}))) as { conversationId?: string };
+  // The accept path always answers with JSON ({ streamId, conversationId, status }).
+  // A 200 whose body is NOT JSON is a pre-controller denial streamed via denyRequest
+  // (OPENAI_MODERATION / BAN_VIOLATIONS): a DEFINITE rejection with nothing billed or
+  // started, so classify it non-ambiguous — the run terminalizes as `error` and can
+  // auto-disable, instead of lingering until the orphan sweep and recording `interrupted`.
+  const raw = await response.text().catch(() => '');
+  let payload: { conversationId?: string };
+  try {
+    payload = raw ? (JSON.parse(raw) as { conversationId?: string }) : {};
+  } catch {
+    throw new ScheduleFireError(`Fire denied before start: ${raw.slice(0, 300)}`, false);
+  }
   if (!payload.conversationId) {
     throw new ScheduleFireError('Fire POST returned no conversationId', true);
   }

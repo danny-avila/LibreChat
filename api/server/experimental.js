@@ -522,7 +522,11 @@ if (cluster.isMaster) {
         // (GenerationJobManager.isRedis) to decide isJobStoreShared: a multi-worker
         // deployment whose stream store is in-memory is NOT shared, so cross-worker
         // job-status reconciliation is skipped instead of misreading a peer's live run.
-        const scheduleEngine = await initializeScheduleEngine({ clustered: workers > 1 });
+        // A single-worker deployment scaled across multiple pods is likewise clustered
+        // but undetectable here, so honor an explicit SCHEDULES_CLUSTERED override too.
+        const scheduleEngine = await initializeScheduleEngine({
+          clustered: workers > 1 || isEnabled(process.env.SCHEDULES_CLUSTERED),
+        });
         // Only accept schedule writes once the engine confirmed its unique idempotency
         // + TTL indexes exist. If index creation failed the engine is left undefined and
         // schedule writes keep returning 503 (the worker otherwise runs normally).
