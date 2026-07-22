@@ -311,7 +311,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           if (existingJob?.clientRequestId && existingJob.clientRequestId !== clientRequestId) {
             logger.warn(
               '[ResumableAgentController] Claimed streamId belongs to a different submission',
-              { existingStreamId, claimClientRequestId: clientRequestId, jobClientRequestId: existingJob.clientRequestId },
+              {
+                existingStreamId,
+                claimClientRequestId: clientRequestId,
+                jobClientRequestId: existingJob.clientRequestId,
+              },
             );
             return res.status(409).json({
               error: 'This generation was superseded. Please reload.',
