@@ -2906,4 +2906,34 @@ describe('updateInterfacePermissions - permissions', () => {
       [Permissions.SHARE_PUBLIC]: true,
     });
   });
+
+  it('does not re-enable a DB-disabled schedules permission when only runtime limits are configured', async () => {
+    // The role already has schedules USE disabled in the DB.
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.SCHEDULES]: { [Permissions.USE]: false, [Permissions.CREATE]: false },
+      },
+    });
+    // Runtime-only limits — NOT a permission config; must not re-derive USE.
+    const config = {
+      interface: {
+        schedules: { maxPerUser: 20, fireConcurrency: 2 },
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    // Schedules must be preserved (omitted from every role update), not silently
+    // re-enabled to USE:true from defaults just because limits were tuned.
+    for (const call of mockUpdateAccessPermissions.mock.calls) {
+      expect(call[1][PermissionTypes.SCHEDULES]).toBeUndefined();
+    }
+  });
 });

@@ -49,8 +49,18 @@ function hasExplicitConfig(
       return interfaceConfig?.skills !== undefined;
     case PermissionTypes.SHARED_LINKS:
       return interfaceConfig?.sharedLinks !== undefined;
-    case PermissionTypes.SCHEDULES:
-      return interfaceConfig?.schedules !== undefined;
+    case PermissionTypes.SCHEDULES: {
+      // `schedules` is dual-purpose: a boolean, or an object carrying use/create,
+      // is a permission config — but runtime-only limits (maxPerUser,
+      // fireConcurrency, …) are NOT. Treating their mere presence as a permission
+      // config would re-apply the USE default below and silently re-enable a
+      // DB-disabled schedules permission whenever an operator tunes the limits.
+      const schedules = interfaceConfig?.schedules;
+      if (typeof schedules === 'boolean') {
+        return true;
+      }
+      return schedules?.use !== undefined || schedules?.create !== undefined;
+    }
     default:
       return false;
   }

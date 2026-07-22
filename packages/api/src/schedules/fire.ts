@@ -215,9 +215,11 @@ export async function fireSchedule(
     // Reserve-then-verify capacity: the insert above is the atomic reservation.
     // The count is GLOBAL (system tenant) — under the owner's tenant context it
     // would only see this tenant's runs and multiple tenants could collectively
-    // exceed the cap. Roll back and retry next tick if over. Never over-admits.
+    // exceed the cap. Compare against the OWNER-resolved fireConcurrency (matching
+    // run-now's request-scoped check) so a lowered per-principal override is
+    // honored for automatic fires, not just the base cap. Roll back if over.
     const active = await deps.countActiveRunsGlobal();
-    if (active > limits.fireConcurrency) {
+    if (active > ownerLimits.fireConcurrency) {
       await methods.deleteScheduleRun(schedule.id, scheduledFor);
       await methods.releaseLease(schedule.id);
       return { fired: false, skipped: 'capacity' as const };
