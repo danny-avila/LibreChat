@@ -12,7 +12,7 @@ cache: true
 # FILE STORAGE CONFIGURATION
 # ==============================================================================
 # Granular file storage strategies for different file types
-fileStrategy:
+fileStrategies:
   avatar: "local"        # User/agent avatar images
   image: "local"         # Uploaded images in chats
   document: "local"      # Document uploads (PDFs, text files, etc.)
@@ -182,7 +182,7 @@ mcpSettings:
 # MCP SERVERS (Model Context Protocol)
 # ==============================================================================
 # Pre-configured MCP servers for extended functionality
-mcpServers:
+mcpServers: {}
   # Filesystem access server
 #  filesystem:
 #    type: stdio
@@ -240,9 +240,9 @@ endpoints:
       - "gpt-4-turbo"
     
     # Available capabilities
-    capabilities: 
+    capabilities:
       - "code_interpreter"
-      - "file_search"
+      - "retrieval"
       - "actions"
       - "tools"
   
@@ -274,13 +274,11 @@ endpoints:
     
     # Available models
     models:
-      default:
-        - "claude-opus-4-20250514"
-        - "claude-sonnet-4-20250514"
-        - "claude-3-7-sonnet-20250219"
-        - "claude-3-5-sonnet-20241022"
-        - "claude-3-5-haiku-20241022"
-      fetch: false                # Don't fetch models from API
+      - "claude-opus-4-20250514"
+      - "claude-sonnet-4-20250514"
+      - "claude-3-7-sonnet-20250219"
+      - "claude-3-5-sonnet-20241022"
+      - "claude-3-5-haiku-20241022"
   
   # --------------------------------------------------------------------------
   # ANTHROPIC via VERTEX AI (Google Cloud)
@@ -310,7 +308,7 @@ endpoints:
     
     # GOOGLE GEMINI via OpenRouter or Direct API
     - name: 'Google Gemini'
-      apiKey: '${GOOGLE_API_KEY}'
+      apiKey: '${GOOGLE_KEY}'
       baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/'
       models:
         default:
@@ -368,6 +366,9 @@ endpoints:
           - 'google/gemini-2.0-flash-exp'
           - 'meta-llama/llama-3.3-70b-instruct'
           - 'deepseek/deepseek-chat'
+          - 'nousresearch/hermes-3-llama-3.1-70b'
+          - 'cognitivecomputations/dolphin-mistral-24b-venice-edition'
+          - 'sao10k/l3.3-euryale-70b'
         fetch: true
       titleConvo: true
       titleModel: 'meta-llama/llama-3.3-70b-instruct'
@@ -460,6 +461,34 @@ modelSpecs:
         model: "claude-sonnet-4-20250514"
         temperature: 0.5
         instructions: "You are a research assistant. Provide thorough, well-sourced analysis with citations."
+
+    # OpenRouter specialty models
+    - name: "hermes-3-70b"
+      label: "Hermes 3 70B"
+      description: "Steerable logic, neutrality, agentic tasks."
+      group: "OpenRouter"
+      preset:
+        endpoint: "OpenRouter"
+        model: "nousresearch/hermes-3-llama-3.1-70b"
+        temperature: 0.7
+
+    - name: "dolphin-mistral-24b-venice"
+      label: "Dolphin Mistral 24B (Venice)"
+      description: "Fast uncensored daily assistant tasks."
+      group: "OpenRouter"
+      preset:
+        endpoint: "OpenRouter"
+        model: "cognitivecomputations/dolphin-mistral-24b-venice-edition"
+        temperature: 0.7
+
+    - name: "euryale-70b"
+      label: "Euryale 70B"
+      description: "Deep atmospheric storywriting, roleplay."
+      group: "OpenRouter"
+      preset:
+        endpoint: "OpenRouter"
+        model: "sao10k/l3.3-euryale-70b"
+        temperature: 0.7
 
 # ==============================================================================
 # FILE UPLOAD CONFIGURATION
