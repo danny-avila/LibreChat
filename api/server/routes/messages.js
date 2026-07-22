@@ -56,72 +56,91 @@ router.get('/', async (req, res) => {
        * exact `totalPages`. The frontend's opaque `cursor` carries the 1-based
        * page number; an absent cursor is the first page.
        */
-      const page = Math.max(1, parseInt(cursor, 10) || 1);
-      const searchResults = await db.searchMessages(
-        search,
-        { filter: `user = "${user}"`, page, hitsPerPage: pageSize },
-        true,
-      );
-
-      const messages = searchResults.hits || [];
-
       /**
-       * `getConvosQueried` is only a hydration/`convoMap` helper for THIS page's
-       * hits. Its `cursor` arg is a date (for the conversation-list feature), so
-       * the numeric page cursor must NOT be passed to it, and its default limit
-       * (25) would truncate conversations out of a page — pass a limit covering
-       * every conversation the page's hits could belong to.
+       * A page whose hits ALL belong to deleted/inaccessible conversations
+       * filters down to zero rows. Returning that empty page with a cursor
+       * strands the client: it renders the no-results state and never scrolls,
+       * so later pages holding real hits are unreachable. Walk forward until a
+       * page yields a row (or the pages run out), bounded so a long filtered
+       * run can't hold the request open.
        */
-      const result = await db.getConvosQueried(req.user.id, messages, null, messages.length || 1);
+      const MAX_EMPTY_PAGE_SCANS = 10;
+      let page = Math.max(1, parseInt(cursor, 10) || 1);
+      let activeMessages = [];
+      let nextCursor = null;
 
-      const messageIds = [];
-      const cleanedMessages = [];
-      for (let i = 0; i < messages.length; i++) {
-        let message = messages[i];
-        if (result.convoMap[message.conversationId]) {
-          messageIds.push(message.messageId);
-          cleanedMessages.push(message);
+      for (let scan = 0; scan < MAX_EMPTY_PAGE_SCANS; scan++) {
+        const searchResults = await db.searchMessages(
+          search,
+          { filter: `user = "${user}"`, page, hitsPerPage: pageSize },
+          true,
+        );
+
+        const messages = searchResults.hits || [];
+
+        /**
+         * `getConvosQueried` is only a hydration/`convoMap` helper for THIS
+         * page's hits. Its `cursor` arg is a date (for the conversation-list
+         * feature), so the numeric page cursor must NOT be passed to it, and its
+         * default limit (25) would truncate conversations out of a page — pass a
+         * limit covering every conversation the page's hits could belong to.
+         */
+        const result = await db.getConvosQueried(req.user.id, messages, null, messages.length || 1);
+
+        const messageIds = [];
+        const cleanedMessages = [];
+        for (let i = 0; i < messages.length; i++) {
+          const message = messages[i];
+          if (result.convoMap[message.conversationId]) {
+            messageIds.push(message.messageId);
+            cleanedMessages.push(message);
+          }
         }
-      }
 
-      const dbMessages = await db.getMessages({
-        user,
-        messageId: { $in: messageIds },
-      });
-
-      const dbMessageMap = {};
-      for (const dbMessage of dbMessages) {
-        dbMessageMap[dbMessage.messageId] = dbMessage;
-      }
-
-      const activeMessages = [];
-      for (const message of cleanedMessages) {
-        const convo = result.convoMap[message.conversationId];
-        const dbMessage = dbMessageMap[message.messageId];
-
-        activeMessages.push({
-          ...message,
-          title: convo.title,
-          conversationId: message.conversationId,
-          model: convo.model,
-          isCreatedByUser: dbMessage?.isCreatedByUser,
-          endpoint: dbMessage?.endpoint,
-          iconURL: dbMessage?.iconURL,
+        const dbMessages = await db.getMessages({
+          user,
+          messageId: { $in: messageIds },
         });
-      }
 
-      /**
-       * Page from Meili's raw hit paging, NOT the post-`convoMap`-filter count:
-       * a page can render fewer rows than `hitsPerPage` when some hits belong to
-       * deleted/inaccessible conversations, but there may still be more pages, so
-       * the cursor must keep advancing. Prefer Meili's exact `totalPages`; fall
-       * back to "a full raw page implies there may be more".
-       */
-      const totalPages = Number.isFinite(searchResults.totalPages)
-        ? searchResults.totalPages
-        : null;
-      const hasNextPage = totalPages != null ? page < totalPages : messages.length >= pageSize;
-      const nextCursor = hasNextPage ? String(page + 1) : null;
+        const dbMessageMap = {};
+        for (const dbMessage of dbMessages) {
+          dbMessageMap[dbMessage.messageId] = dbMessage;
+        }
+
+        activeMessages = [];
+        for (const message of cleanedMessages) {
+          const convo = result.convoMap[message.conversationId];
+          const dbMessage = dbMessageMap[message.messageId];
+
+          activeMessages.push({
+            ...message,
+            title: convo.title,
+            conversationId: message.conversationId,
+            model: convo.model,
+            isCreatedByUser: dbMessage?.isCreatedByUser,
+            endpoint: dbMessage?.endpoint,
+            iconURL: dbMessage?.iconURL,
+          });
+        }
+
+        /**
+         * Page from Meili's raw hit paging, NOT the post-`convoMap`-filter count:
+         * a page can render fewer rows than `hitsPerPage` when some hits belong to
+         * deleted/inaccessible conversations, but there may still be more pages, so
+         * the cursor must keep advancing. Prefer Meili's exact `totalPages`; fall
+         * back to "a full raw page implies there may be more".
+         */
+        const totalPages = Number.isFinite(searchResults.totalPages)
+          ? searchResults.totalPages
+          : null;
+        const hasNextPage = totalPages != null ? page < totalPages : messages.length >= pageSize;
+        nextCursor = hasNextPage ? String(page + 1) : null;
+
+        if (activeMessages.length > 0 || !hasNextPage) {
+          break;
+        }
+        page += 1;
+      }
 
       response = { messages: activeMessages, nextCursor };
     } else {

@@ -75,7 +75,10 @@ export default function Search() {
     return localize('com_ui_results_found', { count: resultsCount });
   }, [resultsCount, localize]);
 
-  const isSearchLoading = search.isTyping || isLoading || isFetchingNextPage;
+  /** Fetching a later page must NOT take over the full view: the results and
+   *  their scroll container have to stay mounted for infinite scroll to keep
+   *  working, and the inline spinner below the list already covers fetch-more. */
+  const isSearchLoading = search.isTyping || isLoading;
 
   if (isSearchLoading) {
     return (

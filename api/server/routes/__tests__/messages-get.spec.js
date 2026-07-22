@@ -316,5 +316,57 @@ describe('message route conversation ownership filters', () => {
         1,
       );
     });
+
+    it('skips a page whose hits are all filtered out and returns the next page with rows', async () => {
+      // Page 1's only hit belongs to a deleted/inaccessible conversation, so it
+      // filters to zero rows; returning that empty page would strand the client.
+      searchMessages
+        .mockResolvedValueOnce({
+          hits: [{ messageId: 'm1', conversationId: 'gone' }],
+          totalPages: 3,
+        })
+        .mockResolvedValueOnce({
+          hits: [{ messageId: 'm2', conversationId: 'c2' }],
+          totalPages: 3,
+        });
+      getConvosQueried
+        .mockResolvedValueOnce({ convoMap: {}, conversations: [], nextCursor: null })
+        .mockResolvedValueOnce({
+          convoMap: { c2: { title: 'T', model: 'gpt' } },
+          conversations: [],
+          nextCursor: null,
+        });
+      getMessages.mockResolvedValue([
+        { messageId: 'm2', isCreatedByUser: false, endpoint: 'openAI' },
+      ]);
+
+      const response = await request(app).get('/api/messages?search=beacon');
+
+      expect(searchMessages).toHaveBeenCalledTimes(2);
+      expect(searchMessages).toHaveBeenNthCalledWith(
+        2,
+        'beacon',
+        expect.objectContaining({ page: 2 }),
+        true,
+      );
+      expect(response.body.messages).toHaveLength(1);
+      expect(response.body.messages[0].messageId).toBe('m2');
+      expect(response.body.nextCursor).toBe('3');
+    });
+
+    it('does not scan past the last page when the final page filters out entirely', async () => {
+      searchMessages.mockResolvedValue({
+        hits: [{ messageId: 'm1', conversationId: 'gone' }],
+        totalPages: 1,
+      });
+      getConvosQueried.mockResolvedValue({ convoMap: {}, conversations: [], nextCursor: null });
+      getMessages.mockResolvedValue([]);
+
+      const response = await request(app).get('/api/messages?search=beacon');
+
+      expect(searchMessages).toHaveBeenCalledTimes(1);
+      expect(response.body.messages).toEqual([]);
+      expect(response.body.nextCursor).toBeNull();
+    });
   });
 });
