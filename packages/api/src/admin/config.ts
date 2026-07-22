@@ -67,9 +67,13 @@ function isInterfacePermissionPath(fieldPath: string): boolean {
   if (!INTERFACE_PERMISSION_FIELDS.has(parts[1])) {
     return false;
   }
-  // "interface.<permField>" with no sub-key → permission (blocks the whole field)
+  // "interface.<permField>" with no sub-key → permission (blocks the whole field),
+  // EXCEPT dual-purpose runtime fields (e.g. schedules) whose bare top-level value
+  // is a runtime enable toggle, not a permission — those must pass through so admin
+  // field patches/tombstones can set or clear them (their .use/.create permission
+  // sub-keys are still blocked below).
   if (parts.length === 2) {
-    return true;
+    return !RUNTIME_CONFIG_INTERFACE_FIELDS.has(parts[1]);
   }
   // "interface.<permField>.<subKey>" → only block if sub-key is a permission bit
   return PERMISSION_SUB_KEYS.has(parts[2]);

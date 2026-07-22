@@ -6,6 +6,7 @@ import type {
 import type { Document, Types } from 'mongoose';
 
 export interface ISchedule {
+  _id?: Types.ObjectId;
   id: string;
   user: Types.ObjectId;
   tenantId?: string;
@@ -32,12 +33,12 @@ export interface ISchedule {
   runCount: number;
   failureCount: number;
   balanceSkipCount: number;
-  lastCountedFor?: Date;
+  countedFor?: Date[];
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-export interface IScheduleDocument extends Omit<ISchedule, 'id'>, Document {
+export interface IScheduleDocument extends Omit<ISchedule, 'id' | '_id'>, Document {
   id: string;
 }
 

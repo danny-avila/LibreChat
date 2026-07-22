@@ -102,9 +102,15 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
       default: 0,
       min: 0,
     },
-    /** Guards `recordRunOutcome` counter increments against double-counting on retry. */
-    lastCountedFor: {
-      type: Date,
+    /**
+     * Bounded set of recently-counted occurrence timestamps. Per-occurrence
+     * idempotency guard for `recordRunOutcome` counter increments: a single
+     * scalar could be moved by an interleaved earlier occurrence, letting the
+     * reconciler double-count a crashed later one. Kept bounded via `$slice`.
+     */
+    countedFor: {
+      type: [Date],
+      default: undefined,
     },
     failureCount: {
       type: Number,

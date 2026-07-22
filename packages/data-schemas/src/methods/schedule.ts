@@ -10,6 +10,14 @@ import { createIndexesWithRetry } from '~/utils/retry';
 
 const DUPLICATE_KEY = 11000;
 
+/**
+ * Upper bound on the per-schedule `countedFor` idempotency set. Far larger than
+ * the number of a single schedule's occurrences that can be terminal (or awaiting
+ * reconciliation) at once, so an occurrence's marker is never evicted before any
+ * possible crash-replay, while the array stays bounded.
+ */
+const COUNTED_FOR_WINDOW = 64;
+
 export interface ClaimDueScheduleParams {
   instanceId: string;
   leaseMs: number;
@@ -39,6 +47,7 @@ export type ScheduleMethods = {
   getScheduleById: (id: string, userId?: string | Types.ObjectId) => Promise<ISchedule | null>;
   getSchedulesByUser: (userId: string | Types.ObjectId) => Promise<ISchedule[]>;
   countSchedulesByUser: (userId: string | Types.ObjectId) => Promise<number>;
+  countSchedulesAheadOf: (userId: string | Types.ObjectId, id: Types.ObjectId) => Promise<number>;
   claimDueSchedule: (params: ClaimDueScheduleParams) => Promise<ISchedule | null>;
   acquireManualRunLease: (
     id: string,
@@ -146,6 +155,18 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   }
 
   /**
+   * Count of the user's schedules ordered strictly before `id` (by the total,
+   * monotonic `_id` order). Used to resolve a deterministic per-limit rank so
+   * racing creates converge on the same winner instead of all self-deleting.
+   */
+  async function countSchedulesAheadOf(
+    userId: string | Types.ObjectId,
+    id: Types.ObjectId,
+  ): Promise<number> {
+    return Schedule().countDocuments({ user: userId, _id: { $lt: id } });
+  }
+
+  /**
    * Atomically claims one due schedule by taking a lease. The per-document CAS
    * is the sole multi-instance dispatch arbiter: exactly one caller wins each
    * due schedule regardless of replica count, with or without Redis.
@@ -247,9 +268,10 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
 
   /**
    * Applies the schedule-side bookkeeping (lastRun + counters + auto-disable) for
-   * a terminal occurrence. Idempotent via the `lastCountedFor` guard: the $inc
-   * lands at most once per occurrence no matter how many times it is retried
-   * (inline finish, reconciler catch of an un-`bookkept` run, crash-replay).
+   * a terminal occurrence. Idempotent via the per-occurrence `countedFor` guard:
+   * the $inc lands at most once per occurrence no matter how many times it is
+   * retried (inline finish, reconciler catch of an un-`bookkept` run, crash-replay),
+   * even when a later occurrence's counting interleaves with an earlier paused one.
    */
   async function applyTerminalBookkeeping(
     params: RecordRunOutcomeParams & { firedAt: Date },
@@ -262,19 +284,21 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     };
     const isFailure = params.status === 'error';
     const isSuccess = params.status === 'success';
-    // The COUNT is idempotent via `lastCountedFor`. Everything that must land
-    // atomically WITH the count goes in this one update so a crash can't leave
+    // The COUNT is idempotent per occurrence: `countedFor` is a bounded set of
+    // recently-counted occurrence timestamps, so an interleaved earlier occurrence
+    // can't clear this one's marker (a single scalar could). Everything that must
+    // land atomically WITH the count goes in this one update so a crash can't leave
     // it half-applied: the balance-skip streak resets on ANY non-balance outcome,
     // and a success clears the failure streak inline (never a lost follow-up).
     await Schedule().updateOne(
-      { id: params.scheduleId, lastCountedFor: { $ne: params.scheduledFor } },
+      { id: params.scheduleId, countedFor: { $ne: params.scheduledFor } },
       {
         $set: {
           lastRun,
-          lastCountedFor: params.scheduledFor,
           balanceSkipCount: 0,
           ...(isSuccess ? { failureCount: 0 } : {}),
         },
+        $push: { countedFor: { $each: [params.scheduledFor], $slice: -COUNTED_FOR_WINDOW } },
         ...(isSuccess ? { $inc: { runCount: 1 } } : {}),
         ...(isFailure ? { $inc: { failureCount: 1 } } : {}),
         ...(isSuccess ? { $unset: { disabledReason: 1 } } : {}),
@@ -296,7 +320,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
    * Matches a run row still in `started` OR `requires_action`. Crash-retryable:
    * the run row is marked `bookkept:false` at terminalization and only flipped
    * to `true` after bookkeeping lands, so a crash in between is re-applied by the
-   * reconciler (`getUnbookkeptRuns`), while `lastCountedFor` keeps it idempotent.
+   * reconciler (`getUnbookkeptRuns`), while `countedFor` keeps it idempotent.
    */
   async function recordRunOutcome(params: RecordRunOutcomeParams): Promise<void> {
     const firedAt = new Date();
@@ -473,6 +497,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     getScheduleById,
     getSchedulesByUser,
     countSchedulesByUser,
+    countSchedulesAheadOf,
     claimDueSchedule,
     acquireManualRunLease,
     releaseLease,

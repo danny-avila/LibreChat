@@ -135,14 +135,19 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       ...(nextRunAt ? { nextRunAt } : {}),
     });
     // Close the check-then-insert window: parallel creates can both pass the
-    // count guard, so re-count after insert and roll back the overflow.
-    const postCount = await deps.methods.countSchedulesByUser(user.id);
-    if (postCount > limits.maxPerUser) {
-      await deps.methods.deleteScheduleById(id, user.id);
-      res.status(400).json({
-        error: `Schedule limit reached (${limits.maxPerUser}). Delete a schedule to add another.`,
-      });
-      return;
+    // count guard. Resolve a deterministic rank by the total `_id` order — a row
+    // survives iff at most `maxPerUser - 1` of the user's schedules precede it —
+    // so exactly `maxPerUser` win instead of every racer self-deleting (which
+    // would leave the user below the limit).
+    if (schedule._id != null) {
+      const ahead = await deps.methods.countSchedulesAheadOf(user.id, schedule._id);
+      if (ahead >= limits.maxPerUser) {
+        await deps.methods.deleteScheduleById(id, user.id);
+        res.status(400).json({
+          error: `Schedule limit reached (${limits.maxPerUser}). Delete a schedule to add another.`,
+        });
+        return;
+      }
     }
     if (parsed.data.file_ids?.length) {
       await deps.markFilesUsed(parsed.data.file_ids, user.id);

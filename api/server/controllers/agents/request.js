@@ -381,6 +381,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     req._resumableStreamId = streamId;
     getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
 
+    // For scheduled fires, persist the schedule identifiers into the job metadata
+    // BEFORE acknowledging the fire below. The loopback caller treats the JSON
+    // `started` response as the run being underway; if these were written only
+    // after and the process crashed in that window, the generation would run with
+    // no scheduleId and no terminal hook could ever record the ScheduleRun outcome
+    // (reconciliation would then treat a successful run as an orphan).
+    if (scheduleId) {
+      await GenerationJobManager.updateMetadata(streamId, { scheduleId, scheduledFor });
+    }
+
     // Send JSON response IMMEDIATELY so client can connect to SSE stream
     // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive
     res.json({ streamId, conversationId, status: 'started' });
@@ -942,15 +952,21 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // manager deletes completed jobs immediately, so if this write ran
           // after and the process died in between, reconciliation would see no
           // job for the still-`started` run and mislabel a success as interrupted.
+          // If the write itself fails (transient Mongo outage across its retries),
+          // preserve the completed job so the reconciler can finalize it as
+          // success from the retained job status instead of deleting the evidence.
+          let scheduleOutcomeRecorded = true;
           if (scheduleId) {
-            await recordScheduleOutcome({
+            scheduleOutcomeRecorded = await recordScheduleOutcome({
               scheduleId,
               scheduledFor,
               status: 'success',
               conversationId: conversation?.conversationId,
             });
           }
-          GenerationJobManager.completeJob(streamId);
+          GenerationJobManager.completeJob(streamId, undefined, {
+            preserveForReconcile: !scheduleOutcomeRecorded,
+          });
           await finishResumableRequest(req, userId);
         } else {
           const finalEvent = {

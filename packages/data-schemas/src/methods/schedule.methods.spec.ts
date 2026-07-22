@@ -176,6 +176,24 @@ describe('insertScheduleRun idempotency', () => {
   });
 });
 
+describe('countSchedulesAheadOf (deterministic create-limit winner)', () => {
+  it("ranks a user's schedules by the total _id order", async () => {
+    const user = new mongoose.Types.ObjectId();
+    const a = await methods.createSchedule(scheduleData({ user }));
+    const b = await methods.createSchedule(scheduleData({ user }));
+    const c = await methods.createSchedule(scheduleData({ user }));
+    // Each row's rank = (# strictly ahead) + 1, so exactly the first N survive a
+    // limit of N regardless of which racer re-counts first.
+    expect(await methods.countSchedulesAheadOf(user, a._id!)).toBe(0);
+    expect(await methods.countSchedulesAheadOf(user, b._id!)).toBe(1);
+    expect(await methods.countSchedulesAheadOf(user, c._id!)).toBe(2);
+    // Scoped to the owner: another user's schedules never count toward the rank.
+    const other = await methods.createSchedule(scheduleData());
+    expect(await methods.countSchedulesAheadOf(user, c._id!)).toBe(2);
+    expect(await methods.countSchedulesAheadOf(other.user, other._id!)).toBe(0);
+  });
+});
+
 describe('recordRunOutcome', () => {
   const scheduledFor = new Date('2026-07-20T12:00:00Z');
 
@@ -498,10 +516,50 @@ describe('recordRunOutcome idempotency + crash-retry (bookkeeping)', () => {
     await methods.recordRunOutcome(outcome);
     const updated = await getSchedule(schedule.id);
     expect(updated.runCount).toBe(1);
-    expect((updated as { lastCountedFor?: Date }).lastCountedFor?.toISOString()).toBe(
-      scheduledFor.toISOString(),
-    );
+    expect(
+      (updated as { countedFor?: Date[] }).countedFor?.map((d) => new Date(d).toISOString()),
+    ).toContain(scheduledFor.toISOString());
     expect((await getRun(schedule.id, scheduledFor)).bookkept).toBe(true);
+  });
+
+  it('does not double-count a crashed later occurrence when an earlier one interleaves', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const t1 = new Date('2026-07-20T10:00:00Z');
+    const t2 = new Date('2026-07-20T11:00:00Z');
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor: t1 }));
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor: t2 }));
+
+    // Later occurrence B (t2) finishes + counts, then crashes before bookkept:true.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: t2,
+      status: 'success',
+      autoDisableAfterFailures: 3,
+    });
+    await ScheduleRun.updateOne(
+      { scheduleId: schedule.id, scheduledFor: t2 },
+      { $set: { bookkept: false } },
+    );
+
+    // Earlier occurrence A (t1) then counts — a single scalar guard would move to
+    // t1 here, so replaying B would look uncounted again.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: t1,
+      status: 'success',
+      autoDisableAfterFailures: 3,
+    });
+
+    // Reconciler replays the still-unbookkept B: the per-occurrence guard blocks a re-count.
+    await methods.finalizeBookkeeping({
+      scheduleId: schedule.id,
+      scheduledFor: t2,
+      status: 'success',
+      autoDisableAfterFailures: 3,
+    });
+
+    const updated = await getSchedule(schedule.id);
+    expect(updated.runCount).toBe(2); // A + B, each counted exactly once
   });
 
   it('finalizeBookkeeping recovers a terminalized-but-uncounted run (crash between writes)', async () => {
@@ -544,7 +602,7 @@ describe('bookkeeping policy is crash-retryable / streak-correct', () => {
       autoDisableAfterFailures: 3,
     });
     expect((await getSchedule(schedule.id)).enabled).toBe(false);
-    // Simulate a crash where the count landed (lastCountedFor set) but the disable
+    // Simulate a crash where the count landed (countedFor set) but the disable
     // was lost: re-enable and replay via finalizeBookkeeping. The count must NOT
     // double (guard), but the disable policy must re-apply.
     await Schedule.updateOne({ id: schedule.id }, { $set: { enabled: true } });

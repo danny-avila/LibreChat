@@ -1,12 +1,19 @@
 const mongoose = require('mongoose');
 const {
+  SystemRoles,
   ResourceType,
   Permissions,
   PermissionBits,
   PermissionTypes,
 } = require('librechat-data-provider');
-const { tenantStorage, runAsSystem, logger } = require('@librechat/data-schemas');
+const {
+  logger,
+  runAsSystem,
+  tenantStorage,
+  ResourceCapabilityMap,
+} = require('@librechat/data-schemas');
 const { checkPermission } = require('~/server/services/PermissionService');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const {
   fireSchedule,
   getBalanceConfig,
@@ -98,6 +105,29 @@ const engineDeps = {
     const agent = await mongoose.models.Agent.findOne({ id: agentId }).select('_id').lean();
     if (agent == null) {
       return 'missing';
+    }
+    // Mirror the loopback chat route's authorization so the precheck disables a
+    // schedule exactly when the fire would be rejected, and never disables one the
+    // fire would allow.
+    // 1) Role-level AGENTS:USE (generateCheckAccess on the route). Admins bypass.
+    if (user.role !== SystemRoles.ADMIN) {
+      const role = await methods.getRoleByName(user.role);
+      const canUseAgents = role?.permissions?.[PermissionTypes.AGENTS]?.[Permissions.USE];
+      if (!canUseAgents) {
+        return 'forbidden';
+      }
+    }
+    // 2) Resource VIEW with the manage:agents capability bypass (canAccessResource
+    //    on the route). Deny the bypass on a check error, like the middleware.
+    const cap = ResourceCapabilityMap[ResourceType.AGENT];
+    let hasManageAgents = false;
+    try {
+      hasManageAgents = cap != null && (await hasCapability(user, cap));
+    } catch (err) {
+      logger.warn(`[schedules] agent capability check failed, denying bypass: ${err.message}`);
+    }
+    if (hasManageAgents) {
+      return 'ok';
     }
     const allowed = await checkPermission({
       userId: user.id,

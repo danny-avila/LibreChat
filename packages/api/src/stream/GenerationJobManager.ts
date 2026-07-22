@@ -740,8 +740,18 @@ class GenerationJobManagerClass {
    * Note: eventTransport is NOT cleaned up here to allow the final event to be
    * fully transmitted. It will be cleaned up when subscribers disconnect or
    * by the periodic cleanup job.
+   *
+   * `preserveForReconcile` retains the completed job record (as `complete`, WITHOUT
+   * `completedAt`) instead of deleting it, so an out-of-band reconciler can still
+   * observe the completion after an inline finalize hook failed transiently. The
+   * `completedAt` omission keeps the 0-TTL sweep from reaping it before the
+   * reconciler's own min-age window; the job store's LRU bound caps accumulation.
    */
-  async completeJob(streamId: string, error?: string): Promise<void> {
+  async completeJob(
+    streamId: string,
+    error?: string,
+    options?: { preserveForReconcile?: boolean },
+  ): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
 
     // Abort the controller to signal all pending operations (e.g., OAuth flow monitors)
@@ -804,11 +814,16 @@ class GenerationJobManagerClass {
     }
 
     // Immediate cleanup if configured (default: true) - only for successful completions
-    if (this._cleanupOnComplete) {
+    if (this._cleanupOnComplete && !options?.preserveForReconcile) {
       this.runtimeState.delete(streamId);
       // Don't cleanup eventTransport here - let the done event fully transmit first.
       // EventTransport will be cleaned up when subscribers disconnect or by periodic cleanup.
       await this.jobStore.deleteJob(streamId);
+    } else if (options?.preserveForReconcile) {
+      // Retain WITHOUT completedAt so the finished-job sweep (which reaps by
+      // completedAt) can't remove it before an out-of-band reconciler observes
+      // the completion.
+      await this.jobStore.updateJob(streamId, { status: 'complete' });
     } else {
       // Only update status if keeping the job around
       await this.jobStore.updateJob(streamId, {
