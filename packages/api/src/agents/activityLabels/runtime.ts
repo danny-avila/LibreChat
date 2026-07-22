@@ -1,14 +1,14 @@
 import { logger } from '@librechat/data-schemas';
 import { initializeModel } from '@librechat/agents';
-import type { HookCallback, HookInputByEvent } from '@librechat/agents';
+import type { ClientOptions, HookCallback, HookInputByEvent, Providers } from '@librechat/agents';
 
 type PostToolBatchInput = HookInputByEvent['PostToolBatch'];
 type BatchEntry = PostToolBatchInput['entries'][number];
 
-/** Resolved provider + client options for the summary model call. */
+/** Resolved provider + client options for the label model call. */
 export interface ActivityLabelLLM {
-  provider: string;
-  clientOptions: Record<string, unknown>;
+  provider: Providers;
+  clientOptions: ClientOptions;
 }
 
 /** Deterministic classification of a batch — computed from tool names, no LLM. */
@@ -270,7 +270,7 @@ export function createActivityLabelHook(
           const { provider, clientOptions } = await getLLM();
           const model = initializeModel({
             provider,
-            clientOptions: { ...clientOptions, streaming: false },
+            clientOptions: { ...clientOptions, streaming: false } as ClientOptions,
           });
           const response = await (
             model as { invoke: (input: string, config?: object) => Promise<{ content?: unknown }> }

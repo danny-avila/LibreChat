@@ -121,7 +121,7 @@ export default function ToolCallGroup({
     [toolMetadata],
   );
   const activityLabel = getActivityLabelPart(labelPart?.part);
-  const activityLabelText = getActivityLabelText(activityLabel);
+  const activityLabelText = getActivityLabelText(activityLabel, localize);
   const activityFailed = activityLabel?.status === 'failed' || activityLabel?.status === 'partial';
   const toolNames = useMemo(() => toolMetadata.map((m) => m?.name ?? ''), [toolMetadata]);
   const iconToolNames = useMemo(() => toolMetadata.map((m) => m?.iconName ?? ''), [toolMetadata]);

@@ -485,6 +485,26 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * Bounded wait for in-flight label fills so a label resolving during the
+   * final batch still reaches the durable log and the saved message before
+   * the job completes. Never delays finalization past the bound; fills that
+   * lose the race leave the counts-only placeholder, which renders fine.
+   */
+  async settleActivityLabels(timeoutMs = 3000) {
+    const pending = this.pendingActivityLabelFills;
+    if (!pending || pending.length === 0) {
+      return;
+    }
+    this.pendingActivityLabelFills = [];
+    let timerId;
+    const timeout = new Promise((resolve) => {
+      timerId = setTimeout(resolve, timeoutMs);
+    });
+    await Promise.race([Promise.allSettled(pending), timeout]);
+    clearTimeout(timerId);
+  }
+
+  /**
    * Activity-label wiring. At each batch boundary the hook synchronously
    * claims a live content slot (steering's index-offset pattern: push
    * placeholder with deterministic counts, bump the shared offset so
@@ -522,6 +542,20 @@ class AgentClient extends BaseClient {
         }),
         claimSlot: (meta) => {
           const index = this.contentParts.length;
+          /** Parallel-column runs: carry the batch's groupId onto the label
+           *  part so ParallelContentRenderer places it inside its group
+           *  instead of filtering it out as an unplaced sequential part. */
+          let groupId;
+          for (let i = this.contentParts.length - 1; i >= 0 && groupId == null; i--) {
+            const prior = this.contentParts[i];
+            if (
+              prior?.type === ContentTypes.TOOL_CALL &&
+              prior.groupId != null &&
+              meta.toolCallIds.includes(prior[ContentTypes.TOOL_CALL]?.id)
+            ) {
+              groupId = prior.groupId;
+            }
+          }
           const part = {
             type: ContentTypes.ACTIVITY_LABEL,
             [ContentTypes.ACTIVITY_LABEL]: '',
@@ -529,24 +563,41 @@ class AgentClient extends BaseClient {
             counts: meta.counts,
             status: meta.status,
             ...(meta.executingAgentId && { agentId: meta.executingAgentId }),
+            ...(groupId != null && { groupId }),
             pending: true,
           };
           this.contentParts.push(part);
           this.steerOffsetState.offset += 1;
           /** Claim-time emit: the counts phrase renders in the live UI
            *  immediately at batch end. Fire-and-forget — claimSlot runs
-           *  inside the awaited hook, so it must not block on the emit. */
-          void emitLabelEvent(index, { ...part }).catch(() => {});
+           *  inside the awaited hook, so it must not block on the emit —
+           *  but the promise is retained so fill() can order the resolved
+           *  label AFTER the placeholder in the durable chunk log. */
+          const claimEmit = emitLabelEvent(index, { ...part }).catch(() => {});
+          /** Deferred settled by fill(); settleActivityLabels() awaits these
+           *  (bounded) before the response finalizes so a label resolving in
+           *  the final batch still lands in the saved message. */
+          let resolveFill;
+          const fillDone = new Promise((resolve) => {
+            resolveFill = resolve;
+          });
+          this.pendingActivityLabelFills = this.pendingActivityLabelFills ?? [];
+          this.pendingActivityLabelFills.push(fillDone);
           return {
             index,
             context: this.captureActivityBlockContext(),
             fill: async (text) => {
-              part.pending = false;
-              if (!text) {
-                return;
+              try {
+                part.pending = false;
+                if (!text) {
+                  return;
+                }
+                part[ContentTypes.ACTIVITY_LABEL] = text;
+                await claimEmit;
+                await emitLabelEvent(index, part);
+              } finally {
+                resolveFill();
               }
-              part[ContentTypes.ACTIVITY_LABEL] = text;
-              await emitLabelEvent(index, part);
             },
           };
         },
@@ -2157,6 +2208,7 @@ class AgentClient extends BaseClient {
       }
 
       this.finalizeSubagentContent();
+      await this.settleActivityLabels();
 
       /** Flush subagent usage emits the sink fired without awaiting, so their
        *  persist/publish completes before we return and the job is cleaned up
@@ -2334,6 +2386,9 @@ class AgentClient extends BaseClient {
         // Steering stays live across a pause/resume cycle: steers queued while
         // the resumed segment runs drain at its tool-batch boundaries.
         steering: this.buildSteerWiring(streamId),
+        // Activity labels likewise survive pause/resume: post-resume tool
+        // batches keep claiming slots and generating group headers.
+        activityLabel: this.buildActivityLabelWiring(streamId),
         // Replay deferred tools discovered before the pause. With `messages: []` the
         // discovery scan finds nothing, so a deferred tool the paused call targets
         // would be absent from the rebuilt toolMap; these names (captured at pause)
@@ -2446,6 +2501,7 @@ class AgentClient extends BaseClient {
       }
 
       this.finalizeSubagentContent();
+      await this.settleActivityLabels();
 
       if (this.pendingSubagentEmits.length > 0) {
         await Promise.allSettled(this.pendingSubagentEmits);

@@ -202,7 +202,10 @@ export function formatMessageContent({
   }
 
   if (content.type === ContentTypes.ACTIVITY_LABEL) {
-    const text = getActivityLabelText(getActivityLabelPart(content as TMessageContentParts));
+    const text = getActivityLabelText(
+      getActivityLabelPart(content as TMessageContentParts),
+      localize,
+    );
     if (text.trim().length === 0) {
       return [];
     }
