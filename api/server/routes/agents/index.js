@@ -325,29 +325,34 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
     // chunk log, which never saw the pause-time stamp applied to the in-process
     // contentParts — stamping inside abortJob (not after) means the LIVE client
     // gets the question too, not just the saved message on reload.
-    const abortedAskPayload = job.metadata?.pendingAction?.payload;
-    const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
-      transformAbortContent: (content) =>
-        abortedAskPayload?.type === 'ask_user_question' && Array.isArray(content)
-          ? attachAskUserQuestionArgs(content, abortedAskPayload.question)
-          : content,
-    });
-    logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
-      abortResultSuccess: abortResult.success,
-      abortResultUserMessageId: abortResult.jobData?.userMessage?.messageId,
-      abortResultResponseMessageId: abortResult.jobData?.responseMessageId,
-    });
-
     // Finalize the schedule side of an aborted scheduled run (incl. a paused one)
-    // so it doesn't linger as requires_action/started until the abandonment sweep.
+    // BEFORE abortJob deletes the job, so it doesn't linger as requires_action/
+    // started until the abandonment sweep. If the outcome write fails (Mongo down
+    // across its retries), preserve the aborted job below so reconcile finalizes it
+    // rather than waiting out the 30-min/25-h orphan sweeps.
+    let scheduleOutcomeRecorded = true;
     if (job.metadata?.scheduleId) {
-      await recordScheduleOutcome({
+      scheduleOutcomeRecorded = await recordScheduleOutcome({
         scheduleId: job.metadata.scheduleId,
         scheduledFor: job.metadata.scheduledFor,
         status: 'interrupted',
         conversationId: jobStreamId,
       });
     }
+
+    const abortedAskPayload = job.metadata?.pendingAction?.payload;
+    const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
+      transformAbortContent: (content) =>
+        abortedAskPayload?.type === 'ask_user_question' && Array.isArray(content)
+          ? attachAskUserQuestionArgs(content, abortedAskPayload.question)
+          : content,
+      preserveForReconcile: Boolean(job.metadata?.scheduleId) && !scheduleOutcomeRecorded,
+    });
+    logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
+      abortResultSuccess: abortResult.success,
+      abortResultUserMessageId: abortResult.jobData?.userMessage?.messageId,
+      abortResultResponseMessageId: abortResult.jobData?.responseMessageId,
+    });
 
     // HITL: prune the durable checkpoint of a run aborted while paused, so a new turn
     // in this conversation can't rehydrate the stale interrupt before the Mongo TTL

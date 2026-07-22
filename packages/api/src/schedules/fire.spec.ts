@@ -104,6 +104,7 @@ function makeDeps(
     getSelfUrl: () => 'http://self',
     runInTenantContext: (_user, fn) => fn(),
     getJobStatus: async () => null,
+    clearReconciledJob: async () => undefined,
     countActiveRunsGlobal: async () => methods.countActiveRuns(),
     ...over,
   } as ScheduleEngineDeps;

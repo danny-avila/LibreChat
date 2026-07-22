@@ -784,6 +784,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
       expect.any(String),
+      { preserveForReconcile: false },
     );
     expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith('user-123', 'req-abc');
     // completeJob must finalize the failed job BEFORE the claim is released, or a racing

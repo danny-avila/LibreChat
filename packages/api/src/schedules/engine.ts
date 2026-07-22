@@ -76,21 +76,26 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             await finalize('requires_action');
             continue;
           }
-          // A retained completed job whose inline completion hook failed
-          // transiently — finalize either a paused OR a still-started run as
-          // success so it stops consuming capacity / blocking overlap.
+          // A retained terminal job whose inline outcome hook failed transiently —
+          // finalize the run from the retained status, then delete the job. The
+          // delete is the cleanup path for `preserveForReconcile` jobs (kept
+          // without `completedAt`, so the store's finished-job sweep never reaps
+          // them); `conversationId` is guaranteed here since jobStatus was fetched.
           if (jobStatus === 'complete') {
+            // Finalize either a paused OR a still-started run as success so it
+            // stops consuming capacity / blocking overlap.
             await finalize('success');
+            await deps.clearReconciledJob(run.conversationId as string);
             continue;
           }
-          // Terminal error/abort while the job record is still retained — don't
-          // leave the run stuck as requires_action/started.
           if (jobStatus === 'error') {
             await finalize('error', 'Run ended in error');
+            await deps.clearReconciledJob(run.conversationId as string);
             continue;
           }
           if (jobStatus === 'aborted') {
             await finalize('interrupted');
+            await deps.clearReconciledJob(run.conversationId as string);
             continue;
           }
           if (run.status === 'started' && jobStatus == null && ageMs > ORPHAN_RUN_AGE_MS) {

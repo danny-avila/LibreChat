@@ -1047,8 +1047,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // Check if this was an abort (not a real error)
         const wasAborted = job.abortController.signal.aborted || error.message?.includes('abort');
 
+        let errorScheduleOutcomeRecorded = true;
         if (scheduleId) {
-          await recordScheduleOutcome({
+          errorScheduleOutcomeRecorded = await recordScheduleOutcome({
             scheduleId,
             scheduledFor,
             status: wasAborted ? 'interrupted' : 'error',
@@ -1088,7 +1089,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             );
           }
           await GenerationJobManager.emitError(streamId, error.message || 'Generation failed');
-          GenerationJobManager.completeJob(streamId, error.message);
+          GenerationJobManager.completeJob(streamId, error.message, {
+            preserveForReconcile: Boolean(scheduleId) && !errorScheduleOutcomeRecorded,
+          });
         }
 
         await finishResumableRequest(req, userId);
@@ -1129,8 +1132,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // early 200) must be terminalized here — an init failure after acceptance
     // would otherwise leave it running until orphan reconciliation. Before
     // completeJob deletes the job (same ordering rationale as the success path).
+    // If the outcome write fails (Mongo down across its retries), preserve the
+    // completed job so reconcile records the failure instead of losing the count.
+    let initScheduleOutcomeRecorded = true;
     if (scheduleId) {
-      await recordScheduleOutcome({
+      initScheduleOutcomeRecorded = await recordScheduleOutcome({
         scheduleId,
         scheduledFor,
         status: 'error',
@@ -1145,7 +1151,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // release + pending-request decrement below, or the retry stays wedged behind the claim
     // and the concurrency slot leaks — so swallow its error. (A failed completeJob did not
     // finalize anything, so releasing afterward can't let it abort a later replacement.)
-    await GenerationJobManager.completeJob(streamId, error.message).catch((completeErr) => {
+    await GenerationJobManager.completeJob(streamId, error.message, {
+      preserveForReconcile: Boolean(scheduleId) && !initScheduleOutcomeRecorded,
+    }).catch((completeErr) => {
       logger.warn(
         '[ResumableAgentController] completeJob failed during init-error cleanup',
         completeErr,

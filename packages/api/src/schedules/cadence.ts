@@ -90,21 +90,30 @@ export interface ComputeNextRunParams {
  * (02:30 → 03:30); fall-back ambiguity fires the first occurrence only.
  */
 export function computeNextRunAt(params: ComputeNextRunParams): Date | null {
-  const cron = new Cron(cadenceToCron(params.cadence), {
-    timezone: params.timezone,
-    paused: true,
-  });
-  const base = params.after ?? new Date();
-  const jitter = params.disableJitter === true ? 0 : scheduleJitterMs(params.scheduleId);
-  // The jittered instant is `cronOccurrence + jitter`. To return the first one
-  // strictly after `base`, find the first cron occurrence after `base - jitter`
-  // (occurrence O > base - jitter ⇒ O + jitter > base). Querying from `base`
-  // directly would skip an occurrence whose jittered time is still in the future
-  // but whose unjittered time already passed (e.g. an hourly :00 created at
-  // 12:00:30 with 90s jitter must fire at 12:01:30, not 13:01:30).
-  const next = cron.nextRun(new Date(base.getTime() - jitter));
-  if (next == null) {
+  // A malformed stored schedule (e.g. an invalid timezone inserted before
+  // validation or by an admin script) makes croner throw at construction. Treat
+  // an uncomputable next run as null — the same signal as "no future occurrence"
+  // — so the engine disables it (`invalid_schedule`) rather than throwing out of
+  // a tick every time the lease expires and starving other due schedules.
+  try {
+    const cron = new Cron(cadenceToCron(params.cadence), {
+      timezone: params.timezone,
+      paused: true,
+    });
+    const base = params.after ?? new Date();
+    const jitter = params.disableJitter === true ? 0 : scheduleJitterMs(params.scheduleId);
+    // The jittered instant is `cronOccurrence + jitter`. To return the first one
+    // strictly after `base`, find the first cron occurrence after `base - jitter`
+    // (occurrence O > base - jitter ⇒ O + jitter > base). Querying from `base`
+    // directly would skip an occurrence whose jittered time is still in the future
+    // but whose unjittered time already passed (e.g. an hourly :00 created at
+    // 12:00:30 with 90s jitter must fire at 12:01:30, not 13:01:30).
+    const next = cron.nextRun(new Date(base.getTime() - jitter));
+    if (next == null) {
+      return null;
+    }
+    return new Date(next.getTime() + jitter);
+  } catch {
     return null;
   }
-  return new Date(next.getTime() + jitter);
 }

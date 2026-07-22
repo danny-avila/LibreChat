@@ -120,6 +120,10 @@ const engineDeps = {
     const job = await GenerationJobManager.getJobStore()?.getJob(conversationId);
     return job?.status ?? null;
   },
+  clearReconciledJob: async (conversationId) => {
+    const { GenerationJobManager } = require('@librechat/api');
+    await GenerationJobManager.getJobStore()?.deleteJob(conversationId);
+  },
   // Counted in system scope so the cap is GLOBAL — a per-owner (tenant-scoped)
   // count would let multiple tenants collectively exceed fireConcurrency.
   countActiveRunsGlobal: () => runAsSystem(() => methods.countActiveRuns()),

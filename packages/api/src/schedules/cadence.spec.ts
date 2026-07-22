@@ -96,6 +96,25 @@ describe('computeNextRunAt', () => {
     expect(next.toISOString()).toBe('2026-07-16T12:00:00.000Z');
   });
 
+  it('returns null for a malformed stored timezone instead of throwing', () => {
+    // A bad schedule reaching the engine must not throw out of a tick — null is
+    // the "uncomputable" signal the engine disables (invalid_schedule) on.
+    expect(() =>
+      computeNextRunAt({
+        cadence: cadence({ frequency: 'daily', hour: 8, minute: 0 }),
+        timezone: 'Not/AZone',
+        scheduleId: 'sched_bad_tz',
+      }),
+    ).not.toThrow();
+    expect(
+      computeNextRunAt({
+        cadence: cadence({ frequency: 'daily', hour: 8, minute: 0 }),
+        timezone: 'Not/AZone',
+        scheduleId: 'sched_bad_tz',
+      }),
+    ).toBeNull();
+  });
+
   it('skips an occurrence exactly at `after` (strictly-after semantics)', () => {
     const next = nextRun({ ...daily8amNewYork, after: new Date('2026-07-15T12:00:00Z') });
     expect(wallClock(next, NEW_YORK)).toBe('Thu 2026-07-16 08:00');

@@ -59,6 +59,12 @@ export interface ScheduleEngineDeps {
   runInTenantContext: <T>(user: ScheduleUserContext, fn: () => Promise<T>) => Promise<T>;
   /** Job-store status for a run's conversation, or null when the job is gone. */
   getJobStatus: (conversationId: string) => Promise<string | null>;
+  /**
+   * Deletes a retained terminal job after the reconciler has finalized its run.
+   * Gives `preserveForReconcile` jobs (kept without `completedAt` so the store's
+   * finished-job sweep can't reap them early) a definitive cleanup path.
+   */
+  clearReconciledJob: (conversationId: string) => Promise<void>;
   /** Global in-flight scheduled-run count (system tenant scope) for the fire cap. */
   countActiveRunsGlobal: () => Promise<number>;
 }
