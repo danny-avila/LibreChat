@@ -2523,6 +2523,10 @@ export enum ErrorTypes {
    */
   GOOGLE_TOOL_CONFLICT = 'google_tool_conflict',
   /**
+   * Google provider could not process a linked video (most often longer than the model accepts)
+   */
+  GOOGLE_VIDEO_UNPROCESSABLE = 'google_video_unprocessable',
+  /**
    * Invalid Agent Provider (excluded by Admin)
    */
   INVALID_AGENT_PROVIDER = 'invalid_agent_provider',
