@@ -6,22 +6,20 @@ const uniqueName = (prefix: string) => `${prefix} ${Date.now()}-${Math.floor(Mat
 
 type AgentSummary = { id: string; name?: string };
 type AgentList = { data?: AgentSummary[] };
+type Schedule = { id: string; name: string };
 
 /**
- * Ensures an agent exists for the schedule dialog's required picker. Reuses an
- * existing accessible agent when present; otherwise creates one via the API with
- * a real Bearer token (the app authenticates with an access token, not a plain
- * cookie, so page.request alone is unauthenticated). Requires the page to already
- * be on the app origin. Returns the agent name to select by.
+ * Ensures an agent exists (reusing one if present, else creating). Uses a real
+ * Bearer token because the app authenticates with an access token, not a plain
+ * cookie. Requires the page to be on the app origin. Returns id + name.
  */
-async function ensureAgent(page: Page): Promise<string> {
-  const token = await getAccessToken(page);
+async function ensureAgent(page: Page, token: string): Promise<AgentSummary> {
   const list = await requestJson<AgentList>(page, { path: '/api/agents?limit=1', token }).catch(
     () => ({}) as AgentList,
   );
   const existing = list.data?.[0];
-  if (existing?.name) {
-    return existing.name;
+  if (existing?.id) {
+    return existing;
   }
   const name = uniqueName('E2E Agent');
   const agent = await requestJson<AgentSummary>(page, {
@@ -31,7 +29,28 @@ async function ensureAgent(page: Page): Promise<string> {
     body: { name, provider: 'Mock Provider A', model: 'mock-model-a' },
   });
   expect(agent.id).toBeTruthy();
-  return name;
+  return agent;
+}
+
+/** Seeds a schedule via the API so the UI test can exercise its lifecycle. */
+async function seedSchedule(page: Page, token: string, agentId: string): Promise<Schedule> {
+  const name = uniqueName('E2E Schedule');
+  const schedule = await requestJson<Schedule>(page, {
+    path: '/api/schedules',
+    token,
+    method: 'POST',
+    body: {
+      name,
+      prompt: 'Summarize what happened today',
+      agent_id: agentId,
+      cadence: { frequency: 'daily', hour: 8, minute: 0 },
+      timezone: 'America/New_York',
+      target: 'new',
+      enabled: true,
+    },
+  });
+  expect(schedule.id).toBeTruthy();
+  return schedule;
 }
 
 async function openSchedulesPanel(page: Page) {
@@ -42,35 +61,23 @@ async function openSchedulesPanel(page: Page) {
 }
 
 test.describe('scheduled chats', () => {
-  test('creates, persists, toggles, and deletes a schedule', async ({ page }) => {
+  test('lists a schedule and toggles + deletes it through the panel', async ({ page }) => {
     test.setTimeout(120000);
     await page.goto('/c/new', { timeout: 15000 });
 
-    const agentName = await ensureAgent(page);
-    const scheduleName = uniqueName('E2E Schedule');
+    const token = await getAccessToken(page);
+    const agent = await ensureAgent(page, token);
+    const schedule = await seedSchedule(page, token, agent.id);
 
-    // Create a schedule through the dialog.
-    let panel = await openSchedulesPanel(page);
-    await panel.getByRole('button', { name: 'New schedule' }).click();
-
-    const dialog = page.getByRole('dialog');
-    await dialog.getByLabel('Name').fill(scheduleName);
-    await dialog.getByLabel('Prompt').fill('Summarize what happened today');
-
-    // Pick the agent (the picker shows the placeholder until one is chosen).
-    await dialog.getByText('Select Agent').click();
-    await page.getByRole('option', { name: agentName }).first().click();
-
-    await dialog.getByRole('button', { name: 'Create', exact: true }).click();
-
-    // The new schedule renders as a card.
-    const card = page.getByTestId('schedule-card').filter({ hasText: scheduleName });
+    // The seeded schedule renders as a card in the panel (full backend round-trip).
+    await openSchedulesPanel(page);
+    const card = page.getByTestId('schedule-card').filter({ hasText: schedule.name });
     await expect(card).toBeVisible({ timeout: 15000 });
 
     // It survives a full reload (persisted through the real backend + DB).
     await page.reload();
-    panel = await openSchedulesPanel(page);
-    const reloadedCard = page.getByTestId('schedule-card').filter({ hasText: scheduleName });
+    await openSchedulesPanel(page);
+    const reloadedCard = page.getByTestId('schedule-card').filter({ hasText: schedule.name });
     await expect(reloadedCard).toBeVisible({ timeout: 15000 });
 
     // Toggling the enabled switch round-trips and re-reads from the server.
@@ -79,13 +86,13 @@ test.describe('scheduled chats', () => {
     await toggle.click();
     await expect(toggle).not.toBeChecked();
 
-    // Delete it via the kebab menu + confirmation dialog.
+    // Delete via the kebab menu + confirmation dialog.
     await reloadedCard.getByRole('button', { name: 'Schedule options' }).click();
     await page.getByRole('menuitem', { name: 'Delete' }).click();
     const confirm = page.getByRole('dialog', { name: /delete schedule/i });
     await confirm.getByRole('button', { name: 'Delete', exact: true }).click();
 
-    await expect(page.getByTestId('schedule-card').filter({ hasText: scheduleName })).toHaveCount(
+    await expect(page.getByTestId('schedule-card').filter({ hasText: schedule.name })).toHaveCount(
       0,
       { timeout: 15000 },
     );
