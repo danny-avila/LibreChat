@@ -19,6 +19,7 @@ const {
   buildMCPAuthRunStepEndDeltaEvent,
   isUserSourced,
   checkAccessWithRequestCache,
+  BACKGROUND_PROGRESS_SINK,
   requiresEphemeralUserConnection,
   containsGraphTokenPlaceholder,
 } = require('@librechat/api');
@@ -817,6 +818,11 @@ function createToolInstance({
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 
+      /** Set per-dispatch by the background executor: forwarding it as the
+       *  SDK's `onprogress` attaches a progressToken to the request, so a
+       *  server emitting `notifications/progress` updates the task mid-flight. */
+      const progressSink = config?.configurable?.[BACKGROUND_PROGRESS_SINK];
+
       const result = await mcpManager.callTool({
         serverName,
         serverConfig: capturedServerConfig,
@@ -825,6 +831,7 @@ function createToolInstance({
         toolArguments,
         options: {
           signal: derivedSignal,
+          ...(typeof progressSink === 'function' ? { onprogress: progressSink } : {}),
         },
         user: effectiveUser,
         requestBody: config?.configurable?.requestBody ?? capturedRequestBody,

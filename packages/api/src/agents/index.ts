@@ -1,5 +1,6 @@
 export * from './avatars';
 export * from './attachments';
+export * from './background';
 export * from './chain';
 export * from './client';
 export * from './config';

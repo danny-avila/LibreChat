@@ -13,6 +13,7 @@ import type {
 } from '@librechat/agents';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { CodeEnvRef } from 'librechat-data-provider';
+import type { BackgroundProgressUpdate } from './background';
 import type { SkillFileRecord } from './skillFiles';
 import type { ServerRequest } from '~/types';
 import {
@@ -26,6 +27,7 @@ import {
   buildBackgroundHandleContent,
   buildBackgroundCapacityContent,
   stripBackgroundFromToolDefinitions,
+  BACKGROUND_PROGRESS_SINK,
   CHECK_BACKGROUND_TASK_NAME,
   RUN_IN_BACKGROUND_ARG,
 } from './background';
@@ -3579,11 +3581,24 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               const { task, isNew } = created;
               if (isNew) {
                 const strippedArgs = stripRunInBackgroundArg(tc.args);
+                /** MCP tools forward this as the SDK's `onprogress` request
+                 *  option, so servers emitting `notifications/progress` update
+                 *  the running task's progress/message for the poll tool. */
+                const onProgress = (update: BackgroundProgressUpdate): void =>
+                  backgroundTaskRegistry.setProgress(
+                    backgroundUserId,
+                    backgroundConversationId,
+                    task.id,
+                    update,
+                  );
                 void (async () => {
                   try {
                     const result = (await tool.invoke(normalizeToolInvokeArgs(strippedArgs, tool), {
                       toolCall: { id: tc.id, stepId: tc.stepId, turn: tc.turn },
-                      configurable: mergedConfigurable,
+                      configurable: {
+                        ...mergedConfigurable,
+                        [BACKGROUND_PROGRESS_SINK]: onProgress,
+                      },
                       metadata,
                     } as Record<string, unknown>)) as { content?: unknown; artifact?: unknown };
                     /** Hold any artifact (images, files, UI resources,
