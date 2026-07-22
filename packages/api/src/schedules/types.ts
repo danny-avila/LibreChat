@@ -60,6 +60,14 @@ export interface ScheduleEngineDeps {
   /** Job-store status for a run's conversation, or null when the job is gone. */
   getJobStatus: (conversationId: string) => Promise<string | null>;
   /**
+   * Whether every engine replica can observe the SAME jobs (Redis-backed, or a
+   * single process). When false — e.g. clustered workers each with a private
+   * in-memory store — a non-owning replica would read `jobStatus == null` for a
+   * peer's live run and wrongly interrupt it, so the job-status reconciliation is
+   * skipped and each run is finalized only by its owning replica's inline hooks.
+   */
+  isJobStoreShared: () => boolean;
+  /**
    * Deletes a retained terminal job after the reconciler has finalized its run.
    * Gives `preserveForReconcile` jobs (kept without `completedAt` so the store's
    * finished-job sweep can't reap them early) a definitive cleanup path.

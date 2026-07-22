@@ -50,6 +50,12 @@ async function getLimits(user) {
 
 const MANUAL_RUN_LEASE_MS = 5 * 60 * 1000;
 
+// Whether every engine replica observes the same jobs. The standard backend is a
+// single process (its one engine sees all its jobs), so it defaults true and keeps
+// full reconciliation; a clustered backend with private in-memory stores passes
+// false unless Redis-backed (see initializeScheduleEngine / experimental.js).
+let jobStoreShared = true;
+
 /**
  * Whether a refill would top up this zero-credit balance record right now,
  * mirroring the chat balance check's auto-refill eligibility (record-based).
@@ -166,6 +172,7 @@ const engineDeps = {
     const { GenerationJobManager } = require('@librechat/api');
     await GenerationJobManager.getJobStore()?.deleteJob(conversationId);
   },
+  isJobStoreShared: () => jobStoreShared,
   // Counted in system scope so the cap is GLOBAL — a per-owner (tenant-scoped)
   // count would let multiple tenants collectively exceed fireConcurrency.
   countActiveRunsGlobal: () => runAsSystem(() => methods.countActiveRuns()),
@@ -174,9 +181,14 @@ const engineDeps = {
 /** @type {ReturnType<typeof startScheduleEngine> | undefined} */
 let engine;
 
-async function initializeScheduleEngine() {
+async function initializeScheduleEngine(options) {
   if (engine != null) {
     return engine;
+  }
+  // A clustered backend passes isJobStoreShared=false (unless Redis-backed) so the
+  // reconciler skips job-status checks it can't trust across workers.
+  if (options?.isJobStoreShared != null) {
+    jobStoreShared = options.isJobStoreShared;
   }
   // Explicitly build the Schedule/ScheduleRun indexes first — the unique
   // idempotency index and TTL retention index would otherwise never exist when

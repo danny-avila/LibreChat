@@ -54,7 +54,11 @@ export type ScheduleMethods = {
     leaseMs: number,
   ) => Promise<boolean>;
   releaseLease: (id: string) => Promise<void>;
-  advanceSchedule: (id: string, nextRunAt: Date | null) => Promise<void>;
+  advanceSchedule: (
+    id: string,
+    nextRunAt: Date | null,
+    expectedNextRunAt?: Date | null,
+  ) => Promise<void>;
   disableSchedule: (id: string, reason: ScheduleDisabledReason) => Promise<void>;
   insertScheduleRun: (data: Partial<IScheduleRun>) => Promise<IScheduleRun | null>;
   setRunFireDetails: (
@@ -212,15 +216,17 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     userId: string | Types.ObjectId,
     leaseMs: number,
   ): Promise<boolean> {
-    const now = new Date();
+    // Compare/expire the lease against Mongo's `$$NOW` (same CAS shape as
+    // claimDueSchedule), not this worker's clock: a skewed replica must not read a
+    // Mongo-written automatic-fire lease as expired early and start a second run.
     const row = await Schedule()
       .findOneAndUpdate(
         {
           id,
           user: userId,
-          $or: [{ leaseUntil: { $exists: false } }, { leaseUntil: { $lt: now } }],
+          $expr: { $lt: [{ $ifNull: ['$leaseUntil', new Date(0)] }, '$$NOW'] },
         },
-        { $set: { leaseUntil: new Date(now.getTime() + leaseMs), leaseBy: 'manual' } },
+        [{ $set: { leaseUntil: { $add: ['$$NOW', leaseMs] }, leaseBy: 'manual' } }],
         { new: true },
       )
       .lean<ISchedule>();
@@ -232,15 +238,27 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     await Schedule().updateOne({ id }, { $unset: { leaseUntil: 1, leaseBy: 1 } });
   }
 
-  /** Advances past a fired (or skipped) occurrence and releases the lease. */
-  async function advanceSchedule(id: string, nextRunAt: Date | null): Promise<void> {
-    await Schedule().updateOne(
-      { id },
-      {
-        $set: { ...(nextRunAt ? { nextRunAt } : {}) },
-        $unset: { leaseUntil: 1, leaseBy: 1, ...(nextRunAt ? {} : { nextRunAt: 1 }) },
-      },
-    );
+  /**
+   * Advances past a fired (or skipped) occurrence and releases the lease. When
+   * `expectedNextRunAt` is given, the whole update is predicated on the schedule
+   * still sitting on the claimed occurrence — so a concurrent owner edit (or
+   * re-enable) that recomputed `nextRunAt` between the claim and here is NOT
+   * clobbered by a value derived from the stale cadence snapshot; the stale
+   * claimer's lease then simply expires on its own.
+   */
+  async function advanceSchedule(
+    id: string,
+    nextRunAt: Date | null,
+    expectedNextRunAt?: Date | null,
+  ): Promise<void> {
+    const filter: Record<string, unknown> = { id };
+    if (expectedNextRunAt !== undefined) {
+      filter.nextRunAt = expectedNextRunAt;
+    }
+    await Schedule().updateOne(filter, {
+      $set: { ...(nextRunAt ? { nextRunAt } : {}) },
+      $unset: { leaseUntil: 1, leaseBy: 1, ...(nextRunAt ? {} : { nextRunAt: 1 }) },
+    });
   }
 
   async function disableSchedule(id: string, reason: ScheduleDisabledReason): Promise<void> {

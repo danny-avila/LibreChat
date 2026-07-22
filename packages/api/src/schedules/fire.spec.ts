@@ -107,6 +107,7 @@ function makeDeps(
     runInTenantContext: (_user, fn) => fn(),
     getJobStatus: async () => null,
     clearReconciledJob: async () => undefined,
+    isJobStoreShared: () => true,
     countActiveRunsGlobal: async () => methods.countActiveRuns(),
     ...over,
   } as ScheduleEngineDeps;

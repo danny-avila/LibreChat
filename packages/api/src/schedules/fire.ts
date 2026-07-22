@@ -121,7 +121,9 @@ export async function fireSchedule(
   // only releases the lease it acquired for serialization.
   const advance = options?.manual
     ? () => methods.releaseLease(schedule.id)
-    : () => methods.advanceSchedule(schedule.id, nextRunAt);
+    : // Predicate the advance on the claimed occurrence so a concurrent owner edit
+      // that recomputed nextRunAt between claim and fire isn't clobbered.
+      () => methods.advanceSchedule(schedule.id, nextRunAt, scheduledFor);
 
   if (nextRunAt == null) {
     await methods.disableSchedule(schedule.id, 'invalid_schedule');

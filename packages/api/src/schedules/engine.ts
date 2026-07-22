@@ -36,12 +36,20 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
   async function reconcile() {
     try {
       const limits = await deps.getLimits();
-      const runs = await runAsSystem(() =>
-        deps.methods.getRunsForReconciliation(
-          new Date(Date.now() - RECONCILE_MIN_RUN_AGE_MS),
-          RECONCILE_BATCH,
-        ),
-      );
+      // The job-status pass can only be trusted when every replica sees the same
+      // jobs (Redis-backed or single-process). With private per-worker in-memory
+      // stores a non-owning worker reads jobStatus == null for a peer's live run
+      // and would wrongly interrupt it, so skip this pass there and let each run's
+      // owning worker finalize it inline. The bookkeeping-catch pass below is
+      // job-status-independent and always runs.
+      const runs = deps.isJobStoreShared()
+        ? await runAsSystem(() =>
+            deps.methods.getRunsForReconciliation(
+              new Date(Date.now() - RECONCILE_MIN_RUN_AGE_MS),
+              RECONCILE_BATCH,
+            ),
+          )
+        : [];
       await runAsSystem(async () => {
         for (const run of runs) {
           const jobStatus = run.conversationId ? await deps.getJobStatus(run.conversationId) : null;
@@ -174,10 +182,15 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           return true;
         }
         const scheduledFor = schedule.nextRunAt ?? new Date();
+        // Use DB time, not this worker's clock, for the misfire cutoff: the claim
+        // wrote leaseUntil = $$NOW + LEASE_MS, so leaseUntil - LEASE_MS is Mongo's
+        // "now" at claim. A skewed worker would otherwise treat a just-claimed
+        // occurrence as stale and drop it (advance without firing).
+        const dbNow = schedule.leaseUntil ? schedule.leaseUntil.getTime() - LEASE_MS : Date.now();
         // Misfire skip-forward: an occurrence overdue past the grace window (the
         // engine was down/paused) is advanced to the next FUTURE occurrence
         // without firing, so a restart doesn't launch stale or bursty chats.
-        if (Date.now() - scheduledFor.getTime() > MISFIRE_GRACE_MS) {
+        if (dbNow - scheduledFor.getTime() > MISFIRE_GRACE_MS) {
           const next = computeNextRunAt({
             cadence: schedule.cadence,
             timezone: schedule.timezone,
@@ -188,7 +201,9 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
               .disableSchedule(schedule.id, 'invalid_schedule')
               .catch(() => undefined);
           }
-          await deps.methods.advanceSchedule(schedule.id, next).catch(() => undefined);
+          await deps.methods
+            .advanceSchedule(schedule.id, next, scheduledFor)
+            .catch(() => undefined);
           logger.info(`[schedules] skipped stale occurrence for ${schedule.id} (misfire grace)`);
           return false;
         }
@@ -212,7 +227,9 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
               .disableSchedule(schedule.id, 'invalid_schedule')
               .catch(() => undefined);
           }
-          await deps.methods.advanceSchedule(schedule.id, next).catch(() => undefined);
+          await deps.methods
+            .advanceSchedule(schedule.id, next, scheduledFor)
+            .catch(() => undefined);
         }
         return false;
       });
