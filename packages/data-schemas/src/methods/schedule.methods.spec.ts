@@ -530,6 +530,66 @@ describe('recordRunOutcome idempotency + crash-retry (bookkeeping)', () => {
   });
 });
 
+describe('bookkeeping policy is crash-retryable / streak-correct', () => {
+  const scheduledFor = new Date('2026-07-20T12:00:00Z');
+
+  it('re-applies auto-disable on a bookkeeping retry after the count already landed', async () => {
+    const schedule = await methods.createSchedule(scheduleData({ failureCount: 2 }));
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+    // First terminal error: increments to threshold (3) and disables.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'error',
+      autoDisableAfterFailures: 3,
+    });
+    expect((await getSchedule(schedule.id)).enabled).toBe(false);
+    // Simulate a crash where the count landed (lastCountedFor set) but the disable
+    // was lost: re-enable and replay via finalizeBookkeeping. The count must NOT
+    // double (guard), but the disable policy must re-apply.
+    await Schedule.updateOne({ id: schedule.id }, { $set: { enabled: true } });
+    await methods.finalizeBookkeeping({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'error',
+      autoDisableAfterFailures: 3,
+    });
+    const updated = await getSchedule(schedule.id);
+    expect(updated.failureCount).toBe(3); // not double-counted
+    expect(updated.enabled).toBe(false); // disable re-applied
+  });
+
+  it('resets the balance-skip streak on an intervening error, then interrupt, then overlap', async () => {
+    const schedule = await methods.createSchedule(scheduleData({ balanceSkipCount: 4 }));
+    const outcomes: Array<[Date, 'error' | 'interrupted']> = [
+      [new Date('2026-07-20T01:00:00Z'), 'error'],
+      [new Date('2026-07-20T02:00:00Z'), 'interrupted'],
+    ];
+    for (const [when, status] of outcomes) {
+      await methods.insertScheduleRun(runData(schedule, { scheduledFor: when }));
+      await methods.recordRunOutcome({
+        scheduleId: schedule.id,
+        scheduledFor: when,
+        status,
+        autoDisableAfterFailures: 10,
+      });
+      expect((await getSchedule(schedule.id)).balanceSkipCount).toBe(0);
+    }
+    // Also an overlap skip breaks the streak.
+    await Schedule.updateOne({ id: schedule.id }, { $set: { balanceSkipCount: 3 } });
+    await methods.recordSkippedRun(
+      {
+        scheduleId: schedule.id,
+        user: schedule.user,
+        scheduledFor: new Date('2026-07-20T03:00:00Z'),
+        status: 'skipped_overlap',
+      },
+      5,
+    );
+    expect((await getSchedule(schedule.id)).balanceSkipCount).toBe(0);
+  });
+});
+
 describe('getRunsForReconciliation fairness', () => {
   it('always includes started runs even behind a backlog of paused rows', async () => {
     const s = await methods.createSchedule(scheduleData());

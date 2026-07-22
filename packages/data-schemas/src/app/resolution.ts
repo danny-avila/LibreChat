@@ -1,6 +1,7 @@
 import {
   BASE_ONLY_CONFIG_SECTIONS,
   INTERFACE_PERMISSION_FIELDS,
+  RUNTIME_CONFIG_INTERFACE_FIELDS,
   PERMISSION_SUB_KEYS,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
@@ -234,8 +235,12 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
               if (Object.keys(uiOnly).length > 0) {
                 filtered[field] = uiOnly;
               }
+            } else if (RUNTIME_CONFIG_INTERFACE_FIELDS.has(field)) {
+              // Dual-purpose field: the boolean form is a runtime disable, not a
+              // permission toggle, so preserve it (e.g. schedules: false).
+              filtered[field] = fieldVal;
             }
-            // boolean permission fields (e.g. runCode: false) are fully stripped
+            // other boolean permission fields (e.g. runCode: false) are fully stripped
           }
           if (Object.keys(filtered).length > 0) {
             remapped[mappedKey] = filtered;

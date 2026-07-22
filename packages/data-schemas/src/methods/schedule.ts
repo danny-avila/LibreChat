@@ -260,40 +260,34 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       error: params.error,
       firedAt: params.firedAt,
     };
-    if (params.status === 'interrupted') {
-      // Not a success or failure — surface on the card, count nothing, but still
-      // claim the occurrence so a retry doesn't re-run counters.
-      await Schedule().updateOne(
-        { id: params.scheduleId, lastCountedFor: { $ne: params.scheduledFor } },
-        { $set: { lastRun, lastCountedFor: params.scheduledFor } },
-      );
-      return;
-    }
     const isFailure = params.status === 'error';
-    const schedule = await Schedule()
-      .findOneAndUpdate(
-        { id: params.scheduleId, lastCountedFor: { $ne: params.scheduledFor } },
-        {
-          $set: {
-            lastRun,
-            lastCountedFor: params.scheduledFor,
-            ...(isFailure ? {} : { balanceSkipCount: 0 }),
-          },
-          $inc: isFailure ? { failureCount: 1 } : { runCount: 1 },
-          ...(isFailure ? {} : { $unset: { disabledReason: 1 } }),
+    const isSuccess = params.status === 'success';
+    // The COUNT is idempotent via `lastCountedFor`. Everything that must land
+    // atomically WITH the count goes in this one update so a crash can't leave
+    // it half-applied: the balance-skip streak resets on ANY non-balance outcome,
+    // and a success clears the failure streak inline (never a lost follow-up).
+    await Schedule().updateOne(
+      { id: params.scheduleId, lastCountedFor: { $ne: params.scheduledFor } },
+      {
+        $set: {
+          lastRun,
+          lastCountedFor: params.scheduledFor,
+          balanceSkipCount: 0,
+          ...(isSuccess ? { failureCount: 0 } : {}),
         },
-        { new: true },
-      )
-      .lean<ISchedule>();
-    // schedule == null means this occurrence was already counted (idempotent retry).
-    if (schedule == null) {
-      return;
-    }
-    if (!isFailure && schedule.failureCount > 0) {
-      await Schedule().updateOne({ id: params.scheduleId }, { $set: { failureCount: 0 } });
-    }
-    if (isFailure && schedule.failureCount >= params.autoDisableAfterFailures) {
-      await disableSchedule(params.scheduleId, 'too_many_failures');
+        ...(isSuccess ? { $inc: { runCount: 1 } } : {}),
+        ...(isFailure ? { $inc: { failureCount: 1 } } : {}),
+        ...(isSuccess ? { $unset: { disabledReason: 1 } } : {}),
+      },
+    );
+    // Auto-disable is a POLICY re-evaluated on EVERY call (idempotent), NOT gated
+    // on the count guard — so if a crash landed the $inc but not the disable, the
+    // reconciler's replay still disables. Reads current state after the count.
+    if (isFailure) {
+      const schedule = await Schedule().findOne({ id: params.scheduleId }).lean<ISchedule>();
+      if (schedule?.enabled && schedule.failureCount >= params.autoDisableAfterFailures) {
+        await disableSchedule(params.scheduleId, 'too_many_failures');
+      }
     }
   }
 
@@ -360,11 +354,17 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     if (inserted == null) {
       return;
     }
-    // Surface the skip on the card (its chip reads schedule.lastRun); counters
-    // for balance skips are handled below.
+    // Surface the skip on the card (its chip reads schedule.lastRun). An overlap
+    // skip is an intervening non-balance outcome, so it BREAKS the balance-skip
+    // streak (the counter is for CONSECUTIVE balance skips).
     await Schedule().updateOne(
       { id: data.scheduleId },
-      { $set: { lastRun: { status: data.status, firedAt } } },
+      {
+        $set: {
+          lastRun: { status: data.status, firedAt },
+          ...(data.status !== 'skipped_balance' ? { balanceSkipCount: 0 } : {}),
+        },
+      },
     );
     if (data.status !== 'skipped_balance' || balanceSkipDisableThreshold == null) {
       return;

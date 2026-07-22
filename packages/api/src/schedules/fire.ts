@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import type { ScheduleEngineDeps, ScheduleLimits, FireResult, FireableSchedule } from './types';
-import { computeNextRunAt } from './cadence';
+import { computeNextRunAt, cadenceIntervalMinutes } from './cadence';
 
 export const SCHEDULE_FIRE_TOKEN_TTL = '60s';
 const FIRE_REQUEST_TIMEOUT_MS = 30_000;
@@ -125,6 +125,15 @@ export async function fireSchedule(
     // auto-disable threshold) must win over the base config the engine read.
     const ownerLimits = await deps.getLimits(user);
     if (!ownerLimits.enabled) {
+      await advance();
+      return { fired: false, skipped: 'disabled' as const };
+    }
+
+    // Enforce a raised interval floor at fire time: create/update reject too-frequent
+    // cadences, but an admin raising the floor later must also stop an already-enabled
+    // schedule that now runs more often than policy allows.
+    if (cadenceIntervalMinutes(schedule.cadence) < ownerLimits.minIntervalMinutes) {
+      await methods.disableSchedule(schedule.id, 'invalid_schedule');
       await advance();
       return { fired: false, skipped: 'disabled' as const };
     }

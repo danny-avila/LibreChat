@@ -189,31 +189,44 @@ async function fireScheduleNow(schedule, limits) {
   }
 }
 
+const OUTCOME_RETRY_ATTEMPTS = 3;
+
 /**
  * Completion hook: called from the agents controller finalize paths when the
- * request carried a scheduleId. One Mongo update; never throws into the caller.
+ * request carried a scheduleId. The caller deletes the job (`completeJob`) right
+ * after, destroying the only evidence the reconciler could use — so a transient
+ * Mongo failure here is RETRIED (bounded) before giving up, and the failure is
+ * surfaced to the caller (returns false) so it can keep the job when it matters.
+ * @returns {Promise<boolean>} true when the outcome was recorded.
  */
 async function recordScheduleOutcome({ scheduleId, scheduledFor, status, conversationId, error }) {
   if (!scheduleId || !scheduledFor) {
-    return;
+    return true;
   }
-  try {
-    // Resolve the owner's limits so auto-disable uses the same per-principal
-    // threshold as the fire path (not the global default).
-    const schedule = await methods.getScheduleById(scheduleId);
-    const owner = schedule ? await engineDeps.getUserContext(schedule.user) : null;
-    const limits = await getLimits(owner ?? undefined);
-    await methods.recordRunOutcome({
-      scheduleId,
-      scheduledFor: new Date(scheduledFor),
-      status,
-      conversationId,
-      error,
-      autoDisableAfterFailures: limits.autoDisableAfterFailures,
-    });
-  } catch (err) {
-    logger.error('[schedules] failed to record run outcome:', err);
+  for (let attempt = 1; attempt <= OUTCOME_RETRY_ATTEMPTS; attempt++) {
+    try {
+      // Resolve the owner's limits so auto-disable uses the same per-principal
+      // threshold as the fire path (not the global default).
+      const schedule = await methods.getScheduleById(scheduleId);
+      const owner = schedule ? await engineDeps.getUserContext(schedule.user) : null;
+      const limits = await getLimits(owner ?? undefined);
+      await methods.recordRunOutcome({
+        scheduleId,
+        scheduledFor: new Date(scheduledFor),
+        status,
+        conversationId,
+        error,
+        autoDisableAfterFailures: limits.autoDisableAfterFailures,
+      });
+      return true;
+    } catch (err) {
+      logger.error(
+        `[schedules] failed to record run outcome (attempt ${attempt}/${OUTCOME_RETRY_ATTEMPTS}):`,
+        err,
+      );
+    }
   }
+  return false;
 }
 
 module.exports = {

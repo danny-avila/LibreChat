@@ -236,6 +236,20 @@ describe('jitter', () => {
       scheduleJitterMs('sched-jitter'),
     );
   });
+
+  it('does not skip a still-future occurrence inside the jitter window', () => {
+    const scheduleId = 'sched-window';
+    const jitter = scheduleJitterMs(scheduleId);
+    expect(jitter).toBeGreaterThan(1000); // ensure the window is meaningful
+    const cadenceHourly = cadence({ frequency: 'hourly', hour: 0, minute: 0 });
+    const cronInstant = new Date('2026-07-15T12:00:00Z'); // an hourly :00 boundary (UTC)
+    // `after` is just past the unjittered instant but before the jittered one:
+    // the jittered occurrence (cronInstant + jitter) is still in the future.
+    const after = new Date(cronInstant.getTime() + 1000);
+    const next = computeNextRunAt({ cadence: cadenceHourly, timezone: 'UTC', scheduleId, after });
+    // Must return THIS hour's jittered instant, not next hour's.
+    expect(next?.getTime()).toBe(cronInstant.getTime() + jitter);
+  });
 });
 
 describe('isValidTimezone', () => {

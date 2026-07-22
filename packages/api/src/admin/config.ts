@@ -4,6 +4,7 @@ import {
   PrincipalType,
   PrincipalModel,
   INTERFACE_PERMISSION_FIELDS,
+  RUNTIME_CONFIG_INTERFACE_FIELDS,
   PERMISSION_SUB_KEYS,
 } from 'librechat-data-provider';
 import type { AppConfig, ConfigSection, IConfig, SystemCapability } from '@librechat/data-schemas';
@@ -420,6 +421,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             if (Object.keys(uiOnly).length > 0) {
               filteredIface[field] = uiOnly;
             }
+          } else if (RUNTIME_CONFIG_INTERFACE_FIELDS.has(field)) {
+            // Dual-purpose field: the boolean form is a runtime disable, not a
+            // permission toggle, so preserve it (e.g. schedules: false).
+            filteredIface[field] = val;
           } else {
             logger.warn(
               `[adminConfig] Stripping interface permission field "${field}" — use role permissions instead`,

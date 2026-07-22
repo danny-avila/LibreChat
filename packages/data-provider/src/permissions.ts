@@ -103,6 +103,15 @@ export const PERMISSION_TYPE_INTERFACE_FIELDS: Record<PermissionTypes, string> =
 export const INTERFACE_PERMISSION_FIELDS = new Set(Object.values(PERMISSION_TYPE_INTERFACE_FIELDS));
 
 /**
+ * Interface fields that seed a permission (use/create) BUT also carry runtime
+ * config that must survive DB/tenant/user overrides. For these, override
+ * sanitizers strip only the permission sub-keys (use/create) from the object
+ * form and PRESERVE the boolean form — for `schedules`, `interface.schedules: false`
+ * is the runtime feature disable that `getLimits` reads, not a permission toggle.
+ */
+export const RUNTIME_CONFIG_INTERFACE_FIELDS = new Set<string>(['schedules']);
+
+/**
  * YAML sub-keys within composite interface permission fields that map to permission bits.
  * When an interface permission field is an object, only these sub-keys are stripped from
  * DB overrides — other sub-keys (like `placeholder`, `trustCheckbox`) are UI-only and pass through.
