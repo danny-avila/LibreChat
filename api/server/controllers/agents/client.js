@@ -50,7 +50,7 @@ const {
   isSteeringSupported,
   buildSteerMedia,
   stampSteerPartMedia,
-  createActivityLabelHook,
+  createActivityLabelWiring,
   isActivityLabelPocEnabled,
   getRequestMemories,
   getMemoryAgentId,
@@ -413,6 +413,18 @@ class AgentClient extends BaseClient {
     if (options.configOptions) {
       clientOptions.configuration = options.configOptions;
     }
+    /** Resolve request-based header placeholders across provider-specific
+     *  header locations, mirroring titleConvo — proxies that key on
+     *  conversation/user metadata need them on label calls too. */
+    resolveConfigHeaders({
+      llmConfig: clientOptions,
+      user: createSafeUser(this.options.req?.user),
+      body: {
+        messageId: this.responseMessageId,
+        conversationId: this.conversationId,
+        parentMessageId: this.parentMessageId,
+      },
+    });
     return { provider, clientOptions };
   }
 
@@ -423,47 +435,6 @@ class AgentClient extends BaseClient {
    * activity-label design notes. Called synchronously at claim time so the
    * snapshot can't include parts from the next block.
    */
-  captureActivityBlockContext(executingAgentId) {
-    const thinkingExcerpts = [];
-    let lastAssistantText;
-    /** Reasoning collection stops at the previous block's label part —
-     *  labels delimit blocks, so scanning past one would bleed another
-     *  batch's reasoning into this payload. `lastAssistantText` (intent)
-     *  keeps scanning: with consecutive batches and no interleaved text,
-     *  the assistant's last words remain the current intent. */
-    let collectThinking = true;
-    for (let i = this.contentParts.length - 1; i >= 0; i--) {
-      const part = this.contentParts[i];
-      if (part == null) {
-        continue;
-      }
-      if (part.type === ContentTypes.ACTIVITY_LABEL) {
-        collectThinking = false;
-        continue;
-      }
-      if (part.type === ContentTypes.TEXT) {
-        const text = typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
-        if (text.trim().length > 0) {
-          lastAssistantText = text.trim().slice(-200);
-          break;
-        }
-        continue;
-      }
-      if (
-        collectThinking &&
-        part.type === ContentTypes.THINK &&
-        thinkingExcerpts.length < 4 &&
-        (executingAgentId == null || part.agentId == null || part.agentId === executingAgentId)
-      ) {
-        const think = typeof part.think === 'string' ? part.think : (part.think?.value ?? '');
-        if (think.trim().length > 0) {
-          thinkingExcerpts.unshift(think.trim().slice(0, 300));
-        }
-      }
-    }
-    return { thinkingExcerpts, lastAssistantText };
-  }
-
   /** Maps aggregated LLM metadata into recorded usage, mirroring titleConvo. */
   async recordActivityLabelUsage(collectedMetadata, model) {
     const appConfig = this.options.req?.config;
@@ -579,104 +550,49 @@ class AgentClient extends BaseClient {
     /** SDK support probe (steering-style): the Run method and the formatter
      *  replay skip ship together, so method presence is the capability. */
     const sdkCapable = typeof Run?.prototype?.generateActivityLabel === 'function';
-    const emitLabelEvent = (index, part, { durable = true } = {}) =>
-      GenerationJobManager.emitChunk(
-        streamId,
-        {
-          event: ActivityLabelEvents.ON_ACTIVITY_LABEL,
-          data: {
-            index,
-            part,
-            responseMessageId: this.responseMessageId,
-            conversationId: this.conversationId,
+    /** Thin wrapper: slot claiming, lane stamping, emit ordering, and settle
+     *  tracking live in `createActivityLabelWiring` (packages/api, TS). */
+    return createActivityLabelWiring({
+      abortSignal,
+      getContentParts: () => this.contentParts,
+      bumpIndexOffset: () => {
+        this.steerOffsetState.offset += 1;
+      },
+      emitLabelEvent: (index, part) =>
+        GenerationJobManager.emitChunk(
+          streamId,
+          {
+            event: ActivityLabelEvents.ON_ACTIVITY_LABEL,
+            data: {
+              index,
+              part,
+              responseMessageId: this.responseMessageId,
+              conversationId: this.conversationId,
+            },
           },
-        },
-        { durable },
-      );
-    return {
-      hook: createActivityLabelHook({
-        resolveLLM: () => this.resolveActivityLabelLLM(),
-        /** Run abort propagates into label calls: without it, cancelled
-         *  turns keep paying for label generation until the timeout. */
-        signal: abortSignal,
-        /** Per-generation usage accounting for the direct fallback path;
-         *  the SDK bridge records its own via chainOptions callbacks. */
-        getInvokeCallbacks: () => {
-          const { handleLLMEnd, collected } = createMetadataAggregator();
-          return {
-            callbacks: [{ handleLLMEnd }],
-            collect: async () => {
-              const { clientOptions } = await this.resolveActivityLabelLLM();
-              await this.recordActivityLabelUsage(collected, clientOptions.model);
-            },
-          };
-        },
-        ...(sdkCapable && {
-          generateLabel: (payload) => this.generateActivityLabelViaRun(payload),
-        }),
-        claimSlot: (meta) => {
-          const index = this.contentParts.length;
-          /** Parallel-column runs: carry the batch's groupId onto the label
-           *  part so ParallelContentRenderer places it inside its group
-           *  instead of filtering it out as an unplaced sequential part. */
-          let groupId;
-          for (let i = this.contentParts.length - 1; i >= 0 && groupId == null; i--) {
-            const prior = this.contentParts[i];
-            if (
-              prior?.type === ContentTypes.TOOL_CALL &&
-              prior.groupId != null &&
-              meta.toolCallIds.includes(prior[ContentTypes.TOOL_CALL]?.id)
-            ) {
-              groupId = prior.groupId;
-            }
-          }
-          const part = {
-            type: ContentTypes.ACTIVITY_LABEL,
-            [ContentTypes.ACTIVITY_LABEL]: '',
-            tool_call_ids: meta.toolCallIds,
-            counts: meta.counts,
-            status: meta.status,
-            ...(meta.executingAgentId && { agentId: meta.executingAgentId }),
-            ...(groupId != null && { groupId }),
-            pending: true,
-          };
-          this.contentParts.push(part);
-          this.steerOffsetState.offset += 1;
-          /** Claim-time emit: the counts phrase renders in the live UI
-           *  immediately at batch end. Fire-and-forget — claimSlot runs
-           *  inside the awaited hook, so it must not block on the emit —
-           *  but the promise is retained so fill() can order the resolved
-           *  label AFTER the placeholder in the durable chunk log. */
-          const claimEmit = emitLabelEvent(index, { ...part }).catch(() => {});
-          /** Deferred settled by fill(); settleActivityLabels() awaits these
-           *  (bounded) before the response finalizes so a label resolving in
-           *  the final batch still lands in the saved message. */
-          let resolveFill;
-          const fillDone = new Promise((resolve) => {
-            resolveFill = resolve;
-          });
-          this.pendingActivityLabelFills = this.pendingActivityLabelFills ?? [];
-          this.pendingActivityLabelFills.push(fillDone);
-          return {
-            index,
-            context: this.captureActivityBlockContext(meta.executingAgentId),
-            fill: async (text) => {
-              try {
-                part.pending = false;
-                if (!text) {
-                  return;
-                }
-                part[ContentTypes.ACTIVITY_LABEL] = text;
-                await claimEmit;
-                await emitLabelEvent(index, part);
-              } finally {
-                resolveFill();
-              }
-            },
-          };
-        },
+          { durable: true },
+        ),
+      trackPendingFill: (fillDone) => {
+        this.pendingActivityLabelFills = this.pendingActivityLabelFills ?? [];
+        this.pendingActivityLabelFills.push(fillDone);
+      },
+      resolveLLM: () => this.resolveActivityLabelLLM(),
+      /** Per-generation usage accounting for the direct fallback path;
+       *  the SDK bridge records its own via chainOptions callbacks. */
+      getInvokeCallbacks: () => {
+        const { handleLLMEnd, collected } = createMetadataAggregator();
+        return {
+          callbacks: [{ handleLLMEnd }],
+          collect: async () => {
+            const { clientOptions } = await this.resolveActivityLabelLLM();
+            await this.recordActivityLabelUsage(collected, clientOptions.model);
+          },
+        };
+      },
+      ...(sdkCapable && {
+        generateLabel: (payload) => this.generateActivityLabelViaRun(payload),
       }),
-    };
+    });
   }
 
   /**

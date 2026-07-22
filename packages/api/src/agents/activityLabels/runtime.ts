@@ -305,7 +305,10 @@ export function createActivityLabelHook(
           text = extractText(response?.content);
           await invokeCallbacks?.collect();
         }
-        await slot.fill(text != null && text.length > 0 ? text : null);
+        /** Trim centrally: a whitespace-only label from either path must
+         *  fill null so the UI keeps the deterministic counts fallback. */
+        const trimmed = text?.trim() ?? '';
+        await slot.fill(trimmed.length > 0 ? trimmed : null);
       } catch (error) {
         logger.warn(
           `[activityLabel] label generation failed (slot ${slot.index}): ${(error as Error)?.message ?? error}`,

@@ -9,3 +9,5 @@ export type {
   ActivityLabelInvokeCallbacks,
   GenerateLabelPayload,
 } from './runtime';
+export { captureActivityBlockContext, createActivityLabelWiring } from './wiring';
+export type { ActivityLabelHostDeps, LooseContentPart } from './wiring';

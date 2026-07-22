@@ -1460,13 +1460,19 @@ export async function createRun({
    * this guard is defense in depth).
    */
   let hooks = hitl?.hooks;
-  if (steering != null && isSteeringSupported()) {
-    hooks = hooks ?? new HookRegistry();
-    hooks.register('PostToolBatch', { hooks: [steering.hook] });
-  }
+  /** Activity labels register BEFORE the steer drain: the label must claim
+   *  its slot while the batch's tool parts are still the content tail. If a
+   *  steer drained first, its injected part would flush the tool block in
+   *  sequential rendering and orphan the label outside its group. With the
+   *  label claimed first, parts order as [tools…, label, steer] — the label
+   *  terminates the group and the steer renders after it. */
   if (activityLabel != null) {
     hooks = hooks ?? new HookRegistry();
     hooks.register('PostToolBatch', { hooks: [activityLabel.hook] });
+  }
+  if (steering != null && isSteeringSupported()) {
+    hooks = hooks ?? new HookRegistry();
+    hooks.register('PostToolBatch', { hooks: [steering.hook] });
   }
 
   /**
