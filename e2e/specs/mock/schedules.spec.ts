@@ -54,14 +54,20 @@ async function seedSchedule(page: Page, token: string, agentId: string): Promise
 }
 
 async function openSchedulesPanel(page: Page) {
-  const panel = page.getByRole('region', { name: 'Scheduled chats' });
-  // The active side panel persists to localStorage, so after a reload the
-  // schedules panel may already be open — clicking again would toggle it CLOSED.
-  // Only click to open when it isn't already visible.
-  if (!(await panel.isVisible().catch(() => false))) {
-    await page.getByRole('button', { name: 'Scheduled chats' }).click();
+  const navButton = page.getByRole('button', { name: 'Scheduled chats' });
+  await expect(navButton).toBeVisible();
+  // The nav button TOGGLES: clicking it while schedules is the active, expanded
+  // panel collapses the sidebar. The active panel persists to localStorage, so
+  // after a reload schedules may already be active but still loading its query
+  // (a spinner, no region yet). Clicking then would collapse it. Branch on
+  // aria-pressed: only click to activate when it isn't already the active panel,
+  // then wait for the query to resolve and render the region.
+  const isActive = (await navButton.getAttribute('aria-pressed')) === 'true';
+  if (!isActive) {
+    await navButton.click();
   }
-  await expect(panel).toBeVisible();
+  const panel = page.getByRole('region', { name: 'Scheduled chats' });
+  await expect(panel).toBeVisible({ timeout: 15000 });
   return panel;
 }
 
