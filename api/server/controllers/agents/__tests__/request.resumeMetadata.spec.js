@@ -670,7 +670,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(initializeClient).not.toHaveBeenCalled();
   });
 
-  it('returns 409 when the deduped job belongs to a different submission', async () => {
+  it('returns 503 SERVER_NOT_READY when the deduped job belongs to a different submission', async () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue({
       claimed: false,
       existing: { streamId: 'orig-stream', conversationId: 'orig-convo' },
@@ -696,9 +696,9 @@ describe('ResumableAgentController resume metadata', () => {
 
     await AgentController(req, res, jest.fn(), jest.fn(), null);
 
-    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.status).toHaveBeenCalledWith(503);
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ error: 'This generation was superseded. Please reload.' }),
+      expect.objectContaining({ code: 'SERVER_NOT_READY' }),
     );
     expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
   });

@@ -317,8 +317,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 jobClientRequestId: existingJob.clientRequestId,
               },
             );
-            return res.status(409).json({
-              error: 'This generation was superseded. Please reload.',
+            return res.status(503).json({
+              code: 'SERVER_NOT_READY',
+              error: 'This generation was superseded. Please retry shortly.',
             });
           }
         } catch (err) {
@@ -382,6 +383,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     const jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
     req._resumableStreamId = streamId;
     getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
+
+    // Persist clientRequestId before exposing the stream so a retry whose old claim
+    // points here never reads a job without it (or a stale one from a prior hash reuse).
+    await GenerationJobManager.updateMetadata(streamId, {
+      clientRequestId: req.body?.clientRequestId,
+    });
 
     // Send JSON response IMMEDIATELY so client can connect to SSE stream
     // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive
