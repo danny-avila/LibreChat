@@ -129,6 +129,7 @@ LANGFUSE_FANOUT_TENANT_EU_BASE_URL=https://cloud.langfuse.com
 LANGFUSE_FANOUT_TENANT_US_BASE_URL=https://us.cloud.langfuse.com
 LANGFUSE_FANOUT_TENANT_JP_BASE_URL=https://jp.cloud.langfuse.com
 LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED=false
+LANGFUSE_FANOUT_LISTEN_ADDR=:4318
 LANGFUSE_FANOUT_UPSTREAM_TIMEOUT=30s
 LANGFUSE_FANOUT_PUBLIC_URL=http://langfuse-fanout-collector:4318
 LANGFUSE_FANOUT_REDIS_URI=redis://langfuse-fanout-redis:6379
@@ -170,6 +171,17 @@ The override builds the fanout gateway image, sets `LANGFUSE_FANOUT_ENABLED=true
 
 ## Helm
 
+The Compose overrides build the gateway image locally. For Kubernetes, build
+the same image from the repository root, push it to a registry available to
+the cluster, and set `langfuseFanout.image.repository` and `.tag` to match:
+
+```sh
+docker build \
+  -f otel/langfuse-fanout/Dockerfile \
+  -t registry.example.com/librechat-langfuse-fanout:<tag> .
+docker push registry.example.com/librechat-langfuse-fanout:<tag>
+```
+
 Create a secret containing the central Langfuse Basic auth header:
 
 ```sh
@@ -186,6 +198,10 @@ redis:
 
 langfuseFanout:
   enabled: true
+  image:
+    repository: registry.example.com/librechat-langfuse-fanout
+    tag: '<tag>'
+    pullPolicy: IfNotPresent
   central:
     baseUrl: https://cloud.langfuse.com
     authHeaderSecret:
@@ -204,14 +220,14 @@ langfuseFanout:
       jp:
         baseUrl: https://jp.cloud.langfuse.com
   upstreamTimeout: 30s
-  publicUrl: ""
+  publicUrl: ''
   otelCollector:
     receiverEndpoint: 127.0.0.1:4319
   redis:
-    uri: ""
-    username: ""
+    uri: ''
+    username: ''
     passwordSecret:
-      name: ""
+      name: ''
       key: REDIS_PASSWORD
     keyPrefix: langfuse-fanout
   memoryLimitMiB: 256
@@ -268,6 +284,8 @@ already uploaded.
 - Tenant destinations default to the three configured Langfuse Cloud regions. Add or
   override `langfuseFanout.tenant.destinations` in Helm for self-hosted or
   custom destinations.
+- `LANGFUSE_FANOUT_LISTEN_ADDR` controls the gateway HTTP bind address and
+  defaults to `:4318`.
 - `LANGFUSE_FANOUT_UPSTREAM_TIMEOUT` tunes the timeout for gateway calls to
   Langfuse APIs and presigned media upload URLs.
 - `LANGFUSE_FANOUT_PUBLIC_URL` pins the base URL returned for the SDK's
