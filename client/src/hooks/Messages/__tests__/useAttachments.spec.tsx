@@ -135,4 +135,30 @@ describe('useAttachments', () => {
     expect((result.current.attachments[0] as AttachmentFixture).status).toBe('pending');
     expect((result.current.attachments[1] as AttachmentFixture).file_id).toBe('fid-B');
   });
+
+  it('dedupes unkeyed live entries against DB copies by type + toolCallId', () => {
+    const citation = {
+      type: 'file_search',
+      toolCallId: 'tc-1',
+      messageId,
+    } as unknown as AttachmentFixture;
+    const { result } = setup({
+      attachments: [citation],
+      liveMap: { [messageId]: [{ ...citation }] },
+    });
+    /* The final message event replays the same persisted file_search
+     * citation the SSE handler already stored — one card, not two. */
+    expect(result.current.attachments).toHaveLength(1);
+  });
+
+  it('drops live entries with no stable identity at all', () => {
+    const db = makeAttachment({ file_id: 'fid-A' });
+    const anonymous = { messageId } as unknown as AttachmentFixture;
+    const { result } = setup({
+      attachments: [db],
+      liveMap: { [messageId]: [anonymous] },
+    });
+    expect(result.current.attachments).toHaveLength(1);
+    expect((result.current.attachments[0] as AttachmentFixture).file_id).toBe('fid-A');
+  });
 });

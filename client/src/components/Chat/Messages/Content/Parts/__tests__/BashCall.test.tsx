@@ -147,6 +147,14 @@ describe('BashCall backgrounded calls', () => {
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Finished in background');
   });
 
+  it('flips to finished on the status marker alone (stdout-only completion)', () => {
+    renderBackgrounded([
+      { type: 'background_task_status', file_id: 'bg-tc-1', toolCallId: 'tc-1' },
+    ]);
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Finished in background');
+    expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
+  });
+
   it('renders real stdout normally after the background result patches the output', () => {
     render(
       <RecoilRoot>

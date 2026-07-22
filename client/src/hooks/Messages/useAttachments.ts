@@ -4,6 +4,26 @@ import type { TAttachment, TFile } from 'librechat-data-provider';
 import { useSearchResultsByTurn } from './useSearchResultsByTurn';
 import store from '~/store';
 
+/**
+ * Stable identity for merging DB and live attachments: `file_id`, else
+ * `filepath` (download fallbacks), else `type:toolCallId` (unkeyed tool
+ * artifacts like file_search citations). Undefined = no stable identity.
+ */
+function attachmentKey(attachment: TAttachment): string | undefined {
+  const { file_id, filepath } = attachment as Partial<TFile>;
+  if (file_id) {
+    return file_id;
+  }
+  if (filepath) {
+    return filepath;
+  }
+  const { type, toolCallId } = attachment as { type?: string; toolCallId?: string };
+  if (type != null && toolCallId != null) {
+    return `${type}:${toolCallId}`;
+  }
+  return undefined;
+}
+
 export default function useAttachments({
   messageId,
   attachments,
@@ -40,24 +60,30 @@ export default function useAttachments({
         liveByFileId.set(id, a);
       }
     }
-    const dbFileIds = new Set<string>();
+    const dbKeys = new Set<string>();
     const merged = attachments.map((db) => {
+      const key = attachmentKey(db);
+      if (key) {
+        dbKeys.add(key);
+      }
       const id = (db as Partial<TFile>).file_id;
       if (!id) {
         return db;
       }
-      dbFileIds.add(id);
       const liveEntry = liveByFileId.get(id);
       return liveEntry ? ({ ...db, ...liveEntry } as TAttachment) : db;
     });
-    /* Live-only entries are kept, not discarded: a background code task's
-     * harvested files arrive via SSE anchored to a message whose DB
-     * `attachments` snapshot predates them (the row is patched
-     * post-finalize), so treating the DB list as exhaustive would make
-     * those files vanish until a full reload. */
+    /* Live-only entries with a stable identity are kept, not discarded: a
+     * background code task's harvested files arrive via SSE anchored to a
+     * message whose DB `attachments` snapshot predates them (the row is
+     * patched post-finalize), so treating the DB list as exhaustive would
+     * make those files vanish until a full reload. Entries whose key is
+     * already in the DB list (e.g. unkeyed file_search citations replayed
+     * by the final message event) are duplicates, and entries with no
+     * stable identity at all cannot be deduped — both are dropped. */
     const liveOnly = live.filter((a) => {
-      const id = (a as Partial<TFile>).file_id;
-      return !id || !dbFileIds.has(id);
+      const key = attachmentKey(a);
+      return key != null && !dbKeys.has(key);
     });
     return liveOnly.length > 0 ? [...merged, ...liveOnly] : merged;
   }, [attachments, messageAttachmentsMap, messageId]);

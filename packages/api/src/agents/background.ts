@@ -41,6 +41,16 @@ import { truncateMiddle } from '~/utils';
 /** Argument the model sets on a tool call to dispatch it in the background. */
 export const RUN_IN_BACKGROUND_ARG = 'run_in_background';
 
+/**
+ * `type` of the synthetic attachment emitted on a poll turn when a harvested
+ * code task settles — the live "this backgrounded call finished" signal for
+ * the original tool-call card (stdout-only runs emit no file attachments, so
+ * attachment presence alone can't signal completion). Rides the existing
+ * `attachment` SSE channel; never persisted. Mirrored in
+ * `client/src/components/Chat/Messages/Content/Parts/handle.ts`.
+ */
+export const BACKGROUND_STATUS_ATTACHMENT_TYPE = 'background_task_status';
+
 /** Poll tool name (LibreChat host-special-cased, not an SDK tool). */
 export const CHECK_BACKGROUND_TASK_NAME: string = Constants.CHECK_BACKGROUND_TASK;
 

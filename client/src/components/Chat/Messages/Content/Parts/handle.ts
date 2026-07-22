@@ -1,3 +1,34 @@
+import type { TAttachment } from 'librechat-data-provider';
+
+/**
+ * `type` of the synthetic attachment the server emits on a poll turn when a
+ * backgrounded code task settles — the live completion signal for the original
+ * card (stdout-only runs produce no file attachments). Never persisted;
+ * mirrored in `packages/api/src/agents/background.ts`.
+ */
+export const BACKGROUND_STATUS_ATTACHMENT_TYPE = 'background_task_status';
+
+/**
+ * Separates real file attachments from the synthetic background status marker.
+ * `backgroundSettled` is true when the marker is present — the backgrounded
+ * call has finished even if it generated no files.
+ */
+export function splitBackgroundAttachments(attachments?: TAttachment[]): {
+  fileAttachments?: TAttachment[];
+  backgroundSettled: boolean;
+} {
+  if (!attachments || attachments.length === 0) {
+    return { fileAttachments: attachments, backgroundSettled: false };
+  }
+  const fileAttachments = attachments.filter(
+    (attachment) => attachment?.type !== BACKGROUND_STATUS_ATTACHMENT_TYPE,
+  );
+  return {
+    fileAttachments,
+    backgroundSettled: fileAttachments.length !== attachments.length,
+  };
+}
+
 export interface BackgroundHandle {
   background_task_id: string;
   tool: string;

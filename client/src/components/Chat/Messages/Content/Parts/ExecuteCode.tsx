@@ -7,8 +7,8 @@ import { sandboxStartingByToolCallId } from '~/store';
 import useLazyHighlight from './useLazyHighlight';
 import useToolCallState from './useToolCallState';
 import CodeWindowHeader from './CodeWindowHeader';
-import { parseBackgroundHandle } from './handle';
 import { AttachmentGroup } from './Attachment';
+import { parseBackgroundHandle, splitBackgroundAttachments } from './handle';
 import { useLocalize } from '~/hooks';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
@@ -83,11 +83,16 @@ export default function ExecuteCode({
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
   /** A backgrounded call's persisted output stays the dispatch handle until
    *  the detached run settles and patches it; render a background state
-   *  instead of the handle JSON. Attachments arriving mean the run finished. */
+   *  instead of the handle JSON. Completion arrives live as the status marker
+   *  attachment (also covers stdout-only runs) or as harvested files. */
   const backgroundHandle = useMemo(() => parseBackgroundHandle(output), [output]);
+  const { fileAttachments, backgroundSettled } = useMemo(
+    () => splitBackgroundAttachments(attachments),
+    [attachments],
+  );
   const backgroundFinishedText = backgroundHandle
     ? localize(
-        attachments && attachments.length > 0
+        backgroundSettled || (fileAttachments?.length ?? 0) > 0
           ? 'com_ui_background_finished'
           : 'com_ui_background_running',
       )
@@ -154,8 +159,8 @@ export default function ExecuteCode({
           </div>
         </div>
       </div>
-      {!hideAttachments && attachments && attachments.length > 0 && (
-        <AttachmentGroup attachments={attachments} />
+      {!hideAttachments && fileAttachments && fileAttachments.length > 0 && (
+        <AttachmentGroup attachments={fileAttachments} />
       )}
     </>
   );

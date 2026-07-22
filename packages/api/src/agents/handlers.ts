@@ -27,6 +27,7 @@ import {
   buildBackgroundHandleContent,
   buildBackgroundCapacityContent,
   stripBackgroundFromToolDefinitions,
+  BACKGROUND_STATUS_ATTACHMENT_TYPE,
   CHECK_BACKGROUND_TASK_NAME,
   RUN_IN_BACKGROUND_ARG,
 } from './background';
@@ -3911,6 +3912,27 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       } catch (emitError) {
                         logger.warn(
                           '[background] Failed to emit harvested attachment on poll:',
+                          emitError,
+                        );
+                      }
+                    }
+                    /** Live completion signal for the original card: stdout-only
+                     *  runs emit no file attachments, so a settled task also
+                     *  emits a synthetic status marker (upserted client-side by
+                     *  its stable id; filtered out of file rendering). */
+                    if (emitAttachment && delivery.messageId) {
+                      try {
+                        emitAttachment({
+                          type: BACKGROUND_STATUS_ATTACHMENT_TYPE,
+                          file_id: `bg-${delivery.toolCallId}`,
+                          messageId: delivery.messageId,
+                          conversationId: backgroundConversationId,
+                          toolCallId: delivery.toolCallId,
+                          status: delivery.status,
+                        });
+                      } catch (emitError) {
+                        logger.warn(
+                          '[background] Failed to emit background status marker on poll:',
                           emitError,
                         );
                       }

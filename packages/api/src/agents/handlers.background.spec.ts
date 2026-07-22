@@ -658,8 +658,18 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     expect(polled.status).toBe('completed');
     expect(polled.result).toContain('hello');
     expect(polled.note).toContain('attached to the tool call');
-    // harvested attachments re-emitted on the live poll stream, not re-processed
-    expect(emitted).toEqual([{ file_id: 'f1', toolCallId: 'call_code' }]);
+    // harvested attachments re-emitted on the live poll stream (not
+    // re-processed), followed by the live completion marker
+    expect(emitted).toEqual([
+      { file_id: 'f1', toolCallId: 'call_code' },
+      expect.objectContaining({
+        type: 'background_task_status',
+        file_id: 'bg-call_code',
+        messageId: 'msg-dispatch',
+        toolCallId: 'call_code',
+        status: 'completed',
+      }),
+    ]);
     expect(toolEndCalls).toHaveLength(0);
     // the claimed artifact rides the poll result so the SDK folds the exec session
     expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
@@ -721,8 +731,11 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     expect(polled.status).toBe('completed');
     expect(polled.result).toContain('hello');
     expect(polled.note).toContain('being attached');
-    // harvest hasn't landed: nothing to emit yet, and no poll-identity fallback
-    expect(emitted).toEqual([]);
+    // harvest hasn't landed: no file attachments yet and no poll-identity
+    // fallback — but the completion marker fires (execution IS finished)
+    expect(emitted).toEqual([
+      expect.objectContaining({ type: 'background_task_status', status: 'completed' }),
+    ]);
     expect(toolEndCalls).toHaveLength(0);
     expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
   });
