@@ -1,5 +1,6 @@
 import { Providers } from '@librechat/agents';
 import type { PostToolBatchHookInput } from '@librechat/agents';
+import type { GenerateLabelPayload } from '../runtime';
 import type { LooseContentPart } from '../wiring';
 import {
   captureActivityBlockContext,
@@ -35,7 +36,11 @@ describe('createActivityLabelWiring', () => {
       { type: 'think', think: 'Comparing runtime versions before searching' },
       { type: 'tool_call', tool_call: { id: 'tool-1' } },
     ];
-    const generateLabel = jest.fn(async () => 'Searched runtime versions');
+    const capturedPayloads: GenerateLabelPayload[] = [];
+    const generateLabel = jest.fn(async (payload: GenerateLabelPayload) => {
+      capturedPayloads.push(payload);
+      return 'Searched runtime versions';
+    });
     const { hook } = createActivityLabelWiring({
       getContentParts: () => parts,
       bumpIndexOffset: jest.fn(),
@@ -52,10 +57,7 @@ describe('createActivityLabelWiring', () => {
     await flushDetached();
 
     expect(generateLabel).toHaveBeenCalledTimes(1);
-    const payload = generateLabel.mock.calls[0][0] as {
-      context: { thinkingExcerpts?: string[] };
-    };
-    expect(payload.context.thinkingExcerpts).toEqual([
+    expect(capturedPayloads[0]?.context.thinkingExcerpts).toEqual([
       'Comparing runtime versions before searching',
     ]);
     /** And the label part landed at the tail with the claimed index. */

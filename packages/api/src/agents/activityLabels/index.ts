@@ -22,6 +22,7 @@ export {
   settlePendingLabelFills,
 } from './host';
 export type {
+  ActivityLabelAgent,
   ActivityLabelUsage,
   CollectedMetadataEntry,
   ResolveActivityLabelModelParams,
