@@ -181,3 +181,6 @@ hive-mind-prompt-*.txt
 CLAUDE.md
 .gsd
 codedb.snapshot
+
+# Superpowers subagent-driven-development scratch (progress ledger, not project docs)
+.superpowers/
