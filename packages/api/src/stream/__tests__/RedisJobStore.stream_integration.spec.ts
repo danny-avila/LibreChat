@@ -2381,12 +2381,16 @@ describe('RedisJobStore Integration Tests', () => {
         activity_label?: string;
         pending?: boolean;
       }>;
-      expect(parts[1]).toMatchObject({
-        type: 'activity_label',
+      /** Position-independent: the placeholder and the filled event share a
+       *  slot, so exactly ONE label part must survive and it must carry the
+       *  resolved text (last write wins). */
+      const labels = parts.filter((part) => part?.type === 'activity_label');
+      expect(labels).toHaveLength(1);
+      expect(labels[0]).toMatchObject({
         activity_label: 'Searched runtime release notes',
         pending: false,
       });
-      expect(parts[2]?.type).toBe('text');
+      expect(parts.some((part) => part?.type === 'text')).toBe(true);
 
       await store.destroy();
     });

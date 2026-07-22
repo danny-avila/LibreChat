@@ -59,6 +59,12 @@ export function captureActivityBlockContext(
       continue;
     }
     if (part.type === ContentTypes.TEXT) {
+      /** Parallel/added-agent runs interleave text parts from several
+       *  agents; another agent's text at the tail is not this batch's
+       *  intent, so skip it rather than stopping the scan there. */
+      if (executingAgentId != null && part.agentId != null && part.agentId !== executingAgentId) {
+        continue;
+      }
       const text = textValue(part.text).trim();
       if (text.length > 0) {
         lastAssistantText = text.slice(-INTENT_CHARS);
@@ -108,6 +114,54 @@ export function stripActivityLabelParts<T extends { content?: unknown }>(payload
     return { ...message, content: filtered };
   });
   return changed ? result : payload;
+}
+
+/** Minimal SSE shape for synthesized gap events. */
+interface ActivityLabelGapEvent {
+  event: string;
+  data: Record<string, unknown>;
+}
+
+/**
+ * Synthesizes `on_activity_label` events for labels that appeared OR were
+ * filled between a resume snapshot and subscriber attach. In Redis mode the
+ * label publish is fire-and-forget and the sync payload carries only the
+ * snapshot, so a label claimed or resolved in that window would otherwise
+ * never reach the reconnecting client. Compares by index: a fresh label part
+ * whose text or pending state differs from the snapshot's (or that has no
+ * snapshot counterpart) is re-emitted. Idempotent - the client applier
+ * ignores duplicates and refuses stale pending placeholders.
+ */
+export function synthesizeActivityLabelGapEvents(
+  snapshotContent: ReadonlyArray<LooseContentPart | null | undefined>,
+  freshContent: ReadonlyArray<LooseContentPart | null | undefined>,
+  meta: { conversationId: string; responseMessageId?: string },
+): ActivityLabelGapEvent[] {
+  const events: ActivityLabelGapEvent[] = [];
+  for (let i = 0; i < freshContent.length; i++) {
+    const part = freshContent[i];
+    if (part?.type !== ContentTypes.ACTIVITY_LABEL) {
+      continue;
+    }
+    const snapshot = snapshotContent[i];
+    const isSameLabel =
+      snapshot?.type === ContentTypes.ACTIVITY_LABEL &&
+      snapshot[ContentTypes.ACTIVITY_LABEL] === part[ContentTypes.ACTIVITY_LABEL] &&
+      snapshot.pending === part.pending;
+    if (isSameLabel) {
+      continue;
+    }
+    events.push({
+      event: 'on_activity_label',
+      data: {
+        index: i,
+        part,
+        conversationId: meta.conversationId,
+        ...(meta.responseMessageId != null && { responseMessageId: meta.responseMessageId }),
+      },
+    });
+  }
+  return events;
 }
 
 /** Host closures the wiring needs; each is a thin bridge into the caller. */
