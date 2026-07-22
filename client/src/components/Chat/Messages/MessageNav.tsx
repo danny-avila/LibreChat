@@ -1315,7 +1315,8 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
       {endEntry && (
         <div
-          className="flex w-14 flex-col items-stretch"
+          className="flex w-14 cursor-pointer touch-none select-none flex-col items-stretch"
+          onPointerDown={handlePointerDown}
           onPointerEnter={handleEndPointerEnter}
           onPointerLeave={clearTooltip}
           onFocus={handleEndFocus}

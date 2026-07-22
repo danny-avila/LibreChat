@@ -1645,6 +1645,27 @@ describe('MessageNav', () => {
       expect(column.scrollTop).toBe(13);
     });
 
+    it('starts a scrub drag from the pinned terminus', () => {
+      const messages = Array.from({ length: 5 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}`, isCreatedByUser: i % 2 === 0 }),
+      );
+      const { container, scrollable } = renderNavWithEnd(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      const wrapper = container.querySelector('[data-msg-id="messages-end"]')!
+        .parentElement as HTMLElement;
+      const getById = jest.spyOn(document, 'getElementById');
+
+      act(() => {
+        fireEvent.pointerDown(wrapper, { pointerId: 1, button: 0, buttons: 1, clientY: 60 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 0 });
+      });
+
+      expect(getById.mock.calls.map((c) => c[0])).toContain('m-0');
+      getById.mockRestore();
+      expect(scrollable).toBeDefined();
+    });
+
     it('previews the terminus on hover even though it sits outside the column', () => {
       const { container } = renderNavWithEnd(threeMessages());
       const wrapper = container.querySelector('[data-msg-id="messages-end"]')!
