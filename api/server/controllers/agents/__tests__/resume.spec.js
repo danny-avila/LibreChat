@@ -732,7 +732,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       });
       expect(typeof finalEvent.title).toBe('string');
 
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, undefined, {
+        preserveForReconcile: false,
+      });
       expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(CONVO_ID, { type: 'mongo' });
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
       expect(mockDisposeClient).toHaveBeenCalledTimes(1);
@@ -941,7 +943,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(client.resumeCompletion).toHaveBeenCalledWith(
         expect.objectContaining({ resumeValue: { answer: 'call it report.pdf' } }),
       );
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, undefined, {
+        preserveForReconcile: false,
+      });
     });
 
     it('generates a title for a first-turn pause before completing the stream', async () => {
@@ -956,7 +960,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
 
       expect(mockAddTitle).toHaveBeenCalledTimes(1);
       // Title is emitted (and the job completed) — order matters but both must happen.
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, undefined, {
+        preserveForReconcile: false,
+      });
     });
 
     it('still finalizes the turn when first-turn title generation throws', async () => {
@@ -974,7 +980,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockLogger.error).toHaveBeenCalled();
       expect(mockSaveMessage).toHaveBeenCalledTimes(1);
       expect(mockGenerationJobManager.emitDone).toHaveBeenCalledWith(CONVO_ID, expect.any(Object));
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, undefined, {
+        preserveForReconcile: false,
+      });
     });
   });
 
