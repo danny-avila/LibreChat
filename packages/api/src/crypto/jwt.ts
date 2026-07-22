@@ -4,6 +4,10 @@ import jwt from 'jsonwebtoken';
  * Generate a short-lived JWT token
  * @param {String} userId - The ID of the user
  * @param {String} [expireIn='5m'] - The expiration time for the token (default is 5 minutes)
+ * @param {Record<string, string>} [extraClaims] - PRIVILEGED. Extra claims are trusted
+ *   downstream: `{ scope: SCHEDULE_FIRE_SCOPE }` mints a token that bypasses the
+ *   interactive message + concurrency limiters (see `isScheduleFireRequest`). Only
+ *   the scheduler (`services/Schedules`) may pass it — never from a user-facing mint.
  * @returns {String} - The generated JWT token
  */
 export const generateShortLivedToken = (

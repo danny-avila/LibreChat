@@ -88,17 +88,19 @@ type CadenceFormValues = Pick<
   'frequency' | 'hour12' | 'minute' | 'meridiem' | 'dayOfWeek'
 >;
 
-const buildCadence = (values: CadenceFormValues): TScheduleCadence => {
+const buildCadence = (values: CadenceFormValues, overrideDays?: number[]): TScheduleCadence => {
   if (values.frequency === 'hourly') {
     return { frequency: 'hourly', hour: 0, minute: values.minute };
   }
   const hour = to24Hour(values.hour12, values.meridiem);
   if (values.frequency === 'weekly') {
+    // `overrideDays` preserves a stored multi-day set (which this single-day
+    // picker can't represent) when only the time — not the day — was changed.
     return {
       frequency: 'weekly',
       hour,
       minute: values.minute,
-      daysOfWeek: [values.dayOfWeek],
+      daysOfWeek: overrideDays ?? [values.dayOfWeek],
     };
   }
   return { frequency: values.frequency, hour, minute: values.minute };
@@ -203,17 +205,25 @@ export default function ScheduleDialog({
   const isLoading = createSchedule.isLoading || updateSchedule.isLoading;
 
   const onSubmit = (values: ScheduleFormValues) => {
-    const cadence = buildCadence(values);
     if (schedule) {
-      // Preserve the stored cadence (incl. multi-day weekly `daysOfWeek`, which
-      // this single-day picker can't represent) unless the user actually touched
-      // a cadence control — otherwise a rename would silently collapse it.
+      // Preserve the stored cadence entirely on a pure rename (no cadence control
+      // touched). If some cadence control WAS touched but the weekly day picker
+      // wasn't, keep the stored `daysOfWeek` so touching the time doesn't collapse
+      // a multi-day weekly schedule to a single day.
       const cadenceTouched =
         dirtyFields.frequency ||
         dirtyFields.hour12 ||
         dirtyFields.minute ||
         dirtyFields.meridiem ||
         dirtyFields.dayOfWeek;
+      const preserveWeeklyDays =
+        !dirtyFields.dayOfWeek &&
+        !dirtyFields.frequency &&
+        schedule.cadence.frequency === 'weekly' &&
+        values.frequency === 'weekly'
+          ? schedule.cadence.daysOfWeek
+          : undefined;
+      const cadence = buildCadence(values, preserveWeeklyDays);
       updateSchedule.mutate({
         id: schedule.id,
         payload: {
@@ -229,7 +239,7 @@ export default function ScheduleDialog({
       name: values.name.trim(),
       prompt: values.prompt.trim(),
       agent_id: values.agent_id,
-      cadence,
+      cadence: buildCadence(values),
       timezone,
       target: 'new',
       enabled: true,
