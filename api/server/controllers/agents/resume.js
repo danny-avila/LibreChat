@@ -23,11 +23,7 @@ const {
   getMCPRequestContext,
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
-const {
-  recordScheduleOutcome,
-  checkScheduledResume,
-  promoteScheduledResume,
-} = require('~/server/services/Schedules');
+const { recordScheduleOutcome, reserveScheduledResume } = require('~/server/services/Schedules');
 const { saveMessage, getConvo, getMessages } = require('~/models');
 
 /**
@@ -540,33 +536,52 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     return res.status(429).json({ error: 'Too many concurrent requests' });
   }
 
-  // Read-only overlap/capacity pre-check BEFORE claiming the approval, so a
-  // deferral leaves the approval claimable. This does NOT promote the run — the
-  // slot is claimed only AFTER the approval claim is won, so its owner is always
-  // the request that actually drives the resume (never a losing racer that would
-  // otherwise release the winner's slot).
+  // Atomically reserve the schedule's active slot BEFORE claiming the approval, so a
+  // deferral (overlap/capacity/gone) leaves the approval claimable. This promotes
+  // the paused run requires_action -> started (single-active partial index enforces
+  // per-schedule overlap) and reserve-then-verifies global fireConcurrency. Crucially
+  // the caller does NOT release on a lost claim below: whichever request wins the
+  // approval drives whatever is `started`, and an unclaimed promotion self-heals when
+  // the reconciler surfaces the still-paused job (so a losing racer never flips the
+  // winner's active row).
   if (job.metadata?.scheduleId) {
-    const check = await checkScheduledResume(job.metadata.scheduleId, job.metadata.scheduledFor);
-    if (check === 'overlap' || check === 'capacity') {
+    let reservation;
+    try {
+      reservation = await reserveScheduledResume(
+        job.metadata.scheduleId,
+        job.metadata.scheduledFor,
+      );
+    } catch (err) {
+      // A store/config error here throws BEFORE the run's own try/finally, so
+      // release the pending-request slot taken above — otherwise it leaks until its
+      // TTL and spuriously 429s the user's later resume/chat attempts.
       await decrementPendingRequest(userId);
-      logger.debug(`[ResumeAgentController] Deferring scheduled resume (${check}): ${streamId}`);
-      return res.status(409).json({
-        error:
-          check === 'capacity'
-            ? 'Scheduled run capacity reached; try again shortly'
-            : 'Another run for this schedule is in progress; try again shortly',
-      });
+      logger.error('[ResumeAgentController] Scheduled resume reservation failed', err);
+      return res.status(500).json({ error: 'Failed to resume' });
+    }
+    if (reservation !== 'ok') {
+      await decrementPendingRequest(userId);
+      logger.debug(
+        `[ResumeAgentController] Deferring scheduled resume (${reservation}): ${streamId}`,
+      );
+      const deferrals = {
+        gone: { status: 410, error: 'This schedule no longer exists' },
+        capacity: { status: 409, error: 'Scheduled run capacity reached; try again shortly' },
+        overlap: {
+          status: 409,
+          error: 'Another run for this schedule is in progress; try again shortly',
+        },
+      };
+      const { status, error } = deferrals[reservation] ?? deferrals.overlap;
+      return res.status(status).json({ error });
     }
   }
 
   // Atomically claim the resume. The single winner drives the run; a racing second
   // submit (double-click, two tabs) gets false and must not re-drive — that would
-  // re-execute tools and double-bill.
-  //
-  // The claim runs AFTER the slot increment above but BEFORE the run's own try/finally
-  // that releases it, so a store/Redis error here (unlike the clean `!claimed` branch)
-  // would leak the concurrency slot until the counter TTL expires — spuriously 429'ing
-  // the user when they retry the still-paused approval. Release the slot on that path too.
+  // re-execute tools and double-bill. Do NOT release the reservation on a lost claim:
+  // the claim winner drives the `started` run this (or the concurrent same-pause)
+  // request reserved, and an unreserved-but-promoted row is healed by the reconciler.
   let claimed;
   try {
     claimed = await GenerationJobManager.approvals.resolve(streamId, pendingAction.actionId);
@@ -578,13 +593,6 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   if (!claimed) {
     await decrementPendingRequest(userId);
     return res.status(409).json({ error: 'This action was already resolved or has expired' });
-  }
-
-  // The claim is won: THIS request drives the resumed run, so it owns the single
-  // active slot. Promote requires_action -> started now (best-effort); its terminal
-  // or re-pause outcome moves the row back out of `started`.
-  if (job.metadata?.scheduleId) {
-    await promoteScheduledResume(job.metadata.scheduleId, job.metadata.scheduledFor);
   }
 
   // Seed the run-scoped MCP request-context store BEFORE the ACK: once `res.json`

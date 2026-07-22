@@ -357,11 +357,12 @@ const startServer = async () => {
       // loopback chats at a server that is not yet listening/accepting starts,
       // recording spurious errors that could auto-disable valid schedules.
       // Ensures indexes before the first tick; failures are logged, not fatal.
-      // Pass whether this may be a multi-instance deployment (USE_REDIS is the
-      // proxy — horizontal replicas share a Redis cache/session store): combined
-      // with the LIVE stream backend it decides whether cross-instance job-status
-      // reconciliation is safe (a replica must not reap a peer's live run).
-      await initializeScheduleEngine({ clustered: isEnabled(process.env.USE_REDIS) });
+      // This is a single process, so it is NOT clustered: its in-memory job store
+      // is local and complete, so orphan/abandoned reconciliation is always safe
+      // here. Horizontal scaling of this entrypoint requires a SHARED stream store
+      // (USE_REDIS_STREAMS) — which makes GenerationJobManager.isRedis true and
+      // isJobStoreShared true anyway — so USE_REDIS is the wrong signal to gate on.
+      await initializeScheduleEngine({ clustered: false });
       logger.info('Server readiness checks passing.');
     } catch (initErr) {
       serverReady = false;

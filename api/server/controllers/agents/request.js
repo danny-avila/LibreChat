@@ -22,7 +22,7 @@ const {
 } = require('~/server/services/MCPRequestContext');
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
-const { recordScheduleOutcome } = require('~/server/services/Schedules');
+const { recordScheduleOutcome, isScheduleLive } = require('~/server/services/Schedules');
 const { saveMessage, getMessages, getConvo } = require('~/models');
 
 function createCloseHandler(abortController) {
@@ -392,6 +392,28 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
     const jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
+
+    // Re-fence a scheduled fire against a delete/quiesce that landed in the
+    // claim -> POST window: the reservation row existed but this job did not yet,
+    // so the deletion's identity-guarded abort could not have seen it. If the
+    // schedule is no longer live, terminalize the run and tear the job down BEFORE
+    // any messages are persisted, so a delete / account-deletion cascade can't be
+    // defeated by data this request would otherwise write. Scoped to scheduled
+    // fires (scheduleId is null for interactive chat), so this never affects it.
+    if (scheduleId && !(await isScheduleLive(scheduleId))) {
+      logger.info(
+        `[AgentController] Scheduled fire aborted before start; schedule ${scheduleId} no longer active`,
+      );
+      await recordScheduleOutcome({
+        scheduleId,
+        scheduledFor,
+        status: 'interrupted',
+        conversationId: streamId,
+      });
+      await GenerationJobManager.completeJob(streamId).catch(() => undefined);
+      return res.json({ streamId, conversationId, status: 'aborted' });
+    }
+
     req._resumableStreamId = streamId;
     getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
 

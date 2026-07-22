@@ -26,12 +26,12 @@ import { startScheduleEngine } from './engine';
 type ScheduleRunOutcomeStatus = Parameters<ScheduleMethods['recordRunOutcome']>[0]['status'];
 
 /**
- * Outcome of the read-only pre-claim overlap/capacity check for a HITL resume.
- * `overlap`/`capacity` defer the resume with the approval left unconsumed; `ok`
- * lets the claim proceed. The actual slot promotion happens AFTER the approval
- * claim is won (promoteScheduledResume), so only the run's driver ever owns it.
+ * Outcome of the pre-claim resume reservation for a HITL resume. `gone` = the
+ * schedule was deleted/soft-deleted (non-resumable); `overlap` = another occurrence
+ * is active; `capacity` = the global cap is saturated; each defers with the approval
+ * left unconsumed. `ok` = reserved (or already active), let the claim proceed.
  */
-export type ResumeCheck = 'ok' | 'overlap' | 'capacity';
+export type ResumeCheck = 'ok' | 'gone' | 'overlap' | 'capacity';
 
 /** Whether a persisted job still carries a given scheduled occurrence's identity. */
 function jobMatchesIdentity(job: SerializableJobData, identity: JobIdentity): boolean {
@@ -95,21 +95,24 @@ export interface SchedulesService {
   ) => Promise<FireResult | null>;
   recordScheduleOutcome: (input: RecordScheduleOutcomeInput) => Promise<boolean>;
   /**
-   * Read-only overlap/capacity pre-check for a HITL resume, run BEFORE the
-   * approval claim so a deferral leaves the approval claimable. 'overlap' = another
-   * occurrence of the schedule is already active; 'capacity' = global
-   * fireConcurrency is saturated. Does NOT mutate — the promotion happens after the
-   * claim is won, so the run's driver (not a losing racer) owns the slot.
+   * Whether a schedule is still live (exists and not soft-deleted). The loopback
+   * chat controller calls this right after creating the generation job to re-fence
+   * a fire against a delete/quiesce that landed in the claim -> POST window (when
+   * the reservation row exists but the job did not yet, so the deletion's abort
+   * missed it) — aborting before any messages are persisted.
    */
-  checkScheduledResume: (scheduleId: string, scheduledFor: string | Date) => Promise<ResumeCheck>;
+  isScheduleLive: (scheduleId: string) => Promise<boolean>;
   /**
-   * Promotes a resumed run into the single active slot AFTER its approval claim is
-   * won. Best-effort: the driver owns the slot, and its terminal/re-pause outcome
-   * moves the row back out of `started`. An 'overlap' at this point (a newer
-   * occurrence started since the pre-check) is logged, not fatal — the run still
-   * drives; the accounting self-heals when it settles.
+   * Atomically reserves the active slot for a HITL resume BEFORE the approval claim
+   * (so a deferral leaves the approval claimable): promotes the paused run to
+   * `started` (the single-active partial index makes per-schedule overlap atomic)
+   * and reserve-then-verifies the global fireConcurrency cap, rolling back its OWN
+   * promotion on overshoot. 'gone' = the schedule was deleted; 'overlap' = another
+   * occurrence is active; 'capacity' = global cap saturated. The caller must NOT
+   * release on a lost approval claim — the claim winner drives whatever is `started`;
+   * an unclaimed promotion self-heals when the reconciler surfaces the pause.
    */
-  promoteScheduledResume: (scheduleId: string, scheduledFor: string | Date) => Promise<void>;
+  reserveScheduledResume: (scheduleId: string, scheduledFor: string | Date) => Promise<ResumeCheck>;
   /** Soft-deletes an owner's schedule: stop claims, abort active runs, drain, erase. */
   deleteScheduleForOwner: (scheduleId: string, userId: string) => Promise<boolean>;
   /** Quiesces all of a user's schedules ahead of account deletion (stop + abort). */
@@ -428,50 +431,54 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
    * the actual promotion happens only after the claim is won, so the slot is owned
    * by the run's driver, never by a losing racer.
    */
-  async function checkScheduledResume(
+  async function isScheduleLive(scheduleId: string): Promise<boolean> {
+    if (!scheduleId) {
+      return false;
+    }
+    return (await methods.getScheduleById(scheduleId)) != null;
+  }
+
+  async function reserveScheduledResume(
     scheduleId: string,
     scheduledFor: string | Date,
   ): Promise<ResumeCheck> {
     if (!scheduleId || !scheduledFor) {
       return 'ok';
     }
-    if (await methods.hasActiveRun(scheduleId)) {
+    // getScheduleById hides deleted/soft-deleted schedules, so a null here means the
+    // owner already deleted the schedule — its paused run must not be resumable even
+    // if the delete's best-effort abort raced. Reject before touching the run.
+    const schedule = await methods.getScheduleById(scheduleId);
+    if (schedule == null) {
+      return 'gone';
+    }
+    const when = new Date(scheduledFor);
+    // Promote requires_action -> started. The single-active partial index makes
+    // per-schedule overlap atomic (a newer occurrence already active -> 'overlap').
+    // 'missing' means a concurrent same-pause resume already promoted this row: it
+    // is already active, so proceed WITHOUT rolling it back (that racer owns it) and
+    // without re-counting capacity (we did not add to the population).
+    const promoted = await methods.promoteRunToStarted(scheduleId, when);
+    if (promoted === 'overlap') {
       return 'overlap';
     }
-    const schedule = await methods.getScheduleById(scheduleId);
-    const owner = schedule ? await engineDeps.getUserContext(schedule.user) : null;
+    if (promoted === 'missing') {
+      return 'ok';
+    }
+    // We added this run to the started population — reserve-then-verify the global
+    // cap against the OWNER's limit, rolling back OUR OWN promotion if over. Doing
+    // this BEFORE the approval claim keeps the approval claimable on a capacity
+    // deferral, and rolling back only our own row avoids the claim-owner race.
+    const owner = await engineDeps.getUserContext(schedule.user);
     const limits = await getLimits(owner ?? undefined);
     const active = await engineDeps.countActiveRunsGlobal();
-    if (active >= limits.fireConcurrency) {
+    if (active > limits.fireConcurrency) {
+      await methods
+        .transitionRunStatus(scheduleId, when, 'started', 'requires_action')
+        .catch(() => undefined);
       return 'capacity';
     }
     return 'ok';
-  }
-
-  /**
-   * Promotes a resumed run into the single active slot after its approval claim is
-   * won (the caller IS the driver). Best-effort: an 'overlap' here means a newer
-   * occurrence started since the pre-check — the run still drives, and its
-   * terminal/re-pause outcome moves the row back out of `started`, so accounting
-   * self-heals without ever letting a non-driver hold or release the slot.
-   */
-  async function promoteScheduledResume(
-    scheduleId: string,
-    scheduledFor: string | Date,
-  ): Promise<void> {
-    if (!scheduleId || !scheduledFor) {
-      return;
-    }
-    try {
-      const promoted = await methods.promoteRunToStarted(scheduleId, new Date(scheduledFor));
-      if (promoted === 'overlap') {
-        logger.warn(
-          `[schedules] resumed run could not reserve the active slot (overlap): ${scheduleId}`,
-        );
-      }
-    } catch (err) {
-      logger.error('[schedules] failed to promote resumed run:', err);
-    }
   }
 
   /** Aborts an active run's loopback job (identity-guarded). */
@@ -536,8 +543,8 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     engineDeps,
     fireScheduleNow,
     recordScheduleOutcome,
-    checkScheduledResume,
-    promoteScheduledResume,
+    isScheduleLive,
+    reserveScheduledResume,
     deleteScheduleForOwner,
     quiesceUserSchedules,
     initializeScheduleEngine,

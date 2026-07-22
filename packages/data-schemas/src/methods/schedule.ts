@@ -626,12 +626,23 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     balanceSkipDisableThreshold?: number,
   ): Promise<void> {
     const firedAt = new Date();
-    // A duplicate {scheduleId, scheduledFor} row means a prior attempt inserted it
-    // but may have crashed before the bookkeeping below landed — proceed as a
-    // retry rather than a no-op. The lastRun write is idempotent and the streak
-    // increment is guarded per occurrence by `countedFor`, so a retry can't
-    // double-count or lose the skip from the card / the insufficient_balance path.
-    await insertScheduleRun({ ...data, firedAt });
+    // A duplicate {scheduleId, scheduledFor} row means a prior attempt inserted it.
+    // Proceed as a retry ONLY when that row is the SAME skip — otherwise this claim
+    // is a retry of an occurrence that actually started/terminalized (e.g. the POST
+    // was accepted but advanceSchedule failed before releasing the lease), and
+    // rewriting lastRun/counters would mislabel a real run as a skip (and could
+    // walk it toward auto-disable). The streak $inc is separately guarded per
+    // occurrence by `countedFor`, so a genuine same-skip retry can't double-count.
+    const inserted = await insertScheduleRun({ ...data, firedAt });
+    if (inserted == null) {
+      const existing = await ScheduleRun()
+        .findOne({ scheduleId: data.scheduleId, scheduledFor: data.scheduledFor })
+        .select('status')
+        .lean<{ status?: ScheduleRunStatus }>();
+      if (existing == null || existing.status !== data.status) {
+        return;
+      }
+    }
     // Surface the skip on the card (its chip reads schedule.lastRun). An overlap
     // skip is an intervening non-balance outcome, so it BREAKS the balance-skip
     // streak (the counter is for CONSECUTIVE balance skips).

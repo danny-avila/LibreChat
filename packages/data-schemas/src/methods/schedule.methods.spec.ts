@@ -178,6 +178,30 @@ describe('insertScheduleRun idempotency', () => {
   });
 });
 
+describe('recordSkippedRun duplicate-occurrence guard', () => {
+  it('does not overwrite lastRun/counters when the occurrence already fired', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const when = new Date('2026-07-20T12:00:00Z');
+    // The occurrence already ran to success (e.g. a claim retry after the POST was
+    // accepted but the lease advance failed).
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor: when, status: 'success' }));
+    // A stale balance preflight must NOT relabel that occurrence as a balance skip.
+    await methods.recordSkippedRun(
+      {
+        scheduleId: schedule.id,
+        user: schedule.user,
+        scheduledFor: when,
+        status: 'skipped_balance',
+      },
+      5,
+    );
+    const after = await getSchedule(schedule.id);
+    expect(after.lastRun).toBeUndefined();
+    expect(after.balanceSkipCount).toBe(0);
+    expect(await getRun(schedule.id, when)).toMatchObject({ status: 'success' });
+  });
+});
+
 describe('reserveStartedRun (single-active overlap guard)', () => {
   it('reserves the slot, then rejects a concurrent occurrence as overlap', async () => {
     const schedule = await methods.createSchedule(scheduleData());
