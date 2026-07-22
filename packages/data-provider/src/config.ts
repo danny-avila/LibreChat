@@ -902,8 +902,8 @@ export const agentsEndpointSchema = baseEndpointSchema
       remoteApi: remoteApiSchema.optional(),
       /** Human-in-the-loop tool approval policy. Off by default. */
       toolApproval: toolApprovalPolicySchema,
-      /** Durable checkpointer backing HITL resume. Defaults to the app's MongoDB
-       *  when `toolApproval.enabled` is set; ignored otherwise. */
+      /** Durable checkpointer backing tool-approval and Ask User resume.
+       *  Defaults to the app's MongoDB when either flow needs it. */
       checkpointer: checkpointerSchema,
     }),
   )
@@ -2692,7 +2692,7 @@ export enum Constants {
    */
   VERSION = '__LIBRECHAT_VERSION__',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.13',
+  CONFIG_VERSION = '1.3.14',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
