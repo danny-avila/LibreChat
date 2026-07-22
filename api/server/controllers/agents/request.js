@@ -393,39 +393,37 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
     const jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
 
-    // Re-fence a scheduled fire against a delete/quiesce that landed in the
-    // claim -> POST window: the reservation row existed but this job did not yet,
-    // so the deletion's identity-guarded abort could not have seen it. If the
-    // schedule is no longer live, terminalize the run and tear the job down BEFORE
-    // any messages are persisted, so a delete / account-deletion cascade can't be
-    // defeated by data this request would otherwise write. Scoped to scheduled
-    // fires (scheduleId is null for interactive chat), so this never affects it.
-    if (scheduleId && !(await isScheduleLive(scheduleId))) {
-      logger.info(
-        `[AgentController] Scheduled fire aborted before start; schedule ${scheduleId} no longer active`,
-      );
-      await recordScheduleOutcome({
-        scheduleId,
-        scheduledFor,
-        status: 'interrupted',
-        conversationId: streamId,
-      });
-      await GenerationJobManager.completeJob(streamId).catch(() => undefined);
-      return res.json({ streamId, conversationId, status: 'aborted' });
+    // Re-fence a scheduled fire against a delete/quiesce that landed in the claim ->
+    // POST window (the reservation row existed but this job did not yet, so the
+    // deletion's identity-guarded abort could not have seen it). Attach the schedule
+    // identity to the job FIRST — so a concurrent quiesce can now identity-match and
+    // abort THIS job — then re-check liveness: if a delete landed in the tiny
+    // createJob -> metadata window (before its abort could match), terminalize the
+    // run and tear the job down BEFORE any messages are persisted. Scoped to
+    // scheduled fires (scheduleId is null for interactive chat), so this never
+    // affects it.
+    if (scheduleId) {
+      await GenerationJobManager.updateMetadata(streamId, { scheduleId, scheduledFor });
+      if (!(await isScheduleLive(scheduleId))) {
+        logger.info(
+          `[AgentController] Scheduled fire aborted before start; schedule ${scheduleId} no longer active`,
+        );
+        await recordScheduleOutcome({
+          scheduleId,
+          scheduledFor,
+          status: 'interrupted',
+          conversationId: streamId,
+        });
+        await GenerationJobManager.completeJob(streamId).catch(() => undefined);
+        return res.json({ streamId, conversationId, status: 'aborted' });
+      }
     }
 
     req._resumableStreamId = streamId;
     getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
 
-    // For scheduled fires, persist the schedule identifiers into the job metadata
-    // BEFORE acknowledging the fire below. The loopback caller treats the JSON
-    // `started` response as the run being underway; if these were written only
-    // after and the process crashed in that window, the generation would run with
-    // no scheduleId and no terminal hook could ever record the ScheduleRun outcome
-    // (reconciliation would then treat a successful run as an orphan).
-    if (scheduleId) {
-      await GenerationJobManager.updateMetadata(streamId, { scheduleId, scheduledFor });
-    }
+    // The schedule identifiers were already persisted into the job metadata above
+    // (before the liveness re-check); the bulk updateMetadata below re-affirms them.
 
     // Send JSON response IMMEDIATELY so client can connect to SSE stream
     // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive

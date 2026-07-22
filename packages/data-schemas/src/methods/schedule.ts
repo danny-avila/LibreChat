@@ -93,9 +93,10 @@ export type ScheduleMethods = {
     id: string,
     userId: string | Types.ObjectId,
     leaseMs: number,
-  ) => Promise<string | null>;
+  ) => Promise<ISchedule | null>;
   releaseLease: (id: string, expectedClaimToken?: string) => Promise<void>;
   revalidateClaim: (id: string, claimToken: string, requireEnabled?: boolean) => Promise<boolean>;
+  holdsClaim: (id: string, claimToken: string) => Promise<boolean>;
   advanceSchedule: (
     id: string,
     nextRunAt: Date | null,
@@ -314,19 +315,21 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   /**
    * Takes the schedule's lease for a manual run-now, serializing concurrent
    * `POST /:id/run` requests (and blocking against an engine claim) so a
-   * double-click can't start two runs. Owner-scoped. Returns the fresh
-   * `claimToken` (to carry through the fire), or null if already leased.
+   * double-click can't start two runs. Owner-scoped. Returns the FRESH schedule row
+   * (post-image, with the new claim token) so the caller fires the current snapshot
+   * — an edit that committed after the route read the schedule but before this lease
+   * is reflected here, not the stale pre-edit prompt/agent. Null if already leased.
    */
   async function acquireManualRunLease(
     id: string,
     userId: string | Types.ObjectId,
     leaseMs: number,
-  ): Promise<string | null> {
+  ): Promise<ISchedule | null> {
     // Compare/expire the lease against Mongo's `$$NOW` (same CAS shape as
     // claimDueSchedule), not this worker's clock: a skewed replica must not read a
     // Mongo-written automatic-fire lease as expired early and start a second run.
     const claimToken = randomUUID();
-    const row = await Schedule()
+    return Schedule()
       .findOneAndUpdate(
         {
           id,
@@ -338,7 +341,6 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
         { new: true },
       )
       .lean<ISchedule>();
-    return row != null ? claimToken : null;
   }
 
   /**
@@ -374,6 +376,26 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
         claimToken,
         deleting: { $ne: true },
         ...(requireEnabled ? { enabled: true } : {}),
+        $expr: { $gt: [{ $ifNull: ['$leaseUntil', new Date(0)] }, '$$NOW'] },
+      })
+      .select('_id')
+      .lean();
+    return row != null;
+  }
+
+  /**
+   * Whether this worker STILL holds the lease it claimed (same claim token, lease
+   * unexpired) — regardless of enabled/deleting state. Used to fence a rollback
+   * delete of a reserved run row against a lease TAKEOVER: if the lease expired and
+   * another worker re-claimed the occurrence (rotating the token) and advanced past
+   * it, deleting the reserved row would erase the only evidence, so the loser must
+   * leave the row for the reconciler instead.
+   */
+  async function holdsClaim(id: string, claimToken: string): Promise<boolean> {
+    const row = await Schedule()
+      .findOne({
+        id,
+        claimToken,
         $expr: { $gt: [{ $ifNull: ['$leaseUntil', new Date(0)] }, '$$NOW'] },
       })
       .select('_id')
@@ -870,6 +892,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     acquireManualRunLease,
     releaseLease,
     revalidateClaim,
+    holdsClaim,
     advanceSchedule,
     disableSchedule,
     insertScheduleRun,

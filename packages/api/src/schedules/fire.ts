@@ -154,6 +154,17 @@ export async function fireSchedule(
       // concurrent owner edit or a lease-expiry re-claim isn't clobbered.
       () => methods.advanceSchedule(schedule.id, nextRunAt, scheduledFor, claimToken);
 
+  // Rolls back a reserved `started` run row — but ONLY if we still hold the claim.
+  // If our lease expired and another worker re-claimed this occurrence (rotating the
+  // token) and advanced past it, deleting the row would erase the only evidence for
+  // an occurrence that is then neither fired nor reconcilable, so leave it for the
+  // reconciler's orphan sweep instead.
+  const rollbackReservation = async () => {
+    if (claimToken != null && (await methods.holdsClaim(schedule.id, claimToken))) {
+      await methods.deleteScheduleRun(schedule.id, scheduledFor, 'started');
+    }
+  };
+
   if (nextRunAt == null) {
     await methods.disableSchedule(schedule.id, 'invalid_schedule', claimToken);
     await advance();
@@ -278,7 +289,7 @@ export async function fireSchedule(
     // request-scoped check). Roll back (status-fenced) if over.
     const active = await deps.countActiveRunsGlobal();
     if (active > ownerLimits.fireConcurrency) {
-      await methods.deleteScheduleRun(schedule.id, scheduledFor, 'started');
+      await rollbackReservation();
       // Automatic claims keep the claim's lease as a backoff so the nextRunAt-sorted
       // claimer doesn't immediately re-pick this row and starve others; nextRunAt is
       // untouched, so the occurrence retries once the lease expires. A manual run-now
@@ -302,7 +313,7 @@ export async function fireSchedule(
       claimToken != null &&
       !(await methods.revalidateClaim(schedule.id, claimToken, !options?.manual))
     ) {
-      await methods.deleteScheduleRun(schedule.id, scheduledFor, 'started');
+      await rollbackReservation();
       await advance();
       return { fired: false, skipped: 'superseded' as const };
     }

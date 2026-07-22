@@ -148,6 +148,22 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     if (!(await validatePayload(req, res, parsed.data, limits))) {
       return;
     }
+    // Fail fast on an obvious over-limit BEFORE retaining attachments, so the common
+    // case never clears an upload TTL it then can't use. The {user, slot} partial
+    // unique index below is the atomic arbiter for the concurrent-create race.
+    if ((await deps.methods.countSchedulesByUser(user.id)) >= limits.maxPerUser) {
+      res.status(400).json({
+        error: `Schedule limit reached (${limits.maxPerUser}). Delete a schedule to add another.`,
+      });
+      return;
+    }
+    // Retain attachments BEFORE creating, so a persisted (claimable) schedule never
+    // references uploads still eligible for TTL expiry — there is no create-then-
+    // retain window where a crash or a failed rollback leaves the two inconsistent.
+    if (parsed.data.file_ids?.length && !(await retainFiles(parsed.data.file_ids, user.id))) {
+      res.status(500).json({ error: 'Failed to retain schedule attachments' });
+      return;
+    }
     const id = `sched_${randomUUID()}`;
     const nextRunAt = parsed.data.enabled
       ? computeNextRunAt({
@@ -158,7 +174,9 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       : undefined;
     // Atomic cap: createScheduleWithSlot claims a free per-user slot via the
     // {user, slot} partial unique index, so concurrent creates can never exceed
-    // maxPerUser (no check-then-insert window). 'limit' means all slots are taken.
+    // maxPerUser. 'limit' means a concurrent racer took the last slot after the
+    // pre-check above; the just-retained files are then unreferenced (a rare, minor
+    // leak of the user's own uploads) — acceptable vs. a partial/expiring commit.
     const created = await deps.methods.createScheduleWithSlot(
       {
         ...parsed.data,
@@ -173,13 +191,6 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(400).json({
         error: `Schedule limit reached (${limits.maxPerUser}). Delete a schedule to add another.`,
       });
-      return;
-    }
-    // Retain attachments; on total failure roll the schedule back so a persisted
-    // schedule never outlives its attachments (which the upload TTL would reap).
-    if (parsed.data.file_ids?.length && !(await retainFiles(parsed.data.file_ids, user.id))) {
-      await deps.methods.deleteScheduleById(id, user.id).catch(() => undefined);
-      res.status(500).json({ error: 'Failed to retain schedule attachments' });
       return;
     }
     logger.info(`[schedules] created ${id} for user ${user.id}`);

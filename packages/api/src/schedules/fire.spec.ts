@@ -88,6 +88,7 @@ function makeMethods() {
       },
     ),
     revalidateClaim: jest.fn(async () => true),
+    holdsClaim: jest.fn(async () => true),
     deleteScheduleRun: jest.fn(async (id: string, when: Date, _status?: string) => {
       runs.delete(key(id, when));
     }),
@@ -258,6 +259,23 @@ describe('fireSchedule', () => {
       [...runs.entries()].filter(([k, r]) => k.startsWith('sched-1:') && r.status === 'started'),
     ).toHaveLength(1);
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the reserved run for reconcile when the lease was taken over', async () => {
+    const { methods, runs } = makeMethods();
+    // At capacity, so this fire will roll back its reservation.
+    for (let i = 0; i < 5; i++) {
+      runs.set(`other-${i}:x`, { status: 'started' });
+    }
+    // Simulate a lease takeover: this worker no longer holds the claim.
+    (methods.holdsClaim as jest.Mock).mockResolvedValue(false);
+    mockFetch(async () => okResponse());
+    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
+    expect(result.skipped).toBe('capacity');
+    // The reserved row must NOT be deleted (another worker owns the occurrence now);
+    // it's left for the reconciler so the occurrence stays reconcilable.
+    expect(methods.deleteScheduleRun).not.toHaveBeenCalled();
+    expect([...runs.entries()].some(([k]) => k.startsWith('sched-1:'))).toBe(true);
   });
 
   it('skips overlap when a prior run is still active', async () => {

@@ -370,21 +370,24 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     schedule: FireableSchedule,
     limits: ScheduleLimits,
   ): Promise<FireResult | null> {
-    const claimToken = await methods.acquireManualRunLease(
+    const leased = await methods.acquireManualRunLease(
       schedule.id,
       schedule.user,
       MANUAL_RUN_LEASE_MS,
     );
-    if (claimToken == null) {
+    if (leased == null) {
       return null;
     }
+    const claimToken = leased.claimToken;
     try {
-      // Carry the fresh claim token so the manual fire's lease release is fenced.
-      return await fireSchedule(engineDeps, { ...schedule, claimToken }, limits, new Date(), {
-        manual: true,
-      });
+      // Fire the FRESH leased row (post-image with the new claim token), not the
+      // snapshot the route read before the lease — an edit that committed in the
+      // window in between is reflected, so a stale prompt/agent is never dispatched.
+      return await fireSchedule(engineDeps, leased, limits, new Date(), { manual: true });
     } catch (err) {
-      await methods.releaseLease(schedule.id, claimToken).catch(() => undefined);
+      if (claimToken != null) {
+        await methods.releaseLease(schedule.id, claimToken).catch(() => undefined);
+      }
       throw err;
     }
   }
@@ -483,15 +486,15 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     if (active >= limits.fireConcurrency) {
       return 'capacity';
     }
-    // Reserve the single active slot. Best-effort: 'overlap' (a different occurrence
-    // won the slot since the check above) leaves the row paused and the resume runs
-    // undercounted until it settles; 'missing' means a concurrent same-pause resume
-    // already promoted it. Never rolled back.
+    // Reserve the single active slot. If a different occurrence won the slot since
+    // the read-only check above, promoteRunToStarted returns 'overlap' — defer the
+    // resume (approval stays claimable) rather than running a second concurrent
+    // occurrence with the paused row still `requires_action` (which overlap/capacity
+    // accounting would miss). 'missing' means a concurrent same-pause resume already
+    // promoted it — proceed. Never rolled back.
     const promoted = await methods.promoteRunToStarted(scheduleId, new Date(scheduledFor));
     if (promoted === 'overlap') {
-      logger.warn(
-        `[schedules] resumed run could not reserve the active slot (overlap): ${scheduleId}`,
-      );
+      return 'overlap';
     }
     return 'ok';
   }

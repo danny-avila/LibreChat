@@ -808,6 +808,16 @@ describe('acquireManualRunLease / releaseLease', () => {
     expect(reacquired).toBeTruthy();
   });
 
+  it('returns the FRESH row (reflecting an edit) with a new claim token', async () => {
+    const schedule = await methods.createSchedule(scheduleData({ name: 'original' }));
+    // An edit commits after a caller read the schedule but before the lease is taken.
+    await methods.updateScheduleById(schedule.id, schedule.user, { name: 'edited' });
+    const leased = await methods.acquireManualRunLease(schedule.id, schedule.user, 60_000);
+    // The lease returns the post-image, so a manual fire uses the edited snapshot.
+    expect(leased?.name).toBe('edited');
+    expect(leased?.claimToken).toBeTruthy();
+  });
+
   it('blocks against a held engine lease and rejects a non-owner', async () => {
     const schedule = await methods.createSchedule(scheduleData());
     const claimed = await methods.claimDueSchedule({ instanceId: 'engine-1', leaseMs: 60_000 });
