@@ -11,6 +11,7 @@ const MAX_HANDLERS_PER_GROUP = 32;
 const MAX_TOTAL_HANDLERS = 512;
 const MAX_TIMEOUT_SECONDS = 3_600;
 const MAX_COMMAND_ARGS = 256;
+const MAX_HTTP_HEADERS = 256;
 
 export interface PluginHookHandler {
   type: string;
@@ -18,6 +19,12 @@ export interface PluginHookHandler {
   commandWindows?: string;
   args?: string[];
   shell?: 'bash' | 'powershell';
+  url?: string;
+  headers?: Record<string, string>;
+  allowedEnvVars?: string[];
+  server?: string;
+  tool?: string;
+  input?: Record<string, unknown>;
   prompt?: string;
   model?: string;
   timeout?: number;
@@ -37,6 +44,7 @@ export interface PluginHookGroup {
 }
 
 export interface PluginHooksDocument {
+  $schema?: string;
   description?: string;
   hooks: Record<string, PluginHookGroup[]>;
 }
@@ -48,6 +56,23 @@ export const pluginHookHandlerSchema: z.ZodType<PluginHookHandler> = z
     commandWindows: z.string().min(1).max(MAX_COMMAND_LENGTH).optional(),
     args: z.array(z.string().max(MAX_COMMAND_LENGTH)).max(MAX_COMMAND_ARGS).optional(),
     shell: z.enum(['bash', 'powershell']).optional(),
+    url: z.string().trim().min(1).max(MAX_COMMAND_LENGTH).optional(),
+    headers: z
+      .record(
+        z.string().trim().min(1).max(MAX_STATUS_MESSAGE_LENGTH),
+        z.string().max(MAX_COMMAND_LENGTH),
+      )
+      .refine((headers) => Object.keys(headers).length <= MAX_HTTP_HEADERS, {
+        message: `HTTP hooks may declare at most ${MAX_HTTP_HEADERS} headers`,
+      })
+      .optional(),
+    allowedEnvVars: z
+      .array(z.string().trim().min(1).max(MAX_STATUS_MESSAGE_LENGTH))
+      .max(MAX_COMMAND_ARGS)
+      .optional(),
+    server: z.string().trim().min(1).max(MAX_STATUS_MESSAGE_LENGTH).optional(),
+    tool: z.string().trim().min(1).max(MAX_STATUS_MESSAGE_LENGTH).optional(),
+    input: z.record(z.string(), z.unknown()).optional(),
     prompt: z.string().min(1).max(MAX_COMMAND_LENGTH).optional(),
     model: z.string().trim().min(1).max(MAX_STATUS_MESSAGE_LENGTH).optional(),
     timeout: z.number().int().positive().max(MAX_TIMEOUT_SECONDS).optional(),
@@ -75,6 +100,34 @@ export const pluginHookHandlerSchema: z.ZodType<PluginHookHandler> = z
         message: 'Prompt hooks require a non-empty prompt',
       });
     }
+    if (handler.type === 'agent' && !handler.prompt?.trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['prompt'],
+        message: 'Agent hooks require a non-empty prompt',
+      });
+    }
+    if (handler.type === 'http' && !handler.url) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['url'],
+        message: 'HTTP hooks require a non-empty URL',
+      });
+    }
+    if (handler.type === 'mcp_tool' && !handler.server) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['server'],
+        message: 'MCP tool hooks require a non-empty server',
+      });
+    }
+    if (handler.type === 'mcp_tool' && !handler.tool) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['tool'],
+        message: 'MCP tool hooks require a non-empty tool',
+      });
+    }
   });
 
 export const pluginHookGroupSchema: z.ZodType<PluginHookGroup> = z
@@ -93,6 +146,7 @@ const pluginHookEventsSchema = z.record(
 
 export const pluginHooksDocumentSchema: z.ZodType<PluginHooksDocument> = z
   .object({
+    $schema: z.string().trim().min(1).max(MAX_COMMAND_LENGTH).optional(),
     description: z.string().max(MAX_DESCRIPTION_LENGTH).optional(),
     hooks: pluginHookEventsSchema,
   })
