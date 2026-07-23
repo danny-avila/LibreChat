@@ -441,6 +441,7 @@ endpoints:
   #   # The following capabilities are opt-in and must be added explicitly:
   #   # "programmatic_tools", "stateful_code_sessions", "run_in_background"
   #   # "stateful_code_sessions" is highly experimental and may change substantially.
+  #   # "run_in_background" allows selected MCP and Code Interpreter tools to run as background tasks.
   #   # (optional) Require user approval before matching tool calls. Disabled by default.
   #   toolApproval:
   #     enabled: true
