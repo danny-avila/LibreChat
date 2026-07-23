@@ -1,10 +1,6 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { TActivityLabelEvent, TMessage } from 'librechat-data-provider';
-import type { LocalizeFunction } from '~/common';
-import { applyActivityLabelPart, buildActivityCountsPhrase } from '../activityLabels';
-
-const localize: LocalizeFunction = ((key: string, options?: Record<string, string>) =>
-  `${key}:${options?.[0] ?? ''}`) as LocalizeFunction;
+import { applyActivityLabelPart } from '../activityLabels';
 
 const buildMessage = (content: TMessage['content']): TMessage =>
   ({ messageId: 'm1', isCreatedByUser: false, content }) as TMessage;
@@ -51,15 +47,5 @@ describe('applyActivityLabelPart', () => {
       activity_label: 'Searched runtime release notes',
       pending: false,
     });
-  });
-});
-
-describe('buildActivityCountsPhrase', () => {
-  it('localizes singular and plural segments', () => {
-    const phrase = buildActivityCountsPhrase(
-      { searches: 2, reads: 1, writes: 0, commands: 0, other: 0 },
-      localize,
-    );
-    expect(phrase).toBe('com_ui_activity_searched_other:2 · com_ui_activity_read_one:1');
   });
 });

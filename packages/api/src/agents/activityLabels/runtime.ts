@@ -17,19 +17,16 @@ export interface ActivityLabelLLM {
   endpointTokenConfig?: unknown;
 }
 
-/** Deterministic classification of a batch — computed from tool names, no LLM. */
-export interface ToolBatchCounts {
-  searches: number;
-  reads: number;
-  writes: number;
-  commands: number;
-  other: number;
-}
-
-/** Batch metadata handed to the host at slot-claim time (all deterministic). */
+/**
+ * Batch metadata handed to the host at slot-claim time (all deterministic).
+ *
+ * Deliberately carries no tool-type tally. A tally can only restate the tool
+ * cards rendered directly beneath the header ("ran 1 command"), so it has no
+ * place in either the prompt or the UI; the header earns its row solely by
+ * saying something the cards cannot.
+ */
 export interface ActivityLabelBatchMeta {
   toolCallIds: string[];
-  counts: ToolBatchCounts;
   /** ok = all succeeded, failed = all failed, partial = mixed. */
   status: 'ok' | 'partial' | 'failed';
   /** Owning agent in multi-agent graphs — lets the host stamp the part for lane grouping. */
@@ -66,6 +63,12 @@ export interface GenerateLabelPayload {
   signal: AbortSignal;
   /** Effective per-entry truncation, forwarded so host and SDK prompts agree. */
   charLimit: number;
+  /**
+   * Instruction for the label model. Always sent: left unset, the SDK falls
+   * back to its own generic past-tense prompt and the register defined here
+   * never reaches the preferred path.
+   */
+  prompt?: string;
 }
 
 /** Per-generation LLM callbacks for usage accounting on the fallback path. */
@@ -145,29 +148,14 @@ function stringifyUnknown(value: unknown): string {
 }
 
 /**
- * Tool-name classification, mirroring Claude Code's streamlined-mode
- * taxonomy (searches/reads/writes/commands/other) with LibreChat tool names.
- * Prefix match covers MCP tool naming (`<tool>_mcp_<server>`).
+ * Deterministic batch facts: which tool calls the label covers (for lane
+ * stamping) and whether they succeeded (for failure tinting). No tool-type
+ * tally — see {@link ActivityLabelBatchMeta}.
  */
-const SEARCH_TOOLS = ['web_search', 'file_search', 'tool_search'];
-const READ_TOOLS = ['read_file', 'retrieval'];
-const WRITE_TOOLS = ['create_file', 'edit_file'];
-const COMMAND_TOOLS = ['execute_code', 'bash_tool'];
-
-function categorizeToolName(toolName: string): keyof ToolBatchCounts {
-  if (SEARCH_TOOLS.some((t) => toolName.startsWith(t))) return 'searches';
-  if (READ_TOOLS.some((t) => toolName.startsWith(t))) return 'reads';
-  if (WRITE_TOOLS.some((t) => toolName.startsWith(t))) return 'writes';
-  if (COMMAND_TOOLS.some((t) => toolName.startsWith(t))) return 'commands';
-  return 'other';
-}
-
 export function classifyBatch(entries: BatchEntry[]): ActivityLabelBatchMeta {
-  const counts: ToolBatchCounts = { searches: 0, reads: 0, writes: 0, commands: 0, other: 0 };
   const toolCallIds: string[] = [];
   let failures = 0;
   for (const entry of entries) {
-    counts[categorizeToolName(entry.toolName)] += 1;
     toolCallIds.push(entry.toolUseId);
     if (entry.status === 'error') {
       failures += 1;
@@ -179,23 +167,37 @@ export function classifyBatch(entries: BatchEntry[]): ActivityLabelBatchMeta {
   } else if (failures === entries.length) {
     status = 'failed';
   }
-  return { toolCallIds, counts, status };
+  return { toolCallIds, status };
 }
 
-const INSTRUCTION = [
-  'You write short labels for collapsed activity groups in a chat UI while an AI agent works.',
-  'Describe what this block of reasoning and tool calls accomplished in 5 to 9 words.',
-  'Past-tense verb first, distinctive nouns, outcomes not mechanics. If a call failed, say so plainly.',
-  'Output only the label — no quotes, no markdown, no preamble, no trailing punctuation.',
+/**
+ * The header sits directly above the tool cards it summarizes, so anything
+ * the cards already display — tool names, how many ran, the arguments — is
+ * noise when repeated. What the cards cannot show is the point of the batch
+ * and how it came out, and that is the only thing worth a row of screen.
+ *
+ * Because this fires after the batch, the tool OUTPUTS are available: prefer
+ * the answer the calls produced over a restatement of what was attempted.
+ */
+export const ACTIVITY_INSTRUCTION: string = [
+  'You write the one-line header above a group of tool calls an AI agent just made.',
+  'Write it like a git commit subject: past tense, verb first, leading with the most distinctive file, name, or finding.',
+  'Say what the calls established or produced — the outcome, not the attempt. If they answered a question, the answer is the line.',
+  'Never name the tools, never count them, never echo the arguments: the cards below the header already show all three.',
+  'Write 4 to 9 words, sentence case, no trailing punctuation, no quotes or markdown.',
+  'Good: "Confirmed /mnt/data resets between calls". "Traced the leak to formatAgentMessages". "Found 3 failing auth tests".',
+  'Bad: "Ran 1 command". "Used bash_tool twice". "Executed ls /mnt/data". "Searched the codebase".',
+  'If every call failed, say what failed and why, plainly.',
+  'Output only the line.',
 ].join(' ');
 
-function buildPrompt(
+export function buildPrompt(
   entries: BatchEntry[],
   charLimit: number,
   context?: ActivityLabelBlockContext,
   instruction?: string,
 ): string {
-  const sections: string[] = [instruction ?? INSTRUCTION];
+  const sections: string[] = [instruction ?? ACTIVITY_INSTRUCTION];
   if (context?.lastAssistantText) {
     sections.push(
       `Intent (assistant's last message): ${truncate(context.lastAssistantText, INPUT_CHAR_LIMIT)}`,
@@ -218,8 +220,10 @@ function buildPrompt(
         : truncate(stringifyUnknown(entry.toolOutput), charLimit);
     return `- ${entry.toolName}(${input}) → ${outcome}`;
   });
-  sections.push(`Tool calls:\n${lines.join('\n')}`);
-  sections.push('Label:');
+  /** Flagged as reference material: without this the model tends to read the
+   *  list as the thing to summarize and hands back a transcription of it. */
+  sections.push(`What it called, and what came back (do not restate these):\n${lines.join('\n')}`);
+  sections.push('Header:');
   return sections.join('\n\n');
 }
 
@@ -303,6 +307,7 @@ export function createActivityLabelHook(
             traceSeed: `${input.runId}-activity-${slot.index}`,
             signal,
             charLimit,
+            ...(opts.prompt != null && { prompt: opts.prompt }),
           });
         } else {
           const { provider, clientOptions } = await getLLM();

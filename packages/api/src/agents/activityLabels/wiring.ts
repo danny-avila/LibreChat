@@ -6,7 +6,7 @@ import type {
   ActivityLabelLLM,
   GenerateLabelPayload,
 } from './runtime';
-import { createActivityLabelHook } from './runtime';
+import { ACTIVITY_INSTRUCTION, createActivityLabelHook } from './runtime';
 
 /** Structural view of a content part; hosts pass their live parts array. */
 export interface LooseContentPart {
@@ -194,10 +194,9 @@ export interface ActivityLabelHostDeps {
 
 /**
  * Builds the run wiring for activity labels: slot claiming at each batch
- * boundary (steering's index-offset pattern), claim-time counts emit,
- * fill-time label emit ordered after the claim emit, groupId/agentId lane
- * stamping, and settle tracking. Implementation lives here (TS) so the JS
- * controller stays a thin wrapper.
+ * boundary (steering's index-offset pattern), fill-time label emit,
+ * groupId/agentId lane stamping, and settle tracking. Implementation lives
+ * here (TS) so the JS controller stays a thin wrapper.
  */
 export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
   hook: HookCallback<'PostToolBatch'>;
@@ -207,7 +206,10 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
       resolveLLM: deps.resolveLLM,
       ...(deps.maxPerRun != null && { maxPerRun: deps.maxPerRun }),
       ...(deps.charLimit != null && { charLimit: deps.charLimit }),
-      ...(deps.prompt != null && { prompt: deps.prompt }),
+      /** Always send an instruction. With none, the SDK path falls back to
+       *  the published package's own generic prompt, so the register this
+       *  module defines would apply to the fallback path only. */
+      prompt: deps.prompt ?? ACTIVITY_INSTRUCTION,
       /** Seed the cap from labels already on the response so a HITL resume
        *  cannot mint a fresh quota after every approval. */
       initialGeneratedCount: deps
@@ -242,7 +244,6 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
           type: ContentTypes.ACTIVITY_LABEL,
           [ContentTypes.ACTIVITY_LABEL]: '',
           tool_call_ids: meta.toolCallIds,
-          counts: meta.counts,
           status: meta.status,
           ...(meta.executingAgentId != null && { agentId: meta.executingAgentId }),
           ...(groupId != null && { groupId }),
@@ -250,12 +251,11 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
         };
         parts.push(part);
         deps.bumpIndexOffset();
-        /** Claim-time emit: the counts phrase renders in the live UI
-         *  immediately at batch end. Fire-and-forget — claimSlot runs
-         *  inside the awaited hook, so it must not block on the emit —
-         *  but the promise is retained so fill() can order the resolved
-         *  label AFTER the placeholder in the durable chunk log. */
-        const claimEmit = deps.emitLabelEvent(index, { ...part }).catch(() => undefined);
+        /** No claim-time emit. The slot is reserved server-side so indices
+         *  stay stable, but an empty header has nothing to say — emitting it
+         *  would change the UI before the generation it announces exists.
+         *  Until `fill` lands, the client renders the batch exactly as it
+         *  does today. */
         let resolveFill: () => void = () => undefined;
         const fillDone = new Promise<void>((resolve) => {
           resolveFill = resolve;
@@ -276,10 +276,6 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
                 return;
               }
               part[ContentTypes.ACTIVITY_LABEL] = text;
-              await claimEmit;
-              if (deps.isClosed?.() === true) {
-                return;
-              }
               await deps.emitLabelEvent(index, part);
             } finally {
               resolveFill();

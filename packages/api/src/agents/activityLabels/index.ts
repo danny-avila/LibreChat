@@ -1,6 +1,10 @@
-export { classifyBatch, createActivityLabelHook } from './runtime';
+export {
+  ACTIVITY_INSTRUCTION,
+  buildPrompt,
+  classifyBatch,
+  createActivityLabelHook,
+} from './runtime';
 export type {
-  ToolBatchCounts,
   ActivityLabelBatchMeta,
   ActivityLabelBlockContext,
   ActivityLabelHookOptions,
