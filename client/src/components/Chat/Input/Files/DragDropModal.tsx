@@ -26,7 +26,7 @@ import { ephemeralAgentByConvoId } from '~/store';
 
 const DragDropModal = () => {
   const localize = useLocalize();
-  const { isVisible, files, closeModal } = useUploadModalContext();
+  const { isVisible, files, closeModal, getFallback } = useUploadModalContext();
   const { conversationId, agentId, endpoint, endpointType, useResponsesApi } = useDragDropContext();
   const ephemeralAgent = useRecoilValue(
     ephemeralAgentByConvoId(conversationId ?? Constants.NEW_CONVO),
@@ -100,8 +100,14 @@ const DragDropModal = () => {
                 <button
                   key={value ?? 'provider'}
                   onClick={() => {
-                    routeFiles(files, value);
-                    closeModal();
+                    const onFallback = getFallback();
+                    const routed = routeFiles(files, value);
+                    closeModal(true);
+                    void routed.then((ok) => {
+                      if (ok === false) {
+                        onFallback?.();
+                      }
+                    });
                   }}
                   className="flex items-center gap-2 rounded-lg p-2 hover:bg-surface-active-alt"
                 >

@@ -283,7 +283,11 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     img.src = preview;
   };
 
-  const handleFiles = async (_files: FileList | File[], _toolResource?: string) => {
+  /** Returns `false` when the files fail validation (nothing was attached), `true` otherwise */
+  const handleFiles = async (
+    _files: FileList | File[],
+    _toolResource?: string,
+  ): Promise<boolean> => {
     abortControllerRef.current = new AbortController();
     const fileList = Array.from(_files);
     /* Validate files */
@@ -307,11 +311,11 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       console.error('file validation error', error);
       setError('com_error_files_validation');
       setFilesLoading(false);
-      return;
+      return false;
     }
     if (!filesAreValid) {
       setFilesLoading(false);
-      return;
+      return false;
     }
 
     /* Process files */
@@ -446,6 +450,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         }
       }
     }
+    return true;
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>, _toolResource?: string) => {
