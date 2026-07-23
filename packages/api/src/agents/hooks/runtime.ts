@@ -302,8 +302,6 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
   const unregisters: Array<() => void> = [];
   const compactTriggers = new Map<string, string>();
   const executedHandlers = new WeakMap<HookInput, Set<string>>();
-  const firedHandlerSessions = new Map<string, Set<string>>();
-  const startedHandlerSessions = new Map<string, Set<string>>();
   const tracksCompactTriggers = plan.entries.some(
     (entry) => entry.status === 'ready' && entry.targetEvent === 'PostCompact',
   );
@@ -328,22 +326,8 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
     }
     const targetEvent = entry.targetEvent;
     const handlerIdentity = getHandlerIdentity(entry.sourceEvent, entry.handler, entry.condition);
-    let seenSessionIds: Set<string> | undefined;
-    if (entry.sourceEvent === 'SessionStart') {
-      seenSessionIds = startedHandlerSessions.get(handlerIdentity);
-      if (!seenSessionIds) {
-        seenSessionIds = new Set<string>();
-        startedHandlerSessions.set(handlerIdentity, seenSessionIds);
-      }
-    }
-    let firedSessionIds: Set<string> | undefined;
-    if (entry.handler.once === true) {
-      firedSessionIds = firedHandlerSessions.get(handlerIdentity);
-      if (!firedSessionIds) {
-        firedSessionIds = new Set<string>();
-        firedHandlerSessions.set(handlerIdentity, firedSessionIds);
-      }
-    }
+    const seenSessionIds = entry.sourceEvent === 'SessionStart' ? new Set<string>() : undefined;
+    const firedSessionIds = entry.handler.once === true ? new Set<string>() : undefined;
     const toolNameTranslator = executor.capabilities.toPluginToolName;
     const toPluginToolName =
       toolNameTranslator === undefined
@@ -415,6 +399,7 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
       }
       const handlersForInput = executedHandlers.get(input);
       if (handlersForInput?.has(handlerIdentity) === true) {
+        firedSessionIds?.add(sessionId);
         return {};
       }
       if (handlersForInput) {

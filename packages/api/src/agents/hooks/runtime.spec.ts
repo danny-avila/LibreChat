@@ -338,9 +338,53 @@ describe('registerPluginHooks', () => {
     expect(hookExecutor.execute).toHaveBeenCalledTimes(1);
   });
 
-  test('passes PostToolUse continueOnBlock through to the executor', async () => {
+  test('keeps once state separate across disjoint matcher declarations', async () => {
     const registry = new HookRegistry();
     const hookExecutor = executor();
+    const duplicateHandler = {
+      type: 'command',
+      command: 'initialize-tool-audit',
+      once: true,
+    };
+    registerPluginHooks({
+      pluginId: 'separate-session-once',
+      registry,
+      executor: hookExecutor,
+      document: document({
+        PreToolUse: [
+          { matcher: '^Write$', hooks: [duplicateHandler] },
+          { matcher: '^Bash$', hooks: [{ ...duplicateHandler }] },
+        ],
+      }),
+    });
+
+    const run = async (runId: string, toolName: string): Promise<void> => {
+      await executeHooks({
+        registry,
+        matchQuery: toolName,
+        input: {
+          hook_event_name: 'PreToolUse',
+          runId,
+          threadId: 'separate-once-session',
+          toolName,
+          toolInput: {},
+          toolUseId: `tool-${runId}`,
+        },
+      });
+    };
+
+    await run('write-first', 'Write');
+    await run('write-second', 'Write');
+    await run('bash-first', 'Bash');
+    await run('bash-second', 'Bash');
+
+    expect(hookExecutor.execute).toHaveBeenCalledTimes(2);
+  });
+
+  test('passes prompt continueOnBlock through to the executor', async () => {
+    const registry = new HookRegistry();
+    const hookExecutor = executor();
+    hookExecutor.capabilities.handlerTypes = new Set(['command', 'prompt']);
     registerPluginHooks({
       pluginId: 'self-correcting-review',
       registry,
@@ -351,8 +395,8 @@ describe('registerPluginHooks', () => {
             matcher: 'Write',
             hooks: [
               {
-                type: 'command',
-                command: 'verify-write',
+                type: 'prompt',
+                prompt: 'Verify this write result',
                 continueOnBlock: true,
               },
             ],
@@ -542,6 +586,44 @@ describe('registerPluginHooks', () => {
     await run('second');
 
     expect(hookExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+
+  test('keeps SessionStart state separate across disjoint source declarations', async () => {
+    const registry = new HookRegistry();
+    const hookExecutor = executor();
+    hookExecutor.capabilities.sessionLifecycle = true;
+    const context = { sessionStartSource: 'startup' };
+    const duplicateHandler = { type: 'command', command: 'load-context' };
+    registerPluginHooks({
+      pluginId: 'separate-session-start',
+      registry,
+      executor: hookExecutor,
+      context,
+      document: document({
+        SessionStart: [
+          { matcher: 'startup', hooks: [duplicateHandler] },
+          { matcher: 'resume', hooks: [{ ...duplicateHandler }] },
+        ],
+      }),
+    });
+
+    const run = async (runId: string): Promise<void> => {
+      await executeHooks({
+        registry,
+        input: {
+          hook_event_name: 'RunStart',
+          runId,
+          threadId: 'separate-session-start',
+          messages: [],
+        },
+      });
+    };
+
+    await run('startup');
+    context.sessionStartSource = 'resume';
+    await run('resume');
+
+    expect(hookExecutor.execute).toHaveBeenCalledTimes(2);
   });
 
   test('translates compaction matchers and carries the trigger into PostCompact', async () => {

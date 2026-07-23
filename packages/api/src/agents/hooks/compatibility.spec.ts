@@ -262,12 +262,18 @@ describe('planPluginHooks', () => {
     );
   });
 
-  test('preserves continueOnBlock for PostToolUse and PreToolUse prompt handlers', () => {
+  test('preserves continueOnBlock for supported prompt handlers', () => {
     const plan = planPluginHooks(
       document({
         PostToolUse: [
           {
-            hooks: [{ type: 'command', command: 'verify-output', continueOnBlock: true }],
+            hooks: [
+              {
+                type: 'prompt',
+                prompt: 'Review this tool result',
+                continueOnBlock: true,
+              },
+            ],
           },
         ],
         PreToolUse: [
@@ -294,6 +300,29 @@ describe('planPluginHooks', () => {
         expect.objectContaining({
           status: 'ready',
           handler: expect.objectContaining({ continueOnBlock: true }),
+        }),
+      ]),
+    );
+  });
+
+  test('rejects continueOnBlock on non-prompt handlers', () => {
+    const plan = planPluginHooks(
+      document({
+        PostToolUse: [
+          {
+            hooks: [{ type: 'command', command: 'verify-output', continueOnBlock: true }],
+          },
+        ],
+      }),
+      commandCapabilities,
+    );
+
+    expect(plan.summary).toEqual({ declared: 1, ready: 0, unsupported: 1 });
+    expect(plan.entries[0].issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'unsupported_continue_on_block',
+          severity: 'error',
         }),
       ]),
     );
