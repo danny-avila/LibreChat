@@ -63,6 +63,7 @@ const localStorageAtoms = {
    */
   steerInterruptsByDefault: atomWithLocalStorage('steerInterruptsByDefault', false),
   maximizeChatSpace: atomWithLocalStorage('maximizeChatSpace', false),
+  pasteLongTextAsFile: atomWithLocalStorage('pasteLongTextAsFile', false),
   chatDirection: atomWithLocalStorage('chatDirection', 'LTR'),
   autoExpandTools: atomWithLocalStorage(LocalStorageKeys.AUTO_EXPAND_TOOLS, false),
   saveDrafts: atomWithLocalStorage('saveDrafts', true),

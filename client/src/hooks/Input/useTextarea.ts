@@ -29,6 +29,9 @@ import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
+/** Minimum pasted-text length before it is attached as a file instead of inserted inline */
+const PASTE_TO_FILE_MIN_LENGTH = 5000;
+
 export default function useTextarea({
   textAreaRef,
   submitButtonRef,
@@ -61,6 +64,7 @@ export default function useTextarea({
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
   const { submitOverride, yieldedChords } = useComposerBindings();
+  const pasteLongTextAsFile = useRecoilValue(store.pasteLongTextAsFile);
 
   const { index, conversation, isSubmitting, setFilesLoading } = useChatContext();
   const latestMessage = useLatestMessageMeta(index);
@@ -283,7 +287,41 @@ export default function useTextarea({
         }
         setFilesLoading(false);
         openModal(timestampedFiles);
+        return;
       }
+
+      const pastedText = clipboardData.getData('text/plain');
+      if (!pasteLongTextAsFile || uploadsDisabled || pastedText.length < PASTE_TO_FILE_MIN_LENGTH) {
+        return;
+      }
+
+      const textFile = new File([pastedText], `pasted_text_${+new Date()}.txt`, {
+        type: 'text/plain',
+      });
+
+      /** Assistants use their own upload path; bypass option resolution like drag-and-drop does */
+      if (isAssistantsEndpoint(conversation?.endpoint)) {
+        e.preventDefault();
+        setFilesLoading(true);
+        routeFiles([textFile]);
+        return;
+      }
+
+      const options = getUploadOptions([textFile]);
+      if (options.length === 0) {
+        /** No viable upload destination; fall back to a regular inline text paste */
+        return;
+      }
+      e.preventDefault();
+      if (options.length === 1) {
+        setFilesLoading(true);
+        routeFiles([textFile], options[0]);
+        if (options[0] === EToolResources.context) {
+          showToast({ message: localize('com_ui_file_attached_as_text'), status: 'info' });
+        }
+        return;
+      }
+      openModal([textFile]);
     },
     [
       localize,
@@ -295,6 +333,7 @@ export default function useTextarea({
       uploadsDisabled,
       setFilesLoading,
       getUploadOptions,
+      pasteLongTextAsFile,
     ],
   );
 
