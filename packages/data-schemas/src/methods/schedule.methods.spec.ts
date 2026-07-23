@@ -1095,13 +1095,15 @@ describe('lifecycle barriers: stale pause vs resume, and concurrent resumes at c
     const schedule = await methods.createSchedule(scheduleData());
     await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
 
-    // Segment 1 pauses. Its writer observed epoch 0 (no resume yet).
+    // Segment 0 pauses. This mirrors the INITIAL pause exactly as request.js writes it:
+    // expectResumeSeq 0, against a row that has no resumeSeq field at all.
     await methods.recordRunOutcome({
       scheduleId: schedule.id,
       scheduledFor,
       status: 'requires_action',
       conversationId: 'convo-1',
       autoDisableAfterFailures: 3,
+      expectResumeSeq: 0,
     });
     expect((await getRun(schedule.id, scheduledFor)).status).toBe('requires_action');
 
@@ -1194,5 +1196,129 @@ describe('lifecycle barriers: stale pause vs resume, and concurrent resumes at c
     expect(row.status).toBe('requires_action');
     expect(row.capacitySlot).toBeUndefined();
     expect(await ScheduleRun.countDocuments({ status: 'started', capacitySlot: 0 })).toBe(0);
+  });
+});
+
+describe('resume lease: duplicate attempts and crash recovery', () => {
+  const scheduledFor = new Date('2026-07-20T12:00:00Z');
+
+  async function pausedRun() {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor, status: 'requires_action' }));
+    return schedule;
+  }
+
+  it('a delayed duplicate resume cannot demote the winner after it committed', async () => {
+    const schedule = await pausedRun();
+
+    // Winner acquires, consumes the approval, reconstructs, commits. Commit clears the
+    // holder, so the row is an ordinary `started` run again.
+    const winner = await methods.acquireResumeLease({
+      scheduleId: schedule.id,
+      scheduledFor,
+      holder: 'winner',
+      ttlMs: 60_000,
+      capacitySlot: 0,
+    });
+    expect(winner.outcome).toBe('acquired');
+    await methods.markResumeClaimed(schedule.id, scheduledFor, 'winner', 60_000);
+    expect(await methods.commitResumeLease(schedule.id, scheduledFor, 'winner')).toBe(true);
+
+    // A delayed duplicate submit for the SAME action now arrives. It can still adopt the
+    // holderless row, but it will LOSE approvals.resolve and then release.
+    const loser = await methods.acquireResumeLease({
+      scheduleId: schedule.id,
+      scheduledFor,
+      holder: 'loser',
+      ttlMs: 60_000,
+      capacitySlot: 0,
+    });
+    expect(loser.outcome).toBe('acquired');
+    await methods.releaseResumeLease(schedule.id, scheduledFor, 'loser');
+
+    // The winner's run must still be live. Demoting here would knock a running
+    // generation back to requires_action and free its capacity slot underneath it.
+    const row = await getRun(schedule.id, scheduledFor);
+    expect(row.status).toBe('started');
+    expect(row.capacitySlot).toBe(0);
+    expect(row.resumeHolder).toBeUndefined();
+  });
+
+  it('still rolls back a resume that genuinely promoted a paused run', async () => {
+    const schedule = await pausedRun();
+    const lease = await methods.acquireResumeLease({
+      scheduleId: schedule.id,
+      scheduledFor,
+      holder: 'solo',
+      ttlMs: 60_000,
+      capacitySlot: 0,
+    });
+    expect(lease.outcome).toBe('acquired');
+
+    // Pre-claim failure: this attempt promoted the row, so release MUST demote it and
+    // free the slot, leaving the approval actionable.
+    expect(await methods.releaseResumeLease(schedule.id, scheduledFor, 'solo')).toBe(true);
+    const row = await getRun(schedule.id, scheduledFor);
+    expect(row.status).toBe('requires_action');
+    expect(row.capacitySlot).toBeUndefined();
+  });
+
+  it('a second live attempt cannot steal an unexpired lease', async () => {
+    const schedule = await pausedRun();
+    await methods.acquireResumeLease({
+      scheduleId: schedule.id,
+      scheduledFor,
+      holder: 'first',
+      ttlMs: 60_000,
+      capacitySlot: 0,
+    });
+    const second = await methods.acquireResumeLease({
+      scheduleId: schedule.id,
+      scheduledFor,
+      holder: 'second',
+      ttlMs: 60_000,
+      capacitySlot: 1,
+    });
+    expect(second.outcome).toBe('held');
+  });
+
+  it('an EXPIRED pre-claim lease is adoptable; a post-claim one is not', async () => {
+    const preClaim = await pausedRun();
+    await methods.acquireResumeLease({
+      scheduleId: preClaim.id,
+      scheduledFor,
+      holder: 'crashed',
+      ttlMs: -1_000, // already expired
+      capacitySlot: 0,
+    });
+    // Never consumed the approval, so a retry may take it over.
+    const adopted = await methods.acquireResumeLease({
+      scheduleId: preClaim.id,
+      scheduledFor,
+      holder: 'retry',
+      ttlMs: 60_000,
+      capacitySlot: 0,
+    });
+    expect(adopted.outcome).toBe('acquired');
+
+    const postClaim = await pausedRun();
+    await methods.acquireResumeLease({
+      scheduleId: postClaim.id,
+      scheduledFor,
+      holder: 'crashed-2',
+      ttlMs: -1_000,
+      capacitySlot: 1,
+    });
+    // The approval WAS consumed, so this must roll forward (reconciler terminalizes it)
+    // rather than be re-run by another attempt.
+    await methods.markResumeClaimed(postClaim.id, scheduledFor, 'crashed-2', -1_000);
+    const stolen = await methods.acquireResumeLease({
+      scheduleId: postClaim.id,
+      scheduledFor,
+      holder: 'retry-2',
+      ttlMs: 60_000,
+      capacitySlot: 2,
+    });
+    expect(stolen.outcome).toBe('held');
   });
 });

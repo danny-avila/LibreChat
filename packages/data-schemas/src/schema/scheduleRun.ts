@@ -80,6 +80,11 @@ const scheduleRunSchema: Schema<IScheduleRunDocument> = new Schema(
     resumeClaimedAt: {
       type: Date,
     },
+    /** True when the lease ADOPTED an already-`started` row instead of promoting a
+     *  paused one. Release must not demote an adopted row (it may be a live run). */
+    resumeAdopted: {
+      type: Boolean,
+    },
     /** Global concurrency slot held while `started`. The unique partial index below
      *  turns fireConcurrency into a DB-enforced bound instead of a racy count. */
     capacitySlot: {

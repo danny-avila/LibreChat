@@ -356,9 +356,21 @@ const deleteUserController = async (req, res) => {
     // scheduling admission consults this durable user-level flag instead. Raising it
     // also invalidates the auth user-doc cache, without which the barrier would only be
     // as strong as the shortest cache TTL.
-    await markUserDeleting(user.id).catch((error) =>
-      logger.error('[deleteUserController] Failed to raise the deletion barrier', error),
-    );
+    let barrierRaised = true;
+    try {
+      await markUserDeleting(user.id);
+    } catch (error) {
+      barrierRaised = false;
+      logger.error('[deleteUserController] Failed to raise the deletion barrier', error);
+    }
+    if (!barrierRaised) {
+      // FAIL CLOSED. Without the barrier we cannot promise that admission is refused for
+      // the rest of the cascade, so destroying now could let concurrently-created work
+      // outlive the account. Refuse rather than proceed on an unenforced guarantee.
+      return res.status(503).json({
+        message: 'Could not start account deletion. Please retry.',
+      });
+    }
 
     const quiesced = await quiesceUserSchedules(user.id).catch((error) => {
       logger.error('[deleteUserController] Failed to quiesce scheduled chats', error);

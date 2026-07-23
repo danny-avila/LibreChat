@@ -368,12 +368,13 @@ const startServer = async () => {
       // via SCHEDULES_CLUSTERED (or use USE_REDIS_STREAMS for a shared store). Without
       // that, a peer replica's in-memory job would be misread as gone and its live run
       // wrongly interrupted after the orphan cutoff.
-      const scheduleEngine = await initializeScheduleEngine({
-        clustered: isEnabled(process.env.SCHEDULES_CLUSTERED),
-      });
+      const clustered = isEnabled(process.env.SCHEDULES_CLUSTERED);
+      const scheduleEngine = await initializeScheduleEngine({ clustered });
       // Only accept schedule writes once the engine confirmed its unique idempotency
       // + TTL indexes exist. If index creation failed the engine is left undefined and
       // schedule writes keep returning 503 (the app otherwise runs normally).
+      // The engine refuses to arm on an unsafe clustered topology, so a null engine
+      // already means "not scheduling here"; the write gate follows it.
       schedulesReady = scheduleEngine != null;
       if (!schedulesReady) {
         logger.warn(

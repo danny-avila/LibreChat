@@ -22,6 +22,7 @@ function makeService(
     disableUserSchedulesForDeletion: jest.fn(async () => undefined),
     getActiveRunsForUser,
     countActiveRuns: jest.fn(async () => 0),
+    requestRunAbort: jest.fn(async () => true),
   };
   const deps = {
     methods,

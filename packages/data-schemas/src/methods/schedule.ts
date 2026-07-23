@@ -673,6 +673,13 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
                 resumeHolder: holder,
                 resumeExpiresAt: { $add: ['$$NOW', ttlMs] },
                 capacitySlot,
+                // Whether this lease ADOPTED a row that was already `started` rather than
+                // promoting a paused one. Expressions in a pipeline $set see the PRE-stage
+                // document, so this observes the status before the line above changes it.
+                // Release must never demote an adopted row: a committed resume clears its
+                // holder, so a late duplicate attempt can otherwise adopt a LIVE running
+                // run and roll it back to requires_action.
+                resumeAdopted: { $eq: ['$status', 'started'] },
               },
             },
             { $unset: ['resumeClaimedAt'] },
@@ -736,7 +743,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   ): Promise<boolean> {
     const result = await ScheduleRun().updateOne(
       { scheduleId, scheduledFor, resumeHolder: holder },
-      { $unset: { resumeHolder: 1, resumeExpiresAt: 1, resumeClaimedAt: 1 } },
+      { $unset: { resumeHolder: 1, resumeExpiresAt: 1, resumeClaimedAt: 1, resumeAdopted: 1 } },
     );
     return (result.matchedCount ?? 0) > 0;
   }
@@ -749,19 +756,38 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     scheduledFor: Date,
     holder: string,
   ): Promise<boolean> {
-    const result = await ScheduleRun().updateOne(
+    // Demote ONLY a row this holder actually promoted out of `requires_action`. An
+    // ADOPTED row was already `started` (a committed resume, or one whose pause
+    // bookkeeping never landed), and demoting it would knock a live generation back to
+    // requires_action and free its capacity slot underneath it.
+    const promoted = await ScheduleRun().updateOne(
+      {
+        scheduleId,
+        scheduledFor,
+        resumeHolder: holder,
+        resumeClaimedAt: { $exists: false },
+        resumeAdopted: { $ne: true },
+      },
+      {
+        $set: { status: 'requires_action' },
+        $unset: { resumeHolder: 1, resumeExpiresAt: 1, capacitySlot: 1, resumeAdopted: 1 },
+      },
+    );
+    if ((promoted.matchedCount ?? 0) > 0) {
+      return true;
+    }
+    // Adopted row: drop only OUR lease so another attempt can take it, leaving the run
+    // (and its slot) exactly as we found it.
+    const released = await ScheduleRun().updateOne(
       {
         scheduleId,
         scheduledFor,
         resumeHolder: holder,
         resumeClaimedAt: { $exists: false },
       },
-      {
-        $set: { status: 'requires_action' },
-        $unset: { resumeHolder: 1, resumeExpiresAt: 1, capacitySlot: 1 },
-      },
+      { $unset: { resumeHolder: 1, resumeExpiresAt: 1, resumeAdopted: 1 } },
     );
-    return (result.matchedCount ?? 0) > 0;
+    return (released.matchedCount ?? 0) > 0;
   }
 
   /** Records that an abort was requested WITHOUT freeing the capacity slot: the run
@@ -877,10 +903,15 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       // EPOCH CAS: a pause may only land on the segment that produced it. A resume
       // bumps resumeSeq, so a stale requires_action callback from the PREVIOUS segment
       // no longer matches and cannot demote the run the resume just promoted.
-      const epochFilter =
-        params.expectResumeSeq != null
-          ? { resumeSeq: params.expectResumeSeq }
-          : ({} as Record<string, never>);
+      // `{field: null}` matches null OR missing in Mongo, so epoch 0 must be expressed
+      // as $in [0, null] — a never-resumed row has no resumeSeq at all, and a plain
+      // equality on 0 would never match it (silently disabling the fence).
+      let epochFilter: Record<string, unknown> = {};
+      if (params.expectResumeSeq === 0) {
+        epochFilter = { resumeSeq: { $in: [0, null] } };
+      } else if (params.expectResumeSeq != null) {
+        epochFilter = { resumeSeq: params.expectResumeSeq };
+      }
       const activeRun = await ScheduleRun()
         .findOne({
           scheduleId: params.scheduleId,
@@ -946,6 +977,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
           resumeHolder: 1,
           resumeExpiresAt: 1,
           resumeClaimedAt: 1,
+          resumeAdopted: 1,
         },
       },
     );

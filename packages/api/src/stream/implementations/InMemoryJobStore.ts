@@ -225,6 +225,8 @@ export class InMemoryJobStore implements IJobStore {
   async deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean> {
     // Generation-fenced: an omitted guard behaves exactly as before. Read-check-write
     // in one synchronous block, so no replacement can land in between.
+    // Guard BEFORE any teardown: a refused delete must leave the replacement
+    // generation's state completely untouched.
     if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
       return false;
     }

@@ -193,6 +193,18 @@ const JOB_DELETE_LUA =
   'redis.call("DEL", KEYS[3]) redis.call("DEL", KEYS[4]) ' +
   'return 1';
 
+/**
+ * Allocates a STRICTLY monotonic generation stamp for a stream, atomically. Reading the
+ * prior createdAt in TS and computing the next value in the client is a race: two
+ * concurrent creates observe the same prior and mint the same stamp, which is exactly
+ * the collision the stamp exists to prevent. ARGV[1] is the caller's wall clock.
+ */
+const JOB_STAMP_LUA =
+  'local prev = redis.call("HGET", KEYS[1], "createdAt") ' +
+  'local now = tonumber(ARGV[1]) ' +
+  'if prev and tonumber(prev) and tonumber(prev) >= now then return tonumber(prev) + 1 end ' +
+  'return now';
+
 const STEER_DRAIN_LUA =
   'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {} end ' +
   'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
@@ -439,21 +451,18 @@ export class RedisJobStore implements IJobStore {
     conversationId?: string,
     tenantId?: string,
   ): Promise<SerializableJobData> {
-    // STRICTLY monotonic per streamId: createdAt is the generation fence and a streamId
-    // is reused across generations, so two creates in the same millisecond would mint
-    // identical tokens and let a stale caller's guard pass against the replacement.
-    const previousCreatedAt = await this.redis
-      .hget(KEYS.job(streamId), 'createdAt')
-      .then((value) => (value == null ? undefined : parseInt(value, 10)))
-      .catch(() => undefined);
+    // STRICTLY monotonic per streamId, allocated ATOMICALLY inside Redis: createdAt is
+    // the generation fence and a streamId is reused across generations, so a read-then-
+    // compute in the client would let two concurrent creates mint the same stamp.
+    const allocated = await this.redis
+      .eval(JOB_STAMP_LUA, 1, KEYS.job(streamId), String(Date.now()))
+      .catch(() => null);
     const job: SerializableJobData = {
       streamId,
       userId,
       ...(tenantId && { tenantId }),
       status: 'running',
-      createdAt: nextGenerationStamp(
-        Number.isFinite(previousCreatedAt) ? previousCreatedAt : undefined,
-      ),
+      createdAt: typeof allocated === 'number' ? allocated : nextGenerationStamp(),
       conversationId,
       syncSent: false,
     };
@@ -785,9 +794,9 @@ export class RedisJobStore implements IJobStore {
   }
 
   async deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean> {
-    this.localGraphCache.delete(streamId);
-    this.localContentParts.delete(streamId);
-    this.localCollectedUsageCache.delete(streamId);
+    // Local caches are dropped only AFTER the guarded delete fires (see
+    // deleteJobInternal): clearing them up front would wipe the REPLACEMENT
+    // generation's cached graph/content when the guard refuses this delete.
     const job = await this.getJob(streamId);
     // Cheap pre-check so a mismatched generation costs no round trip; the Lua guard
     // below is what actually makes it atomic.
@@ -803,10 +812,6 @@ export class RedisJobStore implements IJobStore {
     userJobsKey: string | null,
     expectedCreatedAt?: number,
   ): Promise<boolean> {
-    this.localGraphCache.delete(streamId);
-    this.localContentParts.delete(streamId);
-    this.localCollectedUsageCache.delete(streamId);
-
     // The four per-stream keys share the {streamId} hash tag, so the guarded delete is
     // one atomic single-slot script (safe on Cluster). The three SREMs are cross-slot
     // and stay OUTSIDE the script, running only when the script actually deleted —
@@ -824,6 +829,10 @@ export class RedisJobStore implements IJobStore {
       logger.debug(`[RedisJobStore] Delete skipped (generation mismatch): ${streamId}`);
       return false;
     }
+    // Safe now: this delete owned the generation.
+    this.localGraphCache.delete(streamId);
+    this.localContentParts.delete(streamId);
+    this.localCollectedUsageCache.delete(streamId);
     if (this.isCluster) {
       await this.redis.srem(KEYS.runningJobs, streamId);
       await this.redis.srem(KEYS.requiresActionJobs, streamId);

@@ -424,11 +424,17 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     // another worker, and orphan reaping is disabled. This is unsupported for
     // scheduled chats — warn the operator to enable USE_REDIS_STREAMS.
     if (clustered && !GenerationJobManager.isRedis) {
-      logger.warn(
+      // FAIL CLOSED: do not arm the engine at all. Gating only API writes still left
+      // EXISTING schedules being claimed and fired on private per-worker stores, where
+      // a peer's run is unreachable for abort/quiesce and orphan recovery cannot see it.
+      // Returning undefined also keeps the write gate shut (it keys on the engine).
+      logger.error(
         '[schedules] clustered deployment without a shared stream store (USE_REDIS_STREAMS): ' +
           'scheduled-run peer aborts (deletion/account-deletion quiescing) and cross-worker ' +
-          'orphan recovery are NOT available. Enable USE_REDIS_STREAMS for safe multi-worker scheduling.',
+          'orphan recovery are NOT available. The scheduler is DISABLED for this process. ' +
+          'Enable USE_REDIS_STREAMS for safe multi-worker scheduling.',
       );
+      return undefined;
     }
     // Explicitly build the Schedule/ScheduleRun indexes first — the unique
     // idempotency index and TTL retention index would otherwise never exist when
@@ -459,6 +465,11 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     schedule: FireableSchedule,
     limits: ScheduleLimits,
   ): Promise<FireResult | null> {
+    // The global stop means STOP: a manual run dispatches the same billed generation as
+    // an automatic one, so gating only the engine tick would leave Run Now wide open.
+    if (await engineDeps.isGloballyDisabled()) {
+      return { fired: false, skipped: 'disabled' as const };
+    }
     const leased = await methods.acquireManualRunLease(
       schedule.id,
       schedule.user,
@@ -581,6 +592,11 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     if (!scheduleId || !scheduledFor) {
       return { outcome: 'not-scheduled' };
     }
+    // A resume restarts a billed generation, so the global stop applies here too.
+    // Reported as 'gone' so the approval is left unconsumed and the caller defers.
+    if (await engineDeps.isGloballyDisabled()) {
+      return { outcome: 'gone' };
+    }
     // getScheduleById hides deleted/soft-deleted schedules, so a null here means the
     // owner already deleted the schedule — its paused run must not be resumable even
     // if the delete's best-effort abort raced. Reject before touching the run.
@@ -665,6 +681,13 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     if (!run.conversationId) {
       return false;
     }
+    // Record the abort REQUEST before signalling. This keeps the run holding its global
+    // capacity slot until its generation owner writes a terminal outcome (settlement),
+    // so an abort that has been asked for but not yet honored cannot free capacity for a
+    // new run while the old generation is still alive.
+    await methods
+      .requestRunAbort(run.scheduleId, run.scheduledFor)
+      .catch((err) => logger.warn('[schedules] failed to record abort request:', err));
     return engineDeps
       .abortScheduledJob(
         run.conversationId,

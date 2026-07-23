@@ -66,6 +66,8 @@ export interface IScheduleRun {
   resumeExpiresAt?: Date;
   /** Set once the approval claim succeeded (pre-claim vs post-claim recovery). */
   resumeClaimedAt?: Date;
+  /** True when the lease adopted an already-`started` row rather than promoting a paused one. */
+  resumeAdopted?: boolean;
   /** Global concurrency slot held while `started`. */
   capacitySlot?: number;
   /** When an abort was requested; capacity is held until settlement is confirmed. */
