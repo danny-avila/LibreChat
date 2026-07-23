@@ -20,6 +20,7 @@ import { setTokenHeader } from '../src/headers-helpers';
 const mockAdapter = jest.fn();
 let originalAdapter: typeof axios.defaults.adapter;
 let savedLocation: Location;
+let dataRequest: typeof import('../src/request').default;
 
 type RetryableAdapterConfig = InternalAxiosRequestConfig & { _retry?: boolean };
 
@@ -74,7 +75,7 @@ beforeAll(async () => {
   originalAdapter = axios.defaults.adapter;
   axios.defaults.adapter = mockAdapter;
 
-  await import('../src/request');
+  dataRequest = (await import('../src/request')).default;
 });
 
 beforeEach(() => {
@@ -657,6 +658,69 @@ describe('axios 401 interceptor — Authorization header guard', () => {
     expect(mockAdapter.mock.calls[0][0].url).toContain('/api/auth/refresh');
     expect(mockAdapter.mock.calls[1][0].url).toBe('/api/messages');
     expect(mockAdapter.mock.calls[1][0].headers?.Authorization).toBe('Bearer fresh-token');
+  });
+
+  it('uses shared proactive refresh for authenticated fetch requests', async () => {
+    expect.assertions(4);
+    setTokenHeader(createJwt(Date.now() + 60_000));
+
+    mockAdapter.mockImplementation((config: InternalAxiosRequestConfig) => {
+      if (config.url?.includes('/api/auth/refresh') === true) {
+        return createAdapterResponse(config, { token: 'fresh-token' });
+      }
+      return createAdapterResponse(config, { ok: true });
+    });
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(null, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      }),
+    );
+
+    await dataRequest.authenticatedFetch('/api/files', {
+      method: 'POST',
+      body: new FormData(),
+      headers: { Accept: 'text/event-stream' },
+    });
+
+    expect(getCallsForUrl('/api/auth/refresh')).toHaveLength(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const uploadHeaders = new Headers(fetchSpy.mock.calls[0][1]?.headers);
+    expect(uploadHeaders.get('Authorization')).toBe('Bearer fresh-token');
+    expect(uploadHeaders.get('Accept')).toBe('text/event-stream');
+  });
+
+  it('refreshes and retries an authenticated fetch request after a 401', async () => {
+    expect.assertions(4);
+    setTokenHeader('expired-token');
+
+    mockAdapter.mockImplementation((config: InternalAxiosRequestConfig) => {
+      if (config.url?.includes('/api/auth/refresh') === true) {
+        return createAdapterResponse(config, { token: 'fresh-token' });
+      }
+      return createAdapterResponse(config, { ok: true });
+    });
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        }),
+      );
+
+    await dataRequest.authenticatedFetch('/api/files', {
+      method: 'POST',
+      body: new FormData(),
+    });
+
+    expect(getCallsForUrl('/api/auth/refresh')).toHaveLength(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const firstHeaders = new Headers(fetchSpy.mock.calls[0][1]?.headers);
+    const retriedHeaders = new Headers(fetchSpy.mock.calls[1][1]?.headers);
+    expect(firstHeaders.get('Authorization')).toBe('Bearer expired-token');
+    expect(retriedHeaders.get('Authorization')).toBe('Bearer fresh-token');
   });
 
   it('does not wait on the in-flight recovery when the refresh request itself fails', async () => {

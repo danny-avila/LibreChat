@@ -4,6 +4,64 @@ import type { TAttachment, TFile } from 'librechat-data-provider';
 import { useSearchResultsByTurn } from './useSearchResultsByTurn';
 import store from '~/store';
 
+function fileKeyOf(attachment: TAttachment): string | undefined {
+  const { file_id, filepath } = attachment as Partial<TFile>;
+  return file_id ?? filepath;
+}
+
+function toolCallIdOf(attachment: TAttachment): string | undefined {
+  return (attachment as { toolCallId?: string }).toolCallId;
+}
+
+function agentIdOf(attachment: TAttachment): string | undefined {
+  return (attachment as { agentId?: string }).agentId;
+}
+
+/**
+ * Stable identity for merging DB and live attachments: `file_id ?? filepath`
+ * scoped by `toolCallId` and `agentId` (sibling code calls can share a
+ * claimed file_id for the same filename, and handoff agents can repeat
+ * provider tool ids — each combination anchors its own card), else
+ * `type:toolCallId` for unkeyed tool artifacts like file_search citations.
+ * Undefined = no stable identity.
+ */
+function attachmentKey(attachment: TAttachment): string | undefined {
+  const { type } = attachment as { type?: string };
+  const toolCallId = toolCallIdOf(attachment);
+  const fileKey = fileKeyOf(attachment);
+  if (fileKey) {
+    if (toolCallId == null) {
+      return fileKey;
+    }
+    const agentId = agentIdOf(attachment);
+    return agentId ? `${fileKey}::${toolCallId}::${agentId}` : `${fileKey}::${toolCallId}`;
+  }
+  if (type != null && toolCallId != null) {
+    return `${type}:${toolCallId}`;
+  }
+  return undefined;
+}
+
+/**
+ * Wildcard-tolerant match for the lifecycle overlay: a missing `toolCallId`
+ * or `agentId` on either side matches (preview-sync records are bare
+ * `{file_id, ...}`); only DISTINCT values keep same-file entries separate.
+ */
+function matchesLiveEntry(db: TAttachment, live: TAttachment): boolean {
+  const key = fileKeyOf(db);
+  if (!key || fileKeyOf(live) !== key) {
+    return false;
+  }
+  const dbToolCallId = toolCallIdOf(db);
+  const liveToolCallId = toolCallIdOf(live);
+  if (dbToolCallId != null && liveToolCallId != null && dbToolCallId !== liveToolCallId) {
+    return false;
+  }
+  const dbAgentId = agentIdOf(db);
+  const liveAgentId = agentIdOf(live);
+  return dbAgentId == null || liveAgentId == null || dbAgentId === liveAgentId;
+}
+
 export default function useAttachments({
   messageId,
   attachments,
@@ -33,21 +91,41 @@ export default function useAttachments({
      * resolved record into `messageAttachmentsMap`; merging here lets
      * `artifactTypeForAttachment` see the resolved text/textFormat
      * and route through the proper PanelArtifact card. */
-    const liveByFileId = new Map<string, TAttachment>();
-    for (const a of live) {
-      const id = (a as Partial<TFile>).file_id;
-      if (id) {
-        liveByFileId.set(id, a);
-      }
-    }
-    return attachments.map((db) => {
-      const id = (db as Partial<TFile>).file_id;
-      if (!id) {
+    const dbKeys = new Set<string>();
+    const merged = attachments.map((db) => {
+      const key = attachmentKey(db);
+      if (!key) {
         return db;
       }
-      const liveEntry = liveByFileId.get(id);
+      dbKeys.add(key);
+      /** Partial live records must still be reachable by their less-specific
+       *  keys so an overlaid entry isn't re-appended below: bare records (no
+       *  toolCallId) key by plain file key, agent-less records by
+       *  fileKey::toolCallId. */
+      const fileKey = fileKeyOf(db);
+      if (fileKey) {
+        dbKeys.add(fileKey);
+        const toolCallId = toolCallIdOf(db);
+        if (toolCallId != null) {
+          dbKeys.add(`${fileKey}::${toolCallId}`);
+        }
+      }
+      const liveEntry = live.find((a) => matchesLiveEntry(db, a));
       return liveEntry ? ({ ...db, ...liveEntry } as TAttachment) : db;
     });
+    /* Live-only entries with a stable identity are kept, not discarded: a
+     * background code task's harvested files arrive via SSE anchored to a
+     * message whose DB `attachments` snapshot predates them (the row is
+     * patched post-finalize), so treating the DB list as exhaustive would
+     * make those files vanish until a full reload. Entries whose key is
+     * already in the DB list (e.g. unkeyed file_search citations replayed
+     * by the final message event) are duplicates, and entries with no
+     * stable identity at all cannot be deduped — both are dropped. */
+    const liveOnly = live.filter((a) => {
+      const key = attachmentKey(a);
+      return key != null && !dbKeys.has(key);
+    });
+    return liveOnly.length > 0 ? [...merged, ...liveOnly] : merged;
   }, [attachments, messageAttachmentsMap, messageId]);
 
   const searchResults = useSearchResultsByTurn(messageAttachments);

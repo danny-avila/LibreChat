@@ -148,7 +148,7 @@
     "lint-staged": "^15.4.3",
     "prettier": "^3.5.0",
     "prettier-plugin-tailwindcss": "^0.6.11",
-    "turbo": "^2.9.17",
+    "turbo": "^2.10.5",
     "typescript-eslint": "^8.60.1"
   },
   "overrides": {
@@ -181,14 +181,19 @@
     },
     "underscore": "1.13.8",
     "hono": "^4.12.25",
-    "@hono/node-server": "^1.19.10",
+    "@hono/node-server": "^2.0.11",
     "monaco-editor": {
-      "dompurify": "3.4.0"
+      "dompurify": "3.4.12"
     },
     "svgo": "^2.8.2",
     "js-yaml": "^4.2.0",
     "ws": "^8.21.0",
-    "@opentelemetry/core": "^2.9.0"
+    "@opentelemetry/core": "^2.9.0",
+    "@opentelemetry/propagator-jaeger": "^2.10.0",
+    "protobufjs": "^7.6.5",
+    "gaxios": {
+      "uuid": "^11.1.1"
+    }
   },
   "nodemonConfig": {
     "ignore": [

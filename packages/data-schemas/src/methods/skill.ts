@@ -838,7 +838,8 @@ function resolveAlwaysApplyFromInput(
 }
 
 /**
- * Narrows candidate skill ids to those backed by an existing Skill doc.
+ * Narrows candidate skill ids to those backed by an existing Skill doc or
+ * recognized by an injected external skill registry.
  * Existence-only check (no ACL) so pruning an agent allowlist never drops
  * skills the saving user merely can't view. Preserves input order, dedupes,
  * and drops malformed ids — they can't reference anything. Candidates are
@@ -850,6 +851,7 @@ function resolveAlwaysApplyFromInput(
 export async function filterExistingSkillIds(
   mongoose: typeof import('mongoose'),
   skillIds: string[],
+  isExternalSkillId?: (id: string) => boolean,
 ): Promise<string[]> {
   const candidates = [
     ...new Set(skillIds.filter(isValidObjectIdString).map((id) => id.toLowerCase())),
@@ -863,7 +865,7 @@ export async function filterExistingSkillIds(
     { _id: 1 },
   ).lean<Array<{ _id: Types.ObjectId }>>();
   const existing = new Set(docs.map((doc) => doc._id.toString()));
-  return candidates.filter((id) => existing.has(id));
+  return candidates.filter((id) => existing.has(id) || isExternalSkillId?.(id) === true);
 }
 
 /**

@@ -1578,6 +1578,7 @@ export type TStartupConfig = {
     branch?: string | null;
     buildDate?: string | null;
   };
+  fileUploadSseEnabled?: boolean;
 };
 
 export type TSharedLinkStartupInterface = Pick<
@@ -2110,8 +2111,11 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
+    // Gemini 3.6 Models
+    'gemini-3.6-flash',
     // Gemini 3.5 Models
     'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
     // Gemini 3.1 Models
     'gemini-3.1-pro-preview',
     'gemini-3.1-pro-preview-customtools',
@@ -2518,6 +2522,10 @@ export enum ErrorTypes {
    * Google provider does not allow custom tools with built-in tools
    */
   GOOGLE_TOOL_CONFLICT = 'google_tool_conflict',
+  /**
+   * Google provider could not process a linked video (most often longer than the model accepts)
+   */
+  GOOGLE_VIDEO_UNPROCESSABLE = 'google_video_unprocessable',
   /**
    * Invalid Agent Provider (excluded by Admin)
    */

@@ -3,7 +3,12 @@ import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon, TMessageChatContext } from '~/common';
-import { cn, getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
+import {
+  areMessageFieldsEqual,
+  cn,
+  getHeaderPrefixForScreenReader,
+  getMessageAriaLabel,
+} from '~/utils';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
@@ -30,24 +35,6 @@ type MessageRenderProps = {
   TMessageProps,
   'currentEditId' | 'setCurrentEditId' | 'siblingIdx' | 'setSiblingIdx' | 'siblingCount'
 >;
-
-export function areMessageFilesEqual(
-  prevFiles: TMessage['files'],
-  nextFiles: TMessage['files'],
-): boolean {
-  if (prevFiles === nextFiles) {
-    return true;
-  }
-  const prevLength = prevFiles?.length ?? 0;
-  const nextLength = nextFiles?.length ?? 0;
-  if (prevLength !== nextLength) {
-    return false;
-  }
-  if (prevLength === 0) {
-    return true;
-  }
-  return prevFiles?.every((file, index) => file === nextFiles?.[index]) ?? true;
-}
 
 /**
  * Custom comparator for React.memo: compares `message` by key fields instead of reference
@@ -77,32 +64,7 @@ function areMessageRenderPropsEqual(prev: MessageRenderProps, next: MessageRende
     return false;
   }
 
-  const prevMsg = prev.message;
-  const nextMsg = next.message;
-  if (prevMsg === nextMsg) {
-    return true;
-  }
-  if (!prevMsg || !nextMsg) {
-    return prevMsg === nextMsg;
-  }
-
-  return (
-    prevMsg.messageId === nextMsg.messageId &&
-    prevMsg.text === nextMsg.text &&
-    prevMsg.error === nextMsg.error &&
-    prevMsg.unfinished === nextMsg.unfinished &&
-    prevMsg.createdAt === nextMsg.createdAt &&
-    prevMsg.depth === nextMsg.depth &&
-    prevMsg.isCreatedByUser === nextMsg.isCreatedByUser &&
-    (prevMsg.children?.length ?? 0) === (nextMsg.children?.length ?? 0) &&
-    prevMsg.content === nextMsg.content &&
-    prevMsg.model === nextMsg.model &&
-    prevMsg.endpoint === nextMsg.endpoint &&
-    prevMsg.iconURL === nextMsg.iconURL &&
-    prevMsg.feedback?.rating === nextMsg.feedback?.rating &&
-    areMessageFilesEqual(prevMsg.files, nextMsg.files) &&
-    (prevMsg.quotes?.length ?? 0) === (nextMsg.quotes?.length ?? 0)
-  );
+  return areMessageFieldsEqual(prev.message, next.message);
 }
 
 const MessageRender = memo(function MessageRender({
