@@ -9,6 +9,12 @@ type BatchEntry = PostToolBatchInput['entries'][number];
 export interface ActivityLabelLLM {
   provider: Providers;
   clientOptions: ClientOptions;
+  /**
+   * Token config of the endpoint the LABEL runs on, which differs from the
+   * agent's whenever `activityEndpoint` is set. Pricing must use this or a
+   * cross-endpoint label is costed at the wrong rates.
+   */
+  endpointTokenConfig?: unknown;
 }
 
 /** Deterministic classification of a batch — computed from tool names, no LLM. */
