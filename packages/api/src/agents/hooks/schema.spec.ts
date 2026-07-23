@@ -102,6 +102,7 @@ describe('parsePluginHooks', () => {
                 asyncRewake: true,
                 rewakeMessage: 'Review these findings',
                 rewakeSummary: 'Review complete',
+                continueOnBlock: true,
               },
             ],
           },
@@ -123,6 +124,7 @@ describe('parsePluginHooks', () => {
           asyncRewake: true,
           rewakeMessage: 'Review these findings',
           rewakeSummary: 'Review complete',
+          continueOnBlock: true,
         },
       ],
     });

@@ -332,7 +332,7 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
               targetEvent,
               toolName,
             });
-    let hasFired = false;
+    const firedSessionIds = new Set<string>();
     const hook: HookCallback<HookEvent> = (input, signal) => {
       const sessionId = getSessionId(input, context);
       const compactTrigger = compactTriggers.get(sessionId);
@@ -364,7 +364,28 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
       ) {
         return {};
       }
-      if (entry.handler.once === true && hasFired) {
+      if (entry.condition !== undefined) {
+        const matchCondition = executor.capabilities.matchCondition;
+        if (!matchCondition || !('toolName' in input) || !('toolInput' in input)) {
+          return {};
+        }
+        let matchesCondition = false;
+        try {
+          matchesCondition = matchCondition({
+            sourceEvent: entry.sourceEvent,
+            targetEvent,
+            condition: entry.condition,
+            toolName: getPluginToolName(input.toolName, { toPluginToolName }),
+            toolInput: input.toolInput,
+          });
+        } catch {
+          return {};
+        }
+        if (!matchesCondition) {
+          return {};
+        }
+      }
+      if (entry.handler.once === true && firedSessionIds.has(sessionId)) {
         return {};
       }
       const handlersForInput = executedHandlers.get(input);
@@ -376,7 +397,9 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
       } else {
         executedHandlers.set(input, new Set([handlerIdentity]));
       }
-      hasFired = true;
+      if (entry.handler.once === true) {
+        firedSessionIds.add(sessionId);
+      }
       return executor.execute(
         {
           pluginId,
@@ -403,7 +426,6 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
       hooks: [hook],
       ...(!runtimeFiltered && entry.matcher !== undefined && { pattern: entry.matcher }),
       ...(timeoutMs !== undefined && { timeout: timeoutMs }),
-      ...(!runtimeFiltered && entry.handler.once === true && { once: true }),
     };
     unregisters.push(registry.register(targetEvent, matcher));
     registered++;

@@ -53,7 +53,9 @@ export type PluginHookIssueCode =
   | 'conflicting_condition'
   | 'unsupported_async'
   | 'unsupported_async_rewake'
+  | 'unsupported_continue_on_block'
   | 'unsupported_session_lifecycle'
+  | 'unsupported_session_source'
   | 'unsupported_event_payload'
   | 'unsupported_event_output'
   | 'long_timeout';
@@ -83,6 +85,14 @@ export interface PluginHookToolNameTranslation {
   toolName: string;
 }
 
+export interface PluginHookConditionMatch {
+  sourceEvent: string;
+  targetEvent: HookEvent;
+  condition: string;
+  toolName: string;
+  toolInput: Record<string, unknown>;
+}
+
 export interface PluginHookCapabilities {
   handlerTypes: ReadonlySet<PluginHookHandlerType>;
   translateMatcher?: (
@@ -90,7 +100,8 @@ export interface PluginHookCapabilities {
   ) => string | PluginHookMatcherTranslationResult | undefined;
   /** Maps a LibreChat runtime tool name back into the plugin's source namespace. */
   toPluginToolName?: (input: PluginHookToolNameTranslation) => string;
-  conditions?: boolean;
+  /** Evaluates Claude permission-rule syntax before a conditional handler executes. */
+  matchCondition?: (input: PluginHookConditionMatch) => boolean;
   async?: boolean;
   asyncRewake?: boolean;
   sessionLifecycle?: boolean;
@@ -128,6 +139,14 @@ function normalizeMatcher(matcher: string | undefined): string | undefined {
     return undefined;
   }
   return trimmed;
+}
+
+function matcherIncludesValue(matcher: string, value: string): boolean {
+  try {
+    return new RegExp(matcher).test(value);
+  } catch {
+    return false;
+  }
 }
 
 function getMatcherValidationIssue(
@@ -220,6 +239,7 @@ function getEventIssues(
 }
 
 function getHandlerIssues(
+  sourceEvent: string,
   handler: PluginHookHandler,
   capabilities: PluginHookCapabilities,
 ): PluginHookCompatibilityIssue[] {
@@ -245,6 +265,13 @@ function getHandlerIssues(
       code: 'unsupported_async_rewake',
       severity: 'error',
       message: 'The configured executor does not support asyncRewake',
+    });
+  }
+  if (handler.continueOnBlock === true && sourceEvent !== 'PostToolUse') {
+    issues.push({
+      code: 'unsupported_continue_on_block',
+      severity: 'error',
+      message: 'continueOnBlock is only supported for PostToolUse hooks',
     });
   }
   if ((handler.timeout ?? 0) > 600) {
@@ -282,6 +309,20 @@ function planMatcher(
     };
   }
   if (sourceEvent === 'SessionStart') {
+    if (!validationIssue && matcherIncludesValue(sourceMatcher, 'compact')) {
+      return {
+        sourceMatcher,
+        matcher: sourceMatcher,
+        issues: [
+          {
+            code: 'unsupported_session_source',
+            severity: 'error',
+            message:
+              'SessionStart source "compact" is unavailable because LibreChat PostCompact hook output cannot inject session context',
+          },
+        ],
+      };
+    }
     return {
       sourceMatcher,
       matcher: sourceMatcher,
@@ -375,7 +416,7 @@ export function planPluginHooks(
 
       for (let handlerIndex = 0; handlerIndex < group.hooks.length; handlerIndex++) {
         const handler = group.hooks[handlerIndex];
-        const issues = [...groupIssues, ...getHandlerIssues(handler, capabilities)];
+        const issues = [...groupIssues, ...getHandlerIssues(sourceEvent, handler, capabilities)];
         const condition = handler.if ?? group.if;
         if (handler.if && group.if && handler.if !== group.if) {
           issues.push({
@@ -391,7 +432,7 @@ export function planPluginHooks(
               severity: 'error',
               message: 'Conditional `if` hook expressions are only supported for tool events',
             });
-          } else if (capabilities.conditions !== true) {
+          } else if (!capabilities.matchCondition) {
             issues.push({
               code: 'unsupported_condition',
               severity: 'error',
