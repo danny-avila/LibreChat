@@ -53,7 +53,7 @@ export type PluginHookIssueCode =
   | 'conflicting_condition'
   | 'unsupported_async'
   | 'unsupported_async_rewake'
-  | 'unsupported_continue_on_block'
+  | 'unsupported_handler_event'
   | 'unsupported_session_lifecycle'
   | 'unsupported_session_source'
   | 'unsupported_event_payload'
@@ -238,6 +238,15 @@ function getEventIssues(
   ];
 }
 
+const PROMPT_UNSUPPORTED_EVENTS = new Set([
+  'SessionStart',
+  'PermissionDenied',
+  'SubagentStart',
+  'StopFailure',
+  'PreCompact',
+  'PostCompact',
+]);
+
 function getHandlerIssues(
   sourceEvent: string,
   handler: PluginHookHandler,
@@ -253,6 +262,13 @@ function getHandlerIssues(
       message: `The configured executor does not support ${handler.type} hook handlers`,
     });
   }
+  if (handler.type === 'prompt' && PROMPT_UNSUPPORTED_EVENTS.has(sourceEvent)) {
+    issues.push({
+      code: 'unsupported_handler_event',
+      severity: 'error',
+      message: `${sourceEvent} does not support prompt hook handlers`,
+    });
+  }
   if (handler.async === true && capabilities.async !== true) {
     issues.push({
       code: 'unsupported_async',
@@ -265,13 +281,6 @@ function getHandlerIssues(
       code: 'unsupported_async_rewake',
       severity: 'error',
       message: 'The configured executor does not support asyncRewake',
-    });
-  }
-  if (handler.continueOnBlock === true && sourceEvent !== 'PostToolUse') {
-    issues.push({
-      code: 'unsupported_continue_on_block',
-      severity: 'error',
-      message: 'continueOnBlock is only supported for PostToolUse hooks',
     });
   }
   if ((handler.timeout ?? 0) > 600) {
@@ -298,6 +307,18 @@ function planMatcher(
 ): MatcherPlan {
   const sourceMatcher = normalizeMatcher(configuredMatcher);
   if (!sourceMatcher) {
+    if (sourceEvent === 'SessionStart' && capabilities.sessionLifecycle === true) {
+      return {
+        issues: [
+          {
+            code: 'unsupported_session_source',
+            severity: 'warning',
+            message:
+              'Wildcard SessionStart compatibility covers startup, resume, and clear; compact is runtime-filtered',
+          },
+        ],
+      };
+    }
     return { issues: [] };
   }
   const validationIssue = getMatcherValidationIssue(sourceEvent, sourceMatcher, targetEvent);

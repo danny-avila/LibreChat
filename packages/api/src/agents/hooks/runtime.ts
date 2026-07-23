@@ -17,6 +17,8 @@ export interface PluginHookRuntimeContext {
   transcriptPath?: string | null;
   permissionMode?: string;
   sessionStartSource?: string;
+  model?: string;
+  agentType?: string;
 }
 
 export interface PluginHookBatchToolCall {
@@ -35,6 +37,7 @@ export interface PluginHookPayload {
   transcript_path?: string | null;
   permission_mode?: string;
   source?: string;
+  model?: string;
   agent_id?: string;
   executing_agent_id?: string;
   prompt?: string;
@@ -190,6 +193,8 @@ export function createPluginHookPayload(
         ...payload,
         ...(sourceEvent === 'SessionStart' && {
           source: context.sessionStartSource ?? 'startup',
+          ...(context.model !== undefined && { model: context.model }),
+          ...(context.agentType !== undefined && { agent_type: context.agentType }),
         }),
       };
     case 'UserPromptSubmit':
@@ -297,6 +302,8 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
   const unregisters: Array<() => void> = [];
   const compactTriggers = new Map<string, string>();
   const executedHandlers = new WeakMap<HookInput, Set<string>>();
+  const firedHandlerSessions = new Map<string, Set<string>>();
+  const startedHandlerSessions = new Map<string, Set<string>>();
   const tracksCompactTriggers = plan.entries.some(
     (entry) => entry.status === 'ready' && entry.targetEvent === 'PostCompact',
   );
@@ -320,8 +327,23 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
       continue;
     }
     const targetEvent = entry.targetEvent;
-    const seenSessionIds = new Set<string>();
     const handlerIdentity = getHandlerIdentity(entry.sourceEvent, entry.handler, entry.condition);
+    let seenSessionIds: Set<string> | undefined;
+    if (entry.sourceEvent === 'SessionStart') {
+      seenSessionIds = startedHandlerSessions.get(handlerIdentity);
+      if (!seenSessionIds) {
+        seenSessionIds = new Set<string>();
+        startedHandlerSessions.set(handlerIdentity, seenSessionIds);
+      }
+    }
+    let firedSessionIds: Set<string> | undefined;
+    if (entry.handler.once === true) {
+      firedSessionIds = firedHandlerSessions.get(handlerIdentity);
+      if (!firedSessionIds) {
+        firedSessionIds = new Set<string>();
+        firedHandlerSessions.set(handlerIdentity, firedSessionIds);
+      }
+    }
     const toolNameTranslator = executor.capabilities.toPluginToolName;
     const toPluginToolName =
       toolNameTranslator === undefined
@@ -332,16 +354,19 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
               targetEvent,
               toolName,
             });
-    const firedSessionIds = new Set<string>();
     const hook: HookCallback<HookEvent> = (input, signal) => {
       const sessionId = getSessionId(input, context);
       const compactTrigger = compactTriggers.get(sessionId);
       if (entry.sourceEvent === 'SessionStart') {
         const source = context.sessionStartSource ?? 'startup';
-        if (!matchesQuery(entry.matcher, source) || seenSessionIds.has(sessionId)) {
+        if (
+          source === 'compact' ||
+          !matchesQuery(entry.matcher, source) ||
+          seenSessionIds?.has(sessionId) === true
+        ) {
           return {};
         }
-        seenSessionIds.add(sessionId);
+        seenSessionIds?.add(sessionId);
       }
       if (
         targetEvent === 'PreCompact' &&
@@ -385,7 +410,7 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
           return {};
         }
       }
-      if (entry.handler.once === true && firedSessionIds.has(sessionId)) {
+      if (firedSessionIds?.has(sessionId) === true) {
         return {};
       }
       const handlersForInput = executedHandlers.get(input);
@@ -397,9 +422,7 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
       } else {
         executedHandlers.set(input, new Set([handlerIdentity]));
       }
-      if (entry.handler.once === true) {
-        firedSessionIds.add(sessionId);
-      }
+      firedSessionIds?.add(sessionId);
       return executor.execute(
         {
           pluginId,
