@@ -14,7 +14,7 @@ describe('resolveActivityConfig', () => {
     const config = resolveActivityConfig(
       appConfig({
         openAI: {
-          activity: true,
+          activityLabel: true,
           activityModel: 'gpt-4o-mini',
           activityPrompt: 'custom',
           activityMaxPerRun: 5,
@@ -35,8 +35,8 @@ describe('resolveActivityConfig', () => {
   it('lets endpoints.all win over the named endpoint, like the title options', () => {
     const config = resolveActivityConfig(
       appConfig({
-        all: { activity: true, activityModel: 'shared-model' },
-        openAI: { activity: false, activityModel: 'ignored' },
+        all: { activityLabel: true, activityModel: 'shared-model' },
+        openAI: { activityLabel: false, activityModel: 'ignored' },
       }),
       'openAI',
     );
@@ -46,14 +46,14 @@ describe('resolveActivityConfig', () => {
 
   it('falls back to a custom endpoint config when the name is absent', () => {
     const config = resolveActivityConfig(appConfig({}), 'MyProxy', {
-      activity: true,
+      activityLabel: true,
       activityModel: 'proxy-mini',
     });
     expect(config.enabled).toBe(true);
     expect(config.model).toBe('proxy-mini');
   });
 
-  it('treats a missing activity flag as opt-out even with other fields set', () => {
+  it('treats a missing activityLabel flag as opt-out even with other fields set', () => {
     const config = resolveActivityConfig(
       appConfig({ openAI: { activityModel: 'gpt-4o-mini' } }),
       'openAI',

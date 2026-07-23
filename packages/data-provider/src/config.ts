@@ -616,10 +616,14 @@ export const baseEndpointSchema = z.object({
   /**
    * Agent activity groups: collapse each contiguous block of reasoning and
    * tool calls under a generated one-line header. Mirrors the title options
-   * above — `activity` enables it (like `titleConvo`), the rest tune the
-   * fast model that writes the label.
+   * above — `activityLabel` enables it (like `titleConvo`), the rest tune
+   * the fast model that writes the label.
+   *
+   * NOTE: fields added here reach `endpoints.all` automatically (that schema
+   * is `baseEndpointSchema.omit({ baseURL })`), but NOT Azure — see the
+   * enumerated `.pick()` in `azureEndpointSchema` below.
    */
-  activity: z.boolean().optional(),
+  activityLabel: z.boolean().optional(),
   /** Model used to write activity labels. Defaults to `titleModel`, then the agent's model. */
   activityModel: z.string().optional(),
   /** Endpoint whose credentials the label model runs on. Defaults to the agent's endpoint. */
@@ -1036,6 +1040,13 @@ export const azureEndpointSchema = z
     assistants: z.boolean().optional(),
   })
   .and(
+    /**
+     * Azure carries only the base-endpoint fields enumerated here. This is a
+     * `.pick()`, NOT an omit, so a field added to `baseEndpointSchema` is
+     * silently unavailable on Azure endpoints until it is listed below —
+     * unlike `endpoints.all`, which omits and therefore inherits new fields
+     * automatically. Keep this list in sync when adding endpoint options.
+     */
     endpointSchema
       .pick({
         streamRate: true,
@@ -1045,7 +1056,7 @@ export const azureEndpointSchema = z
         titlePrompt: true,
         titleTiming: true,
         titlePromptTemplate: true,
-        activity: true,
+        activityLabel: true,
         activityModel: true,
         activityEndpoint: true,
         activityPrompt: true,
@@ -1935,6 +1946,13 @@ export const configSchema = z.object({
   endpoints: z
     .object({
       allowedAddresses: allowedAddressesSchema,
+      /**
+       * Defaults applied to every endpoint. Omit-based, so options added to
+       * `baseEndpointSchema` are inherited here automatically — no list to
+       * maintain (contrast `azureEndpointSchema`, which enumerates via
+       * `.pick()`). Resolution order at read sites is `all` > the named
+       * endpoint > a custom endpoint's own config.
+       */
       all: baseEndpointSchema.omit({ baseURL: true }).optional(),
       [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
       [EModelEndpoint.google]: baseEndpointSchema.optional(),

@@ -541,7 +541,7 @@ endpoints:
       titleModel: 'claude-sonnet-4-5'
       # Agent activity groups: collapse each block of reasoning + tool calls
       # under a generated one-line header. Same shape as the title options.
-      activity: true
+      activityLabel: true
       activityModel: 'claude-3-5-haiku'
       # activityEndpoint: 'anthropic'   # run labels on another endpoint's credentials
       # activityPrompt: 'Write a 5-9 word past-tense label...'

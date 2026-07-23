@@ -102,7 +102,7 @@ export function resolveActivityConfig(
   const config: Partial<TEndpoint> | undefined =
     endpoints?.all ?? endpoints?.[endpoint] ?? customEndpointConfig;
   return {
-    enabled: config?.activity === true,
+    enabled: config?.activityLabel === true,
     model: config?.activityModel,
     endpoint: config?.activityEndpoint,
     prompt: config?.activityPrompt,
