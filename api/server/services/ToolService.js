@@ -53,6 +53,7 @@ const {
   ErrorTypes,
   ContentTypes,
   imageGenTools,
+  AuthTypeEnum,
   EModelEndpoint,
   EToolResources,
   isActionTool,
@@ -1216,6 +1217,7 @@ async function loadToolDefinitionsWrapper({
           name: toolName,
           description: sig.description,
           parameters: sig.parameters,
+          oauth: action.metadata.auth?.type === AuthTypeEnum.OAuth,
         });
       }
     }
@@ -1223,8 +1225,14 @@ async function loadToolDefinitionsWrapper({
     return definitions;
   };
 
-  let { toolDefinitions, toolRegistry, hasDeferredTools, mcpToolAliases, mcpResolution } =
-    await loadToolDefinitions(
+  let {
+    toolDefinitions,
+    toolRegistry,
+    hasDeferredTools,
+    mcpToolAliases,
+    mcpResolution,
+    oauthActionToolNames,
+  } = await loadToolDefinitions(
       {
         userId: req.user.id,
         agentId: agent.id,
@@ -1338,6 +1346,7 @@ async function loadToolDefinitionsWrapper({
       hasDeferredTools = reloadResult.hasDeferredTools;
       mcpToolAliases = reloadResult.mcpToolAliases;
       mcpResolution = reloadResult.mcpResolution;
+      oauthActionToolNames = reloadResult.oauthActionToolNames;
     }
   }
 
@@ -1454,6 +1463,7 @@ async function loadToolDefinitionsWrapper({
     mcpToolAliases,
     actionsEnabled,
     primedCodeFiles,
+    oauthActionToolNames,
   };
 }
 

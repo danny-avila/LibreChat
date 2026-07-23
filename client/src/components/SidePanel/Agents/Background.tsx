@@ -1,5 +1,4 @@
 import { useCallback } from 'react';
-import { Tools } from 'librechat-data-provider';
 import { useFormContext, useWatch } from 'react-hook-form';
 import {
   Switch,
@@ -9,48 +8,51 @@ import {
   HoverCardTrigger,
   CircleHelpIcon,
 } from '@librechat/client';
+import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentForm } from '~/common';
 import { useAgentCapabilities, useGetAgentsConfig, useLocalize } from '~/hooks';
-import { withNativeBooleanOptOut } from '~/hooks/Agents/useMCPToolOptions';
+import { withBooleanOption } from '~/hooks/Agents/useMCPToolOptions';
 import { ESide } from '~/common';
 
-/** Tools sharing the code-execution sandbox; background-native, so the single
- *  builder toggle persists (or clears) the pair's explicit opt-out. */
-const CODE_BACKGROUND_TOOL_IDS: string[] = [Tools.execute_code, Tools.bash_tool];
+interface Props {
+  toolIds: string[];
+  switchId: string;
+  labelKey: TranslationKeys;
+  infoKey: TranslationKeys;
+}
 
-export default function Background() {
+/** Shared "Background execution" switch — opts the given tool ids into
+ *  background dispatch via `tool_options`. Reflects enabled when ANY id is
+ *  opted in, mirroring the server, which honors each id independently and
+ *  expands grouped ids (e.g. the code pair) across the group. */
+export default function Background({ toolIds, switchId, labelKey, infoKey }: Props) {
   const localize = useLocalize();
   const { agentsConfig } = useGetAgentsConfig();
   const { backgroundToolsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
   const { control, getValues, setValue } = useFormContext<AgentForm>();
   const toolOptions = useWatch({ control, name: 'tool_options' });
-  /** The pair is background-NATIVE: no entry means on. Mirrors the server's
-   *  resolution precedence for the runtime def — its own `bash_tool` key
-   *  first, then the `execute_code` capability marker, then the native
-   *  default (`resolveToolOption` in packages/api). */
-  const enabled =
-    (toolOptions?.[Tools.bash_tool]?.run_in_background ??
-      toolOptions?.[Tools.execute_code]?.run_in_background) !== false;
+  const enabled = toolIds.some((toolId) => toolOptions?.[toolId]?.run_in_background === true);
 
   const handleChange = useCallback(
     (value: boolean) => {
       let updated = getValues('tool_options') || {};
-      for (const toolId of CODE_BACKGROUND_TOOL_IDS) {
-        updated = withNativeBooleanOptOut(updated, toolId, 'run_in_background', value);
+      for (const toolId of toolIds) {
+        updated = withBooleanOption(updated, toolId, 'run_in_background', value);
       }
       setValue('tool_options', updated, { shouldDirty: true });
     },
-    [getValues, setValue],
+    [toolIds, getValues, setValue],
   );
 
-  if (!backgroundToolsEnabled) {
+  if (!backgroundToolsEnabled || toolIds.length === 0) {
     return null;
   }
+
   return (
     <HoverCard openDelay={50}>
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
-          <div className="text-sm">{localize('com_ui_code_background')}</div>
+          <div className="text-sm">{localize(labelKey)}</div>
           <HoverCardTrigger>
             <CircleHelpIcon className="h-4 w-4 text-text-tertiary" />
           </HoverCardTrigger>
@@ -58,19 +60,17 @@ export default function Background() {
         <HoverCardPortal>
           <HoverCardContent side={ESide.Top} className="w-80">
             <div className="space-y-2">
-              <p className="text-sm text-text-secondary">
-                {localize('com_nav_info_code_background')}
-              </p>
+              <p className="text-sm text-text-secondary">{localize(infoKey)}</p>
             </div>
           </HoverCardContent>
         </HoverCardPortal>
         <Switch
-          id="code-background-tools"
+          id={switchId}
           checked={enabled}
           onCheckedChange={handleChange}
           className="ml-4"
-          data-testid="code-background-tools"
-          aria-label={localize('com_ui_code_background')}
+          data-testid={switchId}
+          aria-label={localize(labelKey)}
         />
       </div>
     </HoverCard>
