@@ -267,6 +267,32 @@ describe('RedisEventTransport Integration Tests', () => {
       transport.destroy();
       subscriber.disconnect();
     });
+
+    test('mock atomic publish refreshes a shortened counter TTL', async () => {
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const mockPublisher = createMockPublisher();
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+      const streamId = 'mock-sequence-ttl-refresh';
+      const sequenceKey = `stream:{${streamId}}:seq`;
+
+      await transport.emitChunk(streamId, { index: 0 });
+      expect(await mockPublisher.ttl(sequenceKey)).toBe(86_400);
+
+      await mockPublisher.expire(sequenceKey, 2);
+      await transport.emitChunk(streamId, { index: 1 });
+
+      expect(await mockPublisher.ttl(sequenceKey)).toBe(86_400);
+      transport.destroy();
+    });
   });
 
   describe('Sequential Event Ordering', () => {
