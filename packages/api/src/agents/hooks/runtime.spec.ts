@@ -297,6 +297,47 @@ describe('registerPluginHooks', () => {
     ]);
   });
 
+  test('shares once state across duplicate overlapping handlers', async () => {
+    const registry = new HookRegistry();
+    const hookExecutor = executor();
+    const duplicateHandler = {
+      type: 'command',
+      command: 'initialize-write-audit',
+      once: true,
+    };
+    registerPluginHooks({
+      pluginId: 'deduplicated-session-once',
+      registry,
+      executor: hookExecutor,
+      document: document({
+        PreToolUse: [
+          { matcher: '^Write$', hooks: [duplicateHandler] },
+          { matcher: '^Wri.*$', hooks: [{ ...duplicateHandler }] },
+        ],
+      }),
+    });
+
+    const run = async (runId: string): Promise<void> => {
+      await executeHooks({
+        registry,
+        matchQuery: 'Write',
+        input: {
+          hook_event_name: 'PreToolUse',
+          runId,
+          threadId: 'shared-once-session',
+          toolName: 'Write',
+          toolInput: { file_path: '/workspace/file.ts' },
+          toolUseId: `tool-${runId}`,
+        },
+      });
+    };
+
+    await run('first');
+    await run('second');
+
+    expect(hookExecutor.execute).toHaveBeenCalledTimes(1);
+  });
+
   test('passes PostToolUse continueOnBlock through to the executor', async () => {
     const registry = new HookRegistry();
     const hookExecutor = executor();
@@ -382,7 +423,11 @@ describe('registerPluginHooks', () => {
       pluginId: 'learning-output-style',
       registry,
       executor: hookExecutor,
-      context: { sessionStartSource: 'resume' },
+      context: {
+        sessionStartSource: 'resume',
+        model: 'claude-sonnet-4-6',
+        agentType: 'code-reviewer',
+      },
       document: document({
         SessionStart: [
           {
@@ -427,10 +472,76 @@ describe('registerPluginHooks', () => {
           hook_event_name: 'SessionStart',
           session_id: 'conversation-2',
           source: 'resume',
+          model: 'claude-sonnet-4-6',
+          agent_type: 'code-reviewer',
         }),
       }),
       expect.any(AbortSignal),
     );
+  });
+
+  test('runtime-filters compact from wildcard SessionStart hooks', async () => {
+    const registry = new HookRegistry();
+    const hookExecutor = executor();
+    hookExecutor.capabilities.sessionLifecycle = true;
+    registerPluginHooks({
+      pluginId: 'compact-context',
+      registry,
+      executor: hookExecutor,
+      context: { sessionStartSource: 'compact', model: 'claude-sonnet-4-6' },
+      document: document({
+        SessionStart: [{ hooks: [{ type: 'command', command: 'load-context' }] }],
+      }),
+    });
+
+    await executeHooks({
+      registry,
+      input: {
+        hook_event_name: 'RunStart',
+        runId: 'run-compact-session',
+        threadId: 'conversation-compact-session',
+        messages: [],
+      },
+    });
+
+    expect(hookExecutor.execute).not.toHaveBeenCalled();
+  });
+
+  test('shares SessionStart deduplication across overlapping declarations', async () => {
+    const registry = new HookRegistry();
+    const hookExecutor = executor();
+    hookExecutor.capabilities.sessionLifecycle = true;
+    delete hookExecutor.capabilities.translateMatcher;
+    const duplicateHandler = { type: 'command', command: 'load-context' };
+    registerPluginHooks({
+      pluginId: 'deduplicated-session-start',
+      registry,
+      executor: hookExecutor,
+      context: { sessionStartSource: 'resume' },
+      document: document({
+        SessionStart: [
+          { matcher: 'startup|resume', hooks: [duplicateHandler] },
+          { matcher: 'resume', hooks: [{ ...duplicateHandler }] },
+        ],
+      }),
+    });
+
+    const run = async (runId: string): Promise<void> => {
+      await executeHooks({
+        registry,
+        input: {
+          hook_event_name: 'RunStart',
+          runId,
+          threadId: 'shared-session-start',
+          messages: [],
+        },
+      });
+    };
+
+    await run('first');
+    await run('second');
+
+    expect(hookExecutor.execute).toHaveBeenCalledTimes(1);
   });
 
   test('translates compaction matchers and carries the trigger into PostCompact', async () => {

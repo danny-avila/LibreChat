@@ -90,6 +90,25 @@ describe('planPluginHooks', () => {
     );
   });
 
+  test('keeps wildcard SessionStart ready while reporting compact as filtered', () => {
+    const plan = planPluginHooks(
+      document({
+        SessionStart: [{ hooks: [{ type: 'command', command: 'load-context' }] }],
+      }),
+      { handlerTypes: new Set(['command']), sessionLifecycle: true },
+    );
+
+    expect(plan.summary).toEqual({ declared: 1, ready: 1, unsupported: 0 });
+    expect(plan.entries[0].issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'unsupported_session_source',
+          severity: 'warning',
+        }),
+      ]),
+    );
+  });
+
   test('plans translated compaction-trigger matchers', () => {
     const plan = planPluginHooks(
       document({
@@ -243,7 +262,7 @@ describe('planPluginHooks', () => {
     );
   });
 
-  test('preserves continueOnBlock only for its supported event', () => {
+  test('preserves continueOnBlock for PostToolUse and PreToolUse prompt handlers', () => {
     const plan = planPluginHooks(
       document({
         PostToolUse: [
@@ -253,23 +272,61 @@ describe('planPluginHooks', () => {
         ],
         PreToolUse: [
           {
-            hooks: [{ type: 'command', command: 'verify-input', continueOnBlock: true }],
+            hooks: [
+              {
+                type: 'prompt',
+                prompt: 'Verify this tool call',
+                continueOnBlock: true,
+              },
+            ],
           },
         ],
       }),
-      commandCapabilities,
+      {
+        ...commandCapabilities,
+        handlerTypes: new Set(['command', 'prompt']),
+      },
     );
 
-    expect(plan.summary).toEqual({ declared: 2, ready: 1, unsupported: 1 });
-    expect(plan.entries[0]).toEqual(
-      expect.objectContaining({
-        status: 'ready',
-        handler: expect.objectContaining({ continueOnBlock: true }),
+    expect(plan.summary).toEqual({ declared: 2, ready: 2, unsupported: 0 });
+    expect(plan.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: 'ready',
+          handler: expect.objectContaining({ continueOnBlock: true }),
+        }),
+      ]),
+    );
+  });
+
+  test('rejects prompt handlers on events that do not support them', () => {
+    const plan = planPluginHooks(
+      document({
+        SessionStart: [
+          {
+            matcher: 'startup',
+            hooks: [{ type: 'prompt', prompt: 'Load context' }],
+          },
+        ],
+        StopFailure: [{ hooks: [{ type: 'prompt', prompt: 'Classify the failure' }] }],
       }),
+      {
+        handlerTypes: new Set(['command', 'prompt']),
+        sessionLifecycle: true,
+      },
     );
-    expect(plan.entries[1].issues).toEqual(
-      expect.arrayContaining([expect.objectContaining({ code: 'unsupported_continue_on_block' })]),
-    );
+
+    expect(plan.summary).toEqual({ declared: 2, ready: 0, unsupported: 2 });
+    for (const entry of plan.entries) {
+      expect(entry.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'unsupported_handler_event',
+            severity: 'error',
+          }),
+        ]),
+      );
+    }
   });
 
   test('rejects conditional, async-rewake, and unsafe matcher semantics by default', () => {
