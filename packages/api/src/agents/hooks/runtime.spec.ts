@@ -21,7 +21,10 @@ function executor(output: HookOutput = {}): PluginHookExecutor & {
     async (_request, _signal) => output,
   );
   return {
-    capabilities: commandCapabilities,
+    capabilities: {
+      ...commandCapabilities,
+      handlerTypes: new Set(commandCapabilities.handlerTypes),
+    },
     execute,
   };
 }
@@ -108,6 +111,108 @@ describe('registerPluginHooks', () => {
       }),
       expect.any(AbortSignal),
     );
+  });
+
+  test('applies Claude default timeouts when handlers omit them', () => {
+    const registry = new HookRegistry();
+    const hookExecutor = executor();
+    hookExecutor.capabilities.handlerTypes = new Set(['command', 'prompt']);
+    registerPluginHooks({
+      pluginId: 'timeout-defaults',
+      registry,
+      executor: hookExecutor,
+      document: document({
+        Stop: [
+          {
+            hooks: [
+              { type: 'command', command: 'long-running-check' },
+              { type: 'prompt', prompt: 'Verify completion' },
+            ],
+          },
+        ],
+        UserPromptSubmit: [
+          {
+            hooks: [{ type: 'command', command: 'validate-prompt' }],
+          },
+        ],
+      }),
+    });
+
+    expect(registry.getMatchers('Stop').map(({ timeout }) => timeout)).toEqual([600_000, 30_000]);
+    expect(registry.getMatchers('UserPromptSubmit')[0].timeout).toBe(30_000);
+  });
+
+  test('maps LibreChat tool names back into the plugin payload namespace', async () => {
+    const registry = new HookRegistry();
+    const hookExecutor = executor();
+    hookExecutor.capabilities.translateMatcher = () => '^bash_tool$';
+    hookExecutor.capabilities.toPluginToolName = ({ toolName }) =>
+      toolName === 'bash_tool' ? 'Bash' : toolName;
+    registerPluginHooks({
+      pluginId: 'tool-name-adapter',
+      registry,
+      executor: hookExecutor,
+      document: document({
+        PreToolUse: [
+          {
+            matcher: 'Bash',
+            hooks: [{ type: 'command', command: 'check-bash' }],
+          },
+        ],
+      }),
+    });
+
+    await executeHooks({
+      registry,
+      matchQuery: 'bash_tool',
+      input: {
+        hook_event_name: 'PreToolUse',
+        runId: 'run-tool-name',
+        toolName: 'bash_tool',
+        toolInput: { command: 'npm test' },
+        toolUseId: 'tool-name-1',
+      },
+    });
+
+    expect(hookExecutor.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({ toolName: 'bash_tool' }),
+        payload: expect.objectContaining({ tool_name: 'Bash' }),
+      }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  test('deduplicates identical handlers across overlapping matcher groups', async () => {
+    const registry = new HookRegistry();
+    const hookExecutor = executor();
+    const duplicateHandler = { type: 'command', command: 'audit-write' };
+    const registration = registerPluginHooks({
+      pluginId: 'deduplicated-hooks',
+      registry,
+      executor: hookExecutor,
+      document: document({
+        PreToolUse: [
+          { matcher: '^write_file$', hooks: [duplicateHandler] },
+          { matcher: '^write_.*$', hooks: [{ ...duplicateHandler }] },
+        ],
+      }),
+    });
+
+    await executeHooks({
+      registry,
+      matchQuery: 'write_file',
+      input: {
+        hook_event_name: 'PreToolUse',
+        runId: 'run-deduplicate',
+        toolName: 'write_file',
+        toolInput: { path: '/workspace/file.ts' },
+        toolUseId: 'tool-deduplicate',
+      },
+    });
+
+    expect(registration.registered).toBe(2);
+    expect(hookExecutor.execute).toHaveBeenCalledTimes(1);
   });
 
   test('filters and deduplicates SessionStart while registering RunStart', async () => {

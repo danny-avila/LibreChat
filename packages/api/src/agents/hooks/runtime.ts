@@ -91,6 +91,7 @@ export interface PluginHookRegistration {
 
 interface PluginHookPayloadState {
   compactTrigger?: string;
+  toPluginToolName?: (toolName: string) => string;
 }
 
 function getSessionId(input: HookInput, context: PluginHookRuntimeContext): string {
@@ -104,10 +105,24 @@ function toClaudeCompactTrigger(trigger: string | undefined): string | undefined
   return trigger === 'manual' ? 'manual' : 'auto';
 }
 
-function toPluginBatchToolCall(entry: PostToolBatchEntry): PluginHookBatchToolCall {
+function getPluginToolName(toolName: string, state: PluginHookPayloadState): string {
+  if (!state.toPluginToolName) {
+    return toolName;
+  }
+  const translated = state.toPluginToolName(toolName);
+  if (!translated?.trim()) {
+    throw new Error(`No plugin tool-name mapping is available for "${toolName}"`);
+  }
+  return translated;
+}
+
+function toPluginBatchToolCall(
+  entry: PostToolBatchEntry,
+  state: PluginHookPayloadState,
+): PluginHookBatchToolCall {
   const toolResponse = entry.status === 'success' ? entry.toolOutput : entry.error;
   return {
-    tool_name: entry.toolName,
+    tool_name: getPluginToolName(entry.toolName, state),
     tool_input: entry.toolInput,
     tool_use_id: entry.toolUseId,
     ...(toolResponse !== undefined && { tool_response: toolResponse }),
@@ -156,14 +171,14 @@ export function createPluginHookPayload(
     case 'PreToolUse':
       return {
         ...payload,
-        tool_name: input.toolName,
+        tool_name: getPluginToolName(input.toolName, state),
         tool_input: input.toolInput,
         tool_use_id: input.toolUseId,
       };
     case 'PostToolUse':
       return {
         ...payload,
-        tool_name: input.toolName,
+        tool_name: getPluginToolName(input.toolName, state),
         tool_input: input.toolInput,
         tool_use_id: input.toolUseId,
         tool_response: input.toolOutput,
@@ -171,17 +186,20 @@ export function createPluginHookPayload(
     case 'PostToolUseFailure':
       return {
         ...payload,
-        tool_name: input.toolName,
+        tool_name: getPluginToolName(input.toolName, state),
         tool_input: input.toolInput,
         tool_use_id: input.toolUseId,
         error: input.error,
       };
     case 'PostToolBatch':
-      return { ...payload, tool_calls: input.entries.map(toPluginBatchToolCall) };
+      return {
+        ...payload,
+        tool_calls: input.entries.map((entry) => toPluginBatchToolCall(entry, state)),
+      };
     case 'PermissionDenied':
       return {
         ...payload,
-        tool_name: input.toolName,
+        tool_name: getPluginToolName(input.toolName, state),
         tool_input: input.toolInput,
         tool_use_id: input.toolUseId,
         reason: input.reason,
@@ -211,11 +229,40 @@ export function createPluginHookPayload(
   }
 }
 
+function getHookTimeoutMs(
+  sourceEvent: string,
+  handler: PluginHookHandler,
+  configuredTimeoutMs: number | undefined,
+): number | undefined {
+  if (configuredTimeoutMs !== undefined) {
+    return configuredTimeoutMs;
+  }
+  if (handler.type === 'command') {
+    return sourceEvent === 'UserPromptSubmit' ? 30_000 : 600_000;
+  }
+  if (handler.type === 'prompt') {
+    return 30_000;
+  }
+  return undefined;
+}
+
+function getHandlerIdentity(
+  sourceEvent: string,
+  handler: PluginHookHandler,
+  condition: string | undefined,
+): string {
+  const handlerProperties = Object.entries(handler)
+    .filter(([key]) => key !== 'if')
+    .sort(([left], [right]) => left.localeCompare(right));
+  return JSON.stringify([sourceEvent, condition ?? null, handlerProperties]);
+}
+
 export function registerPluginHooks(options: RegisterPluginHooksOptions): PluginHookRegistration {
   const { pluginId, registry, document, executor, context = {} } = options;
   const plan = planPluginHooks(document, executor.capabilities);
   const unregisters: Array<() => void> = [];
   const compactTriggers = new Map<string, string>();
+  const executedHandlers = new WeakMap<HookInput, Set<string>>();
   const tracksCompactTriggers = plan.entries.some(
     (entry) => entry.status === 'ready' && entry.targetEvent === 'PostCompact',
   );
@@ -240,6 +287,17 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
     }
     const targetEvent = entry.targetEvent;
     const seenSessionIds = new Set<string>();
+    const handlerIdentity = getHandlerIdentity(entry.sourceEvent, entry.handler, entry.condition);
+    const toolNameTranslator = executor.capabilities.toPluginToolName;
+    const toPluginToolName =
+      toolNameTranslator === undefined
+        ? undefined
+        : (toolName: string): string =>
+            toolNameTranslator({
+              sourceEvent: entry.sourceEvent,
+              targetEvent,
+              toolName,
+            });
     let hasFired = false;
     const hook: HookCallback<HookEvent> = (input, signal) => {
       const sessionId = getSessionId(input, context);
@@ -268,6 +326,15 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
       if (entry.handler.once === true && hasFired) {
         return {};
       }
+      const handlersForInput = executedHandlers.get(input);
+      if (handlersForInput?.has(handlerIdentity) === true) {
+        return {};
+      }
+      if (handlersForInput) {
+        handlersForInput.add(handlerIdentity);
+      } else {
+        executedHandlers.set(input, new Set([handlerIdentity]));
+      }
       hasFired = true;
       return executor.execute(
         {
@@ -279,6 +346,7 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
           input,
           payload: createPluginHookPayload(entry.sourceEvent, input, context, {
             compactTrigger,
+            toPluginToolName,
           }),
         },
         signal,
@@ -288,10 +356,11 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
       entry.sourceEvent === 'SessionStart' ||
       targetEvent === 'PreCompact' ||
       targetEvent === 'PostCompact';
+    const timeoutMs = getHookTimeoutMs(entry.sourceEvent, entry.handler, entry.timeoutMs);
     const matcher: HookMatcher<HookEvent> = {
       hooks: [hook],
       ...(!runtimeFiltered && entry.matcher !== undefined && { pattern: entry.matcher }),
-      ...(entry.timeoutMs !== undefined && { timeout: entry.timeoutMs }),
+      ...(timeoutMs !== undefined && { timeout: timeoutMs }),
       ...(!runtimeFiltered && entry.handler.once === true && { once: true }),
     };
     unregisters.push(registry.register(targetEvent, matcher));

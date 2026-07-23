@@ -30,6 +30,13 @@ const QUERY_EVENTS = new Set<HookEvent>([
   'PostCompact',
 ]);
 
+const TOOL_NAME_EVENTS = new Set<HookEvent>([
+  'PreToolUse',
+  'PostToolUse',
+  'PostToolUseFailure',
+  'PermissionDenied',
+]);
+
 export type PluginHookIssueSeverity = 'warning' | 'error';
 
 export type PluginHookIssueCode =
@@ -39,6 +46,7 @@ export type PluginHookIssueCode =
   | 'invalid_matcher'
   | 'matcher_translated'
   | 'unmapped_matcher'
+  | 'unmapped_tool_name'
   | 'unsupported_matcher'
   | 'unsupported_condition'
   | 'conflicting_condition'
@@ -62,9 +70,17 @@ export interface PluginHookMatcherTranslation {
   matcher: string;
 }
 
+export interface PluginHookToolNameTranslation {
+  sourceEvent: string;
+  targetEvent: HookEvent;
+  toolName: string;
+}
+
 export interface PluginHookCapabilities {
   handlerTypes: ReadonlySet<PluginHookHandlerType>;
   translateMatcher?: (input: PluginHookMatcherTranslation) => string | undefined;
+  /** Maps a LibreChat runtime tool name back into the plugin's source namespace. */
+  toPluginToolName?: (input: PluginHookToolNameTranslation) => string;
   conditions?: boolean;
   async?: boolean;
   asyncRewake?: boolean;
@@ -99,7 +115,7 @@ export interface PluginHookPlan {
 
 function normalizeMatcher(matcher: string | undefined): string | undefined {
   const trimmed = matcher?.trim();
-  if (!trimmed || trimmed === '*') {
+  if (!trimmed || trimmed === '*' || trimmed === '.*') {
     return undefined;
   }
   return trimmed;
@@ -293,6 +309,13 @@ function planMatcher(
       severity: 'warning',
       message: `Plugin matcher "${sourceMatcher}" maps to LibreChat matcher "${matcher}"`,
     });
+    if (TOOL_NAME_EVENTS.has(targetEvent) && !capabilities.toPluginToolName) {
+      issues.push({
+        code: 'unmapped_tool_name',
+        severity: 'error',
+        message: 'Translated tool matchers require a reverse tool-name mapping for plugin payloads',
+      });
+    }
   }
   return { sourceMatcher, matcher, issues };
 }
