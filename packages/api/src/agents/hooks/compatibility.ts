@@ -383,12 +383,20 @@ export function planPluginHooks(
             message: 'A hook cannot combine different group-level and handler-level conditions',
           });
         }
-        if (condition && capabilities.conditions !== true) {
-          issues.push({
-            code: 'unsupported_condition',
-            severity: 'error',
-            message: 'The configured executor does not support conditional `if` hook expressions',
-          });
+        if (condition) {
+          if (!targetEvent || !TOOL_NAME_EVENTS.has(targetEvent)) {
+            issues.push({
+              code: 'unsupported_condition',
+              severity: 'error',
+              message: 'Conditional `if` hook expressions are only supported for tool events',
+            });
+          } else if (capabilities.conditions !== true) {
+            issues.push({
+              code: 'unsupported_condition',
+              severity: 'error',
+              message: 'The configured executor does not support conditional `if` hook expressions',
+            });
+          }
         }
         const status = hasError(issues) ? 'unsupported' : 'ready';
 

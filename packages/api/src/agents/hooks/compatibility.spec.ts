@@ -319,6 +319,39 @@ describe('planPluginHooks', () => {
     );
   });
 
+  test('rejects conditional expressions on non-tool events', () => {
+    const plan = planPluginHooks(
+      document({
+        Stop: [
+          {
+            hooks: [
+              {
+                type: 'command',
+                command: 'verify',
+                if: 'Bash(git status:*)',
+              },
+            ],
+          },
+        ],
+      }),
+      {
+        handlerTypes: new Set(['command']),
+        conditions: true,
+      },
+    );
+
+    expect(plan.summary).toEqual({ declared: 1, ready: 0, unsupported: 1 });
+    expect(plan.entries[0].issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'unsupported_condition',
+          severity: 'error',
+          message: 'Conditional `if` hook expressions are only supported for tool events',
+        }),
+      ]),
+    );
+  });
+
   test('converts portable timeout seconds to the SDK timeout in milliseconds', () => {
     const plan = planPluginHooks(
       document({
