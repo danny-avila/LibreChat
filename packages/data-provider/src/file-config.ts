@@ -220,7 +220,7 @@ export const textMimeTypes =
   /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv|xml|calendar))$/;
 
 export const applicationMimeTypes =
-  /^(application\/(epub\+zip|csv|json|msword|pdf|x-tar|x-sh|x-zip-compressed|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.(presentation|template)|spreadsheetml\.sheet)|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)|xml|zip))$/;
+  /^(application\/(epub\+zip|csv|json|msword|pdf|x-tar|x-sh|x-zip-compressed|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.ms-powerpoint|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.(presentation|template)|spreadsheetml\.sheet)|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)|xml|zip))$/;
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
@@ -235,8 +235,19 @@ export const defaultOCRMimeTypes = [
   /^application\/pdf$/,
   /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)$/,
   /^application\/vnd\.openxmlformats-officedocument\.presentationml\.template$/,
-  /^application\/vnd\.ms-(word|powerpoint)$/,
+  // application/msword is the real legacy .doc MIME; vnd.ms-word is non-standard (never matches).
+  /^application\/(msword|vnd\.ms-(word|powerpoint))$/,
   /^application\/epub\+zip$/,
+  /^application\/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$/,
+];
+
+/** MIME types eligible to route to a configured RAG `/text` endpoint: superset of `documentParserMimeTypes` (OCR-document set minus images and EPUB). */
+export const ragTextMimeTypes = [
+  /^application\/pdf$/,
+  /^application\/msword$/,
+  /^application\/vnd\.ms-powerpoint$/,
+  excelMimeTypes,
+  /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)$/,
   /^application\/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$/,
 ];
 

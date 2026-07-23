@@ -6,6 +6,7 @@ import {
   hasActivePiiPatterns,
   isAssistantsEndpoint,
   isPermissiveMimeConfig,
+  ragTextMimeTypes,
 } from 'librechat-data-provider';
 import type { FileConfig, FileFilterField, FiltersConfig } from 'librechat-data-provider';
 import {
@@ -324,19 +325,23 @@ export function getUploadExtractedTextPlan(
   ) {
     return UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR;
   }
-  const isDocumentParserEligible = documentParserMimeTypes.some((mimePattern) =>
+  const isRagTextEligible = ragTextMimeTypes.some((mimePattern) =>
     mimePattern.test(input.mimeType),
   );
-  if (!isDocumentParserEligible) {
-    return null;
-  }
   if (
     checkType != null &&
+    isRagTextEligible &&
     input.ragConfigured &&
     !isPermissiveMimeConfig(input.fileConfig.text?.supportedMimeTypes) &&
     checkType(input.mimeType, input.fileConfig.text?.supportedMimeTypes ?? [])
   ) {
     return UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
+  }
+  const isDocumentParserEligible = documentParserMimeTypes.some((mimePattern) =>
+    mimePattern.test(input.mimeType),
+  );
+  if (!isDocumentParserEligible) {
+    return null;
   }
   return UPLOAD_EXTRACTED_TEXT_PLANS.documentParser;
 }
