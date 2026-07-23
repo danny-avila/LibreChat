@@ -315,7 +315,7 @@ const getAssistantDocuments = async (req, res) => {
 const uploadAssistantAvatar = async (req, res) => {
   try {
     const appConfig = req.config;
-    filterFile({ req, file: req.file, image: true, isAvatar: true });
+    await filterFile({ req, file: req.file, image: true, isAvatar: true });
     const { assistant_id } = req.params;
     if (!assistant_id) {
       return res.status(400).json({ message: 'Assistant ID is required' });

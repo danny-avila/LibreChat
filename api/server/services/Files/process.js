@@ -42,7 +42,7 @@ const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getRetentionExpiry, getAgentFileRetentionExpiry } = require('./retention');
 const { getStrategyFunctions } = require('./strategies');
-const { determineFileType } = require('~/server/utils');
+const { determineFileType, detectFileTypeFromFile } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
 const db = require('~/models');
 
@@ -1301,6 +1301,188 @@ async function saveBase64Image(
 }
 
 /**
+ * Executable/active-content signatures that must never be accepted under a
+ * benign claimed type, even when the endpoint's allow-list is broad. `file-type`
+ * reports these from the magic bytes regardless of the upload's filename/mimetype.
+ */
+const EXECUTABLE_MIME_TYPES = new Set([
+  'application/x-elf',
+  'application/x-mach-binary',
+  'application/x-msdownload',
+  'application/java-vm',
+  'application/wasm',
+]);
+
+/**
+ * ZIP-based container formats. `file-type` reports the real bytes of OOXML
+ * (docx/xlsx/pptx), OpenDocument and epub files as `application/zip` (or the
+ * specific OOXML type), so these are treated as equivalent to each other.
+ */
+const ZIP_CONTAINER_MIME_TYPES = new Set([
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/epub+zip',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation',
+  'application/vnd.oasis.opendocument.graphics',
+]);
+
+/**
+ * OLE/CFB compound-document formats. `file-type` reports legacy Office files
+ * (.doc/.xls/.ppt) as `application/x-cfb`, so these are treated as equivalent.
+ */
+const OLE_CONTAINER_MIME_TYPES = new Set([
+  'application/x-cfb',
+  'application/x-ole-storage',
+  'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+  'application/x-ms-excel',
+  'application/x-msexcel',
+  'application/msexcel',
+  'application/x-excel',
+  'application/x-dos_ms_excel',
+  'application/xls',
+  'application/x-xls',
+]);
+
+/**
+ * Media container formats `file-type` reports under an `application/*` name even
+ * though the bytes are audio/video (Ogg, ASF for wmv/wma). Treated as media so
+ * they are not mistaken for documents.
+ */
+const MEDIA_CONTAINER_MIME_TYPES = new Set(['application/ogg', 'application/vnd.ms-asf']);
+
+/**
+ * Reduces a MIME type to a token for equivalence comparison. Image and text
+ * collapse to their top-level type; all audio/video (including the media
+ * containers the sniffer reports under `application/*`) collapse to `media`,
+ * since those formats share containers (mp4/ogg/webm/asf) and the sniffer's
+ * canonical name often differs from the configured one. `application/*` is
+ * otherwise kept fine-grained (so `application/zip` never matches
+ * `application/pdf`), with the ZIP and OLE container families each mapped to a
+ * single token so genuine Office/OpenDocument uploads are not falsely rejected.
+ *
+ * @param {string} mimeType
+ * @returns {string}
+ */
+const contentSignature = (mimeType) => {
+  const base = mimeType.split(';')[0].trim();
+  const topLevel = base.split('/')[0];
+
+  if (topLevel === 'image' || topLevel === 'text') {
+    return topLevel;
+  }
+  if (topLevel === 'audio' || topLevel === 'video' || MEDIA_CONTAINER_MIME_TYPES.has(base)) {
+    return 'media';
+  }
+  if (ZIP_CONTAINER_MIME_TYPES.has(base)) {
+    return 'application/zip-container';
+  }
+  if (OLE_CONTAINER_MIME_TYPES.has(base)) {
+    return 'application/ole-container';
+  }
+  return base;
+};
+
+/**
+ * Builds the set of MIME strings to test a sniffed type against the endpoint
+ * allow-list. Includes the vendor/`x-` alias the sniffer may emit
+ * (`video/vnd.avi` → `video/avi`).
+ *
+ * ZIP-based formats are NOT expanded: `file-type` reports the specific type of a
+ * genuine OOXML/ODF/epub file (e.g. a real `.docx` → the wordprocessingml type),
+ * so a plain `application/zip` detection is a real ZIP and must only pass where
+ * ZIP itself is allowed. Legacy Office (`.doc/.xls/.ppt`) is the exception — the
+ * sniffer cannot tell those OLE/CFB formats apart (all report `application/x-cfb`),
+ * so the OLE family is expanded so a real legacy Office file is still accepted.
+ *
+ * @param {string} detectedMime
+ * @returns {string[]}
+ */
+const allowListCandidates = (detectedMime) => {
+  const candidates = new Set([detectedMime]);
+  const [type, subtype = ''] = detectedMime.split('/');
+  candidates.add(`${type}/${subtype.replace(/^x-/, '').replace(/^vnd\./, '')}`);
+
+  if (OLE_CONTAINER_MIME_TYPES.has(detectedMime)) {
+    OLE_CONTAINER_MIME_TYPES.forEach((mime) => candidates.add(mime));
+  }
+
+  return [...candidates];
+};
+
+/**
+ * Guards against MIME spoofing by validating the file's real magic-byte type,
+ * which is not covered by the claimed-type allow-list check `filterFile` already
+ * performs (`file.mimetype`/filename are attacker-controlled).
+ *
+ * Rejects, in order: executable/active-content signatures; a non-media sniffed
+ * type the endpoint does not permit (so `image/bmp` cannot ride in as
+ * `image/png` on an image-only endpoint, nor a raw ZIP as `application/pdf`);
+ * and a sniffed type whose content signature disagrees with the claim (so a PDF
+ * claimed as `image/png` is rejected even on an endpoint that also allows PDFs).
+ *
+ * The strict allow-list check is skipped for media (audio/video): `file-type`'s
+ * canonical names routinely differ from the configured tokens (a `.mov` is
+ * sniffed as `video/quicktime` but configured as `video/mov`; Ogg/ASF are
+ * reported under `application/*`), so an exact check would falsely reject
+ * legitimate uploads. For media it is enough that the claim already passed the
+ * endpoint allow-list and the sniffed content is the same (media) category —
+ * which still blocks a document/executable disguised as media and vice versa.
+ * Files with no detectable signature (plain text, code, csv, svg) fall through
+ * to the claimed-type gate already applied by the caller.
+ *
+ * @param {Object} params
+ * @param {Express.Multer.File} params.file - The uploaded file (disk storage).
+ * @param {import('librechat-data-provider').FileConfig} params.fileConfig
+ * @param {import('librechat-data-provider').EndpointFileConfig} params.endpointFileConfig
+ * @returns {Promise<void>}
+ * @throws {Error} When the sniffed content is not permitted or does not match the claim.
+ */
+const assertContentMatchesType = async ({ file, fileConfig, endpointFileConfig }) => {
+  if (!file.path) {
+    return;
+  }
+
+  const detected = await detectFileTypeFromFile(file.path);
+  if (!detected) {
+    return;
+  }
+
+  const detectedMime = detected.mime.toLowerCase();
+  if (EXECUTABLE_MIME_TYPES.has(detectedMime)) {
+    throw new Error('File content does not match its file type');
+  }
+
+  const detectedSignature = contentSignature(detectedMime);
+  // Media intentionally skips the exact allow-list check: `file-type`'s canonical
+  // names diverge from the configured tokens (video/quicktime vs video/mov,
+  // video/matroska vs video/mkv, ASF/Ogg reported under application/*), and
+  // containers don't reveal audio-vs-video, so an exact match would falsely
+  // reject legitimate uploads. Media is instead constrained to the same category
+  // as the (already allow-listed) claim; the signature check below still blocks a
+  // document/executable disguised as media and vice versa.
+  if (detectedSignature !== 'media') {
+    const detectedIsSupported = allowListCandidates(detectedMime).some((mime) =>
+      fileConfig.checkType(mime, endpointFileConfig.supportedMimeTypes),
+    );
+    if (!detectedIsSupported) {
+      throw new Error('File content does not match its file type');
+    }
+  }
+
+  const claimedMime = (file.mimetype || '').toLowerCase();
+  if (claimedMime && detectedSignature !== contentSignature(claimedMime)) {
+    throw new Error('File content does not match its file type');
+  }
+};
+
+/**
  * Filters a file based on its size and the endpoint origin.
  *
  * @param {Object} params - The parameters for the function.
@@ -1312,11 +1494,11 @@ async function saveBase64Image(
  * @param {number} [params.req.version]
  * @param {boolean} [params.image] - Whether the file expected is an image.
  * @param {boolean} [params.isAvatar] - Whether the file expected is a user or entity avatar.
- * @returns {void}
+ * @returns {Promise<void>}
  *
  * @throws {Error} If a file exception is caught (invalid file size or type, lack of metadata).
  */
-function filterFile({ req, image, isAvatar }) {
+async function filterFile({ req, image, isAvatar }) {
   const { file } = req;
   const { endpoint, endpointType, file_id, width, height } = req.body;
 
@@ -1364,6 +1546,8 @@ function filterFile({ req, image, isAvatar }) {
   if (!isSupportedMimeType) {
     throw new Error('Unsupported file type');
   }
+
+  await assertContentMatchesType({ file, fileConfig, endpointFileConfig });
 
   if (!image || isAvatar === true) {
     return;

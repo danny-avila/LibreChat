@@ -16,6 +16,17 @@ const determineFileType = async (dataBuffer, returnFileType) => {
 };
 
 /**
+ * Detects a file's true media type from its magic bytes on disk, reading only the
+ * leading bytes rather than loading the whole file into memory.
+ * @param {string} filePath
+ * @returns {Promise<import('file-type').FileTypeResult | undefined>} The detected type, or undefined when no signature matches (e.g. plain text).
+ */
+const detectFileTypeFromFile = async (filePath) => {
+  const fileType = await import('file-type');
+  return fileType.fileTypeFromFile(filePath);
+};
+
+/**
  * Get buffer metadata
  * @param {Buffer} buffer
  * @returns {Promise<{ bytes: number, type: string, dimensions: Record<string, number>, extension: string}>}
@@ -89,6 +100,7 @@ const getContentDisposition = (fileName, disposition = 'attachment') => {
 
 module.exports = {
   determineFileType,
+  detectFileTypeFromFile,
   getBufferMetadata,
   cleanFileName,
   getContentDisposition,

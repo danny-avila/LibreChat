@@ -1155,7 +1155,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ message: 'No file uploaded' });
     }
-    filterFile({ req, file: req.file, image: true, isAvatar: true });
+    await filterFile({ req, file: req.file, image: true, isAvatar: true });
     const { agent_id } = req.params;
     if (!agent_id) {
       return res.status(400).json({ message: 'Agent ID is required' });
