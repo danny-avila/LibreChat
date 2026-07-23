@@ -4,7 +4,7 @@ import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import { Constants, ContentTypes, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation, TMessageContentParts } from 'librechat-data-provider';
-import type { PendingSteer, QueuedMessage } from '~/store/families';
+import type { RunEnd, PendingSteer, QueuedMessage } from '~/store/families';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
   useGetMessagesByConvoId,
@@ -12,6 +12,7 @@ import {
   useMarkFilesUsageMutation,
 } from '~/data-provider';
 import { carriedSteerContext, clearAllDrafts } from '~/utils';
+import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useSetFilesToDelete } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
@@ -116,8 +117,11 @@ export default function useSteering({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const setFilesToDelete = useSetFilesToDelete();
-  const steerMutation = useSteerMessageMutation();
-  const markFilesUsage = useMarkFilesUsageMutation();
+  const convertSteersToQueued = useSteerConvert();
+  /** `mutate` is a stable callback; the mutation result objects are fresh
+   * every render and would defeat the memoized return value below. */
+  const { mutate: steerMessage } = useSteerMessageMutation();
+  const { mutate: markFilesUsage } = useMarkFilesUsageMutation();
   const defaultAction = useRecoilValue<DuringRunAction>(store.duringRunDefaultAction);
   const setDefaultAction = useSetRecoilState(store.duringRunDefaultAction);
 
@@ -130,13 +134,16 @@ export default function useSteering({
   const duringRunActive = enabled && isSubmitting && !answerModeActive;
   const queueKey = hasRealConvoId ? conversationId : Constants.NEW_CONVO;
 
-  const { data: messages } = useGetMessagesByConvoId(hasRealConvoId ? conversationId : '', {
-    enabled: hasRealConvoId,
-  });
-  const pausedOnApproval = useMemo(
-    () => (duringRunActive ? hasLiveToolApproval(messages) : false),
-    [duringRunActive, messages],
+  /** Boolean `select` so streaming deltas don't notify this subscription:
+   * structural sharing only re-renders the composer when the flag flips. */
+  const { data: liveToolApproval } = useGetMessagesByConvoId<boolean>(
+    hasRealConvoId ? conversationId : '',
+    {
+      enabled: hasRealConvoId,
+      select: hasLiveToolApproval,
+    },
   );
+  const pausedOnApproval = duringRunActive ? (liveToolApproval ?? false) : false;
 
   /** Whether a steer can reach the live run right now — independent of the
    *  user's default action, so the per-send menu can always override to
@@ -149,6 +156,31 @@ export default function useSteering({
    *  stale by the time the steer response arrives. */
   const isSubmittingRef = useRef(isSubmitting);
   isSubmittingRef.current = isSubmitting;
+
+  /**
+   * How each conversation's last run ended, kept because `useQueueDrain`
+   * CONSUMES the one-shot signal — by the time a reclaim resolves it is already
+   * gone. Every subscriber renders before the drain's effect nulls it, so the
+   * outcome is captured first. Both carriers are watched: the index signal, and
+   * the copy parked under the conversation when the run ended while the user
+   * was looking elsewhere.
+   *
+   * Keyed by conversation because this hook is REUSED across chats: a single
+   * slot would answer for whichever chat is on screen when the reclaim lands,
+   * not the one the words belong to. An entry is dropped once that conversation
+   * starts another run — an older end no longer describes what is happening.
+   */
+  const runEnd = useRecoilValue(store.runEndByIndex(index));
+  const parkedRunEnd = useRecoilValue(store.pendingRunEndByConvoId(queueKey));
+  const runEndsRef = useRef<Map<string, RunEnd>>(new Map());
+  const observedRunEnd = [runEnd, parkedRunEnd].find(
+    (end) => end != null && end.conversationId === conversationId,
+  );
+  if (observedRunEnd != null) {
+    runEndsRef.current.set(conversationId, observedRunEnd);
+  } else if (isSubmitting) {
+    runEndsRef.current.delete(conversationId);
+  }
 
   const upsertSteerChip = useRecoilCallback(
     ({ set }) =>
@@ -238,7 +270,7 @@ export default function useSteering({
         }
       }
       if (file_ids.length > 0) {
-        markFilesUsage.mutate({ file_ids });
+        markFilesUsage({ file_ids });
       }
     },
     [markFilesUsage],
@@ -378,6 +410,30 @@ export default function useSteering({
     [queueKey],
   );
 
+  /**
+   * Re-posts a spent run-end signal so the drain wakes and reconsiders the
+   * queue. No-op while a signal for THIS conversation is still armed: that
+   * drain has not run yet and will see the item on its own, so arming a second
+   * carrier would drain twice and send two messages.
+   *
+   * A signal for a DIFFERENT conversation is not that proof. The index slot is
+   * shared, and the drain parks a foreign signal under its own conversation and
+   * then only inspects the active one's queue — this item would never be looked
+   * at. Park ours alongside it.
+   */
+  const rearmDrain = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (convoId: string, end: RunEnd) => {
+        const indexArmed = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
+        const parkedArmed = snapshot.getLoadable(store.pendingRunEndByConvoId(convoId)).getValue();
+        if (indexArmed?.conversationId === convoId || parkedArmed != null) {
+          return;
+        }
+        set(store.pendingRunEndByConvoId(convoId), end);
+      },
+    [index],
+  );
+
   const armDrainAfterAbort = useRecoilCallback(
     ({ set }) =>
       () => {
@@ -402,15 +458,20 @@ export default function useSteering({
        *  leftover report) can restore the queued item's full context. */
       const carried = carriedSteerContext(context);
       const localId = `local-${v4()}`;
+      /** The true submission time, carried through the ACK and failure chips so
+       *  a later conversion sorts this steer by when it was SENT, not when its
+       *  202 landed — otherwise a draft queued during the round-trip would drain
+       *  ahead of a steer submitted before it. */
+      const createdAt = Date.now();
       upsertSteerChip(conversationId, {
         steerId: localId,
         text: trimmed,
         status: 'sending',
-        createdAt: Date.now(),
+        createdAt,
         ...(files && { files }),
         ...carried,
       });
-      steerMutation.mutate(
+      steerMessage(
         { conversationId, text: trimmed, ...(files && { files }) },
         {
           onSuccess: (response) => {
@@ -418,7 +479,7 @@ export default function useSteering({
               steerId: response.steerId,
               text: trimmed,
               status: 'pending',
-              createdAt: Date.now(),
+              createdAt,
               ...(files && { files }),
               ...carried,
             });
@@ -464,7 +525,7 @@ export default function useSteering({
               steerId: localId,
               text: trimmed,
               status: 'failed',
-              createdAt: Date.now(),
+              createdAt,
               ...(files && { files }),
               ...carried,
             });
@@ -479,7 +540,7 @@ export default function useSteering({
       upsertSteerChip,
       replaceSteerChip,
       acknowledgeSteer,
-      steerMutation,
+      steerMessage,
       sendNow,
       enqueue,
       showToast,
@@ -539,6 +600,55 @@ export default function useSteering({
       replaceSteerChip(conversationId, steerId, null);
     },
     [conversationId, replaceSteerChip],
+  );
+
+  /**
+   * Re-homes a steer the client just reclaimed from the server queue (see
+   * `useSteerReclaim`) as a queued follow-up.
+   *
+   * Routed through the shared conversion rather than `enqueue` so it obeys the
+   * same invariant as the leftover-steer path: the item keeps its ORIGINAL id
+   * and `createdAt`, so a steer accepted before a later follow-up still drains
+   * ahead of it — a fresh `Date.now()` would sort it last.
+   *
+   * The reclaim is a round-trip, so the run can end while it is in flight and
+   * the drain can consume its one-shot run-end signal against an empty queue,
+   * leaving nothing to auto-send this item. Rather than send it here, re-post
+   * that spent signal so `useQueueDrain` runs again and decides: it owns the
+   * completed-only rule, FIFO order, `NEW_CONVO` migration, and submitting via
+   * `ask` (which, unlike the composer's `sendNow`, does not reset the form and
+   * so cannot wipe a draft typed while the reclaim was in flight).
+   *
+   * Parked under the conversation rather than the index, so a run that ended
+   * while the user was elsewhere still drains when they come back.
+   */
+  const queueReclaimedSteer = useCallback(
+    (steer: PendingSteer) => {
+      convertSteersToQueued(conversationId, [
+        {
+          steerId: steer.steerId,
+          text: steer.text,
+          createdAt: steer.createdAt,
+          ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+          /** Carried on the steer itself: the conversion normally recovers this
+           *  from the chip, which a competing cancel can remove mid-reclaim. */
+          ...carriedSteerContext(steer),
+        },
+      ]);
+      /**
+       * Read by conversation, so it describes THIS steer's run even once the
+       * hook has moved to another chat — the user navigating away does not make
+       * their words any less owed a send. No entry means that run is still going
+       * (or has started another): its own end is ahead of this item and drains
+       * it, so there is nothing to re-arm.
+       */
+      const lastRunEnd = runEndsRef.current.get(conversationId);
+      if (lastRunEnd == null || lastRunEnd.outcome !== 'completed') {
+        return;
+      }
+      rearmDrain(conversationId, lastRunEnd);
+    },
+    [conversationId, convertSteersToQueued, rearmDrain],
   );
 
   /** Convert a failed/unsent steer chip into a queued follow-up. */
@@ -643,27 +753,54 @@ export default function useSteering({
     [duringRunActive, effectiveAction, steerFromComposer, queueFromComposer],
   );
 
-  return {
-    enabled,
-    queueKey,
-    canSteer,
-    duringRunActive,
-    effectiveAction,
-    defaultAction,
-    pausedOnApproval,
-    setDefaultAction,
-    submitDuringRun,
-    steerFromComposer,
-    queueFromComposer,
-    submitSteer,
-    retrySteer,
-    removeSteer,
-    convertSteerToQueue,
-    enqueue,
-    removeQueued,
-    sendQueuedNow,
-    interruptAndSend,
-  };
+  /** Memoized so consumers like `memo(PendingSteerChips)` can bail on the
+   * `steering` prop; a fresh literal here would defeat them every render. */
+  return useMemo(
+    () => ({
+      enabled,
+      queueKey,
+      canSteer,
+      duringRunActive,
+      effectiveAction,
+      defaultAction,
+      pausedOnApproval,
+      setDefaultAction,
+      submitDuringRun,
+      steerFromComposer,
+      queueFromComposer,
+      submitSteer,
+      retrySteer,
+      removeSteer,
+      convertSteerToQueue,
+      queueReclaimedSteer,
+      enqueue,
+      removeQueued,
+      sendQueuedNow,
+      interruptAndSend,
+    }),
+    [
+      enabled,
+      queueKey,
+      canSteer,
+      duringRunActive,
+      effectiveAction,
+      defaultAction,
+      pausedOnApproval,
+      setDefaultAction,
+      submitDuringRun,
+      steerFromComposer,
+      queueFromComposer,
+      submitSteer,
+      retrySteer,
+      removeSteer,
+      convertSteerToQueue,
+      queueReclaimedSteer,
+      enqueue,
+      removeQueued,
+      sendQueuedNow,
+      interruptAndSend,
+    ],
+  );
 }
 
 export type SteeringControls = ReturnType<typeof useSteering>;

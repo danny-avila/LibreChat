@@ -12,6 +12,7 @@ on:
       - 'client/**'
       - 'packages/**'
       - '.github/workflows/eslint-ci.yml'
+      - '!**.md'
 
 jobs:
   eslint_checks:

@@ -135,6 +135,14 @@ const file: Schema<IMongoFile> = new Schema(
         ),
         default: undefined,
       },
+      /** Dispatch-order stamp of the last writer (or claimant, on insert):
+       *  the background harvest's stale-output guard compares writer
+       *  dispatch order so an older task settling late cannot overwrite a
+       *  newer task's same-named output. */
+      sourceDispatchedAt: {
+        type: Number,
+        default: undefined,
+      },
     },
     expiresAt: {
       /* Short-lived upload TTL managed by MongoDB. This is separate from

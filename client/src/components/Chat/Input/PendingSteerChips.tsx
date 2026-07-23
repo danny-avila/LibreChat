@@ -1,68 +1,18 @@
 import { memo, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import * as Ariakit from '@ariakit/react';
-import {
-  X,
-  Zap,
-  Send,
-  Clock,
-  Pencil,
-  Trash2,
-  Paperclip,
-  RotateCcw,
-  MoreHorizontal,
-} from 'lucide-react';
+import { X, Zap, Send, Clock, Pencil, Trash2, Paperclip, RotateCcw } from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
+import type { RestoreToComposer } from './InFlightSteers';
+import type { MenuEntry } from './SteerMenu';
+import { RowMenu, useDefaultToggleEntry, ICON_BTN_CLASS, PRIMARY_BTN_CLASS } from './SteerMenu';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
 const ROW_CLASS =
   'flex w-full items-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary';
-const PRIMARY_BTN_CLASS =
-  'flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy';
-const ICON_BTN_CLASS =
-  'shrink-0 rounded-full p-1 text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy';
-const MENU_CLASS =
-  'z-50 min-w-[13rem] rounded-xl border border-border-light bg-surface-secondary p-1.5 text-text-primary shadow-lg outline-none';
-const MENU_ITEM_CLASS =
-  'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-text-primary data-[active-item]:bg-surface-tertiary aria-disabled:cursor-not-allowed aria-disabled:opacity-50';
-
-type MenuEntry = {
-  key: string;
-  label: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-};
-
-/** Per-row "…" overflow menu (edit / mode toggle / conversions). */
-function RowMenu({ label, entries }: { label: string; entries: MenuEntry[] }) {
-  const menu = Ariakit.useMenuStore({ placement: 'top-end' });
-  return (
-    <>
-      <Ariakit.MenuButton store={menu} aria-label={label} className={ICON_BTN_CLASS}>
-        <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-      </Ariakit.MenuButton>
-      <Ariakit.Menu store={menu} portal gutter={6} className={MENU_CLASS}>
-        {entries.map((entry) => (
-          <Ariakit.MenuItem
-            key={entry.key}
-            className={MENU_ITEM_CLASS}
-            onClick={() => {
-              entry.onClick();
-              menu.hide();
-            }}
-          >
-            {entry.icon}
-            {entry.label}
-          </Ariakit.MenuItem>
-        ))}
-      </Ariakit.Menu>
-    </>
-  );
-}
 
 function AttachmentCount({ count, label }: { count: number; label: string }) {
   if (count === 0) {
@@ -77,44 +27,22 @@ function AttachmentCount({ count, label }: { count: number; label: string }) {
   );
 }
 
-/**
- * The overflow item that flips the Enter-during-run default. Shown as the
- * OPPOSITE of the current default (the action you would switch to), matching
- * the reference UX ("Turn on queueing" while steer is the default).
- */
-function useDefaultToggleEntry(steering: SteeringControls): MenuEntry {
-  const localize = useLocalize();
-  return useMemo(() => {
-    const next = steering.defaultAction === 'steer' ? 'queue' : 'steer';
-    return {
-      key: 'toggle-default',
-      label:
-        next === 'queue'
-          ? localize('com_ui_turn_on_queueing')
-          : localize('com_ui_turn_on_steering'),
-      icon:
-        next === 'queue' ? (
-          <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />
-        ) : (
-          <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />
-        ),
-      onClick: () => steering.setDefaultAction(next),
-    };
-  }, [steering, localize]);
-}
-
 function QueuedRow({
   message,
   steering,
+  conversationId,
   onEditToComposer,
+  onRestoreToComposer,
 }: {
   message: QueuedMessage;
   steering: SteeringControls;
+  conversationId: string;
   onEditToComposer: (
     text: string,
     files?: TMessage['files'],
     context?: QueuedMessageContext,
   ) => void;
+  onRestoreToComposer: RestoreToComposer;
 }) {
   const localize = useLocalize();
   const toggleEntry = useDefaultToggleEntry(steering);
@@ -170,7 +98,18 @@ function QueuedRow({
       <button
         type="button"
         aria-label={localize('com_ui_remove_queued')}
-        onClick={() => steering.removeQueued(message.id)}
+        onClick={() => {
+          /* Same safety net as the in-flight cancel: return the words to the
+           * composer when it is free (the gated restore refuses rather than
+           * clobber a draft), then remove either way. */
+          onRestoreToComposer(
+            message.text,
+            message.files,
+            { quotes: message.quotes, manualSkills: message.manualSkills },
+            conversationId,
+          );
+          steering.removeQueued(message.id);
+        }}
         className={ICON_BTN_CLASS}
       >
         <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -273,6 +212,7 @@ function PendingSteerChips({
   conversationId,
   steering,
   onEditToComposer,
+  onRestoreToComposer,
 }: {
   conversationId: string;
   steering: SteeringControls;
@@ -281,6 +221,7 @@ function PendingSteerChips({
     files?: TMessage['files'],
     context?: QueuedMessageContext,
   ) => void;
+  onRestoreToComposer: RestoreToComposer;
 }) {
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
@@ -311,7 +252,9 @@ function PendingSteerChips({
           key={message.id}
           message={message}
           steering={steering}
+          conversationId={conversationId}
           onEditToComposer={onEditToComposer}
+          onRestoreToComposer={onRestoreToComposer}
         />
       ))}
     </div>

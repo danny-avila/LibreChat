@@ -1,5 +1,4 @@
 import { useSetRecoilState } from 'recoil';
-import type { QueryClient } from '@tanstack/react-query';
 import { QueryKeys, Tools } from 'librechat-data-provider';
 import type {
   MemoriesResponse,
@@ -7,6 +6,7 @@ import type {
   TAttachment,
   TFile,
 } from 'librechat-data-provider';
+import type { QueryClient } from '@tanstack/react-query';
 import { handleMemoryArtifact } from '~/utils/memory';
 import store from '~/store';
 
@@ -70,19 +70,54 @@ export default function useAttachmentHandler(queryClient?: QueryClient) {
     setAttachmentsMap((prevMap) => {
       const messageAttachments =
         (prevMap as Record<string, TAttachment[] | undefined>)[messageId] || [];
-      /* Upsert by `file_id` rather than always appending. The
-       * deferred-preview flow emits the same attachment twice: first
-       * with `status: 'pending'` and `text: null`, then again with
-       * `status: 'ready'` (and text/textFormat) or `'failed'` (with
-       * previewError). The second event must merge over the first in
-       * place — appending would render the artifact card twice, once
-       * stuck pending and once resolved. Attachments without a
-       * `file_id` (lightweight types like web_search / file_search
+      /* Upsert by `file_id` (falling back to `filepath` for keyed entries
+       * without one, e.g. code download fallbacks a background poll
+       * re-emits), SCOPED by toolCallId — sibling code calls can share a
+       * claimed file_id for the same filename, and each card anchors its
+       * own attachment. The deferred-preview flow emits the same
+       * attachment twice: first with `status: 'pending'` and `text:
+       * null`, then again with `status: 'ready'` (and text/textFormat) or
+       * `'failed'` (with previewError). The second event must merge over
+       * the first in place — appending would render the artifact card
+       * twice, once stuck pending and once resolved. Attachments with no
+       * file key (lightweight types like web_search / file_search
        * citations) keep the legacy append behavior. */
-      if (fileId) {
-        const existingIndex = messageAttachments.findIndex(
-          (a) => (a as Partial<TFile>).file_id === fileId,
-        );
+      const fileKeyOf = (a: TAttachment): string | undefined => {
+        const { file_id, filepath } = a as Partial<TFile>;
+        return file_id ?? filepath;
+      };
+      const agentIdOf = (a: TAttachment): string | undefined => (a as { agentId?: string }).agentId;
+      const upsertKey = fileKeyOf(data);
+      const incomingToolCallId = (data as { toolCallId?: string }).toolCallId;
+      const incomingAgentId = agentIdOf(data);
+      if (upsertKey) {
+        /** A missing toolCallId on either side is a wildcard (deferred-preview
+         *  updates emit bare `{file_id, status}` payloads); only DISTINCT
+         *  toolCallIds keep entries separate — sibling code calls can share a
+         *  claimed file_id and each card anchors its own attachment. The same
+         *  wildcard applies to agentId: handoff agents can repeat provider
+         *  tool ids (`call_0`) AND share a claimed file_id, so distinct
+         *  non-null agentIds must stay separate entries or the second agent's
+         *  event would merge over (and re-badge) the first's. */
+        const existingIndex = messageAttachments.findIndex((a) => {
+          if (fileKeyOf(a) !== upsertKey) {
+            return false;
+          }
+          const existingToolCallId = (a as { toolCallId?: string }).toolCallId;
+          if (
+            existingToolCallId != null &&
+            incomingToolCallId != null &&
+            existingToolCallId !== incomingToolCallId
+          ) {
+            return false;
+          }
+          const existingAgentId = agentIdOf(a);
+          return (
+            existingAgentId == null ||
+            incomingAgentId == null ||
+            existingAgentId === incomingAgentId
+          );
+        });
         if (existingIndex > -1) {
           const existing = messageAttachments[existingIndex] as Partial<TFile>;
           const incoming = data as Partial<TFile>;

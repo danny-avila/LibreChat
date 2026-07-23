@@ -291,6 +291,79 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       );
     });
 
+    it('should not send custom headers during pre-configured metadata discovery', async () => {
+      const discoveryRequests: Array<{ url: string; method: string; headers: Headers }> = [];
+      const originalFetch = global.fetch;
+      global.fetch = (async (url, init) => {
+        discoveryRequests.push({
+          url: url.toString(),
+          method: init?.method ?? 'GET',
+          headers: new Headers(init?.headers),
+        });
+        return new Response('{}');
+      }) as typeof fetch;
+
+      mockProbeResourceMetadataHint.mockImplementationOnce(async (url, fetchFn) => {
+        await fetchFn?.(url, { method: 'HEAD' });
+        await fetchFn?.(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        return { bearerChallenge: false, headAuthChallenge: false };
+      });
+      mockDiscoverOAuthProtectedResourceMetadata.mockImplementationOnce(async (_, __, fetchFn) => {
+        await fetchFn?.('https://example.com/.well-known/oauth-protected-resource');
+        return {
+          resource: mockServerUrl,
+          authorization_servers: ['https://auth.example.com'],
+        };
+      });
+      mockDiscoverAuthorizationServerMetadata.mockImplementationOnce(async (_, options) => {
+        await options?.fetchFn?.('https://auth.example.com/.well-known/oauth-authorization-server');
+        return {
+          issuer: 'https://auth.example.com',
+          authorization_endpoint: baseConfig.authorization_url,
+          token_endpoint: baseConfig.token_url,
+          token_endpoint_auth_methods_supported: ['client_secret_post'],
+          response_types_supported: ['code'],
+        } as AuthorizationServerMetadata;
+      });
+
+      try {
+        await MCPOAuthHandler.initiateOAuthFlow(
+          mockServerName,
+          mockServerUrl,
+          mockUserId,
+          {
+            Authorization: 'Bearer admin-runtime-token',
+            'X-API-Key': 'gateway-api-key-secret',
+          },
+          baseConfig,
+          ['example.com', 'auth.example.com'],
+        );
+      } finally {
+        global.fetch = originalFetch;
+      }
+
+      expect(discoveryRequests.map(({ url, method }) => ({ url, method }))).toEqual([
+        { url: mockServerUrl, method: 'HEAD' },
+        { url: mockServerUrl, method: 'POST' },
+        {
+          url: 'https://example.com/.well-known/oauth-protected-resource',
+          method: 'GET',
+        },
+        {
+          url: 'https://auth.example.com/.well-known/oauth-authorization-server',
+          method: 'GET',
+        },
+      ]);
+      for (const { headers } of discoveryRequests) {
+        expect(headers.get('Authorization')).toBeNull();
+        expect(headers.get('X-API-Key')).toBeNull();
+      }
+    });
+
     it('should use default values when OAuth metadata fields are not configured', async () => {
       await MCPOAuthHandler.initiateOAuthFlow(
         mockServerName,
@@ -1422,7 +1495,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       expect(headers.get('foo')).toBe('bar');
     });
 
-    it('passes headers to discovery operations', async () => {
+    it('passes headers to auto-discovery operations', async () => {
       mockDiscoverOAuthProtectedResourceMetadata.mockImplementation(async (_, __, fetchFn) => {
         await fetchFn?.('http://example.com/.well-known/oauth-protected-resource', {});
         return {

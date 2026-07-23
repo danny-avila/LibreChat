@@ -20,12 +20,14 @@ import {
   runCheckBackgroundTask,
   claimBackgroundArtifact,
   restoreBackgroundArtifact,
+  getBackgroundCodeDelivery,
   isBackgroundRequested,
   hasRunInBackgroundArg,
   stripRunInBackgroundArg,
   buildBackgroundHandleContent,
   buildBackgroundCapacityContent,
   stripBackgroundFromToolDefinitions,
+  BACKGROUND_STATUS_ATTACHMENT_TYPE,
   CHECK_BACKGROUND_TASK_NAME,
   RUN_IN_BACKGROUND_ARG,
 } from './background';
@@ -74,6 +76,29 @@ export interface ToolExecuteOptions {
   }>;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
   toolEndCallback?: ToolEndCallback;
+  /**
+   * Persists a backgrounded code-execution result onto the dispatch turn once
+   * the detached call settles: downloads/persists generated files, patches the
+   * original tool-call part's `output`, and appends the attachments to the
+   * dispatch turn's message row. Returns the persisted attachments so the poll
+   * turn can re-emit them on its live stream. With `reapply: true` it only
+   * re-applies the (idempotent) row patch using the provided attachments — no
+   * file processing — to heal a full-row save that reverted the anchor.
+   */
+  persistBackgroundCodeResult?: (params: {
+    toolName: string;
+    toolCallId: string;
+    messageId?: string;
+    conversationId?: string;
+    agentId?: string;
+    dispatchedAt?: number;
+    output?: string;
+    artifact?: unknown;
+    attachments?: unknown[];
+    reapply?: boolean;
+  }) => Promise<{ attachments?: unknown[] } | null>;
+  /** Emits an `attachment` SSE event on the current request's live stream. */
+  emitAttachment?: (attachment: unknown) => void;
   /**
    * Loads a skill by name with ACL constraint (returns full body for injection).
    *
@@ -3463,8 +3488,122 @@ function getFileAuthoringQueueKey(
  * This handler receives batched tool calls, loads the required tools,
  * executes them in parallel, and resolves with the results.
  */
+/**
+ * Foreground tool failures reach persisted parts wrapped by the graph as
+ * `Error: [toolName] tool call failed: <message>` — the exact shape the
+ * client's `isError` detection keys on. Detached failures bypass the graph,
+ * so wrap them identically before patching the dispatch row, or a reloaded
+ * failed background run renders as clean stdout.
+ */
+function toCodeToolFailure(toolName: string, message: string): string {
+  if (/^Error:\s*(\[.*?\]\s*)*tool call failed:/i.test(message)) {
+    return message;
+  }
+  return `Error: [${toolName}] tool call failed: ${message}`;
+}
+
+/**
+ * Invoke-time `toolCall` config for a call: identity plus the stateful
+ * runtime-session hint and code-session context (`session_id` +
+ * `_injected_files`) for sandbox-bound tools. Shared by the foreground path
+ * and background dispatch so a detached code call keeps the same session and
+ * file continuity a foreground call gets.
+ */
+function buildToolCallConfig(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown>,
+): Record<string, unknown> {
+  const toolCallConfig: Record<string, unknown> = {
+    id: tc.id,
+    stepId: tc.stepId,
+    turn: tc.turn,
+  };
+
+  /* Stateful runtime-session hint: the SDK resolves it onto
+   * the request for execute_code/bash (orthogonal to the
+   * transient exec-session below — a first call has a hint but
+   * no session yet). The remote executors read it off
+   * `config.toolCall._runtime_session_hint`; without this the
+   * event-driven ON_TOOL_EXECUTE path drops it and every
+   * conversation collapses onto the Code API's `default`
+   * session (no per-conversation isolation). */
+  if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
+    toolCallConfig._runtime_session_hint = tc.runtimeSessionHint;
+  }
+
+  if (tc.codeSessionContext && isCodeSessionAwareToolCall(tc.name, mergedConfigurable)) {
+    toolCallConfig.session_id = tc.codeSessionContext.session_id;
+    if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
+      toolCallConfig._injected_files = tc.codeSessionContext.files;
+      /* Last LC-controlled point before the wire. Mirrors
+       * codeapi's validator context so the two log sides
+       * correlate on a single grep. */
+      const refs = tc.codeSessionContext.files as Array<{
+        id?: unknown;
+        resource_id?: unknown;
+        storage_session_id?: unknown;
+        kind?: unknown;
+        version?: unknown;
+        name?: unknown;
+      }>;
+      const summary = refs.map((f) => ({
+        kind: f.kind,
+        hasResourceId: typeof f.resource_id === 'string' && !!f.resource_id,
+        hasStorageSessionId: typeof f.storage_session_id === 'string' && !!f.storage_session_id,
+        hasVersion: typeof f.version === 'number',
+      }));
+      let missingResourceId = 0;
+      let missingStorageSessionId = 0;
+      let missingVersion = 0;
+      const kindCounts: Record<string, number> = {};
+      for (const s of summary) {
+        if (!s.hasResourceId) missingResourceId++;
+        if (!s.hasStorageSessionId) missingStorageSessionId++;
+        if (!s.hasVersion) missingVersion++;
+        const k = typeof s.kind === 'string' ? s.kind : 'unknown';
+        kindCounts[k] = (kindCounts[k] ?? 0) + 1;
+      }
+      logger.debug(
+        `[code-env:inject] tool=${tc.name} files=${refs.length} ` +
+          `missingResourceId=${missingResourceId} ` +
+          `missingStorageSessionId=${missingStorageSessionId} ` +
+          `missingVersion=${missingVersion} ` +
+          `kinds=${JSON.stringify(kindCounts)}`,
+      );
+      if (missingResourceId > 0) {
+        logger.warn(
+          `[code-env:inject] ${missingResourceId}/${refs.length} files missing resource_id ` +
+            `for tool=${tc.name} — codeapi will reject with 400`,
+          { summary },
+        );
+      }
+    } else {
+      /* Empty `_injected_files` on a code-execution tool
+       * call. Almost always means the seeding chain
+       * (primeCodeFiles → initialSessions →
+       * CodeSessionContext) dropped the file upstream.
+       * `session_id` is still emitted for continuity, but
+       * concrete file refs must arrive through
+       * `_injected_files`; agents no longer falls back to
+       * `/files/<sid>`. Pair with `[primeCodeFiles]`
+       * traces below to locate the layer that lost the ref. */
+      logger.warn(
+        `[code-env:inject] tool=${tc.name} _injected_files=0 — sandbox will see no input files`,
+        {
+          tool: tc.name,
+          session_id: tc.codeSessionContext.session_id,
+          codeSessionContextHasFiles: tc.codeSessionContext.files !== undefined,
+          codeSessionContextFileCount: tc.codeSessionContext.files?.length ?? 0,
+        },
+      );
+    }
+  }
+
+  return toolCallConfig;
+}
+
 export function createToolExecuteHandler(options: ToolExecuteOptions): EventHandler {
-  const { loadTools, toolEndCallback } = options;
+  const { loadTools, toolEndCallback, persistBackgroundCodeResult, emitAttachment } = options;
 
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
@@ -3558,11 +3697,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   errorMessage: `Tool ${tc.name} not found`,
                 };
               }
+              const isCodeCall = isCodeSessionAwareToolCall(tc.name, mergedConfigurable);
+              const harvestEnabled = isCodeCall && persistBackgroundCodeResult != null;
               const created = backgroundTaskRegistry.create({
                 userId: backgroundUserId,
                 conversationId: backgroundConversationId,
                 toolCallId: tc.id,
                 toolName: tc.name,
+                messageId: backgroundRunId,
+                harvestStarted: harvestEnabled,
                 /** Scope idempotency to the agent + run + turn so a later turn's
                  *  or a second agent's repeated provider id (e.g. `call_0`)
                  *  starts a fresh task instead of colliding. */
@@ -3579,13 +3722,92 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               const { task, isNew } = created;
               if (isNew) {
                 const strippedArgs = stripRunInBackgroundArg(tc.args);
+                /** Persists the settled result onto the dispatch turn's message
+                 *  (patch the tool-call part's output, persist generated files,
+                 *  append attachments), so a backgrounded code call reads like a
+                 *  foreground one on reload and in later model turns — even if
+                 *  the model never polls. Runs DETACHED from task completion:
+                 *  the dispatch row may not exist until that turn finalizes, so
+                 *  gating `complete()` on the patch would livelock same-turn
+                 *  polls on `running`. Failures degrade to poll-only delivery. */
+                const harvestCodeResult = (params: {
+                  output?: string;
+                  artifact?: unknown;
+                }): void => {
+                  if (!harvestEnabled || !persistBackgroundCodeResult) {
+                    return;
+                  }
+                  void (async () => {
+                    try {
+                      const persisted = await persistBackgroundCodeResult({
+                        toolName: tc.name,
+                        toolCallId: tc.id,
+                        messageId: backgroundRunId,
+                        conversationId: backgroundConversationId,
+                        /** Disambiguates repeated provider ids (e.g. `call_0`)
+                         *  across agents sharing one response message. */
+                        agentId,
+                        /** Stale-output ordering is decided by DISPATCH order,
+                         *  not harvest wall-clock: a slow old task settling
+                         *  after a newer run wrote the same filename must not
+                         *  overwrite it. */
+                        dispatchedAt: task.createdAt,
+                        ...params,
+                      });
+                      if (persisted == null) {
+                        /** Harvest never persisted anything (missing anchor
+                         *  identity): hand delivery back to the legacy poll-turn
+                         *  callback, restoring the artifact if a poll already
+                         *  claimed it while the harvest was in flight. */
+                        backgroundTaskRegistry.revokeHarvest(
+                          backgroundUserId,
+                          backgroundConversationId,
+                          task.id,
+                          params.artifact,
+                        );
+                        return;
+                      }
+                      const attachments = persisted.attachments;
+                      if (attachments != null && attachments.length > 0) {
+                        backgroundTaskRegistry.attachHarvest(
+                          backgroundUserId,
+                          backgroundConversationId,
+                          task.id,
+                          attachments,
+                        );
+                      }
+                    } catch (persistError) {
+                      logger.warn(
+                        `[background] Failed to persist code result for task ${task.id}:`,
+                        persistError,
+                      );
+                      backgroundTaskRegistry.revokeHarvest(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        params.artifact,
+                      );
+                    }
+                  })();
+                };
                 void (async () => {
                   try {
                     const result = (await tool.invoke(normalizeToolInvokeArgs(strippedArgs, tool), {
-                      toolCall: { id: tc.id, stepId: tc.stepId, turn: tc.turn },
+                      /** Full invoke config (not just identity): a detached
+                       *  code call still needs `session_id`/`_injected_files`/
+                       *  `_runtime_session_hint` or it runs fileless on the
+                       *  Code API's default runtime session. */
+                      toolCall: buildToolCallConfig(tc, mergedConfigurable),
                       configurable: mergedConfigurable,
                       metadata,
                     } as Record<string, unknown>)) as { content?: unknown; artifact?: unknown };
+                    if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
+                      void markSandboxReady(tc.runtimeSessionHint);
+                    }
+                    const content =
+                      isCodeCall && typeof result.content === 'string'
+                        ? cleanCodeToolOutput(result.content)
+                        : result.content;
                     /** Hold any artifact (images, files, UI resources,
                      *  citations) on the task instead of routing it through
                      *  this dispatch turn's callback: a slow background call
@@ -3597,16 +3819,26 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       backgroundUserId,
                       backgroundConversationId,
                       task.id,
-                      { content: result.content, artifact: result.artifact },
+                      { content, artifact: result.artifact, harvestStarted: harvestEnabled },
                     );
+                    harvestCodeResult({
+                      output: typeof content === 'string' ? content : undefined,
+                      artifact: result.artifact,
+                    });
                   } catch (toolError) {
                     const { message } = getSafeToolError(toolError);
+                    const errorOutput = isCodeCall ? toCodeToolFailure(tc.name, message) : message;
                     backgroundTaskRegistry.fail(
                       backgroundUserId,
                       backgroundConversationId,
                       task.id,
-                      message,
+                      errorOutput,
+                      /** Failed code tasks join the heal path too: without this,
+                       *  a full-row save reverting the error patch would leave
+                       *  the dispatch card on the handle JSON forever. */
+                      { harvestStarted: harvestEnabled },
                     );
+                    harvestCodeResult({ output: errorOutput });
                   }
                 })();
               }
@@ -3626,15 +3858,33 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     args: tc.args,
                   });
                   /** Deliver a completed task's artifact through THIS live poll
-                   *  turn's callback (once): the tool's own turn finalized before
-                   *  the artifact resolved, so this is where it can be persisted. */
-                  if (toolEndCallback) {
-                    const pending = claimBackgroundArtifact({
-                      userId: backgroundUserId,
-                      conversationId: backgroundConversationId,
-                      args: tc.args,
-                    });
-                    if (pending) {
+                   *  turn (once): the tool's own turn finalized before the
+                   *  artifact resolved, so this is where it can be surfaced.
+                   *  Code tasks are claimed even without a `toolEndCallback` —
+                   *  their files were already persisted at completion, and the
+                   *  claimed artifact still has to ride this result so the SDK
+                   *  folds the exec session into the run's shared code session. */
+                  let codeSessionArtifact: unknown;
+                  const pending = claimBackgroundArtifact({
+                    userId: backgroundUserId,
+                    conversationId: backgroundConversationId,
+                    args: tc.args,
+                    shouldClaim: (pendingTask) =>
+                      toolEndCallback != null ||
+                      isCodeSessionAwareToolCall(pendingTask.toolName, mergedConfigurable),
+                  });
+                  if (pending) {
+                    const isCodeTask = isCodeSessionAwareToolCall(
+                      pending.toolName,
+                      mergedConfigurable,
+                    );
+                    if (isCodeTask) {
+                      codeSessionArtifact = pending.artifact;
+                    }
+                    /** Harvested code tasks never route through the poll turn's
+                     *  callback — their files were already persisted with the
+                     *  ORIGINAL tool-call identity by the completion harvest. */
+                    if (toolEndCallback && !(isCodeTask && pending.harvestStarted === true)) {
                       try {
                         await toolEndCallback(
                           {
@@ -3666,17 +3916,108 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       }
                     }
                   }
+                  /** Harvest delivery is independent of the one-shot artifact
+                   *  claim so attachments that land AFTER an earlier poll still
+                   *  reach a later one. Re-emitting is idempotent (the client
+                   *  upserts by `file_id`) and the row patch re-application
+                   *  guards against a HITL-pause/resume full-row save having
+                   *  reverted the anchored result. */
+                  const delivery = getBackgroundCodeDelivery({
+                    userId: backgroundUserId,
+                    conversationId: backgroundConversationId,
+                    args: tc.args,
+                  });
+                  if (
+                    delivery &&
+                    delivery.status !== 'running' &&
+                    isCodeSessionAwareToolCall(delivery.toolName, mergedConfigurable)
+                  ) {
+                    for (const attachment of delivery.attachments ?? []) {
+                      try {
+                        emitAttachment?.(attachment);
+                      } catch (emitError) {
+                        logger.warn(
+                          '[background] Failed to emit harvested attachment on poll:',
+                          emitError,
+                        );
+                      }
+                    }
+                    /** Live completion signal for the original card: stdout-only
+                     *  runs emit no file attachments, so a settled task also
+                     *  emits a synthetic status marker (upserted client-side by
+                     *  its stable id; filtered out of file rendering). */
+                    if (emitAttachment && delivery.messageId) {
+                      try {
+                        emitAttachment({
+                          type: BACKGROUND_STATUS_ATTACHMENT_TYPE,
+                          /** Provider ids repeat across agents in handoffs;
+                           *  the agent suffix keeps sibling markers from
+                           *  upserting over each other client-side. */
+                          file_id: `bg-${delivery.toolCallId}${
+                            delivery.agentId != null ? `-${delivery.agentId}` : ''
+                          }`,
+                          messageId: delivery.messageId,
+                          conversationId: backgroundConversationId,
+                          toolCallId: delivery.toolCallId,
+                          agentId: delivery.agentId,
+                          status: delivery.status,
+                        });
+                      } catch (emitError) {
+                        logger.warn(
+                          '[background] Failed to emit background status marker on poll:',
+                          emitError,
+                        );
+                      }
+                    }
+                    if (persistBackgroundCodeResult && delivery.messageId) {
+                      /** Error tasks carry their message in `error`, not
+                       *  `result`; reaped (timed-out) tasks store it raw, so
+                       *  wrap here — `toCodeToolFailure` is a no-op for
+                       *  already-wrapped detached failures. */
+                      const reapplyOutput =
+                        delivery.status === 'error'
+                          ? toCodeToolFailure(
+                              delivery.toolName,
+                              delivery.error ?? delivery.result ?? 'Background task failed',
+                            )
+                          : delivery.result;
+                      void persistBackgroundCodeResult({
+                        toolName: delivery.toolName,
+                        toolCallId: delivery.toolCallId,
+                        messageId: delivery.messageId,
+                        conversationId: backgroundConversationId,
+                        agentId: delivery.agentId,
+                        output: reapplyOutput,
+                        attachments: delivery.attachments,
+                        reapply: true,
+                      }).catch((reapplyError) => {
+                        logger.warn(
+                          '[background] Failed to re-anchor harvested code result:',
+                          reapplyError,
+                        );
+                      });
+                    }
+                  }
                   return reportResult({
                     toolCallId: tc.id,
                     status: 'success' as const,
                     content: pollContent,
+                    ...(codeSessionArtifact != null ? { artifact: codeSessionArtifact } : {}),
                   });
                 }
 
                 if (
                   backgroundToolSet.has(tc.name) &&
                   isBackgroundRequested(tc.args) &&
-                  !toolRequiresEphemeralConnection(toolMap.get(tc.name))
+                  !toolRequiresEphemeralConnection(toolMap.get(tc.name)) &&
+                  /** Code tools depend on the completion-time harvest to anchor
+                   *  results; hosts that don't wire the persister (OpenAI-compat
+                   *  and Responses controllers) downgrade code calls to
+                   *  foreground rather than losing generated files. */
+                  !(
+                    isCodeSessionAwareToolCall(tc.name, mergedConfigurable) &&
+                    persistBackgroundCodeResult == null
+                  )
                 ) {
                   return reportResult(dispatchBackgroundToolCall(tc));
                 }
@@ -3811,95 +4152,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   }
 
                   try {
-                    const toolCallConfig: Record<string, unknown> = {
-                      id: tc.id,
-                      stepId: tc.stepId,
-                      turn: tc.turn,
-                    };
-
-                    /* Stateful runtime-session hint: the SDK resolves it onto
-                     * the request for execute_code/bash (orthogonal to the
-                     * transient exec-session below — a first call has a hint but
-                     * no session yet). The remote executors read it off
-                     * `config.toolCall._runtime_session_hint`; without this the
-                     * event-driven ON_TOOL_EXECUTE path drops it and every
-                     * conversation collapses onto the Code API's `default`
-                     * session (no per-conversation isolation). */
-                    if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
-                      toolCallConfig._runtime_session_hint = tc.runtimeSessionHint;
-                    }
-
-                    if (
-                      tc.codeSessionContext &&
-                      isCodeSessionAwareToolCall(tc.name, mergedConfigurable)
-                    ) {
-                      toolCallConfig.session_id = tc.codeSessionContext.session_id;
-                      if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
-                        toolCallConfig._injected_files = tc.codeSessionContext.files;
-                        /* Last LC-controlled point before the wire. Mirrors
-                         * codeapi's validator context so the two log sides
-                         * correlate on a single grep. */
-                        const refs = tc.codeSessionContext.files as Array<{
-                          id?: unknown;
-                          resource_id?: unknown;
-                          storage_session_id?: unknown;
-                          kind?: unknown;
-                          version?: unknown;
-                          name?: unknown;
-                        }>;
-                        const summary = refs.map((f) => ({
-                          kind: f.kind,
-                          hasResourceId: typeof f.resource_id === 'string' && !!f.resource_id,
-                          hasStorageSessionId:
-                            typeof f.storage_session_id === 'string' && !!f.storage_session_id,
-                          hasVersion: typeof f.version === 'number',
-                        }));
-                        let missingResourceId = 0;
-                        let missingStorageSessionId = 0;
-                        let missingVersion = 0;
-                        const kindCounts: Record<string, number> = {};
-                        for (const s of summary) {
-                          if (!s.hasResourceId) missingResourceId++;
-                          if (!s.hasStorageSessionId) missingStorageSessionId++;
-                          if (!s.hasVersion) missingVersion++;
-                          const k = typeof s.kind === 'string' ? s.kind : 'unknown';
-                          kindCounts[k] = (kindCounts[k] ?? 0) + 1;
-                        }
-                        logger.debug(
-                          `[code-env:inject] tool=${tc.name} files=${refs.length} ` +
-                            `missingResourceId=${missingResourceId} ` +
-                            `missingStorageSessionId=${missingStorageSessionId} ` +
-                            `missingVersion=${missingVersion} ` +
-                            `kinds=${JSON.stringify(kindCounts)}`,
-                        );
-                        if (missingResourceId > 0) {
-                          logger.warn(
-                            `[code-env:inject] ${missingResourceId}/${refs.length} files missing resource_id ` +
-                              `for tool=${tc.name} — codeapi will reject with 400`,
-                            { summary },
-                          );
-                        }
-                      } else {
-                        /* Empty `_injected_files` on a code-execution tool
-                         * call. Almost always means the seeding chain
-                         * (primeCodeFiles → initialSessions →
-                         * CodeSessionContext) dropped the file upstream.
-                         * `session_id` is still emitted for continuity, but
-                         * concrete file refs must arrive through
-                         * `_injected_files`; agents no longer falls back to
-                         * `/files/<sid>`. Pair with `[primeCodeFiles]`
-                         * traces below to locate the layer that lost the ref. */
-                        logger.warn(
-                          `[code-env:inject] tool=${tc.name} _injected_files=0 — sandbox will see no input files`,
-                          {
-                            tool: tc.name,
-                            session_id: tc.codeSessionContext.session_id,
-                            codeSessionContextHasFiles: tc.codeSessionContext.files !== undefined,
-                            codeSessionContextFileCount: tc.codeSessionContext.files?.length ?? 0,
-                          },
-                        );
-                      }
-                    }
+                    const toolCallConfig = buildToolCallConfig(tc, mergedConfigurable);
 
                     if (
                       tc.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING ||

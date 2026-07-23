@@ -185,24 +185,31 @@ export default function useAttachmentPreviewSync(
     setAttachmentsMap((prevMap) => {
       const messageAttachments =
         (prevMap as Record<string, TAttachment[] | undefined>)[messageId] || [];
-      const existingIndex = messageAttachments.findIndex(
-        (a) => (a as Partial<TFile>).file_id === fileId,
-      );
       const resolvedFields = {
         status: polled.status,
         text: polled.text ?? null,
         textFormat: polled.textFormat ?? null,
         previewError: polled.previewError,
       };
-      if (existingIndex >= 0) {
-        const existing = messageAttachments[existingIndex] as Partial<TFile> & TAttachment;
-        const merged = [...messageAttachments];
-        merged[existingIndex] = {
+      /* Fan out to EVERY entry sharing this file_id: sibling tool calls
+       * (or handoff agents) can legitimately hold the same claimed file,
+       * and the preview is a per-file result — patching only the first
+       * match would leave the other cards stuck on `pending`. */
+      let found = false;
+      const merged = messageAttachments.map((a) => {
+        if ((a as Partial<TFile>).file_id !== fileId) {
+          return a;
+        }
+        found = true;
+        const existing = a as Partial<TFile> & TAttachment;
+        return {
           ...existing,
           ...resolvedFields,
           text: polled.text ?? existing.text ?? null,
           textFormat: polled.textFormat ?? existing.textFormat ?? null,
         } as TAttachment;
+      });
+      if (found) {
         return { ...prevMap, [messageId]: merged };
       }
       const inserted = { ...attachment, ...resolvedFields } as TAttachment;

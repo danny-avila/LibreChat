@@ -121,6 +121,64 @@ describe('File Methods', () => {
       expect(tenantAAgain.file_id).toBe('file-tenant-a');
     });
 
+    it('does not bump updatedAt on re-claim (id reservation, not a content write)', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const File = mongoose.models.File;
+
+      await fileMethods.claimCodeFile({
+        filename: 'stable.csv',
+        conversationId: 'conversation-ts',
+        file_id: 'stable-file',
+        user: userId,
+      });
+      const written = new Date('2024-01-01T00:00:00.000Z');
+      await File.updateOne(
+        { file_id: 'stable-file' },
+        { $set: { updatedAt: written } },
+        { timestamps: false },
+      );
+
+      /** The background harvest's out-of-order guard compares `updatedAt`
+       *  against the harvest start; a claim bumping it would make every
+       *  existing filename look freshly written and misfire the guard. */
+      const reclaimed = await fileMethods.claimCodeFile({
+        filename: 'stable.csv',
+        conversationId: 'conversation-ts',
+        file_id: 'stable-file-second',
+        user: userId,
+      });
+      expect(reclaimed.file_id).toBe('stable-file');
+      expect(new Date(reclaimed.updatedAt as unknown as string).getTime()).toBe(written.getTime());
+    });
+
+    it('stamps sourceDispatchedAt on claim INSERT only (existing claims untouched)', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      const inserted = await fileMethods.claimCodeFile({
+        filename: 'stamped.csv',
+        conversationId: 'conversation-stamp',
+        file_id: 'stamped-file',
+        user: userId,
+        sourceDispatchedAt: 111,
+      });
+      expect(
+        (inserted.metadata as { sourceDispatchedAt?: number } | undefined)?.sourceDispatchedAt,
+      ).toBe(111);
+
+      /** A later claimant's stamp must not overwrite the owner's. */
+      const reclaimed = await fileMethods.claimCodeFile({
+        filename: 'stamped.csv',
+        conversationId: 'conversation-stamp',
+        file_id: 'stamped-file-second',
+        user: userId,
+        sourceDispatchedAt: 222,
+      });
+      expect(reclaimed.file_id).toBe('stamped-file');
+      expect(
+        (reclaimed.metadata as { sourceDispatchedAt?: number } | undefined)?.sourceDispatchedAt,
+      ).toBe(111);
+    });
+
     it('keeps non-tenant code output claims in the legacy namespace', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
 

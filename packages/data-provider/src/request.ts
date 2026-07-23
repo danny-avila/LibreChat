@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import axios, { AxiosRequestConfig } from 'axios';
+import axios from 'axios';
+import type { AxiosRequestConfig } from 'axios';
 import type * as t from './types';
 import { setTokenHeader } from './headers-helpers';
 import * as endpoints from './api-endpoints';
@@ -280,22 +281,63 @@ const shouldRefreshBeforeRequest = (url?: string) => {
   return timeUntilExpiry > 0 && timeUntilExpiry <= TOKEN_REFRESH_BUFFER_MS;
 };
 
+const refreshBeforeRequest = async (url?: string) => {
+  const state = getAuthRecoveryState();
+  if (state.refreshPromise && !isAuthRecoveryEndpoint(url)) {
+    return state.refreshPromise.catch(() => null);
+  }
+
+  if (!shouldRefreshBeforeRequest(url)) {
+    return null;
+  }
+
+  return startAuthRecovery(false).catch(() => null);
+};
+
+const withAuthorization = (options: RequestInit | undefined, token: string | null): RequestInit => {
+  const headers = new Headers(options?.headers);
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  return { ...options, headers };
+};
+
+async function _authenticatedFetch(url: string, options?: RequestInit): Promise<Response> {
+  if (typeof window === 'undefined') {
+    return fetch(url, options);
+  }
+
+  const token = (await refreshBeforeRequest(url)) ?? getBearerToken();
+  const response = await fetch(url, withAuthorization(options, token));
+  if (
+    response.status !== 401 ||
+    isAuthRecoveryEndpoint(url) ||
+    isAuthRedirectInProgress() ||
+    !getBearerToken()
+  ) {
+    return response;
+  }
+
+  let refreshedToken: string | null;
+  try {
+    refreshedToken = await startAuthRecovery(false);
+  } catch {
+    redirectToLoginOnce();
+    return response;
+  }
+
+  if (!refreshedToken) {
+    redirectToLoginOnce();
+    return response;
+  }
+
+  await response.body?.cancel().catch(() => undefined);
+  return fetch(url, withAuthorization(options, refreshedToken));
+}
+
 if (typeof window !== 'undefined') {
   axios.interceptors.request.use(async (config) => {
-    const state = getAuthRecoveryState();
-    if (state.refreshPromise && !isAuthRecoveryEndpoint(config.url)) {
-      const token = await state.refreshPromise.catch(() => null);
-      if (token) {
-        setRequestAuthorizationHeader(config, token);
-      }
-      return config;
-    }
-
-    if (!shouldRefreshBeforeRequest(config.url)) {
-      return config;
-    }
-
-    const token = await startAuthRecovery(false).catch(() => null);
+    const token = await refreshBeforeRequest(config.url);
     if (token) {
       setRequestAuthorizationHeader(config, token);
     }
@@ -384,6 +426,7 @@ export default {
   delete: _delete,
   deleteWithOptions: _deleteWithOptions,
   patch: _patch,
+  authenticatedFetch: _authenticatedFetch,
   refreshToken,
   dispatchTokenUpdatedEvent,
 };

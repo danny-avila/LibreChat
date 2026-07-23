@@ -10,6 +10,8 @@ import type {
   IJobStore,
   JobStatus,
   JobStatusTransition,
+  IdempotencyClaimValue,
+  IdempotencyClaimResult,
 } from '~/stream/interfaces/IJobStore';
 import {
   STEER_ENQUEUE_NOT_RUNNING,
@@ -45,6 +47,18 @@ const JOB_CAS_LUA =
   'if #hset > 0 then redis.call("HSET", KEYS[1], unpack(hset)) end ' +
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
   'return 1';
+
+/**
+ * Atomic idempotency claim. Single-key `SET NX PX`: returns nil when this caller
+ * won the claim, or the already-stored stream JSON when a prior request holds it.
+ * Touches ONLY KEYS[1], so it is atomic on single-node and Redis Cluster.
+ *
+ *   KEYS: [idempotency]
+ *   ARGV: [valueJson, ttlMs]
+ */
+const IDEMPOTENCY_CLAIM_LUA =
+  'if redis.call("SET", KEYS[1], ARGV[1], "NX", "PX", tonumber(ARGV[2])) then return false end ' +
+  'return redis.call("GET", KEYS[1])';
 
 /**
  * Atomic job (re)creation for the two same-slot keys: reset the steer queue
@@ -280,6 +294,8 @@ const KEYS = {
   /** User's active jobs set, tenant-qualified when tenantId is available */
   userJobs: (userId: string, tenantId?: string) =>
     tenantId ? `stream:user:{${tenantId}:${userId}}:jobs` : `stream:user:{${userId}}:jobs`,
+  /** Idempotency claim for a start-generation request: stream:idem:{userId:clientRequestId} */
+  idempotency: (key: string) => `stream:idem:{${key}}`,
 };
 
 /**
@@ -689,6 +705,33 @@ export class RedisJobStore implements IJobStore {
       await pipeline.exec();
     }
     return true;
+  }
+
+  async claimIdempotencyKey(
+    key: string,
+    value: IdempotencyClaimValue,
+    ttlSeconds: number,
+  ): Promise<IdempotencyClaimResult> {
+    const result = await this.redis.eval(
+      IDEMPOTENCY_CLAIM_LUA,
+      1,
+      KEYS.idempotency(key),
+      JSON.stringify(value),
+      String(ttlSeconds * 1000),
+    );
+    if (result == null) {
+      return { claimed: true };
+    }
+    try {
+      return { claimed: false, existing: JSON.parse(result as string) as IdempotencyClaimValue };
+    } catch {
+      // Unreachable in practice (we wrote the JSON); proceed rather than dedup to a broken target.
+      return { claimed: false };
+    }
+  }
+
+  async releaseIdempotencyKey(key: string): Promise<void> {
+    await this.redis.del(KEYS.idempotency(key));
   }
 
   private async updateExistingJobHash(key: string, fields: string[]): Promise<boolean> {

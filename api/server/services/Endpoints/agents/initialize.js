@@ -31,6 +31,8 @@ const {
 } = require('librechat-data-provider');
 const {
   createToolEndCallback,
+  createAttachmentEmitter,
+  createBackgroundCodeResultHandler,
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
@@ -254,6 +256,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       });
     },
     toolEndCallback,
+    persistBackgroundCodeResult: createBackgroundCodeResultHandler({
+      req,
+      updateToolCallResult: db.updateToolCallResult,
+    }),
+    emitAttachment: createAttachmentEmitter({ res, streamId }),
     ...getSkillToolDeps(),
   };
 

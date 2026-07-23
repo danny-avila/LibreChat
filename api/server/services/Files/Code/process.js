@@ -57,6 +57,7 @@ const axios = createAxiosInstance();
 const createDownloadFallback = ({
   id,
   name,
+  agentId,
   messageId,
   expiresAt,
   session_id,
@@ -71,6 +72,7 @@ const createDownloadFallback = ({
     conversationId,
     toolCallId,
     messageId,
+    agentId,
   };
 };
 
@@ -321,6 +323,8 @@ const processCodeOutput = async ({
   conversationId,
   messageId,
   session_id,
+  agentId,
+  freshClaimAfter,
 }) => {
   const appConfig = req.config;
   const currentDate = new Date();
@@ -368,6 +372,7 @@ const processCodeOutput = async ({
         file: createDownloadFallback({
           id,
           name,
+          agentId,
           messageId,
           toolCallId,
           session_id,
@@ -410,6 +415,16 @@ const processCodeOutput = async ({
      * (e.g. `"proj name/file@v1.txt"`) would claim under the raw name and
      * then write under the sanitized one, leaving the claim row orphaned.
      */
+    /**
+     * Dispatch-order stamp persisted with every write AND every claim insert
+     * (foreground writes dispatch ≈ now): the out-of-order guard below
+     * compares WRITER dispatch order, not wall-clock write time — an older
+     * task writing late must not make a newer task's harvest look stale, and
+     * a freshly claimed row must carry its claimant's stamp before the
+     * content write lands.
+     */
+    const sourceDispatchedAt = freshClaimAfter ?? Date.now();
+
     const newFileId = v4();
     const claimed = await claimCodeFile({
       filename: safeName,
@@ -417,15 +432,67 @@ const processCodeOutput = async ({
       file_id: newFileId,
       user: req.user.id,
       tenantId: req.user.tenantId,
+      sourceDispatchedAt,
     });
     const file_id = claimed.file_id;
     const isUpdate = file_id !== newFileId;
+
+    /**
+     * Out-of-order guard for detached (background) harvests: when the claimed
+     * row's last writer was dispatched AFTER this task (`freshClaimAfter` =
+     * this task's dispatch time), a newer run owns this filename slot. The
+     * `(filename, conversationId)` unique index means the stale bytes have
+     * nowhere else to live, so skip this file rather than overwrite fresh
+     * content — the harvest's stdout patch still lands, only the superseded
+     * attachment is omitted. Falls back to `updatedAt` for rows written
+     * before the stamp existed (the claim itself is timestamp-neutral).
+     */
+    const lastWriterDispatchedAt =
+      claimed.metadata?.sourceDispatchedAt ??
+      (claimed.updatedAt != null ? new Date(claimed.updatedAt).getTime() : null);
+    if (isUpdate && freshClaimAfter != null && lastWriterDispatchedAt > freshClaimAfter) {
+      logger.warn(
+        `[processCodeOutput] Skipping stale background output "${safeName}" (${file_id}): a newer run owns this filename`,
+      );
+      return null;
+    }
 
     if (isUpdate) {
       logger.debug(
         `[processCodeOutput] Updating existing file "${safeName}" (${file_id}) instead of creating duplicate`,
       );
     }
+
+    /**
+     * Background harvests commit through a CONDITIONAL write: the ownership
+     * predicate (last writer's dispatch stamp not newer than ours) is part of
+     * the update's filter, so check and write are one atomic operation — a
+     * stale harvest's commit simply misses and its attachment is skipped.
+     * The row always exists here (the claim inserted it), so the non-upsert
+     * `updateFile` matches `createFile(data, true)` semantics ($set + TTL
+     * unset). Bytes a loser may have already uploaded to the shared storage
+     * key are a narrow residual that per-file locking would be needed to
+     * close. Foreground writes keep the unconditional `createFile` path.
+     */
+    const commitCodeFile = async (fileData) => {
+      if (freshClaimAfter == null) {
+        await createFile(fileData, true);
+        return true;
+      }
+      const committed = await updateFile(fileData, {
+        $or: [
+          { 'metadata.sourceDispatchedAt': { $exists: false } },
+          { 'metadata.sourceDispatchedAt': { $lte: sourceDispatchedAt } },
+        ],
+      });
+      if (!committed) {
+        logger.warn(
+          `[processCodeOutput] Skipping stale background output "${safeName}" (${file_id}): a newer run owns this filename`,
+        );
+        return false;
+      }
+      return true;
+    };
 
     /**
      * Preserve the original `messageId` on update. Each `processCodeOutput`
@@ -463,11 +530,13 @@ const processCodeOutput = async ({
         updatedAt: formattedDate,
         source: appConfig.fileStrategy,
         context: FileContext.execute_code,
-        metadata: { codeEnvRef },
+        metadata: { codeEnvRef, sourceDispatchedAt },
         ...(await getRetentionExpiry(req)),
       };
-      await createFile(file, true);
-      return { file: Object.assign(file, { messageId, toolCallId }) };
+      if (!(await commitCodeFile(file))) {
+        return null;
+      }
+      return { file: Object.assign(file, { messageId, toolCallId, agentId }) };
     }
 
     const { saveBuffer } = getStrategyFunctions(appConfig.fileStrategy);
@@ -479,6 +548,7 @@ const processCodeOutput = async ({
         file: createDownloadFallback({
           id,
           name,
+          agentId,
           messageId,
           toolCallId,
           session_id,
@@ -562,7 +632,7 @@ const processCodeOutput = async ({
       tenantId: req.user.tenantId,
       bytes: buffer.length,
       updatedAt: formattedDate,
-      metadata: { codeEnvRef },
+      metadata: { codeEnvRef, sourceDispatchedAt },
       source: appConfig.fileStrategy,
       context: FileContext.execute_code,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
@@ -592,9 +662,11 @@ const processCodeOutput = async ({
         previewError: null,
         previewRevision,
       };
-      await createFile(file, true);
+      if (!(await commitCodeFile(file))) {
+        return null;
+      }
       return {
-        file: Object.assign(file, { messageId, toolCallId }),
+        file: Object.assign(file, { messageId, toolCallId, agentId }),
         finalize: () =>
           finalizePreview({ buffer, leafName, mimeType, category, file_id, previewRevision }),
         previewRevision,
@@ -630,8 +702,10 @@ const processCodeOutput = async ({
       previewRevision: null,
     };
 
-    await createFile(file, true);
-    return { file: Object.assign(file, { messageId, toolCallId }) };
+    if (!(await commitCodeFile(file))) {
+      return null;
+    }
+    return { file: Object.assign(file, { messageId, toolCallId, agentId }) };
   } catch (error) {
     if (error?.message === 'Path traversal detected in filename') {
       logger.warn(
@@ -651,6 +725,7 @@ const processCodeOutput = async ({
       file: createDownloadFallback({
         id,
         name,
+        agentId,
         messageId,
         toolCallId,
         session_id,

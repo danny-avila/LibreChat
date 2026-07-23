@@ -27,6 +27,27 @@ function AskUserQuestionPopoverContent({
   conversationId: string;
   textAreaRef?: React.RefObject<HTMLTextAreaElement>;
 }) {
+  const ask = useAskAnswerMode(conversationId);
+
+  if (!ask.popoverVisible || !ask.liveAsk) {
+    return null;
+  }
+
+  return <AskUserQuestionPopoverPanel ask={ask} textAreaRef={textAreaRef} />;
+}
+
+/**
+ * Split from the gate above so the per-keystroke `useWatch` subscription only
+ * exists while the popover is actually visible — the invisible popover was
+ * re-rendering (to null) on every composer keystroke.
+ */
+function AskUserQuestionPopoverPanel({
+  ask,
+  textAreaRef,
+}: {
+  ask: ReturnType<typeof useAskAnswerMode>;
+  textAreaRef?: React.RefObject<HTMLTextAreaElement>;
+}) {
   const localize = useLocalize();
   const { control } = useChatFormContext();
   /** Reactive composer text so multi-select Submit can include (and enable
@@ -47,11 +68,10 @@ function AskUserQuestionPopoverContent({
     skip,
     dismiss,
     collapse,
-    popoverVisible,
     handlePopoverKeyDown,
-  } = useAskAnswerMode(conversationId);
+  } = ask;
 
-  if (!popoverVisible || !liveAsk) {
+  if (!liveAsk) {
     return null;
   }
 

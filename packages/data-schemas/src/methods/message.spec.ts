@@ -22,6 +22,7 @@ let Message: mongoose.Model<IMessage>;
 let saveMessage: ReturnType<typeof createMessageMethods>['saveMessage'];
 let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
+let updateToolCallResult: ReturnType<typeof createMessageMethods>['updateToolCallResult'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
 let bulkSaveMessages: ReturnType<typeof createMessageMethods>['bulkSaveMessages'];
 let updateMessageText: ReturnType<typeof createMessageMethods>['updateMessageText'];
@@ -40,6 +41,7 @@ beforeAll(async () => {
   saveMessage = methods.saveMessage;
   getMessages = methods.getMessages;
   updateMessage = methods.updateMessage;
+  updateToolCallResult = methods.updateToolCallResult;
   deleteMessages = methods.deleteMessages;
   bulkSaveMessages = methods.bulkSaveMessages;
   updateMessageText = methods.updateMessageText;
@@ -162,6 +164,259 @@ describe('Message Operations', () => {
       await expect(
         updateMessage(mockCtx.userId, { messageId: 'nonexistent', text: 'Test' }),
       ).rejects.toThrow('Message not found or user not authorized.');
+    });
+  });
+
+  describe('updateToolCallResult', () => {
+    const toolCallContent = () => [
+      { type: 'text', text: 'intro' },
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'call_bg',
+          name: 'execute_code',
+          args: '{"lang":"py","code":"print(1)"}',
+          output: '{"background_task_id":"task-1"}',
+          progress: 1,
+        },
+      },
+      {
+        type: 'tool_call',
+        tool_call: { id: 'call_other', name: 'execute_code', args: '{}', output: 'untouched' },
+      },
+    ];
+
+    it('patches only the matching tool_call part and appends attachments atomically', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      const result = await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        output: 'stdout:\nhello',
+        attachments: [{ file_id: 'f1', toolCallId: 'call_bg' }],
+      });
+      expect(result).toEqual({ matched: true, unfinished: false });
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      const content = saved?.content as Array<{
+        type: string;
+        tool_call?: { id: string; output?: string };
+      }>;
+      expect(content[1].tool_call?.output).toBe('stdout:\nhello');
+      expect(content[2].tool_call?.output).toBe('untouched');
+      expect(saved?.attachments).toEqual([{ file_id: 'f1', toolCallId: 'call_bg' }]);
+    });
+
+    it('appends to existing attachments instead of replacing them', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: toolCallContent(),
+        attachments: [{ file_id: 'existing' }] as unknown as IMessage['attachments'],
+      });
+
+      await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        attachments: [{ file_id: 'f2' }],
+      });
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(saved?.attachments).toEqual([{ file_id: 'existing' }, { file_id: 'f2' }]);
+    });
+
+    it('is idempotent: re-applying the same patch does not duplicate attachments', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      const patch = {
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        output: 'stdout:\nhello',
+        attachments: [{ file_id: 'f1', toolCallId: 'call_bg' }],
+      };
+      await updateToolCallResult(patch);
+      await updateToolCallResult(patch);
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(saved?.attachments).toEqual([{ file_id: 'f1', toolCallId: 'call_bg' }]);
+      const content = saved?.content as Array<{ tool_call?: { output?: string } }>;
+      expect(content[1].tool_call?.output).toBe('stdout:\nhello');
+    });
+
+    it('dedupes download-fallback attachments (no file_id) by filepath on re-apply', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      const patch = {
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        attachments: [
+          {
+            filepath: '/api/files/code/download/sess-1/f1',
+            filename: 'big.zip',
+            toolCallId: 'call_bg',
+          },
+          { file_id: 'f2', toolCallId: 'call_bg' },
+        ],
+      };
+      await updateToolCallResult(patch);
+      await updateToolCallResult(patch);
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(saved?.attachments).toEqual([
+        {
+          filepath: '/api/files/code/download/sess-1/f1',
+          filename: 'big.zip',
+          toolCallId: 'call_bg',
+        },
+        { file_id: 'f2', toolCallId: 'call_bg' },
+      ]);
+    });
+
+    it('returns false when the message row does not exist yet (caller retries)', async () => {
+      const result = await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'missing-msg',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        output: 'stdout',
+      });
+      expect(result.matched).toBe(false);
+    });
+
+    it('scopes the patch by agentId when provider ids repeat across agents', async () => {
+      /* Handoff runs append multiple agents' parts to ONE response message,
+       * and provider ids like call_0 repeat per model response. */
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          {
+            type: 'tool_call',
+            agentId: 'agent_a',
+            tool_call: { id: 'call_0', name: 'execute_code', output: 'handle-a' },
+          },
+          {
+            type: 'tool_call',
+            agentId: 'agent_b',
+            tool_call: { id: 'call_0', name: 'execute_code', output: 'handle-b' },
+          },
+        ],
+      });
+
+      const result = await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_0',
+        agentId: 'agent_b',
+        output: 'stdout-b',
+      });
+      expect(result.matched).toBe(true);
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      const content = saved?.content as Array<{ tool_call?: { output?: string } }>;
+      expect(content[0].tool_call?.output).toBe('handle-a');
+      expect(content[1].tool_call?.output).toBe('stdout-b');
+    });
+
+    it('flags unfinished partial rows so callers keep re-applying until finalize', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: toolCallContent(),
+        unfinished: true,
+      } as Parameters<typeof saveMessage>[1]);
+
+      const result = await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        output: 'stdout:\nhello',
+      });
+      /** The patch still lands (idempotent), but the finalize save will
+       *  overwrite this partial row with in-memory content. */
+      expect(result).toEqual({ matched: true, unfinished: true });
+    });
+
+    it('keeps a sibling AGENT’s attachment when both id and file key collide', async () => {
+      /* Handoff agents can share a provider tool-call id AND a claimed
+       * file_id (same filename in one conversation); the second agent's
+       * anchor must not evict the first agent's card-scoped attachment. */
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        agentId: 'agent_a',
+        attachments: [{ file_id: 'shared', toolCallId: 'call_bg', agentId: 'agent_a' }],
+      });
+      await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        agentId: 'agent_b',
+        attachments: [{ file_id: 'shared', toolCallId: 'call_bg', agentId: 'agent_b' }],
+      });
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(saved?.attachments).toEqual([
+        { file_id: 'shared', toolCallId: 'call_bg', agentId: 'agent_a' },
+        { file_id: 'shared', toolCallId: 'call_bg', agentId: 'agent_b' },
+      ]);
+    });
+
+    it('keeps a sibling tool call’s attachment when file ids repeat across calls', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        attachments: [{ file_id: 'shared', toolCallId: 'call_bg' }],
+      });
+      /** A second background call regenerated the same filename — same
+       *  claimed file_id, different tool call. The first card must keep
+       *  its attachment (the client anchors by toolCallId). */
+      await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_other',
+        attachments: [{ file_id: 'shared', toolCallId: 'call_other' }],
+      });
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(saved?.attachments).toEqual([
+        { file_id: 'shared', toolCallId: 'call_bg' },
+        { file_id: 'shared', toolCallId: 'call_other' },
+      ]);
+    });
+
+    it('does not match another user’s message', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      const result = await updateToolCallResult({
+        userId: 'someone-else',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        output: 'hijacked',
+      });
+      expect(result.matched).toBe(false);
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      const content = saved?.content as Array<{ tool_call?: { output?: string } }>;
+      expect(content[1].tool_call?.output).toBe('{"background_task_id":"task-1"}');
     });
   });
 

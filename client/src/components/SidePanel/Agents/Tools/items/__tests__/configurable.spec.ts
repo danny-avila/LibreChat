@@ -6,15 +6,15 @@ const builtin = (id: string, extra: Record<string, unknown> = {}): AgentItem =>
   ({ kind: 'builtin', id, name: '', description: '', iconKey: id, ...extra }) as AgentItem;
 
 describe('hasConfigurableSettings', () => {
-  test('artifacts, file_search, and context builtins are configurable', () => {
+  test('artifacts, file_search, context, and memory builtins are configurable', () => {
     expect(hasConfigurableSettings(builtin('artifacts'))).toBe(true);
     expect(hasConfigurableSettings(builtin('file_search'))).toBe(true);
     expect(hasConfigurableSettings(builtin('context'))).toBe(true);
+    expect(hasConfigurableSettings(builtin('memory'))).toBe(true);
   });
 
-  test('execute_code and memory builtins are not configurable', () => {
+  test('execute_code builtin is not configurable', () => {
     expect(hasConfigurableSettings(builtin('execute_code'))).toBe(false);
-    expect(hasConfigurableSettings(builtin('memory'))).toBe(false);
   });
 
   test('web_search is configurable only when auth is user-provided', () => {

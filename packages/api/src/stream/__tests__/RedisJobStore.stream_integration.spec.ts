@@ -2274,4 +2274,103 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
   });
+
+  describe('Idempotency claims (#14339 duplicate-billing guard)', () => {
+    test('grants the first claim and returns the original stream to a duplicate', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const key = `user-1:req-${Date.now()}`;
+      const first = await store.claimIdempotencyKey(
+        key,
+        { streamId: 's1', conversationId: 'c1' },
+        1200,
+      );
+      expect(first).toEqual({ claimed: true });
+
+      const second = await store.claimIdempotencyKey(
+        key,
+        { streamId: 's2', conversationId: 'c2' },
+        1200,
+      );
+      expect(second).toEqual({
+        claimed: false,
+        existing: { streamId: 's1', conversationId: 'c1' },
+      });
+
+      await store.destroy();
+    });
+
+    test('sets a bounded TTL on the claim', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const key = `user-1:req-ttl-${Date.now()}`;
+      await store.claimIdempotencyKey(key, { streamId: 's1', conversationId: 'c1' }, 1200);
+
+      const pttl = await ioredisClient.pttl(`stream:idem:{${key}}`);
+      expect(pttl).toBeGreaterThan(0);
+      expect(pttl).toBeLessThanOrEqual(1200 * 1000);
+
+      await store.destroy();
+    });
+
+    test('releaseIdempotencyKey frees the claim', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const key = `user-1:req-rel-${Date.now()}`;
+      await store.claimIdempotencyKey(key, { streamId: 's1', conversationId: 'c1' }, 1200);
+      await store.releaseIdempotencyKey(key);
+
+      const reclaimed = await store.claimIdempotencyKey(
+        key,
+        { streamId: 's2', conversationId: 'c2' },
+        1200,
+      );
+      expect(reclaimed).toEqual({ claimed: true });
+
+      await store.destroy();
+    });
+
+    test('two concurrent claims for one key elect exactly one winner', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const key = `user-1:req-race-${Date.now()}`;
+      const [a, b] = await Promise.all([
+        store.claimIdempotencyKey(key, { streamId: 'sa', conversationId: 'ca' }, 1200),
+        store.claimIdempotencyKey(key, { streamId: 'sb', conversationId: 'cb' }, 1200),
+      ]);
+
+      const winners = [a, b].filter((r) => r.claimed);
+      const losers = [a, b].filter((r) => !r.claimed);
+      expect(winners).toHaveLength(1);
+      expect(losers).toHaveLength(1);
+      // The loser attaches to whichever stream the winner registered.
+      expect(losers[0].existing).toEqual(
+        winners[0] === a
+          ? { streamId: 'sa', conversationId: 'ca' }
+          : { streamId: 'sb', conversationId: 'cb' },
+      );
+
+      await store.destroy();
+    });
+  });
 });

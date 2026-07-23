@@ -53,6 +53,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     file_id: string;
     user: string;
     tenantId?: string | null;
+    sourceDispatchedAt?: number;
   }) => Promise<IMongoFile>;
   createFile: (data: Partial<IMongoFile>, disableTTL?: boolean) => Promise<IMongoFile | null>;
   updateFile: (
@@ -306,12 +307,21 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     file_id: string;
     user: string;
     tenantId?: string | null;
+    /** The claimant's dispatch-order stamp, persisted on INSERT so a
+     *  freshly claimed (not-yet-written) row still carries an ownership
+     *  signal for the background harvest's stale-output guard. */
+    sourceDispatchedAt?: number;
   }): Promise<IMongoFile> {
     const File = mongoose.models.File as Model<IMongoFile>;
     const tenantFilter = data.tenantId ? { tenantId: data.tenantId } : { tenantId: null };
-    const insertData = data.tenantId
-      ? { file_id: data.file_id, user: data.user, tenantId: data.tenantId }
-      : { file_id: data.file_id, user: data.user };
+    const insertData = {
+      file_id: data.file_id,
+      user: data.user,
+      ...(data.tenantId ? { tenantId: data.tenantId } : {}),
+      ...(data.sourceDispatchedAt != null
+        ? { metadata: { sourceDispatchedAt: data.sourceDispatchedAt } }
+        : {}),
+    };
     const result = await File.findOneAndUpdate(
       {
         filename: data.filename,
@@ -320,7 +330,11 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         ...tenantFilter,
       },
       { $setOnInsert: insertData },
-      { upsert: true, new: true },
+      /** `timestamps: false`: a claim is an id reservation, not a content
+       *  write — bumping `updatedAt` here would make the row look freshly
+       *  written to the background harvest's out-of-order guard, which
+       *  compares `updatedAt` against the harvest's start time. */
+      { upsert: true, new: true, timestamps: false },
     ).lean<IMongoFile>();
     if (!result) {
       throw new Error(
