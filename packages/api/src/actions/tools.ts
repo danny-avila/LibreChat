@@ -1,4 +1,8 @@
-import { actionDelimiter, validateAndParseOpenAPISpec } from 'librechat-data-provider';
+import {
+  actionDelimiter,
+  actionDomainSeparator,
+  validateAndParseOpenAPISpec,
+} from 'librechat-data-provider';
 
 export type ActionToolLike = {
   function?: {
@@ -19,6 +23,33 @@ export type MergeAgentActionToolsParams = {
 };
 
 const httpMethods = new Set(['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']);
+
+const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
+
+/**
+ * Collapse every `actionDomainSeparator` sequence in the encoded-domain suffix
+ * of a fully-qualified action tool name to an underscore. Agents store tool
+ * names in the raw `domainParser(..., true)` output, which for hostnames up to
+ * `ENCODED_DOMAIN_LENGTH` is a `---`-separated string (e.g. `medium---com`),
+ * while the runtime tool definitions are always named with the `_`-collapsed
+ * domain. Any lookup that crosses those two shapes must normalize first, or
+ * short-hostname action tools silently fail to resolve.
+ *
+ * The operationId portion (everything before the last `actionDelimiter`) is
+ * deliberately left untouched: `openapiToFunction` preserves hyphens in
+ * generated operationIds, so two specs can legitimately produce operationIds
+ * differing only in hyphens-vs-underscores (e.g. `get_foo---bar` vs
+ * `get_foo_bar`). Collapsing the operationId would merge those into one slot.
+ */
+export function normalizeActionToolName(toolName: string): string {
+  const delimiterIndex = toolName.lastIndexOf(actionDelimiter);
+  if (delimiterIndex === -1) {
+    return toolName;
+  }
+  const prefixEnd = delimiterIndex + actionDelimiter.length;
+  const encodedDomain = toolName.slice(prefixEnd);
+  return toolName.slice(0, prefixEnd) + encodedDomain.replace(domainSeparatorRegex, '_');
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;

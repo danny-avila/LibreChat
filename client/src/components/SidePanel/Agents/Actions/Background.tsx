@@ -1,5 +1,10 @@
 import { useMemo } from 'react';
-import { AuthTypeEnum, actionDelimiter } from 'librechat-data-provider';
+import {
+  AuthTypeEnum,
+  actionDelimiter,
+  openapiToFunction,
+  validateAndParseOpenAPISpec,
+} from 'librechat-data-provider';
 import { useAgentCapabilities, useGetAgentsConfig } from '~/hooks';
 import { useGetExpandedAgentByIdQuery } from '~/data-provider';
 import { useAgentPanelContext } from '~/Providers';
@@ -20,26 +25,56 @@ export default function ActionBackground({ agentId }: { agentId: string }) {
 
   /** The agent's `actions` entries are `${encodedDomain}_action_${action_id}`,
    *  so the saved encoded domain is recoverable without re-implementing the
-   *  server's domain encoding; operation tool ids share that domain suffix. */
+   *  server's domain encoding. The domain alone is NOT enough to identify this
+   *  action's tools: two actions may share a hostname, and their operations
+   *  then share the suffix. Narrow by this spec's own operation ids, falling
+   *  back to the suffix only when no other action shares the domain. */
   const actionToolIds = useMemo(() => {
     const actionId = action?.action_id;
     if (!actionId || !agent) {
       return [];
     }
     let domain = '';
+    let sharesDomain = false;
     for (const entry of agent.actions ?? []) {
       const idx = entry.indexOf(actionDelimiter);
-      if (idx > 0 && entry.slice(idx + actionDelimiter.length) === actionId) {
+      if (idx < 1) {
+        continue;
+      }
+      if (entry.slice(idx + actionDelimiter.length) === actionId) {
         domain = entry.slice(0, idx);
-        break;
       }
     }
     if (!domain) {
       return [];
     }
+    for (const entry of agent.actions ?? []) {
+      const idx = entry.indexOf(actionDelimiter);
+      if (
+        idx > 0 &&
+        entry.slice(0, idx) === domain &&
+        entry.slice(idx + actionDelimiter.length) !== actionId
+      ) {
+        sharesDomain = true;
+        break;
+      }
+    }
+
     const suffix = `${actionDelimiter}${domain}`;
-    return (agent.tools ?? []).filter((tool) => tool.endsWith(suffix));
-  }, [action?.action_id, agent]);
+    const domainTools = (agent.tools ?? []).filter((tool) => tool.endsWith(suffix));
+    const spec = action?.metadata.raw_spec;
+    const parsed = spec ? validateAndParseOpenAPISpec(spec) : undefined;
+    if (!parsed?.spec) {
+      return sharesDomain ? [] : domainTools;
+    }
+    const operationIds = new Set(
+      openapiToFunction(parsed.spec).functionSignatures.map((sig) => sig.name),
+    );
+    const ownTools = domainTools.filter((tool) =>
+      operationIds.has(tool.slice(0, tool.length - suffix.length)),
+    );
+    return ownTools.length > 0 || sharesDomain ? ownTools : domainTools;
+  }, [action?.action_id, action?.metadata.raw_spec, agent]);
 
   if (action?.metadata.auth?.type === AuthTypeEnum.OAuth) {
     return null;

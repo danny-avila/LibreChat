@@ -35,6 +35,7 @@ const {
   getSafeErrorMetadata,
   isContentFilterError,
   isFileAuthoringToolDefinition,
+  normalizeActionToolName,
   ASK_USER_QUESTION_TOOL_NAME,
   splitMCPToolKey,
   buildServerNameAliases,
@@ -201,32 +202,6 @@ const prepareActionSnapshotForTools = async ({ agentId, toolNames, filters, decr
     decrypt,
   });
   return { storedActions, actionSets };
-};
-
-/**
- * Collapse every `actionDomainSeparator` sequence in the encoded-domain
- * suffix of a fully-qualified action tool name to an underscore. Agents
- * can store tool names in the raw `domainParser(..., true)` output,
- * which for short hostnames is a `---`-separated string (e.g.
- * `medium---com`). The lookup maps below are always keyed with the
- * `_`-collapsed domain, so every read must normalize that suffix or
- * short-hostname tools silently fail to resolve.
- *
- * The operationId portion (everything before the last `actionDelimiter`)
- * is deliberately left untouched: `openapiToFunction` preserves hyphens
- * in generated operationIds, so two specs can legitimately produce
- * operationIds that differ only in hyphens-vs-underscores (e.g.
- * `get_foo---bar` vs `get_foo_bar`). Collapsing the operationId would
- * merge those into a single map slot and silently drop one tool.
- */
-const normalizeActionToolName = (toolName) => {
-  const delimiterIndex = toolName.lastIndexOf(actionDelimiter);
-  if (delimiterIndex === -1) {
-    return toolName;
-  }
-  const prefixEnd = delimiterIndex + actionDelimiter.length;
-  const encodedDomain = toolName.slice(prefixEnd);
-  return toolName.slice(0, prefixEnd) + encodedDomain.replace(domainSeparatorRegex, '_');
 };
 
 /**
