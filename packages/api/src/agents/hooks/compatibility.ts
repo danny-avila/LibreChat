@@ -53,6 +53,7 @@ export type PluginHookIssueCode =
   | 'conflicting_condition'
   | 'unsupported_async'
   | 'unsupported_async_rewake'
+  | 'unsupported_continue_on_block'
   | 'unsupported_handler_event'
   | 'unsupported_session_lifecycle'
   | 'unsupported_session_source'
@@ -281,6 +282,13 @@ function getHandlerIssues(
       code: 'unsupported_async_rewake',
       severity: 'error',
       message: 'The configured executor does not support asyncRewake',
+    });
+  }
+  if (handler.continueOnBlock === true && handler.type !== 'prompt') {
+    issues.push({
+      code: 'unsupported_continue_on_block',
+      severity: 'error',
+      message: 'continueOnBlock is only supported for prompt hook handlers',
     });
   }
   if ((handler.timeout ?? 0) > 600) {
