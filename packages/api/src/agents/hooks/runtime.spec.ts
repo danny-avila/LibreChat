@@ -115,6 +115,53 @@ describe('registerPluginHooks', () => {
     );
   });
 
+  test('registers Claude exact and list matchers without substring matches', async () => {
+    const registry = new HookRegistry();
+    const hookExecutor = executor();
+    const registration = registerPluginHooks({
+      pluginId: 'exact-tool-matches',
+      registry,
+      executor: hookExecutor,
+      document: document({
+        PreToolUse: [
+          {
+            matcher: 'Edit|Write',
+            hooks: [{ type: 'command', command: 'pipe-list-audit' }],
+          },
+          {
+            matcher: 'Edit, Write',
+            hooks: [{ type: 'command', command: 'comma-list-audit' }],
+          },
+        ],
+      }),
+    });
+
+    const run = async (runId: string, toolName: string): Promise<void> => {
+      await executeHooks({
+        registry,
+        matchQuery: toolName,
+        input: {
+          hook_event_name: 'PreToolUse',
+          runId,
+          toolName,
+          toolInput: {},
+          toolUseId: `tool-${runId}`,
+        },
+      });
+    };
+
+    await run('substring', 'MultiEdit');
+    expect(hookExecutor.execute).not.toHaveBeenCalled();
+
+    await run('exact', 'Edit');
+
+    expect(registration.plan.entries.map(({ matcher }) => matcher)).toEqual([
+      '^(?:Edit|Write)$',
+      '^(?:Edit|Write)$',
+    ]);
+    expect(hookExecutor.execute).toHaveBeenCalledTimes(2);
+  });
+
   test('applies Claude default timeouts when handlers omit them', () => {
     const registry = new HookRegistry();
     const hookExecutor = executor();

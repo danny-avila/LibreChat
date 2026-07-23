@@ -52,7 +52,7 @@ describe('planPluginHooks', () => {
         sourceEvent: 'SessionStart',
         targetEvent: 'RunStart',
         sourceMatcher: 'resume',
-        matcher: 'resume',
+        matcher: '^(?:resume)$',
         status: 'ready',
         issues: [
           expect.objectContaining({
@@ -62,6 +62,59 @@ describe('planPluginHooks', () => {
         ],
       }),
     );
+  });
+
+  test('normalizes Claude exact and list matchers while preserving regex matchers', () => {
+    const translatedMatchers: string[] = [];
+    const plan = planPluginHooks(
+      document({
+        PreToolUse: [
+          { matcher: 'Edit|Write', hooks: [{ type: 'command', command: 'pipe-list' }] },
+          { matcher: 'Edit, Write', hooks: [{ type: 'command', command: 'comma-list' }] },
+          {
+            matcher: 'mcp__.*__write.*',
+            hooks: [{ type: 'command', command: 'regex-pattern' }],
+          },
+        ],
+        SessionStart: [
+          { matcher: 'startup, resume', hooks: [{ type: 'command', command: 'load-context' }] },
+        ],
+        SubagentStart: [
+          { matcher: 'code-reviewer', hooks: [{ type: 'command', command: 'track-agent' }] },
+        ],
+        StopFailure: [
+          {
+            matcher: 'rate_limit, overloaded',
+            hooks: [{ type: 'command', command: 'track-failure' }],
+          },
+        ],
+      }),
+      {
+        ...commandCapabilities,
+        sessionLifecycle: true,
+        translateMatcher: ({ matcher }) => {
+          translatedMatchers.push(matcher);
+          return matcher;
+        },
+      },
+    );
+
+    expect(plan.summary).toEqual({ declared: 6, ready: 6, unsupported: 0 });
+    expect(plan.entries.map(({ sourceMatcher, matcher }) => ({ sourceMatcher, matcher }))).toEqual([
+      { sourceMatcher: 'Edit|Write', matcher: '^(?:Edit|Write)$' },
+      { sourceMatcher: 'Edit, Write', matcher: '^(?:Edit|Write)$' },
+      { sourceMatcher: 'mcp__.*__write.*', matcher: 'mcp__.*__write.*' },
+      { sourceMatcher: 'startup, resume', matcher: '^(?:startup|resume)$' },
+      { sourceMatcher: 'code-reviewer', matcher: '^(?:code-reviewer)$' },
+      { sourceMatcher: 'rate_limit, overloaded', matcher: 'rate_limit, overloaded' },
+    ]);
+    expect(translatedMatchers).toEqual([
+      'Edit|Write',
+      'Edit|Write',
+      'mcp__.*__write.*',
+      'code-reviewer',
+      'rate_limit, overloaded',
+    ]);
   });
 
   test('fails closed for SessionStart compact matchers', () => {
@@ -129,13 +182,13 @@ describe('planPluginHooks', () => {
       expect.objectContaining({
         sourceEvent: 'PreCompact',
         sourceMatcher: 'auto',
-        matcher: '^(token_ratio|remaining_tokens|messages_to_refine|default)$',
+        matcher: '^(?:^(token_ratio|remaining_tokens|messages_to_refine|default)$)$',
         status: 'ready',
       }),
       expect.objectContaining({
         sourceEvent: 'PostCompact',
         sourceMatcher: 'manual',
-        matcher: '^manual$',
+        matcher: '^(?:^manual$)$',
         status: 'ready',
       }),
     ]);
@@ -160,7 +213,7 @@ describe('planPluginHooks', () => {
         sourceEvent: 'StopFailure',
         targetEvent: 'StopFailure',
         sourceMatcher: 'rate_limit|overloaded',
-        matcher: 'rate_limit|overloaded',
+        matcher: '^(?:rate_limit|overloaded)$',
         status: 'ready',
       }),
     );
@@ -430,9 +483,34 @@ describe('planPluginHooks', () => {
     expect(plan.entries[0]).toEqual(
       expect.objectContaining({
         sourceMatcher: 'Bash|Write',
-        matcher: '^(bash_tool|create_file)$',
+        matcher: '^(?:^(bash_tool|create_file)$)$',
         status: 'ready',
         issues: [expect.objectContaining({ code: 'matcher_translated', severity: 'warning' })],
+      }),
+    );
+  });
+
+  test('keeps invalid authored regex matchers unsupported after a valid translation', () => {
+    const plan = planPluginHooks(
+      document({
+        PreToolUse: [{ matcher: '[invalid', hooks: [{ type: 'command', command: 'check' }] }],
+      }),
+      {
+        handlerTypes: new Set(['command']),
+        translateMatcher: () => '^bash_tool$',
+      },
+    );
+
+    expect(plan.summary).toEqual({ declared: 1, ready: 0, unsupported: 1 });
+    expect(plan.entries[0]).toEqual(
+      expect.objectContaining({
+        sourceMatcher: '[invalid',
+        matcher: '^bash_tool$',
+        status: 'unsupported',
+        issues: expect.arrayContaining([
+          expect.objectContaining({ code: 'invalid_matcher', severity: 'error' }),
+          expect.objectContaining({ code: 'matcher_translated', severity: 'warning' }),
+        ]),
       }),
     );
   });
@@ -474,7 +552,7 @@ describe('planPluginHooks', () => {
     expect(plan.summary).toEqual({ declared: 1, ready: 1, unsupported: 0 });
     expect(plan.entries[0]).toEqual(
       expect.objectContaining({
-        matcher: '^Bash$',
+        matcher: '^(?:^Bash$)$',
         status: 'ready',
         issues: [expect.objectContaining({ code: 'matcher_translated', severity: 'warning' })],
       }),

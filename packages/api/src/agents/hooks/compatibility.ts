@@ -38,6 +38,10 @@ const TOOL_NAME_EVENTS = new Set<HookEvent>([
   'PermissionDenied',
 ]);
 
+const GENERAL_EXACT_MATCHER = /^[-A-Za-z0-9_,| ]+$/;
+const NARROW_EXACT_MATCHER = /^[A-Za-z0-9_|]+$/;
+const NARROW_EXACT_MATCHER_EVENTS = new Set(['FileChanged', 'StopFailure']);
+
 export type PluginHookIssueSeverity = 'warning' | 'error';
 
 export type PluginHookIssueCode =
@@ -72,10 +76,12 @@ export type PluginHookHandlerType = 'command' | 'prompt';
 export interface PluginHookMatcherTranslation {
   sourceEvent: string;
   targetEvent: HookEvent;
+  /** Authored regex, or a canonical pipe-separated list when Claude applies exact matching. */
   matcher: string;
 }
 
 export interface PluginHookMatcherTranslationResult {
+  /** Runtime pattern; translations of Claude exact matchers are whole-string anchored. */
   matcher: string;
   requiresToolNameTranslation?: boolean;
 }
@@ -140,6 +146,28 @@ function normalizeMatcher(matcher: string | undefined): string | undefined {
     return undefined;
   }
   return trimmed;
+}
+
+type ClaudeMatcherSemantics =
+  | { kind: 'exact'; canonicalMatcher: string; values: string[] }
+  | { kind: 'regex'; canonicalMatcher: string };
+
+function getClaudeMatcherSemantics(sourceEvent: string, matcher: string): ClaudeMatcherSemantics {
+  const isNarrowEvent = NARROW_EXACT_MATCHER_EVENTS.has(sourceEvent);
+  const exactMatcher = isNarrowEvent ? NARROW_EXACT_MATCHER : GENERAL_EXACT_MATCHER;
+  if (!exactMatcher.test(matcher)) {
+    return { kind: 'regex', canonicalMatcher: matcher };
+  }
+  const values = matcher.split(isNarrowEvent ? /\|/ : /[|,]/).map((value) => value.trim());
+  return {
+    kind: 'exact',
+    canonicalMatcher: values.join('|'),
+    values,
+  };
+}
+
+function anchorExactMatcher(matcher: string): string {
+  return `^(?:${matcher})$`;
 }
 
 function matcherIncludesValue(matcher: string, value: string): boolean {
@@ -329,6 +357,7 @@ function planMatcher(
     }
     return { issues: [] };
   }
+  const matcherSemantics = getClaudeMatcherSemantics(sourceEvent, sourceMatcher);
   const validationIssue = getMatcherValidationIssue(sourceEvent, sourceMatcher, targetEvent);
   if (validationIssue?.code === 'unsupported_matcher' || !targetEvent) {
     return {
@@ -338,10 +367,20 @@ function planMatcher(
     };
   }
   if (sourceEvent === 'SessionStart') {
-    if (!validationIssue && matcherIncludesValue(sourceMatcher, 'compact')) {
+    const matcher =
+      matcherSemantics.kind === 'exact'
+        ? anchorExactMatcher(matcherSemantics.canonicalMatcher)
+        : sourceMatcher;
+    const runtimeValidationIssue =
+      validationIssue ?? getMatcherValidationIssue(sourceEvent, matcher, targetEvent);
+    const includesCompact =
+      matcherSemantics.kind === 'exact'
+        ? matcherSemantics.values.includes('compact')
+        : matcherIncludesValue(matcher, 'compact');
+    if (!runtimeValidationIssue && includesCompact) {
       return {
         sourceMatcher,
-        matcher: sourceMatcher,
+        matcher,
         issues: [
           {
             code: 'unsupported_session_source',
@@ -354,8 +393,8 @@ function planMatcher(
     }
     return {
       sourceMatcher,
-      matcher: sourceMatcher,
-      issues: validationIssue ? [validationIssue] : [],
+      matcher,
+      issues: runtimeValidationIssue ? [runtimeValidationIssue] : [],
     };
   }
   if (!capabilities.translateMatcher) {
@@ -376,15 +415,15 @@ function planMatcher(
     translation = capabilities.translateMatcher({
       sourceEvent,
       targetEvent,
-      matcher: sourceMatcher,
+      matcher: matcherSemantics.canonicalMatcher,
     });
   } catch {
     translation = undefined;
   }
-  const matcher = typeof translation === 'string' ? translation : translation?.matcher;
+  const translatedMatcher = typeof translation === 'string' ? translation : translation?.matcher;
   const requiresToolNameTranslation =
     typeof translation === 'object' && translation.requiresToolNameTranslation === true;
-  if (!matcher?.trim()) {
+  if (!translatedMatcher?.trim()) {
     return {
       sourceMatcher,
       issues: [
@@ -397,12 +436,17 @@ function planMatcher(
     };
   }
 
-  const issues: PluginHookCompatibilityIssue[] = [];
+  const normalizedTranslation = translatedMatcher.trim();
+  const matcher =
+    matcherSemantics.kind === 'exact'
+      ? anchorExactMatcher(normalizedTranslation)
+      : normalizedTranslation;
+  const issues: PluginHookCompatibilityIssue[] = validationIssue ? [validationIssue] : [];
   const translatedValidationIssue = getMatcherValidationIssue(sourceEvent, matcher, targetEvent);
-  if (translatedValidationIssue) {
+  if (translatedValidationIssue && !validationIssue) {
     issues.push(translatedValidationIssue);
   }
-  if (matcher !== sourceMatcher) {
+  if (normalizedTranslation !== matcherSemantics.canonicalMatcher) {
     issues.push({
       code: 'matcher_translated',
       severity: 'warning',
