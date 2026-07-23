@@ -41,6 +41,7 @@ export function createMockPublisher(): MockPublisher {
       _script: string,
       _numKeys: number,
       seqKey: string,
+      _jobKey: string,
       channel: string,
       prefix: string,
       suffix: string,

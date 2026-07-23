@@ -17,6 +17,8 @@ const CHANNELS = {
 const KEYS = {
   /** Atomic sequence counter: shared across all replicas for a given stream */
   sequence: (streamId: string) => `stream:{${streamId}}:seq`,
+  /** Job metadata, used to keep the sequence counter alive for the full job lifetime */
+  job: (streamId: string) => `stream:{${streamId}}:job`,
 };
 
 /**
@@ -57,21 +59,29 @@ interface ReorderBuffer {
  * re-encoding arbitrary event data would coerce empty arrays to objects and alter float
  * precision. The caller pre-serializes everything around the seq, so this only concatenates.
  *
- * The TTL is set once on the first INCR and never refreshed, so an active stream cannot have
- * its counter reset mid-generation.
+ * The sequence TTL is extend-only. Once it falls below half the safety window, it is refreshed
+ * to the longer of that window and the live job TTL. Checking the job TTL only at that threshold
+ * keeps it off the per-delta hot path. Because stream IDs are conversation IDs, keeping this
+ * counter monotonic across normal cleanup lets a lingering subscriber order later turns.
  *
  * The channel is passed as ARGV, not KEYS: ioredis applies `keyPrefix` to EVAL keys but never
  * to a pub/sub channel, so keying it here would publish to a prefixed channel that no
  * subscriber listens on. PUBLISH is broadcast cluster-wide rather than slot-routed, so it does
  * not need to be a key for Cluster correctness.
  *
- *   KEYS: [sequence]
+ *   KEYS: [sequence, job]
  *   ARGV: [channel, payloadPrefix, payloadSuffix, sequenceTtlSeconds]
  *   RETURNS: the 0-indexed seq assigned to this event
  */
 const PUBLISH_SEQ_LUA =
   'local val = redis.call("INCR", KEYS[1]) ' +
-  'if val == 1 then redis.call("EXPIRE", KEYS[1], tonumber(ARGV[4])) end ' +
+  'local ttl = tonumber(ARGV[4]) ' +
+  'local seqTtl = redis.call("TTL", KEYS[1]) ' +
+  'if seqTtl < math.floor(ttl / 2) then ' +
+  'local jobTtl = redis.call("TTL", KEYS[2]) ' +
+  'if jobTtl > ttl then ttl = jobTtl end ' +
+  'redis.call("EXPIRE", KEYS[1], ttl) ' +
+  'end ' +
   'local seq = val - 1 ' +
   'redis.call("PUBLISH", ARGV[1], ARGV[2] .. string.format("%d", seq) .. ARGV[3]) ' +
   'return seq';
@@ -148,7 +158,7 @@ export class RedisEventTransport implements IEventTransport {
     });
   }
 
-  /** Safety-net TTL (seconds) set once on first INCR. Not refreshed — prevents mid-stream resets. */
+  /** Minimum safety-net TTL in seconds; publishing and pause transitions may only extend it. */
   private static readonly SEQUENCE_TTL_SECONDS = 86400;
 
   /**
@@ -168,8 +178,9 @@ export class RedisEventTransport implements IEventTransport {
   /**
    * Allocate a sequence number and publish, in one Redis round trip.
    *
-   * Keys are deleted explicitly by cleanup() on normal stream teardown; the TTL is a safety
-   * net for orphaned keys from crashed processes.
+   * The shared counter survives local cleanup and expires after its sliding TTL once no
+   * generation is publishing. This bounds storage without resetting another replica's
+   * subscriber frontier between turns.
    */
   private async publishWithSequence(
     streamId: string,
@@ -178,8 +189,9 @@ export class RedisEventTransport implements IEventTransport {
     const [prefix, suffix] = RedisEventTransport.buildPayloadParts(message);
     const seq = await this.publisher.eval(
       PUBLISH_SEQ_LUA,
-      1,
+      2,
       KEYS.sequence(streamId),
+      KEYS.job(streamId),
       CHANNELS.events(streamId),
       prefix,
       suffix,
@@ -204,30 +216,34 @@ export class RedisEventTransport implements IEventTransport {
   /**
    * Advance subscriber reorder buffer to the authoritative Redis sequence counter (cross-replica safe).
    *
-   * @param earlyReplayCount - Number of events replayed from earlyEventBuffer (same-replica).
-   *   Pending entries with seq < earlyReplayCount are duplicates and are pruned; entries at or
-   *   above are live chunks from ongoing generation that arrived during the async GET window.
-   *   Using the replay count (not the Redis counter) as the prune cutoff is critical: INCR can
-   *   advance the counter past a live chunk's seq during the GET window, so currentSeq is not
-   *   a safe proxy for "already delivered via earlyEventBuffer."
-   *   When 0/undefined (cross-replica), all pending entries are treated as live and preserved.
+   * @param replayedNextSeq - Absolute Redis sequence immediately after the last event replayed
+   *   from earlyEventBuffer. Pending entries below it were already delivered; entries at or
+   *   above it are live chunks from the ongoing generation. Using the exact replay frontier
+   *   (not the Redis counter) is critical: INCR can advance the counter past a live chunk's
+   *   sequence during the GET window. Undefined means no local replay, so currentSeq is trusted.
    */
-  async syncReorderBuffer(streamId: string, earlyReplayCount = 0): Promise<void> {
+  async syncReorderBuffer(streamId: string, replayedNextSeq?: number): Promise<void> {
+    const initialState = this.streams.get(streamId);
     const key = KEYS.sequence(streamId);
     const rawStr = await this.publisher.get(key);
     const parsed = rawStr != null ? parseInt(rawStr, 10) : 0;
     const currentSeq = Number.isNaN(parsed) ? 0 : parsed;
     const state = this.streams.get(streamId);
+    // cleanup() may replace this stream's local state while the Redis GET is in
+    // flight. An obsolete snapshot must never move the replacement's frontier.
+    if (state !== initialState) {
+      return;
+    }
     if (state) {
       if (state.reorderBuffer.flushTimeout) {
         clearTimeout(state.reorderBuffer.flushTimeout);
         state.reorderBuffer.flushTimeout = null;
       }
-      // Prune true duplicates: entries with seq < earlyReplayCount were already delivered
-      // via earlyEventBuffer. Entries at or above are live (possibly from ongoing generation).
-      if (earlyReplayCount > 0) {
+      // Prune true duplicates already delivered via earlyEventBuffer. Entries at or above
+      // the absolute replay frontier are live (possibly from an ongoing generation).
+      if (replayedNextSeq != null) {
         for (const seq of state.reorderBuffer.pending.keys()) {
-          if (seq < earlyReplayCount) {
+          if (seq < replayedNextSeq) {
             state.reorderBuffer.pending.delete(seq);
           }
         }
@@ -235,10 +251,10 @@ export class RedisEventTransport implements IEventTransport {
       // Set nextSeq from remaining state. Never regress — handleOrderedChunk may have
       // already advanced it during the async GET window.
       if (state.reorderBuffer.pending.size === 0) {
-        // Same-replica: INCR precedes PUBLISH, so currentSeq may reflect allocated-but-
-        // not-yet-delivered events. Cap at earlyReplayCount to avoid skipping in-flight chunks.
-        // Cross-replica (earlyReplayCount=0): trust the Redis counter.
-        const ceiling = earlyReplayCount > 0 ? earlyReplayCount : currentSeq;
+        // Same-replica replay: INCR precedes PUBLISH, so currentSeq may reflect
+        // allocated-but-not-yet-delivered events. Cap at the exact replay frontier to
+        // avoid skipping in-flight chunks. With no local replay, trust the Redis counter.
+        const ceiling = replayedNextSeq ?? currentSeq;
         state.reorderBuffer.nextSeq = Math.max(state.reorderBuffer.nextSeq, ceiling);
       } else {
         let minPending = Infinity;
@@ -278,7 +294,6 @@ export class RedisEventTransport implements IEventTransport {
 
     try {
       const parsed = JSON.parse(message) as PubSubMessage;
-
       if (parsed.type === EventTypes.CHUNK && parsed.seq != null) {
         this.handleOrderedChunk(streamId, streamState, parsed);
       } else if (
@@ -512,21 +527,25 @@ export class RedisEventTransport implements IEventTransport {
     return {
       ready: readyPromise,
       unsubscribe: () => {
-        const state = this.streams.get(streamId);
-        if (!state) {
+        // An unsubscribe closure belongs to the exact state and handler created
+        // above. After cleanup + stream reuse, it must not decrement or detach
+        // the replacement subscription that happens to share the same stream ID.
+        if (
+          this.streams.get(streamId) !== streamState ||
+          !streamState.handlers.delete(subscriberId)
+        ) {
           return;
         }
 
-        state.handlers.delete(subscriberId);
-        state.count--;
+        streamState.count--;
 
         // If last subscriber left, unsubscribe from Redis and notify
-        if (state.count === 0) {
+        if (streamState.count === 0) {
           /**
            * Preserve callbacks for reconnect, but drop ordering state from the
            * previous attachment. Reconnects always call syncReorderBuffer(), so
-           * keeping nextSeq here only risks poisoning a later generation when
-           * the shared Redis sequence key has already been reset elsewhere.
+           * keeping a detached subscriber's pending gaps or frontier here can
+           * only delay the next attachment before that authoritative sync.
            */
           this.resetReorderBuffer(streamId);
 
@@ -536,7 +555,7 @@ export class RedisEventTransport implements IEventTransport {
           this.channelSubscriptions.delete(channel);
 
           // Call all-subscribers-left callbacks
-          for (const callback of state.allSubscribersLeftCallbacks) {
+          for (const callback of streamState.allSubscribersLeftCallbacks) {
             try {
               callback();
             } catch (err) {
@@ -564,11 +583,12 @@ export class RedisEventTransport implements IEventTransport {
    * Performance: sequence allocation and publish share one round trip. This runs per streamed
    * delta, so the saved round trip is multiplied by the token count of every response.
    */
-  async emitChunk(streamId: string, event: unknown): Promise<void> {
+  async emitChunk(streamId: string, event: unknown): Promise<number | undefined> {
     try {
-      await this.publishWithSequence(streamId, { type: EventTypes.CHUNK, data: event });
+      return await this.publishWithSequence(streamId, { type: EventTypes.CHUNK, data: event });
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish chunk:`, err);
+      return undefined;
     }
   }
 
@@ -700,7 +720,14 @@ export class RedisEventTransport implements IEventTransport {
   }
 
   /**
-   * Cleanup resources for a specific stream.
+   * Cleanup local resources for a specific stream.
+   *
+   * The sequence counter is deliberately left in Redis. A stream ID is currently the
+   * conversation ID, so later turns reuse the same ordering namespace. Another replica
+   * may also still have a subscriber whose reorder buffer is positioned at this counter.
+   * Deleting it here would restart the next producer at zero and make that subscriber
+   * discard the entire next turn as duplicate traffic. The counter's sliding TTL bounds
+   * orphan lifetime.
    */
   cleanup(streamId: string): void {
     const channel = CHANNELS.events(streamId);
@@ -713,13 +740,6 @@ export class RedisEventTransport implements IEventTransport {
     }
 
     this.resetReorderBuffer(streamId);
-
-    // Delete the shared sequence key — safe because cleanup() is only called
-    // when the stream's job is complete (no more publishes will happen).
-    const seqKey = KEYS.sequence(streamId);
-    this.publisher.del(seqKey).catch((err) => {
-      logger.error(`[RedisEventTransport] Failed to delete sequence key ${seqKey}:`, err);
-    });
 
     if (this.channelSubscriptions.has(channel)) {
       this.subscriber.unsubscribe(channel).catch((err) => {
@@ -738,8 +758,7 @@ export class RedisEventTransport implements IEventTransport {
     // Clear all flush timeouts and buffered messages.
     // Sequence keys are NOT deleted here — they are shared across replicas.
     // A shutting-down replica must not nuke the counter for active publishers.
-    // cleanup() deletes keys on normal teardown; a 24h safety-net TTL (set once
-    // at first INCR, never refreshed) caps orphan lifetime on abnormal shutdown.
+    // A sliding 24h safety-net TTL caps orphan lifetime after the last publish.
     for (const [, state] of this.streams) {
       if (state.reorderBuffer.flushTimeout) {
         clearTimeout(state.reorderBuffer.flushTimeout);

@@ -626,8 +626,12 @@ export interface IEventTransport {
     },
   ): { unsubscribe: () => void; ready?: Promise<void> };
 
-  /** Publish a chunk event - returns Promise in Redis mode for ordered delivery */
-  emitChunk(streamId: string, event: unknown): void | Promise<void>;
+  /**
+   * Publish a chunk event.
+   * Redis returns the assigned absolute sequence so locally replayed events can
+   * advance a subscriber to the exact ordering frontier.
+   */
+  emitChunk(streamId: string, event: unknown): void | Promise<void | number>;
 
   /** Publish a done event - returns Promise in Redis mode for ordered delivery */
   emitDone(streamId: string, event: unknown): void | Promise<void>;
@@ -661,12 +665,11 @@ export interface IEventTransport {
 
   /**
    * Advance subscriber reorder buffer to match publisher sequence (cross-replica safe).
-   * @param earlyReplayCount - Number of events replayed from earlyEventBuffer (same-replica).
-   *   Pending entries with seq < earlyReplayCount are duplicates and are pruned; entries at or
-   *   above are live chunks that arrived during the async GET window and are preserved.
-   *   When 0/undefined (cross-replica), all pending entries are treated as live.
+   * @param replayedNextSeq - Absolute Redis sequence immediately after the last event replayed
+   *   from the local early-event buffer. Pending entries below it are duplicates; entries at
+   *   or above it are live. Undefined means no local replay, so the Redis counter is trusted.
    */
-  syncReorderBuffer?(streamId: string, earlyReplayCount?: number): void | Promise<void>;
+  syncReorderBuffer?(streamId: string, replayedNextSeq?: number): void | Promise<void>;
 
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;

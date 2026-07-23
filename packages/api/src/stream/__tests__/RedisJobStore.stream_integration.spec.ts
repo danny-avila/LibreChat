@@ -1994,6 +1994,39 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('pausing for review extends the event sequence TTL to the approval window', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `sequence-pause-ttl-${Date.now()}`;
+      const sequenceKey = `stream:{${streamId}}:seq`;
+      await store.createJob(streamId, 'sequence-user', streamId);
+      await ioredisClient.set(sequenceKey, '1', 'EX', 1200);
+
+      const approvalWindowSeconds = 48 * 60 * 60;
+      const pendingAction = {
+        ...buildPendingAction(streamId),
+        expiresAt: Date.now() + approvalWindowSeconds * 1000,
+      };
+      const paused = await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction },
+      });
+      expect(paused).toBe(true);
+
+      const ttl = await ioredisClient.ttl(sequenceKey);
+      expect(ttl).toBeGreaterThan(24 * 60 * 60);
+      expect(ttl).toBeLessThanOrEqual(approvalWindowSeconds + 60);
+
+      await store.destroy();
+    });
+
     test('terminal transitions and deleteJob remove the steers key', async () => {
       if (!ioredisClient) {
         return;

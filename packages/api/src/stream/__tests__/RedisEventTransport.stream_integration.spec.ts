@@ -226,7 +226,7 @@ describe('RedisEventTransport Integration Tests', () => {
       subscriber.disconnect();
     });
 
-    test('should assign 0-indexed sequences and set a TTL on the counter only once', async () => {
+    test('should assign 0-indexed sequences and refresh a shortened counter TTL', async () => {
       if (!ioredisClient) {
         console.warn('Redis not available, skipping test');
         return;
@@ -246,18 +246,23 @@ describe('RedisEventTransport Integration Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       await transport.emitChunk(streamId, { index: 0 });
-      /** First INCR arms the TTL; it must never be refreshed, or a long stream could
-       *  have its counter reset mid-generation. */
+      /** First INCR arms the safety TTL. */
       const ttlAfterFirst = await (ioredisClient as Redis).ttl(seqKey);
       expect(ttlAfterFirst).toBeGreaterThan(0);
 
-      for (let i = 1; i < 5; i++) {
+      // Simulate a nearly-expired counter. The next publish must restore the
+      // safety window so a live generation cannot reset to sequence zero.
+      await (ioredisClient as Redis).expire(seqKey, 2);
+      await transport.emitChunk(streamId, { index: 1 });
+      expect(await (ioredisClient as Redis).ttl(seqKey)).toBeGreaterThan(86_000);
+
+      for (let i = 2; i < 5; i++) {
         await transport.emitChunk(streamId, { index: i });
       }
 
       /** Counter is 1-based in Redis; seq is 0-based, so 5 emits => counter 5, last seq 4. */
       expect(await (ioredisClient as Redis).get(seqKey)).toBe('5');
-      expect(await (ioredisClient as Redis).ttl(seqKey)).toBeLessThanOrEqual(ttlAfterFirst);
+      expect(await (ioredisClient as Redis).ttl(seqKey)).toBeGreaterThanOrEqual(ttlAfterFirst - 1);
 
       transport.destroy();
       subscriber.disconnect();
@@ -954,7 +959,7 @@ describe('RedisEventTransport Integration Tests', () => {
    * causing non-deterministic message counts.
    */
   describe('Cross-Replica Sequence Synchronization (#12575)', () => {
-    test('shared counter is cleaned up on stream cleanup', async () => {
+    test('shared counter survives local stream cleanup', async () => {
       if (!ioredisClient) {
         console.warn('Redis not available, skipping test');
         return;
@@ -977,17 +982,13 @@ describe('RedisEventTransport Integration Tests', () => {
       const valBefore = await ioredisClient.get(key);
       expect(valBefore).toBe('5');
 
-      // Cleanup the stream
+      // Cleanup only this transport's local subscriber state. The Redis counter is
+      // shared by every replica and by later generations that reuse this stream ID.
       transport.cleanup(streamId);
 
-      // Poll for the fire-and-forget DEL to complete (robust under CI load)
-      const start = Date.now();
-      let valAfter: string | null = 'pending';
-      while (valAfter !== null && Date.now() - start < 2000) {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-        valAfter = await ioredisClient.get(key);
-      }
-      expect(valAfter).toBeNull();
+      const valAfter = await ioredisClient.get(key);
+      expect(valAfter).toBe('5');
+      expect(await ioredisClient.ttl(key)).toBeGreaterThan(0);
 
       transport.destroy();
       subscriber.disconnect();

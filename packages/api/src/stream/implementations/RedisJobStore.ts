@@ -23,16 +23,16 @@ import { toPendingSteer } from '~/stream/SteeringLifecycle';
 
 /**
  * Atomic compare-and-set on the job hash — the single-winner decision for a
- * status transition. Touches ONLY the job key, which lives on one hash slot, so
- * it is atomic on both single-node and Redis Cluster (cross-slot membership
- * sets are reconciled by the caller AFTER this decides the winner).
+ * status transition. The job and event-sequence keys share the stream hash tag,
+ * so updating the job and extending the counter TTL is atomic on both single-node
+ * Redis and Redis Cluster (cross-slot membership sets are reconciled afterward).
  *
  * Guards on the current `status` and, when ARGV[2] is non-empty, on the flat
  * `pendingActionId` field — so a stale decision targeting a different action
  * loses. On success: removes `clear` fields, writes `status`+patch pairs,
  * refreshes the job-hash TTL. Returns 1 if it fired, 0 otherwise.
  *
- *   KEYS: [job]
+ *   KEYS: [job, eventSequence]
  *   ARGV: [from, expectActionId | "", ttl, hdelCount, ...hdelFields, ...hsetPairs]
  */
 const JOB_CAS_LUA =
@@ -46,6 +46,8 @@ const JOB_CAS_LUA =
   'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
   'if #hset > 0 then redis.call("HSET", KEYS[1], unpack(hset)) end ' +
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
+  'local seqTtl = redis.call("TTL", KEYS[2]) ' +
+  'if seqTtl >= 0 and seqTtl < ttl then redis.call("EXPIRE", KEYS[2], ttl) end ' +
   'return 1';
 
 /**
@@ -278,6 +280,8 @@ const PARKED_RECOVERY_TTL_S: number = 300;
 const KEYS = {
   /** Job metadata: stream:{streamId}:job */
   job: (streamId: string) => `stream:{${streamId}}:job`,
+  /** Pub/sub event sequence counter: stream:{streamId}:seq */
+  sequence: (streamId: string) => `stream:{${streamId}}:seq`,
   /** Chunk stream (Redis Streams): stream:{streamId}:chunks */
   chunks: (streamId: string) => `stream:{${streamId}}:chunks`,
   /** Run steps: stream:{streamId}:runsteps */
@@ -657,8 +661,9 @@ export class RedisJobStore implements IJobStore {
     //    resolves can never both win (and drive the run twice).
     const won = await this.redis.eval(
       JOB_CAS_LUA,
-      1,
+      2,
       key,
+      KEYS.sequence(streamId),
       from,
       expectActionId ?? '',
       String(ttl),
