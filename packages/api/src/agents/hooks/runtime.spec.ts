@@ -3,7 +3,7 @@ import type { HookOutput } from '@librechat/agents';
 import type { PluginHookCapabilities } from './compatibility';
 import type { PluginHookExecutor } from './runtime';
 import type { PluginHooksDocument } from './schema';
-import { registerPluginHooks } from './runtime';
+import { createPluginHookPayload, registerPluginHooks } from './runtime';
 
 const commandCapabilities: PluginHookCapabilities = {
   handlerTypes: new Set(['command']),
@@ -54,12 +54,17 @@ describe('registerPluginHooks', () => {
                 command: 'check-write',
                 if: 'Write(/workspace/**)',
                 timeout: 5,
+                once: true,
               },
             ],
           },
         ],
       }),
     });
+
+    expect(registration.registered).toBe(1);
+    expect(registry.getMatchers('PreToolUse')[0].timeout).toBe(5_000);
+    expect(registry.getMatchers('PreToolUse')[0].once).toBe(true);
 
     const result = await executeHooks({
       registry,
@@ -75,8 +80,6 @@ describe('registerPluginHooks', () => {
       },
     });
 
-    expect(registration.registered).toBe(1);
-    expect(registry.getMatchers('PreToolUse')[0].timeout).toBe(5_000);
     expect(result).toEqual(
       expect.objectContaining({
         decision: 'deny',
@@ -107,7 +110,7 @@ describe('registerPluginHooks', () => {
     );
   });
 
-  test('preserves SessionStart as the source event while registering RunStart', async () => {
+  test('filters and deduplicates SessionStart while registering RunStart', async () => {
     const registry = new HookRegistry();
     const hookExecutor = executor({ additionalContext: 'Loaded project context' });
     hookExecutor.capabilities.sessionLifecycle = true;
@@ -119,14 +122,18 @@ describe('registerPluginHooks', () => {
       document: document({
         SessionStart: [
           {
-            matcher: '*',
+            matcher: 'resume',
             hooks: [{ type: 'command', command: 'load-context' }],
+          },
+          {
+            matcher: 'startup',
+            hooks: [{ type: 'command', command: 'do-not-load' }],
           },
         ],
       }),
     });
 
-    const result = await executeHooks({
+    const firstResult = await executeHooks({
       registry,
       input: {
         hook_event_name: 'RunStart',
@@ -135,12 +142,23 @@ describe('registerPluginHooks', () => {
         messages: [],
       },
     });
+    await executeHooks({
+      registry,
+      input: {
+        hook_event_name: 'RunStart',
+        runId: 'run-3',
+        threadId: 'conversation-2',
+        messages: [],
+      },
+    });
 
-    expect(result.additionalContexts).toEqual(['Loaded project context']);
+    expect(firstResult.additionalContexts).toEqual(['Loaded project context']);
+    expect(hookExecutor.execute).toHaveBeenCalledTimes(1);
     expect(hookExecutor.execute).toHaveBeenCalledWith(
       expect.objectContaining({
         sourceEvent: 'SessionStart',
         targetEvent: 'RunStart',
+        handler: expect.objectContaining({ command: 'load-context' }),
         payload: expect.objectContaining({
           hook_event_name: 'SessionStart',
           session_id: 'conversation-2',
@@ -149,6 +167,153 @@ describe('registerPluginHooks', () => {
       }),
       expect.any(AbortSignal),
     );
+  });
+
+  test('translates compaction matchers and carries the trigger into PostCompact', async () => {
+    const registry = new HookRegistry();
+    const hookExecutor = executor();
+    hookExecutor.capabilities.translateMatcher = ({ matcher }) =>
+      matcher === 'auto' ? '^(token_ratio|remaining_tokens|messages_to_refine|default)$' : matcher;
+    const registration = registerPluginHooks({
+      pluginId: 'compact-audit',
+      registry,
+      executor: hookExecutor,
+      document: document({
+        PreCompact: [
+          {
+            matcher: 'auto',
+            hooks: [{ type: 'command', command: 'before-compact' }],
+          },
+        ],
+        PostCompact: [
+          {
+            matcher: 'auto',
+            hooks: [{ type: 'command', command: 'after-compact' }],
+          },
+        ],
+      }),
+    });
+
+    await executeHooks({
+      registry,
+      input: {
+        hook_event_name: 'PreCompact',
+        runId: 'run-compact',
+        threadId: 'conversation-compact',
+        trigger: 'token_ratio',
+        messagesBeforeCount: 12,
+      },
+    });
+    await executeHooks({
+      registry,
+      input: {
+        hook_event_name: 'PostCompact',
+        runId: 'run-compact',
+        threadId: 'conversation-compact',
+        summary: 'Compacted context',
+        messagesAfterCount: 0,
+      },
+    });
+
+    expect(registration.registered).toBe(2);
+    expect(registry.getMatchers('PreCompact')).toHaveLength(2);
+    expect(registry.getMatchers('PostCompact')).toHaveLength(2);
+    expect(hookExecutor.execute).toHaveBeenCalledTimes(2);
+    expect(hookExecutor.execute).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        sourceEvent: 'PreCompact',
+        payload: expect.objectContaining({
+          hook_event_name: 'PreCompact',
+          trigger: 'auto',
+          messages_before_count: 12,
+        }),
+      }),
+      expect.any(AbortSignal),
+    );
+    expect(hookExecutor.execute).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        sourceEvent: 'PostCompact',
+        payload: expect.objectContaining({
+          hook_event_name: 'PostCompact',
+          trigger: 'auto',
+          compact_summary: 'Compacted context',
+          messages_after_count: 0,
+        }),
+      }),
+      expect.any(AbortSignal),
+    );
+
+    await executeHooks({
+      registry,
+      input: {
+        hook_event_name: 'PostCompact',
+        runId: 'run-compact',
+        threadId: 'conversation-compact',
+        summary: 'No matching trigger',
+        messagesAfterCount: 0,
+      },
+    });
+    expect(hookExecutor.execute).toHaveBeenCalledTimes(2);
+
+    registration.unregister();
+    expect(registry.getMatchers('PreCompact')).toHaveLength(0);
+    expect(registry.getMatchers('PostCompact')).toHaveLength(0);
+  });
+
+  test('translates batch entries and preserves the PostToolUseFailure error field', () => {
+    const batchPayload = createPluginHookPayload('PostToolBatch', {
+      hook_event_name: 'PostToolBatch',
+      runId: 'run-batch',
+      entries: [
+        {
+          toolName: 'Read',
+          toolInput: { file_path: '/workspace/file.ts' },
+          toolUseId: 'tool-success',
+          toolOutput: 'file contents',
+          status: 'success',
+        },
+        {
+          toolName: 'Bash',
+          toolInput: { command: 'exit 1' },
+          toolUseId: 'tool-failure',
+          error: 'Command failed',
+          status: 'error',
+        },
+      ],
+    });
+    const failurePayload = createPluginHookPayload('PostToolUseFailure', {
+      hook_event_name: 'PostToolUseFailure',
+      runId: 'run-failure',
+      toolName: 'Bash',
+      toolInput: { command: 'exit 1' },
+      toolUseId: 'tool-failure',
+      error: 'Command failed',
+    });
+
+    expect(batchPayload.tool_calls).toEqual([
+      {
+        tool_name: 'Read',
+        tool_input: { file_path: '/workspace/file.ts' },
+        tool_use_id: 'tool-success',
+        tool_response: 'file contents',
+      },
+      {
+        tool_name: 'Bash',
+        tool_input: { command: 'exit 1' },
+        tool_use_id: 'tool-failure',
+        tool_response: 'Command failed',
+      },
+    ]);
+    expect(batchPayload).not.toHaveProperty('entries');
+    expect(failurePayload).toEqual(
+      expect.objectContaining({
+        hook_event_name: 'PostToolUseFailure',
+        error: 'Command failed',
+      }),
+    );
+    expect(failurePayload).not.toHaveProperty('tool_error');
   });
 
   test('registers the event surface used by the official hookify plugin', () => {

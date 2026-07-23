@@ -1,4 +1,4 @@
-import { HookRegistry } from '@librechat/agents';
+import { HookRegistry, matchesQuery } from '@librechat/agents';
 import type {
   HookInput,
   HookOutput,
@@ -17,6 +17,13 @@ export interface PluginHookRuntimeContext {
   transcriptPath?: string | null;
   permissionMode?: string;
   sessionStartSource?: string;
+}
+
+export interface PluginHookBatchToolCall {
+  tool_name: string;
+  tool_input: Record<string, unknown>;
+  tool_use_id: string;
+  tool_response?: unknown;
 }
 
 export interface PluginHookPayload {
@@ -40,10 +47,10 @@ export interface PluginHookPayload {
   agent_type?: string;
   stop_hook_active?: boolean;
   trigger?: string;
-  summary?: string;
+  compact_summary?: string;
   messages_before_count?: number;
   messages_after_count?: number;
-  entries?: PostToolBatchEntry[];
+  tool_calls?: PluginHookBatchToolCall[];
 }
 
 export interface PluginHookExecutionRequest {
@@ -82,12 +89,37 @@ export interface PluginHookRegistration {
   unregister: () => void;
 }
 
+interface PluginHookPayloadState {
+  compactTrigger?: string;
+}
+
+function getSessionId(input: HookInput, context: PluginHookRuntimeContext): string {
+  return context.sessionId ?? input.threadId ?? input.runId;
+}
+
+function toClaudeCompactTrigger(trigger: string | undefined): string | undefined {
+  if (!trigger) {
+    return undefined;
+  }
+  return trigger === 'manual' ? 'manual' : 'auto';
+}
+
+function toPluginBatchToolCall(entry: PostToolBatchEntry): PluginHookBatchToolCall {
+  const toolResponse = entry.status === 'success' ? entry.toolOutput : entry.error;
+  return {
+    tool_name: entry.toolName,
+    tool_input: entry.toolInput,
+    tool_use_id: entry.toolUseId,
+    ...(toolResponse !== undefined && { tool_response: toolResponse }),
+  };
+}
+
 function basePayload(
   sourceEvent: string,
   input: HookInput,
   context: PluginHookRuntimeContext,
 ): PluginHookPayload {
-  const sessionId = context.sessionId ?? input.threadId ?? input.runId;
+  const sessionId = getSessionId(input, context);
   return {
     hook_event_name: sourceEvent,
     session_id: sessionId,
@@ -107,6 +139,7 @@ export function createPluginHookPayload(
   sourceEvent: string,
   input: HookInput,
   context: PluginHookRuntimeContext = {},
+  state: PluginHookPayloadState = {},
 ): PluginHookPayload {
   const payload = basePayload(sourceEvent, input, context);
 
@@ -144,7 +177,7 @@ export function createPluginHookPayload(
         error: input.error,
       };
     case 'PostToolBatch':
-      return { ...payload, entries: input.entries };
+      return { ...payload, tool_calls: input.entries.map(toPluginBatchToolCall) };
     case 'PermissionDenied':
       return {
         ...payload,
@@ -163,13 +196,16 @@ export function createPluginHookPayload(
     case 'PreCompact':
       return {
         ...payload,
-        trigger: input.trigger,
+        trigger: toClaudeCompactTrigger(input.trigger),
         messages_before_count: input.messagesBeforeCount,
       };
     case 'PostCompact':
       return {
         ...payload,
-        summary: input.summary,
+        ...(state.compactTrigger !== undefined && {
+          trigger: toClaudeCompactTrigger(state.compactTrigger),
+        }),
+        compact_summary: input.summary,
         messages_after_count: input.messagesAfterCount,
       };
   }
@@ -179,14 +215,61 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
   const { pluginId, registry, document, executor, context = {} } = options;
   const plan = planPluginHooks(document, executor.capabilities);
   const unregisters: Array<() => void> = [];
+  const compactTriggers = new Map<string, string>();
+  const tracksCompactTriggers = plan.entries.some(
+    (entry) => entry.status === 'ready' && entry.targetEvent === 'PostCompact',
+  );
+  let registered = 0;
+
+  if (tracksCompactTriggers) {
+    const trackCompactTrigger: HookCallback<'PreCompact'> = (input) => {
+      compactTriggers.set(getSessionId(input, context), input.trigger);
+      return {};
+    };
+    unregisters.push(
+      registry.register('PreCompact', {
+        hooks: [trackCompactTrigger],
+        internal: true,
+      }),
+    );
+  }
 
   for (const entry of plan.entries) {
     if (entry.status !== 'ready' || entry.targetEvent === undefined) {
       continue;
     }
     const targetEvent = entry.targetEvent;
-    const hook: HookCallback<HookEvent> = (input, signal) =>
-      executor.execute(
+    const seenSessionIds = new Set<string>();
+    let hasFired = false;
+    const hook: HookCallback<HookEvent> = (input, signal) => {
+      const sessionId = getSessionId(input, context);
+      const compactTrigger = compactTriggers.get(sessionId);
+      if (entry.sourceEvent === 'SessionStart') {
+        const source = context.sessionStartSource ?? 'startup';
+        if (!matchesQuery(entry.matcher, source) || seenSessionIds.has(sessionId)) {
+          return {};
+        }
+        seenSessionIds.add(sessionId);
+      }
+      if (
+        targetEvent === 'PreCompact' &&
+        input.hook_event_name === 'PreCompact' &&
+        !matchesQuery(entry.matcher, input.trigger)
+      ) {
+        return {};
+      }
+      if (
+        targetEvent === 'PostCompact' &&
+        input.hook_event_name === 'PostCompact' &&
+        (compactTrigger === undefined || !matchesQuery(entry.matcher, compactTrigger))
+      ) {
+        return {};
+      }
+      if (entry.handler.once === true && hasFired) {
+        return {};
+      }
+      hasFired = true;
+      return executor.execute(
         {
           pluginId,
           sourceEvent: entry.sourceEvent,
@@ -194,27 +277,50 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
           handler: entry.handler,
           ...(entry.condition !== undefined && { condition: entry.condition }),
           input,
-          payload: createPluginHookPayload(entry.sourceEvent, input, context),
+          payload: createPluginHookPayload(entry.sourceEvent, input, context, {
+            compactTrigger,
+          }),
         },
         signal,
       );
+    };
+    const runtimeFiltered =
+      entry.sourceEvent === 'SessionStart' ||
+      targetEvent === 'PreCompact' ||
+      targetEvent === 'PostCompact';
     const matcher: HookMatcher<HookEvent> = {
       hooks: [hook],
-      ...(entry.matcher !== undefined && { pattern: entry.matcher }),
+      ...(!runtimeFiltered && entry.matcher !== undefined && { pattern: entry.matcher }),
       ...(entry.timeoutMs !== undefined && { timeout: entry.timeoutMs }),
+      ...(!runtimeFiltered && entry.handler.once === true && { once: true }),
     };
     unregisters.push(registry.register(targetEvent, matcher));
+    registered++;
+  }
+
+  if (tracksCompactTriggers) {
+    const clearCompactTrigger: HookCallback<'PostCompact'> = (input) => {
+      compactTriggers.delete(getSessionId(input, context));
+      return {};
+    };
+    unregisters.push(
+      registry.register('PostCompact', {
+        hooks: [clearCompactTrigger],
+        internal: true,
+      }),
+    );
   }
 
   let active = true;
   return {
     plan,
-    registered: unregisters.length,
+    registered,
     unregister: () => {
       if (!active) {
         return;
       }
       active = false;
+      compactTriggers.clear();
       for (let index = unregisters.length - 1; index >= 0; index--) {
         unregisters[index]();
       }

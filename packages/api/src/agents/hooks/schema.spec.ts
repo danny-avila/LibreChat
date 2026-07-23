@@ -128,6 +128,50 @@ describe('parsePluginHooks', () => {
     });
   });
 
+  test('retains official command and prompt handler options', () => {
+    const result = parsePluginHooks({
+      hooks: {
+        Stop: [
+          {
+            hooks: [
+              {
+                type: 'command',
+                command: 'verify',
+                args: ['--mode', 'strict'],
+                shell: 'bash',
+                once: true,
+              },
+              {
+                type: 'prompt',
+                prompt: 'Check whether the task is complete',
+                model: 'claude-sonnet-4-5',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.document.hooks.Stop[0].hooks).toEqual([
+      {
+        type: 'command',
+        command: 'verify',
+        args: ['--mode', 'strict'],
+        shell: 'bash',
+        once: true,
+      },
+      {
+        type: 'prompt',
+        prompt: 'Check whether the task is complete',
+        model: 'claude-sonnet-4-5',
+      },
+    ]);
+  });
+
   test('rejects blank conditions and oversized matchers', () => {
     const blankCondition = parsePluginHooks({
       hooks: {
