@@ -17,7 +17,7 @@ describe('planPluginHooks', () => {
       document({
         PreToolUse: [{ matcher: '^write_file$', hooks: [{ type: 'command', command: 'check' }] }],
         PostToolUse: [{ hooks: [{ type: 'command', command: 'record' }] }],
-        Stop: [{ matcher: '*', hooks: [{ type: 'command', command: 'verify' }] }],
+        Stop: [{ matcher: '.*', hooks: [{ type: 'command', command: 'verify' }] }],
       }),
       commandCapabilities,
     );
@@ -203,6 +203,7 @@ describe('planPluginHooks', () => {
       {
         handlerTypes: new Set(['command']),
         translateMatcher: () => '^(bash_tool|create_file)$',
+        toPluginToolName: ({ toolName }) => toolName,
       },
     );
 
@@ -213,6 +214,26 @@ describe('planPluginHooks', () => {
         status: 'ready',
         issues: [expect.objectContaining({ code: 'matcher_translated', severity: 'warning' })],
       }),
+    );
+  });
+
+  test('requires reverse tool-name translation when matcher namespaces differ', () => {
+    const plan = planPluginHooks(
+      document({
+        PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'check' }] }],
+      }),
+      {
+        handlerTypes: new Set(['command']),
+        translateMatcher: () => '^bash_tool$',
+      },
+    );
+
+    expect(plan.summary).toEqual({ declared: 1, ready: 0, unsupported: 1 });
+    expect(plan.entries[0].issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'matcher_translated', severity: 'warning' }),
+        expect.objectContaining({ code: 'unmapped_tool_name', severity: 'error' }),
+      ]),
     );
   });
 
@@ -239,6 +260,7 @@ describe('planPluginHooks', () => {
       {
         handlerTypes: new Set(['command']),
         translateMatcher: () => '^bash_tool$',
+        toPluginToolName: ({ toolName }) => toolName,
       },
     );
 
