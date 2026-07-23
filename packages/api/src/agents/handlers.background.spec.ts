@@ -4,7 +4,15 @@ import { CHECK_BACKGROUND_TASK_NAME } from './background';
 import { createToolExecuteHandler } from './handlers';
 
 interface BatchInput {
-  toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }>;
+  toolCalls: Array<{
+    id: string;
+    name: string;
+    args: Record<string, unknown>;
+    stepId?: string;
+    turn?: number;
+    codeSessionContext?: { session_id: string; files?: Array<Record<string, unknown>> };
+    runtimeSessionHint?: string;
+  }>;
   agentId: string;
   configurable: Record<string, unknown>;
   metadata: Record<string, unknown>;
@@ -522,5 +530,430 @@ describe('createToolExecuteHandler — background tool calls', () => {
     });
     expect(toolEndCalls).toHaveLength(1);
     expect(toolEndCalls[0]).toEqual({ name: 'search_mcp_docs', artifact: { files: ['a.png'] } });
+  });
+});
+
+describe('createToolExecuteHandler — backgrounded code execution', () => {
+  interface CodeToolState {
+    calls: number;
+    throwError?: boolean;
+    lastInput?: Record<string, unknown>;
+    lastConfig?: { toolCall?: Record<string, unknown> };
+  }
+
+  const CODE_ARTIFACT = {
+    session_id: 'exec-sess',
+    files: [{ id: 'f1', name: 'plot.png', storage_session_id: 'store-1' }],
+  };
+
+  const makeCodeTool = (state: CodeToolState) =>
+    ({
+      name: 'execute_code',
+      description: 'run code',
+      schema: z.object({ lang: z.string(), code: z.string() }),
+      invoke: async (
+        input: Record<string, unknown>,
+        config: { toolCall?: Record<string, unknown> },
+      ) => {
+        state.calls += 1;
+        state.lastInput = input;
+        state.lastConfig = config;
+        if (state.throwError) {
+          throw new Error('Execution error:\n\nboom');
+        }
+        return { content: 'stdout:\nhello', artifact: CODE_ARTIFACT };
+      },
+    }) as unknown as StructuredToolInterface;
+
+  const codeCall = (overrides: Record<string, unknown> = {}) => ({
+    id: 'call_code',
+    name: 'execute_code',
+    args: { lang: 'py', code: 'print(1)', run_in_background: true },
+    stepId: 'step_1',
+    turn: 2,
+    codeSessionContext: {
+      session_id: 'sess-prev',
+      files: [{ id: 'in1', name: 'data.csv', storage_session_id: 'store-0', resource_id: 'r1' }],
+    },
+    runtimeSessionHint: 'convo-hint',
+    ...overrides,
+  });
+
+  it('carries full code-session config into the detached invoke, harvests onto the dispatch turn, and re-emits on poll', async () => {
+    const state: CodeToolState = { calls: 0 };
+    const persistCalls: Array<Record<string, unknown>> = [];
+    const emitted: unknown[] = [];
+    const toolEndCalls: unknown[] = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      toolEndCallback: (async (data: { output?: unknown }) => {
+        toolEndCalls.push(data.output);
+      }) as unknown as Parameters<typeof createToolExecuteHandler>[0]['toolEndCallback'],
+      persistBackgroundCodeResult: async (params) => {
+        persistCalls.push(params as unknown as Record<string, unknown>);
+        return { attachments: [{ file_id: 'f1', toolCallId: params.toolCallId }] };
+      },
+      emitAttachment: (attachment) => {
+        emitted.push(attachment);
+      },
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = { thread_id: 'exec_convo_code', run_id: 'msg-dispatch' };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall()],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    const handle = JSON.parse(dispatch[0].content);
+    expect(handle.status).toBe('running');
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    // detached invoke received the same session/file config a foreground call gets
+    expect(state.calls).toBe(1);
+    expect(state.lastInput).toEqual({ lang: 'py', code: 'print(1)' });
+    const toolCall = state.lastConfig?.toolCall ?? {};
+    expect(toolCall.session_id).toBe('sess-prev');
+    expect(toolCall._injected_files).toEqual([
+      { id: 'in1', name: 'data.csv', storage_session_id: 'store-0', resource_id: 'r1' },
+    ]);
+    expect(toolCall._runtime_session_hint).toBe('convo-hint');
+    expect(toolCall.id).toBe('call_code');
+    expect(toolCall.stepId).toBe('step_1');
+
+    // completion-time harvest anchored to the ORIGINAL dispatch identity
+    expect(persistCalls).toHaveLength(1);
+    expect(persistCalls[0]).toEqual(
+      expect.objectContaining({
+        toolName: 'execute_code',
+        toolCallId: 'call_code',
+        messageId: 'msg-dispatch',
+        conversationId: 'exec_convo_code',
+        dispatchedAt: expect.any(Number),
+        output: 'stdout:\nhello',
+        artifact: CODE_ARTIFACT,
+      }),
+    );
+    // nothing rode the finalized dispatch turn's callback
+    expect(toolEndCalls).toHaveLength(0);
+
+    const poll = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: handle.background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_code', run_id: 'msg-poll' },
+    })) as Array<{ content: string; artifact?: unknown }>;
+    await flushMicrotasks();
+
+    const polled = JSON.parse(poll[0].content);
+    expect(polled.status).toBe('completed');
+    expect(polled.result).toContain('hello');
+    expect(polled.note).toContain('attached to the tool call');
+    // harvested attachments re-emitted on the live poll stream (not
+    // re-processed), followed by the live completion marker
+    expect(emitted).toEqual([
+      { file_id: 'f1', toolCallId: 'call_code' },
+      expect.objectContaining({
+        type: 'background_task_status',
+        /** Agent-suffixed: sibling agents' `call_0` markers must not upsert
+         *  over each other client-side. */
+        file_id: 'bg-call_code-a',
+        messageId: 'msg-dispatch',
+        toolCallId: 'call_code',
+        status: 'completed',
+      }),
+    ]);
+    expect(toolEndCalls).toHaveLength(0);
+    // the claimed artifact rides the poll result so the SDK folds the exec session
+    expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
+    // the poll also re-anchors the row patch (idempotent heal after full-row saves)
+    expect(persistCalls).toHaveLength(2);
+    expect(persistCalls[1]).toEqual(
+      expect.objectContaining({
+        reapply: true,
+        toolCallId: 'call_code',
+        messageId: 'msg-dispatch',
+        output: 'stdout:\nhello',
+        attachments: [{ file_id: 'f1', toolCallId: 'call_code' }],
+      }),
+    );
+  });
+
+  it('does not gate task completion on the harvest (same-turn polls see completed)', async () => {
+    const state: CodeToolState = { calls: 0 };
+    const toolEndCalls: unknown[] = [];
+    const emitted: unknown[] = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      toolEndCallback: (async (data: { output?: unknown }) => {
+        toolEndCalls.push(data.output);
+      }) as unknown as Parameters<typeof createToolExecuteHandler>[0]['toolEndCallback'],
+      /** The dispatch turn's row does not exist until that turn finalizes, so
+       *  the real persister can block for a long time — completion must not. */
+      persistBackgroundCodeResult: () => new Promise(() => undefined),
+      emitAttachment: (attachment) => {
+        emitted.push(attachment);
+      },
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = { thread_id: 'exec_convo_code_slow', run_id: 'msg-slow' };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_slow' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const poll = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll_slow',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: JSON.parse(dispatch[0].content).background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_code_slow', run_id: 'msg-slow-poll' },
+    })) as Array<{ content: string; artifact?: unknown }>;
+
+    const polled = JSON.parse(poll[0].content);
+    expect(polled.status).toBe('completed');
+    expect(polled.result).toContain('hello');
+    expect(polled.note).toContain('being attached');
+    // harvest hasn't landed: no file attachments yet and no poll-identity
+    // fallback — but the completion marker fires (execution IS finished)
+    expect(emitted).toEqual([
+      expect.objectContaining({ type: 'background_task_status', status: 'completed' }),
+    ]);
+    expect(toolEndCalls).toHaveLength(0);
+    expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
+  });
+
+  it('falls back to poll-turn delivery when the harvest fails (files not lost)', async () => {
+    const state: CodeToolState = { calls: 0 };
+    const toolEndCalls: Array<{ name?: string; artifact?: unknown }> = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      toolEndCallback: (async (data: { output?: { name?: string; artifact?: unknown } }) => {
+        toolEndCalls.push({ name: data.output?.name, artifact: data.output?.artifact });
+      }) as unknown as Parameters<typeof createToolExecuteHandler>[0]['toolEndCallback'],
+      persistBackgroundCodeResult: async () => {
+        throw new Error('mongo down');
+      },
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = { thread_id: 'exec_convo_code_hfail', run_id: 'msg-hfail' };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_hfail' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const poll = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll_hfail',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: JSON.parse(dispatch[0].content).background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_code_hfail', run_id: 'msg-hfail-poll' },
+    })) as Array<{ content: string; artifact?: unknown }>;
+
+    /** Harvest revoked: the poll turn's callback processes the files instead. */
+    expect(toolEndCalls).toHaveLength(1);
+    expect(toolEndCalls[0].artifact).toEqual(CODE_ARTIFACT);
+    expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
+  });
+
+  it('re-anchors failed code tasks on poll (error output heals like success)', async () => {
+    const state: CodeToolState = { calls: 0, throwError: true };
+    const persistCalls: Array<Record<string, unknown>> = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      persistBackgroundCodeResult: async (params) => {
+        persistCalls.push(params as unknown as Record<string, unknown>);
+        return { attachments: [] };
+      },
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = { thread_id: 'exec_convo_code_errheal', run_id: 'msg-errheal' };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_errheal' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll_errheal',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: JSON.parse(dispatch[0].content).background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_code_errheal', run_id: 'msg-errheal-poll' },
+    });
+    await flushMicrotasks();
+
+    expect(persistCalls).toHaveLength(2);
+    expect(persistCalls[1]).toEqual(
+      expect.objectContaining({ reapply: true, toolCallId: 'call_code_errheal' }),
+    );
+    expect(String(persistCalls[1].output)).toContain('boom');
+  });
+
+  it('re-anchors reaped (timed-out) tasks with the client-recognized failure wrapper', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+    try {
+      const persistCalls: Array<Record<string, unknown>> = [];
+      const hangingTool = {
+        name: 'execute_code',
+        description: 'never settles',
+        schema: z.object({ lang: z.string(), code: z.string() }),
+        invoke: () => new Promise(() => undefined),
+      } as unknown as StructuredToolInterface;
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({ loadedTools: [hangingTool] }),
+        persistBackgroundCodeResult: async (params) => {
+          persistCalls.push(params as unknown as Record<string, unknown>);
+          return { attachments: [] };
+        },
+      });
+      const configurable = buildConfig(['execute_code']);
+
+      const dispatch = await runBatch(handler, {
+        toolCalls: [codeCall({ id: 'call_code_reap' })],
+        agentId: 'a',
+        configurable,
+        metadata: { thread_id: 'exec_convo_reap', run_id: 'msg-reap' },
+      });
+
+      /** Past the running TTL the registry reaps the never-settling task. */
+      jest.advanceTimersByTime(31 * 60 * 1000);
+
+      const poll = await runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call_poll_reap',
+            name: CHECK_BACKGROUND_TASK_NAME,
+            args: { background_task_id: JSON.parse(dispatch[0].content).background_task_id },
+          },
+        ],
+        agentId: 'a',
+        configurable,
+        metadata: { thread_id: 'exec_convo_reap', run_id: 'msg-reap-poll' },
+      });
+      await flushMicrotasks();
+
+      expect(JSON.parse(poll[0].content).status).toBe('error');
+      const reapply = persistCalls.find((call) => call.reapply === true);
+      expect(reapply).toBeDefined();
+      expect(String(reapply?.output)).toMatch(/^Error:\s*\[execute_code\]\s*tool call failed:/);
+      expect(String(reapply?.output)).toContain('timed out');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('patches the dispatch turn with the error message when a backgrounded code call fails', async () => {
+    const state: CodeToolState = { calls: 0, throwError: true };
+    const persistCalls: Array<Record<string, unknown>> = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      persistBackgroundCodeResult: async (params) => {
+        persistCalls.push(params as unknown as Record<string, unknown>);
+        return { attachments: [] };
+      },
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = { thread_id: 'exec_convo_code_err', run_id: 'msg-err' };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_err' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(persistCalls).toHaveLength(1);
+    expect(String(persistCalls[0].output)).toContain('boom');
+    /** Parity with foreground failures (the graph's error wrapper) so the
+     *  client's `isError` detection flags the patched output on reload. */
+    expect(String(persistCalls[0].output)).toMatch(
+      /^Error:\s*\[execute_code\]\s*tool call failed:/,
+    );
+    expect(persistCalls[0].artifact).toBeUndefined();
+
+    const poll = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll_err',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: JSON.parse(dispatch[0].content).background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_code_err', run_id: 'msg-err-poll' },
+    });
+    const polled = JSON.parse(poll[0].content);
+    expect(polled.status).toBe('error');
+    expect(polled.error).toContain('boom');
+  });
+
+  it('downgrades code calls to foreground when the host wires no persister (OpenAI-compat routes)', async () => {
+    const state: CodeToolState = { calls: 0 };
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      /** No persistBackgroundCodeResult: generated files could only anchor
+       *  via a later poll (or never) — safer to run the call foreground. */
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = { thread_id: 'exec_convo_code_fg', run_id: 'msg-fg' };
+
+    const results = (await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_fg' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    })) as Array<{ content: string; artifact?: unknown }>;
+
+    expect(state.calls).toBe(1);
+    expect(results[0].content).not.toContain('background_task_id');
+    expect(results[0].content).toContain('hello');
+    expect(results[0].artifact).toEqual(CODE_ARTIFACT);
+    /** The injected flag never reaches the real tool. */
+    expect(state.lastInput).toEqual({ lang: 'py', code: 'print(1)' });
   });
 });
