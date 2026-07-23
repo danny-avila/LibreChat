@@ -1009,8 +1009,12 @@ export default function useResumableSSE(
               const hasResumedContent = data.resumeState.aggregatedContent.length > 0;
 
               let responseIdx = -1;
+              /** Only an id match proves the row belongs to THIS generation; the parent-based
+               *  fallback below can land on a prior sibling (e.g. the answer being regenerated). */
+              let matchedByResponseId = false;
               if (serverResponseId) {
                 responseIdx = messages.findIndex((m) => m.messageId === serverResponseId);
+                matchedByResponseId = responseIdx >= 0;
               }
               if (responseIdx < 0) {
                 responseIdx = messages.findIndex(
@@ -1031,12 +1035,14 @@ export default function useResumableSSE(
 
               if (responseIdx >= 0) {
                 const oldContent = messages[responseIdx]?.content;
-                /** An EMPTY resume snapshot is not authoritative over what we already have:
-                 *  assigning it would erase content the messages query loaded, leaving a bare
-                 *  cursor. Keep the loaded content and let live deltas take over. */
+                /** An EMPTY resume snapshot is not authoritative over content we already loaded
+                 *  for the SAME response: assigning it would erase that content and leave a bare
+                 *  cursor. Restricted to an id match — preserving a fallback-matched row would
+                 *  make a regenerated run append to the answer it is replacing. */
+                const preserveLoadedContent = !hasResumedContent && matchedByResponseId;
                 const responseMessage = {
                   ...messages[responseIdx],
-                  content: hasResumedContent ? data.resumeState.aggregatedContent : oldContent,
+                  content: preserveLoadedContent ? oldContent : data.resumeState.aggregatedContent,
                   iconURL: preferDefinedString(
                     messages[responseIdx]?.iconURL,
                     data.resumeState.iconURL,
@@ -1048,7 +1054,8 @@ export default function useResumableSSE(
                   messageId: responseMessage.messageId,
                   oldContentLength: Array.isArray(oldContent) ? oldContent.length : 0,
                   newContentLength: data.resumeState.aggregatedContent?.length,
-                  preservedExistingContent: !hasResumedContent,
+                  preservedExistingContent: preserveLoadedContent,
+                  matchedByResponseId,
                 });
                 setMessages(updated);
                 resetContentHandler();

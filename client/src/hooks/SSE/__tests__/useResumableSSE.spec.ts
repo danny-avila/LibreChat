@@ -1306,6 +1306,60 @@ describe('useResumableSSE', () => {
       unmount();
     });
 
+    /**
+     * Regenerate: the new run's response id is not in the loaded history yet, so the
+     * parent-based fallback lands on the answer being REPLACED. Preserving that row's
+     * content would make the regenerated run's deltas append to the stale answer, so an
+     * empty snapshot must still clear a row we only matched heuristically.
+     */
+    it('does not preserve content on a row matched only by the parent fallback', async () => {
+      const submission = buildSubmission();
+      const chatHelpers = buildChatHelpers();
+      chatHelpers.getMessages.mockReturnValue([
+        {
+          messageId: 'msg-1',
+          conversationId: CONV_ID,
+          isCreatedByUser: true,
+          text: 'Hello',
+        },
+        {
+          messageId: 'resp-previous',
+          parentMessageId: 'msg-1',
+          conversationId: CONV_ID,
+          isCreatedByUser: false,
+          text: '',
+          content: [{ type: 'text', text: 'the answer being regenerated' }],
+        },
+      ] as unknown as TMessage[]);
+
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const sse = getLastSSE();
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            sync: true,
+            resumeState: {
+              runSteps: [],
+              aggregatedContent: [],
+              responseMessageId: 'resp-regenerated',
+            },
+          }),
+        });
+      });
+
+      const synced = chatHelpers.setMessages.mock.calls
+        .map(([messages]) => messages as TMessage[])
+        .reverse()
+        .find((messages) => messages?.some((m) => m.messageId === 'resp-previous'))
+        ?.find((m) => m.messageId === 'resp-previous');
+      expect(synced?.content).toEqual([]);
+      unmount();
+    });
+
     it('still applies the resume snapshot when it carries content', async () => {
       const { submission, chatHelpers } = renderWithLoadedResponse();
       const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
