@@ -211,12 +211,20 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
    * owner's context via `runInTenantContext`.
    */
   async function runTick(): Promise<number> {
-    // Do NOT gate claims on the BASE config's `enabled`: schedules can be enabled
-    // per user/role/tenant even when the base config disables them, so gating here
-    // would silently never fire those users' occurrences. The fire path re-resolves
-    // the OWNER's limits and skips ('disabled') any occurrence whose owner has the
-    // feature off, so an owner-scoped disable is still honored. The base config only
-    // supplies the per-tick claim budget (a global throttle).
+    // GLOBAL kill switch: stop claiming entirely. This is the operator's hard stop
+    // (SCHEDULES_DISABLED, or `interface.schedules: false` in the BASE config), which
+    // no principal override can widen — distinct from per-principal availability below.
+    // Deliberately gates CLAIMS only; reconcile() is never gated, because in-flight
+    // runs must still be settled while the feature is off or they strand `started`
+    // rows and leak capacity forever.
+    if (await deps.isGloballyDisabled()) {
+      return 0;
+    }
+    // Do NOT gate claims on the per-principal `enabled`: schedules can be enabled per
+    // user/role/tenant, so gating here would silently never fire those users'
+    // occurrences. The fire path re-resolves the OWNER's limits and skips ('disabled')
+    // any occurrence whose owner has the feature off, so an owner-scoped disable is
+    // still honored. The base config only supplies the per-tick claim budget.
     const limits = await deps.getLimits();
     let fired = 0;
     // Cap on ACTIVE scheduled runs, not just per-tick starts: the loopback chat

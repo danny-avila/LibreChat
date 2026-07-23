@@ -98,6 +98,14 @@ export interface ScheduleEngineDeps {
   /** Global in-flight scheduled-run count (system tenant scope) for the fire cap. */
   countActiveRunsGlobal: () => Promise<number>;
   /**
+   * The GLOBAL kill switch, deliberately distinct from per-principal availability.
+   * True when scheduling is stopped for the whole deployment: the SCHEDULES_DISABLED
+   * env lever (works even when the config plane is unhealthy), or `interface.schedules:
+   * false` in the BASE config — read base-only so no role/user/tenant override can
+   * re-enable it. Checked once per engine tick, so the uncached read is negligible.
+   */
+  isGloballyDisabled: () => Promise<boolean>;
+  /**
    * Runs `claim` against the lowest free GLOBAL capacity slot, retrying the next slot
    * when the unique partial index rejects a collision. Enforces fireConcurrency in the
    * database instead of via a read-then-compare count, so concurrent admissions of

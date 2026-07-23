@@ -16,6 +16,7 @@ type ActiveRun = { scheduleId: string; scheduledFor: Date; conversationId?: stri
 
 function makeService(
   getActiveRunsForUser: jest.Mock<Promise<ActiveRun[]>, [string]>,
+  getAppConfig?: SchedulesServiceDeps['getAppConfig'],
 ): ReturnType<typeof createSchedulesService> {
   const methods = {
     disableUserSchedulesForDeletion: jest.fn(async () => undefined),
@@ -24,7 +25,7 @@ function makeService(
   };
   const deps = {
     methods,
-    getAppConfig: jest.fn(async () => ({})),
+    getAppConfig: getAppConfig ?? jest.fn(async () => ({})),
     findUserById: jest.fn(async () => null),
     findBalance: jest.fn(async () => null),
     upsertBalance: jest.fn(async () => null),
@@ -89,5 +90,55 @@ describe('quiesceUserSchedules drain wait', () => {
     await expect(service.quiesceUserSchedules('user-1')).resolves.toBeUndefined();
     // Only the initial collection read; the drain loop is skipped for an empty set.
     expect(getActive).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('global kill switch', () => {
+  const noRuns = () => jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]);
+
+  afterEach(() => {
+    delete process.env.SCHEDULES_DISABLED;
+  });
+
+  it('is off by default', async () => {
+    const service = makeService(noRuns());
+    expect(await service.engineDeps.isGloballyDisabled()).toBe(false);
+  });
+
+  it('trips on the SCHEDULES_DISABLED env lever without reading config', async () => {
+    process.env.SCHEDULES_DISABLED = 'true';
+    // Throwing getAppConfig proves the env lever works even when the config plane is
+    // unhealthy — the case where a config-dependent kill switch would fail.
+    const getAppConfig = jest.fn(async () => {
+      throw new Error('config plane down');
+    }) as unknown as SchedulesServiceDeps['getAppConfig'];
+    const service = makeService(noRuns(), getAppConfig);
+    expect(await service.engineDeps.isGloballyDisabled()).toBe(true);
+    expect(getAppConfig).not.toHaveBeenCalled();
+  });
+
+  it('trips on `interface.schedules: false` read from the BASE config only', async () => {
+    const getAppConfig = jest.fn(async (options?: { baseOnly?: boolean }) =>
+      options?.baseOnly === true
+        ? { interfaceConfig: { schedules: false } }
+        : // A principal-merged view that re-enables must NOT be consulted: the global
+          // stop is base-only so no role/user/tenant override can widen past it.
+          { interfaceConfig: { schedules: true } },
+    ) as unknown as SchedulesServiceDeps['getAppConfig'];
+    const service = makeService(noRuns(), getAppConfig);
+    expect(await service.engineDeps.isGloballyDisabled()).toBe(true);
+    expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+  });
+
+  it('does not trip when only a principal-merged config disables it', async () => {
+    // Per-principal availability is NOT the global stop; the engine keeps claiming so
+    // other principals still fire, and the fire path skips this owner's occurrences.
+    const getAppConfig = jest.fn(async (options?: { baseOnly?: boolean }) =>
+      options?.baseOnly === true
+        ? { interfaceConfig: { schedules: true } }
+        : { interfaceConfig: { schedules: false } },
+    ) as unknown as SchedulesServiceDeps['getAppConfig'];
+    const service = makeService(noRuns(), getAppConfig);
+    expect(await service.engineDeps.isGloballyDisabled()).toBe(false);
   });
 });

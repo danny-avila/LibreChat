@@ -25,6 +25,7 @@ import { DEFAULT_SCHEDULE_LIMITS } from './types';
 import { getBalanceConfig } from '../app/config';
 import { startScheduleEngine } from './engine';
 import { withCapacitySlot } from './capacity';
+import { isEnabled } from '../utils/common';
 
 /** Recordable terminal/paused run outcome, as accepted by `recordRunOutcome`. */
 type ScheduleRunOutcomeStatus = Parameters<ScheduleMethods['recordRunOutcome']>[0]['status'];
@@ -369,6 +370,19 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     // Counted in system scope so the cap is GLOBAL — a per-owner (tenant-scoped)
     // count would let multiple tenants collectively exceed fireConcurrency.
     countActiveRunsGlobal: () => runAsSystem(() => methods.countActiveRuns()),
+    isGloballyDisabled: async () => {
+      // Env first: an incident lever that must work even if the DB/config plane is the
+      // thing failing (a kill switch that needs a healthy DB is the one that fails when
+      // you need it).
+      if (isEnabled(process.env.SCHEDULES_DISABLED)) {
+        return true;
+      }
+      // BASE config only: DB principal overrides can narrow availability but must never
+      // widen past an operator's global stop, so `schedules: false` in librechat.yaml is
+      // genuinely non-overridable rather than emergent from the override filters.
+      const base = await deps.getAppConfig({ baseOnly: true });
+      return base?.interfaceConfig?.schedules === false;
+    },
     // Occupancy is read in SYSTEM scope so the cap is global across tenants (the
     // owner's tenant context would only see its own runs); the claim itself stays in
     // the caller's context so the inserted row keeps correct tenant ownership.
