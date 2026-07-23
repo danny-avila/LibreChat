@@ -264,6 +264,15 @@ export async function fireSchedule(
       return { fired: false, skipped: 'disabled' as const };
     }
 
+    // Account-deletion barrier, re-checked at the DISPATCH boundary. Admission (the
+    // create/update/run-now handlers) is the primary gate, but there is always a window
+    // between admission and persistence, so the owner is re-checked immediately before a
+    // billed generation is dispatched. Skips silently: the deletion cascade owns the row.
+    if (await deps.isOwnerDeleting(user.id)) {
+      await advance();
+      return { fired: false, skipped: 'user_deleting' as const };
+    }
+
     // Re-check the owner's live schedule permission: a role that lost
     // SCHEDULES access after the schedule was created must stop firing.
     if (!(await deps.hasScheduleAccess(user))) {

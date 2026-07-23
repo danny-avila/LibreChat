@@ -43,10 +43,11 @@ jest.mock('@librechat/api', () => ({
 }));
 
 jest.mock('~/server/services/Schedules', () => ({
-  quiesceUserSchedules: jest.fn().mockResolvedValue(undefined),
+  quiesceUserSchedules: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('~/models', () => ({
+  markUserDeleting: jest.fn().mockResolvedValue(new Date()),
   deleteAllUserSessions: (...args) => mockDeleteAllUserSessions(...args),
   deleteAllSharedLinks: (...args) => mockDeleteAllSharedLinks(...args),
   updateUserPlugins: (...args) => mockUpdateUserPlugins(...args),

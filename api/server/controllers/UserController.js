@@ -25,6 +25,7 @@ const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~
 const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { quiesceUserSchedules } = require('~/server/services/Schedules');
+const { markUserDeleting } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
@@ -349,9 +350,34 @@ const deleteUserController = async (req, res) => {
     // in-flight loopback runs, so a scheduled generation can't persist messages
     // after the messages/conversations below are deleted. Best-effort — a failure
     // here must not block account deletion (deleteSchedulesByUser still erases rows).
-    await quiesceUserSchedules(user.id).catch((error) =>
-      logger.error('[deleteUserController] Failed to quiesce scheduled chats', error),
+    // BARRIER FIRST, before anything slow. Quiescing takes time, and the whole drain
+    // window has to already be refusing new work: a one-shot disable scan cannot close
+    // the create race (a schedule created after the scan simply is not in it), so every
+    // scheduling admission consults this durable user-level flag instead. Raising it
+    // also invalidates the auth user-doc cache, without which the barrier would only be
+    // as strong as the shortest cache TTL.
+    await markUserDeleting(user.id).catch((error) =>
+      logger.error('[deleteUserController] Failed to raise the deletion barrier', error),
     );
+
+    const quiesced = await quiesceUserSchedules(user.id).catch((error) => {
+      logger.error('[deleteUserController] Failed to quiesce scheduled chats', error);
+      return false;
+    });
+    if (!quiesced) {
+      // DEFER rather than destroy on an unconfirmed drain. A scheduled generation that
+      // could not be confirmed settled may still persist messages, and deleting now
+      // would let it resurrect data for a deleted account. The barrier is durable and
+      // stays up, so nothing new accumulates; `getUsersPendingDeletion` makes this a
+      // resumable work list for a later pass to finish.
+      logger.warn(
+        `[deleteUserController] Deferring destructive deletion for ${user.id}: scheduled runs ` +
+          'did not confirm settlement. The deletion barrier remains in place.',
+      );
+      return res.status(202).json({
+        message: 'Account deletion started; in-flight work is still settling.',
+      });
+    }
 
     await db.deleteMessages({ user: user.id });
     await db.deleteAllUserSessions({ userId: user.id });

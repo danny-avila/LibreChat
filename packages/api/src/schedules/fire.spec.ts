@@ -170,6 +170,8 @@ function makeDeps(
     abortScheduledJob: async () => undefined,
     clearReconciledJob: async () => undefined,
     isJobStoreShared: () => true,
+    isOwnerDeleting: async () => false,
+    isGloballyDisabled: async () => false,
     countActiveRunsGlobal: async () => methods.countActiveRuns(),
     withGlobalCapacitySlot: (cap: number, claim: (slot: number) => Promise<unknown>) =>
       withCapacitySlot(

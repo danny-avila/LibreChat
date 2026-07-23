@@ -30,6 +30,7 @@ function makeService(
     findBalance: jest.fn(async () => null),
     upsertBalance: jest.fn(async () => null),
     resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
+    isUserDeleting: jest.fn(async () => false),
   } as unknown as SchedulesServiceDeps;
   return createSchedulesService(deps);
 }
@@ -60,7 +61,9 @@ describe('quiesceUserSchedules drain wait', () => {
     // Each poll waits one interval; advance twice so the loop observes the drain.
     await jest.advanceTimersByTimeAsync(250);
     await jest.advanceTimersByTimeAsync(250);
-    await expect(pending).resolves.toBeUndefined();
+    // The rows drained, but this harness has no job store so the aborts could not be
+    // CONFIRMED delivered — quiesce reports false and the caller must defer destruction.
+    await expect(pending).resolves.toBe(false);
 
     // Initial read + at least one poll that observed a non-empty set + the empty one.
     expect(getActive.mock.calls.length).toBeGreaterThanOrEqual(3);
@@ -73,9 +76,10 @@ describe('quiesceUserSchedules drain wait', () => {
     const service = makeService(getActive);
 
     const pending = service.quiesceUserSchedules('user-1');
-    // Advance past the full bounded timeout; the loop must give up, not hang.
+    // Advance past the full bounded timeout; the loop must give up, not hang, and must
+    // report the drain as UNCONFIRMED so deletion defers rather than destroying.
     await jest.advanceTimersByTimeAsync(10_000);
-    await expect(pending).resolves.toBeUndefined();
+    await expect(pending).resolves.toBe(false);
 
     // It polled repeatedly (bounded by the deadline) and surfaced the un-drained runs.
     expect(getActive.mock.calls.length).toBeGreaterThan(1);
@@ -87,7 +91,9 @@ describe('quiesceUserSchedules drain wait', () => {
     const getActive = jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]);
     const service = makeService(getActive);
 
-    await expect(service.quiesceUserSchedules('user-1')).resolves.toBeUndefined();
+    // Nothing to abort and nothing to drain, so the quiesce is trivially CONFIRMED and
+    // the deletion cascade may proceed to its destructive steps.
+    await expect(service.quiesceUserSchedules('user-1')).resolves.toBe(true);
     // Only the initial collection read; the drain loop is skipped for an empty set.
     expect(getActive).toHaveBeenCalledTimes(1);
   });

@@ -9,6 +9,7 @@ import type {
 } from '~/types/schedule';
 import type { ScheduleMethods } from './schedule';
 import { createScheduleMethods } from './schedule';
+import { createUserMethods } from './user';
 import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
@@ -22,6 +23,7 @@ let mongoServer: MongoMemoryServer;
 let Schedule: Model<IScheduleDocument>;
 let ScheduleRun: Model<IScheduleRunDocument>;
 let methods: ScheduleMethods;
+let userMethods: ReturnType<typeof createUserMethods>;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -32,6 +34,7 @@ beforeAll(async () => {
   await Schedule.init();
   await ScheduleRun.init();
   methods = createScheduleMethods(mongoose);
+  userMethods = createUserMethods(mongoose);
 });
 
 afterAll(async () => {
@@ -1044,5 +1047,43 @@ describe('deletion quiescing (soft-delete, drain, erase)', () => {
     // The deleting schedule no longer occupies the cap, so a replacement fits.
     const b = await methods.createScheduleWithSlot(scheduleData({ user }), 1);
     expect(b).not.toBe('limit');
+  });
+});
+
+describe('account-deletion barrier (delete vs create)', () => {
+  it('is one-way and monotonic under concurrent deletion requests', async () => {
+    const User = mongoose.models.User;
+    const user = await User.create({ email: `barrier-${Date.now()}@test.dev`, name: 'B' });
+
+    expect(await userMethods.isUserDeleting(user._id.toString())).toBe(false);
+
+    // Six concurrent deletion requests must agree on ONE timestamp: the barrier is
+    // stamped only when absent, so there is no un-delete race and no ABA window.
+    const stamps = await Promise.all(
+      Array.from({ length: 6 }, () => userMethods.markUserDeleting(user._id.toString())),
+    );
+    const unique = new Set(stamps.map((d) => d?.getTime()));
+    expect(unique.size).toBe(1);
+    expect(await userMethods.isUserDeleting(user._id.toString())).toBe(true);
+  });
+
+  it('fails CLOSED for an unknown user so admission never leaks', async () => {
+    // Refusing work for a live user is recoverable (the caller retries); admitting work
+    // for a deleting one is not, so an unresolvable lookup must report "deleting".
+    expect(await userMethods.isUserDeleting(new mongoose.Types.ObjectId().toString())).toBe(true);
+  });
+
+  it('surfaces unfinished cascades as a resumable work list', async () => {
+    const User = mongoose.models.User;
+    const pendingUser = await User.create({
+      email: `pending-${Date.now()}@test.dev`,
+      name: 'P',
+    });
+    await userMethods.markUserDeleting(pendingUser._id.toString());
+
+    // A deletion deferred on an unconfirmed quiesce (or crashed part-way) leaves the
+    // barrier up with the document still present — exactly what a later pass queries.
+    const pending = await userMethods.getUsersPendingDeletion(50);
+    expect(pending.some((u) => u._id.toString() === pendingUser._id.toString())).toBe(true);
   });
 });

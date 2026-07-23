@@ -102,6 +102,8 @@ export interface SchedulesServiceDeps {
     agentId: string,
     user: ScheduleUserContext,
   ) => Promise<'ok' | 'missing' | 'forbidden'>;
+  /** Whether this user's account deletion has begun. Fail-closed (unknown == true). */
+  isUserDeleting: (userId: string) => Promise<boolean>;
 }
 
 export interface SchedulesService {
@@ -154,8 +156,13 @@ export interface SchedulesService {
   ) => Promise<boolean>;
   /** Soft-deletes an owner's schedule: stop claims, abort active runs, drain, erase. */
   deleteScheduleForOwner: (scheduleId: string, userId: string) => Promise<boolean>;
-  /** Quiesces all of a user's schedules ahead of account deletion (stop + abort). */
-  quiesceUserSchedules: (userId: string) => Promise<void>;
+  /**
+   * Quiesces all of a user's schedules ahead of account deletion (stop + abort + drain).
+   * Returns whether the drain was CONFIRMED: false means at least one run could not be
+   * confirmed settled, and the caller must NOT proceed to destructive deletion — the
+   * durable barrier keeps refusing new work while a later pass finishes the cascade.
+   */
+  quiesceUserSchedules: (userId: string) => Promise<boolean>;
   initializeScheduleEngine: (options?: {
     clustered?: boolean;
   }) => Promise<ReturnType<typeof startScheduleEngine> | undefined>;
@@ -370,6 +377,7 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     // Counted in system scope so the cap is GLOBAL — a per-owner (tenant-scoped)
     // count would let multiple tenants collectively exceed fireConcurrency.
     countActiveRunsGlobal: () => runAsSystem(() => methods.countActiveRuns()),
+    isOwnerDeleting: (userId) => deps.isUserDeleting(userId),
     isGloballyDisabled: async () => {
       // Env first: an incident lever that must work even if the DB/config plane is the
       // thing failing (a kill switch that needs a healthy DB is the one that fails when
@@ -699,7 +707,7 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
    * the loopback jobs of any in-flight runs, so a scheduled generation cannot keep
    * persisting messages after the account's messages/conversations are deleted.
    */
-  async function quiesceUserSchedules(userId: string): Promise<void> {
+  async function quiesceUserSchedules(userId: string): Promise<boolean> {
     await methods.disableUserSchedulesForDeletion(userId);
     const active = await methods.getActiveRunsForUser(userId);
     const unconfirmed: string[] = [];
@@ -728,7 +736,8 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     // deployment without a shared stream store the run's generation may live on a
     // peer worker and keep persisting for the now-deleted account. Known unshared-
     // topology limitation (see the init warning); make it visible.
-    if (remaining > 0 || unconfirmed.length > 0) {
+    const confirmed = remaining === 0 && unconfirmed.length === 0;
+    if (!confirmed) {
       logger.warn(
         `[schedules] account-deletion quiesce did not confirm ${Math.max(remaining, unconfirmed.length)} ` +
           `in-flight scheduled run(s) settled${unconfirmed.length ? ` [${unconfirmed.join(', ')}]` : ''} ` +
@@ -736,6 +745,7 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
           'shared stream store (USE_REDIS_STREAMS).',
       );
     }
+    return confirmed;
   }
 
   return {

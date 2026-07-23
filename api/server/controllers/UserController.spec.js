@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 jest.mock('~/server/services/Schedules', () => ({
-  quiesceUserSchedules: jest.fn().mockResolvedValue(undefined),
+  quiesceUserSchedules: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('@librechat/data-schemas', () => {
@@ -21,6 +21,7 @@ jest.mock('@librechat/data-schemas', () => {
 jest.mock('~/models', () => {
   const _mongoose = require('mongoose');
   return {
+    markUserDeleting: jest.fn().mockResolvedValue(new Date()),
     deleteAllUserSessions: jest.fn().mockResolvedValue(undefined),
     deleteAllSharedLinks: jest.fn().mockResolvedValue(undefined),
     deleteAllAgentApiKeys: jest.fn().mockResolvedValue(undefined),

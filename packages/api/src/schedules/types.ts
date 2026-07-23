@@ -105,6 +105,8 @@ export interface ScheduleEngineDeps {
    * re-enable it. Checked once per engine tick, so the uncached read is negligible.
    */
   isGloballyDisabled: () => Promise<boolean>;
+  /** Whether the run owner's account deletion has begun. Fail-closed (unknown == true). */
+  isOwnerDeleting: (userId: string) => Promise<boolean>;
   /**
    * Runs `claim` against the lowest free GLOBAL capacity slot, retrying the next slot
    * when the unique partial index rejects a collision. Enforces fireConcurrency in the
@@ -142,6 +144,7 @@ export interface FireResult {
     | 'superseded'
     | 'agent_deleted'
     | 'user_missing'
+    | 'user_deleting'
     | 'permission_revoked'
     | 'disabled';
   error?: string;

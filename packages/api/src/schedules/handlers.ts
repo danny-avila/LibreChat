@@ -24,6 +24,25 @@ export interface SchedulesHandlersDeps {
    * runs, and erases once drained. Returns false when not found / already deleting.
    */
   deleteSchedule: (id: string, userId: string) => Promise<boolean>;
+  /** Whether this user's account deletion has begun. Fail-closed (unknown == true). */
+  isUserDeleting: (userId: string) => Promise<boolean>;
+}
+
+/**
+ * Refuses a scheduling WRITE once the owner's account deletion has begun. A one-shot
+ * disable scan can never close this race (a create landing after the scan is simply not
+ * in it), so admission consults the durable user-level barrier instead. Fail-closed.
+ */
+async function rejectIfUserDeleting(
+  deps: SchedulesHandlersDeps,
+  userId: string,
+  res: Response,
+): Promise<boolean> {
+  if (!(await deps.isUserDeleting(userId))) {
+    return false;
+  }
+  res.status(410).json({ error: 'This account is being deleted' });
+  return true;
 }
 
 /** Bounded attempts to clear the upload TTL on a schedule's attachments. */
@@ -174,6 +193,9 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       return;
     }
     const user = requestUser(req);
+    if (await rejectIfUserDeleting(deps, user.id, res)) {
+      return;
+    }
     const limits = await deps.getLimits(user);
     if (!limits.enabled) {
       res.status(403).json({ error: 'Scheduled chats are disabled' });
@@ -239,6 +261,9 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     }
     const { id } = req.params as { id: string };
     const user = requestUser(req);
+    if (await rejectIfUserDeleting(deps, user.id, res)) {
+      return;
+    }
     const existing = await deps.methods.getScheduleById(id, user.id);
     if (existing == null) {
       res.status(404).json({ error: 'Schedule not found' });
@@ -328,6 +353,9 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
 
   async function runScheduleNow(req: ServerRequest, res: Response): Promise<void> {
     const { id } = req.params as { id: string };
+    if (await rejectIfUserDeleting(deps, requestUser(req).id, res)) {
+      return;
+    }
     const schedule = await deps.methods.getScheduleById(id, requestUser(req).id);
     if (schedule == null) {
       res.status(404).json({ error: 'Schedule not found' });

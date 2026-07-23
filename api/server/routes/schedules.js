@@ -64,6 +64,9 @@ const handlers = createSchedulesHandlers({
   // Quiesce-then-erase delete: stops new claims, aborts in-flight loopback runs,
   // and erases once drained (reconciler completes drain) so evidence is preserved.
   deleteSchedule: deleteScheduleForOwner,
+  // Durable account-deletion barrier. A one-shot disable scan cannot close the
+  // create race, so every scheduling WRITE consults the user-level flag instead.
+  isUserDeleting: methods.isUserDeleting,
 });
 
 router.get('/', checkSchedulesAccess, handlers.listSchedules);
