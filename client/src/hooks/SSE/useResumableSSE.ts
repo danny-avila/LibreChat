@@ -1006,6 +1006,7 @@ export default function useResumableSSE(
               const messages = getMessages() ?? [];
               const userMsgId = userMessage.messageId;
               const serverResponseId = data.resumeState.responseMessageId;
+              const hasResumedContent = data.resumeState.aggregatedContent.length > 0;
 
               let responseIdx = -1;
               if (serverResponseId) {
@@ -1030,9 +1031,12 @@ export default function useResumableSSE(
 
               if (responseIdx >= 0) {
                 const oldContent = messages[responseIdx]?.content;
+                /** An EMPTY resume snapshot is not authoritative over what we already have:
+                 *  assigning it would erase content the messages query loaded, leaving a bare
+                 *  cursor. Keep the loaded content and let live deltas take over. */
                 const responseMessage = {
                   ...messages[responseIdx],
-                  content: data.resumeState.aggregatedContent,
+                  content: hasResumedContent ? data.resumeState.aggregatedContent : oldContent,
                   iconURL: preferDefinedString(
                     messages[responseIdx]?.iconURL,
                     data.resumeState.iconURL,
@@ -1044,6 +1048,7 @@ export default function useResumableSSE(
                   messageId: responseMessage.messageId,
                   oldContentLength: Array.isArray(oldContent) ? oldContent.length : 0,
                   newContentLength: data.resumeState.aggregatedContent?.length,
+                  preservedExistingContent: !hasResumedContent,
                 });
                 setMessages(updated);
                 resetContentHandler();

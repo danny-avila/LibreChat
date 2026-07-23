@@ -1239,6 +1239,88 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  describe('sync content reconciliation', () => {
+    const DB_CONTENT = [{ type: 'text', text: 'streamed before the reload' }];
+
+    const renderWithLoadedResponse = () => {
+      const submission = buildSubmission();
+      const chatHelpers = buildChatHelpers();
+      chatHelpers.getMessages.mockReturnValue([
+        {
+          messageId: 'msg-1',
+          conversationId: CONV_ID,
+          isCreatedByUser: true,
+          text: 'Hello',
+        },
+        {
+          messageId: 'resp-1',
+          parentMessageId: 'msg-1',
+          conversationId: CONV_ID,
+          isCreatedByUser: false,
+          text: '',
+          content: DB_CONTENT,
+        },
+      ] as unknown as TMessage[]);
+      return { submission, chatHelpers };
+    };
+
+    const emitSync = async (aggregatedContent: unknown[]) => {
+      const sse = getLastSSE();
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            sync: true,
+            resumeState: {
+              runSteps: [],
+              aggregatedContent,
+              responseMessageId: 'resp-1',
+            },
+          }),
+        });
+      });
+    };
+
+    const syncedResponse = (chatHelpers: ReturnType<typeof buildChatHelpers>) => {
+      const call = chatHelpers.setMessages.mock.calls
+        .map(([messages]) => messages as TMessage[])
+        .reverse()
+        .find((messages) => messages?.some((m) => m.messageId === 'resp-1'));
+      return call?.find((m) => m.messageId === 'resp-1');
+    };
+
+    /**
+     * An empty snapshot is what a resuming client gets when the conversation's job was
+     * replaced mid-flight. Assigning it erased the content the messages query had already
+     * loaded, leaving a message that renders as a bare cursor forever.
+     */
+    it('keeps already-loaded content when the resume snapshot is empty', async () => {
+      const { submission, chatHelpers } = renderWithLoadedResponse();
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      await emitSync([]);
+
+      expect(syncedResponse(chatHelpers)?.content).toEqual(DB_CONTENT);
+      unmount();
+    });
+
+    it('still applies the resume snapshot when it carries content', async () => {
+      const { submission, chatHelpers } = renderWithLoadedResponse();
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const resumed = [{ type: 'text', text: 'authoritative resumed content' }];
+      await emitSync(resumed);
+
+      expect(syncedResponse(chatHelpers)?.content).toEqual(resumed);
+      unmount();
+    });
+  });
+
   it('replays OAuth run step delta events from resume state sync', async () => {
     const submission = buildSubmission();
     const chatHelpers = buildChatHelpers();
