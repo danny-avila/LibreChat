@@ -22,6 +22,8 @@ import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 import { formatDate } from '~/utils';
 
+const PAGE_SIZE = 50;
+
 export default function SharedImages() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -29,7 +31,24 @@ export default function SharedImages() {
   const [isRevokeOpen, setIsRevokeOpen] = useState(false);
   const [revokeRow, setRevokeRow] = useState<SharedImageItem | null>(null);
 
-  const { data, isLoading, refetch } = useSharedImagesQuery({ enabled: isOpen });
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError, refetch } =
+    useSharedImagesQuery(
+      { pageSize: PAGE_SIZE },
+      {
+        enabled: isOpen,
+        refetchOnWindowFocus: false,
+        refetchOnMount: false,
+      },
+    );
+
+  const allImages = useMemo(() => data?.pages.flatMap((page) => page.images) ?? [], [data?.pages]);
+
+  const handleFetchNextPage = useCallback(async () => {
+    if (hasNextPage !== true || isFetchingNextPage) {
+      return;
+    }
+    await fetchNextPage();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   const revokeMutation = useRevokeSharedImageMutation({
     onSuccess: async () => {
@@ -111,6 +130,9 @@ export default function SharedImages() {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex h-8 w-8 items-center justify-center rounded-md p-0 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-ring"
+                  aria-label={localize('com_ui_open_source_chat_new_tab_title', {
+                    title: row.original.shareTitle || localize('com_ui_untitled'),
+                  })}
                 >
                   <MessageSquare className="size-4" aria-hidden="true" />
                 </a>
@@ -160,20 +182,25 @@ export default function SharedImages() {
             <OGDialogTitle>{localize('com_nav_shared_images')}</OGDialogTitle>
           </OGDialogHeader>
           {isLoading && <Spinner className="mx-auto h-6 w-6" />}
-          {!isLoading && (data?.images.length ?? 0) === 0 && (
+          {!isLoading && isError && (
+            <p className="py-6 text-center text-sm text-text-secondary">
+              {localize('com_ui_shared_images_load_error')}
+            </p>
+          )}
+          {!isLoading && !isError && allImages.length === 0 && (
             <p className="py-6 text-center text-sm text-text-secondary">
               {localize('com_ui_shared_images_empty')}
             </p>
           )}
-          {!isLoading && (data?.images.length ?? 0) > 0 && (
+          {!isLoading && !isError && allImages.length > 0 && (
             <DataTable
               columns={columns}
-              data={data?.images ?? []}
+              data={allImages}
               className="scrollbar-gutter-stable"
               showCheckboxes={false}
-              hasNextPage={false}
-              isFetchingNextPage={false}
-              fetchNextPage={() => Promise.resolve()}
+              hasNextPage={hasNextPage}
+              isFetchingNextPage={isFetchingNextPage}
+              fetchNextPage={handleFetchNextPage}
               isLoading={isLoading}
               enableSearch={false}
             />

@@ -87,7 +87,8 @@ export const getSharedLinks = (
 export const createSharedLink = (conversationId: string) => `${shareRoot}/${conversationId}`;
 export const updateSharedLink = (shareId: string) => `${shareRoot}/${shareId}`;
 /** Owner-side view across all shares: list/revoke embedded images without deleting the share. */
-export const sharedImages = () => `${shareRoot}/images`;
+export const sharedImages = (pageSize: number, cursor?: string) =>
+  `${shareRoot}/images?pageSize=${pageSize}${cursor ? `&cursor=${cursor}` : ''}`;
 export const revokeSharedImage = (shareId: string, fileId: string) =>
   `${shareRoot}/images/${shareId}/${encodeURIComponent(fileId)}`;
 /** Share-scoped file routes: serve snapshotted files via shared-link permission. */

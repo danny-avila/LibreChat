@@ -7,6 +7,10 @@ const mockGrantCreationPermissions = jest.fn();
 const mockUpdateSharedLinkPermissionsExpiration = jest.fn();
 const mockSharedLinksAccess = jest.fn((_req, _res, next) => next());
 const mockBuildSharedLinkStartupPayload = jest.fn();
+const activeShareFilter = {
+  $or: [{ expiredAt: null }, { expiredAt: { $gt: new Date('2030-01-01T00:00:00.000Z') } }],
+};
+const mockActiveExpirationFilter = jest.fn(() => activeShareFilter);
 const mockCanAccessSharedLink = jest.fn((req, _res, next) => {
   req.shareResourceId = 'resource-123';
   next();
@@ -33,6 +37,7 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), warn: jest.fn() },
   getTenantId: (...args) => mockGetTenantId(...args),
   createTempChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
+  activeExpirationFilter: (...args) => mockActiveExpirationFilter(...args),
   runAsSystem: jest.fn((fn) => fn()),
   tenantStorage: { run: jest.fn((_ctx, fn) => fn()) },
   SYSTEM_TENANT_ID: '__SYSTEM__',
@@ -523,7 +528,11 @@ describe('share routes', () => {
   });
 });
 
-const findChain = (value) => ({ sort: jest.fn().mockReturnValue(lean(value)) });
+const findChain = (value) => ({
+  sort: jest.fn().mockReturnValue({
+    limit: jest.fn().mockReturnValue(lean(value)),
+  }),
+});
 
 describe('shared images (owner-side view across all shares)', () => {
   beforeEach(() => {
@@ -570,10 +579,106 @@ describe('shared images (owner-side view across all shares)', () => {
       conversationId: 'convo-1',
       filename: 'diagram.png',
     });
+    expect(response.body.hasNextPage).toBe(false);
+    expect(response.body.nextCursor).toBeNull();
     expect(mongoose.models.SharedLink.find).toHaveBeenCalledWith(
-      { user: 'user-123', fileSnapshots: { $exists: true, $ne: [] } },
-      'shareId title conversationId fileSnapshots createdAt',
+      {
+        user: 'user-123',
+        snapshotFiles: { $ne: false },
+        $and: [
+          activeShareFilter,
+          {
+            $or: [
+              { fileSnapshots: { $exists: false } },
+              { fileSnapshots: { $exists: true, $ne: [] } },
+            ],
+          },
+        ],
+      },
+      'shareId title conversationId fileSnapshots revokedFileIds createdAt',
     );
+  });
+
+  it('backfills legacy shares before listing their images', async () => {
+    mongoose.models.SharedLink.find.mockReturnValue(
+      findChain([
+        {
+          shareId: 'share-legacy',
+          title: 'Legacy Conversation',
+          conversationId: 'convo-legacy',
+          createdAt: new Date('2030-01-01T00:00:00.000Z'),
+        },
+      ]),
+    );
+    backfillSharedLinkFiles.mockResolvedValue([
+      { file_id: 'file-legacy', filename: 'legacy.png', type: 'image/png' },
+    ]);
+
+    const response = await request(buildApp()).get('/api/share/images');
+
+    expect(response.status).toBe(200);
+    expect(response.body.images).toEqual([
+      {
+        file_id: 'file-legacy',
+        filename: 'legacy.png',
+        shareId: 'share-legacy',
+        shareTitle: 'Legacy Conversation',
+        conversationId: 'convo-legacy',
+        createdAt: '2030-01-01T00:00:00.000Z',
+      },
+    ]);
+    expect(backfillSharedLinkFiles).toHaveBeenCalledWith('share-legacy');
+  });
+
+  it('does not list images already revoked from a share', async () => {
+    mongoose.models.SharedLink.find.mockReturnValue(
+      findChain([
+        {
+          shareId: 'share-1',
+          title: 'Conversation A',
+          conversationId: 'convo-1',
+          createdAt: new Date('2030-01-01T00:00:00.000Z'),
+          revokedFileIds: ['file-1'],
+          fileSnapshots: [
+            { file_id: 'file-1', filename: 'revoked.png', type: 'image/png' },
+            { file_id: 'file-2', filename: 'visible.png', type: 'image/png' },
+          ],
+        },
+      ]),
+    );
+
+    const response = await request(buildApp()).get('/api/share/images');
+
+    expect(response.status).toBe(200);
+    expect(response.body.images.map((img) => img.file_id)).toEqual(['file-2']);
+  });
+
+  it('returns pagination metadata for another page of shares', async () => {
+    mongoose.models.SharedLink.find.mockReturnValue(
+      findChain([
+        {
+          shareId: 'share-1',
+          title: 'Conversation A',
+          conversationId: 'convo-1',
+          createdAt: new Date('2030-01-02T00:00:00.000Z'),
+          fileSnapshots: [{ file_id: 'file-1', filename: 'first.png', type: 'image/png' }],
+        },
+        {
+          shareId: 'share-2',
+          title: 'Conversation B',
+          conversationId: 'convo-2',
+          createdAt: new Date('2030-01-01T00:00:00.000Z'),
+          fileSnapshots: [{ file_id: 'file-2', filename: 'second.png', type: 'image/png' }],
+        },
+      ]),
+    );
+
+    const response = await request(buildApp()).get('/api/share/images?pageSize=1');
+
+    expect(response.status).toBe(200);
+    expect(response.body.images.map((img) => img.file_id)).toEqual(['file-1']);
+    expect(response.body.hasNextPage).toBe(true);
+    expect(response.body.nextCursor).toBe('2030-01-02T00:00:00.000Z');
   });
 
   it('returns an empty list when the user has no shares with snapshotted files', async () => {
@@ -604,8 +709,11 @@ describe('shared images (owner-side view across all shares)', () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ success: true });
     expect(mongoose.models.SharedLink.updateOne).toHaveBeenCalledWith(
-      { shareId: 'share-1', user: 'user-123' },
-      { $pull: { fileSnapshots: { file_id: 'file-1' } } },
+      { shareId: 'share-1', user: 'user-123', ...activeShareFilter },
+      {
+        $pull: { fileSnapshots: { file_id: 'file-1' } },
+        $addToSet: { revokedFileIds: 'file-1' },
+      },
     );
   });
 

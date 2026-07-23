@@ -20,6 +20,7 @@ const {
   tenantStorage,
   SYSTEM_TENANT_ID,
   createTempChatExpirationDate,
+  activeExpirationFilter,
 } = require('@librechat/data-schemas');
 const { FileSources, PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
@@ -73,6 +74,8 @@ const resolveSharedLinkExpiration = (req, conversationId) =>
  */
 const allowSharedLinks =
   process.env.ALLOW_SHARED_LINKS === undefined || isEnabled(process.env.ALLOW_SHARED_LINKS);
+const DEFAULT_SHARED_IMAGES_PAGE_SIZE = 50;
+const MAX_SHARED_IMAGES_PAGE_SIZE = 100;
 
 /** Run within the snapshot file's tenant context (mirrors canAccessSharedLink). */
 const runWithTenant = (tenantId, fn) =>
@@ -239,30 +242,84 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
  */
 router.get('/images', requireJwtAuth, async (req, res) => {
   try {
+    const pageSizeParam = Array.isArray(req.query.pageSize)
+      ? req.query.pageSize[0]
+      : req.query.pageSize;
+    const cursorParam = Array.isArray(req.query.cursor) ? req.query.cursor[0] : req.query.cursor;
+    const pageSize = Math.min(
+      MAX_SHARED_IMAGES_PAGE_SIZE,
+      Math.max(1, parseInt(pageSizeParam, 10) || DEFAULT_SHARED_IMAGES_PAGE_SIZE),
+    );
+    const cursor = cursorParam ? new Date(cursorParam) : null;
+    if (cursorParam && Number.isNaN(cursor.getTime())) {
+      return res.status(400).json({ message: 'Invalid cursor' });
+    }
+
     const SharedLink = mongoose.models.SharedLink;
+    const query = {
+      user: req.user.id,
+      snapshotFiles: { $ne: false },
+      ...(cursor ? { createdAt: { $lt: cursor } } : {}),
+      $and: [
+        activeExpirationFilter(),
+        {
+          $or: [
+            { fileSnapshots: { $exists: false } },
+            { fileSnapshots: { $exists: true, $ne: [] } },
+          ],
+        },
+      ],
+    };
     const shares = await SharedLink.find(
-      { user: req.user.id, fileSnapshots: { $exists: true, $ne: [] } },
-      'shareId title conversationId fileSnapshots createdAt',
+      query,
+      'shareId title conversationId fileSnapshots revokedFileIds createdAt',
     )
       .sort({ createdAt: -1 })
+      .limit(pageSize + 1)
       .lean();
 
-    const images = shares.flatMap((share) =>
-      (share.fileSnapshots || [])
-        .filter((f) => typeof f.type === 'string' && f.type.startsWith('image/'))
-        .map((f) => ({
-          file_id: f.file_id,
-          filename: f.filename,
-          width: f.width,
-          height: f.height,
-          shareId: share.shareId,
-          shareTitle: share.title,
-          conversationId: share.conversationId,
-          createdAt: share.createdAt,
-        })),
-    );
+    const hasNextPage = shares.length > pageSize;
+    const pageShares = shares.slice(0, pageSize);
+    const images = [];
 
-    res.status(200).json({ images });
+    for (const share of pageShares) {
+      let fileSnapshots = share.fileSnapshots;
+      if (fileSnapshots === undefined && share.shareId) {
+        const backfilled = await backfillSharedLinkFiles(share.shareId);
+        fileSnapshots = [];
+        if (Array.isArray(backfilled)) {
+          fileSnapshots = backfilled;
+        } else if (backfilled) {
+          fileSnapshots = [backfilled];
+        }
+      }
+
+      const revokedFileIds = new Set(share.revokedFileIds || []);
+      for (const f of fileSnapshots || []) {
+        if (
+          typeof f.type === 'string' &&
+          f.type.startsWith('image/') &&
+          !revokedFileIds.has(f.file_id)
+        ) {
+          images.push({
+            file_id: f.file_id,
+            filename: f.filename,
+            width: f.width,
+            height: f.height,
+            shareId: share.shareId,
+            shareTitle: share.title,
+            conversationId: share.conversationId,
+            createdAt: share.createdAt,
+          });
+        }
+      }
+    }
+
+    res.status(200).json({
+      images,
+      nextCursor: hasNextPage ? pageShares[pageShares.length - 1]?.createdAt : null,
+      hasNextPage,
+    });
   } catch (error) {
     logger.error('Error listing shared images:', error);
     res.status(500).json({ message: 'Error listing shared images' });
@@ -274,8 +331,15 @@ router.delete('/images/:shareId/:file_id', requireJwtAuth, async (req, res) => {
   try {
     const SharedLink = mongoose.models.SharedLink;
     const result = await SharedLink.updateOne(
-      { shareId: req.params.shareId, user: req.user.id },
-      { $pull: { fileSnapshots: { file_id: req.params.file_id } } },
+      {
+        shareId: req.params.shareId,
+        user: req.user.id,
+        ...activeExpirationFilter(),
+      },
+      {
+        $pull: { fileSnapshots: { file_id: req.params.file_id } },
+        $addToSet: { revokedFileIds: req.params.file_id },
+      },
     );
     if (result.matchedCount === 0) {
       return res.status(404).json({ message: 'Share not found' });

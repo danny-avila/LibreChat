@@ -14,6 +14,7 @@ export interface ISharedLink extends Document {
   tenantId?: string;
   snapshotFiles?: boolean;
   fileSnapshots?: SharedFileSnapshot[];
+  revokedFileIds?: string[];
 }
 
 /**
@@ -76,6 +77,10 @@ const shareSchema: Schema<ISharedLink> = new Schema(
     },
     fileSnapshots: {
       type: [fileSnapshotSchema],
+      default: undefined,
+    },
+    revokedFileIds: {
+      type: [String],
       default: undefined,
     },
   },

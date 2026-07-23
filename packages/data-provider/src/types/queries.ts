@@ -100,6 +100,11 @@ export interface SharedLinkQueryData {
   pageParams: (string | null)[];
 }
 
+export interface SharedImagesListParams {
+  pageSize: number;
+  cursor?: string;
+}
+
 export type SharedImageItem = {
   file_id: string;
   filename: string;
@@ -113,6 +118,8 @@ export type SharedImageItem = {
 
 export interface SharedImagesResponse {
   images: SharedImageItem[];
+  nextCursor: string | null;
+  hasNextPage: boolean;
 }
 
 export type AllPromptGroupsFilterRequest = {

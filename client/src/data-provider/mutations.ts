@@ -202,6 +202,7 @@ export const useCreateSharedLinkMutation = (
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
         queryClient.setQueryData([QueryKeys.sharedLinks, _data.conversationId], _data);
+        queryClient.invalidateQueries({ queryKey: [QueryKeys.sharedImages], exact: false });
 
         onSuccess?.(_data, vars, context);
       },
@@ -234,6 +235,7 @@ export const useUpdateSharedLinkMutation = (
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
         queryClient.setQueryData([QueryKeys.sharedLinks, _data.conversationId], _data);
+        queryClient.invalidateQueries({ queryKey: [QueryKeys.sharedImages], exact: false });
 
         onSuccess?.(_data, vars, context);
       },
@@ -300,6 +302,10 @@ export const useDeleteSharedLinkMutation = (
     onSettled: () => {
       queryClient.invalidateQueries({
         queryKey: [QueryKeys.sharedLinks],
+        exact: false,
+      });
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.sharedImages],
         exact: false,
       });
     },

@@ -1,3 +1,4 @@
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import {
   QueryKeys,
   dataService,
@@ -6,14 +7,6 @@ import {
   defaultOrderQuery,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
-import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import type {
-  UseInfiniteQueryOptions,
-  QueryObserverResult,
-  UseQueryOptions,
-  InfiniteData,
-} from '@tanstack/react-query';
-import type t from 'librechat-data-provider';
 import type {
   Action,
   TPreset,
@@ -29,8 +22,16 @@ import type {
   TCheckUserKeyResponse,
   SharedLinksListParams,
   SharedLinksResponse,
+  SharedImagesListParams,
   SharedImagesResponse,
 } from 'librechat-data-provider';
+import type {
+  UseInfiniteQueryOptions,
+  QueryObserverResult,
+  UseQueryOptions,
+  InfiniteData,
+} from '@tanstack/react-query';
+import type t from 'librechat-data-provider';
 import type { ConversationCursorData } from '~/utils/convos';
 import { findConversationInInfinite, isNotFoundError } from '~/utils';
 
@@ -166,17 +167,24 @@ export const useSharedLinksQuery = (
 };
 
 export const useSharedImagesQuery = (
-  config?: UseQueryOptions<SharedImagesResponse>,
-): QueryObserverResult<SharedImagesResponse> => {
-  return useQuery<SharedImagesResponse>(
-    [QueryKeys.sharedImages],
-    () => dataService.listSharedImages(),
-    {
-      staleTime: 5 * 60 * 1000,
-      cacheTime: 30 * 60 * 1000,
-      ...config,
-    },
-  );
+  params: SharedImagesListParams,
+  config?: UseInfiniteQueryOptions<SharedImagesResponse, unknown>,
+) => {
+  const { pageSize } = params;
+
+  return useInfiniteQuery<SharedImagesResponse>({
+    queryKey: [QueryKeys.sharedImages, { pageSize }],
+    queryFn: ({ pageParam }) =>
+      dataService.listSharedImages({
+        pageSize,
+        cursor: pageParam?.toString(),
+      }),
+    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
+    keepPreviousData: true,
+    staleTime: 0,
+    cacheTime: 5 * 60 * 1000,
+    ...config,
+  });
 };
 
 export const useConversationTagsQuery = (

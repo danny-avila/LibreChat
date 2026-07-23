@@ -1092,6 +1092,7 @@
   "com_ui_revoke_shared_image_confirm": "Revoke access to this image? Anyone with the shared link will no longer be able to view it.",
   "com_ui_revoke_shared_image_success": "Successfully revoked image",
   "com_ui_revoke_shared_image_error": "There was an error revoking the image",
+  "com_ui_shared_images_load_error": "There was an error loading shared images",
   "com_ui_shared_images_empty": "No images shared yet",
   "com_ui_delete_success": "Successfully deleted",
   "com_ui_delete_tool": "Delete Tool",
