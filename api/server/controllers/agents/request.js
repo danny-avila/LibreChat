@@ -22,6 +22,7 @@ const {
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
 const { saveMessage, getMessages, getConvo } = require('~/models');
+const { applyPendingAttachments, hasPendingAttachments } = require('~/server/services/pendingAttachments');
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -1340,6 +1341,20 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
           { ...finalResponse, user: userId },
           { context: 'api/server/controllers/agents/request.js - response end' },
         );
+        
+        // Apply any pending attachments from MCP tools
+        // MCP tools execute before the message exists, so attachments are stored
+        // temporarily and applied here after the message is saved
+        if (hasPendingAttachments(messageId)) {
+          try {
+            const applied = await applyPendingAttachments(userId, messageId);
+            if (applied > 0) {
+              logger.debug(`[AgentController] Applied ${applied} pending attachments to message ${messageId}`);
+            }
+          } catch (attachmentError) {
+            logger.error('[AgentController] Error applying pending attachments:', attachmentError);
+          }
+        }
       }
     }
     // Edge case: sendMessage completed but abort happened during sendCompletion

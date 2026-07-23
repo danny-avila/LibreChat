@@ -29,6 +29,8 @@ const {
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
 const { saveBase64Image } = require('~/server/services/Files/process');
+const { addPendingAttachment } = require('~/server/services/pendingAttachments');
+const db = require('~/models');
 
 function isHostFileAuthoringArtifact(artifact) {
   return artifact?.[HOST_FILE_AUTHORING_ARTIFACT_KEY] === true;
@@ -721,12 +723,24 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
    * @type {ToolEndCallback}
    */
   return async (data, metadata) => {
+    // DEBUG: Log all tool end callback data
+    logger.debug('[ToolEndCallback] Called with data:', JSON.stringify({
+      hasOutput: !!data?.output,
+      outputKeys: data?.output ? Object.keys(data.output) : [],
+      hasArtifact: !!data?.output?.artifact,
+      artifactKeys: data?.output?.artifact ? Object.keys(data.output.artifact) : [],
+      toolName: data?.output?.name || 'unknown',
+      toolCallId: data?.output?.tool_call_id || 'unknown',
+    }));
+    
     const output = data?.output;
     if (!output) {
+      logger.debug('[ToolEndCallback] No output, returning early');
       return;
     }
 
     if (!output.artifact) {
+      logger.debug('[ToolEndCallback] No artifact in output, returning early');
       return;
     }
 
@@ -867,6 +881,73 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
         );
       }
       return;
+    }
+
+    /**
+     * Handle MCP tool file artifacts.
+     * MCP tools can return file artifacts with file_id (already uploaded via service endpoint).
+     * These are processed differently from code execution files - they don't need downloading,
+     * just attachment metadata for the message.
+     */
+    if (output.artifact.files && output.artifact.file_ids) {
+      const isMCPFileArtifact = output.artifact.files.some(f => f.file_id);
+      if (isMCPFileArtifact) {
+        for (const file of output.artifact.files) {
+          if (!file.file_id) {
+            continue;
+          }
+          artifactPromises.push(
+            (async () => {
+              const fileMetadata = {
+                file_id: file.file_id,
+                filename: file.filename || file.name,
+                filepath: file.filepath,
+                type: file.mimeType || file.type,
+                bytes: file.bytes,
+                source: file.source || 'local',
+                user: req?.user?.id,
+                messageId: metadata.run_id,
+                toolCallId: output.tool_call_id,
+                conversationId: metadata.thread_id,
+              };
+              
+              if (!streamId && !res.headersSent) {
+                return fileMetadata;
+              }
+              
+              if (fileMetadata) {
+                writeAttachment(res, streamId, fileMetadata);
+                
+                // Store attachment in pending registry for deferred update
+                // Message doesn't exist during tool execution, so we store the attachment
+                // and apply it when the message is created
+                if (metadata.run_id) {
+                  const attachmentData = {
+                    type: 'file',
+                    file_id: fileMetadata.file_id,
+                    filename: fileMetadata.filename,
+                    filepath: fileMetadata.filepath,
+                    mimeType: fileMetadata.type,
+                    bytes: fileMetadata.bytes,
+                    source: fileMetadata.source,
+                    toolCallId: output.tool_call_id,
+                    conversationId: metadata.thread_id,
+                    userId: req?.user?.id,
+                  };
+                  
+                  addPendingAttachment(metadata.run_id, attachmentData);
+                  logger.debug(`[MCP] Stored pending attachment ${fileMetadata.file_id} for message ${metadata.run_id}`);
+                }
+              }
+              return fileMetadata;
+            })().catch((error) => {
+              logger.error('Error processing MCP file artifact:', error);
+              return null;
+            }),
+          );
+        }
+        return;
+      }
     }
 
     if (!isCodeArtifactToolOutput(output)) {

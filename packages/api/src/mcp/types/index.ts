@@ -64,7 +64,22 @@ export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'err
 
 export type MCPTool = Tool;
 export type MCPToolListResponse = ListToolsResult;
-export type ToolContentPart = TextContent | ImageContent | EmbeddedResource | AudioContent;
+
+/**
+ * File content type from MCP tools.
+ * Used when MCP servers return file artifacts in tool responses.
+ */
+export interface FileContent {
+  type: 'file';
+  file_id: string;
+  filename: string;
+  filepath?: string;
+  mimeType?: string;
+  bytes?: number;
+  source?: string;
+}
+
+export type ToolContentPart = TextContent | ImageContent | EmbeddedResource | AudioContent | FileContent;
 export type { TextContent, ImageContent, EmbeddedResource, AudioContent };
 export type MCPToolCallResponse =
   | undefined
@@ -123,6 +138,21 @@ export type FileSearchSource = {
   [key: string]: unknown;
 };
 
+/**
+ * File artifact structure for MCP tool file responses.
+ * Contains full metadata for file attachments.
+ */
+export interface FileArtifact {
+  id: string;
+  name: string;
+  file_id?: string;
+  filename?: string;
+  filepath?: string;
+  mimeType?: string;
+  bytes?: number;
+  source?: string;
+}
+
 export type Artifacts =
   | {
       content?: FormattedContent[];
@@ -134,7 +164,7 @@ export type Artifacts =
         fileCitations?: boolean;
       };
       [Tools.web_search]?: SearchResultData;
-      files?: Array<{ id: string; name: string }>;
+      files?: FileArtifact[];
       session_id?: string;
       file_ids?: string[];
     }

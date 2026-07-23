@@ -44,6 +44,7 @@ const { createOboTrustChecker } = require('./OboPolicyService');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
+const { addPendingAttachment } = require('./pendingAttachments');
 
 const MAX_CACHE_SIZE = 1000;
 const lastReconnectAttempts = new Map();
@@ -845,8 +846,159 @@ function createToolInstance({
         oboTrustChecker: createOboTrustChecker(),
       });
 
-      if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
-        return result[0];
+      // DEBUG: Log the result structure from mcpManager.callTool()
+      logger.info(`[MCP][${serverName}][${toolName}] Result type: ${typeof result}, isArray: ${Array.isArray(result)}`);
+      if (Array.isArray(result)) {
+        logger.info(`[MCP][${serverName}][${toolName}] Result array length: ${result.length}`);
+        logger.info(`[MCP][${serverName}][${toolName}] Result[0] type: ${typeof result[0]}`);
+        logger.info(`[MCP][${serverName}][${toolName}] Result[1] (artifacts): ${JSON.stringify(result[1])}`);
+      } else {
+        logger.info(`[MCP][${serverName}][${toolName}] Result (non-array): ${JSON.stringify(result).substring(0, 500)}`);
+      }
+      
+      // MCP tools return [content, artifacts] from formatToolContent
+      // Need to structure this properly for toolEndCallback in handlers.ts
+      if (Array.isArray(result)) {
+        let [content, artifacts] = result;
+        
+        // WORKAROUND: Handle malformed MCP server responses where content is a JSON string
+        // Some MCP servers return [json_string, null] instead of [content_array, artifacts_object]
+        // The JSON string may contain various structures depending on the MCP server implementation:
+        // - {_meta, content, structuredContent: {files: [...]}, isError}
+        // - {result: {message, file: {...}}} or {result: {message, files: [...]}}
+        if (typeof content === 'string' && (artifacts === null || artifacts === undefined)) {
+          try {
+            const parsed = JSON.parse(content);
+            logger.info(`[MCP][${serverName}][${toolName}] Parsed malformed response, keys: ${Object.keys(parsed).join(', ')}`);
+            
+            let extractedFiles = [];
+            
+            // Try different possible file locations in the response structure
+            
+            // 1. Check structuredContent.files (original format)
+            if (parsed.structuredContent?.files && Array.isArray(parsed.structuredContent.files)) {
+              extractedFiles = parsed.structuredContent.files;
+              logger.info(`[MCP][${serverName}][${toolName}] Found files in structuredContent.files`);
+            }
+            
+            // 2. Check result.file (single file in result)
+            if (parsed.result?.file && parsed.result.file.file_id) {
+              extractedFiles = [parsed.result.file];
+              logger.info(`[MCP][${serverName}][${toolName}] Found file in result.file`);
+            }
+            
+            // 3. Check result.files (array of files in result)
+            if (parsed.result?.files && Array.isArray(parsed.result.files)) {
+              extractedFiles = parsed.result.files;
+              logger.info(`[MCP][${serverName}][${toolName}] Found files in result.files`);
+            }
+            
+            // 4. Check top-level file
+            if (parsed.file && parsed.file.file_id) {
+              extractedFiles = [parsed.file];
+              logger.info(`[MCP][${serverName}][${toolName}] Found file at top level`);
+            }
+            
+            // 5. Check top-level files array
+            if (parsed.files && Array.isArray(parsed.files)) {
+              extractedFiles = parsed.files;
+              logger.info(`[MCP][${serverName}][${toolName}] Found files array at top level`);
+            }
+            
+            // If we found files, create artifacts
+            if (extractedFiles.length > 0) {
+              artifacts = {
+                files: extractedFiles,
+                file_ids: extractedFiles.map(f => f.file_id).filter(Boolean),
+              };
+              logger.info(`[MCP][${serverName}][${toolName}] Extracted ${artifacts.files.length} files from parsed response`);
+            }
+            
+            // Use the actual content array from parsed response if available
+            if (parsed.content && Array.isArray(parsed.content)) {
+              content = parsed.content;
+            } else if (parsed.result?.message) {
+              // Use result.message as content if available
+              content = parsed.result.message;
+            }
+          } catch (parseError) {
+            logger.warn(`[MCP][${serverName}][${toolName}] Failed to parse content as JSON: ${parseError.message}`);
+          }
+        }
+        
+        // DEBUG: Log artifacts structure
+        logger.info(`[MCP][${serverName}][${toolName}] Artifacts: ${JSON.stringify(artifacts)}`);
+        logger.info(`[MCP][${serverName}][${toolName}] Has files: ${!!(artifacts?.files && artifacts.files.length > 0)}`);
+        
+        // Handle MCP file artifacts directly since on_tool_end events don't fire for MCP tools
+        if (artifacts?.files && artifacts.files.length > 0) {
+          const messageId = config?.metadata?.run_id;
+          const conversationId = config?.metadata?.thread_id;
+          const user = config?.configurable?.user;
+          
+          for (const file of artifacts.files) {
+            if (!file.file_id) {
+              continue;
+            }
+            
+            const fileMetadata = {
+              file_id: file.file_id,
+              filename: file.filename || file.name,
+              filepath: file.filepath,
+              type: file.mimeType || file.type,
+              bytes: file.bytes,
+              source: file.source || 'local',
+              messageId: messageId,
+              toolCallId: config?.toolCall?.id,
+              conversationId: conversationId,
+            };
+            
+            // Stream attachment via SSE
+            // Note: For SSE streams, headersSent is ALWAYS true because the stream is active
+            // We should write to the stream as long as res exists and streamId is valid
+            logger.info(`[MCP][${serverName}][${toolName}] SSE conditions: res=${!!res}, headersSent=${res?.headersSent}, streamId=${streamId}, writableEnded=${res?.writableEnded}`);
+            if (res && streamId !== null && !res.writableEnded) {
+              try {
+                const attachmentEvent = `event: attachment\ndata: ${JSON.stringify(fileMetadata)}\n\n`;
+                res.write(attachmentEvent);
+                logger.info(`[MCP][${serverName}][${toolName}] Streamed file attachment via SSE: ${file.file_id}`);
+              } catch (sseError) {
+                logger.error(`[MCP][${serverName}][${toolName}] Failed to write SSE attachment: ${sseError.message}`);
+              }
+            } else {
+              logger.warn(`[MCP][${serverName}][${toolName}] Cannot stream SSE attachment - res=${!!res}, streamId=${streamId}, writableEnded=${res?.writableEnded}`);
+            }
+            
+            // Store attachment in pending registry for deferred update
+            // Message doesn't exist during tool execution, so we store the attachment
+            // and apply it when the message is created
+            if (messageId) {
+              const attachmentData = {
+                type: 'file',
+                file_id: fileMetadata.file_id,
+                filename: fileMetadata.filename,
+                filepath: fileMetadata.filepath,
+                mimeType: fileMetadata.type,
+                bytes: fileMetadata.bytes,
+                source: fileMetadata.source,
+                toolCallId: config?.toolCall?.id,
+                conversationId: conversationId,
+                userId: user?.id,
+              };
+              
+              addPendingAttachment(messageId, attachmentData);
+              logger.info(`[MCP][${serverName}][${toolName}] Stored pending attachment ${file.file_id} for message ${messageId}`);
+            } else {
+              logger.warn(`[MCP][${serverName}][${toolName}] Cannot store pending attachment - missing messageId`);
+            }
+          }
+        }
+        
+        // Return proper two-tuple format [content, artifacts] that LangGraph expects
+        // For content_and_artifact response format
+        const finalContent = isAssistantsEndpoint(provider) ? content : result;
+        logger.info(`[MCP][${serverName}][${toolName}] Returning two-tuple: content type=${typeof finalContent}, artifacts=${!!artifacts}`);
+        return [finalContent, artifacts];
       }
       return result;
     } catch (error) {
