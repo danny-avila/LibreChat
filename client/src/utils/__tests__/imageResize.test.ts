@@ -53,56 +53,63 @@ describe('imageResize utility', () => {
   });
 
   describe('shouldResizeImage', () => {
-    it('should return true for large image files', () => {
-      const largeImageFile = new File([''], 'test.jpg', {
-        type: 'image/jpeg',
-        lastModified: Date.now(),
-      });
+    const makeImage = (size: number, type = 'image/jpeg', name = 'test.jpg') => {
+      const file = new File([''], name, { type, lastModified: Date.now() });
+      Object.defineProperty(file, 'size', { value: size, writable: false });
+      return file;
+    };
 
-      // Mock large file size
-      Object.defineProperty(largeImageFile, 'size', {
-        value: 100 * 1024 * 1024, // 100MB
-        writable: false,
-      });
-
-      const result = shouldResizeImage(largeImageFile, 50 * 1024 * 1024); // 50MB limit
-      expect(result).toBe(true);
+    it('returns true when image size is above the threshold', () => {
+      const file = makeImage(5 * 1024 * 1024);
+      expect(shouldResizeImage(file, 1024 * 1024)).toBe(true);
     });
 
-    it('should return false for small image files', () => {
-      const smallImageFile = new File([''], 'test.jpg', {
-        type: 'image/jpeg',
-        lastModified: Date.now(),
-      });
-
-      // Mock small file size
-      Object.defineProperty(smallImageFile, 'size', {
-        value: 1024, // 1KB
-        writable: false,
-      });
-
-      const result = shouldResizeImage(smallImageFile, 50 * 1024 * 1024); // 50MB limit
-      expect(result).toBe(false);
+    it('returns false when image size is below the threshold', () => {
+      const file = makeImage(100 * 1024);
+      expect(shouldResizeImage(file, 1024 * 1024)).toBe(false);
     });
 
-    it('should return false for non-image files', () => {
+    it('returns true when image size equals the threshold (strict-less-than boundary)', () => {
+      const threshold = 1024 * 1024;
+      const file = makeImage(threshold);
+      expect(shouldResizeImage(file, threshold)).toBe(true);
+    });
+
+    it('returns false when image size is one byte below the threshold', () => {
+      const threshold = 1024 * 1024;
+      const file = makeImage(threshold - 1);
+      expect(shouldResizeImage(file, threshold)).toBe(false);
+    });
+
+    it('treats a 150KB image as below the 1MB threshold (regression for clientImageResize fix)', () => {
+      const file = makeImage(150 * 1024);
+      expect(shouldResizeImage(file, 1024 * 1024)).toBe(false);
+    });
+
+    it('uses a 1MB default threshold when minSizeBytes is omitted', () => {
+      const belowDefault = makeImage(512 * 1024);
+      const aboveDefault = makeImage(2 * 1024 * 1024);
+      expect(shouldResizeImage(belowDefault)).toBe(false);
+      expect(shouldResizeImage(aboveDefault)).toBe(true);
+    });
+
+    it('allows disabling the size gate with minSizeBytes of 0', () => {
+      const tinyImage = makeImage(1);
+      expect(shouldResizeImage(tinyImage, 0)).toBe(true);
+    });
+
+    it('returns false for non-image files', () => {
       const textFile = new File([''], 'test.txt', {
         type: 'text/plain',
         lastModified: Date.now(),
       });
-
-      const result = shouldResizeImage(textFile);
-      expect(result).toBe(false);
+      Object.defineProperty(textFile, 'size', { value: 5 * 1024 * 1024, writable: false });
+      expect(shouldResizeImage(textFile, 1024 * 1024)).toBe(false);
     });
 
-    it('should return false for GIF files', () => {
-      const gifFile = new File([''], 'test.gif', {
-        type: 'image/gif',
-        lastModified: Date.now(),
-      });
-
-      const result = shouldResizeImage(gifFile);
-      expect(result).toBe(false);
+    it('returns false for GIF files even when above the threshold', () => {
+      const gifFile = makeImage(5 * 1024 * 1024, 'image/gif', 'test.gif');
+      expect(shouldResizeImage(gifFile, 1024 * 1024)).toBe(false);
     });
   });
 });
