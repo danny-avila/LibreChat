@@ -17,6 +17,9 @@ const service = createSchedulesService({
       { upsert: true, new: true },
     ).lean(),
   resolveAgentFireAccess,
+  // Durable account-deletion barrier consulted at the fire dispatch boundary. Without
+  // this, engineDeps.isOwnerDeleting would throw on every scheduled fire.
+  isUserDeleting: methods.isUserDeleting,
 });
 
 module.exports = {

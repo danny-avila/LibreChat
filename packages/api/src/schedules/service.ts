@@ -176,6 +176,25 @@ export interface SchedulesService {
 export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesService {
   const { methods } = deps;
 
+  // Fail LOUDLY at construction, not per-fire. The JS adapter (api/server/services/
+  // Schedules) is not typechecked against SchedulesServiceDeps, so a missing dep would
+  // otherwise surface only as a `deps.X is not a function` deep inside a live fire —
+  // which is exactly how the deletion-barrier probe shipped unwired twice.
+  const REQUIRED_DEPS: Array<keyof SchedulesServiceDeps> = [
+    'methods',
+    'getAppConfig',
+    'findUserById',
+    'findBalance',
+    'upsertBalance',
+    'resolveAgentFireAccess',
+    'isUserDeleting',
+  ];
+  for (const key of REQUIRED_DEPS) {
+    if (deps[key] == null) {
+      throw new Error(`createSchedulesService: missing required dependency "${key}"`);
+    }
+  }
+
   /**
    * Resolves schedule limits, honoring per-principal (role/user) config overrides
    * when a user is supplied (routes pass req.user, the fire path passes the owner).
