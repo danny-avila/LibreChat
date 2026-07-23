@@ -99,7 +99,7 @@ function normalizeMatcher(matcher: string | undefined): string | undefined {
   if (!trimmed || trimmed === '*') {
     return undefined;
   }
-  return matcher;
+  return trimmed;
 }
 
 function getMatcherValidationIssue(
