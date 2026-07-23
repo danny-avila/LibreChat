@@ -152,6 +152,8 @@ export interface GenerationJobManagerOptions {
  * @property errorEvent - Cached error event for late subscribers (errors before client connects)
  * @property syncSent - Whether sync event was sent (reset when all subscribers leave)
  * @property earlyEventBuffer - Buffer for events emitted before first subscriber connects
+ * @property earlyEventSequencePromises - Redis sequence assignments corresponding to buffered
+ *   events. Their absolute values identify the exact ordering frontier after replay.
  * @property hasSubscriber - Whether at least one subscriber has connected
  * @property allSubscribersLeftHandlers - Internal handlers for disconnect events.
  *   These are stored separately from eventTransport subscribers to avoid being counted
@@ -169,6 +171,7 @@ interface RuntimeJobState {
   approvalCleanupRan?: boolean;
   syncSent: boolean;
   earlyEventBuffer: t.ServerSentEvent[];
+  earlyEventSequencePromises: Array<Promise<void | number>>;
   hasSubscriber: boolean;
   allSubscribersLeftHandlers?: Array<(...args: unknown[]) => void>;
 }
@@ -391,6 +394,7 @@ class GenerationJobManagerClass {
       resolveReady: resolveReady!,
       syncSent: false,
       earlyEventBuffer: [],
+      earlyEventSequencePromises: [],
       hasSubscriber: false,
     };
     this.runtimeState.set(streamId, runtime);
@@ -613,6 +617,7 @@ class GenerationJobManagerClass {
       resolveReady: resolveReady!,
       syncSent: jobData.syncSent ?? false,
       earlyEventBuffer: [],
+      earlyEventSequencePromises: [],
       hasSubscriber: false,
       finalEvent,
       errorEvent: jobData.error,
@@ -1048,16 +1053,26 @@ class GenerationJobManagerClass {
       }
     });
 
-    const subscription = this.eventTransport.subscribe(streamId, {
-      onChunk: (event) => {
-        const e = event as t.ServerSentEvent;
-        if (!(e as Record<string, unknown>)._internal) {
-          onChunk(e);
-        }
+    const subscription = this.eventTransport.subscribe(
+      streamId,
+      {
+        onChunk: (event) => {
+          const e = event as t.ServerSentEvent;
+          if (!(e as Record<string, unknown>)._internal) {
+            onChunk(e);
+          }
+        },
+        onDone: (event) => onDone?.(event as t.ServerSentEvent),
+        onError,
       },
-      onDone: (event) => onDone?.(event as t.ServerSentEvent),
-      onError,
-    });
+      {
+        // Redis can publish an early buffered event before the EVAL response carrying its
+        // sequence reaches this process. Hold sequenced pub/sub delivery until replay and
+        // sync establish the exact frontier, otherwise the new subscriber sees it twice.
+        deferSequenceDelivery:
+          this._isRedis && !runtime.hasSubscriber && !options?.skipBufferReplay,
+      },
+    );
 
     try {
       if (subscription.ready) {
@@ -1075,32 +1090,40 @@ class GenerationJobManagerClass {
       runtime.hasSubscriber = true;
 
       /**
-       * Pass earlyReplayCount to syncReorderBuffer so it can prune duplicate pub/sub
-       * entries (seqs 0..count-1) without touching live in-flight chunks.
+       * The Redis sequence is conversation-scoped and therefore may start this
+       * generation above zero. Synchronize with the absolute sequence frontier
+       * assigned to the events replayed below, never with their relative count.
        *
-       * Only set when the buffer was actually replayed — those specific seqs were
-       * delivered via onChunk and their pub/sub copies are duplicates.
        * When skipBufferReplay is true, the resume sync payload delivers aggregated
-       * content up to the Redis counter, so syncReorderBuffer should trust currentSeq
-       * as the frontier (earlyReplayCount = 0).
+       * content up to the Redis counter, so syncReorderBuffer receives no local
+       * replay frontier and trusts the current counter.
        */
-      let earlyReplayCount = 0;
+      let replayedNextSeq: number | undefined;
+      const bufferedEvents = runtime.earlyEventBuffer;
+      const sequencePromises = runtime.earlyEventSequencePromises;
+      runtime.earlyEventBuffer = [];
+      runtime.earlyEventSequencePromises = [];
 
-      if (runtime.earlyEventBuffer.length > 0) {
+      if (bufferedEvents.length > 0) {
+        const sequences = await Promise.all(sequencePromises);
         if (options?.skipBufferReplay) {
           logger.debug(
-            `[GenerationJobManager] Skipping ${runtime.earlyEventBuffer.length} buffered events for ${streamId} (skipBufferReplay)`,
+            `[GenerationJobManager] Skipping ${bufferedEvents.length} buffered events for ${streamId} (skipBufferReplay)`,
           );
         } else {
-          earlyReplayCount = runtime.earlyEventBuffer.length;
-          logger.debug(
-            `[GenerationJobManager] Replaying ${earlyReplayCount} buffered events for ${streamId}`,
+          const assignedSequences = sequences.filter(
+            (sequence): sequence is number => typeof sequence === 'number',
           );
-          for (const bufferedEvent of runtime.earlyEventBuffer) {
+          if (assignedSequences.length > 0) {
+            replayedNextSeq = Math.max(...assignedSequences) + 1;
+          }
+          logger.debug(
+            `[GenerationJobManager] Replaying ${bufferedEvents.length} buffered events for ${streamId}`,
+          );
+          for (const bufferedEvent of bufferedEvents) {
             onChunk(bufferedEvent);
           }
         }
-        runtime.earlyEventBuffer = [];
       } else if (this._isRedis && !options?.skipBufferReplay && jobData?.userMessage) {
         /**
          * Cross-replica fallback: the created event was buffered on the generating
@@ -1125,7 +1148,7 @@ class GenerationJobManagerClass {
       }
 
       try {
-        await this.eventTransport.syncReorderBuffer?.(streamId, earlyReplayCount);
+        await this.eventTransport.syncReorderBuffer?.(streamId, replayedNextSeq);
       } catch (err) {
         logger.warn(
           `[GenerationJobManager] Failed to sync reorder buffer for ${streamId}; proceeding with current nextSeq:`,
@@ -1324,14 +1347,21 @@ class GenerationJobManagerClass {
       }
     }
 
-    if (!runtime.hasSubscriber) {
+    const shouldBuffer = !runtime.hasSubscriber;
+    if (shouldBuffer) {
       runtime.earlyEventBuffer.push(event);
       if (!this._isRedis) {
         return;
       }
     }
 
-    await this.eventTransport.emitChunk(streamId, event);
+    const publishPromise = Promise.resolve(this.eventTransport.emitChunk(streamId, event));
+    if (shouldBuffer) {
+      // Store the promise before yielding so subscribe() can wait for the exact
+      // sequence assignment that belongs to every event it replays.
+      runtime.earlyEventSequencePromises.push(publishPromise);
+    }
+    await publishPromise;
   }
 
   /**
@@ -2030,17 +2060,25 @@ class GenerationJobManagerClass {
     let runningJobsChanged = false;
 
     // Cleanup runtime state for deleted jobs
-    for (const streamId of this.runtimeState.keys()) {
+    for (const [streamId, observedRuntime] of this.runtimeState) {
       if (!(await this.jobStore.hasJob(streamId))) {
+        // A replacement generation can reuse the same streamId while hasJob()
+        // is in flight. Never reap the replacement runtime based on the stale
+        // absence observed for its predecessor.
+        if (this.runtimeState.get(streamId) !== observedRuntime) {
+          if (!observedRuntime.abortController.signal.aborted) {
+            observedRuntime.abortController.abort();
+          }
+          continue;
+        }
         /**
          * Abort any still-pending generation whose job has been reaped (e.g. a
          * stale "running" job removed by the store's failsafe timeout). This
          * unwinds the hung in-flight work so its client/graph references can be
          * garbage collected, rather than leaking via the pending promise.
          */
-        const runtime = this.runtimeState.get(streamId);
-        if (runtime && !runtime.abortController.signal.aborted) {
-          runtime.abortController.abort();
+        if (!observedRuntime.abortController.signal.aborted) {
+          observedRuntime.abortController.abort();
         }
         // If a client is still attached when the job is reaped, send a terminal
         // error first so the SSE connection closes instead of hanging open with no
@@ -2051,6 +2089,11 @@ class GenerationJobManagerClass {
           } catch (err) {
             logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);
           }
+        }
+        // emitError() is asynchronous; a replacement may have appeared while
+        // the terminal event was being published.
+        if (this.runtimeState.get(streamId) !== observedRuntime) {
+          continue;
         }
         this.runtimeState.delete(streamId);
         runningJobsChanged = this.runningJobs.delete(streamId) || runningJobsChanged;

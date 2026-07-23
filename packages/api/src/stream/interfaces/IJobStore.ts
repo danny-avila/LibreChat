@@ -616,7 +616,13 @@ export interface IJobStore {
  * Implementations can use EventEmitter, Redis Pub/Sub, etc.
  */
 export interface IEventTransport {
-  /** Subscribe to events for a stream. `ready` resolves once the transport can receive messages. */
+  /**
+   * Subscribe to events for a stream. `ready` resolves once the transport can receive messages.
+   *
+   * Redis callers can defer sequenced delivery until `syncReorderBuffer()` establishes the
+   * replay frontier. This prevents pub/sub copies of locally buffered events from racing ahead
+   * of, and then being duplicated by, first-subscriber replay.
+   */
   subscribe(
     streamId: string,
     handlers: {
@@ -624,10 +630,15 @@ export interface IEventTransport {
       onDone?: (event: unknown) => void;
       onError?: (error: string) => void;
     },
+    options?: { deferSequenceDelivery?: boolean },
   ): { unsubscribe: () => void; ready?: Promise<void> };
 
-  /** Publish a chunk event - returns Promise in Redis mode for ordered delivery */
-  emitChunk(streamId: string, event: unknown): void | Promise<void>;
+  /**
+   * Publish a chunk event.
+   * Redis returns the assigned absolute sequence so locally replayed events can
+   * advance a subscriber to the exact ordering frontier.
+   */
+  emitChunk(streamId: string, event: unknown): void | Promise<void | number>;
 
   /** Publish a done event - returns Promise in Redis mode for ordered delivery */
   emitDone(streamId: string, event: unknown): void | Promise<void>;
@@ -661,12 +672,11 @@ export interface IEventTransport {
 
   /**
    * Advance subscriber reorder buffer to match publisher sequence (cross-replica safe).
-   * @param earlyReplayCount - Number of events replayed from earlyEventBuffer (same-replica).
-   *   Pending entries with seq < earlyReplayCount are duplicates and are pruned; entries at or
-   *   above are live chunks that arrived during the async GET window and are preserved.
-   *   When 0/undefined (cross-replica), all pending entries are treated as live.
+   * @param replayedNextSeq - Absolute Redis sequence immediately after the last event replayed
+   *   from the local early-event buffer. Pending entries below it are duplicates; entries at
+   *   or above it are live. Undefined means no local replay, so the Redis counter is trusted.
    */
-  syncReorderBuffer?(streamId: string, earlyReplayCount?: number): void | Promise<void>;
+  syncReorderBuffer?(streamId: string, replayedNextSeq?: number): void | Promise<void>;
 
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;
