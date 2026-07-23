@@ -26,6 +26,8 @@ const QUERY_EVENTS = new Set<HookEvent>([
   'PermissionDenied',
   'SubagentStart',
   'SubagentStop',
+  'PreCompact',
+  'PostCompact',
 ]);
 
 export type PluginHookIssueSeverity = 'warning' | 'error';
@@ -43,6 +45,7 @@ export type PluginHookIssueCode =
   | 'unsupported_async'
   | 'unsupported_async_rewake'
   | 'unsupported_session_lifecycle'
+  | 'unsupported_event_payload'
   | 'long_timeout';
 
 export interface PluginHookCompatibilityIssue {
@@ -103,13 +106,14 @@ function normalizeMatcher(matcher: string | undefined): string | undefined {
 }
 
 function getMatcherValidationIssue(
+  sourceEvent: string,
   matcher: string | undefined,
   targetEvent: HookEvent | undefined,
 ): PluginHookCompatibilityIssue | undefined {
   if (!matcher) {
     return undefined;
   }
-  if (targetEvent && !QUERY_EVENTS.has(targetEvent)) {
+  if (targetEvent && !QUERY_EVENTS.has(targetEvent) && sourceEvent !== 'SessionStart') {
     return {
       code: 'unsupported_matcher',
       severity: 'error',
@@ -150,7 +154,17 @@ function getEventIssues(
     ];
   }
   if (sourceEvent !== 'SessionStart') {
-    return [];
+    if (sourceEvent !== 'SubagentStop') {
+      return [];
+    }
+    return [
+      {
+        code: 'unsupported_event_payload',
+        severity: 'error',
+        message:
+          'SubagentStop is unavailable because the LibreChat hook input does not expose stop-hook state',
+      },
+    ];
   }
   if (capabilities.sessionLifecycle !== true) {
     return [
@@ -224,7 +238,7 @@ function planMatcher(
   if (!sourceMatcher) {
     return { issues: [] };
   }
-  const validationIssue = getMatcherValidationIssue(sourceMatcher, targetEvent);
+  const validationIssue = getMatcherValidationIssue(sourceEvent, sourceMatcher, targetEvent);
   if (validationIssue?.code === 'unsupported_matcher' || !targetEvent) {
     return {
       sourceMatcher,
@@ -269,7 +283,7 @@ function planMatcher(
   }
 
   const issues: PluginHookCompatibilityIssue[] = [];
-  const translatedValidationIssue = getMatcherValidationIssue(matcher, targetEvent);
+  const translatedValidationIssue = getMatcherValidationIssue(sourceEvent, matcher, targetEvent);
   if (translatedValidationIssue) {
     issues.push(translatedValidationIssue);
   }

@@ -39,7 +39,9 @@ describe('planPluginHooks', () => {
   test('maps SessionStart to RunStart with an explicit lifecycle warning', () => {
     const plan = planPluginHooks(
       document({
-        SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: 'load-context' }] }],
+        SessionStart: [
+          { matcher: 'resume', hooks: [{ type: 'command', command: 'load-context' }] },
+        ],
       }),
       { ...commandCapabilities, sessionLifecycle: true },
     );
@@ -49,11 +51,69 @@ describe('planPluginHooks', () => {
       expect.objectContaining({
         sourceEvent: 'SessionStart',
         targetEvent: 'RunStart',
+        sourceMatcher: 'resume',
+        matcher: 'resume',
         status: 'ready',
         issues: [
           expect.objectContaining({
             code: 'event_alias',
             severity: 'warning',
+          }),
+        ],
+      }),
+    );
+  });
+
+  test('plans translated compaction-trigger matchers', () => {
+    const plan = planPluginHooks(
+      document({
+        PreCompact: [{ matcher: 'auto', hooks: [{ type: 'command', command: 'before' }] }],
+        PostCompact: [{ matcher: 'manual', hooks: [{ type: 'command', command: 'after' }] }],
+      }),
+      {
+        handlerTypes: new Set(['command']),
+        translateMatcher: ({ matcher }) =>
+          matcher === 'auto'
+            ? '^(token_ratio|remaining_tokens|messages_to_refine|default)$'
+            : '^manual$',
+      },
+    );
+
+    expect(plan.summary).toEqual({ declared: 2, ready: 2, unsupported: 0 });
+    expect(plan.entries).toEqual([
+      expect.objectContaining({
+        sourceEvent: 'PreCompact',
+        sourceMatcher: 'auto',
+        matcher: '^(token_ratio|remaining_tokens|messages_to_refine|default)$',
+        status: 'ready',
+      }),
+      expect.objectContaining({
+        sourceEvent: 'PostCompact',
+        sourceMatcher: 'manual',
+        matcher: '^manual$',
+        status: 'ready',
+      }),
+    ]);
+  });
+
+  test('does not activate SubagentStop without Claude stop-hook state', () => {
+    const plan = planPluginHooks(
+      document({
+        SubagentStop: [{ hooks: [{ type: 'command', command: 'verify' }] }],
+      }),
+      commandCapabilities,
+    );
+
+    expect(plan.summary).toEqual({ declared: 1, ready: 0, unsupported: 1 });
+    expect(plan.entries[0]).toEqual(
+      expect.objectContaining({
+        sourceEvent: 'SubagentStop',
+        targetEvent: 'SubagentStop',
+        status: 'unsupported',
+        issues: [
+          expect.objectContaining({
+            code: 'unsupported_event_payload',
+            severity: 'error',
           }),
         ],
       }),

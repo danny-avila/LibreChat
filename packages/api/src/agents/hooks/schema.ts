@@ -10,15 +10,20 @@ const MAX_GROUPS_PER_EVENT = 128;
 const MAX_HANDLERS_PER_GROUP = 32;
 const MAX_TOTAL_HANDLERS = 512;
 const MAX_TIMEOUT_SECONDS = 3_600;
+const MAX_COMMAND_ARGS = 256;
 
 export interface PluginHookHandler {
   type: string;
   command?: string;
   commandWindows?: string;
+  args?: string[];
+  shell?: 'bash' | 'powershell';
   prompt?: string;
+  model?: string;
   timeout?: number;
   statusMessage?: string;
   if?: string;
+  once?: boolean;
   async?: boolean;
   asyncRewake?: boolean;
   rewakeMessage?: string;
@@ -41,10 +46,14 @@ export const pluginHookHandlerSchema: z.ZodType<PluginHookHandler> = z
     type: z.string().trim().min(1).max(MAX_HANDLER_TYPE_LENGTH),
     command: z.string().min(1).max(MAX_COMMAND_LENGTH).optional(),
     commandWindows: z.string().min(1).max(MAX_COMMAND_LENGTH).optional(),
+    args: z.array(z.string().max(MAX_COMMAND_LENGTH)).max(MAX_COMMAND_ARGS).optional(),
+    shell: z.enum(['bash', 'powershell']).optional(),
     prompt: z.string().min(1).max(MAX_COMMAND_LENGTH).optional(),
+    model: z.string().trim().min(1).max(MAX_STATUS_MESSAGE_LENGTH).optional(),
     timeout: z.number().int().positive().max(MAX_TIMEOUT_SECONDS).optional(),
     statusMessage: z.string().max(MAX_STATUS_MESSAGE_LENGTH).optional(),
     if: z.string().trim().min(1).max(MAX_COMMAND_LENGTH).optional(),
+    once: z.boolean().optional(),
     async: z.boolean().optional(),
     asyncRewake: z.boolean().optional(),
     rewakeMessage: z.string().max(MAX_DESCRIPTION_LENGTH).optional(),
