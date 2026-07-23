@@ -366,12 +366,24 @@ export default function useTextarea({
       const textFile = new File([pastedText], `pasted_text_${+new Date()}.txt`, {
         type: 'text/plain',
       });
+      /** The default paste is already blocked past this point, so if the attachment never
+       *  materializes (validation failure, dismissed modal) the text is re-inserted inline */
+      const restorePaste = () => {
+        if (textAreaRef.current) {
+          insertTextAtCursor(textAreaRef.current, pastedText);
+          forceResize(textAreaRef.current);
+        }
+      };
 
       /** Assistants use their own upload path; bypass option resolution like drag-and-drop does */
       if (isAssistantsEndpoint(conversation?.endpoint)) {
         e.preventDefault();
         setFilesLoading(true);
-        routeFiles([textFile]);
+        void routeFiles([textFile]).then((ok) => {
+          if (ok === false) {
+            restorePaste();
+          }
+        });
         return;
       }
 
@@ -383,13 +395,17 @@ export default function useTextarea({
       e.preventDefault();
       if (options.length === 1) {
         setFilesLoading(true);
-        routeFiles([textFile], options[0]);
+        void routeFiles([textFile], options[0]).then((ok) => {
+          if (ok === false) {
+            restorePaste();
+          }
+        });
         if (options[0] === EToolResources.context) {
           showToast({ message: localize('com_ui_file_attached_as_text'), status: 'info' });
         }
         return;
       }
-      openModal([textFile]);
+      openModal([textFile], restorePaste);
     },
     [
       localize,
