@@ -153,17 +153,41 @@ export function formatToolContent(
 
   const imageUrls: t.FormattedContent[] = [];
   const uiResources: UIResource[] = [];
+  const fileArtifacts: Array<{ id: string; name: string; file_id?: string; filename?: string; filepath?: string; mimeType?: string; bytes?: number; source?: string }> = [];
   let currentTextBlock = '';
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
 
+  // Extended content handlers type to include 'file' for MCP file artifacts
   const contentHandlers: {
     text: (item: Extract<t.ToolContentPart, { type: 'text' }>) => void;
     image: (item: t.ToolContentPart) => void;
     resource: (item: Extract<t.ToolContentPart, { type: 'resource' }>) => void;
+    file: (item: { type: 'file'; file_id: string; filename: string; filepath?: string; mimeType?: string; bytes?: number; source?: string }) => void;
   } = {
     text: (item) => {
       currentTextBlock += (currentTextBlock ? '\n\n' : '') + item.text;
+    },
+
+    /**
+     * Handler for 'file' content type from MCP tools.
+     * Extracts file metadata into artifacts.files for attachment processing.
+     * MCP servers should return file content as:
+     * { type: 'file', file_id: 'uuid', filename: 'doc.pdf', filepath: '/path', type: 'mime', bytes: 123, source: 'local' }
+     */
+    file: (item) => {
+      fileArtifacts.push({
+        id: item.file_id,
+        name: item.filename,
+        file_id: item.file_id,
+        filename: item.filename,
+        filepath: item.filepath,
+        mimeType: item.mimeType,
+        bytes: item.bytes,
+        source: item.source,
+      });
+      // Add text notification about the file
+      currentTextBlock += (currentTextBlock ? '\n\n' : '') + `File attached: ${item.filename}`;
     },
 
     image: (item) => {
@@ -247,6 +271,15 @@ UI Resource Markers Available:
     artifacts = {
       ...artifacts,
       [Tools.ui_resources]: { data: uiResources },
+    };
+  }
+
+  // Add file artifacts from MCP tool responses
+  if (fileArtifacts.length > 0) {
+    artifacts = {
+      ...artifacts,
+      files: fileArtifacts,
+      file_ids: fileArtifacts.map(f => f.file_id).filter(Boolean) as string[],
     };
   }
 

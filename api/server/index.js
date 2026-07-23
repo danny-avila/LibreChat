@@ -59,7 +59,6 @@ const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = pro
 const port = isNaN(Number(PORT)) ? 3080 : Number(PORT);
 const host = HOST || 'localhost';
 const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
-
 const app = express();
 let serverReady = false;
 
@@ -300,6 +299,8 @@ const startServer = async () => {
   app.use('/api/mcp', routes.mcp);
   app.use('/api/rum', routes.rum);
 
+ /* Service-to-service file upload endpoint for MCP servers */
+  app.use('/api/service/files', routes.serviceFiles);
   app.use('/metrics', metricsRouter);
 
   /** 404 for unmatched API routes */

@@ -162,6 +162,35 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         message.isTemporary = false;
       }
 
+      // Apply pending attachments if any exist for this message
+      // This handles deferred attachment updates from MCP tools which execute
+      // before the message is created in the database
+      try {
+        const pendingAttachmentsModule = require('~/server/services/pendingAttachments');
+        if (pendingAttachmentsModule && pendingAttachmentsModule.hasPendingAttachments) {
+          const hasPending = pendingAttachmentsModule.hasPendingAttachments(params.messageId);
+          if (hasPending) {
+            const applied = await pendingAttachmentsModule.applyPendingAttachments(
+              mongoose,
+              userId,
+              params.messageId as string,
+            );
+            if (applied > 0) {
+              logger.info(`Applied ${applied} pending attachments to message ${params.messageId}`);
+              // Refresh the message to include the newly added attachments
+              const refreshedMessage = await Message.findOne({ messageId: params.messageId, user: userId });
+              if (refreshedMessage) {
+                return refreshedMessage.toObject();
+              }
+            }
+          }
+        }
+      } catch (pendingError) {
+        // Silently ignore if pendingAttachments module is not available
+        // This can happen in contexts where the module path is different
+        logger.debug('Pending attachments module not available or error:', pendingError);
+      }
+
       return message.toObject();
     } catch (err: unknown) {
       logger.error('Error saving message:', err);
