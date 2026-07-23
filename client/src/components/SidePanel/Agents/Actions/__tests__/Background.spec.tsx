@@ -78,6 +78,52 @@ describe('ActionBackground', () => {
     expect(screen.getByTestId('action-background-tools')).toBeChecked();
   });
 
+  test('opts in only the selected action when two actions share a hostname', () => {
+    mockAgent = {
+      id: 'agent_abc',
+      tools: [
+        'getWeather_action_api---example---com',
+        'sendMail_action_api---example---com',
+        'web_search',
+      ],
+      actions: ['api---example---com_action_act123', 'api---example---com_action_act456'],
+    };
+    mockAction = {
+      action_id: 'act123',
+      metadata: {
+        raw_spec: JSON.stringify({
+          openapi: '3.0.0',
+          info: { title: 'Weather', version: '1.0.0' },
+          servers: [{ url: 'https://api.example.com' }],
+          paths: {
+            '/weather': {
+              get: { operationId: 'getWeather', responses: { '200': { description: 'ok' } } },
+            },
+          },
+        }),
+      },
+    };
+
+    renderActionBackground();
+    fireEvent.click(screen.getByTestId('action-background-tools'));
+    const options = JSON.parse(screen.getByTestId('options').textContent ?? 'null');
+    expect(options).toEqual({
+      'getWeather_action_api---example---com': { run_in_background: true },
+    });
+  });
+
+  test('hides rather than guesses when a shared-hostname spec cannot be parsed', () => {
+    mockAgent = {
+      id: 'agent_abc',
+      tools: ['getWeather_action_api---example---com', 'sendMail_action_api---example---com'],
+      actions: ['api---example---com_action_act123', 'api---example---com_action_act456'],
+    };
+    mockAction = { action_id: 'act123', metadata: {} };
+
+    renderActionBackground();
+    expect(screen.queryByTestId('action-background-tools')).toBeNull();
+  });
+
   test('hidden for OAuth actions', () => {
     mockAction = { action_id: 'act123', metadata: { auth: { type: AuthTypeEnum.OAuth } } };
     renderActionBackground();
