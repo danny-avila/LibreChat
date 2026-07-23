@@ -1590,6 +1590,121 @@ describe('MessageNav', () => {
       expect(ribs[3].getAttribute('aria-label')).toBe('com_ui_scroll_to_bottom');
     });
 
+    it('pins the terminus outside the scrolling column, between it and the next chevron', () => {
+      const { container } = renderNavWithEnd(threeMessages());
+      const nav = container.querySelector('nav') as HTMLElement;
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+
+      expect(column.querySelector('[data-msg-id="messages-end"]')).toBeNull();
+      expect(nav.querySelector('[data-msg-id="messages-end"]')).not.toBeNull();
+
+      const kids = Array.from(nav.children);
+      const endIndex = kids.findIndex((k) => k.querySelector('[data-msg-id="messages-end"]'));
+      const nextIndex = kids.findIndex(
+        (k) => k.getAttribute('aria-label') === 'com_ui_message_nav_next',
+      );
+      expect(endIndex).toBe(kids.indexOf(column) + 1);
+      expect(nextIndex).toBe(endIndex + 1);
+    });
+
+    it('keeps column children aligned with message entries once the terminus is pinned', () => {
+      const messages = Array.from({ length: 5 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}`, isCreatedByUser: i % 2 === 0 }),
+      );
+      const { container } = renderNavWithEnd(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+
+      expect(column.children).toHaveLength(messages.length);
+      for (let i = 0; i < messages.length; i++) {
+        expect(column.children[i].getAttribute('data-msg-id')).toBe(`m-${i}`);
+      }
+    });
+
+    it('centers the column on the visible window using the pinned-out child indices', () => {
+      const messages = Array.from({ length: 10 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}`, isCreatedByUser: i % 2 === 0 }),
+      );
+      const { container, scrollable } = renderNavWithEnd(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+
+      Object.defineProperty(column, 'clientHeight', { value: 30, configurable: true });
+      Object.defineProperty(column, 'scrollHeight', { value: 200, configurable: true });
+      Object.defineProperty(column, 'scrollTop', { value: 0, writable: true, configurable: true });
+      for (let i = 0; i < column.children.length; i++) {
+        Object.defineProperty(column.children[i], 'offsetTop', { value: i * 10 });
+        Object.defineProperty(column.children[i], 'offsetHeight', { value: 6 });
+      }
+      (scrollable as HTMLElement).scrollTop = 400;
+
+      act(() => {
+        fireEvent.scroll(scrollable);
+        jest.advanceTimersByTime(32);
+      });
+
+      /** Visible rows m-1..m-4 → mid of ribs 1 and 4, minus half the column height. */
+      expect(column.scrollTop).toBe(13);
+    });
+
+    it('starts a scrub drag from the pinned terminus', () => {
+      const messages = Array.from({ length: 5 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}`, isCreatedByUser: i % 2 === 0 }),
+      );
+      const { container, scrollable } = renderNavWithEnd(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      const wrapper = container.querySelector('[data-msg-id="messages-end"]')!
+        .parentElement as HTMLElement;
+      const getById = jest.spyOn(document, 'getElementById');
+
+      act(() => {
+        fireEvent.pointerDown(wrapper, { pointerId: 1, button: 0, buttons: 1, clientY: 60 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 0 });
+      });
+
+      expect(getById.mock.calls.map((c) => c[0])).toContain('m-0');
+      getById.mockRestore();
+      expect(scrollable).toBeDefined();
+    });
+
+    it('previews the terminus on hover even though it sits outside the column', () => {
+      const { container } = renderNavWithEnd(threeMessages());
+      const wrapper = container.querySelector('[data-msg-id="messages-end"]')!
+        .parentElement as HTMLElement;
+
+      act(() => {
+        fireEvent.pointerEnter(wrapper, { pointerId: 1, clientY: 5 });
+        jest.advanceTimersByTime(80);
+      });
+      expect(document.body.querySelector('[role="tooltip"]')).toHaveTextContent(
+        'com_ui_scroll_to_bottom',
+      );
+
+      act(() => {
+        fireEvent.pointerLeave(wrapper, { pointerId: 1 });
+      });
+      expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+    });
+
+    it('previews the terminus when it takes keyboard focus', () => {
+      const { container } = renderNavWithEnd(threeMessages());
+      const endRib = container.querySelector('[data-msg-id="messages-end"]') as HTMLElement;
+
+      act(() => {
+        endRib.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+        jest.advanceTimersByTime(80);
+      });
+      expect(document.body.querySelector('[role="tooltip"]')).toHaveTextContent(
+        'com_ui_scroll_to_bottom',
+      );
+
+      act(() => {
+        endRib.dispatchEvent(
+          new FocusEvent('focusout', { bubbles: true, relatedTarget: document.body }),
+        );
+      });
+      expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+    });
+
     it('omits the terminus indicator and the nav when there are fewer than 3 messages', () => {
       const messages = [
         buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),

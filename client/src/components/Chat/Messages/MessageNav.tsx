@@ -313,6 +313,16 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     return map;
   }, [entries]);
 
+  /** The terminus rib is pinned beside the down chevron rather than living in
+   *  the scrolling column, so it stays reachable however far the rail scrolls. */
+  const { messageEntries, endEntry } = useMemo(() => {
+    const last = entries[entries.length - 1];
+    if (last?.isEnd === true) {
+      return { messageEntries: entries.slice(0, -1), endEntry: last };
+    }
+    return { messageEntries: entries, endEntry: null };
+  }, [entries]);
+
   const getCurrentVisibleId = useCallback((): string | null => {
     const container = scrollableRef.current;
     if (!container) {
@@ -518,10 +528,11 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const scrubTo = useCallback(
     (clientY: number) => {
       const col = columnRef.current;
-      if (!col) {
+      const nav = navRef.current;
+      if (!col || !nav) {
         return;
       }
-      const ribs = col.querySelectorAll<HTMLElement>('[data-msg-id]');
+      const ribs = nav.querySelectorAll<HTMLElement>('[data-msg-id]');
       const count = ribs.length;
       if (count === 0) {
         return;
@@ -713,6 +724,38 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       }, TOOLTIP_OPEN_DELAY);
     },
     [positionTip, revealTip],
+  );
+
+  /** The pinned terminus lives outside the column, so it drives the shared
+   *  preview itself instead of through the rail's pointer magnification. */
+  const showEndTip = useCallback(
+    (el: HTMLElement) => {
+      const rect = el.getBoundingClientRect();
+      const left = columnRef.current?.getBoundingClientRect().left ?? rect.left;
+      focusTooltip(MESSAGES_END_ID, rect.top + rect.height / 2, window.innerWidth - left + 8);
+    },
+    [focusTooltip],
+  );
+
+  const handleEndPointerEnter = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => showEndTip(e.currentTarget),
+    [showEndTip],
+  );
+
+  const handleEndFocus = useCallback(
+    (e: React.FocusEvent<HTMLDivElement>) => showEndTip(e.currentTarget),
+    [showEndTip],
+  );
+
+  const handleEndBlur = useCallback(
+    (e: React.FocusEvent<HTMLDivElement>) => {
+      const next = e.relatedTarget as Node | null;
+      if (next && e.currentTarget.contains(next)) {
+        return;
+      }
+      clearTooltip();
+    },
+    [clearTooltip],
   );
 
   const applyMagnify = useCallback(() => {
@@ -1209,9 +1252,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [focusNav]);
 
-  const hasEnd = entries.length > 0 && entries[entries.length - 1].isEnd === true;
-  const messageCount = hasEnd ? entries.length - 1 : entries.length;
-  if (messageCount < 3) {
+  if (messageEntries.length < 3) {
     return null;
   }
 
@@ -1252,15 +1293,11 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         className="flex min-h-0 w-14 cursor-pointer touch-none select-none flex-col items-stretch gap-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        {entries.map((entry) => {
-          const label = entry.isEnd
-            ? localize('com_ui_scroll_to_bottom')
-            : localize(
-                entry.isUser
-                  ? 'com_ui_message_nav_go_to_user'
-                  : 'com_ui_message_nav_go_to_assistant',
-                { 0: entry.preview.slice(0, 30) },
-              );
+        {messageEntries.map((entry) => {
+          const label = localize(
+            entry.isUser ? 'com_ui_message_nav_go_to_user' : 'com_ui_message_nav_go_to_assistant',
+            { 0: entry.preview.slice(0, 30) },
+          );
           const isHighlighted =
             hoveredId != null ? hoveredId === entry.id : visibleIds.has(entry.id);
           return (
@@ -1275,6 +1312,27 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
           );
         })}
       </div>
+
+      {endEntry && (
+        <div
+          className="flex w-14 cursor-pointer touch-none select-none flex-col items-stretch"
+          onPointerDown={handlePointerDown}
+          onPointerEnter={handleEndPointerEnter}
+          onPointerLeave={clearTooltip}
+          onFocus={handleEndFocus}
+          onBlur={handleEndBlur}
+        >
+          <MessageIndicator
+            entry={endEntry}
+            isHighlighted={
+              hoveredId != null ? hoveredId === endEntry.id : visibleIds.has(endEntry.id)
+            }
+            isCurrent={currentId === endEntry.id}
+            onSelect={handleSelect}
+            label={localize('com_ui_scroll_to_bottom')}
+          />
+        </div>
+      )}
 
       <button
         type="button"
