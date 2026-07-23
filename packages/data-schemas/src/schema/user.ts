@@ -157,6 +157,15 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       of: Boolean,
       default: () => new Map(),
     },
+    /**
+     * Durable account-deletion barrier. Set BEFORE the deletion cascade quiesces
+     * anything, so every later scheduling admission (create/update/run-now, engine
+     * claim, loopback fire) can refuse this user. Absent means live, so existing
+     * documents need no migration.
+     */
+    deletionRequestedAt: {
+      type: Date,
+    },
     /** Field for external source identification (for consistency with TPrincipal schema) */
     idOnTheSource: {
       type: String,

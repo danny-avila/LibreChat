@@ -97,6 +97,17 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
       type: String,
     },
     /**
+     * Owner-config generation. Bumped ONLY by an owner edit (updateScheduleById),
+     * atomically with the claimToken rotation. Distinct from claimToken, which also
+     * rotates on every lease acquisition. A run captures this at claim time so its
+     * terminal bookkeeping / auto-disable cannot act on config it never ran under.
+     */
+    configRevision: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    /**
      * Soft-delete marker. A delete disables + marks the schedule `deleting` (so
      * it is hidden from the owner and never re-claimed) and aborts in-flight
      * runs; the reconciler erases it only once no run is still active, so a live

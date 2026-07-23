@@ -1,5 +1,6 @@
 import type { ScheduleMethods, ISchedule } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
+import type { SlotClaimResult } from './capacity';
 
 export interface ScheduleLimits {
   /** Feature-level switch: when false the engine claims/fires nothing. */
@@ -96,6 +97,17 @@ export interface ScheduleEngineDeps {
   clearReconciledJob: (conversationId: string, identity: JobIdentity) => Promise<void>;
   /** Global in-flight scheduled-run count (system tenant scope) for the fire cap. */
   countActiveRunsGlobal: () => Promise<number>;
+  /**
+   * Runs `claim` against the lowest free GLOBAL capacity slot, retrying the next slot
+   * when the unique partial index rejects a collision. Enforces fireConcurrency in the
+   * database instead of via a read-then-compare count, so concurrent admissions of
+   * different schedules cannot both pass a cap-1 check. Occupancy is read in system
+   * scope so the cap stays global across tenants.
+   */
+  withGlobalCapacitySlot: <T>(
+    cap: number,
+    claim: (slot: number) => Promise<SlotClaimResult<T>>,
+  ) => Promise<{ claimed: T } | 'capacity'>;
 }
 
 /** The immutable scheduled identity of a generation job, for reconcile/abort fencing. */

@@ -331,11 +331,40 @@ export async function fireSchedule(
     // rejects a second `started` run for the schedule, so a concurrent occurrence
     // surfaces as 'overlap' with no read-then-insert race.
     const conversationId = randomUUID();
-    const reservation = await methods.reserveStartedRun({
-      ...baseRun,
-      conversationId,
-      firedAt: new Date(),
-    });
+    // The GLOBAL fireConcurrency cap is enforced by claiming a unique capacity slot in
+    // the SAME insert that reserves the run, so it is decided by the DB rather than by
+    // a count read before the write. The allocator advances to the next free slot when
+    // another admission wins one, and reports 'capacity' only when genuinely saturated.
+    // Occupancy is read system-scoped so the cap stays global across tenants.
+    const allocation = await deps.withGlobalCapacitySlot(
+      ownerLimits.fireConcurrency,
+      async (capacitySlot) => {
+        const attempt = await methods.reserveStartedRun({
+          ...baseRun,
+          conversationId,
+          firedAt: new Date(),
+          capacitySlot,
+          ...(typeof schedule.configRevision === 'number'
+            ? { configRevision: schedule.configRevision }
+            : {}),
+        });
+        return 'conflict' in attempt && attempt.conflict === 'slot-taken'
+          ? 'slot-taken'
+          : { claimed: attempt };
+      },
+    );
+    if (allocation === 'capacity') {
+      // Automatic claims keep the claim's lease as a backoff so the nextRunAt-sorted
+      // claimer doesn't immediately re-pick this row and starve others; nextRunAt is
+      // untouched, so the occurrence retries once the lease expires. A manual run-now
+      // MUST release its lease, or repeated Run-now clicks hit a misleading "already
+      // in progress" 409 for the full manual-lease TTL even after capacity frees.
+      if (options?.manual) {
+        await methods.releaseLease(schedule.id, claimToken);
+      }
+      return { fired: false, skipped: 'capacity' as const };
+    }
+    const reservation = allocation.claimed;
     if ('conflict' in reservation) {
       if (reservation.conflict === 'overlap') {
         // Another occurrence of this schedule is already active. Record the skip
@@ -346,26 +375,6 @@ export async function fireSchedule(
       }
       await advance();
       return { fired: false, skipped: 'duplicate' as const };
-    }
-
-    // Reserve-then-verify GLOBAL capacity: the reservation above is atomic per
-    // schedule, but the cross-schedule fireConcurrency cap is a count. The count is
-    // GLOBAL (system tenant) — under the owner's tenant context it would only see
-    // this tenant's runs and multiple tenants could collectively exceed the cap.
-    // Compare against the OWNER-resolved fireConcurrency (matching run-now's
-    // request-scoped check). Roll back (status-fenced) if over.
-    const active = await deps.countActiveRunsGlobal();
-    if (active > ownerLimits.fireConcurrency) {
-      await rollbackReservation();
-      // Automatic claims keep the claim's lease as a backoff so the nextRunAt-sorted
-      // claimer doesn't immediately re-pick this row and starve others; nextRunAt is
-      // untouched, so the occurrence retries once the lease expires. A manual run-now
-      // MUST release its lease, or repeated Run-now clicks hit a misleading "already
-      // in progress" 409 for the full manual-lease TTL even after capacity frees.
-      if (options?.manual) {
-        await methods.releaseLease(schedule.id, claimToken);
-      }
-      return { fired: false, skipped: 'capacity' as const };
     }
 
     // Last check before the point of no return: re-verify this fire still holds an

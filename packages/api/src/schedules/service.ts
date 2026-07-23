@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { logger, runAsSystem, tenantStorage } from '@librechat/data-schemas';
 import { getRefillEligibilityDate, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { ScheduleMethods, AppConfig, IBalance } from '@librechat/data-schemas';
@@ -23,6 +24,7 @@ import { getAppConfigOptionsFromUser } from '../app/service';
 import { DEFAULT_SCHEDULE_LIMITS } from './types';
 import { getBalanceConfig } from '../app/config';
 import { startScheduleEngine } from './engine';
+import { withCapacitySlot } from './capacity';
 
 /** Recordable terminal/paused run outcome, as accepted by `recordRunOutcome`. */
 type ScheduleRunOutcomeStatus = Parameters<ScheduleMethods['recordRunOutcome']>[0]['status'];
@@ -33,7 +35,18 @@ type ScheduleRunOutcomeStatus = Parameters<ScheduleMethods['recordRunOutcome']>[
  * is active; `capacity` = the global cap is saturated; each defers with the approval
  * left unconsumed. `ok` = reserved (or already active), let the claim proceed.
  */
-export type ResumeCheck = 'ok' | 'gone' | 'overlap' | 'capacity';
+export type ResumeCheck = 'ok' | 'gone' | 'overlap' | 'capacity' | 'held';
+
+/**
+ * Outcome of the durable resume reservation. `ok` carries the lease identity the
+ * caller must fence every later transition on: `holder` for commit/release and
+ * `resumeSeq` as the CAS token for any pause written by this segment.
+ */
+export type ResumeReservation =
+  | { outcome: 'ok'; holder: string; resumeSeq: number }
+  /** Not a scheduled resume (ordinary interactive HITL): there is no lease to drive. */
+  | { outcome: 'not-scheduled' }
+  | { outcome: Exclude<ResumeCheck, 'ok'> };
 
 /** Whether a persisted job still carries a given scheduled occurrence's identity. */
 function jobMatchesIdentity(job: SerializableJobData, identity: JobIdentity): boolean {
@@ -49,6 +62,8 @@ export interface RecordScheduleOutcomeInput {
   status: ScheduleRunOutcomeStatus;
   conversationId?: string;
   error?: string;
+  /** Pause CAS token: the resumeSeq the writing segment observed. */
+  expectResumeSeq?: number;
 }
 
 /**
@@ -105,16 +120,37 @@ export interface SchedulesService {
    */
   isScheduleLive: (scheduleId: string) => Promise<boolean>;
   /**
-   * Atomically reserves the active slot for a HITL resume BEFORE the approval claim
-   * (so a deferral leaves the approval claimable): promotes the paused run to
-   * `started` (the single-active partial index makes per-schedule overlap atomic)
-   * and reserve-then-verifies the global fireConcurrency cap, rolling back its OWN
-   * promotion on overshoot. 'gone' = the schedule was deleted; 'overlap' = another
-   * occurrence is active; 'capacity' = global cap saturated. The caller must NOT
-   * release on a lost approval claim — the claim winner drives whatever is `started`;
-   * an unclaimed promotion self-heals when the reconciler surfaces the pause.
+   * Acquires the durable RESUMING lease for a HITL resume, BEFORE the approval claim
+   * (so a deferral leaves the approval claimable). Per-schedule overlap is enforced by
+   * the single-active partial index and the GLOBAL fireConcurrency cap by the unique
+   * capacity-slot index, so two resumes of different schedules can never both admit.
+   * 'gone' = deleted/terminal; 'overlap' = another occurrence is active; 'capacity' =
+   * cap saturated; 'held' = another live resume attempt owns this occurrence. On 'ok'
+   * the caller MUST drive the lease: markResumeClaimed after consuming the approval,
+   * then commitResumeLease on success or releaseResumeLease while still pre-claim.
    */
-  reserveScheduledResume: (scheduleId: string, scheduledFor: string | Date) => Promise<ResumeCheck>;
+  reserveScheduledResume: (
+    scheduleId: string,
+    scheduledFor: string | Date,
+  ) => Promise<ResumeReservation>;
+  /** Marks the resume lease as having consumed the approval (crash must roll forward). */
+  markScheduledResumeClaimed: (
+    scheduleId: string,
+    scheduledFor: string | Date,
+    holder: string,
+  ) => Promise<boolean>;
+  /** Commits a resume once its generation is reconstructed and running. */
+  commitScheduledResume: (
+    scheduleId: string,
+    scheduledFor: string | Date,
+    holder: string,
+  ) => Promise<boolean>;
+  /** Rolls a still-unclaimed resume back to `requires_action`, freeing its slot. */
+  releaseScheduledResume: (
+    scheduleId: string,
+    scheduledFor: string | Date,
+    holder: string,
+  ) => Promise<boolean>;
   /** Soft-deletes an owner's schedule: stop claims, abort active runs, drain, erase. */
   deleteScheduleForOwner: (scheduleId: string, userId: string) => Promise<boolean>;
   /** Quiesces all of a user's schedules ahead of account deletion (stop + abort). */
@@ -160,6 +196,9 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
   }
 
   const MANUAL_RUN_LEASE_MS = 5 * 60 * 1000;
+  // Lease held by an in-flight HITL resume. Long enough to cover reconstruction, short
+  // enough that a crashed PRE-CLAIM resume is reclaimable without a human.
+  const RESUME_LEASE_MS = 2 * 60 * 1000;
   // Bounded wait for aborted scheduled runs to settle during account-deletion quiesce,
   // before the message/conversation cascade runs. Long enough to cover a generation that
   // already returned from the model finishing its persistence; capped so account deletion
@@ -330,6 +369,11 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     // Counted in system scope so the cap is GLOBAL — a per-owner (tenant-scoped)
     // count would let multiple tenants collectively exceed fireConcurrency.
     countActiveRunsGlobal: () => runAsSystem(() => methods.countActiveRuns()),
+    // Occupancy is read in SYSTEM scope so the cap is global across tenants (the
+    // owner's tenant context would only see its own runs); the claim itself stays in
+    // the caller's context so the inserted row keeps correct tenant ownership.
+    withGlobalCapacitySlot: (cap, claim) =>
+      withCapacitySlot(cap, () => runAsSystem(() => methods.getCapacityOccupancy()), claim),
   };
 
   let engine: ReturnType<typeof startScheduleEngine> | undefined;
@@ -424,6 +468,7 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     status,
     conversationId,
     error,
+    expectResumeSeq,
   }: RecordScheduleOutcomeInput): Promise<boolean> {
     if (!scheduleId || !scheduledFor) {
       return true;
@@ -435,6 +480,7 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
         const schedule = await methods.getScheduleById(scheduleId);
         const owner = schedule ? await engineDeps.getUserContext(schedule.user) : null;
         const limits = await getLimits(owner ?? undefined);
+        const run = await methods.getRun(scheduleId, new Date(scheduledFor));
         await methods.recordRunOutcome({
           scheduleId,
           scheduledFor: new Date(scheduledFor),
@@ -442,6 +488,10 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
           conversationId,
           error,
           autoDisableAfterFailures: limits.autoDisableAfterFailures,
+          expectResumeSeq,
+          // Fence terminal bookkeeping/auto-disable to the config this run started
+          // under, so an owner edit or re-enable since then is never acted on.
+          expectConfigRevision: run?.configRevision,
         });
         return true;
       } catch (err) {
@@ -479,46 +529,82 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
   async function reserveScheduledResume(
     scheduleId: string,
     scheduledFor: string | Date,
-  ): Promise<ResumeCheck> {
+  ): Promise<ResumeReservation> {
     if (!scheduleId || !scheduledFor) {
-      return 'ok';
+      return { outcome: 'not-scheduled' };
     }
     // getScheduleById hides deleted/soft-deleted schedules, so a null here means the
     // owner already deleted the schedule — its paused run must not be resumable even
     // if the delete's best-effort abort raced. Reject before touching the run.
     const schedule = await methods.getScheduleById(scheduleId);
     if (schedule == null) {
-      return 'gone';
+      return { outcome: 'gone' };
     }
     const when = new Date(scheduledFor);
     // Overlap = a DIFFERENT occurrence is currently `started`. Exclude this run's own
     // row: if its pause bookkeeping failed transiently the row can still be `started`,
     // and treating that as an overlap would wrongly reject resuming THIS same occurrence.
     if (await methods.hasOtherActiveRun(scheduleId, when)) {
-      return 'overlap';
+      return { outcome: 'overlap' };
     }
-    // Read-only capacity gate BEFORE promoting, so we never mutate a row a concurrent
-    // same-pause resume may already be driving (no rollback path exists). Discount
-    // this occurrence's OWN `started` row when present (a transient pause-bookkeeping
-    // failure): resuming it adds no new active run, so the global count already
-    // includes it and must not block the resume.
     const owner = await engineDeps.getUserContext(schedule.user);
     const limits = await getLimits(owner ?? undefined);
-    const selfActive = await methods.isOccurrenceStarted(scheduleId, when);
-    if (!selfActive && (await engineDeps.countActiveRunsGlobal()) >= limits.fireConcurrency) {
-      return 'capacity';
+    const holder = randomUUID();
+    // ATOMIC global capacity: the slot (not a count) is the contended resource, so two
+    // resumes of DIFFERENT schedules can no longer both pass a cap-1 check — the unique
+    // partial index rejects the loser and the allocator advances it to the next free
+    // slot, or reports 'capacity' when genuinely saturated.
+    const reserved = await runAsSystem(() =>
+      withCapacitySlot(
+        limits.fireConcurrency,
+        () => methods.getCapacityOccupancy(),
+        async (slot) => {
+          const lease = await methods.acquireResumeLease({
+            scheduleId,
+            scheduledFor: when,
+            holder,
+            ttlMs: RESUME_LEASE_MS,
+            capacitySlot: slot,
+          });
+          return lease.outcome === 'slot-taken' ? 'slot-taken' : { claimed: lease };
+        },
+      ),
+    );
+    if (reserved === 'capacity') {
+      return { outcome: 'capacity' };
     }
-    // Reserve the single active slot. If a different occurrence won the slot since
-    // the read-only check above, promoteRunToStarted returns 'overlap' — defer the
-    // resume (approval stays claimable) rather than running a second concurrent
-    // occurrence with the paused row still `requires_action` (which overlap/capacity
-    // accounting would miss). 'missing' means a concurrent same-pause resume already
-    // promoted it — proceed. Never rolled back.
-    const promoted = await methods.promoteRunToStarted(scheduleId, when);
-    if (promoted === 'overlap') {
-      return 'overlap';
+    const lease = reserved.claimed;
+    if (lease.outcome === 'acquired') {
+      return { outcome: 'ok', holder: lease.holder, resumeSeq: lease.resumeSeq };
     }
-    return 'ok';
+    // 'held' = another live resume attempt owns this occurrence (previously collapsed
+    // into a lossy 'missing' -> 'ok', which admitted both racers). 'overlap'/'gone'
+    // defer with the approval left unconsumed.
+    return { outcome: lease.outcome === 'held' ? 'held' : lease.outcome };
+  }
+
+  async function markScheduledResumeClaimed(
+    scheduleId: string,
+    scheduledFor: string | Date,
+    holder: string,
+  ): Promise<boolean> {
+    return methods.markResumeClaimed(scheduleId, new Date(scheduledFor), holder, RESUME_LEASE_MS);
+  }
+
+  async function commitScheduledResume(
+    scheduleId: string,
+    scheduledFor: string | Date,
+    holder: string,
+  ): Promise<boolean> {
+    return methods.commitResumeLease(scheduleId, new Date(scheduledFor), holder);
+  }
+
+  async function releaseScheduledResume(
+    scheduleId: string,
+    scheduledFor: string | Date,
+    holder: string,
+  ): Promise<boolean> {
+    return methods.releaseResumeLease(scheduleId, new Date(scheduledFor), holder);
   }
 
   /** Aborts an active run's loopback job (identity-guarded). Returns whether the
@@ -645,6 +731,9 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     recordScheduleOutcome,
     isScheduleLive,
     reserveScheduledResume,
+    markScheduledResumeClaimed,
+    commitScheduledResume,
+    releaseScheduledResume,
     deleteScheduleForOwner,
     quiesceUserSchedules,
     initializeScheduleEngine,

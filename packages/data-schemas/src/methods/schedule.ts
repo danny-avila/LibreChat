@@ -30,12 +30,23 @@ function isOccurrenceDuplicate(error: unknown): boolean {
   return err?.code === DUPLICATE_KEY && err.keyPattern != null && 'scheduledFor' in err.keyPattern;
 }
 
-/** A duplicate-key error whose conflict is the single-active-run partial index. */
+/** A duplicate-key error whose conflict is the single-active-run partial index
+ *  ({scheduleId} where status:'started'). Matched EXACTLY on scheduleId so the
+ *  global {capacitySlot} index below is never misread as a per-schedule overlap. */
 function isActiveRunConflict(error: unknown): boolean {
   const err = error as DuplicateKeyError;
   return (
-    err?.code === DUPLICATE_KEY && err.keyPattern != null && !('scheduledFor' in err.keyPattern)
+    err?.code === DUPLICATE_KEY &&
+    err.keyPattern != null &&
+    'scheduleId' in err.keyPattern &&
+    !('scheduledFor' in err.keyPattern)
   );
+}
+
+/** A duplicate-key error whose conflict is the GLOBAL {capacitySlot} cap index. */
+function isCapacitySlotConflict(error: unknown): boolean {
+  const err = error as DuplicateKeyError;
+  return err?.code === DUPLICATE_KEY && err.keyPattern != null && 'capacitySlot' in err.keyPattern;
 }
 
 /** A duplicate-key error whose conflict is the per-user {user, slot} cap index. */
@@ -57,6 +68,12 @@ export interface RecordRunOutcomeParams {
   error?: string;
   durationMs?: number;
   autoDisableAfterFailures: number;
+  /** Pause CAS token: the resumeSeq the writing segment observed. A pause whose epoch
+   *  no longer matches is dropped, so it cannot demote an already-resumed run. */
+  expectResumeSeq?: number;
+  /** The configRevision this run started under. Terminal bookkeeping / auto-disable is
+   *  skipped when the owner has since edited the schedule (revision moved on). */
+  expectConfigRevision?: number;
 }
 
 /** Result of claiming/leasing a schedule: the snapshot plus the fencing token to carry. */
@@ -66,7 +83,32 @@ export interface ScheduleClaim {
 }
 
 /** Outcome of reserving the single-active-run slot for a fired occurrence. */
-export type StartedRunReservation = { run: IScheduleRun } | { conflict: 'duplicate' | 'overlap' };
+export type StartedRunReservation =
+  | { run: IScheduleRun }
+  | { conflict: 'duplicate' | 'overlap' | 'slot-taken' };
+
+export interface AcquireResumeLeaseParams {
+  scheduleId: string;
+  scheduledFor: Date;
+  /** Unique identity of this resume attempt; every later transition is fenced on it. */
+  holder: string;
+  ttlMs: number;
+  /** Global capacity slot to claim if the row does not already hold one. */
+  capacitySlot: number;
+}
+
+/**
+ * `acquired` = this attempt owns the occurrence; `held` = another live attempt owns it;
+ * `overlap` = a DIFFERENT occurrence holds the schedule's active slot; `slot-taken` =
+ * the global capacity slot collided (allocator should try the next one); `gone` = the
+ * occurrence no longer exists or is already terminal.
+ */
+export type ResumeLeaseResult =
+  | { outcome: 'acquired'; holder: string; resumeSeq: number; capacitySlot?: number }
+  | { outcome: 'held' }
+  | { outcome: 'overlap' }
+  | { outcome: 'slot-taken' }
+  | { outcome: 'gone' };
 
 /** Outcome of promoting a paused occurrence back into the single active slot. */
 export type PromoteRunResult = 'promoted' | 'overlap' | 'missing';
@@ -114,7 +156,18 @@ export type ScheduleMethods = {
   ) => Promise<void>;
   insertScheduleRun: (data: Partial<IScheduleRun>) => Promise<IScheduleRun | null>;
   reserveStartedRun: (data: Partial<IScheduleRun>) => Promise<StartedRunReservation>;
-  promoteRunToStarted: (scheduleId: string, scheduledFor: Date) => Promise<PromoteRunResult>;
+  getCapacityOccupancy: () => Promise<{ takenSlots: number[]; unslotted: number }>;
+  acquireResumeLease: (params: AcquireResumeLeaseParams) => Promise<ResumeLeaseResult>;
+  markResumeClaimed: (
+    scheduleId: string,
+    scheduledFor: Date,
+    holder: string,
+    ttlMs: number,
+  ) => Promise<boolean>;
+  commitResumeLease: (scheduleId: string, scheduledFor: Date, holder: string) => Promise<boolean>;
+  releaseResumeLease: (scheduleId: string, scheduledFor: Date, holder: string) => Promise<boolean>;
+  requestRunAbort: (scheduleId: string, scheduledFor: Date) => Promise<boolean>;
+  getRun: (scheduleId: string, scheduledFor: Date) => Promise<IScheduleRun | null>;
   setRunFireDetails: (
     scheduleId: string,
     scheduledFor: Date,
@@ -235,7 +288,17 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     return Schedule()
       .findOneAndUpdate(
         { id, user: userId, deleting: { $ne: true } },
-        { $set: { ...update, claimToken: randomUUID() }, ...(unset ? { $unset: unset } : {}) },
+        {
+          $set: { ...update, claimToken: randomUUID() },
+          // The ONLY writer of configRevision: an owner edit moves the config
+          // generation forward atomically with the claim-token rotation, so a run
+          // that started under the old config can detect it and skip bookkeeping.
+          // Worker/policy writes (claim, lease, advance, disable, bookkeeping) never
+          // bump it, and deletion deliberately does not either — a draining run must
+          // still be able to record its outcome before erasure.
+          $inc: { configRevision: 1 },
+          ...(unset ? { $unset: unset } : {}),
+        },
         { new: true },
       )
       .lean<ISchedule>();
@@ -540,6 +603,12 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       if (isOccurrenceDuplicate(error)) {
         return { conflict: 'duplicate' };
       }
+      // Checked BEFORE overlap: the global cap index and the per-schedule active
+      // index are different failures and drive different caller behavior (retry the
+      // next slot vs skip the occurrence).
+      if (isCapacitySlotConflict(error)) {
+        return { conflict: 'slot-taken' };
+      }
       if (isActiveRunConflict(error)) {
         return { conflict: 'overlap' };
       }
@@ -547,29 +616,169 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     }
   }
 
+  /** Capacity-slot occupancy for the allocator: which slots are held by `started`
+   *  runs, plus how many legacy rows hold no slot (they shrink the effective cap so
+   *  the bound stays conservative during rollout rather than transiently overshooting). */
+  async function getCapacityOccupancy(): Promise<{ takenSlots: number[]; unslotted: number }> {
+    const rows = await ScheduleRun()
+      .find({ status: 'started' })
+      .select('capacitySlot')
+      .lean<Array<{ capacitySlot?: number }>>();
+    const takenSlots: number[] = [];
+    let unslotted = 0;
+    for (const row of rows) {
+      if (typeof row.capacitySlot === 'number') {
+        takenSlots.push(row.capacitySlot);
+      } else {
+        unslotted += 1;
+      }
+    }
+    return { takenSlots, unslotted };
+  }
+
   /**
-   * Promotes a paused occurrence back into the single active slot on HITL resume.
-   * The partial unique index makes overlap atomic: if a newer occurrence is
-   * already `started`, the update raises a duplicate key and returns 'overlap'
-   * rather than creating a second concurrent active run. 'missing' means the row
-   * is no longer `requires_action` (already terminalized/reconciled).
+   * Acquires the durable RESUMING lease for a HITL resume, atomically: promotes the
+   * occurrence into the single active slot, claims a global capacity slot, mints the
+   * next `resumeSeq` (the CAS token that fences stale pause writes), and stamps the
+   * holder so only this attempt may drive the row.
+   *
+   * Adoptable states (the $or): a paused row; a row already `started` with NO holder
+   * (its pause bookkeeping never landed); or a row whose PRE-CLAIM lease expired (a
+   * crashed resume that never consumed the approval). A post-claim lease is never
+   * stolen — that attempt must roll forward, not be re-run.
    */
-  async function promoteRunToStarted(
-    scheduleId: string,
-    scheduledFor: Date,
-  ): Promise<PromoteRunResult> {
+  async function acquireResumeLease(params: AcquireResumeLeaseParams): Promise<ResumeLeaseResult> {
+    const { scheduleId, scheduledFor, holder, ttlMs, capacitySlot } = params;
     try {
-      const result = await ScheduleRun().updateOne(
-        { scheduleId, scheduledFor, status: 'requires_action' },
-        { $set: { status: 'started' } },
-      );
-      return (result.matchedCount ?? 0) > 0 ? 'promoted' : 'missing';
+      const row = await ScheduleRun()
+        .findOneAndUpdate(
+          {
+            scheduleId,
+            scheduledFor,
+            $or: [
+              { status: 'requires_action' },
+              { status: 'started', resumeHolder: { $exists: false } },
+              {
+                status: 'started',
+                resumeClaimedAt: { $exists: false },
+                $expr: { $lt: [{ $ifNull: ['$resumeExpiresAt', new Date(0)] }, '$$NOW'] },
+              },
+            ],
+          },
+          [
+            {
+              $set: {
+                status: 'started',
+                resumeSeq: { $add: [{ $ifNull: ['$resumeSeq', 0] }, 1] },
+                resumeHolder: holder,
+                resumeExpiresAt: { $add: ['$$NOW', ttlMs] },
+                capacitySlot,
+              },
+            },
+            { $unset: ['resumeClaimedAt'] },
+          ],
+          { new: true },
+        )
+        .lean<IScheduleRun>();
+      if (row == null) {
+        // Distinguish "another attempt holds it" from "the occurrence is gone/terminal"
+        // instead of collapsing both to a lossy 'missing'.
+        const current = await ScheduleRun()
+          .findOne({ scheduleId, scheduledFor })
+          .select('status resumeHolder')
+          .lean<{ status?: ScheduleRunStatus; resumeHolder?: string }>();
+        if (current == null) {
+          return { outcome: 'gone' };
+        }
+        if (current.resumeHolder != null && current.status === 'started') {
+          return { outcome: 'held' };
+        }
+        return { outcome: 'gone' };
+      }
+      return {
+        outcome: 'acquired',
+        holder,
+        resumeSeq: row.resumeSeq ?? 0,
+        capacitySlot: row.capacitySlot,
+      };
     } catch (error) {
+      if (isCapacitySlotConflict(error)) {
+        return { outcome: 'slot-taken' };
+      }
       if (isActiveRunConflict(error)) {
-        return 'overlap';
+        return { outcome: 'overlap' };
       }
       throw error;
     }
+  }
+
+  /** Marks the resume lease as having consumed the approval. After this point a crash
+   *  must roll FORWARD (the approval is spent) and the lease is no longer adoptable. */
+  async function markResumeClaimed(
+    scheduleId: string,
+    scheduledFor: Date,
+    holder: string,
+    ttlMs: number,
+  ): Promise<boolean> {
+    const result = await ScheduleRun().updateOne(
+      { scheduleId, scheduledFor, resumeHolder: holder },
+      [{ $set: { resumeClaimedAt: '$$NOW', resumeExpiresAt: { $add: ['$$NOW', ttlMs] } } }],
+    );
+    return (result.matchedCount ?? 0) > 0;
+  }
+
+  /** Commits the resume: the generation is reconstructed and running, so the row is a
+   *  normal `started` run again and the lease fields are dropped. Holder-fenced. */
+  async function commitResumeLease(
+    scheduleId: string,
+    scheduledFor: Date,
+    holder: string,
+  ): Promise<boolean> {
+    const result = await ScheduleRun().updateOne(
+      { scheduleId, scheduledFor, resumeHolder: holder },
+      { $unset: { resumeHolder: 1, resumeExpiresAt: 1, resumeClaimedAt: 1 } },
+    );
+    return (result.matchedCount ?? 0) > 0;
+  }
+
+  /** Rolls a PRE-CLAIM resume back to `requires_action`, freeing the capacity slot so
+   *  the approval stays actionable. Refuses once the approval was claimed (post-claim
+   *  must terminalize instead) and is holder-fenced so a stale attempt can't demote. */
+  async function releaseResumeLease(
+    scheduleId: string,
+    scheduledFor: Date,
+    holder: string,
+  ): Promise<boolean> {
+    const result = await ScheduleRun().updateOne(
+      {
+        scheduleId,
+        scheduledFor,
+        resumeHolder: holder,
+        resumeClaimedAt: { $exists: false },
+      },
+      {
+        $set: { status: 'requires_action' },
+        $unset: { resumeHolder: 1, resumeExpiresAt: 1, capacitySlot: 1 },
+      },
+    );
+    return (result.matchedCount ?? 0) > 0;
+  }
+
+  /** Records that an abort was requested WITHOUT freeing the capacity slot: the run
+   *  keeps counting against fireConcurrency until its generation owner confirms
+   *  settlement by writing a terminal outcome. */
+  async function requestRunAbort(scheduleId: string, scheduledFor: Date): Promise<boolean> {
+    const result = await ScheduleRun().updateOne(
+      { scheduleId, scheduledFor, status: { $in: ACTIVE_RUN_STATUSES } },
+      [{ $set: { abortRequestedAt: { $ifNull: ['$abortRequestedAt', '$$NOW'] } } }],
+    );
+    return (result.matchedCount ?? 0) > 0;
+  }
+
+  /** The occurrence's run row, or null. Used to read the revision/epoch a run
+   *  started under before writing its outcome. */
+  async function getRun(scheduleId: string, scheduledFor: Date): Promise<IScheduleRun | null> {
+    return ScheduleRun().findOne({ scheduleId, scheduledFor }).lean<IScheduleRun>();
   }
 
   async function hasActiveRun(scheduleId: string): Promise<boolean> {
@@ -606,8 +815,14 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // land atomically WITH the count goes in this one update so a crash can't leave
     // it half-applied: the balance-skip streak resets on ANY non-balance outcome,
     // and a success clears the failure streak inline (never a lost follow-up).
+    // CONFIG-REVISION FENCE: a run that started under an older owner config must not
+    // apply counters (or walk toward auto-disable) against a schedule the owner has
+    // since edited or re-enabled. Absent on either side disables the fence, so
+    // pre-existing rows/schedules keep today's behavior instead of wedging.
+    const revisionFilter =
+      params.expectConfigRevision != null ? { configRevision: params.expectConfigRevision } : {};
     await Schedule().updateOne(
-      { id: params.scheduleId, countedFor: { $ne: params.scheduledFor } },
+      { id: params.scheduleId, countedFor: { $ne: params.scheduledFor }, ...revisionFilter },
       {
         $set: {
           lastRun,
@@ -659,11 +874,19 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       // instead hide the pause from the card until some later terminal outcome. Guard on
       // a matching active run first so a spoofed scheduleId can't write a card. Keyed on
       // existence, not modification, so a retried pause still re-affirms the card.
+      // EPOCH CAS: a pause may only land on the segment that produced it. A resume
+      // bumps resumeSeq, so a stale requires_action callback from the PREVIOUS segment
+      // no longer matches and cannot demote the run the resume just promoted.
+      const epochFilter =
+        params.expectResumeSeq != null
+          ? { resumeSeq: params.expectResumeSeq }
+          : ({} as Record<string, never>);
       const activeRun = await ScheduleRun()
         .findOne({
           scheduleId: params.scheduleId,
           scheduledFor: params.scheduledFor,
           status: { $in: ['started', 'requires_action'] },
+          ...epochFilter,
         })
         .select('_id')
         .lean();
@@ -683,12 +906,16 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
           scheduleId: params.scheduleId,
           scheduledFor: params.scheduledFor,
           status: { $in: ['started', 'requires_action'] },
+          ...epochFilter,
         },
         {
           $set: {
             status: 'requires_action',
             ...(params.conversationId ? { conversationId: params.conversationId } : {}),
           },
+          // Leaving `started` frees the global capacity slot; the resume claims a
+          // fresh one from the allocator rather than re-adopting a possibly-taken slot.
+          $unset: { capacitySlot: 1 },
         },
       );
       return;
@@ -709,6 +936,16 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
           ...(params.conversationId ? { conversationId: params.conversationId } : {}),
           ...(params.error ? { error: params.error } : {}),
           ...(params.durationMs != null ? { durationMs: params.durationMs } : {}),
+        },
+        // SETTLEMENT: a terminal outcome is the generation owner confirming the run
+        // actually stopped, so this is the ONLY place the global capacity slot is
+        // released. An abort request alone does not free it (see requestRunAbort).
+        // Any in-flight resume lease ends with the run.
+        $unset: {
+          capacitySlot: 1,
+          resumeHolder: 1,
+          resumeExpiresAt: 1,
+          resumeClaimedAt: 1,
         },
       },
     );
@@ -1007,7 +1244,13 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     disableSchedule,
     insertScheduleRun,
     reserveStartedRun,
-    promoteRunToStarted,
+    getCapacityOccupancy,
+    acquireResumeLease,
+    markResumeClaimed,
+    commitResumeLease,
+    releaseResumeLease,
+    requestRunAbort,
+    getRun,
     setRunFireDetails,
     hasActiveRun,
     countActiveRuns,

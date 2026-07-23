@@ -1,5 +1,6 @@
 import type { ScheduleEngineDeps, ScheduleLimits, ScheduleUserContext } from './types';
 import type { FireableSchedule } from './types';
+import { withCapacitySlot } from './capacity';
 import { fireSchedule } from './fire';
 
 const OWNER: ScheduleUserContext = { id: 'user-1', tenantId: 't1', role: 'USER' };
@@ -34,7 +35,10 @@ function makeSchedule(overrides: Partial<FireableSchedule> = {}): FireableSchedu
 
 /** In-memory run store exercising the real insert/count/delete/idempotency interplay. */
 function makeMethods() {
-  const runs = new Map<string, { status: string; conversationId?: string }>();
+  const runs = new Map<
+    string,
+    { status: string; conversationId?: string; capacitySlot?: number }
+  >();
   const calls = {
     advance: 0,
     releaseLease: 0,
@@ -73,10 +77,24 @@ function makeMethods() {
     // Mirrors the partial-unique-index semantics: same-occurrence row => 'duplicate';
     // any OTHER started run for the schedule => 'overlap'; else reserve the slot.
     reserveStartedRun: jest.fn(
-      async (data: { scheduleId: string; scheduledFor: Date; conversationId?: string }) => {
+      async (data: {
+        scheduleId: string;
+        scheduledFor: Date;
+        conversationId?: string;
+        capacitySlot?: number;
+      }) => {
         const k = key(data.scheduleId, data.scheduledFor);
         if (runs.has(k)) {
           return { conflict: 'duplicate' as const };
+        }
+        // Mirrors the unique {capacitySlot} partial index (status:'started').
+        if (
+          data.capacitySlot != null &&
+          [...runs.values()].some(
+            (r) => r.status === 'started' && r.capacitySlot === data.capacitySlot,
+          )
+        ) {
+          return { conflict: 'slot-taken' as const };
         }
         const overlap = [...runs.entries()].some(
           ([rk, r]) => rk.startsWith(`${data.scheduleId}:`) && r.status === 'started',
@@ -84,10 +102,29 @@ function makeMethods() {
         if (overlap) {
           return { conflict: 'overlap' as const };
         }
-        runs.set(k, { status: 'started', conversationId: data.conversationId });
+        runs.set(k, {
+          status: 'started',
+          conversationId: data.conversationId,
+          capacitySlot: data.capacitySlot,
+        });
         return { run: { scheduleId: data.scheduleId, scheduledFor: data.scheduledFor } };
       },
     ),
+    getCapacityOccupancy: jest.fn(async () => {
+      const takenSlots: number[] = [];
+      let unslotted = 0;
+      for (const r of runs.values()) {
+        if (r.status !== 'started') {
+          continue;
+        }
+        if (typeof r.capacitySlot === 'number') {
+          takenSlots.push(r.capacitySlot);
+        } else {
+          unslotted += 1;
+        }
+      }
+      return { takenSlots, unslotted };
+    }),
     revalidateClaim: jest.fn(async () => true),
     holdsLease: jest.fn(async () => true),
     scheduleExists: jest.fn(async () => true),
@@ -134,6 +171,12 @@ function makeDeps(
     clearReconciledJob: async () => undefined,
     isJobStoreShared: () => true,
     countActiveRunsGlobal: async () => methods.countActiveRuns(),
+    withGlobalCapacitySlot: (cap: number, claim: (slot: number) => Promise<unknown>) =>
+      withCapacitySlot(
+        cap,
+        () => methods.getCapacityOccupancy(),
+        claim as Parameters<typeof withCapacitySlot>[2],
+      ),
     ...over,
   } as ScheduleEngineDeps;
 }
@@ -248,30 +291,43 @@ describe('fireSchedule', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('rolls back the reservation when over the global capacity cap', async () => {
+  it('refuses the fire at the global capacity cap WITHOUT inserting a run', async () => {
     const { methods, runs } = makeMethods();
-    // 5 already active → this insert makes 6 > cap(5), so it must roll back.
+    // All 5 slots taken → the allocator finds no free slot and never inserts.
     for (let i = 0; i < 5; i++) {
-      runs.set(`other-${i}:x`, { status: 'started' });
+      runs.set(`other-${i}:x`, { status: 'started', capacitySlot: i });
     }
     mockFetch(async () => okResponse());
     const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
     expect(result.skipped).toBe('capacity');
     expect(global.fetch).not.toHaveBeenCalled();
-    // The reservation was rolled back — only the 5 pre-existing remain.
+    // Slot-based capacity is decided BEFORE the write, so there is nothing to roll back.
     expect([...runs.values()].filter((r) => r.status === 'started')).toHaveLength(5);
-    expect(methods.deleteScheduleRun).toHaveBeenCalledTimes(1);
+    expect(methods.reserveStartedRun).not.toHaveBeenCalled();
+    expect(methods.deleteScheduleRun).not.toHaveBeenCalled();
   });
 
-  it('capacity rollback re-fires cleanly next tick, exactly once', async () => {
+  it('claims a free slot and never exceeds the cap when slots collide', async () => {
+    const { methods, runs } = makeMethods();
+    // Slots 0 and 2 are taken; the allocator must land the fire on slot 1.
+    runs.set('other-a:x', { status: 'started', capacitySlot: 0 });
+    runs.set('other-b:x', { status: 'started', capacitySlot: 2 });
+    mockFetch(async () => okResponse());
+    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
+    expect(result.fired).toBe(true);
+    const own = [...runs.entries()].find(([k]) => k.startsWith('sched-1:'));
+    expect(own?.[1].capacitySlot).toBe(1);
+  });
+
+  it('re-fires cleanly next tick once capacity frees, exactly once', async () => {
     const { methods, runs } = makeMethods();
     for (let i = 0; i < 5; i++) {
-      runs.set(`other-${i}:x`, { status: 'started' });
+      runs.set(`other-${i}:x`, { status: 'started', capacitySlot: i });
     }
     mockFetch(async () => okResponse());
     const schedule = makeSchedule();
     const when = dueAt();
-    // Tick 1: at capacity → rolled back.
+    // Tick 1: every slot taken → refused before any insert.
     const first = await fireSchedule(makeDeps(methods), schedule, LIMITS, when);
     expect(first.skipped).toBe('capacity');
     // Capacity frees up before the next tick.
@@ -279,7 +335,7 @@ describe('fireSchedule', () => {
     // Tick 2: same occurrence re-claimed → now fires, exactly one live run.
     const second = await fireSchedule(makeDeps(methods), schedule, LIMITS, when);
     expect(second.fired).toBe(true);
-    expect(methods.reserveStartedRun).toHaveBeenCalledTimes(2); // reserve, rollback, reserve
+    expect(methods.reserveStartedRun).toHaveBeenCalledTimes(1); // only the successful tick inserts
     expect(
       [...runs.entries()].filter(([k, r]) => k.startsWith('sched-1:') && r.status === 'started'),
     ).toHaveLength(1);
@@ -288,15 +344,14 @@ describe('fireSchedule', () => {
 
   it('preserves the reserved run for reconcile when the lease was taken over', async () => {
     const { methods, runs } = makeMethods();
-    // At capacity, so this fire will roll back its reservation.
-    for (let i = 0; i < 5; i++) {
-      runs.set(`other-${i}:x`, { status: 'started' });
-    }
+    // An owner edit/takeover superseded this fire after it reserved its run, which is
+    // the path that now drives rollbackReservation (capacity no longer inserts at all).
+    (methods.revalidateClaim as jest.Mock).mockResolvedValue(false);
     // Simulate a lease takeover: this worker no longer holds the claim.
     (methods.holdsLease as jest.Mock).mockResolvedValue(false);
     mockFetch(async () => okResponse());
     const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
-    expect(result.skipped).toBe('capacity');
+    expect(result.skipped).toBe('superseded');
     // The reserved row must NOT be deleted (another worker owns the occurrence now);
     // it's left for the reconciler so the occurrence stays reconcilable.
     expect(methods.deleteScheduleRun).not.toHaveBeenCalled();
@@ -305,17 +360,14 @@ describe('fireSchedule', () => {
 
   it('deletes the reserved run when the schedule was hard-deleted mid-fire', async () => {
     const { methods, runs } = makeMethods();
-    // At capacity, so this fire rolls back its reservation.
-    for (let i = 0; i < 5; i++) {
-      runs.set(`other-${i}:x`, { status: 'started' });
-    }
     // Account deletion hard-deleted the schedule after this fire reserved its run:
-    // the lease is not held AND the schedule no longer exists.
+    // revalidation fails, the lease is not held AND the schedule no longer exists.
+    (methods.revalidateClaim as jest.Mock).mockResolvedValue(false);
     (methods.holdsLease as jest.Mock).mockResolvedValue(false);
     (methods.scheduleExists as jest.Mock).mockResolvedValue(false);
     mockFetch(async () => okResponse());
     const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
-    expect(result.skipped).toBe('capacity');
+    expect(result.skipped).toBe('superseded');
     // The orphaned reservation (no schedule left to own it) is deleted, not leaked.
     expect(methods.deleteScheduleRun).toHaveBeenCalledWith('sched-1', expect.any(Date), 'started');
     expect([...runs.entries()].some(([k]) => k.startsWith('sched-1:'))).toBe(false);
