@@ -1580,6 +1580,7 @@ describe('useResumableSSE', () => {
         }),
       }),
     );
+    expect(mockSetQueryData).toHaveBeenCalledWith(['resumable-terminal-event', CONV_ID], true);
 
     unmount();
   });
@@ -1708,6 +1709,48 @@ describe('useResumableSSE', () => {
       unmount();
     },
   );
+
+  it('keeps polling without publishing a run end after exhausting SSE reconnect attempts', async () => {
+    jest.useFakeTimers();
+    const submission = buildSubmission({ conversation: {} });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await flushMicrotasks();
+
+    const retryDelays = [1000, 2000, 4000, 8000, 16000];
+    for (const delay of retryDelays) {
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode: 500 });
+      });
+      await advanceRetryTimer(delay);
+    }
+
+    await act(async () => {
+      getLastSSE()._emit('error', { responseCode: 500 });
+    });
+
+    const activeJobWrites = mockSetQueryData.mock.calls.filter(
+      ([queryKey]) => Array.isArray(queryKey) && queryKey[0] === QueryKeys.activeJobs,
+    );
+    expect(activeJobWrites).toHaveLength(1);
+
+    const addActiveJob = activeJobWrites[0][1] as (data: { activeJobIds: string[] }) => {
+      activeJobIds: string[];
+    };
+    expect(addActiveJob({ activeJobIds: [] })).toEqual({
+      activeJobIds: ['stream-123'],
+    });
+    expect(mockSetQueryData).toHaveBeenCalledWith(['resumable-disconnected-run', 'stream-123'], {
+      startedAsNewConvo: true,
+      created: false,
+    });
+    expect(mockErrorHandler).toHaveBeenCalledTimes(1);
+    expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    unmount();
+  });
 
   it('treats responseCode === 0 with raw SSE buffer data as transport failure (reconnect path)', async () => {
     const submission = buildSubmission();

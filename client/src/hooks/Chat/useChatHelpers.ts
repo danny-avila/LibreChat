@@ -3,7 +3,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useRecoilState, useSetRecoilState, useRecoilCallback } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
-import type { ActiveJobsResponse } from '~/data-provider';
 import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
@@ -179,10 +178,6 @@ export default function useChatHelpers(index = 0, paramId?: string) {
 
     // For non-assistants endpoints (using resumable streams), call abort endpoint first
     if (conversationId && !isAssistants) {
-      queryClient.setQueryData<ActiveJobsResponse>([QueryKeys.activeJobs], (old) => ({
-        activeJobIds: (old?.activeJobIds ?? []).filter((id) => id !== conversationId),
-      }));
-
       // The aborted run's final SSE can land (and the interrupt drain can
       // start the NEXT submission) while the abort response is in flight —
       // the fallback clear below must not tear down that new run.
@@ -238,7 +233,6 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     signalInterruptDrain,
     clearSubmissionsUnlessReplaced,
     clearAllSubmissions,
-    queryClient,
   ]);
 
   const handleStopGenerating = useCallback(
