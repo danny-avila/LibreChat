@@ -138,7 +138,7 @@ describe('planPluginHooks', () => {
   test('records matcher translation without losing the source declaration', () => {
     const plan = planPluginHooks(
       document({
-        PreToolUse: [{ matcher: 'Bash|Write', hooks: [{ type: 'command', command: 'check' }] }],
+        PreToolUse: [{ matcher: ' Bash|Write ', hooks: [{ type: 'command', command: 'check' }] }],
       }),
       {
         handlerTypes: new Set(['command']),

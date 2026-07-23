@@ -1,3 +1,4 @@
+import { MAX_PATTERN_LENGTH } from '@librechat/agents';
 import { parsePluginHooks } from './schema';
 
 describe('parsePluginHooks', () => {
@@ -92,12 +93,12 @@ describe('parsePluginHooks', () => {
       hooks: {
         PostToolUse: [
           {
-            matcher: 'Bash',
+            matcher: ' Bash ',
             hooks: [
               {
                 type: 'command',
                 command: 'review',
-                if: 'Bash(git commit:*)',
+                if: ' Bash(git commit:*) ',
                 asyncRewake: true,
                 rewakeMessage: 'Review these findings',
                 rewakeSummary: 'Review complete',
@@ -125,6 +126,41 @@ describe('parsePluginHooks', () => {
         },
       ],
     });
+  });
+
+  test('rejects blank conditions and oversized matchers', () => {
+    const blankCondition = parsePluginHooks({
+      hooks: {
+        PostToolUse: [
+          {
+            matcher: 'Bash',
+            hooks: [{ type: 'command', command: 'review', if: '   ' }],
+          },
+        ],
+      },
+    });
+    const oversizedMatcher = parsePluginHooks({
+      hooks: {
+        PostToolUse: [
+          {
+            matcher: 'a'.repeat(MAX_PATTERN_LENGTH + 1),
+            hooks: [{ type: 'command', command: 'review' }],
+          },
+        ],
+      },
+    });
+
+    expect(blankCondition.success).toBe(false);
+    expect(oversizedMatcher.success).toBe(false);
+    if (blankCondition.success || oversizedMatcher.success) {
+      return;
+    }
+    expect(blankCondition.issues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: 'hooks.PostToolUse.0.hooks.0.if' })]),
+    );
+    expect(oversizedMatcher.issues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: 'hooks.PostToolUse.0.matcher' })]),
+    );
   });
 
   test('rejects unrecognized behavior instead of silently stripping it', () => {

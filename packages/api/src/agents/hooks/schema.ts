@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_PATTERN_LENGTH } from '@librechat/agents';
 
 const MAX_DESCRIPTION_LENGTH = 2_000;
 const MAX_COMMAND_LENGTH = 32_768;
@@ -43,7 +44,7 @@ export const pluginHookHandlerSchema: z.ZodType<PluginHookHandler> = z
     prompt: z.string().min(1).max(MAX_COMMAND_LENGTH).optional(),
     timeout: z.number().int().positive().max(MAX_TIMEOUT_SECONDS).optional(),
     statusMessage: z.string().max(MAX_STATUS_MESSAGE_LENGTH).optional(),
-    if: z.string().min(1).max(MAX_COMMAND_LENGTH).optional(),
+    if: z.string().trim().min(1).max(MAX_COMMAND_LENGTH).optional(),
     async: z.boolean().optional(),
     asyncRewake: z.boolean().optional(),
     rewakeMessage: z.string().max(MAX_DESCRIPTION_LENGTH).optional(),
@@ -69,9 +70,9 @@ export const pluginHookHandlerSchema: z.ZodType<PluginHookHandler> = z
 
 export const pluginHookGroupSchema: z.ZodType<PluginHookGroup> = z
   .object({
-    matcher: z.string().optional(),
+    matcher: z.string().trim().max(MAX_PATTERN_LENGTH).optional(),
     /** Retained for older hook bundles; current Claude plugins declare `if` per handler. */
-    if: z.string().min(1).max(MAX_COMMAND_LENGTH).optional(),
+    if: z.string().trim().min(1).max(MAX_COMMAND_LENGTH).optional(),
     hooks: z.array(pluginHookHandlerSchema).min(1).max(MAX_HANDLERS_PER_GROUP),
   })
   .strict();
