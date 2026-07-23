@@ -470,6 +470,10 @@ export type TDeleteSharedLinkResponse = {
   message: string;
 };
 
+export type TRevokeSharedImageResponse = {
+  success: boolean;
+};
+
 export type TEditArtifactRequest = {
   index: number;
   messageId: string;

@@ -20,6 +20,7 @@ const {
   tenantStorage,
   SYSTEM_TENANT_ID,
   createTempChatExpirationDate,
+  activeExpirationFilter,
 } = require('@librechat/data-schemas');
 const { FileSources, PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
@@ -73,6 +74,8 @@ const resolveSharedLinkExpiration = (req, conversationId) =>
  */
 const allowSharedLinks =
   process.env.ALLOW_SHARED_LINKS === undefined || isEnabled(process.env.ALLOW_SHARED_LINKS);
+const DEFAULT_SHARED_IMAGES_PAGE_SIZE = 50;
+const MAX_SHARED_IMAGES_PAGE_SIZE = 100;
 
 /** Run within the snapshot file's tenant context (mirrors canAccessSharedLink). */
 const runWithTenant = (tenantId, fn) =>
@@ -224,6 +227,129 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
   res.setHeader('Cache-Control', 'private, max-age=3600');
   return fileStream.pipe(res);
 };
+
+/**
+ * Shared images — flattens the image-type fileSnapshots embedded across all of
+ * the user's active shared links into one list, so they can see and revoke
+ * exposure without hunting through each conversation's share settings. Images
+ * aren't shared independently (see ISharedLink.fileSnapshots) -- this reads
+ * the same data the share-file routes already serve, just from the owner's
+ * side and across every share at once.
+ *
+ * Registered before the `/:shareId`-shaped routes below (inside
+ * `if (allowSharedLinks)`) so literal `/images` isn't swallowed by that
+ * wildcard segment.
+ */
+router.get('/images', requireJwtAuth, async (req, res) => {
+  try {
+    const pageSizeParam = Array.isArray(req.query.pageSize)
+      ? req.query.pageSize[0]
+      : req.query.pageSize;
+    const cursorParam = Array.isArray(req.query.cursor) ? req.query.cursor[0] : req.query.cursor;
+    const pageSize = Math.min(
+      MAX_SHARED_IMAGES_PAGE_SIZE,
+      Math.max(1, parseInt(pageSizeParam, 10) || DEFAULT_SHARED_IMAGES_PAGE_SIZE),
+    );
+    const cursor = cursorParam ? new Date(cursorParam) : null;
+    if (cursorParam && Number.isNaN(cursor.getTime())) {
+      return res.status(400).json({ message: 'Invalid cursor' });
+    }
+
+    const SharedLink = mongoose.models.SharedLink;
+    const query = {
+      user: req.user.id,
+      snapshotFiles: { $ne: false },
+      ...(cursor ? { createdAt: { $lt: cursor } } : {}),
+      $and: [
+        activeExpirationFilter(),
+        {
+          $or: [
+            { fileSnapshots: { $exists: false } },
+            { fileSnapshots: { $exists: true, $ne: [] } },
+          ],
+        },
+      ],
+    };
+    const shares = await SharedLink.find(
+      query,
+      'shareId title conversationId fileSnapshots revokedFileIds createdAt',
+    )
+      .sort({ createdAt: -1 })
+      .limit(pageSize + 1)
+      .lean();
+
+    const hasNextPage = shares.length > pageSize;
+    const pageShares = shares.slice(0, pageSize);
+    const images = [];
+
+    for (const share of pageShares) {
+      let fileSnapshots = share.fileSnapshots;
+      if (fileSnapshots === undefined && share.shareId) {
+        const backfilled = await backfillSharedLinkFiles(share.shareId);
+        fileSnapshots = [];
+        if (Array.isArray(backfilled)) {
+          fileSnapshots = backfilled;
+        } else if (backfilled) {
+          fileSnapshots = [backfilled];
+        }
+      }
+
+      const revokedFileIds = new Set(share.revokedFileIds || []);
+      for (const f of fileSnapshots || []) {
+        if (
+          typeof f.type === 'string' &&
+          f.type.startsWith('image/') &&
+          !revokedFileIds.has(f.file_id)
+        ) {
+          images.push({
+            file_id: f.file_id,
+            filename: f.filename,
+            width: f.width,
+            height: f.height,
+            shareId: share.shareId,
+            shareTitle: share.title,
+            conversationId: share.conversationId,
+            createdAt: share.createdAt,
+          });
+        }
+      }
+    }
+
+    res.status(200).json({
+      images,
+      nextCursor: hasNextPage ? pageShares[pageShares.length - 1]?.createdAt : null,
+      hasNextPage,
+    });
+  } catch (error) {
+    logger.error('Error listing shared images:', error);
+    res.status(500).json({ message: 'Error listing shared images' });
+  }
+});
+
+/** Revoke a single image from a share without deleting the rest of the share. */
+router.delete('/images/:shareId/:file_id', requireJwtAuth, async (req, res) => {
+  try {
+    const SharedLink = mongoose.models.SharedLink;
+    const result = await SharedLink.updateOne(
+      {
+        shareId: req.params.shareId,
+        user: req.user.id,
+        ...activeExpirationFilter(),
+      },
+      {
+        $pull: { fileSnapshots: { file_id: req.params.file_id } },
+        $addToSet: { revokedFileIds: req.params.file_id },
+      },
+    );
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ message: 'Share not found' });
+    }
+    res.status(200).json({ success: true });
+  } catch (error) {
+    logger.error('Error revoking shared image:', error);
+    res.status(500).json({ message: 'Error revoking shared image' });
+  }
+});
 
 if (allowSharedLinks) {
   const { forkIpLimiter, forkUserLimiter } = createForkLimiters();

@@ -31,6 +31,7 @@ describe('Share Methods', () => {
         expiredAt: { type: Date },
         snapshotFiles: { type: Boolean },
         fileSnapshots: { type: [mongoose.Schema.Types.Mixed], default: undefined },
+        revokedFileIds: { type: [String], default: undefined },
       },
       { timestamps: true },
     );
@@ -1844,6 +1845,47 @@ describe('Share Methods', () => {
       expect(file.preview).toBeUndefined();
     });
 
+    test('getSharedMessages omits files and attachments revoked from the share', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const revokedId = await createFile(userId, { type: 'image/png', filename: 'revoked.png' });
+      const visibleId = await createFile(userId, { type: 'image/png', filename: 'visible.png' });
+
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'images',
+        isCreatedByUser: true,
+        files: [
+          { file_id: revokedId, type: 'image/png', filepath: `/uploads/${userId}/${revokedId}` },
+          { file_id: visibleId, type: 'image/png', filepath: `/uploads/${userId}/${visibleId}` },
+        ],
+        attachments: [
+          { file_id: revokedId, type: 'image/png', filepath: `/uploads/${userId}/${revokedId}` },
+        ],
+      });
+
+      const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
+      await SharedLink.updateOne(
+        { shareId },
+        {
+          $pull: { fileSnapshots: { file_id: revokedId } },
+          $addToSet: { revokedFileIds: revokedId },
+        },
+      );
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      const fileIds = result?.messages[0].files?.map((file) => file.file_id);
+
+      expect(fileIds).toEqual([visibleId]);
+      expect(result?.messages[0].attachments).toBeUndefined();
+      const revokedFile = await shareMethods.getSharedLinkFile(shareId, revokedId);
+      expect(revokedFile.file).toBeNull();
+      expect(revokedFile.hasSnapshots).toBe(true);
+    });
+
     test('updateSharedLink recomputes snapshots from current messages', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;
@@ -1933,6 +1975,36 @@ describe('Share Methods', () => {
 
       const saved = await SharedLink.findOne({ shareId }).lean();
       expect(saved?.fileSnapshots).toHaveLength(1);
+    });
+
+    test('backfillSharedLinkFiles does not restore revoked files on legacy shares', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const revokedId = await createFile(userId);
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'doc',
+        isCreatedByUser: true,
+        files: [{ file_id: revokedId }],
+      });
+
+      const shareId = `share_${nanoid()}`;
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+        revokedFileIds: [revokedId],
+      });
+
+      const backfilled = await shareMethods.backfillSharedLinkFiles(shareId, revokedId);
+      const saved = await SharedLink.findOne({ shareId }).lean();
+
+      expect(backfilled).toBeNull();
+      expect(saved?.fileSnapshots).toEqual([]);
     });
 
     test('does not snapshot a file owned by another user', async () => {

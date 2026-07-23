@@ -32,6 +32,7 @@ import { DeleteCache } from '../SettingsTabs/Data/DeleteCache';
 import { RevokeKeys } from '../SettingsTabs/Data/RevokeKeys';
 import { ClearChats } from '../SettingsTabs/Data/ClearChats';
 import { TokenCredits, AutoRefill } from './BillingControls';
+import SharedImages from '../SettingsTabs/Data/SharedImages';
 import SharedLinks from '../SettingsTabs/Data/SharedLinks';
 import { showThinkingAtom } from '~/store/showThinking';
 import ProviderKeys from '../SettingsTabs/ProviderKeys';
@@ -474,6 +475,13 @@ export const registry: SettingEntry[] = [
     section: 'data',
     labelKey: 'com_ui_settings_label_shared_links',
     Component: SharedLinks,
+  },
+  {
+    id: 'sharedImages',
+    tab: DATA,
+    section: 'data',
+    labelKey: 'com_ui_settings_label_shared_images',
+    Component: SharedImages,
   },
   // Data controls · API keys
   {
