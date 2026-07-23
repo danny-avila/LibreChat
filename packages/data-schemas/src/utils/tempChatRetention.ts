@@ -26,7 +26,6 @@ export function getTempChatRetentionHours(
 ): number {
   let retentionHours = DEFAULT_RETENTION_HOURS;
 
-  // Check environment variable first
   if (process.env.TEMP_CHAT_RETENTION_HOURS) {
     const envValue = parseInt(process.env.TEMP_CHAT_RETENTION_HOURS, 10);
     if (!isNaN(envValue)) {
@@ -38,7 +37,6 @@ export function getTempChatRetentionHours(
     }
   }
 
-  // Check config file (takes precedence over environment variable)
   if (interfaceConfig?.temporaryChatRetention !== undefined) {
     const configValue = interfaceConfig.temporaryChatRetention;
     if (typeof configValue === 'number' && !isNaN(configValue)) {
@@ -50,7 +48,6 @@ export function getTempChatRetentionHours(
     }
   }
 
-  // Validate the retention period
   if (retentionHours < MIN_RETENTION_HOURS) {
     logger.warn(
       `Temporary chat retention period ${retentionHours} is below minimum ${MIN_RETENTION_HOURS} hours. Using minimum value.`,
@@ -64,6 +61,53 @@ export function getTempChatRetentionHours(
   }
 
   return retentionHours;
+}
+
+/**
+ * Gets the file retention period from config when configured.
+ * @param interfaceConfig - The custom configuration object
+ * @returns The file retention period in hours, or null when not configured
+ */
+export function getFileRetentionHours(interfaceConfig?: AppConfig['interfaceConfig'] | null): number | null {
+  const configValue = interfaceConfig?.fileRetention;
+
+  if (configValue == null) {
+    return null;
+  }
+
+  if (typeof configValue !== 'number' || isNaN(configValue)) {
+    logger.warn(`Invalid fileRetention in config: ${configValue}. Ignoring file retention override.`);
+    return null;
+  }
+
+  if (configValue < MIN_RETENTION_HOURS) {
+    logger.warn(
+      `File retention period ${configValue} is below minimum ${MIN_RETENTION_HOURS} hours. Using minimum value.`,
+    );
+    return MIN_RETENTION_HOURS;
+  }
+
+  if (configValue > MAX_RETENTION_HOURS) {
+    logger.warn(
+      `File retention period ${configValue} exceeds maximum ${MAX_RETENTION_HOURS} hours. Using maximum value.`,
+    );
+    return MAX_RETENTION_HOURS;
+  }
+
+  return configValue;
+}
+
+/**
+ * Creates an expiration date for uploaded files.
+ * @param interfaceConfig - The custom configuration object
+ * @returns The expiration date
+ */
+export function createFileExpirationDate(interfaceConfig?: AppConfig['interfaceConfig']): Date {
+  const fileRetentionHours = getFileRetentionHours(interfaceConfig);
+  const retentionHours =
+    fileRetentionHours == null ? getTempChatRetentionHours(interfaceConfig) : fileRetentionHours;
+
+  return new Date(Date.now() + retentionHours * 60 * 60 * 1000);
 }
 
 /**

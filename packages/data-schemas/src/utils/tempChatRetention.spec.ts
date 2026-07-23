@@ -1,7 +1,9 @@
 import type { AppConfig } from '~/types';
 import {
   createTempChatExpirationDate,
+  createFileExpirationDate,
   getTempChatRetentionHours,
+  getFileRetentionHours,
   DEFAULT_RETENTION_HOURS,
   MIN_RETENTION_HOURS,
   MAX_RETENTION_HOURS,
@@ -90,6 +92,57 @@ describe('tempChatRetention', () => {
     });
   });
 
+  describe('getFileRetentionHours', () => {
+    it('should return null when file retention is not configured', () => {
+      const result = getFileRetentionHours();
+      expect(result).toBeNull();
+    });
+
+    it('should use configured file retention hours when set', () => {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
+          fileRetention: 36,
+        },
+      };
+
+      const result = getFileRetentionHours(config?.interfaceConfig);
+      expect(result).toBe(36);
+    });
+
+    it('should enforce minimum file retention period', () => {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
+          fileRetention: 0,
+        },
+      };
+
+      const result = getFileRetentionHours(config?.interfaceConfig);
+      expect(result).toBe(MIN_RETENTION_HOURS);
+    });
+
+    it('should enforce maximum file retention period', () => {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
+          fileRetention: 10000,
+        },
+      };
+
+      const result = getFileRetentionHours(config?.interfaceConfig);
+      expect(result).toBe(MAX_RETENTION_HOURS);
+    });
+
+    it('should ignore invalid configured file retention values', () => {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
+          fileRetention: 'invalid' as unknown as number,
+        },
+      };
+
+      const result = getFileRetentionHours(config?.interfaceConfig);
+      expect(result).toBeNull();
+    });
+  });
+
   describe('createTempChatExpirationDate', () => {
     it('should create expiration date with default retention period', () => {
       const beforeCall = Date.now();
@@ -99,7 +152,6 @@ describe('tempChatRetention', () => {
       const expectedMin = beforeCall + DEFAULT_RETENTION_HOURS * 60 * 60 * 1000;
       const expectedMax = afterCall + DEFAULT_RETENTION_HOURS * 60 * 60 * 1000;
 
-      // Result should be between expectedMin and expectedMax
       expect(result.getTime()).toBeGreaterThanOrEqual(expectedMin);
       expect(result.getTime()).toBeLessThanOrEqual(expectedMax);
     });
@@ -118,7 +170,6 @@ describe('tempChatRetention', () => {
       const expectedMin = beforeCall + 12 * 60 * 60 * 1000;
       const expectedMax = afterCall + 12 * 60 * 60 * 1000;
 
-      // Result should be between expectedMin and expectedMax
       expect(result.getTime()).toBeGreaterThanOrEqual(expectedMin);
       expect(result.getTime()).toBeLessThanOrEqual(expectedMax);
     });
@@ -132,6 +183,44 @@ describe('tempChatRetention', () => {
       const now = new Date();
       const result = createTempChatExpirationDate();
       expect(result.getTime()).toBeGreaterThan(now.getTime());
+    });
+  });
+
+  describe('createFileExpirationDate', () => {
+    it('should use file retention when configured', () => {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
+          fileRetention: 8,
+        },
+      };
+
+      const beforeCall = Date.now();
+      const result = createFileExpirationDate(config?.interfaceConfig);
+      const afterCall = Date.now();
+
+      const expectedMin = beforeCall + 8 * 60 * 60 * 1000;
+      const expectedMax = afterCall + 8 * 60 * 60 * 1000;
+
+      expect(result.getTime()).toBeGreaterThanOrEqual(expectedMin);
+      expect(result.getTime()).toBeLessThanOrEqual(expectedMax);
+    });
+
+    it('should fall back to temporary chat retention when file retention is not configured', () => {
+      const config: Partial<AppConfig> = {
+        interfaceConfig: {
+          temporaryChatRetention: 6,
+        },
+      };
+
+      const beforeCall = Date.now();
+      const result = createFileExpirationDate(config?.interfaceConfig);
+      const afterCall = Date.now();
+
+      const expectedMin = beforeCall + 6 * 60 * 60 * 1000;
+      const expectedMax = afterCall + 6 * 60 * 60 * 1000;
+
+      expect(result.getTime()).toBeGreaterThanOrEqual(expectedMin);
+      expect(result.getTime()).toBeLessThanOrEqual(expectedMax);
     });
   });
 });
