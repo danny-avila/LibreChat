@@ -159,7 +159,7 @@ const Part = memo(function Part({
     /** Orphan label (its block's parts were filtered/hidden): renders as a
      *  standalone line. Labeled blocks normally render via ToolCallGroup,
      *  which consumes the label part as the group header instead. */
-    const display = getActivityLabelText(getActivityLabelPart(part), localize);
+    const display = getActivityLabelText(getActivityLabelPart(part));
     if (!display) {
       return null;
     }

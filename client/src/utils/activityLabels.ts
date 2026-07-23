@@ -1,6 +1,5 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TActivityLabelEvent, TMessageContentParts } from 'librechat-data-provider';
-import type { LocalizeFunction } from '~/common';
 
 type ActivityLabelPart = Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }>;
 
@@ -11,52 +10,20 @@ export function getActivityLabelPart(
   return part?.type === ContentTypes.ACTIVITY_LABEL ? (part as ActivityLabelPart) : undefined;
 }
 
-const COUNT_SEGMENTS: Array<{
-  key: keyof NonNullable<ActivityLabelPart['counts']>;
-  one: Parameters<LocalizeFunction>[0];
-  other: Parameters<LocalizeFunction>[0];
-}> = [
-  { key: 'searches', one: 'com_ui_activity_searched_one', other: 'com_ui_activity_searched_other' },
-  { key: 'reads', one: 'com_ui_activity_read_one', other: 'com_ui_activity_read_other' },
-  { key: 'writes', one: 'com_ui_activity_wrote_one', other: 'com_ui_activity_wrote_other' },
-  { key: 'commands', one: 'com_ui_activity_ran_one', other: 'com_ui_activity_ran_other' },
-  { key: 'other', one: 'com_ui_activity_used_one', other: 'com_ui_activity_used_other' },
-];
-
 /**
- * Deterministic fallback header: renders instantly at batch end from tool-name
- * counts; the fast-model label replaces it when it arrives.
+ * The generated description, or empty when none exists yet.
+ *
+ * There is deliberately NO fallback string. A templated stand-in
+ * ("ran 1 command") only restates the tool card rendered directly beneath
+ * it, and showing one changes the UI before anything worth reading exists.
+ * Callers render nothing until this returns text.
  */
-export function buildActivityCountsPhrase(
-  counts: ActivityLabelPart['counts'] | undefined,
-  localize: LocalizeFunction,
-): string {
-  if (!counts) {
-    return '';
-  }
-  const segments: string[] = [];
-  for (const segment of COUNT_SEGMENTS) {
-    const count = counts[segment.key];
-    if (count > 0) {
-      segments.push(localize(count === 1 ? segment.one : segment.other, { 0: String(count) }));
-    }
-  }
-  return segments.join(' · ');
-}
-
-/** Fast-model label when present, localized deterministic counts phrase otherwise. */
-export function getActivityLabelText(
-  part: ActivityLabelPart | undefined,
-  localize: LocalizeFunction,
-): string {
+export function getActivityLabelText(part: ActivityLabelPart | undefined): string {
   if (!part) {
     return '';
   }
   const label = part[ContentTypes.ACTIVITY_LABEL];
-  if (typeof label === 'string' && label.length > 0) {
-    return label;
-  }
-  return buildActivityCountsPhrase(part.counts, localize);
+  return typeof label === 'string' ? label.trim() : '';
 }
 
 /**

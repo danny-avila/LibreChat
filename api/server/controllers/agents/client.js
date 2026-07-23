@@ -443,7 +443,7 @@ class AgentClient extends BaseClient {
    * (thread_id) with its own tags — never as an orphan trace. Returns null
    * when the label could not be generated.
    */
-  async generateActivityLabelViaRun({ entries, context, traceSeed, signal, charLimit }) {
+  async generateActivityLabelViaRun({ entries, context, traceSeed, signal, charLimit, prompt }) {
     if (typeof this.run?.generateActivityLabel !== 'function') {
       return null;
     }
@@ -464,7 +464,12 @@ class AgentClient extends BaseClient {
         lastAssistantText: context.lastAssistantText,
         traceSeed,
         charLimit,
-        ...(this.activityLabelPrompt != null && { prompt: this.activityLabelPrompt }),
+        /** The wiring always supplies one (the yaml `activityPrompt` when
+         *  set, else this repo's instruction). Falling through to the SDK's
+         *  built-in prompt would silently use a different register. */
+        ...((prompt ?? this.activityLabelPrompt) != null && {
+          prompt: prompt ?? this.activityLabelPrompt,
+        }),
         chainOptions: {
           signal,
           callbacks: [{ handleLLMEnd }],

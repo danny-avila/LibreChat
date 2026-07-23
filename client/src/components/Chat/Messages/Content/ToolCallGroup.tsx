@@ -86,8 +86,8 @@ interface ToolCallGroupProps {
   groupAttachments?: TAttachment[];
   initialExpansionState?: ToolCallGroupExpansionState;
   onExpansionChange?: (state: ToolCallGroupExpansionState) => void;
-  /** Activity-label part terminating this block; when present the header
-   *  shows the fast-model label (or its deterministic counts fallback). */
+  /** Activity-label part terminating this block; when it carries generated
+   *  text the header shows that text instead of the default tool summary. */
   labelPart?: PartWithIndex;
 }
 
@@ -126,7 +126,7 @@ export default function ToolCallGroup({
     [toolMetadata],
   );
   const activityLabel = getActivityLabelPart(labelPart?.part);
-  const activityLabelText = getActivityLabelText(activityLabel, localize);
+  const activityLabelText = getActivityLabelText(activityLabel);
   const activityFailed = activityLabel?.status === 'failed' || activityLabel?.status === 'partial';
   const toolNames = useMemo(() => toolMetadata.map((m) => m.name), [toolMetadata]);
   const iconToolNames = useMemo(() => toolMetadata.map((m) => m.iconName), [toolMetadata]);
@@ -264,8 +264,9 @@ export default function ToolCallGroup({
     }
     return localize('com_ui_used_n_tools', { 0: String(count) });
   };
-  /** Fast-model activity label (or its counts fallback) wins over the
-   *  generic category verb when this block carries a label part. */
+  /** The generated line wins over the generic category verb — but only once
+   *  it exists. An unfilled label part leaves the block rendering exactly as
+   *  it would without the feature. */
   const groupLabel = activityLabelText.length > 0 ? activityLabelText : resolveGroupLabel();
   /** Single category glyph for homogeneous groups (else StackedToolIcons). */
   const CategoryIcon = allSubagents ? Users : MessageCircleQuestion;

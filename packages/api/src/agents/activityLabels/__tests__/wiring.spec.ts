@@ -8,6 +8,7 @@ import {
   stripActivityLabelParts,
   synthesizeActivityLabelGapEvents,
 } from '../wiring';
+import { ACTIVITY_INSTRUCTION } from '../runtime';
 
 async function flushDetached(): Promise<void> {
   for (let i = 0; i < 4; i += 1) {
@@ -173,17 +174,58 @@ describe('createActivityLabelWiring close gate', () => {
 
     await hook(batchInput(), new AbortController().signal);
     await flushDetached();
-    /** Claim-time placeholder emitted; label still in flight. */
-    expect(emitLabelEvent).toHaveBeenCalledTimes(1);
+    /** The slot is reserved but silent: claiming one emits nothing, so the
+     *  UI is untouched until a real label exists. */
+    expect(emitLabelEvent).not.toHaveBeenCalled();
 
     /** Settle timed out: the scope closes, then the straggler resolves. */
     closed = true;
     releaseLabel('Late label that must not land');
     await flushDetached();
 
-    expect(emitLabelEvent).toHaveBeenCalledTimes(1);
+    expect(emitLabelEvent).not.toHaveBeenCalled();
     const labelPart = parts[1] as LooseContentPart;
     expect(labelPart.activity_label).toBe('');
     expect(labelPart.pending).toBe(true);
+  });
+});
+
+describe('createActivityLabelWiring instruction', () => {
+  const runWith = async (prompt?: string) => {
+    const parts: Array<LooseContentPart | null | undefined> = [
+      { type: 'tool_call', tool_call: { id: 'tool-1' } },
+    ];
+    const generateLabel = jest.fn(async () => 'Confirmed the sandbox resets');
+    const { hook } = createActivityLabelWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      resolveLLM: jest.fn(async () => ({
+        provider: Providers.OPENAI,
+        clientOptions: { model: 'm' },
+      })),
+      generateLabel,
+      ...(prompt != null && { prompt }),
+    });
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    return generateLabel;
+  };
+
+  /** Without this the SDK path silently uses the published package's own
+   *  generic prompt, and only the fallback path gets this repo's register. */
+  it('always forwards an instruction to the SDK path', async () => {
+    const generateLabel = await runWith();
+    expect(generateLabel).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: ACTIVITY_INSTRUCTION }),
+    );
+  });
+
+  it('prefers the configured activityPrompt when one is set', async () => {
+    const generateLabel = await runWith('House style, please');
+    expect(generateLabel).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: 'House style, please' }),
+    );
   });
 });

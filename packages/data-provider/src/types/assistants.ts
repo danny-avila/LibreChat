@@ -634,14 +634,6 @@ export type TMessageContentParts =
       type: ContentTypes.ACTIVITY_LABEL;
       activity_label?: string;
       tool_call_ids?: string[];
-      /** Deterministic tool-name classification (no LLM): batch composition. */
-      counts?: {
-        searches: number;
-        reads: number;
-        writes: number;
-        commands: number;
-        other: number;
-      };
       /** ok = all tools succeeded, failed = all failed, partial = mixed. */
       status?: 'ok' | 'partial' | 'failed';
       pending?: boolean;

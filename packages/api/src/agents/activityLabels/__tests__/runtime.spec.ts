@@ -9,7 +9,12 @@ jest.mock('@librechat/agents', () => ({
   initializeModel: (...args: unknown[]) => mockInitializeModel(...(args as [])),
 }));
 
-import { classifyBatch, createActivityLabelHook } from '../runtime';
+import {
+  ACTIVITY_INSTRUCTION,
+  buildPrompt,
+  classifyBatch,
+  createActivityLabelHook,
+} from '../runtime';
 import type { ActivityLabelBatchMeta, ActivityLabelSlot } from '../runtime';
 
 /** Flushes the hook's detached generation chain. */
@@ -37,21 +42,13 @@ function batchInput(overrides: Partial<PostToolBatchHookInput> = {}): PostToolBa
 }
 
 describe('classifyBatch', () => {
-  it('classifies tool names deterministically and derives batch status', () => {
+  it('collects the covered tool calls and derives batch status', () => {
     const meta = classifyBatch([
       { toolName: 'web_search', toolInput: {}, toolUseId: 'a', status: 'success', toolOutput: '' },
       { toolName: 'read_file', toolInput: {}, toolUseId: 'b', status: 'success', toolOutput: '' },
       { toolName: 'edit_file', toolInput: {}, toolUseId: 'c', status: 'error', error: 'denied' },
-      {
-        toolName: 'search_mcp_github',
-        toolInput: {},
-        toolUseId: 'd',
-        status: 'success',
-        toolOutput: '',
-      },
     ]);
-    expect(meta.counts).toEqual({ searches: 1, reads: 1, writes: 1, commands: 0, other: 1 });
-    expect(meta.toolCallIds).toEqual(['a', 'b', 'c', 'd']);
+    expect(meta.toolCallIds).toEqual(['a', 'b', 'c']);
     expect(meta.status).toBe('partial');
   });
 
@@ -59,8 +56,61 @@ describe('classifyBatch', () => {
     const meta = classifyBatch([
       { toolName: 'bash_tool', toolInput: {}, toolUseId: 'x', status: 'error', error: 'boom' },
     ]);
-    expect(meta.counts.commands).toBe(1);
     expect(meta.status).toBe('failed');
+  });
+
+  /** A tool-type tally could only echo the cards under the header, so the
+   *  metadata deliberately has no place to put one. */
+  it('carries no tool-type tally', () => {
+    const meta = classifyBatch([
+      { toolName: 'bash_tool', toolInput: {}, toolUseId: 'x', status: 'success', toolOutput: '' },
+    ]);
+    expect(Object.keys(meta).sort()).toEqual(['status', 'toolCallIds']);
+  });
+});
+
+describe('ACTIVITY_INSTRUCTION', () => {
+  it('forbids restating what the tool cards already show', () => {
+    expect(ACTIVITY_INSTRUCTION).toMatch(/never name the tools/i);
+    expect(ACTIVITY_INSTRUCTION).toMatch(/never count them/i);
+    expect(ACTIVITY_INSTRUCTION).toMatch(/never echo the arguments/i);
+  });
+
+  it('asks for a past-tense outcome, not the attempt', () => {
+    expect(ACTIVITY_INSTRUCTION).toMatch(/past tense/i);
+    expect(ACTIVITY_INSTRUCTION).toMatch(/outcome, not the attempt/i);
+  });
+});
+
+describe('buildPrompt', () => {
+  it('carries intent and marks the calls as reference material', () => {
+    const prompt = buildPrompt(
+      [
+        {
+          toolName: 'bash_tool',
+          toolInput: { command: 'ls /mnt/data' },
+          toolUseId: 'a',
+          status: 'success',
+          toolOutput: 'empty',
+        },
+      ],
+      600,
+      {
+        lastAssistantText: 'Let me check what is actually in /mnt/data',
+        thinkingExcerpts: ['The filesystem seems to reset between calls'],
+      },
+    );
+    expect(prompt).toContain('Let me check what is actually in /mnt/data');
+    expect(prompt).toContain('The filesystem seems to reset between calls');
+    expect(prompt).toContain('do not restate these');
+    /** Outputs are the whole reason this runs after the batch. */
+    expect(prompt).toContain('empty');
+  });
+
+  it('uses the caller instruction verbatim when one is supplied', () => {
+    const prompt = buildPrompt([], 600, undefined, 'CUSTOM RULE');
+    expect(prompt.startsWith('CUSTOM RULE')).toBe(true);
+    expect(prompt).not.toContain('git commit subject');
   });
 });
 
