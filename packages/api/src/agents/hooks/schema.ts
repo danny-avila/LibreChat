@@ -10,7 +10,32 @@ const MAX_HANDLERS_PER_GROUP = 32;
 const MAX_TOTAL_HANDLERS = 512;
 const MAX_TIMEOUT_SECONDS = 3_600;
 
-export const pluginHookHandlerSchema = z
+export interface PluginHookHandler {
+  type: string;
+  command?: string;
+  commandWindows?: string;
+  prompt?: string;
+  timeout?: number;
+  statusMessage?: string;
+  if?: string;
+  async?: boolean;
+  asyncRewake?: boolean;
+  rewakeMessage?: string;
+  rewakeSummary?: string;
+}
+
+export interface PluginHookGroup {
+  matcher?: string;
+  if?: string;
+  hooks: PluginHookHandler[];
+}
+
+export interface PluginHooksDocument {
+  description?: string;
+  hooks: Record<string, PluginHookGroup[]>;
+}
+
+export const pluginHookHandlerSchema: z.ZodType<PluginHookHandler> = z
   .object({
     type: z.string().trim().min(1).max(MAX_HANDLER_TYPE_LENGTH),
     command: z.string().min(1).max(MAX_COMMAND_LENGTH).optional(),
@@ -42,7 +67,7 @@ export const pluginHookHandlerSchema = z
     }
   });
 
-export const pluginHookGroupSchema = z
+export const pluginHookGroupSchema: z.ZodType<PluginHookGroup> = z
   .object({
     matcher: z.string().optional(),
     /** Retained for older hook bundles; current Claude plugins declare `if` per handler. */
@@ -56,7 +81,7 @@ const pluginHookEventsSchema = z.record(
   z.array(pluginHookGroupSchema).min(1).max(MAX_GROUPS_PER_EVENT),
 );
 
-export const pluginHooksDocumentSchema = z
+export const pluginHooksDocumentSchema: z.ZodType<PluginHooksDocument> = z
   .object({
     description: z.string().max(MAX_DESCRIPTION_LENGTH).optional(),
     hooks: pluginHookEventsSchema,
@@ -82,10 +107,6 @@ export const pluginHooksDocumentSchema = z
       }
     }
   });
-
-export type PluginHookHandler = z.infer<typeof pluginHookHandlerSchema>;
-export type PluginHookGroup = z.infer<typeof pluginHookGroupSchema>;
-export type PluginHooksDocument = z.infer<typeof pluginHooksDocumentSchema>;
 
 export interface PluginHookValidationIssue {
   path: string;
