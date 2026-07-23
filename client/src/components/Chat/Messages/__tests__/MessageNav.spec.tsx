@@ -1645,6 +1645,67 @@ describe('MessageNav', () => {
       expect(column.scrollTop).toBe(13);
     });
 
+    it('scrubs to the rib under the pointer, not one past it, with the terminus pinned', () => {
+      const messages = Array.from({ length: 5 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}`, isCreatedByUser: i % 2 === 0 }),
+      );
+      const { container } = renderNavWithEnd(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      const getById = jest.spyOn(document, 'getElementById');
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+      });
+
+      const scrubbed = getById.mock.calls.map((c) => c[0]);
+      expect(scrubbed).toContain('m-2');
+      expect(scrubbed).not.toContain('m-3');
+      getById.mockRestore();
+    });
+
+    it('peaks the fisheye and preview on the rib under the pointer', () => {
+      const messages = Array.from({ length: 6 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}` }),
+      );
+      const asRect = (top: number, height: number): DOMRect =>
+        ({
+          top,
+          bottom: top + height,
+          height,
+          left: 200,
+          right: 214,
+          width: 14,
+          x: 200,
+          y: top,
+          toJSON: () => ({}),
+        }) as DOMRect;
+      /** Rib i occupies [i*12, i*12+6] — a 6px rib on a 6px gap. */
+      const rectSpy = jest
+        .spyOn(Element.prototype, 'getBoundingClientRect')
+        .mockImplementation(function (this: Element) {
+          const id = this.getAttribute?.('data-msg-id');
+          const index = id != null ? messages.findIndex((m) => m.messageId === id) : -1;
+          return index >= 0 ? asRect(index * 12, 6) : asRect(0, messages.length * 12);
+        });
+
+      const { container } = renderNavWithEnd(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+
+      act(() => {
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 3 * 12 + 3 });
+        jest.advanceTimersByTime(80);
+      });
+
+      expect(document.body.querySelector('[role="tooltip"]')).toHaveTextContent('message 3');
+      const highlighted = Array.from(container.querySelectorAll('[data-msg-id]')).filter((r) =>
+        r.querySelector('span')?.className.includes('bg-gray-800'),
+      );
+      expect(highlighted.map((r) => r.getAttribute('data-msg-id'))).toEqual(['m-3']);
+      rectSpy.mockRestore();
+    });
+
     it('starts a scrub drag from the pinned terminus', () => {
       const messages = Array.from({ length: 5 }, (_, i) =>
         buildMessage({ messageId: `m-${i}`, text: `message ${i}`, isCreatedByUser: i % 2 === 0 }),
