@@ -24,7 +24,7 @@ export default function useFileUploadRouter() {
           [toolResource]: true,
         }));
       }
-      handleFiles(files, toolResource);
+      return handleFiles(files, toolResource);
     },
     [handleFiles, setEphemeralAgent],
   );

@@ -33,6 +33,9 @@ import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
+/** Minimum pasted-text length before it is attached as a file instead of inserted inline */
+const PASTE_TO_FILE_MIN_LENGTH = 5000;
+
 export default function useTextarea({
   textAreaRef,
   submitButtonRef,
@@ -64,6 +67,7 @@ export default function useTextarea({
   const assistantMap = useAssistantsMapContext();
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
+  const pasteLongTextAsFile = useRecoilValue(store.pasteLongTextAsFile);
   const customShortcuts = useRecoilValue(store.customShortcuts);
 
   /**
@@ -351,7 +355,57 @@ export default function useTextarea({
         }
         setFilesLoading(false);
         openModal(timestampedFiles);
+        return;
       }
+
+      const pastedText = clipboardData.getData('text/plain');
+      if (!pasteLongTextAsFile || uploadsDisabled || pastedText.length < PASTE_TO_FILE_MIN_LENGTH) {
+        return;
+      }
+
+      const textFile = new File([pastedText], `pasted_text_${+new Date()}.txt`, {
+        type: 'text/plain',
+      });
+      /** The default paste is already blocked past this point, so if the attachment never
+       *  materializes (validation failure, dismissed modal) the text is re-inserted inline */
+      const restorePaste = () => {
+        if (textAreaRef.current) {
+          insertTextAtCursor(textAreaRef.current, pastedText);
+          forceResize(textAreaRef.current);
+        }
+      };
+
+      /** Assistants use their own upload path; bypass option resolution like drag-and-drop does */
+      if (isAssistantsEndpoint(conversation?.endpoint)) {
+        e.preventDefault();
+        setFilesLoading(true);
+        void routeFiles([textFile]).then((ok) => {
+          if (ok === false) {
+            restorePaste();
+          }
+        });
+        return;
+      }
+
+      const options = getUploadOptions([textFile]);
+      if (options.length === 0) {
+        /** No viable upload destination; fall back to a regular inline text paste */
+        return;
+      }
+      e.preventDefault();
+      if (options.length === 1) {
+        setFilesLoading(true);
+        void routeFiles([textFile], options[0]).then((ok) => {
+          if (ok === false) {
+            restorePaste();
+          }
+        });
+        if (options[0] === EToolResources.context) {
+          showToast({ message: localize('com_ui_file_attached_as_text'), status: 'info' });
+        }
+        return;
+      }
+      openModal([textFile], restorePaste);
     },
     [
       localize,
@@ -363,6 +417,7 @@ export default function useTextarea({
       uploadsDisabled,
       setFilesLoading,
       getUploadOptions,
+      pasteLongTextAsFile,
     ],
   );
 
