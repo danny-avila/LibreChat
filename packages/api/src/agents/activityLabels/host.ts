@@ -191,7 +191,12 @@ export async function resolveActivityLabelModel({
     user: createSafeUser(req.user as IUser | undefined),
     body: ids,
   });
-  return { provider, clientOptions: clientOptions as ClientOptions };
+  return {
+    provider,
+    clientOptions: clientOptions as ClientOptions,
+    /** Priced with the LABEL endpoint's rates, not the agent's. */
+    endpointTokenConfig: options.endpointTokenConfig,
+  };
 }
 
 /**
