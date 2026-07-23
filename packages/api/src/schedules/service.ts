@@ -346,7 +346,9 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       // reconciler will ever clear it — delete it now so the job hash doesn't leak.
       if (job.status !== 'running' && job.status !== 'requires_action') {
         if (options?.preserve === false) {
-          await store.deleteJob(conversationId);
+          // Generation-fenced for the same reason as clearReconciledJob: a replacement
+          // may have claimed this conversationId since the read above.
+          await store.deleteJob(conversationId, job.createdAt);
         }
         return true;
       }
@@ -366,7 +368,11 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       if (job == null || !jobMatchesIdentity(job, identity)) {
         return;
       }
-      await store.deleteJob(conversationId);
+      // CAS, not read-then-delete: the identity check above is a READ, and a replacement
+      // generation can land between it and the delete. Passing the observed createdAt
+      // makes the delete conditional on the job still being that exact generation, so
+      // the store itself rejects the write if one did.
+      await store.deleteJob(conversationId, job.createdAt);
     },
     // Whether every engine replica observes the SAME jobs: a Redis-backed job
     // store is shared across workers, and a single-process (non-clustered)

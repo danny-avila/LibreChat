@@ -18,6 +18,7 @@ import {
   isPendingActionStale,
 } from '~/stream/interfaces/IJobStore';
 import { toPendingSteer } from '~/stream/SteeringLifecycle';
+import { nextGenerationStamp } from '../generationStamp';
 
 /** Recovery window for parked steers (mirrors Redis's completed-job TTL). */
 export const PARKED_STEERS_TTL_MS: number = 5 * 60 * 1000;
@@ -130,7 +131,11 @@ export class InMemoryJobStore implements IJobStore {
       userId,
       ...(tenantId && { tenantId }),
       status: 'running',
-      createdAt: Date.now(),
+      // STRICTLY monotonic per streamId. createdAt is the generation fence, and a
+      // streamId is deliberately reused across generations, so two createJob calls
+      // landing in the same millisecond would otherwise mint identical tokens and let
+      // a stale caller's guard pass against the replacement.
+      createdAt: nextGenerationStamp(this.jobs.get(streamId)?.createdAt),
       conversationId,
       syncSent: false,
     };
@@ -217,13 +222,19 @@ export class InMemoryJobStore implements IJobStore {
     this.idempotencyClaims.delete(key);
   }
 
-  async deleteJob(streamId: string): Promise<void> {
+  async deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean> {
+    // Generation-fenced: an omitted guard behaves exactly as before. Read-check-write
+    // in one synchronous block, so no replacement can land in between.
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return false;
+    }
     this.jobs.delete(streamId);
     this.contentState.delete(streamId);
     this.lastActivity.delete(streamId);
     this.steerQueues.delete(streamId);
     this.closedSteerQueues.delete(streamId);
     logger.debug(`[InMemoryJobStore] Deleted job: ${streamId}`);
+    return true;
   }
 
   /**

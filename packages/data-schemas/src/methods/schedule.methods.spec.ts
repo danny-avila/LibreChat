@@ -1087,3 +1087,112 @@ describe('account-deletion barrier (delete vs create)', () => {
     expect(pending.some((u) => u._id.toString() === pendingUser._id.toString())).toBe(true);
   });
 });
+
+describe('lifecycle barriers: stale pause vs resume, and concurrent resumes at cap-1', () => {
+  const scheduledFor = new Date('2026-07-20T12:00:00Z');
+
+  it('a stale requires_action write cannot demote an already-resumed run', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+
+    // Segment 1 pauses. Its writer observed epoch 0 (no resume yet).
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-1',
+      autoDisableAfterFailures: 3,
+    });
+    expect((await getRun(schedule.id, scheduledFor)).status).toBe('requires_action');
+
+    // A resume promotes the run and BUMPS the epoch, opening segment 2.
+    const lease = await methods.acquireResumeLease({
+      scheduleId: schedule.id,
+      scheduledFor,
+      holder: 'resume-a',
+      ttlMs: 60_000,
+      capacitySlot: 0,
+    });
+    expect(lease.outcome).toBe('acquired');
+    const resumedEpoch = lease.outcome === 'acquired' ? lease.resumeSeq : -1;
+    expect(resumedEpoch).toBeGreaterThan(0);
+
+    // The now-STALE pause callback from segment 1 fires late, still carrying epoch 0.
+    // It must be dropped: demoting here would make a live, running generation look
+    // paused and free its slot for a concurrent occurrence.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-1',
+      autoDisableAfterFailures: 3,
+      expectResumeSeq: 0,
+    });
+    expect((await getRun(schedule.id, scheduledFor)).status).toBe('started');
+
+    // The CURRENT segment's pause still lands.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-1',
+      autoDisableAfterFailures: 3,
+      expectResumeSeq: resumedEpoch,
+    });
+    expect((await getRun(schedule.id, scheduledFor)).status).toBe('requires_action');
+  });
+
+  it('only one of two resumes of DIFFERENT schedules admits at cap-1', async () => {
+    // Two distinct schedules, each with its own paused occurrence. Per-schedule overlap
+    // cannot arbitrate this: the contended resource is the GLOBAL capacity slot.
+    const a = await methods.createSchedule(scheduleData());
+    const b = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(runData(a, { scheduledFor, status: 'requires_action' }));
+    await methods.insertScheduleRun(runData(b, { scheduledFor, status: 'requires_action' }));
+
+    // Both race for the SAME slot 0 (a cap of 1 leaves exactly one).
+    const [first, second] = await Promise.all([
+      methods.acquireResumeLease({
+        scheduleId: a.id,
+        scheduledFor,
+        holder: 'resume-a',
+        ttlMs: 60_000,
+        capacitySlot: 0,
+      }),
+      methods.acquireResumeLease({
+        scheduleId: b.id,
+        scheduledFor,
+        holder: 'resume-b',
+        ttlMs: 60_000,
+        capacitySlot: 0,
+      }),
+    ]);
+
+    const outcomes = [first.outcome, second.outcome].sort();
+    expect(outcomes).toEqual(['acquired', 'slot-taken']);
+    // Exactly one run holds the slot, so the cap was never exceeded.
+    expect(await ScheduleRun.countDocuments({ status: 'started', capacitySlot: 0 })).toBe(1);
+  });
+
+  it('a released pre-claim resume frees its capacity slot for the loser', async () => {
+    const a = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(runData(a, { scheduledFor, status: 'requires_action' }));
+
+    const lease = await methods.acquireResumeLease({
+      scheduleId: a.id,
+      scheduledFor,
+      holder: 'resume-a',
+      ttlMs: 60_000,
+      capacitySlot: 0,
+    });
+    expect(lease.outcome).toBe('acquired');
+
+    // Rolling back a still-unclaimed resume must return the row to requires_action AND
+    // release the slot, so the approval stays actionable and capacity is not leaked.
+    expect(await methods.releaseResumeLease(a.id, scheduledFor, 'resume-a')).toBe(true);
+    const row = await getRun(a.id, scheduledFor);
+    expect(row.status).toBe('requires_action');
+    expect(row.capacitySlot).toBeUndefined();
+    expect(await ScheduleRun.countDocuments({ status: 'started', capacitySlot: 0 })).toBe(0);
+  });
+});
