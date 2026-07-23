@@ -1,5 +1,5 @@
-import type { PluginHooksDocument } from './schema';
 import type { PluginHookCapabilities } from './compatibility';
+import type { PluginHooksDocument } from './schema';
 import { planPluginHooks } from './compatibility';
 
 const commandCapabilities: PluginHookCapabilities = {
