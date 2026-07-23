@@ -2,10 +2,20 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.3.13
+version: 1.3.14
 
 # Cache settings: Set to true to enable caching
 cache: true
+
+# Tenant-scoped Langfuse export (optional). Fanout also requires the deployment
+# services and environment variables documented in the Langfuse guide.
+# langfuse:
+#   enabled: true
+#   publicKey: '${TENANT_LANGFUSE_PUBLIC_KEY}'
+#   secretKey: '${TENANT_LANGFUSE_SECRET_KEY}'
+#   destination: 'us' # Must match an allowed LANGFUSE_FANOUT_TENANT_DESTINATIONS key
+#   fanout:
+#     enabled: true
 
 # File storage configuration
 # Single strategy for all file types (legacy format, still supported)
@@ -427,7 +437,23 @@ endpoints:
   #   skills:
   #     maxCatalogSkills: 20
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
-  #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
+  #   capabilities: ["deferred_tools", "execute_code", "file_search", "web_search", "artifacts", "subagents", "actions", "context", "skills", "memory", "ask_user_question", "tools", "chain", "ocr"]
+  #   # The following capabilities are opt-in and must be added explicitly:
+  #   # "programmatic_tools", "stateful_code_sessions", "run_in_background"
+  #   # "stateful_code_sessions" is highly experimental and may change substantially.
+  #   # "run_in_background" allows selected MCP and Code Interpreter tools to run as background tasks.
+  #   # (optional) Require user approval before matching tool calls. Disabled by default.
+  #   toolApproval:
+  #     enabled: true
+  #     mode: default # default, dontAsk, or bypass
+  #     allow: ["mcp:trusted-server:read_*"]
+  #     deny: ["mcp:*:delete_*"] # Deny rules always take precedence
+  #     ask: ["mcp:*:*"]
+  #     reason: "Review {tool} before it runs."
+  #   # (optional) Persist Agent runs paused for approval or Ask User. MongoDB is the durable default.
+  #   checkpointer:
+  #     type: mongo # mongo (default) or memory (single-process development only)
+  #     ttl: 86400 # Approval window in seconds; defaults to 24 hours
 
   # (optional) Custom request headers for the built-in OpenAI / Google endpoints.
   # Forwarded on every request to the provider (or an AI gateway / reverse proxy
@@ -696,6 +722,7 @@ endpoints:
 #       description: "Most capable GPT-4 model with multimodal support"
 #       # default: true      # Hard admin default; takes precedence over prior user choices
 #       # softDefault: true  # First-time default only; skipped after a user selects a model/spec/agent
+#       # showInMenu: false  # Hide from the model selector while keeping explicit `spec` access
 #       group: "openAI"  # String value matching the endpoint name
 #       preset:
 #         endpoint: "openAI"
@@ -760,6 +787,15 @@ endpoints:
 #       preset:
 #         endpoint: "openAI"
 #         model: "gpt-4o-mini"
+
+# Automatic conversation summarization (optional)
+# summarization:
+#   enabled: true
+#   provider: "openAI"
+#   model: "gpt-4o-mini"
+#   retainRecent:
+#     turns: 2 # Keep the newest complete user/assistant turns outside the summary
+#     tokens: 2000 # Also preserve up to this many recent tokens
 
 # fileConfig:
 #   endpoints:
