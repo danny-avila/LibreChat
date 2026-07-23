@@ -289,9 +289,20 @@ export class RedisEventTransport implements IEventTransport {
       // A failed Redis GET must not leave a live subscription permanently paused.
       // Fall back to normal reorder/timeout behavior and let the caller log the sync error.
       if (state === initialState && state?.reorderBuffer.deliveryDeferred) {
-        state.reorderBuffer.deliveryDeferred = false;
+        const buffer = state.reorderBuffer;
+        // The local replay frontier remains authoritative even when the shared counter
+        // cannot be read. Drop its pub/sub copies before releasing any later live events.
+        if (replayedNextSeq != null) {
+          for (const seq of buffer.pending.keys()) {
+            if (seq < replayedNextSeq) {
+              buffer.pending.delete(seq);
+            }
+          }
+          buffer.nextSeq = Math.max(buffer.nextSeq, replayedNextSeq);
+        }
+        buffer.deliveryDeferred = false;
         this.flushPendingMessages(streamId, state);
-        if (state.reorderBuffer.pending.size > 0) {
+        if (buffer.pending.size > 0) {
           this.scheduleFlushTimeout(streamId, state);
         }
       }

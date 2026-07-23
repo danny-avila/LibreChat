@@ -220,6 +220,42 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
 
       await manager.destroy();
     });
+
+    test('a failed Redis sync still releases only events beyond the replay frontier', async () => {
+      const mockPublisher = createMockPublisher();
+      mockPublisher.get.mockRejectedValueOnce(new Error('GET failed'));
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+      const streamId = 'first-subscriber-sync-failure';
+      const chunks: unknown[] = [];
+      transport.subscribe(
+        streamId,
+        {
+          onChunk: (event) => chunks.push(event),
+        },
+        { deferSequenceDelivery: true },
+      );
+
+      const messageHandler = mockSubscriber.on.mock.calls.find(
+        (call) => call[0] === 'message',
+      )?.[1] as (channel: string, message: string) => void;
+      const channel = `stream:{${streamId}}:events`;
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 0, data: { index: 0 } }));
+      messageHandler(channel, JSON.stringify({ type: 'chunk', seq: 1, data: { index: 1 } }));
+      expect(chunks).toEqual([]);
+
+      await expect(transport.syncReorderBuffer(streamId, 1)).rejects.toThrow('GET failed');
+
+      expect(chunks).toEqual([{ index: 1 }]);
+      transport.destroy();
+    });
   });
 
   describe('Reorder buffer sync on reconnect (Unit)', () => {
