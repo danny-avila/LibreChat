@@ -393,6 +393,8 @@ export interface InitializeAgentParams {
     toolDefinitions?: LCTool[];
     hasDeferredTools?: boolean;
     actionsEnabled?: boolean;
+    /** Action tool names backed by OAuth — excluded from background dispatch. */
+    oauthActionToolNames?: string[];
     /**
      * Pre-uploaded code-env file refs for the agent's
      * `tool_resources.execute_code`. Bubbled up so the run host can seed
@@ -971,6 +973,7 @@ export async function initializeAgent(
     requestScopedConnections,
     hasDeferredTools,
     actionsEnabled,
+    oauthActionToolNames,
     tools: structuredTools,
     primedCodeFiles,
   } = loadToolsResult ?? {
@@ -984,6 +987,7 @@ export async function initializeAgent(
     toolDefinitions: [],
     hasDeferredTools: false,
     actionsEnabled: undefined,
+    oauthActionToolNames: undefined,
     primedCodeFiles: undefined,
   };
 
@@ -1187,6 +1191,7 @@ export async function initializeAgent(
         ephemeralServerNames.add(normalizeServerName(serverName));
       }
     }
+    const oauthActionNames = new Set(oauthActionToolNames ?? []);
     const backgroundResult = applyBackgroundToolCalls({
       toolDefinitions,
       toolRegistry,
@@ -1195,8 +1200,13 @@ export async function initializeAgent(
        *  placeholders) never get the param: their connection dies at request
        *  end, so the executor would only downgrade the call to foreground.
        *  Unknown servers stay eligible — the executor's per-instance tag is
-       *  the fail-safe for those. */
+       *  the fail-safe for those. OAuth-backed action tools are excluded too:
+       *  a detached call can block on an interactive login prompt the user
+       *  never sees. */
       excludeTool: (toolName) => {
+        if (oauthActionNames.has(toolName)) {
+          return true;
+        }
         const delimiterIndex = toolName.indexOf(Constants.mcp_delimiter);
         if (delimiterIndex < 0) {
           return false;

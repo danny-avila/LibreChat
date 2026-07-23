@@ -212,6 +212,33 @@ describe('applyBackgroundToolCalls', () => {
     ).toBeUndefined();
   });
 
+  it('injects an opted-in action tool but not one the OAuth excludeTool rejects', () => {
+    const oauthActionNames = new Set(['sendMail_action_mail---example---com']);
+    const defs = [
+      mcpDef('getWeather_action_weather---com'),
+      mcpDef('sendMail_action_mail---example---com'),
+    ];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: {
+        'getWeather_action_weather---com': { run_in_background: true },
+        'sendMail_action_mail---example---com': { run_in_background: true },
+      },
+      excludeTool: (name) => oauthActionNames.has(name),
+    });
+    expect(result.backgroundToolNames).toEqual(['getWeather_action_weather---com']);
+    const oauthDef = result.toolDefinitions.find(
+      (d) => d.name === 'sendMail_action_mail---example---com',
+    );
+    expect(
+      (oauthDef?.parameters as { properties?: Record<string, unknown> }).properties?.[
+        RUN_IN_BACKGROUND_ARG
+      ],
+    ).toBeUndefined();
+  });
+
   it('skips a non-object (string-input) schema without rewriting it', () => {
     const defs = [{ name: 'legacy_tool', parameters: { type: 'string' } } as unknown as LCTool];
     const result = applyBackgroundToolCalls({

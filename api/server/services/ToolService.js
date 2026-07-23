@@ -38,6 +38,7 @@ const {
   ErrorTypes,
   ContentTypes,
   imageGenTools,
+  AuthTypeEnum,
   EModelEndpoint,
   EToolResources,
   isActionTool,
@@ -854,6 +855,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           name: toolName,
           description: sig.description,
           parameters: sig.parameters,
+          oauth: action.metadata.auth?.type === AuthTypeEnum.OAuth,
         });
       }
     }
@@ -861,23 +863,24 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     return definitions;
   };
 
-  let { toolDefinitions, toolRegistry, hasDeferredTools } = await loadToolDefinitions(
-    {
-      userId: req.user.id,
-      agentId: agent.id,
-      tools: filteredTools,
-      toolOptions: agent.tool_options,
-      deferredToolsEnabled,
-      programmaticToolsEnabled,
-      codeExecutionEnabled,
-      provider: agent.provider,
-    },
-    {
-      isBuiltInTool,
-      getOrFetchMCPServerTools,
-      getActionToolDefinitions,
-    },
-  );
+  let { toolDefinitions, toolRegistry, hasDeferredTools, oauthActionToolNames } =
+    await loadToolDefinitions(
+      {
+        userId: req.user.id,
+        agentId: agent.id,
+        tools: filteredTools,
+        toolOptions: agent.tool_options,
+        deferredToolsEnabled,
+        programmaticToolsEnabled,
+        codeExecutionEnabled,
+        provider: agent.provider,
+      },
+      {
+        isBuiltInTool,
+        getOrFetchMCPServerTools,
+        getActionToolDefinitions,
+      },
+    );
 
   for (const serverName of getMCPServerNamesFromTools(filteredTools)) {
     if (pendingOAuthServers.has(serverName)) {
@@ -963,6 +966,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       toolDefinitions = reloadResult.toolDefinitions;
       toolRegistry = reloadResult.toolRegistry;
       hasDeferredTools = reloadResult.hasDeferredTools;
+      oauthActionToolNames = reloadResult.oauthActionToolNames;
     }
   }
 
@@ -1061,6 +1065,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     hasDeferredTools,
     actionsEnabled,
     primedCodeFiles,
+    oauthActionToolNames,
   };
 }
 
