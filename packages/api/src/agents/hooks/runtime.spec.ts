@@ -219,6 +219,7 @@ describe('registerPluginHooks', () => {
     const registry = new HookRegistry();
     const hookExecutor = executor({ additionalContext: 'Loaded project context' });
     hookExecutor.capabilities.sessionLifecycle = true;
+    delete hookExecutor.capabilities.translateMatcher;
     registerPluginHooks({
       pluginId: 'learning-output-style',
       registry,
@@ -419,6 +420,25 @@ describe('registerPluginHooks', () => {
       }),
     );
     expect(failurePayload).not.toHaveProperty('tool_error');
+  });
+
+  test('emits the documented SubagentStart identity fields', () => {
+    const payload = createPluginHookPayload('SubagentStart', {
+      hook_event_name: 'SubagentStart',
+      runId: 'run-subagent',
+      parentAgentId: 'agent-parent',
+      agentId: 'agent-child',
+      agentType: 'Explore',
+      inputs: [],
+    });
+
+    expect(payload).toEqual(
+      expect.objectContaining({
+        hook_event_name: 'SubagentStart',
+        agent_id: 'agent-child',
+        agent_type: 'Explore',
+      }),
+    );
   });
 
   test('registers the event surface used by the official hookify plugin', () => {

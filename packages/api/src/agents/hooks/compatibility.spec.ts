@@ -43,7 +43,7 @@ describe('planPluginHooks', () => {
           { matcher: 'resume', hooks: [{ type: 'command', command: 'load-context' }] },
         ],
       }),
-      { ...commandCapabilities, sessionLifecycle: true },
+      { handlerTypes: new Set(['command']), sessionLifecycle: true },
     );
 
     expect(plan.summary.ready).toBe(1);
@@ -96,15 +96,16 @@ describe('planPluginHooks', () => {
     ]);
   });
 
-  test('does not activate SubagentStop without Claude stop-hook state', () => {
+  test('does not activate events whose Claude control surfaces are unavailable', () => {
     const plan = planPluginHooks(
       document({
         SubagentStop: [{ hooks: [{ type: 'command', command: 'verify' }] }],
+        PermissionDenied: [{ hooks: [{ type: 'command', command: 'retry' }] }],
       }),
       commandCapabilities,
     );
 
-    expect(plan.summary).toEqual({ declared: 1, ready: 0, unsupported: 1 });
+    expect(plan.summary).toEqual({ declared: 2, ready: 0, unsupported: 2 });
     expect(plan.entries[0]).toEqual(
       expect.objectContaining({
         sourceEvent: 'SubagentStop',
@@ -113,6 +114,19 @@ describe('planPluginHooks', () => {
         issues: [
           expect.objectContaining({
             code: 'unsupported_event_payload',
+            severity: 'error',
+          }),
+        ],
+      }),
+    );
+    expect(plan.entries[1]).toEqual(
+      expect.objectContaining({
+        sourceEvent: 'PermissionDenied',
+        targetEvent: 'PermissionDenied',
+        status: 'unsupported',
+        issues: [
+          expect.objectContaining({
+            code: 'unsupported_event_output',
             severity: 'error',
           }),
         ],

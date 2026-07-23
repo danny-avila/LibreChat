@@ -54,6 +54,7 @@ export type PluginHookIssueCode =
   | 'unsupported_async_rewake'
   | 'unsupported_session_lifecycle'
   | 'unsupported_event_payload'
+  | 'unsupported_event_output'
   | 'long_timeout';
 
 export interface PluginHookCompatibilityIssue {
@@ -169,10 +170,7 @@ function getEventIssues(
       },
     ];
   }
-  if (sourceEvent !== 'SessionStart') {
-    if (sourceEvent !== 'SubagentStop') {
-      return [];
-    }
+  if (sourceEvent === 'SubagentStop') {
     return [
       {
         code: 'unsupported_event_payload',
@@ -181,6 +179,19 @@ function getEventIssues(
           'SubagentStop is unavailable because the LibreChat hook input does not expose stop-hook state',
       },
     ];
+  }
+  if (sourceEvent === 'PermissionDenied') {
+    return [
+      {
+        code: 'unsupported_event_output',
+        severity: 'error',
+        message:
+          'PermissionDenied is unavailable because the LibreChat hook output cannot request a retry',
+      },
+    ];
+  }
+  if (sourceEvent !== 'SessionStart') {
+    return [];
   }
   if (capabilities.sessionLifecycle !== true) {
     return [
@@ -256,6 +267,13 @@ function planMatcher(
   }
   const validationIssue = getMatcherValidationIssue(sourceEvent, sourceMatcher, targetEvent);
   if (validationIssue?.code === 'unsupported_matcher' || !targetEvent) {
+    return {
+      sourceMatcher,
+      matcher: sourceMatcher,
+      issues: validationIssue ? [validationIssue] : [],
+    };
+  }
+  if (sourceEvent === 'SessionStart') {
     return {
       sourceMatcher,
       matcher: sourceMatcher,
