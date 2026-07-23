@@ -121,7 +121,7 @@ export interface SchedulesService {
    * the reservation row exists but the job did not yet, so the deletion's abort
    * missed it) — aborting before any messages are persisted.
    */
-  isScheduleLive: (scheduleId: string) => Promise<boolean>;
+  isScheduleLive: (scheduleId: string, expectedConfigRevision?: number) => Promise<boolean>;
   /**
    * Acquires the durable RESUMING lease for a HITL resume, BEFORE the approval claim
    * (so a deferral leaves the approval claimable). Per-schedule overlap is enforced by
@@ -532,11 +532,31 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     return false;
   }
 
-  async function isScheduleLive(scheduleId: string): Promise<boolean> {
+  async function isScheduleLive(
+    scheduleId: string,
+    expectedConfigRevision?: number,
+  ): Promise<boolean> {
     if (!scheduleId) {
       return false;
     }
-    return (await methods.getScheduleById(scheduleId)) != null;
+    const schedule = await methods.getScheduleById(scheduleId);
+    if (schedule == null) {
+      return false;
+    }
+    // REVISION FENCE at the admission boundary. Existence alone is not enough: an owner
+    // edit landing between the claim and this point means the dispatched prompt/agent
+    // came from a config the owner has since replaced, and nothing downstream would
+    // catch it because the run persists under the NEW schedule. Refuse before any
+    // message is written. Absent on either side disables the fence, so pre-existing
+    // schedules and older fires keep working.
+    if (
+      expectedConfigRevision != null &&
+      typeof schedule.configRevision === 'number' &&
+      schedule.configRevision !== expectedConfigRevision
+    ) {
+      return false;
+    }
+    return true;
   }
 
   /**

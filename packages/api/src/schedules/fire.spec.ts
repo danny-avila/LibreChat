@@ -222,6 +222,22 @@ describe('fireSchedule', () => {
     expect([...runs.values()][0].status).toBe('started');
   });
 
+  it('carries the claimed config revision on the loopback POST', async () => {
+    const { methods } = makeMethods();
+    mockFetch(async () => okResponse());
+    await fireSchedule(
+      makeDeps(methods),
+      makeSchedule({ configRevision: 7 } as never),
+      LIMITS,
+      dueAt(),
+    );
+    const body = JSON.parse((global.fetch as unknown as jest.Mock).mock.calls[0][1].body as string);
+    // The admission boundary revalidates this before persisting anything, so an owner
+    // edit landing in the claim -> persistence window is refused rather than written
+    // into the edited schedule's history.
+    expect(body.scheduleConfigRevision).toBe(7);
+  });
+
   it('records a definite HTTP rejection as error', async () => {
     const { methods, calls } = makeMethods();
     mockFetch(async () => ({ ok: false, status: 500, text: async () => 'boom' }) as Response);

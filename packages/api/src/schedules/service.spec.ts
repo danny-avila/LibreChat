@@ -148,3 +148,39 @@ describe('global kill switch', () => {
     expect(await service.engineDeps.isGloballyDisabled()).toBe(false);
   });
 });
+
+describe('admission revision fence', () => {
+  const noRuns = () => jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]);
+
+  function serviceWithSchedule(schedule: { configRevision?: number } | null) {
+    const service = makeService(noRuns());
+    (
+      service.engineDeps.methods as unknown as {
+        getScheduleById: jest.Mock;
+      }
+    ).getScheduleById = jest.fn(async () => schedule);
+    return service;
+  }
+
+  it('admits when the claimed revision still matches', async () => {
+    const service = serviceWithSchedule({ configRevision: 3 });
+    expect(await service.isScheduleLive('sched-1', 3)).toBe(true);
+  });
+
+  it('REFUSES when an owner edit moved the revision on after the claim', async () => {
+    // The fire was claimed under revision 3; the owner edited since (now 4). Persisting
+    // would write the OLD prompt/agent into the edited schedule's history.
+    const service = serviceWithSchedule({ configRevision: 4 });
+    expect(await service.isScheduleLive('sched-1', 3)).toBe(false);
+  });
+
+  it('refuses a schedule that is gone regardless of revision', async () => {
+    const service = serviceWithSchedule(null);
+    expect(await service.isScheduleLive('sched-1', 3)).toBe(false);
+  });
+
+  it('stays permissive when either side has no revision (pre-existing rows)', async () => {
+    expect(await serviceWithSchedule({}).isScheduleLive('sched-1', 3)).toBe(true);
+    expect(await serviceWithSchedule({ configRevision: 4 }).isScheduleLive('sched-1')).toBe(true);
+  });
+});

@@ -130,6 +130,13 @@ async function postChatMessageInner(
         // conversation's job by this id instead of mislabeling the run an orphan.
         newConversationId: conversationId,
         clientRequestId: buildFireClientRequestId(schedule.id, scheduledFor),
+        // The owner-config generation this fire was CLAIMED under. The admission
+        // boundary revalidates it before persisting anything, so an owner edit landing
+        // in the claim -> persistence window cannot have its old prompt/agent written
+        // into the edited schedule's history.
+        ...(typeof schedule.configRevision === 'number'
+          ? { scheduleConfigRevision: schedule.configRevision }
+          : {}),
         ...(files.length > 0 ? { files } : {}),
       }),
     });

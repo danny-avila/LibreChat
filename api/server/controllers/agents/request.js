@@ -231,6 +231,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     responseMessageId: editedResponseMessageId = null,
     scheduleId: bodyScheduleId = null,
     scheduledFor: bodyScheduledFor = null,
+    scheduleConfigRevision: bodyScheduleConfigRevision = null,
   } = req.body;
 
   // Only honor schedule bookkeeping fields on a server-minted scheduled fire
@@ -247,6 +248,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   req._isScheduledFire = isScheduledFire;
   const scheduleId = isScheduledFire ? bodyScheduleId : null;
   const scheduledFor = isScheduledFire ? bodyScheduledFor : null;
+  const scheduleConfigRevision = isScheduledFire
+    ? (bodyScheduleConfigRevision ?? undefined)
+    : undefined;
 
   const userId = req.user.id;
 
@@ -404,7 +408,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // affects it.
     if (scheduleId) {
       await GenerationJobManager.updateMetadata(streamId, { scheduleId, scheduledFor });
-      if (!(await isScheduleLive(scheduleId))) {
+      if (!(await isScheduleLive(scheduleId, scheduleConfigRevision))) {
         logger.info(
           `[AgentController] Scheduled fire aborted before start; schedule ${scheduleId} no longer active`,
         );
