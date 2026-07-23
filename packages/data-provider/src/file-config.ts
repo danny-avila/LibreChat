@@ -205,8 +205,19 @@ export const defaultOCRMimeTypes = [
   excelMimeTypes,
   /^application\/pdf$/,
   /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)$/,
-  /^application\/vnd\.ms-(word|powerpoint)$/,
+  // application/msword is the real legacy .doc MIME; vnd.ms-word is non-standard (never matches).
+  /^application\/(msword|vnd\.ms-(word|powerpoint))$/,
   /^application\/epub\+zip$/,
+  /^application\/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$/,
+];
+
+/** MIME types eligible to route to a configured RAG `/text` endpoint: superset of `documentParserMimeTypes` (OCR-document set minus images and EPUB). */
+export const ragTextMimeTypes = [
+  /^application\/pdf$/,
+  /^application\/msword$/,
+  /^application\/vnd\.ms-powerpoint$/,
+  excelMimeTypes,
+  /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)$/,
   /^application\/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$/,
 ];
 
