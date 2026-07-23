@@ -166,6 +166,10 @@ export function synthesizeActivityLabelGapEvents(
 
 /** Host closures the wiring needs; each is a thin bridge into the caller. */
 export interface ActivityLabelHostDeps {
+  /** Cost cap from `activityMaxPerRun`; falls back to the hook default. */
+  maxPerRun?: number;
+  /** Prompt truncation from `activityCharLimit`; falls back to the hook default. */
+  charLimit?: number;
   abortSignal?: AbortSignal;
   /** Returns the LIVE host content array (same instance the SDK writes into). */
   getContentParts: () => Array<LooseContentPart | null | undefined>;
@@ -199,6 +203,8 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
   return {
     hook: createActivityLabelHook({
       resolveLLM: deps.resolveLLM,
+      ...(deps.maxPerRun != null && { maxPerRun: deps.maxPerRun }),
+      ...(deps.charLimit != null && { charLimit: deps.charLimit }),
       signal: deps.abortSignal,
       getInvokeCallbacks: deps.getInvokeCallbacks,
       ...(deps.generateLabel && { generateLabel: deps.generateLabel }),

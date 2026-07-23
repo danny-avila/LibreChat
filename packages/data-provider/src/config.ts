@@ -613,6 +613,23 @@ export const baseEndpointSchema = z.object({
    * completes (legacy behavior).
    */
   titleTiming: z.union([z.literal('immediate'), z.literal('final')]).optional(),
+  /**
+   * Agent activity groups: collapse each contiguous block of reasoning and
+   * tool calls under a generated one-line header. Mirrors the title options
+   * above — `activity` enables it (like `titleConvo`), the rest tune the
+   * fast model that writes the label.
+   */
+  activity: z.boolean().optional(),
+  /** Model used to write activity labels. Defaults to `titleModel`, then the agent's model. */
+  activityModel: z.string().optional(),
+  /** Endpoint whose credentials the label model runs on. Defaults to the agent's endpoint. */
+  activityEndpoint: z.string().optional(),
+  /** Overrides the system prompt used to write activity labels. */
+  activityPrompt: z.string().optional(),
+  /** Cost cap: maximum labels generated per run. Default 20. */
+  activityMaxPerRun: z.number().int().positive().optional(),
+  /** Per-entry truncation of tool input/output in the label prompt. Default 600. */
+  activityCharLimit: z.number().int().positive().optional(),
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars: z.number().positive().optional(),
 });
@@ -1028,6 +1045,12 @@ export const azureEndpointSchema = z
         titlePrompt: true,
         titleTiming: true,
         titlePromptTemplate: true,
+        activity: true,
+        activityModel: true,
+        activityEndpoint: true,
+        activityPrompt: true,
+        activityMaxPerRun: true,
+        activityCharLimit: true,
       })
       .partial(),
   );

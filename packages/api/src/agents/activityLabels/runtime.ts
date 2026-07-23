@@ -108,10 +108,6 @@ const DEFAULT_CHAR_LIMIT = 600;
 const INPUT_CHAR_LIMIT = 200;
 const SUMMARY_TIMEOUT_MS = 12_000;
 
-export function isActivityLabelPocEnabled(): boolean {
-  return process.env.ACTIVITY_LABELS_POC === 'true';
-}
-
 function truncate(value: string, limit: number): string {
   return value.length > limit ? `${value.slice(0, limit)}…` : value;
 }

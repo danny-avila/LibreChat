@@ -1,4 +1,4 @@
-export { classifyBatch, createActivityLabelHook, isActivityLabelPocEnabled } from './runtime';
+export { classifyBatch, createActivityLabelHook } from './runtime';
 export type {
   ToolBatchCounts,
   ActivityLabelBatchMeta,
@@ -18,11 +18,13 @@ export {
 export type { ActivityLabelHostDeps, LooseContentPart } from './wiring';
 export {
   mapCollectedMetadataToUsage,
+  resolveActivityConfig,
   resolveActivityLabelModel,
   settlePendingLabelFills,
 } from './host';
 export type {
   ActivityLabelAgent,
+  ResolvedActivityConfig,
   ActivityLabelUsage,
   CollectedMetadataEntry,
   ResolveActivityLabelModelParams,
