@@ -1360,6 +1360,41 @@ describe('useResumableSSE', () => {
       unmount();
     });
 
+    /**
+     * A row with no `content` array must still be assigned the snapshot's array. Handing it
+     * `undefined` would flip which renderer `MultiMessage` selects (it branches on
+     * `message.content` truthiness, and `[]` is truthy while `undefined` is not).
+     */
+    it('assigns the snapshot when the matched row has no content array', async () => {
+      const submission = buildSubmission();
+      const chatHelpers = buildChatHelpers();
+      chatHelpers.getMessages.mockReturnValue([
+        {
+          messageId: 'msg-1',
+          conversationId: CONV_ID,
+          isCreatedByUser: true,
+          text: 'Hello',
+        },
+        {
+          messageId: 'resp-1',
+          parentMessageId: 'msg-1',
+          conversationId: CONV_ID,
+          isCreatedByUser: false,
+          text: 'legacy text-only row',
+        },
+      ] as unknown as TMessage[]);
+
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      await emitSync([]);
+
+      expect(syncedResponse(chatHelpers)?.content).toEqual([]);
+      unmount();
+    });
+
     it('still applies the resume snapshot when it carries content', async () => {
       const { submission, chatHelpers } = renderWithLoadedResponse();
       const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));

@@ -1038,8 +1038,13 @@ export default function useResumableSSE(
                 /** An EMPTY resume snapshot is not authoritative over content we already loaded
                  *  for the SAME response: assigning it would erase that content and leave a bare
                  *  cursor. Restricted to an id match — preserving a fallback-matched row would
-                 *  make a regenerated run append to the answer it is replacing. */
-                const preserveLoadedContent = !hasResumedContent && matchedByResponseId;
+                 *  make a regenerated run append to the answer it is replacing — and to a row
+                 *  that actually HAS parts, so the array is never swapped for `undefined`. */
+                const preserveLoadedContent =
+                  !hasResumedContent &&
+                  matchedByResponseId &&
+                  Array.isArray(oldContent) &&
+                  oldContent.length > 0;
                 const responseMessage = {
                   ...messages[responseIdx],
                   content: preserveLoadedContent ? oldContent : data.resumeState.aggregatedContent,
