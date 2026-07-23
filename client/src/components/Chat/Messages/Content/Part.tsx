@@ -33,7 +33,6 @@ import RetrievalCall from './RetrievalCall';
 import ToolApproval from './ToolApproval';
 import AgentHandoff from './AgentHandoff';
 import CodeAnalyze from './CodeAnalyze';
-import { useLocalize } from '~/hooks';
 import Container from './Container';
 import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
@@ -60,7 +59,6 @@ const Part = memo(function Part({
   hideAttachments,
   onToolExpand,
 }: PartProps) {
-  const localize = useLocalize();
   if (!part) {
     return null;
   }
