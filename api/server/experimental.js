@@ -10,17 +10,15 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
   apiNotFound,
   ErrorController,
-  GenerationJobManager,
   QUERY_DEVTOOLS_HEADER,
   performStartupChecks,
   handleJsonParseError,
-  deleteAgentCheckpoint,
   initializeFileStorage,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
@@ -42,6 +40,7 @@ const {
 } = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
 const { initializeScheduleEngine } = require('./services/Schedules');
+const { configureGenerationStreams } = require('@librechat/api');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const createSpaFallback = require('./utils/fallback');
@@ -255,6 +254,8 @@ if (cluster.isMaster) {
   let expiredFileSweepOptions = null;
   let expiredFileSweepStarted = false;
   let schedulesReady = false;
+  // Whether this worker's job store is genuinely shared across processes (Redis-backed).
+  let jobStoreShared = false;
   const SCHEDULE_WRITE_READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
   /**
@@ -334,22 +335,20 @@ if (cluster.isMaster) {
     await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
       basePath: path.resolve(__dirname, '../..'),
     });
-    // Prune the paused run's durable checkpoint when its approval EXPIRES (a stale submit —
-    // this startup never runs the periodic sweeper) instead of leaving it until the Mongo
-    // TTL. Mirrors api/server/index.js's configureGenerationStreams wiring; safe here even
-    // though this startup runs the manager on constructor defaults (the setter never resets
-    // services). streamId === conversationId === the LangGraph thread_id.
-    GenerationJobManager.setApprovalExpiredHandler(async (conversationId, job) => {
-      // Resolve config in the PAUSED JOB's tenant/user scope (mirrors index.js): enter the
-      // tenant ALS context — getAppConfig args alone only key the cache.
-      await tenantStorage.run({ tenantId: job?.tenantId, userId: job?.userId }, async () => {
-        const currentConfig = await getAppConfig({
-          userId: job?.userId,
-          tenantId: job?.tenantId,
-        });
-        await deleteAgentCheckpoint(conversationId, currentConfig?.endpoints?.agents?.checkpointer);
-      });
-    });
+    // Configure + initialize the generation stream services. This worker previously
+    // only set the approval-expiry handler and NEVER called configure()/initialize(),
+    // so every worker silently ran on the unconfigured default (private in-memory)
+    // store even with USE_REDIS_STREAMS — making the multiworker scheduler private,
+    // so cross-worker aborts and orphan recovery could not work. Shared with
+    // api/server/index.js so both topologies initialize identically.
+    jobStoreShared = configureGenerationStreams({ getAppConfig });
+    if (!jobStoreShared) {
+      logger.warn(
+        `[streams] worker ${process.pid} is running on a PRIVATE in-memory job store ` +
+          '(USE_REDIS_STREAMS off, or the Redis configuration fell back). Scheduled ' +
+          'chats will refuse writes in this clustered topology.',
+      );
+    }
     expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
     startExpiredFileSweepOnce();
     await performStartupChecks(appConfig);
@@ -530,11 +529,23 @@ if (cluster.isMaster) {
         // Only accept schedule writes once the engine confirmed its unique idempotency
         // + TTL indexes exist. If index creation failed the engine is left undefined and
         // schedule writes keep returning 503 (the worker otherwise runs normally).
-        schedulesReady = scheduleEngine != null;
-        if (!schedulesReady) {
+        // FAIL CLOSED in a clustered topology without a CONFIRMED shared store: with
+        // private per-worker stores a peer's live run is unreachable, so deletion
+        // quiescing cannot abort it and orphan recovery cannot see it. Accepting
+        // schedule writes there would promise durability the topology cannot provide.
+        const clustered = workers > 1 || isEnabled(process.env.SCHEDULES_CLUSTERED);
+        schedulesReady = scheduleEngine != null && (!clustered || jobStoreShared);
+        if (scheduleEngine == null) {
           logger.warn(
             `[schedules] worker ${process.pid} engine not initialized (index creation failed) — ` +
               'schedule writes will be rejected with 503 until an operator resolves the index.',
+          );
+        } else if (!schedulesReady) {
+          logger.error(
+            `[schedules] worker ${process.pid} is clustered WITHOUT a shared stream store, so ` +
+              'scheduled-run aborts and cross-worker recovery are not available. Schedule ' +
+              'writes are rejected (fail-closed). Set USE_REDIS_STREAMS to enable scheduling ' +
+              'in a multi-worker deployment.',
           );
         }
       } catch (initErr) {

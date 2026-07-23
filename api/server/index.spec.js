@@ -109,6 +109,27 @@ describe('Startup readiness wiring', () => {
     expect(readinessGateIndex).toBeLessThan(agentsRouteIndex);
   });
 
+  it('initializes generation streams via the SHARED module (not a private copy)', () => {
+    // The clustered entrypoint could not reuse a private const in index.js (requiring
+    // index.js boots a second listener), which is why its workers never configured the
+    // stream services at all. Both entrypoints must call the shared initializer.
+    expect(source).toContain('configureSharedGenerationStreams({ getAppConfig })');
+    const experimental = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
+    expect(experimental).toContain('configureGenerationStreams({ getAppConfig })');
+  });
+
+  it('fails schedule writes CLOSED when clustered without a confirmed shared store', () => {
+    const experimental = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
+    // Readiness must require BOTH the engine and, when clustered, a confirmed shared
+    // job store — otherwise a peer worker's run is unreachable for abort/recovery.
+    expect(experimental).toContain(
+      'schedulesReady = scheduleEngine != null && (!clustered || jobStoreShared)',
+    );
+    // And the shared-store answer must come from the initializer's return value,
+    // not be assumed from USE_REDIS_STREAMS being set.
+    expect(experimental).toContain('jobStoreShared = configureGenerationStreams(');
+  });
+
   it('guards schedule writes with a readiness gate on the schedules route', () => {
     expect(source).toContain(
       "app.use('/api/schedules', rejectScheduleWritesUntilReady, routes.schedules);",

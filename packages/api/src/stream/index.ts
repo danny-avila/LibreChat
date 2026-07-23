@@ -24,6 +24,7 @@ export {
 export { SteeringLifecycle, toPendingSteer } from './SteeringLifecycle';
 
 export { createStreamServices } from './createStreamServices';
+export { configureGenerationStreams, type GenerationStreamsDeps } from './startup';
 export type { StreamServicesConfig, StreamServices } from './createStreamServices';
 export { filterPersistableAbortContent, hasPersistableAbortContent } from './abortContent';
 
