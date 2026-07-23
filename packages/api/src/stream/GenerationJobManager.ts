@@ -37,12 +37,8 @@ import {
   toPendingSteer,
   synthesizeAppliedSteerEvents,
 } from './SteeringLifecycle';
-/** Deep imports (not the package barrel): the barrel pulls provider-config
- *  and cache modules that import back into the stream layer, and the cycle
- *  breaks module initialization at load time. */
-import { isActivityLabelPocEnabled } from '~/agents/activityLabels/runtime';
-import { synthesizeActivityLabelGapEvents } from '~/agents/activityLabels/wiring';
 import { isPendingActionStale, isPendingActionExpired } from './interfaces/IJobStore';
+import { synthesizeActivityLabelGapEvents } from '~/agents/activityLabels/wiring';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { filterPersistableAbortContent } from './abortContent';
@@ -1287,11 +1283,16 @@ class GenerationJobManagerClass {
     // Same snapshot->subscribe race for activity labels: the label publish
     // is fire-and-forget, so a slot claimed (or filled) in the window is in
     // neither the snapshot nor the chunk replay the client already applied.
-    // Gated on the feature so the default path adds no content re-read.
+    // Gated on the snapshot actually carrying labels, so runs without the
+    // feature (and every pre-existing deployment) add no content re-read.
     // Compare the snapshot content view against a fresh read and re-emit any
     // label whose text/pending state moved; the client applier is idempotent
     // and refuses stale pending placeholders.
-    if (resumeState != null && jobActive && isActivityLabelPocEnabled()) {
+    const snapshotHasActivityLabels =
+      resumeState?.aggregatedContent?.some(
+        (part) => (part as { type?: string } | null)?.type === 'activity_label',
+      ) === true;
+    if (resumeState != null && jobActive && snapshotHasActivityLabels) {
       const labelContent = await this.jobStore.getContentParts(streamId);
       if (labelContent?.content != null) {
         const labelGapEvents = synthesizeActivityLabelGapEvents(

@@ -51,7 +51,7 @@ const {
   buildSteerMedia,
   stampSteerPartMedia,
   createActivityLabelWiring,
-  isActivityLabelPocEnabled,
+  resolveActivityConfig,
   mapCollectedMetadataToUsage,
   resolveActivityLabelModel,
   settlePendingLabelFills,
@@ -342,12 +342,11 @@ class AgentClient extends BaseClient {
   setOptions(_options) {}
 
   /**
-   * PoC (ACTIVITY_LABELS_POC=true): resolve provider + client options for the
+   * Resolve provider + client options for the
    * tool-batch summary model. Same resolution path as titleConvo minus the
-   * title-specific branches. Model precedence: ACTIVITY_LABEL_MODEL env >
-   * endpoint titleModel > the agent's own model, on the agent's endpoint
-   * credentials (PoC constraint: summary model must live on the same
-   * provider as the agent).
+   * title-specific branches. Model precedence: the endpoint's
+   * `activityModel` > its `titleModel` > the agent's own model, on the
+   * endpoint named by `activityEndpoint` (default: the agent's).
    */
   async resolveActivityLabelLLM() {
     return resolveActivityLabelModel({
@@ -441,6 +440,7 @@ class AgentClient extends BaseClient {
         lastAssistantText: context.lastAssistantText,
         traceSeed,
         charLimit,
+        ...(this.activityLabelPrompt != null && { prompt: this.activityLabelPrompt }),
         chainOptions: {
           signal,
           callbacks: [{ handleLLMEnd }],
@@ -481,9 +481,20 @@ class AgentClient extends BaseClient {
    * @param {string | undefined} streamId
    */
   buildActivityLabelWiring(streamId, abortSignal) {
-    if (!isActivityLabelPocEnabled() || !streamId) {
+    if (!streamId) {
       return undefined;
     }
+    /** Per-endpoint opt-in via `activity: true` in librechat.yaml, resolved
+     *  the same way the title options are (endpoints.all > named endpoint >
+     *  custom endpoint config). */
+    const activityConfig = resolveActivityConfig(
+      this.options.req?.config,
+      this.options.agent?.endpoint ?? '',
+    );
+    if (!activityConfig.enabled) {
+      return undefined;
+    }
+    this.activityLabelPrompt = activityConfig.prompt;
     /** SDK support probe (steering-style): the Run method and the formatter
      *  replay skip ship together, so method presence is the capability. */
     const sdkCapable = typeof Run?.prototype?.generateActivityLabel === 'function';
@@ -504,6 +515,8 @@ class AgentClient extends BaseClient {
     /** Thin wrapper: slot claiming, lane stamping, emit ordering, and settle
      *  tracking live in `createActivityLabelWiring` (packages/api, TS). */
     return createActivityLabelWiring({
+      maxPerRun: activityConfig.maxPerRun,
+      charLimit: activityConfig.charLimit,
       abortSignal: this.activityLabelAbort.signal,
       isClosed: () => this.activityLabelsClosed === true,
       getContentParts: () => this.contentParts,

@@ -1,4 +1,5 @@
 import { Providers } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { TEndpoint } from 'librechat-data-provider';
@@ -75,11 +76,49 @@ type MaybeAzureConfig = ClientOptions & {
   configuration?: OpenAIConfiguration;
 };
 
+/** Effective activity-label settings for one endpoint. */
+export interface ResolvedActivityConfig {
+  enabled: boolean;
+  model?: string;
+  endpoint?: string;
+  prompt?: string;
+  maxPerRun?: number;
+  charLimit?: number;
+}
+
+/**
+ * Reads the per-endpoint `activity*` settings, mirroring how titles resolve
+ * theirs: an `endpoints.all` block wins over the named endpoint, which wins
+ * over a custom endpoint's own config.
+ */
+export function resolveActivityConfig(
+  appConfig: AppConfig | undefined,
+  endpoint: string,
+  customEndpointConfig?: Partial<TEndpoint>,
+): ResolvedActivityConfig {
+  const endpoints = appConfig?.endpoints as
+    | (Record<string, TEndpoint | undefined> & { all?: TEndpoint })
+    | undefined;
+  const config: Partial<TEndpoint> | undefined =
+    endpoints?.all ?? endpoints?.[endpoint] ?? customEndpointConfig;
+  return {
+    enabled: config?.activity === true,
+    model: config?.activityModel,
+    endpoint: config?.activityEndpoint,
+    prompt: config?.activityPrompt,
+    maxPerRun: config?.activityMaxPerRun,
+    charLimit: config?.activityCharLimit,
+    /** `titleModel` is the documented fallback below, not a field here. */
+  };
+}
+
 /**
  * Resolves provider + client options for the label model, mirroring
- * `titleConvo`'s resolution minus the title-specific branches. Precedence:
- * `ACTIVITY_LABEL_MODEL` env > the endpoint's `titleModel` > the agent's own
- * model, always on the agent's endpoint credentials.
+ * `titleConvo`'s resolution. Model precedence: the endpoint's
+ * `activityModel` > its `titleModel` > the agent's own model. When
+ * `activityEndpoint` names a different endpoint, the label runs on THAT
+ * endpoint's credentials (title parity); an unknown name falls back to the
+ * agent's endpoint with a warning rather than failing the run.
  */
 export async function resolveActivityLabelModel({
   req,
@@ -88,15 +127,36 @@ export async function resolveActivityLabelModel({
   db,
 }: ResolveActivityLabelModelParams): Promise<ActivityLabelLLM> {
   const appConfig = req.config as AppConfig | undefined;
-  const endpoint = agent.endpoint ?? '';
-  const providerConfig = getProviderConfig({ provider: endpoint, appConfig });
+  const agentEndpoint = agent.endpoint ?? '';
+  let providerConfig = getProviderConfig({ provider: agentEndpoint, appConfig });
+  const activity = resolveActivityConfig(
+    appConfig,
+    agentEndpoint,
+    providerConfig.customEndpointConfig,
+  );
+
+  let endpoint = agentEndpoint;
+  if (activity.endpoint != null && activity.endpoint !== agentEndpoint) {
+    try {
+      providerConfig = getProviderConfig({ provider: activity.endpoint, appConfig });
+      endpoint = activity.endpoint;
+    } catch (error) {
+      logger.warn(
+        `[activityLabels] Unknown activityEndpoint "${activity.endpoint}", falling back to "${agentEndpoint}"`,
+        error,
+      );
+      providerConfig = getProviderConfig({ provider: agentEndpoint, appConfig });
+      endpoint = agentEndpoint;
+    }
+  }
+
   const endpoints = appConfig?.endpoints as
     | (Record<string, TEndpoint | undefined> & { all?: TEndpoint })
     | undefined;
   const endpointConfig: Partial<TEndpoint> | undefined =
     endpoints?.all ?? endpoints?.[endpoint] ?? providerConfig.customEndpointConfig;
   const model =
-    process.env.ACTIVITY_LABEL_MODEL ||
+    activity.model ??
     (endpointConfig?.titleModel != null && endpointConfig.titleModel !== Constants.CURRENT_MODEL
       ? endpointConfig.titleModel
       : (agent.model ?? agent.model_parameters?.model));
