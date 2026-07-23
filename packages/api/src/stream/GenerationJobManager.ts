@@ -1283,16 +1283,16 @@ class GenerationJobManagerClass {
     // Same snapshot->subscribe race for activity labels: the label publish
     // is fire-and-forget, so a slot claimed (or filled) in the window is in
     // neither the snapshot nor the chunk replay the client already applied.
-    // Gated on the snapshot actually carrying labels, so runs without the
-    // feature (and every pre-existing deployment) add no content re-read.
     // Compare the snapshot content view against a fresh read and re-emit any
     // label whose text/pending state moved; the client applier is idempotent
     // and refuses stale pending placeholders.
-    const snapshotHasActivityLabels =
-      resumeState?.aggregatedContent?.some(
-        (part) => (part as { type?: string } | null)?.type === 'activity_label',
-      ) === true;
-    if (resumeState != null && jobActive && snapshotHasActivityLabels) {
+    //
+    // Keyed on the run's own flag, not on the snapshot containing a label:
+    // the gap includes the FIRST label being claimed after getResumeState()
+    // and before the subscriber attaches, so the snapshot is not a reliable
+    // signal. `liveJob` was already fetched above, so runs without the
+    // feature still perform no additional read.
+    if (resumeState != null && jobActive && liveJob?.activityLabels === true) {
       const labelContent = await this.jobStore.getContentParts(streamId);
       if (labelContent?.content != null) {
         const labelGapEvents = synthesizeActivityLabelGapEvents(
@@ -1328,6 +1328,25 @@ class GenerationJobManagerClass {
    * cross-replica reconnect can reconstruct content without them. The default
    * stays fire-and-forget — no added latency on the per-delta hot path.
    */
+  /**
+   * Flags a run as producing activity labels. Read back on resume so label
+   * gap-reconciliation can be skipped for runs without the feature WITHOUT
+   * inspecting content — the first label can be claimed inside the
+   * snapshot->subscribe window, so content is not a reliable signal.
+   * Best-effort: the flag is an optimization hint, never correctness.
+   */
+  async markActivityLabels(streamId: string): Promise<void> {
+    try {
+      await this.jobStore.updateJob(streamId, { activityLabels: true });
+    } catch (error) {
+      logger.debug(
+        `[GenerationJobManager] Could not flag activity labels for ${streamId}: ${
+          (error as Error)?.message ?? error
+        }`,
+      );
+    }
+  }
+
   async emitChunk(
     streamId: string,
     event: t.ServerSentEvent,

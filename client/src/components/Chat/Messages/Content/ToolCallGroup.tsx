@@ -180,7 +180,10 @@ export default function ToolCallGroup({
   }, [toolNames, localize]);
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
-  const autoCollapse = !autoExpand && count >= 2 && allCompleted;
+  /** A labeled activity block is summarized by its header, so it collapses
+   *  even at a single tool call — agent runs are full of one-call batches,
+   *  and leaving those expanded defeats the grouping. */
+  const autoCollapse = !autoExpand && allCompleted && (count >= 2 || activityLabelText.length > 0);
   const initialState = initialExpansionState?.userOverride === true ? initialExpansionState : null;
   const [isExpanded, setIsExpanded] = useState(
     initialState?.isExpanded ?? (autoExpand || !autoCollapse),

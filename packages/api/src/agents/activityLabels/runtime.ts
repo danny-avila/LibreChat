@@ -101,6 +101,18 @@ export interface ActivityLabelHookOptions {
   maxPerRun?: number;
   /** Per-entry output truncation for the prompt. Default 600 chars. */
   charLimit?: number;
+  /**
+   * `activityPrompt` override. Applies to BOTH paths: the SDK bridge passes
+   * it through, and the direct fallback seeds `buildPrompt` with it instead
+   * of the built-in instruction.
+   */
+  prompt?: string;
+  /**
+   * Labels already present on the response (HITL resume rebuilds the hook
+   * with pre-pause content), so the per-response cap counts them instead of
+   * restarting at zero after every approval.
+   */
+  initialGeneratedCount?: number;
 }
 
 const DEFAULT_MAX_PER_RUN = 20;
@@ -175,8 +187,9 @@ function buildPrompt(
   entries: BatchEntry[],
   charLimit: number,
   context?: ActivityLabelBlockContext,
+  instruction?: string,
 ): string {
-  const sections: string[] = [INSTRUCTION];
+  const sections: string[] = [instruction ?? INSTRUCTION];
   if (context?.lastAssistantText) {
     sections.push(
       `Intent (assistant's last message): ${truncate(context.lastAssistantText, INPUT_CHAR_LIMIT)}`,
@@ -239,7 +252,7 @@ export function createActivityLabelHook(
 ): HookCallback<'PostToolBatch'> {
   const maxPerRun = opts.maxPerRun ?? DEFAULT_MAX_PER_RUN;
   const charLimit = opts.charLimit ?? DEFAULT_CHAR_LIMIT;
-  let generated = 0;
+  let generated = opts.initialGeneratedCount ?? 0;
   let llmPromise: Promise<ActivityLabelLLM> | null = null;
 
   const getLLM = (): Promise<ActivityLabelLLM> => {
@@ -294,7 +307,7 @@ export function createActivityLabelHook(
           const invokeCallbacks = opts.getInvokeCallbacks?.();
           const response = await (
             model as { invoke: (input: string, config?: object) => Promise<{ content?: unknown }> }
-          ).invoke(buildPrompt(input.entries, charLimit, slot.context), {
+          ).invoke(buildPrompt(input.entries, charLimit, slot.context, opts.prompt), {
             signal,
             ...(invokeCallbacks && { callbacks: invokeCallbacks.callbacks }),
           });

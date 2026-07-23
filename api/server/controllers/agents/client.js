@@ -52,6 +52,7 @@ const {
   stampSteerPartMedia,
   createActivityLabelWiring,
   resolveActivityConfig,
+  getCustomEndpointConfig,
   mapCollectedMetadataToUsage,
   resolveActivityLabelModel,
   settlePendingLabelFills,
@@ -374,14 +375,30 @@ class AgentClient extends BaseClient {
       return;
     }
     const streamId = this.options.req?._resumableStreamId || null;
+    const includeCost = this.options.req?.config?.interfaceConfig?.contextCost === true;
     for (const usage of collectedUsage) {
+      /** Label usage is billed via recordCollectedUsage but never appended to
+       *  `collectedUsage`, so `collectedUsage.length` is static here — it
+       *  would reuse the last primary usage's `runId:seq` and collide across
+       *  label calls, and the client dedupes on that pair. Use the emit
+       *  sink's length, which grows with every emitted event. */
       const data = {
         input_tokens: usage.input_tokens,
         output_tokens: usage.output_tokens,
         model,
         usage_type: 'activity-label',
         runId: this.responseMessageId,
-        seq: this.collectedUsage.length,
+        seq: (this.usageEmitSink?.length ?? 0) + this.collectedUsage.length,
+        /** Cost coverage is all-or-nothing in `aggregateEmittedUsage`: an
+         *  event without `cost` suppresses the whole response's cost when
+         *  `interface.contextCost` is on. */
+        cost: includeCost
+          ? computeUsageCostUSD(
+              { ...usage, model },
+              { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+              this.options.endpointTokenConfig,
+            )
+          : undefined,
       };
       /** Fold into the response rollup synchronously, then stream it like
        *  primary/subagent usage so the live session gauge stays honest.
@@ -484,17 +501,35 @@ class AgentClient extends BaseClient {
     if (!streamId) {
       return undefined;
     }
-    /** Per-endpoint opt-in via `activity: true` in librechat.yaml, resolved
-     *  the same way the title options are (endpoints.all > named endpoint >
-     *  custom endpoint config). */
+    /** Per-endpoint opt-in via `activityLabel: true` in librechat.yaml,
+     *  resolved the same way the title options are (endpoints.all > named
+     *  endpoint > custom endpoint config). Custom endpoints live in the
+     *  `endpoints.custom` ARRAY, so their settings are only visible through
+     *  the matched entry — without it every custom endpoint reads as
+     *  disabled. */
+    const agentEndpoint = this.options.agent?.endpoint ?? '';
+    const appConfigForActivity = this.options.req?.config;
+    let customEndpointConfig;
+    try {
+      customEndpointConfig = getCustomEndpointConfig({
+        endpoint: agentEndpoint,
+        appConfig: appConfigForActivity,
+      });
+    } catch {
+      customEndpointConfig = undefined;
+    }
     const activityConfig = resolveActivityConfig(
-      this.options.req?.config,
-      this.options.agent?.endpoint ?? '',
+      appConfigForActivity,
+      agentEndpoint,
+      customEndpointConfig,
     );
     if (!activityConfig.enabled) {
       return undefined;
     }
     this.activityLabelPrompt = activityConfig.prompt;
+    /** Mark the job so a resume can reconcile label gaps without probing
+     *  content; fire-and-forget, the flag is only an optimization hint. */
+    void GenerationJobManager.markActivityLabels(streamId);
     /** SDK support probe (steering-style): the Run method and the formatter
      *  replay skip ship together, so method presence is the capability. */
     const sdkCapable = typeof Run?.prototype?.generateActivityLabel === 'function';
@@ -517,6 +552,7 @@ class AgentClient extends BaseClient {
     return createActivityLabelWiring({
       maxPerRun: activityConfig.maxPerRun,
       charLimit: activityConfig.charLimit,
+      prompt: activityConfig.prompt,
       abortSignal: this.activityLabelAbort.signal,
       isClosed: () => this.activityLabelsClosed === true,
       getContentParts: () => this.contentParts,

@@ -44,6 +44,15 @@ export interface SerializableJobData {
   responseMessageId?: string;
 
   /**
+   * Whether this run has activity labels enabled (per-endpoint
+   * `activityLabel: true`). Set once at run start so the resume path can
+   * decide whether to reconcile label gaps WITHOUT reading content — the
+   * first label of a run can be claimed inside the snapshot->subscribe
+   * window, so the snapshot itself is not a reliable signal.
+   */
+  activityLabels?: boolean;
+
+  /**
    * Deferred-tool names discovered (via `tool_search`) before a HITL pause, captured
    * so a resume can replay them into `createRun` — the rebuilt graph uses `messages: []`
    * (state comes from the checkpoint), so without these the paused deferred tool would be
