@@ -31,6 +31,7 @@ export interface PluginHookHandler {
   statusMessage?: string;
   if?: string;
   once?: boolean;
+  continueOnBlock?: boolean;
   async?: boolean;
   asyncRewake?: boolean;
   rewakeMessage?: string;
@@ -79,6 +80,7 @@ export const pluginHookHandlerSchema: z.ZodType<PluginHookHandler> = z
     statusMessage: z.string().max(MAX_STATUS_MESSAGE_LENGTH).optional(),
     if: z.string().trim().min(1).max(MAX_COMMAND_LENGTH).optional(),
     once: z.boolean().optional(),
+    continueOnBlock: z.boolean().optional(),
     async: z.boolean().optional(),
     asyncRewake: z.boolean().optional(),
     rewakeMessage: z.string().max(MAX_DESCRIPTION_LENGTH).optional(),

@@ -64,6 +64,32 @@ describe('planPluginHooks', () => {
     );
   });
 
+  test('fails closed for SessionStart compact matchers', () => {
+    const plan = planPluginHooks(
+      document({
+        SessionStart: [
+          { matcher: 'compact', hooks: [{ type: 'command', command: 'reload-context' }] },
+        ],
+      }),
+      { handlerTypes: new Set(['command']), sessionLifecycle: true },
+    );
+
+    expect(plan.summary).toEqual({ declared: 1, ready: 0, unsupported: 1 });
+    expect(plan.entries[0]).toEqual(
+      expect.objectContaining({
+        sourceEvent: 'SessionStart',
+        targetEvent: 'RunStart',
+        status: 'unsupported',
+        issues: expect.arrayContaining([
+          expect.objectContaining({
+            code: 'unsupported_session_source',
+            severity: 'error',
+          }),
+        ]),
+      }),
+    );
+  });
+
   test('plans translated compaction-trigger matchers', () => {
     const plan = planPluginHooks(
       document({
@@ -214,6 +240,35 @@ describe('planPluginHooks', () => {
           issues: [expect.objectContaining({ code: 'unsupported_handler' })],
         }),
       ]),
+    );
+  });
+
+  test('preserves continueOnBlock only for its supported event', () => {
+    const plan = planPluginHooks(
+      document({
+        PostToolUse: [
+          {
+            hooks: [{ type: 'command', command: 'verify-output', continueOnBlock: true }],
+          },
+        ],
+        PreToolUse: [
+          {
+            hooks: [{ type: 'command', command: 'verify-input', continueOnBlock: true }],
+          },
+        ],
+      }),
+      commandCapabilities,
+    );
+
+    expect(plan.summary).toEqual({ declared: 2, ready: 1, unsupported: 1 });
+    expect(plan.entries[0]).toEqual(
+      expect.objectContaining({
+        status: 'ready',
+        handler: expect.objectContaining({ continueOnBlock: true }),
+      }),
+    );
+    expect(plan.entries[1].issues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'unsupported_continue_on_block' })]),
     );
   });
 
@@ -401,7 +456,7 @@ describe('planPluginHooks', () => {
       }),
       {
         handlerTypes: new Set(['command']),
-        conditions: true,
+        matchCondition: () => true,
       },
     );
 

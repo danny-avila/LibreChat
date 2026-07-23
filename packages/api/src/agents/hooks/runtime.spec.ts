@@ -38,7 +38,8 @@ describe('registerPluginHooks', () => {
       reason: 'Protected path',
       additionalContext: 'Policy checked',
     });
-    hookExecutor.capabilities.conditions = true;
+    hookExecutor.capabilities.matchCondition = ({ toolInput }) =>
+      typeof toolInput.path === 'string' && toolInput.path.startsWith('/workspace/');
     const registration = registerPluginHooks({
       pluginId: 'security-guidance',
       registry,
@@ -68,7 +69,7 @@ describe('registerPluginHooks', () => {
 
     expect(registration.registered).toBe(1);
     expect(registry.getMatchers('PreToolUse')[0].timeout).toBe(5_000);
-    expect(registry.getMatchers('PreToolUse')[0].once).toBe(true);
+    expect(registry.getMatchers('PreToolUse')[0].once).toBeUndefined();
 
     const result = await executeHooks({
       registry,
@@ -182,6 +183,159 @@ describe('registerPluginHooks', () => {
       expect.objectContaining({
         input: expect.objectContaining({ toolName: 'bash_tool' }),
         payload: expect.objectContaining({ tool_name: 'Bash' }),
+      }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  test('does not consume a conditional once hook before its condition matches', async () => {
+    const registry = new HookRegistry();
+    const hookExecutor = executor();
+    hookExecutor.capabilities.translateMatcher = () => ({
+      matcher: '^bash_tool$',
+      requiresToolNameTranslation: true,
+    });
+    hookExecutor.capabilities.toPluginToolName = ({ toolName }) =>
+      toolName === 'bash_tool' ? 'Bash' : toolName;
+    hookExecutor.capabilities.matchCondition = ({ toolName, toolInput }) =>
+      toolName === 'Bash' &&
+      typeof toolInput.command === 'string' &&
+      toolInput.command.startsWith('git commit ');
+    registerPluginHooks({
+      pluginId: 'commit-review',
+      registry,
+      executor: hookExecutor,
+      document: document({
+        PreToolUse: [
+          {
+            matcher: 'Bash',
+            hooks: [
+              {
+                type: 'command',
+                command: 'review-commit',
+                if: 'Bash(git commit:*)',
+                once: true,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    expect(registry.getMatchers('PreToolUse')[0].once).toBeUndefined();
+
+    const run = async (runId: string, command: string): Promise<void> => {
+      await executeHooks({
+        registry,
+        matchQuery: 'bash_tool',
+        input: {
+          hook_event_name: 'PreToolUse',
+          runId,
+          threadId: 'commit-session',
+          toolName: 'bash_tool',
+          toolInput: { command },
+          toolUseId: `tool-${runId}`,
+        },
+      });
+    };
+
+    await run('test', 'npm test');
+    await run('commit', 'git commit -m "test"');
+    await run('second-commit', 'git commit -m "again"');
+
+    expect(hookExecutor.execute).toHaveBeenCalledTimes(1);
+    expect(hookExecutor.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        condition: 'Bash(git commit:*)',
+        input: expect.objectContaining({ runId: 'commit' }),
+      }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  test('scopes once handlers to each plugin session', async () => {
+    const registry = new HookRegistry();
+    const hookExecutor = executor();
+    registerPluginHooks({
+      pluginId: 'session-once',
+      registry,
+      executor: hookExecutor,
+      document: document({
+        PreToolUse: [
+          {
+            matcher: 'Write',
+            hooks: [{ type: 'command', command: 'initialize-write-audit', once: true }],
+          },
+        ],
+      }),
+    });
+
+    const run = async (runId: string, threadId: string): Promise<void> => {
+      await executeHooks({
+        registry,
+        matchQuery: 'Write',
+        input: {
+          hook_event_name: 'PreToolUse',
+          runId,
+          threadId,
+          toolName: 'Write',
+          toolInput: { file_path: '/workspace/file.ts' },
+          toolUseId: `tool-${runId}`,
+        },
+      });
+    };
+
+    await run('session-a-first', 'session-a');
+    await run('session-a-second', 'session-a');
+    await run('session-b-first', 'session-b');
+
+    expect(registry.getMatchers('PreToolUse')[0].once).toBeUndefined();
+    expect(hookExecutor.execute).toHaveBeenCalledTimes(2);
+    expect(hookExecutor.execute.mock.calls.map(([request]) => request.input.threadId)).toEqual([
+      'session-a',
+      'session-b',
+    ]);
+  });
+
+  test('passes PostToolUse continueOnBlock through to the executor', async () => {
+    const registry = new HookRegistry();
+    const hookExecutor = executor();
+    registerPluginHooks({
+      pluginId: 'self-correcting-review',
+      registry,
+      executor: hookExecutor,
+      document: document({
+        PostToolUse: [
+          {
+            matcher: 'Write',
+            hooks: [
+              {
+                type: 'command',
+                command: 'verify-write',
+                continueOnBlock: true,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    await executeHooks({
+      registry,
+      matchQuery: 'Write',
+      input: {
+        hook_event_name: 'PostToolUse',
+        runId: 'run-write',
+        toolName: 'Write',
+        toolInput: { file_path: '/workspace/file.ts' },
+        toolOutput: 'updated',
+        toolUseId: 'tool-write',
+      },
+    });
+
+    expect(hookExecutor.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        handler: expect.objectContaining({ continueOnBlock: true }),
       }),
       expect.any(AbortSignal),
     );
