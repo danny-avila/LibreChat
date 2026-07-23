@@ -39,6 +39,8 @@ export const SystemCapabilities = {
   MANAGE_SKILLS: 'manage:skills',
   READ_SHARED_LINKS: 'read:sharedlinks',
   MANAGE_SHARED_LINKS: 'manage:sharedlinks',
+  READ_ARTIFACT_APPS: 'read:artifactapps',
+  MANAGE_ARTIFACT_APPS: 'manage:artifactapps',
   /** Reserved — not yet enforced by any middleware. */
   READ_ASSISTANTS: 'read:assistants',
   MANAGE_ASSISTANTS: 'manage:assistants',
@@ -65,6 +67,7 @@ export const CapabilityImplications: Partial<Record<BaseSystemCapability, BaseSy
     [SystemCapabilities.MANAGE_SKILLS]: [SystemCapabilities.READ_SKILLS],
     [SystemCapabilities.MANAGE_SHARED_LINKS]: [SystemCapabilities.READ_SHARED_LINKS],
     [SystemCapabilities.MANAGE_ASSISTANTS]: [SystemCapabilities.READ_ASSISTANTS],
+    [SystemCapabilities.MANAGE_ARTIFACT_APPS]: [SystemCapabilities.READ_ARTIFACT_APPS],
   };
 
 // ---------------------------------------------------------------------------
@@ -153,6 +156,7 @@ export const ResourceCapabilityMap: Record<ResourceType, SystemCapability> = {
   [ResourceType.REMOTE_AGENT]: SystemCapabilities.MANAGE_AGENTS,
   [ResourceType.SKILL]: SystemCapabilities.MANAGE_SKILLS,
   [ResourceType.SHARED_LINK]: SystemCapabilities.MANAGE_SHARED_LINKS,
+  [ResourceType.ARTIFACT_APP]: SystemCapabilities.MANAGE_ARTIFACT_APPS,
 };
 
 /**
@@ -225,6 +229,8 @@ export const CAPABILITY_CATEGORIES: CapabilityCategory[] = [
       SystemCapabilities.MANAGE_MCP_SERVERS,
       SystemCapabilities.MANAGE_SHARED_LINKS,
       SystemCapabilities.READ_SHARED_LINKS,
+      SystemCapabilities.MANAGE_ARTIFACT_APPS,
+      SystemCapabilities.READ_ARTIFACT_APPS,
     ],
   },
   {

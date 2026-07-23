@@ -43,3 +43,5 @@ export * from './admin';
 export * from './web';
 /* MCP Servers */
 export * from './mcp';
+/* Artifact Apps */
+export * from './artifactApp';

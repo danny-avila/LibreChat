@@ -529,3 +529,26 @@ export const getAllEffectivePermissions = (resourceType: ResourceType) =>
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
+
+// Artifact Apps
+export const artifactAppsRoot = `${BASE_URL}/api/artifact-apps`;
+
+export const artifactApps = () => artifactAppsRoot;
+
+export const artifactAppById = (artifactAppId: string) =>
+  `${artifactAppsRoot}/${encodeURIComponent(artifactAppId)}`;
+
+export const artifactAppVersions = (artifactAppId: string) =>
+  `${artifactAppById(artifactAppId)}/versions`;
+
+export const artifactAppVersionById = (artifactAppId: string, versionId: string) =>
+  `${artifactAppVersions(artifactAppId)}/${encodeURIComponent(versionId)}`;
+
+export const artifactAppVersionRelease = (artifactAppId: string, versionId: string) =>
+  `${artifactAppVersionById(artifactAppId, versionId)}/release`;
+
+export const artifactAppVersionActivate = (artifactAppId: string, versionId: string) =>
+  `${artifactAppVersionById(artifactAppId, versionId)}/activate`;
+
+export const artifactAppVersionWithdraw = (artifactAppId: string, versionId: string) =>
+  `${artifactAppVersionById(artifactAppId, versionId)}/withdraw`;

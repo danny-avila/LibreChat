@@ -17,6 +17,7 @@ const presets = require('./presets');
 const projects = require('./projects');
 const prompts = require('./prompts');
 const skills = require('./skills');
+const artifactApps = require('./artifactApps');
 const balance = require('./balance');
 const actions = require('./actions');
 const apiKeys = require('./apiKeys');
@@ -66,6 +67,7 @@ module.exports = {
   prompts,
   projects,
   skills,
+  artifactApps,
   actions,
   presets,
   balance,

@@ -9,6 +9,7 @@ import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useShareContext, useMutationState } from '~/Providers';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
 import DownloadArtifact from './DownloadArtifact';
+import { PublishArtifactButton } from '~/components/ArtifactApps';
 import ArtifactVersion from './ArtifactVersion';
 import ArtifactTabs from './ArtifactTabs';
 import { isCodeOnlyArtifact, isPreviewOnlyArtifact } from '~/utils/artifacts';
@@ -330,6 +331,7 @@ export default function Artifacts() {
               )}
               <CopyButton isCopied={isCopied} iconOnly onClick={handleCopyArtifact} />
               <DownloadArtifact artifact={currentArtifact} />
+              <PublishArtifactButton artifact={currentArtifact} />
               <Button
                 size="icon"
                 variant="ghost"

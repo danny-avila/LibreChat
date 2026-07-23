@@ -10,6 +10,8 @@ import {
 } from '~/components/Auth';
 import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
+import StandaloneAppView from '~/components/ArtifactApps/StandaloneAppView';
+import ArtifactAppsList from '~/components/ArtifactApps/ArtifactAppsList';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import WithRum from '~/lib/rum/WithRum';
@@ -177,6 +179,18 @@ export const router = createBrowserRouter(
                   <AgentMarketplace />
                 </MarketplaceProvider>
               ),
+            },
+            {
+              path: 'apps',
+              element: <ArtifactAppsList />,
+            },
+            {
+              path: 'apps/:artifactAppId',
+              element: <StandaloneAppView />,
+            },
+            {
+              path: 'apps/:artifactAppId/version/:versionId',
+              element: <StandaloneAppView />,
             },
             {
               path: 'agents/:category',
