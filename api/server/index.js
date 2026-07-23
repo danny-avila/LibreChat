@@ -27,6 +27,7 @@ const {
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
+  configureServerTimeouts,
   setupGracefulShutdown,
   updateInterfacePermissions,
 } = require('@librechat/api');
@@ -357,6 +358,14 @@ const startServer = async () => {
       logger.error('Post-listen initialization failed:', initErr);
       process.exit(1);
     }
+  });
+
+  configureServerTimeouts(server);
+  logger.info('HTTP server timeout configuration', {
+    keepAliveTimeout: server.keepAliveTimeout,
+    keepAliveTimeoutBuffer: server.keepAliveTimeoutBuffer,
+    headersTimeout: server.headersTimeout,
+    requestTimeout: server.requestTimeout,
   });
 
   setupGracefulShutdown(server);
