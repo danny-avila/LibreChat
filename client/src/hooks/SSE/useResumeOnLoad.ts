@@ -14,6 +14,7 @@ import {
   dedupeSteersById,
   applyPendingAction,
   carriedSteerContext,
+  isNotFoundError,
   getBranchSiblingIndexesForTarget,
   removeConvoFromAllQueries,
 } from '~/utils';
@@ -25,6 +26,12 @@ import {
   getDisconnectedRunRecovery,
 } from './resumableRecovery';
 import store from '~/store';
+
+type ResponseRefreshResult = {
+  messages: TMessage[] | undefined;
+  succeeded: boolean;
+  notFound: boolean;
+};
 
 function hasSubmissionUserMessage(
   submission: TSubmission | null,
@@ -353,14 +360,14 @@ export default function useResumeOnLoad(
     active: isCurrentJobActive,
   });
 
-  const refreshUnfinishedResponse = useCallback(async () => {
+  const refreshUnfinishedResponse = useCallback(async (): Promise<ResponseRefreshResult> => {
     if (!conversationId) {
-      return { messages: undefined, succeeded: false };
+      return { messages: undefined, succeeded: false, notFound: false };
     }
 
     const unfinishedResponse = getUnfinishedAssistantTail(getMessages());
     if (!unfinishedResponse) {
-      return { messages: getMessages(), succeeded: true };
+      return { messages: getMessages(), succeeded: true, notFound: false };
     }
 
     const responseKey = [
@@ -370,7 +377,7 @@ export default function useResumeOnLoad(
       unfinishedResponse.content?.length ?? 0,
     ].join(':');
     if (refreshedResponseRef.current === responseKey) {
-      return { messages: getMessages(), succeeded: false };
+      return { messages: getMessages(), succeeded: false, notFound: false };
     }
 
     refreshedResponseRef.current = responseKey;
@@ -383,18 +390,22 @@ export default function useResumeOnLoad(
         { queryKey: [QueryKeys.messages, conversationId] },
         { throwOnError: true },
       );
-      return { messages: getMessages(), succeeded: true };
-    } catch {
+      return { messages: getMessages(), succeeded: true, notFound: false };
+    } catch (error) {
       if (refreshedResponseRef.current === responseKey) {
         refreshedResponseRef.current = null;
       }
-      return { messages: getMessages(), succeeded: false };
+      return {
+        messages: getMessages(),
+        succeeded: false,
+        notFound: isNotFoundError(error),
+      };
     }
   }, [conversationId, getMessages, queryClient]);
 
   const recoverStatusSteers = useCallback(
     (status: StreamStatusResponse) => {
-      if (!conversationId) {
+      if (!conversationId || status.active) {
         return false;
       }
 
@@ -408,6 +419,65 @@ export default function useResumeOnLoad(
       return leftoverSteers.length > 0;
     },
     [conversationId, convertSteersToQueued],
+  );
+
+  const reconcileRefreshedResponse = useCallback(
+    (
+      refreshed: ResponseRefreshResult,
+      shouldSignalRunEnd: boolean,
+      status?: StreamStatusResponse,
+    ) => {
+      if (!conversationId || !shouldSignalRunEnd) {
+        return;
+      }
+
+      const observed = observedActiveJobRef.current;
+      if (observed.conversationId !== conversationId || observed.active) {
+        return;
+      }
+
+      const disconnectedRun = getDisconnectedRunRecovery(queryClient, conversationId);
+      const persistedOutcome = getPersistedRunOutcome(refreshed.messages);
+      const isUnpersistedFirstTurn =
+        disconnectedRun?.startedAsNewConvo === true &&
+        disconnectedRun.created === false &&
+        (refreshed.notFound || (refreshed.succeeded && persistedOutcome == null));
+
+      if (isUnpersistedFirstTurn) {
+        removeConvoFromAllQueries(queryClient, conversationId);
+        queryClient.removeQueries({
+          queryKey: [QueryKeys.conversation, conversationId],
+        });
+        queryClient.removeQueries({
+          queryKey: [QueryKeys.messages, conversationId],
+        });
+        setRunEnd({
+          conversationId: String(Constants.NEW_CONVO),
+          outcome: 'error',
+          endedAt: Date.now(),
+        });
+        clearDisconnectedRunRecovery(queryClient, conversationId);
+        return;
+      }
+
+      if (!refreshed.succeeded) {
+        return;
+      }
+
+      const outcome = (status && getStatusRunOutcome(status)) ?? persistedOutcome;
+      if (!outcome) {
+        return;
+      }
+
+      setRunEnd({
+        conversationId,
+        outcome,
+        ...(disconnectedRun?.startedAsNewConvo && { startedAsNewConvo: true }),
+        endedAt: Date.now(),
+      });
+      clearDisconnectedRunRecovery(queryClient, conversationId);
+    },
+    [conversationId, queryClient, setRunEnd],
   );
 
   const recoverInactiveResponse = useCallback(
@@ -430,61 +500,36 @@ export default function useResumeOnLoad(
 
       restoreSteerChips(conversationId, undefined);
       const refreshed = await refreshUnfinishedResponse();
-      if (!shouldSignalRunEnd || !refreshed.succeeded) {
-        return;
-      }
-
-      const observed = observedActiveJobRef.current;
-      if (observed.conversationId !== conversationId || observed.active) {
-        return;
-      }
-
-      const persistedOutcome = getPersistedRunOutcome(refreshed.messages);
-      const isUnpersistedFirstTurn =
-        disconnectedRun?.startedAsNewConvo === true &&
-        disconnectedRun.created === false &&
-        persistedOutcome == null;
-
-      if (isUnpersistedFirstTurn) {
-        removeConvoFromAllQueries(queryClient, conversationId);
-        queryClient.removeQueries({
-          queryKey: [QueryKeys.conversation, conversationId],
-        });
-        queryClient.removeQueries({
-          queryKey: [QueryKeys.messages, conversationId],
-        });
-        setRunEnd({
-          conversationId: String(Constants.NEW_CONVO),
-          outcome: 'error',
-          endedAt: Date.now(),
-        });
-        clearDisconnectedRunRecovery(queryClient, conversationId);
-        return;
-      }
-
-      const outcome = getStatusRunOutcome(status) ?? persistedOutcome;
-      if (!outcome) {
-        return;
-      }
-
-      setRunEnd({
-        conversationId,
-        outcome,
-        ...(disconnectedRun?.startedAsNewConvo && { startedAsNewConvo: true }),
-        endedAt: Date.now(),
-      });
-      clearDisconnectedRunRecovery(queryClient, conversationId);
+      reconcileRefreshedResponse(refreshed, shouldSignalRunEnd, status);
     },
     [
       conversationId,
       getMessages,
       queryClient,
+      reconcileRefreshedResponse,
       recoverStatusSteers,
       refreshUnfinishedResponse,
       restoreSteerChips,
-      setRunEnd,
     ],
   );
+
+  const recoverWithoutStatus = useCallback(async () => {
+    if (!conversationId) {
+      return;
+    }
+
+    const shouldSignalRunEnd =
+      getUnfinishedAssistantTail(getMessages()) != null ||
+      getDisconnectedRunRecovery(queryClient, conversationId) != null;
+    const refreshed = await refreshUnfinishedResponse();
+    reconcileRefreshedResponse(refreshed, shouldSignalRunEnd);
+  }, [
+    conversationId,
+    getMessages,
+    queryClient,
+    reconcileRefreshedResponse,
+    refreshUnfinishedResponse,
+  ]);
 
   useEffect(() => {
     const previous = observedActiveJobRef.current;
@@ -518,23 +563,17 @@ export default function useResumeOnLoad(
       const terminalConversationId = conversationId;
       void fetchStreamStatus(terminalConversationId)
         .then((status) => {
-          const recoveredSteers = recoverStatusSteers(status);
           const observed = observedActiveJobRef.current;
-          if (
-            status.active &&
-            observed.conversationId === terminalConversationId &&
-            !observed.active
-          ) {
-            queryClient.setQueryData<ActiveJobsResponse>([QueryKeys.activeJobs], (old) => ({
-              activeJobIds: [...new Set([...(old?.activeJobIds ?? []), terminalConversationId])],
-            }));
+          if (status.active) {
+            if (observed.conversationId === terminalConversationId && !observed.active) {
+              queryClient.setQueryData<ActiveJobsResponse>([QueryKeys.activeJobs], (old) => ({
+                activeJobIds: [...new Set([...(old?.activeJobIds ?? []), terminalConversationId])],
+              }));
+            }
             return;
           }
-          if (
-            status.active ||
-            observed.conversationId !== terminalConversationId ||
-            observed.active
-          ) {
+          const recoveredSteers = recoverStatusSteers(status);
+          if (observed.conversationId !== terminalConversationId || observed.active) {
             return;
           }
           void recoverInactiveResponse(status, {
@@ -545,7 +584,7 @@ export default function useResumeOnLoad(
         .catch(() => {
           const observed = observedActiveJobRef.current;
           if (observed.conversationId === terminalConversationId && !observed.active) {
-            refreshUnfinishedResponse();
+            void recoverWithoutStatus();
           }
         });
     }
@@ -556,7 +595,7 @@ export default function useResumeOnLoad(
     queryClient,
     recoverInactiveResponse,
     recoverStatusSteers,
-    refreshUnfinishedResponse,
+    recoverWithoutStatus,
   ]);
 
   useEffect(() => {

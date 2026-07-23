@@ -758,6 +758,52 @@ describe('useResumeOnLoad', () => {
       });
     });
 
+    it('keeps live pending steers with the server when status confirms the job is active', async () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const observedSteers: PendingSteer[][] = [];
+      const observedQueues: QueuedMessage[][] = [];
+      const observedRunEnds: Array<RunEnd | null> = [];
+      const pendingSteer: PendingSteer = {
+        steerId: 'steer-still-live',
+        text: 'Apply this to the running response',
+        status: 'pending',
+        createdAt: 7,
+      };
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+      });
+      mockFetchStreamStatus.mockResolvedValue({
+        active: true,
+        resumeState: {
+          pendingSteers: [pendingSteer],
+        },
+      });
+
+      const { rerender } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        messages: [buildUserMessage(CONVERSATION_ID), buildAssistantMessage({ unfinished: true })],
+        pendingSteers: [pendingSteer],
+        onPendingSteers: (steers) => observedSteers.push(steers),
+        onQueuedMessages: (queued) => observedQueues.push(queued),
+        onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+        queryClient,
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [] },
+      });
+      rerender();
+
+      await waitFor(() => {
+        expect(queryClient.getQueryData([QueryKeys.activeJobs])).toEqual({
+          activeJobIds: [CONVERSATION_ID],
+        });
+      });
+      expect(observedSteers[observedSteers.length - 1]).toEqual([pendingSteer]);
+      expect(observedQueues[observedQueues.length - 1]).toEqual([]);
+      expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
+    });
+
     it('recovers claimed steers when another run starts before status resolves', async () => {
       let resolveStatus!: (status: { active: boolean; unrecoveredSteers: PendingSteer[] }) => void;
       mockFetchStreamStatus.mockReturnValue(
@@ -817,9 +863,10 @@ describe('useResumeOnLoad', () => {
       expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
     });
 
-    it('prunes an unpersisted optimistic first turn after terminal reconciliation', async () => {
+    it('prunes an unpersisted optimistic first turn when its message refresh returns 404', async () => {
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       const removeQueriesSpy = jest.spyOn(queryClient, 'removeQueries');
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
       const observedRunEnds: Array<RunEnd | null> = [];
       const unfinishedMessages = [
         buildUserMessage(CONVERSATION_ID),
@@ -834,6 +881,10 @@ describe('useResumeOnLoad', () => {
         data: { activeJobIds: [CONVERSATION_ID] },
       });
       mockFetchStreamStatus.mockResolvedValue({ active: false });
+      const notFoundError = Object.assign(new Error('Conversation not found'), {
+        isAxiosError: true,
+        response: { status: 404 },
+      });
 
       const { rerender } = renderUseResumeOnLoad({
         submission: buildSubmission(CONVERSATION_ID),
@@ -841,7 +892,7 @@ describe('useResumeOnLoad', () => {
           queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
         onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
         queryClient,
-        messageQueryFn: jest.fn().mockResolvedValue([]),
+        messageQueryFn: jest.fn().mockRejectedValue(notFoundError),
       });
 
       mockUseActiveJobs.mockReturnValue({
@@ -862,6 +913,116 @@ describe('useResumeOnLoad', () => {
         queryKey: [QueryKeys.messages, CONVERSATION_ID],
       });
       expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
+    });
+
+    it('keeps first-turn recovery state when the message refresh fails transiently', async () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const removeQueriesSpy = jest.spyOn(queryClient, 'removeQueries');
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const observedRunEnds: Array<RunEnd | null> = [];
+      const unfinishedMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({ unfinished: true }),
+      ];
+      queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
+      setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+        startedAsNewConvo: true,
+        created: false,
+      });
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+      });
+      mockFetchStreamStatus.mockResolvedValue({ active: false });
+      const messageQueryFn = jest.fn().mockRejectedValue(new Error('Network unavailable'));
+
+      const { rerender } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        getMessages: () =>
+          queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
+        onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+        queryClient,
+        messageQueryFn,
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [] },
+      });
+      rerender();
+
+      await waitFor(() => {
+        expect(messageQueryFn).toHaveBeenCalledTimes(1);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
+      expect(removeQueriesSpy).not.toHaveBeenCalledWith({
+        queryKey: [QueryKeys.conversation, CONVERSATION_ID],
+      });
+      expect(removeQueriesSpy).not.toHaveBeenCalledWith({
+        queryKey: [QueryKeys.messages, CONVERSATION_ID],
+      });
+      expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toEqual({
+        startedAsNewConvo: true,
+        created: false,
+      });
+    });
+
+    it('publishes run end when status fails but the fallback refresh completes', async () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const observedSteers: PendingSteer[][] = [];
+      const observedRunEnds: Array<RunEnd | null> = [];
+      const pendingSteer: PendingSteer = {
+        steerId: 'steer-without-status',
+        text: 'Keep this pending until status is known',
+        status: 'pending',
+        createdAt: 10,
+      };
+      const unfinishedMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({ unfinished: true }),
+      ];
+      const finalMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({
+          messageId: 'response-message-final',
+          text: 'Completed despite status failure',
+          unfinished: false,
+        }),
+      ];
+      queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+      });
+      mockFetchStreamStatus.mockRejectedValue(new Error('Status unavailable'));
+
+      const { rerender } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        getMessages: () =>
+          queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
+        pendingSteers: [pendingSteer],
+        onPendingSteers: (steers) => observedSteers.push(steers),
+        onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+        queryClient,
+        messageQueryFn: jest.fn().mockResolvedValue(finalMessages),
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [] },
+      });
+      rerender();
+
+      await waitFor(() => {
+        expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+          conversationId: CONVERSATION_ID,
+          outcome: 'completed',
+        });
+      });
+      expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
+        finalMessages,
+      );
+      expect(observedSteers[observedSteers.length - 1]).toEqual([pendingSteer]);
     });
   });
 
