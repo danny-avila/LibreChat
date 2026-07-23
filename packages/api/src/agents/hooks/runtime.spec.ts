@@ -462,6 +462,57 @@ describe('registerPluginHooks', () => {
     );
   });
 
+  test('filters StopFailure matchers against the runtime error', async () => {
+    const registry = new HookRegistry();
+    const hookExecutor = executor();
+    const registration = registerPluginHooks({
+      pluginId: 'failure-audit',
+      registry,
+      executor: hookExecutor,
+      document: document({
+        StopFailure: [
+          {
+            matcher: 'rate_limit|overloaded',
+            hooks: [{ type: 'command', command: 'record-failure' }],
+          },
+        ],
+      }),
+    });
+
+    expect(registration.registered).toBe(1);
+    expect(registry.getMatchers('StopFailure')[0].pattern).toBeUndefined();
+
+    await executeHooks({
+      registry,
+      input: {
+        hook_event_name: 'StopFailure',
+        runId: 'run-auth-failure',
+        error: 'authentication_failed',
+      },
+    });
+    await executeHooks({
+      registry,
+      input: {
+        hook_event_name: 'StopFailure',
+        runId: 'run-rate-limit',
+        error: 'rate_limit',
+      },
+    });
+
+    expect(hookExecutor.execute).toHaveBeenCalledTimes(1);
+    expect(hookExecutor.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceEvent: 'StopFailure',
+        targetEvent: 'StopFailure',
+        payload: expect.objectContaining({
+          hook_event_name: 'StopFailure',
+          error: 'rate_limit',
+        }),
+      }),
+      expect.any(AbortSignal),
+    );
+  });
+
   test('registers the event surface used by the official hookify plugin', () => {
     const registry = new HookRegistry();
     const registration = registerPluginHooks({

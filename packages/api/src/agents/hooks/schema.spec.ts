@@ -172,6 +172,71 @@ describe('parsePluginHooks', () => {
     ]);
   });
 
+  test('retains schema metadata and known handlers for compatibility planning', () => {
+    const result = parsePluginHooks({
+      $schema: 'https://json.schemastore.org/claude-code-settings.json',
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: 'Bash',
+            hooks: [
+              {
+                type: 'command',
+                command: 'verify',
+              },
+              {
+                type: 'http',
+                url: 'https://hooks.example.com/pre-tool',
+                headers: { Authorization: 'Bearer ${HOOK_TOKEN}' },
+                allowedEnvVars: ['HOOK_TOKEN'],
+              },
+              {
+                type: 'mcp_tool',
+                server: 'policy',
+                tool: 'validate',
+                input: { strict: true },
+              },
+              {
+                type: 'agent',
+                prompt: 'Review this tool call',
+                model: 'claude-sonnet-4-5',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.document.$schema).toBe('https://json.schemastore.org/claude-code-settings.json');
+    expect(result.document.hooks.PreToolUse[0].hooks).toEqual([
+      {
+        type: 'command',
+        command: 'verify',
+      },
+      {
+        type: 'http',
+        url: 'https://hooks.example.com/pre-tool',
+        headers: { Authorization: 'Bearer ${HOOK_TOKEN}' },
+        allowedEnvVars: ['HOOK_TOKEN'],
+      },
+      {
+        type: 'mcp_tool',
+        server: 'policy',
+        tool: 'validate',
+        input: { strict: true },
+      },
+      {
+        type: 'agent',
+        prompt: 'Review this tool call',
+        model: 'claude-sonnet-4-5',
+      },
+    ]);
+  });
+
   test('rejects blank conditions and oversized matchers', () => {
     const blankCondition = parsePluginHooks({
       hooks: {

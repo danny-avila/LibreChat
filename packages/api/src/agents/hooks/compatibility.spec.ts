@@ -96,6 +96,31 @@ describe('planPluginHooks', () => {
     ]);
   });
 
+  test('plans StopFailure matchers against translated error names', () => {
+    const plan = planPluginHooks(
+      document({
+        StopFailure: [
+          {
+            matcher: 'rate_limit|overloaded',
+            hooks: [{ type: 'command', command: 'record-failure' }],
+          },
+        ],
+      }),
+      commandCapabilities,
+    );
+
+    expect(plan.summary).toEqual({ declared: 1, ready: 1, unsupported: 0 });
+    expect(plan.entries[0]).toEqual(
+      expect.objectContaining({
+        sourceEvent: 'StopFailure',
+        targetEvent: 'StopFailure',
+        sourceMatcher: 'rate_limit|overloaded',
+        matcher: 'rate_limit|overloaded',
+        status: 'ready',
+      }),
+    );
+  });
+
   test('does not activate events whose Claude control surfaces are unavailable', () => {
     const plan = planPluginHooks(
       document({
@@ -150,6 +175,46 @@ describe('planPluginHooks', () => {
     expect(plan.entries[1].issues).toEqual([
       expect.objectContaining({ code: 'unsupported_handler' }),
     ]);
+  });
+
+  test('keeps known unsupported handler declarations in a mixed compatibility plan', () => {
+    const plan = planPluginHooks(
+      document({
+        Stop: [
+          {
+            hooks: [
+              { type: 'command', command: 'verify' },
+              { type: 'http', url: 'https://hooks.example.com/stop' },
+              { type: 'mcp_tool', server: 'policy', tool: 'validate', input: { strict: true } },
+              { type: 'agent', prompt: 'Review completion', model: 'claude-sonnet-4-5' },
+            ],
+          },
+        ],
+      }),
+      commandCapabilities,
+    );
+
+    expect(plan.summary).toEqual({ declared: 4, ready: 1, unsupported: 3 });
+    expect(plan.entries[0].status).toBe('ready');
+    expect(plan.entries.slice(1)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          handler: expect.objectContaining({ type: 'http' }),
+          status: 'unsupported',
+          issues: [expect.objectContaining({ code: 'unsupported_handler' })],
+        }),
+        expect.objectContaining({
+          handler: expect.objectContaining({ type: 'mcp_tool' }),
+          status: 'unsupported',
+          issues: [expect.objectContaining({ code: 'unsupported_handler' })],
+        }),
+        expect.objectContaining({
+          handler: expect.objectContaining({ type: 'agent' }),
+          status: 'unsupported',
+          issues: [expect.objectContaining({ code: 'unsupported_handler' })],
+        }),
+      ]),
+    );
   });
 
   test('rejects conditional, async-rewake, and unsafe matcher semantics by default', () => {

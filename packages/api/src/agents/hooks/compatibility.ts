@@ -26,6 +26,7 @@ const QUERY_EVENTS = new Set<HookEvent>([
   'PermissionDenied',
   'SubagentStart',
   'SubagentStop',
+  'StopFailure',
   'PreCompact',
   'PostCompact',
 ]);

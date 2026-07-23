@@ -357,6 +357,13 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
       ) {
         return {};
       }
+      if (
+        targetEvent === 'StopFailure' &&
+        input.hook_event_name === 'StopFailure' &&
+        !matchesQuery(entry.matcher, input.error)
+      ) {
+        return {};
+      }
       if (entry.handler.once === true && hasFired) {
         return {};
       }
@@ -389,7 +396,8 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
     const runtimeFiltered =
       entry.sourceEvent === 'SessionStart' ||
       targetEvent === 'PreCompact' ||
-      targetEvent === 'PostCompact';
+      targetEvent === 'PostCompact' ||
+      targetEvent === 'StopFailure';
     const timeoutMs = getHookTimeoutMs(entry.sourceEvent, entry.handler, entry.timeoutMs);
     const matcher: HookMatcher<HookEvent> = {
       hooks: [hook],
