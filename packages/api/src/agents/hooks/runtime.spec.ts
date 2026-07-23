@@ -1,4 +1,5 @@
 import { HookRegistry, executeHooks } from '@librechat/agents';
+import { AIMessage } from '@librechat/agents/langchain/messages';
 import type { HookOutput } from '@librechat/agents';
 import type { PluginHookCapabilities } from './compatibility';
 import type { PluginHookExecutor } from './runtime';
@@ -145,7 +146,10 @@ describe('registerPluginHooks', () => {
   test('maps LibreChat tool names back into the plugin payload namespace', async () => {
     const registry = new HookRegistry();
     const hookExecutor = executor();
-    hookExecutor.capabilities.translateMatcher = () => '^bash_tool$';
+    hookExecutor.capabilities.translateMatcher = () => ({
+      matcher: '^bash_tool$',
+      requiresToolNameTranslation: true,
+    });
     hookExecutor.capabilities.toPluginToolName = ({ toolName }) =>
       toolName === 'bash_tool' ? 'Bash' : toolName;
     registerPluginHooks({
@@ -437,6 +441,23 @@ describe('registerPluginHooks', () => {
         hook_event_name: 'SubagentStart',
         agent_id: 'agent-child',
         agent_type: 'Explore',
+      }),
+    );
+  });
+
+  test('includes StopFailure assistant text when the SDK provides it', () => {
+    const payload = createPluginHookPayload('StopFailure', {
+      hook_event_name: 'StopFailure',
+      runId: 'run-stop-failure',
+      error: 'Model response could not be parsed',
+      lastAssistantMessage: new AIMessage('Partial assistant response'),
+    });
+
+    expect(payload).toEqual(
+      expect.objectContaining({
+        hook_event_name: 'StopFailure',
+        error: 'Model response could not be parsed',
+        last_assistant_message: 'Partial assistant response',
       }),
     );
   });

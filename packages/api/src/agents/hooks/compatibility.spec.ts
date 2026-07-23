@@ -238,7 +238,10 @@ describe('planPluginHooks', () => {
       }),
       {
         handlerTypes: new Set(['command']),
-        translateMatcher: () => '^bash_tool$',
+        translateMatcher: () => ({
+          matcher: '^bash_tool$',
+          requiresToolNameTranslation: true,
+        }),
       },
     );
 
@@ -248,6 +251,27 @@ describe('planPluginHooks', () => {
         expect.objectContaining({ code: 'matcher_translated', severity: 'warning' }),
         expect.objectContaining({ code: 'unmapped_tool_name', severity: 'error' }),
       ]),
+    );
+  });
+
+  test('allows regex-only matcher rewrites without reverse tool-name mapping', () => {
+    const plan = planPluginHooks(
+      document({
+        PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'check' }] }],
+      }),
+      {
+        handlerTypes: new Set(['command']),
+        translateMatcher: () => '^Bash$',
+      },
+    );
+
+    expect(plan.summary).toEqual({ declared: 1, ready: 1, unsupported: 0 });
+    expect(plan.entries[0]).toEqual(
+      expect.objectContaining({
+        matcher: '^Bash$',
+        status: 'ready',
+        issues: [expect.objectContaining({ code: 'matcher_translated', severity: 'warning' })],
+      }),
     );
   });
 

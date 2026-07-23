@@ -71,6 +71,11 @@ export interface PluginHookMatcherTranslation {
   matcher: string;
 }
 
+export interface PluginHookMatcherTranslationResult {
+  matcher: string;
+  requiresToolNameTranslation?: boolean;
+}
+
 export interface PluginHookToolNameTranslation {
   sourceEvent: string;
   targetEvent: HookEvent;
@@ -79,7 +84,9 @@ export interface PluginHookToolNameTranslation {
 
 export interface PluginHookCapabilities {
   handlerTypes: ReadonlySet<PluginHookHandlerType>;
-  translateMatcher?: (input: PluginHookMatcherTranslation) => string | undefined;
+  translateMatcher?: (
+    input: PluginHookMatcherTranslation,
+  ) => string | PluginHookMatcherTranslationResult | undefined;
   /** Maps a LibreChat runtime tool name back into the plugin's source namespace. */
   toPluginToolName?: (input: PluginHookToolNameTranslation) => string;
   conditions?: boolean;
@@ -293,16 +300,19 @@ function planMatcher(
     };
   }
 
-  let matcher: string | undefined;
+  let translation: string | PluginHookMatcherTranslationResult | undefined;
   try {
-    matcher = capabilities.translateMatcher({
+    translation = capabilities.translateMatcher({
       sourceEvent,
       targetEvent,
       matcher: sourceMatcher,
     });
   } catch {
-    matcher = undefined;
+    translation = undefined;
   }
+  const matcher = typeof translation === 'string' ? translation : translation?.matcher;
+  const requiresToolNameTranslation =
+    typeof translation === 'object' && translation.requiresToolNameTranslation === true;
   if (!matcher?.trim()) {
     return {
       sourceMatcher,
@@ -327,13 +337,17 @@ function planMatcher(
       severity: 'warning',
       message: `Plugin matcher "${sourceMatcher}" maps to LibreChat matcher "${matcher}"`,
     });
-    if (TOOL_NAME_EVENTS.has(targetEvent) && !capabilities.toPluginToolName) {
-      issues.push({
-        code: 'unmapped_tool_name',
-        severity: 'error',
-        message: 'Translated tool matchers require a reverse tool-name mapping for plugin payloads',
-      });
-    }
+  }
+  if (
+    requiresToolNameTranslation &&
+    TOOL_NAME_EVENTS.has(targetEvent) &&
+    !capabilities.toPluginToolName
+  ) {
+    issues.push({
+      code: 'unmapped_tool_name',
+      severity: 'error',
+      message: 'Translated tool matchers require a reverse tool-name mapping for plugin payloads',
+    });
   }
   return { sourceMatcher, matcher, issues };
 }
