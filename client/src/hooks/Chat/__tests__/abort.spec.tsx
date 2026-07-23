@@ -1,5 +1,5 @@
 import React from 'react';
-import { Constants } from 'librechat-data-provider';
+import { Constants, QueryKeys } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { RecoilRoot, useSetRecoilState, useRecoilValue } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -175,6 +175,9 @@ describe('useChatHelpers stopGenerating (abort steer targeting)', () => {
       return null;
     }
     const queryClient = new QueryClient();
+    queryClient.setQueryData([QueryKeys.activeJobs], {
+      activeJobIds: [conversationId],
+    });
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={queryClient}>
         <RecoilRoot
@@ -192,7 +195,10 @@ describe('useChatHelpers stopGenerating (abort steer targeting)', () => {
         </RecoilRoot>
       </QueryClientProvider>
     );
-    return renderHook(() => useChatHelpers(INDEX), { wrapper });
+    return {
+      queryClient,
+      ...renderHook(() => useChatHelpers(INDEX), { wrapper }),
+    };
   }
 
   beforeEach(() => {
@@ -204,6 +210,45 @@ describe('useChatHelpers stopGenerating (abort steer targeting)', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('leaves active-job removal to terminal SSE handling or server polling', async () => {
+    let resolveAbort!: (value: {
+      success: boolean;
+      aborted: string;
+      pendingSteers: never[];
+    }) => void;
+    mockAbortMutateAsync.mockReturnValue(
+      new Promise((resolve) => {
+        resolveAbort = resolve;
+      }),
+    );
+
+    const { result, queryClient } = setupStop('convo-held');
+    let stopPromise!: Promise<void>;
+    act(() => {
+      stopPromise = result.current.stopGenerating();
+    });
+
+    await waitFor(() => {
+      expect(mockAbortMutateAsync).toHaveBeenCalledWith({ conversationId: 'convo-held' });
+    });
+    expect(queryClient.getQueryData([QueryKeys.activeJobs])).toEqual({
+      activeJobIds: ['convo-held'],
+    });
+
+    await act(async () => {
+      resolveAbort({
+        success: true,
+        aborted: 'convo-held',
+        pendingSteers: [],
+      });
+      await stopPromise;
+    });
+
+    expect(queryClient.getQueryData([QueryKeys.activeJobs])).toEqual({
+      activeJobIds: ['convo-held'],
+    });
   });
 
   it('keeps chips and the drain signal on the new composer while claiming under the resolved id', async () => {

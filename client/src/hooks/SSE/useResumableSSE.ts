@@ -57,6 +57,11 @@ import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandler
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useUsageHandler from './useUsageHandler';
+import {
+  clearResumableRecovery,
+  markTerminalEventSeen,
+  setDisconnectedRunRecovery,
+} from './resumableRecovery';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -829,6 +834,9 @@ export default function useResumableSSE(
             );
             try {
               finalHandler(data, currentSubmission as EventSubmission);
+              // Mark only after the final cache write succeeds. If finalHandler
+              // throws, active-job polling must still reconcile from the DB.
+              markTerminalEventSeen(queryClient, currentStreamId);
               finalizeUsage(data, { ...currentSubmission, userMessage });
             } catch (error) {
               logger.error('ResumableSSE', 'Error in finalHandler:', error);
@@ -1232,6 +1240,7 @@ export default function useResumableSSE(
           const convoId = currentSubmission.conversation?.conversationId;
           logger.log('ResumableSSE', 'Stream 404, invalidating messages for:', convoId);
           sse.close();
+          markTerminalEventSeen(queryClient, currentStreamId);
           removeActiveJob(currentStreamId);
           /** Terminal: drop any in-flight live estimate so the gauge doesn't
            *  keep counting stale streamed output after the stream ends */
@@ -1327,6 +1336,7 @@ export default function useResumableSSE(
            * tail, so queued tokens must land first — and a stale trailing
            * frame must never overwrite the error write. */
           flushPendingDeltas();
+          markTerminalEventSeen(queryClient, currentStreamId);
           removeActiveJob(currentStreamId);
           resetLive({ ...currentSubmission, userMessage });
           if (
@@ -1425,28 +1435,16 @@ export default function useResumableSSE(
           sse.close();
           flushPendingDeltas();
           errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
-          /** Terminal: clear the in-flight live estimate like the other
-           *  stop-reconnecting paths so the gauge doesn't show stale tokens */
+          /** This subscriber is giving up while the server job may still be
+           *  running. Clear only connection-local UI state; the active-jobs
+           *  poll remains authoritative for terminal recovery. */
           resetLive({ ...currentSubmission, userMessage });
-          // Optimistically remove from active jobs on max retries
-          removeActiveJob(currentStreamId);
-          if (
-            !createdStreamIdsRef.current.has(currentStreamId) &&
-            optimisticStreamIdsRef.current.has(currentStreamId)
-          ) {
-            removeConvoFromAllQueries(queryClient, currentStreamId);
-          }
+          setDisconnectedRunRecovery(queryClient, currentStreamId, {
+            startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
+            created: createdStreamIdsRef.current.has(currentStreamId),
+          });
           setIsSubmitting(false);
           setShowStopButton(false);
-          convertLocalSteersToQueued(
-            currentSubmission.conversation?.conversationId ?? currentStreamId,
-            { claimParked: true },
-          );
-          setRunEnd({
-            conversationId: currentSubmission.conversation?.conversationId ?? currentStreamId,
-            outcome: 'error',
-            endedAt: Date.now(),
-          });
           setStreamId(null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
           createdStreamIdsRef.current.delete(currentStreamId);
@@ -1709,6 +1707,9 @@ export default function useResumableSSE(
         }
         if (startResult) {
           const { streamId: newStreamId, resumed } = startResult;
+          if (!resumed) {
+            clearResumableRecovery(queryClient, newStreamId);
+          }
           setStreamId(newStreamId);
           // Optimistically add to active jobs
           addActiveJob(newStreamId);
