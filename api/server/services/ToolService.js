@@ -1208,26 +1208,26 @@ async function loadToolDefinitionsWrapper({
     mcpResolution,
     oauthActionToolNames,
   } = await loadToolDefinitions(
-      {
-        userId: req.user.id,
-        agentId: agent.id,
-        tools: defsFilteredTools,
-        toolOptions: agent.tool_options,
-        deferredToolsEnabled,
-        programmaticToolsEnabled,
-        codeExecutionEnabled,
-        provider: agent.provider,
-        mcpServerNames,
-        rawServerNames: mcpRawServerNames,
-        accessibleServerNames: defsAccessibleServerNames,
-      },
-      {
-        isBuiltInTool,
-        getOrFetchMCPServerTools,
-        refreshMCPServerTools,
-        getActionToolDefinitions,
-      },
-    );
+    {
+      userId: req.user.id,
+      agentId: agent.id,
+      tools: defsFilteredTools,
+      toolOptions: agent.tool_options,
+      deferredToolsEnabled,
+      programmaticToolsEnabled,
+      codeExecutionEnabled,
+      provider: agent.provider,
+      mcpServerNames,
+      rawServerNames: mcpRawServerNames,
+      accessibleServerNames: defsAccessibleServerNames,
+    },
+    {
+      isBuiltInTool,
+      getOrFetchMCPServerTools,
+      refreshMCPServerTools,
+      getActionToolDefinitions,
+    },
+  );
 
   /** OAuth discovery must not reconnect (or prompt for) a server whose
    *  definitions the collision filter deliberately rejected. */

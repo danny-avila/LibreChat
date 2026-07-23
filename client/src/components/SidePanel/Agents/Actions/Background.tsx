@@ -35,31 +35,23 @@ export default function ActionBackground({ agentId }: { agentId: string }) {
       return [];
     }
     let domain = '';
-    let sharesDomain = false;
+    const domainCounts = new Map<string, number>();
     for (const entry of agent.actions ?? []) {
       const idx = entry.indexOf(actionDelimiter);
       if (idx < 1) {
         continue;
       }
+      const entryDomain = entry.slice(0, idx);
+      domainCounts.set(entryDomain, (domainCounts.get(entryDomain) ?? 0) + 1);
       if (entry.slice(idx + actionDelimiter.length) === actionId) {
-        domain = entry.slice(0, idx);
+        domain = entryDomain;
       }
     }
     if (!domain) {
       return [];
     }
-    for (const entry of agent.actions ?? []) {
-      const idx = entry.indexOf(actionDelimiter);
-      if (
-        idx > 0 &&
-        entry.slice(0, idx) === domain &&
-        entry.slice(idx + actionDelimiter.length) !== actionId
-      ) {
-        sharesDomain = true;
-        break;
-      }
-    }
 
+    const sharesDomain = (domainCounts.get(domain) ?? 0) > 1;
     const suffix = `${actionDelimiter}${domain}`;
     const domainTools = (agent.tools ?? []).filter((tool) => tool.endsWith(suffix));
     const spec = action?.metadata.raw_spec;

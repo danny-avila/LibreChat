@@ -46,6 +46,7 @@ export default function Background() {
   if (!backgroundToolsEnabled) {
     return null;
   }
+
   return (
     <HoverCard openDelay={50}>
       <div className="flex items-center justify-between">
