@@ -170,6 +170,8 @@ export interface ActivityLabelHostDeps {
   maxPerRun?: number;
   /** Prompt truncation from `activityCharLimit`; falls back to the hook default. */
   charLimit?: number;
+  /** `activityPrompt` override, applied on both generation paths. */
+  prompt?: string;
   abortSignal?: AbortSignal;
   /** Returns the LIVE host content array (same instance the SDK writes into). */
   getContentParts: () => Array<LooseContentPart | null | undefined>;
@@ -205,6 +207,12 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
       resolveLLM: deps.resolveLLM,
       ...(deps.maxPerRun != null && { maxPerRun: deps.maxPerRun }),
       ...(deps.charLimit != null && { charLimit: deps.charLimit }),
+      ...(deps.prompt != null && { prompt: deps.prompt }),
+      /** Seed the cap from labels already on the response so a HITL resume
+       *  cannot mint a fresh quota after every approval. */
+      initialGeneratedCount: deps
+        .getContentParts()
+        .filter((part) => part?.type === ContentTypes.ACTIVITY_LABEL).length,
       signal: deps.abortSignal,
       getInvokeCallbacks: deps.getInvokeCallbacks,
       ...(deps.generateLabel && { generateLabel: deps.generateLabel }),

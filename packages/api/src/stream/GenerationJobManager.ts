@@ -2376,6 +2376,25 @@ class GenerationJobManagerClass {
    * cross-replica reconnect can reconstruct content without them. The default
    * stays fire-and-forget — no added latency on the per-delta hot path.
    */
+  /**
+   * Flags a run as producing activity labels. Read back on resume so label
+   * gap-reconciliation can be skipped for runs without the feature WITHOUT
+   * inspecting content — the first label can be claimed inside the
+   * snapshot->subscribe window, so content is not a reliable signal.
+   * Best-effort: the flag is an optimization hint, never correctness.
+   */
+  async markActivityLabels(streamId: string): Promise<void> {
+    try {
+      await this.jobStore.updateJob(streamId, { activityLabels: true });
+    } catch (error) {
+      logger.debug(
+        `[GenerationJobManager] Could not flag activity labels for ${streamId}: ${
+          (error as Error)?.message ?? error
+        }`,
+      );
+    }
+  }
+
   async emitChunk(
     streamId: string,
     event: t.ServerSentEvent,
