@@ -1412,3 +1412,9 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+export const getAdminUsageSummary = (
+  params?: t.TAdminUsageSummaryParams,
+): Promise<t.TAdminUsageSummaryResponse> => {
+  return request.get(endpoints.adminUsageSummary(params));
+};

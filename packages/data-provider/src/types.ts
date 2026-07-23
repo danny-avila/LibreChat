@@ -849,3 +849,26 @@ export type TUpdateSkillNodeRequest = {
   parentId?: string | null;
   order?: number;
 };
+
+/* Admin — per-user usage/cost reporting (GET /api/admin/usage) */
+export type TAdminUsageSummaryItem = {
+  user: string;
+  name?: string;
+  email?: string;
+  totalCost: number;
+  transactionCount: number;
+};
+
+export type TAdminUsageSummaryParams = {
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type TAdminUsageSummaryResponse = {
+  items: TAdminUsageSummaryItem[];
+  total: number;
+  limit: number;
+  offset: number;
+};

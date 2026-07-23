@@ -65,6 +65,20 @@ export interface TransactionResult {
   credits?: number;
 }
 
+/** Aggregated spend for a single user within a usage summary window */
+export interface UserUsageSummaryItem {
+  user: string;
+  name?: string;
+  email?: string;
+  totalCost: number;
+  transactionCount: number;
+}
+
+export interface UserUsageSummaryResult {
+  items: UserUsageSummaryItem[];
+  total: number;
+}
+
 export function createTransactionMethods(
   mongoose: typeof import('mongoose'),
   txMethods: {
@@ -100,6 +114,12 @@ export function createTransactionMethods(
     | undefined
   >;
   createStructuredTransaction: (_txData: TxData) => Promise<TransactionResult | undefined>;
+  getUserUsageSummary: (params: {
+    startDate?: Date;
+    endDate?: Date;
+    limit: number;
+    offset: number;
+  }) => Promise<UserUsageSummaryResult>;
 } {
   /** Calculate and set the tokenValue for a transaction */
   function calculateTokenValue(txn: InternalTxDoc) {
@@ -472,6 +492,82 @@ export function createTransactionMethods(
     }
   }
 
+  /**
+   * Aggregates per-user spend (the negative, debit portion of `tokenValue`) over an
+   * optional date range, sorted highest-spend first. Credits/refills (positive
+   * `tokenValue`) are excluded — this reports cost, not net balance change.
+   */
+  async function getUserUsageSummary({
+    startDate,
+    endDate,
+    limit,
+    offset,
+  }: {
+    startDate?: Date;
+    endDate?: Date;
+    limit: number;
+    offset: number;
+  }): Promise<UserUsageSummaryResult> {
+    const Transaction = mongoose.models.Transaction;
+    const createdAt: { $gte?: Date; $lte?: Date } = {};
+    if (startDate) {
+      createdAt.$gte = startDate;
+    }
+    if (endDate) {
+      createdAt.$lte = endDate;
+    }
+
+    const match: Record<string, unknown> = { tokenValue: { $lt: 0 } };
+    if (startDate || endDate) {
+      match.createdAt = createdAt;
+    }
+
+    const [result] = await Transaction.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: '$user',
+          totalCost: { $sum: { $abs: '$tokenValue' } },
+          transactionCount: { $sum: 1 },
+        },
+      },
+      { $sort: { totalCost: -1 } },
+      {
+        $facet: {
+          items: [
+            { $skip: offset },
+            { $limit: limit },
+            {
+              $lookup: {
+                from: 'users',
+                localField: '_id',
+                foreignField: '_id',
+                as: 'userDoc',
+              },
+            },
+            { $unwind: { path: '$userDoc', preserveNullAndEmptyArrays: true } },
+            {
+              $project: {
+                _id: 0,
+                user: { $toString: '$_id' },
+                name: '$userDoc.name',
+                email: '$userDoc.email',
+                totalCost: 1,
+                transactionCount: 1,
+              },
+            },
+          ],
+          totalCount: [{ $count: 'count' }],
+        },
+      },
+    ]);
+
+    return {
+      items: (result?.items ?? []) as UserUsageSummaryItem[],
+      total: result?.totalCount?.[0]?.count ?? 0,
+    };
+  }
+
   return {
     updateBalance,
     bulkInsertTransactions,
@@ -483,6 +579,7 @@ export function createTransactionMethods(
     createTransaction,
     createAutoRefillTransaction,
     createStructuredTransaction,
+    getUserUsageSummary,
   };
 }
 
