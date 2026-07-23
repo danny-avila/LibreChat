@@ -43,6 +43,7 @@ export interface PluginHookPayload {
   tool_use_id?: string;
   tool_response?: unknown;
   error?: string;
+  last_assistant_message?: string;
   reason?: string;
   agent_type?: string;
   stop_hook_active?: boolean;
@@ -114,6 +115,31 @@ function getPluginToolName(toolName: string, state: PluginHookPayloadState): str
     throw new Error(`No plugin tool-name mapping is available for "${toolName}"`);
   }
   return translated;
+}
+
+function getMessageText(message: unknown): string | undefined {
+  if (!message || typeof message !== 'object' || !('content' in message)) {
+    return undefined;
+  }
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+  const text = content
+    .flatMap((block) => {
+      if (typeof block === 'string') {
+        return [block];
+      }
+      if (block && typeof block === 'object' && 'text' in block && typeof block.text === 'string') {
+        return [block.text];
+      }
+      return [];
+    })
+    .join('\n');
+  return text || undefined;
 }
 
 function toPluginBatchToolCall(
@@ -209,8 +235,16 @@ export function createPluginHookPayload(
       return { ...payload, agent_type: input.agentType };
     case 'Stop':
       return { ...payload, stop_hook_active: input.stopHookActive };
-    case 'StopFailure':
-      return { ...payload, error: input.error };
+    case 'StopFailure': {
+      const lastAssistantMessage = getMessageText(input.lastAssistantMessage);
+      return {
+        ...payload,
+        error: input.error,
+        ...(lastAssistantMessage !== undefined && {
+          last_assistant_message: lastAssistantMessage,
+        }),
+      };
+    }
     case 'PreCompact':
       return {
         ...payload,
