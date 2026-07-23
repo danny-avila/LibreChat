@@ -50,6 +50,8 @@ interface ReorderBuffer {
   pending: Map<number, PubSubMessage>;
   /** Timeout handle for flushing stale messages */
   flushTimeout: ReturnType<typeof setTimeout> | null;
+  /** Hold sequenced delivery until first-subscriber replay establishes its frontier. */
+  deliveryDeferred: boolean;
 }
 
 /**
@@ -210,6 +212,7 @@ export class RedisEventTransport implements IEventTransport {
       }
       state.reorderBuffer.nextSeq = 0;
       state.reorderBuffer.pending.clear();
+      state.reorderBuffer.deliveryDeferred = false;
     }
   }
 
@@ -224,56 +227,75 @@ export class RedisEventTransport implements IEventTransport {
    */
   async syncReorderBuffer(streamId: string, replayedNextSeq?: number): Promise<void> {
     const initialState = this.streams.get(streamId);
-    const key = KEYS.sequence(streamId);
-    const rawStr = await this.publisher.get(key);
-    const parsed = rawStr != null ? parseInt(rawStr, 10) : 0;
-    const currentSeq = Number.isNaN(parsed) ? 0 : parsed;
-    const state = this.streams.get(streamId);
-    // cleanup() may replace this stream's local state while the Redis GET is in
-    // flight. An obsolete snapshot must never move the replacement's frontier.
-    if (state !== initialState) {
-      return;
-    }
-    if (state) {
-      if (state.reorderBuffer.flushTimeout) {
-        clearTimeout(state.reorderBuffer.flushTimeout);
-        state.reorderBuffer.flushTimeout = null;
+    try {
+      const key = KEYS.sequence(streamId);
+      const rawStr = await this.publisher.get(key);
+      const parsed = rawStr != null ? parseInt(rawStr, 10) : 0;
+      const currentSeq = Number.isNaN(parsed) ? 0 : parsed;
+      const state = this.streams.get(streamId);
+      // cleanup() may replace this stream's local state while the Redis GET is in
+      // flight. An obsolete snapshot must never move the replacement's frontier.
+      if (state !== initialState) {
+        return;
       }
+      if (!state) {
+        return;
+      }
+
+      const buffer = state.reorderBuffer;
+      if (buffer.flushTimeout) {
+        clearTimeout(buffer.flushTimeout);
+        buffer.flushTimeout = null;
+      }
+
       // Prune true duplicates already delivered via earlyEventBuffer. Entries at or above
       // the absolute replay frontier are live (possibly from an ongoing generation).
       if (replayedNextSeq != null) {
-        for (const seq of state.reorderBuffer.pending.keys()) {
+        for (const seq of buffer.pending.keys()) {
           if (seq < replayedNextSeq) {
-            state.reorderBuffer.pending.delete(seq);
+            buffer.pending.delete(seq);
           }
         }
       }
+
       // Set nextSeq from remaining state. Never regress — handleOrderedChunk may have
       // already advanced it during the async GET window.
-      if (state.reorderBuffer.pending.size === 0) {
+      if (buffer.pending.size === 0) {
         // Same-replica replay: INCR precedes PUBLISH, so currentSeq may reflect
         // allocated-but-not-yet-delivered events. Cap at the exact replay frontier to
         // avoid skipping in-flight chunks. With no local replay, trust the Redis counter.
         const ceiling = replayedNextSeq ?? currentSeq;
-        state.reorderBuffer.nextSeq = Math.max(state.reorderBuffer.nextSeq, ceiling);
+        buffer.nextSeq = Math.max(buffer.nextSeq, ceiling);
       } else {
         let minPending = Infinity;
-        for (const seq of state.reorderBuffer.pending.keys()) {
+        for (const seq of buffer.pending.keys()) {
           if (seq < minPending) {
             minPending = seq;
           }
         }
-        state.reorderBuffer.nextSeq = Math.max(
-          state.reorderBuffer.nextSeq,
-          Math.min(currentSeq, minPending),
-        );
-        this.flushPendingMessages(streamId, state);
+        buffer.nextSeq = Math.max(buffer.nextSeq, Math.min(currentSeq, minPending));
       }
+
+      buffer.deliveryDeferred = false;
+      this.flushPendingMessages(streamId, state);
+
       // Re-arm flush timeout if gaps remain after sync — without this,
       // buffered messages could sit indefinitely if no new messages arrive.
-      if (state.reorderBuffer.pending.size > 0) {
+      if (buffer.pending.size > 0) {
         this.scheduleFlushTimeout(streamId, state);
       }
+    } catch (err) {
+      const state = this.streams.get(streamId);
+      // A failed Redis GET must not leave a live subscription permanently paused.
+      // Fall back to normal reorder/timeout behavior and let the caller log the sync error.
+      if (state === initialState && state?.reorderBuffer.deliveryDeferred) {
+        state.reorderBuffer.deliveryDeferred = false;
+        this.flushPendingMessages(streamId, state);
+        if (state.reorderBuffer.pending.size > 0) {
+          this.scheduleFlushTimeout(streamId, state);
+        }
+      }
+      throw err;
     }
   }
 
@@ -321,6 +343,11 @@ export class RedisEventTransport implements IEventTransport {
     const buffer = streamState.reorderBuffer;
     const seq = message.seq!;
 
+    if (buffer.deliveryDeferred) {
+      buffer.pending.set(seq, message);
+      return;
+    }
+
     if (seq < buffer.nextSeq) {
       logger.debug(
         `[RedisEventTransport] Dropping duplicate terminal event for stream ${streamId}: seq=${seq}, expected=${buffer.nextSeq}`,
@@ -349,6 +376,11 @@ export class RedisEventTransport implements IEventTransport {
   ): void {
     const buffer = streamState.reorderBuffer;
     const seq = message.seq!;
+
+    if (buffer.deliveryDeferred) {
+      buffer.pending.set(seq, message);
+      return;
+    }
 
     if (seq === buffer.nextSeq) {
       this.deliverMessage(streamState, message);
@@ -480,6 +512,7 @@ export class RedisEventTransport implements IEventTransport {
       onDone?: (event: unknown) => void;
       onError?: (error: string) => void;
     },
+    options?: { deferSequenceDelivery?: boolean },
   ): { unsubscribe: () => void; ready?: Promise<void> } {
     const channel = CHANNELS.events(streamId);
     const subscriberId = `sub_${++this.subscriberIdCounter}`;
@@ -495,6 +528,7 @@ export class RedisEventTransport implements IEventTransport {
           nextSeq: 0,
           pending: new Map(),
           flushTimeout: null,
+          deliveryDeferred: false,
         },
       });
     }
@@ -505,6 +539,7 @@ export class RedisEventTransport implements IEventTransport {
     // attachment and must not inherit that prior generation's expected seq.
     if (streamState.count === 0) {
       this.resetReorderBuffer(streamId);
+      streamState.reorderBuffer.deliveryDeferred = options?.deferSequenceDelivery === true;
     }
     streamState.count++;
     streamState.handlers.set(subscriberId, handlers);
@@ -653,6 +688,7 @@ export class RedisEventTransport implements IEventTransport {
           nextSeq: 0,
           pending: new Map(),
           flushTimeout: null,
+          deliveryDeferred: false,
         },
       });
     }
@@ -693,6 +729,7 @@ export class RedisEventTransport implements IEventTransport {
           nextSeq: 0,
           pending: new Map(),
           flushTimeout: null,
+          deliveryDeferred: false,
         },
       };
       this.streams.set(streamId, state);

@@ -1053,16 +1053,26 @@ class GenerationJobManagerClass {
       }
     });
 
-    const subscription = this.eventTransport.subscribe(streamId, {
-      onChunk: (event) => {
-        const e = event as t.ServerSentEvent;
-        if (!(e as Record<string, unknown>)._internal) {
-          onChunk(e);
-        }
+    const subscription = this.eventTransport.subscribe(
+      streamId,
+      {
+        onChunk: (event) => {
+          const e = event as t.ServerSentEvent;
+          if (!(e as Record<string, unknown>)._internal) {
+            onChunk(e);
+          }
+        },
+        onDone: (event) => onDone?.(event as t.ServerSentEvent),
+        onError,
       },
-      onDone: (event) => onDone?.(event as t.ServerSentEvent),
-      onError,
-    });
+      {
+        // Redis can publish an early buffered event before the EVAL response carrying its
+        // sequence reaches this process. Hold sequenced pub/sub delivery until replay and
+        // sync establish the exact frontier, otherwise the new subscriber sees it twice.
+        deferSequenceDelivery:
+          this._isRedis && !runtime.hasSubscriber && !options?.skipBufferReplay,
+      },
+    );
 
     try {
       if (subscription.ready) {

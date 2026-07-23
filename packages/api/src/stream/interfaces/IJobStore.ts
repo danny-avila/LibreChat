@@ -616,7 +616,13 @@ export interface IJobStore {
  * Implementations can use EventEmitter, Redis Pub/Sub, etc.
  */
 export interface IEventTransport {
-  /** Subscribe to events for a stream. `ready` resolves once the transport can receive messages. */
+  /**
+   * Subscribe to events for a stream. `ready` resolves once the transport can receive messages.
+   *
+   * Redis callers can defer sequenced delivery until `syncReorderBuffer()` establishes the
+   * replay frontier. This prevents pub/sub copies of locally buffered events from racing ahead
+   * of, and then being duplicated by, first-subscriber replay.
+   */
   subscribe(
     streamId: string,
     handlers: {
@@ -624,6 +630,7 @@ export interface IEventTransport {
       onDone?: (event: unknown) => void;
       onError?: (error: string) => void;
     },
+    options?: { deferSequenceDelivery?: boolean },
   ): { unsubscribe: () => void; ready?: Promise<void> };
 
   /**

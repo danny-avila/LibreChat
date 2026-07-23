@@ -6,6 +6,7 @@ import {
   keyvRedisClientReady,
 } from '~/cache/redisClients';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
+import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 import { createStreamServices } from '~/stream/createStreamServices';
 import { createMockPublisher } from './helpers/publisher';
@@ -143,6 +144,81 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
 
       currentSubscription.unsubscribe();
       transport.destroy();
+    });
+  });
+
+  describe('First-subscriber replay ordering (Unit)', () => {
+    test('does not deliver a buffered event twice while its Redis sequence assignment settles', async () => {
+      const mockPublisher = createMockPublisher();
+      let resolveSequence!: (sequence: number) => void;
+      let markEvalStarted!: () => void;
+      const evalStarted = new Promise<void>((resolve) => {
+        markEvalStarted = resolve;
+      });
+      mockPublisher.eval.mockImplementationOnce(
+        () =>
+          new Promise<number>((resolve) => {
+            resolveSequence = resolve;
+            markEvalStarted();
+          }),
+      );
+      // Redis has already executed INCR + PUBLISH while the command response is in flight.
+      mockPublisher.get.mockResolvedValueOnce('1');
+
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore: new InMemoryJobStore(),
+        eventTransport: transport,
+        isRedis: true,
+        cleanupOnComplete: false,
+      });
+
+      const streamId = 'first-subscriber-publish-race';
+      const event = {
+        event: 'on_message_delta',
+        data: { index: 0 },
+      };
+      await manager.createJob(streamId, 'user-1');
+
+      const emitPromise = manager.emitChunk(streamId, event);
+      await evalStarted;
+
+      const received: unknown[] = [];
+      const subscribePromise = manager.subscribe(streamId, (chunk) => received.push(chunk));
+      for (
+        let attempt = 0;
+        attempt < 10 && transport.getSubscriberCount(streamId) === 0;
+        attempt++
+      ) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      expect(transport.getSubscriberCount(streamId)).toBe(1);
+
+      const messageHandler = mockSubscriber.on.mock.calls.find(
+        (call) => call[0] === 'message',
+      )?.[1] as (channel: string, message: string) => void;
+      messageHandler(
+        `stream:{${streamId}}:events`,
+        JSON.stringify({ type: 'chunk', seq: 0, data: event }),
+      );
+      const deliveredBeforeReplay = received.length;
+
+      resolveSequence(0);
+      await Promise.all([emitPromise, subscribePromise]);
+
+      expect(deliveredBeforeReplay).toBe(0);
+      expect(received).toEqual([event]);
+
+      await manager.destroy();
     });
   });
 
