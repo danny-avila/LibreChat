@@ -391,6 +391,74 @@ export const skillSyncGitHubSourceSchema = z
     }
   });
 
+const skillSyncGitLabBaseUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(255)
+  .refine(
+    (value) => {
+      try {
+        const url = new URL(value);
+        return url.protocol === 'https:' || url.protocol === 'http:';
+      } catch {
+        return false;
+      }
+    },
+    { message: 'must be a valid http(s) URL' },
+  )
+  .refine((value) => !value.endsWith('/'), {
+    message: 'must not end with a slash',
+  });
+
+const skillSyncGitLabProjectIdSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine((value) => !value.includes('..') && !value.includes('\\'), {
+    message: 'must not contain traversal segments or backslashes',
+  });
+
+export const skillSyncGitLabSourceSchema = z
+  .object({
+    id: skillSyncIdentifierSchema,
+    baseUrl: skillSyncGitLabBaseUrlSchema.optional(),
+    projectId: skillSyncGitLabProjectIdSchema,
+    ref: skillSyncGitHubRefSchema.default('main'),
+    paths: z.array(skillSyncPathSchema).min(1),
+    skillDiscoveryDepth: z.number().int().min(0).max(SKILL_SYNC_MAX_DISCOVERY_DEPTH).optional(),
+    credentialKey: skillSyncIdentifierSchema.optional(),
+    token: skillSyncTokenReferenceSchema.optional(),
+    tenantId: skillSyncTenantIdSchema.optional(),
+  })
+  .superRefine((source, ctx) => {
+    if (!source.credentialKey && !source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['credentialKey'],
+        message: 'Either credentialKey or token is required',
+      });
+    }
+    if (source.credentialKey && source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['token'],
+        message: 'Use either credentialKey or token, not both',
+      });
+    }
+  });
+
+function duplicateSourceIdIssue(
+  providerLabel: string,
+  id: string,
+): { code: typeof z.ZodIssueCode.custom; path: ['sources']; message: string } {
+  return {
+    code: z.ZodIssueCode.custom,
+    path: ['sources'],
+    message: `Duplicate ${providerLabel} skill sync source id "${id}"`,
+  };
+}
+
 export const skillSyncConfigSchema = z
   .object({
     github: z
@@ -416,11 +484,36 @@ export const skillSyncConfigSchema = z
         const seen = new Set<string>();
         for (const source of github.sources) {
           if (seen.has(source.id)) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              path: ['sources'],
-              message: `Duplicate GitHub skill sync source id "${source.id}"`,
-            });
+            ctx.addIssue(duplicateSourceIdIssue('GitHub', source.id));
+          }
+          seen.add(source.id);
+        }
+      })
+      .optional(),
+    gitlab: z
+      .object({
+        enabled: z.boolean().default(false),
+        intervalMinutes: z
+          .number()
+          .int()
+          .min(SKILL_SYNC_MIN_INTERVAL_MINUTES)
+          .max(SKILL_SYNC_MAX_INTERVAL_MINUTES)
+          .default(60),
+        runOnStartup: z.boolean().default(false),
+        sources: z.array(skillSyncGitLabSourceSchema).default([]),
+      })
+      .superRefine((gitlab, ctx) => {
+        if (gitlab.enabled && gitlab.sources.length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['sources'],
+            message: 'At least one GitLab source is required when skill sync is enabled',
+          });
+        }
+        const seen = new Set<string>();
+        for (const source of gitlab.sources) {
+          if (seen.has(source.id)) {
+            ctx.addIssue(duplicateSourceIdIssue('GitLab', source.id));
           }
           seen.add(source.id);
         }
@@ -431,6 +524,7 @@ export const skillSyncConfigSchema = z
 
 export type SkillSyncConfig = z.infer<typeof skillSyncConfigSchema>;
 export type SkillSyncGitHubSourceConfig = z.infer<typeof skillSyncGitHubSourceSchema>;
+export type SkillSyncGitLabSourceConfig = z.infer<typeof skillSyncGitLabSourceSchema>;
 
 // Helper type to extract the shape of the Zod object schema
 type SchemaShape<T> = T extends z.ZodObject<infer U> ? U : never;

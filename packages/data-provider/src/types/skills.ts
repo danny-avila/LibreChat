@@ -27,9 +27,10 @@ export const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
  * `inline` means the skill was authored directly in LibreChat.
  * `deployment` means the skill was loaded from the server's configured
  * deployment skill directory and is not persisted as a Skill document.
- * `github` is populated by admin-configured GitHub skill sync; `notion` is reserved.
+ * `github`/`gitlab` are populated by admin-configured skill sync sources;
+ * `notion` is reserved.
  */
-export type SkillSource = 'inline' | 'deployment' | 'github' | 'notion';
+export type SkillSource = 'inline' | 'deployment' | 'github' | 'gitlab' | 'notion';
 
 /**
  * Category inferred from a skill file's top-level directory prefix.
@@ -71,6 +72,20 @@ export type SkillSourceMetadata =
       upstreamId: string;
       owner: string;
       repo: string;
+      ref: string;
+      skillPath: string;
+      commitSha?: string;
+      skillBlobSha?: string;
+      syncedAt?: string;
+      syncStatus?: 'synced' | 'failed';
+      error?: string;
+    }
+  | {
+      provider: 'gitlab';
+      sourceId: string;
+      upstreamId: string;
+      projectId: string;
+      baseUrl: string;
       ref: string;
       skillPath: string;
       commitSha?: string;

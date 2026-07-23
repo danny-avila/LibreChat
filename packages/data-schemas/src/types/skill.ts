@@ -74,7 +74,7 @@ export interface ISkill {
    * - `github` — mirrored from a configured GitHub skill sync source.
    * - `notion` — reserved for future external sync integrations.
    */
-  source: 'inline' | 'github' | 'notion';
+  source: 'inline' | 'github' | 'gitlab' | 'notion';
   /**
    * Provenance payload keyed by `source`, including upstream identifiers
    * such as GitHub source id, path, and commit/blob SHAs.
