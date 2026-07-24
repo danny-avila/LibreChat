@@ -123,6 +123,7 @@ ARG BUILD_DATE
 ENV BUILD_COMMIT=${BUILD_COMMIT}
 ENV BUILD_BRANCH=${BUILD_BRANCH}
 ENV BUILD_DATE=${BUILD_DATE}
+RUN mkdir -p /app/api/data && chown -R node:node /app/api /app/config /app/skill
 WORKDIR /app/api
 EXPOSE 3080
 ENV HOST=0.0.0.0
