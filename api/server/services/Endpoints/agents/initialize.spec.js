@@ -36,6 +36,8 @@ jest.mock('@librechat/api', () => ({
 let capturedToolExecuteOptions;
 jest.mock('~/server/controllers/agents/callbacks', () => ({
   createToolEndCallback: jest.fn(() => jest.fn()),
+  createAttachmentEmitter: jest.fn(() => jest.fn()),
+  createBackgroundCodeResultHandler: jest.fn(() => jest.fn()),
   getDefaultHandlers: jest.fn((opts) => {
     capturedToolExecuteOptions = opts?.toolExecuteOptions;
     return {};

@@ -168,6 +168,8 @@ export interface CreateMethodsDeps {
   removeAllPermissions?: (params: { resourceType: string; resourceId: unknown }) => Promise<void>;
   /** Returns a cache store for the given key. From getLogStores. */
   getCache?: RoleDeps['getCache'];
+  /** Recognizes agent skill IDs supplied by an external, non-database registry. */
+  isExternalSkillId?: AgentDeps['isExternalSkillId'];
 }
 
 /**
@@ -243,11 +245,12 @@ export function createMethods(
     removeAllPermissions,
     getActions: actionMethods.getActions,
     getSoleOwnedResourceIds: aclEntryMethods.getSoleOwnedResourceIds,
+    isExternalSkillId: deps.isExternalSkillId,
   };
   const agentMethods = createAgentMethods(mongoose, agentDeps);
 
   return {
-    ...createUserMethods(mongoose),
+    ...createUserMethods(mongoose, { getCache: deps.getCache }),
     ...createSessionMethods(mongoose),
     ...createTokenMethods(mongoose),
     ...roleMethods,

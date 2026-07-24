@@ -47,6 +47,26 @@ export function buildEntry(id: string, msg: TMessage): MessageEntry {
 }
 
 const USER_TURN_SELECTOR = '.user-turn';
+const STEER_RENDER_CLASS = 'steer-render';
+/** One query, document order: steer nodes interleave at their in-thread
+ *  position INSIDE the response that absorbed them. */
+const ENTRY_NODE_SELECTOR = `.message-render, .${STEER_RENDER_CLASS}`;
+
+/** Rail-relevant node: a message row or an in-thread steer part. The mutation
+ *  filter must match BOTH — a steer node swap (optimistic → persisted) or
+ *  removal (cancel) produces no `.message-render` mutation at all. */
+function isEntryNode(node: HTMLElement): boolean {
+  return (
+    node.classList?.contains('message-render') === true ||
+    node.classList?.contains(STEER_RENDER_CLASS) === true
+  );
+}
+
+function containsEntryNode(node: HTMLElement): boolean {
+  return (
+    node.nodeType === 1 && (isEntryNode(node) || node.querySelector?.(ENTRY_NODE_SELECTOR) != null)
+  );
+}
 
 export function buildFallbackEntry(node: HTMLElement, id: string): MessageEntry {
   const isUser = node.querySelector(USER_TURN_SELECTOR) != null;
@@ -58,8 +78,23 @@ export function buildFallbackEntry(node: HTMLElement, id: string): MessageEntry 
   };
 }
 
+/** A mid-run steer is a user message, so its rib reads as one; the preview
+ *  comes from the part's text body, skipping the author header. */
+export function buildSteerEntry(node: HTMLElement, id: string): MessageEntry {
+  const raw = (
+    node.querySelector('.message-content')?.textContent ??
+    node.textContent ??
+    ''
+  ).trim();
+  return {
+    id,
+    isUser: true,
+    preview: raw.slice(0, 80) + (raw.length > 80 ? '...' : ''),
+  };
+}
+
 function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>): MessageEntry[] {
-  const nodes = root.querySelectorAll<HTMLElement>('.message-render');
+  const nodes = root.querySelectorAll<HTMLElement>(ENTRY_NODE_SELECTOR);
   const entries: MessageEntry[] = [];
   const seen = new Set<string>();
   for (let i = 0; i < nodes.length; i++) {
@@ -69,6 +104,10 @@ function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>
       continue;
     }
     seen.add(id);
+    if (node.classList.contains(STEER_RENDER_CLASS)) {
+      entries.push(buildSteerEntry(node, id));
+      continue;
+    }
     const msg = messagesById.get(id);
     entries.push(msg ? buildEntry(id, msg) : buildFallbackEntry(node, id));
   }
@@ -107,10 +146,35 @@ function computeTargetScroll(
   return Math.max(0, Math.min(target, max));
 }
 
+/**
+ * An entry's top edge in the scroll container's content space — the same space
+ * as `container.scrollTop`. A single `offsetTop` is measured from the nearest
+ * positioned ancestor, which for an in-thread steer is the response's `relative`
+ * content column, not the scroll content. Mixing that local value with the
+ * content-space `offsetTop` of top-level rows compares different origins and
+ * breaks every rail decision (jump targets, current row, fisheye centering) the
+ * moment the viewport reaches a steer. Summing `offsetTop` up the offsetParent
+ * chain until it leaves the container folds any nesting back into one origin;
+ * top-level rows collapse to a single hop.
+ */
+function entryTop(el: HTMLElement, container: HTMLElement): number {
+  let top = 0;
+  let node: Element | null = el;
+  while (node instanceof HTMLElement) {
+    top += node.offsetTop;
+    const parent = node.offsetParent;
+    if (!(parent instanceof HTMLElement) || parent === container || !container.contains(parent)) {
+      break;
+    }
+    node = parent;
+  }
+  return top;
+}
+
 type RibDims = { baseW: number; baseH: number; peakW: number; peakH: number };
 
-const RIB_END: RibDims = { baseW: 4, baseH: 4, peakW: 6, peakH: 6 };
-const RIB_MESSAGE: RibDims = { baseW: 16, baseH: 3, peakW: 52, peakH: 6 };
+const RIB_END: RibDims = { baseW: 3, baseH: 3, peakW: 4.5, peakH: 4.5 };
+const RIB_MESSAGE: RibDims = { baseW: 12, baseH: 3, peakW: 39, peakH: 6 };
 
 /** Vertical falloff radius (content-space px) over which neighbouring ribs magnify. */
 const MAG_INFLUENCE = 50;
@@ -150,7 +214,7 @@ const MessageIndicator = memo(function MessageIndicator({
   label: string;
   onSelect: (id: string) => void;
 }) {
-  const baseSize = entry.isEnd ? 'mr-1.5 h-1 w-1' : 'h-[3px] w-4';
+  const baseSize = entry.isEnd ? 'mr-[4.5px] h-[3px] w-[3px]' : 'h-[3px] w-3';
   return (
     <button
       type="button"
@@ -175,7 +239,7 @@ const MessageIndicator = memo(function MessageIndicator({
 });
 
 const chevronButtonClasses = cn(
-  '-mr-0.5 rounded-md p-0.5 text-text-tertiary opacity-40 transition-[color,opacity] duration-300',
+  '-mr-1 rounded-md p-0.5 text-text-tertiary opacity-40 transition-[color,opacity] duration-300',
   'group-hover/nav:text-text-secondary group-hover/nav:opacity-100',
   'group-focus-within/nav:text-text-secondary group-focus-within/nav:opacity-100',
   'group-hover/nav:hover:text-text-primary',
@@ -249,23 +313,92 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     return map;
   }, [entries]);
 
+  /** The terminus rib is pinned beside the down chevron rather than living in
+   *  the scrolling column, so it stays reachable however far the rail scrolls. */
+  const { messageEntries, endEntry } = useMemo(() => {
+    const last = entries[entries.length - 1];
+    if (last?.isEnd === true) {
+      return { messageEntries: entries.slice(0, -1), endEntry: last };
+    }
+    return { messageEntries: entries, endEntry: null };
+  }, [entries]);
+
   const getCurrentVisibleId = useCallback((): string | null => {
+    const container = scrollableRef.current;
+    if (!container) {
+      return null;
+    }
     let nextId: string | null = null;
     let nextTop = Number.POSITIVE_INFINITY;
     for (const id of visibleSetRef.current) {
       const el = observedRef.current.get(id);
-      if (!el || el.offsetTop >= nextTop) {
+      if (!el) {
+        continue;
+      }
+      const top = entryTop(el, container);
+      if (top >= nextTop) {
         continue;
       }
       nextId = id;
-      nextTop = el.offsetTop;
+      nextTop = top;
     }
     return nextId;
-  }, []);
+  }, [scrollableRef]);
 
   useEffect(() => {
     messagesByIdRef.current = messagesById;
   }, [messagesById]);
+
+  const resolveEntryEl = useCallback(
+    (id: string): HTMLElement | null => {
+      if (id === MESSAGES_END_ID) {
+        return scrollableRef.current?.querySelector<HTMLElement>('#' + MESSAGES_END_ID) ?? null;
+      }
+      return document.getElementById(id);
+    },
+    [scrollableRef],
+  );
+
+  /**
+   * Re-point the observer at replaced DOM nodes. A steer part swaps its node
+   * under the SAME id (optimistic entry → persisted part), which produces no
+   * IntersectionObserver exit and — because the entry list dedupes on
+   * (id, preview) — no entries change either, so the observer would keep
+   * watching a detached node and the rib would stay lit forever. Runs from
+   * the mutation-driven refresh regardless of entries identity; visibility is
+   * dropped until the fresh node reports (the observer fires its initial
+   * intersection immediately on observe, so a truly visible part re-lights
+   * within a frame).
+   */
+  const reconcileObservedElements = useCallback(() => {
+    const observer = observerRef.current;
+    if (!observer) {
+      return;
+    }
+    const observed = observedRef.current;
+    const visibleSet = visibleSetRef.current;
+    let visibilityChanged = false;
+    for (const [id, el] of [...observed]) {
+      const current = resolveEntryEl(id);
+      if (current === el) {
+        continue;
+      }
+      observer.unobserve(el);
+      if (current) {
+        observer.observe(current);
+        observed.set(id, current);
+      } else {
+        observed.delete(id);
+      }
+      if (visibleSet.delete(id)) {
+        visibilityChanged = true;
+      }
+    }
+    if (visibilityChanged) {
+      setCurrentId(getCurrentVisibleId());
+      setVisibleIds(new Set(visibleSet));
+    }
+  }, [resolveEntryEl, getCurrentVisibleId]);
 
   const refreshEntries = useCallback(() => {
     if (refreshTimerRef.current) {
@@ -283,22 +416,13 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         }
         return next;
       });
+      reconcileObservedElements();
     }, 200);
-  }, [scrollableRef]);
+  }, [scrollableRef, reconcileObservedElements]);
 
   useEffect(() => {
     refreshEntries();
   }, [messagesById, refreshEntries]);
-
-  const resolveEntryEl = useCallback(
-    (id: string): HTMLElement | null => {
-      if (id === MESSAGES_END_ID) {
-        return scrollableRef.current?.querySelector<HTMLElement>('#' + MESSAGES_END_ID) ?? null;
-      }
-      return document.getElementById(id);
-    },
-    [scrollableRef],
-  );
 
   const scrollToStart = useCallback(
     (id: string) => {
@@ -407,12 +531,19 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (!col) {
         return;
       }
+      const rect = col.getBoundingClientRect();
+      /** The terminus is pinned below the column, so the pointer reaches it by
+       *  travelling past the bottom edge — the proportional mapping covers only
+       *  the ribs the column actually spans, or every position lands one late. */
+      if (endEntry && clientY >= rect.bottom) {
+        scrollToImmediate(MESSAGES_END_ID);
+        return;
+      }
       const ribs = col.querySelectorAll<HTMLElement>('[data-msg-id]');
       const count = ribs.length;
       if (count === 0) {
         return;
       }
-      const rect = col.getBoundingClientRect();
       const fraction = rect.height > 0 ? (clientY - rect.top) / rect.height : 0;
       const index = Math.max(0, Math.min(count - 1, Math.round(fraction * (count - 1))));
       const id = ribs[index].getAttribute('data-msg-id');
@@ -420,7 +551,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         scrollToImmediate(id);
       }
     },
-    [scrollToImmediate],
+    [scrollToImmediate, endEntry],
   );
 
   const handlePointerDown = useCallback(
@@ -601,6 +732,38 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     [positionTip, revealTip],
   );
 
+  /** The pinned terminus lives outside the column, so it drives the shared
+   *  preview itself instead of through the rail's pointer magnification. */
+  const showEndTip = useCallback(
+    (el: HTMLElement) => {
+      const rect = el.getBoundingClientRect();
+      const left = columnRef.current?.getBoundingClientRect().left ?? rect.left;
+      focusTooltip(MESSAGES_END_ID, rect.top + rect.height / 2, window.innerWidth - left + 8);
+    },
+    [focusTooltip],
+  );
+
+  const handleEndPointerEnter = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => showEndTip(e.currentTarget),
+    [showEndTip],
+  );
+
+  const handleEndFocus = useCallback(
+    (e: React.FocusEvent<HTMLDivElement>) => showEndTip(e.currentTarget),
+    [showEndTip],
+  );
+
+  const handleEndBlur = useCallback(
+    (e: React.FocusEvent<HTMLDivElement>) => {
+      const next = e.relatedTarget as Node | null;
+      if (next && e.currentTarget.contains(next)) {
+        return;
+      }
+      clearTooltip();
+    },
+    [clearTooltip],
+  );
+
   const applyMagnify = useCallback(() => {
     magRafRef.current = null;
     const col = columnRef.current;
@@ -730,7 +893,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         const m = mutations[i];
         if (m.type === 'attributes') {
           const target = m.target as HTMLElement;
-          if (target.nodeType === 1 && target.classList?.contains('message-render')) {
+          if (target.nodeType === 1 && isEntryNode(target)) {
             refreshEntries();
             return;
           }
@@ -738,21 +901,13 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         }
         if (m.addedNodes.length || m.removedNodes.length) {
           for (let j = 0; j < m.addedNodes.length; j++) {
-            const n = m.addedNodes[j] as HTMLElement;
-            if (
-              n.nodeType === 1 &&
-              (n.classList?.contains('message-render') || n.querySelector?.('.message-render'))
-            ) {
+            if (containsEntryNode(m.addedNodes[j] as HTMLElement)) {
               refreshEntries();
               return;
             }
           }
           for (let j = 0; j < m.removedNodes.length; j++) {
-            const n = m.removedNodes[j] as HTMLElement;
-            if (
-              n.nodeType === 1 &&
-              (n.classList?.contains('message-render') || n.querySelector?.('.message-render'))
-            ) {
+            if (containsEntryNode(m.removedNodes[j] as HTMLElement)) {
               refreshEntries();
               return;
             }
@@ -789,8 +944,14 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     const recomputeOffsets = () => {
       for (let i = 0; i < entries.length; i++) {
         const el = resolveEntryEl(entries[i].id);
-        offsetsTop[i] = el ? el.offsetTop : Number.POSITIVE_INFINITY;
-        offsetsBottom[i] = el ? el.offsetTop + el.offsetHeight : Number.POSITIVE_INFINITY;
+        if (!el) {
+          offsetsTop[i] = Number.POSITIVE_INFINITY;
+          offsetsBottom[i] = Number.POSITIVE_INFINITY;
+          continue;
+        }
+        const top = entryTop(el, container);
+        offsetsTop[i] = top;
+        offsetsBottom[i] = top + el.offsetHeight;
       }
     };
     recomputeOffsets();
@@ -1055,7 +1216,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (!el) {
         continue;
       }
-      if (el.offsetTop - scrollMargin < scrollTop - JUMP_EPS) {
+      if (entryTop(el, container) - scrollMargin < scrollTop - JUMP_EPS) {
         scrollToStart(entries[i].id);
         return;
       }
@@ -1078,7 +1239,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (!el) {
         continue;
       }
-      if (el.offsetTop - scrollMargin > scrollTop + JUMP_EPS) {
+      if (entryTop(el, container) - scrollMargin > scrollTop + JUMP_EPS) {
         scrollToStart(entries[i].id);
         return;
       }
@@ -1097,9 +1258,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [focusNav]);
 
-  const hasEnd = entries.length > 0 && entries[entries.length - 1].isEnd === true;
-  const messageCount = hasEnd ? entries.length - 1 : entries.length;
-  if (messageCount < 3) {
+  if (messageEntries.length < 3) {
     return null;
   }
 
@@ -1140,15 +1299,11 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         className="flex min-h-0 w-14 cursor-pointer touch-none select-none flex-col items-stretch gap-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        {entries.map((entry) => {
-          const label = entry.isEnd
-            ? localize('com_ui_scroll_to_bottom')
-            : localize(
-                entry.isUser
-                  ? 'com_ui_message_nav_go_to_user'
-                  : 'com_ui_message_nav_go_to_assistant',
-                { 0: entry.preview.slice(0, 30) },
-              );
+        {messageEntries.map((entry) => {
+          const label = localize(
+            entry.isUser ? 'com_ui_message_nav_go_to_user' : 'com_ui_message_nav_go_to_assistant',
+            { 0: entry.preview.slice(0, 30) },
+          );
           const isHighlighted =
             hoveredId != null ? hoveredId === entry.id : visibleIds.has(entry.id);
           return (
@@ -1163,6 +1318,27 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
           );
         })}
       </div>
+
+      {endEntry && (
+        <div
+          className="flex w-14 cursor-pointer touch-none select-none flex-col items-stretch"
+          onPointerDown={handlePointerDown}
+          onPointerEnter={handleEndPointerEnter}
+          onPointerLeave={clearTooltip}
+          onFocus={handleEndFocus}
+          onBlur={handleEndBlur}
+        >
+          <MessageIndicator
+            entry={endEntry}
+            isHighlighted={
+              hoveredId != null ? hoveredId === endEntry.id : visibleIds.has(endEntry.id)
+            }
+            isCurrent={currentId === endEntry.id}
+            onSelect={handleSelect}
+            label={localize('com_ui_scroll_to_bottom')}
+          />
+        </div>
+      )}
 
       <button
         type="button"

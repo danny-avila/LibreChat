@@ -2,6 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { Constants, ViolationTypes, isEphemeralAgentId } = require('librechat-data-provider');
 const {
   sendEvent,
+  toPendingSteer,
   getViolationInfo,
   buildMessageFiles,
   getReferencedQuotes,
@@ -175,6 +176,30 @@ async function finishResumableRequest(req, userId) {
   }
 }
 
+const JOB_RECORD_WAIT_ATTEMPTS = 5;
+const JOB_RECORD_WAIT_DELAY_MS = 60;
+
+// A winner writes its job record within a few ms of claiming; if a losing duplicate still
+// sees no job within this window of the claim, the winner is still starting (retry rather
+// than hand back a stream that would 404). Past it, a missing job means the original
+// already completed and was cleaned up (attach and let the client refetch).
+const IDEMPOTENCY_STARTUP_GRACE_MS = 5000;
+
+/**
+ * Poll briefly for a job record to appear. A deduped retry that loses the idempotency
+ * claim must not be handed the winner's stream until its job exists, or the client's
+ * subscribe 404s terminally. The winner writes the record a few ms after claiming.
+ */
+async function waitForJobRecord(streamId) {
+  for (let attempt = 0; attempt < JOB_RECORD_WAIT_ATTEMPTS; attempt++) {
+    if (await GenerationJobManager.hasJob(streamId)) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, JOB_RECORD_WAIT_DELAY_MS));
+  }
+  return GenerationJobManager.hasJob(streamId);
+}
+
 function rejectPreliminaryParentMessageId(res) {
   return res.status(409).json({
     error:
@@ -218,19 +243,102 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
    *  Resolved from the agent's actual endpoint once the client is initialized. */
   let titleTiming = 'immediate';
 
-  const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
-  if (!allowed) {
-    const violationInfo = getViolationInfo(pendingRequests, limit);
-    await logViolation(req, res, ViolationTypes.CONCURRENT, violationInfo, violationInfo.score);
-    return res.status(429).json(violationInfo);
-  }
-
   // Generate conversationId upfront if not provided - streamId === conversationId always
   // Treat "new" as a placeholder that needs a real UUID (frontend may send "new" for new convos)
   const isNewConvo = !reqConversationId || reqConversationId === 'new';
   const conversationId = isNewConvo ? crypto.randomUUID() : reqConversationId;
   const streamId = conversationId;
   req.body.conversationId = conversationId;
+
+  // Idempotency: a lost/reset start-generation response makes the client re-POST the
+  // identical payload, which would otherwise start a second fully-billed generation.
+  // Claim the submission's clientRequestId before creating the job so a retry attaches
+  // to the original stream instead of spawning a duplicate. Runs before the concurrency
+  // check so a deduped retry is never counted against the limiter. Fail-open on errors.
+  const clientRequestId = req.body?.clientRequestId;
+  let ownsIdempotencyClaim = false;
+  if (clientRequestId) {
+    let claim = null;
+    try {
+      claim = await GenerationJobManager.claimGeneration(
+        userId,
+        clientRequestId,
+        streamId,
+        conversationId,
+      );
+    } catch (err) {
+      // The claim itself could not be determined (store unavailable): fail open and proceed
+      // as a fresh request rather than blocking the send. This is the ONLY fail-open path —
+      // once a duplicate is confirmed below, an error must never fall through to a second
+      // billed generation.
+      logger.error(
+        '[ResumableAgentController] Idempotency claim failed; proceeding without dedup',
+        err,
+      );
+    }
+
+    if (claim?.claimed) {
+      ownsIdempotencyClaim = true;
+    } else if (claim?.existing) {
+      // A duplicate is confirmed. Attach to the original stream — and never fall through to
+      // a second generation, even if the job lookup hiccups.
+      const existingStreamId = claim.existing.streamId;
+      let jobExists = false;
+      try {
+        // Wait briefly for the winner to write the job record (it does so a few ms after
+        // claiming) so a still-live stream isn't handed back before its job exists.
+        jobExists = await waitForJobRecord(existingStreamId);
+      } catch (err) {
+        // Store hiccup while checking the job: ask the client to retry rather than starting
+        // a second generation for a request we know is a duplicate.
+        logger.error(
+          '[ResumableAgentController] Job lookup failed for an existing claim; asking the client to retry',
+          err,
+        );
+        res.set('Retry-After', '1');
+        return res.status(503).json({
+          code: 'SERVER_NOT_READY',
+          error: 'Generation is still starting. Please retry shortly.',
+        });
+      }
+      const claimAgeMs = Date.now() - (claim.existing.claimedAt ?? 0);
+      if (!jobExists && claimAgeMs < IDEMPOTENCY_STARTUP_GRACE_MS) {
+        // The winner claimed but has not written the job yet (still between claim and
+        // createJob). Handing back the stream now would 404 and tear down the client while
+        // the winner goes on to generate and bill with no UI attached — ask the client to
+        // retry via the readiness path instead.
+        res.set('Retry-After', '1');
+        return res.status(503).json({
+          code: 'SERVER_NOT_READY',
+          error: 'Generation is still starting. Please retry shortly.',
+        });
+      }
+      // Job exists (live), or the grace elapsed with none (the original already completed
+      // and was cleaned up, or the winner died): attach. A then-missing job recovers via
+      // the client's subscribe 404 handler (refetch persisted messages) rather than an
+      // indefinite readiness loop.
+      logger.debug('[ResumableAgentController] Deduped retried start-generation request', {
+        userId,
+        clientRequestId,
+        streamId: existingStreamId,
+      });
+      return res.json({
+        streamId: existingStreamId,
+        conversationId: claim.existing.conversationId,
+        status: 'resumed',
+      });
+    }
+  }
+
+  const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
+  if (!allowed) {
+    if (ownsIdempotencyClaim) {
+      await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
+    }
+    const violationInfo = getViolationInfo(pendingRequests, limit);
+    await logViolation(req, res, ViolationTypes.CONCURRENT, violationInfo, violationInfo.score);
+    return res.status(429).json(violationInfo);
+  }
 
   let client = null;
 
@@ -756,6 +864,32 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           await titleEventPromise;
         }
 
+        // Steers that never reached an injection boundary (queued after the last
+        // tool batch, or the run had none). The close-and-drain atomically stops
+        // new enqueues first — a steer POST racing this finalization gets 404
+        // (client sends it as a normal message) instead of a 202 whose payload
+        // completeJob would then silently clear. Reported on the final event so
+        // the client converts them to queued follow-up messages.
+        let pendingSteers;
+        try {
+          const leftoverSteers = await GenerationJobManager.steering.closeAndDrain(
+            streamId,
+            jobCreatedAt,
+          );
+          if (leftoverSteers.length > 0) {
+            pendingSteers = leftoverSteers.map(toPendingSteer);
+            // Parked BEFORE the final event: a client with no live subscriber
+            // recovers these via /chat/status (claim-on-read) within the
+            // recovery TTL — the SSE copy alone is transient.
+            await GenerationJobManager.steering.park(streamId, pendingSteers, {
+              userId,
+              tenantId: req.user?.tenantId,
+            });
+          }
+        } catch (err) {
+          logger.warn(`[ResumableAgentController] Failed to drain leftover steers`, err);
+        }
+
         if (!wasAbortedBeforeComplete) {
           const finalEvent = {
             final: true,
@@ -763,6 +897,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: { ...response },
+            ...(pendingSteers && { pendingSteers }),
           };
 
           logger.debug(`[ResumableAgentController] Emitting FINAL event`, {
@@ -783,6 +918,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: { ...response, unfinished: true },
+            ...(pendingSteers && { pendingSteers }),
           };
 
           logger.debug(`[ResumableAgentController] Emitting ABORTED FINAL event`, {
@@ -849,6 +985,31 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // abortJob already handled emitDone and completeJob
         } else {
           logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
+          // Close the steer queue BEFORE the error event reaches clients: a
+          // steer POST racing this failure gets 404 (client queues or sends it)
+          // instead of a 202 whose payload would vanish with the job. Text
+          // recovery is client-side — acknowledged chips convert to queued.
+          try {
+            const erroredLeftovers = await GenerationJobManager.steering.closeAndDrain(
+              streamId,
+              jobCreatedAt,
+            );
+            if (erroredLeftovers.length > 0) {
+              // The error event is a bare string — park the acknowledged
+              // steers so a reloaded/disconnected client can still recover
+              // them via /chat/status instead of losing them with the queue.
+              await GenerationJobManager.steering.park(
+                streamId,
+                erroredLeftovers.map(toPendingSteer),
+                { userId, tenantId: req.user?.tenantId },
+              );
+            }
+          } catch (drainErr) {
+            logger.warn(
+              `[ResumableAgentController] Failed to close steer queue on error`,
+              drainErr,
+            );
+          }
           await GenerationJobManager.emitError(streamId, error.message || 'Generation failed');
           GenerationJobManager.completeJob(streamId, error.message);
         }
@@ -887,7 +1048,22 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       // JSON already sent, emit error to stream so client can receive it
       await GenerationJobManager.emitError(streamId, error.message || 'Failed to start generation');
     }
-    GenerationJobManager.completeJob(streamId, error.message);
+    // Finalize THIS failed job before releasing the idempotency claim. Releasing first would
+    // let the client's retry win the same key and createJob() the same streamId while we are
+    // still here — and completeJob() is not guarded by the original createdAt, so it would
+    // abort/error that replacement. A completeJob() rejection (store hiccup) must NOT skip the
+    // release + pending-request decrement below, or the retry stays wedged behind the claim
+    // and the concurrency slot leaks — so swallow its error. (A failed completeJob did not
+    // finalize anything, so releasing afterward can't let it abort a later replacement.)
+    await GenerationJobManager.completeJob(streamId, error.message).catch((completeErr) => {
+      logger.warn(
+        '[ResumableAgentController] completeJob failed during init-error cleanup',
+        completeErr,
+      );
+    });
+    if (ownsIdempotencyClaim) {
+      await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
+    }
     await finishResumableRequest(req, userId);
     if (client) {
       disposeClient(client);

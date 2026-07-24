@@ -213,6 +213,7 @@ describe('reinitMCPServer — runtime BODY placeholder pre-check (issue #14074)'
     expect(result).toMatchObject({
       availableTools: null,
       success: true,
+      connectionDeferred: true,
       tools: null,
       oauthRequired: false,
       serverName,
@@ -240,7 +241,7 @@ describe('reinitMCPServer — runtime BODY placeholder pre-check (issue #14074)'
       fetchTools: jest.fn().mockResolvedValue([]),
     });
 
-    await reinitMCPServer({
+    const result = await reinitMCPServer({
       user,
       serverName,
       serverConfig,
@@ -249,6 +250,7 @@ describe('reinitMCPServer — runtime BODY placeholder pre-check (issue #14074)'
     });
 
     expect(mockGetConnection).toHaveBeenCalledTimes(1);
+    expect(result.connectionDeferred).toBeUndefined();
   });
 
   it('reports missing customUserVars before deferring on body placeholders', async () => {

@@ -286,10 +286,27 @@ describe('skill validation helpers', () => {
           effort: 5,
           version: '1.0.0',
           license: 'MIT',
+          compatibility: 'Requires GitHub MCP to access the repository content.',
           hooks: { 'pre-run': 'echo hi' },
           metadata: { owner: 'data-team' },
         }),
       ).toEqual([]);
+    });
+
+    it('accepts the spec-defined compatibility field as a string', () => {
+      expect(
+        validateSkillFrontmatter({
+          compatibility: 'Designed for Claude Code (or similar products)',
+        }),
+      ).toEqual([]);
+    });
+
+    it('rejects a non-string compatibility field', () => {
+      expect(
+        validateSkillFrontmatter({ compatibility: ['a', 'b'] }).some(
+          (i) => i.code === 'INVALID_TYPE',
+        ),
+      ).toBe(true);
     });
 
     it('rejects known keys with wrong types', () => {

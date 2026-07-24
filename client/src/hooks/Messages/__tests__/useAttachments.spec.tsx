@@ -118,17 +118,113 @@ describe('useAttachments', () => {
     expect(merged.filename).toBe('data.xlsx');
   });
 
-  it('leaves DB attachments untouched when no live entry shares the file_id', () => {
+  it('keeps live-only entries alongside DB attachments (background harvest delivery)', () => {
     const db = makeAttachment({ file_id: 'fid-A', status: 'pending' });
     const live = makeAttachment({ file_id: 'fid-B', status: 'ready' });
     const { result } = setup({
       attachments: [db],
       liveMap: { [messageId]: [live] },
     });
-    /* DB attachments are the authoritative list for THIS message — a
-     * live entry without a matching file_id must NOT bleed in. */
-    expect(result.current.attachments).toHaveLength(1);
+    /* Attachments are only emitted after successful persistence, so a
+     * live-only entry is a real file whose message-row snapshot predates
+     * it — e.g. a background code task's harvested files, SSE-delivered
+     * on a poll turn after the dispatch message was saved. Dropping it
+     * would hide the files until a full reload. */
+    expect(result.current.attachments).toHaveLength(2);
     expect((result.current.attachments[0] as AttachmentFixture).file_id).toBe('fid-A');
     expect((result.current.attachments[0] as AttachmentFixture).status).toBe('pending');
+    expect((result.current.attachments[1] as AttachmentFixture).file_id).toBe('fid-B');
+  });
+
+  it('overlays bare live records (no toolCallId) onto DB entries that carry one', () => {
+    /* Preview-sync polling inserts the resolved FILE record, which has no
+     * toolCallId; the DB attachment does. The lifecycle overlay must still
+     * match (wildcard), or reloaded office previews stick on pending. */
+    const db = makeAttachment({ status: 'pending', text: undefined });
+    const live = { ...makeAttachment({ status: 'ready', text: 'resolved' }) };
+    delete (live as { toolCallId?: string }).toolCallId;
+    const { result } = setup({
+      attachments: [db],
+      liveMap: { [messageId]: [live as AttachmentFixture] },
+    });
+    expect(result.current.attachments).toHaveLength(1);
+    expect((result.current.attachments[0] as AttachmentFixture).status).toBe('ready');
+  });
+
+  it('keeps sibling tool calls’ live attachments when file ids repeat across calls', () => {
+    /* Two background code calls regenerated the same filename — same
+     * claimed file_id, different toolCallId. Each card anchors its own
+     * attachment, so the second must not displace the first. */
+    const db = makeAttachment({ file_id: 'shared' });
+    const sibling = { ...makeAttachment({ file_id: 'shared' }), toolCallId: 'tc-2' };
+    const { result } = setup({
+      attachments: [db],
+      liveMap: { [messageId]: [sibling] },
+    });
+    expect(result.current.attachments).toHaveLength(2);
+  });
+
+  it('keeps handoff agents’ live attachments when file_id AND toolCallId collide', () => {
+    /* Handoff agents can repeat provider tool ids (`call_0`) and share a
+     * claimed file_id. The sibling agent's live entry must neither
+     * overlay the first agent's DB row nor be deduped away — each
+     * agent's card anchors its own attachment. */
+    const db = { ...makeAttachment({ file_id: 'shared', status: 'pending' }), agentId: 'agent_a' };
+    const sibling = {
+      ...makeAttachment({ file_id: 'shared', status: 'ready' }),
+      agentId: 'agent_b',
+    };
+    const { result } = setup({
+      attachments: [db],
+      liveMap: { [messageId]: [sibling] },
+    });
+    expect(result.current.attachments).toHaveLength(2);
+    expect((result.current.attachments[0] as AttachmentFixture).status).toBe('pending');
+    expect((result.current.attachments[0] as { agentId?: string }).agentId).toBe('agent_a');
+    expect((result.current.attachments[1] as { agentId?: string }).agentId).toBe('agent_b');
+  });
+
+  it('overlays agent-less live records onto agent-scoped DB rows (wildcard) without re-appending', () => {
+    /* Preview-sync fan-out and bare deferred updates carry no agentId;
+     * they must still resolve an agent-stamped DB row, and the overlaid
+     * entry must be recognized as a duplicate via its less-specific key. */
+    const db = {
+      ...makeAttachment({ file_id: 'shared', status: 'pending', text: undefined }),
+      agentId: 'agent_a',
+    };
+    const live = makeAttachment({ file_id: 'shared', status: 'ready', text: 'resolved' });
+    const { result } = setup({
+      attachments: [db],
+      liveMap: { [messageId]: [live] },
+    });
+    expect(result.current.attachments).toHaveLength(1);
+    expect((result.current.attachments[0] as AttachmentFixture).status).toBe('ready');
+    expect((result.current.attachments[0] as { agentId?: string }).agentId).toBe('agent_a');
+  });
+
+  it('dedupes unkeyed live entries against DB copies by type + toolCallId', () => {
+    const citation = {
+      type: 'file_search',
+      toolCallId: 'tc-1',
+      messageId,
+    } as unknown as AttachmentFixture;
+    const { result } = setup({
+      attachments: [citation],
+      liveMap: { [messageId]: [{ ...citation }] },
+    });
+    /* The final message event replays the same persisted file_search
+     * citation the SSE handler already stored — one card, not two. */
+    expect(result.current.attachments).toHaveLength(1);
+  });
+
+  it('drops live entries with no stable identity at all', () => {
+    const db = makeAttachment({ file_id: 'fid-A' });
+    const anonymous = { messageId } as unknown as AttachmentFixture;
+    const { result } = setup({
+      attachments: [db],
+      liveMap: { [messageId]: [anonymous] },
+    });
+    expect(result.current.attachments).toHaveLength(1);
+    expect((result.current.attachments[0] as AttachmentFixture).file_id).toBe('fid-A');
   });
 });

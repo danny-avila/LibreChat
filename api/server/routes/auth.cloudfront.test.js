@@ -53,6 +53,7 @@ jest.mock('~/server/middleware', () => {
     setTwoFactorTempUser: pass,
     twoFactorTempLimiter: pass,
     checkBan: pass,
+    validateEmailLogin: pass,
     requireLocalAuth: pass,
     requireLdapAuth: pass,
     registerLimiter: pass,

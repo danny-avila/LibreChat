@@ -148,6 +148,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const enabledCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
   const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
   const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
+  const backgroundToolsAvailable = enabledCapabilities.has(AgentCapabilities.run_in_background);
+  const statefulSessionsAvailable = enabledCapabilities.has(
+    AgentCapabilities.stateful_code_sessions,
+  );
   const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
   const skillDbMethods = getSkillDbMethods();
 
@@ -404,6 +408,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       accessibleSkillIds: primaryScopedSkillIds,
       skillAuthoringAvailable: primarySkillAuthoringAvailable,
       codeEnvAvailable,
+      backgroundToolsAvailable,
+      statefulSessionsAvailable,
       memoryAvailable,
       skillStates,
       defaultActiveOnShare,
@@ -480,6 +486,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       skillStates,
       defaultActiveOnShare,
       codeEnvAvailable,
+      backgroundToolsAvailable,
+      statefulSessionsAvailable,
       memoryAvailable,
     },
     {
@@ -552,6 +560,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     skillStates,
     defaultActiveOnShare,
     codeEnvAvailable,
+    backgroundToolsAvailable,
+    statefulSessionsAvailable,
     memoryAvailable,
   });
 
@@ -610,6 +620,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       skillStates,
       defaultActiveOnShare,
       codeEnvAvailable,
+      statefulSessionsAvailable,
       memoryAvailable,
     },
     {

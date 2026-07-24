@@ -4,6 +4,7 @@ on:
     paths:
       - 'api/**'
       - 'packages/**'
+      - '!**.md'
 
 permissions:
   contents: read

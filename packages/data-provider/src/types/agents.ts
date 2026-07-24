@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-namespace */
+import type { TTokenUsageEvent, TContextUsageEvent, TPendingSteer } from './runs';
 import type { FunctionToolCall, SummaryContentPart } from './assistants';
-import type { TTokenUsageEvent, TContextUsageEvent } from './runs';
 import type { TAttachment, TPlugin } from 'src/schemas';
 import { StepTypes, ContentTypes, ToolCallTypes } from './runs';
 
@@ -80,6 +80,8 @@ export namespace Agents {
     id?: string;
     /** If provided, the output of the tool call */
     output?: string;
+    /** The tool call was rejected before execution because its input failed schema validation. */
+    inputValidationError?: true;
     /** Auth URL */
     auth?: string;
     /** Expiration time */
@@ -257,6 +259,12 @@ export namespace Agents {
      * cross-replica client can rebuild and render the prompt from `resumeState`.
      */
     pendingAction?: PendingAction;
+    /**
+     * Steers queued server-side but not yet injected into the run. Injected
+     * steers already live inside `aggregatedContent`; these are the remainder,
+     * so a reconnecting client can rebuild its pending-steer chips.
+     */
+    pendingSteers?: TPendingSteer[];
   }
   /**
    * Represents a run step delta i.e. any changed fields on a run step during

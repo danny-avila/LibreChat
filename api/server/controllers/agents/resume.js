@@ -16,6 +16,7 @@ const {
   filterMalformedContentParts,
   decrementPendingRequest,
   checkAndIncrementPendingRequest,
+  toPendingSteer,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -343,6 +344,32 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
     return;
   }
 
+  // Steers that never reached an injection boundary during the resumed
+  // segment — mirror the normal request path's terminal drain: the atomic
+  // close (createdAt-guarded) rejects a steer POST racing this finalization,
+  // and the leftovers ride the final event as queued follow-ups instead of
+  // being 202-ACKed and then silently cleared by completeJob.
+  let pendingSteers;
+  try {
+    const leftoverSteers = await GenerationJobManager.steering.closeAndDrain(
+      streamId,
+      job.createdAt,
+    );
+    if (leftoverSteers.length > 0) {
+      pendingSteers = leftoverSteers.map(toPendingSteer);
+      // Same no-subscriber recovery as the normal final path (claim-on-read
+      // via /chat/status within the recovery TTL). NOTE: `job` is the manager
+      // facade — owner fields live under `metadata` (a bare `job.userId` is
+      // undefined and would make the parked payload unclaimable).
+      await GenerationJobManager.steering.park(streamId, pendingSteers, {
+        userId: job.metadata?.userId,
+        tenantId: job.metadata?.tenantId,
+      });
+    }
+  } catch (drainErr) {
+    logger.warn('[ResumeAgentController] Failed to drain leftover steers', drainErr);
+  }
+
   const finalEvent = {
     final: true,
     conversation,
@@ -361,6 +388,7 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
         })
       : null,
     responseMessage: { ...responseMessage },
+    ...(pendingSteers && { pendingSteers }),
   };
 
   await GenerationJobManager.emitDone(streamId, finalEvent);
@@ -681,6 +709,25 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         `[ResumeAgentController] Skipping failed-resume finalization — job ${streamId} was replaced`,
       );
     } else {
+      // A steer 202-accepted during the failed resume segment would otherwise
+      // be silently cleared by completeJob's backstop — mirror the normal
+      // request error path: close the queue BEFORE the error event (racing
+      // steer POSTs get 404) and park the leftovers for /chat/status recovery.
+      try {
+        const leftoverSteers = await GenerationJobManager.steering.closeAndDrain(
+          streamId,
+          job.createdAt,
+        );
+        if (leftoverSteers.length > 0) {
+          // Facade shape: owner fields are under `metadata` (see finalize).
+          await GenerationJobManager.steering.park(streamId, leftoverSteers.map(toPendingSteer), {
+            userId: job.metadata?.userId,
+            tenantId: job.metadata?.tenantId,
+          });
+        }
+      } catch (drainErr) {
+        logger.warn('[ResumeAgentController] Failed to drain steers on resume failure', drainErr);
+      }
       try {
         await GenerationJobManager.emitError(streamId, err?.message ?? 'Resume failed');
       } catch (emitErr) {

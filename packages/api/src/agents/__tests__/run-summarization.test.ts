@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { encryptV3, logger } from '@librechat/data-schemas';
 import {
   EModelEndpoint,
   FileSources,
@@ -48,6 +48,13 @@ jest.mock('~/utils/env', () => ({
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
+  decryptV3: jest.fn((value: string) => {
+    if (value === 'v3:test:sk-tenant-1') {
+      return 'sk-tenant-1';
+    }
+    throw new Error('bad decrypt');
+  }),
+  encryptV3: jest.fn((value: string) => `v3:test:${value}`),
   logger: {
     debug: jest.fn(),
     warn: jest.fn(),
@@ -74,7 +81,7 @@ jest.mock('~/agents/checkpointer', () => ({
   getAgentCheckpointer: jest.fn().mockResolvedValue({}),
 }));
 
-import { Run } from '@librechat/agents';
+import { Run, buildChildInputs } from '@librechat/agents';
 
 /** Minimal RunAgent factory */
 function makeAgent(
@@ -215,7 +222,6 @@ beforeEach(() => {
   delete process.env.LANGFUSE_HOST;
   delete process.env.LANGFUSE_FANOUT_ENABLED;
   delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
-  delete process.env.LANGFUSE_FANOUT_TENANT_BASE_URL;
   delete process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS;
   delete process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED;
 });
@@ -1014,6 +1020,36 @@ describe('subagentConfigs', () => {
     expect(configs[0].self).toBeUndefined();
   });
 
+  it('preserves explicit nested subagents across the SDK child graph boundary', async () => {
+    const grandchild = makeAgent({ id: 'agent_grandchild', name: 'Grandchild' });
+    const child = makeAgent({
+      id: 'agent_child',
+      name: 'Child',
+      subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_grandchild'] },
+      subagentAgentConfigs: [grandchild],
+    });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+
+    expect(agents[0].maxSubagentDepth).toBe(MAX_SUBAGENT_DEPTH);
+    const childConfig = (agents[0].subagentConfigs as Parameters<typeof buildChildInputs>[0][])[0];
+    expect(childConfig.allowNested).toBe(true);
+
+    const childInputs = buildChildInputs(childConfig, 'agent_child', MAX_SUBAGENT_DEPTH);
+    expect(childInputs.maxSubagentDepth).toBe(MAX_SUBAGENT_DEPTH - 1);
+    expect(childInputs.subagentConfigs).toHaveLength(1);
+    expect(childInputs.subagentConfigs?.[0]).toMatchObject({
+      type: 'agent_grandchild',
+      allowNested: true,
+    });
+  });
+
   it('combines self-spawn and explicit subagents when both enabled', async () => {
     const child = makeAgent({ id: 'agent_child', name: 'Helper' });
     const agents = await callAndCapture({
@@ -1190,16 +1226,17 @@ describe('Langfuse run config', () => {
   });
 
   it('adds tenant Langfuse credentials from tenant-scoped app config', async () => {
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout-collector:4318';
+
     const callArgs = await callAndCaptureRunConfig({
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
           publicKey: 'pk-tenant-1',
-          secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          secretKey: encryptV3('sk-tenant-1'),
+          destination: 'eu',
           fanout: {
             enabled: true,
-            collectorUrl: 'http://langfuse-fanout-collector:4318',
           },
         },
       } as unknown as AppConfig,
@@ -1229,8 +1266,8 @@ describe('Langfuse run config', () => {
       appConfig: {
         langfuse: {
           publicKey: 'pk-tenant-1',
-          secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          secretKey: encryptV3('sk-tenant-1'),
+          destination: 'eu',
         },
       } as AppConfig,
     });
@@ -1251,14 +1288,13 @@ describe('Langfuse run config', () => {
     process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
-    process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'https://cloud.langfuse.com';
 
     const callArgs = await callAndCaptureRunConfig({
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
           publicKey: 'pk-tenant-1',
-          secretKey: 'sk-tenant-1',
+          secretKey: encryptV3('sk-tenant-1'),
         },
       } as AppConfig,
     });
@@ -1271,7 +1307,7 @@ describe('Langfuse run config', () => {
     });
   });
 
-  it('routes tenant fanout traces to the configured destination for the tenant base URL', async () => {
+  it('routes tenant fanout traces to the configured tenant destination', async () => {
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
 
@@ -1280,8 +1316,8 @@ describe('Langfuse run config', () => {
       appConfig: {
         langfuse: {
           publicKey: 'pk-tenant-1',
-          secretKey: 'sk-tenant-1',
-          baseUrl: 'https://us.cloud.langfuse.com',
+          secretKey: encryptV3('sk-tenant-1'),
+          destination: 'us',
         },
       } as AppConfig,
     });
@@ -1307,8 +1343,8 @@ describe('Langfuse run config', () => {
       appConfig: {
         langfuse: {
           publicKey: 'pk-tenant-1',
-          secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          secretKey: encryptV3('sk-tenant-1'),
+          destination: 'eu',
         },
       } as AppConfig,
     });
@@ -1329,8 +1365,8 @@ describe('Langfuse run config', () => {
         appConfig: {
           langfuse: {
             publicKey: 'pk-tenant-1',
-            secretKey: 'sk-tenant-1',
-            baseUrl: 'https://us.cloud.langfuse.com',
+            secretKey: encryptV3('sk-tenant-1'),
+            destination: 'us',
           },
         } as AppConfig,
       });
@@ -1361,8 +1397,8 @@ describe('Langfuse run config', () => {
         appConfig: {
           langfuse: {
             publicKey: 'pk-tenant-1',
-            secretKey: 'sk-tenant-1',
-            baseUrl: 'https://cloud.langfuse.com',
+            secretKey: encryptV3('sk-tenant-1'),
+            destination: 'eu',
           },
         } as AppConfig,
       });
@@ -1390,8 +1426,8 @@ describe('Langfuse run config', () => {
       appConfig: {
         langfuse: {
           publicKey: 'pk-tenant-1',
-          secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          secretKey: encryptV3('sk-tenant-1'),
+          destination: 'eu',
         },
       } as AppConfig,
     });
@@ -1418,8 +1454,8 @@ describe('Langfuse run config', () => {
       appConfig: {
         langfuse: {
           publicKey: 'pk-tenant-1',
-          secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          secretKey: encryptV3('sk-tenant-1'),
+          destination: 'eu',
         },
       } as AppConfig,
     });
@@ -1434,7 +1470,7 @@ describe('Langfuse run config', () => {
     });
   });
 
-  it('uses deployment fanout collector URL without auth when the tenant base URL is not a configured destination', async () => {
+  it('uses deployment fanout collector URL without auth when the tenant destination is not configured', async () => {
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
     process.env.LANGFUSE_SECRET_KEY = 'sk-central';
     process.env.LANGFUSE_BASE_URL = 'https://central.langfuse.example';
@@ -1447,8 +1483,8 @@ describe('Langfuse run config', () => {
       appConfig: {
         langfuse: {
           publicKey: 'pk-tenant-1',
-          secretKey: 'sk-tenant-1',
-          baseUrl: 'https://unconfigured-langfuse.example.com',
+          secretKey: encryptV3('sk-tenant-1'),
+          destination: 'unconfigured',
         },
       } as AppConfig,
     });
@@ -1515,7 +1551,7 @@ describe('Langfuse run config', () => {
       appConfig: {
         langfuse: {
           publicKey: 'pk-tenant-1',
-          secretKey: 'sk-tenant-1',
+          secretKey: encryptV3('sk-tenant-1'),
         },
       } as AppConfig,
     });
@@ -1540,8 +1576,8 @@ describe('Langfuse run config', () => {
       appConfig: {
         langfuse: {
           publicKey: 'pk-tenant-1',
-          secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          secretKey: encryptV3('sk-tenant-1'),
+          destination: 'eu',
         },
       } as AppConfig,
     });
@@ -1574,8 +1610,8 @@ describe('Langfuse run config', () => {
         appConfig: {
           langfuse: {
             publicKey: 'pk-tenant-1',
-            secretKey: 'sk-tenant-1',
-            baseUrl: 'https://cloud.langfuse.com',
+            secretKey: encryptV3('sk-tenant-1'),
+            destination: 'eu',
           },
         } as AppConfig,
       });
@@ -1603,8 +1639,8 @@ describe('Langfuse run config', () => {
         appConfig: {
           langfuse: {
             publicKey: 'pk-tenant-1',
-            secretKey: 'sk-tenant-1',
-            baseUrl: 'https://cloud.langfuse.com',
+            secretKey: encryptV3('sk-tenant-1'),
+            destination: 'eu',
           },
         } as AppConfig,
       });
@@ -1636,8 +1672,8 @@ describe('Langfuse run config', () => {
       appConfig: {
         langfuse: {
           publicKey: 'pk-tenant-1',
-          secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          secretKey: encryptV3('sk-tenant-1'),
+          destination: 'eu',
           fanout: {
             enabled: false,
           },
@@ -1667,8 +1703,8 @@ describe('Langfuse run config', () => {
       appConfig: {
         langfuse: {
           publicKey: 'pk-tenant-1',
-          secretKey: 'sk-tenant-1',
-          baseUrl: 'https://cloud.langfuse.com',
+          secretKey: encryptV3('sk-tenant-1'),
+          destination: 'eu',
           fanout: {
             enabled: 'false',
           },
@@ -1693,7 +1729,7 @@ describe('Langfuse run config', () => {
         langfuse: {
           enabled: false,
           publicKey: 'pk-tenant-1',
-          secretKey: 'sk-tenant-1',
+          secretKey: encryptV3('sk-tenant-1'),
         },
       } as AppConfig,
     });
@@ -1713,7 +1749,7 @@ describe('Langfuse run config', () => {
         langfuse: {
           enabled: 'false',
           publicKey: 'pk-tenant-1',
-          secretKey: 'sk-tenant-1',
+          secretKey: encryptV3('sk-tenant-1'),
         },
       } as unknown as AppConfig,
     });

@@ -126,6 +126,7 @@ if (typeof (global as { PointerEvent?: unknown }).PointerEvent === 'undefined') 
 import type { TMessage } from 'librechat-data-provider';
 import MessageNav, {
   buildEntry,
+  buildSteerEntry,
   buildFallbackEntry,
   magnifyFalloff,
   ribDimsFor,
@@ -300,8 +301,8 @@ describe('MessageNav', () => {
       const [userInd, assistantInd] = container.querySelectorAll('[data-msg-id]');
       const userLine = userInd.querySelector('span');
       const assistantLine = assistantInd.querySelector('span');
-      expect(userLine?.className).toContain('w-4');
-      expect(assistantLine?.className).toContain('w-4');
+      expect(userLine?.className).toContain('w-3');
+      expect(assistantLine?.className).toContain('w-3');
     });
 
     it('lights up only the in-viewport ribs at rest (no hover)', () => {
@@ -401,6 +402,172 @@ describe('MessageNav', () => {
       expect(user.peakW).toBeGreaterThan(user.baseW);
       expect(end.baseW).toBe(end.baseH);
       expect(end.peakW).toBe(end.peakH);
+    });
+  });
+
+  describe('steer ribs', () => {
+    function appendSteerNode(
+      parent: Element,
+      steerId: string,
+      text: string,
+      offsetTop: number,
+    ): HTMLDivElement {
+      const steer = document.createElement('div');
+      steer.id = `steer-${steerId}`;
+      steer.className = 'steer-render group relative';
+      const header = document.createElement('h2');
+      header.textContent = 'Danny';
+      const body = document.createElement('div');
+      body.className = 'message-content';
+      body.textContent = text;
+      steer.appendChild(header);
+      steer.appendChild(body);
+      Object.defineProperty(steer, 'offsetTop', { value: offsetTop, configurable: true });
+      Object.defineProperty(steer, 'offsetHeight', { value: 40, configurable: true });
+      parent.appendChild(steer);
+      return steer;
+    }
+
+    it('buildSteerEntry reads the text body, skipping the author header', () => {
+      const node = document.createElement('div');
+      appendSteerNode(node, 's', 'actually use bun instead', 0);
+      const entry = buildSteerEntry(node.firstElementChild as HTMLElement, 'steer-s');
+      expect(entry).toEqual({
+        id: 'steer-s',
+        isUser: true,
+        preview: 'actually use bun instead',
+      });
+    });
+
+    it('buildSteerEntry truncates long steers and falls back to full node text', () => {
+      const node = document.createElement('div');
+      node.textContent = 'x'.repeat(100);
+      const entry = buildSteerEntry(node, 'steer-long');
+      expect(entry.preview.endsWith('...')).toBe(true);
+      expect(entry.preview).toHaveLength(83);
+    });
+
+    it('interleaves a steer rib inside its response, labeled as a user message', () => {
+      const messages = [
+        buildMessage({ messageId: 'u1', text: 'first ask', isCreatedByUser: true }),
+        buildMessage({ messageId: 'a1', text: 'long tool run' }),
+        buildMessage({ messageId: 'u2', text: 'follow-up', isCreatedByUser: true }),
+        buildMessage({ messageId: 'a2', text: 'second reply' }),
+      ];
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messages });
+      const { scrollable } = buildDom(messages);
+      const response = scrollable.querySelector('#a1') as HTMLElement;
+      appendSteerNode(response, 's1', 'steer mid-run words', 350);
+
+      const scrollableRef = { current: scrollable } as RefObject<HTMLDivElement>;
+      const { container } = render(<MessageNav scrollableRef={scrollableRef} />);
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      const ids = Array.from(container.querySelectorAll('[data-msg-id]')).map((el) =>
+        el.getAttribute('data-msg-id'),
+      );
+      expect(ids).toEqual(['u1', 'a1', 'steer-s1', 'u2', 'a2']);
+
+      const steerRib = container.querySelector('[data-msg-id="steer-s1"]');
+      expect(steerRib?.getAttribute('aria-label')).toMatch(/^com_ui_message_nav_go_to_user\|/);
+      expect(steerRib?.getAttribute('aria-label')).toContain('steer mid-run words');
+      expect(steerRib?.getAttribute('aria-label')).not.toContain('Danny');
+    });
+
+    it('places a nested steer at its content-space position, not its offset-parent-local offset', () => {
+      // A steer renders inside the response's `relative` content column, so its
+      // raw offsetTop is local to that column, not its true position in the
+      // thread. The rail must sum the offsetParent chain — otherwise the steer's
+      // small local offset reads as the topmost row and hijacks the current
+      // indicator (and, with it, the up/down chevrons) whenever it is on screen.
+      const messages = [
+        buildMessage({ messageId: 'u1', text: 'first ask', isCreatedByUser: true }),
+        buildMessage({ messageId: 'a1', text: 'long tool run' }),
+        buildMessage({ messageId: 'u2', text: 'follow-up', isCreatedByUser: true }),
+        buildMessage({ messageId: 'a2', text: 'second reply' }),
+      ];
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messages });
+      const { scrollable } = buildDom(messages);
+      const response = scrollable.querySelector('#a1') as HTMLElement;
+
+      // Nest the steer in a positioned column of its own; the steer's offsetTop
+      // (40) is local to that column (380), so its content-space top is 420 —
+      // below a1 (300) and above u2 (500). jsdom leaves offsetParent null, so
+      // the nesting has to be declared for the chain-walk to have anything to
+      // sum.
+      const column = document.createElement('div');
+      column.className = 'relative';
+      Object.defineProperty(column, 'offsetTop', { value: 380, configurable: true });
+      response.appendChild(column);
+      const steer = appendSteerNode(column, 's1', 'steer mid-run words', 40);
+      Object.defineProperty(steer, 'offsetParent', { value: column, configurable: true });
+
+      const scrollableRef = { current: scrollable } as RefObject<HTMLDivElement>;
+      const { container } = render(<MessageNav scrollableRef={scrollableRef} />);
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      const io = MockIntersectionObserver.last();
+      act(() => {
+        io!.trigger([
+          { target: document.getElementById('a1')!, isIntersecting: true },
+          { target: document.getElementById('steer-s1')!, isIntersecting: true },
+        ]);
+        jest.advanceTimersByTime(32);
+      });
+
+      // Topmost-by-content-space is the response, not the steer with the smaller
+      // local offset. Before the chain-walk this landed on 'steer-s1'.
+      const current = container.querySelectorAll('[aria-current="true"]');
+      expect(current).toHaveLength(1);
+      expect(current[0]).toHaveAttribute('data-msg-id', 'a1');
+    });
+
+    it('un-lights a steer rib when its DOM node is replaced (pending → applied swap)', async () => {
+      const messages = [
+        buildMessage({ messageId: 'u1', text: 'first ask', isCreatedByUser: true }),
+        buildMessage({ messageId: 'a1', text: 'long tool run' }),
+        buildMessage({ messageId: 'u2', text: 'follow-up', isCreatedByUser: true }),
+      ];
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messages });
+      const { scrollable } = buildDom(messages);
+      const response = scrollable.querySelector('#a1') as HTMLElement;
+      const pendingNode = appendSteerNode(response, 's1', 'swap me', 350);
+
+      const scrollableRef = { current: scrollable } as RefObject<HTMLDivElement>;
+      const { container } = render(<MessageNav scrollableRef={scrollableRef} />);
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      const io = MockIntersectionObserver.last();
+      act(() => {
+        io!.trigger([{ target: pendingNode, isIntersecting: true }]);
+        jest.advanceTimersByTime(32);
+      });
+      const rib = container.querySelector('[data-msg-id="steer-s1"]') as HTMLElement;
+      expect(rib.className).toContain('opacity-100');
+
+      // The applied part replaces the optimistic node under the SAME id —
+      // same entry list (id + preview unchanged), no observer exit event.
+      act(() => {
+        pendingNode.remove();
+        appendSteerNode(response, 's1', 'swap me', 350);
+      });
+      // Let the MutationObserver microtask deliver (it schedules the
+      // debounced refresh), then advance the debounce.
+      await act(async () => {});
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      // Without node-level reconciliation the dead node keeps the rib lit
+      // forever; after it, visibility drops until the fresh node reports.
+      const ribAfter = container.querySelector('[data-msg-id="steer-s1"]') as HTMLElement;
+      expect(ribAfter.className).toContain('opacity-40');
     });
   });
 
@@ -1421,6 +1588,182 @@ describe('MessageNav', () => {
       expect(ribs).toHaveLength(4);
       expect(ribs[3].getAttribute('data-msg-id')).toBe('messages-end');
       expect(ribs[3].getAttribute('aria-label')).toBe('com_ui_scroll_to_bottom');
+    });
+
+    it('pins the terminus outside the scrolling column, between it and the next chevron', () => {
+      const { container } = renderNavWithEnd(threeMessages());
+      const nav = container.querySelector('nav') as HTMLElement;
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+
+      expect(column.querySelector('[data-msg-id="messages-end"]')).toBeNull();
+      expect(nav.querySelector('[data-msg-id="messages-end"]')).not.toBeNull();
+
+      const kids = Array.from(nav.children);
+      const endIndex = kids.findIndex((k) => k.querySelector('[data-msg-id="messages-end"]'));
+      const nextIndex = kids.findIndex(
+        (k) => k.getAttribute('aria-label') === 'com_ui_message_nav_next',
+      );
+      expect(endIndex).toBe(kids.indexOf(column) + 1);
+      expect(nextIndex).toBe(endIndex + 1);
+    });
+
+    it('keeps column children aligned with message entries once the terminus is pinned', () => {
+      const messages = Array.from({ length: 5 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}`, isCreatedByUser: i % 2 === 0 }),
+      );
+      const { container } = renderNavWithEnd(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+
+      expect(column.children).toHaveLength(messages.length);
+      for (let i = 0; i < messages.length; i++) {
+        expect(column.children[i].getAttribute('data-msg-id')).toBe(`m-${i}`);
+      }
+    });
+
+    it('centers the column on the visible window using the pinned-out child indices', () => {
+      const messages = Array.from({ length: 10 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}`, isCreatedByUser: i % 2 === 0 }),
+      );
+      const { container, scrollable } = renderNavWithEnd(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+
+      Object.defineProperty(column, 'clientHeight', { value: 30, configurable: true });
+      Object.defineProperty(column, 'scrollHeight', { value: 200, configurable: true });
+      Object.defineProperty(column, 'scrollTop', { value: 0, writable: true, configurable: true });
+      for (let i = 0; i < column.children.length; i++) {
+        Object.defineProperty(column.children[i], 'offsetTop', { value: i * 10 });
+        Object.defineProperty(column.children[i], 'offsetHeight', { value: 6 });
+      }
+      (scrollable as HTMLElement).scrollTop = 400;
+
+      act(() => {
+        fireEvent.scroll(scrollable);
+        jest.advanceTimersByTime(32);
+      });
+
+      /** Visible rows m-1..m-4 → mid of ribs 1 and 4, minus half the column height. */
+      expect(column.scrollTop).toBe(13);
+    });
+
+    it('scrubs to the rib under the pointer, not one past it, with the terminus pinned', () => {
+      const messages = Array.from({ length: 5 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}`, isCreatedByUser: i % 2 === 0 }),
+      );
+      const { container } = renderNavWithEnd(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      const getById = jest.spyOn(document, 'getElementById');
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+      });
+
+      const scrubbed = getById.mock.calls.map((c) => c[0]);
+      expect(scrubbed).toContain('m-2');
+      expect(scrubbed).not.toContain('m-3');
+      getById.mockRestore();
+    });
+
+    it('peaks the fisheye and preview on the rib under the pointer', () => {
+      const messages = Array.from({ length: 6 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}` }),
+      );
+      const asRect = (top: number, height: number): DOMRect =>
+        ({
+          top,
+          bottom: top + height,
+          height,
+          left: 200,
+          right: 214,
+          width: 14,
+          x: 200,
+          y: top,
+          toJSON: () => ({}),
+        }) as DOMRect;
+      /** Rib i occupies [i*12, i*12+6] — a 6px rib on a 6px gap. */
+      const rectSpy = jest
+        .spyOn(Element.prototype, 'getBoundingClientRect')
+        .mockImplementation(function (this: Element) {
+          const id = this.getAttribute?.('data-msg-id');
+          const index = id != null ? messages.findIndex((m) => m.messageId === id) : -1;
+          return index >= 0 ? asRect(index * 12, 6) : asRect(0, messages.length * 12);
+        });
+
+      const { container } = renderNavWithEnd(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+
+      act(() => {
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 3 * 12 + 3 });
+        jest.advanceTimersByTime(80);
+      });
+
+      expect(document.body.querySelector('[role="tooltip"]')).toHaveTextContent('message 3');
+      const highlighted = Array.from(container.querySelectorAll('[data-msg-id]')).filter((r) =>
+        r.querySelector('span')?.className.includes('bg-gray-800'),
+      );
+      expect(highlighted.map((r) => r.getAttribute('data-msg-id'))).toEqual(['m-3']);
+      rectSpy.mockRestore();
+    });
+
+    it('starts a scrub drag from the pinned terminus', () => {
+      const messages = Array.from({ length: 5 }, (_, i) =>
+        buildMessage({ messageId: `m-${i}`, text: `message ${i}`, isCreatedByUser: i % 2 === 0 }),
+      );
+      const { container, scrollable } = renderNavWithEnd(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      const wrapper = container.querySelector('[data-msg-id="messages-end"]')!
+        .parentElement as HTMLElement;
+      const getById = jest.spyOn(document, 'getElementById');
+
+      act(() => {
+        fireEvent.pointerDown(wrapper, { pointerId: 1, button: 0, buttons: 1, clientY: 60 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 0 });
+      });
+
+      expect(getById.mock.calls.map((c) => c[0])).toContain('m-0');
+      getById.mockRestore();
+      expect(scrollable).toBeDefined();
+    });
+
+    it('previews the terminus on hover even though it sits outside the column', () => {
+      const { container } = renderNavWithEnd(threeMessages());
+      const wrapper = container.querySelector('[data-msg-id="messages-end"]')!
+        .parentElement as HTMLElement;
+
+      act(() => {
+        fireEvent.pointerEnter(wrapper, { pointerId: 1, clientY: 5 });
+        jest.advanceTimersByTime(80);
+      });
+      expect(document.body.querySelector('[role="tooltip"]')).toHaveTextContent(
+        'com_ui_scroll_to_bottom',
+      );
+
+      act(() => {
+        fireEvent.pointerLeave(wrapper, { pointerId: 1 });
+      });
+      expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+    });
+
+    it('previews the terminus when it takes keyboard focus', () => {
+      const { container } = renderNavWithEnd(threeMessages());
+      const endRib = container.querySelector('[data-msg-id="messages-end"]') as HTMLElement;
+
+      act(() => {
+        endRib.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+        jest.advanceTimersByTime(80);
+      });
+      expect(document.body.querySelector('[role="tooltip"]')).toHaveTextContent(
+        'com_ui_scroll_to_bottom',
+      );
+
+      act(() => {
+        endRib.dispatchEvent(
+          new FocusEvent('focusout', { bubbles: true, relatedTarget: document.body }),
+        );
+      });
+      expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
     });
 
     it('omits the terminus indicator and the nav when there are fewer than 3 messages', () => {

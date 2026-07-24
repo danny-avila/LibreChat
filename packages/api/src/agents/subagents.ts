@@ -50,6 +50,7 @@ export interface ResolveSubagentsParams {
   skillStates?: InitializeAgentParams['skillStates'];
   defaultActiveOnShare?: InitializeAgentParams['defaultActiveOnShare'];
   codeEnvAvailable?: InitializeAgentParams['codeEnvAvailable'];
+  statefulSessionsAvailable?: InitializeAgentParams['statefulSessionsAvailable'];
   memoryAvailable?: InitializeAgentParams['memoryAvailable'];
 }
 
@@ -114,6 +115,7 @@ export async function resolveSubagents(
     skillStates,
     defaultActiveOnShare,
     codeEnvAvailable,
+    statefulSessionsAvailable,
     memoryAvailable,
   } = params;
 
@@ -202,6 +204,7 @@ export async function resolveSubagents(
           accessibleSkillIds: scopedSkillIds,
           skillAuthoringAvailable: computeSkillAuthoringAvailable?.(agent, scopedSkillIds),
           codeEnvAvailable,
+          statefulSessionsAvailable,
           memoryAvailable,
           skillStates,
           defaultActiveOnShare,

@@ -4,6 +4,9 @@ const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   logAxiosError,
   refreshS3FileUrls,
+  handleFilesUsageRequest,
+  shouldUseUploadSse,
+  startUploadSseStream,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
 } = require('@librechat/api');
@@ -135,6 +138,26 @@ router.get('/config', async (req, res) => {
   } catch (error) {
     logger.error('[/files] Error getting fileConfig', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
+  }
+});
+
+/**
+ * POST /files/usage
+ *
+ * Owner-scoped TTL touch for uploads held in a client-side queue (mid-run
+ * queued messages), so the upload-window TTL cannot reap them before drain.
+ * Thin wrapper: validation, cap, and best-effort semantics live in
+ * `@librechat/api` (`handleFilesUsageRequest`).
+ */
+router.post('/usage', async (req, res) => {
+  try {
+    const { status, body } = await handleFilesUsageRequest(req.user ?? {}, req.body ?? {}, {
+      updateFilesUsage: db.updateFilesUsage,
+    });
+    return res.status(status).json(body);
+  } catch (error) {
+    logger.error('[/files/usage] Failed to mark files used', error);
+    return res.status(500).json({ code: 'FILES_USAGE_FAILED' });
   }
 });
 
@@ -612,6 +635,15 @@ router.post('/', async (req, res) => {
   const metadata = req.body;
   let cleanup = true;
 
+  /** Opened only once auth/validation has passed, right before the potentially
+   * long-running upload processing begins — see `startUploadSseStream`. */
+  let sseStream = null;
+  const openSseStreamIfRequested = () => {
+    if (shouldUseUploadSse(req)) {
+      sseStream = startUploadSseStream(res);
+    }
+  };
+
   try {
     filterFile({ req });
 
@@ -619,7 +651,8 @@ router.post('/', async (req, res) => {
     metadata.file_id = req.file_id;
 
     if (isAssistantsEndpoint(metadata.endpoint)) {
-      return await processFileUpload({ req, res, metadata });
+      openSseStreamIfRequested();
+      return await processFileUpload({ req, res, metadata, sseStream });
     }
 
     let skipUploadAuth = false;
@@ -642,7 +675,8 @@ router.post('/', async (req, res) => {
       }
     }
 
-    return await processAgentFileUpload({ req, res, metadata });
+    openSseStreamIfRequested();
+    return await processAgentFileUpload({ req, res, metadata, sseStream });
   } catch (error) {
     const message = resolveUploadErrorMessage(error);
     logger.error('[/files] Error processing file:', error);
@@ -653,7 +687,23 @@ router.post('/', async (req, res) => {
     } catch (error) {
       logger.error('[/files] Error deleting file:', error);
     }
-    res.status(500).json({ message });
+
+    let errorStatusCode = 500;
+    if (error.userErrorStatusCode) {
+      errorStatusCode = error.userErrorStatusCode;
+    }
+
+    if (sseStream) {
+      sseStream.sendError({
+        message,
+        code: errorStatusCode,
+        temp_file_id: metadata.temp_file_id,
+        tool_resource: metadata.tool_resource,
+        display_to_user: true,
+      });
+    } else {
+      res.status(errorStatusCode).json({ message });
+    }
   } finally {
     if (cleanup) {
       try {
@@ -663,6 +713,9 @@ router.post('/', async (req, res) => {
       }
     } else {
       logger.debug('[/files] File processing completed without cleanup');
+    }
+    if (sseStream) {
+      sseStream.close();
     }
   }
 });

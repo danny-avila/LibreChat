@@ -21,6 +21,7 @@ import {
   FileAuthoringCall,
   BashCall,
   SubagentCall,
+  SteerPart,
 } from './Parts';
 import { getAskUserQuestionPart } from '~/utils/approval';
 import AskUserQuestionCall from './AskUserQuestionCall';
@@ -68,6 +69,17 @@ const Part = memo(function Part({
       <AskUserQuestion
         actionId={askUserQuestion.ask_user_question.actionId}
         question={askUserQuestion.ask_user_question.question}
+      />
+    );
+  }
+
+  if (part.type === ContentTypes.STEER) {
+    return (
+      <SteerPart
+        steer={part[ContentTypes.STEER]}
+        files={part.files}
+        steerId={part.steerId}
+        createdAt={part.createdAt}
       />
     );
   }
@@ -151,6 +163,8 @@ const Part = memo(function Part({
     const isToolCall =
       'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
     if (isToolCall) {
+      const toolCallId =
+        'id' in toolCall && typeof toolCall.id === 'string' ? toolCall.id : undefined;
       const card = (() => {
         if (isBashProgrammaticToolCall(toolCall.name, toolCall.args)) {
           return (
@@ -163,6 +177,7 @@ const Part = memo(function Part({
               commandField="code"
               hideAttachments={hideAttachments}
               onExpand={onToolExpand}
+              toolCallId={toolCallId}
             />
           );
         } else if (
@@ -179,6 +194,7 @@ const Part = memo(function Part({
               args={toolCall.args}
               hideAttachments={hideAttachments}
               onExpand={onToolExpand}
+              toolCallId={toolCallId}
             />
           );
         } else if (
@@ -206,6 +222,7 @@ const Part = memo(function Part({
               output={typeof toolCall.output === 'string' ? toolCall.output : ''}
               toolCallId={toolCall.id}
               isSubmitting={isSubmitting}
+              failed={'inputValidationError' in toolCall && toolCall.inputValidationError === true}
             />
           );
         } else if (toolCall.name === 'skill') {
@@ -279,6 +296,7 @@ const Part = memo(function Part({
               attachments={attachments}
               hideAttachments={hideAttachments}
               onExpand={onToolExpand}
+              toolCallId={toolCallId}
             />
           );
         } else if (toolCall.name === Tools.web_search) {

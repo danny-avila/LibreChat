@@ -478,6 +478,10 @@ const createResponse = async (req, res) => {
           ephemeralSkillsToggle,
         }),
         codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+        backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+        statefulSessionsAvailable: enabledCapabilities.has(
+          AgentCapabilities.stateful_code_sessions,
+        ),
         skillStates,
         defaultActiveOnShare,
         manualSkills,
@@ -577,6 +581,10 @@ const createResponse = async (req, res) => {
           defaultActiveOnShare,
           /** @see DiscoverConnectedAgentsParams.codeEnvAvailable */
           codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+          backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+          statefulSessionsAvailable: enabledCapabilities.has(
+            AgentCapabilities.stateful_code_sessions,
+          ),
         },
         {
           getAgent: db.getAgent,
@@ -812,6 +820,7 @@ const createResponse = async (req, res) => {
             agent: ctx.agent ?? agent,
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
+            backgroundToolNames: ctx.backgroundToolNames,
             mcpAvailableTools: ctx.mcpAvailableTools,
             requestScopedConnections: ctx.requestScopedConnections,
             userMCPAuthMap: ctx.userMCPAuthMap,
@@ -992,6 +1001,7 @@ const createResponse = async (req, res) => {
             agent: ctx.agent ?? agent,
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
+            backgroundToolNames: ctx.backgroundToolNames,
             mcpAvailableTools: ctx.mcpAvailableTools,
             requestScopedConnections: ctx.requestScopedConnections,
             userMCPAuthMap: ctx.userMCPAuthMap,
