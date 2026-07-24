@@ -802,6 +802,22 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     return result?.availableTools || null;
   };
 
+  const getServerDeferLoading = async (userId, serverName) => {
+    try {
+      const serverConfig =
+        configServers?.[serverName] ??
+        (await getMCPServersRegistry().getServerConfig(serverName, userId, configServers));
+      return serverConfig?.deferLoading === true;
+    } catch (err) {
+      logger.warn(
+        `[Tool Definitions] MCP registry unavailable while resolving deferLoading for '${serverName}': ${
+          err?.message ?? err
+        }. Treating as not deferred.`,
+      );
+      return false;
+    }
+  };
+
   const getActionToolDefinitions = async (agentId, actionToolNames) => {
     const actionSets = (await loadActionSets({ agent_id: agentId })) ?? [];
     if (actionSets.length === 0) {
@@ -875,6 +891,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     {
       isBuiltInTool,
       getOrFetchMCPServerTools,
+      getServerDeferLoading,
       getActionToolDefinitions,
     },
   );
@@ -957,6 +974,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         {
           isBuiltInTool,
           getOrFetchMCPServerTools,
+          getServerDeferLoading,
           getActionToolDefinitions,
         },
       );

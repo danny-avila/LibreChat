@@ -7,10 +7,10 @@ import type { AgentForm } from '~/common';
 type BooleanToolOptionKey = 'defer_loading' | 'run_in_background';
 
 interface BooleanOptionHandlers {
-  isSet: (toolId: string) => boolean;
-  toggle: (toolId: string) => void;
-  areAllSet: (tools: AgentToolType[]) => boolean;
-  toggleAll: (tools: AgentToolType[]) => void;
+  isSet: (toolId: string, serverDefault?: boolean) => boolean;
+  toggle: (toolId: string, serverDefault?: boolean) => void;
+  areAllSet: (tools: AgentToolType[], serverDefault?: boolean) => boolean;
+  toggleAll: (tools: AgentToolType[], serverDefault?: boolean) => void;
 }
 
 interface ToolOptionsFormContext {
@@ -21,16 +21,16 @@ interface ToolOptionsFormContext {
 
 interface UseMCPToolOptionsReturn {
   formToolOptions: AgentToolOptions | undefined;
-  isToolDeferred: (toolId: string) => boolean;
+  isToolDeferred: (toolId: string, serverDefault?: boolean) => boolean;
   isToolProgrammatic: (toolId: string) => boolean;
   isToolBackground: (toolId: string) => boolean;
-  toggleToolDefer: (toolId: string) => void;
+  toggleToolDefer: (toolId: string, serverDefault?: boolean) => void;
   toggleToolProgrammatic: (toolId: string) => void;
   toggleToolBackground: (toolId: string) => void;
-  areAllToolsDeferred: (tools: AgentToolType[]) => boolean;
+  areAllToolsDeferred: (tools: AgentToolType[], serverDefault?: boolean) => boolean;
   areAllToolsProgrammatic: (tools: AgentToolType[]) => boolean;
   areAllToolsBackground: (tools: AgentToolType[]) => boolean;
-  toggleDeferAll: (tools: AgentToolType[]) => void;
+  toggleDeferAll: (tools: AgentToolType[], serverDefault?: boolean) => void;
   toggleProgrammaticAll: (tools: AgentToolType[]) => void;
   toggleBackgroundAll: (tools: AgentToolType[]) => void;
 }
@@ -38,18 +38,22 @@ interface UseMCPToolOptionsReturn {
 /**
  * Sets or clears a boolean flag on one tool's options without mutating the
  * previous objects (react-hook-form still holds them); dropping the last flag
- * removes the tool's entry entirely.
+ * removes the tool's entry entirely. A value matching `serverDefault` is
+ * expressed by clearing the explicit flag (inherit); a value differing from it
+ * is written explicitly — so with a server-level `true` default, opting out
+ * stores an explicit `false`.
  */
 export function withBooleanOption(
   options: AgentToolOptions,
   toolId: string,
   key: BooleanToolOptionKey,
   set: boolean,
+  serverDefault = false,
 ): AgentToolOptions {
   const updatedOptions: AgentToolOptions = { ...options };
   const currentToolOptions = updatedOptions[toolId];
-  if (set) {
-    updatedOptions[toolId] = { ...currentToolOptions, [key]: true };
+  if (set !== serverDefault) {
+    updatedOptions[toolId] = { ...currentToolOptions, [key]: set };
     return updatedOptions;
   }
   if (!currentToolOptions) {
@@ -64,21 +68,27 @@ export function withBooleanOption(
   return updatedOptions;
 }
 
-/** Read/toggle handlers for one boolean per-tool option key (single + bulk). */
+/**
+ * Read/toggle handlers for one boolean per-tool option key (single + bulk).
+ * `serverDefault` is the value inherited when no explicit flag is stored
+ * (e.g. a server-level `deferLoading` config default); an explicit flag
+ * always wins over it.
+ */
 function useBooleanToolOption(
   key: BooleanToolOptionKey,
   { formToolOptions, getValues, setValue }: ToolOptionsFormContext,
 ): BooleanOptionHandlers {
   const isSet = useCallback(
-    (toolId: string): boolean => formToolOptions?.[toolId]?.[key] === true,
+    (toolId: string, serverDefault = false): boolean =>
+      formToolOptions?.[toolId]?.[key] ?? serverDefault,
     [formToolOptions, key],
   );
 
   const toggle = useCallback(
-    (toolId: string) => {
+    (toolId: string, serverDefault = false) => {
       const currentOptions = getValues('tool_options') || {};
-      const set = currentOptions[toolId]?.[key] !== true;
-      setValue('tool_options', withBooleanOption(currentOptions, toolId, key, set), {
+      const set = !(currentOptions[toolId]?.[key] ?? serverDefault);
+      setValue('tool_options', withBooleanOption(currentOptions, toolId, key, set, serverDefault), {
         shouldDirty: true,
       });
     },
@@ -86,20 +96,21 @@ function useBooleanToolOption(
   );
 
   const areAllSet = useCallback(
-    (tools: AgentToolType[]): boolean =>
-      tools.length > 0 && tools.every((tool) => formToolOptions?.[tool.tool_id]?.[key] === true),
+    (tools: AgentToolType[], serverDefault = false): boolean =>
+      tools.length > 0 &&
+      tools.every((tool) => (formToolOptions?.[tool.tool_id]?.[key] ?? serverDefault) === true),
     [formToolOptions, key],
   );
 
   const toggleAll = useCallback(
-    (tools: AgentToolType[]) => {
+    (tools: AgentToolType[], serverDefault = false) => {
       if (tools.length === 0) {
         return;
       }
-      const set = !areAllSet(tools);
+      const set = !areAllSet(tools, serverDefault);
       let updatedOptions = getValues('tool_options') || {};
       for (const tool of tools) {
-        updatedOptions = withBooleanOption(updatedOptions, tool.tool_id, key, set);
+        updatedOptions = withBooleanOption(updatedOptions, tool.tool_id, key, set, serverDefault);
       }
       setValue('tool_options', updatedOptions, { shouldDirty: true });
     },
