@@ -1754,6 +1754,9 @@ describe('GenerationJobManager Integration Tests', () => {
         });
 
         await new Promise((resolve) => setTimeout(resolve, 200));
+        expect(liveEvents.length).toBe(0);
+
+        subscription?.activate();
         expect(liveEvents.length).toBe(1);
 
         subscription?.unsubscribe();
@@ -2379,7 +2382,7 @@ describe('GenerationJobManager Integration Tests', () => {
         onDone: () => {},
       });
 
-      await sub1.ready;
+      await expect(sub1.ready).rejects.toThrow('Simulated Redis SUBSCRIBE failure');
 
       const receivedEvents: unknown[] = [];
       sub1.unsubscribe();
@@ -2391,6 +2394,7 @@ describe('GenerationJobManager Integration Tests', () => {
 
       expect(sub2.ready).toBeDefined();
       await sub2.ready;
+      expect(callCount).toBe(2);
 
       await transport.emitChunk(streamId, { event: 'test', data: { value: 'hello' } });
       await new Promise((resolve) => setTimeout(resolve, 100));
