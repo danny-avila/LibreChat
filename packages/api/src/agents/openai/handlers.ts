@@ -443,8 +443,11 @@ export function sendFinalChunk(
   const { res, context, tracker } = config;
 
   // Determine finish reason based on content
+  // A response that includes tool calls finishes as 'tool_calls' even when the
+  // model also emitted content before them (OpenAI spec), so don't gate on
+  // whether text was streamed.
   let reason = finishReason;
-  if (tracker.toolCalls.size > 0 && !tracker.hasText) {
+  if (tracker.toolCalls.size > 0) {
     reason = 'tool_calls';
   }
 

@@ -350,7 +350,7 @@ export function buildNonStreamingResponse(
   usage: CompletionUsage,
 ): ChatCompletionResponse {
   const toolCallsArray = Array.from(toolCalls.values());
-  const finishReason = toolCallsArray.length > 0 && !text ? 'tool_calls' : 'stop';
+  const finishReason = toolCallsArray.length > 0 ? 'tool_calls' : 'stop';
 
   return {
     id: context.requestId,
