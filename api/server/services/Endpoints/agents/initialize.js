@@ -36,6 +36,7 @@ const {
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
+const { primeConversationImages } = require('~/server/services/Files/Code/primeImages');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const {
   getSkillToolDeps,
@@ -439,6 +440,16 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       getUserCodeFiles: db.getUserCodeFiles,
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+      /* Auto-prime conversation images (MCP tool results, etc.) into the code
+       * environment — see primeConversationImages: getFiles/updateFile are
+       * closed over here so packages/api doesn't depend on models directly. */
+      primeConversationImages: ({ req: primeReq, threadFileIds }) =>
+        primeConversationImages({
+          req: primeReq,
+          threadFileIds,
+          getFiles: db.getFiles,
+          updateFile: db.updateFile,
+        }),
       filterFilesByAgentAccess,
       listSkillsByAccess: skillDbMethods.listSkillsByAccess,
       listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
