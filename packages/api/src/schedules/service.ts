@@ -453,7 +453,6 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
         const schedule = await methods.getScheduleById(scheduleId);
         const owner = schedule ? await engineDeps.getUserContext(schedule.user) : null;
         const limits = await getLimits(owner ?? undefined);
-        const run = await methods.getRun(scheduleId, new Date(scheduledFor));
         await methods.recordRunOutcome({
           scheduleId,
           scheduledFor: new Date(scheduledFor),
@@ -461,9 +460,6 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
           conversationId,
           error,
           autoDisableAfterFailures: limits.autoDisableAfterFailures,
-          // Fence terminal bookkeeping/auto-disable to the config this run started
-          // under, so an owner edit or re-enable since then is never acted on.
-          expectConfigRevision: run?.configRevision,
         });
         return true;
       } catch (err) {

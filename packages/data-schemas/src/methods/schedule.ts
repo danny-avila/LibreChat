@@ -68,9 +68,6 @@ export interface RecordRunOutcomeParams {
   error?: string;
   durationMs?: number;
   autoDisableAfterFailures: number;
-  /** The configRevision this run started under. Terminal bookkeeping / auto-disable is
-   *  skipped when the owner has since edited the schedule (revision moved on). */
-  expectConfigRevision?: number;
 }
 
 /** Result of claiming/leasing a schedule: the snapshot plus the fencing token to carry. */
@@ -636,7 +633,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
    * even when a later occurrence's counting interleaves with an earlier paused one.
    */
   async function applyTerminalBookkeeping(
-    params: RecordRunOutcomeParams & { firedAt: Date },
+    params: RecordRunOutcomeParams & { firedAt: Date; expectConfigRevision?: number },
   ): Promise<void> {
     const lastRun = {
       conversationId: params.conversationId,
@@ -751,33 +748,43 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // TERMINAL: flip the run row (match-guarded), then apply bookkeeping. `bookkept` is
     // set false at the flip and true only after bookkeeping lands, so a crash between is
     // re-applied by the reconciler (getUnbookkeptRuns) while countedFor keeps counters idempotent.
-    const matched = await ScheduleRun().updateOne(
-      {
-        scheduleId: params.scheduleId,
-        scheduledFor: params.scheduledFor,
-        status: { $in: ['started', 'requires_action'] },
-      },
-      {
-        $set: {
-          status: params.status,
-          bookkept: false,
-          ...(params.conversationId ? { conversationId: params.conversationId } : {}),
-          ...(params.error ? { error: params.error } : {}),
-          ...(params.durationMs != null ? { durationMs: params.durationMs } : {}),
+    const settled = await ScheduleRun()
+      .findOneAndUpdate(
+        {
+          scheduleId: params.scheduleId,
+          scheduledFor: params.scheduledFor,
+          status: { $in: ['started', 'requires_action'] },
         },
-        // SETTLEMENT: a terminal outcome is the generation owner confirming the run
-        // actually stopped, so this is the ONLY place the global capacity slot is
-        // released. An abort request alone does not free it (see requestRunAbort).
-        // Any in-flight resume lease ends with the run.
-        $unset: { capacitySlot: 1 },
-      },
-    );
+        {
+          $set: {
+            status: params.status,
+            bookkept: false,
+            ...(params.conversationId ? { conversationId: params.conversationId } : {}),
+            ...(params.error ? { error: params.error } : {}),
+            ...(params.durationMs != null ? { durationMs: params.durationMs } : {}),
+          },
+          // SETTLEMENT: a terminal outcome is the generation owner confirming the run
+          // actually stopped, so this is the ONLY place the global capacity slot is
+          // released. An abort request alone does not free it (see requestRunAbort).
+          $unset: { capacitySlot: 1 },
+        },
+        { new: false },
+      )
+      .lean<IScheduleRun>();
     // No-match guard: never touch schedule bookkeeping without a matching run
     // (protects against a spoofed scheduleId on a normal chat).
-    if ((matched.matchedCount ?? 0) === 0) {
+    if (settled == null) {
       return;
     }
-    await applyTerminalBookkeeping({ ...params, firedAt });
+    // SINGLE SEAM: the config fence is DERIVED here from the row being settled, not
+    // passed in by each caller. Callers only say "this occurrence reached status X" and
+    // structurally cannot forget a token — which is exactly how the reconcile and
+    // balance-skip paths previously shipped unfenced.
+    await applyTerminalBookkeeping({
+      ...params,
+      firedAt,
+      expectConfigRevision: settled.configRevision,
+    });
     await ScheduleRun().updateOne(
       { scheduleId: params.scheduleId, scheduledFor: params.scheduledFor },
       { $set: { bookkept: true } },
@@ -902,7 +909,17 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
 
   /** Re-applies (idempotent) bookkeeping for a terminal run and marks it bookkept. */
   async function finalizeBookkeeping(params: RecordRunOutcomeParams): Promise<void> {
-    await applyTerminalBookkeeping({ ...params, firedAt: new Date() });
+    // Same single seam as recordRunOutcome: derive the config fence from the row, so the
+    // crash-retry path cannot apply bookkeeping the inline path would have refused.
+    const run = await ScheduleRun()
+      .findOne({ scheduleId: params.scheduleId, scheduledFor: params.scheduledFor })
+      .select('configRevision')
+      .lean<Pick<IScheduleRun, 'configRevision'>>();
+    await applyTerminalBookkeeping({
+      ...params,
+      firedAt: new Date(),
+      expectConfigRevision: run?.configRevision,
+    });
     await ScheduleRun().updateOne(
       { scheduleId: params.scheduleId, scheduledFor: params.scheduledFor },
       { $set: { bookkept: true } },

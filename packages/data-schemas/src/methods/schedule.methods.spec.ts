@@ -1087,3 +1087,73 @@ describe('account-deletion barrier (delete vs create)', () => {
     expect(pending.some((u) => u._id.toString() === pendingUser._id.toString())).toBe(true);
   });
 });
+
+describe('config fence is DERIVED at the seam, not passed by callers', () => {
+  const scheduledFor = new Date('2026-07-20T12:00:00Z');
+
+  it('skips bookkeeping when the owner edited the schedule after the run started', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    // The run captured the config generation it started under.
+    await methods.insertScheduleRun(
+      runData(schedule, { scheduledFor, configRevision: schedule.configRevision ?? 0 }),
+    );
+    // Owner edits -> configRevision moves on.
+    await methods.updateScheduleById(schedule.id, schedule.user, { name: 'edited' });
+
+    // NOTE: no fence token is passed — recordRunOutcome derives it from the run row.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'error',
+      error: 'boom',
+      autoDisableAfterFailures: 3,
+    });
+
+    // The run still terminalizes (evidence is preserved)...
+    expect((await getRun(schedule.id, scheduledFor)).status).toBe('error');
+    // ...but it must NOT count a failure against the schedule the owner just edited.
+    const after = await getSchedule(schedule.id);
+    expect(after.failureCount).toBe(0);
+    expect(after.lastRun).toBeUndefined();
+  });
+
+  it('applies bookkeeping normally when the revision still matches', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(
+      runData(schedule, { scheduledFor, configRevision: schedule.configRevision ?? 0 }),
+    );
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'success',
+      conversationId: 'c1',
+      autoDisableAfterFailures: 3,
+    });
+    const after = await getSchedule(schedule.id);
+    expect(after.runCount).toBe(1);
+    expect(after.lastRun?.status).toBe('success');
+  });
+
+  it('fences the crash-retry path (finalizeBookkeeping) the same way', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(
+      runData(schedule, {
+        scheduledFor,
+        status: 'error',
+        bookkept: false,
+        configRevision: schedule.configRevision ?? 0,
+      }),
+    );
+    await methods.updateScheduleById(schedule.id, schedule.user, { name: 'edited' });
+
+    // The reconciler replays bookkeeping for an unbookkept run; it must honor the same
+    // fence as the inline path, or a crash would let it apply what inline refused.
+    await methods.finalizeBookkeeping({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'error',
+      autoDisableAfterFailures: 3,
+    });
+    expect((await getSchedule(schedule.id)).failureCount).toBe(0);
+  });
+});

@@ -89,9 +89,6 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
               conversationId: run.conversationId,
               error,
               autoDisableAfterFailures: runLimits.autoDisableAfterFailures,
-              // Terminal bookkeeping is fenced on the config the run started under, so a
-              // reconciled outcome cannot auto-disable a schedule the owner has edited.
-              ...(run.configRevision != null ? { expectConfigRevision: run.configRevision } : {}),
             });
           if (jobStatus === 'running') {
             continue;
