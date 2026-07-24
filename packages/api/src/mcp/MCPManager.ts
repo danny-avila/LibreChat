@@ -277,11 +277,13 @@ export class MCPManager extends UserConnectionManager {
   /**
    * Get instructions for MCP servers
    * @param serverNames Optional array of server names. If not provided or empty, returns all servers.
+   * @param user Optional requesting user, used to resolve placeholders in custom instructions.
    * @returns Object mapping server names to their instructions
    */
   private async getInstructions(
     serverNames?: string[],
     configServers?: Record<string, t.ParsedServerConfig>,
+    user?: Partial<IUser>,
   ): Promise<Record<string, string>> {
     const instructions: Record<string, string> = {};
     const configs = await MCPServersRegistry.getInstance().getAllServerConfigs(
@@ -289,9 +291,26 @@ export class MCPManager extends UserConnectionManager {
       configServers,
     );
     for (const [serverName, config] of Object.entries(configs)) {
-      if (config.serverInstructions != null) {
-        instructions[serverName] = config.serverInstructions as string;
+      if (config.serverInstructions == null) {
+        continue;
       }
+      /**
+       * Custom instructions are resolved per-user so `{{LIBRECHAT_USER_*}}` reflects the
+       * requesting user. A non-string value means "fetch from the server" and is left as-is.
+       * Only the instructions and `dbId` are passed through, so the sandboxing applied to
+       * DB-sourced servers is preserved without cloning the rest of the parsed config.
+       */
+      const { serverInstructions } =
+        typeof config.serverInstructions === 'string'
+          ? processMCPEnv({
+              options: {
+                serverInstructions: config.serverInstructions,
+                dbId: config.dbId,
+              } as t.ParsedServerConfig,
+              user,
+            })
+          : config;
+      instructions[serverName] = serverInstructions as string;
     }
     if (!serverNames) return instructions;
     return pick(instructions, serverNames);
@@ -300,13 +319,15 @@ export class MCPManager extends UserConnectionManager {
   /**
    * Format MCP server instructions for injection into context
    * @param serverNames Optional array of server names to include. If not provided, includes all servers.
+   * @param user Optional requesting user, used to resolve placeholders in custom instructions.
    * @returns Formatted instructions string ready for context injection
    */
   public async formatInstructionsForContext(
     serverNames?: string[],
     configServers?: Record<string, t.ParsedServerConfig>,
+    user?: Partial<IUser>,
   ): Promise<string> {
-    const instructionsToInclude = await this.getInstructions(serverNames, configServers);
+    const instructionsToInclude = await this.getInstructions(serverNames, configServers, user);
 
     if (Object.keys(instructionsToInclude).length === 0) {
       return '';

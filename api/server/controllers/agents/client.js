@@ -767,6 +767,7 @@ class AgentClient extends BaseClient {
           logger,
           mcpManager,
           configServers,
+          user: this.options.req.user,
           sharedRunContext: agentRunContextParts.filter(Boolean).join('\n\n'),
           ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
         });

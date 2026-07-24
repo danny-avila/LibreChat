@@ -348,6 +348,81 @@ describe('MCPManager', () => {
 
       expect(result).toBe('');
     });
+
+    describe('placeholder resolution', () => {
+      const actualEnv = jest.requireActual<typeof import('~/utils/env')>('~/utils/env');
+
+      beforeEach(() => {
+        mockProcessMCPEnv.mockImplementation(actualEnv.processMCPEnv);
+      });
+
+      it('should resolve user and environment placeholders in serverInstructions', async () => {
+        process.env.TEST_MCP_INSTRUCTIONS_REGION = 'eu-west-1';
+        (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
+          github: {
+            type: 'sse',
+            url: 'https://api.github.com',
+            serverInstructions:
+              'Address the user as {{LIBRECHAT_USER_NAME}} and query ${TEST_MCP_INSTRUCTIONS_REGION}.',
+          },
+        });
+
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        const result = await manager.formatInstructionsForContext(['github'], undefined, {
+          id: 'user-1',
+          name: 'Ada',
+        } as Partial<IUser>);
+
+        expect(result).toContain('Address the user as Ada and query eu-west-1.');
+        expect(result).not.toContain('{{LIBRECHAT_USER_NAME}}');
+        expect(result).not.toContain('${TEST_MCP_INSTRUCTIONS_REGION}');
+
+        delete process.env.TEST_MCP_INSTRUCTIONS_REGION;
+      });
+
+      it('should only resolve custom user variables for user-sourced servers', async () => {
+        process.env.TEST_MCP_INSTRUCTIONS_REGION = 'eu-west-1';
+        (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
+          personal: {
+            type: 'sse',
+            url: 'https://example.com',
+            dbId: 'db-1',
+            source: 'user',
+            serverInstructions:
+              'Address the user as {{LIBRECHAT_USER_NAME}} and query ${TEST_MCP_INSTRUCTIONS_REGION}.',
+          },
+        });
+
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        const result = await manager.formatInstructionsForContext(['personal'], undefined, {
+          id: 'user-1',
+          name: 'Ada',
+        } as Partial<IUser>);
+
+        expect(result).toContain('{{LIBRECHAT_USER_NAME}}');
+        expect(result).toContain('${TEST_MCP_INSTRUCTIONS_REGION}');
+
+        delete process.env.TEST_MCP_INSTRUCTIONS_REGION;
+      });
+
+      it('should leave non-string serverInstructions untouched', async () => {
+        (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
+          github: {
+            type: 'sse',
+            url: 'https://api.github.com',
+            serverInstructions: true,
+          },
+        });
+
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        const result = await manager.formatInstructionsForContext(['github'], undefined, {
+          id: 'user-1',
+          name: 'Ada',
+        } as Partial<IUser>);
+
+        expect(result).toContain('## github MCP Server Instructions');
+      });
+    });
   });
 
   describe('getServerToolFunctions', () => {

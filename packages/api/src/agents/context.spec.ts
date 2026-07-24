@@ -159,6 +159,7 @@ describe('Agent Context Utilities', () => {
       expect(mockMCPManager.formatInstructionsForContext).toHaveBeenCalledWith(
         ['server1', 'server2'],
         undefined,
+        undefined,
       );
       expect(mockLogger.debug).toHaveBeenCalledWith(
         '[AgentContext] Fetched MCP instructions for servers:',
@@ -365,6 +366,7 @@ describe('Agent Context Utilities', () => {
       expect(mockMCPManager.formatInstructionsForContext).toHaveBeenCalledWith(
         ['ephemeral-server'],
         undefined,
+        undefined,
       );
       expect(agent.instructions).toBe('Base instructions\n\nEphemeral MCP');
       expect(agent.additional_instructions).toBe('Context');
@@ -397,6 +399,39 @@ describe('Agent Context Utilities', () => {
       expect(mockMCPManager.formatInstructionsForContext).toHaveBeenCalledWith(
         ['agent-server'],
         undefined,
+        undefined,
+      );
+    });
+
+    it('should forward the requesting user so instruction placeholders resolve', async () => {
+      const agent: AgentWithTools = {
+        id: 'test-agent',
+        instructions: 'Base',
+        tools: [
+          new DynamicStructuredTool({
+            name: `tool${Constants.mcp_delimiter}agent-server`,
+            description: 'Test tool',
+            schema: testSchema,
+            func: async () => 'result',
+          }),
+        ],
+      };
+
+      mockMCPManager.formatInstructionsForContext.mockResolvedValue('Agent MCP');
+      const user = { id: 'user-1', name: 'Ada' };
+
+      await applyContextToAgent({
+        agent,
+        sharedRunContext: '',
+        mcpManager: mockMCPManager,
+        logger: mockLogger,
+        user,
+      });
+
+      expect(mockMCPManager.formatInstructionsForContext).toHaveBeenCalledWith(
+        ['agent-server'],
+        undefined,
+        user,
       );
     });
 

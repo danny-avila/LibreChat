@@ -414,6 +414,19 @@ export function processMCPEnv(params: {
     });
   }
 
+  // Process server instructions if they exist (all transport types).
+  // Only the custom-string form is processed: a boolean (or the YAML string "true")
+  // means "fetch instructions from the server" and must be left untouched.
+  if ('serverInstructions' in newObj && typeof newObj.serverInstructions === 'string') {
+    newObj.serverInstructions = processSingleValue({
+      user,
+      body,
+      dbSourced,
+      customUserVars,
+      originalValue: newObj.serverInstructions,
+    });
+  }
+
   // Process outbound proxy if it exists (for SSE and StreamableHTTP types)
   if ('proxy' in newObj && newObj.proxy) {
     newObj.proxy = processAdminValue(newObj.proxy, dbSourced);
