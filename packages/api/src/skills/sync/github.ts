@@ -24,6 +24,11 @@ import type {
 import type { SkillSyncConfig, SkillSyncGitHubSourceConfig } from 'librechat-data-provider';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
 import { parseSkillMarkdown } from '../parse';
+import {
+  GitHubAppAuthError,
+  appAuthErrorMessage,
+  createGitHubAppTokenProvider,
+} from './github-app-auth';
 
 const GITHUB_API_BASE = 'https://api.github.com';
 const SYSTEM_AUTHOR_ID = new Types.ObjectId('000000000000000000000000');
@@ -1383,12 +1388,116 @@ function getTokenEnvVarName(tokenReference: string | undefined): string | null {
   return match?.[1] ?? null;
 }
 
+/**
+ * Memoize App token providers per source id so the in-process installation
+ * token cache (held inside the provider closure) survives across sync runs.
+ * Cache entries carry a fingerprint of the resolved App config so that any
+ * change to the underlying env vars or source attributes (App credential
+ * rotation, owner/repo/installation edits) replaces the closure on next sync
+ * instead of re-using a stale one for the process lifetime.
+ */
+type CachedAppProvider = {
+  fingerprint: string;
+  provider: () => Promise<string>;
+};
+const appTokenProviders = new Map<string, CachedAppProvider>();
+
+function appConfigFingerprint(parts: {
+  appId: string;
+  privateKey: string;
+  owner: string;
+  repo: string;
+  installationId: string | undefined;
+}): string {
+  // Hash the private key on its own first so it never enters the joined buffer
+  // verbatim; the joined buffer is itself hashed before being kept anywhere.
+  const keyDigest = crypto.createHash('sha256').update(parts.privateKey).digest('hex');
+  return crypto
+    .createHash('sha256')
+    .update(
+      [parts.appId, parts.owner, parts.repo, parts.installationId ?? '', keyDigest].join('\0'),
+    )
+    .digest('hex')
+    .slice(0, 16);
+}
+
+function getEnvOrNull(reference: string | undefined): string | null {
+  const name = getTokenEnvVarName(reference);
+  if (!name) return null;
+  return process.env[name]?.trim() || null;
+}
+
+async function resolveAppToken(
+  source: SkillSyncGitHubSourceConfig,
+  fetchFn: FetchFn,
+): Promise<string> {
+  const app = source.app!;
+  const appId = getEnvOrNull(app.appId);
+  const privateKey = getEnvOrNull(app.privateKey);
+  const missing: string[] = [];
+  if (!appId) missing.push(getTokenEnvVarName(app.appId) ?? 'appId env var');
+  if (!privateKey) missing.push(getTokenEnvVarName(app.privateKey) ?? 'privateKey env var');
+  // `installationId` is optional in the schema, but a *configured* env var that
+  // doesn't resolve is operator misconfiguration — fall back to discovery only
+  // when the field is omitted entirely.
+  let installationId: string | undefined;
+  if (app.installationId) {
+    const resolved = getEnvOrNull(app.installationId);
+    if (!resolved) {
+      missing.push(getTokenEnvVarName(app.installationId) ?? 'installationId env var');
+    } else {
+      installationId = resolved;
+    }
+  }
+  if (missing.length > 0 || !appId || !privateKey) {
+    throw new GitHubAppAuthError(`Missing GitHub App env var(s): ${missing.join(', ')}`);
+  }
+  const fingerprint = appConfigFingerprint({
+    appId,
+    privateKey,
+    owner: source.owner,
+    repo: source.repo,
+    installationId,
+  });
+  const cached = appTokenProviders.get(source.id);
+  if (cached && cached.fingerprint === fingerprint) {
+    return cached.provider();
+  }
+  const provider = createGitHubAppTokenProvider({
+    appId,
+    privateKey,
+    owner: source.owner,
+    repo: source.repo,
+    installationId,
+    fetchFn,
+  });
+  appTokenProviders.set(source.id, { fingerprint, provider });
+  return provider();
+}
+
+/**
+ * Returns true when the resolved App config could authenticate now — every
+ * referenced env var resolves. Used by `getStatus()` to surface configured
+ * App credentials as present alongside PAT env vars and stored credentials.
+ */
+function isAppCredentialPresent(source: SkillSyncGitHubSourceConfig): boolean {
+  if (!source.app) return false;
+  if (!getEnvOrNull(source.app.appId)) return false;
+  if (!getEnvOrNull(source.app.privateKey)) return false;
+  if (source.app.installationId && !getEnvOrNull(source.app.installationId)) return false;
+  return true;
+}
+
 async function resolveGitHubToken(
   deps: GitHubSkillSyncDeps,
   source: SkillSyncGitHubSourceConfig,
+  fetchFn: FetchFn,
 ): Promise<string | null> {
   if (deps.allowServerCredentials === false) {
     return null;
+  }
+  if (source.app) {
+    return resolveAppToken(source, fetchFn);
   }
   const tokenEnvVar = getTokenEnvVarName(source.token);
   if (tokenEnvVar) {
@@ -1426,7 +1535,24 @@ async function syncSource(params: {
   try {
     assertNotCancelled();
     const allowServerCredentials = deps.allowServerCredentials !== false;
-    const token = await resolveGitHubToken(deps, source);
+    let token: string | null;
+    try {
+      token = await resolveGitHubToken(deps, source, fetchFn);
+    } catch (err) {
+      if (err instanceof GitHubAppAuthError) {
+        // `appAuthErrorMessage` is the right wrapper when the failure came
+        // from GitHub (status set). For local failures (missing env vars,
+        // unsignable PEM) the original `err.message` already names the exact
+        // env var or signing problem the operator needs to fix — preserve it
+        // rather than collapsing to the generic "misconfigured" template.
+        const message =
+          err.status === undefined
+            ? err.message
+            : appAuthErrorMessage(err, source.owner, source.repo);
+        throw new SkillSyncError('GITHUB_APP_AUTH_FAILED', message);
+      }
+      throw err;
+    }
     assertNotCancelled();
     if (!token) {
       throw new SkillSyncError(
@@ -1753,13 +1879,14 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSk
       const tokenEnvVar = getTokenEnvVarName(source.token);
       const envTokenPresent =
         allowServerCredentials && tokenEnvVar ? Boolean(process.env[tokenEnvVar]?.trim()) : false;
+      const appPresent = allowServerCredentials && isAppCredentialPresent(source);
       return {
         provider: PROVIDER,
         sourceId: source.id,
         tenantId: source.tenantId,
         status: stored?.status ?? 'idle',
         credentialKey: source.credentialKey,
-        credentialPresent: envTokenPresent || Boolean(credential),
+        credentialPresent: envTokenPresent || appPresent || Boolean(credential),
         owner: source.owner,
         repo: source.repo,
         ref: source.ref,
