@@ -40,4 +40,57 @@ describe('resolveModel', () => {
       sender: 'some-future-model',
     });
   });
+
+  it('maps pro suffix label', () => {
+    expect(resolveModel('gpt-5-4-pro', 'gpt-4o').sender).toBe('GPT-5.4 Pro');
+  });
+
+  it('maps instant suffix label', () => {
+    expect(resolveModel('gpt-5-1-instant', 'gpt-4o').sender).toBe('GPT-5.1 Instant');
+  });
+
+  it('maps auto suffix label', () => {
+    expect(resolveModel('gpt-5-4-auto-thinking', 'gpt-4o').sender).toBe('GPT-5.4 Auto Thinking');
+  });
+
+  it('maps t suffix as thinking', () => {
+    expect(resolveModel('gpt-5-t-mini', 'gpt-4o').sender).toBe('GPT-5 Thinking mini');
+  });
+
+  it('covers all 25 real-world slugs from import data', () => {
+    const cases = [
+      ['gpt-4o', 'GPT-4o'],
+      ['gpt-5-5-thinking', 'GPT-5.5 Thinking'],
+      ['gpt-5', 'GPT-5'],
+      ['gpt-5-thinking', 'GPT-5 Thinking'],
+      ['gpt-4-1', 'GPT-4.1'],
+      ['gpt-5-1-thinking', 'GPT-5.1 Thinking'],
+      ['gpt-5-2', 'GPT-5.2'],
+      ['gpt-5-4-thinking', 'GPT-5.4 Thinking'],
+      ['gpt-5-1', 'GPT-5.1'],
+      ['gpt-5-2-thinking', 'GPT-5.2 Thinking'],
+      ['gpt-4o-mini', 'GPT-4o mini'],
+      ['o3', 'o3'],
+      ['o4-mini-high', 'o4-mini-high'],
+      ['gpt-5-3', 'GPT-5.3'],
+      ['gpt-5-6-thinking', 'GPT-5.6 Thinking'],
+      ['gpt-5-5', 'GPT-5.5'],
+      ['gpt-5-4-pro', 'GPT-5.4 Pro'],
+      ['o4-mini', 'o4-mini'],
+      ['gpt-5-t-mini', 'GPT-5 Thinking mini'],
+      ['research', 'Deep Research'],
+      ['gpt-5-4-auto-thinking', 'GPT-5.4 Auto Thinking'],
+      ['gpt-5-1-instant', 'GPT-5.1 Instant'],
+      ['o3-mini', 'o3-mini'],
+      ['gpt-5-auto-thinking', 'GPT-5 Auto Thinking'],
+      ['gpt-4-5', 'GPT-4.5'],
+    ] as const;
+
+    cases.forEach(([slug, expectedSender]) => {
+      expect(resolveModel(slug, 'gpt-4o')).toEqual({
+        model: slug,
+        sender: expectedSender,
+      });
+    });
+  });
 });

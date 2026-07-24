@@ -1,6 +1,5 @@
 const EXACT_SENDERS: Record<string, string> = {
   research: 'Deep Research',
-  auto: 'Auto',
 };
 
 const SUFFIX_LABELS: Record<string, string> = {
@@ -9,6 +8,7 @@ const SUFFIX_LABELS: Record<string, string> = {
   instant: 'Instant',
   mini: 'mini',
   auto: 'Auto',
+  t: 'Thinking',
 };
 
 /**
