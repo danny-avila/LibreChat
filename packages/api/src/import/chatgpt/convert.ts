@@ -13,7 +13,6 @@ import { buildCitations } from './citations';
 import { resolveModel } from './models';
 
 const SKIPPED_CONTENT = new Set(['thoughts', 'reasoning_recap']);
-const NO_ASSETS = new Map<string, ImportedAsset>();
 
 export interface ImportAttachment {
   type: Tools.web_search;
@@ -52,7 +51,7 @@ export interface ConvertedConversation {
 
 export interface ConvertOptions {
   userId: string;
-  assets: Map<string, string>;
+  assets: Map<string, ImportedAsset>;
   defaultModel: string;
 }
 
@@ -132,6 +131,68 @@ function buildAttachments(citations: ImportedCitations[]): ImportAttachment[] | 
   }));
 }
 
+function buildById(messages: ConvertedMessage[]): Map<string, ConvertedMessage> {
+  const byId = new Map<string, ConvertedMessage>();
+  for (const message of messages) {
+    byId.set(message.messageId, message);
+  }
+  return byId;
+}
+
+/**
+ * Breaks any cycle in the parent graph by rooting the message that closes the
+ * loop. Real exports occasionally reference an ancestor as its own descendant;
+ * `buildTree` requires an acyclic graph so this must run before rendering.
+ */
+function breakCycles(messages: ConvertedMessage[], byId: Map<string, ConvertedMessage>): void {
+  for (const message of messages) {
+    const seen = new Set<string>([message.messageId]);
+    let current = message.parentMessageId;
+    while (current !== Constants.NO_PARENT) {
+      const parent = byId.get(current);
+      if (!parent) {
+        break;
+      }
+      if (seen.has(current)) {
+        message.parentMessageId = Constants.NO_PARENT;
+        break;
+      }
+      seen.add(current);
+      current = parent.parentMessageId;
+    }
+  }
+}
+
+/**
+ * Nudges a child's timestamp past its parent's when the export's `create_time`
+ * values are out of order, via a single BFS from the roots so every parent is
+ * visited before its children.
+ */
+function enforceOrdering(messages: ConvertedMessage[], byId: Map<string, ConvertedMessage>): void {
+  const children = new Map<string, ConvertedMessage[]>();
+  for (const message of messages) {
+    const siblings = children.get(message.parentMessageId);
+    if (siblings) {
+      siblings.push(message);
+      continue;
+    }
+    children.set(message.parentMessageId, [message]);
+  }
+
+  const queue = [...(children.get(Constants.NO_PARENT) ?? [])];
+  while (queue.length > 0) {
+    const node = queue.shift() as ConvertedMessage;
+    const parent = byId.get(node.parentMessageId);
+    if (parent && node.createdAt.getTime() <= parent.createdAt.getTime()) {
+      node.createdAt = new Date(parent.createdAt.getTime() + 1);
+    }
+    const kids = children.get(node.messageId);
+    if (kids) {
+      queue.push(...kids);
+    }
+  }
+}
+
 export function convertConversation(
   conv: ChatGptConversation,
   options: ConvertOptions,
@@ -156,14 +217,11 @@ export function convertConversation(
 
     const message = node.message;
     const isCreatedByUser = message.author.role === 'user';
-    const converted0 = convertContent(message, NO_ASSETS);
+    const converted0 = convertContent(message, options.assets);
     const cited = isCreatedByUser
       ? { text: converted0.text, citations: [] }
       : buildCitations(message, converted0.text);
     const text = cited.text;
-    const parts = converted0.parts.map((part) =>
-      part.type === 'text' ? { type: 'text' as const, text } : part,
-    );
     const files = converted0.files;
     const { model, sender } = resolveModel(
       message.metadata?.model_slug ?? conv.default_model_slug ?? undefined,
@@ -183,9 +241,10 @@ export function convertConversation(
 
     const thinking = isCreatedByUser ? null : findThinking(node.parent, mapping);
     if (thinking) {
-      converted.content = [{ type: 'think', think: thinking }, ...parts];
-    } else if (parts.length > 1 || parts.some((part) => part.type !== 'text')) {
-      converted.content = parts;
+      converted.content = [
+        { type: 'think', think: thinking },
+        { type: 'text', text },
+      ];
     }
 
     if (!isCreatedByUser) {
@@ -198,6 +257,10 @@ export function convertConversation(
 
     messages.push(converted);
   }
+
+  const byId = buildById(messages);
+  breakCycles(messages, byId);
+  enforceOrdering(messages, byId);
 
   const { model } = resolveModel(conv.default_model_slug ?? undefined, options.defaultModel);
 

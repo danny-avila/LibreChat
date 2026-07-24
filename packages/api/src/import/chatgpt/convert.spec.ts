@@ -1,4 +1,5 @@
-import type { ChatGptConversation } from '~/import/types';
+import { Constants } from 'librechat-data-provider';
+import type { ChatGptConversation, ImportedAsset } from '~/import/types';
 import { convertConversation } from './convert';
 
 const CITE = '';
@@ -17,7 +18,11 @@ function conversation(mapping: ChatGptConversation['mapping']): ChatGptConversat
   };
 }
 
-const OPTIONS = { userId: 'u1', assets: new Map<string, string>(), defaultModel: 'gpt-4o' };
+const OPTIONS = {
+  userId: 'u1',
+  assets: new Map<string, ImportedAsset>(),
+  defaultModel: 'gpt-4o',
+};
 
 describe('convertConversation', () => {
   it('carries archive, pin, model, and external id onto the conversation', () => {
@@ -194,6 +199,42 @@ describe('convertConversation', () => {
     expect(result.messages[0].assetPointers).toEqual(['file-service://file-A']);
   });
 
+  it('resolves a matching asset pointer onto message.files', () => {
+    const asset: ImportedAsset = {
+      file_id: 'file-1',
+      filepath: '/uploads/file-1.png',
+      filename: 'file-A.png',
+      type: 'image/png',
+    };
+    const assets = new Map<string, ImportedAsset>([['file-service://file-A', asset]]);
+
+    const result = convertConversation(
+      conversation({
+        root: { id: 'root', message: null, parent: null, children: ['a'] },
+        a: {
+          id: 'a',
+          message: {
+            id: 'a',
+            author: { role: 'user', name: null },
+            create_time: 1700000002,
+            content: {
+              content_type: 'multimodal_text',
+              parts: [
+                { content_type: 'image_asset_pointer', asset_pointer: 'file-service://file-A' },
+                'what is this',
+              ],
+            },
+          },
+          parent: 'root',
+          children: [],
+        },
+      }),
+      { ...OPTIONS, assets },
+    );
+
+    expect(result.messages[0].files).toEqual([asset]);
+  });
+
   it('survives a parent cycle without hanging', () => {
     const result = convertConversation(
       conversation({
@@ -224,5 +265,90 @@ describe('convertConversation', () => {
     );
 
     expect(result.messages).toHaveLength(2);
+  });
+
+  it('breaks a two-message parent cycle into a single root with no self-ancestor', () => {
+    const result = convertConversation(
+      conversation({
+        a: {
+          id: 'a',
+          message: {
+            id: 'a',
+            author: { role: 'user', name: null },
+            create_time: 1700000001,
+            content: { content_type: 'text', parts: ['one'] },
+          },
+          parent: 'b',
+          children: [],
+        },
+        b: {
+          id: 'b',
+          message: {
+            id: 'b',
+            author: { role: 'user', name: null },
+            create_time: 1700000002,
+            content: { content_type: 'text', parts: ['two'] },
+          },
+          parent: 'a',
+          children: [],
+        },
+      }),
+      OPTIONS,
+    );
+
+    const byId = new Map(result.messages.map((message) => [message.messageId, message]));
+    const roots = result.messages.filter(
+      (message) => message.parentMessageId === Constants.NO_PARENT,
+    );
+    expect(roots).toHaveLength(1);
+
+    for (const message of result.messages) {
+      const seen = new Set<string>([message.messageId]);
+      let current = message.parentMessageId;
+      while (current !== Constants.NO_PARENT) {
+        expect(seen.has(current)).toBe(false);
+        seen.add(current);
+        current = byId.get(current)?.parentMessageId ?? Constants.NO_PARENT;
+      }
+    }
+  });
+
+  it('nudges a child timestamp forward when it precedes its parent', () => {
+    const result = convertConversation(
+      conversation({
+        root: { id: 'root', message: null, parent: null, children: ['p'] },
+        p: {
+          id: 'p',
+          message: {
+            id: 'p',
+            author: { role: 'user', name: null },
+            create_time: 1700000010,
+            content: { content_type: 'text', parts: ['parent'] },
+          },
+          parent: 'root',
+          children: ['c'],
+        },
+        c: {
+          id: 'c',
+          message: {
+            id: 'c',
+            author: { role: 'user', name: null },
+            create_time: 1700000005,
+            content: { content_type: 'text', parts: ['child'] },
+          },
+          parent: 'p',
+          children: [],
+        },
+      }),
+      OPTIONS,
+    );
+
+    const parent = result.messages.find((message) => message.text === 'parent');
+    const child = result.messages.find((message) => message.text === 'child');
+    if (!parent || !child) {
+      throw new Error('expected parent and child messages to be present');
+    }
+
+    expect(child.createdAt.getTime()).toBeGreaterThan(parent.createdAt.getTime());
   });
 });
