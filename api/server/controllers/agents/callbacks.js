@@ -30,6 +30,35 @@ const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
 const { saveBase64Image } = require('~/server/services/Files/process');
 
+function collectAnnotationsFromValue(value, collected = []) {
+  if (!value || typeof value !== 'object') {
+    return collected;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectAnnotationsFromValue(item, collected);
+    }
+    return collected;
+  }
+
+  if (Array.isArray(value.annotations)) {
+    for (const annotation of value.annotations) {
+      if (annotation && typeof annotation === 'object') {
+        collected.push(annotation);
+      }
+    }
+  }
+
+  for (const nested of Object.values(value)) {
+    if (nested && typeof nested === 'object') {
+      collectAnnotationsFromValue(nested, collected);
+    }
+  }
+
+  return collected;
+}
+
 function isHostFileAuthoringArtifact(artifact) {
   return artifact?.[HOST_FILE_AUTHORING_ARTIFACT_KEY] === true;
 }
@@ -54,13 +83,20 @@ class ModelEndHandler {
    *   a no-op for them even when the map is provided.
    * @param {(data: Record<string, unknown>) => Promise<void> | void} [emitUsage] Optional
    *   callback to stream per-call token usage to the client.
+   * @param {Array<Object>} [collectedAnnotations]
    */
-  constructor(collectedUsage, collectedThoughtSignatures = null, emitUsage = null) {
+  constructor(
+    collectedUsage,
+    collectedThoughtSignatures = null,
+    emitUsage = null,
+    collectedAnnotations = null,
+  ) {
     if (!Array.isArray(collectedUsage)) {
       throw new Error('collectedUsage must be an array');
     }
     this.collectedUsage = collectedUsage;
     this.collectedThoughtSignatures = collectedThoughtSignatures;
+    this.collectedAnnotations = Array.isArray(collectedAnnotations) ? collectedAnnotations : null;
     this.emitUsage = emitUsage;
   }
 
@@ -88,6 +124,20 @@ class ModelEndHandler {
     let errorMessage;
     try {
       const agentContext = graph.getAgentContext(metadata);
+      if (Array.isArray(this.collectedAnnotations)) {
+        const annotations = collectAnnotationsFromValue(data?.output);
+        if (annotations.length > 0) {
+          const model = metadata?.ls_model_name || agentContext.clientOptions?.model;
+          this.collectedAnnotations.push(
+            ...annotations.map((annotation) => ({
+              ...annotation,
+              provider: agentContext.provider,
+              model,
+            })),
+          );
+        }
+      }
+
       if (data?.output?.additional_kwargs?.stop_reason === 'refusal') {
         const info = { ...data.output.additional_kwargs };
         errorMessage = JSON.stringify({
@@ -322,6 +372,7 @@ function feedSubagentAggregator(aggregator, event) {
  *   Schema-validation errors keyed by tool-call ID at the execution error boundary.
  * @param {ToolEndCallback} options.toolEndCallback - Callback to use when tool ends.
  * @param {Array<UsageMetadata>} options.collectedUsage - The list of collected usage metadata.
+ * @param {Array<Object>} [options.collectedAnnotations] - Provider annotations/citations to persist on message metadata.
  * @param {string | null} [options.streamId] - The stream ID for resumable mode, or null for standard mode.
  * @param {ToolExecuteOptions} [options.toolExecuteOptions] - Options for event-driven tool execution.
  * @param {UsageCostDeps} [options.usageCost] - Pricing context for authoritative per-event cost.
@@ -341,6 +392,7 @@ function getDefaultHandlers({
   toolInputValidationErrors = null,
   toolEndCallback,
   collectedUsage,
+  collectedAnnotations = null,
   collectedThoughtSignatures = null,
   streamId = null,
   toolExecuteOptions = null,
@@ -392,6 +444,7 @@ function getDefaultHandlers({
       collectedUsage,
       collectedThoughtSignatures,
       emitTokenUsage,
+      collectedAnnotations,
     ),
     [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
     [GraphEvents.ON_RUN_STEP]: {

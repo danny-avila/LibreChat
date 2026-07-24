@@ -139,6 +139,7 @@ class AgentClient extends BaseClient {
       agentConfigs,
       contentParts,
       collectedUsage,
+      collectedAnnotations,
       collectedThoughtSignatures,
       artifactPromises,
       maxContextTokens,
@@ -169,6 +170,8 @@ class AgentClient extends BaseClient {
     this.contentParts = contentParts;
     /** @type {Array<UsageMetadata>} */
     this.collectedUsage = collectedUsage;
+    /** @type {Array<Object>} */
+    this.collectedAnnotations = collectedAnnotations;
     /** Vertex Gemini 3 thought signatures captured during the run, keyed by
      *  `tool_call_id`. Persisted on `responseMessage.metadata.thoughtSignatures`
      *  and restored as `additional_kwargs.signatures` on subsequent turns to
@@ -1117,6 +1120,7 @@ class AgentClient extends BaseClient {
    * Returns undefined when nothing was captured.
    * @returns {{
    *   thoughtSignatures?: Record<string, string>,
+   *   annotations?: Array<Object>,
    *   contextUsage?: import('librechat-data-provider').TContextUsageEvent,
    *   usage?: import('librechat-data-provider').TResponseUsage,
    * } | undefined}
@@ -1126,6 +1130,7 @@ class AgentClient extends BaseClient {
      *   thoughtSignatures?: Record<string, string>,
      *   contextUsage?: import('librechat-data-provider').TContextUsageEvent,
      *   usage?: import('librechat-data-provider').TResponseUsage,
+     *   annotations?: Array<Object>,
      * }} */
     const metadata = {};
     const signatures = this.collectedThoughtSignatures;
@@ -1181,6 +1186,11 @@ class AgentClient extends BaseClient {
     if (usage) {
       metadata.usage = usage;
     }
+
+    if (Array.isArray(this.collectedAnnotations) && this.collectedAnnotations.length > 0) {
+      metadata.annotations = this.collectedAnnotations;
+    }
+
     return Object.keys(metadata).length > 0 ? metadata : undefined;
   }
 
