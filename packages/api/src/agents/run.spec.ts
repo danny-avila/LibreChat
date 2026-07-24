@@ -7,7 +7,25 @@ import {
   isDeepSeekReasoningProvider,
   shouldReplayReasoningContent,
   anyAgentReplaysReasoningContent,
+  createRun,
 } from './run';
+
+// Mock Run.create to capture the graphConfig it receives, so the placeholder
+// resolution test below can inspect the built `clientOptions.modelKwargs`
+// without spinning up a real provider run.
+jest.mock('@librechat/agents', () => {
+  const actual = jest.requireActual('@librechat/agents');
+  return {
+    ...actual,
+    Run: {
+      create: jest.fn().mockResolvedValue({
+        processStream: jest.fn().mockResolvedValue(undefined),
+      }),
+    },
+  };
+});
+
+import { Run } from '@librechat/agents';
 
 describe('extractDiscoveredToolsFromHistory', () => {
   it('extracts tool names from tool_search JSON output', () => {
@@ -366,5 +384,57 @@ describe('anyAgentReplaysReasoningContent', () => {
     (x as { subagentAgentConfigs?: unknown[] }).subagentAgentConfigs = [y];
     (y as { subagentAgentConfigs?: unknown[] }).subagentAgentConfigs = [x];
     expect(anyAgentReplaysReasoningContent([x])).toBe(false);
+  });
+});
+
+describe('createRun body/user placeholder resolution in modelKwargs', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('resolves {{LIBRECHAT_BODY_*}}/{{LIBRECHAT_USER_*}} placeholders inside llmConfig.modelKwargs', async () => {
+    const agent = {
+      id: 'agent_1',
+      provider: 'openAI',
+      endpoint: 'openAI',
+      model: 'gpt-4o',
+      tools: [],
+      model_parameters: {
+        model: 'gpt-4o',
+        modelKwargs: {
+          metadata: {
+            chat_id: '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+            user_id: '{{LIBRECHAT_USER_ID}}',
+            message_id: '{{LIBRECHAT_BODY_MESSAGEID}}',
+          },
+        },
+      },
+      maxContextTokens: 100_000,
+      toolContextMap: {},
+    } as unknown as Parameters<typeof createRun>[0]['agents'][number];
+
+    await createRun({
+      agents: [agent],
+      signal: new AbortController().signal,
+      streaming: true,
+      streamUsage: true,
+      user: { id: 'user-123' } as unknown as Parameters<typeof createRun>[0]['user'],
+      requestBody: { conversationId: 'convo-abc', messageId: 'msg-xyz' },
+    });
+
+    const createMock = Run.create as jest.Mock;
+    expect(createMock).toHaveBeenCalledTimes(1);
+    const graphConfigAgents = createMock.mock.calls[0][0].graphConfig.agents as Array<
+      Record<string, unknown>
+    >;
+    const clientOptions = graphConfigAgents[0].clientOptions as {
+      modelKwargs: Record<string, unknown>;
+    };
+
+    expect(clientOptions.modelKwargs.metadata).toEqual({
+      chat_id: 'convo-abc',
+      user_id: 'user-123',
+      message_id: 'msg-xyz',
+    });
   });
 });

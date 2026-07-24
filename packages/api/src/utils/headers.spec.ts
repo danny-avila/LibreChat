@@ -1,5 +1,5 @@
 import type { RunLLMConfig } from '~/types';
-import { mergeHeaders, resolveConfigHeaders } from './headers';
+import { mergeHeaders, resolveConfigHeaders, resolveConfigModelKwargs } from './headers';
 
 describe('mergeHeaders', () => {
   it('returns undefined when neither side has headers', () => {
@@ -151,5 +151,64 @@ describe('resolveConfigHeaders', () => {
     const llmConfig = { model: 'gpt-4o', configuration: {} } as unknown as RunLLMConfig;
     expect(() => resolveConfigHeaders({ llmConfig, user, body })).not.toThrow();
     expect(llmConfig.configuration).toEqual({});
+  });
+});
+
+describe('resolveConfigModelKwargs', () => {
+  const user = { id: 'user-123', email: 'person@example.com' };
+  const body = { conversationId: 'convo-abc', messageId: 'msg-xyz' };
+
+  it('is a no-op when llmConfig is null/undefined', () => {
+    expect(() => resolveConfigModelKwargs({ llmConfig: null, user, body })).not.toThrow();
+    expect(() => resolveConfigModelKwargs({ llmConfig: undefined, user, body })).not.toThrow();
+  });
+
+  it('is a no-op when modelKwargs is absent', () => {
+    const llmConfig = { model: 'gpt-4o' } as unknown as RunLLMConfig;
+    expect(() => resolveConfigModelKwargs({ llmConfig, user, body })).not.toThrow();
+    expect((llmConfig as unknown as { modelKwargs?: unknown }).modelKwargs).toBeUndefined();
+  });
+
+  it('resolves placeholders inside nested modelKwargs objects and arrays', () => {
+    const llmConfig = {
+      modelKwargs: {
+        metadata: {
+          chat_id: '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+          user_id: '{{LIBRECHAT_USER_ID}}',
+          message_id: '{{LIBRECHAT_BODY_MESSAGEID}}',
+        },
+        tags: ['{{LIBRECHAT_USER_ID}}', 'static-tag'],
+        max_tokens: 100,
+      },
+    } as unknown as RunLLMConfig;
+
+    resolveConfigModelKwargs({ llmConfig, user, body });
+
+    expect((llmConfig as unknown as { modelKwargs: Record<string, unknown> }).modelKwargs).toEqual({
+      metadata: {
+        chat_id: 'convo-abc',
+        user_id: 'user-123',
+        message_id: 'msg-xyz',
+      },
+      tags: ['user-123', 'static-tag'],
+      max_tokens: 100,
+    });
+  });
+
+  it('resolves each modelKwargs object only once across repeated calls (idempotent under reuse)', () => {
+    process.env.HEADERS_SPEC_MODELKWARGS_IDEMPOTENT = 'env-value';
+    const reusedUser = { id: 'u', name: '${HEADERS_SPEC_MODELKWARGS_IDEMPOTENT}' };
+    const llmConfig = {
+      modelKwargs: { metadata: { name: '{{LIBRECHAT_USER_NAME}}' } },
+    } as unknown as RunLLMConfig;
+
+    resolveConfigModelKwargs({ llmConfig, user: reusedUser, body });
+    // Second pass must NOT re-expand the now-substituted ${...} from the user name
+    resolveConfigModelKwargs({ llmConfig, user: reusedUser, body });
+
+    expect((llmConfig as unknown as { modelKwargs: Record<string, unknown> }).modelKwargs).toEqual({
+      metadata: { name: '${HEADERS_SPEC_MODELKWARGS_IDEMPOTENT}' },
+    });
+    delete process.env.HEADERS_SPEC_MODELKWARGS_IDEMPOTENT;
   });
 });
