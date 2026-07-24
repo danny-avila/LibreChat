@@ -65,6 +65,10 @@ const errorMessages = {
     const { info } = json;
     return localize('com_error_input_length', { 0: info });
   },
+  [ErrorTypes.FILE_TOKEN_LIMIT]: (json: TGenericError, localize: LocalizeFunction) => {
+    const { info } = json;
+    return localize('com_error_file_token_limit', { 0: info });
+  },
   [ErrorTypes.INVALID_AGENT_PROVIDER]: (json: TGenericError, localize: LocalizeFunction) => {
     const { info } = json;
     const provider = (alternateName[info] as string | undefined) ?? info;

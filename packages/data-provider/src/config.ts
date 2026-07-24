@@ -2503,6 +2503,11 @@ export enum ErrorTypes {
    */
   INPUT_LENGTH = 'INPUT_LENGTH',
   /**
+   * Attached file's text exceeds the configured token limit (with
+   * `errorOnFileTokenLimit` enabled).
+   */
+  FILE_TOKEN_LIMIT = 'file_token_limit',
+  /**
    * Invalid request error, API rejected request
    */
   INVALID_REQUEST = 'invalid_request_error',
