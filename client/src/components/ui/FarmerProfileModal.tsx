@@ -141,6 +141,23 @@ const FarmerProfileModal = ({
     setValue('villageName', '', { shouldValidate: false });
   };
 
+  // Fetch credential status for warnings
+  const { data: credentialStatus } = useQuery<{
+    hasApiKey: boolean;
+    hasStatesUrl: boolean;
+    hasDistrictsUrl: boolean;
+    hasSubdistrictsUrl: boolean;
+    hasVillagesUrl: boolean;
+  }>({
+    queryKey: ['locations-status'],
+    queryFn: async () => {
+      const res = await fetch('/api/locations/status');
+      return res.json();
+    },
+    enabled: open,
+    staleTime: Infinity,
+  });
+
   const { data: statesList = [] } = useQuery<{ code: number | string; name: string }[]>({
     queryKey: ['states'],
     queryFn: async () => {
@@ -793,6 +810,37 @@ const FarmerProfileModal = ({
           <p className="shrink-0 px-1 pb-3 text-sm font-medium text-red-500">
             {localize('com_farmer_profile_fill_all_required')}
           </p>
+
+          {/* ── Credential warnings ── */}
+          {credentialStatus && (
+            <div className="shrink-0 px-1 pb-3 space-y-1">
+              {!credentialStatus.hasApiKey && (
+                <p className="text-xs text-orange-500">
+                  {localize('com_farmer_credential_warning_api_key_missing')}
+                </p>
+              )}
+              {!credentialStatus.hasStatesUrl && (
+                <p className="text-xs text-orange-500">
+                  {localize('com_farmer_credential_warning_states_missing')}
+                </p>
+              )}
+              {!credentialStatus.hasDistrictsUrl && (
+                <p className="text-xs text-orange-500">
+                  {localize('com_farmer_credential_warning_districts_missing')}
+                </p>
+              )}
+              {!credentialStatus.hasSubdistrictsUrl && (
+                <p className="text-xs text-orange-500">
+                  {localize('com_farmer_credential_warning_blocks_missing')}
+                </p>
+              )}
+              {!credentialStatus.hasVillagesUrl && (
+                <p className="text-xs text-orange-500">
+                  {localize('com_farmer_credential_warning_villages_missing')}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="flex-1 overflow-y-auto px-1 py-2">
             <div className={fieldClass}>
