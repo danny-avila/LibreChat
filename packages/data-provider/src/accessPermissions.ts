@@ -32,7 +32,7 @@ export enum PrincipalModel {
 /**
  * Source of the principal (local LibreChat or external Entra ID)
  */
-export type TPrincipalSource = 'local' | 'entra';
+export type TPrincipalSource = 'local' | 'entra' | 'oidc';
 
 /**
  * Access levels for agents
@@ -98,10 +98,10 @@ export const principalSchema = z.object({
   id: z.string().optional(), // undefined for 'public' type, role name for 'role' type
   name: z.string().optional(),
   email: z.string().optional(), // for user and group types
-  source: z.enum(['local', 'entra']).optional(),
+  source: z.enum(['local', 'entra', 'oidc']).optional(),
   avatar: z.string().optional(), // for user and group types
   description: z.string().optional(), // for group and role types
-  idOnTheSource: z.string().optional(), // Entra ID for users/groups
+  idOnTheSource: z.string().optional(), // External ID for users/groups (Entra, OIDC, etc.)
   accessRoleId: z.nativeEnum(AccessRoleIds).optional(), // Access role ID for permissions
   memberCount: z.number().optional(), // for group type
 });
@@ -129,7 +129,7 @@ export const permissionEntrySchema = z.object({
   grantedBy: z.string(),
   grantedAt: z.string(), // ISO date string
   inheritedFrom: z.string().optional(), // for project-level inheritance
-  source: z.enum(['local', 'entra']).optional(),
+  source: z.enum(['local', 'entra', 'oidc']).optional(),
 });
 
 /**
@@ -223,10 +223,10 @@ export type TPrincipalSearchResult = {
   username?: string; // for users
   avatar?: string; // for users and groups
   provider?: string; // for users
-  source: 'local' | 'entra';
+  source: 'local' | 'entra' | 'oidc';
   memberCount?: number; // for groups
   description?: string; // for groups
-  idOnTheSource?: string; // Entra ID for users (maps to openidId) and groups (maps to idOnTheSource)
+  idOnTheSource?: string; // External ID for users (maps to openidId) and groups (maps to idOnTheSource)
 };
 
 /**
@@ -241,6 +241,7 @@ export type TPrincipalSearchResponse = {
   sources: {
     local: number;
     entra: number;
+    oidc: number;
   };
 };
 
