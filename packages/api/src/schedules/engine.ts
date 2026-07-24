@@ -52,13 +52,6 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
   async function reconcile() {
     try {
       const limits = await deps.getLimits();
-      // When every replica shares the job store (Redis-backed or single-process), a
-      // jobStatus == null genuinely means the job is gone. With private per-worker
-      // in-memory stores it can instead mean the run's job lives on a PEER worker, so
-      // a non-owning worker must not treat null as orphaned. We still process runs
-      // this worker owns (non-null jobStatus = this worker's job) on every replica;
-      // only the jobStatus == null orphan/abandoned reaping below is gated on sharing.
-      const jobStoreShared = deps.isJobStoreShared();
       const runs = await runAsSystem(() =>
         deps.methods.getRunsForReconciliation(
           new Date(Date.now() - RECONCILE_MIN_RUN_AGE_MS),
@@ -139,24 +132,15 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             });
             continue;
           }
-          // A `started` run whose job is gone (jobStatus null) is an orphan. Every
-          // run records its conversationId up front (fire.ts pre-generates it), so
-          // getJobStatus above already liveness-checked it: a live long-running fire
-          // reads as `running` and is left alone; only one whose job is genuinely
-          // gone reaches here, so the standard orphan cutoff applies. Gated on
-          // jobStoreShared: with private per-worker stores a null could be a peer's
-          // live job, so a non-owning worker must not interrupt it (its owner does).
-          if (
-            jobStoreShared &&
-            run.status === 'started' &&
-            jobStatus == null &&
-            ageMs > ORPHAN_RUN_AGE_MS
-          ) {
+          // A `started` run whose job is gone (jobStatus null) is an orphan. Every run
+          // records its conversationId up front, so getJobStatus above already
+          // liveness-checked it: a live long-running fire reads as `running` and is left
+          // alone. v1 is single-process, so a null job genuinely means gone.
+          if (run.status === 'started' && jobStatus == null && ageMs > ORPHAN_RUN_AGE_MS) {
             await finalize('interrupted');
             continue;
           }
           if (
-            jobStoreShared &&
             run.status === 'requires_action' &&
             jobStatus == null &&
             ageMs > ABANDONED_PAUSE_AGE_MS

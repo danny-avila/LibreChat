@@ -109,9 +109,10 @@ export interface SchedulesService {
    * durable barrier keeps refusing new work while a later pass finishes the cascade.
    */
   quiesceUserSchedules: (userId: string) => Promise<boolean>;
-  initializeScheduleEngine: (options?: {
-    clustered?: boolean;
-  }) => Promise<ReturnType<typeof startScheduleEngine> | undefined>;
+  /** Arms the scheduler for THIS process. v1 is single-process only; the clustered
+   *  entrypoint does not start it. Returns undefined when disabled by config or when
+   *  index creation failed. */
+  initializeScheduleEngine: () => Promise<ReturnType<typeof startScheduleEngine> | undefined>;
 }
 
 /**
@@ -177,13 +178,6 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
   // never blocks indefinitely on an unreachable peer-worker run.
   const QUIESCE_DRAIN_TIMEOUT_MS = 10 * 1000;
   const QUIESCE_DRAIN_POLL_MS = 250;
-
-  // Whether this deployment runs multiple engine replicas. Combined with the live
-  // job-store backend (GenerationJobManager.isRedis), this decides isJobStoreShared:
-  // a clustered deployment whose stream store is in-memory (each worker private) is
-  // NOT shared and must skip cross-worker orphan reaping. Set from USE_REDIS (the
-  // clustering proxy) via initializeScheduleEngine; single-process defaults false.
-  let clustered = false;
 
   /**
    * Whether a refill would top up this zero-credit balance record right now,
@@ -338,12 +332,6 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       // the store itself rejects the write if one did.
       await store.deleteJob(conversationId, job.createdAt);
     },
-    // Whether every engine replica observes the SAME jobs: a Redis-backed job
-    // store is shared across workers, and a single-process (non-clustered)
-    // deployment sees all its own jobs. Only a CLUSTERED in-memory store (each
-    // worker private) is unshared — and would wrongly reap a peer's live run.
-    // Read live so a stream-store that fell back to in-memory is reflected.
-    isJobStoreShared: () => GenerationJobManager.isRedis || !clustered,
     // Counted in system scope so the cap is GLOBAL — a per-owner (tenant-scoped)
     // count would let multiple tenants collectively exceed fireConcurrency.
     countActiveRunsGlobal: () => runAsSystem(() => methods.countActiveRuns()),
@@ -370,9 +358,9 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
 
   let engine: ReturnType<typeof startScheduleEngine> | undefined;
 
-  async function initializeScheduleEngine(options?: {
-    clustered?: boolean;
-  }): Promise<ReturnType<typeof startScheduleEngine> | undefined> {
+  async function initializeScheduleEngine(): Promise<
+    ReturnType<typeof startScheduleEngine> | undefined
+  > {
     if (engine != null) {
       return engine;
     }
@@ -381,30 +369,6 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     // no claims), rather than running and refusing at the last step.
     if (!(await getLimits()).enabled) {
       logger.info('[schedules] disabled by config; engine not started (set interface.schedules)');
-      return undefined;
-    }
-    // A clustered deployment (multiple replicas) that is NOT Redis-backed has
-    // private per-worker job stores, so isJobStoreShared reads false and the
-    // reconciler skips cross-worker orphan reaping it can't trust.
-    if (options?.clustered != null) {
-      clustered = options.clustered;
-    }
-    // A clustered deployment without a SHARED stream backend cannot signal a peer
-    // worker's in-memory job (emitAbort is cross-replica only over Redis), so
-    // deletion quiescing can't abort a scheduled run whose generation lives on
-    // another worker, and orphan reaping is disabled. This is unsupported for
-    // scheduled chats — warn the operator to enable USE_REDIS_STREAMS.
-    if (clustered && !GenerationJobManager.isRedis) {
-      // FAIL CLOSED: do not arm the engine at all. Gating only API writes still left
-      // EXISTING schedules being claimed and fired on private per-worker stores, where
-      // a peer's run is unreachable for abort/quiesce and orphan recovery cannot see it.
-      // Returning undefined also keeps the write gate shut (it keys on the engine).
-      logger.error(
-        '[schedules] clustered deployment without a shared stream store (USE_REDIS_STREAMS): ' +
-          'scheduled-run peer aborts (deletion/account-deletion quiescing) and cross-worker ' +
-          'orphan recovery are NOT available. The scheduler is DISABLED for this process. ' +
-          'Enable USE_REDIS_STREAMS for safe multi-worker scheduling.',
-      );
       return undefined;
     }
     // Explicitly build the Schedule/ScheduleRun indexes first — the unique
@@ -649,10 +613,8 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       await new Promise((resolve) => setTimeout(resolve, QUIESCE_DRAIN_POLL_MS));
       remaining = (await methods.getActiveRunsForUser(userId)).length;
     }
-    // Surface anything that did not drain / could not be confirmed: in a clustered
-    // deployment without a shared stream store the run's generation may live on a
-    // peer worker and keep persisting for the now-deleted account. Known unshared-
-    // topology limitation (see the init warning); make it visible.
+    // Surface anything that did not drain / could not be confirmed so the deletion
+    // cascade defers rather than destroying while a generation may still persist.
     const confirmed = remaining === 0 && unconfirmed.length === 0;
     if (!confirmed) {
       logger.warn(

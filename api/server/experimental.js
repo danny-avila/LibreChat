@@ -39,7 +39,6 @@ const {
   sweepOrphanedPreviews,
 } = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
-const { initializeScheduleEngine } = require('./services/Schedules');
 const { configureGenerationStreams } = require('@librechat/api');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
@@ -254,25 +253,21 @@ if (cluster.isMaster) {
   let expiredFileSweepOptions = null;
   let expiredFileSweepStarted = false;
   let schedulesReady = false;
-  // Whether this worker's job store is genuinely shared across processes (Redis-backed).
-  let jobStoreShared = false;
   const SCHEDULE_WRITE_READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
   /**
-   * Reject schedule WRITES until this worker's engine (and thus its unique
-   * idempotency + TTL indexes) is up. With MONGO_AUTO_INDEX disabled those indexes
-   * are created only by initializeScheduleEngine, which runs after the worker starts
-   * listening — a create/run-now that lands in that window would persist without
-   * duplicate protection. Reads stay open; writers get a 503 + Retry-After.
+   * Refuse schedule WRITES in this clustered entrypoint. v1 supports single-process
+   * scheduling only, and this process never arms the engine, so accepting a create or
+   * run-now here would persist a schedule nothing will ever fire. Reads stay open so an
+   * operator can still inspect existing schedules.
    */
   const rejectScheduleWritesUntilReady = (req, res, next) => {
     if (schedulesReady || SCHEDULE_WRITE_READ_ONLY_METHODS.has(req.method)) {
       return next();
     }
-    res.set('Retry-After', '1');
-    return res.status(503).json({
-      code: 'SCHEDULES_NOT_READY',
-      error: 'Scheduler is still starting. Please retry shortly.',
+    return res.status(501).json({
+      code: 'SCHEDULES_NOT_SUPPORTED',
+      error: 'Scheduled chats are not available in clustered mode.',
     });
   };
 
@@ -341,14 +336,7 @@ if (cluster.isMaster) {
     // store even with USE_REDIS_STREAMS — making the multiworker scheduler private,
     // so cross-worker aborts and orphan recovery could not work. Shared with
     // api/server/index.js so both topologies initialize identically.
-    jobStoreShared = configureGenerationStreams({ getAppConfig });
-    if (!jobStoreShared) {
-      logger.warn(
-        `[streams] worker ${process.pid} is running on a PRIVATE in-memory job store ` +
-          '(USE_REDIS_STREAMS off, or the Redis configuration fell back). Scheduled ' +
-          'chats will refuse writes in this clustered topology.',
-      );
-    }
+    configureGenerationStreams({ getAppConfig });
     expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
     startExpiredFileSweepOnce();
     await performStartupChecks(appConfig);
@@ -513,41 +501,11 @@ if (cluster.isMaster) {
         await initializeMCPs();
         await initializeOAuthReconnectManager();
         await checkMigrations();
-        // Arm the scheduler in each worker: the Mongo lease-claim CAS guarantees
-        // exactly one worker fires each due schedule, so multi-worker arming is safe.
-        // This entrypoint forks `workers` processes, each with a PRIVATE in-memory
-        // job store unless Redis-backed — so it is clustered whenever workers > 1.
-        // The service combines this with the LIVE stream backend
-        // (GenerationJobManager.isRedis) to decide isJobStoreShared: a multi-worker
-        // deployment whose stream store is in-memory is NOT shared, so cross-worker
-        // job-status reconciliation is skipped instead of misreading a peer's live run.
-        // A single-worker deployment scaled across multiple pods is likewise clustered
-        // but undetectable here, so honor an explicit SCHEDULES_CLUSTERED override too.
-        const scheduleEngine = await initializeScheduleEngine({
-          clustered: workers > 1 || isEnabled(process.env.SCHEDULES_CLUSTERED),
-        });
-        // Only accept schedule writes once the engine confirmed its unique idempotency
-        // + TTL indexes exist. If index creation failed the engine is left undefined and
-        // schedule writes keep returning 503 (the worker otherwise runs normally).
-        // FAIL CLOSED in a clustered topology without a CONFIRMED shared store: with
-        // private per-worker stores a peer's live run is unreachable, so deletion
-        // quiescing cannot abort it and orphan recovery cannot see it. Accepting
-        // schedule writes there would promise durability the topology cannot provide.
-        const clustered = workers > 1 || isEnabled(process.env.SCHEDULES_CLUSTERED);
-        schedulesReady = scheduleEngine != null && (!clustered || jobStoreShared);
-        if (scheduleEngine == null) {
-          logger.warn(
-            `[schedules] worker ${process.pid} engine not initialized (index creation failed) — ` +
-              'schedule writes will be rejected with 503 until an operator resolves the index.',
-          );
-        } else if (!schedulesReady) {
-          logger.error(
-            `[schedules] worker ${process.pid} is clustered WITHOUT a shared stream store, so ` +
-              'scheduled-run aborts and cross-worker recovery are not available. Schedule ' +
-              'writes are rejected (fail-closed). Set USE_REDIS_STREAMS to enable scheduling ' +
-              'in a multi-worker deployment.',
-          );
-        }
+        // v1 scope: scheduled chats are SINGLE-PROCESS only, so this clustered
+        // entrypoint deliberately does not arm the scheduler. Running it per worker
+        // needs cross-worker abort + orphan recovery over a shared stream store, which
+        // is a fast-follow. schedulesReady stays false, so schedule writes are refused
+        // here rather than silently accepted by a process that will never fire them.
       } catch (initErr) {
         logger.error(`Worker ${process.pid} post-listen initialization failed:`, initErr);
         process.exit(1);

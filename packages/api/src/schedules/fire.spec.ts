@@ -169,7 +169,6 @@ function makeDeps(
     getJobStatus: async () => null,
     abortScheduledJob: async () => undefined,
     clearReconciledJob: async () => undefined,
-    isJobStoreShared: () => true,
     isOwnerDeleting: async () => false,
     isGloballyDisabled: async () => false,
     countActiveRunsGlobal: async () => methods.countActiveRuns(),

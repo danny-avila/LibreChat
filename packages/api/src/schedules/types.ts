@@ -79,14 +79,6 @@ export interface ScheduleEngineDeps {
     options?: { preserve?: boolean },
   ) => Promise<boolean>;
   /**
-   * Whether every engine replica can observe the SAME jobs (Redis-backed, or a
-   * single process). When false — e.g. clustered workers each with a private
-   * in-memory store — a non-owning replica would read `jobStatus == null` for a
-   * peer's live run and wrongly interrupt it, so the job-status reconciliation is
-   * skipped and each run is finalized only by its owning replica's inline hooks.
-   */
-  isJobStoreShared: () => boolean;
-  /**
    * Deletes a retained terminal job after the reconciler has finalized its run.
    * Identity-guarded: only deletes when the job still carries this run's
    * scheduleId/scheduledFor, so a replacement generation occupying the same

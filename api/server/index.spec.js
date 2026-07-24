@@ -118,16 +118,12 @@ describe('Startup readiness wiring', () => {
     expect(experimental).toContain('configureGenerationStreams({ getAppConfig })');
   });
 
-  it('fails schedule writes CLOSED when clustered without a confirmed shared store', () => {
+  it('does not run the scheduler in the clustered entrypoint (v1 is single-process)', () => {
     const experimental = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
-    // Readiness must require BOTH the engine and, when clustered, a confirmed shared
-    // job store — otherwise a peer worker's run is unreachable for abort/recovery.
-    expect(experimental).toContain(
-      'schedulesReady = scheduleEngine != null && (!clustered || jobStoreShared)',
-    );
-    // And the shared-store answer must come from the initializer's return value,
-    // not be assumed from USE_REDIS_STREAMS being set.
-    expect(experimental).toContain('jobStoreShared = configureGenerationStreams(');
+    // v1 scope: the clustered entrypoint must not arm the engine at all, and must refuse
+    // schedule writes rather than persist schedules nothing will ever fire.
+    expect(experimental).not.toContain('initializeScheduleEngine');
+    expect(experimental).toContain('SCHEDULES_NOT_SUPPORTED');
   });
 
   it('guards schedule writes with a readiness gate on the schedules route', () => {
