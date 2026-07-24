@@ -131,10 +131,17 @@ async function validateAnthropicPdf(
 
 /**
  * Matches Bedrock Claude 4+ model identifiers, including cross-region inference profile IDs.
- * Pattern: [region.]anthropic.claude-{family}-{version≥4}-{date}-v{n}:{rev}
- * e.g. "anthropic.claude-sonnet-4-6" or "us.anthropic.claude-sonnet-4-6"
+ * Pattern: [region.]anthropic.claude-{family}-{version≥4}[-{minor}][-{date}-v{n}:{rev}]
+ * e.g. "anthropic.claude-sonnet-4-6", "us.anthropic.claude-sonnet-4-6",
+ * "global.anthropic.claude-opus-5".
+ *
+ * The trailing version segment is optional: undated IDs end at the major
+ * version (`claude-opus-5`), so requiring a following `-` silently dropped the
+ * exemption for every single-segment ID. Fable/Mythos are matched too — they
+ * are Claude 4+ generation and take the same PDF exemption.
  */
-const BEDROCK_CLAUDE_4_PLUS_RE = /(?:^|\.)anthropic\.claude-(?:sonnet|opus|haiku)-[4-9]\d*-/;
+const BEDROCK_CLAUDE_4_PLUS_RE =
+  /(?:^|\.)anthropic\.claude-(?:sonnet|opus|haiku|fable|mythos)-[4-9]\d*(?:[-.]|$)/;
 const isBedrockClaude4Plus = (model?: string): boolean =>
   model != null && BEDROCK_CLAUDE_4_PLUS_RE.test(model);
 

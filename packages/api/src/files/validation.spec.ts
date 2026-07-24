@@ -239,6 +239,34 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
       expect(result.error).toBeUndefined();
     });
 
+    it.each([
+      'anthropic.claude-opus-5',
+      'global.anthropic.claude-opus-5',
+      'us.anthropic.claude-opus-5',
+      'global.anthropic.claude-sonnet-5',
+      'global.anthropic.claude-fable-5',
+    ])('should exempt undated Claude 4+ ID %s from the 4.5MB limit', async (model) => {
+      /** These IDs end at the major version, so a pattern requiring a trailing
+       * `-` after it silently dropped the exemption. */
+      const pdfBuffer = createMockPdfBuffer(10);
+      const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider, undefined, model);
+
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it.each([
+      'global.anthropic.claude-opus-4-8',
+      'global.anthropic.claude-opus-4-7',
+      'global.anthropic.claude-sonnet-4-6',
+      'global.anthropic.claude-opus-4-6-v1',
+    ])('should exempt global inference profile ID %s', async (model) => {
+      const pdfBuffer = createMockPdfBuffer(10);
+      const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider, undefined, model);
+
+      expect(result.isValid).toBe(true);
+    });
+
     it('should still enforce 4.5MB for non-exempt models without config override', async () => {
       const pdfBuffer = createMockPdfBuffer(5);
       const model = 'anthropic.claude-3-5-sonnet-20241022-v2:0';
