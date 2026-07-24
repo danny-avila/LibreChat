@@ -186,7 +186,11 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
                   </div>
                 )}
                 {viewMode === 'rendered' ? (
-                  <SkillMarkdownRenderer content={parsed.body} />
+                  <SkillMarkdownRenderer
+                    content={parsed.body}
+                    skillId={skillId}
+                    currentFilePath={relativePath}
+                  />
                 ) : (
                   <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-text-primary">
                     {data.content}
