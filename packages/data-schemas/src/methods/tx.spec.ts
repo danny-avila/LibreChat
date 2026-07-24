@@ -2488,6 +2488,30 @@ describe('Claude Model Tests', () => {
     );
   });
 
+  it('should price Bedrock cross-region inference profile IDs like their base model', () => {
+    const profileToBase: Array<[string, string]> = [
+      ['global.anthropic.claude-opus-5', 'claude-opus-5'],
+      ['us.anthropic.claude-opus-5', 'claude-opus-5'],
+      ['global.anthropic.claude-opus-4-8', 'claude-opus-4-8'],
+      ['global.anthropic.claude-sonnet-5', 'claude-sonnet-5'],
+      ['global.anthropic.claude-sonnet-4-6', 'claude-sonnet-4-6'],
+      ['global.anthropic.claude-fable-5', 'claude-fable-5'],
+    ];
+
+    profileToBase.forEach(([profileId, base]) => {
+      expect(getValueKey(profileId)).toBe(base);
+      expect(getMultiplier({ model: profileId, tokenType: 'prompt' })).toBe(
+        tokenValues[base].prompt,
+      );
+      expect(getMultiplier({ model: profileId, tokenType: 'completion' })).toBe(
+        tokenValues[base].completion,
+      );
+      expect(getCacheMultiplier({ model: profileId, cacheType: 'write' })).toBe(
+        cacheTokenValues[base].write,
+      );
+    });
+  });
+
   it('should return correct prompt and completion rates for Claude Fable 5', () => {
     expect(getMultiplier({ model: 'claude-fable-5', tokenType: 'prompt' })).toBe(
       tokenValues['claude-fable-5'].prompt,
