@@ -1,6 +1,6 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
-const { logger } = require('@librechat/data-schemas');
+const { logger, MEILI_SEARCH_LIMIT } = require('@librechat/data-schemas');
 const { ContentTypes, isAssistantsEndpoint } = require('librechat-data-provider');
 const {
   unescapeLaTeX,
@@ -51,7 +51,11 @@ router.get('/', async (req, res) => {
         { sortField, sortOrder, limit: pageSize, cursor },
       );
     } else if (search) {
-      const searchResults = await db.searchMessages(search, { filter: `user = "${user}"` }, true);
+      const searchResults = await db.searchMessages(
+        search,
+        { filter: `user = "${user}"`, limit: MEILI_SEARCH_LIMIT },
+        true,
+      );
 
       const messages = searchResults.hits || [];
 
