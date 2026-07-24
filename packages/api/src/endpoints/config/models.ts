@@ -4,6 +4,7 @@ import {
   ErrorTypes,
   EModelEndpoint,
   extractEnvVariable,
+  extractVariableName,
   normalizeEndpointName,
 } from 'librechat-data-provider';
 import type { TModelsConfig, TEndpoint } from 'librechat-data-provider';
@@ -42,6 +43,23 @@ interface ResolvedEndpoint {
   baseURL: string;
   apiKeyIsUserProvided: boolean;
   baseURLIsUserProvided: boolean;
+}
+
+function resolveDefaultModelNames(defaultModels: TEndpoint['models']['default']): string[] {
+  return defaultModels.flatMap((model) => {
+    const rawModelName = typeof model === 'string' ? model : model.name;
+    const envVarName = extractVariableName(rawModelName);
+    const resolvedModelName = extractEnvVariable(rawModelName);
+
+    if (envVarName && resolvedModelName.includes(',')) {
+      return resolvedModelName
+        .split(',')
+        .map((name) => name.trim())
+        .filter(Boolean);
+    }
+
+    return [resolvedModelName];
+  });
 }
 
 export interface LoadConfigModelsDeps {
@@ -244,9 +262,7 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
       }
 
       if (Array.isArray(models?.default)) {
-        modelsConfig[name] = models.default.map((model) =>
-          typeof model === 'string' ? model : model.name,
-        );
+        modelsConfig[name] = resolveDefaultModelNames(models.default);
       }
     }
 
@@ -264,9 +280,7 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
 
       for (const name of associatedNames) {
         const endpoint = endpointsMap[name];
-        const defaults = (endpoint.models?.default ?? []).map((m) =>
-          typeof m === 'string' ? m : m.name,
-        );
+        const defaults = resolveDefaultModelNames(endpoint.models?.default ?? []);
         modelsConfig[name] = !modelData?.length ? defaults : modelData;
       }
 
