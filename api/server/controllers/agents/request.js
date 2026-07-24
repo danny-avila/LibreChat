@@ -866,11 +866,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               scheduledFor,
               status: 'requires_action',
               conversationId: streamId,
-              // Segment 0: this generation came from the fire, which creates the run
-              // with no resumeSeq. The approval card is emitted BEFORE this write, so a
-              // fast resume can promote the run (bumping the epoch) first — without this
-              // token the stale pause would demote the run that resume just started.
-              expectResumeSeq: 0,
             });
           }
           logger.debug(

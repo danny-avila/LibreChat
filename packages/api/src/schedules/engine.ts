@@ -96,38 +96,10 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
               conversationId: run.conversationId,
               error,
               autoDisableAfterFailures: runLimits.autoDisableAfterFailures,
-              // Fence the reconciler's own pause on the epoch it OBSERVED: several awaits
-              // separate the read from this write, and a resume landing in between must
-              // not be demoted by a sweep that is now looking at a stale segment.
-              ...(status === 'requires_action' ? { expectResumeSeq: run.resumeSeq ?? 0 } : {}),
               // Terminal bookkeeping is fenced on the config the run started under, so a
               // reconciled outcome cannot auto-disable a schedule the owner has edited.
               ...(run.configRevision != null ? { expectConfigRevision: run.configRevision } : {}),
             });
-          // RESUME-LEASE RECOVERY. A resume that died between consuming the approval and
-          // reconstructing its generation leaves the row `started` with a live-looking
-          // lease, and the `running` skip below would step over it forever. Once the
-          // lease deadline passes, decide by phase:
-          //   post-claim (resumeClaimedAt set) -> the approval is spent, so it can never
-          //     be re-offered; roll FORWARD by terminalizing as interrupted.
-          //   pre-claim  -> the approval was never consumed, so roll BACK to
-          //     requires_action (releaseResumeLease frees the slot) and let the user retry.
-          if (
-            run.resumeHolder != null &&
-            run.resumeExpiresAt != null &&
-            run.resumeExpiresAt.getTime() < Date.now()
-          ) {
-            if (run.resumeClaimedAt != null) {
-              await finalize('interrupted', 'Resume did not complete');
-            } else {
-              await deps.methods.releaseResumeLease(
-                run.scheduleId,
-                run.scheduledFor,
-                run.resumeHolder,
-              );
-            }
-            continue;
-          }
           if (jobStatus === 'running') {
             continue;
           }

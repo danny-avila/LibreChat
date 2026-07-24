@@ -59,32 +59,6 @@ const scheduleRunSchema: Schema<IScheduleRunDocument> = new Schema(
     bookkept: {
       type: Boolean,
     },
-    /** Monotonic per-occurrence segment counter. Incremented by every resume
-     *  reservation; a pause write must CAS on the epoch its segment observed, so a
-     *  stale `requires_action` callback can never demote an already-resumed run. */
-    resumeSeq: {
-      type: Number,
-      min: 0,
-    },
-    /** Identity of the in-flight resume attempt. Presence means RESUMING: the run is
-     *  `started` but its generation has not been reconstructed yet. */
-    resumeHolder: {
-      type: String,
-    },
-    /** Deadline for the current resume phase, so a crashed resume is reclaimable. */
-    resumeExpiresAt: {
-      type: Date,
-    },
-    /** Set once the approval claim succeeded; discriminates pre-claim (rollback-safe)
-     *  from post-claim (must roll forward) recovery. */
-    resumeClaimedAt: {
-      type: Date,
-    },
-    /** True when the lease ADOPTED an already-`started` row instead of promoting a
-     *  paused one. Release must not demote an adopted row (it may be a live run). */
-    resumeAdopted: {
-      type: Boolean,
-    },
     /** Global concurrency slot held while `started`. The unique partial index below
      *  turns fireConcurrency into a DB-enforced bound instead of a racy count. */
     capacitySlot: {
@@ -109,18 +83,17 @@ const scheduleRunSchema: Schema<IScheduleRunDocument> = new Schema(
 );
 
 scheduleRunSchema.index({ scheduleId: 1, scheduledFor: 1 }, { unique: true });
-// At most ONE active (`started`) run per schedule, enforced by the DB rather than
-// a read-then-write check. Makes both the fire-path overlap skip and the HITL
-// resume promotion atomic: a second occurrence inserting/promoting to `started`
-// while one is already active fails with a duplicate-key error instead of racing.
+// At most ONE active (`started`) run per schedule, enforced by the DB rather than a
+// read-then-write check: a second occurrence inserting while one is already active
+// fails with a duplicate-key error instead of racing.
 scheduleRunSchema.index(
   { scheduleId: 1 },
   { unique: true, partialFilterExpression: { status: 'started' } },
 );
 // GLOBAL fireConcurrency, enforced by the DB rather than a read-then-compare count.
-// Every transition into `started` (fire insert, resume promotion) claims a slot in
-// [0, fireConcurrency) in the SAME write; a duplicate slot is rejected atomically, so
-// two concurrent admissions of DIFFERENT schedules can never both pass a cap-1 check.
+// A fire claims a slot in [0, fireConcurrency) in the SAME write that inserts the run;
+// a duplicate slot is rejected atomically, so two concurrent admissions of DIFFERENT
+// schedules can never both pass a cap-1 check.
 // Partial + $exists so legacy slotless rows (written before this field) never collide.
 scheduleRunSchema.index(
   { capacitySlot: 1 },

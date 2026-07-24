@@ -59,15 +59,6 @@ export interface IScheduleRun {
   droppedFileIds?: string[];
   durationMs?: number;
   bookkept?: boolean;
-  /** Monotonic segment counter; the CAS token a pause write must match. */
-  resumeSeq?: number;
-  /** Identity of the in-flight resume attempt (presence == RESUMING). */
-  resumeHolder?: string;
-  resumeExpiresAt?: Date;
-  /** Set once the approval claim succeeded (pre-claim vs post-claim recovery). */
-  resumeClaimedAt?: Date;
-  /** True when the lease adopted an already-`started` row rather than promoting a paused one. */
-  resumeAdopted?: boolean;
   /** Global concurrency slot held while `started`. */
   capacitySlot?: number;
   /** When an abort was requested; capacity is held until settlement is confirmed. */

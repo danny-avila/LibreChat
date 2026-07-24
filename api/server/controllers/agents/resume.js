@@ -23,13 +23,7 @@ const {
   getMCPRequestContext,
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
-const {
-  recordScheduleOutcome,
-  reserveScheduledResume,
-  markScheduledResumeClaimed,
-  commitScheduledResume,
-  releaseScheduledResume,
-} = require('~/server/services/Schedules');
+const { recordScheduleOutcome } = require('~/server/services/Schedules');
 const { saveMessage, getConvo, getMessages } = require('~/models');
 
 /**
@@ -542,60 +536,12 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     return res.status(429).json({ error: 'Too many concurrent requests' });
   }
 
-  // Atomically reserve the schedule's active slot BEFORE claiming the approval, so a
-  // deferral (overlap/capacity/gone) leaves the approval claimable. This promotes
-  // the paused run requires_action -> started (single-active partial index enforces
-  // per-schedule overlap) and reserve-then-verifies global fireConcurrency. Crucially
-  // the caller does NOT release on a lost claim below: whichever request wins the
-  // approval drives whatever is `started`, and an unclaimed promotion self-heals when
-  // the reconciler surfaces the still-paused job (so a losing racer never flips the
-  // winner's active row).
-  let resumeLease = null;
-  if (job.metadata?.scheduleId) {
-    let reservation;
-    try {
-      reservation = await reserveScheduledResume(
-        job.metadata.scheduleId,
-        job.metadata.scheduledFor,
-      );
-    } catch (err) {
-      // A store/config error here throws BEFORE the run's own try/finally, so
-      // release the pending-request slot taken above — otherwise it leaks until its
-      // TTL and spuriously 429s the user's later resume/chat attempts.
-      await decrementPendingRequest(userId);
-      logger.error('[ResumeAgentController] Scheduled resume reservation failed', err);
-      return res.status(500).json({ error: 'Failed to resume' });
-    }
-    if (reservation.outcome !== 'ok') {
-      await decrementPendingRequest(userId);
-      logger.debug(
-        `[ResumeAgentController] Deferring scheduled resume (${reservation.outcome}): ${streamId}`,
-      );
-      const deferrals = {
-        gone: { status: 410, error: 'This schedule no longer exists' },
-        capacity: { status: 409, error: 'Scheduled run capacity reached; try again shortly' },
-        overlap: {
-          status: 409,
-          error: 'Another run for this schedule is in progress; try again shortly',
-        },
-        held: {
-          status: 409,
-          error: 'This scheduled run is already resuming; try again shortly',
-        },
-      };
-      const { status, error } = deferrals[reservation.outcome] ?? deferrals.overlap;
-      return res.status(status).json({ error });
-    }
-    // Own the durable RESUMING lease: every later transition is fenced on this holder,
-    // and resumeSeq is the CAS token any pause written by THIS segment must carry.
-    resumeLease = {
-      scheduleId: job.metadata.scheduleId,
-      scheduledFor: job.metadata.scheduledFor,
-      holder: reservation.holder,
-      resumeSeq: reservation.resumeSeq,
-    };
-  }
-
+  // v1 scope: the scheduler does NOT orchestrate resumes. A scheduled run that pauses
+  // for approval released its capacity slot on pause and is handed off — from here it is
+  // an ordinary paused conversation the user resumes through the chat UI. The scheduler
+  // only OBSERVES the eventual outcome below (so the schedule card reflects it); it does
+  // not reserve, lease, or fence this resume. Scheduled HITL orchestration is a
+  // fast-follow behind the experimental flag.
   // Atomically claim the resume. The single winner drives the run; a racing second
   // submit (double-click, two tabs) gets false and must not re-drive — that would
   // re-execute tools and double-bill. Do NOT release the reservation on a lost claim:
@@ -606,41 +552,12 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     claimed = await GenerationJobManager.approvals.resolve(streamId, pendingAction.actionId);
   } catch (err) {
     await decrementPendingRequest(userId);
-    // Pre-claim failure: roll the reservation back so the approval stays actionable
-    // and the capacity slot isn't held by a resume that never started.
-    if (resumeLease) {
-      await releaseScheduledResume(
-        resumeLease.scheduleId,
-        resumeLease.scheduledFor,
-        resumeLease.holder,
-      ).catch(() => undefined);
-    }
     logger.error('[ResumeAgentController] Failed to claim resume', err);
     return res.status(500).json({ error: 'Failed to resume' });
   }
   if (!claimed) {
     await decrementPendingRequest(userId);
-    // Still pre-claim: roll the reservation back so the approval stays actionable and
-    // the capacity slot is freed rather than held by a resume that never ran.
-    if (resumeLease) {
-      await releaseScheduledResume(
-        resumeLease.scheduleId,
-        resumeLease.scheduledFor,
-        resumeLease.holder,
-      ).catch(() => undefined);
-    }
     return res.status(409).json({ error: 'This action was already resolved or has expired' });
-  }
-  // The approval is consumed: from here a crash must roll FORWARD (the reconciler must
-  // finish or terminalize this run), so the lease is no longer adoptable by a retry.
-  if (resumeLease) {
-    await markScheduledResumeClaimed(
-      resumeLease.scheduleId,
-      resumeLease.scheduledFor,
-      resumeLease.holder,
-    ).catch((err) =>
-      logger.error('[ResumeAgentController] Failed to mark resume lease claimed', err),
-    );
   }
 
   // Seed the run-scoped MCP request-context store BEFORE the ACK: once `res.json`
@@ -739,17 +656,6 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     // the paused job's createdAt — used by the re-pause CAS pre-check + checkpoint prune to
     // avoid acting on a job a newer request has since replaced.
     client.jobCreatedAt = job.createdAt;
-    // Reconstruction succeeded, so the RESUMING phase is over: drop the lease and let
-    // the row be an ordinary `started` run again. A crash before this point leaves the
-    // lease for the reconciler (post-claim => roll forward), never a silently stranded
-    // `running` job the reconciler would skip.
-    if (resumeLease) {
-      await commitScheduledResume(
-        resumeLease.scheduleId,
-        resumeLease.scheduledFor,
-        resumeLease.holder,
-      ).catch((err) => logger.error('[ResumeAgentController] Failed to commit resume lease', err));
-    }
     client.responseMessageId = job.metadata.responseMessageId;
     client.parentMessageId = job.metadata.userMessage?.messageId ?? Constants.NO_PARENT;
     // Read the pre-pause content BEFORE swapping the store's content reference: the
@@ -801,9 +707,6 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           scheduledFor: job.metadata.scheduledFor,
           status: 'requires_action',
           conversationId,
-          // Epoch CAS: if a newer resume already bumped resumeSeq, this pause belongs to
-          // a superseded segment and must not demote the run that resume promoted.
-          expectResumeSeq: resumeLease?.resumeSeq,
         });
       }
       return;
