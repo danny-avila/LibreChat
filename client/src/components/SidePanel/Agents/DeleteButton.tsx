@@ -14,18 +14,20 @@ import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { logger, getDefaultAgentFormValues } from '~/utils';
 import { useDeleteAgentMutation } from '~/data-provider';
-import { isEphemeralAgent } from '~/common';
 import { useLocalize } from '~/hooks';
+import { isEphemeralAgent } from '~/common';
 import store from '~/store';
 
 function DeleteButton({
   agent_id,
   setCurrentAgentId,
   createMutation,
+  onDraftClear,
 }: {
   agent_id: string;
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
   createMutation: UseMutationResult<Agent, Error, AgentCreateParams>;
+  onDraftClear?: (agentId: string) => void;
 }) {
   const localize = useLocalize();
   const { reset } = useFormContext();
@@ -44,6 +46,7 @@ function DeleteButton({
         message: localize('com_ui_agent_deleted'),
         status: 'success',
       });
+      onDraftClear?.(vars.agent_id);
 
       if (createMutation.data?.id ?? '') {
         logger.log('agents', 'resetting createMutation');
@@ -128,6 +131,7 @@ const MemoizedDeleteButton = memo(
   (prevProps, nextProps) =>
     prevProps.agent_id === nextProps.agent_id &&
     prevProps.setCurrentAgentId === nextProps.setCurrentAgentId &&
+    prevProps.onDraftClear === nextProps.onDraftClear &&
     prevProps.createMutation.data?.id === nextProps.createMutation.data?.id &&
     prevProps.createMutation.isLoading === nextProps.createMutation.isLoading,
 );

@@ -5,9 +5,11 @@ import * as React from 'react';
 import { render, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Agent } from 'librechat-data-provider';
+import type { AgentForm } from '~/common';
 
 // Mock toast context - define this after all mocks
 let mockShowToast: jest.Mock;
+const MOCK_USER_ID = 'user-123';
 
 // Mock notification severity enum before other imports
 jest.mock('~/common/types', () => ({
@@ -97,7 +99,7 @@ jest.mock('~/utils', () => ({
 jest.mock('~/hooks', () => ({
   useSelectAgent: () => ({ onSelect: jest.fn() }),
   useLocalize: () => (key: string) => key,
-  useAuthContext: () => ({ user: { id: 'user-123', role: 'USER' } }),
+  useAuthContext: () => ({ user: { id: MOCK_USER_ID, role: 'USER' } }),
 }));
 
 jest.mock('~/hooks/useResourcePermissions', () => ({
@@ -205,6 +207,7 @@ jest.mock('react-hook-form', () => {
 import { dataService } from 'librechat-data-provider';
 import { useGetAgentByIdQuery } from '~/data-provider';
 import AgentPanel from './AgentPanel';
+import { clearAllAgentDrafts, getAgentDraft, saveAgentDraft } from './drafts';
 
 // Mock useGetAgentByIdQuery
 jest.mock('~/data-provider', () => {
@@ -287,6 +290,7 @@ const renderAndSubmitForm = async () => {
 describe('AgentPanel - Update Agent Toast Messages', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    clearAllAgentDrafts();
     mockShowToast = jest.fn();
     mockFormSubmitHandler = null;
   });
@@ -398,6 +402,42 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
           message: 'com_agents_update_error com_ui_error: Update failed',
           status: 'error',
         });
+      });
+    });
+
+    it('should clear the draft after a successful update', async () => {
+      const { mockUseGetAgentByIdQuery, mockUpdateAgent } = setupMocks();
+
+      mockAgentQuery(mockUseGetAgentByIdQuery, {
+        name: 'Test Agent',
+        version: 1,
+      });
+      mockUpdateAgent.mockResolvedValue(createMockAgent({ name: 'Test Agent', version: 2 }));
+
+      saveAgentDraft(
+        'agent-123',
+        {
+          id: 'agent-123',
+          name: 'Unsaved Agent',
+          description: '',
+          instructions: 'Unsaved instructions',
+          model: 'gpt-4',
+          model_parameters: {},
+          provider: 'openai',
+          category: 'general',
+          execute_code: false,
+          file_search: false,
+          web_search: false,
+        } as AgentForm,
+        MOCK_USER_ID,
+      );
+
+      expect(getAgentDraft('agent-123', MOCK_USER_ID)).toBeDefined();
+
+      await renderAndSubmitForm();
+
+      await waitFor(() => {
+        expect(getAgentDraft('agent-123', MOCK_USER_ID)).toBeUndefined();
       });
     });
   });

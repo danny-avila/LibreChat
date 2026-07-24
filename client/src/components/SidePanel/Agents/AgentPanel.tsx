@@ -1,5 +1,6 @@
-import React, { useMemo, useCallback, useRef, useState } from 'react';
+import React, { useMemo, useEffect, useCallback, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
+import debounce from 'lodash/debounce';
 import { Button, useToastContext } from '@librechat/client';
 import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -12,7 +13,7 @@ import {
   PermissionBits,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import type { FieldNamesMarkedBoolean } from 'react-hook-form';
+import type { FieldNamesMarkedBoolean, FieldPath } from 'react-hook-form';
 import type { Agent } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentForm, StringOption } from '~/common';
@@ -27,6 +28,7 @@ import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
+import { clearAgentDrafts, getAgentDraft, saveAgentDraft } from './drafts';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
 import { Panel, isEphemeralAgent } from '~/common';
@@ -224,6 +226,28 @@ export const isAvatarUploadOnlyDirty = (
   return result.sawDirty && result.onlyAvatarDirty;
 };
 
+const hasPersistableDirtyFields = (dirtyFields?: FieldNamesMarkedBoolean<AgentForm>): boolean => {
+  if (!dirtyFields) {
+    return false;
+  }
+
+  const result = evaluateDirtyFields(dirtyFields);
+  return result.sawDirty && !result.onlyAvatarDirty;
+};
+
+const isPersistableDraftField = (name?: string): boolean => {
+  const [fieldName] = name?.split('.') ?? [];
+  return Boolean(
+    fieldName && !AVATAR_ONLY_DIRTY_FIELDS.has(fieldName) && !IGNORED_DIRTY_FIELDS.has(fieldName),
+  );
+};
+
+const getDraftFormValues = (draftValues?: Partial<AgentForm>): AgentForm =>
+  ({
+    ...getDefaultAgentFormValues(),
+    ...draftValues,
+  }) as AgentForm;
+
 export default function AgentPanel() {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -256,8 +280,14 @@ export default function AgentPanel() {
   const agentQuery = canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
 
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
+  const draftUserId = user?.id;
+  const draftValues = useMemo(
+    () => getAgentDraft(current_agent_id, draftUserId),
+    [current_agent_id, draftUserId],
+  );
+  const defaultValues = useMemo(() => getDraftFormValues(draftValues), [draftValues]);
   const methods = useForm<AgentForm>({
-    defaultValues: getDefaultAgentFormValues(),
+    defaultValues,
     mode: 'onChange',
   });
 
@@ -265,11 +295,173 @@ export default function AgentPanel() {
     control,
     handleSubmit,
     reset,
+    watch,
     getValues,
+    getFieldState,
     setValue,
     formState: { dirtyFields },
   } = methods;
+  const currentAgentIdRef = useRef<string | undefined>(current_agent_id);
+  const draftUserIdRef = useRef<string | undefined>(draftUserId);
+  const [hasDraft, setHasDraft] = useState(draftValues != null);
+  const shouldPersistDraftRef = useRef(hasDraft);
+  const dirtyFieldsRef = useRef(dirtyFields);
   const [isAvatarUploadInFlight, setIsAvatarUploadInFlight] = useState(false);
+  dirtyFieldsRef.current = dirtyFields;
+
+  const persistAgentDraft = useCallback((agentId: string | undefined, values: AgentForm) => {
+    saveAgentDraft(agentId, values, draftUserIdRef.current);
+    if (agentId === currentAgentIdRef.current) {
+      setHasDraft(true);
+    }
+  }, []);
+
+  const debouncedPersistAgentDraft = useMemo(
+    () => debounce(persistAgentDraft, 250),
+    [persistAgentDraft],
+  );
+
+  const clearDraftsForAgentIds = useCallback(
+    (agentIds: Array<string | null | undefined>) => {
+      shouldPersistDraftRef.current = false;
+      debouncedPersistAgentDraft.cancel();
+      clearAgentDrafts(agentIds, draftUserIdRef.current);
+      setHasDraft(getAgentDraft(currentAgentIdRef.current, draftUserIdRef.current) != null);
+    },
+    [debouncedPersistAgentDraft],
+  );
+
+  const handleAgentChange = useCallback(() => {
+    clearDraftsForAgentIds([currentAgentIdRef.current]);
+  }, [clearDraftsForAgentIds]);
+
+  const handleCreateNewAgent = useCallback(() => {
+    clearDraftsForAgentIds([currentAgentIdRef.current, undefined]);
+    reset(getDefaultAgentFormValues());
+    setCurrentAgentId(undefined);
+  }, [clearDraftsForAgentIds, reset, setCurrentAgentId]);
+
+  const handleDeleteDraftClear = useCallback(
+    (agentId: string) => {
+      clearDraftsForAgentIds([agentId]);
+    },
+    [clearDraftsForAgentIds],
+  );
+
+  const shouldPersistDraft = useMemo(() => hasPersistableDirtyFields(dirtyFields), [dirtyFields]);
+  const shouldPersistAvatarResetDraft = useMemo(
+    () => dirtyFields?.avatar_action === true && getValues('avatar_action') === 'reset',
+    [dirtyFields?.avatar_action, getValues],
+  );
+
+  const isDirtyPersistableDraftField = useCallback(
+    (name?: string): boolean => {
+      const [fieldName] = name?.split('.') ?? [];
+      if (fieldName === 'avatar_action') {
+        return (
+          getFieldState(name as FieldPath<AgentForm>).isDirty &&
+          getValues('avatar_action') === 'reset'
+        );
+      }
+
+      if (!isPersistableDraftField(name)) {
+        return false;
+      }
+
+      return getFieldState(name as FieldPath<AgentForm>).isDirty;
+    },
+    [getFieldState, getValues],
+  );
+
+  useEffect(() => {
+    const previousAgentId = currentAgentIdRef.current;
+    const previousUserId = draftUserIdRef.current;
+    const agentChanged = previousAgentId !== current_agent_id;
+    const userChanged = previousUserId !== draftUserId;
+
+    if (!agentChanged && !userChanged) {
+      return;
+    }
+
+    if ((agentChanged || userChanged) && shouldPersistDraftRef.current) {
+      debouncedPersistAgentDraft.cancel();
+    }
+
+    if (agentChanged && !userChanged && shouldPersistDraftRef.current) {
+      saveAgentDraft(previousAgentId, getValues(), previousUserId);
+    }
+
+    const nextDraft = getAgentDraft(current_agent_id, draftUserId);
+    if (
+      agentChanged &&
+      !userChanged &&
+      previousAgentId == null &&
+      shouldPersistDraftRef.current &&
+      !nextDraft
+    ) {
+      // AgentPanelSwitch can restore the chat agent id after a remount while a new-agent draft is visible.
+      setCurrentAgentId(undefined);
+      setHasDraft(shouldPersistDraftRef.current);
+      return;
+    }
+
+    currentAgentIdRef.current = current_agent_id;
+    draftUserIdRef.current = draftUserId;
+    const nextHasDraft = nextDraft != null;
+    shouldPersistDraftRef.current = nextHasDraft;
+    setHasDraft(nextHasDraft);
+    if (nextDraft) {
+      reset(getDraftFormValues(nextDraft));
+      return;
+    }
+
+    if (userChanged) {
+      reset(getDefaultAgentFormValues());
+    }
+  }, [
+    current_agent_id,
+    debouncedPersistAgentDraft,
+    draftUserId,
+    getValues,
+    reset,
+    setCurrentAgentId,
+  ]);
+
+  useEffect(() => {
+    if (hasDraft) {
+      shouldPersistDraftRef.current = true;
+    }
+  }, [hasDraft]);
+
+  useEffect(() => {
+    if (!shouldPersistDraft && !shouldPersistAvatarResetDraft) {
+      return;
+    }
+
+    shouldPersistDraftRef.current = true;
+    setHasDraft(true);
+  }, [shouldPersistAvatarResetDraft, shouldPersistDraft]);
+
+  useEffect(() => {
+    const subscription = watch((_, { name }) => {
+      if (!shouldPersistDraftRef.current && !isDirtyPersistableDraftField(name)) {
+        return;
+      }
+
+      shouldPersistDraftRef.current = true;
+      setHasDraft(true);
+      debouncedPersistAgentDraft(currentAgentIdRef.current, getValues());
+    });
+
+    return () => {
+      debouncedPersistAgentDraft.cancel();
+      if (shouldPersistDraftRef.current) {
+        saveAgentDraft(currentAgentIdRef.current, getValues(), draftUserIdRef.current);
+      }
+      subscription.unsubscribe();
+    };
+  }, [debouncedPersistAgentDraft, getValues, isDirtyPersistableDraftField, watch]);
+
   const uploadAvatarMutation = useUploadAgentAvatarMutation({
     onSuccess: (updatedAgent) => {
       showToast({ message: localize('com_ui_upload_agent_avatar') });
@@ -375,6 +567,9 @@ export default function AgentPanel() {
         setValue('avatar_preview', '', { shouldDirty: false });
       }
 
+      clearDraftsForAgentIds([current_agent_id, data.id ?? agent_id]);
+      reset(getValues());
+
       // Clear the ref after use
       previousVersionRef.current = undefined;
     },
@@ -391,7 +586,6 @@ export default function AgentPanel() {
 
   const create = useCreateAgentMutation({
     onSuccess: async (data) => {
-      setCurrentAgentId(data.id);
       showToast({
         message: `${localize('com_assistants_create_success')} ${
           data.name ?? localize('com_ui_agent')
@@ -407,6 +601,13 @@ export default function AgentPanel() {
           status: 'error',
         });
       }
+
+      clearDraftsForAgentIds([undefined, current_agent_id, data.id]);
+      reset({
+        ...getValues(),
+        id: data.id ?? getValues('id'),
+      });
+      setCurrentAgentId(data.id);
     },
     onError: (err) => {
       const error = err as Error;
@@ -439,7 +640,7 @@ export default function AgentPanel() {
       const { payload: basePayload, provider, model } = composeAgentUpdatePayload(data, agent_id);
 
       if (agent_id) {
-        if (data.avatar_action === 'upload' && isAvatarUploadOnlyDirty(dirtyFields)) {
+        if (data.avatar_action === 'upload' && isAvatarUploadOnlyDirty(dirtyFieldsRef.current)) {
           try {
             const uploaded = await handleAvatarUpload(agent_id);
             if (!uploaded) {
@@ -447,6 +648,7 @@ export default function AgentPanel() {
                 message: localize('com_agents_avatar_upload_error'),
                 status: 'error',
               });
+              return;
             }
           } catch (error) {
             console.error('[AgentPanel] Avatar upload failed for avatar-only submission', error);
@@ -454,7 +656,10 @@ export default function AgentPanel() {
               message: localize('com_agents_avatar_upload_error'),
               status: 'error',
             });
+            return;
           }
+          clearDraftsForAgentIds([current_agent_id, agent_id]);
+          reset(getValues());
           return;
         }
         update.mutate({ agent_id, data: { ...basePayload, tools } });
@@ -476,7 +681,18 @@ export default function AgentPanel() {
 
       create.mutate({ ...basePayload, model, tools, provider });
     },
-    [agent_id, create, dirtyFields, handleAvatarUpload, update, showToast, localize],
+    [
+      agent_id,
+      create,
+      reset,
+      getValues,
+      current_agent_id,
+      handleAvatarUpload,
+      update,
+      showToast,
+      localize,
+      clearDraftsForAgentIds,
+    ],
   );
 
   const handleSelectAgent = useCallback(() => {
@@ -510,6 +726,8 @@ export default function AgentPanel() {
               <AgentSelect
                 createMutation={create}
                 agentQuery={agentQuery}
+                hasDraft={hasDraft}
+                onAgentChange={handleAgentChange}
                 setCurrentAgentId={setCurrentAgentId}
                 selectedAgentId={agentQuery.isInitialLoading ? null : (current_agent_id ?? null)}
               />
@@ -520,10 +738,7 @@ export default function AgentPanel() {
                   type="button"
                   variant="outline"
                   className="w-full justify-center"
-                  onClick={() => {
-                    reset(getDefaultAgentFormValues());
-                    setCurrentAgentId(undefined);
-                  }}
+                  onClick={handleCreateNewAgent}
                   disabled={agentQuery.isInitialLoading}
                   aria-label={localize('com_ui_create_new_agent')}
                 >
@@ -573,6 +788,7 @@ export default function AgentPanel() {
             activePanel={activePanel}
             setActivePanel={setActivePanel}
             setCurrentAgentId={setCurrentAgentId}
+            onDraftClear={handleDeleteDraftClear}
           />
         )}
       </form>
