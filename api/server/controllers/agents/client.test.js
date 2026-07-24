@@ -1,6 +1,9 @@
 const mockCreateRun = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn();
 const mockIsHITLEnabled = jest.fn().mockReturnValue(false);
+const mockBuildAgentScopedContext = jest.fn((...args) =>
+  jest.requireActual('@librechat/api').buildAgentScopedContext(...args),
+);
 const mockFormatAgentMessages = jest.fn(() => ({
   messages: [],
   indexTokenCountMap: {},
@@ -32,6 +35,7 @@ jest.mock('@librechat/agents', () => ({
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
+  buildAgentScopedContext: (...args) => mockBuildAgentScopedContext(...args),
   checkAccess: jest.fn(),
   createRun: (...args) => mockCreateRun(...args),
   countFormattedMessageTokens: jest.fn(() => 42),
@@ -100,9 +104,10 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
 });
 
 describe('AgentClient - startup telemetry', () => {
-  it('records run preparation in order and waits for checkpoint pruning before stream processing', async () => {
+  it('overlaps run creation with checkpoint pruning and joins both before stream processing', async () => {
     let releaseCheckpoint;
     let checkpointStarted;
+    const runCreation = deferred();
     const checkpointStartedPromise = new Promise((resolve) => {
       checkpointStarted = resolve;
     });
@@ -121,7 +126,7 @@ describe('AgentClient - startup telemetry', () => {
       recordGenerationEvent: jest.fn(),
       end: jest.fn(),
     };
-    mockCreateRun.mockResolvedValue(run);
+    mockCreateRun.mockReturnValue(runCreation.promise);
     mockIsHITLEnabled.mockReturnValue(true);
     mockDeleteAgentCheckpoint.mockImplementation(() => {
       checkpointStarted();
@@ -160,6 +165,14 @@ describe('AgentClient - startup telemetry', () => {
 
     expect(mockCreateRun).toHaveBeenCalledTimes(1);
     expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith('conversation-123', undefined);
+    expect(startupTelemetry.mark.mock.calls.map(([milestone]) => milestone)).toEqual([
+      'run_input_prepared',
+    ]);
+    expect(processStream).not.toHaveBeenCalled();
+
+    runCreation.resolve(run);
+    await Promise.resolve();
+
     expect(startupTelemetry.mark.mock.calls.map(([milestone]) => milestone)).toEqual([
       'run_input_prepared',
       'run_created',
@@ -1562,6 +1575,75 @@ describe('AgentClient - titleConvo', () => {
 
       expect(client.augmentedPrompt).toBe('Retrieved context');
       expect(client.options.agent.additional_instructions).toContain('Retrieved context');
+    });
+
+    it('starts independent context and current-file work at their earliest dependency barriers', async () => {
+      const requestAttachments = deferred();
+      const memoryContext = deferred();
+      const mcpConfig = deferred();
+      const agentScopedContext = deferred();
+      const fileContext = deferred();
+      const providerAttachments = deferred();
+      const requestFile = {
+        file_id: 'request-file',
+        filename: 'request.txt',
+        source: 'text',
+        type: 'text/plain',
+      };
+
+      client.options.attachments = requestAttachments.promise;
+      client.useMemory = jest.fn(() => memoryContext.promise);
+      resolveConfigServers.mockReturnValueOnce(mcpConfig.promise);
+      mockBuildAgentScopedContext.mockReturnValueOnce(agentScopedContext.promise);
+      client.addFileContextToMessage = jest.fn(() => fileContext.promise);
+      client.processAttachments = jest.fn(() => providerAttachments.promise);
+
+      const buildPromise = client.buildMessages(
+        [
+          {
+            messageId: 'msg-early-context',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Load the request file.',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-early-context',
+        {},
+      );
+
+      expect(client.useMemory).toHaveBeenCalledTimes(1);
+      expect(resolveConfigServers).toHaveBeenCalledWith(mockReq);
+      expect(mockBuildAgentScopedContext).not.toHaveBeenCalled();
+      expect(client.addFileContextToMessage).not.toHaveBeenCalled();
+      expect(client.processAttachments).not.toHaveBeenCalled();
+
+      requestAttachments.resolve([requestFile]);
+      await Promise.resolve();
+
+      expect(mockBuildAgentScopedContext).toHaveBeenCalledTimes(1);
+      const scopedContextArgs = mockBuildAgentScopedContext.mock.calls[0][0];
+      expect([...scopedContextArgs.sharedRunAttachmentIds]).toEqual(['request-file']);
+      expect(client.addFileContextToMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'msg-early-context' }),
+        [requestFile],
+      );
+      expect(client.processAttachments).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'msg-early-context' }),
+        [requestFile],
+      );
+
+      providerAttachments.resolve([requestFile]);
+      await Promise.resolve();
+      expect(client.options.attachments).toBe(requestAttachments.promise);
+
+      fileContext.resolve();
+      memoryContext.resolve(undefined);
+      mcpConfig.resolve({});
+      agentScopedContext.resolve(new Map());
+      await buildPromise;
+
+      expect(client.options.attachments).toEqual([requestFile]);
     });
 
     it('should await MCP instructions and not include [object Promise] in agent instructions', async () => {

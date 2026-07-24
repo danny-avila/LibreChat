@@ -1523,8 +1523,10 @@ class BaseClient {
         return message;
       }
 
-      await this.addFileContextToMessage(message, contextFiles);
-      await this.processAttachments(message, contextFiles);
+      await Promise.all([
+        this.addFileContextToMessage(message, contextFiles),
+        this.processAttachments(message, contextFiles),
+      ]);
 
       this.message_file_map[message.messageId] = contextFiles;
       return message;

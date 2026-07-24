@@ -1,6 +1,14 @@
 const { Constants } = require('librechat-data-provider');
 const { FakeClient, initializeFakeClient } = require('./FakeClient');
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 jest.mock('~/db/connect');
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({
@@ -1486,6 +1494,45 @@ describe('BaseClient', () => {
         expect.objectContaining({ file_id: 'owner-file', filename: 'owner.txt' }),
       ]);
       expect(JSON.stringify(secondMessage)).not.toContain('second-forged');
+    });
+
+    test('extracts historical file context while encoding provider attachments', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+      const fileContext = deferred();
+      const providerAttachments = deferred();
+      let completed = false;
+
+      TestClient.addFileContextToMessage.mockImplementation(async (message) => {
+        await fileContext.promise;
+        message.fileContext = 'authorized owner text';
+      });
+      TestClient.processAttachments.mockImplementation(() => providerAttachments.promise);
+
+      const messagesPromise = TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-concurrent-file-work',
+          files: [{ file_id: 'owner-file', filename: 'owner.txt' }],
+        },
+      ]).then((messages) => {
+        completed = true;
+        return messages;
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(TestClient.addFileContextToMessage).toHaveBeenCalledTimes(1);
+      expect(TestClient.processAttachments).toHaveBeenCalledTimes(1);
+
+      providerAttachments.resolve([ownerFile]);
+      await Promise.resolve();
+      expect(completed).toBe(false);
+
+      fileContext.resolve();
+      const [message] = await messagesPromise;
+
+      expect(message.fileContext).toBe('authorized owner text');
+      expect(TestClient.message_file_map['msg-concurrent-file-work']).toEqual([ownerFile]);
     });
 
     test('preserves download-only historical attachments without trusting file fields', async () => {
