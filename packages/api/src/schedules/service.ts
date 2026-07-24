@@ -204,12 +204,14 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       ? await deps.getAppConfig(getAppConfigOptionsFromUser(user))
       : await deps.getAppConfig();
     const config = appConfig?.interfaceConfig?.schedules;
-    // Disabled config is a hard stop: the engine must not keep firing existing
-    // schedules after an admin turns the feature off.
-    if (config === false) {
+    // EXPERIMENTAL, default-OFF (v1): scheduled chats are disabled unless an admin
+    // explicitly enables them. Absence, null, or `false` all resolve to disabled, so a
+    // deployment that never opts in never runs the scheduler. `true` uses the defaults;
+    // an object opts in unless it sets `use: false`.
+    if (config == null || config === false) {
       return { ...DEFAULT_SCHEDULE_LIMITS, enabled: false };
     }
-    if (config == null || typeof config === 'boolean') {
+    if (config === true) {
       return DEFAULT_SCHEDULE_LIMITS;
     }
     return {
@@ -430,6 +432,13 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
   }): Promise<ReturnType<typeof startScheduleEngine> | undefined> {
     if (engine != null) {
       return engine;
+    }
+    // EXPERIMENTAL default-off: do not arm the engine unless the base config enables the
+    // feature. Keeps "off" meaning the scheduler genuinely is not running (no tick loop,
+    // no claims), rather than running and refusing at the last step.
+    if (!(await getLimits()).enabled) {
+      logger.info('[schedules] disabled by config; engine not started (set interface.schedules)');
+      return undefined;
     }
     // A clustered deployment (multiple replicas) that is NOT Redis-backed has
     // private per-worker job stores, so isJobStoreShared reads false and the
