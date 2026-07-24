@@ -392,6 +392,67 @@ describe('OpenAIChatCompletionController', () => {
         }),
       );
     });
+
+    it('should pass endpoint token config from primaryConfig', async () => {
+      const { initializeAgent } = require('@librechat/api');
+      const endpointTokenConfig = {
+        'gpt-5.6-sol-fast:priority': { prompt: 10, completion: 60, context: 1050000 },
+      };
+      initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'gpt-5.6-sol',
+        model_parameters: { model: 'gpt-5.6-sol-fast', service_tier: 'priority' },
+        endpointTokenConfig,
+        toolRegistry: {},
+        edges: [],
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ endpointTokenConfig }),
+      );
+    });
+  });
+
+  describe('service tier capture', () => {
+    it('does not infer a tier when the request omitted service_tier', async () => {
+      const { createRun, initializeAgent } = require('@librechat/api');
+      initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'gpt-5.6',
+        model_parameters: { model: 'gpt-5.6', priorityProcessing: true },
+        toolRegistry: {},
+        edges: [],
+      });
+      await OpenAIChatCompletionController(req, res);
+
+      const usage = { input_tokens: 10, output_tokens: 2 };
+      const handlers = createRun.mock.calls[0][0].customHandlers;
+      handlers.on_chat_model_end.handle(null, { output: { usage_metadata: usage } }, {});
+
+      expect(usage).not.toHaveProperty('serviceTier');
+      expect(usage).not.toHaveProperty('serviceTierInferred');
+    });
+
+    it('infers the tier from the request service_tier when provider metadata is absent', async () => {
+      const { createRun, initializeAgent } = require('@librechat/api');
+      initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'gpt-5.6',
+        model_parameters: { model: 'gpt-5.6', service_tier: 'priority' },
+        toolRegistry: {},
+        edges: [],
+      });
+      await OpenAIChatCompletionController(req, res);
+
+      const usage = { input_tokens: 10, output_tokens: 2 };
+      const handlers = createRun.mock.calls[0][0].customHandlers;
+      handlers.on_chat_model_end.handle(null, { output: { usage_metadata: usage } }, {});
+
+      expect(usage).toMatchObject({ serviceTier: 'priority', serviceTierInferred: true });
+    });
   });
 
   describe('recursionLimit resolution', () => {

@@ -192,6 +192,7 @@ export enum ImageDetail {
   low = 'low',
   auto = 'auto',
   high = 'high',
+  original = 'original',
 }
 
 export enum ReasoningEffort {
@@ -294,12 +295,14 @@ export const imageDetailNumeric = {
   [ImageDetail.low]: 0,
   [ImageDetail.auto]: 1,
   [ImageDetail.high]: 2,
+  [ImageDetail.original]: 3,
 };
 
 export const imageDetailValue = {
   0: ImageDetail.low,
   1: ImageDetail.auto,
   2: ImageDetail.high,
+  3: ImageDetail.original,
 };
 
 export const eImageDetailSchema = z.nativeEnum(ImageDetail);
@@ -993,6 +996,7 @@ export const tConversationSchema = z.object({
   /* OpenAI Responses API: reasoning mode (standard/pro) + context */
   reasoning_mode: eReasoningModeSchema.optional().nullable(),
   reasoning_context: eReasoningContextSchema.optional().nullable(),
+  priorityProcessing: z.boolean().optional(),
   /* OpenAI: Verbosity control */
   verbosity: eVerbositySchema.optional().nullable(),
   /* OpenAI: use Responses API */
@@ -1196,7 +1200,7 @@ export type TPreset = z.infer<typeof tPresetSchema>;
 
 export type TSetOption = (
   param: number | string,
-) => (newValue: number | string | boolean | string[] | Partial<TPreset>) => void;
+) => (newValue: number | string | boolean | string[] | Partial<TPreset> | null | undefined) => void;
 
 export type TConversation = z.infer<typeof tConversationSchema> & {
   presetOverride?: Partial<TPreset>;
@@ -1430,6 +1434,8 @@ export const openAIBaseSchema = tConversationSchema.pick({
   reasoning_summary: true,
   reasoning_mode: true,
   reasoning_context: true,
+  priorityProcessing: true,
+  promptCache: true,
   verbosity: true,
   useResponsesApi: true,
   web_search: true,

@@ -706,6 +706,21 @@ const OpenAIChatCompletionController = async (req, res) => {
         handle: (_event, data, metadata) => {
           const usage = data?.output?.usage_metadata;
           if (usage) {
+            const reportedTier = data?.output?.response_metadata?.service_tier;
+            const requestedTier = primaryConfig.model_parameters?.service_tier;
+            if (reportedTier === 'default' || reportedTier === 'priority') {
+              usage.serviceTier = reportedTier;
+            } else if (requestedTier === 'default' || requestedTier === 'priority') {
+              usage.serviceTier = requestedTier;
+              usage.serviceTierInferred = true;
+              logger.warn(
+                '[OpenAIChatCompletionController] Provider omitted service_tier; using requested tier',
+                {
+                  model: primaryConfig.model_parameters?.model,
+                  requestedServiceTier: requestedTier,
+                },
+              );
+            }
             const taggedUsage = markSummarizationUsage(usage, metadata);
             collectedUsage.push(taggedUsage);
             const target = isStreaming ? tracker : aggregator;
@@ -807,6 +822,7 @@ const OpenAIChatCompletionController = async (req, res) => {
         balance: balanceConfig,
         transactions: transactionsConfig,
         model: primaryConfig.model || agent.model_parameters?.model,
+        endpointTokenConfig: primaryConfig.endpointTokenConfig,
       },
     ).catch((err) => {
       logger.error('[OpenAI API] Error recording usage:', err);

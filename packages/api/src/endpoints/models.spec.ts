@@ -601,6 +601,18 @@ describe('getOpenAIModels sorting behavior', () => {
     expect(models).not.toContain('dall-e-3');
     expect(models).not.toContain('gpt-realtime-2');
   });
+
+  it('adds the GPT-5.6 alias when OpenAI advertises Sol', async () => {
+    mockedAxios.get.mockResolvedValue({
+      data: {
+        data: [{ id: 'gpt-5.6-sol' }, { id: 'gpt-5.6-terra' }, { id: 'gpt-5.6-luna' }],
+      },
+    });
+
+    const models = await getOpenAIModels({ user: 'user456' });
+
+    expect(models).toEqual(['gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']);
+  });
 });
 
 describe('fetchModels with Ollama specific logic', () => {

@@ -787,6 +787,126 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
       azureOpenAIApiVersion: '',
     });
   });
+
+  it('reuses the standard route when priority is enabled with true', () => {
+    const configs: TAzureGroups = [
+      {
+        group: 'primary',
+        apiKey: 'standard-key',
+        instanceName: 'standard-instance',
+        deploymentName: 'gpt-5-6',
+        version: 'v1',
+        models: {
+          'gpt-5.6': {
+            priority: true,
+          },
+        },
+      },
+    ];
+    const { isValid, priorityModels, modelGroupMap, groupMap } = validateAzureGroups(configs);
+    expect(isValid).toBe(true);
+    expect(priorityModels).toEqual(['gpt-5.6']);
+
+    const standard = mapModelToAzureConfig({
+      modelName: 'gpt-5.6',
+      modelGroupMap,
+      groupMap,
+    });
+    const priority = mapModelToAzureConfig({
+      modelName: 'gpt-5.6',
+      modelGroupMap,
+      groupMap,
+      serviceTier: 'priority',
+    });
+    expect(priority).toEqual(standard);
+  });
+
+  it('inherits standard route fields and overrides only configured priority fields', () => {
+    const configs: TAzureGroups = [
+      {
+        group: 'primary',
+        apiKey: 'standard-key',
+        instanceName: 'standard-instance',
+        deploymentName: 'standard-deployment',
+        version: 'v1',
+        baseURL: 'https://standard.example.com',
+        additionalHeaders: {
+          'x-shared': 'standard',
+          'x-standard': 'present',
+        },
+        models: {
+          'gpt-5.6': {
+            priority: {
+              deploymentName: 'priority-deployment',
+              instanceName: 'priority-instance',
+              apiKey: 'priority-key',
+              baseURL: 'https://priority.example.com',
+              additionalHeaders: {
+                'x-shared': 'priority',
+                'x-priority': 'present',
+              },
+              tokenConfig: {
+                prompt: 10,
+                completion: 60,
+                context: 1050000,
+                cacheRead: 1,
+                cacheWrite: 12.5,
+              },
+            },
+          },
+        },
+      },
+    ];
+    const { modelGroupMap, groupMap } = validateAzureGroups(configs);
+    const priority = mapModelToAzureConfig({
+      modelName: 'gpt-5.6',
+      modelGroupMap,
+      groupMap,
+      serviceTier: 'priority',
+    });
+
+    expect(priority.azureOptions).toEqual({
+      azureOpenAIApiKey: 'priority-key',
+      azureOpenAIApiInstanceName: 'priority-instance',
+      azureOpenAIApiDeploymentName: 'priority-deployment',
+      azureOpenAIApiVersion: 'v1',
+    });
+    expect(priority.baseURL).toBe('https://priority.example.com');
+    expect(priority.headers).toEqual({
+      'x-shared': 'priority',
+      'x-standard': 'present',
+      'x-priority': 'present',
+    });
+    expect(priority.tokenConfig).toEqual({
+      prompt: 10,
+      completion: 60,
+      context: 1050000,
+      cacheRead: 1,
+      cacheWrite: 12.5,
+    });
+  });
+
+  it('rejects priority configuration when service_tier is dropped', () => {
+    const configs: TAzureGroups = [
+      {
+        group: 'primary',
+        apiKey: 'key',
+        instanceName: 'instance',
+        deploymentName: 'deployment',
+        version: 'v1',
+        dropParams: ['service_tier'],
+        models: {
+          'gpt-5.6': {
+            priority: true,
+          },
+        },
+      },
+    ];
+
+    const result = validateAzureGroups(configs);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.join(' ')).toContain('service_tier');
+  });
 });
 
 describe('mapGroupToAzureConfig', () => {

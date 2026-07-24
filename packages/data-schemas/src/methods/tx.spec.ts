@@ -4,6 +4,8 @@ import {
   createTxMethods,
   tokenValues,
   cacheTokenValues,
+  priorityTokenValues,
+  priorityCacheTokenValues,
   premiumTokenValues,
   premiumCacheTokenValues,
   defaultRate,
@@ -468,6 +470,109 @@ describe('getMultiplier', () => {
     for (const model of ['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
       expect(cacheTokenValues[model].write).toBeCloseTo(tokenValues[model].prompt * 1.25);
     }
+  });
+
+  it('should apply the long-context multiplier to priority and configured Azure rates', () => {
+    const inputTokenCount = premiumTokenValues['gpt-5.6'].threshold + 1;
+    expect(
+      getMultiplier({
+        model: 'gpt-5.6',
+        tokenType: 'prompt',
+        serviceTier: 'priority',
+        inputTokenCount,
+      }),
+    ).toBe(priorityTokenValues['gpt-5.6'].prompt * 2);
+    expect(
+      getMultiplier({
+        model: 'gpt-5.6',
+        tokenType: 'completion',
+        serviceTier: 'priority',
+        inputTokenCount,
+      }),
+    ).toBe(priorityTokenValues['gpt-5.6'].completion * 1.5);
+    expect(
+      getCacheMultiplier({
+        model: 'gpt-5.6',
+        cacheType: 'write',
+        serviceTier: 'priority',
+        inputTokenCount,
+      }),
+    ).toBe(priorityCacheTokenValues['gpt-5.6'].write * 2);
+    expect(
+      getMultiplier({
+        model: 'gpt-5.6',
+        tokenType: 'prompt',
+        serviceTier: 'priority',
+        inputTokenCount,
+        endpointTokenConfig: {
+          'gpt-5.6:priority': {
+            prompt: 11,
+            completion: 61,
+            context: 1_000_000,
+          },
+        },
+      }),
+    ).toBe(22);
+  });
+
+  it('uses GPT-5.6 priority rates for every token class', () => {
+    for (const model of ['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
+      expect(getMultiplier({ model, tokenType: 'prompt', serviceTier: 'priority' })).toBe(
+        priorityTokenValues[model].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion', serviceTier: 'priority' })).toBe(
+        priorityTokenValues[model].completion,
+      );
+      expect(getCacheMultiplier({ model, cacheType: 'write', serviceTier: 'priority' })).toBe(
+        priorityCacheTokenValues[model].write,
+      );
+      expect(getCacheMultiplier({ model, cacheType: 'read', serviceTier: 'priority' })).toBe(
+        priorityCacheTokenValues[model].read,
+      );
+      expect(priorityCacheTokenValues[model].write).toBeCloseTo(
+        priorityTokenValues[model].prompt * 1.25,
+      );
+    }
+    expect(
+      getMultiplier({ model: 'gpt-5.6-sol', tokenType: 'prompt', serviceTier: 'priority' }),
+    ).toBe(priorityTokenValues['gpt-5.6'].prompt);
+  });
+
+  it('prefers Azure priority token configuration and falls back to standard rates by actual tier', () => {
+    const endpointTokenConfig = {
+      'gpt-5.6:priority': {
+        prompt: 11,
+        completion: 61,
+        context: 1050000,
+        read: 1.1,
+        write: 13.75,
+      },
+    };
+
+    expect(
+      getMultiplier({
+        model: 'gpt-5.6',
+        tokenType: 'prompt',
+        serviceTier: 'priority',
+        endpointTokenConfig,
+      }),
+    ).toBe(11);
+    expect(
+      getCacheMultiplier({
+        model: 'gpt-5.6',
+        cacheType: 'write',
+        serviceTier: 'priority',
+        endpointTokenConfig,
+      }),
+    ).toBe(13.75);
+    expect(
+      getMultiplier({
+        model: 'gpt-5.6',
+        tokenType: 'prompt',
+        serviceTier: 'default',
+        endpointTokenConfig,
+      }),
+    ).toBe(tokenValues['gpt-5.6'].prompt);
   });
 
   it('should return the correct multiplier for gpt-4o', () => {

@@ -381,9 +381,28 @@ export async function fetchOpenAIModels(
   if (baseURL === openaiBaseURL) {
     const regex = /(text-davinci-003|gpt-|o\d+|chat-latest)/;
     const excludeRegex = /audio|realtime/;
-    models = models.filter((model) => regex.test(model) && !excludeRegex.test(model));
-    const instructModels = models.filter((model) => model.includes('instruct'));
-    const otherModels = models.filter((model) => !model.includes('instruct'));
+    const instructModels: string[] = [];
+    const otherModels: string[] = [];
+    let gpt56AliasPresent = false;
+    let gpt56SolIndex = -1;
+    for (const model of models) {
+      if (!regex.test(model) || excludeRegex.test(model)) {
+        continue;
+      }
+      if (model.includes('instruct')) {
+        instructModels.push(model);
+        continue;
+      }
+      if (model === 'gpt-5.6') {
+        gpt56AliasPresent = true;
+      } else if (model === 'gpt-5.6-sol') {
+        gpt56SolIndex = otherModels.length;
+      }
+      otherModels.push(model);
+    }
+    if (!gpt56AliasPresent && gpt56SolIndex >= 0) {
+      otherModels.splice(gpt56SolIndex, 0, 'gpt-5.6');
+    }
     models = otherModels.concat(instructModels);
   }
 

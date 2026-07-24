@@ -7,6 +7,7 @@ import {
   alternateName,
   getSettingsKeys,
   getEndpointField,
+  getInvalidModelAwareKeys,
   LocalStorageKeys,
   SettingDefinition,
   agentParamSettings,
@@ -20,6 +21,13 @@ import { useLiveAnnouncer } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 import { cn } from '~/utils';
+
+const modelAwareKeys: Array<keyof t.AgentModelParameters> = [
+  'reasoning_mode',
+  'reasoning_context',
+  'priorityProcessing',
+  'promptCache',
+];
 
 export default function ModelPanel({
   providers,
@@ -64,7 +72,7 @@ export default function ModelPanel({
     }
   }, [provider, models, modelsData, setValue, model]);
 
-  const { data: endpointsConfig = {} } = useGetEndpointsQuery();
+  const { data: endpointsConfig = {}, isSuccess: endpointsConfigReady } = useGetEndpointsQuery();
 
   const bedrockRegions = useMemo(() => {
     return endpointsConfig?.[provider]?.availableRegions ?? [];
@@ -87,11 +95,42 @@ export default function ModelPanel({
       defaultParams.filter((param) => param != null),
       overriddenEndpointKey,
       model ?? '',
+      {
+        provider,
+        useResponsesApi: modelParameters?.useResponsesApi === true,
+        priorityModels: endpointsConfig[provider]?.priorityModels,
+        isAgent: true,
+      },
     );
     return modelAwareParams.map(
       (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
     );
-  }, [endpointType, endpointsConfig, model, provider]);
+  }, [endpointType, endpointsConfig, model, modelParameters?.useResponsesApi, provider]);
+
+  useEffect(() => {
+    if (!modelParameters || !endpointsConfigReady) {
+      return;
+    }
+    const visibleKeys = new Set(parameters.map((parameter) => parameter.key));
+    const nextParameters = { ...modelParameters };
+    const invalidKeys = new Set(getInvalidModelAwareKeys(parameters, nextParameters));
+    let changed = false;
+    for (const key of modelAwareKeys) {
+      if (!visibleKeys.has(key) && Object.prototype.hasOwnProperty.call(nextParameters, key)) {
+        delete nextParameters[key];
+        changed = true;
+      }
+    }
+    for (const key of invalidKeys) {
+      if (Object.prototype.hasOwnProperty.call(nextParameters, key)) {
+        delete nextParameters[key as keyof t.AgentModelParameters];
+        changed = true;
+      }
+    }
+    if (changed) {
+      setValue('model_parameters', nextParameters, { shouldDirty: true });
+    }
+  }, [endpointsConfigReady, modelParameters, parameters, setValue]);
 
   const setOption = (optionKey: keyof t.AgentModelParameters) => (value: t.AgentParameterValue) => {
     setValue(`model_parameters.${optionKey}`, value);

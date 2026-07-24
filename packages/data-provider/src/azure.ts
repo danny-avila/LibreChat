@@ -2,6 +2,7 @@ import type { ZodError } from 'zod';
 import type {
   TAzureGroups,
   TAzureGroupMap,
+  TAzureTokenConfig,
   TAzureModelGroupMap,
   TValidatedAzureConfig,
   TAzureConfigValidationResult,
@@ -13,6 +14,7 @@ import { errorsToString } from '../src/parsers';
 export function validateAzureGroups(configs: TAzureGroups): TAzureConfigValidationResult {
   let isValid = true;
   const modelNames: string[] = [];
+  const priorityModels: string[] = [];
   const modelGroupMap: TAzureModelGroupMap = {};
   const groupMap: TAzureGroupMap = {};
   const errors: (ZodError | string)[] = [];
@@ -38,19 +40,19 @@ export function validateAzureGroups(configs: TAzureGroups): TAzureConfigValidati
 
       if (groupMap[groupName]) {
         errors.push(`Duplicate group name detected: "${groupName}". Group names must be unique.`);
-        return { isValid: false, modelNames, modelGroupMap, groupMap, errors };
+        return { isValid: false, modelNames, priorityModels, modelGroupMap, groupMap, errors };
       }
 
       if (serverless && !baseURL) {
         errors.push(`Group "${groupName}" is serverless but missing mandatory "baseURL."`);
-        return { isValid: false, modelNames, modelGroupMap, groupMap, errors };
+        return { isValid: false, modelNames, priorityModels, modelGroupMap, groupMap, errors };
       }
 
       if (!instanceName && !serverless) {
         errors.push(
           `Group "${groupName}" is missing an "instanceName" for non-serverless configuration.`,
         );
-        return { isValid: false, modelNames, modelGroupMap, groupMap, errors };
+        return { isValid: false, modelNames, priorityModels, modelGroupMap, groupMap, errors };
       }
 
       groupMap[groupName] = {
@@ -68,12 +70,35 @@ export function validateAzureGroups(configs: TAzureGroups): TAzureConfigValidati
       for (const modelName in group.models) {
         modelNames.push(modelName);
         const model = group.models[modelName];
+        if (typeof model === 'object' && model.priority) {
+          priorityModels.push(modelName);
+          if (group.dropParams?.includes('service_tier')) {
+            errors.push(
+              `Model "${modelName}" in group "${groupName}" enables priority processing but the group drops "service_tier".`,
+            );
+            return {
+              isValid: false,
+              modelNames,
+              priorityModels,
+              modelGroupMap,
+              groupMap,
+              errors,
+            };
+          }
+        }
 
         if (modelGroupMap[modelName]) {
           errors.push(
             `Duplicate model name detected: "${modelName}". Model names must be unique across groups.`,
           );
-          return { isValid: false, modelNames, modelGroupMap, groupMap, errors };
+          return {
+            isValid: false,
+            modelNames,
+            priorityModels,
+            modelGroupMap,
+            groupMap,
+            errors,
+          };
         }
 
         if (serverless) {
@@ -91,7 +116,14 @@ export function validateAzureGroups(configs: TAzureGroups): TAzureConfigValidati
             errors.push(
               `Model "${modelName}" in group "${groupName}" is missing a deploymentName or version.`,
             );
-            return { isValid: false, modelNames, modelGroupMap, groupMap, errors };
+            return {
+              isValid: false,
+              modelNames,
+              priorityModels,
+              modelGroupMap,
+              groupMap,
+              errors,
+            };
           }
 
           modelGroupMap[modelName] = {
@@ -105,7 +137,14 @@ export function validateAzureGroups(configs: TAzureGroups): TAzureConfigValidati
             errors.push(
               `Model "${modelName}" in group "${groupName}" is missing a required deploymentName or version.`,
             );
-            return { isValid: false, modelNames, modelGroupMap, groupMap, errors };
+            return {
+              isValid: false,
+              modelNames,
+              priorityModels,
+              modelGroupMap,
+              groupMap,
+              errors,
+            };
           }
 
           modelGroupMap[modelName] = {
@@ -118,7 +157,7 @@ export function validateAzureGroups(configs: TAzureGroups): TAzureConfigValidati
     }
   }
 
-  return { isValid, modelNames, modelGroupMap, groupMap, errors };
+  return { isValid, modelNames, priorityModels, modelGroupMap, groupMap, errors };
 }
 
 type AzureOptions = {
@@ -133,14 +172,17 @@ type MappedAzureConfig = {
   baseURL?: string;
   headers?: Record<string, string>;
   serverless?: boolean;
+  tokenConfig?: TAzureTokenConfig;
 };
 
 export function mapModelToAzureConfig({
   modelName,
   modelGroupMap,
   groupMap,
-}: Omit<TValidatedAzureConfig, 'modelNames'> & {
+  serviceTier = 'default',
+}: Omit<TValidatedAzureConfig, 'modelNames' | 'priorityModels'> & {
   modelName: string;
+  serviceTier?: 'default' | 'priority';
 }): MappedAzureConfig {
   const modelConfig = modelGroupMap[modelName];
   if (!modelConfig) {
@@ -154,7 +196,28 @@ export function mapModelToAzureConfig({
     );
   }
 
-  const instanceName = groupConfig.instanceName ?? '';
+  const modelDetails = groupConfig.models?.[modelName];
+  const priorityConfig =
+    serviceTier === 'priority' && typeof modelDetails === 'object'
+      ? modelDetails.priority
+      : undefined;
+  if (serviceTier === 'priority' && !priorityConfig) {
+    throw new Error(`Model named "${modelName}" does not have priority processing configured.`);
+  }
+
+  const priorityOverrides = typeof priorityConfig === 'object' ? priorityConfig : undefined;
+  const instanceName = priorityOverrides?.instanceName ?? groupConfig.instanceName ?? '';
+  const apiKey = priorityOverrides?.apiKey ?? groupConfig.apiKey;
+  const baseURL = priorityOverrides?.baseURL ?? groupConfig.baseURL ?? '';
+  const version =
+    priorityOverrides?.version ??
+    (typeof modelDetails === 'object' ? modelDetails.version : undefined) ??
+    groupConfig.version ??
+    '';
+  const headers =
+    priorityOverrides?.additionalHeaders != null
+      ? { ...groupConfig.additionalHeaders, ...priorityOverrides.additionalHeaders }
+      : groupConfig.additionalHeaders;
 
   if (!instanceName && groupConfig.serverless !== true) {
     throw new Error(
@@ -162,7 +225,6 @@ export function mapModelToAzureConfig({
     );
   }
 
-  const baseURL = groupConfig.baseURL ?? '';
   if (groupConfig.serverless === true && !baseURL) {
     throw new Error(
       `Group "${modelConfig.group}" is missing the required base URL for serverless configuration.`,
@@ -172,11 +234,12 @@ export function mapModelToAzureConfig({
   if (groupConfig.serverless === true) {
     const result: MappedAzureConfig = {
       azureOptions: {
-        azureOpenAIApiVersion: extractEnvVariable(groupConfig.version ?? ''),
-        azureOpenAIApiKey: extractEnvVariable(groupConfig.apiKey),
+        azureOpenAIApiVersion: extractEnvVariable(version),
+        azureOpenAIApiKey: extractEnvVariable(apiKey),
       },
       baseURL: extractEnvVariable(baseURL),
       serverless: true,
+      tokenConfig: priorityOverrides?.tokenConfig,
     };
 
     const apiKeyValue = result.azureOptions.azureOpenAIApiKey;
@@ -184,8 +247,8 @@ export function mapModelToAzureConfig({
       throw new Error(`Azure configuration environment variable "${apiKeyValue}" was not found.`);
     }
 
-    if (groupConfig.additionalHeaders) {
-      result.headers = groupConfig.additionalHeaders;
+    if (headers) {
+      result.headers = headers;
     }
 
     return result;
@@ -197,16 +260,16 @@ export function mapModelToAzureConfig({
     );
   }
 
-  const modelDetails = groupConfig.models[modelName];
-  const { deploymentName = '', version = '' } =
+  const { deploymentName = '' } =
     typeof modelDetails === 'object'
       ? {
-          deploymentName: modelDetails.deploymentName ?? groupConfig.deploymentName,
-          version: modelDetails.version ?? groupConfig.version,
+          deploymentName:
+            priorityOverrides?.deploymentName ??
+            modelDetails.deploymentName ??
+            groupConfig.deploymentName,
         }
       : {
-          deploymentName: groupConfig.deploymentName,
-          version: groupConfig.version,
+          deploymentName: priorityOverrides?.deploymentName ?? groupConfig.deploymentName,
         };
 
   if (!deploymentName || !version) {
@@ -216,7 +279,7 @@ export function mapModelToAzureConfig({
   }
 
   const azureOptions: AzureOptions = {
-    azureOpenAIApiKey: extractEnvVariable(groupConfig.apiKey),
+    azureOpenAIApiKey: extractEnvVariable(apiKey),
     azureOpenAIApiInstanceName: extractEnvVariable(instanceName),
     azureOpenAIApiDeploymentName: extractEnvVariable(deploymentName),
     azureOpenAIApiVersion: extractEnvVariable(version),
@@ -228,14 +291,17 @@ export function mapModelToAzureConfig({
     }
   }
 
-  const result: MappedAzureConfig = { azureOptions };
+  const result: MappedAzureConfig = {
+    azureOptions,
+    tokenConfig: priorityOverrides?.tokenConfig,
+  };
 
   if (baseURL) {
     result.baseURL = extractEnvVariable(baseURL);
   }
 
-  if (groupConfig.additionalHeaders) {
-    result.headers = groupConfig.additionalHeaders;
+  if (headers) {
+    result.headers = headers;
   }
 
   return result;

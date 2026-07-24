@@ -116,7 +116,7 @@
     "@azure/storage-blob": "^12.30.0",
     "@google/genai": "^2.8.0",
     "@keyv/redis": "^4.3.3",
-    "@librechat/agents": "^3.2.68",
+    "@librechat/agents": "git+https://github.com/usnavy13/agents.git#b2133e5c27af3179de89d1811b07cf9fed6eaf98",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentelemetry/api": "^1.9.0",

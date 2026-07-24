@@ -106,6 +106,10 @@ function checkPasswordReset() {
  * @param {Function} options.checkEmailConfig - Function to check email configuration
  */
 export function checkVariables(): void {
+  if (!process.env.CREDS_KEY) {
+    throw new Error('CREDS_KEY is required for encrypted credentials and OpenAI identifiers.');
+  }
+
   let hasDefaultSecrets = false;
   for (const [key, value] of Object.entries(secretDefaults)) {
     if (process.env[key] === value) {

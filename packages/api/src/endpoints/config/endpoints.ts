@@ -43,7 +43,10 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
     };
 
     if (appConfig.endpoints?.[EModelEndpoint.azureOpenAI]) {
-      mergedConfig[EModelEndpoint.azureOpenAI] = { userProvide: false };
+      mergedConfig[EModelEndpoint.azureOpenAI] = {
+        userProvide: false,
+        priorityModels: appConfig.endpoints[EModelEndpoint.azureOpenAI].priorityModels ?? [],
+      };
     }
 
     if (appConfig.endpoints?.[EModelEndpoint.anthropic]?.vertexConfig?.enabled) {

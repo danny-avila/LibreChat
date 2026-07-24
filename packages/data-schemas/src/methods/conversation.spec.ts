@@ -145,6 +145,31 @@ describe('Conversation Operations', () => {
       expect(savedConvo?.title).toBe('Test Conversation');
     });
 
+    it('persists GPT-5.6 model controls', async () => {
+      const result = await saveConvo(mockCtx, {
+        ...mockConversationData,
+        reasoning_mode: 'pro',
+        reasoning_context: 'all_turns',
+        priorityProcessing: true,
+      });
+
+      expect(result).toMatchObject({
+        reasoning_mode: 'pro',
+        reasoning_context: 'all_turns',
+        priorityProcessing: true,
+      });
+
+      const savedConvo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+      }).lean();
+      expect(savedConvo).toMatchObject({
+        reasoning_mode: 'pro',
+        reasoning_context: 'all_turns',
+        priorityProcessing: true,
+      });
+    });
+
     it('should query messages when saving a conversation', async () => {
       // Mock messages as ObjectIds
       const mockMessages = [new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()];

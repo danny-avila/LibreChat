@@ -3,6 +3,7 @@ import { openAISchema } from 'librechat-data-provider';
 import type { BindToolsInput } from '@librechat/agents/langchain/language_models/chat_models';
 import type { OpenAIClientOptions, Providers } from '@librechat/agents';
 import type { TConfig } from 'librechat-data-provider';
+import type { EndpointTokenConfig } from './tokens';
 import type { AzureOptions } from './azure';
 
 export type OpenAIParameters = z.infer<typeof openAISchema>;
@@ -35,6 +36,11 @@ export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
   /** Replays `reasoning_content` on tool-bearing turns (DeepSeek thinking-mode, #13366). */
   includeReasoningContent?: boolean;
   promptCache?: boolean;
+  promptCacheKey?: string;
+  promptCacheExplicit?: boolean;
+  safety_identifier?: string;
+  firstPartyOpenAI?: boolean;
+  service_tier?: 'default' | 'priority';
   promptCacheTtl?: '5m' | '1h';
   _lc_stream_delay?: number;
   verbosity?: string | null;
@@ -51,4 +57,5 @@ export interface LLMConfigResult<T = OAIClientOptions> {
 
 export type OpenAIConfigResult = LLMConfigResult<OAIClientOptions> & {
   configOptions?: OpenAIConfiguration;
+  endpointTokenConfig?: EndpointTokenConfig;
 };

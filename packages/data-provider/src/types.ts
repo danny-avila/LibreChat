@@ -479,6 +479,7 @@ export type TConfig = {
   userProvideBearerToken?: boolean;
   disableBuilder?: boolean;
   retrievalModels?: string[];
+  priorityModels?: string[];
   capabilities?: string[];
   customParams?: {
     defaultParamsEndpoint?: string;
