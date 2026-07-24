@@ -6,134 +6,172 @@ import type {
   ChatGptContentReference,
 } from '~/import/types';
 
-const ANCHOR_PATTERN = /turn(\d+)(search|image|news|video|ref|file)(\d+)/g;
+type OrganicSource = NonNullable<SearchResultData['organic']>[number];
 
-interface SourceBuckets {
-  organic: SearchResultData['organic'];
-  topStories: SearchResultData['topStories'];
-  images: SearchResultData['images'];
-  references: SearchResultData['references'];
+const COMPOSITE_PATTERN = /[\s\S]*?/g;
+const ANCHOR_PATTERN = /turn\d+(?:search|image|news|video|ref|file)\d+/g;
+const MARKER_PATTERN = /[-]/g;
+
+const CITABLE_TYPES = new Set([
+  'grouped_webpages',
+  'grouped_webpages_model_predicted_fallback',
+  'webpage',
+  'webpage_extended',
+  'image_v2',
+  'video',
+  'file',
+]);
+
+interface GroupSpan {
+  start: number;
+  end: number;
 }
 
-function toSource(entry: ChatGptSearchEntry, domain: string | null) {
-  return {
-    link: entry.url ?? '',
-    title: entry.title ?? undefined,
-    snippet: entry.snippet ?? undefined,
-    attribution: entry.attributions ?? domain ?? undefined,
-  };
-}
-
-function fromReference(reference: ChatGptContentReference) {
-  return {
-    link: reference.url ?? '',
-    title: reference.title ?? undefined,
-    snippet: reference.snippet ?? undefined,
-    attribution: reference.attribution ?? undefined,
-  };
-}
-
-function collectWebSources(message: ChatGptMessage) {
-  const sources: ReturnType<typeof toSource>[] = [];
-
-  for (const group of message.metadata?.search_result_groups ?? []) {
-    for (const entry of group.entries) {
-      sources.push(toSource(entry, group.domain));
-    }
-  }
-
-  for (const reference of message.metadata?.content_references ?? []) {
-    if (reference.type === 'webpage' || reference.type === 'webpage_extended') {
-      sources.push(fromReference(reference));
-      continue;
-    }
-    for (const item of reference.items ?? reference.sources ?? []) {
-      sources.push(toSource(item, null));
-    }
-  }
-
-  return sources.filter((source) => source.link.length > 0);
-}
-
-function collectFileSources(message: ChatGptMessage) {
-  const references = [];
-  for (const reference of message.metadata?.content_references ?? []) {
-    if (reference.type !== 'file' || !reference.id) {
-      continue;
-    }
-    const name = reference.name ?? reference.title ?? reference.id;
-    references.push({
-      link: `#file-${reference.id}`,
-      title: name,
-      attribution: name,
-      snippet: reference.snippet ?? undefined,
-      type: 'file' as const,
-    });
-  }
-  return references;
-}
-
-function collectImageSources(message: ChatGptMessage) {
-  const images = [];
-  for (const entry of message.metadata?.image_results ?? []) {
-    if (entry.url) {
-      images.push({ link: entry.url, title: entry.title ?? undefined });
-    }
-  }
-  return images;
+function stripMarkers(value: string): string {
+  return value.replace(ANCHOR_PATTERN, '').replace(MARKER_PATTERN, '');
 }
 
 /**
- * Anchors already present in the exported text use LibreChat's own citation
- * format, so only the per-turn source payload has to be reconstructed. Turns
- * with no resolvable source are omitted; the client strips their anchors.
+ * Composites are matched first and their spans then exclude any standalone
+ * anchors nested inside them, so each citation is counted exactly once.
  */
-export function buildCitations(message: ChatGptMessage, text: string): ImportedCitations[] {
-  ANCHOR_PATTERN.lastIndex = 0;
-  const turns = new Map<number, Set<string>>();
+function findGroups(text: string): GroupSpan[] {
+  const groups: GroupSpan[] = [];
 
-  let match: RegExpExecArray | null;
-  while ((match = ANCHOR_PATTERN.exec(text)) !== null) {
-    const turn = Number(match[1]);
-    const existing = turns.get(turn);
-    if (existing) {
-      existing.add(match[2]);
-      continue;
-    }
-    turns.set(turn, new Set([match[2]]));
+  COMPOSITE_PATTERN.lastIndex = 0;
+  let composite: RegExpExecArray | null;
+  while ((composite = COMPOSITE_PATTERN.exec(text)) !== null) {
+    groups.push({ start: composite.index, end: composite.index + composite[0].length });
   }
 
-  if (turns.size === 0) {
+  ANCHOR_PATTERN.lastIndex = 0;
+  let anchor: RegExpExecArray | null;
+  while ((anchor = ANCHOR_PATTERN.exec(text)) !== null) {
+    const start = anchor.index;
+    const nested = groups.some((group) => start >= group.start && start < group.end);
+    if (!nested) {
+      groups.push({ start, end: start + anchor[0].length });
+    }
+  }
+
+  return groups.sort((a, b) => a.start - b.start);
+}
+
+function fromEntry(entry: ChatGptSearchEntry): OrganicSource | null {
+  if (!entry.url) {
+    return null;
+  }
+  return {
+    link: entry.url,
+    title: entry.title ?? undefined,
+    snippet: entry.snippet ?? undefined,
+    attribution: entry.attributions ?? undefined,
+  };
+}
+
+function sourcesOfReference(reference: ChatGptContentReference): OrganicSource[] {
+  const items = reference.items ?? reference.sources;
+  if (items?.length) {
+    return items.map(fromEntry).filter((source): source is OrganicSource => source !== null);
+  }
+  if (!reference.url) {
     return [];
   }
+  return [
+    {
+      link: reference.url,
+      title: reference.title ?? undefined,
+      snippet: reference.snippet ?? undefined,
+      attribution: reference.attribution ?? undefined,
+    },
+  ];
+}
 
-  const web = collectWebSources(message);
-  const files = collectFileSources(message);
-  const images = collectImageSources(message);
+function citableReferences(message: ChatGptMessage): ChatGptContentReference[] {
+  const references = message.metadata?.content_references ?? [];
+  return references.filter((reference) => CITABLE_TYPES.has(reference.type));
+}
 
-  const results: ImportedCitations[] = [];
-  for (const [turn, types] of turns) {
-    const buckets: Partial<SourceBuckets> = {};
+function appendSources(text: string, references: ChatGptContentReference[]): string {
+  const seen = new Set<string>();
+  const lines: string[] = [];
 
-    if (types.has('search') && web.length > 0) {
-      buckets.organic = web;
+  for (const reference of references) {
+    for (const source of sourcesOfReference(reference)) {
+      if (seen.has(source.link)) {
+        continue;
+      }
+      seen.add(source.link);
+      lines.push(`- [${source.title ?? source.attribution ?? source.link}](${source.link})`);
     }
-    if (types.has('news') && web.length > 0) {
-      buckets.topStories = web;
-    }
-    if (types.has('image') && images.length > 0) {
-      buckets.images = images;
-    }
-    if ((types.has('file') || types.has('ref')) && files.length > 0) {
-      buckets.references = files;
-    }
+  }
 
-    if (Object.keys(buckets).length === 0) {
+  if (lines.length === 0) {
+    return text;
+  }
+
+  return `${text}\n\n**Sources**\n${lines.join('\n')}`;
+}
+
+function renumber(
+  text: string,
+  groups: GroupSpan[],
+  references: ChatGptContentReference[],
+): { text: string; sources: OrganicSource[] } {
+  const sources: OrganicSource[] = [];
+  const segments: string[] = [];
+  let cursor = 0;
+
+  for (let index = 0; index < groups.length; index++) {
+    const group = groups[index];
+    segments.push(stripMarkers(text.slice(cursor, group.start)));
+    cursor = group.end;
+
+    const groupSources = sourcesOfReference(references[index]);
+    if (groupSources.length === 0) {
       continue;
     }
 
-    results.push({ turn, data: { turn, ...buckets } });
+    const anchors = groupSources
+      .map((source) => {
+        sources.push(source);
+        return `turn0search${sources.length - 1}`;
+      })
+      .join('');
+
+    segments.push(groupSources.length > 1 ? `${anchors}` : anchors);
   }
 
-  return results;
+  segments.push(stripMarkers(text.slice(cursor)));
+  return { text: segments.join(''), sources };
+}
+
+/**
+ * Anchors are renumbered against a freshly built source array rather than
+ * trusting the exported indices, which do not address any array present in the
+ * export. Renumbering only runs when the group and reference counts match; any
+ * other shape falls back to a plain sources list so no claim is ever attributed
+ * to a source ChatGPT did not cite.
+ */
+export function buildCitations(
+  message: ChatGptMessage,
+  text: string,
+): { text: string; citations: ImportedCitations[] } {
+  const groups = findGroups(text);
+  const references = citableReferences(message);
+
+  if (groups.length === 0) {
+    return { text: stripMarkers(text), citations: [] };
+  }
+
+  if (groups.length !== references.length) {
+    return { text: appendSources(stripMarkers(text), references), citations: [] };
+  }
+
+  const { text: rewritten, sources } = renumber(text, groups, references);
+  if (sources.length === 0) {
+    return { text: rewritten, citations: [] };
+  }
+
+  return { text: rewritten, citations: [{ turn: 0, data: { turn: 0, organic: sources } }] };
 }
