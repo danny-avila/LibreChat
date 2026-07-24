@@ -12,6 +12,7 @@ import type {
   TCustomEndpoints,
   TAssistantEndpoint,
   TAnthropicEndpoint,
+  TGoogleEndpoint,
   SummarizationConfig,
   SkillSyncConfig,
 } from 'librechat-data-provider';
@@ -113,7 +114,7 @@ export interface AppConfig {
     /** OpenAI endpoint configuration */
     openAI?: Partial<TEndpoint>;
     /** Google endpoint configuration */
-    google?: Partial<TEndpoint>;
+    google?: TGoogleEndpoint;
     /** Bedrock endpoint configuration */
     bedrock?: Partial<TEndpoint>;
     /** Anthropic endpoint configuration with optional Vertex AI support */

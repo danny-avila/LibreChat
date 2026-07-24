@@ -1,5 +1,46 @@
 import { AuthKeys } from 'librechat-data-provider';
-import { createAnthropicVertexClient } from './vertex';
+import { createAnthropicVertexClient, getVertexRegion } from './vertex';
+
+describe('getVertexRegion', () => {
+  it('should return undefined when vertexConfig is undefined', () => {
+    expect(getVertexRegion('model-a', undefined)).toBeUndefined();
+  });
+
+  it('should return undefined when models is an array', () => {
+    const config = {
+      models: ['model-a', 'model-b'],
+    };
+    expect(getVertexRegion('model-a', config)).toBeUndefined();
+  });
+
+  it('should return undefined when model config is a boolean', () => {
+    const config = {
+      models: {
+        'model-a': true,
+        'model-b': false,
+      },
+    };
+    expect(getVertexRegion('model-a', config)).toBeUndefined();
+  });
+
+  it('should return undefined when model config exists but has no region', () => {
+    const config = {
+      models: {
+        'model-a': { deploymentName: 'deploy-a' },
+      },
+    };
+    expect(getVertexRegion('model-a', config)).toBeUndefined();
+  });
+
+  it('should return overridden region when model config has region', () => {
+    const config = {
+      models: {
+        'model-a': { deploymentName: 'deploy-a', region: 'europe-west1' },
+      },
+    };
+    expect(getVertexRegion('model-a', config)).toBe('europe-west1');
+  });
+});
 
 describe('createAnthropicVertexClient', () => {
   const credentials = {
