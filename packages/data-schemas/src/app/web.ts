@@ -1,4 +1,4 @@
-import { RerankerTypes, SafeSearchTypes } from 'librechat-data-provider';
+import { SafeSearchTypes } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '~/types/web';
 
@@ -16,6 +16,11 @@ export const webSearchAuth = {
       tavilyApiKey: 1 as const,
       tavilySearchUrl: 0 as const,
     },
+    crw: {
+      crwApiKey: 1 as const,
+      /** Optional (0) */
+      crwApiUrl: 0 as const,
+    },
   },
   scrapers: {
     firecrawl: {
@@ -30,6 +35,11 @@ export const webSearchAuth = {
     tavily: {
       tavilyApiKey: 1 as const,
       tavilyExtractUrl: 0 as const,
+    },
+    crw: {
+      crwApiKey: 1 as const,
+      /** Optional (0) */
+      crwApiUrl: 0 as const,
     },
   },
   rerankers: {
@@ -83,6 +93,8 @@ export function loadWebSearchConfig(
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
+  const crwApiKey = config?.crwApiKey ?? '${CRW_API_KEY}';
+  const crwApiUrl = config?.crwApiUrl ?? '${CRW_API_URL}';
   const safeSearch = config?.safeSearch ?? SafeSearchTypes.MODERATE;
   const rerankerType = config?.rerankerType;
 
@@ -100,6 +112,8 @@ export function loadWebSearchConfig(
     firecrawlApiKey,
     firecrawlApiUrl,
     firecrawlVersion,
+    crwApiKey,
+    crwApiUrl,
     searxngInstanceUrl,
     rerankerType,
   };

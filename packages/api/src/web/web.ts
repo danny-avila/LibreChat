@@ -1,3 +1,4 @@
+import { webSearchAuth } from '@librechat/data-schemas';
 import {
   AuthType,
   SafeSearchTypes,
@@ -6,7 +7,6 @@ import {
   ScraperProviders,
   extractVariableName,
 } from 'librechat-data-provider';
-import { webSearchAuth } from '@librechat/data-schemas';
 import type { RerankerTypes, TCustomConfig, TWebSearchConfig } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '@librechat/data-schemas';
 import { isSSRFTarget, resolveHostnameSSRF } from '../auth';
@@ -18,6 +18,7 @@ const USER_PROVIDED_URL_KEYS = new Set<TWebSearchKeys>([
   'searxngInstanceUrl',
   'firecrawlApiUrl',
   'jinaApiUrl',
+  'crwApiUrl',
 ]);
 
 /**
@@ -278,6 +279,8 @@ export async function loadWebSearchAuth({
     scraperOptionsTimeout = webSearchConfig?.tavilyScraperOptions?.timeout;
   } else if (scraperProvider === ScraperProviders.FIRECRAWL) {
     scraperOptionsTimeout = webSearchConfig?.firecrawlOptions?.timeout;
+  } else if (scraperProvider === ScraperProviders.CRW) {
+    scraperOptionsTimeout = webSearchConfig?.crwOptions?.timeout;
   }
 
   const searchProvider = authResult.searchProvider ?? webSearchConfig?.searchProvider;
@@ -286,6 +289,7 @@ export async function loadWebSearchAuth({
   }
   authResult.scraperTimeout = webSearchConfig?.scraperTimeout ?? scraperOptionsTimeout ?? 7500;
   authResult.firecrawlOptions = webSearchConfig?.firecrawlOptions;
+  authResult.crwOptions = webSearchConfig?.crwOptions;
   authResult.tavilySearchOptions = webSearchConfig?.tavilySearchOptions;
   authResult.tavilyScraperOptions = webSearchConfig?.tavilyScraperOptions;
 

@@ -7,8 +7,8 @@ import {
   ScraperProviders,
   SearchCategories,
 } from 'librechat-data-provider';
-import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
+import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import InputSection, { type DropdownOption } from './InputSection';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
@@ -88,6 +88,24 @@ export default function ApiKeyDialog({
           link: {
             url: 'https://app.tavily.com/home',
             text: localize('com_ui_web_search_provider_tavily_key'),
+          },
+        },
+      },
+    },
+    {
+      key: SearchProviders.CRW,
+      label: localize('com_ui_web_search_provider_crw'),
+      inputs: {
+        crwApiUrl: {
+          placeholder: localize('com_ui_web_search_crw_url'),
+          type: 'text' as const,
+        },
+        crwApiKey: {
+          placeholder: localize('com_ui_enter_api_key'),
+          type: 'password' as const,
+          link: {
+            url: 'https://fastcrw.com',
+            text: localize('com_ui_web_search_provider_crw_key'),
           },
         },
       },
@@ -176,6 +194,24 @@ export default function ApiKeyDialog({
           link: {
             url: 'https://app.tavily.com/home',
             text: localize('com_ui_web_search_scraper_tavily_key'),
+          },
+        },
+      },
+    },
+    {
+      key: ScraperProviders.CRW,
+      label: localize('com_ui_web_search_scraper_crw'),
+      inputs: {
+        crwApiUrl: {
+          placeholder: localize('com_ui_web_search_crw_url'),
+          type: 'text' as const,
+        },
+        crwApiKey: {
+          placeholder: localize('com_ui_enter_api_key'),
+          type: 'password' as const,
+          link: {
+            url: 'https://fastcrw.com',
+            text: localize('com_ui_web_search_scraper_crw_key'),
           },
         },
       },
