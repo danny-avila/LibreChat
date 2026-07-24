@@ -629,75 +629,68 @@ const OpenAIChatCompletionController = async (req, res) => {
         }
       }),
 
-      // Tool call initiation - streams id and name (from on_run_step)
-      on_run_step: createHandler((data) => {
-        const stepDetails = data?.stepDetails;
-        if (stepDetails?.type === 'tool_calls' && stepDetails.tool_calls) {
-          for (const tc of stepDetails.tool_calls) {
-            const toolIndex = data.index ?? 0;
-            const toolId = tc.id ?? '';
-            const toolName = tc.name ?? '';
-            const toolCall = {
-              id: toolId,
-              type: 'function',
-              function: { name: toolName, arguments: '' },
-            };
+      // on_run_step's index counts preceding text/reasoning steps, not the
+      // tool call's own index — streaming from here desynced the id chunk from
+      // the argument chunks (#13987). All tool call streaming now flows through
+      // on_run_step_delta, whose first chunk already carries the id/name.
+      on_run_step: createHandler(),
 
-            // Track tool call in tracker or aggregator
-            if (isStreaming) {
-              if (!tracker.toolCalls.has(toolIndex)) {
-                tracker.toolCalls.set(toolIndex, toolCall);
-              }
-              // Stream initial tool call chunk (like OpenAI does)
-              writeSSE(
-                res,
-                createChunk(context, {
-                  tool_calls: [{ index: toolIndex, ...toolCall }],
-                }),
-              );
-            } else {
-              if (!aggregator.toolCalls.has(toolIndex)) {
-                aggregator.toolCalls.set(toolIndex, toolCall);
-              }
-            }
-          }
-        }
-      }),
-
-      // Tool call argument streaming (from on_run_step_delta)
+      // id/name arrive on the first delta, arguments on the rest — all keyed by
+      // the tool call's own index so clients can accumulate by index.
       on_run_step_delta: createHandler((data) => {
         const delta = data?.delta;
-        if (delta?.type === 'tool_calls' && delta.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            const args = tc.args ?? '';
-            if (!args) {
-              continue;
+        if (delta?.type !== 'tool_calls' || !delta.tool_calls) {
+          return;
+        }
+        for (const tc of delta.tool_calls) {
+          const toolIndex = tc.index ?? 0;
+          const args = tc.args ?? '';
+          const targetMap = isStreaming ? tracker.toolCalls : aggregator.toolCalls;
+
+          let tracked = targetMap.get(toolIndex);
+          if (!tracked && (tc.id || tc.name)) {
+            tracked = {
+              id: tc.id ?? '',
+              type: 'function',
+              function: { name: '', arguments: '' },
+            };
+            targetMap.set(toolIndex, tracked);
+          }
+          if (tracked) {
+            if (tc.id && !tracked.id) {
+              tracked.id = tc.id;
             }
-
-            const toolIndex = tc.index ?? 0;
-
-            // Update tool call arguments
-            const targetMap = isStreaming ? tracker.toolCalls : aggregator.toolCalls;
-            const tracked = targetMap.get(toolIndex);
-            if (tracked) {
+            if (tc.name) {
+              tracked.function.name += tc.name;
+            }
+            if (args) {
               tracked.function.arguments += args;
             }
-
-            // Stream argument delta (only for streaming)
-            if (isStreaming) {
-              writeSSE(
-                res,
-                createChunk(context, {
-                  tool_calls: [
-                    {
-                      index: toolIndex,
-                      function: { arguments: args },
-                    },
-                  ],
-                }),
-              );
-            }
           }
+
+          if (!isStreaming) {
+            continue;
+          }
+
+          const toolCallDelta = { index: toolIndex };
+          if (tc.id) {
+            toolCallDelta.id = tc.id;
+            toolCallDelta.type = 'function';
+          }
+          const fn = {};
+          if (tc.name) {
+            fn.name = tc.name;
+          }
+          if (args) {
+            fn.arguments = args;
+          }
+          if (Object.keys(fn).length > 0) {
+            toolCallDelta.function = fn;
+          }
+          if (!toolCallDelta.id && !toolCallDelta.function) {
+            continue;
+          }
+          writeSSE(res, createChunk(context, { tool_calls: [toolCallDelta] }));
         }
       }),
 
