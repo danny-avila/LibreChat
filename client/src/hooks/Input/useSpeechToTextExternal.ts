@@ -52,12 +52,12 @@ const useSpeechToTextExternal = (
 
   function getBestSupportedMimeType() {
     const types = [
-      'audio/webm',
-      'audio/webm;codecs=opus',
-      'audio/mp4',
       'audio/ogg;codecs=opus',
       'audio/ogg',
       'audio/wav',
+      'audio/webm',
+      'audio/webm;codecs=opus',
+      'audio/mp4',
     ];
 
     for (const type of types) {
