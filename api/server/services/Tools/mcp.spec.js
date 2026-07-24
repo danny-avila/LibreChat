@@ -80,7 +80,10 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   });
 
   it('proceeds to connect once every required customUserVar is provided', async () => {
-    mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
+    mockGetConnection.mockResolvedValue({
+      fetchTools: jest.fn().mockResolvedValue([]),
+      fetchResources: jest.fn().mockResolvedValue([]),
+    });
 
     await reinitMCPServer({
       user,
@@ -101,7 +104,10 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   });
 
   it('passes request body and Graph resolver into connection creation', async () => {
-    mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
+    mockGetConnection.mockResolvedValue({
+      fetchTools: jest.fn().mockResolvedValue([]),
+      fetchResources: jest.fn().mockResolvedValue([]),
+    });
     const requestBody = { conversationId: 'conv-123', messageId: 'msg-123' };
 
     await reinitMCPServer({
@@ -152,6 +158,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     mockGetConnection.mockResolvedValue({
       disconnect,
       fetchTools: jest.fn().mockResolvedValue(tools),
+      fetchResources: jest.fn().mockResolvedValue([]),
     });
 
     await reinitMCPServer({
@@ -171,8 +178,33 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     );
   });
 
+  it('passes discovered resources into the MCP tool cache update', async () => {
+    const resources = [{ uri: 'file://guide.md', name: 'Guide', mimeType: 'text/markdown' }];
+    mockGetConnection.mockResolvedValue({
+      fetchTools: jest.fn().mockResolvedValue([]),
+      fetchResources: jest.fn().mockResolvedValue(resources),
+    });
+
+    await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+      userMCPAuthMap: undefined,
+    });
+
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools: [],
+        resources,
+      }),
+    );
+  });
+
   it('proceeds to connect when the server declares no customUserVars', async () => {
-    mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
+    mockGetConnection.mockResolvedValue({
+      fetchTools: jest.fn().mockResolvedValue([]),
+      fetchResources: jest.fn().mockResolvedValue([]),
+    });
 
     await reinitMCPServer({
       user,

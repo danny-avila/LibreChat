@@ -54,6 +54,8 @@ async function reinitMCPServer({
   let availableTools = null;
   /** @type {ReturnType<MCPConnection['fetchTools']> | null} */
   let tools = null;
+  /** @type {import('@librechat/api').MCPResource[] | null} */
+  let resources = null;
   let oauthRequired = false;
   let oauthUrl = null;
   let ephemeralServer = false;
@@ -223,6 +225,7 @@ async function reinitMCPServer({
 
           if (discoveryResult.tools && discoveryResult.tools.length > 0) {
             tools = discoveryResult.tools;
+            resources = discoveryResult.resources ?? null;
             logger.info(
               `[MCP Reinitialize] Discovered ${tools.length} tools for ${serverName} without full auth`,
             );
@@ -241,14 +244,15 @@ async function reinitMCPServer({
     }
 
     if (connection && !oauthRequired) {
-      tools = await connection.fetchTools();
+      [tools, resources] = await Promise.all([connection.fetchTools(), connection.fetchResources()]);
     }
 
-    if (tools && tools.length > 0) {
+    if ((tools && tools.length > 0) || (resources && resources.length > 0)) {
       availableTools = await updateMCPServerTools({
         userId: user.id,
         serverName,
         tools,
+        resources,
         serverConfig,
       });
     }

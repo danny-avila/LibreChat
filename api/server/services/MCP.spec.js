@@ -837,6 +837,55 @@ describe('User parameter passing tests', () => {
       expect(mockReinitMCPServer.mock.calls[0][0].user).toBe(mockUser);
     });
 
+    it('should include managed resource tools when reinit discovers resources', async () => {
+      const mockUser = { id: 'resource-user', name: 'Resource User' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const listKey = `resources/list${D}test-server`;
+      const readKey = `resources/read${D}test-server`;
+
+      mockReinitMCPServer.mockResolvedValue({
+        tools: [{ name: 'test-tool' }],
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Test tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+          [listKey]: {
+            function: {
+              description: 'List resources',
+              parameters: { type: 'object', properties: {}, required: [] },
+            },
+          },
+          [readKey]: {
+            function: {
+              description: 'Read resource',
+              parameters: {
+                type: 'object',
+                properties: { uri: { type: 'string' } },
+                required: ['uri'],
+              },
+            },
+          },
+        },
+      });
+
+      const tools = await createMCPTools({
+        res: mockRes,
+        user: mockUser,
+        serverName: 'test-server',
+        provider: 'openai',
+        userMCPAuthMap: {},
+      });
+
+      expect(tools.map((createdTool) => createdTool.name)).toEqual([
+        `test-tool${D}test-server`,
+        listKey,
+        readKey,
+      ]);
+    });
+
     it('should fail tenant-scoped OAuth flows when tool loading is aborted', async () => {
       const mockUser = { id: 'tenant-user', name: 'Tenant User' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };
@@ -1124,6 +1173,131 @@ describe('User parameter passing tests', () => {
 
       expect(getRoleByName).toHaveBeenCalledTimes(1);
       expect(mockCallTool).toHaveBeenCalledTimes(2);
+    });
+
+    it('should execute managed resources/list through MCPManager.listResources', async () => {
+      const mockUser = { id: 'resource-list-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+
+      const mockListResources = jest
+        .fn()
+        .mockResolvedValue([{ uri: 'file://a.md', name: 'A', mimeType: 'text/markdown' }]);
+      mockGetMCPManager.mockReturnValue({
+        listResources: mockListResources,
+      });
+
+      const resourceTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `resources/list${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`resources/list${D}test-server`]: {
+            function: {
+              description: 'List resources',
+              parameters: { type: 'object', properties: {}, required: [] },
+            },
+          },
+        },
+      });
+
+      await expect(
+        resourceTool.invoke(
+          {},
+          {
+            configurable: {
+              user: mockUser,
+            },
+            metadata: {
+              provider: 'openai',
+              thread_id: 'thread-1',
+              run_id: 'run-1',
+            },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toContain('"file://a.md"');
+
+      expect(mockListResources).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'test-server',
+          user: mockUser,
+        }),
+      );
+    });
+
+    it('should execute managed resources/read through MCPManager.readResource', async () => {
+      const mockUser = { id: 'resource-read-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+
+      const mockReadResource = jest.fn().mockResolvedValue({
+        contents: [{ uri: 'file://a.md', text: 'hello', mimeType: 'text/markdown' }],
+      });
+      mockGetMCPManager.mockReturnValue({
+        readResource: mockReadResource,
+      });
+
+      const resourceTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `resources/read${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`resources/read${D}test-server`]: {
+            function: {
+              description: 'Read resource',
+              parameters: {
+                type: 'object',
+                properties: { uri: { type: 'string' } },
+                required: ['uri'],
+              },
+            },
+          },
+        },
+      });
+
+      await expect(
+        resourceTool.invoke(
+          { uri: 'file://a.md' },
+          {
+            configurable: {
+              user: mockUser,
+            },
+            metadata: {
+              provider: 'openai',
+              thread_id: 'thread-1',
+              run_id: 'run-1',
+            },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toContain('"hello"');
+
+      expect(mockReadResource).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'test-server',
+          uri: 'file://a.md',
+          user: mockUser,
+        }),
+      );
     });
 
     it('should pass the captured user to MCPManager.callTool when invocation config omits configurable.user', async () => {
