@@ -21,6 +21,7 @@ export const useScreenshot = () => {
 
     const canvas = await toCanvas(node, {
       backgroundColor,
+      pixelRatio: Math.max(window.devicePixelRatio || 1, 3),
       imagePlaceholder:
         'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
     });
