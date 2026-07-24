@@ -7,8 +7,8 @@ import {
   ScraperProviders,
   SearchCategories,
 } from 'librechat-data-provider';
-import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
+import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import InputSection, { type DropdownOption } from './InputSection';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
@@ -88,6 +88,20 @@ export default function ApiKeyDialog({
           link: {
             url: 'https://app.tavily.com/home',
             text: localize('com_ui_web_search_provider_tavily_key'),
+          },
+        },
+      },
+    },
+    {
+      key: SearchProviders.KEENABLE,
+      label: localize('com_ui_web_search_provider_keenable'),
+      inputs: {
+        keenableApiKey: {
+          placeholder: localize('com_ui_enter_api_key_optional'),
+          type: 'password' as const,
+          link: {
+            url: 'https://keenable.ai',
+            text: localize('com_ui_web_search_provider_keenable_key'),
           },
         },
       },

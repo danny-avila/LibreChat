@@ -390,6 +390,75 @@ describe('web.ts', () => {
       expect(result.authResult).toHaveProperty('safeSearch', SafeSearchTypes.OFF);
     });
 
+    it('should authenticate Keenable keyless (no API key configured)', async () => {
+      // Keenable works against the public endpoint with no key. Return nothing for
+      // the KEENABLE_* fields; other categories still authenticate normally.
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field.startsWith('KEENABLE_')) {
+            return;
+          }
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const keenableConfig = {
+        ...webSearchConfig,
+        keenableApiKey: '${KEENABLE_API_KEY}',
+        keenableApiUrl: '${KEENABLE_API_URL}',
+        searchProvider: 'keenable' as SearchProviders,
+        keenableSearchOptions: { maxResults: 7 },
+      } as TWebSearchConfig;
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig: keenableConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.searchProvider).toBe('keenable' as SearchProviders);
+      // No key was resolved, so it should not be set on the result.
+      expect(result.authResult.keenableApiKey).toBeUndefined();
+      // Provider-specific options are passed through untouched.
+      expect(result.authResult.keenableSearchOptions).toEqual({ maxResults: 7 });
+    });
+
+    it('should pick up a configured Keenable API key', async () => {
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'KEENABLE_API_KEY') {
+            result[field] = 'user-keenable-key';
+          } else if (field === 'KEENABLE_API_URL') {
+            return;
+          } else {
+            result[field] =
+              field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const keenableConfig = {
+        ...webSearchConfig,
+        keenableApiKey: '${KEENABLE_API_KEY}',
+        keenableApiUrl: '${KEENABLE_API_URL}',
+        searchProvider: 'keenable' as SearchProviders,
+      } as TWebSearchConfig;
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig: keenableConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.searchProvider).toBe('keenable' as SearchProviders);
+      expect(result.authResult.keenableApiKey).toBe('user-keenable-key');
+    });
+
     it('should set the correct service types in authResult', async () => {
       // Mock successful authentication
       mockLoadAuthValues.mockImplementation(({ authFields }) => {

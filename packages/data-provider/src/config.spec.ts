@@ -1,6 +1,4 @@
 import type { TEndpointsConfig } from './types';
-import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
-import { getEndpointFileConfig, mergeFileConfig } from './file-config';
 import {
   allowedAddressesSchema,
   configSchema,
@@ -8,6 +6,8 @@ import {
   resolveEndpointType,
   webSearchSchema,
 } from './config';
+import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
+import { getEndpointFileConfig, mergeFileConfig } from './file-config';
 
 const endpointsConfig: TEndpointsConfig = {
   [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
@@ -553,6 +553,40 @@ describe('webSearchSchema', () => {
     expect(() =>
       webSearchSchema.parse({
         tavilyScraperOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts Keenable search options', () => {
+    const result = webSearchSchema.parse({
+      keenableSearchOptions: {
+        maxResults: 7,
+        site: 'example.com',
+        attributionTitle: 'LibreChat',
+        timeout: 15000,
+      },
+    });
+
+    expect(result.keenableSearchOptions?.maxResults).toBe(7);
+    expect(result.keenableSearchOptions?.site).toBe('example.com');
+    expect(result.keenableSearchOptions?.attributionTitle).toBe('LibreChat');
+    expect(result.keenableSearchOptions?.timeout).toBe(15000);
+  });
+
+  it('rejects invalid Keenable search options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        keenableSearchOptions: {
+          maxResults: 0,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        keenableSearchOptions: {
           timeout: 120001,
         },
       }),

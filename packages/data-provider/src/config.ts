@@ -1612,6 +1612,7 @@ export enum SearchProviders {
   SERPER = 'serper',
   SEARXNG = 'searxng',
   TAVILY = 'tavily',
+  KEENABLE = 'keenable',
 }
 
 export enum ScraperProviders {
@@ -1642,6 +1643,8 @@ export const webSearchSchema = z.object({
   tavilyApiKey: z.string().optional().default('${TAVILY_API_KEY}'),
   tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
   tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
+  keenableApiKey: z.string().optional().default('${KEENABLE_API_KEY}'),
+  keenableApiUrl: z.string().optional().default('${KEENABLE_API_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
@@ -1707,6 +1710,14 @@ export const webSearchSchema = z.object({
       includeImages: z.boolean().optional(),
       includeFavicon: z.boolean().optional(),
       format: z.enum(['markdown', 'text']).optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
+    })
+    .optional(),
+  keenableSearchOptions: z
+    .object({
+      maxResults: z.number().int().min(1).max(20).optional(),
+      site: z.string().optional(),
+      attributionTitle: z.string().optional(),
       timeout: z.number().int().nonnegative().max(120000).optional(),
     })
     .optional(),
