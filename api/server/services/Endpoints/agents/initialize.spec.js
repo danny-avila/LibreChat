@@ -655,7 +655,7 @@ describe('initializeClient — subagent loading', () => {
       }),
     ).rejects.toThrow(`maximum depth of ${MAX_SUBAGENT_DEPTH}`);
     expect(logger.warn).toHaveBeenCalledWith(
-      '[initializeClient] Subagent graph depth limit exceeded',
+      '[resolveSubagents] Subagent graph depth limit exceeded',
       expect.objectContaining({
         agentId: `agent_depth_${MAX_SUBAGENT_DEPTH - 1}`,
         primaryAgentId: PRIMARY_ID,
@@ -703,7 +703,7 @@ describe('initializeClient — subagent loading', () => {
       }),
     ).rejects.toThrow(`maximum depth of ${MAX_SUBAGENT_DEPTH}`);
     expect(logger.warn).toHaveBeenCalledWith(
-      '[initializeClient] Subagent graph depth limit exceeded',
+      '[resolveSubagents] Subagent graph depth limit exceeded',
       expect.objectContaining({
         primaryAgentId: PRIMARY_ID,
         depth: MAX_SUBAGENT_DEPTH,
@@ -751,7 +751,7 @@ describe('initializeClient — subagent loading', () => {
       }),
     ).rejects.toThrow(`maximum of ${MAX_SUBAGENT_GRAPH_NODES} unique agents`);
     expect(logger.warn).toHaveBeenCalledWith(
-      '[initializeClient] Subagent graph node limit exceeded',
+      '[resolveSubagents] Subagent graph node limit exceeded',
       expect.objectContaining({
         primaryAgentId: PRIMARY_ID,
         loadedSubagentCount: MAX_SUBAGENT_GRAPH_NODES,

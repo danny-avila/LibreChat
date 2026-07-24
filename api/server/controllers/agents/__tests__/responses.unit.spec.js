@@ -57,6 +57,7 @@ const mockGetSkillToolDeps = jest.fn(() => ({}));
 const mockBuildAgentScopedContext = jest.fn().mockResolvedValue(new Map());
 const mockBuildAgentContextAttachmentsByAgentId = jest.fn().mockReturnValue(new Map());
 const mockApplyContextToAgent = jest.fn().mockResolvedValue(undefined);
+const mockResolveSubagents = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('nanoid', () => ({
   nanoid: jest.fn(() => 'mock-nanoid-123'),
@@ -120,6 +121,7 @@ jest.mock('@librechat/api', () => ({
       userMCPAuthMap: undefined,
     };
   }),
+  resolveSubagents: (...args) => mockResolveSubagents(...args),
   getBalanceConfig: mockGetBalanceConfig,
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
@@ -554,6 +556,52 @@ describe('createResponse controller', () => {
         expect.objectContaining({
           agentId: 'agent-handoff',
           sharedRunContext: 'Handoff context',
+        }),
+      );
+    });
+
+    it('applies scoped context to pure subagents pruned from run agents', async () => {
+      const api = require('@librechat/api');
+      const subagentConfig = {
+        id: 'agent-subagent',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [],
+        agentContextAttachments: [{ file_id: 'file-2', filename: 'subagent_context.pdf' }],
+      };
+
+      api.initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [],
+        agentContextAttachments: [],
+      });
+      mockResolveSubagents.mockImplementationOnce(async ({ primaryConfig }) => {
+        primaryConfig.subagentAgentConfigs = [subagentConfig];
+      });
+      mockBuildAgentScopedContext.mockResolvedValueOnce(
+        new Map([['agent-subagent', 'Subagent context']]),
+      );
+
+      await createResponse(req, res);
+
+      expect(mockBuildAgentContextAttachmentsByAgentId).toHaveBeenCalledWith([
+        expect.objectContaining({ id: 'agent-123' }),
+        subagentConfig,
+      ]);
+      expect(mockBuildAgentScopedContext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentIds: ['agent-123', 'agent-subagent'],
+        }),
+      );
+      expect(mockApplyContextToAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent: subagentConfig,
+          agentId: 'agent-subagent',
+          sharedRunContext: 'Subagent context',
         }),
       );
     });

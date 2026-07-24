@@ -28,6 +28,7 @@ const {
   resolveRecursionLimit,
   findPiiMatchInMessages,
   discoverConnectedAgents,
+  resolveSubagents,
   getRemoteAgentPermissions,
   createToolExecuteHandler,
   buildNonStreamingResponse,
@@ -370,12 +371,34 @@ const OpenAIChatCompletionController = async (req, res) => {
     let handoffAgentConfigs = new Map();
     let discoveredEdges = [];
     let discoveredMCPAuthMap;
-    if (primaryConfig.edges?.length) {
-      const modelsConfig = await getModelsConfig(req);
+    let discoveredSkippedIds = new Set();
+    const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
+    const needsHandoffDiscovery = (primaryConfig.edges?.length ?? 0) > 0;
+
+    // `getModelsConfig` can trigger provider model-list fetches, so only pay it
+    // when handoff discovery or real subagent loading needs it — keep the
+    // common single-agent request off that path.
+    let modelsConfig;
+    if (needsHandoffDiscovery) {
+      modelsConfig = await getModelsConfig(req);
+    }
+
+    const remoteAgentPermissionCheck = async ({ userId, role, resourceId, requiredPermission }) => {
+      const permissions = await getRemoteAgentPermissions(
+        { getEffectivePermissions },
+        userId,
+        role,
+        resourceId,
+      );
+      return hasPermissions(permissions, requiredPermission);
+    };
+
+    if (needsHandoffDiscovery) {
       ({
         agentConfigs: handoffAgentConfigs,
         edges: discoveredEdges,
         userMCPAuthMap: discoveredMCPAuthMap,
+        skippedAgentIds: discoveredSkippedIds,
       } = await discoverConnectedAgents(
         {
           req,
@@ -428,15 +451,7 @@ const OpenAIChatCompletionController = async (req, res) => {
           // middleware does for the primary: AGENT owners with the SHARE
           // bit are treated as remotely authorized even without an
           // explicit REMOTE_AGENT grant.
-          checkPermission: async ({ userId, role, resourceId, requiredPermission }) => {
-            const permissions = await getRemoteAgentPermissions(
-              { getEffectivePermissions },
-              userId,
-              role,
-              resourceId,
-            );
-            return hasPermissions(permissions, requiredPermission);
-          },
+          checkPermission: remoteAgentPermissionCheck,
           logViolation,
           db: dbMethods,
           onAgentInitialized: (agentId, handoffAgent, config) => {
@@ -446,6 +461,70 @@ const OpenAIChatCompletionController = async (req, res) => {
         },
       ));
     }
+
+    // Always run resolution: when the capability is disabled it strips any
+    // `subagents` persisted on the primary/handoff configs so `createRun`
+    // can't expose self-spawn. Only fetch `modelsConfig` when an agent
+    // actually has subagents to load (validation needs it).
+    const needsSubagentResolution =
+      subagentsCapabilityEnabled &&
+      (primaryConfig.subagents?.enabled ||
+        [...handoffAgentConfigs.values()].some((cfg) => cfg.subagents?.enabled));
+    if (needsSubagentResolution && !modelsConfig) {
+      modelsConfig = await getModelsConfig(req);
+    }
+    await resolveSubagents(
+      {
+        req,
+        res,
+        primaryConfig,
+        agentConfigs: handoffAgentConfigs,
+        edges: discoveredEdges,
+        subagentsCapabilityEnabled,
+        skippedAgentIds: discoveredSkippedIds,
+        endpointOption,
+        allowedProviders,
+        modelsConfig,
+        loadTools,
+        requestFiles: [],
+        conversationId,
+        parentMessageId,
+        resourceType: ResourceType.REMOTE_AGENT,
+        computeAccessibleSkillIds: (handoffAgent) =>
+          resolveAgentScopedSkillIds({
+            agent: handoffAgent,
+            accessibleSkillIds,
+            skillsCapabilityEnabled,
+            ephemeralSkillsToggle,
+          }),
+        computeSkillAuthoringAvailable: (handoffAgent) =>
+          canAuthorSkillFiles({
+            agent: handoffAgent,
+            scopedEditableSkillIds: resolveAgentScopedSkillIds({
+              agent: handoffAgent,
+              accessibleSkillIds: editableSkillIds,
+              skillsCapabilityEnabled,
+              ephemeralSkillsToggle,
+            }),
+            skillCreateAllowed,
+            skillsCapabilityEnabled,
+            ephemeralSkillsToggle,
+          }),
+        skillStates,
+        defaultActiveOnShare,
+        codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+      },
+      {
+        getAgent: db.getAgent,
+        checkPermission: remoteAgentPermissionCheck,
+        logViolation,
+        db: dbMethods,
+        onAgentInitialized: (agentId, handoffAgent, config) => {
+          agentToolContexts.set(agentId, buildAgentToolContext({ agent: handoffAgent, config }));
+        },
+        initializeAgent,
+      },
+    );
 
     primaryConfig.edges = discoveredEdges;
 
