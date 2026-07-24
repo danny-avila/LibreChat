@@ -101,9 +101,9 @@ function configureReasoning(
   const modelName = updatedOptions.model ?? '';
 
   /**
-   * Sonnet 5 runs adaptive thinking by default when the `thinking` field is
-   * omitted, so honoring a user who turns thinking off requires sending an
-   * explicit disabled config rather than leaving the field unset.
+   * Sonnet 5 and Opus 5 run adaptive thinking by default when the `thinking`
+   * field is omitted, so honoring a user who turns thinking off requires
+   * sending an explicit disabled config rather than leaving the field unset.
    */
   if (!extendedOptions.thinking && modelName && requiresExplicitThinkingDisabled(modelName)) {
     updatedOptions.thinking = { type: 'disabled' } as AnthropicClientOptions['thinking'];

@@ -2,9 +2,10 @@ import { Agent } from 'undici';
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import {
-  anthropicSettings,
+  clampEffortForDisabledThinking,
   omitsSamplingParameters,
   removeNullishValues,
+  anthropicSettings,
   ThinkingDisplay,
   AuthKeys,
 } from 'librechat-data-provider';
@@ -234,14 +235,14 @@ function getLLMConfig(
   requestOptions = configureReasoning(requestOptions, systemOptions);
 
   if (supportsAdaptiveThinking(resolvedModel)) {
-    if (
-      systemOptions.effort &&
-      (systemOptions.effort as string) !== '' &&
-      !requestOptions.invocationKwargs?.output_config
-    ) {
+    /** Opus 5 rejects an explicit disabled thinking config above effort `high` (400). */
+    const effort = systemOptions.thinking
+      ? systemOptions.effort
+      : clampEffortForDisabledThinking(resolvedModel, systemOptions.effort);
+    if (effort && (effort as string) !== '' && !requestOptions.invocationKwargs?.output_config) {
       requestOptions.invocationKwargs = {
         ...requestOptions.invocationKwargs,
-        output_config: { effort: systemOptions.effort },
+        output_config: { effort },
       };
     }
   } else {

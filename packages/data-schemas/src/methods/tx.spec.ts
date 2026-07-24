@@ -2578,6 +2578,54 @@ describe('Claude Model Tests', () => {
       cacheTokenValues['claude-sonnet-5'].read,
     );
   });
+
+  it('should return correct prompt and completion rates for Claude Opus 5', () => {
+    expect(getMultiplier({ model: 'claude-opus-5', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-opus-5'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-opus-5', tokenType: 'completion' })).toBe(
+      tokenValues['claude-opus-5'].completion,
+    );
+  });
+
+  it('should pin Claude Opus 5 to standard Opus pricing ($5 / $25 per MTok)', () => {
+    expect(tokenValues['claude-opus-5']).toEqual({ prompt: 5, completion: 25 });
+  });
+
+  it('should apply standard Opus cache rates ($6.25 / $0.50) for Claude Opus 5', () => {
+    expect(cacheTokenValues['claude-opus-5']).toEqual({ write: 6.25, read: 0.5 });
+  });
+
+  it('should handle Claude Opus 5 model name variations without matching Opus 4', () => {
+    const modelVariations = [
+      'claude-opus-5',
+      'claude-opus-5-20260601',
+      'claude-opus-5-latest',
+      'anthropic/claude-opus-5',
+      'claude-opus-5/anthropic',
+      'anthropic.claude-opus-5',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-opus-5');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-opus-5'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-opus-5'].completion,
+      );
+    });
+  });
+
+  it('should return correct cache rates for Claude Opus 5', () => {
+    expect(getCacheMultiplier({ model: 'claude-opus-5', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-opus-5'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-opus-5', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-opus-5'].read,
+    );
+  });
 });
 
 describe('Premium Token Pricing', () => {
@@ -2602,6 +2650,7 @@ describe('Premium Token Pricing', () => {
       'claude-opus-4-6',
       'claude-opus-4-7',
       'claude-opus-4-8',
+      'claude-opus-5',
       'claude-fable-5',
       'claude-mythos-5',
       'claude-sonnet-4-6',

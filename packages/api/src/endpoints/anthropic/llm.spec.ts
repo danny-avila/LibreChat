@@ -1290,6 +1290,100 @@ describe('getLLMConfig', () => {
         expect(result.llmConfig.thinking).toBeUndefined();
       });
 
+      it('should request summarized thinking display for Opus 5 (opt back in)', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: { model: 'claude-opus-5', thinking: true },
+        });
+
+        const thinking = result.llmConfig.thinking as unknown as {
+          type: string;
+          display?: string;
+        };
+        expect(thinking.type).toBe('adaptive');
+        expect(thinking.display).toBe('summarized');
+      });
+
+      it('should send explicit disabled thinking for Opus 5 when thinking is off', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: { model: 'claude-opus-5', thinking: false },
+        });
+
+        expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('disabled');
+      });
+
+      it('should keep Opus 5 thinking off when a disabled config round-trips from persistence', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-5',
+            thinking: { type: 'disabled' } as unknown as boolean,
+          },
+        });
+
+        expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('disabled');
+      });
+
+      it('should omit sampling parameters for Opus 5', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-5',
+            thinking: true,
+            temperature: 0.7,
+            topP: 0.9,
+            topK: 40,
+          },
+        });
+
+        expect(result.llmConfig).not.toHaveProperty('temperature');
+        expect(result.llmConfig).not.toHaveProperty('topP');
+        expect(result.llmConfig).not.toHaveProperty('topK');
+      });
+
+      it('should clamp effort to high for Opus 5 when thinking is off (disabled capped at high)', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-5',
+            thinking: false,
+            effort: 'xhigh' as AnthropicEffort,
+          },
+        });
+
+        expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('disabled');
+        expect(result.llmConfig.invocationKwargs?.output_config).toEqual({ effort: 'high' });
+      });
+
+      it('should keep effort at or below high for Opus 5 when thinking is off', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: { model: 'claude-opus-5', thinking: false, effort: AnthropicEffort.medium },
+        });
+
+        expect(result.llmConfig.invocationKwargs?.output_config).toEqual({ effort: 'medium' });
+      });
+
+      it('should keep xhigh effort for Opus 5 when thinking is on', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-5',
+            thinking: true,
+            effort: 'xhigh' as AnthropicEffort,
+          },
+        });
+
+        expect(result.llmConfig.invocationKwargs?.output_config).toEqual({ effort: 'xhigh' });
+      });
+
+      it('should keep xhigh effort for Sonnet 5 when thinking is off (no disabled-effort cap)', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-sonnet-5',
+            thinking: false,
+            effort: 'xhigh' as AnthropicEffort,
+          },
+        });
+
+        expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('disabled');
+        expect(result.llmConfig.invocationKwargs?.output_config).toEqual({ effort: 'xhigh' });
+      });
+
       it('should NOT set thinking.display for pre-Opus-4.7 adaptive models', () => {
         const pre47Models = ['claude-opus-4-6', 'claude-sonnet-4-6'];
 

@@ -483,6 +483,7 @@ endpoints:
   #     # Use this if you want the technical model IDs to show in the UI
   #     # models:
   #     #   - "claude-fable-5"
+  #     #   - "claude-opus-5"
   #     #   - "claude-opus-4-8"
   #     #   - "claude-sonnet-4-6"
   #     #   - "claude-3-7-sonnet-20250219"
@@ -496,6 +497,8 @@ endpoints:
   #     models:
   #       claude-fable-5:
   #         deploymentName: claude-fable-5
+  #       claude-opus-5:
+  #         deploymentName: claude-opus-5
   #       claude-opus-4.8:
   #         deploymentName: claude-opus-4-8
   #       claude-opus-4.5:

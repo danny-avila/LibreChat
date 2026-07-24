@@ -5,6 +5,7 @@ import {
   omitsSamplingParameters,
   omitsThinkingByDefault,
   requiresExplicitThinkingDisabled,
+  clampEffortForDisabledThinking,
   resolveThinkingDisplay,
   bedrockOutputParser,
   bedrockInputParser,
@@ -400,13 +401,44 @@ describe('requiresExplicitThinkingDisabled', () => {
     expect(requiresExplicitThinkingDisabled('claude-sonnet-9')).toBe(true);
   });
 
-  test('returns false for pre-5 Sonnet, Opus, and Mythos-class models', () => {
-    // Opus 4.7+ omit -> off; Fable/Mythos reject an explicit disabled config (400)
+  test('returns true for Opus 5+ (omitted thinking runs adaptive by default)', () => {
+    expect(requiresExplicitThinkingDisabled('claude-opus-5')).toBe(true);
+    expect(requiresExplicitThinkingDisabled('claude-opus-5-20260601')).toBe(true);
+    expect(requiresExplicitThinkingDisabled('anthropic.claude-opus-5')).toBe(true);
+    expect(requiresExplicitThinkingDisabled('us.anthropic.claude-opus-5')).toBe(true);
+    expect(requiresExplicitThinkingDisabled('claude-opus-6')).toBe(true);
+  });
+
+  test('returns false for pre-5 Sonnet, pre-5 Opus, and Mythos-class models', () => {
+    // Opus 4.7/4.8 omit -> off; Fable/Mythos reject an explicit disabled config (400)
     expect(requiresExplicitThinkingDisabled('claude-sonnet-4-6')).toBe(false);
     expect(requiresExplicitThinkingDisabled('claude-opus-4-8')).toBe(false);
     expect(requiresExplicitThinkingDisabled('claude-fable-5')).toBe(false);
     expect(requiresExplicitThinkingDisabled('claude-mythos-5')).toBe(false);
     expect(requiresExplicitThinkingDisabled('gpt-4o')).toBe(false);
+  });
+});
+
+describe('clampEffortForDisabledThinking', () => {
+  test('clamps xhigh/max to high for Opus 5+ (disabled thinking capped at high effort)', () => {
+    expect(clampEffortForDisabledThinking('claude-opus-5', 'xhigh')).toBe('high');
+    expect(clampEffortForDisabledThinking('claude-opus-5', 'max')).toBe('high');
+    expect(clampEffortForDisabledThinking('anthropic.claude-opus-5', 'xhigh')).toBe('high');
+    expect(clampEffortForDisabledThinking('claude-opus-6', 'max')).toBe('high');
+  });
+
+  test('leaves effort at or below high unchanged for Opus 5', () => {
+    expect(clampEffortForDisabledThinking('claude-opus-5', 'high')).toBe('high');
+    expect(clampEffortForDisabledThinking('claude-opus-5', 'medium')).toBe('medium');
+    expect(clampEffortForDisabledThinking('claude-opus-5', 'low')).toBe('low');
+    expect(clampEffortForDisabledThinking('claude-opus-5', '')).toBe('');
+    expect(clampEffortForDisabledThinking('claude-opus-5', undefined)).toBeUndefined();
+  });
+
+  test('leaves Sonnet 5 and pre-5 Opus untouched (no disabled-effort cap)', () => {
+    expect(clampEffortForDisabledThinking('claude-sonnet-5', 'xhigh')).toBe('xhigh');
+    expect(clampEffortForDisabledThinking('claude-sonnet-5', 'max')).toBe('max');
+    expect(clampEffortForDisabledThinking('claude-opus-4-8', 'xhigh')).toBe('xhigh');
   });
 });
 
@@ -829,6 +861,74 @@ describe('bedrockInputParser', () => {
       const result = bedrockInputParser.parse(input) as Record<string, unknown>;
       const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
       expect(additionalFields.thinking).toEqual({ type: 'disabled' });
+    });
+
+    test('should send explicit disabled thinking for Bedrock Opus 5 when thinking is off', () => {
+      const input = {
+        model: 'anthropic.claude-opus-5',
+        thinking: false,
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'disabled' });
+    });
+
+    test('should keep Bedrock Opus 5 thinking off when only the persisted AMRF disabled config remains', () => {
+      const input = {
+        model: 'anthropic.claude-opus-5',
+        additionalModelRequestFields: { thinking: { type: 'disabled' } },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'disabled' });
+    });
+
+    test('should clamp effort to high for Bedrock Opus 5 when thinking is off (xhigh rejected with disabled)', () => {
+      const input = {
+        model: 'anthropic.claude-opus-5',
+        thinking: false,
+        effort: 'xhigh',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'disabled' });
+      expect(additionalFields.output_config).toEqual({ effort: 'high' });
+    });
+
+    test('should clamp a persisted AMRF output_config for Bedrock Opus 5 when thinking is off', () => {
+      const input = {
+        model: 'anthropic.claude-opus-5',
+        thinking: false,
+        additionalModelRequestFields: { output_config: { effort: 'max' } },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'disabled' });
+      expect(additionalFields.output_config).toEqual({ effort: 'high' });
+    });
+
+    test('should keep xhigh effort for Bedrock Opus 5 when thinking is on', () => {
+      const input = {
+        model: 'anthropic.claude-opus-5',
+        thinking: true,
+        effort: 'xhigh',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+      expect(additionalFields.output_config).toEqual({ effort: 'xhigh' });
+    });
+
+    test('should keep xhigh effort for Bedrock Sonnet 5 when thinking is off (no disabled-effort cap)', () => {
+      const input = {
+        model: 'anthropic.claude-sonnet-5',
+        thinking: false,
+        effort: 'xhigh',
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(additionalFields.thinking).toEqual({ type: 'disabled' });
+      expect(additionalFields.output_config).toEqual({ effort: 'xhigh' });
     });
 
     test('should respect custom thinking budget', () => {

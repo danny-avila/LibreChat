@@ -179,17 +179,44 @@ export function omitsSamplingParameters(model: string): boolean {
  * Whether disabling thinking requires sending an explicit `{ type: 'disabled' }`
  * config rather than simply omitting the `thinking` field.
  *
- * Sonnet 5 treats an omitted `thinking` field as adaptive thinking ON by
- * default, so honoring a user who turns thinking off means sending the disabled
- * config explicitly. Opus 4.7+ run without thinking when the field is omitted,
- * and Fable/Mythos reject an explicit disabled config (400, thinking always
- * on), so both are excluded.
+ * Sonnet 5 and Opus 5 treat an omitted `thinking` field as adaptive thinking
+ * ON by default, so honoring a user who turns thinking off means sending the
+ * disabled config explicitly. Opus 4.7/4.8 run without thinking when the field
+ * is omitted, and Fable/Mythos reject an explicit disabled config (400,
+ * thinking always on), so both are excluded.
  *
- * See https://platform.claude.com/docs/en/about-claude/models/migration-guide#migrating-to-claude-sonnet-5
+ * See https://platform.claude.com/docs/en/about-claude/models/migration-guide#migrating-to-claude-opus-5
  */
 export function requiresExplicitThinkingDisabled(model: string): boolean {
   const sonnet = parseSonnetVersion(model);
-  return sonnet != null && sonnet.major >= 5;
+  if (sonnet != null && sonnet.major >= 5) {
+    return true;
+  }
+  const opus = parseOpusVersion(model);
+  return opus != null && opus.major >= 5;
+}
+
+/**
+ * Opus 5 accepts an explicit `{ type: 'disabled' }` thinking config only at
+ * effort `high` or below — combining it with `xhigh` or `max` returns a 400.
+ * Clamps the requested effort to `high` so honoring "thinking off" degrades
+ * gracefully instead of failing the request. Sonnet 5 accepts disabled
+ * thinking at any effort and is returned unchanged.
+ *
+ * See https://platform.claude.com/docs/en/about-claude/models/migration-guide#migrating-to-claude-opus-5
+ */
+export function clampEffortForDisabledThinking<T extends string | null | undefined>(
+  model: string,
+  effort: T,
+): T | s.AnthropicEffort.high {
+  if (effort !== s.AnthropicEffort.xhigh && effort !== s.AnthropicEffort.max) {
+    return effort;
+  }
+  const opus = parseOpusVersion(model);
+  if (opus != null && opus.major >= 5) {
+    return s.AnthropicEffort.high;
+  }
+  return effort;
 }
 
 /** Checks if a model has a 1M context window (Sonnet 4.6+, Opus 4.6+, Opus 5+, Fable/Mythos) */
@@ -474,6 +501,24 @@ export const bedrockInputParser = s.tConversationSchema
           delete additionalFields.thinkingDisplay;
           if (requiresExplicitThinkingDisabled(typedData.model as string)) {
             additionalFields.thinking = { type: 'disabled' };
+            /** Opus 5 rejects disabled thinking above effort `high` (400). */
+            const clampOutputConfig = (target: Record<string, unknown>) => {
+              const outputConfig = target.output_config as { effort?: string } | undefined;
+              if (typeof outputConfig?.effort !== 'string') {
+                return;
+              }
+              const clamped = clampEffortForDisabledThinking(
+                typedData.model as string,
+                outputConfig.effort,
+              );
+              if (clamped !== outputConfig.effort) {
+                target.output_config = { ...outputConfig, effort: clamped };
+              }
+            };
+            clampOutputConfig(additionalFields);
+            if (persistedAmrf) {
+              clampOutputConfig(persistedAmrf);
+            }
           } else {
             delete additionalFields.thinking;
             /** Disable-by-omission models (Opus 4.7+): drop the persisted
