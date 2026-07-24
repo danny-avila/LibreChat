@@ -465,6 +465,9 @@ endpoints:
   #     # Vertex AI region (optional, defaults to 'us-east5')
   #     # Available regions: us-east5, us-central1, europe-west1, europe-west4, asia-southeast1
   #     # Multi-region endpoints: us, eu, global
+  #     # IMPORTANT: specific regional endpoints only serve Claude Sonnet 4.6 and earlier. Newer
+  #     # models (Opus 4.7+, Opus 5, Sonnet 5, Fable 5) require "global" or a multi-region value
+  #     # ("us"/"eu") and will 404 on a specific region. "global" also avoids the 10% regional premium.
   #     region: "us-east5"
   #     # Path to Google service account key file (optional)
   #     # If not specified, uses GOOGLE_SERVICE_KEY_FILE env var or default path (api/data/auth.json)
