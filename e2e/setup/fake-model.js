@@ -27,6 +27,7 @@ const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
 const SLOW_COUNTED_REPLY_MARKER = 'E2E_SLOW_COUNTED_REPLY:';
 const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
+const ACTIVITY_REPLY_MARKER = 'E2E_ACTIVITY_REPLY:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
@@ -39,6 +40,7 @@ const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
 const AGENT_CONTEXT_ASSERTION_FINAL_TEXT = 'E2E agent context assertion passed';
 const QUOTE_ASSERTION_FINAL_TEXT = 'E2E quote assertion passed';
 const STEER_TOOL_FINAL_TEXT = 'E2E steer tool reply done';
+const ACTIVITY_FINAL_TEXT = 'E2E activity reply done';
 const STEER_TOOL_NAME_PREFIX = 'remember_fact';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
 const SLOW_REPLY_CHUNKS = 160;
@@ -634,6 +636,40 @@ function steerToolReplyResponses(label, toolNames) {
   };
 }
 
+/**
+ * Two-turn run with a real tool boundary for the activity-label e2e: turn 1
+ * emits TWO parallel `remember_fact` calls (one `PostToolBatch` -> one label),
+ * turn 2 streams the final text. The args are distinct and the MCP fixture
+ * echoes them back prefixed, so a spec can tell an OUTPUT ("E2E MCP memory
+ * noted: ...") from an INPUT in the recorded label prompt — which is the whole
+ * point of labeling after the batch rather than before it.
+ */
+function activityReplyResponses(label, toolNames) {
+  const toolName = Array.from(toolNames).find((name) => name.startsWith(STEER_TOOL_NAME_PREFIX));
+  if (!toolName) {
+    return {
+      responses: [`E2E activity reply unavailable: no ${STEER_TOOL_NAME_PREFIX} tool advertised.`],
+    };
+  }
+  return {
+    responses: ['', `${ACTIVITY_FINAL_TEXT} ${label}`],
+    toolCalls: [
+      {
+        id: `call_e2e_activity_alpha_${label}`,
+        name: toolName,
+        args: { fact: `activity alpha ${label}` },
+        type: 'tool_call',
+      },
+      {
+        id: `call_e2e_activity_beta_${label}`,
+        name: toolName,
+        args: { fact: `activity beta ${label}` },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
 function findLastToolMessageText(messages, requiredToken) {
   for (let index = (messages ?? []).length - 1; index >= 0; index--) {
     const message = messages[index];
@@ -749,6 +785,11 @@ function resolveResponses({ agents, messages, text, toolNames }) {
   const steerToolLabel = getMarkerValue(text, STEER_TOOL_REPLY_MARKER);
   if (steerToolLabel) {
     return steerToolReplyResponses(steerToolLabel, toolNames);
+  }
+
+  const activityLabel = getMarkerValue(text, ACTIVITY_REPLY_MARKER);
+  if (activityLabel) {
+    return activityReplyResponses(activityLabel, toolNames);
   }
 
   if (text.includes(ASSERT_AGENT_CONTEXT_MARKER)) {
