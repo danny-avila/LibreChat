@@ -188,7 +188,7 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
      */
     source: {
       type: String,
-      enum: ['inline', 'github', 'notion'],
+      enum: ['inline', 'github', 'gitlab', 'bitbucket', 'azuredevops', 'notion'],
       default: 'inline',
     },
     /**

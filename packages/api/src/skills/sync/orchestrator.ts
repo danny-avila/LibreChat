@@ -77,6 +77,25 @@ function hasGitHubConfig(config: SkillSyncConfig | undefined): config is SkillSy
   return Boolean(config?.github);
 }
 
+function hasAnyEnabledProvider(config: SkillSyncConfig | undefined): boolean {
+  if (!config) {
+    return false;
+  }
+  if (config.github?.enabled && config.github.sources.length > 0) {
+    return true;
+  }
+  if (config.gitlab?.enabled && config.gitlab.sources.length > 0) {
+    return true;
+  }
+  if (config.bitbucket?.enabled && config.bitbucket.sources.length > 0) {
+    return true;
+  }
+  if (config.azuredevops?.enabled && config.azuredevops.sources.length > 0) {
+    return true;
+  }
+  return false;
+}
+
 function isSameSkillSyncConfig(
   left: SkillSyncConfig | undefined,
   right: SkillSyncConfig | undefined,
@@ -153,12 +172,17 @@ function getRequestSkillSyncConfig(
   logger: SkillSyncTriggerLogger,
 ): SkillSyncConfig | undefined {
   const resolved = parseSkillSyncConfig(appConfig?.skillSync, logger);
-  if (
-    !hasGitHubConfig(resolved) ||
-    !resolved.github.enabled ||
-    resolved.github.sources.length === 0
-  ) {
+  if (!hasAnyEnabledProvider(resolved)) {
     return undefined;
+  }
+  if (!hasGitHubConfig(resolved)) {
+    // Non-GitHub providers are configured but no GitHub — pass through the
+    // full config so the runner can process them via syncNonGitHubProviders.
+    const base = parseSkillSyncConfig(appConfig?.config?.skillSync, logger);
+    if (isSameSkillSyncConfig(resolved, base)) {
+      return undefined;
+    }
+    return resolved;
   }
 
   const base = parseSkillSyncConfig(appConfig?.config?.skillSync, logger);
@@ -268,11 +292,13 @@ export function createSkillSyncTriggerOrchestrator(
 
   async function maybeRunForRequest(request: SkillSyncRequestLike): Promise<boolean> {
     const config = getRequestSkillSyncConfig(request.config, request.user, deps.logger);
-    if (!hasGitHubConfig(config)) {
+    if (!config) {
       return false;
     }
 
-    const syncKey = getRequestSyncKey(config, request.user);
+    const syncKey = hasGitHubConfig(config)
+      ? getRequestSyncKey(config, request.user)
+      : `nongithub:${JSON.stringify(request.user?.tenantId ?? '')}`;
     if (inFlight.has(syncKey)) {
       return false;
     }
@@ -282,9 +308,15 @@ export function createSkillSyncTriggerOrchestrator(
       loadAppConfig: async () => request.config,
       allowServerCredentials: Boolean(request.skillSyncAllowServerCredentials),
     });
-    const status = await requestRunner.getStatus();
-    if (!shouldRunRequestSync(status, { minIntervalMs, staleRunningMs })) {
-      return false;
+
+    // For configs with GitHub sources, use the status-based interval check.
+    // For non-GitHub-only configs, run unconditionally (interval gating happens
+    // inside the generic sync via the per-source status timestamps).
+    if (hasGitHubConfig(config)) {
+      const status = await requestRunner.getStatus();
+      if (!shouldRunRequestSync(status, { minIntervalMs, staleRunningMs })) {
+        return false;
+      }
     }
 
     inFlight.add(syncKey);
