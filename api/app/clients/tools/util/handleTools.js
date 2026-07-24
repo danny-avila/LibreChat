@@ -234,6 +234,8 @@ const loadTools = async ({
         imageFiles,
         userId: user,
         fileStrategy,
+        imageOutputType,
+        provider: agent?.provider ?? endpoint,
       });
     },
   };
