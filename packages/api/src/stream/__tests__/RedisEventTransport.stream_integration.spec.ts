@@ -897,6 +897,57 @@ describe('RedisEventTransport Integration Tests', () => {
       subscriber2.disconnect();
     });
 
+    test('should deliver a remote abort after the last SSE subscriber disconnects', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber1 = (ioredisClient as Redis).duplicate();
+      const subscriber2 = (ioredisClient as Redis).duplicate();
+      const transport1 = new RedisEventTransport(ioredisClient, subscriber1);
+      const transport2 = new RedisEventTransport(ioredisClient, subscriber2);
+      const streamId = `abort-after-disconnect-${Date.now()}`;
+      let remoteAbortReceived = false;
+      let signalAbortReceived: (() => void) | undefined;
+      const abortReceived = new Promise<void>((resolve) => {
+        signalAbortReceived = resolve;
+      });
+      let abortTimeout: ReturnType<typeof setTimeout> | undefined;
+
+      try {
+        await transport1.onAbort(streamId, () => {
+          remoteAbortReceived = true;
+          signalAbortReceived?.();
+        });
+        const sseSubscription = transport1.subscribe(streamId, { onChunk: () => undefined });
+        await sseSubscription.ready;
+        sseSubscription.unsubscribe();
+
+        transport2.emitAbort(streamId);
+
+        await Promise.race([
+          abortReceived,
+          new Promise<never>((_, reject) => {
+            abortTimeout = setTimeout(
+              () => reject(new Error('Timed out waiting for remote abort')),
+              2000,
+            );
+          }),
+        ]);
+        expect(remoteAbortReceived).toBe(true);
+      } finally {
+        clearTimeout(abortTimeout);
+        transport1.cleanup(streamId);
+        transport1.destroy();
+        transport2.destroy();
+        subscriber1.disconnect();
+        subscriber2.disconnect();
+      }
+    });
+
     test('should call multiple abort callbacks', async () => {
       if (!ioredisClient) {
         console.warn('Redis not available, skipping test');
@@ -972,11 +1023,11 @@ describe('RedisEventTransport Integration Tests', () => {
   /**
    * Cross-Replica Sequence Synchronization (#12575)
    *
-   * The core cross-replica sync logic (Redis INCR counter, async GET in
-   * syncReorderBuffer, pruneStaleEntries flag) is verified by:
+   * The core cross-replica sync logic (atomic sequence allocation, first-observed
+   * attachment baseline, and same-replica replay frontier) is verified by:
    * - Unit tests with mock publishers (deterministic, no cluster timing)
    * - GenerationJobManager integration tests (end-to-end with earlyEventBuffer)
-   * - The race-condition unit test (paused GET with injected message)
+   * - The race-condition unit test (delayed subscriber dispatch after publish)
    *
    * Transport-level integration tests with two real Redis transports are
    * inherently flaky in Redis Cluster: cluster pub/sub fan-out is async
@@ -1054,6 +1105,7 @@ describe('RedisEventTransport Integration Tests', () => {
   describe('Publish Error Propagation', () => {
     test('should swallow emitChunk publish errors (callers fire-and-forget)', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+      const { emitChunkWithReceipt } = await import('../internal/chunkPublication');
 
       const mockPublisher = createMockPublisher();
       mockPublisher.publish.mockRejectedValue(new Error('Redis connection lost'));
@@ -1070,15 +1122,19 @@ describe('RedisEventTransport Integration Tests', () => {
 
       const streamId = `error-prop-chunk-${Date.now()}`;
 
-      // emitChunk swallows errors because callers often fire-and-forget (no await).
-      // Throwing would cause unhandled promise rejections.
+      // Public callers retain Promise<void>; the internal manager capability receives failure
+      // without creating an unhandled rejection.
       await expect(transport.emitChunk(streamId, { data: 'test' })).resolves.toBeUndefined();
+      await expect(emitChunkWithReceipt(transport, streamId, { data: 'test' })).resolves.toBe(
+        false,
+      );
 
       transport.destroy();
     });
 
     test('should swallow emitChunk incr errors (sequence allocation failure)', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+      const { emitChunkWithReceipt } = await import('../internal/chunkPublication');
 
       const mockPublisher = createMockPublisher();
       mockPublisher.incr.mockRejectedValue(new Error('INCR failed'));
@@ -1096,6 +1152,9 @@ describe('RedisEventTransport Integration Tests', () => {
       const streamId = `error-prop-incr-${Date.now()}`;
 
       await expect(transport.emitChunk(streamId, { data: 'test' })).resolves.toBeUndefined();
+      await expect(emitChunkWithReceipt(transport, streamId, { data: 'test' })).resolves.toBe(
+        false,
+      );
       expect(mockPublisher.publish).not.toHaveBeenCalled();
 
       transport.destroy();

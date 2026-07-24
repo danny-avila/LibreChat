@@ -14,6 +14,7 @@ const {
   resolveAgentTokenConfig,
   resolveAgentScopedSkillIds,
   resolveModelSpecSkillIds,
+  getAgentStartupTelemetry,
   buildAgentContextAttachmentsByAgentId,
 } = require('@librechat/api');
 const {
@@ -117,6 +118,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     throw new Error('Endpoint option not provided');
   }
   const appConfig = req.config;
+  const startupTelemetry = getAgentStartupTelemetry(req);
 
   /** @type {string | null} */
   const streamId = req._resumableStreamId || null;
@@ -160,6 +162,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
   const skillDbMethods = getSkillDbMethods();
 
+  if (!endpointOption.agent) {
+    throw new Error('No agent promise provided');
+  }
+
   /** Run-level gate for inline memory tools: the `memory` capability must be
    *  enabled, memory must be configured, and the user must not have opted out.
    *  Requires the memory WRITE permissions (CREATE + UPDATE) — both inline tools
@@ -167,45 +173,66 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    *  read-only-memory roles that the runtime loader would then refuse to build.
    *  Agents (or the ephemeral memory badge) opt in per-agent via the `memory`
    *  marker on `tools`. */
-  const memoryAvailable =
+  const memoryAvailablePromise =
     enabledCapabilities.has(AgentCapabilities.memory) &&
     isMemoryEnabled(appConfig?.memory) &&
     req.user?.personalization?.memories !== false &&
-    (await checkAccess({
+    checkAccess({
       user: req.user,
       permissionType: PermissionTypes.MEMORIES,
       permissions: [Permissions.USE, Permissions.CREATE, Permissions.UPDATE],
       getRoleByName: db.getRoleByName,
-    }));
+    });
 
-  const accessibleSkillIds = skillsCapabilityEnabled
-    ? withDeploymentSkillIds(
-        await findAccessibleResources({
-          userId: req.user.id,
-          role: req.user.role,
-          resourceType: ResourceType.SKILL,
-          requiredPermissions: PermissionBits.VIEW,
-        }),
-      )
-    : [];
-  const editableSkillIds = skillsCapabilityEnabled
-    ? await findAccessibleResources({
+  const accessibleSkillIdsPromise = skillsCapabilityEnabled
+    ? findAccessibleResources({
+        userId: req.user.id,
+        role: req.user.role,
+        resourceType: ResourceType.SKILL,
+        requiredPermissions: PermissionBits.VIEW,
+      }).then(withDeploymentSkillIds)
+    : Promise.resolve([]);
+  const editableSkillIdsPromise = skillsCapabilityEnabled
+    ? findAccessibleResources({
         userId: req.user.id,
         role: req.user.role,
         resourceType: ResourceType.SKILL,
         requiredPermissions: PermissionBits.EDIT,
       })
-    : [];
-  const skillCreateAllowed = skillsCapabilityEnabled
-    ? await getSkillToolDeps().canCreateSkill({ req })
-    : false;
+    : Promise.resolve([]);
+  const skillCreateAllowedPromise = skillsCapabilityEnabled
+    ? getSkillToolDeps().canCreateSkill({ req })
+    : Promise.resolve(false);
+  const skillStatesPromise = accessibleSkillIdsPromise.then((accessibleSkillIds) =>
+    loadSkillStates({
+      userId: req.user.id,
+      appConfig,
+      getUserById: db.getUserById,
+      accessibleSkillIds,
+    }),
+  );
+  const primaryAgentPromise = endpointOption.agent;
+  const modelsConfigPromise = getModelsConfig(req);
+  const validatedPrimaryAgentPromise = Promise.all([primaryAgentPromise, modelsConfigPromise]).then(
+    async ([primaryAgent, modelsConfig]) => {
+      if (!primaryAgent) {
+        throw new Error('Agent not found');
+      }
 
-  const { skillStates, defaultActiveOnShare } = await loadSkillStates({
-    userId: req.user.id,
-    appConfig,
-    getUserById: db.getUserById,
-    accessibleSkillIds,
-  });
+      const validationResult = await validateAgentModel({
+        req,
+        res,
+        modelsConfig,
+        logViolation,
+        agent: primaryAgent,
+      });
+      if (!validationResult.isValid) {
+        throw new Error(validationResult.error?.message);
+      }
+
+      return { primaryAgent, modelsConfig };
+    },
+  );
 
   /**
    * Agent context store - populated after initialization, accessed by callback via closure.
@@ -315,28 +342,22 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     usageEmitSink,
   });
 
-  if (!endpointOption.agent) {
-    throw new Error('No agent promise provided');
-  }
-
-  const primaryAgent = await endpointOption.agent;
+  const [
+    memoryAvailable,
+    accessibleSkillIds,
+    editableSkillIds,
+    skillCreateAllowed,
+    { skillStates, defaultActiveOnShare },
+    { primaryAgent, modelsConfig },
+  ] = await Promise.all([
+    memoryAvailablePromise,
+    accessibleSkillIdsPromise,
+    editableSkillIdsPromise,
+    skillCreateAllowedPromise,
+    skillStatesPromise,
+    validatedPrimaryAgentPromise,
+  ]);
   delete endpointOption.agent;
-  if (!primaryAgent) {
-    throw new Error('Agent not found');
-  }
-
-  const modelsConfig = await getModelsConfig(req);
-  const validationResult = await validateAgentModel({
-    req,
-    res,
-    modelsConfig,
-    logViolation,
-    agent: primaryAgent,
-  });
-
-  if (!validationResult.isValid) {
-    throw new Error(validationResult.error?.message);
-  }
 
   const agentConfigs = new Map();
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
@@ -1016,6 +1037,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
      *  them to persist the breakdown + usage rollup on the response message. */
     contextUsageSink,
     usageEmitSink,
+    startupTelemetry,
     toolInputValidationErrors,
   });
 
