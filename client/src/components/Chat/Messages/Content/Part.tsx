@@ -10,6 +10,7 @@ import {
 import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
 import {
   ImageGen,
+  VideoGen,
   ExecuteCode,
   AgentUpdate,
   EmptyText,
@@ -178,6 +179,16 @@ const Part = memo(function Part({
               hideAttachments={hideAttachments}
               onExpand={onToolExpand}
               toolCallId={toolCallId}
+            />
+          );
+        } else if (toolCall.name === 'video_gen_oai') {
+          return (
+            <VideoGen
+              initialProgress={toolCall.progress ?? 0.1}
+              isSubmitting={isSubmitting}
+              output={toolCall.output ?? ''}
+              attachments={attachments}
+              hideAttachments={hideAttachments}
             />
           );
         } else if (

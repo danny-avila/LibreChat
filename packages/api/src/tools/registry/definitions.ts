@@ -439,6 +439,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     toolType: 'builtin',
     responseFormat: oaiToolkit.image_edit_oai.responseFormat,
   },
+  video_gen_oai: {
+    name: oaiToolkit.video_gen_oai.name,
+    description: oaiToolkit.video_gen_oai.description,
+    schema: oaiToolkit.video_gen_oai.schema,
+    toolType: 'builtin',
+    responseFormat: oaiToolkit.video_gen_oai.responseFormat,
+  },
   gemini_image_gen: {
     name: geminiToolkit.gemini_image_gen.name,
     description: geminiToolkit.gemini_image_gen.description,
