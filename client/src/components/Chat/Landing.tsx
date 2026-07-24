@@ -82,9 +82,39 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const brandedSpecLabel = modelSpec?.showOnLanding ? modelSpec.label : '';
   const brandedSpecDescription = (modelSpec?.showOnLanding && modelSpec.description) || '';
   const name = entity?.name ?? brandedSpecLabel;
-  const description =
+
+  const escapeHtml = useCallback(
+    (value: string) =>
+      value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;'),
+    [],
+  );
+
+  const interpolate = useCallback(
+    (text: string, escapeName = false) => {
+      if (!user?.name) {
+        return text;
+      }
+      const name = escapeName ? escapeHtml(user.name) : user.name;
+      return text.replace(/\{\{user\.name\}\}/g, () => name);
+    },
+    [user?.name, escapeHtml],
+  );
+
+  const rawDescription =
     (entity?.description || brandedSpecDescription || conversation?.greeting) ?? '';
-  const descriptionIsHTML = description.trim().startsWith('<');
+  // Decide HTML-ness from the *raw* string, before interpolation, so a user
+  // name containing `<`/`>` can't itself flip which rendering path is taken.
+  const descriptionIsHTML = rawDescription.trim().startsWith('<');
+  // Only escape the substituted name on the HTML path — it gets sanitized
+  // and rendered via dangerouslySetInnerHTML, so it must stay literal text.
+  // On the plain-text path React already escapes text children, so
+  // escaping there would incorrectly surface entities like `&amp;` as-is.
+  const description = interpolate(rawDescription, descriptionIsHTML);
 
   const sanitizeDescription = useMemo(
     () =>
@@ -101,8 +131,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     if (typeof startupConfig?.interface?.customWelcome === 'string') {
       const customWelcome = startupConfig.interface.customWelcome;
       // Replace {{user.name}} with actual user name if available
-      if (user?.name && customWelcome.includes('{{user.name}}')) {
-        return customWelcome.replace(/{{user.name}}/g, user.name);
+      if (customWelcome.includes('{{user.name}}')) {
+        return interpolate(customWelcome);
       }
       return customWelcome;
     }
@@ -132,7 +162,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     else {
       return localize('com_ui_good_evening');
     }
-  }, [localize, startupConfig?.interface?.customWelcome, user?.name]);
+  }, [localize, startupConfig?.interface?.customWelcome, interpolate]);
 
   const handleLineCountChange = useCallback((count: number) => {
     setTextHasMultipleLines(count > 1);
