@@ -2,6 +2,7 @@ const telemetry = require('./telemetry');
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
+const openRouterInterceptor = require('./utils/openRouterInterceptor');
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
@@ -61,6 +62,7 @@ const host = HOST || 'localhost';
 const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
 
 const app = express();
+app.use(openRouterInterceptor.requestContextMiddleware);
 let serverReady = false;
 
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
