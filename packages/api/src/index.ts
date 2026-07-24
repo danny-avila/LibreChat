@@ -13,6 +13,7 @@ export * from './mcp/mcpConfig';
 export * from './mcp/registry/MCPServersRegistry';
 export * from './mcp/MCPManager';
 export * from './mcp/connection';
+export * from './mcp/elicitation';
 export * from './mcp/oauth';
 export * from './mcp/auth';
 export * from './mcp/zod';

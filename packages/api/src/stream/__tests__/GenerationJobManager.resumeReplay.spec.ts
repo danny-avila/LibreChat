@@ -109,6 +109,41 @@ describe('GenerationJobManager resume replay events', () => {
     expect(resumeState?.replayEvents).toEqual([runStepEvent, authEvent]);
   });
 
+  test('replays pending and resolved URL-mode elicitation events, deduped by flow', async () => {
+    manager = createInMemoryManager();
+    const streamId = `elicitation-resume-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+
+    const flowId = 'user-1:jira:create_issue:nonce';
+    const pendingEvent = {
+      event: 'on_elicitation',
+      data: {
+        id: 'step-elicit',
+        runId: 'USE_PRELIM_RESPONSE_MESSAGE_ID',
+        elicitation: { flowId, mode: 'url', message: 'Authorize', url: 'https://auth.example.com' },
+      },
+    } satisfies ServerSentEvent;
+    const resolvedEvent = {
+      event: 'on_elicitation_resolved',
+      data: {
+        id: 'step-elicit',
+        runId: 'USE_PRELIM_RESPONSE_MESSAGE_ID',
+        flowId,
+        action: 'complete',
+      },
+    } satisfies ServerSentEvent;
+
+    // Duplicate pending emit dedups by flowId; the resolved event is a separate
+    // slot so a resumed client renders the card then patches it resolved.
+    await manager.emitChunk(streamId, pendingEvent);
+    await manager.emitChunk(streamId, pendingEvent);
+    await manager.emitChunk(streamId, resolvedEvent);
+
+    const resumeState = await manager.getResumeState(streamId);
+
+    expect(resumeState?.replayEvents).toEqual([pendingEvent, resolvedEvent]);
+  });
+
   test('replaces OAuth replay event for the same step id', async () => {
     manager = createInMemoryManager();
     const streamId = `oauth-delta-replace-${Date.now()}`;

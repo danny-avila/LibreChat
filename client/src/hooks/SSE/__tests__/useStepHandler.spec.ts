@@ -2007,6 +2007,58 @@ describe('useStepHandler', () => {
       consoleSpy.mockRestore();
     });
 
+    it('relocates an elicitation card to the tail when a text delta lands on its slot, keeping the text', () => {
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      const elicitationPart = {
+        type: ContentTypes.ELICITATION,
+        elicitation: { flowId: 'flow-1', mode: 'url', message: 'Authorize access' },
+      } as unknown as TMessageContentParts;
+      /** Tool-call+elicitation+final-text sequence colliding on the same server
+       *  index: the elicitation card occupies index 1 when the final text delta
+       *  streams into that same slot. */
+      const responseMessage = createResponseMessage({
+        content: [{ type: ContentTypes.TEXT, text: 'Calling tool...' }, elicitationPart],
+      });
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      act(() => {
+        result.current.syncStepMessage(responseMessage);
+      });
+
+      const runStep = createRunStep({ index: 1 });
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const textDelta: Agents.MessageDeltaEvent = {
+        id: 'step-1',
+        delta: { content: [{ type: ContentTypes.TEXT, text: 'Final answer' }] },
+      };
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: textDelta },
+          submission,
+        );
+      });
+
+      expect(consoleSpy).not.toHaveBeenCalledWith('Content type mismatch', expect.anything());
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1];
+      const updated = lastCall[0][lastCall[0].length - 1] as TMessage;
+      const content = updated.content as Array<{ type?: string; text?: string }>;
+      // Final text is written into the collided slot, not dropped.
+      expect(content[1]).toMatchObject({ type: ContentTypes.TEXT, text: 'Final answer' });
+      // The elicitation card survives, relocated to the tail.
+      expect(content[content.length - 1]).toMatchObject({ type: ContentTypes.ELICITATION });
+      consoleSpy.mockRestore();
+    });
+
     it('drops an answered ask card when the resumed segment streams AROUND its slot', () => {
       /**
        * The first event after a resume re-renders the ask tool_call at ITS OWN

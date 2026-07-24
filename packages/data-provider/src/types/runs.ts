@@ -12,8 +12,45 @@ export enum ContentTypes {
   INPUT_AUDIO = 'input_audio',
   AGENT_UPDATE = 'agent_update',
   SUMMARY = 'summary',
+  ELICITATION = 'elicitation',
   STEER = 'steer',
   ERROR = 'error',
+}
+
+/**
+ * Content-part types that exist only for the chat UI and must never be sent to
+ * the model. Currently just elicitation cards — they are rendered and persisted
+ * for replay but carry no meaning for a completion request. Single source of
+ * truth for the model-payload strip (see {@link stripUiOnlyContentParts}).
+ */
+export const UI_ONLY_CONTENT_TYPES: ReadonlySet<ContentTypes> = new Set([ContentTypes.ELICITATION]);
+
+/**
+ * Returns `messages` with UI-only content parts (see {@link UI_ONLY_CONTENT_TYPES})
+ * removed from each message's `content`, for use right before the payload reaches
+ * `formatAgentMessages`. Non-mutating: only messages that actually contain such a
+ * part are shallow-cloned, so the persisted message and UI copy keep the card.
+ * String/absent content and non-array inputs pass through untouched.
+ */
+export function stripUiOnlyContentParts<T extends { content?: unknown }>(messages: T[]): T[];
+export function stripUiOnlyContentParts<T>(messages: T): T;
+export function stripUiOnlyContentParts(messages: unknown): unknown {
+  if (!Array.isArray(messages)) {
+    return messages;
+  }
+  return messages.map((message) => {
+    const content = (message as { content?: unknown } | null | undefined)?.content;
+    if (!Array.isArray(content)) {
+      return message;
+    }
+    const filtered = content.filter((part) => {
+      const type = (part as { type?: ContentTypes | string } | null | undefined)?.type;
+      return type == null || !UI_ONLY_CONTENT_TYPES.has(type as ContentTypes);
+    });
+    return filtered.length === content.length
+      ? message
+      : { ...(message as object), content: filtered };
+  });
 }
 
 export enum StepTypes {
@@ -42,6 +79,8 @@ export enum StepEvents {
   ON_SUMMARIZE_DELTA = 'on_summarize_delta',
   ON_SUMMARIZE_COMPLETE = 'on_summarize_complete',
   ON_SUBAGENT_UPDATE = 'on_subagent_update',
+  ON_ELICITATION = 'on_elicitation',
+  ON_ELICITATION_RESOLVED = 'on_elicitation_resolved',
   ON_SANDBOX_STARTING = 'on_sandbox_starting',
 }
 

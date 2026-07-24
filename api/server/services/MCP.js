@@ -52,6 +52,22 @@ const RECONNECT_THROTTLE_MS = 10_000;
 const missingToolCache = new Map();
 const MISSING_TOOL_TTL_MS = 10_000;
 
+/**
+ * Bridges the URL-mode elicitation SSE stream to the out-of-band completion
+ * route. `createElicitationStart` runs inside the streaming tool call, so it
+ * holds the stream context (`res`/`streamId`/`stepId`); the
+ * `POST /api/mcp/elicitation/:flowId` route runs in a separate request that has
+ * none of it. Keyed by `flowId`, this registry lets the route emit
+ * `on_elicitation_resolved` back onto the originating stream. Entries are
+ * deleted on resolution; any left abandoned are bounded to {@link MAX_CACHE_SIZE}
+ * and TTL-swept once the map exceeds that cap (see {@link evictStale}).
+ * `elicitationId` is retained alongside them for future
+ * `notifications/elicitation/complete` correlation.
+ * @type {Map<string, { res?: import('http').ServerResponse, streamId: string | null, stepId: string, elicitationId?: string, createdAt: number }>}
+ */
+const elicitationFlowContext = new Map();
+const ELICITATION_CONTEXT_TTL_MS = 10 * 60 * 1000;
+
 async function userCanUseMCPServers(user, req) {
   if (!user?.id || !user?.role) {
     return false;
@@ -82,8 +98,12 @@ function evictStale(map, ttl) {
     return;
   }
   const now = Date.now();
-  for (const [key, timestamp] of map) {
-    if (now - timestamp >= ttl) {
+  for (const [key, value] of map) {
+    // Entries are either a bare timestamp (number) or an object carrying a
+    // `createdAt` field (e.g. elicitationFlowContext). Extract the timestamp
+    // for either shape; drop entries whose age can't be determined.
+    const timestamp = typeof value === 'number' ? value : value?.createdAt;
+    if (timestamp == null || now - timestamp >= ttl) {
       map.delete(key);
     }
     if (map.size <= MAX_CACHE_SIZE) {
@@ -375,6 +395,148 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
     await runStepEmitter();
     await runStepDeltaEmitter(authURL, options);
   };
+}
+
+/**
+ * Emits the `on_elicitation` SSE event so the chat UI can render an
+ * authorization card. Covers the URL-mode wire mechanisms: a `mode: 'url'`
+ * `elicitation/create` request, and the -32042 URL-exception path (always
+ * `mode: 'url'`).
+ * @param {object} params
+ * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {string} params.stepId - The ID of the step.
+ * @param {string | null} [params.streamId] - The stream ID for resumable mode.
+ * @returns {(params: { flowId: string; mode: 'url'; message: string; serverName?: string; toolName?: string; url?: string; elicitationId?: string }) => Promise<void>}
+ */
+function createElicitationStart({ res, stepId, streamId = null }) {
+  return async function ({ flowId, mode, message, serverName, toolName, url, elicitationId }) {
+    // Capture stream context so the out-of-band completion route can emit
+    // `on_elicitation_resolved` onto this stream. `elicitationId` is retained
+    // for future `notifications/elicitation/complete` correlation; it is not
+    // part of the client-facing `on_elicitation` payload below.
+    // Schedule TTL-based cleanup so an abandoned flow (tab closed, timed out, or
+    // a completion that 404'd/never arrived) can't retain its `res`/context
+    // entry indefinitely — `evictStale` only sweeps on insertion once the map
+    // grows past MAX_CACHE_SIZE, which may never happen under low/medium traffic.
+    // Cleared in `resolveElicitationFlow` on normal resolution.
+    const cleanupTimer = setTimeout(() => {
+      elicitationFlowContext.delete(flowId);
+    }, ELICITATION_CONTEXT_TTL_MS);
+    cleanupTimer.unref?.();
+    elicitationFlowContext.set(flowId, {
+      res,
+      streamId,
+      stepId,
+      elicitationId,
+      cleanupTimer,
+      createdAt: Date.now(),
+    });
+    evictStale(elicitationFlowContext, ELICITATION_CONTEXT_TTL_MS);
+
+    const data = {
+      id: stepId,
+      runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+      elicitation: { flowId, mode, message, serverName, toolName, url },
+    };
+    const eventData = { event: 'on_elicitation', data };
+    if (streamId) {
+      await GenerationJobManager.emitChunk(streamId, eventData);
+    } else {
+      sendEvent(res, eventData);
+    }
+  };
+}
+
+/**
+ * Returns the captured stream context for a pending elicitation flow, or
+ * `undefined` once it has resolved or aged out. Used by the completion route to
+ * verify a flow is still live before resolving it.
+ * @param {string} flowId
+ * @returns {{ res?: import('http').ServerResponse, streamId: string | null, stepId: string, elicitationId?: string, createdAt: number } | undefined}
+ */
+function getElicitationFlowContext(flowId) {
+  return elicitationFlowContext.get(flowId);
+}
+
+/**
+ * Emits the `on_elicitation_resolved` SSE event back onto the stream that
+ * originally rendered the card, so a resumed/replayed session reconstructs the
+ * resolved state instead of a stale pending card, then drops the flow's context
+ * entry.
+ *
+ * When this process never held the flow's context — most likely because a
+ * different replica served the originating tool call than the one handling
+ * this completion request — falls back to `fallbackStreamId`/`fallbackStepId`
+ * (sourced by the caller from the flow's persisted `FlowStateManager`
+ * metadata). This process has no runtime state for that stream, so it first
+ * hydrates it via `GenerationJobManager.getJob` before emitting; if the job no
+ * longer exists there, or the fallback stream/step is unusable, resolution is
+ * a no-op (returns `false`) — the live client still patches its own copy from
+ * the POST response, and full reloads rely on the persisted content part.
+ * @param {object} params
+ * @param {string} params.flowId
+ * @param {import('librechat-data-provider').Agents.ElicitationAction} params.action
+ * @param {Record<string, string | number | boolean>} [params.content]
+ * @param {string | null} [params.fallbackStreamId] - Stream id from the flow's persisted
+ *   metadata, used when this process holds no local context for the flow.
+ * @param {string} [params.fallbackStepId] - Step id paired with `fallbackStreamId`.
+ * @returns {Promise<boolean>}
+ */
+async function resolveElicitationFlow({
+  flowId,
+  action,
+  content,
+  fallbackStreamId = null,
+  fallbackStepId,
+}) {
+  let context = elicitationFlowContext.get(flowId);
+  if (context) {
+    clearTimeout(context.cleanupTimer);
+    elicitationFlowContext.delete(flowId);
+  } else {
+    const streamId = fallbackStreamId;
+    const stepId = fallbackStepId;
+    if (streamId && !stepId) {
+      return false;
+    }
+    if (!streamId || !stepId) {
+      return false;
+    }
+    // This process never ran the originating stream, so it has no runtime
+    // state for it yet — hydrate before emitChunk can target it.
+    // GenerationJobManager.getJob returns falsy when the job no longer exists
+    // (e.g. already cleaned up), in which case there's nothing to resolve onto.
+    const job = await GenerationJobManager.getJob(streamId);
+    if (!job) {
+      return false;
+    }
+    context = { streamId, stepId };
+  }
+
+  const eventData = {
+    event: 'on_elicitation_resolved',
+    data: {
+      id: context.stepId,
+      runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+      flowId,
+      action,
+      content,
+    },
+  };
+
+  try {
+    if (context.streamId) {
+      await GenerationJobManager.emitChunk(context.streamId, eventData);
+    } else if (context.res) {
+      sendEvent(context.res, eventData);
+    } else {
+      return false;
+    }
+    return true;
+  } catch (error) {
+    logger.warn(`[MCP][Elicitation] Failed to emit resolution for flow ${flowId}`, error);
+    return false;
+  }
 }
 
 /**
@@ -807,6 +969,17 @@ function createToolInstance({
         toolCall,
         streamId,
       });
+      // Elicitation is enabled by default; a server config sets `elicitation: false`
+      // to opt out. When disabled, we pass no `elicitationStart`, so MCPManager's
+      // `if (elicitationStart && userId)` guards skip all elicitation handling.
+      const elicitationStart =
+        capturedServerConfig?.elicitation === false
+          ? undefined
+          : createElicitationStart({
+              res,
+              stepId,
+              streamId,
+            });
 
       if (derivedSignal) {
         const tenantId = config?.configurable?.user?.tenantId ?? getTenantId();
@@ -840,6 +1013,9 @@ function createToolInstance({
         },
         oauthStart,
         oauthEnd,
+        elicitationStart,
+        elicitationStreamId: streamId,
+        elicitationStepId: stepId,
         graphTokenResolver: getGraphApiToken,
         oboTokenResolver: exchangeOboToken,
         oboTrustChecker: createOboTrustChecker(),
@@ -1065,6 +1241,9 @@ module.exports = {
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
   createOAuthStart,
+  createElicitationStart,
+  getElicitationFlowContext,
+  resolveElicitationFlow,
   checkOAuthFlowStatus,
   getServerConnectionStatus,
   createUnavailableToolStub,

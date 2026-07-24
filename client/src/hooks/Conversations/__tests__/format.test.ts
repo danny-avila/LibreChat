@@ -92,6 +92,15 @@ const contentByType: Record<ContentTypes, ExportableContentPart> = {
     type: ContentTypes.ERROR,
     error: 'Something failed',
   },
+  [ContentTypes.ELICITATION]: {
+    type: ContentTypes.ELICITATION,
+    elicitation: {
+      flowId: 'flow-1',
+      mode: 'url',
+      message: 'Please authorize',
+      url: 'https://example.com/authorize',
+    },
+  },
 };
 
 const expectedMarkdownByType: Record<ContentTypes, MessageContentExport> = {
@@ -110,6 +119,7 @@ const expectedMarkdownByType: Record<ContentTypes, MessageContentExport> = {
   [ContentTypes.SUMMARY]: ['Summary', 'Summary text'],
   [ContentTypes.STEER]: ['You (steered)', 'Focus on the tests'],
   [ContentTypes.ERROR]: ['Assistant', 'Something failed'],
+  [ContentTypes.ELICITATION]: [],
 };
 
 describe('handledExportContentTypes', () => {

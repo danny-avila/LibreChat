@@ -21,6 +21,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
+import { extractUrlElicitation } from './elicitation';
 import { runOutsideTracing } from '~/utils/tracing';
 import { isAddressAllowed } from '~/auth/domain';
 import { sanitizeUrlForLogging } from './utils';
@@ -1279,7 +1280,15 @@ export class MCPConnection extends EventEmitter {
         version: '1.2.3',
       },
       {
-        capabilities: {},
+        /** Declares support for the `url` elicitation wire mode (spec 2025-11-25).
+         *  The target gateway (AWS Bedrock AgentCore) returns the -32042
+         *  `UrlElicitationRequired` error on `tools/call` ONLY to clients that
+         *  declare `elicitation.url`, so this must stay declared even though
+         *  proactive server-initiated `elicitation/create` handling is
+         *  intentionally deferred to a follow-up. Gated on the per-server
+         *  `elicitation` flag: when a server opts out (`elicitation: false`),
+         *  the capability is not advertised. */
+        capabilities: params.serverConfig.elicitation === false ? {} : { elicitation: { url: {} } },
       },
     );
 
@@ -2098,6 +2107,26 @@ export class MCPConnection extends EventEmitter {
         rawMessage.startsWith(SDK_SSE_RECONNECT_FAILED)
       ) {
         logger.debug(`${this.getLogPrefix()} SDK SSE stream recovery in progress: ${rawMessage}`);
+        return;
+      }
+
+      /**
+       * A -32042 `UrlElicitationRequired` (the gateway's per-tool authorization
+       * signal, delivered HTTP-wrapped so `.code` is the 401 status) is NOT a
+       * transport/session failure: the gateway responded and the session is
+       * alive. `MCPManager.callTool` handles it in-band — surface the link, await
+       * consent, then retry the SAME session. Classifying it as an OAuth error
+       * here (`isOAuthError` matches the 401) would emit `oauthError` and
+       * `connectionChange: 'error'`, triggering a spurious background
+       * reconnection that races with — and can invalidate — that retry. In
+       * production that reconnection abandons on `-32002 insufficient_scope`,
+       * leaving a stale session whose retry then fails with `-32600 Session not
+       * initialized`. Leave the live session untouched.
+       */
+      if (extractUrlElicitation(error)) {
+        logger.debug(
+          `${this.getLogPrefix()} tools/call URL elicitation (-32042); handled in-band by callTool, not reconnecting`,
+        );
         return;
       }
 
