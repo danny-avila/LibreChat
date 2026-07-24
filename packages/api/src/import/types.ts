@@ -1,5 +1,14 @@
 import type { SearchResultData } from 'librechat-data-provider';
 
+export interface ImportedAsset {
+  file_id: string;
+  filepath: string;
+  filename: string;
+  type: string;
+  width?: number;
+  height?: number;
+}
+
 export interface ChatGptAuthor {
   role: 'user' | 'assistant' | 'system' | 'tool';
   name: string | null;

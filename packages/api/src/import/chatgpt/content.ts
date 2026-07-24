@@ -1,9 +1,6 @@
-import type { ChatGptMessage, ChatGptPart } from '~/import/types';
+import type { ChatGptMessage, ChatGptPart, ImportedAsset } from '~/import/types';
 
-export type ContentPart =
-  | { type: 'text'; text: string }
-  | { type: 'image_file'; fileId: string }
-  | { type: 'audio'; fileId: string };
+export type ContentPart = { type: 'text'; text: string };
 
 function pointerOf(part: ChatGptPart): string | null {
   if (typeof part === 'string') {
@@ -36,9 +33,10 @@ export function collectAssetPointers(message: ChatGptMessage): string[] {
 
 function convertPart(
   part: ChatGptPart,
-  assets: Map<string, string>,
+  assets: Map<string, ImportedAsset>,
   parts: ContentPart[],
   texts: string[],
+  files: ImportedAsset[],
 ): void {
   if (typeof part === 'string') {
     if (part.length > 0) {
@@ -61,42 +59,40 @@ function convertPart(
     return;
   }
 
-  const fileId = assets.get(pointer);
-  if (!fileId) {
+  const asset = assets.get(pointer);
+  if (!asset) {
     return;
   }
 
-  parts.push({
-    type: part.content_type === 'image_asset_pointer' ? 'image_file' : 'audio',
-    fileId,
-  });
+  files.push(asset);
 }
 
 export function convertContent(
   message: ChatGptMessage,
-  assets: Map<string, string>,
-): { text: string; parts: ContentPart[] } {
+  assets: Map<string, ImportedAsset>,
+): { text: string; parts: ContentPart[]; files: ImportedAsset[] } {
   const { content } = message;
 
   if (content.content_type === 'code') {
     const text = `\`\`\`${content.language ?? ''}\n${content.text ?? ''}\n\`\`\``;
-    return { text, parts: [{ type: 'text', text }] };
+    return { text, parts: [{ type: 'text', text }], files: [] };
   }
 
   if (content.content_type === 'execution_output') {
     const text = `Execution Output:\n> ${content.text ?? ''}`;
-    return { text, parts: [{ type: 'text', text }] };
+    return { text, parts: [{ type: 'text', text }], files: [] };
   }
 
   if (!content.parts) {
-    return { text: '', parts: [] };
+    return { text: '', parts: [], files: [] };
   }
 
   const parts: ContentPart[] = [];
   const texts: string[] = [];
+  const files: ImportedAsset[] = [];
   for (const part of content.parts) {
-    convertPart(part, assets, parts, texts);
+    convertPart(part, assets, parts, texts, files);
   }
 
-  return { text: texts.join('\n\n'), parts };
+  return { text: texts.join('\n\n'), parts, files };
 }
