@@ -1,7 +1,9 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
 import { ViolationTypes, ErrorTypes, alternateName } from 'librechat-data-provider';
+import type { RefillIntervalUnit } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
+import { getRefillIntervalUnitKey } from '~/utils';
 import { useLocalize } from '~/hooks';
 import CodeBlock from './CodeBlock';
 
@@ -16,6 +18,14 @@ type TMessageLimit = {
   windowInMinutes: number;
 };
 
+type TBalanceRefill = {
+  amount: number;
+  intervalValue: number;
+  intervalUnit: RefillIntervalUnit;
+  lastRefill: string;
+  refillEligibilityDate: string;
+};
+
 type TTokenBalance = {
   type: ViolationTypes | ErrorTypes;
   balance: number;
@@ -25,6 +35,7 @@ type TTokenBalance = {
   violation_count: number;
   date: Date;
   generations?: unknown[];
+  refill?: TBalanceRefill;
 };
 
 type TExpiredKey = {
@@ -102,15 +113,30 @@ const errorMessages = {
     }.`;
   },
   token_balance: (json: TTokenBalance, localize: LocalizeFunction) => {
-    const { balance, tokenCost, promptTokens, generations } = json;
+    const { balance, tokenCost, promptTokens, generations, refill } = json;
     const message = localize('com_error_token_balance', {
       0: balance,
       1: promptTokens,
       2: tokenCost,
     });
+    const refillMessage = refill
+      ? localize('com_error_balance_refill', {
+          0: refill.amount.toLocaleString(),
+          1: `${refill.intervalValue} ${localize(
+            getRefillIntervalUnitKey(refill.intervalValue, refill.intervalUnit),
+          )}`,
+          2: new Date(refill.refillEligibilityDate).toLocaleString(),
+        })
+      : null;
     return (
       <>
         {message}
+        {refillMessage && (
+          <>
+            <br />
+            {refillMessage}
+          </>
+        )}
         {generations && (
           <>
             <br />

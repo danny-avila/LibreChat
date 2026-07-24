@@ -1,5 +1,9 @@
 import { logger } from '@librechat/data-schemas';
-import { getRefillEligibilityDate, ViolationTypes } from 'librechat-data-provider';
+import {
+  getRefillEligibilityDate,
+  getNextRefillDate,
+  ViolationTypes,
+} from 'librechat-data-provider';
 import type { BalanceConfig, IBalanceUpdate } from '@librechat/data-schemas';
 import type { RefillIntervalUnit } from 'librechat-data-provider';
 import type { Response } from 'express';
@@ -12,6 +16,39 @@ interface BalanceRecord {
   lastRefill?: Date;
   refillIntervalValue?: number;
   refillIntervalUnit?: RefillIntervalUnit;
+}
+
+interface RefillInfo {
+  amount: number;
+  intervalValue: number;
+  intervalUnit: RefillIntervalUnit;
+  lastRefill: Date;
+  refillEligibilityDate: Date;
+}
+
+type RefillFields = Pick<
+  BalanceRecord,
+  'autoRefillEnabled' | 'refillAmount' | 'refillIntervalValue' | 'refillIntervalUnit'
+>;
+
+/** Builds auto-refill details for an insufficient balance, or undefined when auto-refill is inactive. */
+function buildRefillInfo(
+  record: RefillFields,
+  lastRefill: Date,
+  now: Date,
+): RefillInfo | undefined {
+  if (!record.autoRefillEnabled || !record.refillAmount || record.refillAmount <= 0) {
+    return undefined;
+  }
+  const intervalValue = record.refillIntervalValue ?? 0;
+  const intervalUnit = record.refillIntervalUnit ?? 'days';
+  return {
+    amount: record.refillAmount,
+    intervalValue,
+    intervalUnit,
+    lastRefill,
+    refillEligibilityDate: getNextRefillDate(lastRefill, intervalValue, intervalUnit, now),
+  };
 }
 
 interface TxData {
@@ -48,7 +85,7 @@ export interface CheckBalanceDeps {
 async function checkBalanceRecord(
   txData: TxData,
   deps: CheckBalanceDeps,
-): Promise<{ canSpend: boolean; balance: number; tokenCost: number }> {
+): Promise<{ canSpend: boolean; balance: number; tokenCost: number; refill?: RefillInfo }> {
   const { user, model, endpoint, valueKey, tokenType, amount, endpointTokenConfig } = txData;
   const multiplier = deps.getMultiplier({
     valueKey,
@@ -58,6 +95,7 @@ async function checkBalanceRecord(
     endpointTokenConfig,
   });
   const tokenCost = amount * multiplier;
+  const now = new Date();
 
   const record = await deps.findBalanceByUser(user);
   if (!record) {
@@ -82,11 +120,17 @@ async function checkBalanceRecord(
           fields.refillIntervalValue = config.refillIntervalValue;
           fields.refillIntervalUnit = config.refillIntervalUnit;
           fields.refillAmount = config.refillAmount;
-          fields.lastRefill = new Date();
+          fields.lastRefill = now;
         }
         const created = await deps.upsertBalanceFields(user, fields);
         const balance = created?.tokenCredits ?? deps.balanceConfig.startBalance;
-        return { canSpend: balance >= tokenCost, balance, tokenCost };
+        const canSpend = balance >= tokenCost;
+        return {
+          canSpend,
+          balance,
+          tokenCost,
+          refill: canSpend ? undefined : buildRefillInfo(fields, fields.lastRefill ?? now, now),
+        };
       } catch (error) {
         logger.error('[Balance.check] Failed to lazy-initialize balance record', { user, error });
         return { canSpend: false, balance: 0, tokenCost };
@@ -96,6 +140,7 @@ async function checkBalanceRecord(
     return { canSpend: false, balance: 0, tokenCost };
   }
   let balance = record.tokenCredits;
+  let lastRefillDate = new Date(record.lastRefill ?? 0);
 
   logger.debug('[Balance.check] Initial state', {
     user,
@@ -115,8 +160,6 @@ async function checkBalanceRecord(
     record.refillAmount &&
     record.refillAmount > 0
   ) {
-    const lastRefillDate = new Date(record.lastRefill ?? 0);
-    const now = new Date();
     if (
       isNaN(lastRefillDate.getTime()) ||
       now >=
@@ -135,6 +178,7 @@ async function checkBalanceRecord(
         });
         if (result) {
           balance = result.balance;
+          lastRefillDate = now;
         }
       } catch (error) {
         logger.error('[Balance.check] Failed to record transaction for auto-refill', error);
@@ -143,7 +187,13 @@ async function checkBalanceRecord(
   }
 
   logger.debug('[Balance.check] Token cost', { tokenCost });
-  return { canSpend: balance >= tokenCost, balance, tokenCost };
+  const canSpend = balance >= tokenCost;
+  return {
+    canSpend,
+    balance,
+    tokenCost,
+    refill: canSpend ? undefined : buildRefillInfo(record, lastRefillDate, now),
+  };
 }
 
 /**
@@ -154,7 +204,7 @@ export async function checkBalance(
   { req, res, txData }: { req: ServerRequest; res: Response; txData: TxData },
   deps: CheckBalanceDeps,
 ): Promise<boolean> {
-  const { canSpend, balance, tokenCost } = await checkBalanceRecord(txData, deps);
+  const { canSpend, balance, tokenCost, refill } = await checkBalanceRecord(txData, deps);
   if (canSpend) {
     return true;
   }
@@ -166,6 +216,16 @@ export async function checkBalance(
     tokenCost,
     promptTokens: txData.amount,
   };
+
+  if (refill) {
+    errorMessage.refill = {
+      amount: refill.amount,
+      intervalValue: refill.intervalValue,
+      intervalUnit: refill.intervalUnit,
+      lastRefill: refill.lastRefill.toISOString(),
+      refillEligibilityDate: refill.refillEligibilityDate.toISOString(),
+    };
+  }
 
   if (txData.generations && txData.generations.length > 0) {
     errorMessage.generations = txData.generations;

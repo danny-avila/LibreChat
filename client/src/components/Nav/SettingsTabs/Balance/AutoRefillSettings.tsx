@@ -1,15 +1,11 @@
 import React from 'react';
 import { Label, InfoHoverCard, ESide } from '@librechat/client';
-import { getRefillEligibilityDate } from 'librechat-data-provider';
+import { getNextRefillDate } from 'librechat-data-provider';
 
 import type { RefillIntervalUnit, TBalanceResponse } from 'librechat-data-provider';
-import type { TranslationKeys } from '~/hooks';
 
+import { getRefillIntervalUnitKey } from '~/utils';
 import { useLocalize } from '~/hooks';
-
-function ensureExhaustive(value: never): void {
-  void value;
-}
 
 interface AutoRefillSettingsProps {
   lastRefill: NonNullable<TBalanceResponse['lastRefill']>;
@@ -28,37 +24,11 @@ const AutoRefillSettings: React.FC<AutoRefillSettingsProps> = ({
 
   const lastRefillDate = lastRefill ? new Date(lastRefill) : null;
   const refillEligibilityDate = lastRefillDate
-    ? getRefillEligibilityDate(lastRefillDate, refillIntervalValue, refillIntervalUnit)
+    ? getNextRefillDate(lastRefillDate, refillIntervalValue, refillIntervalUnit, new Date())
     : null;
 
-  const getLocalizedIntervalUnit = (value: number, unit: RefillIntervalUnit): string => {
-    let key: TranslationKeys;
-    switch (unit) {
-      case 'seconds':
-        key = value === 1 ? 'com_nav_balance_second' : 'com_nav_balance_seconds';
-        break;
-      case 'minutes':
-        key = value === 1 ? 'com_nav_balance_minute' : 'com_nav_balance_minutes';
-        break;
-      case 'hours':
-        key = value === 1 ? 'com_nav_balance_hour' : 'com_nav_balance_hours';
-        break;
-      case 'days':
-        key = value === 1 ? 'com_nav_balance_day' : 'com_nav_balance_days';
-        break;
-      case 'weeks':
-        key = value === 1 ? 'com_nav_balance_week' : 'com_nav_balance_weeks';
-        break;
-      case 'months':
-        key = value === 1 ? 'com_nav_balance_month' : 'com_nav_balance_months';
-        break;
-      default: {
-        ensureExhaustive(unit);
-        key = 'com_nav_balance_seconds';
-      }
-    }
-    return localize(key);
-  };
+  const getLocalizedIntervalUnit = (value: number, unit: RefillIntervalUnit): string =>
+    localize(getRefillIntervalUnitKey(value, unit));
 
   return (
     <div className="space-y-4">
