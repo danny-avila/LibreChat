@@ -1,0 +1,367 @@
+import {
+  installCanvasMock,
+  registerFakeIcon,
+  resetFakeIcons,
+  getLastCrossOrigin,
+} from 'test/canvasMock';
+import { detectMonochrome, sanitizeSvg, scanMonochrome, svgToDataUri } from '../svg';
+import { isSvgIcon } from '../icons';
+
+const rgba = (...quads: number[]) => Uint8ClampedArray.from(quads);
+
+describe('scanMonochrome', () => {
+  it('treats a black glyph on a transparent background as monochrome', () => {
+    expect(scanMonochrome(rgba(0, 0, 0, 0, 0, 0, 0, 255))).toBe(true);
+  });
+
+  it('treats a mid-gray glyph as monochrome', () => {
+    expect(scanMonochrome(rgba(128, 128, 128, 255, 0, 0, 0, 0))).toBe(true);
+  });
+
+  it('allows a channel spread within the tolerance', () => {
+    expect(scanMonochrome(rgba(100, 110, 105, 255, 0, 0, 0, 0))).toBe(true);
+  });
+
+  it('accepts a channel spread exactly at the tolerance', () => {
+    expect(scanMonochrome(rgba(100, 116, 100, 255, 0, 0, 0, 0))).toBe(true);
+  });
+
+  it('rejects a channel spread just past the tolerance', () => {
+    expect(scanMonochrome(rgba(100, 117, 100, 255, 0, 0, 0, 0))).toBe(false);
+  });
+
+  it('rejects a chromatic pixel', () => {
+    expect(scanMonochrome(rgba(255, 0, 0, 255, 0, 0, 0, 0))).toBe(false);
+  });
+
+  it('ignores transparent pixels when judging tone', () => {
+    expect(scanMonochrome(rgba(255, 0, 0, 0, 20, 20, 20, 255))).toBe(true);
+  });
+
+  it('skips a chromatic pixel at the alpha threshold', () => {
+    expect(scanMonochrome(rgba(255, 0, 0, 8, 20, 20, 20, 255))).toBe(true);
+  });
+
+  it('samples a chromatic pixel just above the alpha threshold', () => {
+    expect(scanMonochrome(rgba(255, 0, 0, 9, 0, 0, 0, 0))).toBe(false);
+  });
+
+  it('is not monochrome when nothing is painted', () => {
+    expect(scanMonochrome(rgba(0, 0, 0, 0, 255, 0, 0, 0))).toBe(false);
+  });
+
+  it('is not monochrome when any opaque pixel is chromatic', () => {
+    expect(scanMonochrome(rgba(10, 10, 10, 255, 200, 10, 10, 255, 0, 0, 0, 0))).toBe(false);
+  });
+
+  it('is not monochrome when fully opaque, since a mask would flatten it to a block', () => {
+    expect(scanMonochrome(rgba(0, 0, 0, 255, 90, 90, 90, 255))).toBe(false);
+  });
+
+  it('is not monochrome when a semi-transparent fill covers every pixel', () => {
+    // grayscale and partly transparent, but no empty pixel: masking it would
+    // paint a full-canvas currentColor wash rather than reveal a glyph.
+    expect(scanMonochrome(rgba(128, 128, 128, 128, 90, 90, 90, 200))).toBe(false);
+  });
+
+  it('is monochrome when a translucent glyph sits on genuinely empty pixels', () => {
+    expect(scanMonochrome(rgba(128, 128, 128, 128, 0, 0, 0, 0))).toBe(true);
+  });
+});
+
+describe('detectMonochrome', () => {
+  beforeEach(() => {
+    resetFakeIcons();
+    installCanvasMock();
+  });
+
+  it('detects a grayscale glyph as monochrome', async () => {
+    registerFakeIcon('/mono.svg', {
+      width: 24,
+      height: 24,
+      pixels: [0, 0, 0, 0, 0, 0, 0, 255, 90, 90, 90, 255],
+    });
+    await expect(detectMonochrome('/mono.svg')).resolves.toBe(true);
+  });
+
+  it('detects a multi-color icon as not monochrome', async () => {
+    registerFakeIcon('/color.svg', {
+      width: 24,
+      height: 24,
+      pixels: [12, 120, 240, 255, 0, 0, 0, 0],
+    });
+    await expect(detectMonochrome('/color.svg')).resolves.toBe(false);
+  });
+
+  it('does not treat a fully-opaque grayscale image as monochrome', async () => {
+    registerFakeIcon('/block.svg', {
+      width: 24,
+      height: 24,
+      pixels: [0, 0, 0, 255, 60, 60, 60, 255],
+    });
+    await expect(detectMonochrome('/block.svg')).resolves.toBe(false);
+  });
+
+  it('requests cross-origin access so CORS icons can be sampled', async () => {
+    registerFakeIcon('/cors.svg', { width: 8, height: 8, pixels: [0, 0, 0, 255] });
+    await detectMonochrome('/cors.svg');
+    expect(getLastCrossOrigin()).toBe('anonymous');
+  });
+
+  it('falls back to non-monochrome when the image fails to load', async () => {
+    registerFakeIcon('/broken.svg', { width: 24, height: 24, error: true });
+    await expect(detectMonochrome('/broken.svg')).resolves.toBe(false);
+  });
+
+  it('falls back to non-monochrome when the canvas is tainted', async () => {
+    registerFakeIcon('/cross-origin.svg', {
+      width: 24,
+      height: 24,
+      pixels: [0, 0, 0, 255],
+      taint: true,
+    });
+    await expect(detectMonochrome('/cross-origin.svg')).resolves.toBe(false);
+  });
+
+  it('is not monochrome when the icon reports no intrinsic size', async () => {
+    registerFakeIcon('/sizeless.svg', { width: 0, height: 0, pixels: [0, 0, 0, 255] });
+    await expect(detectMonochrome('/sizeless.svg')).resolves.toBe(false);
+  });
+});
+
+describe('sanitizeSvg', () => {
+  it('strips script tags but keeps drawing elements', () => {
+    const dirty = '<svg><script>alert(1)</script><path d="M0 0h10v10H0z" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).not.toContain('<script');
+    expect(clean).not.toContain('alert(1)');
+    expect(clean).toContain('path');
+  });
+
+  it('strips inline event handler attributes', () => {
+    const dirty = '<svg onload="alert(1)"><circle cx="5" cy="5" r="5" onclick="alert(2)" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).not.toContain('onload');
+    expect(clean).not.toContain('onclick');
+    expect(clean).toContain('circle');
+  });
+
+  it('removes foreignObject and embedded HTML', () => {
+    const dirty =
+      '<svg><foreignObject><iframe src="javascript:alert(1)"></iframe></foreignObject></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean.toLowerCase()).not.toContain('foreignobject');
+    expect(clean.toLowerCase()).not.toContain('iframe');
+  });
+
+  it('strips anchors and javascript: URLs', () => {
+    const dirty = '<svg><a href="javascript:alert(1)"><rect width="10" height="10" /></a></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).not.toContain('javascript:');
+    expect(clean.toLowerCase()).not.toContain('<a');
+    expect(clean).toContain('rect');
+  });
+
+  it('drops external <image> references so an SVG cannot phone home', () => {
+    const dirty =
+      '<svg><image href="https://evil.example/track.png" width="10" height="10" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).not.toContain('evil.example');
+    expect(clean.toLowerCase()).not.toContain('<image');
+  });
+
+  it('strips external <use> references but keeps the element inert', () => {
+    const dirty = '<svg><use href="https://evil.example/x.svg#a" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).not.toContain('evil.example');
+    expect(clean).not.toContain('href');
+  });
+
+  it('strips relative-path and javascript: hrefs from <use>', () => {
+    for (const href of ['icons.svg#a', '//evil.example/x.svg#a', 'javascript:alert(1)']) {
+      const clean = sanitizeSvg(`<svg><use href="${href}" /></svg>`);
+      expect(clean).not.toContain('href');
+    }
+  });
+
+  it('preserves local <defs>/<use> references', () => {
+    const dirty = '<svg><defs><path id="p" d="M0 0h10v10H0z" /></defs><use href="#p" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('<use href="#p"');
+    expect(clean).toContain('d="M0 0h10v10H0z"');
+  });
+
+  it('preserves local xlink:href <use> references', () => {
+    const dirty = '<svg><defs><path id="p" d="M0 0h1v1z" /></defs><use xlink:href="#p" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('xlink:href="#p"');
+  });
+
+  it('keeps the xmlns:xlink declaration that binds xlink:href prefixes', () => {
+    const dirty =
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><use xlink:href="#p" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('xmlns:xlink="http://www.w3.org/1999/xlink"');
+  });
+
+  it('preserves safe filter effects and strips external feImage references', () => {
+    const dirty =
+      '<svg><filter id="f"><feGaussianBlur in="SourceGraphic" stdDeviation="2" result="b" /><feOffset in="b" dx="2" dy="2" /><feImage href="https://evil.example/x.png" /></filter><rect width="10" height="10" filter="url(#f)" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('feGaussianBlur');
+    expect(clean).toContain('stdDeviation="2"');
+    expect(clean).toContain('filter="url(#f)"');
+    expect(clean).not.toContain('evil.example');
+  });
+
+  it('strips external url() references from presentation and style attributes', () => {
+    for (const attr of [
+      'filter="url(https://evil.example/f.svg#f)"',
+      'fill="url(https://evil.example/p)"',
+      'style="fill:url(//evil.example/p)"',
+      'clip-path="url(data:image/svg+xml,evil)"',
+    ]) {
+      const clean = sanitizeSvg(`<svg><rect ${attr} width="10" height="10" /></svg>`);
+      expect(clean).not.toContain('evil.example');
+      expect(clean).not.toContain('evil');
+    }
+  });
+
+  it('preserves local url() paint and filter references', () => {
+    const dirty =
+      '<svg><defs><filter id="f"><feGaussianBlur stdDeviation="1" /></filter><linearGradient id="g"><stop offset="0" stop-color="#000" /></linearGradient></defs><rect fill="url(#g)" filter="url(#f)" width="10" height="10" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('fill="url(#g)"');
+    expect(clean).toContain('filter="url(#f)"');
+  });
+
+  it('preserves gradient stop inheritance via local href', () => {
+    const dirty =
+      '<svg><linearGradient id="g"><stop offset="0" stop-color="#000" /></linearGradient><linearGradient id="g2" href="#g" x1="0" x2="1" /><rect fill="url(#g2)" width="10" height="10" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('href="#g"');
+    expect(clean).toContain('x1="0"');
+    expect(clean).toContain('fill="url(#g2)"');
+  });
+
+  it('preserves internal stylesheet paint rules', () => {
+    const dirty =
+      '<svg><style>.red{fill:#e00}.blue{fill:#00f}</style><path class="red" d="M0 0h1v1z" /><path class="blue" d="M1 1h1v1z" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('<style');
+    expect(clean).toContain('.red{fill:#e00}');
+    expect(clean).toContain('.blue{fill:#00f}');
+    expect(clean).toContain('class="red"');
+  });
+
+  it('scrubs @import and external url() from internal stylesheets', () => {
+    const dirty =
+      '<svg><style>@import url(https://evil.example/x.css);.a{fill:url(https://evil.example/beacon)}.b{fill:url(#grad)}</style><rect class="a" /></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).toContain('<style');
+    expect(clean).not.toContain('evil.example');
+    expect(clean).not.toContain('@import');
+    expect(clean).toContain('url(#grad)');
+  });
+
+  it('strips a script smuggled after a premature </style> close', () => {
+    const dirty = '<svg><style>.a{}</style><script>alert(1)</script></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).not.toContain('<script');
+    expect(clean).not.toContain('alert(1)');
+  });
+
+  it('does not let escaped markup in a stylesheet reintroduce elements', () => {
+    // Scrubbed CSS is set as a text node, so `\3c/style\3e\3cimage\3e` stays
+    // inert escaped text rather than becoming a real element.
+    const dirty =
+      '<svg><style>\\3c/style\\3e\\3cimage href="https://evil.example/x.png"/\\3e</style></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean.toLowerCase()).not.toContain('<image');
+    expect(clean).toContain('&lt;');
+  });
+
+  it('strips CSS-escaped external url() from style attributes and stylesheets', () => {
+    const attrEsc = sanitizeSvg(
+      '<svg><rect style="fill:u\\72l(https://evil.example/x)" width="10" height="10" /></svg>',
+    );
+    expect(attrEsc).not.toContain('evil.example');
+    const styleEsc = sanitizeSvg(
+      '<svg><style>.a{fill:u\\72l(https://evil.example/b)}.b{fill:url(#g)}</style><rect class="a" /></svg>',
+    );
+    expect(styleEsc).not.toContain('evil.example');
+    expect(styleEsc).toContain('url(#g)');
+  });
+
+  it('strips CSS-escaped @import from internal stylesheets', () => {
+    const clean = sanitizeSvg(
+      '<svg><style>\\40import "https://evil.example/x.css";</style><rect /></svg>',
+    );
+    expect(clean).not.toContain('evil.example');
+  });
+
+  it('keeps co-located local declarations when scrubbing an escaped external ref', () => {
+    const clean = sanitizeSvg(
+      '<svg><rect style="fill:u\\72l(https://evil.example/x);stroke:#000" width="10" height="10" /></svg>',
+    );
+    expect(clean).not.toContain('evil.example');
+    expect(clean).toContain('stroke:#000');
+  });
+
+  it('strips XML-entity-encoded @import from internal stylesheets', () => {
+    for (const enc of ['&#64;import', '&#x40;import', '&#x40;IMPORT']) {
+      const clean = sanitizeSvg(
+        `<svg><style>${enc} "https://evil.example/x.css";</style><rect /></svg>`,
+      );
+      expect(clean).not.toContain('evil.example');
+    }
+  });
+
+  it('strips a quoted CSS url() whose path contains a right parenthesis', () => {
+    const block = sanitizeSvg(
+      '<svg><style>.a{fill:url("https://evil.example/a)b")}.b{fill:url(#g)}</style><rect class="a" /></svg>',
+    );
+    expect(block).not.toContain('evil.example');
+    expect(block).toContain('url(#g)');
+    const attr = sanitizeSvg(
+      '<svg><rect style="fill:url(&quot;https://evil.example/a)b&quot;)" width="10" height="10" /></svg>',
+    );
+    expect(attr).not.toContain('evil.example');
+  });
+
+  it('drops href-smuggling animation elements', () => {
+    const dirty = '<svg><a><animate attributeName="href" values="javascript:alert(1)" /></a></svg>';
+    const clean = sanitizeSvg(dirty);
+    expect(clean).not.toContain('javascript:');
+    expect(clean.toLowerCase()).not.toContain('<animate');
+  });
+});
+
+describe('svgToDataUri', () => {
+  const b64Body = (uri: string) => uri.slice('data:image/svg+xml;base64,'.length);
+
+  it('produces a base64 image/svg+xml data URI', () => {
+    const uri = svgToDataUri('<svg><path d="M0 0h1v1H0z" /></svg>');
+    expect(uri.startsWith('data:image/svg+xml;base64,')).toBe(true);
+  });
+
+  it('round-trips through sanitizeSvg into a URI that isSvgIcon accepts', () => {
+    const uri = svgToDataUri(sanitizeSvg('<svg><path d="M0 0h1v1H0z" /></svg>'));
+    expect(isSvgIcon(uri)).toBe(true);
+    const decoded = atob(b64Body(uri));
+    expect(decoded).toContain('path');
+    expect(decoded.startsWith('<svg')).toBe(true);
+  });
+
+  it('encodes non-ASCII markup without throwing and stays decodable', () => {
+    const uri = svgToDataUri('<svg><title>café ☕</title><path d="M0 0h1v1H0z" /></svg>');
+    expect(uri.startsWith('data:image/svg+xml;base64,')).toBe(true);
+    const utf8 = decodeURIComponent(
+      atob(b64Body(uri))
+        .split('')
+        .map((c) => `%${c.charCodeAt(0).toString(16).padStart(2, '0')}`)
+        .join(''),
+    );
+    expect(utf8).toContain('café ☕');
+  });
+});

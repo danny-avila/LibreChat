@@ -12,6 +12,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import LangIcon from '~/components/Messages/Content/LangIcon';
+import CustomIcon from '~/components/ui/CustomIcon';
 import { cn } from '~/utils';
 
 function BashIcon({ className }: { className?: string }) {
@@ -110,15 +111,14 @@ interface ToolIconProps {
 export default function ToolIcon({ type, iconUrl, isAnimating = false, className }: ToolIconProps) {
   if (iconUrl) {
     return (
-      <img
+      <CustomIcon
         src={iconUrl}
         alt=""
         className={cn(
-          'size-4 shrink-0 rounded-full object-cover',
+          'size-4 shrink-0 rounded-full object-cover text-text-secondary',
           isAnimating && 'animate-pulse',
           className,
         )}
-        aria-hidden="true"
       />
     );
   }

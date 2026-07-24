@@ -1,15 +1,16 @@
-import * as Ariakit from '@ariakit/react';
 import { Check } from 'lucide-react';
+import * as Ariakit from '@ariakit/react';
 import { MCPIcon } from '@librechat/client';
 import type { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
 import type { MCPServerStatusIconProps } from './MCPServerStatusIcon';
-import MCPServerStatusIcon from './MCPServerStatusIcon';
 import {
   getStatusColor,
   getStatusTextKey,
   shouldShowActionButton,
   type ConnectionStatusMap,
 } from './mcpServerUtils';
+import MCPServerStatusIcon from './MCPServerStatusIcon';
+import CustomIcon from '~/components/ui/CustomIcon';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -58,10 +59,10 @@ export default function MCPServerMenuItem({
       {/* Server Icon with Status Dot */}
       <div className="relative flex-shrink-0">
         {server.config?.iconPath ? (
-          <img
+          <CustomIcon
             src={server.config.iconPath}
-            className="h-8 w-8 rounded-lg object-cover"
-            alt={displayName}
+            className="h-8 w-8 rounded-lg object-cover text-text-primary"
+            alt=""
           />
         ) : (
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-tertiary">
