@@ -46,6 +46,12 @@ export interface BaseInitializeParams {
   endpoint: string;
   /** Model parameters from the request (includes model, temperature, topP, etc.) */
   model_parameters?: Record<string, unknown>;
+  /**
+   * The current agent's id, when initialized as part of an agent graph. Distinct
+   * from `req.body.agent_id` (the root request agent) so per-agent logic resolves
+   * correctly for subagents/connected agents that share the same request.
+   */
+  agentId?: string;
   /** Database methods for user key operations */
   db: EndpointDbMethods;
 }
