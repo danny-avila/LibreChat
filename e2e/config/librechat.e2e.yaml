@@ -42,7 +42,9 @@ mcpServers:
 
 endpoints:
   # Default capabilities plus run_in_background (off by default upstream) so the
-  # background tool-call e2e can opt an MCP tool into detached dispatch.
+  # background tool-call e2e can opt an MCP tool into detached dispatch, and
+  # stateful_code_sessions (also off by default) so the opt-in code-upload spec
+  # can exercise stateful sandbox sessions against a live Code API.
   agents:
     capabilities:
       - deferred_tools
@@ -60,6 +62,7 @@ endpoints:
       - chain
       - ocr
       - run_in_background
+      - stateful_code_sessions
   custom:
     - name: 'Mock Provider A'
       apiKey: 'e2e-mock-key-a'

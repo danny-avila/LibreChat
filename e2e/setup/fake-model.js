@@ -54,6 +54,13 @@ const BACKGROUND_TOOL_NAME = 'slow_echo_mcp_e2e-memory';
 const CHECK_BACKGROUND_TASK_TOOL_NAME = 'check_background_task';
 const BACKGROUND_DISPATCH_TOOL_CALL_ID = 'call_e2e_background_dispatch';
 const BACKGROUND_COLLECT_TOOL_CALL_ID = 'call_e2e_background_collect';
+const EXEC_UPLOADED_MARKER = 'E2E_EXEC_UPLOADED:';
+const EXEC_PERSIST_MARKER = 'E2E_EXEC_PERSIST:';
+const EXEC_UPLOADED_TOOL_CALL_ID = 'call_e2e_exec_uploaded';
+const EXEC_PERSIST_TOOL_CALL_ID = 'call_e2e_exec_persist';
+const EXEC_UPLOADED_FINAL_TEXT = 'E2E code exec complete';
+const EXEC_PERSIST_FINAL_TEXT = 'E2E code persistence complete';
+const EXEC_TURN_MARKER_FILE = 'e2e-turn1-marker.txt';
 const MODEL_SPEC_ACCESSIBLE_SKILL = 'e2e-model-spec-allowed';
 const MODEL_SPEC_MISSING_SKILL = 'e2e-model-spec-missing';
 const MODEL_SPEC_INACCESSIBLE_SKILL = 'e2e-model-spec-inaccessible';
@@ -124,6 +131,15 @@ function getRequestedSkillName(text, marker) {
   }
   const afterMarker = text.slice(markerIndex + marker.length);
   return afterMarker.match(/[a-z0-9][a-z0-9-]*/)?.[0] ?? '';
+}
+
+function getRequestedSandboxFilename(text, marker) {
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex === -1) {
+    return '';
+  }
+  const afterMarker = text.slice(markerIndex + marker.length);
+  return afterMarker.match(/[A-Za-z0-9][A-Za-z0-9._-]*/)?.[0] ?? '';
 }
 
 function getMarkerValue(text, marker) {
@@ -810,7 +826,66 @@ function resolveResponses({ agents, messages, text, toolNames }) {
     );
   }
 
+  const execUploadedFile = getRequestedSandboxFilename(text, EXEC_UPLOADED_MARKER);
+  if (execUploadedFile) {
+    return codeExecResponses(
+      {
+        filename: execUploadedFile,
+        toolCallId: EXEC_UPLOADED_TOOL_CALL_ID,
+        finalText: EXEC_UPLOADED_FINAL_TEXT,
+        /* Reads the uploaded file back and drops a marker file the upload set
+         * never contained. `printf` keeps the proof string out of the tool
+         * ARGS, so a later assertion matching the rendered output can never
+         * be satisfied by this command's own text echoed in the message. */
+        code: `cat "/mnt/data/${execUploadedFile}" && printf 'turn1-proof-%s\\n' "$((40 + 2))" > "/mnt/data/${EXEC_TURN_MARKER_FILE}"`,
+      },
+      toolNames,
+    );
+  }
+
+  const execPersistFile = getRequestedSandboxFilename(text, EXEC_PERSIST_MARKER);
+  if (execPersistFile) {
+    return codeExecResponses(
+      {
+        filename: execPersistFile,
+        toolCallId: EXEC_PERSIST_TOOL_CALL_ID,
+        finalText: EXEC_PERSIST_FINAL_TEXT,
+        /* The marker file was written by the previous turn and is NOT part of
+         * any upload, so reading it back proves the exec reused the same
+         * runtime session rather than a fresh sandbox primed from uploads. */
+        code: `printf 'LINES=%s\\n' "$(wc -l < "/mnt/data/${execPersistFile}")" && cat "/mnt/data/${EXEC_TURN_MARKER_FILE}"`,
+      },
+      toolNames,
+    );
+  }
+
   return { responses: [MOCK_REPLY] };
+}
+
+/**
+ * Emits a real `bash_tool` call through the actual tool pipeline — the
+ * sandbox surface stateful-session agents register (execute_code stays a
+ * host-wired capability, never a registry tool). Mock runs pointed at a live
+ * Code API (see code-upload.spec.ts) exercise upload priming and stateful
+ * runtime sessions end to end.
+ */
+function codeExecResponses({ filename, toolCallId, finalText, code }, toolNames) {
+  if (!toolNames.has(BASH_TOOL_NAME)) {
+    return {
+      responses: [`E2E code exec unavailable: ${BASH_TOOL_NAME} was not advertised.`],
+    };
+  }
+  return {
+    responses: ['', `${finalText}: ${filename}`],
+    toolCalls: [
+      {
+        id: toolCallId,
+        name: BASH_TOOL_NAME,
+        args: { command: code },
+        type: 'tool_call',
+      },
+    ],
+  };
 }
 
 /** @type {import('@librechat/api').TestRunHook} */
@@ -823,6 +898,23 @@ module.exports = function fakeModelHook(run, context) {
 
   const text = getLatestUserText(context?.messages);
   const toolNames = collectToolNames(context?.agents);
+  if (process.env.E2E_DEBUG_AGENT_TOOLS === 'true') {
+    console.warn(
+      '[e2e-debug] agents:',
+      JSON.stringify(
+        (context?.agents ?? []).map((a) => ({
+          id: a?.id,
+          tools: (a?.tools ?? []).map((t) => (typeof t === 'string' ? t : (t?.name ?? typeof t))),
+          toolDefs: (a?.toolDefinitions ?? []).map((d) => d?.name ?? typeof d),
+          registry:
+            a?.toolRegistry && typeof a.toolRegistry.keys === 'function'
+              ? [...a.toolRegistry.keys()]
+              : null,
+          keys: Object.keys(a ?? {}),
+        })),
+      ),
+    );
+  }
   const { responses, sleep, toolCalls, thrownError, resolveOnStream } = resolveResponses({
     agents: context?.agents,
     messages: context?.messages,
