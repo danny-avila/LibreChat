@@ -804,9 +804,19 @@ endpoints:
 #   searxngApiKey: '${SEARXNG_API_KEY}'
 #   # Tavily (search provider and/or scraper)
 #   tavilyApiKey: '${TAVILY_API_KEY}'
-#   # Content scrapers
+#   # Firecrawl (search provider and/or scraper)
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
+#   firecrawlVersion: '${FIRECRAWL_VERSION}'
+#
+# Firecrawl as both search and scraper provider example:
+# webSearch:
+#   searchProvider: firecrawl
+#   scraperProvider: firecrawl
+#   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
+#   # Optional: custom API URL and version
+#   # firecrawlApiUrl: '${FIRECRAWL_API_URL}'
+#   # firecrawlVersion: '${FIRECRAWL_VERSION}'
 #
 # Tavily as both search and scraper provider example:
 # webSearch:

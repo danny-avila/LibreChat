@@ -495,6 +495,20 @@ describe('allowedAddressesSchema', () => {
 });
 
 describe('webSearchSchema', () => {
+  it('accepts firecrawl as searchProvider', () => {
+    const result = webSearchSchema.parse({
+      searchProvider: 'firecrawl',
+      firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+      firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+      firecrawlVersion: '${FIRECRAWL_VERSION}',
+    });
+
+    expect(result.searchProvider).toBe('firecrawl');
+    expect(result.firecrawlApiKey).toBe('${FIRECRAWL_API_KEY}');
+    expect(result.firecrawlApiUrl).toBe('${FIRECRAWL_API_URL}');
+    expect(result.firecrawlVersion).toBe('${FIRECRAWL_VERSION}');
+  });
+
   it('accepts Tavily string modes for answer and raw content options', () => {
     const result = webSearchSchema.parse({
       tavilySearchOptions: {

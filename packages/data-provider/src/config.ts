@@ -1612,6 +1612,7 @@ export enum SearchProviders {
   SERPER = 'serper',
   SEARXNG = 'searxng',
   TAVILY = 'tavily',
+  FIRECRAWL = 'firecrawl',
 }
 
 export enum ScraperProviders {
