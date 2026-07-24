@@ -10,6 +10,7 @@ const {
 const {
   getBasePath,
   createSafeUser,
+  createAuthIdentityContext,
   MCPOAuthHandler,
   MCPTokenStorage,
   setOAuthSession,
@@ -47,6 +48,7 @@ const { requireJwtAuth, canAccessMCPServerResource } = require('~/server/middlew
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
+const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
@@ -705,6 +707,10 @@ router.post(
           findPluginAuthsByKeys: db.findPluginAuthsByKeys,
         });
       }
+      const oboIdentityContext = createAuthIdentityContext({
+        user: req.user,
+        tenantId: getTenantId(),
+      });
 
       const result = await reinitMCPServer({
         user,
@@ -712,6 +718,14 @@ router.post(
         serverConfig,
         configServers,
         userMCPAuthMap,
+        upstreamTokenProvider: createOpenIDSessionTokenProvider({
+          req,
+          res,
+          user: req.user,
+          identityContext: oboIdentityContext,
+          tokenPreference: 'access_token',
+        }),
+        oboIdentityContext,
       });
 
       if (!result) {

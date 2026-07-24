@@ -120,6 +120,22 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     );
   });
 
+  it('forwards the pre-built upstreamTokenProvider closure into connection creation', async () => {
+    mockGetConnection.mockResolvedValue({ fetchTools: jest.fn().mockResolvedValue([]) });
+    const upstreamTokenProvider = jest.fn().mockResolvedValue(null);
+
+    await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+      upstreamTokenProvider,
+    });
+
+    expect(mockGetConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ upstreamTokenProvider }),
+    );
+  });
+
   it('passes request body and Graph resolver into OAuth discovery fallback', async () => {
     mockGetConnection.mockRejectedValue(new Error('OAuth authentication required'));
     mockDiscoverServerTools.mockResolvedValue({ tools: [], oauthRequired: true, oauthUrl: null });

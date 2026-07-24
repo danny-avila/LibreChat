@@ -75,6 +75,8 @@ function createOAuthHandler(redirectUri = domains.client) {
         setOpenIDAuthTokens(req.user.tokenset, req, res, {
           userId: req.user._id.toString(),
           tenantId: req.user.tenantId,
+          openidSubject: req.user.openidId,
+          openidIssuer: req.user.openidIssuer,
         });
       } else {
         await setAuthTokens(req.user._id, res, null, req);

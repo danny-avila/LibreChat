@@ -1,8 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
-import type { IUser } from '@librechat/data-schemas';
-import { extractOpenIDTokenInfo, isOpenIDTokenValid } from '~/utils/oidc';
+import type { IUser, OIDCTokens } from '@librechat/data-schemas';
+import type { TRole } from 'librechat-data-provider';
+import type { AuthIdentityContext } from '~/utils/identity';
+import type { OpenIDTokenInfo } from '~/utils/oidc';
 import type { MCPOAuthTokens } from './types';
+import { getOboTokenExpiresAtMs, getSkewedOboTokenExpiresAtMs } from './expiry';
+import { extractOpenIDTokenInfo, isOpenIDTokenValid } from '~/utils/oidc';
 
 export interface OboConfig {
   scopes: string;
@@ -17,13 +21,31 @@ export type OboTokenResolver = (
   accessToken: string,
   scopes: string,
   fromCache?: boolean,
-) => Promise<{ access_token: string; expires_in?: number }>;
+  identityContext?: AuthIdentityContext,
+) => Promise<{ access_token: string; expires_in?: number; expires_at?: number }>;
+
+/**
+ * Provides the LIVE upstream OpenID tokens at OBO call time, refreshing the
+ * server-side session via the IdP refresh-token grant when the access token
+ * has expired. Closes over the active Express request so it can read/write
+ * `req.session.openidTokens` in place.
+ *
+ * Contract:
+ *   - non-null result: `access_token` MUST be populated; the closure enforces
+ *     this internally so callers do not defend against missing access_token.
+ *   - null: not applicable (non-OpenID user, OPENID_REUSE_TOKENS off, no
+ *     session). Caller treats as `missing_upstream_token`.
+ *   - throws: refresh was attempted and the IdP rejected it. Caller wraps as
+ *     `session_refresh_failed`.
+ */
+export type UpstreamTokenProvider = () => Promise<OIDCTokens | null>;
 
 export type OboTokenResolutionReason =
   | 'missing_upstream_token'
   | 'missing_upstream_access_token'
   | 'empty_exchange_response'
-  | 'exchange_failed';
+  | 'exchange_failed'
+  | 'session_refresh_failed';
 
 const RETRYABLE_OBO_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 const RETRYABLE_OBO_ERROR_CODES = new Set(['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'ENOTFOUND']);
@@ -58,6 +80,19 @@ function getErrorRetryableFlag(error: unknown): boolean | undefined {
 
   const retryable = (error as { retryable?: unknown }).retryable;
   return typeof retryable === 'boolean' ? retryable : undefined;
+}
+
+function getOboFailureReason(error: unknown): OboTokenResolutionReason | undefined {
+  if (!error || typeof error !== 'object' || !('oboFailureReason' in error)) {
+    return undefined;
+  }
+
+  const reason = (error as { oboFailureReason?: unknown }).oboFailureReason;
+  if (reason === 'empty_exchange_response') {
+    return reason;
+  }
+
+  return undefined;
 }
 
 export class OboTokenResolutionError extends Error {
@@ -114,18 +149,72 @@ function isRetryableOboExchangeError(error: unknown): boolean {
 }
 
 /**
+ * Resolves the upstream OpenID token info used for the OBO exchange. The live
+ * session (via `upstreamTokenProvider`) is the preferred source because it can
+ * inline-refresh an expired access token. When no live session exists — the
+ * OIDC remote-agent flow verifies a bearer token and attaches it to
+ * `user.federatedTokens` without an Express session — fall back to the token
+ * snapshot on the user via `extractOpenIDTokenInfo`. Returns null when neither
+ * source yields a token; the caller maps that to `missing_upstream_token`.
+ */
+function buildUpstreamTokenInfo(
+  user: IUser,
+  liveTokens: OIDCTokens | null,
+): OpenIDTokenInfo | null {
+  if (liveTokens) {
+    return {
+      accessToken: liveTokens.access_token,
+      idToken: liveTokens.id_token,
+      expiresAt: liveTokens.expires_at,
+      userId: user.openidId || user.id,
+      userEmail: user.email,
+      userName: user.name || user.username,
+    };
+  }
+  return extractOpenIDTokenInfo(user);
+}
+
+/**
  * Performs an OBO token exchange for the given user and MCP server OBO config.
  * Returns MCPOAuthTokens suitable for injection into the MCP connection.
+ *
+ * The `upstreamTokenProvider` closure is the authoritative source of the user's
+ * upstream OpenID access token at call time — it reads from the live session and
+ * may inline-refresh via the IdP refresh-token grant when the token has expired.
+ * This avoids relying on a stale snapshot frozen onto `user.federatedTokens` at
+ * request validation, which is what previously caused the walk-away failure mode
+ * ("No valid OpenID access token is available for OBO exchange") on long-running
+ * tool calls. Required (not optional) so wiring bugs surface at compile time.
+ *
+ * When the provider yields no live session (it resolves to null), this falls
+ * back to `user.federatedTokens` so the OIDC remote-agent flow — which carries a
+ * verified bearer token but no Express session — still works.
  */
 export async function resolveOboToken(
   user: IUser,
   oboConfig: OboConfig,
   oboTokenResolver: OboTokenResolver,
+  upstreamTokenProvider: UpstreamTokenProvider,
+  identityContext?: AuthIdentityContext,
 ): Promise<MCPOAuthTokens> {
-  const tokenInfo = extractOpenIDTokenInfo(user);
+  let liveTokens: OIDCTokens | null;
+  try {
+    liveTokens = await upstreamTokenProvider();
+  } catch (error) {
+    logger.error('[OBO] Upstream session refresh failed:', error);
+    throw new OboTokenResolutionError(
+      'session_refresh_failed',
+      'Your sign-in session expired and could not be refreshed. Please sign in again.',
+      false,
+      error,
+    );
+  }
+
+  const tokenInfo = buildUpstreamTokenInfo(user, liveTokens);
+
   if (!tokenInfo || !isOpenIDTokenValid(tokenInfo)) {
     logger.warn(
-      `[OBO] No valid OpenID token available for OBO exchange (provider: ${user.provider}, hasOpenidId: ${!!user.openidId}, hasFederatedTokens: ${!!user.federatedTokens})`,
+      `[OBO] No valid OpenID token available for OBO exchange (provider: ${user.provider}, hasOpenidId: ${!!user.openidId}, hasFederatedTokens: ${!!user.federatedTokens}, hadLiveSession: ${!!liveTokens})`,
     );
     throw new OboTokenResolutionError(
       'missing_upstream_token',
@@ -142,7 +231,13 @@ export async function resolveOboToken(
   }
 
   try {
-    const response = await oboTokenResolver(user, tokenInfo.accessToken, oboConfig.scopes, true);
+    const response = await oboTokenResolver(
+      user,
+      tokenInfo.accessToken,
+      oboConfig.scopes,
+      true,
+      identityContext,
+    );
 
     if (!response?.access_token) {
       logger.warn('[OBO] Token exchange did not return an access token');
@@ -153,17 +248,32 @@ export async function resolveOboToken(
     }
 
     const now = Date.now();
-    const expiresIn = response.expires_in ?? 3600;
+    const expiresAt = getOboTokenExpiresAtMs({
+      expiresAt: response.expires_at,
+      expiresIn: response.expires_in,
+      now,
+    });
 
     return {
       access_token: response.access_token,
       token_type: 'Bearer',
       obtained_at: now,
-      expires_at: now + expiresIn * 1000,
+      expires_at: getSkewedOboTokenExpiresAtMs(expiresAt, now),
     };
   } catch (error) {
     if (error instanceof OboTokenResolutionError) {
       throw error;
+    }
+
+    const failureReason = getOboFailureReason(error);
+    if (failureReason === 'empty_exchange_response') {
+      logger.warn('[OBO] Token exchange did not return an access token');
+      throw new OboTokenResolutionError(
+        failureReason,
+        'The identity provider returned no access token for the OBO exchange.',
+        false,
+        error,
+      );
     }
 
     logger.error('[OBO] Failed to exchange token:', error);
@@ -193,9 +303,11 @@ export async function resolveOboToken(
  *   - role missing the CONFIGURE_OBO bit
  */
 export type GetUserRoleByAuthorId = (authorId: string) => Promise<string | null | undefined>;
-export type GetRolePermissions = (
-  roleName: string,
-) => Promise<Record<string, Record<string, boolean | undefined>> | null | undefined>;
+type RolePermissions = Partial<{
+  [K in keyof TRole['permissions']]: Partial<TRole['permissions'][K]>;
+}>;
+
+export type GetRolePermissions = (roleName: string) => Promise<RolePermissions | null | undefined>;
 
 export async function isOboConfigStillTrusted({
   authorId,
@@ -219,7 +331,7 @@ export async function isOboConfigStillTrusted({
   if (!roleName) {
     return false;
   }
-  let permissions: Record<string, Record<string, boolean | undefined>> | null | undefined;
+  let permissions: RolePermissions | null | undefined;
   try {
     permissions = await getRolePermissions(roleName);
   } catch (err) {

@@ -1,4 +1,4 @@
-const { logger, redactMessage } = require('@librechat/data-schemas');
+const { logger, redactMessage, getTenantId } = require('@librechat/data-schemas');
 const { tool: toolFn, DynamicStructuredTool } = require('@librechat/agents/langchain/tools');
 const {
   sleep,
@@ -11,6 +11,7 @@ const {
   sendEvent,
   getToolkitKey,
   getUserMCPAuthMap,
+  createAuthIdentityContext,
   loadToolDefinitions,
   GenerationJobManager,
   isActionDomainAllowed,
@@ -70,6 +71,7 @@ const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { createMCPPermissionContext, resolveConfigServers } = require('~/server/services/MCP');
+const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
@@ -620,6 +622,23 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   /** @type {Record<string, import('@librechat/api').LCAvailableTools>} */
   const mcpAvailableTools = {};
   const requestScopedConnections = getMCPRequestContext(req, res);
+  /**
+   * Build the OBO upstream-token closure once at this request boundary and pass
+   * the function into MCP handling, so `reinitMCPServer` never receives the raw
+   * Express request. `res` is forwarded so a rotated refresh token can be
+   * mirrored to the `refreshToken` cookie when the response is still writable.
+   */
+  const oboIdentityContext = createAuthIdentityContext({
+    user: req.user,
+    tenantId: getTenantId(),
+  });
+  const upstreamTokenProvider = createOpenIDSessionTokenProvider({
+    req,
+    res,
+    user: req.user,
+    identityContext: oboIdentityContext,
+    tokenPreference: 'access_token',
+  });
   const rememberMCPAvailableTools = (serverName, availableTools) => {
     if (!availableTools || Object.keys(availableTools).length === 0) {
       return;
@@ -796,6 +815,8 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       userMCPAuthMap,
       requestBody: req.body,
       requestScopedConnections,
+      upstreamTokenProvider,
+      oboIdentityContext,
     });
 
     rememberMCPAvailableTools(serverName, result?.availableTools);
@@ -920,6 +941,8 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           oauthStart,
           oauthEnd: createOAuthEndEmitter(serverName),
           connectionTimeout: Time.TWO_MINUTES,
+          upstreamTokenProvider,
+          oboIdentityContext,
         });
 
         if (result?.availableTools) {

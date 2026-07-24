@@ -1036,6 +1036,11 @@ describe('MCPManager', () => {
     } as unknown as MCPConnection;
 
     const mockOboTokenResolver = jest.fn();
+    const mockUpstreamTokenProvider = jest.fn().mockResolvedValue({
+      access_token: 'live-access-token',
+      id_token: 'live-id-token',
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+    });
 
     const serverConfig: t.SSEOptions & { obo: { scopes: string } } = {
       type: 'sse',
@@ -1050,6 +1055,7 @@ describe('MCPManager', () => {
 
     beforeEach(() => {
       mockResolveOboToken.mockReset();
+      mockUpstreamTokenProvider.mockClear();
     });
 
     it('should bypass shared app connections for OBO servers and use a user-scoped connection', async () => {
@@ -1105,6 +1111,7 @@ describe('MCPManager', () => {
           typeof manager.callTool
         >[0]['flowManager'],
         oboTokenResolver: mockOboTokenResolver,
+        upstreamTokenProvider: mockUpstreamTokenProvider,
       });
 
       expect(appConnections.get).not.toHaveBeenCalled();
@@ -1155,12 +1162,15 @@ describe('MCPManager', () => {
           typeof manager.callTool
         >[0]['flowManager'],
         oboTokenResolver: mockOboTokenResolver,
+        upstreamTokenProvider: mockUpstreamTokenProvider,
       });
 
       expect(mockResolveOboToken).toHaveBeenCalledWith(
         mockUser,
         serverConfig.obo,
         mockOboTokenResolver,
+        mockUpstreamTokenProvider,
+        undefined,
       );
       expect(appConnections.get).not.toHaveBeenCalled();
       expect(getUserConnectionSpy).toHaveBeenCalled();
@@ -1204,6 +1214,7 @@ describe('MCPManager', () => {
             typeof manager.callTool
           >[0]['flowManager'],
           oboTokenResolver: mockOboTokenResolver,
+          upstreamTokenProvider: mockUpstreamTokenProvider,
         }),
       ).rejects.toMatchObject({
         message: expect.stringContaining('Temporary OBO token exchange failure.'),
@@ -1250,6 +1261,7 @@ describe('MCPManager', () => {
             typeof manager.callTool
           >[0]['flowManager'],
           oboTokenResolver: mockOboTokenResolver,
+          upstreamTokenProvider: mockUpstreamTokenProvider,
         }),
       ).rejects.toMatchObject({
         message: expect.stringContaining('verify the configured OBO scopes'),
@@ -1259,6 +1271,35 @@ describe('MCPManager', () => {
       expect(getUserConnectionSpy).toHaveBeenCalled();
       expect(mockConnection.setRequestHeaders).not.toHaveBeenCalled();
       expect(mockConnection.client.request).not.toHaveBeenCalled();
+    });
+
+    it('should fail with an internal error when upstreamTokenProvider is omitted on an OBO call', async () => {
+      const appConnections = {
+        get: jest.fn().mockResolvedValue(mockConnection),
+      };
+
+      mockAppConnections(appConnections);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getUserConnection').mockResolvedValue(mockConnection);
+
+      await expect(
+        manager.callTool({
+          user: mockUser as IUser,
+          serverName,
+          toolName: 'test_tool',
+          provider: 'openai',
+          flowManager: mockFlowManager as unknown as Parameters<
+            typeof manager.callTool
+          >[0]['flowManager'],
+          oboTokenResolver: mockOboTokenResolver,
+          /** upstreamTokenProvider intentionally omitted */
+        }),
+      ).rejects.toMatchObject({
+        message: expect.stringContaining('upstreamTokenProvider not plumbed'),
+      });
+      expect(mockResolveOboToken).not.toHaveBeenCalled();
     });
   });
 
