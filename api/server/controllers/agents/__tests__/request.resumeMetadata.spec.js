@@ -16,6 +16,10 @@ const mockGenerationJobManager = {
   claimGeneration: jest.fn(),
   releaseGeneration: jest.fn(),
   hasJob: jest.fn(),
+  steering: {
+    closeAndDrain: jest.fn(),
+    park: jest.fn(),
+  },
 };
 
 const mockCheckAndIncrementPendingRequest = jest.fn();
@@ -32,6 +36,14 @@ const mockFilterPersistableAbortContent = jest.fn((content) =>
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
 const mockSaveMessage = jest.fn();
+const mockStartupTelemetry = {
+  mark: jest.fn(),
+  setStreamId: jest.fn(),
+  recordGenerationEvent: jest.fn(),
+  end: jest.fn(),
+};
+const mockGetAgentStartupTelemetry = jest.fn(() => mockStartupTelemetry);
+const mockAcceptAgentStartupTelemetry = jest.fn();
 let mockMCPContexts = new WeakMap();
 
 const mockCreateMCPRequestContext = jest.fn(() => ({
@@ -94,6 +106,7 @@ jest.mock('@librechat/api', () => ({
   getViolationInfo: (...args) => mockGetViolationInfo(...args),
   buildMessageFiles: jest.fn(() => []),
   resolveTitleTiming: jest.fn(() => 'immediate'),
+  resolveConversationAnchor: jest.requireActual('@librechat/api').resolveConversationAnchor,
   GenerationJobManager: mockGenerationJobManager,
   getReferencedQuotes: jest.fn((quotes) => {
     if (!Array.isArray(quotes)) {
@@ -112,6 +125,8 @@ jest.mock('@librechat/api', () => ({
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   sanitizeMessageForTransmit: jest.fn((message) => message),
   checkAndIncrementPendingRequest: (...args) => mockCheckAndIncrementPendingRequest(...args),
+  getAgentStartupTelemetry: (...args) => mockGetAgentStartupTelemetry(...args),
+  acceptAgentStartupTelemetry: (...args) => mockAcceptAgentStartupTelemetry(...args),
   isUnpersistedPreliminaryParent: async ({
     userId,
     conversationId,
@@ -155,6 +170,7 @@ jest.mock('~/models', () => ({
 }));
 
 const AgentController = require('../request');
+const { disposeClient: mockDisposeClient } = require('~/server/cleanup');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 
 function createResumableResponse() {
@@ -199,6 +215,8 @@ describe('ResumableAgentController resume metadata', () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue({ claimed: true });
     mockGenerationJobManager.releaseGeneration.mockResolvedValue(undefined);
     mockGenerationJobManager.hasJob.mockResolvedValue(true);
+    mockGenerationJobManager.steering.closeAndDrain.mockResolvedValue([]);
+    mockGenerationJobManager.steering.park.mockResolvedValue(undefined);
     mockSaveMessage.mockResolvedValue({});
   });
 
@@ -279,6 +297,7 @@ describe('ResumableAgentController resume metadata', () => {
       conversationId,
       'user-123',
       conversationId,
+      { startupTelemetry: mockStartupTelemetry },
     );
   });
 
@@ -329,6 +348,65 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.updateMetadata.mock.invocationCallOrder[0]).toBeLessThan(
       initializeClient.mock.invocationCallOrder[0],
     );
+    const startupMilestones = mockStartupTelemetry.mark.mock.calls.map(([milestone]) => milestone);
+    expect(startupMilestones.slice(0, 2)).toEqual(['request_admitted', 'job_created']);
+    expect(new Set(startupMilestones.slice(2))).toEqual(
+      new Set(['conversation_resolved', 'metadata_persisted']),
+    );
+    expect(mockAcceptAgentStartupTelemetry).toHaveBeenCalledWith(req, conversationId);
+    expect(mockStartupTelemetry.end).toHaveBeenCalledWith('error', expect.any(Error));
+  });
+
+  it('prefetches conversation state before admission and joins it with job metadata', async () => {
+    let resolveConversation;
+    let signalMetadataStarted;
+    const conversationPromise = new Promise((resolve) => {
+      resolveConversation = resolve;
+    });
+    const metadataStarted = new Promise((resolve) => {
+      signalMetadataStarted = resolve;
+    });
+    mockGetConvo.mockReturnValue(conversationPromise);
+    mockGenerationJobManager.updateMetadata.mockImplementation(() => {
+      signalMetadataStarted();
+      return Promise.resolve();
+    });
+    const initializeClient = jest.fn().mockRejectedValue(new Error('stop after startup reads'));
+    const conversationId = 'conversation-123';
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Run independent startup work together.',
+        messageId: 'user-message',
+        parentMessageId: 'parent-message',
+        conversationId,
+        endpointOption: {
+          endpoint: 'agents',
+          modelOptions: { model: 'gpt-4.1' },
+        },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    const controllerPromise = AgentController(req, res, jest.fn(), initializeClient, null);
+    expect(mockGetConvo).toHaveBeenCalledWith('user-123', conversationId);
+    await metadataStarted;
+
+    expect(mockGetConvo.mock.invocationCallOrder[0]).toBeLessThan(
+      mockCheckAndIncrementPendingRequest.mock.invocationCallOrder[0],
+    );
+    expect(res.json).toHaveBeenCalledWith({
+      streamId: conversationId,
+      conversationId,
+      status: 'started',
+    });
+    expect(initializeClient).not.toHaveBeenCalled();
+
+    resolveConversation({ createdAt: '2026-06-07T00:00:00.000Z' });
+    await controllerPromise;
+
+    expect(initializeClient).toHaveBeenCalledTimes(1);
   });
 
   it('keeps request-scoped MCP connections until resumable initialization finishes', async () => {
@@ -662,6 +740,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
     expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
     expect(initializeClient).not.toHaveBeenCalled();
+    expect(mockStartupTelemetry.end).toHaveBeenCalledWith('deduplicated');
   });
 
   it('resumes when the job is missing but the claim is old (original completed and was cleaned up)', async () => {
@@ -812,6 +891,146 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
   });
 
+  it('still finalizes and releases when streaming the initialization error fails', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue({ claimed: true });
+    mockGenerationJobManager.emitError.mockRejectedValue(new Error('publish failed'));
+    const initializeClient = jest.fn().mockRejectedValue(new Error('init boom after res.json'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Start fails while Redis publish is degraded.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      'conversation-123',
+      'init boom after res.json',
+    );
+    expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith('user-123', 'req-abc');
+    expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
+    expect(mockStartupTelemetry.end).toHaveBeenCalledWith('error', expect.any(Error));
+  });
+
+  it('finalizes and disposes a client aborted during initialization before releasing the slot', async () => {
+    const abortController = new AbortController();
+    let resolveCompletion;
+    let signalCompletionStarted;
+    const completionStarted = new Promise((resolve) => {
+      signalCompletionStarted = resolve;
+    });
+    mockGenerationJobManager.createJob.mockResolvedValue({
+      createdAt: 1000,
+      readyPromise: Promise.resolve(),
+      abortController,
+      emitter: { on: jest.fn() },
+    });
+    mockGenerationJobManager.completeJob.mockImplementation(() => {
+      signalCompletionStarted();
+      return new Promise((resolve) => {
+        resolveCompletion = resolve;
+      });
+    });
+    const client = { options: {} };
+    const initializeClient = jest.fn(async ({ signal }) => {
+      expect(signal).toBe(abortController.signal);
+      abortController.abort();
+      return { client };
+    });
+    const conversationId = 'conversation-123';
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Stop during initialization.',
+        messageId: 'user-msg',
+        conversationId,
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    const controllerPromise = AgentController(req, res, jest.fn(), initializeClient, null);
+    await completionStarted;
+
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      conversationId,
+      'Request aborted during initialization',
+    );
+    expect(mockDecrementPendingRequest).not.toHaveBeenCalled();
+    expect(mockDisposeClient).not.toHaveBeenCalled();
+
+    resolveCompletion();
+    await controllerPromise;
+
+    expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
+    expect(mockDisposeClient).toHaveBeenCalledTimes(1);
+    expect(mockDisposeClient).toHaveBeenCalledWith(client);
+    expect(mockStartupTelemetry.end).toHaveBeenCalledWith('aborted');
+  });
+
+  it('awaits background error finalization before releasing the slot and always disposes', async () => {
+    const generationError = new Error('generation failed');
+    let rejectCompletion;
+    let signalCompletionStarted;
+    const completionStarted = new Promise((resolve) => {
+      signalCompletionStarted = resolve;
+    });
+    mockGenerationJobManager.emitError.mockRejectedValue(new Error('publish failed'));
+    mockGenerationJobManager.completeJob.mockImplementation(() => {
+      signalCompletionStarted();
+      return new Promise((_, reject) => {
+        rejectCompletion = reject;
+      });
+    });
+    const client = {
+      options: {},
+      sendMessage: jest.fn().mockRejectedValue(generationError),
+    };
+    const initializeClient = jest.fn().mockResolvedValue({ client });
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Fail after initialization.',
+        messageId: 'user-msg',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+    await completionStarted;
+
+    expect(mockGenerationJobManager.emitError).toHaveBeenCalledWith(
+      'conversation-123',
+      generationError.message,
+    );
+    expect(mockDecrementPendingRequest).not.toHaveBeenCalled();
+    expect(mockDisposeClient).not.toHaveBeenCalled();
+
+    rejectCompletion(new Error('store failed'));
+    await nextTick();
+
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      'conversation-123',
+      generationError.message,
+    );
+    expect(mockGenerationJobManager.completeJob.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDecrementPendingRequest.mock.invocationCallOrder[0],
+    );
+    expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
+    expect(mockDisposeClient).toHaveBeenCalledWith(client);
+  });
+
   it('proceeds to create the job when it wins the idempotency claim', async () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue({ claimed: true });
     const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));
@@ -842,6 +1061,7 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       'user-123',
       'conversation-123',
+      { startupTelemetry: mockStartupTelemetry },
     );
   });
 
@@ -869,6 +1089,7 @@ describe('ResumableAgentController resume metadata', () => {
 
     expect(res.status).toHaveBeenCalledWith(429);
     expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith('user-123', 'req-abc');
+    expect(mockStartupTelemetry.end).toHaveBeenCalledWith('rejected');
   });
 
   it('does not release a claim it never won when a fail-open duplicate hits the limiter', async () => {

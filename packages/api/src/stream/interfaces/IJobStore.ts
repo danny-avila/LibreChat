@@ -630,7 +630,10 @@ export interface IEventTransport {
       onDone?: (event: unknown) => void;
       onError?: (error: string) => void;
     },
-    options?: { deferSequenceDelivery?: boolean },
+    options?: {
+      /** Hold sequenced events until syncReorderBuffer establishes the replay frontier. */
+      deferSequenceDelivery?: boolean;
+    },
   ): { unsubscribe: () => void; ready?: Promise<void> };
 
   /**
@@ -657,9 +660,10 @@ export interface IEventTransport {
   /**
    * Register callback for abort signals from any replica (Redis mode).
    * Called when abort is triggered from any replica.
+   * An async implementation resolves only after it can receive abort messages.
    * Optional - only implemented in Redis transport.
    */
-  onAbort?(streamId: string, callback: () => void): void;
+  onAbort?(streamId: string, callback: () => void): void | Promise<void>;
 
   /** Get subscriber count for a stream */
   getSubscriberCount(streamId: string): number;
@@ -677,6 +681,12 @@ export interface IEventTransport {
    *   or above it are live. Undefined means no local replay, so the Redis counter is trusted.
    */
   syncReorderBuffer?(streamId: string, replayedNextSeq?: number): void | Promise<void>;
+
+  /**
+   * Notify and detach subscribers attached to this process without broadcasting a terminal event.
+   * Must trigger all-subscribers-left cleanup so graceful shutdown can drain partial persistence.
+   */
+  closeLocalSubscribers?(streamId: string, error: string): void;
 
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;

@@ -905,6 +905,18 @@ describe('BaseClient', () => {
       expect(TestClient.sendCompletion).toHaveBeenCalledWith(payload, opts);
     });
 
+    test('records history and message-build startup milestones', async () => {
+      const startupTelemetry = { mark: jest.fn() };
+      TestClient.options.startupTelemetry = startupTelemetry;
+
+      await TestClient.sendMessage('Hello, world!', {});
+
+      expect(startupTelemetry.mark.mock.calls.map(([milestone]) => milestone)).toEqual([
+        'history_loaded',
+        'messages_built',
+      ]);
+    });
+
     test('getTokenCount for response is called with the correct arguments', async () => {
       const tokenCountMap = {}; // Mock tokenCountMap
       TestClient.buildMessages.mockReturnValue({ prompt: [], tokenCountMap });

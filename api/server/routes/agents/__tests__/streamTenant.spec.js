@@ -4,7 +4,9 @@ const request = require('supertest');
 const mockGenerationJobManager = {
   getJob: jest.fn(),
   subscribe: jest.fn(),
+  subscribeWithResume: jest.fn(),
   getResumeState: jest.fn(),
+  markSyncSent: jest.fn(),
   abortJob: jest.fn(),
   getActiveJobIdsForUser: jest.fn().mockResolvedValue([]),
 };
@@ -123,6 +125,73 @@ describe('SSE stream tenant isolation', () => {
       const res = await request(app).get('/agents/chat/stream/stream-123');
       expect(res.status).toBe(200);
       expect(mockGenerationJobManager.subscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it('writes the resume sync frame before activating live delivery', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue({
+        metadata: { userId: 'user-123' },
+        status: 'running',
+      });
+      const activate = jest.fn();
+      mockGenerationJobManager.subscribeWithResume.mockImplementation(
+        async (_streamId, writeEvent, onDone) => {
+          activate.mockImplementation(() => {
+            writeEvent({ event: 'on_message_delta', data: { text: 'live' } });
+            onDone({ final: true });
+          });
+          return {
+            subscription: { unsubscribe: jest.fn(), activate },
+            resumeState: { runSteps: [], aggregatedContent: [] },
+            pendingEvents: [],
+          };
+        },
+      );
+
+      const res = await request(app).get('/agents/chat/stream/stream-123?resume=true');
+      const payloads = res.text
+        .trim()
+        .split('\n\n')
+        .map((frame) => JSON.parse(frame.split('\ndata: ')[1]));
+
+      expect(res.status).toBe(200);
+      expect(payloads).toEqual([
+        {
+          sync: true,
+          resumeState: { runSteps: [], aggregatedContent: [] },
+          pendingEvents: [],
+        },
+        { event: 'on_message_delta', data: { text: 'live' } },
+        { final: true },
+      ]);
+      expect(activate).toHaveBeenCalledTimes(1);
+      expect(mockGenerationJobManager.markSyncSent).toHaveBeenCalledWith('stream-123');
+    });
+
+    it('detaches a paused resume subscription when the response ends before activation', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue({
+        metadata: { userId: 'user-123' },
+        status: 'running',
+      });
+      const subscription = {
+        unsubscribe: jest.fn(),
+        activate: jest.fn(),
+      };
+      mockGenerationJobManager.subscribeWithResume.mockImplementation(
+        async (_streamId, _writeEvent, onDone) => {
+          onDone({ final: true });
+          return {
+            subscription,
+            resumeState: { runSteps: [], aggregatedContent: [] },
+            pendingEvents: [],
+          };
+        },
+      );
+
+      const res = await request(app).get('/agents/chat/stream/stream-123?resume=true');
+
+      expect(res.status).toBe(200);
+      expect(subscription.unsubscribe).toHaveBeenCalled();
+      expect(subscription.activate).not.toHaveBeenCalled();
     });
 
     it('returns 403 when job has tenantId but user has no tenantId', async () => {

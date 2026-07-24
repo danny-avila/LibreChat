@@ -1,6 +1,25 @@
+const mockCreateRun = jest.fn();
+const mockDeleteAgentCheckpoint = jest.fn();
+const mockIsHITLEnabled = jest.fn().mockReturnValue(false);
+const mockFormatAgentMessages = jest.fn(() => ({
+  messages: [],
+  indexTokenCountMap: {},
+  summary: undefined,
+  boundaryTokenAdjustment: undefined,
+}));
+
 const { Providers } = require('@librechat/agents');
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
 const AgentClient = require('./client');
+const { resolveConfigServers } = require('~/server/services/MCP');
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
 
 jest.mock('@librechat/agents', () => ({
   ...jest.requireActual('@librechat/agents'),
@@ -8,14 +27,19 @@ jest.mock('@librechat/agents', () => ({
     handleLLMEnd: jest.fn(),
     collected: [],
   }),
+  formatAgentMessages: (...args) => mockFormatAgentMessages(...args),
 }));
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   checkAccess: jest.fn(),
+  createRun: (...args) => mockCreateRun(...args),
   countFormattedMessageTokens: jest.fn(() => 42),
   countTokens: jest.fn((text) => Math.ceil(String(text ?? '').length / 4)),
+  createTokenCounter: jest.fn(() => jest.fn(() => 0)),
+  deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
   initializeAgent: jest.fn(),
+  isHITLEnabled: (...args) => mockIsHITLEnabled(...args),
   createMemoryProcessor: jest.fn(),
   isMemoryAgentEnabled: jest.fn((config) => {
     if (!config || config.disabled === true) return false;
@@ -24,6 +48,7 @@ jest.mock('@librechat/api', () => ({
     return Boolean(agent.id || (agent.provider && agent.model));
   }),
   loadAgent: jest.fn(),
+  maybePrewarmCodeSandbox: jest.fn(),
 }));
 
 jest.mock('~/server/services/Config', () => ({
@@ -71,6 +96,85 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
     const ctx = { options: { agent: { hide_sequential_outputs: false } }, contentParts: parts };
     AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
     expect(ctx.contentParts).toEqual([textPart('a'), textPart('b')]);
+  });
+});
+
+describe('AgentClient - startup telemetry', () => {
+  it('records run preparation in order and waits for checkpoint pruning before stream processing', async () => {
+    let releaseCheckpoint;
+    let checkpointStarted;
+    const checkpointStartedPromise = new Promise((resolve) => {
+      checkpointStarted = resolve;
+    });
+    const checkpointPromise = new Promise((resolve) => {
+      releaseCheckpoint = resolve;
+    });
+    const processStream = jest.fn().mockResolvedValue();
+    const run = {
+      Graph: null,
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+    };
+    const startupTelemetry = {
+      mark: jest.fn(),
+      setStreamId: jest.fn(),
+      recordGenerationEvent: jest.fn(),
+      end: jest.fn(),
+    };
+    mockCreateRun.mockResolvedValue(run);
+    mockIsHITLEnabled.mockReturnValue(true);
+    mockDeleteAgentCheckpoint.mockImplementation(() => {
+      checkpointStarted();
+      return checkpointPromise;
+    });
+
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: { toolApproval: {} } } },
+        _resumableStreamId: 'conversation-123',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+      startupTelemetry,
+    });
+    client.conversationId = 'conversation-123';
+    client.responseMessageId = 'response-123';
+    client.parentMessageId = 'parent-123';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    const completionPromise = client.chatCompletion({ payload: [] });
+    await checkpointStartedPromise;
+
+    expect(mockCreateRun).toHaveBeenCalledTimes(1);
+    expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith('conversation-123', undefined);
+    expect(startupTelemetry.mark.mock.calls.map(([milestone]) => milestone)).toEqual([
+      'run_input_prepared',
+      'run_created',
+    ]);
+    expect(processStream).not.toHaveBeenCalled();
+
+    releaseCheckpoint();
+    await completionPromise;
+
+    expect(startupTelemetry.mark.mock.calls.map(([milestone]) => milestone)).toEqual([
+      'run_input_prepared',
+      'run_created',
+      'stream_processing_started',
+    ]);
+    expect(processStream).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1421,6 +1525,43 @@ describe('AgentClient - titleConvo', () => {
       client.responseMessageId = 'response-123';
       client.shouldSummarize = false;
       client.maxContextTokens = 4096;
+    });
+
+    it('loads RAG, memory, attachment, and MCP context without serial waits', async () => {
+      const ragContext = deferred();
+      const memoryContext = deferred();
+      const mcpConfig = deferred();
+      client.contextHandlers = {
+        createContext: jest.fn(() => ragContext.promise),
+      };
+      client.useMemory = jest.fn(() => memoryContext.promise);
+      resolveConfigServers.mockReturnValueOnce(mcpConfig.promise);
+
+      const buildPromise = client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Load all context.',
+            isCreatedByUser: true,
+          },
+        ],
+        null,
+        {},
+      );
+
+      expect(client.contextHandlers.createContext).toHaveBeenCalledTimes(1);
+      expect(client.useMemory).toHaveBeenCalledTimes(1);
+      expect(resolveConfigServers).toHaveBeenCalledWith(mockReq);
+
+      ragContext.resolve('Retrieved context');
+      memoryContext.resolve(undefined);
+      mcpConfig.resolve({});
+      await buildPromise;
+
+      expect(client.augmentedPrompt).toBe('Retrieved context');
+      expect(client.options.agent.additional_instructions).toContain('Retrieved context');
     });
 
     it('should await MCP instructions and not include [object Promise] in agent instructions', async () => {

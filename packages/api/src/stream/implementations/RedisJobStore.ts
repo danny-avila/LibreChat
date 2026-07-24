@@ -491,12 +491,16 @@ export class RedisJobStore implements IJobStore {
     // Set-membership bookkeeping lives on other slots; ordering after the
     // atomic hash write is safe (scanners tolerate momentary lag).
     if (this.isCluster) {
-      await this.redis.sadd(KEYS.runningJobs, streamId);
-      await this.redis.srem(KEYS.requiresActionJobs, streamId);
-      await this.redis.sadd(userJobsKey, streamId);
-      if (this.ttl.userJobsSet > 0) {
-        await this.redis.expire(userJobsKey, this.ttl.userJobsSet);
-      }
+      await Promise.all([
+        this.redis.sadd(KEYS.runningJobs, streamId),
+        this.redis.srem(KEYS.requiresActionJobs, streamId),
+        (async () => {
+          await this.redis.sadd(userJobsKey, streamId);
+          if (this.ttl.userJobsSet > 0) {
+            await this.redis.expire(userJobsKey, this.ttl.userJobsSet);
+          }
+        })(),
+      ]);
     } else {
       const pipeline = this.redis.pipeline();
       pipeline.sadd(KEYS.runningJobs, streamId);

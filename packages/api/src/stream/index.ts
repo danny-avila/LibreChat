@@ -1,6 +1,7 @@
 export {
   GenerationJobManager,
   GenerationJobManagerClass,
+  type CreateGenerationJobOptions,
   type GenerationJobManagerOptions,
 } from './GenerationJobManager';
 

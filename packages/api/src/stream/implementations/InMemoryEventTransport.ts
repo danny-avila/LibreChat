@@ -51,6 +51,10 @@ export class InMemoryEventTransport implements IEventTransport {
       unsubscribe: () => {
         const currentState = this.streams.get(streamId);
         if (currentState) {
+          if (!currentState.emitter.listeners('chunk').includes(chunkHandler)) {
+            return;
+          }
+
           currentState.emitter.off('chunk', chunkHandler);
           currentState.emitter.off('done', doneHandler);
           currentState.emitter.off('error', errorHandler);
@@ -106,6 +110,32 @@ export class InMemoryEventTransport implements IEventTransport {
     const count = state?.emitter.listenerCount('chunk') ?? 0;
     logger.debug(`[InMemoryEventTransport] isFirstSubscriber ${streamId}: count=${count}`);
     return count === 1;
+  }
+
+  closeLocalSubscribers(streamId: string, error: string): void {
+    const state = this.streams.get(streamId);
+    if (!state) {
+      return;
+    }
+
+    const errorListeners = state.emitter.listeners('error');
+    for (const listener of errorListeners) {
+      try {
+        listener(error);
+      } catch (err) {
+        logger.error(
+          `[InMemoryEventTransport] Failed to close local subscriber for ${streamId}:`,
+          err,
+        );
+      }
+    }
+
+    if (state.emitter.listenerCount('chunk') === 0) {
+      return;
+    }
+
+    state.emitter.removeAllListeners();
+    state.allSubscribersLeftCallback?.();
   }
 
   /**
