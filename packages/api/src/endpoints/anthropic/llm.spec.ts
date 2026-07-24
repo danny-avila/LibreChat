@@ -1266,6 +1266,79 @@ describe('getLLMConfig', () => {
         expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('disabled');
       });
 
+      it('should send explicit disabled thinking for Opus 5 when thinking is off', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: { model: 'claude-opus-5', thinking: false },
+        });
+
+        expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('disabled');
+      });
+
+      it('should omit sampling parameters for Opus 5', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-5',
+            thinking: true,
+            temperature: 0.7,
+            topP: 0.9,
+            topK: 40,
+          },
+        });
+
+        expect(result.llmConfig).not.toHaveProperty('temperature');
+        expect(result.llmConfig).not.toHaveProperty('topP');
+        expect(result.llmConfig).not.toHaveProperty('topK');
+      });
+
+      it('should keep xhigh/max effort for Opus 5 while thinking is on', () => {
+        (['xhigh', 'max'] as AnthropicEffort[]).forEach((effort) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model: 'claude-opus-5', thinking: true, effort },
+          });
+
+          expect(result.llmConfig.invocationKwargs?.output_config).toEqual({ effort });
+        });
+      });
+
+      it('should clamp xhigh/max effort to high for Opus 5 when thinking is disabled', () => {
+        (['xhigh', 'max'] as AnthropicEffort[]).forEach((effort) => {
+          const result = getLLMConfig('test-key', {
+            modelOptions: { model: 'claude-opus-5', thinking: false, effort },
+          });
+
+          expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('disabled');
+          expect(result.llmConfig.invocationKwargs?.output_config).toEqual({
+            effort: AnthropicEffort.high,
+          });
+        });
+      });
+
+      it('should leave sub-xhigh effort untouched for Opus 5 when thinking is disabled', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-5',
+            thinking: false,
+            effort: AnthropicEffort.medium,
+          },
+        });
+
+        expect(result.llmConfig.invocationKwargs?.output_config).toEqual({
+          effort: AnthropicEffort.medium,
+        });
+      });
+
+      it('should NOT clamp xhigh effort for Opus 4.8 when thinking is disabled', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-4-8',
+            thinking: false,
+            effort: 'xhigh' as AnthropicEffort,
+          },
+        });
+
+        expect(result.llmConfig.invocationKwargs?.output_config).toEqual({ effort: 'xhigh' });
+      });
+
       it('should omit sampling parameters for Sonnet 5', () => {
         const result = getLLMConfig('test-key', {
           modelOptions: {

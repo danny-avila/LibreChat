@@ -179,17 +179,56 @@ export function omitsSamplingParameters(model: string): boolean {
  * Whether disabling thinking requires sending an explicit `{ type: 'disabled' }`
  * config rather than simply omitting the `thinking` field.
  *
- * Sonnet 5 treats an omitted `thinking` field as adaptive thinking ON by
- * default, so honoring a user who turns thinking off means sending the disabled
- * config explicitly. Opus 4.7+ run without thinking when the field is omitted,
- * and Fable/Mythos reject an explicit disabled config (400, thinking always
- * on), so both are excluded.
+ * Sonnet 5 and Opus 5 treat an omitted `thinking` field as adaptive thinking ON
+ * by default, so honoring a user who turns thinking off means sending the
+ * disabled config explicitly. Opus 4.7/4.8 run without thinking when the field
+ * is omitted, and Fable/Mythos reject an explicit disabled config (400,
+ * thinking always on), so both are excluded.
  *
  * See https://platform.claude.com/docs/en/about-claude/models/migration-guide#migrating-to-claude-sonnet-5
  */
 export function requiresExplicitThinkingDisabled(model: string): boolean {
   const sonnet = parseSonnetVersion(model);
-  return sonnet != null && sonnet.major >= 5;
+  if (sonnet != null && sonnet.major >= 5) {
+    return true;
+  }
+  const opus = parseOpusVersion(model);
+  return opus != null && opus.major >= 5;
+}
+
+/** Effort levels Opus 5 rejects while thinking is explicitly disabled. */
+const EFFORTS_REJECTED_WHEN_THINKING_DISABLED = new Set<string>([
+  s.AnthropicEffort.xhigh,
+  s.AnthropicEffort.max,
+]);
+
+/**
+ * Whether the model caps `output_config.effort` while thinking is disabled.
+ *
+ * Opus 5 rejects `xhigh`/`max` in that combination with a 400: "output_config
+ * .effort 'xhigh' is not supported when thinking is disabled on this model. Use
+ * effort 'high' or below, or enable thinking." Opus 4.7/4.8, Sonnet 5, and
+ * Sonnet 4.6 accept every effort level they otherwise support with thinking
+ * off, so the cap is Opus 5+ only.
+ */
+export function capsEffortWhenThinkingDisabled(model: string): boolean {
+  const opus = parseOpusVersion(model);
+  return opus != null && opus.major >= 5;
+}
+
+/**
+ * Lowers an effort level the model would reject while thinking is disabled to
+ * the highest accepted value (`high`, which is also the API default). Returns
+ * the effort unchanged when the combination is valid.
+ */
+export function clampEffortForDisabledThinking(model: string, effort: string): string {
+  if (
+    capsEffortWhenThinkingDisabled(model) &&
+    EFFORTS_REJECTED_WHEN_THINKING_DISABLED.has(effort)
+  ) {
+    return s.AnthropicEffort.high;
+  }
+  return effort;
 }
 
 /** Checks if a model has a 1M context window (Sonnet 4.6+, Opus 4.6+, Opus 5+, Fable/Mythos) */
@@ -458,6 +497,7 @@ export const bedrockInputParser = s.tConversationSchema
         const persistedAmrf = typedData.additionalModelRequestFields as
           | Record<string, unknown>
           | undefined;
+        const thinkingDisabled = additionalFields.thinking === false;
         const effort = additionalFields.effort;
         if (typeof effort === 'string' && effort !== '') {
           additionalFields.output_config = { effort };
@@ -468,6 +508,29 @@ export const bedrockInputParser = s.tConversationSchema
           delete persistedAmrf.output_config;
         }
         delete additionalFields.effort;
+
+        /**
+         * Opus 5 rejects `xhigh`/`max` effort while thinking is disabled, so
+         * clamp both the effort derived above and any effort still carried in
+         * persisted AMRF (agent resume sends `output_config` with no top-level
+         * `effort`, so the branch above leaves it untouched).
+         */
+        if (thinkingDisabled) {
+          const targets: (Record<string, unknown> | undefined)[] = [
+            additionalFields,
+            persistedAmrf,
+          ];
+          targets.forEach((target) => {
+            const outputConfig = target?.output_config as { effort?: unknown } | undefined;
+            if (typeof outputConfig?.effort !== 'string') {
+              return;
+            }
+            outputConfig.effort = clampEffortForDisabledThinking(
+              typedData.model as string,
+              outputConfig.effort,
+            );
+          });
+        }
 
         if (additionalFields.thinking === false) {
           delete additionalFields.thinkingBudget;

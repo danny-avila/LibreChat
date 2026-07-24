@@ -2,6 +2,7 @@ import { Agent } from 'undici';
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import {
+  clampEffortForDisabledThinking,
   anthropicSettings,
   omitsSamplingParameters,
   removeNullishValues,
@@ -254,6 +255,25 @@ function getLLMConfig(
     if (requestOptions.invocationKwargs?.output_config) {
       delete requestOptions.invocationKwargs.output_config;
     }
+  }
+
+  /**
+   * Opus 5 rejects `xhigh`/`max` effort while thinking is disabled (400).
+   * `configureReasoning` returns before setting effort on the disabled path, so
+   * the value applied just above is the one that would ship — clamp it to the
+   * highest level the model accepts in that combination.
+   */
+  const disabledThinkingEffort = requestOptions.invocationKwargs?.output_config as
+    | { effort?: string }
+    | undefined;
+  if (
+    (requestOptions.thinking as unknown as { type?: string } | undefined)?.type === 'disabled' &&
+    typeof disabledThinkingEffort?.effort === 'string'
+  ) {
+    disabledThinkingEffort.effort = clampEffortForDisabledThinking(
+      resolvedModel,
+      disabledThinkingEffort.effort,
+    );
   }
 
   const hasActiveThinking = requestOptions.thinking != null;
