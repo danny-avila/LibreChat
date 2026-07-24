@@ -196,8 +196,7 @@ export default function ToolCallGroup({
 
   /** `ask_user_question` calls form their own category, mirroring subagents:
    *  a homogeneous group reads "Asking/Asked N questions" (never "Used N
-   *  tools — ask_user_question") with a question glyph. A group only exists
-   *  at count >= 2, so the plural is always grammatical. */
+   *  tools — ask_user_question") with a question glyph. */
   const askQuestionCount = useMemo(
     () => toolNames.filter((n) => n === ASK_USER_QUESTION).length,
     [toolNames],
@@ -331,11 +330,19 @@ export default function ToolCallGroup({
    *  category (with tense), everything else is the generic "Used N tools". */
   const resolveGroupLabel = (): string => {
     if (allSubagents) {
+      if (count === 1) {
+        return localize(subagentsDone ? 'com_ui_subagent_complete' : 'com_ui_subagent_running');
+      }
       return subagentsDone
         ? localize('com_ui_ran_n_agents', { 0: String(count) })
         : localize('com_ui_running_n_agents', { 0: String(count) });
     }
     if (allAskQuestions) {
+      if (count === 1) {
+        return localize(
+          askQuestionsDone ? 'com_ui_asked_one_question' : 'com_ui_asking_one_question',
+        );
+      }
       return askQuestionsDone
         ? localize('com_ui_asked_n_questions', { 0: String(count) })
         : localize('com_ui_asking_n_questions', { 0: String(count) });

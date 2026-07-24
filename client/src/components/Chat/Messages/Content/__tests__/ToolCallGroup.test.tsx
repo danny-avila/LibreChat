@@ -17,6 +17,18 @@ jest.mock('~/hooks', () => ({
     if (key === 'com_ui_asking_n_questions') {
       return `Asking ${values?.[0]} questions`;
     }
+    if (key === 'com_ui_asked_one_question') {
+      return 'Asked 1 question';
+    }
+    if (key === 'com_ui_asking_one_question') {
+      return 'Asking 1 question';
+    }
+    if (key === 'com_ui_subagent_complete') {
+      return 'Ran agent';
+    }
+    if (key === 'com_ui_subagent_running') {
+      return 'Running agent';
+    }
     if (key === 'com_ui_via_server') {
       return `via ${values?.[0]}`;
     }
@@ -545,6 +557,48 @@ describe('ToolCallGroup image hoisting', () => {
     });
 
     expect(screen.getByRole('button', { name: 'Asking 2 questions' })).toBeInTheDocument();
+  });
+
+  it('uses a singular completed label for one question grouped with reasoning', () => {
+    renderGroup({
+      ...baseProps,
+      parts: [{ part: makePart('q1', 'blue', 'ask_user_question'), idx: 0 }],
+      lastContentIdx: 0,
+    });
+
+    expect(screen.getByRole('button', { name: 'Asked 1 question' })).toBeInTheDocument();
+  });
+
+  it('uses a singular active label for one question grouped with reasoning', () => {
+    renderGroup({
+      ...baseProps,
+      isSubmitting: true,
+      parts: [{ part: makePart('q1', '', 'ask_user_question'), idx: 0 }],
+      lastContentIdx: 0,
+    });
+
+    expect(screen.getByRole('button', { name: 'Asking 1 question' })).toBeInTheDocument();
+  });
+
+  it('uses a singular completed label for one subagent grouped with reasoning', () => {
+    renderGroup({
+      ...baseProps,
+      parts: [{ part: makePart('a1', 'done', Constants.SUBAGENT), idx: 0 }],
+      lastContentIdx: 0,
+    });
+
+    expect(screen.getByRole('button', { name: 'Ran agent' })).toBeInTheDocument();
+  });
+
+  it('uses a singular active label for one subagent grouped with reasoning', () => {
+    renderGroup({
+      ...baseProps,
+      isSubmitting: true,
+      parts: [{ part: makePart('a1', '', Constants.SUBAGENT), idx: 0 }],
+      lastContentIdx: 0,
+    });
+
+    expect(screen.getByRole('button', { name: 'Running agent' })).toBeInTheDocument();
   });
 
   it('keeps the generic "Used N tools" label for a mixed group containing a question', () => {
