@@ -329,6 +329,7 @@ export function createAgentMethods(
   }: {
     file_ids: string[];
   }) => Promise<{ matchedCount: number; modifiedCount: number }>;
+  findAgentFileIds: ({ fileIds }: { fileIds: string[] }) => Promise<string[]>;
 } {
   const { removeAllPermissions, getActions, getSoleOwnedResourceIds, isExternalSkillId } = deps;
 
@@ -727,6 +728,48 @@ export function createAgentMethods(
   }
 
   /**
+   * Returns the subset of the given file ids that are referenced by any agent's
+   * `tool_resources.*.file_ids`. Read-only; used to keep files attached to an
+   * agent from being deleted when their owning conversation is removed.
+   */
+  async function findAgentFileIds({ fileIds }: { fileIds: string[] }): Promise<string[]> {
+    if (!fileIds || fileIds.length === 0) {
+      return [];
+    }
+
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+
+    const orQuery = TOOL_RESOURCE_KEYS.map((key) => ({
+      [`tool_resources.${key}.file_ids`]: { $in: fileIds },
+    }));
+
+    const projection = TOOL_RESOURCE_KEYS.reduce<Record<string, 1>>((acc, key) => {
+      acc[`tool_resources.${key}.file_ids`] = 1;
+      return acc;
+    }, {});
+
+    const agents = (await Agent.find({ $or: orQuery }, projection).lean()) as Array<{
+      tool_resources?: AgentToolResources;
+    }>;
+
+    const candidateSet = new Set(fileIds);
+    const referenced = new Set<string>();
+    for (const agent of agents) {
+      const toolResources = agent.tool_resources ?? {};
+      for (const key of TOOL_RESOURCE_KEYS) {
+        const resourceFileIds = (toolResources[key] as { file_ids?: string[] } | undefined)
+          ?.file_ids;
+        for (const fileId of resourceFileIds ?? []) {
+          if (candidateSet.has(fileId)) {
+            referenced.add(fileId);
+          }
+        }
+      }
+    }
+    return [...referenced];
+  }
+
+  /**
    * Deletes an agent based on the provided search parameter.
    */
   async function deleteAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
@@ -1059,6 +1102,7 @@ export function createAgentMethods(
     generateActionMetadataHash,
     removeAgentFromUserFavorites,
     removeAgentResourceFilesFromAllAgents,
+    findAgentFileIds,
   };
 }
 

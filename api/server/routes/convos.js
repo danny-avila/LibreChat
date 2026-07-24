@@ -20,6 +20,10 @@ const {
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const {
+  processDeleteRequest,
+  getConvoFilesToDelete,
+} = require('~/server/services/Files/process');
 const { importConversations } = require('~/server/utils/import');
 const getLogStores = require('~/cache/getLogStores');
 const db = require('~/models');
@@ -143,6 +147,15 @@ router.delete('/', configMiddleware, async (req, res) => {
     }
   }
 
+  // Collect files to delete before deleteConvos removes the conversation's messages.
+  let filesToDelete = [];
+  if (req.config?.fileConfig?.deleteFilesOnConversationDelete === true && filter.conversationId) {
+    filesToDelete = await getConvoFilesToDelete({
+      userId: req.user.id,
+      conversationId: filter.conversationId,
+    });
+  }
+
   try {
     const dbResponse = await db.deleteConvos(req.user.id, filter);
     // HITL: prune the deleted conversations' durable checkpoints — a paused run's
@@ -154,6 +167,13 @@ router.delete('/', configMiddleware, async (req, res) => {
     if (filter.conversationId) {
       await db.deleteToolCalls(req.user.id, filter.conversationId);
       await deleteConvoSharedLinksWithCleanup(req.user.id, filter.conversationId);
+    }
+    if (filesToDelete.length > 0) {
+      try {
+        await processDeleteRequest({ req, files: filesToDelete });
+      } catch (error) {
+        logger.error('[/convos] Failed to delete files associated with conversation', error);
+      }
     }
     res.status(201).json(dbResponse);
   } catch (error) {
