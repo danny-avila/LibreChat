@@ -96,7 +96,11 @@ export function resolveConfigHeaders({
   body,
   customUserVars,
 }: {
-  llmConfig?: RunLLMConfig | null;
+  /** Partial: this only reads the three provider header carriers, so
+   *  callers with a bare ClientOptions (e.g. auxiliary generations like
+   *  titles/activity labels) can resolve headers without assembling a
+   *  full run config. */
+  llmConfig?: Partial<RunLLMConfig> | null;
   user?: Partial<IUser> | { id: string };
   body?: RequestBody;
   customUserVars?: Record<string, string>;

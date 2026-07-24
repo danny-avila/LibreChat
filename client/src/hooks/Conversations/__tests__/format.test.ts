@@ -12,6 +12,7 @@ const translations: Record<string, string> = {
   com_ui_export_image: 'Image',
   com_ui_export_retrieval: 'Retrieval',
   com_ui_export_steer: 'You (steered)',
+  com_ui_export_activity_label: 'Activity',
   com_ui_export_summary: 'Summary',
   com_ui_export_tool: 'Tool',
   com_ui_export_video: 'Video',
@@ -88,6 +89,12 @@ const contentByType: Record<ContentTypes, ExportableContentPart> = {
     steer: 'Focus on the tests',
     steerId: 'steer-1',
   },
+  [ContentTypes.ACTIVITY_LABEL]: {
+    type: ContentTypes.ACTIVITY_LABEL,
+    activity_label: 'Searched runtime release notes',
+    tool_call_ids: ['tool-1'],
+    status: 'ok',
+  },
   [ContentTypes.ERROR]: {
     type: ContentTypes.ERROR,
     error: 'Something failed',
@@ -109,6 +116,7 @@ const expectedMarkdownByType: Record<ContentTypes, MessageContentExport> = {
   [ContentTypes.AGENT_UPDATE]: ['Agent Update', '{"index":0,"runId":"run-1","agentId":"agent-1"}'],
   [ContentTypes.SUMMARY]: ['Summary', 'Summary text'],
   [ContentTypes.STEER]: ['You (steered)', 'Focus on the tests'],
+  [ContentTypes.ACTIVITY_LABEL]: ['Activity', 'Searched runtime release notes'],
   [ContentTypes.ERROR]: ['Assistant', 'Something failed'],
 };
 

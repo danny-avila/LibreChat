@@ -50,6 +50,13 @@ const {
   isSteeringSupported,
   buildSteerMedia,
   stampSteerPartMedia,
+  createActivityLabelWiring,
+  resolveActivityConfig,
+  getCustomEndpointConfig,
+  mapCollectedMetadataToUsage,
+  resolveActivityLabelModel,
+  settlePendingLabelFills,
+  stripActivityLabelParts,
   getRequestMemories,
   getMemoryAgentId,
   createMemoryProcessor,
@@ -78,6 +85,7 @@ const {
   maybePrewarmCodeSandbox,
 } = require('@librechat/api');
 const {
+  Run,
   Callback,
   Providers,
   TitleMethod,
@@ -88,6 +96,7 @@ const {
 const {
   Constants,
   SteerEvents,
+  ActivityLabelEvents,
   UsageEvents,
   Permissions,
   VisionModes,
@@ -332,6 +341,288 @@ class AgentClient extends BaseClient {
   }
 
   setOptions(_options) {}
+
+  /**
+   * Resolve provider + client options for the
+   * tool-batch summary model. Same resolution path as titleConvo minus the
+   * title-specific branches. Model precedence: the endpoint's
+   * `activityModel` > its `titleModel` > the agent's own model, on the
+   * endpoint named by `activityEndpoint` (default: the agent's).
+   */
+  async resolveActivityLabelLLM() {
+    return resolveActivityLabelModel({
+      req: this.options.req,
+      agent: this.options.agent,
+      ids: {
+        messageId: this.responseMessageId,
+        conversationId: this.conversationId,
+        parentMessageId: this.parentMessageId,
+      },
+      db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
+    });
+  }
+
+  /**
+   * Bills the label call and folds its usage into the response rollup with
+   * an `activity-label` tag (subagent precedent) so `metadata.usage` and the
+   * live cost gauge reflect it. Tagged, so it is not a PRIMARY usage event
+   * and cannot disturb the context-snapshot pairing in buildResponseMetadata.
+   */
+  async recordActivityLabelUsage(collectedMetadata, model, endpointTokenConfig) {
+    const appConfig = this.options.req?.config;
+    const collectedUsage = mapCollectedMetadataToUsage(collectedMetadata);
+    if (collectedUsage.length === 0) {
+      return;
+    }
+    const streamId = this.options.req?._resumableStreamId || null;
+    const includeCost = this.options.req?.config?.interfaceConfig?.contextCost === true;
+    /** Cross-endpoint labels (`activityEndpoint`) price with THEIR endpoint's
+     *  rates; fall back to the agent's only when the label runs there. */
+    const labelTokenConfig = endpointTokenConfig ?? this.options.endpointTokenConfig;
+    for (const usage of collectedUsage) {
+      /** `seq` is normally a position in `collectedUsage` (each emitter
+       *  pushes, then emits with the new length). Label usage is billed
+       *  separately and never appended there, so it has no position: any
+       *  positive value eventually collides with a real one, and the client
+       *  dedupes on `runId:seq`. Labels therefore occupy a NEGATIVE seq
+       *  namespace that positional sequences can never reach. The key is
+       *  only used for Set membership, so the sign is inert. */
+      this.activityLabelUsageSeq = (this.activityLabelUsageSeq ?? 0) + 1;
+      const data = {
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        model,
+        usage_type: 'activity-label',
+        runId: this.responseMessageId,
+        seq: -this.activityLabelUsageSeq,
+        /** Cost coverage is all-or-nothing in `aggregateEmittedUsage`: an
+         *  event without `cost` suppresses the whole response's cost when
+         *  `interface.contextCost` is on. */
+        cost: includeCost
+          ? computeUsageCostUSD(
+              { ...usage, model },
+              { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+              labelTokenConfig,
+            )
+          : undefined,
+      };
+      /** Fold into the response rollup synchronously, then stream it like
+       *  primary/subagent usage so the live session gauge stays honest.
+       *  Retained and flushed with the subagent emits so job cleanup cannot
+       *  race the persist. */
+      this.usageEmitSink?.push(data);
+      if (streamId) {
+        const emit = GenerationJobManager.emitChunk(streamId, {
+          event: UsageEvents.ON_TOKEN_USAGE,
+          data,
+        }).catch((err) => {
+          logger.warn(`[AgentClient] Failed to emit activity-label usage: ${err?.message ?? err}`);
+        });
+        this.pendingSubagentEmits.push(emit);
+      }
+    }
+    await this.recordCollectedUsage({
+      collectedUsage,
+      context: 'activity-label',
+      model,
+      endpointTokenConfig: labelTokenConfig,
+      balance: getBalanceConfig(appConfig),
+      transactions: getTransactionsConfig(appConfig),
+      messageId: this.responseMessageId,
+    }).catch((err) => {
+      logger.error(
+        '[api/server/controllers/agents/client.js #recordActivityLabelUsage] Error recording usage',
+        err,
+      );
+    });
+  }
+
+  /**
+   * Bridges label generation to the SDK's `run.generateActivityLabel()` so
+   * the fast-model call is Langfuse-traced under the conversation's session
+   * (thread_id) with its own tags — never as an orphan trace. Returns null
+   * when the label could not be generated.
+   */
+  async generateActivityLabelViaRun({ entries, context, traceSeed, signal, charLimit, prompt }) {
+    if (typeof this.run?.generateActivityLabel !== 'function') {
+      return null;
+    }
+    const { provider, clientOptions, endpointTokenConfig } = await this.resolveActivityLabelLLM();
+    const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
+    try {
+      const { label } = await this.run.generateActivityLabel({
+        provider,
+        clientOptions,
+        entries: entries.map(({ toolName, toolInput, toolOutput, error, status }) => ({
+          toolName,
+          toolInput,
+          toolOutput,
+          error,
+          status,
+        })),
+        thinkingExcerpts: context.thinkingExcerpts,
+        lastAssistantText: context.lastAssistantText,
+        traceSeed,
+        charLimit,
+        /** The wiring always supplies one (the yaml `activityPrompt` when
+         *  set, else this repo's instruction). Falling through to the SDK's
+         *  built-in prompt would silently use a different register. */
+        ...((prompt ?? this.activityLabelPrompt) != null && {
+          prompt: prompt ?? this.activityLabelPrompt,
+        }),
+        chainOptions: {
+          signal,
+          callbacks: [{ handleLLMEnd }],
+          configurable: {
+            thread_id: this.conversationId,
+            user_id: this.user ?? this.options.req?.user?.id,
+          },
+        },
+      });
+      return label ?? null;
+    } finally {
+      await this.recordActivityLabelUsage(
+        collectedMetadata,
+        clientOptions.model,
+        endpointTokenConfig,
+      );
+    }
+  }
+
+  /** Bounded settle for in-flight label fills before finalization. On
+   *  timeout the label scope is closed and its abort controller fired, so a
+   *  straggler cannot mutate the saved response or emit into a dead job. */
+  async settleActivityLabels(timeoutMs = 3000) {
+    const pending = this.pendingActivityLabelFills;
+    if (!pending || pending.length === 0) {
+      return;
+    }
+    this.pendingActivityLabelFills = [];
+    await settlePendingLabelFills(pending, timeoutMs, () => {
+      /** Close EVERY generation's scope: a pre-pause wiring's straggler must
+       *  stay closed even though a resume built a newer one. */
+      for (const scope of this.activityLabelScopes ?? []) {
+        scope.closed = true;
+        scope.abort.abort();
+      }
+    });
+  }
+
+  /**
+   * Activity-label wiring. At each batch boundary the hook synchronously
+   * claims a live content slot (steering's index-offset pattern: push
+   * placeholder with deterministic counts, bump the shared offset so
+   * subsequent SDK indices land past it) and fills it when the fast-model
+   * label resolves. Both states reach the live client via the dedicated
+   * `on_activity_label` event; failures leave the counts-only part.
+   * @param {string | undefined} streamId
+   */
+  buildActivityLabelWiring(streamId, abortSignal) {
+    if (!streamId) {
+      return undefined;
+    }
+    /** Per-endpoint opt-in via `activityLabel: true` in librechat.yaml,
+     *  resolved the same way the title options are (endpoints.all > named
+     *  endpoint > custom endpoint config). Custom endpoints live in the
+     *  `endpoints.custom` ARRAY, so their settings are only visible through
+     *  the matched entry — without it every custom endpoint reads as
+     *  disabled. */
+    const agentEndpoint = this.options.agent?.endpoint ?? '';
+    const appConfigForActivity = this.options.req?.config;
+    let customEndpointConfig;
+    try {
+      customEndpointConfig = getCustomEndpointConfig({
+        endpoint: agentEndpoint,
+        appConfig: appConfigForActivity,
+      });
+    } catch {
+      customEndpointConfig = undefined;
+    }
+    const activityConfig = resolveActivityConfig(
+      appConfigForActivity,
+      agentEndpoint,
+      customEndpointConfig,
+    );
+    if (!activityConfig.enabled) {
+      return undefined;
+    }
+    this.activityLabelPrompt = activityConfig.prompt;
+    /** Mark the job so a resume can reconcile label gaps without probing
+     *  content; fire-and-forget, the flag is only an optimization hint. */
+    void GenerationJobManager.markActivityLabels(streamId);
+    /** SDK support probe (steering-style): the Run method and the formatter
+     *  replay skip ship together, so method presence is the capability. */
+    const sdkCapable = typeof Run?.prototype?.generateActivityLabel === 'function';
+    /** Label-scoped abort: fired when settle times out so a straggling
+     *  generation stops burning provider time for a finalized response.
+     *  Chained to the run signal so a user abort still cancels labels. */
+    /** Close state is PER WIRING, not per client: a HITL resume rebuilds the
+     *  wiring, and resetting a shared instance flag would re-open closures
+     *  from the pre-pause segment whose provider call ignored the abort.
+     *  Scopes are retained so settle closes every generation, past included. */
+    const labelScope = { closed: false, abort: new AbortController() };
+    this.activityLabelScopes = this.activityLabelScopes ?? [];
+    this.activityLabelScopes.push(labelScope);
+    this.activityLabelAbort = labelScope.abort;
+    if (abortSignal != null) {
+      if (abortSignal.aborted) {
+        labelScope.abort.abort();
+      } else {
+        abortSignal.addEventListener('abort', () => labelScope.abort.abort(), { once: true });
+      }
+    }
+    /** Thin wrapper: slot claiming, lane stamping, emit ordering, and settle
+     *  tracking live in `createActivityLabelWiring` (packages/api, TS). */
+    return createActivityLabelWiring({
+      maxPerRun: activityConfig.maxPerRun,
+      charLimit: activityConfig.charLimit,
+      prompt: activityConfig.prompt,
+      abortSignal: labelScope.abort.signal,
+      isClosed: () => labelScope.closed,
+      getContentParts: () => this.contentParts,
+      bumpIndexOffset: () => {
+        this.steerOffsetState.offset += 1;
+      },
+      emitLabelEvent: (index, part) =>
+        GenerationJobManager.emitChunk(
+          streamId,
+          {
+            event: ActivityLabelEvents.ON_ACTIVITY_LABEL,
+            data: {
+              index,
+              part,
+              responseMessageId: this.responseMessageId,
+              conversationId: this.conversationId,
+            },
+          },
+          { durable: true },
+        ),
+      trackPendingFill: (fillDone) => {
+        this.pendingActivityLabelFills = this.pendingActivityLabelFills ?? [];
+        this.pendingActivityLabelFills.push(fillDone);
+      },
+      resolveLLM: () => this.resolveActivityLabelLLM(),
+      /** Per-generation usage accounting for the direct fallback path;
+       *  the SDK bridge records its own via chainOptions callbacks. */
+      getInvokeCallbacks: () => {
+        const { handleLLMEnd, collected } = createMetadataAggregator();
+        return {
+          callbacks: [{ handleLLMEnd }],
+          collect: async () => {
+            const { clientOptions, endpointTokenConfig } = await this.resolveActivityLabelLLM();
+            await this.recordActivityLabelUsage(
+              collected,
+              clientOptions.model,
+              endpointTokenConfig,
+            );
+          },
+        };
+      },
+      ...(sdkCapable && {
+        generateLabel: (payload) => this.generateActivityLabelViaRun(payload),
+      }),
+    });
+  }
 
   /**
    * `AgentClient` is not opinionated about vision requests, so we don't do anything here
@@ -1360,6 +1651,9 @@ class AgentClient extends BaseClient {
         // Steer parts are user speech, not intermediate agent output — dropping
         // one would erase the user's words from the persisted turn.
         part.type === ContentTypes.STEER ||
+        // Activity labels summarize the hidden intermediate outputs — exactly
+        // the affordance hide_sequential_outputs wants to keep visible.
+        part.type === ContentTypes.ACTIVITY_LABEL ||
         part.tool_call_ids,
     );
   }
@@ -1623,7 +1917,7 @@ class AgentClient extends BaseClient {
         summary: initialSummary,
         boundaryTokenAdjustment,
       } = formatAgentMessages(
-        payload,
+        stripActivityLabelParts(payload),
         this.indexTokenCountMap,
         toolSet,
         skillPrimeResult?.skills,
@@ -1697,7 +1991,7 @@ class AgentClient extends BaseClient {
       const memoryMessages =
         this.processMemory && this.memoryPayload
           ? formatAgentMessages(
-              this.memoryPayload,
+              stripActivityLabelParts(this.memoryPayload),
               undefined,
               toolSet,
               skillPrimeResult?.skills,
@@ -1775,6 +2069,7 @@ class AgentClient extends BaseClient {
           // boundary and inject them into graph state. The offset wrapper
           // shifts SDK content indices past any spliced steer parts.
           steering: this.buildSteerWiring(streamId),
+          activityLabel: this.buildActivityLabelWiring(streamId, abortController.signal),
           indexTokenCountMap,
           initialSummary,
           initialSessions,
@@ -1935,6 +2230,7 @@ class AgentClient extends BaseClient {
       }
 
       this.finalizeSubagentContent();
+      await this.settleActivityLabels();
 
       /** Flush subagent usage emits the sink fired without awaiting, so their
        *  persist/publish completes before we return and the job is cleaned up
@@ -2112,6 +2408,9 @@ class AgentClient extends BaseClient {
         // Steering stays live across a pause/resume cycle: steers queued while
         // the resumed segment runs drain at its tool-batch boundaries.
         steering: this.buildSteerWiring(streamId),
+        // Activity labels likewise survive pause/resume: post-resume tool
+        // batches keep claiming slots and generating group headers.
+        activityLabel: this.buildActivityLabelWiring(streamId, abortController.signal),
         // Replay deferred tools discovered before the pause. With `messages: []` the
         // discovery scan finds nothing, so a deferred tool the paused call targets
         // would be absent from the rebuilt toolMap; these names (captured at pause)
@@ -2224,6 +2523,7 @@ class AgentClient extends BaseClient {
       }
 
       this.finalizeSubagentContent();
+      await this.settleActivityLabels();
 
       if (this.pendingSubagentEmits.length > 0) {
         await Promise.allSettled(this.pendingSubagentEmits);

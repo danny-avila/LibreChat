@@ -107,6 +107,26 @@ endpoints:
       titleConvo: false
       modelDisplayLabel: 'Mock Provider D'
 
+    # Activity labels are enabled ONLY here. They get a dedicated endpoint
+    # because a label collapses its tool group (a labeled block auto-collapses
+    # even at one call), which hides the tool cards other specs assert on —
+    # enabling this on a shared endpoint broke steering.spec.ts. Provider D is
+    # the unlabeled control. The label call is the one request that leaves the
+    # process (e2e/setup/fake-label-server.js serves the baseURL below), and
+    # `activityModel` differs from the chat model so a spec can prove the label
+    # ran on the configured model rather than the agent's.
+    - name: 'Mock Provider E'
+      apiKey: 'e2e-mock-key-e'
+      baseURL: 'http://127.0.0.1:8889/v1'
+      models:
+        default:
+          - 'mock-model-e'
+        fetch: false
+      titleConvo: false
+      modelDisplayLabel: 'Mock Provider E'
+      activityLabel: true
+      activityModel: 'mock-label-model'
+
 modelSpecs:
   prioritize: true
   # Enforcement would reject sends from the non-spec paths addedEndpoints
@@ -117,6 +137,7 @@ modelSpecs:
   addedEndpoints:
     - 'Mock Provider C'
     - 'Mock Provider D'
+    - 'Mock Provider E'
     - 'agents'
   list:
     - name: 'e2e-mock-provider-a'

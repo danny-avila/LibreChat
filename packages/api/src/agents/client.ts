@@ -285,7 +285,12 @@ export function countFormattedMessageTokens(
           continue;
         }
 
-        if (type === ContentTypes.THINK || type === ContentTypes.ERROR) {
+        if (
+          type === ContentTypes.THINK ||
+          type === ContentTypes.ERROR ||
+          // UI-only progress headers — never model input, never billed output
+          type === ContentTypes.ACTIVITY_LABEL
+        ) {
           continue;
         }
 

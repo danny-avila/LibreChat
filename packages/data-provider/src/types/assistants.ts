@@ -628,6 +628,16 @@ export type TMessageContentParts =
     } & ContentMetadata)
   | ({ type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata } & ContentMetadata)
   | (SummaryContentPart & ContentMetadata)
+  | ({
+      /** One-line LLM-generated note describing a completed tool batch. UI-only:
+       *  never sent to the model (stripped before payload formatting). */
+      type: ContentTypes.ACTIVITY_LABEL;
+      activity_label?: string;
+      tool_call_ids?: string[];
+      /** ok = all tools succeeded, failed = all failed, partial = mixed. */
+      status?: 'ok' | 'partial' | 'failed';
+      pending?: boolean;
+    } & ContentMetadata)
   | (Agents.AgentUpdate & ContentMetadata)
   | (Agents.MessageContentImageUrl & ContentMetadata)
   | (Agents.MessageContentVideoUrl & ContentMetadata)

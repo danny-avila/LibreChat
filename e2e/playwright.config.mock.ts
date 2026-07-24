@@ -8,6 +8,9 @@ const serverPath = path.resolve(rootPath, 'e2e/setup/start-server.js');
 const mcpHttpServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-http-server.js');
 /** Must match the `e2e-http` server URL in e2e/config/librechat.e2e.yaml. */
 const MCP_HTTP_PORT = process.env.E2E_MCP_HTTP_PORT || '8765';
+const labelServerPath = path.resolve(rootPath, 'e2e/setup/fake-label-server.js');
+/** Must match the custom endpoints' `baseURL` in e2e/config/librechat.e2e.yaml. */
+const LABEL_PORT = process.env.E2E_LABEL_PORT || '8889';
 const fakeModelHookPath = path.resolve(rootPath, 'e2e/setup/fake-model.js');
 const configTemplatePath = path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml');
 const configPath = path.resolve(rootPath, 'e2e/.generated/librechat.e2e.yaml');
@@ -45,9 +48,13 @@ const preservedCredentialEnvKeys = new Set([
 ]);
 
 /**
- * The custom endpoints in the template point at an unreachable baseURL; the fake
- * model injected via `LIBRECHAT_TEST_RUN_HOOK` overrides the run before any
- * request is made, so no real (or mock HTTP) provider is contacted.
+ * The custom endpoints in the template point their `baseURL` at the local fake
+ * label server; the fake model injected via `LIBRECHAT_TEST_RUN_HOOK` overrides
+ * the GRAPH before any request is made, so no real provider is contacted.
+ *
+ * Activity labels are the one exception: `run.generateActivityLabel()` bypasses
+ * the graph override and calls the endpoint's resolved client options, so that
+ * request does go out over HTTP — to `fake-label-server.js` on 127.0.0.1.
  */
 function writeRuntimeMockConfig() {
   const template = fs.readFileSync(configTemplatePath, 'utf8');
@@ -142,6 +149,16 @@ export default defineConfig({
       cwd: rootPath,
       env: { ...process.env, E2E_MCP_HTTP_PORT: MCP_HTTP_PORT },
       url: `http://127.0.0.1:${MCP_HTTP_PORT}/`,
+      stdout: 'pipe',
+      timeout: 60_000,
+      reuseExistingServer: false,
+    },
+    {
+      // Serves the activity-label model call (the custom endpoints' baseURL).
+      command: `node ${labelServerPath}`,
+      cwd: rootPath,
+      env: { ...process.env, E2E_LABEL_PORT: LABEL_PORT },
+      url: `http://127.0.0.1:${LABEL_PORT}/`,
       stdout: 'pipe',
       timeout: 60_000,
       reuseExistingServer: false,

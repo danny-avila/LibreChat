@@ -10,9 +10,9 @@ import type {
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
+import { cn, getToolDisplayLabel, getActivityLabelPart, getActivityLabelText } from '~/utils';
 import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
-import { cn, getToolDisplayLabel } from '~/utils';
 import { StackedToolIcons } from './ToolOutput';
 import { useMCPIconMap } from '~/hooks/MCP';
 import { AttachmentGroup } from './Parts';
@@ -86,6 +86,9 @@ interface ToolCallGroupProps {
   groupAttachments?: TAttachment[];
   initialExpansionState?: ToolCallGroupExpansionState;
   onExpansionChange?: (state: ToolCallGroupExpansionState) => void;
+  /** Activity-label part terminating this block; when it carries generated
+   *  text the header shows that text instead of the default tool summary. */
+  labelPart?: PartWithIndex;
 }
 
 export type ToolCallGroupExpansionState = {
@@ -102,20 +105,31 @@ export default function ToolCallGroup({
   groupAttachments,
   initialExpansionState,
   onExpansionChange,
+  labelPart,
 }: ToolCallGroupProps) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
-  const count = parts.length;
 
-  const toolMetadata = useMemo(() => parts.map((p) => getToolMeta(p.part)), [parts]);
+  /** Labeled activity blocks also contain THINK parts, which yield null
+   *  metadata. Narrow to tool entries once: they alone drive the count, the
+   *  completion check, and the icon strip — passing a null-derived empty
+   *  name to StackedToolIcons would render a phantom generic tool icon. */
+  const toolMetadata = useMemo(
+    () => parts.map((p) => getToolMeta(p.part)).filter((m): m is ToolMeta => m != null),
+    [parts],
+  );
+  const count = toolMetadata.length;
   const allCompleted = useMemo(
-    () => toolMetadata.every((m) => m?.hasOutput === true),
+    () => toolMetadata.every((m) => m.hasOutput === true),
     [toolMetadata],
   );
-  const toolNames = useMemo(() => toolMetadata.map((m) => m?.name ?? ''), [toolMetadata]);
-  const iconToolNames = useMemo(() => toolMetadata.map((m) => m?.iconName ?? ''), [toolMetadata]);
+  const activityLabel = getActivityLabelPart(labelPart?.part);
+  const activityLabelText = getActivityLabelText(activityLabel);
+  const activityFailed = activityLabel?.status === 'failed' || activityLabel?.status === 'partial';
+  const toolNames = useMemo(() => toolMetadata.map((m) => m.name), [toolMetadata]);
+  const iconToolNames = useMemo(() => toolMetadata.map((m) => m.iconName), [toolMetadata]);
 
   /** Subagent tool calls get their own label verb ("Running/Ran N agents")
    *  since "Used N tools" reads oddly when the "tools" are actually child
@@ -166,7 +180,10 @@ export default function ToolCallGroup({
   }, [toolNames, localize]);
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
-  const autoCollapse = !autoExpand && count >= 2 && allCompleted;
+  /** A labeled activity block is summarized by its header, so it collapses
+   *  even at a single tool call — agent runs are full of one-call batches,
+   *  and leaving those expanded defeats the grouping. */
+  const autoCollapse = !autoExpand && allCompleted && (count >= 2 || activityLabelText.length > 0);
   const initialState = initialExpansionState?.userOverride === true ? initialExpansionState : null;
   const [isExpanded, setIsExpanded] = useState(
     initialState?.isExpanded ?? (autoExpand || !autoCollapse),
@@ -247,7 +264,10 @@ export default function ToolCallGroup({
     }
     return localize('com_ui_used_n_tools', { 0: String(count) });
   };
-  const groupLabel = resolveGroupLabel();
+  /** The generated line wins over the generic category verb — but only once
+   *  it exists. An unfilled label part leaves the block rendering exactly as
+   *  it would without the feature. */
+  const groupLabel = activityLabelText.length > 0 ? activityLabelText : resolveGroupLabel();
   /** Single category glyph for homogeneous groups (else StackedToolIcons). */
   const CategoryIcon = allSubagents ? Users : MessageCircleQuestion;
 
@@ -295,7 +315,15 @@ export default function ToolCallGroup({
             isAnimating={!allCompleted && isSubmitting}
           />
         )}
-        <span className="tool-status-text font-medium">{groupLabel}</span>
+        <span
+          className={cn(
+            'tool-status-text font-medium',
+            activityFailed && 'text-amber-600 dark:text-amber-400',
+          )}
+          role="status"
+        >
+          {groupLabel}
+        </span>
         {/** Hide the tool-name summary for pure-category groups (subagents /
          *   questions) — every entry deduplicates to the same token, which
          *   adds noise without info. Mixed groups keep the summary. */}

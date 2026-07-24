@@ -11,6 +11,7 @@ import {
   StepEvents,
   apiBaseUrl,
   SteerEvents,
+  ActivityLabelEvents,
   UsageEvents,
   createPayload,
   ApprovalEvents,
@@ -26,6 +27,7 @@ import type {
   TPendingSteer,
   EventSubmission,
   TSteerAppliedEvent,
+  TActivityLabelEvent,
 } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { ActiveJobsResponse } from '~/data-provider';
@@ -38,6 +40,8 @@ import {
   carriedSteerContext,
   resolveRunEndTarget,
   findSteerMessageIndex,
+  applyActivityLabelPart,
+  findActivityLabelMessageIndex,
   appendAppliedSteerIds,
   removeConvoFromAllQueries,
   upsertConvoInAllQueries,
@@ -545,6 +549,7 @@ export default function useResumableSSE(
    *  bounded next-frame retry as pending actions, on its own handle so the
    *  two retries can't cancel each other. */
   const steerRetryRef = useRef<number | null>(null);
+  const activityLabelRetryRef = useRef<number | null>(null);
 
   /** Removes the pending chip once its steer is injected (the inline content
    *  part becomes the durable record), and records the id so a 202 ACK that
@@ -774,6 +779,41 @@ export default function useResumableSSE(
         resolveSteerChip(chipConvoId, event.steerId);
       };
 
+      /**
+       * Places an activity-label part at its claimed content index on the
+       * in-flight response message. Fires twice per block (counts placeholder
+       * at batch end, fast-model label on resolve); `applyActivityLabelPart`
+       * is referentially stable on duplicate replays. Same bounded
+       * next-frame retry as steers for the inject-before-render race.
+       */
+      const applyActivityLabelToMessages = (event: TActivityLabelEvent, attempt = 0) => {
+        const retryNextFrame = () => {
+          if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
+            activityLabelRetryRef.current = requestAnimationFrame(() =>
+              applyActivityLabelToMessages(event, attempt + 1),
+            );
+          }
+        };
+        /** Same boundary as pending actions and steers: land queued deltas
+         * before the label part is placed and synced, or the later flush
+         * would clobber it (and `syncStepMessage` would sync a pre-delta
+         * copy back into the step handler's authoritative map). */
+        flushPendingDeltas();
+        const messages = getMessages() ?? [];
+        const index = findActivityLabelMessageIndex(messages, event);
+        if (index < 0) {
+          retryNextFrame();
+          return;
+        }
+        const updated = applyActivityLabelPart(messages[index], event);
+        if (updated !== messages[index]) {
+          const nextMessages = [...messages];
+          nextMessages[index] = updated;
+          setMessages(nextMessages);
+          syncStepMessage(updated);
+        }
+      };
+
       const baseUrl = `${apiBaseUrl()}/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
       const url = isResume ? `${baseUrl}?resume=true` : baseUrl;
       logger.log('ResumableSSE', 'Subscribing to stream:', url, { isResume });
@@ -929,6 +969,11 @@ export default function useResumableSSE(
 
           if (data.event === SteerEvents.ON_STEER_APPLIED) {
             applySteerToMessages(data.data as TSteerAppliedEvent);
+            return;
+          }
+
+          if (data.event === ActivityLabelEvents.ON_ACTIVITY_LABEL) {
+            applyActivityLabelToMessages(data.data as TActivityLabelEvent);
             return;
           }
 
@@ -1127,6 +1172,8 @@ export default function useResumableSSE(
                   applyPendingActionToMessages(replayEvent.data as Agents.PendingAction);
                 } else if (replayEvent.event === SteerEvents.ON_STEER_APPLIED) {
                   applySteerToMessages(replayEvent.data as TSteerAppliedEvent);
+                } else if (replayEvent.event === ActivityLabelEvents.ON_ACTIVITY_LABEL) {
+                  applyActivityLabelToMessages(replayEvent.data as TActivityLabelEvent);
                 } else if (replayEvent.event != null) {
                   if (
                     replayEvent.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -1156,6 +1203,8 @@ export default function useResumableSSE(
                   applyPendingActionToMessages(pendingEvent.data as Agents.PendingAction);
                 } else if (pendingEvent.event === SteerEvents.ON_STEER_APPLIED) {
                   applySteerToMessages(pendingEvent.data as TSteerAppliedEvent);
+                } else if (pendingEvent.event === ActivityLabelEvents.ON_ACTIVITY_LABEL) {
+                  applyActivityLabelToMessages(pendingEvent.data as TActivityLabelEvent);
                 } else if (pendingEvent.event != null) {
                   if (
                     pendingEvent.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -1749,6 +1798,10 @@ export default function useResumableSSE(
       if (pendingActionRetryRef.current != null) {
         cancelAnimationFrame(pendingActionRetryRef.current);
         pendingActionRetryRef.current = null;
+      }
+      if (activityLabelRetryRef.current != null) {
+        cancelAnimationFrame(activityLabelRetryRef.current);
+        activityLabelRetryRef.current = null;
       }
       if (steerRetryRef.current != null) {
         cancelAnimationFrame(steerRetryRef.current);
