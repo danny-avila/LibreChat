@@ -793,6 +793,75 @@ function extractAlwaysApplyFromBody(body: string | undefined): BodyAlwaysApplyRe
   return aliasResult ?? { status: 'absent' };
 }
 
+type BodyBooleanResult =
+  | { status: 'absent' }
+  | { status: 'valid'; value: boolean }
+  | { status: 'invalid' };
+
+/**
+ * Extract a single strict boolean flag (`user-invocable` /
+ * `disable-model-invocation`) from a SKILL.md body's YAML frontmatter block.
+ * Mirrors `extractAlwaysApplyFromBody`: the REST edit flow rewrites the full
+ * SKILL.md via `update.body` without a structured `frontmatter` object, so an
+ * inline flag flip is otherwise invisible to the derived columns. `key` is the
+ * canonical hyphenated frontmatter key; matching is case-insensitive and
+ * tolerant of quoted keys, quoted values, and YAML inline comments.
+ */
+function extractBooleanFlagFromBody(body: string | undefined, key: string): BodyBooleanResult {
+  if (typeof body !== 'string' || body.length === 0) {
+    return { status: 'absent' };
+  }
+  const trimmed = body.trim();
+  if (!trimmed.startsWith('---')) {
+    return { status: 'absent' };
+  }
+  const after = trimmed.slice(3);
+  const closingIdx = after.indexOf('\n---');
+  if (closingIdx === -1) {
+    return { status: 'absent' };
+  }
+  const block = after.slice(0, closingIdx);
+  const target = key.toLowerCase();
+  for (const line of block.split('\n')) {
+    const colon = line.indexOf(':');
+    if (colon === -1) {
+      continue;
+    }
+    let rawKey = line.slice(0, colon).trim();
+    if (
+      rawKey.length >= 2 &&
+      ((rawKey[0] === '"' && rawKey.endsWith('"')) || (rawKey[0] === "'" && rawKey.endsWith("'")))
+    ) {
+      rawKey = rawKey.slice(1, -1).trim();
+    }
+    if (rawKey.toLowerCase() !== target) {
+      continue;
+    }
+    let value = stripYamlTrailingComment(line.slice(colon + 1).trim()).trim();
+    if (value === '') {
+      return { status: 'absent' };
+    }
+    if (
+      value.length >= 2 &&
+      ((value[0] === '"' && value.endsWith('"')) || (value[0] === "'" && value.endsWith("'")))
+    ) {
+      value = value.slice(1, -1).trim();
+    }
+    if (value === '') {
+      return { status: 'absent' };
+    }
+    const lowered = value.toLowerCase();
+    if (lowered === 'true') {
+      return { status: 'valid', value: true };
+    }
+    if (lowered === 'false') {
+      return { status: 'valid', value: false };
+    }
+    return { status: 'invalid' };
+  }
+  return { status: 'absent' };
+}
+
 /**
  * Resolve the effective `alwaysApply` boolean for a create/update call.
  *
@@ -1352,6 +1421,19 @@ export function createSkillMethods(
        update. */
     const bodyAlwaysApply =
       update.body !== undefined ? extractAlwaysApplyFromBody(update.body) : undefined;
+    /* Same story for the invocation flags: the UI edit flow sends only
+       `body`, so an inline `user-invocable:` / `disable-model-invocation:`
+       flip is invisible to the derived columns unless we read it back out
+       here. A structured `frontmatter` bag, when present, already drives
+       every derived column below, so body-inline is only consulted when it's
+       absent. */
+    const readBodyFlags = update.frontmatter === undefined && update.body !== undefined;
+    const bodyUserInvocable = readBodyFlags
+      ? extractBooleanFlagFromBody(update.body, 'user-invocable')
+      : undefined;
+    const bodyDisableModelInvocation = readBodyFlags
+      ? extractBooleanFlagFromBody(update.body, 'disable-model-invocation')
+      : undefined;
     const issues: ValidationIssue[] = [];
     if (update.name !== undefined) issues.push(...validateSkillName(update.name));
     if (update.description !== undefined)
@@ -1379,6 +1461,18 @@ export function createSkillMethods(
         message:
           '"always-apply" or "alwaysApply" in SKILL.md frontmatter must be a boolean (true or false)',
       });
+    }
+    for (const [field, result] of [
+      ['user-invocable', bodyUserInvocable],
+      ['disable-model-invocation', bodyDisableModelInvocation],
+    ] as const) {
+      if (result?.status === 'invalid') {
+        issues.push({
+          field: `body.frontmatter.${field}`,
+          code: 'INVALID_TYPE',
+          message: `"${field}" in SKILL.md frontmatter must be a boolean (true or false)`,
+        });
+      }
     }
     const { errors, warnings } = partitionIssues(issues);
     if (errors.length > 0) {
@@ -1411,6 +1505,22 @@ export function createSkillMethods(
           setPayload[key] = derived[key];
         } else {
           unsetPayload[key] = '';
+        }
+      }
+    } else if (update.body !== undefined) {
+      /* No structured frontmatter bag, but a body edit can still flip the
+         invocation flags inline. Mirror the frontmatter branch: a valid value
+         sets the column, and an absent flag unsets it back to the schema
+         default so removing `user-invocable: false` from a SKILL.md restores
+         it to the popover on the next save (`invalid` is rejected above). */
+      for (const [column, result] of [
+        ['userInvocable', bodyUserInvocable],
+        ['disableModelInvocation', bodyDisableModelInvocation],
+      ] as const) {
+        if (result?.status === 'valid') {
+          setPayload[column] = result.value;
+        } else if (result?.status === 'absent') {
+          unsetPayload[column] = '';
         }
       }
     }

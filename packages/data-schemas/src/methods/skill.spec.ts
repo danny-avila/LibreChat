@@ -1534,6 +1534,89 @@ describe('Skill CRUD methods', () => {
     ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
   });
 
+  it('updateSkill restores user-invocable to the default when a body edit removes the imported line', async () => {
+    /* The reported regression: a skill imported with `user-invocable: false`
+       drives the column, but editing the SKILL.md body (which the UI sends
+       without a structured `frontmatter` object) to drop the line must make
+       the skill user-invocable again. Without the body-inline sync the column
+       would stick at `false` and the skill would stay hidden from the `$`
+       popover forever. */
+    const { skill } = await methods.createSkill(
+      makeSkillInput({
+        name: 'import-then-edit',
+        frontmatter: {
+          name: 'import-then-edit',
+          description: 'A small demo skill used in tests.',
+          'user-invocable': false,
+        },
+      }),
+    );
+    expect(skill.userInvocable).toBe(false);
+    const bodyWithoutFlag = `---\nname: import-then-edit\ndescription: user removed the invocation line.\n---\n\n# Body`;
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: { body: bodyWithoutFlag },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.userInvocable).toBeUndefined();
+    }
+  });
+
+  it('updateSkill syncs invocation columns from an inline body edit', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'body-invocation' }));
+    expect(skill.userInvocable).toBe(true);
+    expect(skill.disableModelInvocation).toBe(false);
+    const newBody = `---\nname: body-invocation\ndescription: opting into manual-only.\nuser-invocable: false\ndisable-model-invocation: true\n---\n\n# Body`;
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: { body: newBody },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.userInvocable).toBe(false);
+      expect(result.skill.disableModelInvocation).toBe(true);
+    }
+  });
+
+  it('updateSkill lets a structured frontmatter bag win over inline body invocation flags', async () => {
+    /* When a caller sends a structured `frontmatter` object it is the
+       authoritative source for every derived column, so a conflicting
+       body-inline flag must not override it. */
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'fm-wins-invocation' }));
+    const body = `---\nname: fm-wins-invocation\ndescription: body says hidden.\nuser-invocable: false\n---\n\n# Body`;
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: {
+        frontmatter: {
+          name: 'fm-wins-invocation',
+          description: 'A small demo skill used in tests.',
+          'user-invocable': true,
+        },
+        body,
+      },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.userInvocable).toBe(true);
+    }
+  });
+
+  it('updateSkill rejects a non-boolean invocation flag in a body-only edit', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'body-invocation-typo' }));
+    const bodyWithTypo = `---\nname: body-invocation-typo\ndescription: broken flag.\nuser-invocable: yes\n---\n\n# Body`;
+    await expect(
+      methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: skill.version,
+        update: { body: bodyWithTypo },
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+  });
+
   it('createSkill accepts a body typo when an explicit top-level alwaysApply overrides it', async () => {
     /* Same precedence-aware validation on the create path: explicit
        top-level `alwaysApply` short-circuits body-inline validation. */

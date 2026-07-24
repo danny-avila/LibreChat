@@ -328,6 +328,42 @@ describe('parseFrontmatter', () => {
     expect(result.alwaysApply).toBe(false);
     expect(result.invalidBooleans).toEqual([]);
   });
+
+  it('extracts user-invocable and disable-model-invocation', () => {
+    const raw = `---\nname: manual-only\ndescription: demo.\nuser-invocable: false\ndisable-model-invocation: true\n---\n\nbody`;
+    const result = parseFrontmatter(raw);
+    expect(result.userInvocable).toBe(false);
+    expect(result.disableModelInvocation).toBe(true);
+    expect(result.invalidBooleans).toEqual([]);
+  });
+
+  it('leaves invocation fields undefined when absent', () => {
+    const raw = `---\nname: n\ndescription: d\n---\n\nbody`;
+    const result = parseFrontmatter(raw);
+    expect(result.userInvocable).toBeUndefined();
+    expect(result.disableModelInvocation).toBeUndefined();
+  });
+
+  it('is case-insensitive on the invocation keys', () => {
+    const raw = `---\nname: n\ndescription: d\nUser-Invocable: FALSE\n---\n\nbody`;
+    expect(parseFrontmatter(raw).userInvocable).toBe(false);
+  });
+
+  it('flags non-boolean invocation values as invalid (no silent drop)', () => {
+    const raw = `---\nname: n\ndescription: d\nuser-invocable: yes\ndisable-model-invocation: 1\n---\n\nbody`;
+    const result = parseFrontmatter(raw);
+    expect(result.userInvocable).toBeUndefined();
+    expect(result.disableModelInvocation).toBeUndefined();
+    expect(result.invalidBooleans).toEqual(['user-invocable', 'disable-model-invocation']);
+  });
+
+  it('accepts quoted invocation keys (js-yaml parses them as booleans)', () => {
+    const raw = `---\nname: n\ndescription: d\n'user-invocable': false\n"disable-model-invocation": true\n---\n\nbody`;
+    const result = parseFrontmatter(raw);
+    expect(result.userInvocable).toBe(false);
+    expect(result.disableModelInvocation).toBe(true);
+    expect(result.invalidBooleans).toEqual([]);
+  });
 });
 
 describe('createImportHandler', () => {
@@ -386,6 +422,62 @@ describe('createImportHandler', () => {
           expect.objectContaining({
             field: 'frontmatter',
             code: 'INVALID_YAML',
+          }),
+        ]),
+      }),
+    );
+    expect(deps.createSkill).not.toHaveBeenCalled();
+  });
+
+  it('forwards user-invocable / disable-model-invocation to createSkill on markdown import', async () => {
+    const deps = mockImportDeps();
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+    const md = `---\nname: manual-only\ndescription: A manual-only skill.\nuser-invocable: false\ndisable-model-invocation: true\n---\n\nbody`;
+
+    await handler(mockMarkdownRequest(md, 'manual-only.md'), res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(deps.createSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        frontmatter: {
+          'user-invocable': false,
+          'disable-model-invocation': true,
+        },
+      }),
+    );
+  });
+
+  it('omits the frontmatter bag when no invocation fields are present', async () => {
+    const deps = mockImportDeps();
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+    const md = `---\nname: plain\ndescription: A plain skill.\n---\n\nbody`;
+
+    await handler(mockMarkdownRequest(md, 'plain.md'), res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(deps.createSkill).toHaveBeenCalledWith(
+      expect.objectContaining({ frontmatter: undefined }),
+    );
+  });
+
+  it('rejects a non-boolean invocation field before creating the skill', async () => {
+    const deps = mockImportDeps();
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+    const md = `---\nname: n\ndescription: d\nuser-invocable: yes\n---\n\nbody`;
+
+    await handler(mockMarkdownRequest(md, 'bad.md'), res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        error: 'Validation failed',
+        issues: expect.arrayContaining([
+          expect.objectContaining({
+            field: 'frontmatter.user-invocable',
+            code: 'INVALID_TYPE',
           }),
         ]),
       }),
