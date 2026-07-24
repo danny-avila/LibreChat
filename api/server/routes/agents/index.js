@@ -21,6 +21,7 @@ const {
   messageIpLimiter,
   configMiddleware,
   messageUserLimiter,
+  idempotencyCheck,
 } = require('~/server/middleware');
 const SteerController = require('~/server/controllers/agents/steer');
 const { saveMessage } = require('~/models');
@@ -464,6 +465,10 @@ router.use('/', v1);
 
 const chatRouter = express.Router();
 chatRouter.use(configMiddleware);
+
+// Idempotency must run BEFORE rate limiters so a retried POST is
+// deduped instead of counting against the user's message quota (#14349).
+chatRouter.use(idempotencyCheck);
 
 if (isEnabled(LIMIT_MESSAGE_IP)) {
   chatRouter.use(messageIpLimiter);

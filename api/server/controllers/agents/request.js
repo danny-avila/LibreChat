@@ -250,14 +250,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const streamId = conversationId;
   req.body.conversationId = conversationId;
 
-  // Idempotency: a lost/reset start-generation response makes the client re-POST the
-  // identical payload, which would otherwise start a second fully-billed generation.
-  // Claim the submission's clientRequestId before creating the job so a retry attaches
-  // to the original stream instead of spawning a duplicate. Runs before the concurrency
-  // check so a deduped retry is never counted against the limiter. Fail-open on errors.
+  // Idempotency: the idempotencyCheck middleware runs the atomic claim first,
+  // before rate limiters. If it won, `_ownsIdempotencyClaim` is set here and we
+  // skip the duplicate-attach logic. We still run the claim as a fallback for
+  // paths that bypass the middleware (tests, legacy routes). Fail-open on errors.
   const clientRequestId = req.body?.clientRequestId;
-  let ownsIdempotencyClaim = false;
-  if (clientRequestId) {
+  let ownsIdempotencyClaim = !!req._ownsIdempotencyClaim;
+  if (!ownsIdempotencyClaim && clientRequestId) {
     let claim = null;
     try {
       claim = await GenerationJobManager.claimGeneration(
@@ -280,13 +279,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     if (claim?.claimed) {
       ownsIdempotencyClaim = true;
     } else if (claim?.existing) {
-      // A duplicate is confirmed. Attach to the original stream — and never fall through to
+      // A duplicate is confirmed. Attach to the original stream, never fall through to
       // a second generation, even if the job lookup hiccups.
       const existingStreamId = claim.existing.streamId;
       let jobExists = false;
       try {
-        // Wait briefly for the winner to write the job record (it does so a few ms after
-        // claiming) so a still-live stream isn't handed back before its job exists.
         jobExists = await waitForJobRecord(existingStreamId);
       } catch (err) {
         // Store hiccup while checking the job: ask the client to retry rather than starting
@@ -303,20 +300,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       }
       const claimAgeMs = Date.now() - (claim.existing.claimedAt ?? 0);
       if (!jobExists && claimAgeMs < IDEMPOTENCY_STARTUP_GRACE_MS) {
-        // The winner claimed but has not written the job yet (still between claim and
-        // createJob). Handing back the stream now would 404 and tear down the client while
-        // the winner goes on to generate and bill with no UI attached — ask the client to
-        // retry via the readiness path instead.
         res.set('Retry-After', '1');
         return res.status(503).json({
           code: 'SERVER_NOT_READY',
           error: 'Generation is still starting. Please retry shortly.',
         });
       }
-      // Job exists (live), or the grace elapsed with none (the original already completed
-      // and was cleaned up, or the winner died): attach. A then-missing job recovers via
-      // the client's subscribe 404 handler (refetch persisted messages) rather than an
-      // indefinite readiness loop.
+      // Job exists (live), or the grace elapsed with none — attach.
       logger.debug('[ResumableAgentController] Deduped retried start-generation request', {
         userId,
         clientRequestId,

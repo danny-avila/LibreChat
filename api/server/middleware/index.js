@@ -25,6 +25,7 @@ const uaParser = require('./uaParser');
 const checkBan = require('./checkBan');
 const noIndex = require('./noIndex');
 const roles = require('./roles');
+const idempotencyCheck = require('./idempotencyCheck');
 
 module.exports = {
   ...abortMiddleware,
@@ -55,4 +56,5 @@ module.exports = {
   validateRegistration,
   validatePasswordReset,
   validateEmailLogin,
+  idempotencyCheck,
 };
