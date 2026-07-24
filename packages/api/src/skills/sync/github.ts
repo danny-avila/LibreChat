@@ -25,7 +25,7 @@ import type { SkillSyncConfig, SkillSyncGitHubSourceConfig } from 'librechat-dat
 import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
 import { parseSkillMarkdown } from '../parse';
 
-const GITHUB_API_BASE = 'https://api.github.com';
+const DEFAULT_GITHUB_API_BASE = 'https://api.github.com';
 const SYSTEM_AUTHOR_ID = new Types.ObjectId('000000000000000000000000');
 const SYSTEM_AUTHOR_NAME = 'GitHub Sync';
 const PROVIDER: SkillSyncProvider = 'github';
@@ -472,8 +472,8 @@ function buildGitHubHeaders(token: string): HeadersInit {
   };
 }
 
-function buildGitHubUrl(pathname: string): string {
-  return `${GITHUB_API_BASE}${pathname}`;
+function buildGitHubUrl(pathname: string, apiBase?: string): string {
+  return `${apiBase ?? DEFAULT_GITHUB_API_BASE}${pathname}`;
 }
 
 function encodeGitHubPath(value: string): string {
@@ -506,8 +506,9 @@ async function githubJson<T>(params: {
   fetchFn: FetchFn;
   token: string;
   pathname: string;
+  apiBase?: string;
 }): Promise<T> {
-  const response = await params.fetchFn(buildGitHubUrl(params.pathname), {
+  const response = await params.fetchFn(buildGitHubUrl(params.pathname, params.apiBase), {
     headers: buildGitHubHeaders(params.token),
   });
   if (response.ok) {
@@ -548,6 +549,7 @@ async function fetchCommit(params: {
     fetchFn: params.fetchFn,
     token: params.token,
     pathname: `/repos/${owner}/${repo}/commits/${ref}`,
+    apiBase: params.source.apiUrl,
   });
 }
 
@@ -566,6 +568,7 @@ async function fetchTree(params: {
     fetchFn: params.fetchFn,
     token: params.token,
     pathname: `/repos/${owner}/${repo}/git/trees/${treeSha}${recursive ? '?recursive=1' : ''}`,
+    apiBase: params.source.apiUrl,
   });
 }
 
@@ -656,6 +659,7 @@ async function fetchBlob(params: {
     fetchFn: params.fetchFn,
     token: params.token,
     pathname: `/repos/${owner}/${repo}/git/blobs/${sha}`,
+    apiBase: params.source.apiUrl,
   });
   if (blob.encoding !== 'base64') {
     throw new SkillSyncError(

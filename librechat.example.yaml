@@ -73,6 +73,9 @@ cache: true
 #     runOnStartup: true
 #     sources:
 #       - id: librechat-skills
+#         # Optional. GitHub API base URL for GitHub Enterprise instances.
+#         # Omit for github.com (default: https://api.github.com).
+#         # apiUrl: 'https://github.your-company.com/api/v3'
 #         owner: your-org
 #         repo: your-skills-repo
 #         ref: main
