@@ -31,6 +31,19 @@ describe('buildLangfuseConfig', () => {
     clearEnv();
   });
 
+  it('enables fanout only when both the toggle and collector URL are configured', async () => {
+    const { isLangfuseFanoutEnabled } = await import('./config');
+
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    expect(isLangfuseFanoutEnabled()).toBe(false);
+
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = '   ';
+    expect(isLangfuseFanoutEnabled()).toBe(false);
+
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
+    expect(isLangfuseFanoutEnabled()).toBe(true);
+  });
+
   it('decrypts encrypted tenant secrets for tenant trace export', async () => {
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout-collector:4318';
@@ -41,12 +54,10 @@ describe('buildLangfuseConfig', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: encryptV3('sk-tenant-1'),
           destination: 'eu',
-          fanout: {
-            enabled: true,
-          },
         },
       } as unknown as AppConfig,
     });
@@ -71,6 +82,7 @@ describe('buildLangfuseConfig', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: 'v3:not-valid-ciphertext',
           destination: 'eu',
@@ -95,6 +107,7 @@ describe('buildLangfuseConfig', () => {
       tenantId: 'tenant-1',
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'pk-tenant-1',
           secretKey: 'sk-tenant-1',
           destination: 'eu',
@@ -183,6 +196,7 @@ describe('buildLangfuseConfig', () => {
         centralTraceExportEnabled: false,
         appConfig: {
           langfuse: {
+            enabled: true,
             publicKey: 'pk-tenant-1',
             secretKey: encryptV3('sk-tenant-1'),
             destination: 'us',
@@ -217,6 +231,7 @@ describe('buildLangfuseConfig', () => {
         centralTraceExportEnabled: false,
         appConfig: {
           langfuse: {
+            enabled: true,
             publicKey: 'pk-tenant-1',
             secretKey: encryptV3('sk-tenant-1'),
             destination: 'us',
@@ -234,7 +249,60 @@ describe('buildLangfuseConfig', () => {
     });
   });
 
-  it('honors tenant Langfuse enabled=false before adding routing attributes', async () => {
+  it('keeps central collector export when the tenant connection is disabled', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+    const { encryptV3 } = await import('@librechat/data-schemas');
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        tenantId: 'tenant-1',
+        appConfig: {
+          langfuse: {
+            enabled: false,
+            publicKey: 'pk-tenant-1',
+            secretKey: encryptV3('sk-tenant-1'),
+            destination: 'us',
+          },
+        } as unknown as AppConfig,
+      }),
+    ).toEqual({
+      deterministicTraceId: true,
+      baseUrl: 'http://collector-from-env:4318',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('keeps central collector export when tenant enabled is missing', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+    const { encryptV3 } = await import('@librechat/data-schemas');
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        tenantId: 'tenant-1',
+        appConfig: {
+          langfuse: {
+            publicKey: 'pk-tenant-1',
+            secretKey: encryptV3('sk-tenant-1'),
+            destination: 'us',
+          },
+        } as unknown as AppConfig,
+      }),
+    ).toEqual({
+      deterministicTraceId: true,
+      baseUrl: 'http://collector-from-env:4318',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('does not emit central-suppressed traces when the tenant connection is disabled', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
     const { buildLangfuseConfig } = await import('./config');
 
     expect(
@@ -251,6 +319,9 @@ describe('buildLangfuseConfig', () => {
       deterministicTraceId: true,
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       enabled: false,
+      librechatTraceAttributes: {
+        [CENTRAL_EXPORT_ATTRIBUTE]: 'false',
+      },
       tags: ['tenant:tenant-1'],
     });
   });

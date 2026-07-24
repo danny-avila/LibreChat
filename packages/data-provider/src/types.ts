@@ -849,3 +849,36 @@ export type TUpdateSkillNodeRequest = {
   parentId?: string | null;
   order?: number;
 };
+
+export type TLangfuseConnectionStatus = {
+  configured: boolean;
+  enabled: boolean;
+  destinations: TLangfuseDestinationOption[];
+  destination?: string;
+  publicKey?: string;
+  displaySecretKey?: string;
+  updatedAt?: string;
+};
+
+export type TLangfuseDestinationOption = {
+  key: string;
+  baseUrl: string;
+};
+
+export type TUpdateLangfuseConnectionRequest = {
+  enabled: boolean;
+  destination: string;
+  publicKey: string;
+  secretKey?: string;
+};
+
+export type TLangfuseConnectionTestRequest = {
+  destination: string;
+  publicKey: string;
+  secretKey?: string;
+};
+
+export type TLangfuseConnectionTestResponse = {
+  success: boolean;
+  message?: string;
+};

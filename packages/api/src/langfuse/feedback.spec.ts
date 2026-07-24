@@ -88,7 +88,12 @@ function getCentralAuthorization(): string {
 }
 
 function appConfigWithLangfuse(langfuse: AppConfig['langfuse']): AppConfig {
-  return { langfuse } as AppConfig;
+  return {
+    langfuse: {
+      enabled: true,
+      ...langfuse,
+    },
+  } as AppConfig;
 }
 
 describe('Langfuse feedback scores', () => {
@@ -183,6 +188,7 @@ describe('Langfuse feedback scores', () => {
       metadata: { tenantId: 'tenant-a' },
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'tenant-public-key',
           secretKey: encryptedTenantSecret(),
           destination: 'eu',
@@ -370,6 +376,7 @@ describe('Langfuse feedback scores', () => {
       feedback: null,
       appConfig: {
         langfuse: {
+          enabled: true,
           publicKey: 'tenant-public-key',
           secretKey: encryptedTenantSecret(),
           destination: 'eu',
@@ -438,6 +445,33 @@ describe('Langfuse feedback scores', () => {
         publicKey: 'tenant-public-key',
         secretKey: encryptedTenantSecret(),
       }),
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledTimes(1);
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'http://central-langfuse:3000/api/public/scores',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: getCentralAuthorization() }),
+      }),
+    );
+  });
+
+  it('skips tenant scores when tenant enabled is missing', async () => {
+    enableTenantFanout();
+    process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: 'trace-id',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: {
+        langfuse: {
+          publicKey: 'tenant-public-key',
+          secretKey: encryptedTenantSecret(),
+          destination: 'eu',
+        },
+      } as AppConfig,
     });
 
     expect(getFetchMock()).toHaveBeenCalledTimes(1);
@@ -605,58 +639,6 @@ describe('Langfuse feedback scores', () => {
         secretKey: encryptedTenantSecret(),
         destination: 'eu',
       }),
-    });
-
-    expect(getFetchMock()).toHaveBeenCalledTimes(1);
-    expect(getFetchMock()).toHaveBeenCalledWith(
-      'http://central-langfuse:3000/api/public/scores',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ Authorization: getCentralAuthorization() }),
-      }),
-    );
-  });
-
-  it('skips tenant scores when tenant fanout is disabled in app config', async () => {
-    enableTenantFanout();
-    process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
-    const { sendFeedbackScore } = await loadFeedback();
-
-    await sendFeedbackScore({
-      traceId: 'trace-id',
-      feedback: { rating: 'thumbsUp' },
-      appConfig: appConfigWithLangfuse({
-        publicKey: 'tenant-public-key',
-        secretKey: encryptedTenantSecret(),
-        destination: 'eu',
-        fanout: { enabled: false },
-      }),
-    });
-
-    expect(getFetchMock()).toHaveBeenCalledTimes(1);
-    expect(getFetchMock()).toHaveBeenCalledWith(
-      'http://central-langfuse:3000/api/public/scores',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ Authorization: getCentralAuthorization() }),
-      }),
-    );
-  });
-
-  it('skips tenant scores when tenant fanout enabled is the string false', async () => {
-    enableTenantFanout();
-    process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
-    const { sendFeedbackScore } = await loadFeedback();
-
-    await sendFeedbackScore({
-      traceId: 'trace-id',
-      feedback: { rating: 'thumbsUp' },
-      appConfig: appConfigWithLangfuse({
-        publicKey: 'tenant-public-key',
-        secretKey: encryptedTenantSecret(),
-        destination: 'eu',
-        fanout: { enabled: 'false' },
-      } as unknown as AppConfig['langfuse']),
     });
 
     expect(getFetchMock()).toHaveBeenCalledTimes(1);

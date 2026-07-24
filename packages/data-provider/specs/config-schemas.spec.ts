@@ -1210,16 +1210,14 @@ describe('specsConfigSchema', () => {
 });
 
 describe('configSchema langfuse', () => {
-  it('accepts tenant Langfuse fanout config', () => {
+  it('accepts tenant Langfuse connection config', () => {
     const result = configSchema.safeParse({
       version: '1.3.7',
       langfuse: {
+        enabled: true,
         publicKey: 'pk-lf-tenant',
         secretKey: 'sk-lf-tenant',
-        fanout: {
-          enabled: true,
-          collectorUrl: 'http://langfuse-fanout-collector:4318',
-        },
+        destination: 'eu',
       },
     });
 

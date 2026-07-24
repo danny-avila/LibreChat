@@ -1490,6 +1490,8 @@ export type StartupConfigContext = 'share';
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
+  langfuseFanoutEnabled?: boolean;
+  langfuseConnectionAccess?: boolean;
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
@@ -1850,11 +1852,6 @@ export const langfuseConfigSchema = z.object({
   displaySecretKey: z.string().optional(),
   /** Routing key for one of the deployment-configured tenant Langfuse destinations. */
   destination: z.string().optional(),
-  fanout: z
-    .object({
-      enabled: z.boolean().optional(),
-    })
-    .optional(),
 });
 
 export type LangfuseConfig = z.infer<typeof langfuseConfigSchema>;
@@ -2619,6 +2616,10 @@ export enum SettingsTabValues {
    * Tab for Speech Settings
    */
   SPEECH = 'speech',
+  /**
+   * Tab for Langfuse Settings
+   */
+  LANGFUSE = 'langfuse',
   /**
    * Tab for Beta Features
    */

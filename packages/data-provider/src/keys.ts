@@ -8,6 +8,7 @@ export enum QueryKeys {
   searchConversations = 'searchConversations',
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
+  langfuseConnection = 'langfuseConnection',
   user = 'user',
   name = 'name', // user key name
   models = 'models',
@@ -93,6 +94,8 @@ export const DynamicQueryKeys = {
 } as const;
 
 export enum MutationKeys {
+  updateLangfuseConnection = 'updateLangfuseConnection',
+  testLangfuseConnection = 'testLangfuseConnection',
   createAgentApiKey = 'createAgentApiKey',
   deleteAgentApiKey = 'deleteAgentApiKey',
   fileUpload = 'fileUpload',

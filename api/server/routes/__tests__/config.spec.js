@@ -10,8 +10,10 @@ jest.mock('~/server/services/Config/ldap', () => ({
 }));
 
 const mockHasCapability = jest.fn();
+const mockHasConfigCapability = jest.fn();
 jest.mock('~/server/middleware/roles/capabilities', () => ({
   hasCapability: (...args) => mockHasCapability(...args),
+  hasConfigCapability: (...args) => mockHasConfigCapability(...args),
 }));
 
 const mockGetTenantId = jest.fn(() => undefined);
@@ -104,6 +106,8 @@ afterEach(() => {
   delete process.env.ANALYTICS_GTM_ID;
   delete process.env.CUSTOM_FOOTER;
   delete process.env.HELP_AND_FAQ_URL;
+  delete process.env.LANGFUSE_FANOUT_ENABLED;
+  delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
 });
 
 describe('GET /api/config', () => {
@@ -383,6 +387,47 @@ describe('GET /api/config', () => {
       expect(response.body.bundlerURL).toBe('https://bundler.test');
       expect(response.body.staticBundlerURL).toBe('https://static-bundler.test');
       expect(response.body.conversationImportMaxFileSize).toBe(5000000);
+    });
+
+    it('should advertise Langfuse fanout only when the toggle and collector URL are configured', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      mockHasConfigCapability.mockResolvedValue(true);
+      process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+      const app = createApp(mockUser);
+
+      let response = await request(app).get('/api/config');
+      expect(response.body.langfuseFanoutEnabled).toBe(false);
+      expect(response.body.langfuseConnectionAccess).toBe(false);
+
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = '   ';
+      response = await request(app).get('/api/config');
+      expect(response.body.langfuseFanoutEnabled).toBe(false);
+      expect(response.body.langfuseConnectionAccess).toBe(false);
+
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
+      response = await request(app).get('/api/config');
+      expect(response.body.langfuseFanoutEnabled).toBe(true);
+      expect(response.body.langfuseConnectionAccess).toBe(true);
+    });
+
+    it('advertises Langfuse connection access from capabilities rather than the user role', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
+      const app = createApp({ ...mockUser, role: 'DELEGATED_ADMIN' });
+
+      mockHasCapability.mockImplementation(
+        async (_user, capability) => capability === 'access:admin',
+      );
+      mockHasConfigCapability.mockResolvedValue(true);
+      let response = await request(app).get('/api/config');
+      expect(response.body.langfuseConnectionAccess).toBe(true);
+
+      mockHasConfigCapability.mockResolvedValue(false);
+      response = await request(app).get('/api/config');
+      expect(response.body.langfuseFanoutEnabled).toBe(true);
+      expect(response.body.langfuseConnectionAccess).toBe(false);
     });
 
     it('should include post-login informational fields', async () => {
