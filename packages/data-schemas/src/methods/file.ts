@@ -59,6 +59,9 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     data: Partial<IMongoFile> & { file_id: string },
     extraFilter?: FilterQuery<IMongoFile>,
   ) => Promise<IMongoFile | null>;
+  /** Clears the upload TTL on files (idempotent, no usage side effect). Returns the
+   *  number of owner-scoped files actually retained. */
+  retainFiles: (fileIds: string[], ownerScope?: FileOwnerScope) => Promise<number>;
   updateFileUsage: (data: {
     file_id: string;
     inc?: number;
@@ -390,6 +393,30 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
+   * Clears the upload TTL on files so they survive until they are actually used, WITHOUT
+   * touching the usage counter. Fully idempotent: re-running it (a retry, or a schedule
+   * PATCH that resends unchanged file_ids) unsets fields that are already unset.
+   *
+   * `updateFileUsage` is deliberately not used for this: its `$inc: {usage}` is a
+   * "this file was consumed by a message" semantic, so reusing it for retention inflates
+   * the counter on every retry and every re-save, with no decrement anywhere.
+   *
+   * Owner-scoped fail-closed, and returns how many files were actually retained so the
+   * caller can detect a file deleted between the ownership check and here.
+   */
+  async function retainFiles(fileIds: string[], ownerScope?: FileOwnerScope): Promise<number> {
+    const unique = [...new Set(fileIds)];
+    if (unique.length === 0) {
+      return 0;
+    }
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const result = await File.updateMany(withOwnerScope({ file_id: { $in: unique } }, ownerScope), {
+      $unset: { expiresAt: '', temp_file_id: '' },
+    });
+    return result.matchedCount ?? 0;
+  }
+
+  /**
    * Increments the usage of a file identified by file_id.
    * @param data - The data to update, must contain file_id and the increment value for usage
    * @returns A promise that resolves to the updated file document
@@ -574,6 +601,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     claimCodeFile,
     createFile,
     updateFile,
+    retainFiles,
     updateFileUsage,
     deleteFile,
     deleteFiles,

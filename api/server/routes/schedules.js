@@ -43,21 +43,17 @@ const handlers = createSchedulesHandlers({
     return (files ?? []).map((file) => file.file_id);
   },
   markFilesUsed: async (fileIds, userId) => {
-    // Verify EVERY requested file was actually marked used (TTL cleared). A file can
-    // be deleted/expire between the ownership check and here; updateFilesUsage then
-    // returns fewer docs without throwing, and a silent success would persist a
-    // schedule whose attachments the first fire drops. Throw so retainFiles retries /
-    // fails, rather than committing a schedule with unretained files.
+    // IDEMPOTENT retention: clears the upload TTL without touching the usage counter.
+    // The previous implementation went through updateFilesUsage, whose `$inc: {usage}`
+    // means "consumed by a message" — so every retry, and every schedule PATCH that
+    // resent unchanged file_ids, inflated the counter with no decrement anywhere.
+    // Still verifies EVERY requested file was retained: a file can be deleted between
+    // the ownership check and here, and a silent success would persist a schedule whose
+    // attachments the first fire drops.
     const requested = new Set(fileIds).size;
-    // updateFilesUsage dedupes and returns only the docs it actually updated.
-    const updated = await methods.updateFilesUsage(
-      fileIds.map((file_id) => ({ file_id })),
-      undefined,
-      { user: userId },
-    );
-    const cleared = Array.isArray(updated) ? updated.length : 0;
-    if (cleared !== requested) {
-      throw new Error(`attachment retention incomplete: ${cleared}/${requested} files marked used`);
+    const retained = await methods.retainFiles(fileIds, { userId });
+    if (retained !== requested) {
+      throw new Error(`attachment retention incomplete: ${retained}/${requested} files retained`);
     }
   },
   fireNow: fireScheduleNow,
