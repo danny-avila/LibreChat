@@ -3,27 +3,58 @@ import jwksRsa from 'jwks-rsa';
 import { fetch as undiciFetch } from 'undici';
 import { getTenantId, logger, tenantStorage } from '@librechat/data-schemas';
 import { SystemRoles, isRemoteOidcUrlAllowed } from 'librechat-data-provider';
-import type { AppConfig, IUser, RoleMethods, UserMethods } from '@librechat/data-schemas';
+import type {
+  AppConfig,
+  IUser,
+  RoleMethods,
+  UserGroupMethods,
+  UserMethods,
+} from '@librechat/data-schemas';
 import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import type { Algorithm, JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
 import type { GetAppConfigOptions } from '../app/service';
 import {
+  readFederatedAuthCache,
+  writeFederatedAuthCache as writeFederatedAuthCacheEntry,
+  type FederatedAuthCacheEntry,
+  type FederatedAuthCacheKeyInput,
+  type FederatedAuthCacheOptions,
+} from '../auth/federatedAuthCache';
+import {
+  type EntraGroupSyncResult,
+  syncUserEntraGroupMemberships,
+  type EntraGroupSyncDbMethods,
+  type EntraGroupSyncOptions,
+  type EntraGraphConfig,
+} from '../auth/entraGroupSync';
+import {
   getLibreChatRolesForOpenIdSync,
   getOpenIdRolesForOpenIdSync,
   getOpenIdRoleSyncOptions,
   selectOpenIdRole,
 } from '../auth/openidRoleSync';
-import { findOpenIDUser, getOpenIdEmail, normalizeOpenIdIssuer } from '../auth/openid';
+import {
+  resolveOpenIdAccount,
+  type OpenIdAccountMethods,
+  type OpenIdAccountOptions,
+  type OpenIdAccountProfile,
+} from '../auth/openidAccount';
 import { getEnvProxyDispatcher, getHttpsProxyAgent } from '~/utils/proxy';
+import { enrichOpenIdProfile } from '../auth/openidUserInfo';
+import { normalizeOpenIdIssuer } from '../auth/openid';
 import { isEnabled, math } from '~/utils';
 
 export interface RemoteAgentAuthDeps {
   apiKeyMiddleware: RequestHandler;
   findUser: UserMethods['findUser'];
+  createUser: UserMethods['createUser'];
   getRolesByNames: RoleMethods['findRolesByNames'];
   updateUser: UserMethods['updateUser'];
+  bulkUpdateGroups: UserGroupMethods['bulkUpdateGroups'];
+  findGroupsByExternalIds: UserGroupMethods['findGroupsByExternalIds'];
+  upsertGroupByExternalId: UserGroupMethods['upsertGroupByExternalId'];
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
 }
 
@@ -42,10 +73,65 @@ type CacheEntry<T> = {
   promise: Promise<T>;
 };
 type ScopeClaim = string | string[] | undefined;
-type UserResolution =
-  | { status: 'resolved'; user: IUser; updateData: Partial<IUser> }
-  | { status: 'missing' }
-  | { status: 'rejected'; error: string };
+type ProvisioningConfig = NonNullable<EnabledOidcConfig['provisioning']>;
+type UserInfoConfig = NonNullable<EnabledOidcConfig['userInfo']>;
+type ProfileSyncConfig = NonNullable<EnabledOidcConfig['profileSync']>;
+type GroupSyncConfig = NonNullable<EnabledOidcConfig['groupSync']>;
+type FederatedAuthCacheConfig = NonNullable<EnabledOidcConfig['federatedAuthCache']>;
+type RemoteUserInfoOptions = {
+  fetchUserInfo: boolean;
+  requireUserInfo: boolean;
+};
+type TenantPolicyResult =
+  | { ok: false }
+  | { ok: true; config?: AppConfig; oidcConfig?: EnabledOidcConfig };
+type RemoteAuthLifecycle = 'created' | 'existing';
+type ResolvedRemotePolicy = {
+  accountOptions: OpenIdAccountOptions;
+  groupSyncOptions: EntraGroupSyncOptions;
+  oidcConfig: EnabledOidcConfig;
+  config: AppConfig;
+};
+type RemoteAuthContext = {
+  user: IUser;
+  lifecycle: RemoteAuthLifecycle;
+  policy: ResolvedRemotePolicy;
+};
+type RemoteAccountResolution =
+  | { ok: true; context: RemoteAuthContext }
+  | { ok: false; status: 401 | 500 };
+type RemoteAuthLogContext = {
+  tenantId?: string;
+  userId?: string;
+  issuer?: string;
+  openidId?: string;
+  lifecycle?: RemoteAuthLifecycle;
+  reason?: string;
+};
+
+const DEFAULT_PROVISIONING_CONFIG: ProvisioningConfig = {
+  enabled: false,
+};
+
+const DEFAULT_USER_INFO_CONFIG: UserInfoConfig = {
+  fetch: false,
+  require: false,
+};
+
+const DEFAULT_PROFILE_SYNC_CONFIG: ProfileSyncConfig = {
+  onCreate: true,
+  forExisting: false,
+};
+
+const DEFAULT_GROUP_SYNC_CONFIG: GroupSyncConfig = {
+  onCreate: false,
+  forExisting: false,
+};
+
+const DEFAULT_FEDERATED_AUTH_CACHE_CONFIG: FederatedAuthCacheConfig = {
+  enabled: true,
+  ttlSeconds: 300,
+};
 
 const OIDC_DISCOVERY_TIMEOUT_MS = 10000;
 const MAX_JWKS_CACHE_ENTRIES = 100;
@@ -293,6 +379,186 @@ function isApiKeyEnabled(config: AppConfig): boolean {
   return getRemoteAuthConfig(config)?.apiKey?.enabled !== false;
 }
 
+function isTenantStrict(): boolean {
+  return process.env.TENANT_ISOLATION_STRICT === 'true';
+}
+
+function getAccountOptions(oidcConfig: EnabledOidcConfig): OpenIdAccountOptions {
+  const provisioning = oidcConfig.provisioning ?? DEFAULT_PROVISIONING_CONFIG;
+  const profileSync = oidcConfig.profileSync ?? DEFAULT_PROFILE_SYNC_CONFIG;
+  return {
+    allowUserCreation: provisioning.enabled === true,
+    syncProfileOnCreate: profileSync.onCreate === true,
+    syncProfileForExisting: profileSync.forExisting === true,
+  };
+}
+
+function getGroupSyncOptions(oidcConfig: EnabledOidcConfig): EntraGroupSyncOptions {
+  const groupSync = oidcConfig.groupSync ?? DEFAULT_GROUP_SYNC_CONFIG;
+  return {
+    syncGroupsOnCreate: groupSync.onCreate === true,
+    syncGroupsForExisting: groupSync.forExisting === true,
+  };
+}
+
+function getUserInfoOptions(userInfo?: UserInfoConfig): RemoteUserInfoOptions {
+  const config = userInfo ?? DEFAULT_USER_INFO_CONFIG;
+  return {
+    fetchUserInfo: config.fetch === true,
+    requireUserInfo: config.require === true,
+  };
+}
+
+function getFederatedCacheOptions(
+  federatedAuthCache?: FederatedAuthCacheConfig,
+): FederatedAuthCacheOptions {
+  const cacheConfig = federatedAuthCache ?? DEFAULT_FEDERATED_AUTH_CACHE_CONFIG;
+  return {
+    enabled: cacheConfig.enabled === true,
+    ttlMs: Math.max(cacheConfig.ttlSeconds, 0) * 1000,
+  };
+}
+
+function getEntraGraphConfig(oidcConfig: EnabledOidcConfig): EntraGraphConfig {
+  return {
+    issuer: oidcConfig.issuer,
+    clientId: process.env.OPENID_CLIENT_ID,
+    clientSecret: process.env.OPENID_CLIENT_SECRET,
+    enabled: true,
+  };
+}
+
+async function runTenantScoped<T>(user: IUser, fn: () => Promise<T>): Promise<T> {
+  if (!user.tenantId) {
+    return fn();
+  }
+
+  return tenantStorage.run({ tenantId: user.tenantId }, fn);
+}
+
+function getUserId(user: IUser): string | undefined {
+  return user._id?.toString() ?? user.id;
+}
+
+function getCacheLogContext(input: FederatedAuthCacheKeyInput): RemoteAuthLogContext {
+  return {
+    tenantId: input.tenantId ?? 'base',
+    issuer: normalizeOpenIdIssuer(input.issuer) ?? input.issuer,
+    openidId: input.subject,
+  };
+}
+
+function getUserLogContext({
+  user,
+  input,
+  lifecycle,
+  reason,
+}: {
+  user: IUser;
+  input?: FederatedAuthCacheKeyInput | null;
+  lifecycle?: RemoteAuthLifecycle;
+  reason?: string;
+}): RemoteAuthLogContext {
+  return {
+    tenantId: user.tenantId ?? input?.tenantId ?? 'base',
+    userId: getUserId(user),
+    issuer: input
+      ? (normalizeOpenIdIssuer(input.issuer) ?? input.issuer)
+      : normalizeOpenIdIssuer(user.openidIssuer),
+    openidId: input?.subject ?? user.openidId,
+    lifecycle,
+    reason,
+  };
+}
+
+function hydrateCachedOpenIdUser(
+  entry: FederatedAuthCacheEntry,
+  token: string,
+  payload: JwtPayload,
+): IUser {
+  return attachFederatedTokens(
+    {
+      _id: entry.userId,
+      id: entry.userId,
+      email: entry.email,
+      provider: 'openid',
+      openidId: entry.subject,
+      ...(entry.issuer ? { openidIssuer: entry.issuer } : {}),
+      ...(entry.tenantId ? { tenantId: entry.tenantId } : {}),
+      ...(entry.username ? { username: entry.username } : {}),
+      ...(entry.name ? { name: entry.name } : {}),
+      ...(entry.role ? { role: entry.role } : {}),
+      ...(entry.idOnTheSource ? { idOnTheSource: entry.idOnTheSource } : {}),
+    } as unknown as IUser,
+    token,
+    payload,
+  );
+}
+
+function buildFederatedCacheEntry({
+  user,
+  input,
+  lifecycle,
+  options,
+  groupsSyncedAt,
+}: {
+  user: IUser;
+  input: FederatedAuthCacheKeyInput;
+  lifecycle: RemoteAuthLifecycle;
+  options: OpenIdAccountOptions;
+  groupsSyncedAt?: number;
+}): FederatedAuthCacheEntry | null {
+  const now = Date.now();
+  const userId = getUserId(user);
+  if (!userId) {
+    return null;
+  }
+
+  const profileSynced =
+    lifecycle === 'created' ? options.syncProfileOnCreate : options.syncProfileForExisting;
+
+  return {
+    userId,
+    ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+    subject: input.subject,
+    ...(input.issuer ? { issuer: normalizeOpenIdIssuer(input.issuer) ?? input.issuer } : {}),
+    email: user.email,
+    ...(user.username ? { username: user.username } : {}),
+    ...(user.name ? { name: user.name } : {}),
+    ...(user.role ? { role: user.role } : {}),
+    ...(user.idOnTheSource ? { idOnTheSource: user.idOnTheSource } : {}),
+    accountSyncedAt: now,
+    ...(profileSynced ? { profileSyncedAt: now } : {}),
+    ...(groupsSyncedAt ? { groupsSyncedAt } : {}),
+  };
+}
+
+async function readRemoteFederatedAuthCache(
+  input: FederatedAuthCacheKeyInput,
+  options: FederatedAuthCacheOptions,
+): Promise<{ entry: FederatedAuthCacheEntry | null; failed: boolean }> {
+  try {
+    return { entry: await readFederatedAuthCache(input, options), failed: false };
+  } catch (err) {
+    logger.warn('[remoteAgentAuth] Federated auth cache read failed:', err);
+    return { entry: null, failed: true };
+  }
+}
+
+async function writeRemoteFederatedAuthCache(
+  input: FederatedAuthCacheKeyInput,
+  entry: FederatedAuthCacheEntry,
+  options: FederatedAuthCacheOptions,
+): Promise<boolean> {
+  try {
+    await writeFederatedAuthCacheEntry(input, entry, options);
+    return true;
+  } catch (err) {
+    logger.warn('[remoteAgentAuth] Federated auth cache write failed:', err);
+    return false;
+  }
+}
+
 async function enforceApiKeyTenantPolicy(
   req: Request,
   res: Response,
@@ -337,19 +603,19 @@ async function enforceOidcTenantPolicy(
   user: IUser,
   initialOptions: GetAppConfigOptions,
   getAppConfig: RemoteAgentAuthDeps['getAppConfig'],
-): Promise<boolean> {
-  if (isResolvedUserConfigScope(initialOptions, user)) return true;
+): Promise<TenantPolicyResult> {
+  if (isResolvedUserConfigScope(initialOptions, user)) return { ok: true };
 
   const config = await getAppConfig(getUserConfigOptions(user));
   const oidcConfig = getEnabledOidcConfig(getRemoteAuthConfig(config));
   if (!oidcConfig) {
     logger.warn('[remoteAgentAuth] OIDC rejected by resolved tenant auth policy');
-    return false;
+    return { ok: false };
   }
 
   try {
     const payload = await verifyOidcBearer(token, oidcConfig);
-    if (hasRequiredScopes(oidcConfig.scope, payload)) return true;
+    if (hasRequiredScopes(oidcConfig.scope, payload)) return { ok: true, config, oidcConfig };
     logger.warn(
       `[remoteAgentAuth] Token missing resolved tenant required scope: ${oidcConfig.scope}`,
     );
@@ -357,7 +623,7 @@ async function enforceOidcTenantPolicy(
     logger.warn('[remoteAgentAuth] OIDC token rejected by resolved tenant auth policy:', err);
   }
 
-  return false;
+  return { ok: false };
 }
 
 function verifyJwt(
@@ -409,48 +675,141 @@ async function verifyOidcBearer(token: string, oidcConfig: EnabledOidcConfig): P
   return verifyWithSigningKeys(token, await client.getSigningKeys(), oidcConfig);
 }
 
-async function resolveUser(
-  token: string,
-  payload: JwtPayload,
-  oidcConfig: EnabledOidcConfig,
-  findUser: UserMethods['findUser'],
-): Promise<UserResolution> {
-  if (typeof payload.sub !== 'string' || payload.sub.trim() === '') {
-    return { status: 'rejected', error: 'missing_sub_claim' };
-  }
-
-  const { user, error, migration } = await findOpenIDUser({
-    findUser,
-    email: getOpenIdEmail(payload, 'remoteAgentAuth'),
-    openidId: payload.sub,
-    openidIssuer: oidcConfig.issuer,
-    idOnTheSource: payload['oid'] as string | undefined,
-    strategyName: 'remoteAgentAuth',
-  });
-
-  if (error != null) return { status: 'rejected', error };
-  if (user == null) return { status: 'missing' };
-
-  user.id = String(user._id);
-
-  const updateData: Partial<IUser> = {};
-
-  if (migration) {
-    updateData.provider = 'openid';
-    updateData.openidId = payload.sub;
-    updateData.openidIssuer = normalizeOpenIdIssuer(oidcConfig.issuer);
-  }
-
-  if (!user.role) {
-    user.role = SystemRoles.USER;
-    updateData.role = SystemRoles.USER;
-  }
-
+function attachFederatedTokens(user: IUser, token: string, payload: JwtPayload): IUser {
   user.federatedTokens = {
     access_token: token,
     ...(payload.exp != null ? { expires_at: payload.exp } : {}),
   };
-  return { status: 'resolved', user, updateData };
+  return user;
+}
+
+async function resolveRemoteOpenIdAccount({
+  payload,
+  profile,
+  issuer,
+  tenantId,
+  policy,
+  methods,
+}: {
+  payload: JwtPayload;
+  profile?: OpenIdAccountProfile;
+  issuer: string;
+  tenantId?: string;
+  policy: ResolvedRemotePolicy;
+  methods: OpenIdAccountMethods;
+}): Promise<RemoteAccountResolution> {
+  const accountResult = await resolveOpenIdAccount({
+    claims: payload,
+    profile,
+    issuer,
+    tenantId,
+    appConfig: policy.config,
+    options: policy.accountOptions,
+    methods,
+  });
+
+  if (accountResult.status === 'unauthorized') {
+    logger.warn(`[remoteAgentAuth] OpenID user rejected: ${accountResult.reason}`);
+    return { ok: false, status: 401 };
+  }
+
+  if (accountResult.status === 'failed') {
+    logger.error('[remoteAgentAuth] OpenID account resolution failed:', accountResult);
+    return { ok: false, status: 500 };
+  }
+
+  return {
+    ok: true,
+    context: {
+      user: accountResult.user,
+      lifecycle: accountResult.created ? 'created' : 'existing',
+      policy,
+    },
+  };
+}
+
+async function syncRemoteGroups({
+  context,
+  token,
+  methods,
+  cacheInput,
+}: {
+  context: RemoteAuthContext;
+  token: string;
+  methods: EntraGroupSyncDbMethods;
+  cacheInput: FederatedAuthCacheKeyInput | null;
+}): Promise<EntraGroupSyncResult> {
+  const { user, lifecycle, policy } = context;
+  const groupContext = getUserLogContext({
+    user,
+    input: cacheInput,
+    lifecycle,
+  });
+  logger.info('[remoteAgentAuth] Remote Entra group sync started', groupContext);
+
+  const result = await runTenantScoped(user, () =>
+    syncUserEntraGroupMemberships({
+      lifecycle,
+      user,
+      accessToken: token,
+      graphConfig: getEntraGraphConfig(policy.oidcConfig),
+      options: policy.groupSyncOptions,
+      methods,
+    }),
+  );
+  const resultContext = getUserLogContext({
+    user,
+    input: cacheInput,
+    lifecycle,
+    reason: result.reason,
+  });
+
+  if (result.synced) {
+    logger.info('[remoteAgentAuth] Remote Entra group sync completed', resultContext);
+  } else if (result.attempted) {
+    logger.warn('[remoteAgentAuth] Remote Entra group sync failed', resultContext);
+  } else {
+    logger.info('[remoteAgentAuth] Remote Entra group sync skipped', resultContext);
+  }
+
+  return result;
+}
+
+async function writeFederatedAuthCache({
+  context,
+  cacheInput,
+  federatedCacheOptions,
+  groupSyncResult,
+}: {
+  context: RemoteAuthContext;
+  cacheInput: FederatedAuthCacheKeyInput;
+  federatedCacheOptions: FederatedAuthCacheOptions;
+  groupSyncResult: EntraGroupSyncResult;
+}): Promise<void> {
+  const cacheEntry = buildFederatedCacheEntry({
+    user: context.user,
+    input: cacheInput,
+    lifecycle: context.lifecycle,
+    options: context.policy.accountOptions,
+    groupsSyncedAt: groupSyncResult.synced ? groupSyncResult.syncedAt : undefined,
+  });
+  if (!cacheEntry) {
+    return;
+  }
+
+  const cacheContext = {
+    ...getCacheLogContext(cacheInput),
+    userId: cacheEntry.userId,
+  };
+  logger.debug('[remoteAgentAuth] Federated auth cache write started', cacheContext);
+  const written = await writeRemoteFederatedAuthCache(
+    cacheInput,
+    cacheEntry,
+    federatedCacheOptions,
+  );
+  if (written) {
+    logger.debug('[remoteAgentAuth] Federated auth cache write completed', cacheContext);
+  }
 }
 
 async function selectOpenIdRoleForOpenIdSync(
@@ -517,17 +876,24 @@ async function selectOpenIdRoleForOpenIdSync(
   return result.selectedRole;
 }
 
-async function updateResolvedUser(
-  userResolution: Extract<UserResolution, { status: 'resolved' }>,
+async function updateRemoteUserRole(
+  user: IUser,
+  selectedRole: string | undefined,
   updateUser: RemoteAgentAuthDeps['updateUser'],
 ): Promise<void> {
-  if (Object.keys(userResolution.updateData).length === 0) {
+  if (!selectedRole) {
     return;
   }
 
-  const update = async () => updateUser(userResolution.user.id, userResolution.updateData);
-  if (userResolution.user.tenantId && getTenantId() !== userResolution.user.tenantId) {
-    await tenantStorage.run({ tenantId: userResolution.user.tenantId }, update);
+  const userId = getUserId(user);
+  if (!userId) {
+    return;
+  }
+
+  user.role = selectedRole;
+  const update = async () => updateUser(userId, { role: selectedRole });
+  if (user.tenantId && getTenantId() !== user.tenantId) {
+    await tenantStorage.run({ tenantId: user.tenantId }, update);
     return;
   }
 
@@ -558,8 +924,12 @@ async function updateResolvedUser(
 export function createRemoteAgentAuth({
   apiKeyMiddleware,
   findUser,
+  createUser,
   getRolesByNames,
   updateUser,
+  bulkUpdateGroups,
+  findGroupsByExternalIds,
+  upsertGroupByExternalId,
   getAppConfig,
 }: RemoteAgentAuthDeps): RequestHandler {
   /**
@@ -572,11 +942,13 @@ export function createRemoteAgentAuth({
    */
   const handler = async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // Resolve the request's auth policy before choosing OIDC or API key auth.
       const initialConfigOptions = getConfigOptions(req);
       const config = await getAppConfig(initialConfigOptions);
       const authConfig = getRemoteAuthConfig(config);
       const apiKeyEnabled = isApiKeyEnabled(config);
 
+      // Fall back to API key auth when OIDC is not configured for this scope.
       if (authConfig?.oidc?.enabled !== true) {
         if (apiKeyEnabled) {
           await runApiKeyAuth(req, res, next, apiKeyMiddleware, getAppConfig);
@@ -586,6 +958,7 @@ export function createRemoteAgentAuth({
         return;
       }
 
+      // Validate required OIDC config before doing any token work.
       if (!authConfig.oidc.issuer) {
         logger.error('[remoteAgentAuth] OIDC issuer is required when OIDC auth is enabled');
         res.status(500).json({ error: 'Internal server error' });
@@ -600,6 +973,7 @@ export function createRemoteAgentAuth({
       const oidcConfig = getEnabledOidcConfig(authConfig);
       if (!oidcConfig) throw new Error('OIDC configuration is required when OIDC auth is enabled');
 
+      // Require a Bearer token unless API key fallback is enabled.
       const token = extractBearer(req.headers.authorization);
       if (token == null) {
         if (apiKeyEnabled) {
@@ -612,6 +986,7 @@ export function createRemoteAgentAuth({
 
       let payload: JwtPayload;
 
+      // Verify the JWT and enforce configured token scopes.
       try {
         payload = await verifyOidcBearer(token, oidcConfig);
         if (!hasRequiredScopes(oidcConfig.scope, payload)) {
@@ -630,63 +1005,278 @@ export function createRemoteAgentAuth({
         return;
       }
 
-      const userResolution = await resolveUser(token, payload, oidcConfig, findUser);
-
-      if (userResolution.status === 'rejected') {
-        logger.warn(`[remoteAgentAuth] OpenID user rejected: ${userResolution.error}`);
+      // Enforce strict tenant isolation before account lookup.
+      const requestTenantId = initialConfigOptions.tenantId;
+      if (!requestTenantId && isTenantStrict()) {
+        logger.warn('[remoteAgentAuth] OpenID user rejected: tenant_context_required', {
+          tenantId: 'missing',
+          reason: 'tenant_context_required',
+        });
         res.status(401).json({ error: 'Unauthorized' });
         return;
       }
 
-      if (userResolution.status === 'missing') {
-        logger.warn('[remoteAgentAuth] OIDC token valid but no matching LibreChat user');
-        if (apiKeyEnabled) {
-          await runApiKeyAuth(req, res, next, apiKeyMiddleware, getAppConfig);
+      // Derive request-scoped policy decisions used by account, group, and cache flows.
+      const accountOptions = getAccountOptions(oidcConfig);
+      const groupSyncOptions = getGroupSyncOptions(oidcConfig);
+      const policy: ResolvedRemotePolicy = {
+        config,
+        oidcConfig,
+        accountOptions,
+        groupSyncOptions,
+      };
+      const userInfoOptions = getUserInfoOptions(oidcConfig.userInfo);
+      const federatedCacheOptions = getFederatedCacheOptions(oidcConfig.federatedAuthCache);
+      const subject = typeof payload.sub === 'string' ? payload.sub.trim() : '';
+      if (!subject) {
+        logger.warn('[remoteAgentAuth] OpenID user rejected: missing_sub');
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+      const initialLogContext: RemoteAuthLogContext = {
+        tenantId: requestTenantId ?? 'base',
+        issuer: normalizeOpenIdIssuer(oidcConfig.issuer) ?? oidcConfig.issuer,
+        openidId: subject,
+      };
+
+      // Use a same-scope federated auth cache hit to skip account reconciliation.
+      if (federatedCacheOptions.enabled) {
+        const requestScopeCacheKey: FederatedAuthCacheKeyInput = {
+          tenantId: requestTenantId,
+          issuer: oidcConfig.issuer,
+          subject,
+        };
+        const cacheReadContext = getCacheLogContext(requestScopeCacheKey);
+        logger.debug('[remoteAgentAuth] Federated auth cache read started', cacheReadContext);
+
+        const cacheReadResult = await readRemoteFederatedAuthCache(
+          requestScopeCacheKey,
+          federatedCacheOptions,
+        );
+        const cachedEntry = cacheReadResult.entry;
+        if (cachedEntry) {
+          logger.debug('[remoteAgentAuth] Federated auth cache read completed', {
+            ...cacheReadContext,
+            outcome: 'hit',
+            userId: cachedEntry.userId,
+          });
+          const cachedUser = hydrateCachedOpenIdUser(cachedEntry, token, payload);
+          const tenantPolicy = await enforceOidcTenantPolicy(
+            token,
+            cachedUser,
+            initialConfigOptions,
+            getAppConfig,
+          );
+          if (!tenantPolicy.ok) {
+            res.status(401).json({ error: 'Unauthorized' });
+            return;
+          }
+
+          req.user = cachedUser;
+          return next();
+        }
+
+        if (!cacheReadResult.failed) {
+          logger.debug('[remoteAgentAuth] Federated auth cache read completed', {
+            ...cacheReadContext,
+            outcome: 'miss',
+          });
+        }
+      }
+
+      // Optionally enrich token claims from userinfo before resolving the account.
+      let profile: OpenIdAccountProfile = payload;
+      if (userInfoOptions.fetchUserInfo) {
+        logger.info('[remoteAgentAuth] OpenID userinfo fetch started', initialLogContext);
+
+        const userInfoResult = await enrichOpenIdProfile({
+          claims: payload,
+          accessToken: token,
+          subject,
+          config: getEntraGraphConfig(oidcConfig),
+          fetchUserInfo: true,
+        });
+
+        if (userInfoResult.status === 'fetched') {
+          logger.info('[remoteAgentAuth] OpenID userinfo fetch completed', initialLogContext);
+        } else if (userInfoResult.status === 'failed') {
+          if (userInfoOptions.requireUserInfo) {
+            logger.warn('[remoteAgentAuth] Required OpenID userinfo rejected remote auth', {
+              ...initialLogContext,
+              reason: userInfoResult.reason,
+            });
+            res.status(401).json({ error: 'Unauthorized' });
+            return;
+          }
+
+          logger.warn('[remoteAgentAuth] OpenID userinfo fetch failed', {
+            ...initialLogContext,
+            reason: userInfoResult.reason,
+          });
+        }
+
+        profile = userInfoResult.profile;
+      }
+
+      // Resolve or provision the OpenID account in the request's initial scope.
+      const accountMethods = {
+        findUser,
+        createUser,
+        updateUser,
+      };
+      const accountResolution = await resolveRemoteOpenIdAccount({
+        payload,
+        profile,
+        issuer: oidcConfig.issuer,
+        tenantId: requestTenantId,
+        policy,
+        methods: accountMethods,
+      });
+
+      if (accountResolution.ok === false) {
+        res
+          .status(accountResolution.status)
+          .json(
+            accountResolution.status === 401
+              ? { error: 'Unauthorized' }
+              : { error: 'Internal server error' },
+          );
+        return;
+      }
+
+      let authContext = accountResolution.context;
+
+      // Re-check auth policy after user resolution because the user can move scopes.
+      const tenantPolicy = await enforceOidcTenantPolicy(
+        token,
+        authContext.user,
+        initialConfigOptions,
+        getAppConfig,
+      );
+      if (!tenantPolicy.ok) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      // A base-context lookup can find an existing tenant user; rerun account resolution
+      // in that tenant context before applying migrations or profile updates.
+      if (
+        authContext.lifecycle !== 'created' &&
+        !initialConfigOptions.tenantId &&
+        Boolean(authContext.user.tenantId)
+      ) {
+        const tenantOidcConfig = tenantPolicy.oidcConfig ?? authContext.policy.oidcConfig;
+        const tenantScopedPolicy: ResolvedRemotePolicy = {
+          config: tenantPolicy.config ?? authContext.policy.config,
+          oidcConfig: tenantOidcConfig,
+          accountOptions: getAccountOptions(tenantOidcConfig),
+          groupSyncOptions: getGroupSyncOptions(tenantOidcConfig),
+        };
+        const tenantScopedResolution = await resolveRemoteOpenIdAccount({
+          payload,
+          profile,
+          issuer: tenantOidcConfig.issuer,
+          tenantId: authContext.user.tenantId,
+          policy: tenantScopedPolicy,
+          methods: accountMethods,
+        });
+        if (tenantScopedResolution.ok === false) {
+          res
+            .status(tenantScopedResolution.status)
+            .json(
+              tenantScopedResolution.status === 401
+                ? { error: 'Unauthorized' }
+                : { error: 'Internal server error' },
+            );
           return;
         }
-        res.status(401).json({ error: 'Unauthorized' });
-        return;
+        authContext = tenantScopedResolution.context;
       }
 
-      if (
-        !(await enforceOidcTenantPolicy(
-          token,
-          userResolution.user,
-          initialConfigOptions,
-          getAppConfig,
-        ))
-      ) {
-        res.status(401).json({ error: 'Unauthorized' });
-        return;
-      }
+      // Log the resolved identity
+      const resolvedPolicyCacheKey: FederatedAuthCacheKeyInput = {
+        tenantId: requestTenantId,
+        issuer: authContext.policy.oidcConfig.issuer,
+        subject,
+      };
+      logger.info(
+        authContext.lifecycle === 'created'
+          ? '[remoteAgentAuth] OpenID remote user provisioned'
+          : '[remoteAgentAuth] OpenID remote user resolved',
+        getUserLogContext({
+          user: authContext.user,
+          input: resolvedPolicyCacheKey,
+          lifecycle: authContext.lifecycle,
+        }),
+      );
+
+      //attaching request-scoped token material.
+      attachFederatedTokens(authContext.user, token, payload);
 
       const selectedRole = await selectOpenIdRoleForOpenIdSync(
         payload,
-        userResolution.user,
+        authContext.user,
         getRolesByNames,
       );
-      const roleChanged = Boolean(selectedRole);
       if (selectedRole) {
-        userResolution.user.role = selectedRole;
-        userResolution.updateData.role = selectedRole;
-      }
-
-      if (
-        roleChanged &&
-        !(await enforceOidcTenantPolicy(
+        authContext.user.role = selectedRole;
+        const rolePolicy = await enforceOidcTenantPolicy(
           token,
-          userResolution.user,
+          authContext.user,
           initialConfigOptions,
           getAppConfig,
-        ))
-      ) {
-        res.status(401).json({ error: 'Unauthorized' });
-        return;
+        );
+        if (!rolePolicy.ok) {
+          res.status(401).json({ error: 'Unauthorized' });
+          return;
+        }
+
+        await updateRemoteUserRole(authContext.user, selectedRole, updateUser);
       }
 
-      await updateResolvedUser(userResolution, updateUser);
+      // Sync remote groups only for lifecycle phases enabled by policy.
+      let shouldSyncGroups = authContext.policy.groupSyncOptions.syncGroupsForExisting;
+      if (authContext.lifecycle === 'created') {
+        shouldSyncGroups = authContext.policy.groupSyncOptions.syncGroupsOnCreate;
+      }
 
-      req.user = userResolution.user;
+      let groupSyncResult: EntraGroupSyncResult = {
+        attempted: false,
+        synced: false,
+        reason: 'disabled',
+      };
+      if (shouldSyncGroups) {
+        groupSyncResult = await syncRemoteGroups({
+          context: authContext,
+          token,
+          cacheInput: resolvedPolicyCacheKey,
+          methods: {
+            bulkUpdateGroups,
+            findGroupsByExternalIds,
+            upsertGroupByExternalId,
+          },
+        });
+      }
+
+      // Cache the reconciled identity only when account and group state are safe to reuse.
+      if (
+        federatedCacheOptions.enabled &&
+        federatedCacheOptions.ttlMs > 0 &&
+        (requestTenantId
+          ? authContext.user.tenantId === requestTenantId
+          : !authContext.user.tenantId) &&
+        (!groupSyncResult.attempted || groupSyncResult.synced)
+      ) {
+        await writeFederatedAuthCache({
+          context: authContext,
+          cacheInput: resolvedPolicyCacheKey,
+          federatedCacheOptions,
+          groupSyncResult,
+        });
+      }
+
+      // Publish the authenticated user to downstream middleware.
+      req.user = authContext.user;
       return next();
     } catch (err) {
       logger.error('[remoteAgentAuth] Unexpected error', err);

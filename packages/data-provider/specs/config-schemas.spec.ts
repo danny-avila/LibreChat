@@ -429,6 +429,146 @@ describe('agentsEndpointSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('defaults remote OIDC account lifecycle settings', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'https://auth.example.com',
+            audience: 'remote-agent-api',
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.remoteApi?.auth?.oidc?.provisioning).toEqual({
+        enabled: false,
+      });
+      expect(result.data.remoteApi?.auth?.oidc?.userInfo).toEqual({
+        fetch: false,
+        require: false,
+      });
+      expect(result.data.remoteApi?.auth?.oidc?.profileSync).toEqual({
+        onCreate: true,
+        forExisting: false,
+      });
+      expect(result.data.remoteApi?.auth?.oidc?.groupSync).toEqual({
+        onCreate: false,
+        forExisting: false,
+      });
+      expect(result.data.remoteApi?.auth?.oidc?.federatedAuthCache).toEqual({
+        enabled: true,
+        ttlSeconds: 300,
+      });
+    }
+  });
+
+  it('accepts remote OIDC account lifecycle overrides', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'https://auth.example.com',
+            audience: 'remote-agent-api',
+            provisioning: {
+              enabled: true,
+            },
+            userInfo: { fetch: true, require: true },
+            profileSync: { onCreate: false, forExisting: true },
+            groupSync: { onCreate: true, forExisting: true },
+            federatedAuthCache: {
+              enabled: false,
+              ttlSeconds: 60,
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.remoteApi?.auth?.oidc?.provisioning).toEqual({
+        enabled: true,
+      });
+      expect(result.data.remoteApi?.auth?.oidc?.userInfo).toEqual({
+        fetch: true,
+        require: true,
+      });
+      expect(result.data.remoteApi?.auth?.oidc?.profileSync).toEqual({
+        onCreate: false,
+        forExisting: true,
+      });
+      expect(result.data.remoteApi?.auth?.oidc?.groupSync).toEqual({
+        onCreate: true,
+        forExisting: true,
+      });
+      expect(result.data.remoteApi?.auth?.oidc?.federatedAuthCache).toEqual({
+        enabled: false,
+        ttlSeconds: 60,
+      });
+    }
+  });
+
+  it('requires userInfo.fetch when userInfo.require is true', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'https://auth.example.com',
+            audience: 'remote-agent-api',
+            userInfo: { require: true },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('requires positive integer federated auth cache TTL seconds', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'https://auth.example.com',
+            audience: 'remote-agent-api',
+            federatedAuthCache: {
+              ttlSeconds: 0,
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('does not validate env-backed Graph prerequisites in remote OIDC config schema', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          oidc: {
+            enabled: true,
+            issuer: 'https://auth.example.com',
+            audience: 'remote-agent-api',
+            provisioning: {
+              enabled: true,
+            },
+            groupSync: { onCreate: true, forExisting: true },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it('requires a valid issuer when remote OIDC auth is enabled', () => {
     const missingIssuer = agentsEndpointSchema.safeParse({
       remoteApi: {
