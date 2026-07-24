@@ -1,5 +1,5 @@
-import { RetentionMode } from 'librechat-data-provider';
 import { createFallbackRetentionDate } from '@librechat/data-schemas';
+import { RetentionMode, isAllDataRetention } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 
 type InterfaceConfig = AppConfig['interfaceConfig'];
@@ -99,11 +99,50 @@ const getRetentionCacheKey = (req: RetentionRequest): string =>
     String(req.body?.isTemporary ?? ''),
   ].join('|');
 
+/**
+ * Resolves a forced (ephemeral) file deadline. The file is always retained, but capped to the
+ * minimum of a freshly created window and the parent conversation's active expiry, so a new
+ * attachment cannot linger in files/storage after the conversation and messages are TTL-deleted.
+ */
+async function computeForcedRetentionExpiry(
+  req: RetentionRequest | null | undefined,
+  dependencies: RetentionDependencies,
+): Promise<RetentionExpiry> {
+  const fresh = createRetentionExpiry(req, dependencies);
+  const conversationId = req?.body?.conversationId;
+  const userId = req?.user?.id;
+  if (!conversationId || !userId) {
+    return fresh;
+  }
+
+  try {
+    const convo = await dependencies.getConvo(userId, conversationId);
+    const conversationExpiredAt = getConversationExpirationDate(convo);
+    if (conversationExpiredAt == null) {
+      return fresh;
+    }
+    if (!isActiveExpirationDate(conversationExpiredAt)) {
+      return { expiredAt: conversationExpiredAt };
+    }
+    if (fresh.expiredAt != null && conversationExpiredAt < fresh.expiredAt) {
+      return { expiredAt: conversationExpiredAt };
+    }
+    return fresh;
+  } catch (err) {
+    dependencies.logger?.error('[getRetentionExpiry] Error checking conversation retention:', err);
+    return fresh;
+  }
+}
+
 async function computeRetentionExpiry(
   req: RetentionRequest | null | undefined,
   dependencies: RetentionDependencies,
 ): Promise<RetentionExpiry> {
-  if (req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL) {
+  const retentionMode = req?.config?.interfaceConfig?.retentionMode;
+  if (retentionMode === RetentionMode.EPHEMERAL) {
+    return computeForcedRetentionExpiry(req, dependencies);
+  }
+  if (isAllDataRetention(retentionMode)) {
     return createRetentionExpiry(req, dependencies);
   }
 
@@ -177,10 +216,11 @@ const shouldRetainPersistentAgentFile = ({
   toolResource,
 }: AgentFileRetentionRequest): boolean => {
   const interfaceConfig = req?.config?.interfaceConfig;
+  const retentionMode = interfaceConfig?.retentionMode;
   return (
     isPersistentAgentResourceUpload({ messageAttachment, toolResource }) &&
-    (interfaceConfig?.retentionMode !== RetentionMode.ALL ||
-      interfaceConfig?.retainAgentFiles === true)
+    (!isAllDataRetention(retentionMode) ||
+      (retentionMode === RetentionMode.ALL && interfaceConfig?.retainAgentFiles === true))
   );
 };
 
@@ -202,6 +242,11 @@ export async function getAgentFileRetentionExpiry(
  * - `undefined`: no decision can be made because the conversation id or row is missing.
  * - `null`: the share should be stored without an expiration.
  * - `Date`: the share should expire at that date; callers reject already-expired dates.
+ *
+ * A share embeds a snapshot of the source conversation's messages, so it must never
+ * outlive the conversation it was created from. When the source conversation still has an
+ * active expiration, the share is capped at the earlier of that deadline and a freshly
+ * created retention window rather than starting a brand-new window.
  */
 export async function getSharedLinkExpiration(
   {
@@ -218,7 +263,7 @@ export async function getSharedLinkExpiration(
     return undefined;
   }
 
-  const isRetentionAll = req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL;
+  const isRetentionAll = isAllDataRetention(req?.config?.interfaceConfig?.retentionMode);
   const convo = await dependencies.getConvo(userId, conversationId);
   if (!convo) {
     return undefined;
@@ -234,10 +279,14 @@ export async function getSharedLinkExpiration(
   }
 
   try {
-    return dependencies.createExpirationDate(req?.config?.interfaceConfig);
+    const createdExpiration = dependencies.createExpirationDate(req?.config?.interfaceConfig);
+    if (conversationExpiredAt != null && conversationExpiredAt < createdExpiration) {
+      return conversationExpiredAt;
+    }
+    return createdExpiration;
   } catch (err) {
     dependencies.logger?.error('[getSharedLinkExpiration] Error creating expiration date:', err);
-    return null;
+    return conversationExpiredAt ?? null;
   }
 }
 

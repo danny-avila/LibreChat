@@ -1,8 +1,15 @@
-import { RetentionMode } from 'librechat-data-provider';
+import { RetentionMode, isForcedTemporaryRetention } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
-import type { AppConfig, IMessage } from '~/types';
+import type { AppConfig, IConversation, IMessage, IMongoFile, ISharedLink } from '~/types';
+import {
+  capForcedRetentionExpiry,
+  capForcedRetentionToParent,
+  cascadeForcedConversationRetention,
+  cascadeForcedRetentionByTag,
+  createFallbackRetentionDate,
+} from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
-import { createFallbackRetentionDate } from '~/utils/retention';
+import { refreshChatProjectStatsForUser } from './chatProject';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 
@@ -18,7 +25,7 @@ export interface MessageMethods {
   saveMessage(
     ctx: { userId: string; isTemporary?: boolean; interfaceConfig?: AppConfig['interfaceConfig'] },
     params: Partial<IMessage> & { newMessageId?: string },
-    metadata?: { context?: string },
+    metadata?: { context?: string; capExpiryToConversation?: boolean },
   ): Promise<IMessage | null | undefined>;
   bulkSaveMessages(
     messages: Array<Partial<IMessage>>,
@@ -47,6 +54,16 @@ export interface MessageMethods {
     message: Partial<IMessage> & { newMessageId?: string },
     metadata?: { context?: string },
   ): Promise<Partial<IMessage>>;
+  applyForcedRetention(
+    ctx: { userId: string; interfaceConfig?: AppConfig['interfaceConfig'] },
+    params: { conversationId: string; messageId?: string },
+    metadata?: { context?: string; capExpiryToConversation?: boolean },
+  ): Promise<void>;
+  applyForcedRetentionToTag(
+    ctx: { userId: string; interfaceConfig?: AppConfig['interfaceConfig'] },
+    params: { tag: string },
+    metadata?: { context?: string },
+  ): Promise<void>;
   deleteMessagesSince(
     userId: string,
     params: { messageId: string; conversationId: string },
@@ -89,7 +106,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       interfaceConfig?: AppConfig['interfaceConfig'];
     },
     params: Partial<IMessage> & { newMessageId?: string },
-    metadata?: { context?: string },
+    metadata?: { context?: string; capExpiryToConversation?: boolean },
   ) {
     if (!userId) {
       throw new Error('User not authenticated');
@@ -111,7 +128,16 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         messageId: params.newMessageId || params.messageId,
       };
 
-      if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
+      if (interfaceConfig?.retentionMode === RetentionMode.EPHEMERAL) {
+        update.isTemporary = true;
+        try {
+          update.expiredAt = createTempChatExpirationDate(interfaceConfig);
+        } catch (err) {
+          logger.error('Error creating temporary chat expiration date:', err);
+          logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
+          update.expiredAt = createFallbackRetentionDate();
+        }
+      } else if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
         if (typeof isTemporary === 'boolean') {
           update.isTemporary = isTemporary;
         }
@@ -143,6 +169,37 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
         update.tokenCount = 0;
       }
+
+      const forcedExpiredAt = update.expiredAt;
+      const isForcedRetention = isForcedTemporaryRetention(interfaceConfig?.retentionMode);
+      /**
+       * Under forced retention the new message must never outlive a parent that already
+       * expires sooner, since `saveConvo` preserves that earlier deadline rather than
+       * refreshing it. Message-only saves (branch/artifact/abort) additionally backfill the
+       * parent's other messages and shares because no `saveConvo` follows to cascade; normal
+       * saves only cap the message itself and let the conversation cascade handle the rest.
+       */
+      if (isForcedRetention && forcedExpiredAt instanceof Date) {
+        const Conversation = mongoose.models.Conversation as Model<IConversation>;
+        if (metadata?.capExpiryToConversation === true) {
+          const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+          update.expiredAt = await capForcedRetentionToParent(
+            Conversation,
+            Message,
+            SharedLink,
+            userId,
+            conversationId,
+            forcedExpiredAt,
+          );
+        } else {
+          const parent = await Conversation.findOne(
+            { conversationId, user: userId },
+            'expiredAt',
+          ).lean<{ expiredAt?: Date | null } | null>();
+          update.expiredAt = capForcedRetentionExpiry(parent?.expiredAt, forcedExpiredAt);
+        }
+      }
+
       const message = await Message.findOneAndUpdate(
         { messageId: params.messageId, user: userId },
         update,
@@ -160,6 +217,32 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           { $set: { isTemporary: false } },
         );
         message.isTemporary = false;
+      }
+
+      const cascadeExpiredAt = update.expiredAt;
+      if (isForcedRetention && cascadeExpiredAt instanceof Date) {
+        const Conversation = mongoose.models.Conversation as Model<IConversation>;
+        const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+        const File = mongoose.models.File as Model<IMongoFile>;
+        const convertedParent = await cascadeForcedConversationRetention(
+          Conversation,
+          Message,
+          SharedLink,
+          File,
+          userId,
+          conversationId,
+          cascadeExpiredAt,
+        );
+        /**
+         * Message-only writes (branch/artifact/abort saves) have no `saveConvo` afterward to
+         * recompute project stats, so when the cascade just hid a project chat the cached
+         * count/lastConversationId must be refreshed here.
+         */
+        if (convertedParent) {
+          await refreshForcedRetentionProjectStats(userId, {
+            conversationId,
+          } as FilterQuery<IConversation>);
+        }
       }
 
       return message.toObject();
@@ -467,6 +550,159 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }
 
   /**
+   * Recomputes the owning project's cached stats after forced retention hides project chats.
+   * A conversion flips the conversation to `isTemporary: true`, which
+   * `visibleProjectConversationFilter` excludes, so a stale count/`lastConversationId` would keep
+   * pointing at a chat the project workspace no longer shows — matching `saveConvo`, which already
+   * refreshes project stats on a retention-visibility change. Scoped to conversations carrying a
+   * `chatProjectId`; a no-op when none of the touched chats belong to a project.
+   */
+  async function refreshForcedRetentionProjectStats(
+    userId: string,
+    conversationFilter: FilterQuery<IConversation>,
+  ): Promise<void> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const projectChats = await Conversation.find(
+      { user: userId, ...conversationFilter, chatProjectId: { $exists: true, $ne: null } },
+      'chatProjectId',
+    ).lean<Array<{ chatProjectId?: string | null }>>();
+    if (projectChats.length === 0) {
+      return;
+    }
+
+    const projectIds = new Set<string>();
+    for (const chat of projectChats) {
+      if (typeof chat.chatProjectId === 'string' && chat.chatProjectId.length > 0) {
+        projectIds.add(chat.chatProjectId);
+      }
+    }
+    for (const projectId of projectIds) {
+      await refreshChatProjectStatsForUser(mongoose, userId, projectId);
+    }
+  }
+
+  /**
+   * Enforces forced (ephemeral) retention on a conversation (and optionally a specific
+   * message) that was touched outside `saveMessage`/`saveConvo` — message edits, feedback,
+   * or bookmark-tag writes. Without these, an older permanent chat touched after an install
+   * switches to ephemeral would stay visible and never expire. Omit `messageId` for
+   * conversation-only writes (e.g. tag changes) to run just the conversation cascade.
+   */
+  async function applyForcedRetention(
+    { userId, interfaceConfig }: { userId: string; interfaceConfig?: AppConfig['interfaceConfig'] },
+    { conversationId, messageId }: { conversationId: string; messageId?: string },
+    metadata?: { context?: string; capExpiryToConversation?: boolean },
+  ): Promise<void> {
+    if (!isForcedTemporaryRetention(interfaceConfig?.retentionMode)) {
+      return;
+    }
+    if (typeof conversationId !== 'string' || conversationId.length === 0) {
+      logger.warn(
+        `[applyForcedRetention] Ignoring non-string conversationId (context: ${metadata?.context ?? 'n/a'})`,
+      );
+      return;
+    }
+
+    let forcedExpiredAt: Date;
+    try {
+      forcedExpiredAt = createTempChatExpirationDate(interfaceConfig);
+    } catch (err) {
+      logger.error('Error creating temporary chat expiration date:', err);
+      logger.info(`---\`applyForcedRetention\` context: ${metadata?.context}`);
+      forcedExpiredAt = createFallbackRetentionDate();
+    }
+
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+    const File = mongoose.models.File as Model<IMongoFile>;
+
+    if (metadata?.capExpiryToConversation === true) {
+      forcedExpiredAt = await capForcedRetentionToParent(
+        Conversation,
+        Message,
+        SharedLink,
+        userId,
+        conversationId,
+        forcedExpiredAt,
+      );
+    }
+
+    if (typeof messageId === 'string' && messageId.length > 0) {
+      await Message.updateOne({ messageId, user: userId }, [
+        {
+          $set: {
+            isTemporary: true,
+            expiredAt: { $min: [{ $ifNull: ['$expiredAt', forcedExpiredAt] }, forcedExpiredAt] },
+          },
+        },
+      ]);
+    }
+    const convertedParent = await cascadeForcedConversationRetention(
+      Conversation,
+      Message,
+      SharedLink,
+      File,
+      userId,
+      conversationId,
+      forcedExpiredAt,
+    );
+    if (convertedParent) {
+      await refreshForcedRetentionProjectStats(userId, {
+        conversationId,
+      } as FilterQuery<IConversation>);
+    }
+  }
+
+  /**
+   * Enforces forced (ephemeral) retention on every conversation carrying a bookmark tag,
+   * for tag-scoped writes that bypass `saveConvo`/`applyForcedRetention` — global tag renames
+   * and deletes that `Conversation.updateMany` the tag on/off existing chats. Without this an
+   * older permanent chat touched only by a tag change after an install switches to ephemeral
+   * would stay visible and never expire. A no-op outside forced retention.
+   */
+  async function applyForcedRetentionToTag(
+    { userId, interfaceConfig }: { userId: string; interfaceConfig?: AppConfig['interfaceConfig'] },
+    { tag }: { tag: string },
+    metadata?: { context?: string },
+  ): Promise<void> {
+    if (!isForcedTemporaryRetention(interfaceConfig?.retentionMode)) {
+      return;
+    }
+    if (typeof tag !== 'string' || tag.length === 0) {
+      logger.warn(
+        `[applyForcedRetentionToTag] Ignoring non-string tag (context: ${metadata?.context ?? 'n/a'})`,
+      );
+      return;
+    }
+
+    let forcedExpiredAt: Date;
+    try {
+      forcedExpiredAt = createTempChatExpirationDate(interfaceConfig);
+    } catch (err) {
+      logger.error('Error creating temporary chat expiration date:', err);
+      logger.info(`---\`applyForcedRetentionToTag\` context: ${metadata?.context}`);
+      forcedExpiredAt = createFallbackRetentionDate();
+    }
+
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+    const File = mongoose.models.File as Model<IMongoFile>;
+
+    await cascadeForcedRetentionByTag(
+      Conversation,
+      Message,
+      SharedLink,
+      File,
+      userId,
+      tag,
+      forcedExpiredAt,
+    );
+    await refreshForcedRetentionProjectStats(userId, { tags: tag } as FilterQuery<IConversation>);
+  }
+
+  /**
    * Deletes messages in a conversation since a specific message.
    */
   async function deleteMessagesSince(
@@ -603,6 +839,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     updateMessageText,
     updateToolCallResult,
     updateMessage,
+    applyForcedRetention,
+    applyForcedRetentionToTag,
     deleteMessagesSince,
     getMessages,
     getMessage,

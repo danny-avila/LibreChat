@@ -1,13 +1,30 @@
-import { RetentionMode } from 'librechat-data-provider';
+import { RetentionMode, isForcedTemporaryRetention } from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
-import type { AppConfig, IChatProjectDocument, IConversation } from '~/types';
+import type {
+  AppConfig,
+  IChatProjectDocument,
+  IConversation,
+  IMessage,
+  IMongoFile,
+  ISharedLink,
+} from '~/types';
 import type { MessageMethods } from './message';
+import {
+  buildRetentionVisibilityFilter,
+  capConversationFiles,
+  capConversationSharedLinks,
+  capForcedRetentionExpiry,
+  collectConversationFileIds,
+  conversationNeedsForcedRetention,
+  conversationSeedFileIds,
+  createFallbackRetentionDate,
+  forceConversationMessagesTemporary,
+} from '~/utils/retention';
 import {
   refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
 } from './chatProject';
-import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
@@ -236,23 +253,52 @@ export function createConversationMethods(
         }
       }
 
+      const isForcedRetention = isForcedTemporaryRetention(interfaceConfig?.retentionMode);
       const mayChangeProjectMembership =
         Object.prototype.hasOwnProperty.call(update, 'chatProjectId') ||
         Object.prototype.hasOwnProperty.call(unsetFields, 'chatProjectId');
       let previousChatProjectId: string | null = null;
-      if (mayChangeProjectMembership) {
+      let parentRetention: {
+        isTemporary?: boolean | null;
+        expiredAt?: Date | null;
+        files?: string[];
+        file_ids?: string[];
+      } | null = null;
+      if (mayChangeProjectMembership || isForcedRetention) {
         const existing = await Conversation.findOne(
           { conversationId, user: userId },
-          'chatProjectId',
-        ).lean<{ chatProjectId?: string | null } | null>();
+          'chatProjectId isTemporary expiredAt files file_ids',
+        ).lean<{
+          chatProjectId?: string | null;
+          isTemporary?: boolean | null;
+          expiredAt?: Date | null;
+          files?: string[];
+          file_ids?: string[];
+        } | null>();
         previousChatProjectId = existing?.chatProjectId ?? null;
+        parentRetention = existing;
       }
 
       if (newConversationId) {
         update.conversationId = newConversationId;
       }
 
-      if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
+      if (interfaceConfig?.retentionMode === RetentionMode.EPHEMERAL) {
+        update.isTemporary = true;
+        try {
+          update.expiredAt = capForcedRetentionExpiry(
+            parentRetention?.expiredAt,
+            createTempChatExpirationDate(interfaceConfig),
+          );
+        } catch (err) {
+          logger.error('Error creating temporary chat expiration date:', err);
+          logger.info(`---\`saveConvo\` context: ${metadata?.context}`);
+          update.expiredAt = capForcedRetentionExpiry(
+            parentRetention?.expiredAt,
+            createFallbackRetentionDate(),
+          );
+        }
+      } else if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
         if (typeof isTemporary === 'boolean') {
           update.isTemporary = isTemporary;
         }
@@ -275,6 +321,37 @@ export function createConversationMethods(
       } else if (isTemporary === false) {
         update.isTemporary = false;
         update.expiredAt = null;
+      }
+
+      const forcedExpiredAt = update.expiredAt;
+      /**
+       * Cap the dependent messages, shares, and files whenever forced retention resolves an
+       * active deadline for a pre-existing conversation, before converting the parent. Running
+       * before the findOneAndUpdate keeps a failed child from leaving an already-conforming
+       * parent behind (a retried save would skip the child rows), and running for conforming
+       * parents too heals children that lag from before the mode switch or a partial earlier
+       * backfill — each cap is an indexed no-op once the chat's children conform.
+       */
+      if (isForcedRetention && forcedExpiredAt instanceof Date && parentRetention != null) {
+        const Message = mongoose.models.Message as Model<IMessage>;
+        const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
+        const File = mongoose.models.File as Model<IMongoFile>;
+        /**
+         * Referenced file ids (message-attachment rows carry no conversationId) are collected
+         * only at conversion time: post-conversion uploads always receive a deadline at upload,
+         * so the id scan over the chat's messages is not needed on every conforming save.
+         */
+        const fileIds = conversationNeedsForcedRetention(parentRetention, forcedExpiredAt)
+          ? await collectConversationFileIds(
+              Message,
+              userId,
+              [conversationId],
+              conversationSeedFileIds(parentRetention),
+            )
+          : [];
+        await forceConversationMessagesTemporary(Message, userId, conversationId, forcedExpiredAt);
+        await capConversationSharedLinks(SharedLink, userId, conversationId, forcedExpiredAt);
+        await capConversationFiles(File, userId, conversationId, forcedExpiredAt, fileIds);
       }
 
       const createdAtOnInsert =

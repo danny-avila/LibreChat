@@ -32,6 +32,7 @@ const {
   getSharedLink,
   getSharedLinkFile,
   backfillSharedLinkFiles,
+  applyForcedRetention,
   getRoleByName,
 } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -66,6 +67,18 @@ const resolveSharedLinkExpiration = (req, conversationId) =>
       createExpirationDate: createTempChatExpirationDate,
       logger,
     },
+  );
+
+/**
+ * Converts the shared source conversation (and its messages) under forced (ephemeral)
+ * retention, so sharing an older permanent chat does not leave it visible and non-expiring
+ * after the public link itself expires; a no-op outside forced retention.
+ */
+const enforceForcedRetention = (req, conversationId, context) =>
+  applyForcedRetention(
+    { userId: req?.user?.id, interfaceConfig: req?.config?.interfaceConfig },
+    { conversationId },
+    { context },
   );
 
 /**
@@ -454,6 +467,18 @@ router.post(
   async (req, res) => {
     try {
       const { targetMessageId } = req.body;
+      /**
+       * Convert the source conversation before creating the link. createSharedLink rejects
+       * when an active share already exists, so a retention failure after creation would
+       * leave a live share whose source chat never converts — no retry could reach the
+       * cascade again. Converting first also lets the share expiration below read the
+       * converted conversation's deadline.
+       */
+      await enforceForcedRetention(
+        req,
+        req.params.conversationId,
+        'POST /api/share/:conversationId',
+      );
       const expiredAt = await resolveSharedLinkExpiration(req, req.params.conversationId);
       if (expiredAt != null && !isActiveExpirationDate(expiredAt)) {
         return res.status(404).end();
@@ -516,6 +541,9 @@ router.patch('/:shareId', requireJwtAuth, configMiddleware, async (req, res) => 
     if (updatedShare) {
       if (updatedShare._id && expiredAt !== undefined) {
         await updateSharedLinkPermissionsExpiration(updatedShare._id, expiredAt);
+      }
+      if (existing?.conversationId) {
+        await enforceForcedRetention(req, existing.conversationId, 'PATCH /api/share/:shareId');
       }
       res.status(200).json(updatedShare);
     } else {

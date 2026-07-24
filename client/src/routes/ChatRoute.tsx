@@ -3,8 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { Spinner, useToastContext } from '@librechat/client';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { Constants, EModelEndpoint, isForcedTemporaryRetention } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
 import {
   mergeQuerySettingsWithSpec,
@@ -126,16 +126,17 @@ export default function ChatRoute() {
   const assistantListMap = useAssistantListMap();
 
   const isTemporaryChat = isTemporaryConversation(conversation);
+  const forceTemporaryChat = isForcedTemporaryRetention(startupConfig?.interface?.retentionMode);
 
   useEffect(() => {
     if (conversationId === Constants.NEW_CONVO) {
-      setIsTemporary(defaultTemporaryChat);
-    } else if (isTemporaryChat) {
-      setIsTemporary(isTemporaryChat);
+      setIsTemporary(forceTemporaryChat || defaultTemporaryChat);
+    } else if (forceTemporaryChat || isTemporaryChat) {
+      setIsTemporary(true);
     } else {
       setIsTemporary(false);
     }
-  }, [conversationId, isTemporaryChat, setIsTemporary, defaultTemporaryChat]);
+  }, [conversationId, isTemporaryChat, setIsTemporary, defaultTemporaryChat, forceTemporaryChat]);
 
   /** This effect is mainly for the first conversation state change on first load of the page.
    *  Adjusting this may have unintended consequences on the conversation state.

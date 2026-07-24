@@ -5,6 +5,7 @@ import {
   roleDefaults,
   PermissionTypes,
   getConfigDefaults,
+  isForcedTemporaryRetention,
 } from 'librechat-data-provider';
 import type { IRole, AppConfig } from '@librechat/data-schemas';
 import { isMemoryEnabled } from '~/memory/config';
@@ -28,7 +29,10 @@ function hasExplicitConfig(
     case PermissionTypes.AGENTS:
       return interfaceConfig?.agents !== undefined;
     case PermissionTypes.TEMPORARY_CHAT:
-      return interfaceConfig?.temporaryChat !== undefined;
+      return (
+        interfaceConfig?.temporaryChat !== undefined ||
+        isForcedTemporaryRetention(interfaceConfig?.retentionMode)
+      );
     case PermissionTypes.RUN_CODE:
       return interfaceConfig?.runCode !== undefined;
     case PermissionTypes.WEB_SEARCH:
@@ -317,11 +321,13 @@ export async function updateInterfacePermissions({
           : {}),
       },
       [PermissionTypes.TEMPORARY_CHAT]: {
-        [Permissions.USE]: getPermissionValue(
-          loadedInterface.temporaryChat,
-          defaultPerms[PermissionTypes.TEMPORARY_CHAT]?.[Permissions.USE],
-          defaults.temporaryChat,
-        ),
+        [Permissions.USE]:
+          isForcedTemporaryRetention(loadedInterface.retentionMode) ||
+          getPermissionValue(
+            loadedInterface.temporaryChat,
+            defaultPerms[PermissionTypes.TEMPORARY_CHAT]?.[Permissions.USE],
+            defaults.temporaryChat,
+          ),
       },
       [PermissionTypes.RUN_CODE]: {
         [Permissions.USE]: getPermissionValue(

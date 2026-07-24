@@ -2,7 +2,8 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type { IMessage } from '..';
+import type { IChatProject, IConversation, IMessage, IMongoFile, ISharedLink } from '..';
+import { cascadeForcedConversationRetention, sweepForcedRetention } from '../utils/retention';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createMessageMethods } from './message';
 import { createModels } from '../models';
@@ -23,6 +24,8 @@ let saveMessage: ReturnType<typeof createMessageMethods>['saveMessage'];
 let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
 let updateToolCallResult: ReturnType<typeof createMessageMethods>['updateToolCallResult'];
+let applyForcedRetention: ReturnType<typeof createMessageMethods>['applyForcedRetention'];
+let applyForcedRetentionToTag: ReturnType<typeof createMessageMethods>['applyForcedRetentionToTag'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
 let bulkSaveMessages: ReturnType<typeof createMessageMethods>['bulkSaveMessages'];
 let updateMessageText: ReturnType<typeof createMessageMethods>['updateMessageText'];
@@ -42,6 +45,8 @@ beforeAll(async () => {
   getMessages = methods.getMessages;
   updateMessage = methods.updateMessage;
   updateToolCallResult = methods.updateToolCallResult;
+  applyForcedRetention = methods.applyForcedRetention;
+  applyForcedRetentionToTag = methods.applyForcedRetentionToTag;
   deleteMessages = methods.deleteMessages;
   bulkSaveMessages = methods.bulkSaveMessages;
   updateMessageText = methods.updateMessageText;
@@ -836,6 +841,30 @@ describe('Message Operations', () => {
       expect(result?.expiredAt).toBeNull();
     });
 
+    it('should force temporary message and set expiredAt when retentionMode is EPHEMERAL even if isTemporary is false', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.EPHEMERAL,
+      };
+      const result = await saveMessage(mockCtx, mockMessageData);
+      expect(result?.isTemporary).toBe(true);
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeInstanceOf(Date);
+    });
+
+    it('should force temporary message when retentionMode is EPHEMERAL and isTemporary is omitted', async () => {
+      mockCtx.isTemporary = undefined;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.EPHEMERAL,
+      };
+      const result = await saveMessage(mockCtx, mockMessageData);
+      expect(result?.isTemporary).toBe(true);
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeInstanceOf(Date);
+    });
+
     it('should handle missing config gracefully', async () => {
       // Simulate missing config - should use default retention period
       delete mockCtx.interfaceConfig;
@@ -980,6 +1009,1266 @@ describe('Message Operations', () => {
 
       expect(bulk1?.expiredAt).toBeDefined();
       expect(bulk2?.expiredAt).toBeNull();
+    });
+  });
+
+  describe('forced retention conversation cascade', () => {
+    const Conversation = () => mongoose.models.Conversation as mongoose.Model<IConversation>;
+
+    beforeEach(async () => {
+      await Conversation().deleteMany({});
+    });
+
+    it('converts a permanent parent conversation and backfills its messages', async () => {
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Existing permanent chat',
+      });
+      const olderMessage = await saveMessage(
+        { userId: 'user123' },
+        { messageId: uuidv4(), conversationId, text: 'older', user: 'user123' },
+      );
+      expect(olderMessage?.expiredAt ?? null).toBeNull();
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.isTemporary).toBe(true);
+      expect(convo?.expiredAt).toBeInstanceOf(Date);
+
+      const messages = await getMessages({ conversationId, user: 'user123' });
+      expect(messages).toHaveLength(2);
+      for (const message of messages) {
+        expect(message.isTemporary).toBe(true);
+        expect(message.expiredAt).toBeInstanceOf(Date);
+      }
+    });
+
+    it('converts an active retained (all-mode) parent when switching to ephemeral', async () => {
+      const conversationId = uuidv4();
+      const retainedUntil = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Retained all-mode chat',
+        isTemporary: false,
+        expiredAt: retainedUntil,
+      });
+      await Message.create({
+        messageId: uuidv4(),
+        conversationId,
+        user: 'user123',
+        text: 'retained',
+        isTemporary: false,
+        expiredAt: retainedUntil,
+      });
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.isTemporary).toBe(true);
+      expect(convo?.expiredAt?.getTime()).toBeLessThan(retainedUntil.getTime());
+
+      const messages = await getMessages({ conversationId, user: 'user123' });
+      expect(messages).toHaveLength(2);
+      for (const message of messages) {
+        expect(message.isTemporary).toBe(true);
+        expect(message.expiredAt?.getTime()).toBeLessThan(retainedUntil.getTime());
+      }
+    });
+
+    it('preserves a carried-over message that already expires sooner than the forced window', async () => {
+      const conversationId = uuidv4();
+      const soonerExpiry = new Date(Date.now() + 30 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Permanent chat with a sooner-expiring message',
+        isTemporary: false,
+      });
+      const soonerMessageId = uuidv4();
+      await Message.create({
+        messageId: soonerMessageId,
+        conversationId,
+        user: 'user123',
+        text: 'all-mode message with its own sooner TTL',
+        isTemporary: false,
+        expiredAt: soonerExpiry,
+      });
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'follow-up', user: 'user123' },
+      );
+
+      const sooner = await Message.findOne({ messageId: soonerMessageId }).lean();
+      expect(sooner?.isTemporary).toBe(true);
+      expect(sooner?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+    });
+
+    it('re-caps an already temporary parent and its messages to a shorter ephemeral window', async () => {
+      const conversationId = uuidv4();
+      const longerExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Already temporary chat',
+        isTemporary: true,
+        expiredAt: longerExpiry,
+      });
+      await Message.create({
+        messageId: uuidv4(),
+        conversationId,
+        user: 'user123',
+        text: 'older temporary message',
+        isTemporary: true,
+        expiredAt: longerExpiry,
+      });
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.expiredAt?.getTime()).toBeLessThan(longerExpiry.getTime());
+
+      const messages = await getMessages({ conversationId, user: 'user123' });
+      expect(messages).toHaveLength(2);
+      for (const message of messages) {
+        expect(message.isTemporary).toBe(true);
+        expect(message.expiredAt?.getTime()).toBeLessThan(longerExpiry.getTime());
+      }
+    });
+
+    it('caps a message-only save to a sooner parent expiry instead of orphaning it', async () => {
+      const conversationId = uuidv4();
+      const parentExpiry = new Date(Date.now() + 60 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Ephemeral chat expiring soon',
+        isTemporary: true,
+        expiredAt: parentExpiry,
+      });
+
+      const saved = await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+        { context: 'branch', capExpiryToConversation: true },
+      );
+
+      expect(saved?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+      expect(saved?.expiredAt?.getTime()).toBeLessThanOrEqual(convo?.expiredAt?.getTime() ?? 0);
+    });
+
+    it('caps a message-only save to an all-mode parent expiring sooner without extending it', async () => {
+      const conversationId = uuidv4();
+      const parentExpiry = new Date(Date.now() + 60 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'All-mode chat expiring soon',
+        isTemporary: false,
+        expiredAt: parentExpiry,
+      });
+      const olderMessageId = uuidv4();
+      await Message.create({
+        messageId: olderMessageId,
+        conversationId,
+        user: 'user123',
+        text: 'older retained message',
+        isTemporary: false,
+        expiredAt: parentExpiry,
+      });
+
+      const saved = await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+        { context: 'branch', capExpiryToConversation: true },
+      );
+
+      expect(saved?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.isTemporary).toBe(true);
+      expect(convo?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+
+      const older = await Message.findOne({ messageId: olderMessageId }).lean();
+      expect(older?.isTemporary).toBe(true);
+      expect(older?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+    });
+
+    it('backfills lagging messages when the parent already expires sooner', async () => {
+      const conversationId = uuidv4();
+      const parentExpiry = new Date(Date.now() + 60 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Ephemeral chat expiring soon',
+        isTemporary: true,
+        expiredAt: parentExpiry,
+      });
+      const laggingMessageId = uuidv4();
+      await Message.create({
+        messageId: laggingMessageId,
+        conversationId,
+        user: 'user123',
+        text: 'older message with no expiry',
+      });
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+        { context: 'branch', capExpiryToConversation: true },
+      );
+
+      const lagging = await Message.findOne({ messageId: laggingMessageId }).lean();
+      expect(lagging?.isTemporary).toBe(true);
+      expect(lagging?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+    });
+
+    it('caps a normal send to a parent expiring sooner so it cannot outlive the conversation', async () => {
+      const conversationId = uuidv4();
+      const parentExpiry = new Date(Date.now() + 60 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Ephemeral chat expiring soon',
+        isTemporary: true,
+        expiredAt: parentExpiry,
+      });
+
+      const saved = await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'follow-up', user: 'user123' },
+      );
+
+      expect(saved?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+      expect(saved?.expiredAt?.getTime()).toBeLessThanOrEqual(convo?.expiredAt?.getTime() ?? 0);
+    });
+
+    it('does not touch the parent conversation outside forced retention', async () => {
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Existing permanent chat',
+      });
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.TEMPORARY },
+        },
+        { messageId: uuidv4(), conversationId, text: 'edit', user: 'user123' },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.expiredAt ?? null).toBeNull();
+    });
+
+    it('caps an existing permanent shared link when converting via a message save', async () => {
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
+      await SharedLink.deleteMany({});
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Existing permanent chat',
+      });
+      await SharedLink.create({ conversationId, user: 'user123', shareId: uuidv4() });
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+        { context: 'branch', capExpiryToConversation: true },
+      );
+
+      const reloaded = await SharedLink.findOne({ conversationId }).lean();
+      expect(reloaded?.expiredAt).toBeInstanceOf(Date);
+    });
+  });
+
+  describe('applyForcedRetention', () => {
+    const Conversation = () => mongoose.models.Conversation as mongoose.Model<IConversation>;
+
+    beforeEach(async () => {
+      await Conversation().deleteMany({});
+    });
+
+    it('converts a permanent message and its conversation when editing under ephemeral mode', async () => {
+      const conversationId = uuidv4();
+      const editedMessageId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Existing permanent chat',
+      });
+      await Message.create([
+        { messageId: editedMessageId, conversationId, user: 'user123', text: 'first' },
+        { messageId: uuidv4(), conversationId, user: 'user123', text: 'second' },
+      ]);
+
+      await applyForcedRetention(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, messageId: editedMessageId },
+        { context: 'edit', capExpiryToConversation: true },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.isTemporary).toBe(true);
+      expect(convo?.expiredAt).toBeInstanceOf(Date);
+
+      const messages = await getMessages({ conversationId, user: 'user123' });
+      expect(messages).toHaveLength(2);
+      for (const message of messages) {
+        expect(message.isTemporary).toBe(true);
+        expect(message.expiredAt).toBeInstanceOf(Date);
+      }
+    });
+
+    it('preserves an edited message expiring sooner than its parent under forced retention', async () => {
+      const conversationId = uuidv4();
+      const editedMessageId = uuidv4();
+      const messageDeadline = new Date(Date.now() + 60 * 60 * 1000);
+      const parentDeadline = new Date(Date.now() + 12 * 60 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Carried-over chat',
+        isTemporary: false,
+        expiredAt: parentDeadline,
+      });
+      await Message.create({
+        messageId: editedMessageId,
+        conversationId,
+        user: 'user123',
+        text: 'edited',
+        isTemporary: false,
+        expiredAt: messageDeadline,
+      });
+
+      await applyForcedRetention(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, messageId: editedMessageId },
+        { context: 'edit', capExpiryToConversation: true },
+      );
+
+      const message = await Message.findOne({ messageId: editedMessageId, user: 'user123' }).lean();
+      expect(message?.isTemporary).toBe(true);
+      expect(message?.expiredAt?.getTime()).toBe(messageDeadline.getTime());
+    });
+
+    it('refreshes owning project stats when forced retention hides a project chat', async () => {
+      const ChatProject = mongoose.models.ChatProject as mongoose.Model<IChatProject>;
+      await ChatProject.deleteMany({});
+      const conversationId = uuidv4();
+      const project = await ChatProject.create({
+        name: 'Ephemeral Project',
+        user: 'user123',
+        conversationCount: 1,
+        lastConversationId: conversationId,
+        lastConversationAt: new Date(),
+      });
+      const projectId = project._id!.toString();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Project chat',
+        isTemporary: false,
+        chatProjectId: projectId,
+      });
+      await Message.create({ messageId: uuidv4(), conversationId, user: 'user123', text: 'hi' });
+
+      await applyForcedRetention(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId },
+        { context: 'tag' },
+      );
+
+      const refreshed = await ChatProject.findById(projectId).lean<IChatProject>();
+      expect(refreshed?.conversationCount).toBe(0);
+      expect(refreshed?.lastConversationId ?? null).toBeNull();
+    });
+
+    it('refreshes owning project stats when a message-only save converts a project chat', async () => {
+      const ChatProject = mongoose.models.ChatProject as mongoose.Model<IChatProject>;
+      await ChatProject.deleteMany({});
+      const conversationId = uuidv4();
+      const project = await ChatProject.create({
+        name: 'Ephemeral Project',
+        user: 'user123',
+        conversationCount: 1,
+        lastConversationId: conversationId,
+        lastConversationAt: new Date(),
+      });
+      const projectId = project._id!.toString();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Project chat',
+        isTemporary: false,
+        chatProjectId: projectId,
+      });
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+        { context: 'branch', capExpiryToConversation: true },
+      );
+
+      const refreshed = await ChatProject.findById(projectId).lean<IChatProject>();
+      expect(refreshed?.conversationCount).toBe(0);
+      expect(refreshed?.lastConversationId ?? null).toBeNull();
+    });
+
+    it('converts a permanent conversation and its messages without a messageId (tag write)', async () => {
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Existing permanent chat',
+      });
+      await Message.create([
+        { messageId: uuidv4(), conversationId, user: 'user123', text: 'first' },
+        { messageId: uuidv4(), conversationId, user: 'user123', text: 'second' },
+      ]);
+
+      await applyForcedRetention(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId },
+        { context: 'tag' },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.isTemporary).toBe(true);
+      expect(convo?.expiredAt).toBeInstanceOf(Date);
+
+      const messages = await getMessages({ conversationId, user: 'user123' });
+      expect(messages).toHaveLength(2);
+      for (const message of messages) {
+        expect(message.isTemporary).toBe(true);
+        expect(message.expiredAt).toBeInstanceOf(Date);
+      }
+    });
+
+    it('is a no-op outside forced retention', async () => {
+      const conversationId = uuidv4();
+      const messageId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Existing permanent chat',
+      });
+      await Message.create({ messageId, conversationId, user: 'user123', text: 'first' });
+
+      await applyForcedRetention(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.TEMPORARY },
+        },
+        { conversationId, messageId },
+        { context: 'edit', capExpiryToConversation: true },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.expiredAt ?? null).toBeNull();
+      const message = await Message.findOne({ messageId }).lean();
+      expect(message?.expiredAt ?? null).toBeNull();
+    });
+  });
+
+  describe('applyForcedRetentionToTag', () => {
+    const Conversation = () => mongoose.models.Conversation as mongoose.Model<IConversation>;
+    const SharedLink = () => mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
+
+    beforeEach(async () => {
+      await Conversation().deleteMany({});
+      await SharedLink().deleteMany({});
+    });
+
+    it('converts every permanent conversation carrying the tag under ephemeral mode', async () => {
+      const taggedA = uuidv4();
+      const taggedB = uuidv4();
+      const untagged = uuidv4();
+      await Conversation().create([
+        { conversationId: taggedA, user: 'user123', endpoint: 'openAI', tags: ['work'] },
+        { conversationId: taggedB, user: 'user123', endpoint: 'openAI', tags: ['work', 'urgent'] },
+        { conversationId: untagged, user: 'user123', endpoint: 'openAI', tags: ['personal'] },
+      ]);
+      await Message.create([
+        { messageId: uuidv4(), conversationId: taggedA, user: 'user123', text: 'a' },
+        { messageId: uuidv4(), conversationId: taggedB, user: 'user123', text: 'b' },
+        { messageId: uuidv4(), conversationId: untagged, user: 'user123', text: 'c' },
+      ]);
+
+      await applyForcedRetentionToTag(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { tag: 'work' },
+        { context: 'DELETE /api/tags/:tag' },
+      );
+
+      for (const conversationId of [taggedA, taggedB]) {
+        const convo = await Conversation().findOne({ conversationId }).lean();
+        expect(convo?.isTemporary).toBe(true);
+        expect(convo?.expiredAt).toBeInstanceOf(Date);
+        const messages = await getMessages({ conversationId, user: 'user123' });
+        for (const message of messages) {
+          expect(message.isTemporary).toBe(true);
+          expect(message.expiredAt).toBeInstanceOf(Date);
+        }
+      }
+
+      const untouched = await Conversation().findOne({ conversationId: untagged }).lean();
+      expect(untouched?.isTemporary ?? null).not.toBe(true);
+      expect(untouched?.expiredAt ?? null).toBeNull();
+    });
+
+    it('preserves earlier expirations per tagged conversation when cascading forced retention', async () => {
+      const soonerConversationId = uuidv4();
+      const permanentConversationId = uuidv4();
+      const soonerExpiry = new Date(Date.now() + 60 * 60 * 1000);
+      await Conversation().create([
+        {
+          conversationId: soonerConversationId,
+          user: 'user123',
+          endpoint: 'openAI',
+          tags: ['work'],
+          isTemporary: false,
+          expiredAt: soonerExpiry,
+        },
+        {
+          conversationId: permanentConversationId,
+          user: 'user123',
+          endpoint: 'openAI',
+          tags: ['work'],
+        },
+      ]);
+      await Message.create([
+        {
+          messageId: uuidv4(),
+          conversationId: soonerConversationId,
+          user: 'user123',
+          text: 'sooner',
+          isTemporary: false,
+          expiredAt: soonerExpiry,
+        },
+        {
+          messageId: uuidv4(),
+          conversationId: permanentConversationId,
+          user: 'user123',
+          text: 'permanent',
+        },
+      ]);
+      await SharedLink().create([
+        {
+          conversationId: soonerConversationId,
+          user: 'user123',
+          shareId: uuidv4(),
+          expiredAt: soonerExpiry,
+        },
+        {
+          conversationId: permanentConversationId,
+          user: 'user123',
+          shareId: uuidv4(),
+        },
+      ]);
+
+      await applyForcedRetentionToTag(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { tag: 'work' },
+        { context: 'PUT /api/tags/:tag' },
+      );
+
+      const soonerConvo = await Conversation()
+        .findOne({ conversationId: soonerConversationId })
+        .lean();
+      expect(soonerConvo?.isTemporary).toBe(true);
+      expect(soonerConvo?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+      const soonerMessage = await Message.findOne({ conversationId: soonerConversationId }).lean();
+      expect(soonerMessage?.isTemporary).toBe(true);
+      expect(soonerMessage?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+      const soonerShare = await SharedLink()
+        .findOne({ conversationId: soonerConversationId })
+        .lean();
+      expect(soonerShare?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+
+      const permanentConvo = await Conversation()
+        .findOne({ conversationId: permanentConversationId })
+        .lean();
+      expect(permanentConvo?.isTemporary).toBe(true);
+      expect(permanentConvo?.expiredAt).toBeInstanceOf(Date);
+      expect(permanentConvo?.expiredAt?.getTime()).toBeGreaterThan(soonerExpiry.getTime());
+      const permanentMessage = await Message.findOne({
+        conversationId: permanentConversationId,
+      }).lean();
+      expect(permanentMessage?.isTemporary).toBe(true);
+      expect(permanentMessage?.expiredAt?.getTime()).toBeGreaterThan(soonerExpiry.getTime());
+      const permanentShare = await SharedLink()
+        .findOne({ conversationId: permanentConversationId })
+        .lean();
+      expect(permanentShare?.expiredAt?.getTime()).toBeGreaterThan(soonerExpiry.getTime());
+    });
+
+    it('is a no-op outside forced retention', async () => {
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        tags: ['work'],
+      });
+
+      await applyForcedRetentionToTag(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.ALL },
+        },
+        { tag: 'work' },
+        { context: 'PUT /api/tags/:tag' },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.expiredAt ?? null).toBeNull();
+    });
+
+    it('ignores a non-string tag instead of matching every conversation (NoSQL injection)', async () => {
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        tags: ['work'],
+      });
+
+      await applyForcedRetentionToTag(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { tag: { $gt: '' } as unknown as string },
+        { context: 'PUT /api/tags/:tag' },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.isTemporary ?? null).not.toBe(true);
+      expect(convo?.expiredAt ?? null).toBeNull();
+    });
+  });
+
+  describe('sweepForcedRetention', () => {
+    const Conversation = () => mongoose.models.Conversation as mongoose.Model<IConversation>;
+    const SharedLink = () => mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
+    const File = () => mongoose.models.File as mongoose.Model<IMongoFile>;
+
+    beforeEach(async () => {
+      await Conversation().deleteMany({});
+      await SharedLink().deleteMany({});
+      await File().deleteMany({});
+    });
+
+    it('converts untouched permanent conversations, messages, and shares and skips conforming ones', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const permanentId = uuidv4();
+      const conformingId = uuidv4();
+      const soonerExpiry = new Date(Date.now() + 30 * 60 * 1000);
+
+      await Conversation().create([
+        { conversationId: permanentId, user: 'user123', endpoint: 'openAI', isTemporary: false },
+        {
+          conversationId: conformingId,
+          user: 'user123',
+          endpoint: 'openAI',
+          isTemporary: true,
+          expiredAt: soonerExpiry,
+        },
+      ]);
+      await Message.create([
+        { messageId: uuidv4(), conversationId: permanentId, user: 'user123', text: 'permanent' },
+        {
+          messageId: uuidv4(),
+          conversationId: conformingId,
+          user: 'user123',
+          text: 'conforming',
+          isTemporary: true,
+          expiredAt: soonerExpiry,
+        },
+      ]);
+      await SharedLink().create({
+        conversationId: permanentId,
+        user: 'user123',
+        shareId: uuidv4(),
+      });
+
+      const result = await sweepForcedRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        File(),
+        forcedExpiredAt,
+      );
+      expect(result).toEqual({ conversations: 1, aligned: 0, errors: 0, projects: [] });
+
+      const permanent = await Conversation().findOne({ conversationId: permanentId }).lean();
+      expect(permanent?.isTemporary).toBe(true);
+      expect(permanent?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+
+      const permanentMessages = await getMessages({ conversationId: permanentId, user: 'user123' });
+      for (const message of permanentMessages) {
+        expect(message.isTemporary).toBe(true);
+        expect(message.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+      }
+
+      const share = await SharedLink().findOne({ conversationId: permanentId }).lean();
+      expect(share?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+
+      const conforming = await Conversation().findOne({ conversationId: conformingId }).lean();
+      expect(conforming?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+    });
+
+    it("caps a converted conversation's permanent files while preserving sooner and unrelated ones", async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const soonerExpiry = new Date(Date.now() + 30 * 60 * 1000);
+      const conversationId = uuidv4();
+      const unrelatedConversationId = uuidv4();
+      const permanentFileId = uuidv4();
+      const soonerFileId = uuidv4();
+      const unrelatedFileId = uuidv4();
+
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: false,
+      });
+      await File().collection.insertMany([
+        {
+          file_id: permanentFileId,
+          conversationId,
+          user: new mongoose.Types.ObjectId(),
+          expiredAt: null,
+        },
+        {
+          file_id: soonerFileId,
+          conversationId,
+          user: new mongoose.Types.ObjectId(),
+          expiredAt: soonerExpiry,
+        },
+        {
+          file_id: unrelatedFileId,
+          conversationId: unrelatedConversationId,
+          user: new mongoose.Types.ObjectId(),
+          expiredAt: null,
+        },
+      ]);
+
+      await sweepForcedRetention(Conversation(), Message, SharedLink(), File(), forcedExpiredAt);
+
+      const permanentFile = await File().findOne({ file_id: permanentFileId }).lean();
+      expect(permanentFile?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+
+      const soonerFile = await File().findOne({ file_id: soonerFileId }).lean();
+      expect(soonerFile?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+
+      const unrelatedFile = await File().findOne({ file_id: unrelatedFileId }).lean();
+      expect(unrelatedFile?.expiredAt ?? null).toBeNull();
+    });
+
+    it('aligns lagging children of an already-conforming temporary conversation', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const parentDeadline = new Date(Date.now() + 60 * 60 * 1000);
+      const conversationId = uuidv4();
+      const fileId = uuidv4();
+
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: true,
+        expiredAt: parentDeadline,
+      });
+      await SharedLink().create({ conversationId, user: 'user123', shareId: uuidv4() });
+      await File().collection.insertOne({
+        file_id: fileId,
+        conversationId,
+        user: new mongoose.Types.ObjectId(),
+        expiredAt: null,
+      });
+
+      const result = await sweepForcedRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        File(),
+        forcedExpiredAt,
+      );
+      expect(result).toEqual({ conversations: 0, aligned: 1, errors: 0, projects: [] });
+
+      const share = await SharedLink().findOne({ conversationId }).lean();
+      expect(share?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
+
+      const file = await File().findOne({ file_id: fileId }).lean();
+      expect(file?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
+
+      const parent = await Conversation().findOne({ conversationId }).lean();
+      expect(parent?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
+    });
+
+    it('aligns referenced attachment files that carry no conversationId', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const parentDeadline = new Date(Date.now() + 60 * 60 * 1000);
+      const ownerObjectId = new mongoose.Types.ObjectId();
+      const owner = ownerObjectId.toString();
+      const conversationId = uuidv4();
+      const messageFileId = uuidv4();
+
+      await Conversation().create({
+        conversationId,
+        user: owner,
+        endpoint: 'openAI',
+        isTemporary: true,
+        expiredAt: parentDeadline,
+      });
+      await Message.create({
+        messageId: uuidv4(),
+        conversationId,
+        user: owner,
+        text: 'with attachment',
+        isTemporary: true,
+        expiredAt: parentDeadline,
+        files: [{ file_id: messageFileId, filename: 'doc.pdf' }],
+      });
+      await File().collection.insertOne({
+        file_id: messageFileId,
+        user: ownerObjectId,
+        expiredAt: null,
+      });
+
+      const result = await sweepForcedRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        File(),
+        forcedExpiredAt,
+      );
+      expect(result).toEqual({ conversations: 0, aligned: 1, errors: 0, projects: [] });
+
+      const file = await File().findOne({ file_id: messageFileId }).lean();
+      expect(file?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
+    });
+
+    it('collects converted project memberships so callers can refresh project stats', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const chatProjectId = new mongoose.Types.ObjectId().toString();
+
+      await Conversation().create([
+        {
+          conversationId: uuidv4(),
+          user: 'user123',
+          endpoint: 'openAI',
+          isTemporary: false,
+          chatProjectId,
+        },
+        {
+          conversationId: uuidv4(),
+          user: 'user123',
+          endpoint: 'openAI',
+          isTemporary: false,
+          chatProjectId,
+        },
+        { conversationId: uuidv4(), user: 'user123', endpoint: 'openAI', isTemporary: false },
+      ]);
+
+      const result = await sweepForcedRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        File(),
+        forcedExpiredAt,
+      );
+
+      expect(result.conversations).toBe(3);
+      expect(result.projects).toEqual([{ user: 'user123', chatProjectId }]);
+    });
+
+    it('aligns a permanent message to a sooner parent deadline instead of the forced window', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const conversationId = uuidv4();
+      const soonerExpiry = new Date(Date.now() + 30 * 60 * 1000);
+
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: false,
+        expiredAt: soonerExpiry,
+      });
+      const permanentMessageId = uuidv4();
+      await Message.create({
+        messageId: permanentMessageId,
+        conversationId,
+        user: 'user123',
+        text: 'permanent',
+        isTemporary: false,
+      });
+
+      await sweepForcedRetention(Conversation(), Message, SharedLink(), File(), forcedExpiredAt);
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+      const message = await Message.findOne({ messageId: permanentMessageId }).lean();
+      expect(message?.isTemporary).toBe(true);
+      expect(message?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+    });
+
+    it('assigns the forced deadline to a legacy message whose expiredAt is explicitly null', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: false,
+      });
+      const legacyMessageId = uuidv4();
+      await Message.create({
+        messageId: legacyMessageId,
+        conversationId,
+        user: 'user123',
+        text: 'legacy permanent',
+        isTemporary: false,
+        expiredAt: null,
+      });
+
+      await sweepForcedRetention(Conversation(), Message, SharedLink(), File(), forcedExpiredAt);
+
+      const message = await Message.findOne({ messageId: legacyMessageId }).lean();
+      expect(message?.isTemporary).toBe(true);
+      expect(message?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+    });
+
+    it('leaves a conversation non-conforming when a child backfill fails so a re-run retries it', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: false,
+      });
+
+      const throwingSharedLink = {
+        updateMany: jest.fn().mockRejectedValue(new Error('backfill failed')),
+      } as unknown as mongoose.Model<ISharedLink>;
+
+      const failed = await sweepForcedRetention(
+        Conversation(),
+        Message,
+        throwingSharedLink,
+        File(),
+        forcedExpiredAt,
+      );
+      expect(failed).toEqual({ conversations: 0, aligned: 0, errors: 1, projects: [] });
+
+      const stillPermanent = await Conversation().findOne({ conversationId }).lean();
+      expect(stillPermanent?.isTemporary ?? null).not.toBe(true);
+      expect(stillPermanent?.expiredAt ?? null).toBeNull();
+
+      const retried = await sweepForcedRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        File(),
+        forcedExpiredAt,
+      );
+      expect(retried).toEqual({ conversations: 1, aligned: 0, errors: 0, projects: [] });
+
+      const converted = await Conversation().findOne({ conversationId }).lean();
+      expect(converted?.isTemporary).toBe(true);
+      expect(converted?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+    });
+
+    it('scopes the sweep to the active tenant context, leaving other tenants untouched', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const tenantAConversationId = uuidv4();
+      const tenantBConversationId = uuidv4();
+      await Conversation().collection.insertMany([
+        {
+          conversationId: tenantAConversationId,
+          user: 'user123',
+          endpoint: 'openAI',
+          isTemporary: false,
+          tenantId: 'tenant-a',
+        },
+        {
+          conversationId: tenantBConversationId,
+          user: 'user123',
+          endpoint: 'openAI',
+          isTemporary: false,
+          tenantId: 'tenant-b',
+        },
+      ]);
+
+      const result = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        sweepForcedRetention(Conversation(), Message, SharedLink(), File(), forcedExpiredAt),
+      );
+      expect(result).toEqual({ conversations: 1, aligned: 0, errors: 0, projects: [] });
+
+      const tenantA = await Conversation().collection.findOne({
+        conversationId: tenantAConversationId,
+      });
+      expect(tenantA?.isTemporary).toBe(true);
+
+      const tenantB = await Conversation().collection.findOne({
+        conversationId: tenantBConversationId,
+      });
+      expect(tenantB?.isTemporary ?? null).not.toBe(true);
+      expect(tenantB?.expiredAt ?? null).toBeNull();
+    });
+  });
+
+  describe('cascadeForcedConversationRetention', () => {
+    const Conversation = () => mongoose.models.Conversation as mongoose.Model<IConversation>;
+    const SharedLink = () => mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
+    const File = () => mongoose.models.File as mongoose.Model<IMongoFile>;
+
+    beforeEach(async () => {
+      await Conversation().deleteMany({});
+      await SharedLink().deleteMany({});
+      await File().deleteMany({});
+    });
+
+    it('caps referenced attachment files that carry no conversationId when converting', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const ownerObjectId = new mongoose.Types.ObjectId();
+      const owner = ownerObjectId.toString();
+      const conversationId = uuidv4();
+      const messageFileId = uuidv4();
+      const toolOutputFileId = uuidv4();
+      const convoFileId = uuidv4();
+      const threadFileId = uuidv4();
+      const foreignFileId = uuidv4();
+
+      await Conversation().create({
+        conversationId,
+        user: owner,
+        endpoint: 'openAI',
+        isTemporary: false,
+        files: [convoFileId],
+        file_ids: [threadFileId],
+      });
+      await Message.create({
+        messageId: uuidv4(),
+        conversationId,
+        user: owner,
+        text: 'with attachment',
+        files: [
+          { file_id: messageFileId, filename: 'doc.pdf' },
+          { file_id: foreignFileId, filename: 'crafted.pdf' },
+        ],
+        attachments: [{ file_id: toolOutputFileId, filename: 'chart.png' }],
+      });
+      await File().collection.insertMany([
+        { file_id: messageFileId, user: ownerObjectId, expiredAt: null },
+        { file_id: toolOutputFileId, user: ownerObjectId, expiredAt: null },
+        { file_id: convoFileId, user: ownerObjectId, expiredAt: null },
+        { file_id: threadFileId, user: ownerObjectId, expiredAt: null },
+        { file_id: foreignFileId, user: new mongoose.Types.ObjectId(), expiredAt: null },
+      ]);
+
+      await cascadeForcedConversationRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        File(),
+        owner,
+        conversationId,
+        forcedExpiredAt,
+      );
+
+      const messageFile = await File().findOne({ file_id: messageFileId }).lean();
+      expect(messageFile?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+
+      const toolOutputFile = await File().findOne({ file_id: toolOutputFileId }).lean();
+      expect(toolOutputFile?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+
+      const convoFile = await File().findOne({ file_id: convoFileId }).lean();
+      expect(convoFile?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+
+      const threadFile = await File().findOne({ file_id: threadFileId }).lean();
+      expect(threadFile?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+
+      /**
+       * A crafted reference to another user's file must never shorten that file's retention:
+       * the referenced-id cap is owner-scoped, so the foreign row stays permanent.
+       */
+      const foreignFile = await File().findOne({ file_id: foreignFileId }).lean();
+      expect(foreignFile?.expiredAt ?? null).toBeNull();
+    });
+
+    it('caps lagging children even when the parent conversation already conforms', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const parentDeadline = new Date(Date.now() + 60 * 60 * 1000);
+      const conversationId = uuidv4();
+      const fileId = uuidv4();
+
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: true,
+        expiredAt: parentDeadline,
+      });
+      await SharedLink().create({ conversationId, user: 'user123', shareId: uuidv4() });
+      await File().collection.insertOne({
+        file_id: fileId,
+        conversationId,
+        user: new mongoose.Types.ObjectId(),
+        expiredAt: null,
+      });
+
+      await cascadeForcedConversationRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        File(),
+        'user123',
+        conversationId,
+        forcedExpiredAt,
+      );
+
+      const share = await SharedLink().findOne({ conversationId }).lean();
+      expect(share?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
+
+      const file = await File().findOne({ file_id: fileId }).lean();
+      expect(file?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
+
+      const parent = await Conversation().findOne({ conversationId }).lean();
+      expect(parent?.expiredAt?.getTime()).toBe(parentDeadline.getTime());
+    });
+
+    it('leaves the conversation non-conforming when a child backfill fails so a re-run retries it', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        isTemporary: false,
+      });
+
+      const throwingFile = {
+        updateMany: jest.fn().mockRejectedValue(new Error('file backfill failed')),
+      } as unknown as mongoose.Model<IMongoFile>;
+
+      await expect(
+        cascadeForcedConversationRetention(
+          Conversation(),
+          Message,
+          SharedLink(),
+          throwingFile,
+          'user123',
+          conversationId,
+          forcedExpiredAt,
+        ),
+      ).rejects.toThrow('file backfill failed');
+
+      const stillPermanent = await Conversation().findOne({ conversationId }).lean();
+      expect(stillPermanent?.isTemporary ?? null).not.toBe(true);
+      expect(stillPermanent?.expiredAt ?? null).toBeNull();
+
+      await cascadeForcedConversationRetention(
+        Conversation(),
+        Message,
+        SharedLink(),
+        File(),
+        'user123',
+        conversationId,
+        forcedExpiredAt,
+      );
+
+      const converted = await Conversation().findOne({ conversationId }).lean();
+      expect(converted?.isTemporary).toBe(true);
+      expect(converted?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
     });
   });
 
