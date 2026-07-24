@@ -85,24 +85,48 @@ async function convertImageFormat(inputBuffer, targetFormat) {
 }
 
 /**
+ * Build `httpOptions` for the GoogleGenAI client from admin-configured gateway
+ * routing options (`imageTools.gemini_image_gen` in librechat.yaml)
+ * @param {Object} options
+ * @param {string} [options.baseURL] - Custom base URL (e.g. an LLM gateway/proxy)
+ * @param {Record<string, string>} [options.headers] - Resolved headers to attach to every request
+ * @returns {{ baseUrl?: string, headers?: Record<string, string> } | undefined}
+ */
+function buildHttpOptions({ baseURL, headers } = {}) {
+  const httpOptions = {};
+  if (baseURL) {
+    httpOptions.baseUrl = baseURL;
+  }
+  if (headers && Object.keys(headers).length > 0) {
+    httpOptions.headers = headers;
+  }
+  return Object.keys(httpOptions).length > 0 ? httpOptions : undefined;
+}
+
+/**
  * Initialize Gemini client (supports both Gemini API and Vertex AI)
  * Priority: API key (from options, resolved by loadAuthValues) > Vertex AI service account
  * @param {Object} options - Initialization options
  * @param {string} [options.GEMINI_API_KEY] - Gemini API key (resolved by loadAuthValues)
  * @param {string} [options.GOOGLE_KEY] - Google API key (resolved by loadAuthValues)
+ * @param {string} [options.baseURL] - Custom base URL (e.g. an LLM gateway/proxy)
+ * @param {Record<string, string>} [options.headers] - Resolved headers to attach to every request
  * @returns {Promise<GoogleGenAI>} - The initialized client
  */
 async function initializeGeminiClient(options = {}) {
+  const httpOptions = buildHttpOptions(options);
+  const clientOptions = httpOptions ? { httpOptions } : {};
+
   const geminiKey = options.GEMINI_API_KEY;
   if (geminiKey) {
     logger.debug('[GeminiImageGen] Using Gemini API with GEMINI_API_KEY');
-    return new GoogleGenAI({ apiKey: geminiKey });
+    return new GoogleGenAI({ apiKey: geminiKey, ...clientOptions });
   }
 
   const googleKey = options.GOOGLE_KEY;
   if (googleKey) {
     logger.debug('[GeminiImageGen] Using Gemini API with GOOGLE_KEY');
-    return new GoogleGenAI({ apiKey: googleKey });
+    return new GoogleGenAI({ apiKey: googleKey, ...clientOptions });
   }
 
   logger.debug('[GeminiImageGen] Using Vertex AI with service account');
@@ -121,6 +145,7 @@ async function initializeGeminiClient(options = {}) {
     project: serviceKey.project_id,
     location: process.env.GOOGLE_CLOUD_LOCATION || process.env.GOOGLE_LOC || 'global',
     googleAuthOptions: { credentials: serviceKey },
+    ...clientOptions,
   });
 }
 
@@ -307,6 +332,8 @@ async function recordTokenUsage({ usageMetadata, req, userId, conversationId, mo
 /**
  * Creates Gemini Image Generation tool
  * @param {Object} fields - Configuration fields
+ * @param {string} [fields.baseURL] - Custom base URL (e.g. an LLM gateway/proxy)
+ * @param {Record<string, string>} [fields.headers] - Resolved headers to attach to every request
  * @returns {ReturnType<tool>} - The image generation tool
  */
 function createGeminiImageTool(fields = {}) {
@@ -316,7 +343,16 @@ function createGeminiImageTool(fields = {}) {
     throw new Error('This tool is only available for agents.');
   }
 
-  const { req, imageFiles = [], userId, fileStrategy, GEMINI_API_KEY, GOOGLE_KEY } = fields;
+  const {
+    req,
+    imageFiles = [],
+    userId,
+    fileStrategy,
+    GEMINI_API_KEY,
+    GOOGLE_KEY,
+    baseURL,
+    headers,
+  } = fields;
 
   const imageOutputType = fields.imageOutputType || EImageOutputType.PNG;
 
@@ -333,6 +369,8 @@ function createGeminiImageTool(fields = {}) {
         ai = await initializeGeminiClient({
           GEMINI_API_KEY,
           GOOGLE_KEY,
+          baseURL,
+          headers,
         });
       } catch (error) {
         logger.error('[GeminiImageGen] Failed to initialize client:', error);
