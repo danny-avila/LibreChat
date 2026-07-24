@@ -83,7 +83,7 @@
 - 🔍 **Web Search**:  
   - Search the internet and retrieve relevant information to enhance your AI context
   - Combines search providers, content scrapers, and result rerankers for optimal results
-  - **Customizable Jina Reranking**: Configure custom Jina API URLs for reranking services
+  - **Customizable Reranking**: Configure custom API URLs and models for supported reranking services
   - **[Learn More →](https://www.librechat.ai/docs/features/web_search)**
 
 - 🪄 **Generative UI with Code Artifacts**:  
