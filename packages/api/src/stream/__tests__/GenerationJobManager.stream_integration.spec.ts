@@ -1678,7 +1678,7 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
-    test('should deliver live events after subscribeWithResume', async () => {
+    test('should defer live events until a resumed subscription is activated', async () => {
       const manager = createInMemoryManager();
       const streamId = `atomic-live-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
@@ -1707,6 +1707,9 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(liveEvents.length).toBe(0);
+
+      subscription?.activate();
       expect(liveEvents.length).toBe(1);
       const liveEvent = liveEvents[0] as {
         event: string;

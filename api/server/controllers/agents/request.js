@@ -13,6 +13,9 @@ const {
   sanitizeMessageForTransmit,
   checkAndIncrementPendingRequest,
   isUnpersistedPreliminaryParent,
+  resolveConversationAnchor,
+  getAgentStartupTelemetry,
+  acceptAgentStartupTelemetry,
 } = require('@librechat/api');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const {
@@ -41,44 +44,24 @@ function createCloseHandler(abortController) {
   };
 }
 
-function toValidISOString(value) {
-  if (value == null) {
-    return null;
-  }
-
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-async function resolveConversationCreatedAt({ userId, conversationId, isNewConvo }) {
-  if (isNewConvo) {
-    return { createdAt: new Date().toISOString(), conversation: undefined };
-  }
-
-  try {
-    const conversation = await getConvo(userId, conversationId);
-    return {
-      conversation,
-      createdAt: toValidISOString(conversation?.createdAt) ?? new Date().toISOString(),
-    };
-  } catch (error) {
-    logger.warn('[AgentController] Failed to resolve conversation timestamp anchor', {
-      conversationId,
-      error: error?.message ?? error,
-    });
-    return { createdAt: new Date().toISOString(), conversation: undefined };
-  }
-}
-
-async function attachConversationCreatedAt(req, { userId, conversationId, isNewConvo }) {
-  req.body.conversationId = conversationId;
-  const resolved = await resolveConversationCreatedAt({
-    userId,
-    conversationId,
-    isNewConvo,
+function resolveConversationCreatedAt({ userId, conversationId, isNewConvo }) {
+  return resolveConversationAnchor({
+    isNewConversation: isNewConvo,
+    loadConversation: () => getConvo(userId, conversationId),
+    onLoadError: (error) => {
+      logger.warn('[AgentController] Failed to resolve conversation timestamp anchor', {
+        conversationId,
+        error: error.message,
+      });
+    },
   });
+}
+
+async function attachConversationCreatedAt(req, conversationId, conversationAnchorPromise) {
+  req.body.conversationId = conversationId;
+  const resolved = await conversationAnchorPromise;
   req.conversationCreatedAt = resolved.createdAt;
-  if (!isNewConvo && resolved.conversation !== undefined) {
+  if (resolved.conversation !== undefined) {
     req.resolvedConversation = resolved.conversation ?? null;
   }
 }
@@ -212,6 +195,7 @@ function rejectPreliminaryParentMessageId(res) {
  * Returns streamId immediately, client subscribes separately via SSE.
  */
 const ResumableAgentController = async (req, res, next, initializeClient, addTitle) => {
+  const startupTelemetry = getAgentStartupTelemetry(req);
   const {
     text,
     isRegenerate,
@@ -225,6 +209,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   } = req.body;
 
   const userId = req.user.id;
+  const isNewConvo = !reqConversationId || reqConversationId === 'new';
+  const conversationId = isNewConvo ? crypto.randomUUID() : reqConversationId;
+  const conversationAnchorPromise = resolveConversationCreatedAt({
+    userId,
+    conversationId,
+    isNewConvo,
+  });
 
   if (
     await isUnpersistedPreliminaryParent({
@@ -234,6 +225,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       getMessages,
     })
   ) {
+    startupTelemetry?.end('rejected');
     return rejectPreliminaryParentMessageId(res);
   }
 
@@ -245,8 +237,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
   // Generate conversationId upfront if not provided - streamId === conversationId always
   // Treat "new" as a placeholder that needs a real UUID (frontend may send "new" for new convos)
-  const isNewConvo = !reqConversationId || reqConversationId === 'new';
-  const conversationId = isNewConvo ? crypto.randomUUID() : reqConversationId;
   const streamId = conversationId;
   req.body.conversationId = conversationId;
 
@@ -296,6 +286,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           err,
         );
         res.set('Retry-After', '1');
+        startupTelemetry?.end('deduplicated');
         return res.status(503).json({
           code: 'SERVER_NOT_READY',
           error: 'Generation is still starting. Please retry shortly.',
@@ -308,6 +299,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // the winner goes on to generate and bill with no UI attached — ask the client to
         // retry via the readiness path instead.
         res.set('Retry-After', '1');
+        startupTelemetry?.end('deduplicated');
         return res.status(503).json({
           code: 'SERVER_NOT_READY',
           error: 'Generation is still starting. Please retry shortly.',
@@ -322,6 +314,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         clientRequestId,
         streamId: existingStreamId,
       });
+      startupTelemetry?.end('deduplicated');
       return res.json({
         streamId: existingStreamId,
         conversationId: claim.existing.conversationId,
@@ -337,8 +330,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
     const violationInfo = getViolationInfo(pendingRequests, limit);
     await logViolation(req, res, ViolationTypes.CONCURRENT, violationInfo, violationInfo.score);
+    startupTelemetry?.end('rejected');
     return res.status(429).json(violationInfo);
   }
+  startupTelemetry?.mark('request_admitted');
 
   let client = null;
 
@@ -350,7 +345,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       userId,
     });
 
-    const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
+    const job = await GenerationJobManager.createJob(streamId, userId, conversationId, {
+      startupTelemetry,
+    });
+    startupTelemetry?.mark('job_created');
+    acceptAgentStartupTelemetry(req, streamId);
     const jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
     req._resumableStreamId = streamId;
     getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
@@ -359,13 +358,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive
     res.json({ streamId, conversationId, status: 'started' });
 
-    await attachConversationCreatedAt(req, { userId, conversationId, isNewConvo });
-
     const endpointIconURL = getEndpointIconURL(req, endpointOption);
     const responseModel = getAgentResponseModel(req, endpointOption);
     const preliminaryUserMessage = getPreliminaryUserMessage(req.body, conversationId);
     const preliminaryResponseMessageId = getPreliminaryResponseMessageId(req.body);
-    await GenerationJobManager.updateMetadata(streamId, {
+    const conversationPromise = attachConversationCreatedAt(
+      req,
+      conversationId,
+      conversationAnchorPromise,
+    ).then(() => startupTelemetry?.mark('conversation_resolved'));
+    const metadataPromise = GenerationJobManager.updateMetadata(streamId, {
       conversationId,
       endpoint: endpointOption.endpoint,
       iconURL: endpointIconURL,
@@ -378,7 +380,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       isTemporary: req.body?.isTemporary,
       responseMessageId: preliminaryResponseMessageId,
       userMessage: preliminaryUserMessage,
-    });
+    }).then(() => startupTelemetry?.mark('metadata_persisted'));
+    await Promise.all([conversationPromise, metadataPromise]);
 
     // Note: We no longer use res.on('close') to abort since we send JSON immediately.
     // The response closes normally after res.json(), which is not an abort condition.
@@ -464,14 +467,31 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       // Use the job's abort controller signal - allows abort via GenerationJobManager.abortJob()
       signal: job.abortController.signal,
     });
+    startupTelemetry?.mark('client_initialized');
+    client = result.client;
 
     if (job.abortController.signal.aborted) {
-      GenerationJobManager.completeJob(streamId, 'Request aborted during initialization');
-      await finishResumableRequest(req, userId);
+      await GenerationJobManager.completeJob(
+        streamId,
+        'Request aborted during initialization',
+      ).catch((completeErr) => {
+        logger.warn(
+          '[ResumableAgentController] completeJob failed after initialization abort',
+          completeErr,
+        );
+      });
+      startupTelemetry?.end('aborted');
+      try {
+        await finishResumableRequest(req, userId);
+      } finally {
+        if (client) {
+          disposeClient(client);
+        }
+        client = null;
+      }
       return;
     }
 
-    client = result.client;
     // Tag the client with THIS generation's identity so HITL terminal side-effects
     // (pause CAS, checkpoint prune) can tell whether a newer request has since replaced
     // this job on the same conversationId before acting on it.
@@ -485,7 +505,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     });
 
     if (client?.sender) {
-      GenerationJobManager.updateMetadata(streamId, { sender: client.sender });
+      void GenerationJobManager.updateMetadata(streamId, { sender: client.sender }).catch((err) => {
+        logger.warn('[ResumableAgentController] Failed to persist response sender', err);
+      });
     }
 
     // Store reference to client's contentParts - graph will be set when run is created
@@ -502,24 +524,33 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       // conversationId is pre-generated, no need to update from callback
     };
 
-    // Start background generation - readyPromise resolves immediately now
-    // (sync mechanism handles late subscribers)
-    const startGeneration = async () => {
-      try {
-        // Short timeout as safety net - promise should already be resolved
-        await Promise.race([job.readyPromise, new Promise((resolve) => setTimeout(resolve, 100))]);
-      } catch (waitError) {
-        logger.warn(
-          `[ResumableAgentController] Error waiting for subscriber: ${waitError.message}`,
-        );
+    let immediateTitlePromise = null;
+    let backgroundClientCleanupScheduled = false;
+    const disposeBackgroundClient = () => {
+      if (backgroundClientCleanupScheduled) {
+        return;
       }
+      backgroundClientCleanupScheduled = true;
 
+      if (immediateTitlePromise) {
+        immediateTitlePromise.finally(() => {
+          if (client) {
+            disposeClient(client);
+          }
+        });
+      } else if (client) {
+        disposeClient(client);
+      }
+    };
+
+    // Start background generation immediately. The stream layer buffers and persists events
+    // until an SSE subscriber attaches, so generation no longer waits on subscriber readiness.
+    const startGeneration = async () => {
       /** Immediate-mode title generation runs in parallel with the response, so
        *  the conversation row may not exist when the title resolves. `convoReady`
        *  resolves once the response (and thus the conversation) has been saved,
        *  gating the title's `saveConvo`. Declared here so both the success tail
        *  and the catch block can settle it and gate `disposeClient` on the title. */
-      let immediateTitlePromise = null;
       let titleEventPromise = null;
       let acceptsTitleEvents = true;
       let resolveConvoReady;
@@ -599,6 +630,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   alwaysAppliedSkills: req.body.alwaysAppliedSkills,
                 }),
             },
+          }).catch((err) => {
+            logger.error('[ResumableAgentController] Failed to persist start metadata', err);
           });
 
           GenerationJobManager.emitChunk(streamId, {
@@ -621,6 +654,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 }),
             },
             streamId,
+          }).catch((err) => {
+            logger.error('[ResumableAgentController] Failed to queue created event', err);
           });
         };
 
@@ -757,6 +792,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           logger.debug(
             `[ResumableAgentController] Turn paused for approval; awaiting resume: ${streamId}`,
           );
+          startupTelemetry?.end('paused');
           return;
         }
 
@@ -834,6 +870,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           resolveConvoReady();
           // Still decrement pending request since we incremented at start
           await finishResumableRequest(req, userId);
+          startupTelemetry?.end('replaced');
           if (immediateTitlePromise) {
             immediateTitlePromise.finally(() => {
               if (client) {
@@ -909,7 +946,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           });
 
           await GenerationJobManager.emitDone(streamId, finalEvent);
-          GenerationJobManager.completeJob(streamId);
+          startupTelemetry?.end('completed_without_delta');
+          void GenerationJobManager.completeJob(streamId).catch((err) => {
+            logger.warn('[ResumableAgentController] Failed to finalize completed job', err);
+          });
           await finishResumableRequest(req, userId);
         } else {
           const finalEvent = {
@@ -930,7 +970,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           });
 
           await GenerationJobManager.emitDone(streamId, finalEvent);
-          GenerationJobManager.completeJob(streamId, 'Request aborted');
+          startupTelemetry?.end('aborted');
+          void GenerationJobManager.completeJob(streamId, 'Request aborted').catch((err) => {
+            logger.warn('[ResumableAgentController] Failed to finalize aborted job', err);
+          });
           await finishResumableRequest(req, userId);
         }
 
@@ -982,6 +1025,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         if (wasAborted) {
           logger.debug(`[ResumableAgentController] Generation aborted for ${streamId}`);
+          startupTelemetry?.end('aborted');
           // abortJob already handled emitDone and completeJob
         } else {
           logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
@@ -1010,21 +1054,28 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               drainErr,
             );
           }
-          await GenerationJobManager.emitError(streamId, error.message || 'Generation failed');
-          GenerationJobManager.completeJob(streamId, error.message);
+          try {
+            await GenerationJobManager.emitError(streamId, error.message || 'Generation failed');
+          } catch (notificationError) {
+            logger.warn(
+              '[ResumableAgentController] Failed to notify client of generation error',
+              notificationError,
+            );
+          } finally {
+            startupTelemetry?.end('error', error);
+          }
+          await GenerationJobManager.completeJob(streamId, error.message).catch((completeErr) => {
+            logger.warn(
+              '[ResumableAgentController] completeJob failed during generation-error cleanup',
+              completeErr,
+            );
+          });
         }
 
-        await finishResumableRequest(req, userId);
-
-        // Defer disposal until any immediate title settles (it holds the run/req).
-        if (immediateTitlePromise) {
-          immediateTitlePromise.finally(() => {
-            if (client) {
-              disposeClient(client);
-            }
-          });
-        } else if (client) {
-          disposeClient(client);
+        try {
+          await finishResumableRequest(req, userId);
+        } finally {
+          disposeBackgroundClient();
         }
 
         // Don't continue to title generation after error/abort
@@ -1037,16 +1088,38 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       logger.error(
         `[ResumableAgentController] Unhandled error in background generation: ${err.message}`,
       );
-      GenerationJobManager.completeJob(streamId, err.message);
-      await finishResumableRequest(req, userId);
+      startupTelemetry?.end('error', err);
+      await GenerationJobManager.completeJob(streamId, err.message).catch((completeErr) => {
+        logger.warn(
+          '[ResumableAgentController] completeJob failed during background-error cleanup',
+          completeErr,
+        );
+      });
+      try {
+        await finishResumableRequest(req, userId);
+      } finally {
+        disposeBackgroundClient();
+      }
     });
   } catch (error) {
     logger.error('[ResumableAgentController] Initialization error:', error);
-    if (!res.headersSent) {
-      res.status(500).json({ error: error.message || 'Failed to start generation' });
-    } else {
-      // JSON already sent, emit error to stream so client can receive it
-      await GenerationJobManager.emitError(streamId, error.message || 'Failed to start generation');
+    try {
+      if (!res.headersSent) {
+        res.status(500).json({ error: error.message || 'Failed to start generation' });
+      } else {
+        // JSON already sent, emit error to stream so client can receive it
+        await GenerationJobManager.emitError(
+          streamId,
+          error.message || 'Failed to start generation',
+        );
+      }
+    } catch (notificationError) {
+      logger.warn(
+        '[ResumableAgentController] Failed to notify client of initialization error',
+        notificationError,
+      );
+    } finally {
+      startupTelemetry?.end('error', error);
     }
     // Finalize THIS failed job before releasing the idempotency claim. Releasing first would
     // let the client's retry win the same key and createJob() the same streamId while we are

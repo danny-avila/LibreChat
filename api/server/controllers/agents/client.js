@@ -655,19 +655,28 @@ class AgentClient extends BaseClient {
      * Memory context is handled separately and applied per-agent based on config.
      */
     const sharedRunContextParts = [];
+    const [augmentedPrompt, memories, agentScopedContext, configServers] = await Promise.all([
+      this.contextHandlers?.createContext(),
+      this.useMemory(),
+      buildAgentScopedContext({
+        agentIds: allAgents.map(({ agentId }) => agentId),
+        attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
+        sharedRunAttachmentIds,
+        req: this.options.req,
+        tokenCountFn: (text) => countTokens(text),
+      }),
+      resolveConfigServers(this.options.req),
+    ]);
 
     /** Augmented prompt from RAG/context handlers */
-    if (this.contextHandlers) {
-      this.augmentedPrompt = await this.contextHandlers.createContext();
-      if (this.augmentedPrompt) {
-        sharedRunContextParts.push(this.augmentedPrompt);
-      }
+    this.augmentedPrompt = augmentedPrompt;
+    if (this.augmentedPrompt) {
+      sharedRunContextParts.push(this.augmentedPrompt);
     }
 
     /** Memory context (user preferences/memories). Keyed context (with memory
      *  keys + token metadata) is reserved for agents that can call
      *  `delete_memory`; everyone else gets the unkeyed values only. */
-    const memories = await this.useMemory();
     /** Partition the loaded memories belong to (the primary agent's). */
     const loadedMemoryAgentId = getMemoryAgentId(this.options.agent);
     const buildMemoryContext = (text) =>
@@ -699,14 +708,6 @@ class AgentClient extends BaseClient {
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
-
-    const agentScopedContext = await buildAgentScopedContext({
-      agentIds: allAgents.map(({ agentId }) => agentId),
-      attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
-      sharedRunAttachmentIds,
-      req: this.options.req,
-      tokenCountFn: (text) => countTokens(text),
-    });
 
     /** Preserve prompt token counts for graph formatting and pruning. */
     this.indexTokenCountMap = indexTokenCountMap;
@@ -740,8 +741,6 @@ class AgentClient extends BaseClient {
      */
     const ephemeralAgent = this.options.req.body.ephemeralAgent;
     const mcpManager = getMCPManager();
-
-    const configServers = await resolveConfigServers(this.options.req);
 
     await Promise.all(
       allAgents.map(async ({ agent, agentId }) => {
@@ -1807,6 +1806,7 @@ class AgentClient extends BaseClient {
         if (!run) {
           throw new Error('Failed to create run');
         }
+        this.options.startupTelemetry?.mark('run_created');
 
         this.run = run;
         if (this._resolveRun) {
@@ -1844,6 +1844,7 @@ class AgentClient extends BaseClient {
           await deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer);
         }
 
+        this.options.startupTelemetry?.mark('stream_processing_started');
         await run.processStream({ messages }, config, {
           callbacks: {
             [Callback.TOOL_ERROR]: logToolError,
@@ -1858,6 +1859,7 @@ class AgentClient extends BaseClient {
         config.signal = null;
       };
 
+      this.options.startupTelemetry?.mark('run_input_prepared');
       await runAgents(initialMessages);
 
       /**
