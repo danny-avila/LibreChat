@@ -302,7 +302,13 @@ export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
  * Transformations applied:
  * - Converts `const` values to `enum` arrays (Gemini/Vertex AI rejects `const`)
  * - Strips vendor extension fields (`x-*` prefixed keys, e.g. `x-google-enum-descriptions`)
- * - Strips leftover `$defs`/`definitions` blocks that may survive ref resolution
+ * - Strips `definitions` and `$`-prefixed schema keywords (`$defs`, `$schema`,
+ *   `$id`, `$comment`, ...) that may survive ref resolution
+ *
+ * Beyond LLM compatibility, dropping every `$`-prefixed keyword also makes the
+ * output safe to persist: MongoDB rejects field names beginning with `$`, so a
+ * standard, spec-compliant `$schema` keyword in an MCP tool's `inputSchema`
+ * would otherwise crash storage of the tool's `parameters` blob.
  *
  * @param schema - The JSON schema to normalize
  * @returns The normalized schema
@@ -327,9 +333,14 @@ export function normalizeJsonSchema<T extends Record<string, unknown>>(schema: T
       continue;
     }
 
-    // Strip leftover $defs/definitions (should already be resolved by resolveJsonSchemaRefs,
-    // but strip as a safety net for schemas that bypass ref resolution).
-    if (key === '$defs' || key === 'definitions') {
+    // Strip `definitions` and any `$`-prefixed JSON Schema keyword (`$defs`,
+    // `$schema`, `$id`, `$comment`, ...). `$defs`/`$ref` should already be
+    // resolved away by resolveJsonSchemaRefs; the remaining `$`-prefixed keys
+    // are informational annotations the LLM function schema doesn't need — and
+    // MongoDB rejects `$`-prefixed field names, so leaving them in a stored MCP
+    // tool `parameters` blob breaks persistence. Property names (which live
+    // under `properties` and are handled below) are never reached here.
+    if (key === 'definitions' || key.startsWith('$')) {
       continue;
     }
 
