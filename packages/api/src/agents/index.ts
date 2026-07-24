@@ -7,6 +7,7 @@ export * from './checkpointer';
 export * from './contact';
 export * from './context';
 export * from './discovery';
+export * from './subagents';
 export * from './edges';
 export * from './handlers';
 export * from './harvest';

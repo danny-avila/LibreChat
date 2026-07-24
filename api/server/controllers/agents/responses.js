@@ -3,6 +3,8 @@ const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
 const {
+  MAX_SUBAGENT_DEPTH,
+  MAX_SUBAGENT_GRAPH_NODES,
   EModelEndpoint,
   ResourceType,
   PermissionBits,
@@ -28,6 +30,7 @@ const {
   discoverConnectedAgents,
   createToolExecuteHandler,
   getRemoteAgentPermissions,
+  resolveV1Subagents,
   resolveAgentScopedSkillIds,
   // Responses API
   writeDone,
@@ -572,6 +575,40 @@ const createResponse = async (req, res) => {
     }
 
     primaryConfig.edges = discoveredEdges;
+
+    /**
+     * #13898: load subagent-spawn configs for the /v1 path (parity with handoffs,
+     * mirrors PR #12740). Placement/state is local; ACL = REMOTE_AGENT + VIEW,
+     * the same boundary discoverConnectedAgents enforces for handoff targets.
+     */
+    const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
+    if (subagentsCapabilityEnabled) {
+      await resolveV1Subagents(
+        {
+          req,
+          res,
+          primaryConfig,
+          handoffAgentConfigs,
+          endpointOption,
+          allowedProviders,
+          conversationId,
+          parentMessageId,
+          loadTools,
+          dbMethods,
+          maxSubagentDepth: MAX_SUBAGENT_DEPTH,
+          maxSubagentGraphNodes: MAX_SUBAGENT_GRAPH_NODES,
+          logPrefix: '[responses]',
+        },
+        {
+          getAgent: db.getAgent,
+          initializeAgent,
+          getEffectivePermissions,
+          getRemoteAgentPermissions,
+          hasPermissions,
+        },
+      );
+    }
+
     const runAgents = [primaryConfig, ...handoffAgentConfigs.values()];
     const mergedMCPAuthMap = discoveredMCPAuthMap ?? primaryConfig.userMCPAuthMap;
 
