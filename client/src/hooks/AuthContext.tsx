@@ -27,7 +27,7 @@ import {
   useRefreshTokenMutation,
 } from '~/data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
-import { SESSION_KEY, isSafeRedirect, getPostLoginRedirect } from '~/utils';
+import { SESSION_KEY, isSafeRedirect, getResponseStatus, getPostLoginRedirect } from '~/utils';
 import useTimeout from './useTimeout';
 import store from '~/store';
 
@@ -215,7 +215,14 @@ const AuthContextProvider = ({
         if (authConfig?.test === true) {
           return;
         }
-        navigate(buildLoginRedirectUrl());
+        /** A missing status means the request never reached the server (network
+         * error, backend restart/restart window, etc.) — the existing refresh
+         * token may still be valid, so don't force a logout redirect for that.
+         * Only redirect on an actual auth failure from the server. */
+        const status = getResponseStatus(error);
+        if (status === 401 || status === 403) {
+          navigate(buildLoginRedirectUrl());
+        }
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deps are stable at mount; adding refreshToken causes infinite re-fire
@@ -229,7 +236,13 @@ const AuthContextProvider = ({
       setUser(userQuery.data);
     } else if (userQuery.isError) {
       doSetError((userQuery.error as Error).message);
-      navigate(buildLoginRedirectUrl(), { replace: true });
+      /** Same reasoning as the silentRefresh onError handler above: a missing
+       * status means this never reached the server, so don't force a logout
+       * redirect for what may just be a transient connection failure. */
+      const status = getResponseStatus(userQuery.error);
+      if (status === 401 || status === 403) {
+        navigate(buildLoginRedirectUrl(), { replace: true });
+      }
     }
     if (error != null && error && isAuthenticated) {
       doSetError(undefined);
