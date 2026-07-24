@@ -1486,7 +1486,15 @@ export async function createRun({
     // `interrupt()` from its tool body, which must run inside the Pregel task
     // frame — a speculative eager execution could never pause the run.
     eagerEventToolExecution: {
-      enabled: true,
+      // The primary agent's `eager_execution` flag gates the whole
+      // optimization. Unset (the default) keeps eager execution on;
+      // `false` disables the prestart so tools only run once their full
+      // arguments are assembled. This is the escape hatch for agents whose
+      // tools emit large arguments not covered by `excludeToolNames` below
+      // (e.g. long MCP query strings), which otherwise trip the
+      // "Tool call changed after eager execution started" guard on every
+      // retry and exhaust the recursion limit.
+      enabled: agents[0]?.eager_execution !== false,
       excludeToolNames: [
         CREATE_FILE_TOOL_NAME,
         EDIT_FILE_TOOL_NAME,

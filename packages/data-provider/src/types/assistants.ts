@@ -296,6 +296,7 @@ export type Agent = {
   stateful_code_sessions?: boolean;
   artifacts?: ArtifactModes;
   recursion_limit?: number;
+  eager_execution?: boolean;
   isPublic?: boolean;
   version?: number;
   category?: string;
@@ -335,6 +336,7 @@ export type AgentCreateParams = {
   | 'stateful_code_sessions'
   | 'artifacts'
   | 'recursion_limit'
+  | 'eager_execution'
   | 'category'
   | 'support_contact'
   | 'tool_options'
@@ -364,6 +366,7 @@ export type AgentUpdateParams = {
   | 'stateful_code_sessions'
   | 'artifacts'
   | 'recursion_limit'
+  | 'eager_execution'
   | 'category'
   | 'support_contact'
   | 'tool_options'
