@@ -508,4 +508,90 @@ describe('OpenAIChatCompletionController', () => {
       });
     });
   });
+
+  describe('tool call streaming index (#13987)', () => {
+    const {
+      createRun,
+      createChunk,
+      validateRequest,
+      createOpenAIStreamTracker,
+    } = require('@librechat/api');
+
+    /** Drive the streamed tool call events the way a provider like Bedrock does:
+     * id/name land on the first delta (empty args), then arguments stream on the
+     * following deltas — all under the tool call's own index. */
+    const driveToolCallStream = async () => {
+      validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [{ role: 'user', content: 'What time is it in Madrid?' }],
+          stream: true,
+        },
+      });
+      const tracker = {
+        addText: jest.fn(),
+        addReasoning: jest.fn(),
+        toolCalls: new Map(),
+        usage: { promptTokens: 0, completionTokens: 0, reasoningTokens: 0 },
+      };
+      createOpenAIStreamTracker.mockReturnValueOnce(tracker);
+
+      req.body.stream = true;
+      await OpenAIChatCompletionController(req, res);
+
+      const { customHandlers } = createRun.mock.calls[0][0];
+      customHandlers.on_run_step.handle('on_run_step', {
+        index: 2,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'tooluse_1', name: 'get_time' }],
+        },
+      });
+      customHandlers.on_run_step_delta.handle('on_run_step_delta', {
+        delta: {
+          type: 'tool_calls',
+          tool_calls: [{ index: 1, id: 'tooluse_1', name: 'get_time', args: '' }],
+        },
+      });
+      customHandlers.on_run_step_delta.handle('on_run_step_delta', {
+        delta: { type: 'tool_calls', tool_calls: [{ index: 1, args: '{"city":"' }] },
+      });
+      customHandlers.on_run_step_delta.handle('on_run_step_delta', {
+        delta: { type: 'tool_calls', tool_calls: [{ index: 1, args: 'Madrid"}' }] },
+      });
+
+      return {
+        tracker,
+        toolCallDeltas: createChunk.mock.calls
+          .map((call) => call[1])
+          .filter((delta) => delta && Array.isArray(delta.tool_calls))
+          .map((delta) => delta.tool_calls[0]),
+      };
+    };
+
+    it('keeps one index across the id chunk and the argument chunks', async () => {
+      const { toolCallDeltas } = await driveToolCallStream();
+
+      expect(toolCallDeltas.length).toBeGreaterThan(0);
+      expect([...new Set(toolCallDeltas.map((tc) => tc.index))]).toEqual([1]);
+
+      const idChunks = toolCallDeltas.filter((tc) => tc.id);
+      expect(idChunks).toHaveLength(1);
+      expect(idChunks[0]).toMatchObject({ index: 1, id: 'tooluse_1' });
+
+      const argChunks = toolCallDeltas.filter((tc) => tc.function?.arguments);
+      expect(argChunks.every((tc) => tc.index === 1)).toBe(true);
+      expect(argChunks.map((tc) => tc.function.arguments).join('')).toBe('{"city":"Madrid"}');
+    });
+
+    it('records the tool call so the final chunk can report tool_calls', async () => {
+      const { tracker } = await driveToolCallStream();
+
+      expect(tracker.toolCalls.size).toBe(1);
+      expect(tracker.toolCalls.get(1)).toMatchObject({
+        id: 'tooluse_1',
+        function: { name: 'get_time', arguments: '{"city":"Madrid"}' },
+      });
+    });
+  });
 });
