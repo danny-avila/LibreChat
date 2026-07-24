@@ -4,6 +4,7 @@ const { logger } = require('@librechat/data-schemas');
 const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
 const {
   EModelEndpoint,
+  Constants,
   ResourceType,
   PermissionBits,
   hasPermissions,
@@ -163,15 +164,22 @@ async function loadPreviousMessages(conversationId, userId) {
  * @param {string} agentId
  * @returns {Promise<void>}
  */
-async function saveInputMessages(req, conversationId, inputMessages, agentId) {
+async function saveInputMessages(req, conversationId, inputMessages, agentId, initialParentId) {
+  const userContext = {
+    userId: req?.user?.id,
+    isTemporary: req?.body?.isTemporary,
+    interfaceConfig: req?.config?.interfaceConfig,
+  };
+  let parentMessageId = initialParentId ?? Constants.NO_PARENT;
   for (const msg of inputMessages) {
     if (msg.role === 'user') {
+      const messageId = msg.messageId || nanoid();
       await db.saveMessage(
-        req,
+        userContext,
         {
-          messageId: msg.messageId || nanoid(),
+          messageId,
           conversationId,
-          parentMessageId: null,
+          parentMessageId,
           isCreatedByUser: true,
           text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
           sender: 'User',
@@ -180,8 +188,10 @@ async function saveInputMessages(req, conversationId, inputMessages, agentId) {
         },
         { context: 'Responses API - save user input' },
       );
+      parentMessageId = messageId;
     }
   }
+  return parentMessageId;
 }
 
 /**
@@ -193,7 +203,7 @@ async function saveInputMessages(req, conversationId, inputMessages, agentId) {
  * @param {string} agentId
  * @returns {Promise<void>}
  */
-async function saveResponseOutput(req, conversationId, responseId, response, agentId) {
+async function saveResponseOutput(req, conversationId, responseId, response, agentId, parentMessageId) {
   // Extract text content from output items
   let responseText = '';
   for (const item of response.output) {
@@ -208,11 +218,15 @@ async function saveResponseOutput(req, conversationId, responseId, response, age
 
   // Save the assistant message
   await db.saveMessage(
-    req,
+    {
+      userId: req?.user?.id,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    },
     {
       messageId: responseId,
       conversationId,
-      parentMessageId: null,
+      parentMessageId: parentMessageId ?? Constants.NO_PARENT,
       isCreatedByUser: false,
       text: responseText,
       sender: 'Agent',
@@ -243,7 +257,7 @@ async function saveConversation(req, conversationId, agentId, agent) {
     {
       conversationId,
       endpoint: EModelEndpoint.agents,
-      agentId,
+      agent_id: agentId,
       title: agent?.name || 'Open Responses Conversation',
       model: agent?.model,
     },
@@ -857,15 +871,34 @@ const createResponse = async (req, res) => {
       // Save to database if store: true
       if (request.store === true) {
         try {
-          // Save conversation
-          await saveConversation(req, conversationId, agentId, agent);
+          // Thread parent: last prior message (continuation) or NO_PARENT (new conversation)
+          const initialParentId =
+            previousMessages.length > 0
+              ? previousMessages[previousMessages.length - 1].messageId
+              : Constants.NO_PARENT;
 
-          // Save input messages
-          await saveInputMessages(req, conversationId, inputMessages, agentId);
+          // Save messages first so saveConversation's getMessages() picks them up
+          const lastUserMessageId = await saveInputMessages(
+            req,
+            conversationId,
+            inputMessages,
+            agentId,
+            initialParentId,
+          );
 
           // Build response for saving (use tracker with buildResponse for streaming)
           const finalResponse = buildResponse(context, tracker, 'completed');
-          await saveResponseOutput(req, conversationId, responseId, finalResponse, agentId);
+          await saveResponseOutput(
+            req,
+            conversationId,
+            responseId,
+            finalResponse,
+            agentId,
+            lastUserMessageId,
+          );
+
+          // Save conversation last so its message list reflects the new messages
+          await saveConversation(req, conversationId, agentId, agent);
 
           logger.debug(
             `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
@@ -1037,11 +1070,29 @@ const createResponse = async (req, res) => {
 
       if (request.store === true) {
         try {
+          const initialParentId =
+            previousMessages.length > 0
+              ? previousMessages[previousMessages.length - 1].messageId
+              : Constants.NO_PARENT;
+
+          const lastUserMessageId = await saveInputMessages(
+            req,
+            conversationId,
+            inputMessages,
+            agentId,
+            initialParentId,
+          );
+
+          await saveResponseOutput(
+            req,
+            conversationId,
+            responseId,
+            response,
+            agentId,
+            lastUserMessageId,
+          );
+
           await saveConversation(req, conversationId, agentId, agent);
-
-          await saveInputMessages(req, conversationId, inputMessages, agentId);
-
-          await saveResponseOutput(req, conversationId, responseId, response, agentId);
 
           logger.debug(
             `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
