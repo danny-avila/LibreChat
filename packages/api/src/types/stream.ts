@@ -30,6 +30,10 @@ export interface GenerationJobMetadata {
    * without them the paused deferred tool would be missing from the schema-only toolMap.
    */
   discoveredTools?: string[];
+  /** ClientRequestId that originated this generation. Stored so a deduped retry
+   *  can verify the job at the claimed streamId belongs to the same submission
+   *  rather than a newer generation that replaced it. */
+  clientRequestId?: string;
   /** Set when the job is paused for human review (status === 'requires_action') */
   pendingAction?: Agents.PendingAction;
 }

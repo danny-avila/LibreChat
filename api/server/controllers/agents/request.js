@@ -301,6 +301,35 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           error: 'Generation is still starting. Please retry shortly.',
         });
       }
+
+      // Verify the job at the claimed streamId still belongs to this submission.
+      // streamId === conversationId, so a new request to the same conversation can
+      // replace the job before this retry arrives, causing a wrong-render (#14348).
+      if (jobExists && clientRequestId) {
+        try {
+          const existingJob = await GenerationJobManager.getJobStore().getJob(existingStreamId);
+          if (existingJob?.clientRequestId && existingJob.clientRequestId !== clientRequestId) {
+            logger.warn(
+              '[ResumableAgentController] Claimed streamId belongs to a different submission',
+              {
+                existingStreamId,
+                claimClientRequestId: clientRequestId,
+                jobClientRequestId: existingJob.clientRequestId,
+              },
+            );
+            return res.status(503).json({
+              code: 'SERVER_NOT_READY',
+              error: 'This generation was superseded. Please retry shortly.',
+            });
+          }
+        } catch (err) {
+          logger.warn(
+            '[ResumableAgentController] Failed to verify job ownership; proceeding with attach',
+            err,
+          );
+        }
+      }
+
       const claimAgeMs = Date.now() - (claim.existing.claimedAt ?? 0);
       if (!jobExists && claimAgeMs < IDEMPOTENCY_STARTUP_GRACE_MS) {
         // The winner claimed but has not written the job yet (still between claim and
@@ -355,6 +384,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     req._resumableStreamId = streamId;
     getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
 
+    // Persist clientRequestId before exposing the stream so a retry whose old claim
+    // points here never reads a job without it (or a stale one from a prior hash reuse).
+    await GenerationJobManager.updateMetadata(streamId, {
+      clientRequestId: req.body?.clientRequestId,
+    });
+
     // Send JSON response IMMEDIATELY so client can connect to SSE stream
     // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive
     res.json({ streamId, conversationId, status: 'started' });
@@ -378,6 +413,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       isTemporary: req.body?.isTemporary,
       responseMessageId: preliminaryResponseMessageId,
       userMessage: preliminaryUserMessage,
+      clientRequestId: req.body?.clientRequestId,
     });
 
     // Note: We no longer use res.on('close') to abort since we send JSON immediately.

@@ -1679,6 +1679,9 @@ class GenerationJobManagerClass {
     if (metadata.discoveredTools) {
       updates.discoveredTools = metadata.discoveredTools;
     }
+    if (metadata.clientRequestId) {
+      updates.clientRequestId = metadata.clientRequestId;
+    }
     await this.jobStore.updateJob(streamId, updates);
   }
 
