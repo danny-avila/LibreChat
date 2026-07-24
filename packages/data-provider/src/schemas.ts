@@ -942,6 +942,7 @@ const DocumentType: z.ZodType<DocumentTypeValue> = z.lazy(() =>
 
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
+  responseId: z.string().nullable().optional(),
   endpoint: eModelEndpointSchema.nullable(),
   endpointType: eModelEndpointSchema.nullable().optional(),
   isArchived: z.boolean().optional(),
@@ -1041,6 +1042,7 @@ export const tPresetSchema = tConversationSchema
   .omit({
     conversationId: true,
     chatProjectId: true,
+    responseId: true,
     createdAt: true,
     updatedAt: true,
     title: true,
