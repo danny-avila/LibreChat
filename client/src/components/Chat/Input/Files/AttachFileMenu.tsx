@@ -36,6 +36,7 @@ import {
   useAgentCapabilities,
   useGetAgentsConfig,
   useFileHandlingNoChatContext,
+  useImageCapability,
   useLocalize,
 } from '~/hooks';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
@@ -130,10 +131,17 @@ const AttachFileMenu = ({
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
-  const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
-    agentId,
-    ephemeralAgent,
-  );
+  const {
+    fileSearchAllowedByAgent,
+    codeAllowedByAgent,
+    provider,
+    model: agentModel,
+  } = useAgentToolPermissions(agentId, ephemeralAgent);
+
+  const { confidentlyNonVision } = useImageCapability({
+    model: agentModel ?? conversation?.model,
+    spec: conversation?.spec,
+  });
 
   const handleUploadClick = useCallback(
     (fileType?: FileUploadType) => {
@@ -141,32 +149,38 @@ const AttachFileMenu = ({
         return;
       }
       inputRef.current.value = '';
+      const imagePrefix = confidentlyNonVision ? '' : 'image/*,.heif,.heic';
+      const withImage = (rest: string) => [imagePrefix, rest].filter(Boolean).join(',') || rest;
+      const scopeToCapability = (capability: MimeUploadCapability): MimeUploadCapability =>
+        confidentlyNonVision
+          ? { ...capability, categories: capability.categories.filter((c) => c !== 'image') }
+          : capability;
       const configuredAccept =
         fileType !== undefined
           ? getConfiguredMimeAccept(
               endpointFileConfig?.supportedMimeTypes,
-              fileTypeCapabilities[fileType],
+              scopeToCapability(fileTypeCapabilities[fileType]),
             )
           : undefined;
       if (configuredAccept != null) {
         inputRef.current.accept = configuredAccept;
       } else if (fileType === 'image') {
-        inputRef.current.accept = 'image/*,.heif,.heic';
+        inputRef.current.accept = imagePrefix;
       } else if (fileType === 'document') {
         inputRef.current.accept = '.pdf,application/pdf';
       } else if (fileType === 'image_document') {
-        inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf';
+        inputRef.current.accept = withImage('.pdf,application/pdf');
       } else if (fileType === 'image_document_extended') {
-        inputRef.current.accept = `image/*,.heif,.heic,${bedrockDocumentExtensions}`;
+        inputRef.current.accept = withImage(bedrockDocumentExtensions);
       } else if (fileType === 'image_document_video_audio') {
-        inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf,video/*,audio/*';
+        inputRef.current.accept = withImage('.pdf,application/pdf,video/*,audio/*');
       } else {
         inputRef.current.accept = '';
       }
       inputRef.current.click();
       inputRef.current.accept = '';
     },
-    [endpointFileConfig?.supportedMimeTypes],
+    [endpointFileConfig?.supportedMimeTypes, confidentlyNonVision],
   );
 
   const dropdownItems = useMemo(() => {
@@ -211,7 +225,7 @@ const AttachFileMenu = ({
           },
           icon: <FileImageIcon className="icon-md" />,
         });
-      } else {
+      } else if (!confidentlyNonVision) {
         items.push({
           label: localize('com_ui_upload_image_input'),
           onClick: () => {
@@ -294,6 +308,7 @@ const AttachFileMenu = ({
     setEphemeralAgent,
     sharePointEnabled,
     codeAllowedByAgent,
+    confidentlyNonVision,
     fileSearchAllowedByAgent,
     setIsSharePointDialogOpen,
   ]);

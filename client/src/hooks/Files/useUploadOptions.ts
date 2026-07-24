@@ -23,7 +23,8 @@ import { isEphemeralAgent } from '~/common';
  * consistently from one source.
  */
 export default function useUploadOptions() {
-  const { conversationId, agentId, endpoint, endpointType, useResponsesApi } = useDragDropContext();
+  const { conversationId, agentId, endpoint, endpointType, useResponsesApi, confidentlyNonVision } =
+    useDragDropContext();
   const { agentsConfig } = useGetAgentsConfig();
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
   const ephemeralAgent = useRecoilValue(
@@ -60,6 +61,7 @@ export default function useUploadOptions() {
         codeAllowedByAgent,
         fileConfig,
         endpointSupportedMimeTypes,
+        confidentlyNonVision,
       }),
     [
       provider,
@@ -73,6 +75,7 @@ export default function useUploadOptions() {
       codeAllowedByAgent,
       fileConfig,
       endpointSupportedMimeTypes,
+      confidentlyNonVision,
     ],
   );
 

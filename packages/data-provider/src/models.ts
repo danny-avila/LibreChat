@@ -53,6 +53,12 @@ export type TModelSpec = {
   fileSearch?: boolean;
   executeCode?: boolean;
   memory?: boolean;
+  /**
+   * Explicitly declares whether this spec's model can accept image input.
+   * Overrides the built-in vision heuristic for both UI gating and backend
+   * enforcement. Leave unset to fall back to heuristic/endpoint detection.
+   */
+  vision?: boolean;
   /** Equip the spec's ephemeral agent with the `ask_user_question` HITL tool. */
   askUserQuestion?: boolean;
   /**
@@ -95,6 +101,7 @@ export const tModelSpecSchema = z.object({
   fileSearch: z.boolean().optional(),
   executeCode: z.boolean().optional(),
   memory: z.boolean().optional(),
+  vision: z.boolean().optional(),
   askUserQuestion: z.boolean().optional(),
   runInBackground: z.boolean().optional(),
   artifacts: z.union([z.string(), z.boolean()]).optional(),

@@ -75,6 +75,9 @@ const {
   resolveGoogleVideoError,
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
+  getImageCapability,
+  shouldStripImages,
+  getCustomEndpointConfig,
   maybePrewarmCodeSandbox,
 } = require('@librechat/api');
 const {
@@ -111,6 +114,35 @@ const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
+
+/**
+ * Content-part types that carry image data. Covers the OpenAI-style `image_url`
+ * / `image` blocks and LibreChat's `image_file` parts (how image-generation tool
+ * results are persisted, see ToolService), so none survive into the payload of a
+ * non-image-capable model.
+ */
+const IMAGE_CONTENT_TYPES = new Set([ContentTypes.IMAGE_URL, ContentTypes.IMAGE_FILE, 'image']);
+
+/**
+ * Removes image content parts from a formatted LLM-payload message in place, so
+ * a non-image-capable model never receives them. Covers both channels: uploaded
+ * images (routed through `image_urls` → media parts) and images already embedded
+ * in `content` (e.g. an image-generation tool's artifact fed back as context).
+ * String content has no image parts and is left untouched.
+ * @param {{ content?: unknown }} formattedMessage
+ * @returns {boolean} Whether any image part was removed (used to force a token recount).
+ */
+const stripImageContentParts = (formattedMessage) => {
+  if (!Array.isArray(formattedMessage.content)) {
+    return false;
+  }
+  const filtered = formattedMessage.content.filter(
+    (part) => !part || !IMAGE_CONTENT_TYPES.has(part.type),
+  );
+  const removed = filtered.length !== formattedMessage.content.length;
+  formattedMessage.content = filtered.length > 0 ? filtered : '';
+  return removed;
+};
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
@@ -379,6 +411,79 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * Resolves whether a single agent's model can accept image input, layering
+   * explicit config (model spec / endpoint `visionModels`) over the built-in
+   * heuristic. The user-selected (primary) agent reads its declaration from the
+   * run's model spec (`useSpec`); added/handoff agents carry their own resolved
+   * `vision` flag on the agent config (copied from their spec in `addedConvo`),
+   * so a spec-declared text-only added model is caught here too.
+   * @param {Agent} agent
+   * @param {{ useSpec?: boolean }} [options]
+   * @returns {import('librechat-data-provider').ImageCapabilityResult}
+   */
+  resolveAgentImageCapability(agent, { useSpec = false } = {}) {
+    const appConfig = this.options.req?.config;
+    const endpoint = agent?.endpoint ?? this.options.endpoint;
+
+    let endpointConfig;
+    try {
+      endpointConfig = getCustomEndpointConfig({ endpoint, appConfig });
+    } catch (error) {
+      logger.debug(
+        `[AgentClient] Could not resolve custom endpoint config for "${endpoint}"; skipping endpoint-derived image-capability signals.`,
+        error,
+      );
+      endpointConfig = undefined;
+    }
+
+    const modelSpec =
+      useSpec && this.options.spec
+        ? appConfig?.modelSpecs?.list?.find((spec) => spec.name === this.options.spec)
+        : undefined;
+
+    return getImageCapability({
+      model: agent?.model_parameters?.model ?? agent?.model,
+      endpointConfig,
+      modelSpec,
+      vision: typeof agent?.vision === 'boolean' ? agent.vision : undefined,
+    });
+  }
+
+  /**
+   * Resolves (and caches) the primary (user-selected) model's image capability.
+   * @returns {import('librechat-data-provider').ImageCapabilityResult}
+   */
+  resolveModelImageCapability() {
+    if (this._imageCapability) {
+      return this._imageCapability;
+    }
+    this._imageCapability = this.resolveAgentImageCapability(this.options.agent, { useSpec: true });
+    return this._imageCapability;
+  }
+
+  /**
+   * Whether image parts must be stripped from the shared LLM payload. A single
+   * `payload` is sent to every agent in the run (primary + `agentConfigs`), so
+   * if *any* of them is confidently non-image-capable the images have to go —
+   * otherwise that agent's provider rejects the request. Trades images on a
+   * vision-capable primary for a working run in mixed-model setups.
+   * @returns {boolean}
+   */
+  shouldStripImagesForRun() {
+    if (this._shouldStripImages !== undefined) {
+      return this._shouldStripImages;
+    }
+    const runAgents = [
+      this.options.agent,
+      ...(this.agentConfigs ? Array.from(this.agentConfigs.values()) : []),
+    ];
+    this._shouldStripImages = runAgents.some((agent, index) =>
+      shouldStripImages(this.resolveAgentImageCapability(agent, { useSpec: index === 0 })),
+    );
+    return this._shouldStripImages;
+  }
+
+  /**
    *
    * @param {TMessage} message
    * @param {Array<MongoFile>} attachments
@@ -468,6 +573,21 @@ class AgentClient extends BaseClient {
     let hasFileContext = false;
     let promptTokenTotal = 0;
     const encoding = this.getEncoding();
+    /**
+     * When the model can't accept images, strip image content parts from the
+     * LLM payload for every message — current and historical/resent — so
+     * text-only providers don't reject the request. The persisted message and
+     * its UI rendering are untouched (the user still sees their uploaded image);
+     * only the formatted payload and its token accounting change. The memory
+     * copy is stripped too so `canonicalTokenCount` reflects what is actually
+     * sent and the model isn't budgeted/pruned as if the image were present.
+     */
+    const stripImages = this.shouldStripImagesForRun();
+    if (stripImages) {
+      logger.debug(
+        `[AgentClient] A run agent is non-image-capable (primary "${this.model}" source: ${this.resolveModelImageCapability().source}); stripping image parts from the LLM payload.`,
+      );
+    }
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
         message,
@@ -479,6 +599,11 @@ class AgentClient extends BaseClient {
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
       });
+      let strippedImages = false;
+      if (stripImages) {
+        stripImageContentParts(formattedMessage);
+        strippedImages = stripImageContentParts(memoryFormattedMessage);
+      }
 
       /**
        * Bind file context to the message it belongs to. Historical attachments
@@ -511,9 +636,16 @@ class AgentClient extends BaseClient {
        * `message.quotes` persisted, so the stored count would undercount the
        * quote block this turn prepends. Recounting from the quote-merged memory
        * copy keeps context accounting accurate (and self-heals stale counts).
+       *
+       * Also recount when image parts were just stripped: a historical image
+       * message carries a persisted, image-inclusive `tokenCount`, so reusing it
+       * would over-budget the now image-free payload and prune/summarize
+       * unnecessarily. Recounting from the stripped memory copy keeps the count
+       * aligned with what the text-only model actually receives.
        */
       const needsCanonicalTokenCount =
         !hasDbTokenCount ||
+        strippedImages ||
         (this.isVisionModel && (message.image_urls || message.files)) ||
         (Array.isArray(message.quotes) && message.quotes.length > 0);
 
@@ -2591,3 +2723,4 @@ class AgentClient extends BaseClient {
 }
 
 module.exports = AgentClient;
+module.exports.stripImageContentParts = stripImageContentParts;

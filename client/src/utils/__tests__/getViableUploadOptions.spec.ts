@@ -75,6 +75,28 @@ describe('getViableUploadOptions', () => {
       const ctx = baseCtx({ fileSearchEnabled: false, codeEnabled: false, contextEnabled: false });
       expect(getViableUploadOptions([file(XLSX, 'report.xlsx')], ctx)).toEqual([]);
     });
+
+    it('offers the provider attach for an image by default', () => {
+      expect(getViableUploadOptions([file('image/png', 'a.png')], baseCtx())).toContain(undefined);
+    });
+
+    it('does not offer the provider attach for an image on a confidently non-vision model', () => {
+      expect(
+        getViableUploadOptions(
+          [file('image/png', 'a.png')],
+          baseCtx({ confidentlyNonVision: true }),
+        ),
+      ).not.toContain(undefined);
+    });
+
+    it('still offers a PDF to the provider on a non-vision model (only images are gated)', () => {
+      expect(
+        getViableUploadOptions(
+          [file('application/pdf', 'doc.pdf')],
+          baseCtx({ confidentlyNonVision: true }),
+        ),
+      ).toContain(undefined);
+    });
   });
 
   describe('provider-specific direct attachment', () => {

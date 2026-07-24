@@ -8,6 +8,7 @@ export { default as useDragHelpers } from './useDragHelpers';
 export { default as useUploadOptions } from './useUploadOptions';
 export { default as useFileUploadRouter } from './useFileUploadRouter';
 export { default as useFileMap } from './useFileMap';
+export { default as useImageCapability } from './useImageCapability';
 export { default as useSharePointPicker } from './useSharePointPicker';
 export { default as useSharePointDownload } from './useSharePointDownload';
 export { default as useSharePointFileHandling } from './useSharePointFileHandling';
