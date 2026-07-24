@@ -747,6 +747,53 @@ const remoteApiOidcSchema = z
     }
   });
 
+const remoteApiM2MClientSchema = z.object({
+  clientId: z.string().min(1),
+  userId: z.string().min(1),
+  tenantId: z.string().min(1).optional(),
+});
+
+const remoteApiM2MScopesSchema = z
+  .object({
+    read: remoteApiOidcScopeSchema.optional(),
+    create: remoteApiOidcScopeSchema.optional(),
+    update: remoteApiOidcScopeSchema.optional(),
+    delete: remoteApiOidcScopeSchema.optional(),
+  })
+  .optional();
+
+const remoteApiM2MSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    issuer: remoteApiOidcUrlSchema.optional(),
+    audience: z.string().min(1).optional(),
+    jwksUri: remoteApiOidcUrlSchema.optional(),
+    tokenUseClaim: z.string().min(1).default('token_use'),
+    tokenUseValue: z.string().min(1).default('access'),
+    clientIdClaim: z.string().min(1).default('client_id'),
+    scopes: remoteApiM2MScopesSchema,
+    clients: z.array(remoteApiM2MClientSchema).default([]),
+  })
+  .superRefine((m2m, ctx) => {
+    if (m2m.enabled !== true) {
+      return;
+    }
+    if (!m2m.issuer) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['issuer'],
+        message: 'issuer is required when M2M auth is enabled',
+      });
+    }
+    if (m2m.clients.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['clients'],
+        message: 'at least one client mapping is required when M2M auth is enabled',
+      });
+    }
+  });
+
 const remoteApiAuthSchema = z.object({
   apiKey: z
     .object({
@@ -754,6 +801,7 @@ const remoteApiAuthSchema = z.object({
     })
     .optional(),
   oidc: remoteApiOidcSchema.optional(),
+  m2m: remoteApiM2MSchema.optional(),
 });
 
 const remoteApiSchema = z.object({
