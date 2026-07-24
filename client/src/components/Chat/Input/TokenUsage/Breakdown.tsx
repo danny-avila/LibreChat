@@ -180,6 +180,9 @@ export default function Breakdown({ view, showCost, currency }: BreakdownProps) 
         <>
           <div className="border-t border-border-light" role="separator" />
           <div className="space-y-1.5" data-testid="token-usage-totals">
+            <span className="text-sm font-semibold text-text-primary">
+              {localize('com_ui_last_prompt_and_reply')}
+            </span>
             <Row label={localize('com_ui_input')} value={branchUsage.input} />
             <Row label={localize('com_ui_output')} value={branchUsage.output} />
             {branchUsage.cacheRead > 0 && (
