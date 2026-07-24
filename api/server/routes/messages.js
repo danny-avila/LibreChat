@@ -35,6 +35,14 @@ router.get('/', async (req, res) => {
       search,
     } = req.query;
     const pageSize = parseInt(pageSizeRaw, 10) || 25;
+    /**
+     * Search-only cap: this value reaches Meili as `hitsPerPage`, so an unbounded
+     * one would fetch an oversized raw page and hydrate that many
+     * conversations/messages — once per empty-page scan. Conversation paging
+     * keeps its own unclamped `pageSize`, whose limit this cap doesn't justify.
+     */
+    const MAX_SEARCH_PAGE_SIZE = 100;
+    const searchPageSize = Math.min(Math.max(pageSize, 1), MAX_SEARCH_PAGE_SIZE);
 
     let response;
     const sortField = ['endpoint', 'createdAt', 'updatedAt'].includes(sortBy)
@@ -51,49 +59,110 @@ router.get('/', async (req, res) => {
         { sortField, sortOrder, limit: pageSize, cursor },
       );
     } else if (search) {
-      const searchResults = await db.searchMessages(search, { filter: `user = "${user}"` }, true);
+      /**
+       * Meili paginates in page mode (`page` + `hitsPerPage`), which returns an
+       * exact `totalPages`. The frontend's opaque `cursor` carries the 1-based
+       * page number; an absent cursor is the first page.
+       */
+      /**
+       * A page whose hits ALL belong to deleted/inaccessible conversations
+       * filters down to zero rows. Returning that empty page strands the client:
+       * it renders the no-results state, so there are no rows to drive the next
+       * fetch and later pages holding real hits are unreachable. Walk forward
+       * until a page yields a row (or the pages run out).
+       *
+       * The bound only stops a pathological corpus from holding the request
+       * open; it is deliberately high enough that reaching it means there are no
+       * accessible hits in ~625 raw results. If it IS reached, the cursor is
+       * still returned rather than nulled — claiming the search is exhausted
+       * would silently drop real matches past the filtered run.
+       */
+      const MAX_EMPTY_PAGE_SCANS = 25;
+      let page = Math.max(1, parseInt(cursor, 10) || 1);
+      let activeMessages = [];
+      let nextCursor = null;
 
-      const messages = searchResults.hits || [];
+      for (let scan = 0; scan < MAX_EMPTY_PAGE_SCANS; scan++) {
+        const searchResults = await db.searchMessages(
+          search,
+          { filter: `user = "${user}"`, page, hitsPerPage: searchPageSize },
+          true,
+        );
 
-      const result = await db.getConvosQueried(req.user.id, messages, cursor);
+        const messages = searchResults.hits || [];
 
-      const messageIds = [];
-      const cleanedMessages = [];
-      for (let i = 0; i < messages.length; i++) {
-        let message = messages[i];
-        if (result.convoMap[message.conversationId]) {
-          messageIds.push(message.messageId);
-          cleanedMessages.push(message);
+        /**
+         * `getConvosQueried` is only a hydration/`convoMap` helper for THIS
+         * page's hits. Its `cursor` arg is a date (for the conversation-list
+         * feature), so the numeric page cursor must NOT be passed to it, and its
+         * default limit (25) would truncate conversations out of a page — pass a
+         * limit covering every conversation the page's hits could belong to.
+         */
+        /**
+         * Both reads are independent and scoped to the authenticated user, so
+         * they start together: the message lookup only needs ids, which come
+         * straight off the Meili hits, and waiting for `convoMap` first added a
+         * serial round trip to every scanned page. Hits whose conversation is
+         * later filtered out just leave unused entries in the map.
+         */
+        const hitMessageIds = messages.map((message) => message.messageId);
+        const [result, dbMessages] = await Promise.all([
+          db.getConvosQueried(req.user.id, messages, null, messages.length || 1),
+          hitMessageIds.length
+            ? db.getMessages({ user, messageId: { $in: hitMessageIds } })
+            : Promise.resolve([]),
+        ]);
+
+        const cleanedMessages = [];
+        for (let i = 0; i < messages.length; i++) {
+          const message = messages[i];
+          if (result.convoMap[message.conversationId]) {
+            cleanedMessages.push(message);
+          }
         }
+
+        const dbMessageMap = {};
+        for (const dbMessage of dbMessages) {
+          dbMessageMap[dbMessage.messageId] = dbMessage;
+        }
+
+        activeMessages = [];
+        for (const message of cleanedMessages) {
+          const convo = result.convoMap[message.conversationId];
+          const dbMessage = dbMessageMap[message.messageId];
+
+          activeMessages.push({
+            ...message,
+            title: convo.title,
+            conversationId: message.conversationId,
+            model: convo.model,
+            isCreatedByUser: dbMessage?.isCreatedByUser,
+            endpoint: dbMessage?.endpoint,
+            iconURL: dbMessage?.iconURL,
+          });
+        }
+
+        /**
+         * Page from Meili's raw hit paging, NOT the post-`convoMap`-filter count:
+         * a page can render fewer rows than `hitsPerPage` when some hits belong to
+         * deleted/inaccessible conversations, but there may still be more pages, so
+         * the cursor must keep advancing. Prefer Meili's exact `totalPages`; fall
+         * back to "a full raw page implies there may be more".
+         */
+        const totalPages = Number.isFinite(searchResults.totalPages)
+          ? searchResults.totalPages
+          : null;
+        const hasNextPage =
+          totalPages != null ? page < totalPages : messages.length >= searchPageSize;
+        nextCursor = hasNextPage ? String(page + 1) : null;
+
+        if (activeMessages.length > 0 || !hasNextPage) {
+          break;
+        }
+        page += 1;
       }
 
-      const dbMessages = await db.getMessages({
-        user,
-        messageId: { $in: messageIds },
-      });
-
-      const dbMessageMap = {};
-      for (const dbMessage of dbMessages) {
-        dbMessageMap[dbMessage.messageId] = dbMessage;
-      }
-
-      const activeMessages = [];
-      for (const message of cleanedMessages) {
-        const convo = result.convoMap[message.conversationId];
-        const dbMessage = dbMessageMap[message.messageId];
-
-        activeMessages.push({
-          ...message,
-          title: convo.title,
-          conversationId: message.conversationId,
-          model: convo.model,
-          isCreatedByUser: dbMessage?.isCreatedByUser,
-          endpoint: dbMessage?.endpoint,
-          iconURL: dbMessage?.iconURL,
-        });
-      }
-
-      response = { messages: activeMessages, nextCursor: null };
+      response = { messages: activeMessages, nextCursor };
     } else {
       response = { messages: [], nextCursor: null };
     }

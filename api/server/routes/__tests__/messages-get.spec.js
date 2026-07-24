@@ -244,4 +244,208 @@ describe('message route conversation ownership filters', () => {
       '-_id -__v -user',
     );
   });
+
+  describe('search pagination', () => {
+    const { searchMessages, getConvosQueried } = require('~/models');
+
+    const primeSearch = ({ hits, totalPages }) => {
+      searchMessages.mockResolvedValue({ hits, totalPages });
+      const convoMap = {};
+      hits.forEach((h) => {
+        convoMap[h.conversationId] = { title: 'T', model: 'gpt' };
+      });
+      getConvosQueried.mockResolvedValue({ convoMap, conversations: [], nextCursor: null });
+      getMessages.mockResolvedValue(
+        hits.map((h) => ({ ...h, isCreatedByUser: false, endpoint: 'openAI' })),
+      );
+    };
+
+    it('requests Meili in page mode (page + hitsPerPage) and defaults to page 1', async () => {
+      primeSearch({ hits: [{ messageId: 'm1', conversationId: 'c1' }], totalPages: 3 });
+
+      const response = await request(app).get('/api/messages?search=beacon');
+
+      expect(response.status).toBe(200);
+      expect(searchMessages).toHaveBeenCalledWith(
+        'beacon',
+        expect.objectContaining({ page: 1, hitsPerPage: 25 }),
+        true,
+      );
+    });
+
+    it('returns a real nextCursor when more pages remain', async () => {
+      primeSearch({ hits: [{ messageId: 'm1', conversationId: 'c1' }], totalPages: 3 });
+
+      const response = await request(app).get('/api/messages?search=beacon');
+
+      expect(response.body.nextCursor).toBe('2');
+      expect(response.body.messages).toHaveLength(1);
+    });
+
+    it('advances the page from the incoming cursor', async () => {
+      primeSearch({ hits: [{ messageId: 'm2', conversationId: 'c1' }], totalPages: 3 });
+
+      const response = await request(app).get('/api/messages?search=beacon&cursor=2');
+
+      expect(searchMessages).toHaveBeenCalledWith(
+        'beacon',
+        expect.objectContaining({ page: 2 }),
+        true,
+      );
+      expect(response.body.nextCursor).toBe('3');
+    });
+
+    it('returns nextCursor null on the last page', async () => {
+      primeSearch({ hits: [{ messageId: 'm1', conversationId: 'c1' }], totalPages: 1 });
+
+      const response = await request(app).get('/api/messages?search=beacon');
+
+      expect(response.body.nextCursor).toBeNull();
+    });
+
+    it('never passes the numeric page cursor to getConvosQueried as a date', async () => {
+      primeSearch({ hits: [{ messageId: 'm1', conversationId: 'c1' }], totalPages: 3 });
+
+      await request(app).get('/api/messages?search=beacon&cursor=2');
+
+      // 3rd arg (cursor) must be null, not "2" — getConvosQueried treats it as a date.
+      expect(getConvosQueried).toHaveBeenCalledWith(
+        authenticatedUserId,
+        expect.any(Array),
+        null,
+        1,
+      );
+    });
+
+    it('skips a page whose hits are all filtered out and returns the next page with rows', async () => {
+      // Page 1's only hit belongs to a deleted/inaccessible conversation, so it
+      // filters to zero rows; returning that empty page would strand the client.
+      searchMessages
+        .mockResolvedValueOnce({
+          hits: [{ messageId: 'm1', conversationId: 'gone' }],
+          totalPages: 3,
+        })
+        .mockResolvedValueOnce({
+          hits: [{ messageId: 'm2', conversationId: 'c2' }],
+          totalPages: 3,
+        });
+      getConvosQueried
+        .mockResolvedValueOnce({ convoMap: {}, conversations: [], nextCursor: null })
+        .mockResolvedValueOnce({
+          convoMap: { c2: { title: 'T', model: 'gpt' } },
+          conversations: [],
+          nextCursor: null,
+        });
+      getMessages.mockResolvedValue([
+        { messageId: 'm2', isCreatedByUser: false, endpoint: 'openAI' },
+      ]);
+
+      const response = await request(app).get('/api/messages?search=beacon');
+
+      expect(searchMessages).toHaveBeenCalledTimes(2);
+      expect(searchMessages).toHaveBeenNthCalledWith(
+        2,
+        'beacon',
+        expect.objectContaining({ page: 2 }),
+        true,
+      );
+      expect(response.body.messages).toHaveLength(1);
+      expect(response.body.messages[0].messageId).toBe('m2');
+      expect(response.body.nextCursor).toBe('3');
+    });
+
+    it('keeps a cursor when the scan budget is exhausted so later matches stay reachable', async () => {
+      // Every scanned page filters out entirely while Meili keeps reporting more.
+      searchMessages.mockResolvedValue({
+        hits: [{ messageId: 'm', conversationId: 'gone' }],
+        totalPages: 500,
+      });
+      getConvosQueried.mockResolvedValue({ convoMap: {}, conversations: [], nextCursor: null });
+      getMessages.mockResolvedValue([]);
+
+      const response = await request(app).get('/api/messages?search=beacon');
+
+      expect(searchMessages).toHaveBeenCalledTimes(25); // MAX_EMPTY_PAGE_SCANS
+      expect(response.body.messages).toEqual([]);
+      // Nulling here would mark the search exhausted and silently drop the
+      // accessible matches that still sit past the filtered run.
+      expect(response.body.nextCursor).toBe('26');
+    });
+
+    it('starts the convo and message hydration reads in parallel', async () => {
+      let convosResolved = false;
+      let messagesStartedBeforeConvos = false;
+      searchMessages.mockResolvedValue({
+        hits: [{ messageId: 'm1', conversationId: 'c1' }],
+        totalPages: 1,
+      });
+      getConvosQueried.mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(() => {
+              convosResolved = true;
+              resolve({
+                convoMap: { c1: { title: 'T', model: 'gpt' } },
+                conversations: [],
+                nextCursor: null,
+              });
+            }, 20),
+          ),
+      );
+      getMessages.mockImplementation(() => {
+        // If this runs before convoMap resolves, the two reads overlap.
+        messagesStartedBeforeConvos = !convosResolved;
+        return Promise.resolve([{ messageId: 'm1', isCreatedByUser: false, endpoint: 'openAI' }]);
+      });
+
+      const response = await request(app).get('/api/messages?search=beacon');
+
+      expect(messagesStartedBeforeConvos).toBe(true);
+      // Ids come off the raw Meili hits, not the post-filter list.
+      expect(getMessages).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: { $in: ['m1'] } }),
+      );
+      expect(response.body.messages).toHaveLength(1);
+    });
+
+    it('clamps an oversized pageSize before asking Meili for a raw page', async () => {
+      primeSearch({ hits: [{ messageId: 'm1', conversationId: 'c1' }], totalPages: 1 });
+
+      await request(app).get('/api/messages?search=beacon&pageSize=100000');
+
+      expect(searchMessages).toHaveBeenCalledWith(
+        'beacon',
+        expect.objectContaining({ hitsPerPage: 100 }),
+        true,
+      );
+    });
+
+    it('leaves conversation paging unclamped — the Meili cap is search-only', async () => {
+      const { getMessagesByCursor } = require('~/models');
+      getMessagesByCursor.mockResolvedValue({ messages: [], nextCursor: null });
+
+      await request(app).get('/api/messages?conversationId=convo-1&pageSize=500');
+
+      expect(getMessagesByCursor).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 'convo-1' }),
+        expect.objectContaining({ limit: 500 }),
+      );
+      expect(searchMessages).not.toHaveBeenCalled();
+    });
+
+    it('does not scan past the last page when the final page filters out entirely', async () => {
+      searchMessages.mockResolvedValue({
+        hits: [{ messageId: 'm1', conversationId: 'gone' }],
+        totalPages: 1,
+      });
+      getConvosQueried.mockResolvedValue({ convoMap: {}, conversations: [], nextCursor: null });
+      getMessages.mockResolvedValue([]);
+
+      const response = await request(app).get('/api/messages?search=beacon');
+
+      expect(searchMessages).toHaveBeenCalledTimes(1);
+      expect(response.body.messages).toEqual([]);
+      expect(response.body.nextCursor).toBeNull();
+    });
+  });
 });
