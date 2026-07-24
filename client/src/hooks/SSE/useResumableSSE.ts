@@ -90,6 +90,12 @@ const getStartGenerationStreamId = (data: unknown): string | null => {
   return typeof streamId === 'string' && streamId.length > 0 ? streamId : null;
 };
 
+/** The server returns `status: 'resumed'` when a duplicate start request was deduped to an
+ *  already-running stream — the client must subscribe with resume=true to replay its state
+ *  (prior content and any pending-action) rather than only receiving live events. */
+const isResumedStartResponse = (data: unknown): boolean =>
+  data != null && typeof data === 'object' && (data as { status?: unknown }).status === 'resumed';
+
 const parseSSEErrorData = (body: string): unknown | null => {
   const blocks = body.split(/\r?\n\r?\n/);
   for (const block of blocks) {
@@ -625,6 +631,7 @@ export default function useResumableSSE(
     syncStepMessage,
     attachmentHandler,
     resetContentHandler,
+    flushPendingDeltas,
   } = useEventHandlers({
     setMessages,
     getMessages,
@@ -697,6 +704,11 @@ export default function useResumableSSE(
             );
           }
         };
+        /** The pause card must attach to the same message state the stream
+         * produced — apply any queued delta before reading the cache, or the
+         * later flush would clobber the card (and `syncStepMessage` below
+         * would sync a pre-delta copy). */
+        flushPendingDeltas();
         const messages = getMessages() ?? [];
         const index = findPendingActionMessageIndex(messages, pendingAction);
         if (index < 0) {
@@ -741,6 +753,9 @@ export default function useResumableSSE(
             );
           }
         };
+        /** Same boundary as pending actions: land queued deltas before the
+         * steer part is placed and synced. */
+        flushPendingDeltas();
         const messages = getMessages() ?? [];
         const index = findSteerMessageIndex(messages, event);
         if (index < 0) {
@@ -991,10 +1006,15 @@ export default function useResumableSSE(
               const messages = getMessages() ?? [];
               const userMsgId = userMessage.messageId;
               const serverResponseId = data.resumeState.responseMessageId;
+              const hasResumedContent = data.resumeState.aggregatedContent.length > 0;
 
               let responseIdx = -1;
+              /** Only an id match proves the row belongs to THIS generation; the parent-based
+               *  fallback below can land on a prior sibling (e.g. the answer being regenerated). */
+              let matchedByResponseId = false;
               if (serverResponseId) {
                 responseIdx = messages.findIndex((m) => m.messageId === serverResponseId);
+                matchedByResponseId = responseIdx >= 0;
               }
               if (responseIdx < 0) {
                 responseIdx = messages.findIndex(
@@ -1015,9 +1035,19 @@ export default function useResumableSSE(
 
               if (responseIdx >= 0) {
                 const oldContent = messages[responseIdx]?.content;
+                /** An EMPTY resume snapshot is not authoritative over content we already loaded
+                 *  for the SAME response: assigning it would erase that content and leave a bare
+                 *  cursor. Restricted to an id match — preserving a fallback-matched row would
+                 *  make a regenerated run append to the answer it is replacing — and to a row
+                 *  that actually HAS parts, so the array is never swapped for `undefined`. */
+                const preserveLoadedContent =
+                  !hasResumedContent &&
+                  matchedByResponseId &&
+                  Array.isArray(oldContent) &&
+                  oldContent.length > 0;
                 const responseMessage = {
                   ...messages[responseIdx],
-                  content: data.resumeState.aggregatedContent,
+                  content: preserveLoadedContent ? oldContent : data.resumeState.aggregatedContent,
                   iconURL: preferDefinedString(
                     messages[responseIdx]?.iconURL,
                     data.resumeState.iconURL,
@@ -1029,6 +1059,8 @@ export default function useResumableSSE(
                   messageId: responseMessage.messageId,
                   oldContentLength: Array.isArray(oldContent) ? oldContent.length : 0,
                   newContentLength: data.resumeState.aggregatedContent?.length,
+                  preservedExistingContent: preserveLoadedContent,
+                  matchedByResponseId,
                 });
                 setMessages(updated);
                 resetContentHandler();
@@ -1217,7 +1249,17 @@ export default function useResumableSSE(
             !createdStreamIdsRef.current.has(currentStreamId) &&
             optimisticStreamIdsRef.current.has(currentStreamId)
           ) {
-            removeConvoFromAllQueries(queryClient, currentStreamId);
+            if (isResume) {
+              // A resumed subscribe attaches to an already-adopted stream (e.g. a deduped
+              // start request). A 404 means the job is gone — but the conversation may be
+              // persisted (the original completed and was cleaned up) or may never have
+              // existed (the winner died before persisting). Don't guess: reconcile against
+              // the server so a real conversation stays and a phantom is dropped.
+              queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+            } else {
+              // Fresh optimistic stream that never started: prune immediately.
+              removeConvoFromAllQueries(queryClient, currentStreamId);
+            }
           }
           setIsSubmitting(false);
           setShowStopButton(false);
@@ -1281,6 +1323,10 @@ export default function useResumableSSE(
         if (responseCode == null && e.data) {
           logger.log('ResumableSSE', 'Server-sent error event received:', e.data);
           sse.close();
+          /** FLUSH (not cancel): the error card below is built from the cache
+           * tail, so queued tokens must land first — and a stale trailing
+           * frame must never overwrite the error write. */
+          flushPendingDeltas();
           removeActiveJob(currentStreamId);
           resetLive({ ...currentSubmission, userMessage });
           if (
@@ -1377,6 +1423,7 @@ export default function useResumableSSE(
         } else {
           logger.error('ResumableSSE', 'Max reconnect attempts reached');
           sse.close();
+          flushPendingDeltas();
           errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
           /** Terminal: clear the in-flight live estimate like the other
            *  stop-reconnecting paths so the gauge doesn't show stale tokens */
@@ -1478,6 +1525,7 @@ export default function useResumableSSE(
       clearStepMaps,
       messageHandler,
       errorHandler,
+      flushPendingDeltas,
       setIsSubmitting,
       getMessages,
       setMessages,
@@ -1508,7 +1556,10 @@ export default function useResumableSSE(
    * Readiness retries honor Retry-After until cleanup or the readiness window expires.
    */
   const startGeneration = useCallback(
-    async (currentSubmission: TSubmission, signal?: AbortSignal): Promise<string | null> => {
+    async (
+      currentSubmission: TSubmission,
+      signal?: AbortSignal,
+    ): Promise<{ streamId: string; resumed: boolean } | null> => {
       const payloadData = createPayload(currentSubmission);
       let { payload } = payloadData;
       payload = removeNullishValues(payload) as TPayload;
@@ -1533,8 +1584,9 @@ export default function useResumableSSE(
           }
           const streamId = getStartGenerationStreamId(data);
           if (streamId) {
-            logger.log('ResumableSSE', 'Generation started:', { streamId });
-            return streamId;
+            const resumed = isResumedStartResponse(data);
+            logger.log('ResumableSSE', 'Generation started:', { streamId, resumed });
+            return { streamId, resumed };
           }
 
           lastError = { response: { data } };
@@ -1651,11 +1703,12 @@ export default function useResumableSSE(
       } else {
         // New generation: start and then subscribe
         logger.log('ResumableSSE', 'Starting NEW generation');
-        const newStreamId = await startGeneration(submission, signal);
+        const startResult = await startGeneration(submission, signal);
         if (signal.aborted) {
           return;
         }
-        if (newStreamId) {
+        if (startResult) {
+          const { streamId: newStreamId, resumed } = startResult;
           setStreamId(newStreamId);
           // Optimistically add to active jobs
           addActiveJob(newStreamId);
@@ -1672,7 +1725,9 @@ export default function useResumableSSE(
           }
           const streamSubmission = addOptimisticConversation(newStreamId, submission);
           submissionRef.current = streamSubmission;
-          subscribeToStream(newStreamId, streamSubmission);
+          // A deduped retry (status: 'resumed') attaches to an already-running stream, so
+          // subscribe with resume=true to replay its state instead of only live events.
+          subscribeToStream(newStreamId, streamSubmission, resumed);
         } else {
           logger.error('ResumableSSE', 'Failed to get streamId from startGeneration');
         }

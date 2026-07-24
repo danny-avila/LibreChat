@@ -191,6 +191,24 @@ export interface JobStatusTransition {
   expectActionId?: string;
 }
 
+/** Value stored under an idempotency claim: the stream a retried request should attach to. */
+export interface IdempotencyClaimValue {
+  streamId: string;
+  conversationId: string;
+  /** Epoch ms the claim was written — lets a losing duplicate tell a winner that is still
+   *  starting (recent, no job yet → retry) from one that already finished and was cleaned
+   *  up (old, no job → attach and let the client refetch). */
+  claimedAt?: number;
+}
+
+/** Result of an atomic {@link IJobStore.claimIdempotencyKey} attempt. */
+export interface IdempotencyClaimResult {
+  /** True when this caller won the claim and should create the job. */
+  claimed: boolean;
+  /** When `claimed` is false, the stream the original request is already driving. */
+  existing?: IdempotencyClaimValue;
+}
+
 /**
  * Usage metadata for token spending across different LLM providers.
  *
@@ -362,6 +380,32 @@ export interface IJobStore {
    * existing cluster posture for status writes.
    */
   transitionStatus(streamId: string, args: JobStatusTransition): Promise<boolean>;
+
+  /**
+   * Atomically claim an idempotency key so a retried start-generation request
+   * attaches to the original stream instead of starting a second billed
+   * generation. The first caller gets `{ claimed: true }` and should create the
+   * job; a later caller for the same key gets `{ claimed: false, existing }`
+   * carrying the stream the original request is already driving.
+   *
+   * Atomicity: single-key `SET NX` on Redis (one hash slot, cluster-safe) /
+   * check-and-set on the single-threaded in-memory store.
+   *
+   * @param key - Caller-scoped key, e.g. `${userId}:${clientRequestId}`.
+   * @param value - The stream a duplicate request should attach to.
+   * @param ttlSeconds - Claim lifetime; outlive the generation so a late retry still dedups.
+   */
+  claimIdempotencyKey(
+    key: string,
+    value: IdempotencyClaimValue,
+    ttlSeconds: number,
+  ): Promise<IdempotencyClaimResult>;
+
+  /**
+   * Release a previously-claimed idempotency key so the submission can be retried
+   * (e.g. the start failed before generation began). No-op if the key is absent.
+   */
+  releaseIdempotencyKey(key: string): Promise<void>;
 
   /** Delete a job */
   deleteJob(streamId: string): Promise<void>;
@@ -572,7 +616,13 @@ export interface IJobStore {
  * Implementations can use EventEmitter, Redis Pub/Sub, etc.
  */
 export interface IEventTransport {
-  /** Subscribe to events for a stream. `ready` resolves once the transport can receive messages. */
+  /**
+   * Subscribe to events for a stream. `ready` resolves once the transport can receive messages.
+   *
+   * Redis callers can defer sequenced delivery until `syncReorderBuffer()` establishes the
+   * replay frontier. This prevents pub/sub copies of locally buffered events from racing ahead
+   * of, and then being duplicated by, first-subscriber replay.
+   */
   subscribe(
     streamId: string,
     handlers: {
@@ -580,10 +630,15 @@ export interface IEventTransport {
       onDone?: (event: unknown) => void;
       onError?: (error: string) => void;
     },
+    options?: { deferSequenceDelivery?: boolean },
   ): { unsubscribe: () => void; ready?: Promise<void> };
 
-  /** Publish a chunk event - returns Promise in Redis mode for ordered delivery */
-  emitChunk(streamId: string, event: unknown): void | Promise<void>;
+  /**
+   * Publish a chunk event.
+   * Redis returns the assigned absolute sequence so locally replayed events can
+   * advance a subscriber to the exact ordering frontier.
+   */
+  emitChunk(streamId: string, event: unknown): void | Promise<void | number>;
 
   /** Publish a done event - returns Promise in Redis mode for ordered delivery */
   emitDone(streamId: string, event: unknown): void | Promise<void>;
@@ -617,12 +672,11 @@ export interface IEventTransport {
 
   /**
    * Advance subscriber reorder buffer to match publisher sequence (cross-replica safe).
-   * @param earlyReplayCount - Number of events replayed from earlyEventBuffer (same-replica).
-   *   Pending entries with seq < earlyReplayCount are duplicates and are pruned; entries at or
-   *   above are live chunks that arrived during the async GET window and are preserved.
-   *   When 0/undefined (cross-replica), all pending entries are treated as live.
+   * @param replayedNextSeq - Absolute Redis sequence immediately after the last event replayed
+   *   from the local early-event buffer. Pending entries below it are duplicates; entries at
+   *   or above it are live. Undefined means no local replay, so the Redis counter is trusted.
    */
-  syncReorderBuffer?(streamId: string, earlyReplayCount?: number): void | Promise<void>;
+  syncReorderBuffer?(streamId: string, replayedNextSeq?: number): void | Promise<void>;
 
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;

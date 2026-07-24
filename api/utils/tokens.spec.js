@@ -350,6 +350,12 @@ describe('getModelMaxTokens', () => {
     expect(getModelMaxTokens('gemini-3.5-flash', EModelEndpoint.google)).toBe(
       maxTokensMap[EModelEndpoint.google]['gemini-3.5-flash'],
     );
+    expect(getModelMaxTokens('gemini-3.5-flash-lite', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-3.5-flash-lite'],
+    );
+    expect(getModelMaxTokens('gemini-3.6-flash', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-3.6-flash'],
+    );
     expect(getModelMaxTokens('gemini-2.5-pro', EModelEndpoint.google)).toBe(
       maxTokensMap[EModelEndpoint.google]['gemini-2.5-pro'],
     );

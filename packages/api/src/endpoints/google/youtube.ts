@@ -16,6 +16,9 @@ import type { MessageContentComplex } from '@librechat/agents';
 /** Per-message cap on auto-injected YouTube video parts for Gemini 2.5+ (the API allows up to 10). */
 export const DEFAULT_MAX_YOUTUBE_PARTS = 5;
 
+/** Canonical form every extracted YouTube link is normalized to before injection. */
+const YOUTUBE_WATCH_PREFIX = 'https://www.youtube.com/watch?v=';
+
 /** A Gemini video-understanding content block (becomes a `fileData` part downstream). */
 export interface YouTubeVideoPart {
   type: 'media';
@@ -197,7 +200,7 @@ export function extractYouTubeUrls(text?: string | null, max?: number): string[]
       continue;
     }
     seen.add(videoId);
-    urls.push(`https://www.youtube.com/watch?v=${videoId}`);
+    urls.push(`${YOUTUBE_WATCH_PREFIX}${videoId}`);
     if (urls.length >= limit) {
       break;
     }
@@ -211,6 +214,25 @@ export function hasUrlContextTool(tools: unknown): boolean {
     return false;
   }
   return tools.some((tool) => tool != null && typeof tool === 'object' && 'urlContext' in tool);
+}
+
+/**
+ * True when a formatted message carries a YouTube video part produced by
+ * `appendYouTubeVideoParts`. Read after injection so a provider rejection can be attributed to the
+ * video rather than reported as a generic failure — Google returns the same opaque
+ * `INVALID_ARGUMENT` for an over-length or otherwise unreadable video as for unrelated bad input.
+ */
+export function hasYouTubeVideoParts(content: string | MessageContentComplex[]): boolean {
+  if (!Array.isArray(content)) {
+    return false;
+  }
+  return content.some((part) => {
+    if (part == null || typeof part !== 'object') {
+      return false;
+    }
+    const { fileUri } = part as { fileUri?: unknown };
+    return typeof fileUri === 'string' && fileUri.startsWith(YOUTUBE_WATCH_PREFIX);
+  });
 }
 
 function toBaseParts(content: string | MessageContentComplex[]): MessageContentComplex[] {

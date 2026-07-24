@@ -70,7 +70,9 @@ const {
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
   hasUrlContextTool,
+  hasYouTubeVideoParts,
   appendYouTubeVideoParts,
+  resolveGoogleVideoError,
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
@@ -601,6 +603,9 @@ class AgentClient extends BaseClient {
         max,
         mimeType,
       });
+      /** Google rejects an unusable video with a generic `INVALID_ARGUMENT` that names no cause,
+       *  so `#sendCompletion` can only attribute one by knowing this turn carried a video. */
+      this.injectedYouTubeVideo = hasYouTubeVideoParts(latestFormatted.content);
     }
 
     payload = formattedMessages;
@@ -1915,9 +1920,16 @@ class AgentClient extends BaseClient {
           '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
           err,
         );
+        const videoError = resolveGoogleVideoError({
+          error: err,
+          provider: this.options.agent?.provider,
+          hasYouTubeVideo: this.injectedYouTubeVideo,
+        });
         this.contentParts.push({
           type: ContentTypes.ERROR,
-          [ContentTypes.ERROR]: `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
+          [ContentTypes.ERROR]:
+            videoError ??
+            `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
         });
       }
     } finally {

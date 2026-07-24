@@ -81,7 +81,7 @@ jest.mock('~/agents/checkpointer', () => ({
   getAgentCheckpointer: jest.fn().mockResolvedValue({}),
 }));
 
-import { Run } from '@librechat/agents';
+import { Run, buildChildInputs } from '@librechat/agents';
 
 /** Minimal RunAgent factory */
 function makeAgent(
@@ -1018,6 +1018,36 @@ describe('subagentConfigs', () => {
     });
     expect(configs[0].agentInputs).toBeDefined();
     expect(configs[0].self).toBeUndefined();
+  });
+
+  it('preserves explicit nested subagents across the SDK child graph boundary', async () => {
+    const grandchild = makeAgent({ id: 'agent_grandchild', name: 'Grandchild' });
+    const child = makeAgent({
+      id: 'agent_child',
+      name: 'Child',
+      subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_grandchild'] },
+      subagentAgentConfigs: [grandchild],
+    });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+
+    expect(agents[0].maxSubagentDepth).toBe(MAX_SUBAGENT_DEPTH);
+    const childConfig = (agents[0].subagentConfigs as Parameters<typeof buildChildInputs>[0][])[0];
+    expect(childConfig.allowNested).toBe(true);
+
+    const childInputs = buildChildInputs(childConfig, 'agent_child', MAX_SUBAGENT_DEPTH);
+    expect(childInputs.maxSubagentDepth).toBe(MAX_SUBAGENT_DEPTH - 1);
+    expect(childInputs.subagentConfigs).toHaveLength(1);
+    expect(childInputs.subagentConfigs?.[0]).toMatchObject({
+      type: 'agent_grandchild',
+      allowNested: true,
+    });
   });
 
   it('combines self-spawn and explicit subagents when both enabled', async () => {

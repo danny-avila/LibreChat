@@ -2212,10 +2212,10 @@ export class MCPConnection extends EventEmitter {
     };
   }
 
-  private async closeAgents(): Promise<void> {
+  private async closeAgents(force = false): Promise<void> {
     const logPrefix = this.getLogPrefix();
     const closing = this.agents.map((agent) =>
-      agent.close().catch((err: unknown) => {
+      (force ? agent.destroy() : agent.close()).catch((err: unknown) => {
         logger.debug(`${logPrefix} Agent close error (non-fatal):`, err);
       }),
     );
@@ -2259,14 +2259,14 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
-  public async disconnect(resetCycleTracking = true): Promise<void> {
+  public async disconnect(resetCycleTracking = true, forceAgentClose = false): Promise<void> {
     try {
       if (this.transport) {
         await this.terminateStreamableSession();
         await this.client.close();
         this.transport = null;
       }
-      await this.closeAgents();
+      await this.closeAgents(forceAgentClose);
       if (this.connectionState === 'disconnected') {
         return;
       }
@@ -2278,6 +2278,13 @@ export class MCPConnection extends EventEmitter {
         this.recordCycle();
       }
     }
+  }
+
+  /** Permanently tears down a connection that will never be reused. */
+  public async dispose(): Promise<void> {
+    this.shouldStopReconnecting = true;
+    this.removeAllListeners();
+    await this.disconnect(true, true);
   }
 
   async fetchResources(): Promise<t.MCPResource[]> {

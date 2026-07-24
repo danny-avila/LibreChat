@@ -8,6 +8,8 @@ import type {
   IJobStore,
   JobStatus,
   JobStatusTransition,
+  IdempotencyClaimValue,
+  IdempotencyClaimResult,
 } from '~/stream/interfaces/IJobStore';
 import {
   STEER_ENQUEUE_NOT_RUNNING,
@@ -63,6 +65,12 @@ export class InMemoryJobStore implements IJobStore {
   /** Parked terminally-drained steers — lifecycle-independent of `jobs` (the
    *  default completeJob path deletes the job record immediately). */
   private parkedSteers = new Map<string, { payload: string; expiresAt: number }>();
+
+  /** Maps idempotency key -> claimed stream + expiry, deduping retried start requests. */
+  private idempotencyClaims = new Map<
+    string,
+    { value: IdempotencyClaimValue; expiresAt: number }
+  >();
 
   /** Time to keep completed jobs before cleanup (0 = immediate) */
   private ttlAfterComplete = 0;
@@ -191,6 +199,24 @@ export class InMemoryJobStore implements IJobStore {
     return true;
   }
 
+  async claimIdempotencyKey(
+    key: string,
+    value: IdempotencyClaimValue,
+    ttlSeconds: number,
+  ): Promise<IdempotencyClaimResult> {
+    const now = Date.now();
+    const existing = this.idempotencyClaims.get(key);
+    if (existing && existing.expiresAt > now) {
+      return { claimed: false, existing: existing.value };
+    }
+    this.idempotencyClaims.set(key, { value, expiresAt: now + ttlSeconds * 1000 });
+    return { claimed: true };
+  }
+
+  async releaseIdempotencyKey(key: string): Promise<void> {
+    this.idempotencyClaims.delete(key);
+  }
+
   async deleteJob(streamId: string): Promise<void> {
     this.jobs.delete(streamId);
     this.contentState.delete(streamId);
@@ -234,6 +260,14 @@ export class InMemoryJobStore implements IJobStore {
     for (const [streamId, parked] of this.parkedSteers) {
       if (parked.expiresAt <= now) {
         this.parkedSteers.delete(streamId);
+      }
+    }
+
+    // Idempotency keys are unique per submission, so expired claims are never
+    // overwritten — prune them here to keep the map bounded.
+    for (const [key, claim] of this.idempotencyClaims) {
+      if (claim.expiresAt <= now) {
+        this.idempotencyClaims.delete(key);
       }
     }
 
@@ -366,6 +400,7 @@ export class InMemoryJobStore implements IJobStore {
     this.steerQueues.clear();
     this.closedSteerQueues.clear();
     this.parkedSteers.clear();
+    this.idempotencyClaims.clear();
     logger.debug('[InMemoryJobStore] Destroyed');
   }
 

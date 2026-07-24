@@ -3,7 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Copy, CopyCheck } from 'lucide-react';
 import { useGetSharedLinkQuery } from 'librechat-data-provider/react-query';
 import { OGDialogTemplate, Button, Spinner, OGDialog, Checkbox, Label } from '@librechat/client';
-import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
+import { useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
 import { useLocalize, useCopyToClipboard } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import SharedLinkButton from './SharedLinkButton';
@@ -38,7 +38,7 @@ export default function ShareButton({
       setAnnouncement('');
     }, 1000);
   };
-  const latestMessage = useLatestMessage(0);
+  const latestMessageId = useLatestMessageId(0);
   const { data: share, isLoading } = useGetSharedLinkQuery(conversationId);
   const shareId = share?.shareId ?? '';
 
@@ -61,7 +61,7 @@ export default function ShareButton({
       <SharedLinkButton
         share={share}
         conversationId={conversationId}
-        targetMessageId={latestMessage?.messageId ?? undefined}
+        targetMessageId={latestMessageId ?? undefined}
         showQR={showQR}
         setShowQR={setShowQR}
         setSharedLink={setSharedLink}

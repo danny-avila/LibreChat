@@ -21,7 +21,9 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   const [filesLoading, setFilesLoading] = useState(false);
 
   const queryClient = useQueryClient();
-  const abortMutation = useAbortStreamMutation();
+  /** `mutateAsync` is bound once per observer; the mutation result object is
+   * fresh every render and would defeat the context value memo below. */
+  const { mutateAsync: abortStream } = useAbortStreamMutation();
   const convertSteersToQueued = useSteerConvert();
   const { captureSubmission, clearSubmissionsUnlessReplaced } = useAbortCleanup(index);
 
@@ -187,7 +189,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
       const submissionAtAbort = captureSubmission();
       try {
         console.log('[useChatHelpers] Calling abort mutation for:', conversationId);
-        const response = await abortMutation.mutateAsync({ conversationId });
+        const response = await abortStream({ conversationId });
         console.log('[useChatHelpers] Abort mutation succeeded');
         // The response's `aborted` field is the RESOLVED job id — authoritative
         // when this turn still holds the `new` placeholder. Chips and the drain
@@ -230,7 +232,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     conversationId,
     endpoint,
     endpointType,
-    abortMutation,
+    abortStream,
     captureSubmission,
     convertSteersToQueued,
     signalInterruptDrain,

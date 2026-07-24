@@ -255,4 +255,59 @@ describe('GenerationJobManager - generation abort on reaping', () => {
       jest.useRealTimers();
     }
   });
+
+  it('does not reap a replacement runtime from a stale hasJob result', async () => {
+    const { GenerationJobManagerClass } = await import('../GenerationJobManager');
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+
+    const store = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+    const transport = new InMemoryEventTransport();
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore: store,
+      eventTransport: transport,
+      isRedis: false,
+    });
+    manager.initialize();
+
+    const streamId = 'replacement-during-cleanup';
+    const original = await manager.createJob(streamId, 'user-1', streamId);
+
+    let releaseHasJob!: (exists: boolean) => void;
+    let markHasJobStarted!: () => void;
+    const hasJobStarted = new Promise<void>((resolve) => {
+      markHasJobStarted = resolve;
+    });
+    const hasJobSpy = jest.spyOn(store, 'hasJob').mockImplementationOnce(() => {
+      markHasJobStarted();
+      return new Promise<boolean>((resolve) => {
+        releaseHasJob = resolve;
+      });
+    });
+
+    try {
+      const cleanupPromise = (
+        manager as unknown as {
+          cleanup: () => Promise<void>;
+        }
+      ).cleanup();
+      await hasJobStarted;
+
+      // The old lookup is still in flight while a fresh generation replaces
+      // both the store record and the manager's runtime under the same ID.
+      const replacement = await manager.createJob(streamId, 'user-1', streamId);
+      releaseHasJob(false);
+      await cleanupPromise;
+
+      expect(original.abortController.signal.aborted).toBe(true);
+      expect(replacement.abortController.signal.aborted).toBe(false);
+      expect(await manager.hasJob(streamId)).toBe(true);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+      expect(manager.getRuntimeStats().eventTransportStreams).toBe(1);
+    } finally {
+      hasJobSpy.mockRestore();
+      await manager.destroy();
+    }
+  });
 });

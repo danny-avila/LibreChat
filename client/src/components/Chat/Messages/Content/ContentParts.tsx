@@ -7,8 +7,8 @@ import type {
   Agents,
 } from 'librechat-data-provider';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
+import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
-import { mapAttachments, groupSequentialToolCalls } from '~/utils';
 import { MessageContext, SearchContext } from '~/Providers';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import { EditTextPart, EmptyText } from './Parts';
@@ -20,6 +20,10 @@ import Part from './Part';
 
 const getToolCallId = (part: TMessageContentParts): string =>
   (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+
+const getPartAgentId = (part: TMessageContentParts): string | undefined =>
+  (part as { agentId?: string })?.agentId ??
+  (part?.[ContentTypes.TOOL_CALL] as { agentId?: string } | undefined)?.agentId;
 
 const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string => {
   const firstPart = parts[0];
@@ -243,7 +247,10 @@ const ContentParts = memo(function ContentParts({
           isCreatedByUser={isCreatedByUser}
           nextType={content?.[idx + 1]?.type}
           isSubmitting={effectiveIsSubmitting}
-          partAttachments={attachmentMap[getToolCallId(part)]}
+          partAttachments={filterAttachmentsForPart(
+            attachmentMap[getToolCallId(part)],
+            getPartAgentId(part),
+          )}
         />
       );
     },
@@ -274,7 +281,10 @@ const ContentParts = memo(function ContentParts({
           isCreatedByUser={isCreatedByUser}
           nextType={content?.[idx + 1]?.type}
           isSubmitting={effectiveIsSubmitting}
-          partAttachments={attachmentMap[getToolCallId(part)]}
+          partAttachments={filterAttachmentsForPart(
+            attachmentMap[getToolCallId(part)],
+            getPartAgentId(part),
+          )}
           hideAttachments
           onToolExpand={onToolExpand}
         />
@@ -313,7 +323,9 @@ const ContentParts = memo(function ContentParts({
         }
         const groupId = getToolGroupId(group.parts, fallbackScope);
         const groupAttachments = group.parts.flatMap(
-          ({ part }) => attachmentMap[getToolCallId(part)] ?? [],
+          ({ part }) =>
+            filterAttachmentsForPart(attachmentMap[getToolCallId(part)], getPartAgentId(part)) ??
+            [],
         );
         return { ...group, groupId, groupAttachments };
       }),

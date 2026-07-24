@@ -2,6 +2,7 @@ export interface MockPublisher {
   publish: jest.Mock;
   incr: jest.Mock;
   expire: jest.Mock;
+  ttl: jest.Mock;
   get: jest.Mock;
   del: jest.Mock;
   eval: jest.Mock;
@@ -10,6 +11,7 @@ export interface MockPublisher {
 /** Mock publisher with Redis command simulation for atomic sequence counters */
 export function createMockPublisher(): MockPublisher {
   const counters = new Map<string, number>();
+  const ttls = new Map<string, number>();
   const publisher: MockPublisher = {
     publish: jest.fn().mockResolvedValue(1),
     incr: jest.fn().mockImplementation((key: string) => {
@@ -17,7 +19,19 @@ export function createMockPublisher(): MockPublisher {
       counters.set(key, current);
       return Promise.resolve(current);
     }),
-    expire: jest.fn().mockResolvedValue(1),
+    expire: jest.fn().mockImplementation((key: string, ttl: number) => {
+      if (!counters.has(key)) {
+        return Promise.resolve(0);
+      }
+      ttls.set(key, ttl);
+      return Promise.resolve(1);
+    }),
+    ttl: jest.fn().mockImplementation((key: string) => {
+      if (!counters.has(key)) {
+        return Promise.resolve(-2);
+      }
+      return Promise.resolve(ttls.get(key) ?? -1);
+    }),
     get: jest.fn().mockImplementation((key: string) => {
       const val = counters.get(key);
       return Promise.resolve(val != null ? String(val) : null);
@@ -25,6 +39,7 @@ export function createMockPublisher(): MockPublisher {
     del: jest.fn().mockImplementation((...keys: string[]) => {
       for (const key of keys) {
         counters.delete(key);
+        ttls.delete(key);
       }
       return Promise.resolve(keys.length);
     }),
@@ -41,14 +56,21 @@ export function createMockPublisher(): MockPublisher {
       _script: string,
       _numKeys: number,
       seqKey: string,
+      jobKey: string,
       channel: string,
       prefix: string,
       suffix: string,
       ttlSeconds: string,
     ) => {
       const val = (await publisher.incr(seqKey)) as number;
-      if (val === 1) {
-        await publisher.expire(seqKey, Number(ttlSeconds));
+      let ttl = Number(ttlSeconds);
+      const seqTtl = (await publisher.ttl(seqKey)) as number;
+      if (seqTtl < Math.floor(ttl / 2)) {
+        const jobTtl = (await publisher.ttl(jobKey)) as number;
+        if (jobTtl > ttl) {
+          ttl = jobTtl;
+        }
+        await publisher.expire(seqKey, ttl);
       }
       const seq = val - 1;
       await publisher.publish(channel, `${prefix}${seq}${suffix}`);

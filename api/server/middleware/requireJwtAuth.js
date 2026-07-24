@@ -121,6 +121,14 @@ const requireJwtAuth = (req, res, next) => {
       fallback_succeeded: false,
       attempted_strategies: strategies,
       final_strategy: strategy,
+      // Surface the primary (openidJwt) failure alongside the final strategy's reason so a
+      // reused-token failure is not misattributed to the HS256 `jwt` fallback's "invalid
+      // algorithm" error, which is the fallback rejecting an RS256 provider token, not the
+      // real reason openidJwt did not authenticate.
+      ...(fallbackAttempted && {
+        primary_failure_reason: primaryFailureReason,
+        primary_failure_error_name: primaryFailureErrorName,
+      }),
       reason: getAuthFailureReason(err, info),
       error_name: getAuthFailureErrorName(err, info),
       status: status || 401,

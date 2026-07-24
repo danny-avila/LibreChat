@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions, isAssistantsEndpoint } from 'librechat-data-provider';
+import { useGetLatestMessage } from '~/hooks/Messages/useLatestMessage';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import useGetAgentsConfig from '~/hooks/Agents/useGetAgentsConfig';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
-import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
 import store from '~/store';
 
 /** Event keys that shouldn't trigger a command */
@@ -70,7 +70,7 @@ const useHandleKeyUp = ({
   });
   const { agentsConfig } = useGetAgentsConfig();
   const { skillsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
-  const latestMessage = useLatestMessage(index);
+  const getLatestMessage = useGetLatestMessage(index);
   const endpoint = useRecoilValue(store.effectiveEndpointByIndex(index));
   const setShowMentionPopover = useSetRecoilState(store.showMentionPopoverFamily(index));
   const setShowPlusPopover = useSetRecoilState(store.showPlusPopoverFamily(index));
@@ -146,6 +146,7 @@ const useHandleKeyUp = ({
 
   const handleUpArrow = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      const latestMessage = getLatestMessage();
       if (!latestMessage) {
         return;
       }
@@ -157,7 +158,7 @@ const useHandleKeyUp = ({
       event.preventDefault();
       element.click();
     },
-    [latestMessage],
+    [getLatestMessage],
   );
 
   /**

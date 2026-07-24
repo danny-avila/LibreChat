@@ -10,6 +10,8 @@ import type {
   IJobStore,
   JobStatus,
   JobStatusTransition,
+  IdempotencyClaimValue,
+  IdempotencyClaimResult,
 } from '~/stream/interfaces/IJobStore';
 import {
   STEER_ENQUEUE_NOT_RUNNING,
@@ -21,16 +23,16 @@ import { toPendingSteer } from '~/stream/SteeringLifecycle';
 
 /**
  * Atomic compare-and-set on the job hash — the single-winner decision for a
- * status transition. Touches ONLY the job key, which lives on one hash slot, so
- * it is atomic on both single-node and Redis Cluster (cross-slot membership
- * sets are reconciled by the caller AFTER this decides the winner).
+ * status transition. The job and event-sequence keys share the stream hash tag,
+ * so updating the job and extending the counter TTL is atomic on both single-node
+ * Redis and Redis Cluster (cross-slot membership sets are reconciled afterward).
  *
  * Guards on the current `status` and, when ARGV[2] is non-empty, on the flat
  * `pendingActionId` field — so a stale decision targeting a different action
  * loses. On success: removes `clear` fields, writes `status`+patch pairs,
  * refreshes the job-hash TTL. Returns 1 if it fired, 0 otherwise.
  *
- *   KEYS: [job]
+ *   KEYS: [job, eventSequence]
  *   ARGV: [from, expectActionId | "", ttl, hdelCount, ...hdelFields, ...hsetPairs]
  */
 const JOB_CAS_LUA =
@@ -44,7 +46,21 @@ const JOB_CAS_LUA =
   'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
   'if #hset > 0 then redis.call("HSET", KEYS[1], unpack(hset)) end ' +
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
+  'local seqTtl = redis.call("TTL", KEYS[2]) ' +
+  'if seqTtl >= 0 and seqTtl < ttl then redis.call("EXPIRE", KEYS[2], ttl) end ' +
   'return 1';
+
+/**
+ * Atomic idempotency claim. Single-key `SET NX PX`: returns nil when this caller
+ * won the claim, or the already-stored stream JSON when a prior request holds it.
+ * Touches ONLY KEYS[1], so it is atomic on single-node and Redis Cluster.
+ *
+ *   KEYS: [idempotency]
+ *   ARGV: [valueJson, ttlMs]
+ */
+const IDEMPOTENCY_CLAIM_LUA =
+  'if redis.call("SET", KEYS[1], ARGV[1], "NX", "PX", tonumber(ARGV[2])) then return false end ' +
+  'return redis.call("GET", KEYS[1])';
 
 /**
  * Atomic job (re)creation for the two same-slot keys: reset the steer queue
@@ -264,6 +280,8 @@ const PARKED_RECOVERY_TTL_S: number = 300;
 const KEYS = {
   /** Job metadata: stream:{streamId}:job */
   job: (streamId: string) => `stream:{${streamId}}:job`,
+  /** Pub/sub event sequence counter: stream:{streamId}:seq */
+  sequence: (streamId: string) => `stream:{${streamId}}:seq`,
   /** Chunk stream (Redis Streams): stream:{streamId}:chunks */
   chunks: (streamId: string) => `stream:{${streamId}}:chunks`,
   /** Run steps: stream:{streamId}:runsteps */
@@ -280,6 +298,8 @@ const KEYS = {
   /** User's active jobs set, tenant-qualified when tenantId is available */
   userJobs: (userId: string, tenantId?: string) =>
     tenantId ? `stream:user:{${tenantId}:${userId}}:jobs` : `stream:user:{${userId}}:jobs`,
+  /** Idempotency claim for a start-generation request: stream:idem:{userId:clientRequestId} */
+  idempotency: (key: string) => `stream:idem:{${key}}`,
 };
 
 /**
@@ -641,8 +661,9 @@ export class RedisJobStore implements IJobStore {
     //    resolves can never both win (and drive the run twice).
     const won = await this.redis.eval(
       JOB_CAS_LUA,
-      1,
+      2,
       key,
+      KEYS.sequence(streamId),
       from,
       expectActionId ?? '',
       String(ttl),
@@ -689,6 +710,33 @@ export class RedisJobStore implements IJobStore {
       await pipeline.exec();
     }
     return true;
+  }
+
+  async claimIdempotencyKey(
+    key: string,
+    value: IdempotencyClaimValue,
+    ttlSeconds: number,
+  ): Promise<IdempotencyClaimResult> {
+    const result = await this.redis.eval(
+      IDEMPOTENCY_CLAIM_LUA,
+      1,
+      KEYS.idempotency(key),
+      JSON.stringify(value),
+      String(ttlSeconds * 1000),
+    );
+    if (result == null) {
+      return { claimed: true };
+    }
+    try {
+      return { claimed: false, existing: JSON.parse(result as string) as IdempotencyClaimValue };
+    } catch {
+      // Unreachable in practice (we wrote the JSON); proceed rather than dedup to a broken target.
+      return { claimed: false };
+    }
+  }
+
+  async releaseIdempotencyKey(key: string): Promise<void> {
+    await this.redis.del(KEYS.idempotency(key));
   }
 
   private async updateExistingJobHash(key: string, fields: string[]): Promise<boolean> {
