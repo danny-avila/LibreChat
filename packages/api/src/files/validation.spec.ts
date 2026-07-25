@@ -267,6 +267,44 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
       expect(result.isValid).toBe(true);
     });
 
+    it.each(['claude-opus-5', 'claude-sonnet-5', 'claude-opus-4-8', 'claude-fable-5'])(
+      'should exempt bare application inference profile ID %s',
+      async (model) => {
+        /** A LibreChat model ID mapping to an application inference profile has
+         * no `anthropic.` segment. */
+        const pdfBuffer = createMockPdfBuffer(10);
+        const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider, undefined, model);
+
+        expect(result.isValid).toBe(true);
+        expect(result.error).toBeUndefined();
+      },
+    );
+
+    it.each(['claude-4-6-opus', 'claude-5-sonnet', 'anthropic.claude-4-6-opus'])(
+      'should exempt version-first ID %s',
+      async (model) => {
+        const pdfBuffer = createMockPdfBuffer(10);
+        const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider, undefined, model);
+
+        expect(result.isValid).toBe(true);
+      },
+    );
+
+    it.each([
+      'anthropic.claude-3-5-sonnet-20241022-v2:0',
+      'anthropic.claude-3-opus-20240229-v1:0',
+      'claude-3-5-sonnet',
+      'claude-3-opus',
+      'mistral.mistral-large-2402-v1:0',
+    ])('should NOT exempt pre-Claude-4 or non-Claude model %s', async (model) => {
+      /** The relaxed prefix must not pull in Claude 3.x or other providers. */
+      const pdfBuffer = createMockPdfBuffer(10);
+      const result = await validatePdf(pdfBuffer, pdfBuffer.length, provider, undefined, model);
+
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('4.5MB');
+    });
+
     it('should still enforce 4.5MB for non-exempt models without config override', async () => {
       const pdfBuffer = createMockPdfBuffer(5);
       const model = 'anthropic.claude-3-5-sonnet-20241022-v2:0';
