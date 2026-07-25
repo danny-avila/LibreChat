@@ -32,7 +32,7 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 
 function jobHashFromCreationCall(call: unknown[]): Record<string, string> {
   const keyCount = Number(call[1]);
-  const fields = call.slice(4 + keyCount);
+  const fields = call.slice(5 + keyCount);
   return Object.fromEntries(
     Array.from({ length: fields.length / 2 }, (_, index) => [
       String(fields[index * 2]),
@@ -68,6 +68,7 @@ describe('RedisJobStore', () => {
       runStepsKey,
       steersKey,
       parkedSteersKey,
+      generationEpochKey,
       from,
       actionId,
       createdAt,
@@ -75,6 +76,9 @@ describe('RedisJobStore', () => {
     expect(script).toContain('HGET", KEYS[1], "createdAt"');
     expect(script).toContain('redis.call("DEL", KEYS[5])');
     expect(script).toContain('redis.call("SET", KEYS[6]');
+    expect(script).toContain(
+      'redis.call("SET", KEYS[7], currentCreatedAt, "EX", ttl + generationEpochGraceTtl)',
+    );
     expect(script.indexOf('local ownerUserId')).toBeLessThan(
       script.indexOf('redis.call("EXPIRE", KEYS[1], ttl)'),
     );
@@ -86,20 +90,90 @@ describe('RedisJobStore', () => {
       runStepsKey,
       steersKey,
       parkedSteersKey,
+      generationEpochKey,
       from,
       actionId,
       createdAt,
     ]).toEqual([
-      6,
+      7,
       'stream:{stream-epoch}:job',
       'stream:{stream-epoch}:seq',
       'stream:{stream-epoch}:chunks',
       'stream:{stream-epoch}:runsteps',
       'stream:{stream-epoch}:steers',
       'stream:{stream-epoch}:parked',
+      'stream:{stream-epoch}:generation-epoch',
       'running',
       '',
       '123456',
+    ]);
+  });
+
+  test('retains the generation epoch beyond the paused job TTL', async () => {
+    const evalTransition = jest.fn().mockResolvedValue(0);
+    const redis = {
+      isCluster: true,
+      eval: evalTransition,
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis, { requiresActionTtl: 4321 });
+
+    await store.transitionStatus('stream-paused-epoch', {
+      from: 'running',
+      to: 'requires_action',
+      expectCreatedAt: 123456,
+    });
+
+    const transitionCall = evalTransition.mock.calls[0];
+    expect(transitionCall[0]).toContain(
+      'redis.call("SET", KEYS[7], currentCreatedAt, "EX", ttl + generationEpochGraceTtl)',
+    );
+    expect(transitionCall[12]).toBe('4321');
+    expect(transitionCall[13]).toBe('0');
+    expect(transitionCall[17]).toBe('300');
+  });
+
+  test('seeds the guarded epoch when reaping a legacy job without a marker', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(100_000);
+    const evalCommand = jest.fn().mockResolvedValue(1);
+    const redis = {
+      isCluster: true,
+      eval: evalCommand,
+      hgetall: jest
+        .fn()
+        .mockResolvedValueOnce({
+          streamId: 'legacy-reap',
+          userId: 'user-1',
+          status: 'running',
+          createdAt: '1',
+          syncSent: '0',
+        })
+        .mockResolvedValue({}),
+      smembers: jest.fn().mockResolvedValueOnce(['legacy-reap']).mockResolvedValueOnce([]),
+      srem: jest.fn().mockResolvedValue(1),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis, { runningTtl: 60 });
+
+    try {
+      await expect(store.cleanup()).resolves.toBe(1);
+    } finally {
+      now.mockRestore();
+    }
+
+    const reapCall = evalCommand.mock.calls[0];
+    expect(reapCall[0]).toContain('redis.call("SET", KEYS[6], ARGV[1], "EX", tonumber(ARGV[5]))');
+    expect(reapCall.slice(1)).toEqual([
+      6,
+      'stream:{legacy-reap}:job',
+      'stream:{legacy-reap}:chunks',
+      'stream:{legacy-reap}:runsteps',
+      'stream:{legacy-reap}:steers',
+      'stream:{legacy-reap}:parked',
+      'stream:{legacy-reap}:generation-epoch',
+      '1',
+      '100000',
+      '60000',
+      '300',
+      '300',
     ]);
   });
 
@@ -213,15 +287,24 @@ describe('RedisJobStore', () => {
     await store.createJob('stream-replacement', 'user-1');
 
     const [script, keyCount, ...args] = evalJobCreation.mock.calls[0];
+    expect(script).toContain('local retainedEpoch = tonumber(redis.call("GET", KEYS[6]))');
+    expect(script).toContain(
+      'if previousCreatedAt and previousCreatedAt >= createdAt then createdAt = previousCreatedAt + 1 end',
+    );
     expect(script).toContain('redis.call("DEL", KEYS[1], KEYS[2], KEYS[3], KEYS[4], KEYS[5])');
-    expect([keyCount, ...args.slice(0, 5)]).toEqual([
-      5,
+    expect(script).toContain(
+      'redis.call("SET", KEYS[6], tostring(createdAt), "EX", ttl + generationEpochGraceTtl)',
+    );
+    expect([keyCount, ...args.slice(0, 6)]).toEqual([
+      6,
       'stream:{stream-replacement}:job',
       'stream:{stream-replacement}:chunks',
       'stream:{stream-replacement}:runsteps',
       'stream:{stream-replacement}:steers',
       'stream:{stream-replacement}:parked',
+      'stream:{stream-replacement}:generation-epoch',
     ]);
+    expect(args[8]).toBe('300');
     expect(store.getCollectedUsage('stream-replacement')).toEqual([]);
   });
 

@@ -846,9 +846,10 @@ describe('RedisEventTransport', () => {
       1,
     );
     const guardedPublish = mockPublisher.eval.mock.calls[1];
-    expect(guardedPublish[0]).toContain('redis.call("HGET", KEYS[2], "createdAt") ~= ARGV[5]');
-    expect(guardedPublish[8]).toBe('777');
-    expect(JSON.parse(`${guardedPublish[5]}1${guardedPublish[6]}`)).toMatchObject({
+    expect(guardedPublish[0]).toContain('local currentCreatedAt = redis.call("HGET", KEYS[2]');
+    expect(guardedPublish[9]).toBe('777');
+    expect(guardedPublish[10]).toBe('0');
+    expect(JSON.parse(`${guardedPublish[6]}1${guardedPublish[7]}`)).toMatchObject({
       type: 'chunk',
       data: { text: 'World' },
       generationId: 777,
@@ -863,6 +864,40 @@ describe('RedisEventTransport', () => {
     await expect(emitChunkWithReceipt(transport, 'failed-stream', { text: 'Hello' })).resolves.toBe(
       false,
     );
+
+    transport.destroy();
+  });
+
+  it('guards terminal publications with the winning finalized epoch', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+
+    await transport.emitDone('terminal-guard', { final: true }, 777);
+    await transport.emitError('terminal-guard', 'failed', 777);
+    await emitChunkWithReceipt(transport, 'terminal-guard', { text: 'delta' }, 777);
+
+    const [donePublish, errorPublish, chunkPublish] = mockPublisher.eval.mock.calls;
+    expect(donePublish[0]).toContain(
+      'if redis.call("EXISTS", KEYS[2]) == 1 or ARGV[6] ~= "1" then return -1 end',
+    );
+    expect(donePublish[0]).toContain(
+      'redis.call("SET", KEYS[3], ARGV[5], "EX", tonumber(ARGV[7]), "NX")',
+    );
+    expect(donePublish[0]).not.toContain('redis.call("DEL", KEYS[3])');
+    expect(donePublish[4]).toBe('stream:{terminal-guard}:generation-epoch');
+    expect(donePublish[9]).toBe('777');
+    expect(donePublish[10]).toBe('1');
+    expect(donePublish[11]).toBe('300');
+    expect(errorPublish[9]).toBe('777');
+    expect(errorPublish[10]).toBe('1');
+    expect(errorPublish[11]).toBe('300');
+    expect(chunkPublish[9]).toBe('777');
+    expect(chunkPublish[10]).toBe('0');
+    expect(chunkPublish[11]).toBe('300');
 
     transport.destroy();
   });

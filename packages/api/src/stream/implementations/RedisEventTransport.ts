@@ -20,6 +20,8 @@ const KEYS = {
   sequence: (streamId: string) => `stream:{${streamId}}:seq`,
   /** Job metadata, used to keep the sequence counter alive for the full job lifetime */
   job: (streamId: string) => `stream:{${streamId}}:job`,
+  /** Latest generation epoch, retained briefly beyond the live job hash. */
+  generationEpoch: (streamId: string) => `stream:{${streamId}}:generation-epoch`,
 };
 
 /**
@@ -78,12 +80,37 @@ interface AbortRegistration {
  * subscriber listens on. PUBLISH is broadcast cluster-wide rather than slot-routed, so it does
  * not need to be a key for Cluster correctness.
  *
- *   KEYS: [sequence, job]
- *   ARGV: [channel, payloadPrefix, payloadSuffix, sequenceTtlSeconds, expectCreatedAt | ""]
+ *   KEYS: [sequence, job, generationEpoch]
+ *   ARGV: [
+ *     channel,
+ *     payloadPrefix,
+ *     payloadSuffix,
+ *     sequenceTtlSeconds,
+ *     expectCreatedAt | "",
+ *     allowRetainedEpoch ("0" | "1"),
+ *     generationEpochGraceTtl
+ *   ]
  *   RETURNS: the 0-indexed seq assigned to this event, or -1 when the generation guard fails
+ *
+ * During a rolling deployment, a job created by the previous version can expire without
+ * leaving a generation marker. A tagged terminal event may claim that absent marker only
+ * while the job hash is also absent. The same bounded ambiguity exists for an extremely
+ * late event after a recovery marker expires; the generationId in the payload contains it,
+ * because active runtimes discard terminal events for another epoch.
  */
 const PUBLISH_SEQ_LUA =
-  'if ARGV[5] ~= "" and redis.call("HGET", KEYS[2], "createdAt") ~= ARGV[5] then return -1 end ' +
+  'if ARGV[5] ~= "" then ' +
+  'local currentCreatedAt = redis.call("HGET", KEYS[2], "createdAt") ' +
+  'if currentCreatedAt ~= ARGV[5] then ' +
+  'if redis.call("EXISTS", KEYS[2]) == 1 or ARGV[6] ~= "1" then return -1 end ' +
+  'local retainedEpoch = redis.call("GET", KEYS[3]) ' +
+  'if not retainedEpoch then ' +
+  'redis.call("SET", KEYS[3], ARGV[5], "EX", tonumber(ARGV[7]), "NX") ' +
+  'retainedEpoch = redis.call("GET", KEYS[3]) ' +
+  'end ' +
+  'if retainedEpoch ~= ARGV[5] then return -1 end ' +
+  'end ' +
+  'end ' +
   'local val = redis.call("INCR", KEYS[1]) ' +
   'local ttl = tonumber(ARGV[4]) ' +
   'local seqTtl = redis.call("TTL", KEYS[1]) ' +
@@ -100,6 +127,8 @@ const PUBLISH_SEQ_LUA =
 const REORDER_TIMEOUT_MS = 500;
 /** Max messages to buffer before force-flushing (prevents memory issues) */
 const MAX_BUFFER_SIZE = 100;
+/** Rolling-upgrade recovery window after a legacy job hash expires without an epoch marker. */
+const GENERATION_EPOCH_GRACE_TTL_SECONDS = 300;
 
 /**
  * Subscriber state for a stream
@@ -203,18 +232,22 @@ export class RedisEventTransport implements IEventTransport {
     streamId: string,
     message: Omit<PubSubMessage, 'seq'>,
     expectedGenerationId?: number,
+    allowRetainedEpoch = false,
   ): Promise<number> {
     const [prefix, suffix] = RedisEventTransport.buildPayloadParts(message);
     const seq = await this.publisher.eval(
       PUBLISH_SEQ_LUA,
-      2,
+      3,
       KEYS.sequence(streamId),
       KEYS.job(streamId),
+      KEYS.generationEpoch(streamId),
       CHANNELS.events(streamId),
       prefix,
       suffix,
       String(RedisEventTransport.SEQUENCE_TTL_SECONDS),
       expectedGenerationId != null ? String(expectedGenerationId) : '',
+      allowRetainedEpoch ? '1' : '0',
+      String(GENERATION_EPOCH_GRACE_TTL_SECONDS),
     );
     return seq as number;
   }
@@ -719,11 +752,16 @@ export class RedisEventTransport implements IEventTransport {
    */
   async emitDone(streamId: string, event: unknown, generationId?: number): Promise<void> {
     try {
-      await this.publishWithSequence(streamId, {
-        type: EventTypes.DONE,
-        data: event,
-        ...(generationId != null && { generationId }),
-      });
+      await this.publishWithSequence(
+        streamId,
+        {
+          type: EventTypes.DONE,
+          data: event,
+          ...(generationId != null && { generationId }),
+        },
+        generationId,
+        true,
+      );
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish done:`, err);
       throw err;
@@ -736,11 +774,16 @@ export class RedisEventTransport implements IEventTransport {
    */
   async emitError(streamId: string, error: string, generationId?: number): Promise<void> {
     try {
-      await this.publishWithSequence(streamId, {
-        type: EventTypes.ERROR,
-        error,
-        ...(generationId != null && { generationId }),
-      });
+      await this.publishWithSequence(
+        streamId,
+        {
+          type: EventTypes.ERROR,
+          error,
+          ...(generationId != null && { generationId }),
+        },
+        generationId,
+        true,
+      );
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish error:`, err);
       throw err;

@@ -57,10 +57,14 @@ export function createMockPublisher(): MockPublisher {
       _numKeys: number,
       seqKey: string,
       jobKey: string,
+      _generationEpochKey: string,
       channel: string,
       prefix: string,
       suffix: string,
       ttlSeconds: string,
+      _expectedGenerationId: string,
+      _allowRetainedEpoch: string,
+      _generationEpochGraceTtl: string,
     ) => {
       const val = (await publisher.incr(seqKey)) as number;
       let ttl = Number(ttlSeconds);

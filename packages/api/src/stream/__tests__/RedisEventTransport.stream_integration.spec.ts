@@ -96,6 +96,286 @@ describe('RedisEventTransport Integration Tests', () => {
       subscriber.disconnect();
     });
 
+    test('should publish a zero-TTL terminal winner without leaking it into a replacement', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber = (ioredisClient as Redis).duplicate();
+      const transport = new RedisEventTransport(ioredisClient, subscriber);
+      const store = new RedisJobStore(ioredisClient, { completedTtl: 0 });
+      await store.initialize();
+
+      const streamId = `zero-ttl-terminal-${Date.now()}`;
+      const received: unknown[] = [];
+      const subscription = transport.subscribe(streamId, {
+        onChunk: () => undefined,
+        onDone: (event) => received.push(event),
+      });
+      await subscription.ready;
+
+      let replacementCreatedAt: number | undefined;
+      try {
+        const terminalJob = await store.createJob(streamId, 'user-1', streamId);
+        await expect(
+          store.transitionStatus(streamId, {
+            from: 'running',
+            to: 'aborted',
+            expectCreatedAt: terminalJob.createdAt,
+            patch: { completedAt: Date.now() },
+          }),
+        ).resolves.toBe(true);
+        await expect(store.getJob(streamId)).resolves.toBeNull();
+
+        const finalEvent = { final: true, aborted: true };
+        await transport.emitDone(streamId, finalEvent, terminalJob.createdAt);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(received).toEqual([finalEvent]);
+
+        const regressedClock = jest
+          .spyOn(Date, 'now')
+          .mockReturnValue(terminalJob.createdAt - 1000);
+        const replacement = await (async () => {
+          try {
+            return await store.createJob(streamId, 'user-1', streamId);
+          } finally {
+            regressedClock.mockRestore();
+          }
+        })();
+        replacementCreatedAt = replacement.createdAt;
+        expect(replacement.createdAt).toBe(terminalJob.createdAt + 1);
+
+        // A live replacement must reject the predecessor's delayed terminal event.
+        await transport.emitDone(streamId, { final: true, stale: true }, terminalJob.createdAt);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(received).toEqual([finalEvent]);
+
+        // The latest epoch marker survives zero-TTL finalization. It still rejects
+        // the predecessor after the replacement hash itself has disappeared.
+        await expect(
+          store.transitionStatus(streamId, {
+            from: 'running',
+            to: 'aborted',
+            expectCreatedAt: replacement.createdAt,
+            patch: { completedAt: Date.now() },
+          }),
+        ).resolves.toBe(true);
+        await expect(store.getJob(streamId)).resolves.toBeNull();
+        await transport.emitDone(
+          streamId,
+          { final: true, staleAfterReplacement: true },
+          terminalJob.createdAt,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(received).toEqual([finalEvent]);
+
+        const replacementFinalEvent = { final: true, replacement: true };
+        await transport.emitDone(streamId, replacementFinalEvent, replacement.createdAt);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(received).toEqual([finalEvent, replacementFinalEvent]);
+      } finally {
+        if (replacementCreatedAt != null) {
+          await store.deleteJob(streamId, replacementCreatedAt);
+        }
+        await ioredisClient.del(`stream:{${streamId}}:generation-epoch`);
+        subscription.unsubscribe();
+        await store.destroy();
+        transport.destroy();
+        subscriber.disconnect();
+      }
+    });
+
+    test('should publish the latest generation error after stale-job reaping removes its hash', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber = (ioredisClient as Redis).duplicate();
+      const transport = new RedisEventTransport(ioredisClient, subscriber);
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 60 });
+      await store.initialize();
+
+      const streamId = `reaped-generation-${Date.now()}`;
+      let resolveError!: (value: { error: string; generationId?: number }) => void;
+      const receivedError = new Promise<{ error: string; generationId?: number }>((resolve) => {
+        resolveError = resolve;
+      });
+      const subscription = transport.subscribe(streamId, {
+        onChunk: () => undefined,
+        onError: (error, generationId) => resolveError({ error, generationId }),
+      });
+      await subscription.ready;
+
+      try {
+        const job = await store.createJob(streamId, 'user-1', streamId);
+        const generationEpochKey = `stream:{${streamId}}:generation-epoch`;
+        await ioredisClient.del(generationEpochKey);
+        await expect(ioredisClient.get(generationEpochKey)).resolves.toBeNull();
+        await store.updateJob(streamId, { lastActiveAt: Date.now() - 61_000 }, job.createdAt);
+
+        await expect(store.cleanup()).resolves.toBeGreaterThanOrEqual(1);
+        await expect(store.getJob(streamId)).resolves.toBeNull();
+        await expect(ioredisClient.get(generationEpochKey)).resolves.toBe(String(job.createdAt));
+
+        await transport.emitError(streamId, 'Generation timed out', job.createdAt);
+        await expect(receivedError).resolves.toEqual({
+          error: 'Generation timed out',
+          generationId: job.createdAt,
+        });
+      } finally {
+        await ioredisClient.del(`stream:{${streamId}}:generation-epoch`);
+        subscription.unsubscribe();
+        await store.destroy();
+        transport.destroy();
+        subscriber.disconnect();
+      }
+    });
+
+    test('should atomically contain legacy terminal claims when both job and epoch have expired', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber = (ioredisClient as Redis).duplicate();
+      const transport = new RedisEventTransport(ioredisClient, subscriber);
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const claimBeforeCreateId = `legacy-claim-first-${Date.now()}`;
+      const createBeforeClaimId = `legacy-create-first-${Date.now()}`;
+      const competingClaimsId = `legacy-competing-${Date.now()}`;
+      const claimedEvents: string[] = [];
+      const createFirstEvents: string[] = [];
+      const competingEvents: string[] = [];
+      const subscriptions = [
+        transport.subscribe(claimBeforeCreateId, {
+          onChunk: () => undefined,
+          onError: (error) => claimedEvents.push(error),
+        }),
+        transport.subscribe(createBeforeClaimId, {
+          onChunk: () => undefined,
+          onError: (error) => createFirstEvents.push(error),
+        }),
+        transport.subscribe(competingClaimsId, {
+          onChunk: () => undefined,
+          onError: (error) => competingEvents.push(error),
+        }),
+      ];
+      await Promise.all(subscriptions.map((subscription) => subscription.ready));
+
+      try {
+        // Natural expiry of a pre-deploy job leaves neither hash nor epoch. Its
+        // terminal event claims the empty marker, then replacement creation must
+        // allocate above the claimed epoch even if the local clock regresses.
+        const claimFirstLegacy = await store.createJob(
+          claimBeforeCreateId,
+          'user-1',
+          claimBeforeCreateId,
+        );
+        await ioredisClient.del(
+          `stream:{${claimBeforeCreateId}}:job`,
+          `stream:{${claimBeforeCreateId}}:generation-epoch`,
+        );
+        await transport.emitError(
+          claimBeforeCreateId,
+          'legacy claim won',
+          claimFirstLegacy.createdAt,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(claimedEvents).toEqual(['legacy claim won']);
+        await expect(
+          ioredisClient.get(`stream:{${claimBeforeCreateId}}:generation-epoch`),
+        ).resolves.toBe(String(claimFirstLegacy.createdAt));
+
+        const regressedClock = jest
+          .spyOn(Date, 'now')
+          .mockReturnValue(claimFirstLegacy.createdAt - 1000);
+        const claimedReplacement = await (async () => {
+          try {
+            return await store.createJob(claimBeforeCreateId, 'user-1', claimBeforeCreateId);
+          } finally {
+            regressedClock.mockRestore();
+          }
+        })();
+        expect(claimedReplacement.createdAt).toBe(claimFirstLegacy.createdAt + 1);
+        await transport.emitError(
+          claimBeforeCreateId,
+          'stale after replacement',
+          claimFirstLegacy.createdAt,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(claimedEvents).toEqual(['legacy claim won']);
+
+        // If replacement creation wins the Redis serialization order, its live
+        // hash rejects the legacy terminal before the fallback can claim.
+        const createFirstLegacy = await store.createJob(
+          createBeforeClaimId,
+          'user-1',
+          createBeforeClaimId,
+        );
+        await ioredisClient.del(
+          `stream:{${createBeforeClaimId}}:job`,
+          `stream:{${createBeforeClaimId}}:generation-epoch`,
+        );
+        const forwardClock = jest
+          .spyOn(Date, 'now')
+          .mockReturnValue(createFirstLegacy.createdAt + 1000);
+        const createFirstReplacement = await (async () => {
+          try {
+            return await store.createJob(createBeforeClaimId, 'user-1', createBeforeClaimId);
+          } finally {
+            forwardClock.mockRestore();
+          }
+        })();
+        expect(createFirstReplacement.createdAt).toBe(createFirstLegacy.createdAt + 1000);
+        await transport.emitError(
+          createBeforeClaimId,
+          'legacy claim lost',
+          createFirstLegacy.createdAt,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(createFirstEvents).toEqual([]);
+
+        // With two unknowable pre-marker epochs and no live hash, Redis ordering
+        // gives the marker to the first claimant and rejects the differing second.
+        await transport.emitError(competingClaimsId, 'first claimant', 100);
+        await transport.emitError(competingClaimsId, 'second claimant', 200);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(competingEvents).toEqual(['first claimant']);
+        await expect(
+          ioredisClient.get(`stream:{${competingClaimsId}}:generation-epoch`),
+        ).resolves.toBe('100');
+      } finally {
+        for (const streamId of [claimBeforeCreateId, createBeforeClaimId, competingClaimsId]) {
+          await store.deleteJob(streamId);
+        }
+        await store.cleanup();
+        await Promise.all(
+          [claimBeforeCreateId, createBeforeClaimId, competingClaimsId].map((streamId) =>
+            ioredisClient!.del(`stream:{${streamId}}:generation-epoch`),
+          ),
+        );
+        for (const subscription of subscriptions) {
+          subscription.unsubscribe();
+        }
+        await store.destroy();
+        transport.destroy();
+        subscriber.disconnect();
+      }
+    });
+
     test('should deliver events across transport instances (simulating different servers)', async () => {
       if (!ioredisClient) {
         console.warn('Redis not available, skipping test');

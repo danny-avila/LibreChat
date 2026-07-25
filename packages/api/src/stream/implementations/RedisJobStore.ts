@@ -33,7 +33,7 @@ import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
  * fields, writes `status`+patch pairs, refreshes the job-hash TTL, and performs
  * terminal cleanup of same-slot stream state. Returns 1 if it fired, 0 otherwise.
  *
- *   KEYS: [job, eventSequence, chunks, runSteps, steers, parkedSteers]
+ *   KEYS: [job, eventSequence, chunks, runSteps, steers, parkedSteers, generationEpoch]
  *   ARGV: [
  *     from,
  *     expectActionId | "",
@@ -43,6 +43,7 @@ import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
  *     chunksAfterComplete,
  *     runStepsAfterComplete,
  *     parkedSteersTtl,
+ *     generationEpochGraceTtl,
  *     hdelCount,
  *     ...hdelFields,
  *     ...hsetPairs
@@ -52,13 +53,15 @@ const JOB_CAS_LUA =
   'if redis.call("HGET", KEYS[1], "status") ~= ARGV[1] then return 0 end ' +
   'if ARGV[2] ~= "" and redis.call("HGET", KEYS[1], "pendingActionId") ~= ARGV[2] then return 0 end ' +
   'if ARGV[3] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[3] then return 0 end ' +
+  'local currentCreatedAt = redis.call("HGET", KEYS[1], "createdAt") ' +
   'local ttl = tonumber(ARGV[4]) ' +
   'local terminal = ARGV[5] == "1" ' +
   'local chunksTtl = tonumber(ARGV[6]) ' +
   'local runStepsTtl = tonumber(ARGV[7]) ' +
   'local parkedTtl = tonumber(ARGV[8]) ' +
-  'local hdelCount = tonumber(ARGV[9]) ' +
-  'local idx = 10 ' +
+  'local generationEpochGraceTtl = tonumber(ARGV[9]) ' +
+  'local hdelCount = tonumber(ARGV[10]) ' +
+  'local idx = 11 ' +
   'for i = 1, hdelCount do redis.call("HDEL", KEYS[1], ARGV[idx]) idx = idx + 1 end ' +
   'local hset = {} ' +
   'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
@@ -68,6 +71,7 @@ const JOB_CAS_LUA =
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
   'local seqTtl = redis.call("TTL", KEYS[2]) ' +
   'if seqTtl >= 0 and seqTtl < ttl then redis.call("EXPIRE", KEYS[2], ttl) end ' +
+  'if currentCreatedAt then redis.call("SET", KEYS[7], currentCreatedAt, "EX", ttl + generationEpochGraceTtl) end ' +
   'if terminal then ' +
   'local queued = redis.call("LRANGE", KEYS[5], 0, -1) ' +
   'if #queued > 0 then ' +
@@ -115,23 +119,27 @@ const IDEMPOTENCY_CLAIM_LUA =
  * that observes the replacement can therefore never reconstruct predecessor
  * state, even when the predecessor's delayed completion loses its epoch guard.
  *
- *   KEYS: [job, chunks, runSteps, steers, parkedSteers]
- *   ARGV: [ttl, requestedCreatedAt, ...hsetPairs]
+ *   KEYS: [job, chunks, runSteps, steers, parkedSteers, generationEpoch]
+ *   ARGV: [ttl, requestedCreatedAt, generationEpochGraceTtl, ...hsetPairs]
  *   Returns: [previousUserId | "", previousTenantId | "", createdAt]
  */
 const JOB_CREATE_LUA =
   'local previousUserId = redis.call("HGET", KEYS[1], "userId") ' +
   'local previousTenantId = redis.call("HGET", KEYS[1], "tenantId") ' +
   'local previousCreatedAt = tonumber(redis.call("HGET", KEYS[1], "createdAt")) ' +
+  'local retainedEpoch = tonumber(redis.call("GET", KEYS[6])) ' +
+  'if retainedEpoch and (not previousCreatedAt or retainedEpoch > previousCreatedAt) then previousCreatedAt = retainedEpoch end ' +
   'local createdAt = tonumber(ARGV[2]) ' +
   'if previousCreatedAt and previousCreatedAt >= createdAt then createdAt = previousCreatedAt + 1 end ' +
   'redis.call("DEL", KEYS[1], KEYS[2], KEYS[3], KEYS[4], KEYS[5]) ' +
   'local ttl = tonumber(ARGV[1]) ' +
+  'local generationEpochGraceTtl = tonumber(ARGV[3]) ' +
   'local hset = {} ' +
-  'for i = 3, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
+  'for i = 4, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
   'redis.call("HSET", KEYS[1], unpack(hset)) ' +
   'redis.call("HSET", KEYS[1], "createdAt", tostring(createdAt)) ' +
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
+  'redis.call("SET", KEYS[6], tostring(createdAt), "EX", ttl + generationEpochGraceTtl) ' +
   'return { previousUserId or "", previousTenantId or "", tostring(createdAt) }';
 
 /**
@@ -187,8 +195,8 @@ const JOB_DELETE_LUA =
  * lands before the script and fails the guard, or lands afterward and clears
  * the predecessor's parked payload in {@link JOB_CREATE_LUA}.
  *
- *   KEYS: [job, chunks, runSteps, steers, parkedSteers]
- *   ARGV: [expectCreatedAt, nowMs, staleAfterMs, parkedSteersTtl]
+ *   KEYS: [job, chunks, runSteps, steers, parkedSteers, generationEpoch]
+ *   ARGV: [expectCreatedAt, nowMs, staleAfterMs, parkedSteersTtl, generationEpochGraceTtl]
  */
 const STALE_JOB_DELETE_LUA =
   'if redis.call("HGET", KEYS[1], "status") ~= "running" then return 0 end ' +
@@ -215,6 +223,7 @@ const STALE_JOB_DELETE_LUA =
   'redis.call("SET", KEYS[5], cjson.encode(parked), "EX", tonumber(ARGV[4])) ' +
   'end ' +
   'end ' +
+  'redis.call("SET", KEYS[6], ARGV[1], "EX", tonumber(ARGV[5])) ' +
   'redis.call("DEL", KEYS[1], KEYS[2], KEYS[3], KEYS[4]) ' +
   'return 1';
 
@@ -439,6 +448,8 @@ const KNOWN_INTERRUPT_TYPES = new Set(['tool_approval', 'ask_user_question']);
  *  configured to 0 — Redis rejects `EX 0`, which would silently kill
  *  park-based recovery. */
 const PARKED_RECOVERY_TTL_S: number = 300;
+/** Grace window for publishing terminal/reaper events after the live job hash expires. */
+const GENERATION_EPOCH_GRACE_TTL_S: number = 300;
 
 /** Bound pathological replacement churn without leaving the request unbounded. */
 const MEMBERSHIP_RECONCILE_MAX_ATTEMPTS: number = 8;
@@ -467,6 +478,8 @@ const KEYS = {
   /** Parked terminally-drained steers (own TTL — must outlive the job hash,
    *  which the default completeJob path deletes immediately) */
   parkedSteers: (streamId: string) => `stream:{${streamId}}:parked`,
+  /** Latest generation epoch, retained briefly beyond the live job hash. */
+  generationEpoch: (streamId: string) => `stream:{${streamId}}:generation-epoch`,
   /** Running jobs set for cleanup (global set - single slot) */
   runningJobs: 'stream:running',
   /** Jobs paused for human review (global set - single slot) */
@@ -700,14 +713,16 @@ export class RedisJobStore implements IJobStore {
     const hsetPairs = Object.entries(this.serializeJob(job)).flat();
     const previousOwner = await this.redis.eval(
       JOB_CREATE_LUA,
-      5,
+      6,
       key,
       KEYS.chunks(streamId),
       KEYS.runSteps(streamId),
       KEYS.steers(streamId),
       KEYS.parkedSteers(streamId),
+      KEYS.generationEpoch(streamId),
       String(this.ttl.running),
       String(job.createdAt),
+      String(GENERATION_EPOCH_GRACE_TTL_S),
       ...hsetPairs,
     );
     const previousUserId =
@@ -1015,13 +1030,14 @@ export class RedisJobStore implements IJobStore {
     //    resolves can never both win (and drive the run twice).
     const won = await this.redis.eval(
       JOB_CAS_LUA,
-      6,
+      7,
       key,
       KEYS.sequence(streamId),
       KEYS.chunks(streamId),
       KEYS.runSteps(streamId),
       KEYS.steers(streamId),
       KEYS.parkedSteers(streamId),
+      KEYS.generationEpoch(streamId),
       from,
       expectActionId ?? '',
       expectCreatedAt != null ? String(expectCreatedAt) : '',
@@ -1030,6 +1046,7 @@ export class RedisJobStore implements IJobStore {
       String(this.ttl.chunksAfterComplete),
       String(this.ttl.runStepsAfterComplete),
       String(this.ttl.completed > 0 ? this.ttl.completed : PARKED_RECOVERY_TTL_S),
+      String(GENERATION_EPOCH_GRACE_TTL_S),
       String(clearFields.length),
       ...clearFields,
       ...fields,
@@ -1114,16 +1131,18 @@ export class RedisJobStore implements IJobStore {
   ): Promise<boolean> {
     const deleted = await this.redis.eval(
       STALE_JOB_DELETE_LUA,
-      5,
+      6,
       KEYS.job(streamId),
       KEYS.chunks(streamId),
       KEYS.runSteps(streamId),
       KEYS.steers(streamId),
       KEYS.parkedSteers(streamId),
+      KEYS.generationEpoch(streamId),
       String(observedJob.createdAt),
       String(now),
       String(this.ttl.running * 1000),
       String(this.ttl.completed > 0 ? this.ttl.completed : PARKED_RECOVERY_TTL_S),
+      String(GENERATION_EPOCH_GRACE_TTL_S),
     );
     if (deleted !== 1) {
       return false;
