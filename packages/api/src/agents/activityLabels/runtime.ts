@@ -15,6 +15,13 @@ export interface ActivityLabelLLM {
    * cross-endpoint label is costed at the wrong rates.
    */
   endpointTokenConfig?: unknown;
+  /**
+   * True when the label resolved to the agent's OWN endpoint. Callers need
+   * this to read an undefined `endpointTokenConfig` correctly: for a built-in
+   * label endpoint undefined means "price from the shared table", so
+   * inheriting the agent's custom rates there would misprice the label.
+   */
+  sameEndpoint?: boolean;
 }
 
 /**
@@ -69,6 +76,12 @@ export interface GenerateLabelPayload {
    * never reaches the preferred path.
    */
   prompt?: string;
+  /**
+   * Owning agent of the batch. Selects that agent's tracing metadata AND its
+   * tool-output redaction policy on the SDK path, so a handoff is not traced
+   * or redacted under the default agent's configuration.
+   */
+  executingAgentId?: string;
 }
 
 /** Per-generation LLM callbacks for usage accounting on the fallback path. */
@@ -88,11 +101,16 @@ export interface ActivityLabelHookOptions {
   claimSlot: (meta: ActivityLabelBatchMeta) => ActivityLabelSlot;
   /**
    * Preferred generation path: host bridges to the SDK's
-   * `run.generateActivityLabel()` (session-grouped Langfuse tracing). When
-   * absent — SDK too old — the hook falls back to a direct, untraced model
-   * call via `resolveLLM`.
+   * `run.generateActivityLabel()` (session-grouped Langfuse tracing).
+   *
+   * Resolve `undefined` to decline — the SDK lacks the API — and the hook
+   * falls back to a direct, untraced model call via `resolveLLM`. `null`
+   * means the opposite: this path ran and produced no label, so the slot
+   * fills empty. Hosts wire this bridge unconditionally (the run does not
+   * exist yet at construction time), which is why declining has to be
+   * expressible at call time rather than by omitting the option.
    */
-  generateLabel?: (payload: GenerateLabelPayload) => Promise<string | null>;
+  generateLabel?: (payload: GenerateLabelPayload) => Promise<string | null | undefined>;
   /**
    * Fallback model resolution for the direct-call path. Memoized here so
    * hosts can pass a fresh thunk without caching concerns.
@@ -297,19 +315,9 @@ export function createActivityLabelHook(
          *  label call — a user abort must not keep paying for generation
          *  until the timeout. */
         const signal = buildSignal(opts.signal, hookSignal);
-        let text: string | null = null;
-        if (opts.generateLabel != null) {
-          /** SDK-backed path: session-grouped Langfuse tracing via
-           *  `run.generateActivityLabel()` (host bridges the call). */
-          text = await opts.generateLabel({
-            entries: input.entries,
-            context: slot.context ?? {},
-            traceSeed: `${input.runId}-activity-${slot.index}`,
-            signal,
-            charLimit,
-            ...(opts.prompt != null && { prompt: opts.prompt }),
-          });
-        } else {
+        /** Direct, untraced call: the fallback when no SDK bridge is wired or
+         *  when the bridge declines because the package is too old. */
+        const generateDirect = async (): Promise<string | null> => {
           const { provider, clientOptions } = await getLLM();
           const model = initializeModel({
             provider,
@@ -322,8 +330,28 @@ export function createActivityLabelHook(
             signal,
             ...(invokeCallbacks && { callbacks: invokeCallbacks.callbacks }),
           });
-          text = extractText(response?.content);
+          const direct = extractText(response?.content);
           await invokeCallbacks?.collect();
+          return direct;
+        };
+
+        let text: string | null = null;
+        if (opts.generateLabel != null) {
+          /** SDK-backed path: session-grouped Langfuse tracing via
+           *  `run.generateActivityLabel()` (host bridges the call). */
+          const bridged = await opts.generateLabel({
+            entries: input.entries,
+            context: slot.context ?? {},
+            traceSeed: `${input.runId}-activity-${slot.index}`,
+            signal,
+            charLimit,
+            ...(opts.prompt != null && { prompt: opts.prompt }),
+            ...(input.executingAgentId != null && { executingAgentId: input.executingAgentId }),
+          });
+          /** Declined (no SDK support) — not the same as "no label". */
+          text = bridged === undefined ? await generateDirect() : bridged;
+        } else {
+          text = await generateDirect();
         }
         /** Trim centrally: a whitespace-only label from either path must
          *  fill null so the UI keeps the deterministic counts fallback. */

@@ -174,19 +174,91 @@ describe('createActivityLabelWiring close gate', () => {
 
     await hook(batchInput(), new AbortController().signal);
     await flushDetached();
-    /** The slot is reserved but silent: claiming one emits nothing, so the
-     *  UI is untouched until a real label exists. */
-    expect(emitLabelEvent).not.toHaveBeenCalled();
+    /** Claiming publishes the reservation so replay cannot compact the index
+     *  away — empty and pending, which renders nothing. */
+    expect(emitLabelEvent).toHaveBeenCalledTimes(1);
+    expect(emitLabelEvent).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ activity_label: '', pending: true }),
+    );
 
     /** Settle timed out: the scope closes, then the straggler resolves. */
     closed = true;
     releaseLabel('Late label that must not land');
     await flushDetached();
 
-    expect(emitLabelEvent).not.toHaveBeenCalled();
+    /** No SECOND emit: the late fill neither mutates nor publishes. */
+    expect(emitLabelEvent).toHaveBeenCalledTimes(1);
     const labelPart = parts[1] as LooseContentPart;
     expect(labelPart.activity_label).toBe('');
     expect(labelPart.pending).toBe(true);
+  });
+});
+
+describe('createActivityLabelWiring reservation', () => {
+  /**
+   * Without a claim-time event the slot exists only in server memory, so a
+   * cross-instance replay rebuilds [tool, <hole>, laterText], compacts the
+   * hole, and the fill for the reserved index then overwrites `laterText`.
+   * Publishing the empty part keeps the index real for every consumer.
+   */
+  it('publishes the reserved index before any label exists', async () => {
+    const parts: Array<LooseContentPart | null | undefined> = [
+      { type: 'tool_call', tool_call: { id: 'tool-1' } },
+    ];
+    const emitted: Array<{ index: number; label: unknown; pending?: boolean }> = [];
+    const emitLabelEvent = jest.fn(async (index: number, part: LooseContentPart) => {
+      emitted.push({ index, label: part.activity_label, pending: part.pending });
+      return undefined;
+    });
+    const { hook } = createActivityLabelWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent,
+      trackPendingFill: jest.fn(),
+      resolveLLM: jest.fn(async () => ({
+        provider: Providers.OPENAI,
+        clientOptions: { model: 'm' },
+      })),
+      generateLabel: jest.fn(async () => 'Stored the release notes'),
+    });
+
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+
+    /** Reservation first (empty, pending), then the fill at the SAME index. */
+    expect(emitted).toEqual([
+      { index: 1, label: '', pending: true },
+      { index: 1, label: 'Stored the release notes', pending: false },
+    ]);
+  });
+
+  /** A blank result must still settle the slot, or the client stays pending. */
+  it('publishes a settled empty part when generation yields nothing', async () => {
+    const parts: Array<LooseContentPart | null | undefined> = [
+      { type: 'tool_call', tool_call: { id: 'tool-1' } },
+    ];
+    const emitLabelEvent = jest.fn(async () => undefined);
+    const { hook } = createActivityLabelWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent,
+      trackPendingFill: jest.fn(),
+      resolveLLM: jest.fn(async () => ({
+        provider: Providers.OPENAI,
+        clientOptions: { model: 'm' },
+      })),
+      generateLabel: jest.fn(async () => null),
+    });
+
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+
+    expect(emitLabelEvent).toHaveBeenCalledTimes(2);
+    expect(emitLabelEvent).toHaveBeenLastCalledWith(
+      1,
+      expect.objectContaining({ activity_label: '', pending: false }),
+    );
   });
 });
 

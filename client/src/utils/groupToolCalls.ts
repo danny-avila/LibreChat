@@ -1,6 +1,7 @@
 import { Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, Agents } from 'librechat-data-provider';
 import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
+import { getActivityLabelPart, getActivityLabelText } from '~/utils/activityLabels';
 
 export type GroupedPart =
   | { type: 'single'; part: PartWithIndex }
@@ -69,10 +70,19 @@ export function groupSequentialToolCalls(parts: PartWithIndex[]): GroupedPart[] 
       continue;
     }
     if (item.part.type === ContentTypes.ACTIVITY_LABEL) {
+      /** A reserved-but-unfilled slot (and a failed/blank fill) still
+       *  DELIMITS its batch, so grouping does not re-shuffle when the text
+       *  lands — but it is not attached as a labelPart, leaving the group to
+       *  render its generic verb exactly as it would without the feature. */
+      const hasText = getActivityLabelText(getActivityLabelPart(item.part)).length > 0;
       if (currentBlock.length > 0) {
-        result.push({ type: 'tool-group', parts: [...currentBlock], labelPart: item });
+        result.push({
+          type: 'tool-group',
+          parts: [...currentBlock],
+          ...(hasText && { labelPart: item }),
+        });
         currentBlock = [];
-      } else {
+      } else if (hasText) {
         /** Orphan label (block parts hidden/filtered): renders standalone. */
         result.push({ type: 'single', part: item });
       }

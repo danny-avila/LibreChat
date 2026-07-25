@@ -2244,6 +2244,11 @@ export class RedisJobStore implements IJobStore {
       pendingAction: this.parsePendingAction(data.pendingAction),
       pendingActionId: data.pendingActionId || undefined,
       lastActiveAt: data.lastActiveAt ? parseInt(data.lastActiveAt, 10) : undefined,
+      /** `markActivityLabels` persists this, so it has to be read back:
+       *  without it every Redis reload leaves the flag undefined and resume
+       *  skips activity-label gap reconciliation, silently dropping a label
+       *  that resolved between the snapshot and subscriber attach. */
+      activityLabels: data.activityLabels != null ? data.activityLabels === '1' : undefined,
     };
   }
 

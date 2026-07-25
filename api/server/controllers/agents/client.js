@@ -376,7 +376,7 @@ class AgentClient extends BaseClient {
    * live cost gauge reflect it. Tagged, so it is not a PRIMARY usage event
    * and cannot disturb the context-snapshot pairing in buildResponseMetadata.
    */
-  async recordActivityLabelUsage(collectedMetadata, model, endpointTokenConfig) {
+  async recordActivityLabelUsage(collectedMetadata, model, endpointTokenConfig, sameEndpoint) {
     const appConfig = this.options.req?.config;
     const collectedUsage = mapCollectedMetadataToUsage(collectedMetadata);
     if (collectedUsage.length === 0) {
@@ -385,8 +385,15 @@ class AgentClient extends BaseClient {
     const streamId = this.options.req?._resumableStreamId || null;
     const includeCost = this.options.req?.config?.interfaceConfig?.contextCost === true;
     /** Cross-endpoint labels (`activityEndpoint`) price with THEIR endpoint's
-     *  rates; fall back to the agent's only when the label runs there. */
-    const labelTokenConfig = endpointTokenConfig ?? this.options.endpointTokenConfig;
+     *  rates. `undefined` is a MEANINGFUL result for a built-in label endpoint
+     *  (built-ins price from the shared table, not a per-endpoint map), so it
+     *  must not fall through to the agent's custom rates — a custom primary
+     *  pointing `activityEndpoint` at a built-in would bill the label at its
+     *  own rates. Only inherit when the label actually runs on the agent's
+     *  endpoint. */
+    const labelTokenConfig = sameEndpoint
+      ? (endpointTokenConfig ?? this.options.endpointTokenConfig)
+      : endpointTokenConfig;
     for (const usage of collectedUsage) {
       /** `seq` is normally a position in `collectedUsage` (each emitter
        *  pushes, then emits with the new length). Label usage is billed
@@ -451,11 +458,26 @@ class AgentClient extends BaseClient {
    * (thread_id) with its own tags — never as an orphan trace. Returns null
    * when the label could not be generated.
    */
-  async generateActivityLabelViaRun({ entries, context, traceSeed, signal, charLimit, prompt }) {
+  async generateActivityLabelViaRun({
+    entries,
+    context,
+    traceSeed,
+    signal,
+    charLimit,
+    prompt,
+    executingAgentId,
+  }) {
+    /** Version gating happens at wiring time via the `sdkCapable` prototype
+     *  probe, so this only catches a run that is missing or not yet built.
+     *  Resolve `undefined` (not `null`) so the hook reads it as "this path
+     *  cannot serve the request" and falls back to the direct model call;
+     *  `null` would mean "ran, produced no label" and would leave the slot
+     *  permanently empty. */
     if (typeof this.run?.generateActivityLabel !== 'function') {
-      return null;
+      return undefined;
     }
-    const { provider, clientOptions, endpointTokenConfig } = await this.resolveActivityLabelLLM();
+    const { provider, clientOptions, endpointTokenConfig, sameEndpoint } =
+      await this.resolveActivityLabelLLM();
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
     try {
       const { label } = await this.run.generateActivityLabel({
@@ -472,6 +494,11 @@ class AgentClient extends BaseClient {
         lastAssistantText: context.lastAssistantText,
         traceSeed,
         charLimit,
+        /** Selects the EXECUTING agent's Langfuse metadata and, more
+         *  importantly, its tool-output redaction policy. Omitting it lets a
+         *  handoff's activity be traced and redacted under the default
+         *  agent's configuration, bypassing a stricter per-agent policy. */
+        ...(executingAgentId != null && { agentId: executingAgentId }),
         /** The wiring always supplies one (the yaml `activityPrompt` when
          *  set, else this repo's instruction). Falling through to the SDK's
          *  built-in prompt would silently use a different register. */
@@ -493,6 +520,7 @@ class AgentClient extends BaseClient {
         collectedMetadata,
         clientOptions.model,
         endpointTokenConfig,
+        sameEndpoint,
       );
     }
   }
@@ -571,6 +599,15 @@ class AgentClient extends BaseClient {
     const labelScope = { closed: false, abort: new AbortController() };
     this.activityLabelScopes = this.activityLabelScopes ?? [];
     this.activityLabelScopes.push(labelScope);
+    /** Seed the usage sequence past the labels already on this response.
+     *  `runId` is the response message id, so a HITL resume — which builds a
+     *  NEW client for the SAME response — would otherwise restart at -1 and
+     *  the client's `runId:seq` deduper would discard the post-approval
+     *  label's usage as already counted. Each label generation is a single
+     *  non-streaming invoke, so one existing label part == one consumed seq. */
+    this.activityLabelUsageSeq =
+      this.activityLabelUsageSeq ??
+      (this.contentParts ?? []).filter((part) => part?.type === ContentTypes.ACTIVITY_LABEL).length;
     this.activityLabelAbort = labelScope.abort;
     if (abortSignal != null) {
       if (abortSignal.aborted) {
@@ -617,11 +654,13 @@ class AgentClient extends BaseClient {
         return {
           callbacks: [{ handleLLMEnd }],
           collect: async () => {
-            const { clientOptions, endpointTokenConfig } = await this.resolveActivityLabelLLM();
+            const { clientOptions, endpointTokenConfig, sameEndpoint } =
+              await this.resolveActivityLabelLLM();
             await this.recordActivityLabelUsage(
               collected,
               clientOptions.model,
               endpointTokenConfig,
+              sameEndpoint,
             );
           },
         };

@@ -251,11 +251,24 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
         };
         parts.push(part);
         deps.bumpIndexOffset();
-        /** No claim-time emit. The slot is reserved server-side so indices
-         *  stay stable, but an empty header has nothing to say — emitting it
-         *  would change the UI before the generation it announces exists.
-         *  Until `fill` lands, the client renders the batch exactly as it
-         *  does today. */
+        /**
+         * Publish the reservation immediately, empty and pending.
+         *
+         * Reserving the index server-side is not enough on its own: with no
+         * event for this slot, a cross-instance replay rebuilds content as
+         * [tool, <hole>, laterText] and compacts the hole away, so the fill
+         * that later arrives for this index lands on `laterText` and
+         * overwrites it. Publishing the empty part keeps the slot real
+         * everywhere the content is reconstructed.
+         *
+         * It stays invisible: `groupSequentialToolCalls` lets an empty label
+         * delimit its batch without becoming the header, so the block renders
+         * exactly as it does with the feature off until `fill` lands.
+         */
+        void Promise.resolve(deps.emitLabelEvent(index, part)).catch(() => {
+          /** Best-effort: a dropped reservation degrades to the pre-fix
+           *  behavior, and must never break the batch that triggered it. */
+        });
         let resolveFill: () => void = () => undefined;
         const fillDone = new Promise<void>((resolve) => {
           resolveFill = resolve;
@@ -272,10 +285,13 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
                 return;
               }
               part.pending = false;
-              if (text == null || text.length === 0) {
-                return;
+              if (text != null && text.length > 0) {
+                part[ContentTypes.ACTIVITY_LABEL] = text;
               }
-              part[ContentTypes.ACTIVITY_LABEL] = text;
+              /** Emitted even when generation produced nothing: the claim
+               *  already published a PENDING part, so staying silent here
+               *  would leave the client pinned at pending forever. An empty
+               *  label still renders nothing. */
               await deps.emitLabelEvent(index, part);
             } finally {
               resolveFill();

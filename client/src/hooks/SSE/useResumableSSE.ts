@@ -781,10 +781,11 @@ export default function useResumableSSE(
 
       /**
        * Places an activity-label part at its claimed content index on the
-       * in-flight response message. Fires twice per block (counts placeholder
-       * at batch end, fast-model label on resolve); `applyActivityLabelPart`
-       * is referentially stable on duplicate replays. Same bounded
-       * next-frame retry as steers for the inject-before-render race.
+       * in-flight response message. Fires twice per block (the empty
+       * reservation at batch end, the generated label on resolve);
+       * `applyActivityLabelPart` is referentially stable on duplicate replays
+       * and refuses to overwrite filled text with a stale placeholder. Same
+       * bounded next-frame retry as steers for the inject-before-render race.
        */
       const applyActivityLabelToMessages = (event: TActivityLabelEvent, attempt = 0) => {
         const retryNextFrame = () => {
@@ -805,7 +806,20 @@ export default function useResumableSSE(
           retryNextFrame();
           return;
         }
-        const updated = applyActivityLabelPart(messages[index], event);
+        /** Edit-and-resubmit replays the kept prefix into the response before
+         *  the run starts, and the server indexes only the NEW content — so
+         *  run steps offset by that prefix (`useStepHandler`). The label index
+         *  is claimed in the same server-side space and needs the identical
+         *  shift, or it lands inside the prefix and overwrites kept content. */
+        const initialContent =
+          currentSubmission.editedContent != null
+            ? ((currentSubmission.initialResponse as TMessage | undefined)?.content ?? [])
+            : [];
+        const offsetEvent =
+          initialContent.length > 0
+            ? { ...event, index: event.index + initialContent.length }
+            : event;
+        const updated = applyActivityLabelPart(messages[index], offsetEvent);
         if (updated !== messages[index]) {
           const nextMessages = [...messages];
           nextMessages[index] = updated;
