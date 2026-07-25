@@ -145,6 +145,7 @@ modelSpecs:
         model: 'mock-model-a'
       skills:
         - 'e2e-model-spec-allowed'
+        - 'e2e-deployment-skill'
         - 'e2e-model-spec-missing'
         - 'e2e-model-spec-inaccessible'
 

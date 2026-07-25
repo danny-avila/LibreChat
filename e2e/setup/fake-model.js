@@ -18,7 +18,9 @@ const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
 
 const CREATE_SKILL_MARKER = 'E2E_CREATE_SKILL:';
 const EDIT_SKILL_MARKER = 'E2E_EDIT_SKILL:';
-const ASSERT_MODEL_SPEC_SKILLS_MARKER = 'E2E_ASSERT_MODEL_SPEC_SKILLS';
+const ASSERT_SKILLS_MARKER = 'E2E_ASSERT_SKILLS:';
+const ASSERT_MANUAL_SKILL_MARKER = 'E2E_ASSERT_MANUAL_SKILL:';
+const INVOKE_SKILL_MARKER = 'E2E_INVOKE_SKILL:';
 const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
 const ASSERT_AGENT_CONTEXT_MARKER = 'E2E_ASSERT_AGENT_CONTEXT:';
 const ASSERT_QUOTE_MARKER = 'E2E_ASSERT_QUOTE:';
@@ -34,7 +36,9 @@ const BACKGROUND_DISPATCH_MARKER = 'E2E_BACKGROUND_DISPATCH:';
 const BACKGROUND_COLLECT_MARKER = 'E2E_BACKGROUND_COLLECT:';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
-const MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT = 'E2E model spec skill assertion passed';
+const SKILL_ASSERTION_FINAL_TEXT = 'E2E skill assertion passed';
+const MANUAL_SKILL_ASSERTION_FINAL_TEXT = 'E2E manual skill assertion passed';
+const SKILL_TOOL_ASSERTION_FINAL_TEXT = 'E2E skill tool assertion passed';
 const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
 const AGENT_CONTEXT_ASSERTION_FINAL_TEXT = 'E2E agent context assertion passed';
 const QUOTE_ASSERTION_FINAL_TEXT = 'E2E quote assertion passed';
@@ -55,9 +59,9 @@ const CHECK_BACKGROUND_TASK_TOOL_NAME = 'check_background_task';
 const BACKGROUND_DISPATCH_TOOL_CALL_ID = 'call_e2e_background_dispatch';
 const BACKGROUND_COLLECT_TOOL_CALL_ID = 'call_e2e_background_collect';
 const MODEL_SPEC_ACCESSIBLE_SKILL = 'e2e-model-spec-allowed';
-const MODEL_SPEC_MISSING_SKILL = 'e2e-model-spec-missing';
-const MODEL_SPEC_INACCESSIBLE_SKILL = 'e2e-model-spec-inaccessible';
+const DEPLOYMENT_SKILL_NAME = 'e2e-deployment-skill';
 const ALWAYS_APPLY_BODY_MARKER = 'E2E_ALWAYS_APPLY_BODY_MARKER';
+const DEPLOYMENT_SKILL_BODY_MARKER = 'E2E deployment skill loaded through Playwright';
 const SKILL_DESCRIPTION =
   'Use this skill to verify LibreChat skill file authoring in mock end-to-end tests.';
 const EDITED_SKILL_DESCRIPTION =
@@ -165,13 +169,30 @@ function collectToolNames(agents) {
   return names;
 }
 
-function collectAdditionalInstructions(agents) {
-  return (agents ?? [])
-    .map((agent) =>
-      typeof agent?.additional_instructions === 'string' ? agent.additional_instructions : '',
-    )
-    .filter(Boolean)
-    .join('\n');
+async function getStreamAgentView({ graph, messages, options, runManager }) {
+  let agentId = runManager?.metadata?.agentId ?? options?.metadata?.agentId;
+  let agentContext;
+  if (typeof agentId === 'string') {
+    agentContext = graph?.agentContexts?.get(agentId);
+  } else if (graph?.agentContexts?.size === 1) {
+    [agentId, agentContext] = graph.agentContexts.entries().next().value;
+  }
+  /**
+   * Graph.attemptInvoke intentionally sends test override models the pruned
+   * messages directly, bypassing the production model's systemRunnable pipe.
+   * Apply that agent's runnable here so assertions inspect the same complete
+   * prompt (system catalog plus messages) that a real provider receives.
+   */
+  const systemRunnable = agentContext?.systemRunnable;
+  const promptMessages =
+    systemRunnable && typeof systemRunnable.invoke === 'function'
+      ? await systemRunnable.invoke(messages)
+      : messages;
+  return {
+    agentId,
+    messages: promptMessages,
+    toolNames: collectToolNames(agentContext ? [agentContext] : []),
+  };
 }
 
 function collectPromptText(value, parts = []) {
@@ -443,7 +464,7 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
 
   async *_streamResponseChunks(messages, options, runManager) {
     let outputChars = 0;
-    const dynamicResponse = this.resolveOnStream?.(messages);
+    const dynamicResponse = await this.resolveOnStream?.(messages, options, runManager);
     const chunkStream = dynamicResponse
       ? this.streamDynamicResponseChunks({
           responses: dynamicResponse.responses,
@@ -502,45 +523,208 @@ function overrideModel({ graph, responses, sleep, toolCalls, thrownError, resolv
   });
 }
 
-function modelSpecSkillAssertionResponses({ agents, messages, toolNames }) {
-  const failures = [];
-  const additionalInstructions = collectAdditionalInstructions(agents);
-  const skillPrimeMessages = collectSkillPrimeMessages(messages);
-  const alwaysApplyPrime = skillPrimeMessages.find(
-    (message) => message.name === MODEL_SPEC_ACCESSIBLE_SKILL && message.trigger === 'always-apply',
-  );
+function parseSkillAssertion(text, agentId) {
+  const markerValue = getMarkerValue(text, ASSERT_SKILLS_MARKER);
+  const sections = markerValue
+    .split(';')
+    .map((section) => section.trim())
+    .filter(Boolean);
+  const isAgentScoped = sections.some((section) => section.includes('='));
+  let entriesValue = markerValue;
+  if (isAgentScoped) {
+    // Parallel agents receive a per-run `____N` suffix while the request and
+    // persisted Agent Builder state retain the stable agent id.
+    const persistedAgentId =
+      typeof agentId === 'string' ? agentId.replace(/____\d+$/, '') : agentId;
+    const prefixes = [`${agentId}=`, `${persistedAgentId}=`];
+    const scopedSection = sections.find((section) =>
+      prefixes.some((prefix) => section.startsWith(prefix)),
+    );
+    if (!scopedSection) {
+      return {
+        required: [],
+        requiredBodies: [],
+        forbidden: [],
+        error: `no skill assertion was configured for agent ${agentId ?? 'unknown'}`,
+      };
+    }
+    const prefix = prefixes.find((candidate) => scopedSection.startsWith(candidate));
+    entriesValue = scopedSection.slice(prefix.length);
+  }
 
-  if (!toolNames.has(SKILL_TOOL_NAME)) {
+  const entries = entriesValue
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return entries.reduce(
+    (assertion, entry) => {
+      if (entry.startsWith('!')) {
+        const name = entry.slice(1);
+        if (name) {
+          assertion.forbidden.push(name);
+        }
+        return assertion;
+      }
+      if (entry.startsWith('*')) {
+        const name = entry.slice(1);
+        if (name) {
+          assertion.required.push(name);
+          assertion.requiredBodies.push(name);
+        }
+        return assertion;
+      }
+      assertion.required.push(entry);
+      return assertion;
+    },
+    { required: [], requiredBodies: [], forbidden: [], error: undefined },
+  );
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function promptHasSkillCatalogEntry(promptText, skillName) {
+  if (!promptText.includes('## Available Skills')) {
+    return false;
+  }
+  return new RegExp(`(?:^|\\n)- ${escapeRegExp(skillName)}(?::|\\s*(?:\\n|$))`, 'm').test(
+    promptText,
+  );
+}
+
+function expectedSkillBodyMarker(skillName) {
+  if (skillName === MODEL_SPEC_ACCESSIBLE_SKILL) {
+    return ALWAYS_APPLY_BODY_MARKER;
+  }
+  if (skillName === DEPLOYMENT_SKILL_NAME) {
+    return DEPLOYMENT_SKILL_BODY_MARKER;
+  }
+  return `# ${skillName}`;
+}
+
+function skillAssertionResponses({ messages, assertion, toolNames }) {
+  const failures = [];
+  if (assertion.error) {
+    failures.push(assertion.error);
+  }
+  const promptText = collectPromptText(messages).join('\n');
+  const skillPrimeMessages = collectSkillPrimeMessages(messages);
+
+  if (assertion.required.length > 0 && !toolNames.has(SKILL_TOOL_NAME)) {
     failures.push(`${SKILL_TOOL_NAME} tool was not advertised`);
   }
-  if (!additionalInstructions.includes(MODEL_SPEC_ACCESSIBLE_SKILL)) {
-    failures.push(`${MODEL_SPEC_ACCESSIBLE_SKILL} was not present in the model-visible catalog`);
+  if (assertion.required.length === 0 && toolNames.has(SKILL_TOOL_NAME)) {
+    failures.push(`${SKILL_TOOL_NAME} tool was unexpectedly advertised`);
   }
-  if (additionalInstructions.includes(MODEL_SPEC_MISSING_SKILL)) {
-    failures.push(`${MODEL_SPEC_MISSING_SKILL} leaked into the model-visible catalog`);
+  for (const name of assertion.required) {
+    if (!promptHasSkillCatalogEntry(promptText, name)) {
+      failures.push(`${name} was not present in the model-visible catalog`);
+    }
   }
-  if (additionalInstructions.includes(MODEL_SPEC_INACCESSIBLE_SKILL)) {
-    failures.push(`${MODEL_SPEC_INACCESSIBLE_SKILL} leaked into the model-visible catalog`);
+  for (const name of assertion.requiredBodies) {
+    const expectedMarker = expectedSkillBodyMarker(name);
+    const taggedBody = skillPrimeMessages.find((message) => message.name === name);
+    if (!taggedBody?.content.includes(expectedMarker)) {
+      failures.push(`${name} body was missing its expected marker "${expectedMarker}"`);
+    }
   }
-  if (!alwaysApplyPrime) {
-    failures.push(`${MODEL_SPEC_ACCESSIBLE_SKILL} was not always-apply primed`);
-  } else if (!alwaysApplyPrime.content.includes(ALWAYS_APPLY_BODY_MARKER)) {
-    failures.push(`${MODEL_SPEC_ACCESSIBLE_SKILL} always-apply body was missing its marker`);
+  for (const name of assertion.forbidden) {
+    if (promptHasSkillCatalogEntry(promptText, name)) {
+      failures.push(`${name} leaked into the model-visible catalog`);
+    }
+    if (skillPrimeMessages.some((message) => message.name === name)) {
+      failures.push(`${name} was unexpectedly primed`);
+    }
+    if (name === MODEL_SPEC_ACCESSIBLE_SKILL && promptText.includes(ALWAYS_APPLY_BODY_MARKER)) {
+      failures.push(`${name} always-apply body marker leaked into the model prompt`);
+    }
+    if (name === DEPLOYMENT_SKILL_NAME && promptText.includes(DEPLOYMENT_SKILL_BODY_MARKER)) {
+      failures.push(`${name} always-apply body marker leaked into the model prompt`);
+    }
   }
-  if (skillPrimeMessages.some((message) => message.name === MODEL_SPEC_MISSING_SKILL)) {
-    failures.push(`${MODEL_SPEC_MISSING_SKILL} was unexpectedly primed`);
-  }
-  if (skillPrimeMessages.some((message) => message.name === MODEL_SPEC_INACCESSIBLE_SKILL)) {
-    failures.push(`${MODEL_SPEC_INACCESSIBLE_SKILL} was unexpectedly primed`);
-  }
-
   if (failures.length > 0) {
     return {
-      responses: [`E2E model spec skill assertion failed: ${failures.join('; ')}`],
+      responses: [`E2E skill assertion failed: ${failures.join('; ')}`],
     };
   }
   return {
-    responses: [`${MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT}: ${MODEL_SPEC_ACCESSIBLE_SKILL}`],
+    responses: [
+      `${SKILL_ASSERTION_FINAL_TEXT}: ${
+        assertion.required.length > 0 ? assertion.required.join(', ') : 'none'
+      }`,
+    ],
+  };
+}
+
+function manualSkillAssertionResponses({ messages, skillName }) {
+  const taggedPrime = collectSkillPrimeMessages(messages).find(
+    (message) => message.name === skillName && message.trigger === 'manual',
+  );
+  if (!taggedPrime) {
+    return {
+      responses: [`E2E manual skill assertion failed: ${skillName} was not manually primed`],
+    };
+  }
+  if (!taggedPrime.content.includes(`# ${skillName}`)) {
+    return {
+      responses: [`E2E manual skill assertion failed: ${skillName} body was missing`],
+    };
+  }
+  return {
+    responses: [`${MANUAL_SKILL_ASSERTION_FINAL_TEXT}: ${skillName}`],
+  };
+}
+
+/**
+ * Exercises the real event-driven `skill` handler. The first model call emits
+ * the tool request; the second verifies both the visible tool result and the
+ * body-bearing meta HumanMessage that ToolNode reinjected for the model.
+ */
+function skillToolInvocationResponses({ skillName, toolNames }) {
+  if (!toolNames.has(SKILL_TOOL_NAME)) {
+    return {
+      responses: [`E2E skill tool assertion failed: ${SKILL_TOOL_NAME} was not advertised`],
+    };
+  }
+
+  return {
+    responses: ['', ''],
+    toolCalls: [
+      {
+        id: `call_e2e_skill_${skillName}`,
+        name: SKILL_TOOL_NAME,
+        args: { skillName },
+        type: 'tool_call',
+      },
+    ],
+    resolveOnStream: (streamMessages) => {
+      const toolResult = findLastToolMessageText(
+        streamMessages,
+        `Skill "${skillName}" loaded. Follow the instructions below.`,
+      );
+      if (!toolResult) {
+        return null;
+      }
+
+      const expectedMarker = expectedSkillBodyMarker(skillName);
+      const modelInvokedPrime = collectSkillPrimeMessages(streamMessages).find(
+        (message) =>
+          message.name === skillName &&
+          message.trigger == null &&
+          message.content.includes(expectedMarker),
+      );
+      if (!modelInvokedPrime) {
+        return {
+          responses: [
+            `E2E skill tool assertion failed: ${skillName} body was not reinjected with marker "${expectedMarker}"`,
+          ],
+        };
+      }
+      return {
+        responses: [`${SKILL_TOOL_ASSERTION_FINAL_TEXT}: ${skillName}`],
+      };
+    },
   };
 }
 
@@ -740,7 +924,7 @@ function backgroundCollectResponses(messages, toolNames) {
   };
 }
 
-function resolveResponses({ agents, messages, text, toolNames }) {
+function resolveResponses({ graph, messages, text, toolNames }) {
   const reply = replyResponses(text);
   if (reply) {
     return reply;
@@ -769,8 +953,50 @@ function resolveResponses({ agents, messages, text, toolNames }) {
     return quoteAssertion;
   }
 
-  if (text.includes(ASSERT_MODEL_SPEC_SKILLS_MARKER)) {
-    return modelSpecSkillAssertionResponses({ agents, messages, toolNames });
+  if (text.includes(ASSERT_SKILLS_MARKER)) {
+    return {
+      responses: [MOCK_REPLY],
+      resolveOnStream: async (streamMessages, streamOptions, runManager) => {
+        const agentView = await getStreamAgentView({
+          graph,
+          messages: streamMessages,
+          options: streamOptions,
+          runManager,
+        });
+        return skillAssertionResponses({
+          messages: agentView.messages,
+          assertion: parseSkillAssertion(text, agentView.agentId),
+          toolNames: agentView.toolNames,
+        });
+      },
+    };
+  }
+
+  if (text.includes(ASSERT_MANUAL_SKILL_MARKER)) {
+    const skillName = getMarkerValue(text, ASSERT_MANUAL_SKILL_MARKER);
+    return {
+      responses: [MOCK_REPLY],
+      resolveOnStream: async (streamMessages, streamOptions, runManager) => {
+        const agentView = await getStreamAgentView({
+          graph,
+          messages: streamMessages,
+          options: streamOptions,
+          runManager,
+        });
+        return manualSkillAssertionResponses({
+          messages: agentView.messages,
+          skillName,
+        });
+      },
+    };
+  }
+
+  const invokedSkillName = getMarkerValue(text, INVOKE_SKILL_MARKER);
+  if (invokedSkillName) {
+    return skillToolInvocationResponses({
+      skillName: invokedSkillName,
+      toolNames,
+    });
   }
 
   const createSkillName = getRequestedSkillName(text, CREATE_SKILL_MARKER);
@@ -824,7 +1050,7 @@ module.exports = function fakeModelHook(run, context) {
   const text = getLatestUserText(context?.messages);
   const toolNames = collectToolNames(context?.agents);
   const { responses, sleep, toolCalls, thrownError, resolveOnStream } = resolveResponses({
-    agents: context?.agents,
+    graph,
     messages: context?.messages,
     text,
     toolNames,

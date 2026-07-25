@@ -402,7 +402,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
       const resolvedSkillIds = await resolveModelSpecSkillIds({
         names: selectedModelSpec.skills,
         accessibleSkillIds,
-        getSkillByName: db.getSkillByName,
+        getSkillByName: skillDbMethods.getSkillByName,
       });
       primaryAgent.skills_enabled = true;
       primaryAgent.skills = resolvedSkillIds.map((id) => id.toString());

@@ -1,5 +1,6 @@
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
+import type { FormEvent } from 'react';
 import {
   Button,
   OGDialog,
@@ -98,13 +99,23 @@ export default function CreateSkillDialog({
     reset();
   };
 
+  const handleFormSubmit = (event: FormEvent<HTMLFormElement>) => {
+    /**
+     * This dialog can be portaled from inside Agent Builder's form. React
+     * events still bubble through the component tree across a portal, so an
+     * unguarded submit also submits (and prematurely creates) the agent.
+     */
+    event.stopPropagation();
+    return handleSubmit(onSubmit)(event);
+  };
+
   const submitDisabled = !isValid || isSubmitting || createSkill.isLoading;
 
   return (
     <OGDialog open={isOpen} onOpenChange={setIsOpen}>
       <OGDialogContent className="w-11/12 max-w-5xl overflow-hidden" showCloseButton={false}>
         <form
-          onSubmit={handleSubmit(onSubmit)}
+          onSubmit={handleFormSubmit}
           className="flex max-h-[80vh] min-w-0 flex-col gap-3 overflow-hidden p-1 sm:gap-4 sm:p-2"
         >
           <h2 className="text-lg font-bold text-text-primary">

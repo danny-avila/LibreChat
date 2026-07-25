@@ -50,7 +50,7 @@ export function filterSkillsForPopover(
   skills: TSkillSummary[],
   ctx: {
     agentSkillIds: string[] | null | undefined;
-    isActive: (skill: Pick<TSkillSummary, '_id' | 'author'>) => boolean;
+    isActive: (skill: Pick<TSkillSummary, '_id' | 'author' | 'source'>) => boolean;
   },
 ): TSkillSummary[] {
   const { agentSkillIds, isActive } = ctx;
@@ -128,21 +128,10 @@ function SkillsCommandContent({
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useSkillsInfiniteQuery({ limit: 50 });
 
-  /* Sticky circuit breaker: once any page request fails, stop auto-fetching
-     for the lifetime of the popover so a transient API error does not turn
-     into an unbounded retry loop (isError can flip back to false on the
-     next attempt, which would otherwise re-arm the auto-fetch effect). */
-  const paginationBlockedRef = useRef(false);
-  useEffect(() => {
-    if (isError) {
-      paginationBlockedRef.current = true;
-    }
-  }, [isError]);
-
   /* Auto-fetch all pages so client-side search covers the full catalog,
      not just the first page. The skills API is server-side capped. */
   useEffect(() => {
-    if (paginationBlockedRef.current || isError) {
+    if (isError) {
       return;
     }
     if (hasNextPage && !isFetchingNextPage) {
