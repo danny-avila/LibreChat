@@ -118,9 +118,7 @@ export default function Import() {
   const showSummary = job?.phase === 'awaiting_confirmation' && job.summary != null;
 
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm text-text-secondary">{localize('com_ui_import_info')}</p>
-
+    <div className="flex flex-col gap-2">
       {jobId == null && (
         <Dropzone
           onFile={handleFile}

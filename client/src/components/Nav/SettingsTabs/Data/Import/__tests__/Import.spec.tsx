@@ -96,10 +96,10 @@ describe('Import panel', () => {
     return input;
   }
 
-  it('renders a keyboard-operable drop zone', async () => {
+  it('renders a keyboard-operable import control', async () => {
     const clickSpy = jest.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
     render(<Import />);
-    const zone = screen.getByRole('button', { name: /drop a \.zip or \.json/i });
+    const zone = screen.getByRole('button', { name: /import data import$/i });
     expect(zone).toBeInTheDocument();
     expect(zone.tagName).toBe('BUTTON');
 
@@ -112,10 +112,10 @@ describe('Import panel', () => {
     clickSpy.mockRestore();
   });
 
-  it('does not give the drop zone a label that mismatches its visible text while uploading', () => {
+  it('keeps the accessible name containing the visible text, including while uploading', () => {
     const { rerender } = render(<Import />);
-    const idleZone = screen.getByRole('button', { name: /drop a \.zip or \.json/i });
-    expect(idleZone).toHaveAccessibleName('Drop a .zip or .json file here, or click to choose');
+    const idleZone = screen.getByRole('button', { name: /import data import$/i });
+    expect(idleZone).toHaveAccessibleName('Import data Import');
 
     dataProvider.useUploadImportMutation.mockImplementation(
       (options: typeof capturedUploadOptions) => {
@@ -125,7 +125,7 @@ describe('Import panel', () => {
     );
     rerender(<Import />);
     const busyZone = screen.getByRole('button', { name: /importing/i });
-    expect(busyZone).toHaveAccessibleName('Importing');
+    expect(busyZone).toHaveAccessibleName('Import data Importing');
   });
 
   it('shows a specific toast when the file is over the configured size limit, and never uploads it', () => {
@@ -358,7 +358,7 @@ describe('Import panel', () => {
     expect(screen.getByText(/archive truncated/i)).toBeInTheDocument();
   });
 
-  it('moves focus back to the drop zone after starting another import', () => {
+  it('moves focus back to the import control after starting another import', () => {
     dataProvider.useImportJobQuery.mockReturnValue({
       data: job({
         phase: 'completed',
@@ -379,7 +379,7 @@ describe('Import panel', () => {
     dataProvider.useImportJobQuery.mockReturnValue({ data: undefined });
     rerender(<Import />);
 
-    expect(screen.getByRole('button', { name: /drop a \.zip or \.json/i })).toHaveFocus();
+    expect(screen.getByRole('button', { name: /import data import$/i })).toHaveFocus();
   });
 
   it('moves focus to a loading status while the created job has not been fetched yet', () => {
@@ -396,13 +396,13 @@ describe('Import panel', () => {
 
   it('shows a success toast and never starts a job when the upload finishes synchronously', () => {
     render(<Import />);
-    expect(screen.getByRole('button', { name: /drop a \.zip or \.json/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /import data import$/i })).toBeInTheDocument();
 
     act(() => {
       capturedUploadOptions.onSuccess?.({ message: 'Imported 3 conversations' });
     });
 
-    expect(screen.getByRole('button', { name: /drop a \.zip or \.json/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /import data import$/i })).toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     expect(dataProvider.useImportJobQuery).not.toHaveBeenCalledWith(expect.stringMatching(/.+/));
     expect(showToast).toHaveBeenCalledWith(
@@ -442,9 +442,7 @@ describe('Import panel', () => {
     render(<Import />);
 
     expect(dataProvider.useImportJobQuery).toHaveBeenCalledWith('job-99');
-    expect(
-      screen.queryByRole('button', { name: /drop a \.zip or \.json/i }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /import data import$/i })).not.toBeInTheDocument();
   });
 
   it('records the started job so it survives the panel unmounting, and clears it on reset', () => {
