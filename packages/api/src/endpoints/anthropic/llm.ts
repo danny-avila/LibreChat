@@ -2,9 +2,10 @@ import { Agent } from 'undici';
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import {
-  clampEffortForDisabledThinking,
-  anthropicSettings,
+  clampOutputConfigEffort,
   omitsSamplingParameters,
+  isThinkingDisabled,
+  anthropicSettings,
   removeNullishValues,
   ThinkingDisplay,
   AuthKeys,
@@ -263,17 +264,8 @@ function getLLMConfig(
    * the value applied just above is the one that would ship — clamp it to the
    * highest level the model accepts in that combination.
    */
-  const disabledThinkingEffort = requestOptions.invocationKwargs?.output_config as
-    | { effort?: string }
-    | undefined;
-  if (
-    (requestOptions.thinking as unknown as { type?: string } | undefined)?.type === 'disabled' &&
-    typeof disabledThinkingEffort?.effort === 'string'
-  ) {
-    disabledThinkingEffort.effort = clampEffortForDisabledThinking(
-      resolvedModel,
-      disabledThinkingEffort.effort,
-    );
+  if (isThinkingDisabled(requestOptions.thinking)) {
+    clampOutputConfigEffort(resolvedModel, requestOptions.invocationKwargs?.output_config);
   }
 
   const hasActiveThinking = requestOptions.thinking != null;

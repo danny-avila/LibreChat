@@ -231,6 +231,34 @@ export function clampEffortForDisabledThinking(model: string, effort: string): s
   return effort;
 }
 
+/** An `output_config` container carrying a usable effort level. */
+function hasStringEffort(value: unknown): value is { effort: string } {
+  if (typeof value !== 'object' || value === null || !('effort' in value)) {
+    return false;
+  }
+  return typeof value.effort === 'string';
+}
+
+/**
+ * Clamps an `output_config.effort` in place when the model would reject it
+ * while thinking is disabled. No-op when the container carries no string
+ * effort, so callers can pass a possibly-absent config directly.
+ */
+export function clampOutputConfigEffort(model: string, outputConfig: unknown): void {
+  if (!hasStringEffort(outputConfig)) {
+    return;
+  }
+  outputConfig.effort = clampEffortForDisabledThinking(model, outputConfig.effort);
+}
+
+/** Whether a resolved thinking config is an explicit `{ type: 'disabled' }`. */
+export function isThinkingDisabled(thinking: unknown): boolean {
+  if (typeof thinking !== 'object' || thinking === null || !('type' in thinking)) {
+    return false;
+  }
+  return thinking.type === 'disabled';
+}
+
 /** Checks if a model has a 1M context window (Sonnet 4.6+, Opus 4.6+, Opus 5+, Fable/Mythos) */
 export function supportsContext1m(model: string): boolean {
   const sonnet = parseSonnetVersion(model);
@@ -516,20 +544,9 @@ export const bedrockInputParser = s.tConversationSchema
          * `effort`, so the branch above leaves it untouched).
          */
         if (thinkingDisabled) {
-          const targets: (Record<string, unknown> | undefined)[] = [
-            additionalFields,
-            persistedAmrf,
-          ];
-          targets.forEach((target) => {
-            const outputConfig = target?.output_config as { effort?: unknown } | undefined;
-            if (typeof outputConfig?.effort !== 'string') {
-              return;
-            }
-            outputConfig.effort = clampEffortForDisabledThinking(
-              typedData.model as string,
-              outputConfig.effort,
-            );
-          });
+          [additionalFields, persistedAmrf].forEach((target) =>
+            clampOutputConfigEffort(typedData.model as string, target?.output_config),
+          );
         }
 
         if (additionalFields.thinking === false) {
