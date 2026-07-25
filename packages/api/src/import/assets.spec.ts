@@ -487,4 +487,191 @@ describe('ingestAssets', () => {
 
     archive.close();
   });
+
+  it('strips directory components from a mapped name containing forward slashes', async () => {
+    const filepath = await buildFixtureExport();
+    const archive = await openArchive(filepath);
+    const layout = resolveLayout(
+      archive.entries,
+      parseManifest(await archive.read('export_manifest.json')),
+    );
+
+    const saved: string[] = [];
+    const result = await ingestAssets({
+      archive: withAssetNames(
+        archive,
+        JSON.stringify({
+          'file-one.dat':
+            '69a6e640-9640-8397-9003-84ae676527f2/audio/75b7513a-d0e2-4024-9156-c2a2d96321b2.wav',
+        }),
+      ),
+      layout,
+      userId: 'u1',
+      tenantId: undefined,
+      source: 'local',
+      pointers: ['file-service://file-one'],
+      deps: {
+        saveBuffer: async ({ fileName }) => {
+          saved.push(fileName);
+          return `/uploads/u1/${fileName}`;
+        },
+        createFile: async (data) => ({ file_id: data.file_id as string }),
+      },
+    });
+
+    expect(result.imported).toBe(1);
+    expect(result.errors).toEqual([]);
+    expect(saved[0]).not.toContain('/');
+    expect(saved[0].endsWith('-75b7513a-d0e2-4024-9156-c2a2d96321b2.wav')).toBe(true);
+    expect(result.map.get('file-service://file-one')?.filename).toBe(
+      '75b7513a-d0e2-4024-9156-c2a2d96321b2.wav',
+    );
+
+    archive.close();
+  });
+
+  it('cannot escape the upload directory via a mapped name containing ".." segments', async () => {
+    const filepath = await buildFixtureExport();
+    const archive = await openArchive(filepath);
+    const layout = resolveLayout(
+      archive.entries,
+      parseManifest(await archive.read('export_manifest.json')),
+    );
+
+    const saved: string[] = [];
+    const result = await ingestAssets({
+      archive: withAssetNames(archive, JSON.stringify({ 'file-one.dat': '../../etc/passwd' })),
+      layout,
+      userId: 'u1',
+      tenantId: undefined,
+      source: 'local',
+      pointers: ['file-service://file-one'],
+      deps: {
+        saveBuffer: async ({ fileName }) => {
+          saved.push(fileName);
+          return `/uploads/u1/${fileName}`;
+        },
+        createFile: async (data) => ({ file_id: data.file_id as string }),
+      },
+    });
+
+    expect(result.imported).toBe(1);
+    expect(saved[0]).not.toContain('..');
+    expect(saved[0]).not.toContain('/');
+    expect(result.map.get('file-service://file-one')?.filename).toBe('passwd');
+
+    archive.close();
+  });
+
+  it('neutralizes a mapped name containing Windows-style backslash separators', async () => {
+    const filepath = await buildFixtureExport();
+    const archive = await openArchive(filepath);
+    const layout = resolveLayout(
+      archive.entries,
+      parseManifest(await archive.read('export_manifest.json')),
+    );
+
+    const saved: string[] = [];
+    const result = await ingestAssets({
+      archive: withAssetNames(
+        archive,
+        JSON.stringify({
+          'file-one.dat':
+            '699ef7b9-eaa4-838a-b307-eba213e48730\\video\\0add091d-1b12-4535-8592-edcb23153e14.mp4',
+        }),
+      ),
+      layout,
+      userId: 'u1',
+      tenantId: undefined,
+      source: 'local',
+      pointers: ['file-service://file-one'],
+      deps: {
+        saveBuffer: async ({ fileName }) => {
+          saved.push(fileName);
+          return `/uploads/u1/${fileName}`;
+        },
+        createFile: async (data) => ({ file_id: data.file_id as string }),
+      },
+    });
+
+    expect(result.imported).toBe(1);
+    expect(saved[0]).not.toContain('\\');
+    expect(saved[0]).not.toContain('/');
+    expect(result.map.get('file-service://file-one')?.filename).toBe(
+      '0add091d-1b12-4535-8592-edcb23153e14.mp4',
+    );
+
+    archive.close();
+  });
+
+  it('keeps two entries that sanitize to the same leaf name from overwriting each other', async () => {
+    const filepath = await buildFixtureExport();
+    const archive = await openArchive(filepath);
+    const layout = resolveLayout(
+      archive.entries,
+      parseManifest(await archive.read('export_manifest.json')),
+    );
+
+    const saved: string[] = [];
+    const result = await ingestAssets({
+      archive: withAssetNames(
+        archive,
+        JSON.stringify({
+          'file-one.dat': 'conv-a/audio/clip.wav',
+          'file-two.dat': 'conv-b/audio/clip.wav',
+        }),
+      ),
+      layout,
+      userId: 'u1',
+      tenantId: undefined,
+      source: 'local',
+      pointers: ['file-service://file-one', 'file-service://file-two'],
+      deps: {
+        saveBuffer: async ({ fileName }) => {
+          saved.push(fileName);
+          return `/uploads/u1/${fileName}`;
+        },
+        createFile: async (data) => ({ file_id: data.file_id as string }),
+      },
+    });
+
+    expect(result.imported).toBe(2);
+    expect(new Set(saved).size).toBe(2);
+    expect(result.map.get('file-service://file-one')?.filename).toBe('clip.wav');
+    expect(result.map.get('file-service://file-two')?.filename).toBe('clip.wav');
+
+    archive.close();
+  });
+
+  it('falls back to a slash-bearing attachment name and still stores it as a leaf', async () => {
+    const filepath = await buildFixtureExport();
+    const archive = await openArchive(filepath);
+    const layout = resolveLayout(
+      archive.entries,
+      parseManifest(await archive.read('export_manifest.json')),
+    );
+
+    const saved: string[] = [];
+    const result = await ingestAssets({
+      archive: withAssetNames(archive, JSON.stringify({})),
+      layout,
+      userId: 'u1',
+      tenantId: undefined,
+      source: 'local',
+      pointers: ['file-service://file-one'],
+      attachments: new Map([['file-one', { id: 'file-one', name: 'conv-a/images/photo.png' }]]),
+      deps: {
+        saveBuffer: async ({ fileName }) => {
+          saved.push(fileName);
+          return `/uploads/u1/${fileName}`;
+        },
+        createFile: async (data) => ({ file_id: data.file_id as string }),
+      },
+    });
+
+    expect(result.map.get('file-service://file-one')?.filename).toBe('photo.png');
+    expect(saved[0]).not.toContain('/');
+
+    archive.close();
+  });
 });

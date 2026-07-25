@@ -201,7 +201,12 @@ export async function buildFixtureExport(overrides: FixtureOverrides = {}): Prom
     'conversation_asset_file_names.json',
     JSON.stringify({
       'file-one.dat': 'first.jpg',
-      'file-two.dat': 'second.jpg',
+      /** Real ChatGPT exports map many `.dat` entries to an original name
+       * that also encodes the asset's nested conversation folder (e.g.
+       * `<conversation-id>/audio/<file>.wav`), not a bare leaf name. This
+       * entry mirrors that shape so every suite building on this fixture
+       * exercises it. */
+      'file-two.dat': '69a6e640-9640-8397-9003-84ae676527f2/images/second.jpg',
       'file-three.dat': 'orphan.jpg',
     }),
   );

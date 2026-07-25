@@ -7,6 +7,7 @@ import type { AssetReference } from './chatgpt/content';
 import type { ExportLayout } from './manifest';
 import type { Archive } from './archive';
 
+import { sanitizeFilename } from '~/utils/files';
 import { ASSET_NAMES_ENTRY } from './manifest';
 import { sanitizeImportError } from './errors';
 
@@ -164,6 +165,37 @@ function resolveMime(
   );
 }
 
+/**
+ * `conversation_asset_file_names.json` and `metadata.attachments[].name` are
+ * both attacker-controlled export content, and both have been observed to
+ * carry the asset's original nested location rather than a bare leaf name
+ * (e.g. `<conversation-id>/audio/<file>.wav`). Splitting on both `/` and `\`
+ * — a crafted export can use either — and keeping only the final segment
+ * strips any traversal (`../../etc/passwd` -> `passwd`) before the name ever
+ * reaches a filesystem path, and gives the user a readable file name instead
+ * of a directory prefix they never saw in ChatGPT.
+ */
+function originalLeafName(name: string): string {
+  const segments = name.split(/[\\/]+/).filter((segment) => segment.length > 0);
+  return segments.length > 0 ? segments[segments.length - 1] : name;
+}
+
+/**
+ * Resolves the display name for one asset. `conversation_asset_file_names.json`
+ * is the authoritative source when it has an entry; `metadata.attachments[].name`
+ * is the same kind of export-recorded original name and covers assets the map
+ * omits; the bare `.dat` id is the last resort. All three pass through
+ * `originalLeafName` before use.
+ */
+function resolveOriginalName(
+  entryName: string,
+  names: Record<string, string>,
+  attachment: ChatGptAttachment | undefined,
+): string {
+  const rawName = names[entryName] ?? attachment?.name ?? entryName.replace(/\.dat$/, '');
+  return originalLeafName(rawName);
+}
+
 async function readAssetNames(
   archive: Archive,
   layout: ExportLayout,
@@ -206,15 +238,22 @@ function buildImportedAsset(
 async function ingestOne(
   pointer: string,
   entryName: string,
-  originalName: string,
+  names: Record<string, string>,
   input: IngestInput,
 ): Promise<ImportedAsset> {
   const { archive, userId, tenantId, deps } = input;
   const buffer = await archive.read(entryName);
   const attachment = input.attachments?.get(pointerId(pointer));
+  const originalName = resolveOriginalName(entryName, names, attachment);
   const type = resolveMime(attachment, originalName, buffer);
   const fileId = uuidv4();
-  const fileName = `${fileId}-${originalName}`;
+  /** `originalName` is already a leaf (no separators), but it is still
+   * attacker-controlled export content — `sanitizeFilename` is the one
+   * vetted place that turns it into a safe storage-path segment (ASCII
+   * punctuation allow-list, dotfile guard, NAME_MAX truncation). The
+   * `fileId` prefix is a fresh `uuidv4()` per asset, so two entries whose
+   * names sanitize to the same string still land at distinct paths. */
+  const fileName = `${fileId}-${sanitizeFilename(originalName)}`;
 
   const filepath = await deps.saveBuffer({ userId, buffer, fileName, tenantId });
 
@@ -270,10 +309,8 @@ export async function ingestAssets(input: IngestInput): Promise<IngestResult> {
       continue;
     }
 
-    const originalName = names[entryName] ?? entryName.replace(/\.dat$/, '');
-
     try {
-      const asset = await ingestOne(pointer, entryName, originalName, input);
+      const asset = await ingestOne(pointer, entryName, names, input);
       map.set(pointer, asset);
       imported += 1;
     } catch (error) {
