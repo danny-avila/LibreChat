@@ -27,6 +27,7 @@ describe('Convos Routes', () => {
     deleteAllSharedLinksWithCleanup,
     deleteConvoSharedLinksWithCleanup,
   } = require('@librechat/api');
+  const { configMiddleware, validateConvoAccess } = require('~/server/middleware');
 
   beforeAll(() => {
     convosRouter = require('../convos');
@@ -45,6 +46,30 @@ describe('Convos Routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('conversation mutation middleware', () => {
+    it.each([
+      ['/api/convos/archive', { arg: { conversationId: 'conv-123', isArchived: true } }],
+      ['/api/convos/pin', { arg: { conversationId: 'conv-123', pinned: true } }],
+      ['/api/convos/update', { arg: { conversationId: 'conv-123', title: 'Updated' } }],
+    ])('loads config before an access denial on %s', async (path, body) => {
+      configMiddleware.mockImplementationOnce((req, res, next) => {
+        req.config = { interfaceConfig: { retentionMode: 'ephemeral' } };
+        next();
+      });
+      validateConvoAccess.mockImplementationOnce((req, res) => {
+        res.status(403).json({ configLoaded: req.config != null });
+      });
+
+      const response = await request(app).post(path).send(body);
+
+      expect(response.status).toBe(403);
+      expect(response.body).toEqual({ configLoaded: true });
+      expect(configMiddleware).toHaveBeenCalledTimes(1);
+      expect(validateConvoAccess).toHaveBeenCalledTimes(1);
+      expect(saveConvo).not.toHaveBeenCalled();
+    });
   });
 
   describe('DELETE /all', () => {

@@ -1570,10 +1570,12 @@ describe('Message Operations', () => {
   describe('applyForcedRetentionToTag', () => {
     const Conversation = () => mongoose.models.Conversation as mongoose.Model<IConversation>;
     const SharedLink = () => mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
+    const File = () => mongoose.models.File as mongoose.Model<IMongoFile>;
 
     beforeEach(async () => {
       await Conversation().deleteMany({});
       await SharedLink().deleteMany({});
+      await File().deleteMany({});
     });
 
     it('converts every permanent conversation carrying the tag under ephemeral mode', async () => {
@@ -1705,6 +1707,45 @@ describe('Message Operations', () => {
       expect(permanentShare?.expiredAt?.getTime()).toBeGreaterThan(soonerExpiry.getTime());
     });
 
+    it('owner-scopes bulk conversation file caps when conversation ids collide', async () => {
+      const ownerObjectId = new mongoose.Types.ObjectId();
+      const foreignOwnerObjectId = new mongoose.Types.ObjectId();
+      const owner = ownerObjectId.toString();
+      const foreignOwner = foreignOwnerObjectId.toString();
+      const conversationId = uuidv4();
+      const ownerFileId = uuidv4();
+      const foreignFileId = uuidv4();
+
+      await Conversation().create([
+        { conversationId, user: owner, endpoint: 'openAI', tags: ['work'] },
+        { conversationId, user: foreignOwner, endpoint: 'openAI', tags: ['personal'] },
+      ]);
+      await File().collection.insertMany([
+        { file_id: ownerFileId, conversationId, user: ownerObjectId, expiredAt: null },
+        {
+          file_id: foreignFileId,
+          conversationId,
+          user: foreignOwnerObjectId,
+          expiredAt: null,
+        },
+      ]);
+
+      await applyForcedRetentionToTag(
+        {
+          userId: owner,
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { tag: 'work' },
+        { context: 'PUT /api/tags/:tag' },
+      );
+
+      const ownerFile = await File().findOne({ file_id: ownerFileId }).lean();
+      expect(ownerFile?.expiredAt).toBeInstanceOf(Date);
+
+      const foreignFile = await File().findOne({ file_id: foreignFileId }).lean();
+      expect(foreignFile?.expiredAt ?? null).toBeNull();
+    });
+
     it('is a no-op outside forced retention', async () => {
       const conversationId = uuidv4();
       await Conversation().create({
@@ -1829,10 +1870,12 @@ describe('Message Operations', () => {
       const permanentFileId = uuidv4();
       const soonerFileId = uuidv4();
       const unrelatedFileId = uuidv4();
+      const ownerObjectId = new mongoose.Types.ObjectId();
+      const owner = ownerObjectId.toString();
 
       await Conversation().create({
         conversationId,
-        user: 'user123',
+        user: owner,
         endpoint: 'openAI',
         isTemporary: false,
       });
@@ -1840,19 +1883,19 @@ describe('Message Operations', () => {
         {
           file_id: permanentFileId,
           conversationId,
-          user: new mongoose.Types.ObjectId(),
+          user: ownerObjectId,
           expiredAt: null,
         },
         {
           file_id: soonerFileId,
           conversationId,
-          user: new mongoose.Types.ObjectId(),
+          user: ownerObjectId,
           expiredAt: soonerExpiry,
         },
         {
           file_id: unrelatedFileId,
           conversationId: unrelatedConversationId,
-          user: new mongoose.Types.ObjectId(),
+          user: ownerObjectId,
           expiredAt: null,
         },
       ]);
@@ -1874,19 +1917,21 @@ describe('Message Operations', () => {
       const parentDeadline = new Date(Date.now() + 60 * 60 * 1000);
       const conversationId = uuidv4();
       const fileId = uuidv4();
+      const ownerObjectId = new mongoose.Types.ObjectId();
+      const owner = ownerObjectId.toString();
 
       await Conversation().create({
         conversationId,
-        user: 'user123',
+        user: owner,
         endpoint: 'openAI',
         isTemporary: true,
         expiredAt: parentDeadline,
       });
-      await SharedLink().create({ conversationId, user: 'user123', shareId: uuidv4() });
+      await SharedLink().create({ conversationId, user: owner, shareId: uuidv4() });
       await File().collection.insertOne({
         file_id: fileId,
         conversationId,
-        user: new mongoose.Types.ObjectId(),
+        user: ownerObjectId,
         expiredAt: null,
       });
 
@@ -2083,6 +2128,53 @@ describe('Message Operations', () => {
       expect(converted?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
     });
 
+    it('does not extend a parent shortened after the sweep cursor read', async () => {
+      const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const soonerExpiry = new Date(Date.now() + 30 * 60 * 1000);
+      const owner = new mongoose.Types.ObjectId().toString();
+      const conversationId = uuidv4();
+      const convo = await Conversation().create({
+        conversationId,
+        user: owner,
+        endpoint: 'openAI',
+        isTemporary: false,
+      });
+      const FileModel = File();
+      const updateMany = FileModel.updateMany.bind(FileModel);
+      const racingUpdateMany = jest.fn(
+        async (
+          filter: mongoose.FilterQuery<IMongoFile>,
+          update: mongoose.UpdateQuery<IMongoFile>,
+        ) => {
+          await Conversation().collection.updateOne(
+            { _id: convo._id },
+            { $set: { isTemporary: true, expiredAt: soonerExpiry } },
+          );
+          return updateMany(filter, update);
+        },
+      );
+      Object.assign(FileModel, { updateMany: racingUpdateMany });
+      const result = await (async () => {
+        try {
+          return await sweepForcedRetention(
+            Conversation(),
+            Message,
+            SharedLink(),
+            FileModel,
+            forcedExpiredAt,
+          );
+        } finally {
+          Object.assign(FileModel, { updateMany });
+        }
+      })();
+
+      expect(racingUpdateMany).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({ conversations: 0, aligned: 0, errors: 0, projects: [] });
+      const parent = await Conversation().findById(convo._id).lean();
+      expect(parent?.isTemporary).toBe(true);
+      expect(parent?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+    });
+
     it('scopes the sweep to the active tenant context, leaving other tenants untouched', async () => {
       const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
       const tenantAConversationId = uuidv4();
@@ -2143,6 +2235,9 @@ describe('Message Operations', () => {
       const convoFileId = uuidv4();
       const threadFileId = uuidv4();
       const foreignFileId = uuidv4();
+      const conversationFileId = uuidv4();
+      const foreignConversationFileId = uuidv4();
+      const foreignOwnerObjectId = new mongoose.Types.ObjectId();
 
       await Conversation().create({
         conversationId,
@@ -2169,6 +2264,13 @@ describe('Message Operations', () => {
         { file_id: convoFileId, user: ownerObjectId, expiredAt: null },
         { file_id: threadFileId, user: ownerObjectId, expiredAt: null },
         { file_id: foreignFileId, user: new mongoose.Types.ObjectId(), expiredAt: null },
+        { file_id: conversationFileId, conversationId, user: ownerObjectId, expiredAt: null },
+        {
+          file_id: foreignConversationFileId,
+          conversationId,
+          user: foreignOwnerObjectId,
+          expiredAt: null,
+        },
       ]);
 
       await cascadeForcedConversationRetention(
@@ -2193,12 +2295,20 @@ describe('Message Operations', () => {
       const threadFile = await File().findOne({ file_id: threadFileId }).lean();
       expect(threadFile?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
 
+      const conversationFile = await File().findOne({ file_id: conversationFileId }).lean();
+      expect(conversationFile?.expiredAt?.getTime()).toBe(forcedExpiredAt.getTime());
+
       /**
        * A crafted reference to another user's file must never shorten that file's retention:
        * the referenced-id cap is owner-scoped, so the foreign row stays permanent.
        */
       const foreignFile = await File().findOne({ file_id: foreignFileId }).lean();
       expect(foreignFile?.expiredAt ?? null).toBeNull();
+
+      const foreignConversationFile = await File()
+        .findOne({ file_id: foreignConversationFileId })
+        .lean();
+      expect(foreignConversationFile?.expiredAt ?? null).toBeNull();
     });
 
     it('caps lagging children even when the parent conversation already conforms', async () => {
@@ -2206,19 +2316,21 @@ describe('Message Operations', () => {
       const parentDeadline = new Date(Date.now() + 60 * 60 * 1000);
       const conversationId = uuidv4();
       const fileId = uuidv4();
+      const ownerObjectId = new mongoose.Types.ObjectId();
+      const owner = ownerObjectId.toString();
 
       await Conversation().create({
         conversationId,
-        user: 'user123',
+        user: owner,
         endpoint: 'openAI',
         isTemporary: true,
         expiredAt: parentDeadline,
       });
-      await SharedLink().create({ conversationId, user: 'user123', shareId: uuidv4() });
+      await SharedLink().create({ conversationId, user: owner, shareId: uuidv4() });
       await File().collection.insertOne({
         file_id: fileId,
         conversationId,
-        user: new mongoose.Types.ObjectId(),
+        user: ownerObjectId,
         expiredAt: null,
       });
 
@@ -2227,7 +2339,7 @@ describe('Message Operations', () => {
         Message,
         SharedLink(),
         File(),
-        'user123',
+        owner,
         conversationId,
         forcedExpiredAt,
       );
@@ -2245,9 +2357,10 @@ describe('Message Operations', () => {
     it('leaves the conversation non-conforming when a child backfill fails so a re-run retries it', async () => {
       const forcedExpiredAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
       const conversationId = uuidv4();
+      const owner = new mongoose.Types.ObjectId().toString();
       await Conversation().create({
         conversationId,
-        user: 'user123',
+        user: owner,
         endpoint: 'openAI',
         isTemporary: false,
       });
@@ -2262,7 +2375,7 @@ describe('Message Operations', () => {
           Message,
           SharedLink(),
           throwingFile,
-          'user123',
+          owner,
           conversationId,
           forcedExpiredAt,
         ),
@@ -2277,7 +2390,7 @@ describe('Message Operations', () => {
         Message,
         SharedLink(),
         File(),
-        'user123',
+        owner,
         conversationId,
         forcedExpiredAt,
       );
