@@ -155,10 +155,36 @@ describe('useStartImportMutation', () => {
 
     unmount();
   });
+
+  it('surfaces start failures through onError', async () => {
+    const mockStart = dataService.startImportJob as jest.MockedFunction<
+      typeof dataService.startImportJob
+    >;
+    const error = new Error('start failed');
+    mockStart.mockRejectedValue(error);
+    const onError = jest.fn();
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+
+    const { result, unmount } = renderHook(() => useStartImportMutation({ onError }), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync('job-1').catch(() => undefined);
+    });
+
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalledWith(error);
+    });
+    expect(invalidateSpy).not.toHaveBeenCalled();
+
+    unmount();
+  });
 });
 
 describe('useCancelImportMutation', () => {
-  it('invalidates the job query so the panel reflects the cancelled state, not the conversation list', async () => {
+  it('invalidates both the job query and the conversation list, since cancelling stops mid-import rather than before it', async () => {
     const mockCancel = dataService.cancelImportJob as jest.MockedFunction<
       typeof dataService.cancelImportJob
     >;
@@ -176,7 +202,7 @@ describe('useCancelImportMutation', () => {
 
     expect(mockCancel).toHaveBeenCalledWith('job-1');
     expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.importJob, 'job-1']);
-    expect(invalidateSpy).not.toHaveBeenCalledWith([QueryKeys.allConversations]);
+    expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.allConversations]);
 
     unmount();
   });

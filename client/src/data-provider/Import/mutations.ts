@@ -3,6 +3,8 @@ import { QueryKeys, dataService, isImportJobStarted } from 'librechat-data-provi
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { TImportResponse } from 'librechat-data-provider';
 
+export type ImportJobActionResult = { jobId: string };
+
 export const useUploadImportMutation = (options?: {
   onSuccess?: (data: TImportResponse) => void;
   onError?: (error: unknown) => void;
@@ -25,10 +27,10 @@ export const useUploadImportMutation = (options?: {
 
 export const useStartImportMutation = (options?: {
   onError?: (error: unknown) => void;
-}): UseMutationResult<{ jobId: string }, unknown, string> => {
+}): UseMutationResult<ImportJobActionResult, unknown, string> => {
   const queryClient = useQueryClient();
 
-  return useMutation<{ jobId: string }, unknown, string>({
+  return useMutation<ImportJobActionResult, unknown, string>({
     mutationFn: (jobId: string) => dataService.startImportJob(jobId),
     onSuccess: (_data, jobId) => {
       queryClient.invalidateQueries([QueryKeys.importJob, jobId]);
@@ -40,16 +42,24 @@ export const useStartImportMutation = (options?: {
 };
 
 export const useCancelImportMutation = (): UseMutationResult<
-  { jobId: string },
+  ImportJobActionResult,
   unknown,
   string
 > => {
   const queryClient = useQueryClient();
 
-  return useMutation<{ jobId: string }, unknown, string>({
+  return useMutation<ImportJobActionResult, unknown, string>({
     mutationFn: (jobId: string) => dataService.cancelImportJob(jobId),
     onSuccess: (_data, jobId) => {
+      /**
+       * Cancellation stops the background job between conversations, not
+       * before the first one: everything already flushed to the database
+       * up to that point is a real, permanent import. The conversation
+       * list must be invalidated alongside the job query, or the sidebar
+       * never reflects what was actually imported before cancelling.
+       */
       queryClient.invalidateQueries([QueryKeys.importJob, jobId]);
+      queryClient.invalidateQueries([QueryKeys.allConversations]);
     },
   });
 };

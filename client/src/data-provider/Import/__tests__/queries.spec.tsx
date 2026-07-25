@@ -4,7 +4,7 @@ import { QueryKeys, dataService } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TImportJob } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import { importJobRefetchInterval, useImportJobQuery } from '../queries';
+import { fetchImportJob, importJobRefetchInterval, useImportJobQuery } from '../queries';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -69,6 +69,39 @@ describe('importJobRefetchInterval', () => {
 
   it('polls when there is no data yet', () => {
     expect(importJobRefetchInterval(undefined)).toBe(2000);
+  });
+});
+
+describe('fetchImportJob', () => {
+  it('invalidates the conversation list when the job has just completed', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+    const mockGetImportJob = dataService.getImportJob as jest.MockedFunction<
+      typeof dataService.getImportJob
+    >;
+    mockGetImportJob.mockResolvedValue(job('completed'));
+
+    const data = await fetchImportJob('job-1', queryClient);
+
+    expect(data.phase).toBe('completed');
+    expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.allConversations]);
+  });
+
+  it('does not invalidate the conversation list for non-completed phases, including other terminal ones', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+    const mockGetImportJob = dataService.getImportJob as jest.MockedFunction<
+      typeof dataService.getImportJob
+    >;
+
+    mockGetImportJob.mockResolvedValue(job('failed'));
+    await fetchImportJob('job-1', queryClient);
+    mockGetImportJob.mockResolvedValue(job('cancelled'));
+    await fetchImportJob('job-1', queryClient);
+    mockGetImportJob.mockResolvedValue(job('assets'));
+    await fetchImportJob('job-1', queryClient);
+
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -141,5 +174,32 @@ describe('useImportJobQuery', () => {
     expect(invalidateSpy).not.toHaveBeenCalledWith([QueryKeys.allConversations]);
 
     unmount();
+  });
+
+  it('does not refetch, and so does not re-invalidate, when remounted on an already-cached completed job', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const mockGetImportJob = dataService.getImportJob as jest.MockedFunction<
+      typeof dataService.getImportJob
+    >;
+    mockGetImportJob.mockResolvedValue(job('completed'));
+
+    const first = renderHook(() => useImportJobQuery('job-1'), {
+      wrapper: createWrapper(queryClient),
+    });
+    await waitFor(() => {
+      expect(first.result.current.data?.phase).toBe('completed');
+    });
+    first.unmount();
+
+    const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+    const second = renderHook(() => useImportJobQuery('job-1'), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    expect(second.result.current.data?.phase).toBe('completed');
+    expect(mockGetImportJob).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).not.toHaveBeenCalled();
+
+    second.unmount();
   });
 });
