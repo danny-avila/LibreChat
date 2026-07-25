@@ -389,6 +389,7 @@ class BaseClient {
       parentMessageId,
       responseMessageId,
     } = await this.setMessageOptions(opts);
+    this.options.startupTelemetry?.mark('history_loaded');
 
     const userMessage = opts.isEdited
       ? this.currentMessages[this.currentMessages.length - 2]
@@ -610,6 +611,7 @@ class BaseClient {
       this.getBuildMessagesOptions(opts),
       opts,
     );
+    this.options.startupTelemetry?.mark('messages_built');
 
     if (tokenCountMap && tokenCountMap[userMessage.messageId]) {
       userMessage.tokenCount = tokenCountMap[userMessage.messageId];
@@ -1521,8 +1523,10 @@ class BaseClient {
         return message;
       }
 
-      await this.addFileContextToMessage(message, contextFiles);
-      await this.processAttachments(message, contextFiles);
+      await Promise.all([
+        this.addFileContextToMessage(message, contextFiles),
+        this.processAttachments(message, contextFiles),
+      ]);
 
       this.message_file_map[message.messageId] = contextFiles;
       return message;

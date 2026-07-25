@@ -9,7 +9,7 @@ const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
-const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   isEnabled,
   apiNotFound,
@@ -21,12 +21,14 @@ const {
   GenerationJobManager,
   QUERY_DEVTOOLS_HEADER,
   createStreamServices,
-  deleteAgentCheckpoint,
+  agentStartupIngressMiddleware,
+  agentStartupTelemetryMiddleware,
   initializeFileStorage,
   initializeDeploymentSkills,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
+  registerShutdownTask,
   setupGracefulShutdown,
   updateInterfacePermissions,
 } = require('@librechat/api');
@@ -85,18 +87,18 @@ const configureGenerationStreams = () => {
     cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
   });
   GenerationJobManager.initialize();
-  // Prune the paused run's durable checkpoint when its approval EXPIRES (periodic sweeper
-  // or a stale submit) instead of leaving it until the Mongo TTL. streamId === conversationId
-  // === the LangGraph thread_id. Config is resolved lazily per expiry so the prune always
-  // targets the currently configured checkpoint collections.
-  GenerationJobManager.setApprovalExpiredHandler(async (conversationId, job) => {
-    // Resolve config in the PAUSED JOB's tenant/user scope — the expiry runs outside any
-    // request context. Passing ids to getAppConfig only keys the cache; the Config query
-    // itself is ALS-scoped by the tenant-isolation plugin, so ENTER the tenant context.
-    await tenantStorage.run({ tenantId: job?.tenantId, userId: job?.userId }, async () => {
-      const appConfig = await getAppConfig({ userId: job?.userId, tenantId: job?.tenantId });
-      await deleteAgentCheckpoint(conversationId, appConfig?.endpoints?.agents?.checkpointer);
-    });
+  // Stop active generations and close their SSE streams while the HTTP server drains.
+  registerShutdownTask(
+    'generation job manager prepare',
+    () => GenerationJobManager.prepareForShutdown(),
+    {
+      phase: 'pre-drain',
+      priority: 100,
+    },
+  );
+  // Tear down stream resources before shared caches and telemetry exporters shut down.
+  registerShutdownTask('generation job manager', () => GenerationJobManager.destroy(), {
+    priority: 100,
   });
 };
 
@@ -197,6 +199,7 @@ const startServer = async () => {
   });
 
   /* Middleware */
+  app.use('/api/agents/chat', agentStartupIngressMiddleware);
   app.use(metricsMiddleware);
   app.use(noIndex);
   app.use(express.json({ limit: '3mb' }));
@@ -234,6 +237,7 @@ const startServer = async () => {
   if (telemetry.enabled) {
     app.use(telemetry.telemetryMiddleware);
   }
+  app.use('/api/agents/chat', agentStartupTelemetryMiddleware);
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
