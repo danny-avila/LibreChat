@@ -4,8 +4,12 @@ const mockLoadAddedAgent = jest.fn();
 const mockResolveAgentScopedSkillIds = jest.fn();
 const mockResolveModelSpecSkillIds = jest.fn();
 const mockCanAuthorSkillFiles = jest.fn();
+const mockGetSkillDbMethods = jest.fn();
 const mockGetAgent = jest.fn();
 const mockGetMCPServerTools = jest.fn();
+const mockRegistryGetSkillByName = jest.fn();
+const mockRegistryListSkillsByAccess = jest.fn();
+const mockRegistryListAlwaysApplySkills = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -35,6 +39,7 @@ jest.mock('~/server/services/Config', () => ({
 
 jest.mock('./skillDeps', () => ({
   canAuthorSkillFiles: (...args) => mockCanAuthorSkillFiles(...args),
+  getSkillDbMethods: () => mockGetSkillDbMethods(),
 }));
 
 jest.mock('~/models', () => ({
@@ -45,7 +50,6 @@ jest.mock('~/models', () => ({
 }));
 
 const { processAddedConvo } = require('./addedConvo');
-const db = require('~/models');
 const { Constants } = require('librechat-data-provider');
 
 const makeReq = () => ({ user: { id: 'u1', role: 'USER' } });
@@ -72,6 +76,11 @@ describe('processAddedConvo', () => {
     );
     mockResolveModelSpecSkillIds.mockResolvedValue([]);
     mockCanAuthorSkillFiles.mockReturnValue(false);
+    mockGetSkillDbMethods.mockReturnValue({
+      getSkillByName: mockRegistryGetSkillByName,
+      listSkillsByAccess: mockRegistryListSkillsByAccess,
+      listAlwaysApplySkills: mockRegistryListAlwaysApplySkills,
+    });
   });
 
   const baseParams = (overrides = {}) => ({
@@ -123,6 +132,75 @@ describe('processAddedConvo', () => {
       expect.objectContaining({ codeEnvAvailable: undefined }),
       expect.anything(),
     );
+  });
+
+  it('keeps deployment-aware skill metadata on a persisted added-agent config', async () => {
+    const deploymentSkillId = { toString: () => 'deployment-skill' };
+    const agentConfigs = new Map();
+    const initializedConfig = {
+      id: 'persisted-added-agent',
+      additional_instructions: '<skill_catalog>deployment-skill</skill_catalog>',
+      manualSkillPrimes: [],
+      alwaysApplySkillPrimes: [
+        {
+          _id: 'deployment-skill',
+          name: 'deployment-skill',
+          body: 'deployment skill body',
+        },
+      ],
+      toolDefinitions: [{ name: 'skill' }],
+      userMCPAuthMap: undefined,
+    };
+
+    mockLoadAddedAgent.mockResolvedValue({
+      id: 'persisted-added-agent',
+      provider: 'openai',
+      skills_enabled: true,
+      skills: ['deployment-skill'],
+    });
+    mockResolveAgentScopedSkillIds.mockReturnValue([deploymentSkillId]);
+    mockInitializeAgent.mockResolvedValue(initializedConfig);
+
+    await processAddedConvo(
+      baseParams({
+        accessibleSkillIds: [deploymentSkillId],
+        editableSkillIds: [deploymentSkillId],
+        skillsCapabilityEnabled: true,
+        agentConfigs,
+      }),
+    );
+
+    expect(mockResolveModelSpecSkillIds).not.toHaveBeenCalled();
+    expect(mockInitializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: expect.objectContaining({
+          id: 'persisted-added-agent',
+          skills_enabled: true,
+          skills: ['deployment-skill'],
+        }),
+        accessibleSkillIds: [deploymentSkillId],
+      }),
+      expect.objectContaining({
+        listSkillsByAccess: mockRegistryListSkillsByAccess,
+        listAlwaysApplySkills: mockRegistryListAlwaysApplySkills,
+        getSkillByName: mockRegistryGetSkillByName,
+      }),
+    );
+    expect(agentConfigs.get('persisted-added-agent')).toBe(initializedConfig);
+    expect(agentConfigs.get('persisted-added-agent')).toEqual(
+      expect.objectContaining({
+        additional_instructions: '<skill_catalog>deployment-skill</skill_catalog>',
+        manualSkillPrimes: [],
+        alwaysApplySkillPrimes: [
+          expect.objectContaining({
+            name: 'deployment-skill',
+            body: 'deployment skill body',
+          }),
+        ],
+        toolDefinitions: [expect.objectContaining({ name: 'skill' })],
+      }),
+    );
+    expect(mockGetSkillDbMethods).toHaveBeenCalledTimes(1);
   });
 
   it('resolves and forwards model-spec skill scope for added ephemeral agents', async () => {
@@ -181,7 +259,7 @@ describe('processAddedConvo', () => {
     expect(mockResolveModelSpecSkillIds).toHaveBeenCalledWith({
       names: ['finance-analyst'],
       accessibleSkillIds: [accessibleSkillId],
-      getSkillByName: db.getSkillByName,
+      getSkillByName: mockRegistryGetSkillByName,
     });
     expect(mockResolveAgentScopedSkillIds).toHaveBeenNthCalledWith(1, {
       agent: expect.objectContaining({
@@ -222,10 +300,11 @@ describe('processAddedConvo', () => {
         defaultActiveOnShare: true,
       }),
       expect.objectContaining({
-        listSkillsByAccess: db.listSkillsByAccess,
-        listAlwaysApplySkills: db.listAlwaysApplySkills,
-        getSkillByName: db.getSkillByName,
+        listSkillsByAccess: mockRegistryListSkillsByAccess,
+        listAlwaysApplySkills: mockRegistryListAlwaysApplySkills,
+        getSkillByName: mockRegistryGetSkillByName,
       }),
     );
+    expect(mockGetSkillDbMethods).toHaveBeenCalledTimes(1);
   });
 });
