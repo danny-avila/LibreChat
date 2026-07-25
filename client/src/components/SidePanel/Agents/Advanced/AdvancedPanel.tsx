@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
-import { Button, TooltipAnchor, useToastContext } from '@librechat/client';
 import { ChevronLeft, Check, Copy } from 'lucide-react';
 import { AgentCapabilities } from 'librechat-data-provider';
+import { Button, TooltipAnchor, useToastContext } from '@librechat/client';
 import type { AgentForm } from '~/common';
 import { sectionLabelClass, groupHeadingClass } from './ui';
 import { useAgentPanelContext } from '~/Providers';

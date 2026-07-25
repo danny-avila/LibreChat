@@ -1,8 +1,8 @@
 import { forwardRef } from 'react';
 import { CheckIcon } from 'lucide-react';
 import { Spinner, DialogButton, InfoHoverCard, ESide } from '@librechat/client';
-import type { TDangerButtonProps } from '~/common';
 import type { ForwardedRef } from 'react';
+import type { TDangerButtonProps } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

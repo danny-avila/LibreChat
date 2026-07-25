@@ -1,6 +1,6 @@
-import type { MemoryArtifact } from 'librechat-data-provider';
 import { useMemo } from 'react';
 import { Alert } from '@librechat/client';
+import type { MemoryArtifact } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 
 export default function MemoryInfo({ memoryArtifacts }: { memoryArtifacts: MemoryArtifact[] }) {

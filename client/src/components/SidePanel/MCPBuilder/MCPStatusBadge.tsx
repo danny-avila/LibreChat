@@ -1,5 +1,5 @@
-import { Check, PlugZap } from 'lucide-react';
 import { Spinner } from '@librechat/client';
+import { Check, PlugZap } from 'lucide-react';
 import type { MCPServerStatus } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';

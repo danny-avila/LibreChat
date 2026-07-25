@@ -22,10 +22,10 @@ import type { TDialogProps } from '~/common';
 import { useUserKey, useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import CustomConfig from './CustomEndpoint';
+import BedrockConfig from './BedrockConfig';
 import GoogleConfig from './GoogleConfig';
 import OpenAIConfig from './OpenAIConfig';
 import OtherConfig from './OtherConfig';
-import BedrockConfig from './BedrockConfig';
 import HelpText from './HelpText';
 import { logger } from '~/utils';
 

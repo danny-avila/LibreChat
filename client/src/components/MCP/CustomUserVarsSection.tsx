@@ -2,12 +2,12 @@ import React, { useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Label, Input, Button, SecretInput } from '@librechat/client';
 import type { Control, FieldErrors } from 'react-hook-form';
-import { useMCPAuthValuesQuery } from '~/data-provider/Tools/queries';
 import {
   CONFIG_HTML_INLINE_TAGS,
   CONFIG_HTML_CLASS_ATTR,
   createConfigHtmlSanitizer,
 } from '~/utils/configHtml';
+import { useMCPAuthValuesQuery } from '~/data-provider/Tools/queries';
 import { useLocalize } from '~/hooks';
 
 export interface CustomUserVarConfig {

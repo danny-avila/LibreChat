@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { ListFilter } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
+import { FileContext } from 'librechat-data-provider';
 import {
   flexRender,
   getCoreRowModel,
@@ -9,13 +10,6 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import type {
-  ColumnDef,
-  SortingState,
-  VisibilityState,
-  ColumnFiltersState,
-} from '@tanstack/react-table';
-import { FileContext } from 'librechat-data-provider';
 import {
   Input,
   Table,
@@ -32,6 +26,12 @@ import {
   DropdownMenuTrigger,
   DropdownMenuCheckboxItem,
 } from '@librechat/client';
+import type {
+  ColumnDef,
+  SortingState,
+  VisibilityState,
+  ColumnFiltersState,
+} from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
 import type { AugmentedColumnDef } from '~/common';
 import ActionButton from '~/components/Files/ActionButton';

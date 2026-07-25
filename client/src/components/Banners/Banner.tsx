@@ -1,7 +1,7 @@
+import { useEffect, useMemo, useRef } from 'react';
 import { XIcon } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import { Button, cn } from '@librechat/client';
-import { useEffect, useMemo, useRef } from 'react';
 import {
   CONFIG_HTML_TEXT_TAGS,
   CONFIG_HTML_CLASS_ATTR,

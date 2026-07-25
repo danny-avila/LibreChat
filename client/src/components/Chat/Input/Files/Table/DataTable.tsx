@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useSetRecoilState } from 'recoil';
+import { FileContext } from 'librechat-data-provider';
 import {
   flexRender,
   useReactTable,
@@ -8,13 +9,6 @@ import {
   getFilteredRowModel,
   getPaginationRowModel,
 } from '@tanstack/react-table';
-import type {
-  ColumnDef,
-  SortingState,
-  VisibilityState,
-  ColumnFiltersState,
-} from '@tanstack/react-table';
-import { FileContext } from 'librechat-data-provider';
 import {
   Table,
   Button,
@@ -28,6 +22,12 @@ import {
   TableHeader,
   useMediaQuery,
 } from '@librechat/client';
+import type {
+  ColumnDef,
+  SortingState,
+  VisibilityState,
+  ColumnFiltersState,
+} from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
 import { ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
 import { useDeleteFilesFromTable } from '~/hooks/Files';
