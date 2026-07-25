@@ -23,6 +23,10 @@ import { nextGenerationStamp } from '../generationStamp';
 /** Recovery window for parked steers (mirrors Redis's completed-job TTL). */
 export const PARKED_STEERS_TTL_MS: number = 5 * 60 * 1000;
 
+/** How long a stream's generation stamp is remembered after its job is gone (24h,
+ *  matching RedisJobStore's generation-key TTL). */
+const GENERATION_STAMP_RETENTION_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Content state for a job - volatile, in-memory only.
  * Uses WeakRef to allow garbage collection of graph when no longer needed.
@@ -56,6 +60,16 @@ export class InMemoryJobStore implements IJobStore {
    * inactivity (a hung generation) rather than age (a long but live stream).
    */
   private lastActivity = new Map<string, number>();
+
+  /**
+   * Maps streamId -> last generation stamp minted for it. Deliberately OUTLIVES the
+   * job: deriving the next stamp from `jobs` alone made the fence monotonic only while
+   * the job existed, so a replacement created in the same millisecond as a DELETED
+   * generation was handed that generation's exact `createdAt`, and a stale fenced
+   * cleanup would then match and delete the live replacement. Delete-then-recreate is
+   * exactly what the fence guards, so the epoch has to survive the delete.
+   */
+  private lastGenerationStamp = new Map<string, number>();
 
   /** Maps streamId -> FIFO queue of pending steer messages. */
   private steerQueues = new Map<string, SteerQueueItem[]>();
@@ -134,13 +148,15 @@ export class InMemoryJobStore implements IJobStore {
       // STRICTLY monotonic per streamId. createdAt is the generation fence, and a
       // streamId is deliberately reused across generations, so two createJob calls
       // landing in the same millisecond would otherwise mint identical tokens and let
-      // a stale caller's guard pass against the replacement.
-      createdAt: nextGenerationStamp(this.jobs.get(streamId)?.createdAt),
+      // a stale caller's guard pass against the replacement. Seeded from the epoch map
+      // rather than `jobs`, so the sequence survives a delete (see lastGenerationStamp).
+      createdAt: nextGenerationStamp(this.lastGenerationStamp.get(streamId)),
       conversationId,
       syncSent: false,
     };
 
     this.jobs.set(streamId, job);
+    this.lastGenerationStamp.set(streamId, job.createdAt);
     // Clear any prior activity timestamp so a replacement reusing this streamId
     // (the controller handles job replacement) falls back to the fresh createdAt
     // and isn't reaped on the previous generation's stale last-activity time.
@@ -281,6 +297,16 @@ export class InMemoryJobStore implements IJobStore {
     for (const [key, claim] of this.idempotencyClaims) {
       if (claim.expiresAt <= now) {
         this.idempotencyClaims.delete(key);
+      }
+    }
+
+    // Generation stamps outlive their jobs on purpose, so nothing else bounds this map.
+    // A stamp only has to beat the window in which the wall clock could still collide
+    // with it, which is milliseconds; a day is a wide margin, after which Date.now()
+    // is unambiguously larger and the entry is dead weight.
+    for (const [streamId, stamp] of this.lastGenerationStamp) {
+      if (now - stamp > GENERATION_STAMP_RETENTION_MS && !this.jobs.has(streamId)) {
+        this.lastGenerationStamp.delete(streamId);
       }
     }
 

@@ -80,20 +80,32 @@ const IDEMPOTENCY_CLAIM_LUA =
  * the stamp only ever exists as part of a committed job. The stamp is written AFTER
  * the caller's pairs so it wins, and returned so the caller's job object matches.
  *
- *   KEYS: [job, steers, parkedSteers]
- *   ARGV: [ttl, hdelCount, callerNowMs, ...hdelFields, ...hsetPairs]
+ * The last stamp is kept in its OWN key, which `JOB_DELETE_LUA` deliberately does not
+ * remove. Deriving the stamp from the job hash alone made the fence monotonic only
+ * while that hash existed: after a delete the allocator fell back to the wall clock, so
+ * a replacement created in the same millisecond as the deleted generation was handed
+ * that generation's exact stamp, and a stale fenced cleanup would then match and delete
+ * the live replacement. Delete-then-recreate is precisely what the fence is for, so the
+ * epoch has to outlive the job. The hash value is still consulted so streams created
+ * before this key existed stay monotonic across the upgrade.
+ *
+ *   KEYS: [job, steers, parkedSteers, generation]
+ *   ARGV: [ttl, hdelCount, callerNowMs, generationTtl, ...hdelFields, ...hsetPairs]
  *   Returns: the allocated stamp
  */
 const JOB_CREATE_LUA =
-  'local prev = redis.call("HGET", KEYS[1], "createdAt") ' +
+  'local prev = tonumber(redis.call("GET", KEYS[4])) ' +
+  'local hashPrev = tonumber(redis.call("HGET", KEYS[1], "createdAt")) ' +
+  'if hashPrev and (not prev or hashPrev > prev) then prev = hashPrev end ' +
   'local now = tonumber(ARGV[3]) ' +
   'local stamp = now ' +
-  'if prev and tonumber(prev) and tonumber(prev) >= now then stamp = tonumber(prev) + 1 end ' +
+  'if prev and prev >= now then stamp = prev + 1 end ' +
+  'redis.call("SET", KEYS[4], stamp, "EX", tonumber(ARGV[4])) ' +
   'redis.call("DEL", KEYS[2]) ' +
   'redis.call("DEL", KEYS[3]) ' +
   'local ttl = tonumber(ARGV[1]) ' +
   'local hdelCount = tonumber(ARGV[2]) ' +
-  'local idx = 4 ' +
+  'local idx = 5 ' +
   'for i = 1, hdelCount do redis.call("HDEL", KEYS[1], ARGV[idx]) idx = idx + 1 end ' +
   'local hset = {} ' +
   'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
@@ -316,6 +328,9 @@ const KEYS = {
   /** Parked terminally-drained steers (own TTL — must outlive the job hash,
    *  which the default completeJob path deletes immediately) */
   parkedSteers: (streamId: string) => `stream:{${streamId}}:parked`,
+  /** Last generation stamp minted for this stream. Deliberately OUTLIVES the job hash
+   *  (see JOB_CREATE_LUA): the fence is only meaningful if it survives a delete. */
+  generation: (streamId: string) => `stream:{${streamId}}:gen`,
   /** Running jobs set for cleanup (global set - single slot) */
   runningJobs: 'stream:running',
   /** Jobs paused for human review (global set - single slot) */
@@ -342,6 +357,13 @@ const DEFAULT_TTL = {
   runStepsAfterComplete: 0,
   /** Safety-net TTL for per-user job tracking sets (24 hours). Refreshed on each createJob. */
   userJobsSet: 86400,
+  /**
+   * How long a stream's last generation stamp is remembered after its job is gone
+   * (24 hours). It only has to outlive the window in which the wall clock could still
+   * collide with the previous stamp, which is milliseconds; a day is a wide margin that
+   * still lets the key expire rather than accumulate per conversation forever.
+   */
+  generation: 86400,
   /**
    * Backstop TTL for a job paused for human review (24 hours). A paused job is
    * NOT a hung generation, so it must not inherit the 20-minute running TTL —
@@ -426,6 +448,7 @@ export class RedisJobStore implements IJobStore {
       runStepsAfterComplete: options?.runStepsAfterCompleteTtl ?? DEFAULT_TTL.runStepsAfterComplete,
       userJobsSet: options?.userJobsSetTtl ?? DEFAULT_TTL.userJobsSet,
       requiresAction: options?.requiresActionTtl ?? DEFAULT_TTL.requiresAction,
+      generation: DEFAULT_TTL.generation,
     };
     // Detect cluster mode using ioredis's isCluster property
     this.isCluster = (redis as Cluster).isCluster === true;
@@ -513,13 +536,15 @@ export class RedisJobStore implements IJobStore {
     const hsetPairs = Object.entries(this.serializeJob(job)).flat();
     const stamp = await this.redis.eval(
       JOB_CREATE_LUA,
-      3,
+      4,
       key,
       KEYS.steers(streamId),
       KEYS.parkedSteers(streamId),
+      KEYS.generation(streamId),
       String(this.ttl.running),
       String(staleHitlFields.length),
       String(Date.now()),
+      String(this.ttl.generation),
       ...staleHitlFields,
       ...hsetPairs,
     );

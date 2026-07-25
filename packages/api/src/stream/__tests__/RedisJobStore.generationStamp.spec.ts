@@ -9,6 +9,8 @@ import { RedisJobStore } from '../implementations/RedisJobStore';
 function makeRedisStub(options?: { failCreate?: boolean }) {
   const evals: Array<{ script: string; args: string[] }> = [];
   const hash = new Map<string, string>();
+  /** The generation key, which the job delete deliberately leaves alone. */
+  const generation = new Map<string, string>();
   const redis = {
     isCluster: false,
     eval: jest.fn(async (script: string, numKeys: number, ...rest: unknown[]) => {
@@ -20,10 +22,15 @@ function makeRedisStub(options?: { failCreate?: boolean }) {
       if (options?.failCreate) {
         throw new Error('LOADING Redis is loading the dataset in memory');
       }
-      // ARGV after the keys: [ttl, hdelCount, callerNowMs, ...].
+      // ARGV after the keys: [ttl, hdelCount, callerNowMs, generationTtl, ...].
+      const genKey = args[3];
       const now = Number(args[numKeys + 2]);
-      const prev = Number(hash.get('createdAt'));
-      const stamp = Number.isFinite(prev) && prev >= now ? prev + 1 : now;
+      const candidates = [Number(generation.get(genKey)), Number(hash.get('createdAt'))].filter(
+        (value) => Number.isFinite(value),
+      );
+      const prev = candidates.length > 0 ? Math.max(...candidates) : undefined;
+      const stamp = prev != null && prev >= now ? prev + 1 : now;
+      generation.set(genKey, String(stamp));
       hash.set('createdAt', String(stamp));
       return stamp;
     }),
@@ -35,7 +42,7 @@ function makeRedisStub(options?: { failCreate?: boolean }) {
     }),
     hgetall: jest.fn(async () => Object.fromEntries(hash)),
   };
-  return { redis: redis as unknown as Redis, evals, hash };
+  return { redis: redis as unknown as Redis, evals, hash, generation };
 }
 
 describe('RedisJobStore generation stamp allocation', () => {
@@ -78,5 +85,26 @@ describe('RedisJobStore generation stamp allocation', () => {
     // createdAt is the generation fence, so a replacement must never be able to
     // collide with (or regress below) the generation it replaces.
     expect(second.createdAt).toBeGreaterThan(first.createdAt);
+  });
+
+  it('keeps stamps monotonic ACROSS a delete', async () => {
+    const { redis, hash } = makeRedisStub();
+    const store = new RedisJobStore(redis);
+    const first = await store.createJob('stream-1', 'user-1');
+    // The job hash is gone, exactly as JOB_DELETE_LUA leaves it.
+    hash.clear();
+    const replacement = await store.createJob('stream-1', 'user-1');
+    // Delete-then-recreate is precisely what the fence guards. Deriving the stamp from
+    // the job hash alone reset the sequence to the wall clock here, so a replacement in
+    // the same millisecond as the deleted generation inherited its exact stamp and a
+    // stale fenced cleanup would match and delete the LIVE replacement.
+    expect(replacement.createdAt).toBeGreaterThan(first.createdAt);
+  });
+
+  it('remembers the stamp in a key the job delete does not touch', async () => {
+    const { redis, generation } = makeRedisStub();
+    const store = new RedisJobStore(redis);
+    const job = await store.createJob('stream-1', 'user-1');
+    expect(generation.get('stream:{stream-1}:gen')).toBe(String(job.createdAt));
   });
 });
