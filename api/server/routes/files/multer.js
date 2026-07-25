@@ -28,6 +28,24 @@ const storage = multer.diskStorage({
   },
 });
 
+/**
+ * Storage for conversation-export uploads. Identical to `storage` except
+ * that the stored name is prefixed with the per-upload id: an import job
+ * keeps reading its archive long after the upload request ends (inspect →
+ * confirm → run, up to the job TTL), so two uploads of the same
+ * `conversations.zip` must not resolve to one path — otherwise the second
+ * overwrites the archive the first is still importing, and cancelling
+ * either deletes the other's file.
+ */
+const importStorage = multer.diskStorage({
+  destination: storage.getDestination,
+  filename: function (req, file, cb) {
+    req.file_id = crypto.randomUUID();
+    file.originalname = decodeURIComponent(file.originalname);
+    cb(null, `${req.file_id}-${sanitizeFilename(file.originalname)}`);
+  },
+});
+
 const IMPORT_EXTENSIONS = new Set(['.json', '.zip']);
 
 /**
@@ -42,7 +60,7 @@ const importFileFilter = (req, file, cb) => {
     cb(null, true);
     return;
   }
-  cb(new Error('Only JSON or ZIP files are allowed'), false);
+  cb(new Error('Unsupported import type'), false);
 };
 
 const normalizeUploadMimeType = (file) => {
@@ -103,4 +121,10 @@ const createMulterInstance = async () => {
   });
 };
 
-module.exports = { createMulterInstance, storage, importFileFilter, createFileFilter };
+module.exports = {
+  createMulterInstance,
+  storage,
+  importStorage,
+  importFileFilter,
+  createFileFilter,
+};

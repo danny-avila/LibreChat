@@ -6,7 +6,7 @@ const request = require('supertest');
 const mongoose = require('mongoose');
 const multer = require('multer');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { buildFixtureExport } = require('@librechat/api');
+const { buildChatGptExportZip, cleanupChatGptExportZips } = require('~/test/chatgptExport');
 const { createModels, createMethods } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
 
@@ -141,16 +141,25 @@ describe('Conversation Import - Multer File Size Limits', () => {
   });
 });
 
-/** Waits for a job to leave the given phase, polling the real job store through the route. */
-async function waitForPhase(app, jobId, notPhase, attempts = 20) {
+const TERMINAL_PHASES = new Set(['completed', 'failed', 'cancelled']);
+
+/** Waits for a job to reach a terminal phase, polling the real job store through the route. */
+async function waitForTerminal(app, jobId, attempts = 40) {
   for (let i = 0; i < attempts; i++) {
     const res = await request(app).get(`/api/convos/import/jobs/${jobId}`);
-    if (res.body.phase !== notPhase) {
+    if (TERMINAL_PHASES.has(res.body.phase)) {
       return res;
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`Job ${jobId} never left phase ${notPhase}`);
+  throw new Error(`Job ${jobId} never reached a terminal phase`);
+}
+
+/** The single archive stored for a user under the request's upload dir. */
+function storedUpload(uploadsDir, userId) {
+  const dir = path.join(uploadsDir, 'temp', userId);
+  const [name] = fs.readdirSync(dir);
+  return path.join(dir, name);
 }
 
 function bareChatGptExport() {
@@ -265,6 +274,7 @@ describe('conversation import job API (real router, real Mongo)', () => {
     for (const dir of uploadDirs) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+    cleanupChatGptExportZips();
   });
 
   beforeEach(async () => {
@@ -275,7 +285,7 @@ describe('conversation import job API (real router, real Mongo)', () => {
   });
 
   it('accepts a zip, returns a job awaiting confirmation, then runs it', async () => {
-    const filepath = await buildFixtureExport();
+    const filepath = await buildChatGptExportZip();
 
     const uploaded = await request(app)
       .post('/api/convos/import')
@@ -292,11 +302,11 @@ describe('conversation import job API (real router, real Mongo)', () => {
       .get(`/api/convos/import/jobs/${uploaded.body.jobId}`)
       .expect(200);
 
-    expect(['conversations', 'assets', 'completed']).toContain(status.body.phase);
+    expect(['queued', 'assets', 'conversations', 'completed']).toContain(status.body.phase);
     expect(status.body.filepath).toBeUndefined();
     expect(status.body.userId).toBeUndefined();
 
-    const completed = await waitForPhase(app, uploaded.body.jobId, 'conversations');
+    const completed = await waitForTerminal(app, uploaded.body.jobId);
     expect(completed.body.phase).toBe('completed');
     expect(completed.body.report.imported).toBe(2);
 
@@ -316,7 +326,7 @@ describe('conversation import job API (real router, real Mongo)', () => {
   });
 
   it("scopes jobs by user: another user gets 404, not the first user's job", async () => {
-    const filepath = await buildFixtureExport();
+    const filepath = await buildChatGptExportZip();
     const uploaded = await request(app)
       .post('/api/convos/import')
       .attach('file', filepath)
@@ -337,7 +347,7 @@ describe('conversation import job API (real router, real Mongo)', () => {
     expect(uploaded.body.summary.source).toBe('chatgpt-legacy');
 
     await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
-    const completed = await waitForPhase(app, uploaded.body.jobId, 'conversations');
+    const completed = await waitForTerminal(app, uploaded.body.jobId);
     expect(completed.body.phase).toBe('completed');
     expect(completed.body.report.imported).toBe(1);
 
@@ -385,7 +395,7 @@ describe('conversation import job API (real router, real Mongo)', () => {
 
   it('never leaks the server upload path in job.error when the underlying file disappears before start', async () => {
     const beforeUpload = uploadDirs.length;
-    const filepath = await buildFixtureExport();
+    const filepath = await buildChatGptExportZip();
 
     const uploaded = await request(app)
       .post('/api/convos/import')
@@ -393,13 +403,13 @@ describe('conversation import job API (real router, real Mongo)', () => {
       .expect(202);
 
     const requestUploadDir = uploadDirs[beforeUpload];
-    const storedFilepath = path.join(requestUploadDir, 'temp', userId, 'chatgpt-export.zip');
+    const storedFilepath = storedUpload(requestUploadDir, userId);
     expect(fs.existsSync(storedFilepath)).toBe(true);
     fs.rmSync(storedFilepath);
 
     await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
 
-    const failed = await waitForPhase(app, uploaded.body.jobId, 'conversations');
+    const failed = await waitForTerminal(app, uploaded.body.jobId);
     expect(failed.body.phase).toBe('failed');
     expect(typeof failed.body.error).toBe('string');
     expect(failed.body.error).not.toContain(requestUploadDir);
@@ -414,26 +424,92 @@ describe('conversation import job API (real router, real Mongo)', () => {
     });
 
     const beforeUpload = uploadDirs.length;
-    const filepath = await buildFixtureExport();
+    const filepath = await buildChatGptExportZip();
     const uploaded = await request(app)
       .post('/api/convos/import')
       .attach('file', filepath)
       .expect(202);
 
     const requestUploadDir = uploadDirs[beforeUpload];
-    const storedFilepath = path.join(requestUploadDir, 'temp', userId, 'chatgpt-export.zip');
+    const storedFilepath = storedUpload(requestUploadDir, userId);
     expect(fs.existsSync(storedFilepath)).toBe(true);
 
     await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
 
-    const failed = await waitForPhase(app, uploaded.body.jobId, 'conversations');
+    const failed = await waitForTerminal(app, uploaded.body.jobId);
     expect(failed.body.phase).toBe('failed');
     expect(typeof failed.body.error).toBe('string');
     expect(fs.existsSync(storedFilepath)).toBe(false);
   });
 
+  it('cancels an inspected job, removes its temp archive, and 404s an unknown job', async () => {
+    const beforeUpload = uploadDirs.length;
+    const filepath = await buildChatGptExportZip();
+    const uploaded = await request(app)
+      .post('/api/convos/import')
+      .attach('file', filepath)
+      .expect(202);
+
+    const storedFilepath = storedUpload(uploadDirs[beforeUpload], userId);
+    expect(fs.existsSync(storedFilepath)).toBe(true);
+
+    const cancelled = await request(app)
+      .delete(`/api/convos/import/jobs/${uploaded.body.jobId}`)
+      .expect(200);
+    expect(cancelled.body.jobId).toBe(uploaded.body.jobId);
+    expect(fs.existsSync(storedFilepath)).toBe(false);
+
+    const status = await request(app)
+      .get(`/api/convos/import/jobs/${uploaded.body.jobId}`)
+      .expect(200);
+    expect(status.body.phase).toBe('cancelled');
+    expect(status.body.status).toBe('cancelled');
+
+    await request(app).delete('/api/convos/import/jobs/does-not-exist').expect(404);
+  });
+
+  it('never overwrites a cancelled job with a completed phase once the run returns', async () => {
+    const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+    /** Slows asset ingestion so the cancel lands while the run is still in
+     * flight, which is the window the completion patch used to overwrite. */
+    getStrategyFunctions.mockImplementationOnce(() => ({
+      saveBuffer: async ({ fileName }) => {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        return `/tmp/${fileName}`;
+      },
+    }));
+
+    const filepath = await buildChatGptExportZip();
+    const uploaded = await request(app)
+      .post('/api/convos/import')
+      .attach('file', filepath)
+      .expect(202);
+
+    await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
+    await request(app).delete(`/api/convos/import/jobs/${uploaded.body.jobId}`).expect(200);
+
+    const settled = await waitForTerminal(app, uploaded.body.jobId);
+    expect(settled.body.phase).toBe('cancelled');
+    expect(settled.body.status).toBe('cancelled');
+  });
+
+  it('stores same-named uploads under distinct paths so one job cannot clobber another', async () => {
+    const beforeUpload = uploadDirs.length;
+    const filepath = await buildChatGptExportZip();
+
+    await request(app).post('/api/convos/import').attach('file', filepath).expect(202);
+    await request(app).post('/api/convos/import').attach('file', filepath).expect(202);
+
+    const [first] = fs.readdirSync(path.join(uploadDirs[beforeUpload], 'temp', userId));
+    const [second] = fs.readdirSync(path.join(uploadDirs[beforeUpload + 1], 'temp', userId));
+
+    expect(first).not.toBe('chatgpt-export.zip');
+    expect(first).toMatch(/chatgpt-export\.zip$/);
+    expect(first).not.toBe(second);
+  });
+
   it('rejects a second /start call for the same job with 409 and does not double-run the import', async () => {
-    const filepath = await buildFixtureExport();
+    const filepath = await buildChatGptExportZip();
     const uploaded = await request(app)
       .post('/api/convos/import')
       .attach('file', filepath)
@@ -447,7 +523,7 @@ describe('conversation import job API (real router, real Mongo)', () => {
     const statuses = [first.status, second.status].sort();
     expect(statuses).toEqual([202, 409]);
 
-    await waitForPhase(app, uploaded.body.jobId, 'conversations');
+    await waitForTerminal(app, uploaded.body.jobId);
     const savedConvos = await Conversation.countDocuments({ user: userId });
     expect(savedConvos).toBe(2);
   });

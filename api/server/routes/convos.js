@@ -28,7 +28,7 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { createImportBatchBuilder } = require('~/server/utils/import/importBatchBuilder');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
 const { resolveImportDefaultModel } = require('~/server/utils/import/defaults');
-const { storage, importFileFilter } = require('~/server/routes/files/multer');
+const { importStorage, importFileFilter } = require('~/server/routes/files/multer');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
@@ -303,7 +303,7 @@ const { importIpLimiter, importUserLimiter } = createImportLimiters();
 const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
 const importMaxFileSize = resolveImportMaxFileSize();
 const upload = multer({
-  storage,
+  storage: importStorage,
   fileFilter: importFileFilter,
   limits: { fileSize: importMaxFileSize },
 });
@@ -316,7 +316,9 @@ function handleUpload(req, res, next) {
       return res.status(413).json({ message: 'File exceeds the maximum allowed size' });
     }
     if (err) {
-      return res.status(400).json({ message: err.message || 'Invalid upload' });
+      return res.status(400).json({
+        message: sanitizeImportError(err, `Import upload rejected for user ${req.user?.id}`),
+      });
     }
     next();
   });
@@ -375,7 +377,25 @@ async function runImportJob(req, job) {
       onProgress: async (progress) => {
         await importJobs.patch(req.user.id, job.jobId, { progress });
       },
+      onPhase: async (phase) => {
+        if (await importJobs.isCancelled(req.user.id, job.jobId)) {
+          return;
+        }
+        await importJobs.patch(req.user.id, job.jobId, { phase });
+      },
     });
+
+    /**
+     * `runImport` returns normally when the cancel flag breaks its loop, so
+     * the completion patch has to check: a cancelled job keeps its
+     * `cancelled` phase and only gains the partial report describing what
+     * was already written.
+     */
+    const current = await importJobs.get(req.user.id, job.jobId);
+    if (current?.status === 'cancelled') {
+      await importJobs.patch(req.user.id, job.jobId, { report });
+      return;
+    }
 
     await importJobs.patch(req.user.id, job.jobId, {
       report,
@@ -538,7 +558,10 @@ router.get('/import/jobs/:jobId', async (req, res) => {
 });
 
 /**
- * Cancels an in-progress import job and removes its temporary upload.
+ * Cancels an import job. The temporary upload is removed here only for a
+ * job that never started: once `runImportJob` owns the archive its
+ * `finally` removes it, and deleting the file out from under a running
+ * import turns a clean cancellation into an `ENOENT` failure.
  * @route DELETE /import/jobs/:jobId
  * @returns {object} 200 - the job was cancelled
  * @returns {object} 404 - no such job for this user
@@ -550,7 +573,9 @@ router.delete('/import/jobs/:jobId', async (req, res) => {
     return;
   }
   await importJobs.cancel(req.user.id, job.jobId);
-  await fs.promises.unlink(job.filepath).catch(() => undefined);
+  if (job.phase === 'awaiting_confirmation') {
+    await fs.promises.unlink(job.filepath).catch(() => undefined);
+  }
   res.status(200).json({ jobId: job.jobId });
 });
 
