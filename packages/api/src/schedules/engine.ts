@@ -278,6 +278,12 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           // re-claimed and retried, matching how the fire path already treats a
           // transient file-resolution failure.
           logger.error(`[schedules] unexpected fire error for ${schedule.id} (will retry):`, error);
+          // An UNCOMPUTABLE cadence is the one non-transient case: retrying can never
+          // make progress, and leaving the lease would re-claim the same occurrence
+          // forever. Disable so it stops being due, and only then clear nextRunAt —
+          // advancing on a failed disable would leave `enabled: true` with no nextRunAt
+          // and no disabledReason (permanently unclaimable and invisible). Everything
+          // else falls through untouched: nextRunAt and the lease both stand.
           const next = computeNextRunAt({
             cadence: schedule.cadence,
             timezone: schedule.timezone,
@@ -287,13 +293,16 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             after: new Date(dbNow),
           });
           if (next == null) {
-            await deps.methods
+            const disabled = await deps.methods
               .disableSchedule(schedule.id, 'invalid_schedule', schedule.claimToken)
-              .catch(() => undefined);
+              .then(() => true)
+              .catch(() => false);
+            if (disabled) {
+              await deps.methods
+                .advanceSchedule(schedule.id, null, scheduledFor, schedule.claimToken)
+                .catch(() => undefined);
+            }
           }
-          await deps.methods
-            .advanceSchedule(schedule.id, next, scheduledFor, schedule.claimToken)
-            .catch(() => undefined);
         }
         return false;
       });
