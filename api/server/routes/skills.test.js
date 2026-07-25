@@ -753,7 +753,7 @@ describe('Skill routes', () => {
         skills: {
           pii: {
             fields: ['file_text'],
-            starterPatterns: [],
+            starterPatterns: ['sk_prefix'],
           },
         },
         files: {
