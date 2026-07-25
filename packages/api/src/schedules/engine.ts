@@ -246,19 +246,25 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           });
           if (next == null) {
             // Uncomputable cadence is NOT transient, so this occurrence can never run.
-            // Disable and clear nextRunAt — but only if the disable actually landed, or
-            // the advance would leave `enabled: true` with no nextRunAt and no
-            // disabledReason: permanently unclaimable and invisible.
+            // The advance below would clear nextRunAt AND the lease; doing that after a
+            // transiently failed disable would leave `enabled: true` with no nextRunAt
+            // and no disabledReason, permanently unclaimable and invisible. Bail
+            // instead: the lease expires and the occurrence is retried.
             const disabled = await deps.methods
               .disableSchedule(schedule.id, 'invalid_schedule', schedule.claimToken)
               .then(() => true)
               .catch(() => false);
-            if (disabled) {
-              await deps.methods
-                .advanceSchedule(schedule.id, null, scheduledFor, schedule.claimToken)
-                .catch(() => undefined);
+            if (!disabled) {
+              return false;
             }
           }
+          // The SKIP-FORWARD itself, and the whole point of this branch: move to the
+          // next FUTURE occurrence. Without it nextRunAt keeps pointing at the stale
+          // one, so every later tick reclaims and skips the same occurrence forever and
+          // a schedule overdue past an outage never fires again.
+          await deps.methods
+            .advanceSchedule(schedule.id, next, scheduledFor, schedule.claimToken)
+            .catch(() => undefined);
           logger.info(`[schedules] skipped stale occurrence for ${schedule.id} (misfire grace)`);
           return false;
         }

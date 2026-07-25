@@ -46,8 +46,10 @@ function makeMethods(schedule: FireableSchedule) {
     // One claimable occurrence per tick, then the claim scan comes up empty.
     claimDueSchedule: jest.fn(async () => (claims++ === 0 ? schedule : null)),
     countActiveRuns: jest.fn(async () => 0),
-    advanceSchedule: jest.fn(async () => undefined),
-    disableSchedule: jest.fn(async () => undefined),
+    advanceSchedule: jest.fn(
+      async (_id: string, _next: Date | null, _from?: Date, _token?: string) => undefined,
+    ),
+    disableSchedule: jest.fn(async (_id: string, _reason: string, _token?: string) => undefined),
     releaseLease: jest.fn(async () => undefined),
     holdsLease: jest.fn(async () => true),
     scheduleExists: jest.fn(async () => true),
@@ -92,6 +94,57 @@ async function tickOnce(deps: ScheduleEngineDeps): Promise<void> {
 }
 
 afterEach(() => jest.restoreAllMocks());
+
+/** Overdue past MISFIRE_GRACE_MS (15m), so the tick skips it forward instead of firing. */
+const staleAt = () => new Date(Date.now() - 20 * 60_000);
+
+describe('runTick misfire skip-forward', () => {
+  it('advances a stale occurrence to the next future one', async () => {
+    const schedule = makeClaimedSchedule({ nextRunAt: staleAt() });
+    const methods = makeMethods(schedule);
+    const fetchSpy = jest.fn();
+    global.fetch = fetchSpy as never;
+    await tickOnce(makeDeps(methods));
+    // Skipping forward is the whole point of the branch. Leaving nextRunAt on the
+    // stale occurrence would make every later tick reclaim and skip the same one,
+    // so a schedule overdue past an outage would never fire again.
+    expect(methods.advanceSchedule).toHaveBeenCalledTimes(1);
+    const [id, next, expectedFrom, token] = methods.advanceSchedule.mock.calls[0];
+    expect(id).toBe('sched-1');
+    expect(next).toBeInstanceOf(Date);
+    expect(next?.getTime()).toBeGreaterThan(Date.now());
+    // Fenced on the claimed occurrence and the claim token, so a re-claim or an
+    // owner edit is not clobbered.
+    expect(expectedFrom).toBe(schedule.nextRunAt);
+    expect(token).toBe('ct-1');
+    // Being overdue is not a fault: the schedule stays enabled and is not fired.
+    expect(methods.disableSchedule).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('disables and clears a stale occurrence whose cadence is uncomputable', async () => {
+    const schedule = makeClaimedSchedule({ nextRunAt: staleAt(), timezone: 'Not/AZone' });
+    const methods = makeMethods(schedule);
+    await tickOnce(makeDeps(methods));
+    expect(methods.disableSchedule).toHaveBeenCalledWith('sched-1', 'invalid_schedule', 'ct-1');
+    expect(methods.advanceSchedule).toHaveBeenCalledWith(
+      'sched-1',
+      null,
+      schedule.nextRunAt,
+      'ct-1',
+    );
+  });
+
+  it('leaves a stale occurrence alone when its disable failed', async () => {
+    const schedule = makeClaimedSchedule({ nextRunAt: staleAt(), timezone: 'Not/AZone' });
+    const methods = makeMethods(schedule);
+    methods.disableSchedule.mockRejectedValue(new Error('mongo unavailable') as never);
+    await tickOnce(makeDeps(methods));
+    // Clearing nextRunAt without the disable landing would leave `enabled: true`
+    // with no nextRunAt and no disabledReason: unclaimable and invisible.
+    expect(methods.advanceSchedule).not.toHaveBeenCalled();
+  });
+});
 
 describe('runTick error handling', () => {
   it('retains the due occurrence when a preflight query throws', async () => {
