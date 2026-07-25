@@ -115,6 +115,10 @@ export class ImportJobStore {
    * observes the job already out of that phase and gets `status:
    * 'conflict'` instead of silently re-running the import over the same
    * archive.
+   *
+   * The job lands in `queued`, not in a working phase: the background run
+   * announces `assets` and then `conversations` itself, so the phase the
+   * client polls always reflects what the run is actually doing.
    */
   async confirmStart(userId: string, jobId: string): Promise<StartTransitionResult> {
     return this.withTransitionLock(this.key(userId, jobId), async () => {
@@ -125,7 +129,7 @@ export class ImportJobStore {
       if (existing.phase !== 'awaiting_confirmation') {
         return { status: 'conflict', job: existing };
       }
-      const updated = await this.patch(userId, jobId, { phase: 'conversations' });
+      const updated = await this.patch(userId, jobId, { phase: 'queued' });
       if (!updated) {
         return { status: 'not_found' };
       }

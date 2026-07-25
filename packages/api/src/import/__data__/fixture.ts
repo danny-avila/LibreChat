@@ -66,7 +66,7 @@ const SHARD_ONE: ChatGptConversation[] = [
       a1: {
         id: 'a1',
         parent: 'r1',
-        children: [],
+        children: ['a2'],
         message: {
           id: 'a1',
           author: { role: 'assistant', name: null },
@@ -88,6 +88,29 @@ const SHARD_ONE: ChatGptConversation[] = [
               },
             ],
           },
+        },
+      },
+      a2: {
+        id: 'a2',
+        parent: 'a1',
+        children: [],
+        message: {
+          id: 'a2',
+          author: { role: 'assistant', name: null },
+          create_time: 1700000004,
+          content: {
+            content_type: 'multimodal_text',
+            parts: [
+              'Here is the coastline.',
+              {
+                content_type: 'image_asset_pointer',
+                asset_pointer: 'sediment://file_generated',
+                width: 1024,
+                height: 1536,
+              },
+            ],
+          },
+          metadata: { model_slug: 'gpt-5-thinking' },
         },
       },
     },
@@ -185,6 +208,9 @@ export async function buildFixtureExport(overrides: FixtureOverrides = {}): Prom
   zip.file('file-one.dat', Buffer.from([1, 2, 3, 4]));
   zip.file('file-two.dat', Buffer.from([5, 6, 7, 8]));
   zip.file('file-three.dat', Buffer.from([9, 9, 9, 9]));
+  /** Deliberately absent from the asset-name map and carrying no
+   * extension, so its MIME type can only come from its magic bytes. */
+  zip.file('file_generated.dat', Buffer.from([0x89, 0x50, 0x4e, 0x47]));
   zip.file('user.json', JSON.stringify({ email: 'fixture@example.com' }));
 
   if (!overrides.omitManifest) {

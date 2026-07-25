@@ -7,7 +7,6 @@ import { useLocalize } from '~/hooks';
 const TERMINAL_PHASES = new Set<TImportPhase>(['completed', 'failed', 'cancelled']);
 
 const PHASE_LABEL_KEYS: Partial<Record<TImportPhase, TranslationKeys>> = {
-  inspecting: 'com_ui_import_inspecting',
   conversations: 'com_ui_import_phase_conversations',
   assets: 'com_ui_import_phase_assets',
 };
@@ -22,7 +21,7 @@ interface ProgressProps {
 export default function Progress({ job, onCancel, onReset, isCancelling }: ProgressProps) {
   const localize = useLocalize();
   const isTerminal = TERMINAL_PHASES.has(job.phase);
-  const { done, total } = job.progress.conversations;
+  const { done, total } = job.phase === 'assets' ? job.progress.assets : job.progress.conversations;
   const phaseLabel = localize(PHASE_LABEL_KEYS[job.phase] ?? 'com_ui_importing');
   const statusRef = useAutoFocus<HTMLDivElement, TImportPhase>(job.phase);
 

@@ -40,6 +40,11 @@ export async function inspectExport(
       throw new Error('Unsupported import type');
     }
 
+    /** The conversation, archived and starred counts the confirmation screen
+     * shows exist nowhere but inside the shards, so they cannot be read from
+     * a header — the shards have to be parsed. Each one is parsed, tallied
+     * and dropped before the next is read, so peak heap stays at a single
+     * shard rather than the whole export. */
     const totals: ShardTotals = { conversations: 0, archived: 0, starred: 0 };
     for (const shard of layout.conversationShards) {
       const parsed = JSON.parse((await archive.read(shard)).toString('utf8'));

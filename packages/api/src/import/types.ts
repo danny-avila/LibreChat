@@ -134,10 +134,9 @@ export interface ChatGptConversation {
 
 export type ImportPhase =
   | 'queued'
-  | 'inspecting'
   | 'awaiting_confirmation'
-  | 'conversations'
   | 'assets'
+  | 'conversations'
   | 'completed'
   | 'failed'
   | 'cancelled';

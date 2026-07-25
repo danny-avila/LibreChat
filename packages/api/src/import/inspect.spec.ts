@@ -14,8 +14,8 @@ describe('inspectExport', () => {
     expect(summary.manifestVersion).toBe(1);
     expect(summary.shards).toBe(2);
     expect(summary.conversations).toBe(2);
-    expect(summary.assets).toBe(3);
-    expect(summary.assetBytes).toBe(12);
+    expect(summary.assets).toBe(4);
+    expect(summary.assetBytes).toBe(16);
     expect(summary.archived).toBe(1);
     expect(summary.starred).toBe(1);
   });

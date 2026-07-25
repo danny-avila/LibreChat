@@ -113,7 +113,7 @@ describe('runImport', () => {
 
     expect(report.imported).toBe(2);
     expect(report.skipped).toBe(0);
-    expect(report.assetsImported).toBe(2);
+    expect(report.assetsImported).toBe(3);
     expect(report.assetsUnavailable).toBe(1);
     expect(report.errors).toEqual([]);
 
@@ -196,6 +196,119 @@ describe('runImport', () => {
     });
 
     expect(seen[seen.length - 1]).toBe(2);
+  });
+
+  it('announces the assets phase before the conversations phase', async () => {
+    const filepath = await buildFixtureExport();
+    const { sink } = recorder();
+    const phases: string[] = [];
+
+    await runImport({
+      filepath,
+      userId: 'u1',
+      source: 'local',
+      defaultModel: 'gpt-4o',
+      deps: DEPS,
+      batch: sink,
+      existingExternalIds: new Set(),
+      onPhase: async (phase) => {
+        phases.push(phase);
+      },
+    });
+
+    expect(phases).toEqual(['assets', 'conversations']);
+  });
+
+  it('reports asset progress against the referenced pointers, not every archive entry', async () => {
+    const filepath = await buildFixtureExport();
+    const { sink } = recorder();
+    const assetProgress: Array<{ done: number; total: number }> = [];
+
+    await runImport({
+      filepath,
+      userId: 'u1',
+      source: 'local',
+      defaultModel: 'gpt-4o',
+      deps: DEPS,
+      batch: sink,
+      existingExternalIds: new Set(),
+      onProgress: async (progress) => {
+        assetProgress.push({ ...progress.assets });
+      },
+    });
+
+    /** The fixture references 4 pointers, one of which has no `.dat` entry,
+     * so `done` only reaches `total` because misses count as processed. */
+    const last = assetProgress[assetProgress.length - 1];
+    expect(last.total).toBe(4);
+    expect(assetProgress.some((entry) => entry.done > 0 && entry.done < entry.total)).toBe(true);
+    expect(last.done).toBe(last.total);
+  });
+
+  it('resolves an assistant-generated image into a nested image_file content part', async () => {
+    const filepath = await buildFixtureExport();
+    const { sink, recorded } = recorder();
+
+    await runImport({
+      filepath,
+      userId: 'u1',
+      source: 'local',
+      defaultModel: 'gpt-4o',
+      deps: DEPS,
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    const generated = recorded.messages.find(
+      (message) => message.text === 'Here is the coastline.',
+    );
+    expect(generated?.content).toEqual([
+      { type: 'text', text: 'Here is the coastline.' },
+      {
+        type: 'image_file',
+        image_file: expect.objectContaining({
+          filename: 'file_generated',
+          type: 'image/png',
+          width: 1024,
+          height: 1536,
+        }),
+      },
+    ]);
+  });
+
+  it('never holds more than one shard of parsed conversations at a time', async () => {
+    const filepath = await buildFixtureExport();
+    const { sink } = recorder();
+    const readSizes: number[] = [];
+
+    const realOpenArchive = archiveModule.openArchive;
+    jest.spyOn(archiveModule, 'openArchive').mockImplementationOnce(async (path, options) => {
+      const archive = await realOpenArchive(path, options);
+      return {
+        ...archive,
+        read: async (name: string) => {
+          const buffer = await archive.read(name);
+          if (name.startsWith('conversations-')) {
+            readSizes.push(buffer.byteLength);
+          }
+          return buffer;
+        },
+      };
+    });
+
+    await runImport({
+      filepath,
+      userId: 'u1',
+      source: 'local',
+      defaultModel: 'gpt-4o',
+      deps: DEPS,
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    /** Two shards, read once to scan and once to convert: the conversion
+     * pass streams them rather than keeping the first scan's objects. */
+    expect(readSizes).toHaveLength(4);
   });
 
   it('stops early when cancelled', async () => {
@@ -405,7 +518,7 @@ describe('runImport', () => {
     });
 
     expect(report.imported).toBe(2);
-    expect(report.assetsImported).toBe(1);
+    expect(report.assetsImported).toBe(2);
     expect(report.assetsUnavailable).toBe(1);
     expect(report.errors).toHaveLength(1);
     // The raw storage-driver message ('quota exceeded') is never returned to the

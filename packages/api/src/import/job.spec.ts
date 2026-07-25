@@ -111,13 +111,13 @@ describe('ImportJobStore', () => {
       expect(result.status).toBe('conflict');
     });
 
-    it('moves an awaiting_confirmation job to conversations and returns it', async () => {
+    it('moves an awaiting_confirmation job to queued and returns it', async () => {
       const job = await store.create({ userId: 'u1', filepath: '/tmp/a.zip', filename: 'a.zip' });
       await store.patch('u1', job.jobId, { phase: 'awaiting_confirmation' });
 
       const result = await store.confirmStart('u1', job.jobId);
 
-      expect(result).toMatchObject({ status: 'started', job: { phase: 'conversations' } });
+      expect(result).toMatchObject({ status: 'started', job: { phase: 'queued' } });
     });
 
     it('does not confirm start for another user’s job', async () => {

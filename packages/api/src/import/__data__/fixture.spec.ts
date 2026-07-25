@@ -16,7 +16,7 @@ describe('buildFixtureExport', () => {
 
     expect(layout.version).toBe(1);
     expect(layout.conversationShards).toEqual(['conversations-000.json', 'conversations-001.json']);
-    expect(layout.assetEntries).toHaveLength(3);
+    expect(layout.assetEntries).toHaveLength(4);
     expect(layout.assetNames).toBe('conversation_asset_file_names.json');
 
     archive.close();
@@ -32,7 +32,7 @@ describe('buildFixtureExport', () => {
     const layout = resolveLayout(archive.entries, null);
 
     expect(layout.conversationShards).toEqual(['conversations-000.json', 'conversations-001.json']);
-    expect(layout.assetEntries).toHaveLength(3);
+    expect(layout.assetEntries).toHaveLength(4);
 
     archive.close();
   });
