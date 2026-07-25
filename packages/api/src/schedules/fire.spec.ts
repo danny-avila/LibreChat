@@ -281,6 +281,28 @@ describe('fireSchedule', () => {
     expect(calls.advance).toBe(1);
   });
 
+  it('treats a message-limiter 429 as a skip, not a schedule failure', async () => {
+    const { methods, runs } = makeMethods();
+    mockFetch(
+      async () =>
+        ({
+          ok: false,
+          status: 429,
+          text: async () => '{"message":"Too many requests"}',
+        }) as Response,
+    );
+    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt(), {
+      manual: true,
+    });
+    expect(result.skipped).toBe('rate_limited');
+    // Counting this as a failure would let an owner merely over their message quota
+    // auto-disable a healthy schedule by clicking Run Now enough times.
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+    // Nothing reached the controller, so no outcome was recorded for the occurrence and
+    // the reservation must not be left holding its capacity slot.
+    expect([...runs.values()].filter((r) => r.status === 'started')).toHaveLength(0);
+  });
+
   it('records a definite HTTP rejection as error', async () => {
     const { methods, calls } = makeMethods();
     mockFetch(async () => ({ ok: false, status: 500, text: async () => 'boom' }) as Response);

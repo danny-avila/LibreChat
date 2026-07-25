@@ -27,6 +27,11 @@ class ScheduleFireError extends Error {
      *  controller already recorded the occurrence's outcome — so this is a SKIP, not a
      *  fault, and must not count toward auto-disable. */
     readonly preStartAbort = false,
+    /** The server's own message limiter refused the fire before it reached the
+     *  controller. Reachable for a manual Run Now, which is deliberately NOT exempt from
+     *  the interactive limiters. Nothing started and the schedule is not at fault, so
+     *  this must not count toward auto-disable either. */
+    readonly throttled = false,
   ) {
     super(message);
   }
@@ -162,10 +167,15 @@ async function postChatMessageInner(
   }
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    // A received error response is a definite rejection (nothing started).
+    // A received error response is a definite rejection (nothing started). 429 is the
+    // exception: the server's OWN message limiter refused the request, which says
+    // nothing about the schedule's health. Only a manual Run Now can reach it, since
+    // automatic occurrences are exempt.
     throw new ScheduleFireError(
       `Fire POST failed (${response.status}): ${body.slice(0, 300)}`,
       false,
+      false,
+      response.status === 429,
     );
   }
   // The accept path always answers with JSON ({ streamId, conversationId, status }).
@@ -529,6 +539,19 @@ export async function fireSchedule(
         logger.info(`[schedules] fire aborted pre-start for ${schedule.id} (superseded)`);
         await advance();
         return { fired: false, skipped: 'superseded' as const };
+      }
+      if (error instanceof ScheduleFireError && error.throttled) {
+        // The server's own message limiter refused this before it reached the
+        // controller, so nothing was billed and the SCHEDULE is not at fault. Counting
+        // it as a failure would let an owner who is merely over their message quota
+        // auto-disable a perfectly healthy schedule by clicking Run Now enough times.
+        // Unlike the controller fence above, nothing recorded an outcome for this
+        // occurrence, so the reservation has to be rolled back or it holds its capacity
+        // slot and blocks overlap until the orphan sweep.
+        logger.info(`[schedules] fire refused by the message limiter for ${schedule.id}`);
+        await rollbackReservation();
+        await advance();
+        return { fired: false, skipped: 'rate_limited' as const };
       }
       // Definite rejection (an error response was received): nothing started.
       logger.error(`[schedules] fire rejected for ${schedule.id}:`, error);

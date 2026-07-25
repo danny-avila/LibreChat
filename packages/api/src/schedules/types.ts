@@ -138,6 +138,7 @@ export interface FireResult {
     | 'user_missing'
     | 'user_deleting'
     | 'permission_revoked'
+    | 'rate_limited'
     | 'disabled';
   error?: string;
 }

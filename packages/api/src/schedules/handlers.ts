@@ -412,8 +412,13 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       return;
     }
     if (!result.fired) {
-      res.status(409).json({
-        error: result.error ?? `Run skipped (${result.skipped ?? 'unknown'})`,
+      // A limiter refusal is the caller's own quota, not a conflicting schedule state,
+      // so answer 429 rather than burying it in the generic 409.
+      res.status(result.skipped === 'rate_limited' ? 429 : 409).json({
+        error:
+          result.skipped === 'rate_limited'
+            ? 'Too many messages. Try running this schedule again shortly.'
+            : (result.error ?? `Run skipped (${result.skipped ?? 'unknown'})`),
         skipped: result.skipped,
       });
       return;
