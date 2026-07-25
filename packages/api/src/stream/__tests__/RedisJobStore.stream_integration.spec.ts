@@ -440,8 +440,7 @@ describe('RedisJobStore Integration Tests', () => {
 
       const streamId = `stale-agent-${Date.now()}`;
       // Turn 1: a saved agent in a temporary chat that discovered a deferred tool.
-      await store.createJob(streamId, 'user-1', streamId);
-      await store.updateJob(streamId, {
+      await store.createJob(streamId, 'user-1', streamId, undefined, {
         agent_id: 'saved-agent-1',
         isTemporary: true,
         discoveredTools: ['deep_tool'],

@@ -126,6 +126,23 @@ export interface SerializableJobData {
   steersClosed?: boolean;
 }
 
+export type JobMetadataPatch = Partial<
+  Pick<
+    SerializableJobData,
+    | 'responseMessageId'
+    | 'sender'
+    | 'conversationId'
+    | 'userMessage'
+    | 'endpoint'
+    | 'iconURL'
+    | 'model'
+    | 'agent_id'
+    | 'isTemporary'
+    | 'promptTokens'
+    | 'discoveredTools'
+  >
+>;
+
 /**
  * Whether a job's pending review has passed its `expiresAt`. Shared by the
  * stores so an expired approval is kept out of active-job listings (the client
@@ -351,6 +368,7 @@ export interface IJobStore {
     userId: string,
     conversationId?: string,
     tenantId?: string,
+    initialMetadata?: JobMetadataPatch,
   ): Promise<SerializableJobData>;
 
   /** Get a job by streamId (streamId === conversationId) */

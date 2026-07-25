@@ -43,6 +43,7 @@ import { InMemoryEventTransport } from './implementations/InMemoryEventTransport
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { emitChunkWithReceipt } from './internal/chunkPublication';
 import { filterPersistableAbortContent } from './abortContent';
+import { sanitizeJobMetadata } from './metadata';
 import { toClientPendingAction } from '~/agents/hitl/policy';
 import { ApprovalLifecycle } from './ApprovalLifecycle';
 
@@ -147,6 +148,7 @@ export interface GenerationJobManagerOptions {
 
 export interface CreateGenerationJobOptions {
   startupTelemetry?: AgentStartupTelemetry;
+  initialMetadata?: Partial<t.GenerationJobMetadata>;
 }
 
 /**
@@ -544,7 +546,14 @@ class GenerationJobManagerClass {
 
     const tenantId = getTenantId();
     const safeTenantId = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
-    const jobData = await this.jobStore.createJob(streamId, userId, conversationId, safeTenantId);
+    const initialMetadata = sanitizeJobMetadata(options.initialMetadata ?? {});
+    const jobData = await this.jobStore.createJob(
+      streamId,
+      userId,
+      conversationId,
+      safeTenantId,
+      initialMetadata,
+    );
     if (this.shuttingDown) {
       throw new Error(SHUTTING_DOWN_ERROR);
     }
@@ -2366,41 +2375,7 @@ class GenerationJobManagerClass {
     streamId: string,
     metadata: Partial<t.GenerationJobMetadata>,
   ): Promise<void> {
-    const updates: Partial<SerializableJobData> = {};
-    if (metadata.responseMessageId) {
-      updates.responseMessageId = metadata.responseMessageId;
-    }
-    if (metadata.sender) {
-      updates.sender = metadata.sender;
-    }
-    if (metadata.conversationId) {
-      updates.conversationId = metadata.conversationId;
-    }
-    if (metadata.userMessage) {
-      updates.userMessage = metadata.userMessage;
-    }
-    if (metadata.endpoint) {
-      updates.endpoint = metadata.endpoint;
-    }
-    if (metadata.iconURL) {
-      updates.iconURL = metadata.iconURL;
-    }
-    if (metadata.model) {
-      updates.model = metadata.model;
-    }
-    if (metadata.agent_id) {
-      updates.agent_id = metadata.agent_id;
-    }
-    if (metadata.isTemporary !== undefined) {
-      updates.isTemporary = metadata.isTemporary;
-    }
-    if (metadata.promptTokens !== undefined) {
-      updates.promptTokens = metadata.promptTokens;
-    }
-    if (metadata.discoveredTools) {
-      updates.discoveredTools = metadata.discoveredTools;
-    }
-    await this.jobStore.updateJob(streamId, updates);
+    await this.jobStore.updateJob(streamId, sanitizeJobMetadata(metadata));
   }
 
   /**

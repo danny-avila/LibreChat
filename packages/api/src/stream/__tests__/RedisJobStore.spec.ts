@@ -30,6 +30,71 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 }
 
 describe('RedisJobStore', () => {
+  test('writes initial metadata in the atomic job creation', async () => {
+    const evalJobCreation = jest.fn().mockResolvedValue(1);
+    const redis = {
+      isCluster: true,
+      eval: evalJobCreation,
+      sadd: jest.fn().mockResolvedValue(1),
+      srem: jest.fn().mockResolvedValue(1),
+      expire: jest.fn().mockResolvedValue(1),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    const job = await store.createJob('stream-metadata', 'user-1', 'conversation-1', undefined, {
+      conversationId: 'untrusted-conversation',
+      userMessage: {
+        messageId: 'message-1',
+        parentMessageId: 'parent-1',
+      },
+      responseMessageId: 'response-1',
+      sender: 'Agent',
+      endpoint: 'agents',
+      iconURL: 'https://example.com/icon.png',
+      model: 'test-model',
+      agent_id: 'agent-1',
+      isTemporary: false,
+      promptTokens: 0,
+      discoveredTools: [],
+    });
+
+    expect(job).toMatchObject({
+      streamId: 'stream-metadata',
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      userMessage: {
+        messageId: 'message-1',
+        parentMessageId: 'parent-1',
+      },
+      responseMessageId: 'response-1',
+      sender: 'Agent',
+      endpoint: 'agents',
+      iconURL: 'https://example.com/icon.png',
+      model: 'test-model',
+      agent_id: 'agent-1',
+      isTemporary: false,
+      promptTokens: 0,
+      discoveredTools: [],
+    });
+
+    const creationArgs = evalJobCreation.mock.calls[0];
+    const clearCount = Number(creationArgs[6]);
+    const storedFields = Object.fromEntries(
+      Array.from({ length: (creationArgs.length - 7 - clearCount) / 2 }, (_, index) => [
+        creationArgs[7 + clearCount + index * 2],
+        creationArgs[8 + clearCount + index * 2],
+      ]),
+    );
+    expect(storedFields).toMatchObject({
+      conversationId: 'conversation-1',
+      responseMessageId: 'response-1',
+      agent_id: 'agent-1',
+      isTemporary: '0',
+      promptTokens: '0',
+      discoveredTools: '[]',
+    });
+  });
+
   test('parallelizes Redis Cluster membership bookkeeping with ordered user TTL', async () => {
     const evalResult = createDeferred<number>();
     const runningMembership = createDeferred<number>();

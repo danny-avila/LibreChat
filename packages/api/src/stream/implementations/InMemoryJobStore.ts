@@ -7,6 +7,7 @@ import type {
   UsageMetadata,
   IJobStore,
   JobStatus,
+  JobMetadataPatch,
   JobStatusTransition,
   IdempotencyClaimValue,
   IdempotencyClaimResult,
@@ -120,18 +121,20 @@ export class InMemoryJobStore implements IJobStore {
     userId: string,
     conversationId?: string,
     tenantId?: string,
+    initialMetadata: JobMetadataPatch = {},
   ): Promise<SerializableJobData> {
     if (this.jobs.size >= this.maxJobs) {
       await this.evictOldest();
     }
 
     const job: SerializableJobData = {
+      ...initialMetadata,
       streamId,
       userId,
       ...(tenantId && { tenantId }),
       status: 'running',
       createdAt: Date.now(),
-      conversationId,
+      ...(conversationId !== undefined && { conversationId }),
       syncSent: false,
     };
 

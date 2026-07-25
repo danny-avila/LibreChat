@@ -345,11 +345,30 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       userId,
     });
 
+    const endpointIconURL = getEndpointIconURL(req, endpointOption);
+    const responseModel = getAgentResponseModel(req, endpointOption);
+    const preliminaryUserMessage = getPreliminaryUserMessage(req.body, conversationId);
+    const preliminaryResponseMessageId = getPreliminaryResponseMessageId(req.body);
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId, {
       startupTelemetry,
+      initialMetadata: {
+        conversationId,
+        endpoint: endpointOption.endpoint,
+        iconURL: endpointIconURL,
+        model: responseModel,
+        // Persist the originating agent so a HITL resume can refuse to rebuild this
+        // paused run on a different agent (see resume.js).
+        agent_id: endpointOption.agent_id ?? req.body?.agent_id,
+        // Persist temporary-chat state so a HITL resume keeps the resumed response
+        // non-persisted instead of trusting the resume request to re-send the flag.
+        isTemporary: req.body?.isTemporary,
+        responseMessageId: preliminaryResponseMessageId,
+        userMessage: preliminaryUserMessage,
+      },
     });
     startupTelemetry?.mark('job_created');
     acceptAgentStartupTelemetry(req, streamId);
+    startupTelemetry?.mark('metadata_persisted');
     const jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
     req._resumableStreamId = streamId;
     getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
@@ -358,30 +377,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive
     res.json({ streamId, conversationId, status: 'started' });
 
-    const endpointIconURL = getEndpointIconURL(req, endpointOption);
-    const responseModel = getAgentResponseModel(req, endpointOption);
-    const preliminaryUserMessage = getPreliminaryUserMessage(req.body, conversationId);
-    const preliminaryResponseMessageId = getPreliminaryResponseMessageId(req.body);
-    const conversationPromise = attachConversationCreatedAt(
-      req,
-      conversationId,
-      conversationAnchorPromise,
-    ).then(() => startupTelemetry?.mark('conversation_resolved'));
-    const metadataPromise = GenerationJobManager.updateMetadata(streamId, {
-      conversationId,
-      endpoint: endpointOption.endpoint,
-      iconURL: endpointIconURL,
-      model: responseModel,
-      // Persist the originating agent so a HITL resume can refuse to rebuild this
-      // paused run on a different agent (see resume.js).
-      agent_id: endpointOption.agent_id ?? req.body?.agent_id,
-      // Persist temporary-chat state so a HITL resume keeps the resumed response
-      // non-persisted instead of trusting the resume request to re-send the flag.
-      isTemporary: req.body?.isTemporary,
-      responseMessageId: preliminaryResponseMessageId,
-      userMessage: preliminaryUserMessage,
-    }).then(() => startupTelemetry?.mark('metadata_persisted'));
-    await Promise.all([conversationPromise, metadataPromise]);
+    await attachConversationCreatedAt(req, conversationId, conversationAnchorPromise).then(() =>
+      startupTelemetry?.mark('conversation_resolved'),
+    );
 
     // Note: We no longer use res.on('close') to abort since we send JSON immediately.
     // The response closes normally after res.json(), which is not an abort condition.

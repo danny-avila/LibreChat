@@ -26,6 +26,127 @@ function createManager(): GenerationJobManagerClass {
 }
 
 describe('GenerationJobManager startup telemetry', () => {
+  it('returns sanitized initial metadata from the atomic job creation', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const updateJob = jest.spyOn(jobStore, 'updateJob');
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore,
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+    });
+    manager.initialize();
+
+    const job = await manager.createJob('stream-initial-metadata', 'user-1', 'conversation-1', {
+      initialMetadata: {
+        userId: 'untrusted-user',
+        tenantId: 'untrusted-tenant',
+        conversationId: 'untrusted-conversation',
+        userMessage: {
+          messageId: 'message-1',
+          parentMessageId: 'parent-1',
+        },
+        responseMessageId: 'response-1',
+        sender: 'Agent',
+        endpoint: 'agents',
+        iconURL: 'https://example.com/icon.png',
+        model: 'test-model',
+        agent_id: 'agent-1',
+        isTemporary: false,
+        promptTokens: 0,
+        discoveredTools: [],
+        pendingAction: {
+          actionId: 'untrusted-action',
+          streamId: 'stream-initial-metadata',
+          conversationId: 'conversation-1',
+          payload: {
+            type: 'ask_user_question',
+            question: { question: 'Should not be persisted?' },
+          },
+          createdAt: Date.now(),
+        },
+      },
+    });
+
+    expect(job.metadata).toMatchObject({
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      userMessage: {
+        messageId: 'message-1',
+        parentMessageId: 'parent-1',
+      },
+      responseMessageId: 'response-1',
+      sender: 'Agent',
+      endpoint: 'agents',
+      iconURL: 'https://example.com/icon.png',
+      model: 'test-model',
+      agent_id: 'agent-1',
+      isTemporary: false,
+      promptTokens: 0,
+      discoveredTools: [],
+    });
+    expect(job.metadata.tenantId).toBeUndefined();
+    expect(job.metadata.pendingAction).toBeUndefined();
+    expect(updateJob).not.toHaveBeenCalled();
+
+    await manager.destroy();
+  });
+
+  it('clears omitted per-turn identity when an in-memory job is replaced', async () => {
+    const manager = createManager();
+    await manager.createJob('stream-replaced-metadata', 'user-1', 'conversation-1', {
+      initialMetadata: {
+        agent_id: 'agent-1',
+        isTemporary: true,
+        discoveredTools: ['deferred-tool'],
+      },
+    });
+
+    const replacement = await manager.createJob(
+      'stream-replaced-metadata',
+      'user-1',
+      'conversation-1',
+    );
+
+    expect(replacement.metadata.agent_id).toBeUndefined();
+    expect(replacement.metadata.isTemporary).toBeUndefined();
+    expect(replacement.metadata.discoveredTools).toBeUndefined();
+
+    await manager.destroy();
+  });
+
+  it('preserves updateMetadata truthiness semantics through the shared sanitizer', async () => {
+    const manager = createManager();
+    await manager.createJob('stream-metadata-update', 'user-1', 'conversation-1', {
+      initialMetadata: {
+        sender: 'Agent',
+        agent_id: 'agent-1',
+        isTemporary: true,
+        promptTokens: 42,
+        discoveredTools: ['deferred-tool'],
+      },
+    });
+
+    await manager.updateMetadata('stream-metadata-update', {
+      sender: '',
+      agent_id: '',
+      isTemporary: false,
+      promptTokens: 0,
+      discoveredTools: [],
+    });
+
+    const updated = await manager.getJob('stream-metadata-update');
+    expect(updated?.metadata).toMatchObject({
+      sender: 'Agent',
+      agent_id: 'agent-1',
+      isTemporary: false,
+      promptTokens: 0,
+      discoveredTools: [],
+    });
+
+    await manager.destroy();
+  });
+
   it('records accepted events centrally and detaches after the first content delta', async () => {
     const manager = createManager();
     const telemetry = createTelemetry();

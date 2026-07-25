@@ -297,11 +297,17 @@ describe('ResumableAgentController resume metadata', () => {
       conversationId,
       'user-123',
       conversationId,
-      { startupTelemetry: mockStartupTelemetry },
+      expect.objectContaining({
+        startupTelemetry: mockStartupTelemetry,
+        initialMetadata: expect.objectContaining({
+          conversationId,
+          endpoint: 'agents',
+        }),
+      }),
     );
   });
 
-  it('stores the in-flight turn before MCP initialization can emit OAuth', async () => {
+  it('creates the job with the in-flight turn before MCP initialization can emit OAuth', async () => {
     const conversationId = 'conversation-123';
     const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));
     const req = {
@@ -311,6 +317,7 @@ describe('ResumableAgentController resume metadata', () => {
         messageId: 'follow-up-user',
         parentMessageId: 'original-response',
         conversationId,
+        isTemporary: true,
         endpointOption: {
           endpoint: 'agents',
           iconURL: 'https://example.com/spec-icon.png',
@@ -329,25 +336,33 @@ describe('ResumableAgentController resume metadata', () => {
 
     await AgentController(req, res, jest.fn(), initializeClient, null);
 
-    expect(mockGenerationJobManager.updateMetadata).toHaveBeenCalledWith(
+    expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
       conversationId,
-      expect.objectContaining({
-        conversationId,
-        endpoint: 'agents',
-        iconURL: 'https://example.com/spec-icon.png',
-        model: 'gpt-3.5-turbo',
-        responseMessageId: 'follow-up-user_',
-        userMessage: {
-          messageId: 'follow-up-user',
-          parentMessageId: 'original-response',
+      'user-123',
+      conversationId,
+      {
+        startupTelemetry: mockStartupTelemetry,
+        initialMetadata: {
           conversationId,
-          text: 'Check Google Workspace availability.',
+          endpoint: 'agents',
+          iconURL: 'https://example.com/spec-icon.png',
+          model: 'gpt-3.5-turbo',
+          agent_id: undefined,
+          isTemporary: true,
+          responseMessageId: 'follow-up-user_',
+          userMessage: {
+            messageId: 'follow-up-user',
+            parentMessageId: 'original-response',
+            conversationId,
+            text: 'Check Google Workspace availability.',
+          },
         },
-      }),
+      },
     );
-    expect(mockGenerationJobManager.updateMetadata.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mockGenerationJobManager.createJob.mock.invocationCallOrder[0]).toBeLessThan(
       initializeClient.mock.invocationCallOrder[0],
     );
+    expect(mockGenerationJobManager.updateMetadata).not.toHaveBeenCalled();
     const startupMilestones = mockStartupTelemetry.mark.mock.calls.map(([milestone]) => milestone);
     expect(startupMilestones.slice(0, 2)).toEqual(['request_admitted', 'job_created']);
     expect(new Set(startupMilestones.slice(2))).toEqual(
@@ -367,9 +382,14 @@ describe('ResumableAgentController resume metadata', () => {
       signalMetadataStarted = resolve;
     });
     mockGetConvo.mockReturnValue(conversationPromise);
-    mockGenerationJobManager.updateMetadata.mockImplementation(() => {
+    mockGenerationJobManager.createJob.mockImplementation(() => {
       signalMetadataStarted();
-      return Promise.resolve();
+      return Promise.resolve({
+        createdAt: 1000,
+        readyPromise: Promise.resolve(),
+        abortController: new AbortController(),
+        emitter: { on: jest.fn() },
+      });
     });
     const initializeClient = jest.fn().mockRejectedValue(new Error('stop after startup reads'));
     const conversationId = 'conversation-123';
@@ -392,6 +412,7 @@ describe('ResumableAgentController resume metadata', () => {
     const controllerPromise = AgentController(req, res, jest.fn(), initializeClient, null);
     expect(mockGetConvo).toHaveBeenCalledWith('user-123', conversationId);
     await metadataStarted;
+    await nextTick();
 
     expect(mockGetConvo.mock.invocationCallOrder[0]).toBeLessThan(
       mockCheckAndIncrementPendingRequest.mock.invocationCallOrder[0],
@@ -460,6 +481,7 @@ describe('ResumableAgentController resume metadata', () => {
         messageId: 'follow-up-user',
         parentMessageId: 'original-response',
         conversationId,
+        isTemporary: true,
         endpointOption: {
           endpoint: 'agents',
           spec: 'agent-spec',
@@ -491,11 +513,17 @@ describe('ResumableAgentController resume metadata', () => {
 
     await AgentController(req, res, jest.fn(), initializeClient, null);
 
-    expect(mockGenerationJobManager.updateMetadata).toHaveBeenCalledWith(
+    expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
+      conversationId,
+      'user-123',
       conversationId,
       expect.objectContaining({
-        iconURL: 'https://example.com/preset-icon.png',
-        model: 'agent_resume_spec',
+        initialMetadata: expect.objectContaining({
+          iconURL: 'https://example.com/preset-icon.png',
+          model: 'agent_resume_spec',
+          agent_id: 'agent_resume_spec',
+          isTemporary: true,
+        }),
       }),
     );
   });
@@ -539,11 +567,15 @@ describe('ResumableAgentController resume metadata', () => {
 
     await AgentController(req, res, jest.fn(), initializeClient, null);
 
-    expect(mockGenerationJobManager.updateMetadata).toHaveBeenCalledWith(
+    expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
+      conversationId,
+      'user-123',
       conversationId,
       expect.objectContaining({
-        iconURL: 'anthropic',
-        model: 'gpt-4.1',
+        initialMetadata: expect.objectContaining({
+          iconURL: 'anthropic',
+          model: 'gpt-4.1',
+        }),
       }),
     );
   });
@@ -1061,7 +1093,13 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       'user-123',
       'conversation-123',
-      { startupTelemetry: mockStartupTelemetry },
+      expect.objectContaining({
+        startupTelemetry: mockStartupTelemetry,
+        initialMetadata: expect.objectContaining({
+          conversationId: 'conversation-123',
+          endpoint: 'agents',
+        }),
+      }),
     );
   });
 
