@@ -6,7 +6,7 @@ import JSZip from 'jszip';
 
 import type { ChatGptConversation } from '~/import/types';
 
-const CITE = '';
+const CITE = '';
 
 export const FIXTURE_ASSET_BYTES = 4;
 
@@ -77,17 +77,14 @@ const SHARD_ONE: ChatGptConversation[] = [
           },
           metadata: {
             model_slug: 'gpt-5-thinking',
-            search_result_groups: [
+            content_references: [
               {
-                domain: 'earthtrekkers.com',
-                entries: [
-                  {
-                    title: 'Amalfi Coast Itinerary',
-                    url: 'https://earthtrekkers.com/amalfi',
-                    snippet: 'Plan your trip',
-                    attributions: null,
-                  },
-                ],
+                type: 'webpage',
+                alt: null,
+                url: 'https://earthtrekkers.com/amalfi',
+                title: 'Amalfi Coast Itinerary',
+                snippet: 'Plan your trip',
+                attribution: null,
               },
             ],
           },
