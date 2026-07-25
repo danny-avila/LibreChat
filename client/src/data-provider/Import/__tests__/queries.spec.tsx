@@ -52,9 +52,8 @@ describe('importJobRefetchInterval', () => {
     expect(importJobRefetchInterval(job('assets'))).toBe(2000);
   });
 
-  it('polls while the archive is being inspected or queued', () => {
+  it('polls while the job is queued', () => {
     expect(importJobRefetchInterval(job('queued'))).toBe(2000);
-    expect(importJobRefetchInterval(job('inspecting'))).toBe(2000);
   });
 
   it('stops on terminal phases', () => {
@@ -69,6 +68,10 @@ describe('importJobRefetchInterval', () => {
 
   it('polls when there is no data yet', () => {
     expect(importJobRefetchInterval(undefined)).toBe(2000);
+  });
+
+  it('stops once the query has errored, so a 404 does not poll forever', () => {
+    expect(importJobRefetchInterval(undefined, { state: { status: 'error' } })).toBe(false);
   });
 });
 
@@ -106,6 +109,25 @@ describe('fetchImportJob', () => {
 });
 
 describe('useImportJobQuery', () => {
+  it('surfaces the error and stops polling when the job cannot be fetched', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const mockGetImportJob = dataService.getImportJob as jest.MockedFunction<
+      typeof dataService.getImportJob
+    >;
+    mockGetImportJob.mockRejectedValue(new Error('Request failed with status code 404'));
+
+    const { result, unmount } = renderHook(() => useImportJobQuery('job-1'), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
+    expect(mockGetImportJob).toHaveBeenCalledTimes(1);
+
+    unmount();
+  });
+
   it('stays disabled and never calls the API when jobId is null', () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const { result, unmount } = renderHook(() => useImportJobQuery(null), {

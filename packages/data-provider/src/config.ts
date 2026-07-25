@@ -3106,6 +3106,8 @@ export enum LocalStorageKeys {
   LAST_SPEC = 'lastSelectedSpec',
   /** Key for temporary files to delete */
   FILES_TO_DELETE = 'filesToDelete',
+  /** Key for the import job the settings panel should rejoin */
+  IMPORT_JOB_ID = 'importJobId',
   /** Prefix key for the last selected assistant ID by index */
   ASST_ID_PREFIX = 'assistant_id__',
   /** Prefix key for the last selected agent ID by index */

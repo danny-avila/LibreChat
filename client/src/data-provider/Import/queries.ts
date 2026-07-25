@@ -5,6 +5,9 @@ import type { TImportJob } from 'librechat-data-provider';
 
 const POLL_MS = 2000;
 
+/** The subset of React Query's `Query` that the interval callback reads. */
+type ImportJobQueryState = { state: { status: string } };
+
 const TERMINAL_PHASES = new Set<TImportJob['phase']>([
   'awaiting_confirmation',
   'completed',
@@ -15,13 +18,22 @@ const TERMINAL_PHASES = new Set<TImportJob['phase']>([
 /**
  * Determines the polling cadence for an import job.
  *
- * Polls every `POLL_MS` while the job is queued, being inspected, or
- * actively importing conversations/assets, and while no data has arrived
- * yet. Stops on every terminal phase, including `awaiting_confirmation`:
- * the job is idle there, waiting on the user to confirm before it starts,
- * so continuing to poll would burn requests for nothing.
+ * Polls every `POLL_MS` while the job is queued or actively importing
+ * conversations/assets, and while no data has arrived yet. Stops on every
+ * terminal phase, including `awaiting_confirmation`: the job is idle there,
+ * waiting on the user to confirm before it starts, so continuing to poll
+ * would burn requests for nothing. Also stops once the query has errored —
+ * a job that 404s (TTL expiry, cache eviction, a server restart on the
+ * default in-memory backend) will never appear, so retrying every two
+ * seconds forever only wastes requests.
  */
-export const importJobRefetchInterval = (data: TImportJob | undefined): number | false => {
+export const importJobRefetchInterval = (
+  data: TImportJob | undefined,
+  query?: ImportJobQueryState,
+): number | false => {
+  if (query?.state.status === 'error') {
+    return false;
+  }
   if (!data) {
     return POLL_MS;
   }

@@ -85,6 +85,7 @@ describe('Import panel', () => {
     );
     dataProvider.useCancelImportMutation.mockReturnValue({ mutate: jest.fn(), isLoading: false });
     dataProvider.useImportJobQuery.mockReturnValue({ data: undefined });
+    window.localStorage.clear();
   });
 
   function getFileInput(): HTMLInputElement {
@@ -139,6 +140,20 @@ describe('Import panel', () => {
 
     expect(uploadMutate).not.toHaveBeenCalled();
     expect(showToast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+  });
+
+  it('accepts a large file when the configured limit is 0, which means no limit', () => {
+    dataProvider.useGetStartupConfig.mockReturnValue({
+      data: { conversationImportMaxFileSize: 0 },
+    });
+
+    render(<Import />);
+    const file = new File(['x'], 'export.zip');
+    Object.defineProperty(file, 'size', { value: 800 * 1024 * 1024 });
+    fireEvent.change(getFileInput(), { target: { files: [file] } });
+
+    expect(uploadMutate).toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
   });
 
   it('shows the detected summary before importing, with real numbers and no raw placeholders', () => {
@@ -403,6 +418,60 @@ describe('Import panel', () => {
     });
 
     expect(dataProvider.useImportJobQuery).toHaveBeenCalledWith('job-42');
+  });
+
+  it('shows a recoverable error instead of an endless spinner when the job cannot be fetched', () => {
+    dataProvider.useImportJobQuery.mockReturnValue({ data: undefined, isError: true });
+    render(<Import />);
+
+    act(() => {
+      capturedUploadOptions.onSuccess?.({ jobId: 'job-42', summary: summary() });
+    });
+
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent(/could not be found/i);
+    expect(screen.getByRole('button', { name: /import another/i })).toBeInTheDocument();
+  });
+
+  it('rejoins a running job recorded before the panel unmounted', () => {
+    window.localStorage.setItem('importJobId', 'job-99');
+    dataProvider.useImportJobQuery.mockReturnValue({
+      data: job({ phase: 'conversations', status: 'active' }),
+    });
+
+    render(<Import />);
+
+    expect(dataProvider.useImportJobQuery).toHaveBeenCalledWith('job-99');
+    expect(
+      screen.queryByRole('button', { name: /drop a \.zip or \.json/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('records the started job so it survives the panel unmounting, and clears it on reset', () => {
+    const { rerender } = render(<Import />);
+
+    act(() => {
+      capturedUploadOptions.onSuccess?.({ jobId: 'job-42', summary: summary() });
+    });
+    expect(window.localStorage.getItem('importJobId')).toBe('job-42');
+
+    dataProvider.useImportJobQuery.mockReturnValue({
+      data: job({
+        phase: 'completed',
+        status: 'completed',
+        report: {
+          imported: 1,
+          skipped: 0,
+          assetsImported: 0,
+          assetsUnavailable: 0,
+          errors: [],
+        },
+      }),
+    });
+    rerender(<Import />);
+    fireEvent.click(screen.getByRole('button', { name: /import another/i }));
+
+    expect(window.localStorage.getItem('importJobId')).toBeNull();
   });
 
   it('shows a distinct toast for an unsupported file type', () => {

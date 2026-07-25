@@ -1366,7 +1366,7 @@
   "com_ui_import_drop": "Drop a .zip or .json file here, or click to choose",
   "com_ui_import_errors": "{{0}} items could not be imported",
   "com_ui_import_info": "Import conversations and attachments from ChatGPT, Claude, or another LibreChat instance",
-  "com_ui_import_inspecting": "Reading export",
+  "com_ui_import_lost": "This import could not be found. It may have already finished or expired.",
   "com_ui_import_phase_assets": "Importing attachments",
   "com_ui_import_phase_conversations": "Importing conversations",
   "com_ui_import_report": "{{0}} conversations imported, {{1}} skipped",
