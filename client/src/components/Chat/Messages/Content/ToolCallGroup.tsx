@@ -324,7 +324,12 @@ export default function ToolCallGroup({
           aria-hidden="true"
         />
       </button>
-      <div style={expandStyle} onTransitionEnd={handleTransitionEnd} aria-hidden={!isExpanded}>
+      <div
+        style={expandStyle}
+        onTransitionEnd={handleTransitionEnd}
+        aria-hidden={!isExpanded}
+        data-testid="tool-call-group-panel"
+      >
         {shouldRenderBody && (
           <div className="overflow-hidden" ref={expandRef}>
             <div className="py-0.5 pl-4">

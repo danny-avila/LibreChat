@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { Locator, Page, Request, Route } from '@playwright/test';
 import type { AgentDetail } from './agents.helpers';
@@ -24,7 +26,29 @@ const APPROVAL_REASON = `E2E approval required before running ${APPROVAL_TOOL_ID
 const APPROVAL_ERROR = 'Something went wrong submitting your decision. Please try again.';
 const APPROVAL_EXPIRED = 'This request expired or was already handled.';
 const DESCRIPTION = 'Verifies human approval behavior for MCP tool calls in mock E2E tests.';
+const APPROVAL_AUDIT_DIR = path.join('/tmp', 'librechat-e2e-approval-audit');
 const uniqueLabel = () => `${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
+const approvalInvocationPath = (value: string) =>
+  path.join(APPROVAL_AUDIT_DIR, Buffer.from(value).toString('base64url'));
+
+function clearApprovalInvocations(...values: string[]) {
+  values.forEach((value) => fs.rmSync(approvalInvocationPath(value), { force: true }));
+}
+
+function approvalInvocationCount(value: string) {
+  const filename = approvalInvocationPath(value);
+  if (!fs.existsSync(filename)) {
+    return 0;
+  }
+  return fs
+    .readFileSync(filename, 'utf8')
+    .split('\n')
+    .filter((line) => line.length > 0).length;
+}
+
+async function expectApprovalInvocationCount(value: string, count: number) {
+  await expect.poll(() => approvalInvocationCount(value), { timeout: 30000 }).toBe(count);
+}
 
 type MCPToolsResponse = {
   servers?: Record<string, { tools?: Array<{ pluginKey: string }> }>;
@@ -136,11 +160,47 @@ async function submitAndCapture(page: Page, submit: Locator) {
   };
 }
 
+async function expectCompletedApprovalToolOutput(page: Page, toolCallId: string, output: string) {
+  const view = messagesView(page);
+  const groupToggle = view.getByRole('button', { name: /^Used \d+ tools$/ }).last();
+  const toolCall = view.locator(`[data-testid="tool-call"][data-tool-call-id="${toolCallId}"]`);
+
+  // On reload, the conversation arrives asynchronously and multi-tool groups
+  // start collapsed. Wait for either the target card or its group before
+  // deciding whether expansion is necessary.
+  await expect(toolCall.or(groupToggle).first()).toBeVisible({ timeout: 30000 });
+  if (
+    !(await toolCall.isVisible()) &&
+    (await groupToggle.getAttribute('aria-expanded')) !== 'true'
+  ) {
+    await groupToggle.click();
+  }
+
+  await expect(toolCall).toBeVisible({ timeout: 30000 });
+  const toggle = toolCall.getByRole('button', { name: /Ran approval_probe/ });
+  await expect(toggle).toBeVisible({ timeout: 30000 });
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+    await toggle.click();
+  }
+
+  // Scope exact output to its stable call id. This catches both a dropped
+  // completion and an output accidentally attached to a sibling tool card.
+  await expect(
+    view.locator(`[data-tool-call-output-id="${toolCallId}"]`).getByText(output, { exact: true }),
+  ).toBeVisible({ timeout: 30000 });
+  // The final model turn is the quiescence barrier: all parallel tool work
+  // has settled before invocation-count assertions inspect the audit.
+  await expect(view.getByText(/^E2E approval outcomes:/).last()).toBeVisible({ timeout: 30000 });
+}
+
 test.describe('tool approvals', () => {
   test('approves a paused tool with its original arguments', async ({ page }) => {
     test.setTimeout(120000);
     const label = uniqueLabel();
+    const toolCallId = `call_e2e_approval_${label}`;
+    const originalValue = `original-${label}`;
     let agentId: string | undefined;
+    clearApprovalInvocations(originalValue);
 
     try {
       agentId = await createAndSelectApprovalAgent(page);
@@ -165,7 +225,7 @@ test.describe('tool approvals', () => {
       expect(body.decisions).toEqual([
         expect.objectContaining({
           decision: 'approve',
-          tool_call_id: `call_e2e_approval_${label}`,
+          tool_call_id: toolCallId,
         }),
       ]);
       await expect(response.json() as Promise<ApprovalResumeResponse>).resolves.toEqual(
@@ -176,11 +236,15 @@ test.describe('tool approvals', () => {
         }),
       );
 
-      await expect(
-        messagesView(page).getByText(`E2E approval probe executed: original-${label}`),
-      ).toBeVisible({ timeout: 30000 });
+      await expectCompletedApprovalToolOutput(
+        page,
+        toolCallId,
+        `E2E approval probe executed: ${originalValue}`,
+      );
+      await expectApprovalInvocationCount(originalValue, 1);
       await expect(approvalCards(page)).toHaveCount(0);
     } finally {
+      clearApprovalInvocations(originalValue);
       await cleanupAgent(page, agentId);
     }
   });
@@ -188,8 +252,11 @@ test.describe('tool approvals', () => {
   test('rejects with an optional reason without executing the tool', async ({ page }) => {
     test.setTimeout(120000);
     const label = uniqueLabel();
+    const toolCallId = `call_e2e_approval_${label}`;
+    const originalValue = `original-${label}`;
     const reason = `do not run ${label}`;
     let agentId: string | undefined;
+    clearApprovalInvocations(originalValue);
 
     try {
       agentId = await createAndSelectApprovalAgent(page);
@@ -205,18 +272,15 @@ test.describe('tool approvals', () => {
         expect.objectContaining({
           decision: 'reject',
           reason,
-          tool_call_id: `call_e2e_approval_${label}`,
+          tool_call_id: toolCallId,
         }),
       ]);
 
-      await expect(messagesView(page).getByText(`Blocked: ${reason}`)).toBeVisible({
-        timeout: 30000,
-      });
-      await expect(
-        messagesView(page).getByText(`E2E approval probe executed: original-${label}`),
-      ).toHaveCount(0);
+      await expectCompletedApprovalToolOutput(page, toolCallId, `Blocked: ${reason}`);
+      await expectApprovalInvocationCount(originalValue, 0);
       await expect(approvalCards(page)).toHaveCount(0);
     } finally {
+      clearApprovalInvocations(originalValue);
       await cleanupAgent(page, agentId);
     }
   });
@@ -226,8 +290,11 @@ test.describe('tool approvals', () => {
   }) => {
     test.setTimeout(120000);
     const label = uniqueLabel();
+    const toolCallId = `call_e2e_approval_${label}`;
+    const originalValue = `original-${label}`;
     const editedValue = `edited-${label}`;
     let agentId: string | undefined;
+    clearApprovalInvocations(originalValue, editedValue);
 
     try {
       agentId = await createAndSelectApprovalAgent(page);
@@ -253,17 +320,19 @@ test.describe('tool approvals', () => {
         expect.objectContaining({
           decision: 'edit',
           editedArguments: { value: editedValue },
-          tool_call_id: `call_e2e_approval_${label}`,
+          tool_call_id: toolCallId,
         }),
       ]);
 
-      await expect(
-        messagesView(page).getByText(`E2E approval probe executed: ${editedValue}`),
-      ).toBeVisible({ timeout: 30000 });
-      await expect(
-        messagesView(page).getByText(`E2E approval probe executed: original-${label}`),
-      ).toHaveCount(0);
+      await expectCompletedApprovalToolOutput(
+        page,
+        toolCallId,
+        `E2E approval probe executed: ${editedValue}`,
+      );
+      await expectApprovalInvocationCount(editedValue, 1);
+      await expectApprovalInvocationCount(originalValue, 0);
     } finally {
+      clearApprovalInvocations(originalValue, editedValue);
       await cleanupAgent(page, agentId);
     }
   });
@@ -271,8 +340,11 @@ test.describe('tool approvals', () => {
   test('requires a nonblank substitute response and skips tool execution', async ({ page }) => {
     test.setTimeout(120000);
     const label = uniqueLabel();
+    const toolCallId = `call_e2e_approval_${label}`;
+    const originalValue = `original-${label}`;
     const responseText = `manual result ${label}`;
     let agentId: string | undefined;
+    clearApprovalInvocations(originalValue);
 
     try {
       agentId = await createAndSelectApprovalAgent(page);
@@ -291,15 +363,14 @@ test.describe('tool approvals', () => {
         expect.objectContaining({
           decision: 'respond',
           responseText,
-          tool_call_id: `call_e2e_approval_${label}`,
+          tool_call_id: toolCallId,
         }),
       ]);
 
-      await expect(messagesView(page).getByText(responseText)).toBeVisible({ timeout: 30000 });
-      await expect(
-        messagesView(page).getByText(`E2E approval probe executed: original-${label}`),
-      ).toHaveCount(0);
+      await expectCompletedApprovalToolOutput(page, toolCallId, responseText);
+      await expectApprovalInvocationCount(originalValue, 0);
     } finally {
+      clearApprovalInvocations(originalValue);
       await cleanupAgent(page, agentId);
     }
   });
@@ -307,7 +378,10 @@ test.describe('tool approvals', () => {
   test('honors a hook-restricted decision set', async ({ page }) => {
     test.setTimeout(120000);
     const label = uniqueLabel();
+    const toolCallId = `call_e2e_approval_${label}`;
+    const originalValue = `original-${label}`;
     let agentId: string | undefined;
+    clearApprovalInvocations(originalValue);
 
     try {
       agentId = await createAndSelectApprovalAgent(page);
@@ -329,13 +403,17 @@ test.describe('tool approvals', () => {
       expect(body.decisions).toEqual([
         expect.objectContaining({
           decision: 'approve',
-          tool_call_id: `call_e2e_approval_${label}`,
+          tool_call_id: toolCallId,
         }),
       ]);
-      await expect(
-        messagesView(page).getByText(`E2E approval probe executed: original-${label}`),
-      ).toBeVisible({ timeout: 30000 });
+      await expectCompletedApprovalToolOutput(
+        page,
+        toolCallId,
+        `E2E approval probe executed: ${originalValue}`,
+      );
+      await expectApprovalInvocationCount(originalValue, 1);
     } finally {
+      clearApprovalInvocations(originalValue);
       await cleanupAgent(page, agentId);
     }
   });
@@ -343,7 +421,11 @@ test.describe('tool approvals', () => {
   test('reviews and approves the authoritative hook-rewritten arguments', async ({ page }) => {
     test.setTimeout(120000);
     const label = uniqueLabel();
+    const toolCallId = `call_e2e_approval_${label}`;
+    const originalValue = `original-${label}`;
+    const rewrittenValue = `rewritten-${label}`;
     let agentId: string | undefined;
+    clearApprovalInvocations(originalValue, rewrittenValue);
 
     try {
       agentId = await createAndSelectApprovalAgent(page);
@@ -366,17 +448,19 @@ test.describe('tool approvals', () => {
       expect(body.decisions).toEqual([
         expect.objectContaining({
           decision: 'approve',
-          tool_call_id: `call_e2e_approval_${label}`,
+          tool_call_id: toolCallId,
         }),
       ]);
 
-      await expect(
-        messagesView(page).getByText(`E2E approval probe executed: rewritten-${label}`),
-      ).toBeVisible({ timeout: 30000 });
-      await expect(
-        messagesView(page).getByText(`E2E approval probe executed: original-${label}`),
-      ).toHaveCount(0);
+      await expectCompletedApprovalToolOutput(
+        page,
+        toolCallId,
+        `E2E approval probe executed: ${rewrittenValue}`,
+      );
+      await expectApprovalInvocationCount(rewrittenValue, 1);
+      await expectApprovalInvocationCount(originalValue, 0);
     } finally {
+      clearApprovalInvocations(originalValue, rewrittenValue);
       await cleanupAgent(page, agentId);
     }
   });
@@ -386,12 +470,22 @@ test.describe('tool approvals', () => {
     const label = uniqueLabel();
     const firstCallId = `call_e2e_approval_${label}_first`;
     const secondCallId = `call_e2e_approval_${label}_second`;
+    const firstValue = `first-${label}`;
+    const secondValue = `second-${label}`;
     const responseText = `manual batch result ${label}`;
     let agentId: string | undefined;
+    clearApprovalInvocations(firstValue, secondValue);
 
     try {
       agentId = await createAndSelectApprovalAgent(page);
       await startApproval(page, label, BATCH_APPROVAL_PROMPT_MARKER);
+      const conversationPath = new URL(page.url()).pathname;
+      await expect(approvalCards(page)).toHaveCount(2);
+
+      // Reconstruct both pending cards from persisted state before making any
+      // decisions, not just the simpler one-call resume path.
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect.poll(() => new URL(page.url()).pathname).toBe(conversationPath);
       await expect(approvalCards(page)).toHaveCount(2);
 
       const firstCard = approvalCard(page, firstCallId);
@@ -411,9 +505,26 @@ test.describe('tool approvals', () => {
         name: 'Used 2 tools',
         exact: true,
       });
-      await groupToggle.click();
+      const groupPanel = messagesView(page).getByTestId('tool-call-group-panel').last();
+      await Promise.all([
+        groupPanel.evaluate(
+          (element) =>
+            new Promise<void>((resolve) => {
+              const handleTransitionEnd = (event: Event) => {
+                if (
+                  event.target === element &&
+                  (event as TransitionEvent).propertyName === 'grid-template-rows'
+                ) {
+                  element.removeEventListener('transitionend', handleTransitionEnd);
+                  resolve();
+                }
+              };
+              element.addEventListener('transitionend', handleTransitionEnd);
+            }),
+        ),
+        groupToggle.click(),
+      ]);
       await expect(groupToggle).toHaveAttribute('aria-expanded', 'false');
-      await page.waitForTimeout(400);
       await groupToggle.click();
       await expect(groupToggle).toHaveAttribute('aria-expanded', 'true');
 
@@ -448,15 +559,29 @@ test.describe('tool approvals', () => {
         ]),
       );
 
-      await expect(
-        messagesView(page).getByText(`E2E approval probe executed: first-${label}`),
-      ).toBeVisible({ timeout: 30000 });
-      await expect(messagesView(page).getByText(responseText)).toBeVisible({ timeout: 30000 });
-      await expect(
-        messagesView(page).getByText(`E2E approval probe executed: second-${label}`),
-      ).toHaveCount(0);
+      await expectCompletedApprovalToolOutput(
+        page,
+        firstCallId,
+        `E2E approval probe executed: ${firstValue}`,
+      );
+      await expectCompletedApprovalToolOutput(page, secondCallId, responseText);
+      await expectApprovalInvocationCount(firstValue, 1);
+      await expectApprovalInvocationCount(secondValue, 0);
+      await expect(approvalCards(page)).toHaveCount(0);
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect.poll(() => new URL(page.url()).pathname).toBe(conversationPath);
+      await expectCompletedApprovalToolOutput(
+        page,
+        firstCallId,
+        `E2E approval probe executed: ${firstValue}`,
+      );
+      await expectCompletedApprovalToolOutput(page, secondCallId, responseText);
+      await expectApprovalInvocationCount(firstValue, 1);
+      await expectApprovalInvocationCount(secondValue, 0);
       await expect(approvalCards(page)).toHaveCount(0);
     } finally {
+      clearApprovalInvocations(firstValue, secondValue);
       await cleanupAgent(page, agentId);
     }
   });
@@ -465,8 +590,10 @@ test.describe('tool approvals', () => {
     test.setTimeout(120000);
     const label = uniqueLabel();
     const toolCallId = `call_e2e_approval_${label}`;
-    const executedText = `E2E approval probe executed: original-${label}`;
+    const originalValue = `original-${label}`;
+    const executedText = `E2E approval probe executed: ${originalValue}`;
     let agentId: string | undefined;
+    clearApprovalInvocations(originalValue);
 
     try {
       agentId = await createAndSelectApprovalAgent(page);
@@ -488,14 +615,17 @@ test.describe('tool approvals', () => {
 
       await navigatedCard.getByRole('button', { name: 'Approve' }).click();
       await submitAndCapture(page, navigatedCard.getByRole('button', { name: 'Submit' }));
-      await expect(messagesView(page).getByText(executedText)).toBeVisible({ timeout: 30000 });
+      await expectCompletedApprovalToolOutput(page, toolCallId, executedText);
+      await expectApprovalInvocationCount(originalValue, 1);
       await expect(approvalCards(page)).toHaveCount(0);
 
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect.poll(() => new URL(page.url()).pathname).toBe(conversationPath);
-      await expect(messagesView(page).getByText(executedText)).toBeVisible({ timeout: 30000 });
+      await expectCompletedApprovalToolOutput(page, toolCallId, executedText);
+      await expectApprovalInvocationCount(originalValue, 1);
       await expect(approvalCards(page)).toHaveCount(0);
     } finally {
+      clearApprovalInvocations(originalValue);
       await cleanupAgent(page, agentId);
     }
   });
@@ -503,10 +633,13 @@ test.describe('tool approvals', () => {
   test('sends only one resume request for two synchronous submit clicks', async ({ page }) => {
     test.setTimeout(120000);
     const label = uniqueLabel();
-    const executedText = `E2E approval probe executed: original-${label}`;
+    const toolCallId = `call_e2e_approval_${label}`;
+    const originalValue = `original-${label}`;
+    const executedText = `E2E approval probe executed: ${originalValue}`;
     let agentId: string | undefined;
     let releaseResume = () => undefined;
     let resumeHandler: ((route: Route) => Promise<void>) | undefined;
+    clearApprovalInvocations(originalValue);
 
     try {
       agentId = await createAndSelectApprovalAgent(page);
@@ -544,13 +677,15 @@ test.describe('tool approvals', () => {
       await expect(card.getByRole('button', { name: 'Approve' })).toBeDisabled();
       releaseResume();
 
-      await expect(messagesView(page).getByText(executedText)).toBeVisible({ timeout: 30000 });
+      await expectCompletedApprovalToolOutput(page, toolCallId, executedText);
+      await expectApprovalInvocationCount(originalValue, 1);
       await expect(approvalCards(page)).toHaveCount(0);
     } finally {
       releaseResume();
       if (resumeHandler) {
         await page.unroute('**/api/agents/chat/resume', resumeHandler);
       }
+      clearApprovalInvocations(originalValue);
       await cleanupAgent(page, agentId);
     }
   });
@@ -560,9 +695,12 @@ test.describe('tool approvals', () => {
   }) => {
     test.setTimeout(120000);
     const label = uniqueLabel();
+    const toolCallId = `call_e2e_approval_${label}`;
+    const originalValue = `original-${label}`;
     const responseText = `retry response ${label}`;
     let agentId: string | undefined;
     let resumeHandler: ((route: Route) => Promise<void>) | undefined;
+    clearApprovalInvocations(originalValue);
 
     try {
       agentId = await createAndSelectApprovalAgent(page);
@@ -607,16 +745,15 @@ test.describe('tool approvals', () => {
         ),
         submit.click(),
       ]);
-      await expect(messagesView(page).getByText(responseText)).toBeVisible({ timeout: 30000 });
-      await expect(
-        messagesView(page).getByText(`E2E approval probe executed: original-${label}`),
-      ).toHaveCount(0);
+      await expectCompletedApprovalToolOutput(page, toolCallId, responseText);
+      await expectApprovalInvocationCount(originalValue, 0);
       expect(resumeRequests).toBe(2);
       await expect(approvalCards(page)).toHaveCount(0);
     } finally {
       if (resumeHandler) {
         await page.unroute('**/api/agents/chat/resume', resumeHandler);
       }
+      clearApprovalInvocations(originalValue);
       await cleanupAgent(page, agentId);
     }
   });
@@ -624,11 +761,14 @@ test.describe('tool approvals', () => {
   test('locks the approval controls and explains an expired resume action', async ({ page }) => {
     test.setTimeout(120000);
     const label = uniqueLabel();
-    const executedText = `E2E approval probe executed: original-${label}`;
+    const toolCallId = `call_e2e_approval_${label}`;
+    const originalValue = `original-${label}`;
+    const executedText = `E2E approval probe executed: ${originalValue}`;
     let agentId: string | undefined;
     let capturedResumeBody: Record<string, unknown> | undefined;
     let backendResolved = false;
     let routeInstalled = false;
+    clearApprovalInvocations(originalValue);
     const resumeHandler = async (route: Route) => {
       capturedResumeBody = route.request().postDataJSON() as Record<string, unknown>;
       await route.fulfill({
@@ -672,7 +812,8 @@ test.describe('tool approvals', () => {
         body: capturedResumeBody,
       });
       backendResolved = true;
-      await expect(messagesView(page).getByText(executedText)).toBeVisible({ timeout: 30000 });
+      await expectCompletedApprovalToolOutput(page, toolCallId, executedText);
+      await expectApprovalInvocationCount(originalValue, 1);
       await expect(approvalCards(page)).toHaveCount(0);
     } finally {
       if (routeInstalled) {
@@ -687,6 +828,7 @@ test.describe('tool approvals', () => {
           body: capturedResumeBody,
         }).catch(() => undefined);
       }
+      clearApprovalInvocations(originalValue);
       await cleanupAgent(page, agentId);
     }
   });

@@ -39,7 +39,7 @@ jest.mock('@librechat/api', () => {
 });
 
 const { logger } = require('@librechat/data-schemas');
-const { MCPOAuthHandler } = require('@librechat/api');
+const { MCPOAuthHandler, GenerationJobManager } = require('@librechat/api');
 const { CacheKeys, Constants, Permissions, PermissionTypes } = require('librechat-data-provider');
 const D = Constants.mcp_delimiter;
 const {
@@ -837,6 +837,44 @@ describe('User parameter passing tests', () => {
       expect(mockReinitMCPServer.mock.calls[0][0].user).toBe(mockUser);
     });
 
+    it('fences resumable tool-loading OAuth events to the owning job epoch', async () => {
+      const mockUser = { id: 'epoch-loading-user', name: 'Epoch Loading User' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const streamId = 'epoch-loading-stream';
+      const jobCreatedAt = 1234;
+      const flowManager = {
+        getFlowState: jest.fn().mockResolvedValue(null),
+        createFlowWithHandler: jest.fn(async (_flowId, _type, handler) => handler()),
+        failFlow: jest.fn(),
+      };
+      mockGetFlowStateManager.mockReturnValue(flowManager);
+      mockReinitMCPServer.mockImplementation(async ({ oauthStart }) => {
+        await oauthStart('https://auth.example.com/loading');
+        return { tools: [], availableTools: {} };
+      });
+
+      await createMCPTools({
+        res: mockRes,
+        user: mockUser,
+        serverName: 'epoch-loading-server',
+        provider: 'openai',
+        userMCPAuthMap: {},
+        config: { type: 'stdio' },
+        streamId,
+        jobCreatedAt,
+      });
+
+      expect(GenerationJobManager.emitChunk).toHaveBeenCalledTimes(2);
+      expect(GenerationJobManager.emitChunk.mock.calls.map(([, event]) => event.event)).toEqual([
+        'on_run_step',
+        'on_run_step_delta',
+      ]);
+      for (const [emittedStreamId, , options] of GenerationJobManager.emitChunk.mock.calls) {
+        expect(emittedStreamId).toBe(streamId);
+        expect(options).toEqual({ expectedCreatedAt: jobCreatedAt });
+      }
+    });
+
     it('should fail tenant-scoped OAuth flows when tool loading is aborted', async () => {
       const mockUser = { id: 'tenant-user', name: 'Tenant User' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };
@@ -1052,6 +1090,76 @@ describe('User parameter passing tests', () => {
         '[MCP][test-server][test-tool] tool call failed: Forbidden: Insufficient MCP server permissions',
       );
       expect(mockGetMCPManager).not.toHaveBeenCalled();
+    });
+
+    it('fences resumable tool-call OAuth events to the owning job epoch', async () => {
+      const mockUser = { id: 'epoch-tool-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const streamId = 'epoch-tool-stream';
+      const jobCreatedAt = 5678;
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+      const flowManager = {
+        getFlowState: jest.fn().mockResolvedValue(null),
+        createFlowWithHandler: jest.fn(async (_flowId, _type, handler) => handler()),
+        failFlow: jest.fn(),
+      };
+      mockGetFlowStateManager.mockReturnValue(flowManager);
+      mockGetMCPManager.mockReturnValue({
+        callTool: jest.fn(async ({ oauthStart, oauthEnd }) => {
+          await oauthStart('https://auth.example.com/tool-call');
+          await oauthEnd();
+          return ['ok', null];
+        }),
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `test-tool${D}epoch-tool-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}epoch-tool-server`]: {
+            function: {
+              description: 'Epoch-fenced tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+        streamId,
+        jobCreatedAt,
+      });
+
+      await mcpTool.invoke(
+        {},
+        {
+          configurable: { user: mockUser },
+          metadata: {
+            provider: 'openai',
+            thread_id: 'thread-epoch',
+            run_id: 'run-epoch',
+          },
+          toolCall: {
+            id: 'tool-call-epoch',
+            stepId: 'step-epoch',
+            name: 'test-tool',
+            type: 'tool_call',
+          },
+        },
+      );
+
+      expect(GenerationJobManager.emitChunk).toHaveBeenCalledTimes(2);
+      for (const [emittedStreamId, , options] of GenerationJobManager.emitChunk.mock.calls) {
+        expect(emittedStreamId).toBe(streamId);
+        expect(options).toEqual({ expectedCreatedAt: jobCreatedAt });
+      }
     });
 
     it('should reuse request-scoped MCP permission checks across tool executions', async () => {

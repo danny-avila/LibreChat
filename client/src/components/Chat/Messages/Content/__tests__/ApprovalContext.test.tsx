@@ -1,8 +1,8 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { act, renderHook } from '@testing-library/react';
-import { ChatContext } from '~/Providers/ChatContext';
 import ApprovalProvider, { useApprovalContext, useResumeSubmit } from '../ApprovalContext';
+import { ChatContext } from '~/Providers/ChatContext';
 
 const mockApprovalMutate = jest.fn();
 const mockAskMutate = jest.fn();
