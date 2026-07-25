@@ -507,23 +507,25 @@ describe('ChatProject methods', () => {
   });
 
   it('forces ephemeral retention on a permanent chat, its messages, shares, and files when assigning', async () => {
-    const project = await methods.createChatProject(user, { name: 'Ephemeral' });
-    await createConversation(user, 'convo-1', 'Permanent');
+    const ownerObjectId = new mongoose.Types.ObjectId();
+    const owner = ownerObjectId.toString();
+    const project = await methods.createChatProject(owner, { name: 'Ephemeral' });
+    await createConversation(owner, 'convo-1', 'Permanent');
     await Message.create([
-      { messageId: uuidv4(), conversationId: 'convo-1', user, text: 'first' },
-      { messageId: uuidv4(), conversationId: 'convo-1', user, text: 'second' },
+      { messageId: uuidv4(), conversationId: 'convo-1', user: owner, text: 'first' },
+      { messageId: uuidv4(), conversationId: 'convo-1', user: owner, text: 'second' },
     ]);
-    await SharedLink.create({ conversationId: 'convo-1', user, shareId: uuidv4() });
+    await SharedLink.create({ conversationId: 'convo-1', user: owner, shareId: uuidv4() });
     const fileId = uuidv4();
     await File.collection.insertOne({
       file_id: fileId,
       conversationId: 'convo-1',
-      user: new mongoose.Types.ObjectId(),
+      user: ownerObjectId,
       expiredAt: null,
     });
 
     const result = await methods.assignConversationToProject(
-      user,
+      owner,
       'convo-1',
       project._id!.toString(),
       ephemeralConfig,
@@ -534,20 +536,26 @@ describe('ChatProject methods', () => {
     expect(result?.conversation.chatProjectId).toBe(project._id!.toString());
 
     const conversation = await Conversation.findOne({
-      user,
+      user: owner,
       conversationId: 'convo-1',
     }).lean<IConversation>();
     expect(conversation?.isTemporary).toBe(true);
     expect(conversation?.expiredAt).toBeInstanceOf(Date);
 
-    const messages = await Message.find({ user, conversationId: 'convo-1' }).lean<IMessage[]>();
+    const messages = await Message.find({
+      user: owner,
+      conversationId: 'convo-1',
+    }).lean<IMessage[]>();
     expect(messages).toHaveLength(2);
     for (const message of messages) {
       expect(message.isTemporary).toBe(true);
       expect(message.expiredAt).toBeInstanceOf(Date);
     }
 
-    const share = await SharedLink.findOne({ user, conversationId: 'convo-1' }).lean<ISharedLink>();
+    const share = await SharedLink.findOne({
+      user: owner,
+      conversationId: 'convo-1',
+    }).lean<ISharedLink>();
     expect(share?.expiredAt).toBeInstanceOf(Date);
 
     const file = await File.findOne({ file_id: fileId }).lean<IMongoFile>();
@@ -585,25 +593,32 @@ describe('ChatProject methods', () => {
   });
 
   it('forces ephemeral retention on member chats when deleting a project', async () => {
-    const project = await methods.createChatProject(user, { name: 'Ephemeral' });
+    const ownerObjectId = new mongoose.Types.ObjectId();
+    const owner = ownerObjectId.toString();
+    const project = await methods.createChatProject(owner, { name: 'Ephemeral' });
     const projectId = project._id!.toString();
-    await createConversation(user, 'convo-1', 'First');
-    await createConversation(user, 'convo-2', 'Second');
-    await methods.assignConversationToProject(user, 'convo-1', projectId);
-    await methods.assignConversationToProject(user, 'convo-2', projectId);
-    await Message.create({ messageId: uuidv4(), conversationId: 'convo-1', user, text: 'hi' });
+    await createConversation(owner, 'convo-1', 'First');
+    await createConversation(owner, 'convo-2', 'Second');
+    await methods.assignConversationToProject(owner, 'convo-1', projectId);
+    await methods.assignConversationToProject(owner, 'convo-2', projectId);
+    await Message.create({
+      messageId: uuidv4(),
+      conversationId: 'convo-1',
+      user: owner,
+      text: 'hi',
+    });
     const fileId = uuidv4();
     await File.collection.insertOne({
       file_id: fileId,
       conversationId: 'convo-1',
-      user: new mongoose.Types.ObjectId(),
+      user: ownerObjectId,
       expiredAt: null,
     });
 
-    await methods.deleteChatProject(user, projectId, ephemeralConfig);
+    await methods.deleteChatProject(owner, projectId, ephemeralConfig);
 
     const conversations = await Conversation.find({
-      user,
+      user: owner,
       conversationId: { $in: ['convo-1', 'convo-2'] },
     }).lean<IConversation[]>();
     expect(conversations).toHaveLength(2);
@@ -613,7 +628,10 @@ describe('ChatProject methods', () => {
       expect(conversation.expiredAt).toBeInstanceOf(Date);
     }
 
-    const message = await Message.findOne({ user, conversationId: 'convo-1' }).lean<IMessage>();
+    const message = await Message.findOne({
+      user: owner,
+      conversationId: 'convo-1',
+    }).lean<IMessage>();
     expect(message?.isTemporary).toBe(true);
     expect(message?.expiredAt).toBeInstanceOf(Date);
 

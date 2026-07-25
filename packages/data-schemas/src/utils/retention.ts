@@ -226,21 +226,23 @@ export const conversationSeedFileIds = (convo: {
   file_ids?: string[] | null;
 }): string[] => [...(convo.files ?? []), ...(convo.file_ids ?? [])];
 
-/**
- * Builds the owner-scoped referenced-file-id branch of a file-cap filter. File ids inside
- * message/conversation documents are caller-supplied, so a crafted reference to another user's
- * file must never shorten that file's retention: the branch always filters on `File.user`.
- * `File.user` is an ObjectId, so when the caller's user id is not a castable ObjectId string
- * (legacy/test data) the branch is dropped entirely — fail closed rather than cap unverified
- * rows.
- */
-const ownedFileIdScope = (
+/** Builds an owner-scoped file-cap filter for conversation and referenced-file matches. */
+const ownedFileScope = (
   userId: string,
+  conversationId: string | { $in: string[] },
   fileIds: string[],
-): { file_id: { $in: string[] }; user: string } | null =>
-  fileIds.length > 0 && isValidObjectIdString(userId)
-    ? { file_id: { $in: fileIds }, user: userId }
-    : null;
+): FilterQuery<IMongoFile> | null => {
+  if (!isValidObjectIdString(userId)) {
+    return null;
+  }
+  const conversationScope = { conversationId, user: userId };
+  if (fileIds.length === 0) {
+    return conversationScope;
+  }
+  return {
+    $or: [conversationScope, { file_id: { $in: fileIds }, user: userId }],
+  };
+};
 
 /**
  * Caps a conversation's uploaded files to the forced deadline. Files use a retention-scoped
@@ -251,10 +253,9 @@ const ownedFileIdScope = (
  * already expires sooner. Under ephemeral retention every conversation-scoped file is meant to
  * expire (persistent agent files are not retained), so no agent-file exclusion is needed here.
  *
- * Matches by `conversationId` (a globally unique per-conversation id whose File rows are
- * server-created by this conversation's own processes; a colliding id can only shorten the
- * colliding owner's files, never extend) plus any referenced `fileIds`, which are
- * owner-scoped via {@link ownedFileIdScope} because references are caller-supplied.
+ * Matches by `conversationId` plus any referenced `fileIds`. Both branches are scoped by
+ * `File.user` because conversation ids are unique only together with their owner and tenant,
+ * while referenced ids can be caller-supplied.
  * A shared file referenced from several chats is capped to the earliest converting chat's
  * deadline, consistent with cap-don't-extend.
  */
@@ -265,8 +266,10 @@ export const capConversationFiles = async (
   forcedExpiredAt: Date,
   fileIds: string[] = [],
 ): Promise<number> => {
-  const fileIdScope = ownedFileIdScope(userId, fileIds);
-  const scope = fileIdScope ? { $or: [{ conversationId }, fileIdScope] } : { conversationId };
+  const scope = ownedFileScope(userId, conversationId, fileIds);
+  if (scope == null) {
+    return 0;
+  }
   const result = await File.updateMany(
     {
       $and: [scope, { $or: [{ expiredAt: null }, { expiredAt: { $gt: forcedExpiredAt } }] }],
@@ -453,10 +456,10 @@ const cascadeForcedRetentionForConversationSet = async (
       { $set: { expiredAt } },
     );
     const fileIds = await collectConversationFileIds(Message, userId, conversationIds, seedFileIds);
-    const fileIdScope = ownedFileIdScope(userId, fileIds);
-    const fileScope = fileIdScope
-      ? { $or: [{ conversationId: { $in: conversationIds } }, fileIdScope] }
-      : { conversationId: { $in: conversationIds } };
+    const fileScope = ownedFileScope(userId, { $in: conversationIds }, fileIds);
+    if (fileScope == null) {
+      continue;
+    }
     await File.updateMany(
       {
         $and: [fileScope, { $or: [{ expiredAt: null }, { expiredAt: { $gt: expiredAt } }] }],
@@ -622,7 +625,13 @@ export const sweepForcedRetention = async (
       await forceConversationMessagesTemporary(Message, user, conversationId, expiredAt);
       await capConversationSharedLinks(SharedLink, user, conversationId, expiredAt);
       await capConversationFiles(File, user, conversationId, expiredAt, fileIds);
-      await Conversation.updateOne({ _id: convo._id }, { $set: { isTemporary: true, expiredAt } });
+      const convoResult = await Conversation.updateOne(
+        { _id: convo._id, ...forcedRetentionGapFilter<IConversation>(expiredAt) },
+        { $set: { isTemporary: true, expiredAt } },
+      );
+      if ((convoResult.modifiedCount ?? 0) === 0) {
+        continue;
+      }
       result.conversations += 1;
       if (typeof chatProjectId === 'string' && chatProjectId.length > 0) {
         const key = `${user}|${chatProjectId}`;
