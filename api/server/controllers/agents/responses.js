@@ -30,9 +30,22 @@ const {
   createSubagentUsageSink,
   getTransactionsConfig,
   resolveAgentTokenConfig,
-  findPiiMatchInMessages,
-  discoverConnectedAgents,
   resolveSubagentGraphs,
+  inspectContent,
+  extractAgentContent,
+  extractFileContent,
+  extractMessageContent,
+  extractModelParameterContent,
+  extractSkillContent,
+  extractToolArgumentContent,
+  contentFilterBlockResponse,
+  contentFilterUninspectableResponse,
+  discoverConnectedAgents,
+  getBlockedOpaqueFileField,
+  isContentTraversalLimitError,
+  isNestedMessageTraversalProtected,
+  assertModelBoundContent,
+  isContentFilterError,
   createToolExecuteHandler,
   getRemoteAgentPermissions,
   resolveAgentScopedSkillIds,
@@ -128,7 +141,7 @@ function createToolLoader(signal, definitionsOnly = true) {
         streamId: null,
       });
     } catch (error) {
-      if (isFatalAgentInitializationError(error)) {
+      if (isFatalAgentInitializationError(error) || isContentFilterError(error)) {
         throw error;
       }
       logger.error('Error loading tools for agent ' + agentId, error);
@@ -143,6 +156,58 @@ function createToolLoader(signal, definitionsOnly = true) {
  */
 function convertToInternalMessages(input) {
   return convertInputToMessages(input);
+}
+
+function extractResponseRequestContent(request, messageFragments) {
+  const fragments = [
+    ...extractAgentContent({ instructions: request.instructions }),
+    ...messageFragments,
+    ...extractModelParameterContent({
+      metadata: request.metadata,
+      response_format: request.text?.format,
+      additionalModelRequestFields: {
+        user: request.user,
+        tool_choice: request.tool_choice,
+        reasoning: request.reasoning,
+      },
+    }),
+  ];
+
+  if (Array.isArray(request.input)) {
+    for (const item of request.input) {
+      if (item?.type !== 'message' || !Array.isArray(item.content)) {
+        continue;
+      }
+      for (const part of item.content) {
+        if (part?.type === 'input_file') {
+          fragments.push(...extractFileContent({ name: part.filename }));
+          continue;
+        }
+        if (
+          part?.type === 'input_image' &&
+          typeof part.image_url === 'string' &&
+          !part.image_url.startsWith('data:')
+        ) {
+          fragments.push(...extractFileContent({ uri: part.image_url }));
+        }
+      }
+    }
+  }
+
+  for (const tool of request.tools ?? []) {
+    if (tool?.type !== 'function') {
+      continue;
+    }
+    fragments.push(
+      ...extractAgentContent({
+        name: tool.name,
+        description: tool.description,
+      }),
+      ...extractToolArgumentContent({ arguments: tool.parameters }),
+    );
+  }
+
+  return fragments;
 }
 
 /**
@@ -164,6 +229,7 @@ async function loadPreviousMessages(conversationId, userId) {
         role: msg.isCreatedByUser ? 'user' : 'assistant',
         content: '',
         messageId: msg.messageId,
+        isCreatedByUser: msg.isCreatedByUser === true,
       };
 
       // Handle content - could be string or array
@@ -328,8 +394,76 @@ const executeResponse = async (envelope, { req, res }) => {
   // but all request-body reads now observe the detached envelope payload.
   req.body = request;
   const agentId = request.model;
+  const manualSkills = extractManualSkills(req.body);
   const isStreaming = request.stream === true;
   const summarizationConfig = appConfig?.summarization;
+
+  const uninspectableField = getBlockedOpaqueFileField(appConfig?.filters, request.input);
+  if (uninspectableField != null) {
+    const blockResponse = contentFilterUninspectableResponse(uninspectableField);
+    return sendResponsesErrorResponse(
+      res,
+      400,
+      blockResponse.message,
+      'invalid_request',
+      blockResponse.error,
+    );
+  }
+
+  const inputMessages = convertToInternalMessages(
+    typeof request.input === 'string' ? request.input : request.input,
+  );
+  const messageFragments = [];
+  let traversalError = null;
+  try {
+    for (const fragment of extractMessageContent(inputMessages)) {
+      messageFragments.push(fragment);
+    }
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    traversalError = error;
+  }
+  const contentFinding = inspectContent(
+    [
+      ...extractResponseRequestContent(request, messageFragments),
+      ...(manualSkills ?? []).flatMap((name) => extractSkillContent({ name })),
+    ],
+    {
+      filters: appConfig?.filters,
+      legacyPii: appConfig?.messageFilter?.pii,
+    },
+  );
+  if (contentFinding != null) {
+    const isLegacyFilter = contentFinding.detectorId === 'legacy-pattern';
+    const blockResponse = contentFilterBlockResponse(contentFinding);
+    return sendResponsesErrorResponse(
+      res,
+      400,
+      isLegacyFilter
+        ? `Message contains a ${contentFinding.label}. Remove it and try again.`
+        : blockResponse.message,
+      'invalid_request',
+      isLegacyFilter ? 'message_filter_pii_block' : blockResponse.error,
+    );
+  }
+  if (
+    traversalError != null &&
+    isNestedMessageTraversalProtected({
+      filters: appConfig?.filters,
+      legacyPii: appConfig?.messageFilter?.pii,
+      roles: inputMessages.map((message) => message?.role),
+    })
+  ) {
+    return sendResponsesErrorResponse(
+      res,
+      traversalError.statusCode,
+      traversalError.body.message,
+      'invalid_request',
+      traversalError.body.error,
+    );
+  }
 
   // Look up the agent
   const agent = await db.getAgent({ id: agentId });
@@ -462,8 +596,6 @@ const executeResponse = async (envelope, { req, res }) => {
       getUserById: db.getUserById,
       accessibleSkillIds,
     });
-
-    const manualSkills = extractManualSkills(request);
 
     const primaryScopedSkillIds = resolveAgentScopedSkillIds({
       agent,
@@ -649,6 +781,11 @@ const executeResponse = async (envelope, { req, res }) => {
     }
     const contextAgents = [...contextAgentsById.values()];
     const mergedMCPAuthMap = discoveredMCPAuthMap ?? primaryConfig.userMCPAuthMap;
+    assertModelBoundContent({
+      filters: appConfig?.filters,
+      legacyPii: appConfig?.messageFilter?.pii,
+      agents: runAgents,
+    });
 
     const agentContextAttachmentsByAgentId = buildAgentContextAttachmentsByAgentId(contextAgents);
     const agentScopedContext = await buildAgentScopedContext({
@@ -693,24 +830,6 @@ const executeResponse = async (envelope, { req, res }) => {
       previousMessages = await loadPreviousMessages(request.previous_response_id, userId);
     }
 
-    // Convert input to internal messages
-    const inputMessages = convertToInternalMessages(
-      typeof request.input === 'string' ? request.input : request.input,
-    );
-
-    const piiHit = findPiiMatchInMessages(inputMessages, appConfig?.messageFilter?.pii);
-    if (piiHit != null) {
-      return sendResponsesErrorResponse(
-        res,
-        400,
-        piiHit.misconfigured
-          ? 'Message filtering is misconfigured; contact your administrator.'
-          : `Message contains a ${piiHit.label}. Remove it and try again.`,
-        'invalid_request',
-        'message_filter_pii_block',
-      );
-    }
-
     // Merge previous messages with new input
     const allMessages = [...previousMessages, ...inputMessages];
 
@@ -751,6 +870,16 @@ const executeResponse = async (envelope, { req, res }) => {
         );
       }
     }
+
+    assertModelBoundContent({
+      filters: appConfig?.filters,
+      legacyPii: appConfig?.messageFilter?.pii,
+      submittedMessages: inputMessages,
+      storedMessages: previousMessages,
+      agents: runAgents,
+      skills: [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])],
+      files: [...agentContextAttachmentsByAgentId.values()].flat(),
+    });
 
     /* Stable for the turn: the primary prime list is fixed once
        `initializeAgent` resolves and is used as the fallback when a
@@ -1167,6 +1296,15 @@ const executeResponse = async (envelope, { req, res }) => {
       writeDone(res);
       res.end();
     } else {
+      if (isContentFilterError(error)) {
+        return sendResponsesErrorResponse(
+          res,
+          error.statusCode,
+          error.body.message,
+          'invalid_request',
+          error.body.error,
+        );
+      }
       // Forward upstream provider status codes (e.g., Anthropic 400s) instead of masking as 500
       const statusCode =
         typeof error?.status === 'number' && error.status >= 400 && error.status < 600

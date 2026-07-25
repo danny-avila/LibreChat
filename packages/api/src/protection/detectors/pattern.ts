@@ -1,25 +1,40 @@
 import { logger } from '@librechat/data-schemas';
-import type { MessageFilterPiiConfig } from 'librechat-data-provider';
+import type { MessageFilterPiiConfig, FilterPiiCustomPatternConfig } from 'librechat-data-provider';
+import { RE2JS } from 're2js';
 import type { ProtectionFinding, TextContentFragment } from '../types';
+
+interface TestablePattern {
+  test(input: string): boolean;
+}
 
 interface CompiledPattern {
   readonly id: string;
   readonly label: string;
-  readonly pattern: RegExp;
+  readonly pattern: TestablePattern;
 }
 
 export interface PatternContentInspector {
   inspect(fragments: Iterable<TextContentFragment>): ProtectionFinding | null;
 }
 
+export interface PatternContentInspectorConfig {
+  readonly starterPatterns?: readonly string[];
+  readonly customPatterns?: readonly FilterPiiCustomPatternConfig[];
+}
+
+export interface PatternContentInspectorOptions {
+  readonly linearTime?: boolean;
+}
+
 const STARTER_PATTERNS: readonly CompiledPattern[] = [
-  { id: 'sk_prefix', label: 'sk- prefix token', pattern: /\b(sk-)[a-zA-Z0-9_-]+/g },
-  { id: 'bearer_header', label: 'Bearer token', pattern: /\b(Bearer )[^\s"']+/gi },
-  { id: 'api_key_header', label: 'api-key header', pattern: /\b(api-key:?\s+)[^\s"']+/gi },
+  { id: 'sk_prefix', label: 'sk- prefix token', pattern: /\b(sk-)[a-zA-Z0-9_-]+/ },
+  { id: 'bearer_header', label: 'Bearer token', pattern: /\b(Bearer )[^\s"']+/i },
+  { id: 'api_key_header', label: 'api-key header', pattern: /\b(api-key:?\s+)[^\s"']+/i },
 ];
 
 const STARTER_BY_ID = new Map(STARTER_PATTERNS.map((pattern) => [pattern.id, pattern]));
-const INSPECTOR_CACHE = new WeakMap<object, PatternContentInspector>();
+const NATIVE_INSPECTOR_CACHE = new WeakMap<object, PatternContentInspector>();
+const LINEAR_INSPECTOR_CACHE = new WeakMap<object, PatternContentInspector>();
 
 function selectStarter(ids?: readonly string[]): readonly CompiledPattern[] {
   if (ids == null) {
@@ -44,7 +59,6 @@ function createInspector(patterns: readonly CompiledPattern[]): PatternContentIn
 
       for (const fragment of fragments) {
         for (const pattern of patterns) {
-          pattern.pattern.lastIndex = 0;
           if (!pattern.pattern.test(fragment.text)) {
             continue;
           }
@@ -53,6 +67,7 @@ function createInspector(patterns: readonly CompiledPattern[]): PatternContentIn
             ruleId: pattern.id,
             label: pattern.label,
             source: fragment.source,
+            field: fragment.field,
             provenance: fragment.provenance,
             fragmentId: fragment.id,
             fragmentPath: fragment.path,
@@ -66,9 +81,11 @@ function createInspector(patterns: readonly CompiledPattern[]): PatternContentIn
 }
 
 export function createPatternContentInspector(
-  config: MessageFilterPiiConfig,
+  config: PatternContentInspectorConfig | MessageFilterPiiConfig,
+  options: PatternContentInspectorOptions = {},
 ): PatternContentInspector {
-  const cached = INSPECTOR_CACHE.get(config);
+  const cache = options.linearTime === true ? LINEAR_INSPECTOR_CACHE : NATIVE_INSPECTOR_CACHE;
+  const cached = cache.get(config);
   if (cached != null) {
     return cached;
   }
@@ -76,11 +93,19 @@ export function createPatternContentInspector(
   const starter = selectStarter(config.starterPatterns);
   const custom: CompiledPattern[] = [];
   for (const pattern of config.customPatterns ?? []) {
+    if (options.linearTime === true) {
+      custom.push({
+        id: pattern.id,
+        label: pattern.label,
+        pattern: RE2JS.compile(pattern.regex),
+      });
+      continue;
+    }
     try {
       custom.push({
         id: pattern.id,
         label: pattern.label,
-        pattern: new RegExp(pattern.regex, 'g'),
+        pattern: new RegExp(pattern.regex),
       });
     } catch (error) {
       logger.warn(
@@ -91,6 +116,6 @@ export function createPatternContentInspector(
 
   const compiled = [...starter, ...custom];
   const inspector = createInspector(compiled);
-  INSPECTOR_CACHE.set(config, inspector);
+  cache.set(config, inspector);
   return inspector;
 }

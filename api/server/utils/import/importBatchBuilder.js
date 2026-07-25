@@ -1,5 +1,16 @@
 const { v4: uuidv4 } = require('uuid');
 const {
+  ContentFilterError,
+  UninspectableFileError,
+  extractConversationImportContent,
+  extractStoredMessageContent,
+  getBlockedOpaqueFileField,
+  getContentTraversalFragments,
+  inspectContent,
+  isContentTraversalLimitError,
+  isNestedMessageTraversalProtected,
+} = require('@librechat/api');
+const {
   logger,
   createFallbackRetentionDate,
   createTempChatExpirationDate,
@@ -17,10 +28,75 @@ const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
  * Factory function for creating an instance of ImportBatchBuilder.
  * @param {string} requestUserId - The ID of the user making the request.
  * @param {object} [interfaceConfig] - Runtime interface config for import retention.
+ * @param {object} [filters] - Source-aware content filters for submitted imports.
  * @returns {ImportBatchBuilder} - The newly created ImportBatchBuilder instance.
  */
-function createImportBatchBuilder(requestUserId, interfaceConfig) {
-  return new ImportBatchBuilder(requestUserId, interfaceConfig);
+function createImportBatchBuilder(requestUserId, interfaceConfig, filters) {
+  return new ImportBatchBuilder(requestUserId, interfaceConfig, filters);
+}
+
+/**
+ * Applies the current content policy to a conversation snapshot before it is copied.
+ * @param {object} [filters] - Source-aware content filters.
+ * @param {object} snapshot - Conversation content that would be persisted.
+ * @param {object[]} snapshot.conversations - Conversation metadata records.
+ * @param {object[]} snapshot.messages - Message records.
+ * @returns {void}
+ * @throws {ContentFilterError|UninspectableFileError|import('@librechat/api').ContentTraversalLimitError}
+ */
+function assertConversationContentAllowed(filters, { conversations, messages }) {
+  if (filters == null) {
+    return;
+  }
+
+  const uninspectableField = getBlockedOpaqueFileField(filters, {
+    conversations,
+    messages,
+  });
+  if (uninspectableField != null) {
+    throw new UninspectableFileError(uninspectableField);
+  }
+
+  const conversationFinding = inspectContent(
+    extractConversationImportContent({
+      conversations,
+      messages: [],
+    }),
+    { filters },
+  );
+  if (conversationFinding != null) {
+    throw new ContentFilterError(conversationFinding);
+  }
+
+  for (const message of messages) {
+    let fragments;
+    try {
+      fragments = extractStoredMessageContent(message);
+    } catch (error) {
+      if (!isContentTraversalLimitError(error)) {
+        throw error;
+      }
+      const partialFinding = inspectContent(getContentTraversalFragments(error), {
+        filters,
+      });
+      if (partialFinding != null) {
+        throw new ContentFilterError(partialFinding);
+      }
+      if (
+        isNestedMessageTraversalProtected({
+          filters,
+          roles: [message.role],
+        })
+      ) {
+        throw error;
+      }
+      continue;
+    }
+    const messageFinding = inspectContent(fragments, { filters });
+    if (messageFinding != null) {
+      throw new ContentFilterError(messageFinding);
+    }
+  }
 }
 
 /**
@@ -31,10 +107,12 @@ class ImportBatchBuilder {
    * Creates an instance of ImportBatchBuilder.
    * @param {string} requestUserId - The ID of the user making the import request.
    * @param {object} [interfaceConfig] - Runtime interface config for import retention.
+   * @param {object} [filters] - Source-aware content filters for submitted imports.
    */
-  constructor(requestUserId, interfaceConfig) {
+  constructor(requestUserId, interfaceConfig, filters) {
     this.requestUserId = requestUserId;
     this.interfaceConfig = interfaceConfig;
+    this.filters = filters;
     this.conversations = [];
     this.messages = [];
     this.retentionFields = undefined;
@@ -140,6 +218,11 @@ class ImportBatchBuilder {
    * @throws {Error} If there is an error saving the batch.
    */
   async saveBatch() {
+    assertConversationContentAllowed(this.filters, {
+      conversations: this.conversations,
+      messages: this.messages,
+    });
+
     try {
       const promises = [];
       promises.push(bulkSaveConvos(this.conversations));
@@ -207,4 +290,8 @@ class ImportBatchBuilder {
   }
 }
 
-module.exports = { ImportBatchBuilder, createImportBatchBuilder };
+module.exports = {
+  ImportBatchBuilder,
+  createImportBatchBuilder,
+  assertConversationContentAllowed,
+};

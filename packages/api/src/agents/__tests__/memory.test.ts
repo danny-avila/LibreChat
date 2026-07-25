@@ -1,7 +1,9 @@
 import { Response } from 'express';
 import { Providers } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
 import { Tools } from 'librechat-data-provider';
 import type { MemoryArtifact } from 'librechat-data-provider';
+import Tokenizer from '~/utils/tokenizer';
 import { createMemoryTool, processMemory } from '../memory';
 
 // Mock the logger
@@ -172,6 +174,40 @@ describe('createMemoryTool', () => {
       expect(mockSetMemory).not.toHaveBeenCalled();
     });
 
+    it('filters invalid keys before logging and never logs submitted content', async () => {
+      const protectedValue = 'ORG-PRIVATE-KEY';
+      const warn = jest.spyOn(logger, 'warn');
+      const tool = createMemoryTool({
+        userId: 'test-user',
+        setMemory: mockSetMemory,
+        validKeys: ['allowed'],
+        filters: {
+          memories: {
+            pii: {
+              fields: ['key'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'organization-token',
+                  label: 'secret token',
+                  regex: 'ORG-[A-Z-]+',
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      const result = await tool.func({ key: protectedValue, value: 'some value' });
+
+      expect(result).toEqual([
+        'Submitted content contains a secret token. Remove it and try again.',
+        undefined,
+      ]);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(protectedValue);
+      expect(mockSetMemory).not.toHaveBeenCalled();
+    });
+
     it('should handle setMemory failure', async () => {
       mockSetMemory.mockResolvedValue({ ok: false });
       const tool = createMemoryTool({
@@ -197,6 +233,52 @@ describe('createMemoryTool', () => {
       expect(result[0]).toBe('Error setting memory for key "test"');
       expect(result[1]).toBeUndefined();
     });
+
+    it('should block configured memory content before tokenization or persistence', async () => {
+      const onWrite = jest.fn();
+      const tokenCount = jest.mocked(Tokenizer.getTokenCount);
+      const tool = createMemoryTool({
+        userId: 'test-user',
+        setMemory: mockSetMemory,
+        onWrite,
+        filters: {
+          memories: {
+            pii: {
+              fields: ['value'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'organization-token',
+                  label: 'secret token',
+                  regex: 'ORG-[A-Z]+',
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      tokenCount.mockClear();
+      const blocked = await tool.func({ key: 'preferences', value: 'Keep ORG-SECRET' });
+
+      expect(blocked).toEqual([
+        'Submitted content contains a secret token. Remove it and try again.',
+        undefined,
+      ]);
+      expect(tokenCount).not.toHaveBeenCalled();
+      expect(mockSetMemory).not.toHaveBeenCalled();
+      expect(onWrite).not.toHaveBeenCalled();
+
+      await tool.func({ key: 'ORG-KEY', value: 'Prefers concise answers' });
+
+      expect(mockSetMemory).toHaveBeenCalledTimes(1);
+      expect(mockSetMemory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          key: 'ORG-KEY',
+          value: 'Prefers concise answers',
+        }),
+      );
+    });
   });
 });
 
@@ -218,6 +300,60 @@ describe('processMemory - GPT-5+ handling', () => {
     const { Run } = jest.requireMock('@librechat/agents');
     (Run.create as jest.Mock).mockResolvedValue({
       processStream: jest.fn().mockResolvedValue('Memory processed'),
+    });
+  });
+
+  it('should enforce memory filters in the automatic processor without changing deletes', async () => {
+    const tokenCount = jest.mocked(Tokenizer.getTokenCount);
+    tokenCount.mockClear();
+
+    await processMemory({
+      res: mockRes as Response,
+      userId: 'test-user',
+      setMemory: mockSetMemory,
+      deleteMemory: mockDeleteMemory,
+      messages: [],
+      memory: 'Test memory',
+      messageId: 'msg-123',
+      conversationId: 'conv-123',
+      instructions: 'Test instructions',
+      filters: {
+        memories: {
+          pii: {
+            fields: ['value'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'organization-token',
+                label: 'secret token',
+                regex: 'ORG-[A-Z]+',
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const { Run } = jest.requireMock('@librechat/agents');
+    const runConfig = (Run.create as jest.Mock).mock.calls[0][0];
+    const [setMemoryTool, deleteMemoryTool] = runConfig.graphConfig.tools;
+
+    const blocked = await setMemoryTool.func({
+      key: 'preferences',
+      value: 'Keep ORG-SECRET',
+    });
+    expect(blocked).toEqual([
+      'Submitted content contains a secret token. Remove it and try again.',
+      undefined,
+    ]);
+    expect(tokenCount).not.toHaveBeenCalled();
+    expect(mockSetMemory).not.toHaveBeenCalled();
+
+    await deleteMemoryTool.func({ key: 'preferences' });
+    expect(mockDeleteMemory).toHaveBeenCalledWith({
+      userId: 'test-user',
+      key: 'preferences',
+      agentId: undefined,
     });
   });
 

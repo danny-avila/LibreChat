@@ -349,6 +349,387 @@ describe('createToolExecuteHandler', () => {
 
       expect(capturedArgs).toEqual([payload]);
     });
+
+    it('blocks normalized model-generated arguments before foreground tool invocation', async () => {
+      const protectedValue = 'PROTECTED-FOREGROUND';
+      const tool = createMockTool('filtered_tool', [], {
+        schema: {
+          type: 'object',
+          properties: { query: { type: 'string' } },
+        },
+      });
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+        configurable: {
+          req: {
+            config: {
+              filters: {
+                toolArguments: {
+                  pii: {
+                    starterPatterns: [],
+                    customPatterns: [
+                      {
+                        id: 'protected-value',
+                        label: 'protected value',
+                        regex: 'PROTECTED-[A-Z]+',
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+      }));
+      const handler = createToolExecuteHandler({ loadTools });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_filtered_foreground',
+          name: 'filtered_tool',
+          args: `{"query":"${protectedValue}"}` as unknown as ToolCallRequest['args'],
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).not.toContain(protectedValue);
+      expect(tool.invoke).not.toHaveBeenCalled();
+    });
+
+    it('blocks model-generated tool names before foreground invocation', async () => {
+      const protectedName = 'PROTECTED-TOOL';
+      const tool = createMockTool(protectedName, []);
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+        configurable: {
+          req: {
+            config: {
+              filters: {
+                toolArguments: {
+                  pii: {
+                    fields: ['name'],
+                    starterPatterns: [],
+                    customPatterns: [
+                      {
+                        id: 'protected-value',
+                        label: 'protected value',
+                        regex: 'PROTECTED-[A-Z]+',
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+      }));
+      const handler = createToolExecuteHandler({ loadTools });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_filtered_name',
+          name: protectedName,
+          args: {},
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).not.toContain(protectedName);
+      expect(tool.invoke).not.toHaveBeenCalled();
+    });
+
+    it('filters tool names before loading while allowing safe calls in the same batch', async () => {
+      const protectedName = 'PROTECTED-PRELOAD-TOOL';
+      const allowedTool = createMockTool('allowed_tool', []);
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [allowedTool] as never[],
+      }));
+      const handler = createToolExecuteHandler({ loadTools });
+      const configurable = {
+        req: {
+          config: {
+            filters: {
+              toolArguments: {
+                pii: {
+                  fields: ['name'],
+                  starterPatterns: [],
+                  customPatterns: [
+                    {
+                      id: 'protected-name',
+                      label: 'protected name',
+                      regex: 'PROTECTED-[A-Z-]+',
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      };
+
+      const results = await invokeHandlerWithConfig(
+        handler,
+        [
+          { id: 'call_blocked_preload', name: protectedName, args: {} },
+          { id: 'call_allowed_preload', name: 'allowed_tool', args: {} },
+        ],
+        configurable,
+      );
+
+      expect(loadTools).toHaveBeenCalledTimes(1);
+      expect(loadTools).toHaveBeenCalledWith(['allowed_tool'], undefined);
+      expect(JSON.stringify(loadTools.mock.calls)).not.toContain(protectedName);
+      expect(results[0]).toEqual(
+        expect.objectContaining({
+          status: 'error',
+          content: '',
+          errorMessage: expect.stringContaining('protected name'),
+        }),
+      );
+      expect(results[0].errorMessage).not.toContain(protectedName);
+      expect(results[1]).toEqual(
+        expect.objectContaining({
+          status: 'success',
+          content: expect.stringContaining('allowed_tool executed'),
+        }),
+      );
+      expect(allowedTool.invoke).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips tool loading when every submitted name is blocked by the source config', async () => {
+      const protectedName = 'PROTECTED-ONLY-TOOL';
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn();
+      const handler = createToolExecuteHandler({ loadTools });
+
+      const [result] = await invokeHandlerWithConfig(
+        handler,
+        [{ id: 'call_only_blocked_name', name: protectedName, args: {} }],
+        {
+          req: {
+            config: {
+              filters: {
+                toolArguments: {
+                  pii: {
+                    fields: ['name'],
+                    starterPatterns: [],
+                    customPatterns: [
+                      {
+                        id: 'protected-name',
+                        label: 'protected name',
+                        regex: 'PROTECTED-[A-Z-]+',
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+      );
+
+      expect(loadTools).not.toHaveBeenCalled();
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('protected name');
+      expect(result.errorMessage).not.toContain(protectedName);
+    });
+
+    it('blocks unknown tool names before lookup logging or error history', async () => {
+      const protectedName = 'PROTECTED-UNKNOWN-TOOL';
+      const warn = jest.spyOn(logger, 'warn');
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [],
+        configurable: {
+          req: {
+            config: {
+              filters: {
+                toolArguments: {
+                  pii: {
+                    fields: ['name'],
+                    starterPatterns: [],
+                    customPatterns: [
+                      {
+                        id: 'protected-value',
+                        label: 'protected value',
+                        regex: 'PROTECTED-[A-Z-]+',
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+      }));
+      const handler = createToolExecuteHandler({ loadTools });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_filtered_unknown_name',
+          name: protectedName,
+          args: {},
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).not.toContain(protectedName);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(protectedName);
+    });
+
+    it('blocks foreground tool output before callbacks or model context', async () => {
+      const protectedValue = 'PROTECTED-OUTPUT';
+      const toolEndCallback = jest.fn();
+      const tool = {
+        name: 'filtered_output_tool',
+        invoke: jest.fn(async () => ({
+          content: protectedValue,
+          artifact: { filename: `${protectedValue}.txt` },
+        })),
+      };
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+        configurable: {
+          req: {
+            config: {
+              filters: {
+                toolArguments: {
+                  pii: {
+                    fields: ['output'],
+                    starterPatterns: [],
+                    customPatterns: [
+                      {
+                        id: 'protected-value',
+                        label: 'protected value',
+                        regex: 'PROTECTED-[A-Z]+',
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+      }));
+      const handler = createToolExecuteHandler({ loadTools, toolEndCallback });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_filtered_output',
+          name: 'filtered_output_tool',
+          args: {},
+        },
+      ]);
+
+      expect(tool.invoke).toHaveBeenCalledTimes(1);
+      expect(result.status).toBe('error');
+      expect(result.content).toBe('');
+      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).not.toContain(protectedValue);
+      expect(result.artifact).toBeUndefined();
+      expect(toolEndCallback).not.toHaveBeenCalled();
+    });
+
+    it('blocks protected string leaves in cyclic tool output', async () => {
+      const protectedValue = 'PROTECTED-CYCLIC-OUTPUT';
+      const artifact: { label: string; self?: unknown } = { label: protectedValue };
+      artifact.self = artifact;
+      const toolEndCallback = jest.fn();
+      const tool = {
+        name: 'cyclic_output_tool',
+        invoke: jest.fn(async () => ({ content: 'safe result', artifact })),
+      };
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({
+          loadedTools: [tool] as never[],
+          configurable: {
+            req: {
+              config: {
+                filters: {
+                  toolArguments: {
+                    pii: {
+                      fields: ['output'],
+                      starterPatterns: [],
+                      customPatterns: [
+                        {
+                          id: 'protected-value',
+                          label: 'protected value',
+                          regex: 'PROTECTED-[A-Z-]+',
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }),
+        toolEndCallback,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        { id: 'call_cyclic_output', name: 'cyclic_output_tool', args: {} },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).not.toContain(protectedValue);
+      expect(result.artifact).toBeUndefined();
+      expect(toolEndCallback).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when tool output cannot be completely traversed', async () => {
+      const opaqueArtifact = new Proxy(
+        { value: 'hidden' },
+        {
+          ownKeys: () => {
+            throw new Error('opaque');
+          },
+        },
+      );
+      const toolEndCallback = jest.fn();
+      const tool = {
+        name: 'opaque_output_tool',
+        invoke: jest.fn(async () => ({ content: 'safe result', artifact: opaqueArtifact })),
+      };
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({
+          loadedTools: [tool] as never[],
+          configurable: {
+            req: {
+              config: {
+                filters: {
+                  toolArguments: {
+                    pii: {
+                      fields: ['output'],
+                      starterPatterns: [],
+                      customPatterns: [
+                        {
+                          id: 'protected-value',
+                          label: 'protected value',
+                          regex: 'PROTECTED-[A-Z-]+',
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }),
+        toolEndCallback,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        { id: 'call_opaque_output', name: 'opaque_output_tool', args: {} },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('could not be completely inspected');
+      expect(result.artifact).toBeUndefined();
+      expect(toolEndCallback).not.toHaveBeenCalled();
+    });
   });
 
   describe('programmatic tool config', () => {
@@ -430,6 +811,103 @@ describe('createToolExecuteHandler', () => {
   });
 
   describe('tool error handling', () => {
+    it('filters missing-tool error output before lookup warnings', async () => {
+      const protectedName = 'PROTECTED-MISSING-OUTPUT';
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [],
+      }));
+      const warnSpy = jest.spyOn(logger, 'warn').mockReturnValue(logger);
+      try {
+        const handler = createToolExecuteHandler({ loadTools });
+        const [result] = await invokeHandlerWithConfig(
+          handler,
+          [{ id: 'call_filtered_missing_output', name: protectedName, args: {} }],
+          {
+            req: {
+              config: {
+                filters: {
+                  toolArguments: {
+                    pii: {
+                      fields: ['output'],
+                      starterPatterns: [],
+                      customPatterns: [
+                        {
+                          id: 'protected-output',
+                          label: 'protected output',
+                          regex: 'PROTECTED-[A-Z-]+',
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        );
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('protected output');
+        expect(result.errorMessage).not.toContain(protectedName);
+        expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(protectedName);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('filters thrown foreground errors before result delivery or logging', async () => {
+      const protectedValue = 'PROTECTED-FOREGROUND-ERROR';
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [
+          {
+            name: 'throwing_tool',
+            invoke: jest.fn(async () => {
+              throw new Error(protectedValue);
+            }),
+          },
+        ] as never[],
+      }));
+      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+      try {
+        const handler = createToolExecuteHandler({ loadTools });
+        const [result] = await invokeHandlerWithConfig(
+          handler,
+          [{ id: 'call_filtered_throw', name: 'throwing_tool', args: {} }],
+          {
+            req: {
+              config: {
+                filters: {
+                  toolArguments: {
+                    pii: {
+                      fields: ['output'],
+                      starterPatterns: [],
+                      customPatterns: [
+                        {
+                          id: 'protected-output',
+                          label: 'protected output',
+                          regex: 'PROTECTED-[A-Z-]+',
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        );
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('protected output');
+        expect(result.errorMessage).not.toContain(protectedValue);
+        expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(protectedValue);
+        expect(errorSpy).toHaveBeenCalledWith(
+          '[ON_TOOL_EXECUTE] Tool throwing_tool error',
+          expect.objectContaining({ contentFiltered: true }),
+        );
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
     it('truncates oversized tool errors in the result and log context', async () => {
       const oversizedMessage = `tool failed: ${'x'.repeat(15_000)}`;
       const thrown = new Error(oversizedMessage);
@@ -552,10 +1030,16 @@ describe('createToolExecuteHandler', () => {
   });
 
   describe('skill tool model-invocation gate', () => {
-    function createSkillHandler(getSkillByName: ToolExecuteOptions['getSkillByName']) {
+    function createSkillHandler(
+      getSkillByName: ToolExecuteOptions['getSkillByName'],
+      filters?: Record<string, unknown>,
+    ) {
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [],
-        configurable: { accessibleSkillIds: skillsInScope() },
+        configurable: {
+          accessibleSkillIds: skillsInScope(),
+          ...(filters != null ? { req: { config: { filters } } } : {}),
+        },
       }));
       return createToolExecuteHandler({ loadTools, getSkillByName });
     }
@@ -626,6 +1110,47 @@ describe('createToolExecuteHandler', () => {
       expect(result.errorMessage).toContain('pii-redactor');
     });
 
+    it('blocks stored skill instructions before injecting them into model context', async () => {
+      const protectedValue = 'PRIVATE-SKILL-BODY';
+      const getSkillByName = jest.fn(async () => ({
+        _id: 'skill-id' as unknown as never,
+        name: 'stored-skill',
+        description: 'Stored skill',
+        body: `Use ${protectedValue}`,
+        fileCount: 0,
+        version: 1,
+      }));
+      const handler = createSkillHandler(getSkillByName, {
+        skills: {
+          pii: {
+            fields: ['instructions'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private-value',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z-]+',
+              },
+            ],
+          },
+        },
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_stored_skill_filter',
+          name: Constants.SKILL_TOOL,
+          args: { skillName: 'stored-skill' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('private value');
+      expect(result.errorMessage).not.toContain(protectedValue);
+      expect(result.injectedMessages).toBeUndefined();
+      expect(result.artifact).toBeUndefined();
+    });
+
     it('returns the regular not-accessible error when the skill itself is missing (gate runs after lookup)', async () => {
       const getSkillByName = jest.fn(async () => null);
       const handler = createSkillHandler(getSkillByName);
@@ -643,6 +1168,85 @@ describe('createToolExecuteHandler', () => {
          from "exists but model-blocked". */
       expect(result.errorMessage).toContain('not found or not accessible');
       expect(result.errorMessage).not.toContain('cannot be invoked');
+    });
+
+    it('filters host-tool error results before returning them to the model', async () => {
+      const protectedValue = 'PROTECTED-HOST-RESULT';
+      const handler = createSkillHandler(
+        jest.fn(async () => null),
+        {
+          toolArguments: {
+            pii: {
+              fields: ['output'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'protected-output',
+                  label: 'protected output',
+                  regex: 'PROTECTED-[A-Z-]+',
+                },
+              ],
+            },
+          },
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_filtered_host_result',
+          name: Constants.SKILL_TOOL,
+          args: { skillName: protectedValue },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('protected output');
+      expect(result.errorMessage).not.toContain(protectedValue);
+    });
+
+    it('filters thrown host-tool errors before result delivery or logging', async () => {
+      const protectedValue = 'PROTECTED-HOST-THROW';
+      const handler = createSkillHandler(
+        jest.fn(async () => {
+          throw new Error(protectedValue);
+        }),
+        {
+          toolArguments: {
+            pii: {
+              fields: ['output'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'protected-output',
+                  label: 'protected output',
+                  regex: 'PROTECTED-[A-Z-]+',
+                },
+              ],
+            },
+          },
+        },
+      );
+      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+      try {
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_filtered_host_throw',
+            name: Constants.SKILL_TOOL,
+            args: { skillName: 'stored-skill' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('protected output');
+        expect(result.errorMessage).not.toContain(protectedValue);
+        expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(protectedValue);
+        expect(errorSpy).toHaveBeenCalledWith(
+          `[ON_TOOL_EXECUTE] Tool ${Constants.SKILL_TOOL} error`,
+          expect.objectContaining({ contentFiltered: true }),
+        );
+      } finally {
+        errorSpy.mockRestore();
+      }
     });
 
     it('lets through skills without disableModelInvocation set (default behavior)', async () => {
@@ -1080,6 +1684,8 @@ describe('createToolExecuteHandler', () => {
       codeEnvAvailable: boolean;
       listSkillFiles: jest.Mock;
       batchUploadCodeEnvFiles?: jest.Mock;
+      filters?: Record<string, unknown>;
+      getStrategyFunctions?: jest.Mock;
     }) {
       const getSkillByName = jest.fn(async () => ({
         _id: SKILL_ID as unknown as never,
@@ -1092,7 +1698,10 @@ describe('createToolExecuteHandler', () => {
          `configurable`, which mirrors production flow through
          `enrichWithSkillConfigurable`. `req` must be present for the
          priming branch to enter (the handler guards on it). */
-      const req = { user: { id: 'user-1' } };
+      const req = {
+        user: { id: 'user-1' },
+        ...(params.filters != null ? { config: { filters: params.filters } } : {}),
+      };
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [],
         configurable: { codeEnvAvailable: params.codeEnvAvailable, req },
@@ -1103,7 +1712,8 @@ describe('createToolExecuteHandler', () => {
         listSkillFiles: params.listSkillFiles as unknown as ToolExecuteOptions['listSkillFiles'],
         batchUploadCodeEnvFiles: (params.batchUploadCodeEnvFiles ??
           jest.fn()) as unknown as ToolExecuteOptions['batchUploadCodeEnvFiles'],
-        getStrategyFunctions: jest.fn() as unknown as ToolExecuteOptions['getStrategyFunctions'],
+        getStrategyFunctions: (params.getStrategyFunctions ??
+          jest.fn()) as unknown as ToolExecuteOptions['getStrategyFunctions'],
       });
     }
 
@@ -1138,6 +1748,53 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(listSkillFiles).toHaveBeenCalledWith(SKILL_ID);
+    });
+
+    it('returns a raw-free filter error without injecting a blocked bundled file', async () => {
+      const protectedValue = 'sk-historical-bundled-secret';
+      const listSkillFiles = jest.fn().mockResolvedValue([
+        {
+          relativePath: 'references/private.md',
+          filename: 'private.md',
+          filepath: '/storage/brand-guidelines/references/private.md',
+          source: 's3',
+          bytes: protectedValue.length,
+        },
+      ]);
+      const batchUploadCodeEnvFiles = jest.fn();
+      const handler = makeSkillHandlerWithFiles({
+        codeEnvAvailable: true,
+        listSkillFiles,
+        batchUploadCodeEnvFiles,
+        filters: {
+          skills: {
+            pii: {
+              fields: ['file_text'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+        getStrategyFunctions: jest.fn().mockReturnValue({
+          getDownloadStream: jest
+            .fn()
+            .mockResolvedValue(Readable.from(Buffer.from(protectedValue))),
+        }),
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_blocked_bundle',
+          name: Constants.SKILL_TOOL,
+          args: { skillName: 'brand-guidelines' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('sk- prefix token');
+      expect(result.errorMessage).not.toContain(protectedValue);
+      expect(result.injectedMessages).toBeUndefined();
+      expect(result.artifact).toBeUndefined();
+      expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
     });
   });
 
@@ -1300,6 +1957,59 @@ describe('createToolExecuteHandler', () => {
       });
     });
 
+    it('blocks filtered SKILL.md content before creating the skill', async () => {
+      const protectedValue = 'PROTECTED-SKILL';
+      const createSkill = jest.fn();
+      const filteredReq = {
+        user: {
+          id: 'user-1',
+          _id: new Types.ObjectId(),
+          role: 'USER',
+          name: 'Test User',
+        },
+        config: {
+          filters: {
+            skills: {
+              pii: {
+                fields: ['instructions'],
+                starterPatterns: [],
+                customPatterns: [
+                  {
+                    id: 'protected-value',
+                    label: 'protected value',
+                    regex: 'PROTECTED-[A-Z]+',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      } as never;
+      const handler = makeAuthoringHandler(
+        {
+          getSkillByName: jest.fn(async () => null),
+          createSkill: createSkill as unknown as ToolExecuteOptions['createSkill'],
+        },
+        { req: filteredReq },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_filtered_skill',
+          name: 'create_file',
+          args: {
+            path: 'skills/filtered-skill/SKILL.md',
+            content: `---\nname: filtered-skill\ndescription: Use for tests\n---\n# ${protectedValue}\n`,
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).not.toContain(protectedValue);
+      expect(createSkill).not.toHaveBeenCalled();
+    });
+
     it('adds required SKILL.md frontmatter when create_file only provides markdown', async () => {
       const createSkill = jest.fn(async () => ({
         skill: {
@@ -1434,6 +2144,67 @@ describe('createToolExecuteHandler', () => {
           content: 'reference text',
         }),
       );
+    });
+
+    it('blocks filtered bundled skill files before saving their content', async () => {
+      const protectedValue = 'PROTECTED-BUNDLE';
+      const existingSkill = {
+        _id: SKILL_ID,
+        name: 'filtered-skill',
+        body: '# Existing',
+        fileCount: 0,
+        version: 1,
+      };
+      const saveSkillFileContent = jest.fn();
+      const filteredReq = {
+        user: {
+          id: 'user-1',
+          _id: new Types.ObjectId(),
+          role: 'USER',
+          name: 'Test User',
+        },
+        config: {
+          filters: {
+            skills: {
+              pii: {
+                fields: ['file_text'],
+                starterPatterns: [],
+                customPatterns: [
+                  {
+                    id: 'protected-value',
+                    label: 'protected value',
+                    regex: 'PROTECTED-[A-Z]+',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      } as never;
+      const handler = makeAuthoringHandler(
+        {
+          getSkillByName: jest.fn(async () => existingSkill),
+          getSkillFileByPath: jest.fn(async () => null),
+          saveSkillFileContent,
+        },
+        { req: filteredReq },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_filtered_bundle',
+          name: 'create_file',
+          args: {
+            path: 'skills/filtered-skill/references/private.md',
+            content: protectedValue,
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).not.toContain(protectedValue);
+      expect(saveSkillFileContent).not.toHaveBeenCalled();
     });
 
     it('preserves newly authored skills across later tool execution rounds', async () => {
@@ -2322,7 +3093,10 @@ describe('createToolExecuteHandler', () => {
       config: {},
     } as never;
 
-    function makeSandboxAuthoringHandler(params: Partial<ToolExecuteOptions>) {
+    function makeSandboxAuthoringHandler(
+      params: Partial<ToolExecuteOptions>,
+      configurable?: Record<string, unknown>,
+    ) {
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [],
         configurable: {
@@ -2331,6 +3105,7 @@ describe('createToolExecuteHandler', () => {
           accessibleSkillIds: [],
           skillAuthoringAvailable: false,
           fileAuthoringToolNames: new Set(['create_file', 'edit_file']),
+          ...(configurable ?? {}),
         },
       }));
       return createToolExecuteHandler({
@@ -2383,6 +3158,102 @@ describe('createToolExecuteHandler', () => {
         files: [{ id: 'f1', name: 'input.csv', session_id: 'sess-prev' }],
         req,
       });
+    });
+
+    it('blocks filtered file content before writing to the sandbox', async () => {
+      const protectedValue = 'PROTECTED-SANDBOX';
+      const readSandboxFile = jest.fn(async () => {
+        throw new Error('cat: /mnt/data/filtered.txt: No such file or directory');
+      });
+      const writeSandboxFile = jest.fn();
+      const filteredReq = {
+        user: {
+          id: 'user-1',
+        },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['content'],
+                starterPatterns: [],
+                customPatterns: [
+                  {
+                    id: 'protected-value',
+                    label: 'protected value',
+                    regex: 'PROTECTED-[A-Z]+',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      } as never;
+      const handler = makeSandboxAuthoringHandler(
+        { readSandboxFile, writeSandboxFile },
+        { req: filteredReq },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_filtered_sandbox',
+          name: 'create_file',
+          args: {
+            path: '/mnt/data/filtered.txt',
+            content: protectedValue,
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).not.toContain(protectedValue);
+      expect(writeSandboxFile).not.toHaveBeenCalled();
+    });
+
+    it('applies the uninspectable file policy before writing binary-like sandbox content', async () => {
+      const writeSandboxFile = jest.fn();
+      const filteredReq = {
+        user: {
+          id: 'user-1',
+        },
+        config: {
+          filters: {
+            files: {
+              pii: {
+                fields: ['content'],
+                starterPatterns: [],
+                uninspectable: 'block',
+              },
+            },
+          },
+        },
+      } as never;
+      const handler = makeSandboxAuthoringHandler(
+        {
+          readSandboxFile: jest.fn(async () => {
+            throw new Error('cat: /mnt/data/opaque: No such file or directory');
+          }),
+          writeSandboxFile,
+        },
+        { req: filteredReq },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_uninspectable_sandbox',
+          name: 'create_file',
+          args: {
+            path: '/mnt/data/opaque',
+            content: `${'a'.repeat(8192)}\0opaque`,
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toBe(
+        'Submitted file content could not be inspected before processing.',
+      );
+      expect(writeSandboxFile).not.toHaveBeenCalled();
     });
 
     it('refuses to overwrite an existing sandbox file without overwrite: true', async () => {

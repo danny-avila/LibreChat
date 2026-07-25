@@ -49,9 +49,9 @@ const createAssistant = async (req, res) => {
          *  the assistants runtime — drop them even when posted directly, since
          *  the tools-dialog scoping doesn't gate REST clients or stale payloads. */
         if (isAgentsOnlyTool(tool)) {
-          logger.warn(
-            `[/assistants] Dropping agents-only tool from assistant payload: ${typeof tool === 'string' ? tool : tool?.function?.name}`,
-          );
+          logger.warn('[/assistants] Dropping agents-only tool from assistant payload', {
+            toolShape: typeof tool === 'string' ? 'name' : 'definition',
+          });
           return undefined;
         }
         if (typeof tool !== 'string') {
@@ -106,7 +106,11 @@ const createAssistant = async (req, res) => {
       assistant.append_current_datetime = append_current_datetime;
     }
 
-    logger.debug('/assistants/', assistant);
+    logger.debug('[/assistants] Assistant created', {
+      assistantId: assistant.id,
+      toolCount: assistantData.tools.length,
+      hasConversationStarters: Array.isArray(document.conversation_starters),
+    });
     res.status(201).json(assistant);
   } catch (error) {
     logger.error('[/assistants] Error creating assistant', error);

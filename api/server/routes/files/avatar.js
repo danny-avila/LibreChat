@@ -1,6 +1,13 @@
 const fs = require('fs').promises;
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
+const {
+  inspectContent,
+  extractFileContent,
+  contentFilterBlockResponse,
+  contentFilterUninspectableResponse,
+  getBlockedUninspectableFileField,
+} = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
@@ -12,6 +19,19 @@ router.post('/', async (req, res) => {
   try {
     const appConfig = req.config;
     filterFile({ req, file: req.file, image: true, isAvatar: true });
+    if (req.config?.filters?.files?.pii != null) {
+      const finding = inspectContent(extractFileContent({ name: req.file.originalname }), {
+        filters: req.config.filters,
+      });
+      if (finding != null) {
+        return res.status(400).json(contentFilterBlockResponse(finding));
+      }
+      const uninspectableField = getBlockedUninspectableFileField(req.config.filters, ['content']);
+      if (uninspectableField != null) {
+        return res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
+      }
+    }
+
     const userId = req.user.id;
     const { manual } = req.body;
     const input = await fs.readFile(req.file.path);

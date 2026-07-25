@@ -1089,8 +1089,8 @@ export async function initializeAgent(
     }
     if (extraAllowedToolNames.length > 0) {
       logger.warn(
-        `[allowedTools] loadTools threw with skill-added extras [${extraAllowedToolNames.join(', ')}]; retrying without them:`,
-        err instanceof Error ? err.message : err,
+        `[allowedTools] loadTools threw with ${extraAllowedToolNames.length} skill-added extra(s); retrying without them`,
+        { errorName: err instanceof Error ? err.name : 'UnknownError' },
       );
       loadToolsResult = await callLoadTools(baseToolNames);
     } else {
@@ -1102,7 +1102,7 @@ export async function initializeAgent(
        the same as a throw when extras were requested — the agent's own
        tools must still load. */
     logger.warn(
-      `[allowedTools] loadTools returned no result with skill-added extras [${extraAllowedToolNames.join(', ')}]; retrying without them.`,
+      `[allowedTools] loadTools returned no result with ${extraAllowedToolNames.length} skill-added extra(s); retrying without them.`,
     );
     loadToolsResult = await callLoadTools(baseToolNames);
   }
@@ -1149,17 +1149,8 @@ export async function initializeAgent(
     const loadedNames = new Set((toolDefinitions ?? []).map((d) => d.name));
     const dropped = extraAllowedToolNames.filter((n) => !loadedNames.has(n));
     if (dropped.length > 0) {
-      const sources: string[] = [];
-      for (const [skillName, names] of perSkillExtras) {
-        const droppedFromSkill = names.filter((n) => !loadedNames.has(n));
-        if (droppedFromSkill.length > 0) {
-          sources.push(`"${skillName}" → [${droppedFromSkill.join(', ')}]`);
-        }
-      }
       logger.debug(
-        `[allowedTools] Dropped unrecognized tool names: ${
-          sources.length > 0 ? sources.join('; ') : dropped.join(', ')
-        }`,
+        `[allowedTools] Dropped ${dropped.length} unrecognized tool name(s) from ${perSkillExtras.size} skill(s)`,
       );
     }
   }

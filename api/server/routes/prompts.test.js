@@ -12,6 +12,8 @@ const {
 } = require('librechat-data-provider');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 
+let mockAppConfig = {};
+
 // Mock modules before importing
 jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn().mockResolvedValue({}),
@@ -36,6 +38,10 @@ jest.mock('~/models', () => {
 
 jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (req, res, next) => next(),
+  configMiddleware: (req, res, next) => {
+    req.config = mockAppConfig;
+    next();
+  },
   promptUsageLimiter: (req, res, next) => next(),
   canAccessPromptViaGroup: jest.requireActual('~/server/middleware').canAccessPromptViaGroup,
   canAccessPromptGroupResource:
@@ -103,6 +109,7 @@ beforeAll(async () => {
 });
 
 afterEach(() => {
+  mockAppConfig = {};
   // Always reset to owner user after each test for isolation
   if (currentTestUser !== testUsers.owner) {
     currentTestUser = testUsers.owner;
@@ -223,6 +230,41 @@ describe('Prompt Routes - ACL Permissions', () => {
       await Prompt.deleteMany({});
       await PromptGroup.deleteMany({});
       await AclEntry.deleteMany({});
+    });
+
+    it('should block configured prompt content before persistence', async () => {
+      mockAppConfig = {
+        filters: {
+          prompts: {
+            pii: {
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+
+      const response = await request(app)
+        .post('/api/prompts')
+        .send({
+          prompt: {
+            prompt: 'Use sk-private-token for requests',
+            type: 'text',
+          },
+          group: {
+            name: 'Filtered Prompt Group',
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'prompt',
+          field: 'text',
+        }),
+      );
+      await expect(Prompt.countDocuments()).resolves.toBe(0);
+      await expect(PromptGroup.countDocuments()).resolves.toBe(0);
     });
 
     it('should create a prompt and grant owner permissions', async () => {

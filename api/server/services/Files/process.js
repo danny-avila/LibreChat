@@ -25,8 +25,11 @@ const {
   sanitizeFilename,
   parseText,
   processAudioFile,
+  inspectContent,
+  extractFileContent,
   sendUploadSuccess,
   getStorageMetadata,
+  contentFilterBlockResponse,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -751,14 +754,42 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
      * @param {number} params.bytes
      * @param {string} params.filepath
      * @param {string} params.type
+     * @param {boolean} params.isTranscript
      * @return {Promise<void>}
      */
-    const createTextFile = async ({ text, bytes, filepath, type = 'text/plain' }) => {
+    const createTextFile = async ({
+      text,
+      bytes,
+      filepath,
+      type = 'text/plain',
+      isTranscript = false,
+    }) => {
       const textBytes = Buffer.byteLength(text, 'utf8');
       if (textBytes > 15 * megabyte) {
         throw new Error(
           `Extracted text from "${file.originalname}" exceeds the 15MB storage limit (${Math.round(textBytes / megabyte)}MB). Try a shorter document.`,
         );
+      }
+      if (appConfig?.filters?.files?.pii != null) {
+        const content = isTranscript ? { transcript: text } : { extractedText: text };
+        const finding = inspectContent(extractFileContent(content), {
+          filters: appConfig.filters,
+        });
+        if (finding != null) {
+          const blockResponse = contentFilterBlockResponse(finding);
+          if (sseStream) {
+            sseStream.sendError({
+              ...blockResponse,
+              code: 400,
+              temp_file_id,
+              tool_resource,
+              display_to_user: true,
+            });
+          } else {
+            res.status(400).json(blockResponse);
+          }
+          return;
+        }
       }
       const retentionExpiry = await getAgentFileRetentionExpiry({
         req,
@@ -870,7 +901,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     if (shouldUseSTT) {
       const sttService = await STTService.getInstance();
       const { text, bytes } = await processAudioFile({ req, file, sttService });
-      return await createTextFile({ text, bytes });
+      return await createTextFile({ text, bytes, isTranscript: true });
     }
 
     const shouldUseText = fileConfig.checkType(

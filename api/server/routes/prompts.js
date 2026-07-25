@@ -9,6 +9,9 @@ const {
   safeValidatePromptGroupUpdate,
   createEmptyPromptGroupsResponse,
   filterAccessibleIdsBySharedLogic,
+  inspectContent,
+  extractPromptContent,
+  contentFilterBlockResponse,
 } = require('@librechat/api');
 const {
   Permissions,
@@ -39,6 +42,7 @@ const {
   canAccessPromptViaGroup,
   promptUsageLimiter,
   requireJwtAuth,
+  configMiddleware,
 } = require('~/server/middleware');
 const {
   findPubliclyAccessibleResources,
@@ -49,6 +53,20 @@ const {
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 
 const router = express.Router();
+
+const blockFilteredPromptContent = (req, res, promptData) => {
+  if (req.config?.filters == null) {
+    return false;
+  }
+  const finding = inspectContent(extractPromptContent(promptData), {
+    filters: req.config.filters,
+  });
+  if (finding == null) {
+    return false;
+  }
+  res.status(400).json(contentFilterBlockResponse(finding));
+  return true;
+};
 
 const checkPromptAccess = generateCheckAccess({
   permissionType: PermissionTypes.PROMPTS,
@@ -253,6 +271,10 @@ const createNewPromptGroup = async (req, res) => {
       return res.status(400).send({ error: 'Prompt and group name are required' });
     }
 
+    if (blockFilteredPromptContent(req, res, { prompt, group })) {
+      return;
+    }
+
     const saveData = {
       prompt,
       group,
@@ -315,6 +337,10 @@ const addPromptToGroup = async (req, res) => {
       return res.status(400).send({ error: 'Prompt type must be "text" or "chat"' });
     }
 
+    if (blockFilteredPromptContent(req, res, { prompt })) {
+      return;
+    }
+
     // Ensure the prompt is associated with the correct group
     prompt.groupId = groupId;
 
@@ -333,7 +359,7 @@ const addPromptToGroup = async (req, res) => {
 };
 
 // Create new prompt group (requires CREATE permission)
-router.post('/', checkPromptCreate, createNewPromptGroup);
+router.post('/', checkPromptCreate, configMiddleware, createNewPromptGroup);
 
 // Add prompt to existing group (requires EDIT permission on the group)
 router.post(
@@ -342,6 +368,7 @@ router.post(
   canAccessPromptGroupResource({
     requiredPermission: PermissionBits.EDIT,
   }),
+  configMiddleware,
   addPromptToGroup,
 );
 
@@ -398,6 +425,10 @@ const patchPromptGroup = async (req, res) => {
       });
     }
 
+    if (blockFilteredPromptContent(req, res, { group: validationResult.data })) {
+      return;
+    }
+
     const promptGroup = await updatePromptGroup(filter, validationResult.data);
     res.status(200).send(promptGroup);
   } catch (error) {
@@ -412,6 +443,7 @@ router.patch(
   canAccessPromptGroupResource({
     requiredPermission: PermissionBits.EDIT,
   }),
+  configMiddleware,
   patchPromptGroup,
 );
 

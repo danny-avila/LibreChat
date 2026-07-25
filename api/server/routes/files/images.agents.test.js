@@ -96,7 +96,7 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     jest.clearAllMocks();
   });
 
-  const createAppWithUser = (userId, userRole = SystemRoles.USER) => {
+  const createAppWithUser = (userId, userRole = SystemRoles.USER, config = {}) => {
     const app = express();
     app.use(express.json());
     app.use((req, _res, next) => {
@@ -115,7 +115,11 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     app.use((req, _res, next) => {
       req.user = { id: userId.toString(), role: userRole };
       req.app = { locals: {} };
-      req.config = { fileStrategy: 'local', paths: { imageOutput: '/tmp/images' } };
+      req.config = {
+        fileStrategy: 'local',
+        paths: { imageOutput: '/tmp/images' },
+        ...config,
+      };
       next();
     });
     app.use('/images', router);
@@ -165,6 +169,38 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     expect(response.status).toBe(200);
     expect(processAgentFileUpload).toHaveBeenCalled();
   });
+
+  it.each(['content', 'extracted_text'])(
+    'blocks opaque image %s before permission or processing side effects',
+    async (field) => {
+      const app = createAppWithUser(authorId, SystemRoles.USER, {
+        filters: {
+          files: {
+            pii: {
+              fields: [field],
+              uninspectable: 'block',
+            },
+          },
+        },
+      });
+      const response = await request(app).post('/images').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        error: 'content_filter_uninspectable',
+        message: 'Submitted file content could not be inspected before processing.',
+        source: 'file',
+        field,
+      });
+      expect(processAgentFileUpload).not.toHaveBeenCalled();
+      expect(fs.promises.unlink).toHaveBeenCalledWith('/tmp/t.png');
+    },
+  );
 
   it('should allow upload for admin regardless of ownership', async () => {
     await createAgent({

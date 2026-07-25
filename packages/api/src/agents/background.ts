@@ -1346,6 +1346,27 @@ export async function runCheckBackgroundTask(params: {
   });
 }
 
+/** Returns a read-only snapshot of the specifically requested task, if any. */
+export function getBackgroundTaskSnapshot(params: {
+  userId: string;
+  conversationId: string;
+  args: unknown;
+}): Readonly<BackgroundTask> | undefined {
+  const rawId = coerceArgsObject(params.args)?.background_task_id;
+  const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
+  if (!taskId) {
+    return undefined;
+  }
+  const task = backgroundTaskRegistry.get(params.userId, params.conversationId, taskId);
+  if (!task) {
+    return undefined;
+  }
+  return {
+    ...task,
+    ...(task.attachments != null ? { attachments: [...task.attachments] } : {}),
+  };
+}
+
 /**
  * When a `check_background_task` call targets a specific completed task that
  * produced an artifact, returns that artifact once (marking it delivered) so the

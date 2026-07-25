@@ -27,6 +27,11 @@ const {
   buildMCPAuthRunStepEvent,
   buildMCPAuthRunStepDeltaEvent,
   buildMCPAuthRunStepCompletedEvent,
+  inspectContent,
+  ContentFilterError,
+  assertModelBoundContent,
+  extractToolArgumentContent,
+  contentFilterBlockResponse,
   isFileAuthoringToolDefinition,
   ASK_USER_QUESTION_TOOL_NAME,
   splitMCPToolKey,
@@ -90,6 +95,80 @@ const { getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
+
+const getActiveToolResources = (toolResources, tools) => {
+  if (toolResources == null) {
+    return null;
+  }
+
+  const activeResources = {};
+  if (tools.includes(Tools.execute_code) && toolResources[EToolResources.execute_code] != null) {
+    activeResources[EToolResources.execute_code] = toolResources[EToolResources.execute_code];
+  }
+  if (tools.includes(Tools.file_search) && toolResources[EToolResources.file_search] != null) {
+    activeResources[EToolResources.file_search] = toolResources[EToolResources.file_search];
+  }
+  if (
+    (tools.includes('image_gen_oai') || tools.includes('gemini_image_gen')) &&
+    toolResources[EToolResources.image_edit] != null
+  ) {
+    activeResources[EToolResources.image_edit] = toolResources[EToolResources.image_edit];
+  }
+
+  return Object.keys(activeResources).length > 0 ? activeResources : null;
+};
+
+const assertToolResourcesAllowed = ({ req, toolResources, tools }) => {
+  const filters = req.config?.filters;
+  if (filters == null) {
+    return;
+  }
+  const activeResources = getActiveToolResources(toolResources, tools);
+  if (activeResources == null) {
+    return;
+  }
+  const files = Object.values(activeResources).flatMap((resource) =>
+    Array.isArray(resource?.files) ? resource.files : [],
+  );
+  assertModelBoundContent({
+    filters,
+    agents: [{ tool_resources: activeResources }],
+    files,
+  });
+};
+
+const withoutEncryptedActionSecrets = (action) => {
+  const metadata = { ...action.metadata };
+  delete metadata.api_key;
+  delete metadata.oauth_client_id;
+  delete metadata.oauth_client_secret;
+  return { ...action, metadata };
+};
+
+const prepareStoredActionsForUse = async ({ actions, filters, decrypt }) => {
+  if (filters != null) {
+    assertModelBoundContent({
+      filters,
+      actions: actions.map(withoutEncryptedActionSecrets),
+    });
+  }
+
+  const inspectDecryptedMetadata = filters?.actionMetadata?.pii != null;
+  if (!decrypt && !inspectDecryptedMetadata) {
+    return actions;
+  }
+
+  const decryptedActions = await Promise.all(
+    actions.map(async (action) => ({
+      ...action,
+      metadata: await decryptMetadata(action.metadata),
+    })),
+  );
+  if (filters != null) {
+    assertModelBoundContent({ filters, actions: decryptedActions });
+  }
+  return decryptedActions;
+};
 
 /**
  * Collapse every `actionDomainSeparator` sequence in the encoded-domain
@@ -218,6 +297,31 @@ const processVisionRequest = async (client, currentAction) => {
   };
 };
 
+const getRequiredActionContentFinding = (client, input) => {
+  const filters = client.req.config?.filters;
+  if (filters?.toolArguments?.pii == null) {
+    return null;
+  }
+  return inspectContent(extractToolArgumentContent(input), { filters });
+};
+
+const getSafeRequiredActionOutput = (client, currentAction, output) => {
+  const finding = getRequiredActionContentFinding(client, {
+    name: currentAction.tool,
+    output,
+  });
+  if (finding == null) {
+    return output;
+  }
+  const blockResponse = contentFilterBlockResponse(finding);
+  logger.warn('[required actions] Blocked tool output', {
+    toolCallId: currentAction.toolCallId,
+    source: blockResponse.source,
+    field: blockResponse.field,
+  });
+  return blockResponse.message;
+};
+
 /**
  * Processes return required actions from run.
  * @param {OpenAIClient | StreamRunManager} client - OpenAI (legacy) or StreamRunManager Client.
@@ -225,9 +329,18 @@ const processVisionRequest = async (client, currentAction) => {
  * @returns {Promise<ToolOutputs>} The outputs of the tools.
  */
 async function processRequiredActions(client, requiredActions) {
+  for (const currentAction of requiredActions) {
+    const finding = getRequiredActionContentFinding(client, {
+      name: currentAction.tool,
+      arguments: currentAction.toolInput,
+    });
+    if (finding != null) {
+      throw new ContentFilterError(finding);
+    }
+  }
+
   logger.debug(
-    `[required actions] user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
-    requiredActions,
+    `[required actions] user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id} | count: ${requiredActions.length}`,
   );
   const appConfig = client.req.config;
   const toolDefinitions = (await getCachedTools()) ?? {};
@@ -284,12 +397,18 @@ async function processRequiredActions(client, requiredActions) {
   for (let i = 0; i < requiredActions.length; i++) {
     const currentAction = requiredActions[i];
     if (currentAction.tool === ImageVisionTool.function.name) {
-      promises.push(processVisionRequest(client, currentAction));
+      promises.push(
+        processVisionRequest(client, currentAction).then((result) => ({
+          ...result,
+          output: getSafeRequiredActionOutput(client, currentAction, result.output),
+        })),
+      );
       continue;
     }
     let tool = ToolMap[currentAction.tool] ?? ActionToolMap[currentAction.tool];
 
-    const handleToolOutput = async (output) => {
+    const handleToolOutput = async (rawOutput) => {
+      const output = getSafeRequiredActionOutput(client, currentAction, rawOutput);
       requiredActions[i].output = output;
 
       /** @type {FunctionToolCall & PartMetadata} */
@@ -364,15 +483,22 @@ async function processRequiredActions(client, requiredActions) {
 
       if (!actionSetsData) {
         /** @type {Action[]} */
-        const actionSets =
+        const storedActions =
           (await loadActionSets({
             assistant_id: client.req.body.assistant_id,
           })) ?? [];
+        const actionSets = await prepareStoredActionsForUse({
+          actions: storedActions,
+          filters: client.req.config?.filters,
+          decrypt: true,
+        });
 
         // See registerActionTools for the key-shape rationale.
         const toolToAction = new Map();
 
-        for (const action of actionSets) {
+        for (let actionIndex = 0; actionIndex < actionSets.length; actionIndex++) {
+          const action = actionSets[actionIndex];
+          const storedAction = storedActions[actionIndex];
           const domain = await domainParser(action.metadata.domain, true);
           const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
           const legacyDomain = legacyDomainEncode(action.metadata.domain);
@@ -414,13 +540,9 @@ async function processRequiredActions(client, requiredActions) {
 
           // Store encrypted values for OAuth flow
           const encrypted = {
-            oauth_client_id: action.metadata.oauth_client_id,
-            oauth_client_secret: action.metadata.oauth_client_secret,
+            oauth_client_id: storedAction.metadata.oauth_client_id,
+            oauth_client_secret: storedAction.metadata.oauth_client_secret,
           };
-
-          // Decrypt metadata
-          const decryptedAction = { ...action };
-          decryptedAction.metadata = await decryptMetadata(action.metadata);
 
           registerActionTools({
             toolToAction,
@@ -428,7 +550,7 @@ async function processRequiredActions(client, requiredActions) {
             normalizedDomain,
             legacyNormalized,
             makeEntry: (sig) => ({
-              action: decryptedAction,
+              action,
               requestBuilder: requestBuilders[sig.name],
               encrypted,
             }),
@@ -476,13 +598,19 @@ async function processRequiredActions(client, requiredActions) {
     }
 
     const handleToolError = (error) => {
-      logger.error(
-        `tool_call_id: ${currentAction.toolCallId} | Error processing tool ${currentAction.tool}`,
-        error,
+      logger.error('[required actions] Tool execution failed', {
+        toolCallId: currentAction.toolCallId,
+        errorName: error?.name,
+        errorCode: error?.code,
+      });
+      const output = getSafeRequiredActionOutput(
+        client,
+        currentAction,
+        `Error processing tool ${currentAction.tool}: ${redactMessage(error.message, 256)}`,
       );
       return {
         tool_call_id: currentAction.toolCallId,
-        output: `Error processing tool ${currentAction.tool}: ${redactMessage(error.message, 256)}`,
+        output,
       };
     };
 
@@ -665,6 +793,12 @@ async function loadToolDefinitionsWrapper({
     return { toolDefinitions: [] };
   }
 
+  assertToolResourcesAllowed({
+    req,
+    toolResources: tool_resources,
+    tools: filteredTools,
+  });
+
   /** Only MCP tool keys need the server context; a purely non-MCP agent should not
    *  pay an app-config lookup on startup. */
   const hasFilteredMCPTools = filteredTools.some((t) => t.includes(Constants.mcp_delimiter));
@@ -791,9 +925,11 @@ async function loadToolDefinitionsWrapper({
         sendEvent(res, runStepEvent);
         sendEvent(res, runStepDeltaEvent);
       } else {
-        logger.warn(
-          `[Tool Definitions] Cannot emit OAuth event for ${serverName}: no streamId and res not available`,
-        );
+        logger.warn('[Tool Definitions] Cannot emit MCP OAuth event', {
+          hasStreamId: Boolean(streamId),
+          hasResponse: Boolean(res),
+          responseEnded: Boolean(res?.writableEnded),
+        });
       }
     };
   };
@@ -821,9 +957,11 @@ async function loadToolDefinitionsWrapper({
       } else if (res && !res.writableEnded) {
         sendEvent(res, runStepCompletedEvent);
       } else {
-        logger.warn(
-          `[Tool Definitions] Cannot emit OAuth completion for ${serverName}: no streamId and res not available`,
-        );
+        logger.warn('[Tool Definitions] Cannot emit MCP OAuth completion', {
+          hasStreamId: Boolean(streamId),
+          hasResponse: Boolean(res),
+          responseEnded: Boolean(res?.writableEnded),
+        });
       }
     };
   };
@@ -875,18 +1013,16 @@ async function loadToolDefinitionsWrapper({
       serverConfig =
         configServers?.[serverName] ??
         (await getMCPServersRegistry().getServerConfig(serverName, userId, configServers));
-    } catch (err) {
+    } catch {
       logger.warn(
-        `[Tool Definitions] MCP registry unavailable while resolving '${serverName}': ${
-          err?.message ?? err
-        }. Skipping MCP tool exposure for this lookup.`,
+        '[Tool Definitions] MCP registry unavailable; skipping tool exposure for one server',
       );
       return null;
     }
 
     if (!serverConfig) {
       logger.warn(
-        `[Tool Definitions] Skipping MCP server '${serverName}': no server config found (server may have been removed).`,
+        '[Tool Definitions] Skipping one MCP server because its configuration is unavailable',
       );
       return null;
     }
@@ -894,11 +1030,9 @@ async function loadToolDefinitionsWrapper({
     const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
     const missingUserVars = getMissingCustomUserVars(serverConfig, customUserVars);
     if (missingUserVars.length > 0) {
-      logger.warn(
-        `[Tool Definitions] Skipping MCP server '${serverName}': required user-provided variable(s) not set: ${missingUserVars.join(
-          ', ',
-        )}. Tools will not be exposed until the user configures them.`,
-      );
+      logger.warn('[Tool Definitions] Skipping one MCP server with missing user configuration', {
+        missingVariableCount: missingUserVars.length,
+      });
       return null;
     }
 
@@ -967,10 +1101,15 @@ async function loadToolDefinitionsWrapper({
   };
 
   const getActionToolDefinitions = async (agentId, actionToolNames) => {
-    const actionSets = (await loadActionSets({ agent_id: agentId })) ?? [];
-    if (actionSets.length === 0) {
+    const storedActions = (await loadActionSets({ agent_id: agentId })) ?? [];
+    if (storedActions.length === 0) {
       return [];
     }
+    const actionSets = await prepareStoredActionsForUse({
+      actions: storedActions,
+      filters: req.config?.filters,
+      decrypt: false,
+    });
 
     const definitions = [];
     const allowedDomains = appConfig?.actions?.allowedDomains;
@@ -1069,7 +1208,7 @@ async function loadToolDefinitionsWrapper({
   if (pendingOAuthServers.size > 0 && (res || streamId)) {
     const serverNames = Array.from(pendingOAuthServers);
     logger.info(
-      `[Tool Definitions] OAuth required for ${serverNames.length} server(s): ${serverNames.join(', ')}. Emitting events and waiting.`,
+      `[Tool Definitions] MCP OAuth required for ${serverNames.length} server(s); emitting events and waiting`,
     );
 
     const oauthWaitPromises = serverNames.map(async (serverName, index) => {
@@ -1095,12 +1234,12 @@ async function loadToolDefinitionsWrapper({
 
         if (result?.availableTools && Object.keys(result.availableTools).length > 0) {
           rememberMCPAvailableTools(serverName, result.availableTools);
-          logger.info(`[Tool Definitions] OAuth completed for ${serverName}, tools available`);
+          logger.info('[Tool Definitions] MCP OAuth completed; tools available');
           return { serverName, success: true };
         }
         return { serverName, success: false };
-      } catch (error) {
-        logger.debug(`[Tool Definitions] OAuth wait failed for ${serverName}:`, error?.message);
+      } catch {
+        logger.debug('[Tool Definitions] MCP OAuth wait failed for one server');
         return { serverName, success: false };
       }
     });
@@ -1112,7 +1251,7 @@ async function loadToolDefinitionsWrapper({
 
     if (successfulServers.length > 0) {
       logger.info(
-        `[Tool Definitions] Reloading tools after OAuth for: ${successfulServers.join(', ')}`,
+        `[Tool Definitions] Reloading tools after OAuth for ${successfulServers.length} server(s)`,
       );
       const reloadResult = await loadToolDefinitions(
         {
@@ -1367,6 +1506,11 @@ async function loadAgentTools({
   if (!_agentTools || _agentTools.length === 0) {
     return {};
   }
+  assertToolResourcesAllowed({
+    req,
+    toolResources: tool_resources,
+    tools: _agentTools,
+  });
   /** @type {ReturnType<typeof createOnSearchResults>} */
   let webSearchCallbacks;
   if (includesWebSearch) {
@@ -1521,10 +1665,10 @@ async function loadAgentTools({
     };
   }
 
-  const actionSets = (await loadActionSets({ agent_id: agent.id })) ?? [];
-  if (actionSets.length === 0) {
+  const storedActions = (await loadActionSets({ agent_id: agent.id })) ?? [];
+  if (storedActions.length === 0) {
     if (_agentTools.length > 0 && agentTools.length === 0) {
-      logger.warn(`No tools found for the specified tool calls: ${_agentTools.join(', ')}`);
+      logger.warn(`No tools found for ${_agentTools.length} specified tool call(s)`);
     }
     return {
       toolRegistry,
@@ -1540,11 +1684,18 @@ async function loadAgentTools({
       primedCodeFiles,
     };
   }
+  const actionSets = await prepareStoredActionsForUse({
+    actions: storedActions,
+    filters: req.config?.filters,
+    decrypt: true,
+  });
 
   // See registerActionTools for the key-shape rationale.
   const toolToAction = new Map();
 
-  for (const action of actionSets) {
+  for (let index = 0; index < actionSets.length; index++) {
+    const action = actionSets[index];
+    const storedAction = storedActions[index];
     const domain = await domainParser(action.metadata.domain, true);
     const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
     const legacyDomain = legacyDomainEncode(action.metadata.domain);
@@ -1581,13 +1732,9 @@ async function loadAgentTools({
     }
 
     const encrypted = {
-      oauth_client_id: action.metadata.oauth_client_id,
-      oauth_client_secret: action.metadata.oauth_client_secret,
+      oauth_client_id: storedAction.metadata.oauth_client_id,
+      oauth_client_secret: storedAction.metadata.oauth_client_secret,
     };
-
-    // Decrypt metadata once per action set
-    const decryptedAction = { ...action };
-    decryptedAction.metadata = await decryptMetadata(action.metadata);
 
     // Process the OpenAPI spec once per action set
     const { requestBuilders, functionSignatures, zodSchemas } = openapiToFunction(
@@ -1601,7 +1748,7 @@ async function loadAgentTools({
       normalizedDomain,
       legacyNormalized,
       makeEntry: (sig) => ({
-        action: decryptedAction,
+        action,
         requestBuilder: requestBuilders[sig.name],
         zodSchema: zodSchemas[sig.name],
         functionSignature: sig,
@@ -1653,7 +1800,7 @@ async function loadAgentTools({
   }
 
   if (_agentTools.length > 0 && agentTools.length === 0) {
-    logger.warn(`No tools found for the specified tool calls: ${_agentTools.join(', ')}`);
+    logger.warn(`No tools found for ${_agentTools.length} specified tool call(s)`);
     return {};
   }
 
@@ -2001,17 +2148,24 @@ async function loadActionToolsForExecution({
 }) {
   const loadedActionTools = [];
 
-  const actionSets = (await loadActionSets({ agent_id: agent.id })) ?? [];
-  if (actionSets.length === 0) {
+  const storedActions = (await loadActionSets({ agent_id: agent.id })) ?? [];
+  if (storedActions.length === 0) {
     return loadedActionTools;
   }
+  const actionSets = await prepareStoredActionsForUse({
+    actions: storedActions,
+    filters: req.config?.filters,
+    decrypt: true,
+  });
 
   // See registerActionTools for the key-shape rationale.
   const toolToAction = new Map();
   const allowedDomains = appConfig?.actions?.allowedDomains;
   const allowedAddresses = appConfig?.actions?.allowedAddresses;
 
-  for (const action of actionSets) {
+  for (let index = 0; index < actionSets.length; index++) {
+    const action = actionSets[index];
+    const storedAction = storedActions[index];
     const domain = await domainParser(action.metadata.domain, true);
     const normalizedDomain = domain.replace(domainSeparatorRegex, '_');
     const legacyDomain = legacyDomainEncode(action.metadata.domain);
@@ -2050,12 +2204,9 @@ async function loadActionToolsForExecution({
     }
 
     const encrypted = {
-      oauth_client_id: action.metadata.oauth_client_id,
-      oauth_client_secret: action.metadata.oauth_client_secret,
+      oauth_client_id: storedAction.metadata.oauth_client_id,
+      oauth_client_secret: storedAction.metadata.oauth_client_secret,
     };
-
-    const decryptedAction = { ...action };
-    decryptedAction.metadata = await decryptMetadata(action.metadata);
 
     const { requestBuilders, functionSignatures, zodSchemas } = openapiToFunction(
       validationResult.spec,
@@ -2068,7 +2219,7 @@ async function loadActionToolsForExecution({
       normalizedDomain,
       legacyNormalized,
       makeEntry: (sig) => ({
-        action: decryptedAction,
+        action,
         requestBuilder: requestBuilders[sig.name],
         zodSchema: zodSchemas[sig.name],
         functionSignature: sig,

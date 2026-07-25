@@ -7,6 +7,11 @@ const {
   startUploadSseStream,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
+  inspectContent,
+  extractFileContent,
+  contentFilterBlockResponse,
+  contentFilterUninspectableResponse,
+  getBlockedUninspectableFileField,
 } = require('@librechat/api');
 const { isAssistantsEndpoint } = require('librechat-data-provider');
 const {
@@ -34,6 +39,20 @@ router.post('/', async (req, res) => {
 
   try {
     filterFile({ req, image: true });
+
+    const contentFinding = inspectContent(extractFileContent({ name: req.file?.originalname }), {
+      filters: req.config?.filters,
+    });
+    if (contentFinding != null) {
+      return res.status(400).json(contentFilterBlockResponse(contentFinding));
+    }
+    const uninspectableField = getBlockedUninspectableFileField(req.config?.filters, [
+      'content',
+      'extracted_text',
+    ]);
+    if (uninspectableField != null) {
+      return res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
+    }
 
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;

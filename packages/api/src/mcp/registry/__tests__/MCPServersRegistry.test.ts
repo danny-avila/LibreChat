@@ -135,8 +135,9 @@ describe('MCPServersRegistry', () => {
       try {
         await registry.getAllServerConfigs('user-1');
 
-        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('slack'));
         expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('shadow DB-backed server'));
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('1 colliding name'));
+        expect(JSON.stringify(warnSpy.mock.calls)).not.toContain('slack');
       } finally {
         warnSpy.mockRestore();
       }

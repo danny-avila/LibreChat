@@ -1,5 +1,5 @@
 import { messageFilterPiiSchema, setMessageFilterRegexValidator } from 'librechat-data-provider';
-import type { MessageFilterPiiConfig } from 'librechat-data-provider';
+import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
 import type { Request, Response, NextFunction } from 'express';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -16,10 +16,14 @@ type CapturedResponse = { status?: number; body?: unknown };
 function runMiddleware(
   config: MessageFilterPiiConfig | undefined,
   body: unknown,
+  filters?: FiltersConfig,
 ): { capturedRes: CapturedResponse; nextCalls: number } {
   const captured: CapturedResponse = {};
   let nextCalls = 0;
-  const mw = createMessageFilterPii({ getConfig: () => config });
+  const mw = createMessageFilterPii({
+    getConfig: () => config,
+    getFilters: () => filters,
+  });
   const req = { body } as unknown as Request;
   const res = {
     status(code: number) {
@@ -36,6 +40,14 @@ function runMiddleware(
   };
   mw(req, res, next);
   return { capturedRes: captured, nextCalls };
+}
+
+function nestedPayload(depth: number): unknown {
+  let value: unknown = 'safe';
+  for (let index = 0; index < depth; index++) {
+    value = { nested: value };
+  }
+  return value;
 }
 
 describe('messageFilterPii middleware', () => {
@@ -59,10 +71,99 @@ describe('messageFilterPii middleware', () => {
     expect(capturedRes.status).toBeUndefined();
   });
 
+  it('blocks a manually selected skill name before agent initialization', () => {
+    const submittedName = 'PRIVATE-SKILL';
+    const { capturedRes, nextCalls } = runMiddleware(
+      undefined,
+      { manualSkills: [submittedName] },
+      {
+        skills: {
+          pii: {
+            fields: ['name'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z]+',
+              },
+            ],
+          },
+        },
+      },
+    );
+
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toEqual({
+      error: 'content_filter_block',
+      message: 'Submitted content contains a private value. Remove it and try again.',
+      source: 'skill',
+      field: 'name',
+    });
+    expect(JSON.stringify(capturedRes.body)).not.toContain(submittedName);
+  });
+
   it('passes through plain text that matches no pattern', () => {
     const { capturedRes, nextCalls } = runMiddleware({}, { text: 'hello world' });
     expect(nextCalls).toBe(1);
     expect(capturedRes.status).toBeUndefined();
+  });
+
+  it('preserves legacy-only behavior for nested payloads outside the legacy surface', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { role: 'user', content: [{ type: 'vendor', payload: nestedPayload(30) }] },
+    );
+
+    expect(nextCalls).toBe(1);
+    expect(capturedRes.status).toBeUndefined();
+  });
+
+  it('returns a raw-free 400 when protected nested message content cannot be fully inspected', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      undefined,
+      { role: 'user', content: [{ type: 'vendor', payload: nestedPayload(30) }] },
+      {
+        messages: {
+          pii: {
+            fields: ['content_part'],
+          },
+        },
+      },
+    );
+
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toEqual({
+      error: 'content_filter_uninspectable',
+      message: 'Submitted content could not be completely inspected before processing.',
+      source: 'message',
+      field: 'content_part',
+    });
+    expect(JSON.stringify(capturedRes.body)).not.toContain('safe');
+  });
+
+  it('fails closed when incomplete nested content would contribute to assembled context', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      undefined,
+      { role: 'user', content: [{ type: 'vendor', payload: nestedPayload(30) }] },
+      {
+        messages: {
+          pii: {
+            fields: ['assembled_context'],
+          },
+        },
+      },
+    );
+
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({
+      error: 'content_filter_uninspectable',
+      source: 'message',
+      field: 'content_part',
+    });
   });
 
   it('rejects with 400 when an sk- token is present (default starters)', () => {
@@ -185,6 +286,55 @@ describe('messageFilterPii middleware', () => {
     const { capturedRes, nextCalls } = runMiddleware({}, { answer: 'name it report.pdf' });
     expect(nextCalls).toBe(1);
     expect(capturedRes.status).toBeUndefined();
+  });
+
+  it('applies file-only policy to chat attachment names', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      undefined,
+      { files: [{ filename: 'PRIVATE-REPORT.txt' }] },
+      {
+        files: {
+          pii: {
+            fields: ['name'],
+            starterPatterns: [],
+            customPatterns: [
+              { id: 'private-file', label: 'private file', regex: 'PRIVATE-[A-Z]+\\.txt' },
+            ],
+          },
+        },
+      },
+    );
+
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({
+      error: 'content_filter_block',
+      source: 'file',
+      field: 'name',
+    });
+  });
+
+  it('blocks opaque chat attachments before downstream processing when configured', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      undefined,
+      { files: [{ file_data: 'opaque-file-data' }] },
+      {
+        files: {
+          pii: {
+            fields: ['content'],
+            uninspectable: 'block',
+          },
+        },
+      },
+    );
+
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({
+      error: 'content_filter_uninspectable',
+      source: 'file',
+      field: 'content',
+    });
   });
 
   it('honors a starterPatterns subset (sk passes when only bearer is enabled)', () => {

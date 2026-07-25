@@ -8,6 +8,7 @@ const {
   getBalanceConfig,
   getModelMaxTokens,
   ATTACHMENT_ONLY_TEXT,
+  isContentFilterError,
 } = require('@librechat/api');
 const {
   Time,
@@ -33,6 +34,7 @@ const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { addTitle } = require('~/server/services/Endpoints/assistants');
 const { createRunBody } = require('~/server/services/createRunBody');
+const setHeaders = require('~/server/middleware/setHeaders');
 const {
   getConvo,
   getMultiplier,
@@ -42,6 +44,7 @@ const {
   createAutoRefillTransaction,
 } = require('~/models');
 const { logViolation, getLogStores } = require('~/cache');
+const { preflightAssistantRunContent } = require('./contentFilter');
 const { getOpenAIClient } = require('./helpers');
 
 /**
@@ -53,7 +56,6 @@ const { getOpenAIClient } = require('./helpers');
  * @returns {void}
  */
 const chatV2 = async (req, res) => {
-  logger.debug('[/assistants/chat/] req.body', req.body);
   const appConfig = req.config;
 
   /** @type {{files: MongoFile[]}} */
@@ -72,6 +74,13 @@ const chatV2 = async (req, res) => {
     parentMessageId: _parentId = Constants.NO_PARENT,
     clientTimestamp,
   } = req.body;
+  logger.debug('[/assistants/chat/] request', {
+    endpoint,
+    conversationId: convoId,
+    assistantId: assistant_id,
+    hasText: typeof text === 'string' && text.length > 0,
+    fileCount: Array.isArray(files) ? files.length : 0,
+  });
 
   /** @type {OpenAI} */
   let openai;
@@ -103,6 +112,7 @@ const chatV2 = async (req, res) => {
 
   /** @type {Run | undefined} - The completed run, undefined if incomplete */
   let completedRun;
+  let contentRejected = false;
 
   const getContext = () => ({
     openai,
@@ -121,7 +131,7 @@ const chatV2 = async (req, res) => {
 
   try {
     res.on('close', async () => {
-      if (!completedRun) {
+      if (!completedRun && !contentRejected) {
         await handleError(new Error('Request closed'));
       }
     });
@@ -190,6 +200,21 @@ const chatV2 = async (req, res) => {
 
     openai = _openai;
     await validateAuthor({ req, openai });
+    try {
+      await preflightAssistantRunContent({
+        req,
+        openai,
+        assistantId: assistant_id,
+        threadId: _thread_id,
+      });
+    } catch (error) {
+      if (!isContentFilterError(error)) {
+        throw error;
+      }
+      contentRejected = true;
+      return res.status(error.statusCode).json(error.body);
+    }
+    setHeaders(req, res, () => {});
 
     if (previousMessages.length) {
       parentMessageId = previousMessages[previousMessages.length - 1].messageId;

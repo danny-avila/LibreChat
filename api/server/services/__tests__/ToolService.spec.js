@@ -5,6 +5,7 @@ const {
   Constants,
   ResourceType,
   ErrorTypes,
+  EToolResources,
   EModelEndpoint,
   isActionTool,
   actionDelimiter,
@@ -51,6 +52,8 @@ const mockResolveCodeExecutionContext = jest.fn(
     };
   },
 );
+const mockPrimeSearchFiles = jest.fn().mockResolvedValue({});
+const mockPrimeCodeFiles = jest.fn().mockResolvedValue({});
 jest.mock('~/server/services/Config', () => ({
   getEndpointsConfig: (...args) => mockGetEndpointsConfig(...args),
   getMCPServerTools: (...args) => mockGetMCPServerTools(...args),
@@ -102,10 +105,10 @@ jest.mock('~/server/services/Files/process', () => ({
   uploadImageBuffer: jest.fn(),
 }));
 jest.mock('~/app/clients/tools/util/fileSearch', () => ({
-  primeFiles: jest.fn().mockResolvedValue({}),
+  primeFiles: (...args) => mockPrimeSearchFiles(...args),
 }));
 jest.mock('~/server/services/Files/Code/process', () => ({
-  primeFiles: jest.fn().mockResolvedValue({}),
+  primeFiles: (...args) => mockPrimeCodeFiles(...args),
 }));
 jest.mock('../ActionService', () => ({
   loadActionSets: (...args) => mockLoadActionSets(...args),
@@ -188,6 +191,7 @@ describe('ToolService - Action Capability Gating', () => {
     });
     mockLoadToolsUtil.mockResolvedValue({ loadedTools: [], toolContextMap: {} });
     mockLoadActionSets.mockResolvedValue([]);
+    mockDecryptMetadata.mockImplementation(async (metadata) => metadata);
     mockGetMCPServerTools.mockResolvedValue(null);
     mockGetCachedTools.mockResolvedValue(null);
     mockGetUserMCPAuthMap.mockResolvedValue({});
@@ -195,6 +199,169 @@ describe('ToolService - Action Capability Gating', () => {
     mockFlowManager.getFlowState.mockResolvedValue(undefined);
     mockResolveConfigServers.mockResolvedValue({});
     mockResolveMcpServerNames.mockResolvedValue([]);
+    mockPrimeSearchFiles.mockResolvedValue({});
+    mockPrimeCodeFiles.mockResolvedValue({});
+  });
+
+  describe('processRequiredActions content protection', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    const buildFilters = (field, sentinel) => ({
+      toolArguments: {
+        pii: {
+          fields: [field],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'private',
+              label: 'private value',
+              regex: sentinel,
+            },
+          ],
+        },
+      },
+    });
+
+    const buildClient = (filters) => ({
+      req: {
+        user: { id: 'user_123' },
+        body: {
+          assistant_id: 'assistant_content_filter',
+          model: 'gpt-4o-mini',
+          endpoint: 'openAI',
+        },
+        config: { filters },
+      },
+      res: {},
+      apiKey: 'test-key',
+      mappedOrder: new Map([['call_1', 0]]),
+      seenToolCalls: new Map(),
+      addContentData: jest.fn(),
+    });
+
+    const buildAction = (overrides = {}) => ({
+      tool: 'safe_tool',
+      toolInput: { value: 'safe' },
+      toolCallId: 'call_1',
+      thread_id: 'thread_1',
+      run_id: 'run_1',
+      ...overrides,
+    });
+
+    it('blocks a filtered tool name before lookup, logging, or execution', async () => {
+      const privateName = 'PRIVATE-NAME';
+      const client = buildClient(buildFilters('name', privateName));
+      const debugSpy = jest.spyOn(require('@librechat/data-schemas').logger, 'debug');
+
+      await expect(
+        processRequiredActions(client, [buildAction({ tool: privateName })]),
+      ).rejects.toMatchObject({
+        code: 'content_filter_block',
+        message: expect.not.stringContaining(privateName),
+      });
+
+      expect(mockGetCachedTools).not.toHaveBeenCalled();
+      expect(mockLoadToolsUtil).not.toHaveBeenCalled();
+      expect(debugSpy).not.toHaveBeenCalled();
+    });
+
+    it('blocks filtered arguments before tool execution', async () => {
+      const privateArgument = 'PRIVATE-ARGUMENT';
+      const client = buildClient(buildFilters('arguments', privateArgument));
+
+      await expect(
+        processRequiredActions(client, [
+          buildAction({ toolInput: { nested: { value: privateArgument } } }),
+        ]),
+      ).rejects.toMatchObject({
+        code: 'content_filter_block',
+        message: expect.not.stringContaining(privateArgument),
+      });
+
+      expect(mockGetCachedTools).not.toHaveBeenCalled();
+      expect(mockLoadToolsUtil).not.toHaveBeenCalled();
+    });
+
+    it('replaces a filtered tool output before UI or model submission', async () => {
+      const privateOutput = 'PRIVATE-OUTPUT';
+      const toolCall = jest.fn().mockResolvedValue(privateOutput);
+      mockLoadToolsUtil.mockResolvedValue({
+        loadedTools: [{ name: 'safe_tool', _call: toolCall }],
+        toolContextMap: {},
+      });
+      const client = buildClient(buildFilters('output', privateOutput));
+      const action = buildAction();
+
+      const result = await processRequiredActions(client, [action]);
+
+      expect(toolCall).toHaveBeenCalledWith(action.toolInput);
+      expect(result.tool_outputs).toEqual([
+        {
+          tool_call_id: 'call_1',
+          output: 'Submitted content contains a private value. Remove it and try again.',
+        },
+      ]);
+      expect(action.output).not.toContain(privateOutput);
+      expect(client.addContentData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tool_call: expect.objectContaining({
+            function: expect.objectContaining({
+              output: expect.not.stringContaining(privateOutput),
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('blocks persisted Assistant action metadata before required-action execution', async () => {
+      const actionToolName = `get_weather${actionDelimiter}api_example_com`;
+      const filters = {
+        actionMetadata: {
+          pii: {
+            fields: ['api_key'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z]+',
+              },
+            ],
+          },
+        },
+      };
+      const metadata = {
+        domain: 'https://api.example.com',
+        raw_spec: '{}',
+        api_key: 'encrypted-value',
+      };
+      const client = buildClient(filters);
+      mockLoadActionSets.mockResolvedValue([
+        {
+          action_id: 'assistant_action_private_auth',
+          metadata,
+        },
+      ]);
+      mockDecryptMetadata.mockResolvedValue({
+        ...metadata,
+        api_key: 'PRIVATE-AUTH',
+      });
+
+      await expect(
+        processRequiredActions(client, [buildAction({ tool: actionToolName })]),
+      ).rejects.toMatchObject({
+        code: 'content_filter_block',
+        body: {
+          source: 'action_metadata',
+          field: 'api_key',
+        },
+      });
+
+      expect(mockDomainParser).not.toHaveBeenCalled();
+      expect(mockCreateActionTool).not.toHaveBeenCalled();
+    });
   });
 
   describe('resolveAgentCapabilities', () => {
@@ -265,6 +432,148 @@ describe('ToolService - Action Capability Gating', () => {
       // the guard interprets as the MCP suffix.
       const edgeCaseTool = `getData${actionDelimiter}api_mcp_internal_com`;
       expect(isActionTool(edgeCaseTool)).toBe(false);
+    });
+  });
+
+  describe('loadAgentTools tool-resource content protection', () => {
+    const opaqueFileFilters = {
+      files: {
+        pii: {
+          fields: ['content'],
+          starterPatterns: ['sk_prefix'],
+          uninspectable: 'block',
+        },
+      },
+    };
+
+    const patternFilters = (source, fields, regex) => ({
+      [source]: {
+        pii: {
+          fields,
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex }],
+        },
+      },
+    });
+
+    it.each([true, false])(
+      'blocks historical execute-code resources before code-file priming (definitionsOnly=%s)',
+      async (definitionsOnly) => {
+        const privateFileId = 'file-historical-code';
+        const req = createMockReq([AgentCapabilities.execute_code]);
+        req.config.filters = opaqueFileFilters;
+        mockGetEndpointsConfig.mockResolvedValue(
+          createEndpointsConfig([AgentCapabilities.execute_code]),
+        );
+
+        await expect(
+          loadAgentTools({
+            req,
+            res: {},
+            agent: { id: 'agent_code', tools: [Tools.execute_code] },
+            tool_resources: {
+              [EToolResources.execute_code]: { file_ids: [privateFileId] },
+            },
+            definitionsOnly,
+          }),
+        ).rejects.toMatchObject({
+          code: 'content_filter_uninspectable',
+          message: expect.not.stringContaining(privateFileId),
+        });
+
+        expect(mockLoadToolDefinitions).not.toHaveBeenCalled();
+        expect(mockPrimeCodeFiles).not.toHaveBeenCalled();
+        expect(mockPrimeSearchFiles).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([true, false])(
+      'blocks historical file-search resources before search-file priming (definitionsOnly=%s)',
+      async (definitionsOnly) => {
+        const privateFileId = 'file-historical-search';
+        const req = createMockReq([AgentCapabilities.file_search]);
+        req.config.filters = opaqueFileFilters;
+        mockGetEndpointsConfig.mockResolvedValue(
+          createEndpointsConfig([AgentCapabilities.file_search]),
+        );
+
+        await expect(
+          loadAgentTools({
+            req,
+            res: {},
+            agent: { id: 'agent_search', tools: [Tools.file_search] },
+            tool_resources: {
+              [EToolResources.file_search]: { file_ids: [privateFileId] },
+            },
+            definitionsOnly,
+          }),
+        ).rejects.toMatchObject({
+          code: 'content_filter_uninspectable',
+          message: expect.not.stringContaining(privateFileId),
+        });
+
+        expect(mockLoadToolDefinitions).not.toHaveBeenCalled();
+        expect(mockPrimeCodeFiles).not.toHaveBeenCalled();
+        expect(mockPrimeSearchFiles).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not apply prompt policy to canonical file-resource content', async () => {
+      const privateFilename = 'PRIVATE-FILE.txt';
+      const req = createMockReq([AgentCapabilities.file_search]);
+      req.config.filters = patternFilters('prompts', ['name'], privateFilename);
+      mockGetEndpointsConfig.mockResolvedValue(
+        createEndpointsConfig([AgentCapabilities.file_search]),
+      );
+
+      await expect(
+        loadAgentTools({
+          req,
+          res: {},
+          agent: { id: 'agent_search', tools: [Tools.file_search] },
+          tool_resources: {
+            [EToolResources.file_search]: {
+              files: [{ file_id: 'file-safe', filename: privateFilename }],
+            },
+          },
+          definitionsOnly: true,
+        }),
+      ).resolves.toBeDefined();
+
+      expect(mockPrimeSearchFiles).toHaveBeenCalledTimes(1);
+      expect(mockPrimeCodeFiles).not.toHaveBeenCalled();
+    });
+
+    it('does not apply an unselected file field to canonical resource content', async () => {
+      const privateContent = 'PRIVATE-CONTENT';
+      const req = createMockReq([AgentCapabilities.execute_code]);
+      req.config.filters = patternFilters('files', ['name'], privateContent);
+      mockGetEndpointsConfig.mockResolvedValue(
+        createEndpointsConfig([AgentCapabilities.execute_code]),
+      );
+
+      await expect(
+        loadAgentTools({
+          req,
+          res: {},
+          agent: { id: 'agent_code', tools: [Tools.execute_code] },
+          tool_resources: {
+            [EToolResources.execute_code]: {
+              files: [
+                {
+                  file_id: 'file-safe',
+                  filename: 'safe.txt',
+                  text: privateContent,
+                },
+              ],
+            },
+          },
+          definitionsOnly: true,
+        }),
+      ).resolves.toBeDefined();
+
+      expect(mockPrimeCodeFiles).toHaveBeenCalledTimes(1);
+      expect(mockPrimeSearchFiles).not.toHaveBeenCalled();
     });
   });
 
@@ -400,6 +709,124 @@ describe('ToolService - Action Capability Gating', () => {
       const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
       expect(callArgs.tools).toContain(regularTool);
       expect(callArgs.tools).toContain(actionToolName);
+    });
+
+    it('blocks a persisted action schema before domain parsing during definition loading', async () => {
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.actions];
+      const req = createMockReq(capabilities);
+      req.config.filters = {
+        toolArguments: {
+          pii: {
+            fields: ['arguments'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z]+',
+              },
+            ],
+          },
+        },
+      };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockLoadActionSets.mockResolvedValue([
+        {
+          action_id: 'action_private_schema',
+          metadata: {
+            domain: 'https://api.example.com',
+            raw_spec: '{"description":"PRIVATE-SCHEMA"}',
+          },
+        },
+      ]);
+      mockLoadToolDefinitions.mockImplementationOnce(async (_options, dependencies) => {
+        await dependencies.getActionToolDefinitions('agent_123', [actionToolName]);
+        return {
+          toolDefinitions: [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+
+      await expect(
+        loadAgentTools({
+          req,
+          res: {},
+          agent: { id: 'agent_123', tools: [actionToolName] },
+          definitionsOnly: true,
+        }),
+      ).rejects.toMatchObject({
+        code: 'content_filter_block',
+        body: {
+          source: 'tool_argument',
+          field: 'arguments',
+        },
+      });
+
+      expect(mockDecryptMetadata).not.toHaveBeenCalled();
+      expect(mockDomainParser).not.toHaveBeenCalled();
+    });
+
+    it('blocks decrypted persisted action secrets before definition-time domain work', async () => {
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.actions];
+      const req = createMockReq(capabilities);
+      req.config.filters = {
+        actionMetadata: {
+          pii: {
+            fields: ['api_key'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z]+',
+              },
+            ],
+          },
+        },
+      };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      const metadata = {
+        domain: 'https://api.example.com',
+        raw_spec: '{}',
+        api_key: 'encrypted-value',
+      };
+      mockLoadActionSets.mockResolvedValue([
+        {
+          action_id: 'action_private_auth',
+          metadata,
+        },
+      ]);
+      mockDecryptMetadata.mockResolvedValue({
+        ...metadata,
+        api_key: 'PRIVATE-AUTH',
+      });
+      mockLoadToolDefinitions.mockImplementationOnce(async (_options, dependencies) => {
+        await dependencies.getActionToolDefinitions('agent_123', [actionToolName]);
+        return {
+          toolDefinitions: [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+
+      await expect(
+        loadAgentTools({
+          req,
+          res: {},
+          agent: { id: 'agent_123', tools: [actionToolName] },
+          definitionsOnly: true,
+        }),
+      ).rejects.toMatchObject({
+        code: 'content_filter_block',
+        body: {
+          source: 'action_metadata',
+          field: 'api_key',
+        },
+      });
+
+      expect(mockDecryptMetadata).toHaveBeenCalledWith(metadata);
+      expect(mockDomainParser).not.toHaveBeenCalled();
     });
 
     it('should exclude ask_user_question when its capability is disabled (even if tools is enabled)', async () => {
@@ -811,13 +1238,17 @@ describe('ToolService - Action Capability Gating', () => {
     });
 
     it('should not expose cached MCP tool definitions when the registry lookup fails', async () => {
-      const serverName = 'private-server';
+      const serverName = 'PRIVATE-MCP-SERVER-NAME';
+      const privateRegistryError = 'PRIVATE-MCP-REGISTRY-ERROR';
       const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
       const capabilities = [AgentCapabilities.tools];
       const req = createMockReq(capabilities);
+      const warnSpy = jest
+        .spyOn(require('@librechat/data-schemas').logger, 'warn')
+        .mockImplementation(() => {});
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
       mockGetServerConfig.mockImplementation(() => {
-        throw new Error('MCPServersRegistry has not been initialized.');
+        throw new Error(privateRegistryError);
       });
       mockGetMCPServerTools.mockResolvedValue({
         [mcpTool]: {
@@ -844,8 +1275,15 @@ describe('ToolService - Action Capability Gating', () => {
         definitionsOnly: true,
       });
 
+      const loggedText = warnSpy.mock.calls.flat().map(String).join('\n');
       expect(result.toolDefinitions).toEqual([]);
       expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+      expect(loggedText).not.toContain(serverName);
+      expect(loggedText).not.toContain(privateRegistryError);
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[Tool Definitions] MCP registry unavailable; skipping tool exposure for one server',
+      );
+      warnSpy.mockRestore();
     });
 
     it('should re-emit pending MCP OAuth prompts when cached tool definitions exist', async () => {
@@ -1764,6 +2202,60 @@ describe('ToolService - Action Capability Gating', () => {
       });
 
       expect(mockLoadActionSets).toHaveBeenCalledWith({ agent_id: 'agent_123' });
+    });
+
+    it('blocks decrypted persisted action secrets before execution-time domain work', async () => {
+      const req = createMockReq([AgentCapabilities.actions]);
+      req.config.filters = {
+        actionMetadata: {
+          pii: {
+            fields: ['oauth_client_secret'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z]+',
+              },
+            ],
+          },
+        },
+      };
+      const metadata = {
+        domain: 'https://api.example.com',
+        raw_spec: '{}',
+        oauth_client_secret: 'encrypted-value',
+      };
+      mockLoadActionSets.mockResolvedValue([
+        {
+          action_id: 'action_private_auth',
+          metadata,
+        },
+      ]);
+      mockDecryptMetadata.mockResolvedValue({
+        ...metadata,
+        oauth_client_secret: 'PRIVATE-OAUTH',
+      });
+
+      await expect(
+        loadToolsForExecution({
+          req,
+          res: {},
+          agent: { id: 'agent_123' },
+          toolNames: [actionToolName],
+          actionsEnabled: true,
+        }),
+      ).rejects.toMatchObject({
+        code: 'content_filter_block',
+        body: {
+          source: 'action_metadata',
+          field: 'oauth_client_secret',
+        },
+      });
+
+      expect(mockDecryptMetadata).toHaveBeenCalledWith(metadata);
+      expect(mockDomainParser).not.toHaveBeenCalled();
+      expect(mockCreateActionTool).not.toHaveBeenCalled();
     });
 
     it('should resolve actionsEnabled from capabilities when not explicitly provided', async () => {

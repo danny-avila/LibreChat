@@ -19,6 +19,7 @@ const { Providers } = require('@librechat/agents');
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
 const { GenerationJobManager, createStreamServices } = require('@librechat/api');
 const BaseClient = require('~/app/clients/BaseClient');
+const mockGetAgentCheckpointer = jest.fn();
 const AgentClient = require('./client');
 const { resolveConfigServers } = require('~/server/services/MCP');
 
@@ -64,6 +65,7 @@ jest.mock('@librechat/api', () => ({
   loadAgent: jest.fn(),
   maybePrewarmCodeSandbox: jest.fn(),
   recordCollectedUsage: (...args) => mockRecordCollectedUsage(...args),
+  getAgentCheckpointer: mockGetAgentCheckpointer,
 }));
 
 describe('AgentClient - detached subagent usage', () => {
@@ -338,7 +340,9 @@ jest.mock('~/models', () => ({
   getCacheMultiplier: jest.fn(),
   getAgent: jest.fn(),
   getMultiplier: jest.fn(),
+  getFiles: jest.fn(),
   getRoleByName: jest.fn(),
+  getUserMemories: jest.fn(),
   getFormattedMemories: jest.fn(),
   isAgentTriggerPrincipalActive: jest.fn().mockResolvedValue(true),
   spendStructuredTokens: jest.fn(),
@@ -2308,6 +2312,45 @@ describe('AgentClient - titleConvo', () => {
       expect(client.options.agent.instructions).toContain('Base agent instructions');
     });
 
+    it('blocks fetched MCP instructions before they become model-bound', async () => {
+      const privateInstruction = 'PRIVATE-MCP-INSTRUCTION';
+      mockReq.config.filters = {
+        agentInstructions: {
+          pii: {
+            fields: ['instructions'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private-mcp-instruction',
+                label: 'private MCP instruction',
+                regex: privateInstruction,
+              },
+            ],
+          },
+        },
+      };
+      mockFormatInstructions.mockResolvedValue(privateInstruction);
+
+      await expect(
+        client.buildMessages(
+          [
+            {
+              messageId: 'msg-1',
+              parentMessageId: null,
+              sender: 'User',
+              text: 'Hello',
+              isCreatedByUser: true,
+            },
+          ],
+          null,
+          {},
+        ),
+      ).rejects.toMatchObject({
+        code: 'content_filter_block',
+        body: { source: 'agent_instruction', field: 'instructions' },
+      });
+    });
+
     it('should handle MCP instructions with ephemeral agent', async () => {
       // Set specific return value for this test
       mockFormatInstructions.mockResolvedValue(
@@ -2435,6 +2478,8 @@ describe('AgentClient - titleConvo', () => {
       jest.clearAllMocks();
       mockFormatInstructions.mockResolvedValue('');
       require('@librechat/api').countFormattedMessageTokens.mockImplementation(() => 42);
+      require('~/models').getFiles.mockReset().mockResolvedValue([]);
+      require('~/models').getUserMemories.mockReset().mockResolvedValue([]);
 
       mockAgent = {
         id: 'primary-agent',
@@ -2478,6 +2523,154 @@ describe('AgentClient - titleConvo', () => {
       client.maxContextTokens = 4096;
       client.useMemory = jest.fn().mockResolvedValue(undefined);
     });
+
+    it('blocks current attachment content before attachment processing', async () => {
+      const privateFilename = 'PRIVATE-FILE.txt';
+      mockReq.config.filters = {
+        files: {
+          pii: {
+            fields: ['name'],
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: privateFilename }],
+          },
+        },
+      };
+      client.options.attachments = [
+        makeTextFile('current-file', privateFilename, 'otherwise safe content'),
+      ];
+      client.addFileContextToMessage = jest.fn();
+      client.processAttachments = jest.fn();
+
+      await expect(
+        client.buildMessages(
+          [
+            {
+              messageId: 'msg-1',
+              parentMessageId: null,
+              sender: 'User',
+              text: 'Read this file.',
+              isCreatedByUser: true,
+            },
+          ],
+          'msg-1',
+          {},
+        ),
+      ).rejects.toMatchObject({ code: 'content_filter_block' });
+
+      expect(client.addFileContextToMessage).not.toHaveBeenCalled();
+      expect(client.processAttachments).not.toHaveBeenCalled();
+    });
+
+    it('blocks historical attachment content before re-encoding it', async () => {
+      const privateText = 'PRIVATE-HISTORICAL-CONTENT';
+      mockReq.config.filters = {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: privateText }],
+          },
+        },
+      };
+      client.options.resendFiles = true;
+      require('~/models').getFiles.mockResolvedValue([
+        makeTextFile('historical-file', 'history.txt', privateText),
+      ]);
+      client.addFileContextToMessage = jest.fn();
+      client.processAttachments = jest.fn();
+
+      await expect(
+        client.addPreviousAttachments([
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            isCreatedByUser: true,
+            files: [{ file_id: 'historical-file' }],
+          },
+        ]),
+      ).rejects.toMatchObject({ code: 'content_filter_block' });
+
+      expect(client.addFileContextToMessage).not.toHaveBeenCalled();
+      expect(client.processAttachments).not.toHaveBeenCalled();
+    });
+
+    it('blocks historical steer attachments before replay encoding', async () => {
+      const privateText = 'PRIVATE-STEER-FILE-CONTENT';
+      mockReq.config.filters = {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: privateText }],
+          },
+        },
+      };
+      client.options.resendFiles = true;
+      require('~/models').getFiles.mockResolvedValue([
+        makeTextFile('steer-file', 'steer.txt', privateText),
+      ]);
+
+      await expect(
+        client.addPreviousAttachments([
+          {
+            messageId: 'assistant-msg',
+            parentMessageId: null,
+            isCreatedByUser: false,
+            content: [
+              {
+                type: ContentTypes.STEER,
+                steer: 'Read the attached file.',
+                files: [{ file_id: 'steer-file' }],
+              },
+            ],
+          },
+        ]),
+      ).rejects.toMatchObject({ code: 'content_filter_block' });
+    });
+
+    it.each(['fails', 'returns no rows'])(
+      'inspects formatted memory text when canonical memory loading %s',
+      async (canonicalResult) => {
+        const privateMemory = 'PRIVATE-MEMORY';
+        mockReq.config.filters = {
+          memories: {
+            pii: {
+              fields: ['value'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: privateMemory }],
+            },
+          },
+        };
+        if (canonicalResult === 'fails') {
+          require('~/models').getUserMemories.mockRejectedValue(new Error('memory read failed'));
+        } else {
+          require('~/models').getUserMemories.mockResolvedValue([]);
+        }
+        client.useMemory.mockResolvedValue({
+          withKeys: privateMemory,
+          withoutKeys: privateMemory,
+        });
+
+        await expect(
+          client.buildMessages(
+            [
+              {
+                messageId: 'msg-1',
+                parentMessageId: null,
+                sender: 'User',
+                text: 'Use my preferences.',
+                isCreatedByUser: true,
+              },
+            ],
+            'msg-1',
+            {},
+          ),
+        ).rejects.toMatchObject({
+          code: 'content_filter_block',
+          body: { source: 'memory', field: 'value' },
+        });
+      },
+    );
 
     it.each([
       ['CSV', 'csv-file', 'sample.csv', 'text/csv'],
@@ -3668,6 +3861,41 @@ describe('AgentClient - titleConvo', () => {
       );
     });
 
+    it('should pass only source-aware filters to automatic memory processing', async () => {
+      const filters = {
+        memories: {
+          pii: {
+            fields: ['value'],
+          },
+        },
+      };
+      const legacyPii = {
+        starterPatterns: ['email'],
+      };
+      mockReq.config.filters = filters;
+      mockReq.config.messageFilter = { pii: legacyPii };
+      mockCheckAccess.mockResolvedValue(true);
+      mockInitializeAgent.mockResolvedValue({
+        ...mockAgent,
+        provider: EModelEndpoint.openAI,
+      });
+      mockCreateMemoryProcessor.mockResolvedValue([undefined, jest.fn()]);
+
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+
+      await client.useMemory();
+
+      expect(mockCreateMemoryProcessor).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filters,
+        }),
+      );
+      expect(mockCreateMemoryProcessor.mock.calls[0][0]).not.toHaveProperty('legacyPii');
+      expect(mockCreateMemoryProcessor.mock.calls[0][0]).not.toHaveProperty('contentInspection');
+    });
+
     it('should load different agent when memory config agent.id differs from current agent id', async () => {
       const differentAgentId = 'different-agent-456';
       const differentAgent = {
@@ -4087,5 +4315,120 @@ describe('AgentClient - finalizeSubagentContent', () => {
     expect(client.contentParts[1].tool_call.subagent_content).toEqual([
       expect.objectContaining({ type: 'text', text: 'B' }),
     ]);
+  });
+});
+
+describe('AgentClient - resumeCompletion content protection', () => {
+  const makeContext = (filters) => ({
+    options: {
+      req: {
+        user: { id: 'user-123' },
+        body: { files: [] },
+        config: {
+          endpoints: { [EModelEndpoint.agents]: { checkpointer: {} } },
+          filters,
+        },
+      },
+      agent: {
+        id: 'agent-123',
+        hide_sequential_outputs: false,
+        model_parameters: { model: 'gpt-4' },
+        tools: [],
+      },
+    },
+    user: 'user-123',
+    conversationId: 'conversation-123',
+    responseMessageId: 'response-123',
+    parentMessageId: 'parent-123',
+    agentConfigs: new Map(),
+    contentParts: [],
+    collectedUsage: [],
+    pendingSubagentEmits: [],
+    getEncoding: jest.fn(() => 'o200k_base'),
+    finalizeSubagentContent: jest.fn(),
+    recordCollectedUsage: jest.fn().mockResolvedValue(undefined),
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCreateRun.mockReset();
+    mockGetAgentCheckpointer.mockReset();
+  });
+
+  it('blocks checkpoint user content before rebuilding the run', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: [{ _getType: () => 'human', content: 'PRIVATE-RESUME-CONTENT' }],
+          },
+        },
+      }),
+    });
+    const context = makeContext({
+      messages: {
+        pii: {
+          fields: ['text'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'private-resume',
+              label: 'private resume content',
+              regex: 'PRIVATE-RESUME-CONTENT',
+            },
+          ],
+        },
+      },
+    });
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: { source: 'message', field: 'text' },
+    });
+    expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it('blocks seeded tool arguments before rebuilding the run', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    const context = makeContext({
+      toolArguments: {
+        pii: {
+          fields: ['arguments'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'private-tool-input',
+              label: 'private tool input',
+              regex: 'PRIVATE-TOOL-INPUT',
+            },
+          ],
+        },
+      },
+    });
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, {
+        resumeValue: {},
+        seedContent: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            tool_call: {
+              name: 'example_tool',
+              arguments: { value: 'PRIVATE-TOOL-INPUT' },
+            },
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: { source: 'tool_argument', field: 'arguments' },
+    });
+    expect(mockCreateRun).not.toHaveBeenCalled();
   });
 });

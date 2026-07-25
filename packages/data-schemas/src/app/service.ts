@@ -1,6 +1,7 @@
 import {
   AgentCapabilities,
   EModelEndpoint,
+  filtersConfigSchema,
   getConfigDefaults,
   langfuseConfigSchema,
   skillSyncConfigSchema,
@@ -89,6 +90,21 @@ export function loadLangfuseConfig(config: DeepPartial<TCustomConfig>): AppConfi
   return parsed.data;
 }
 
+export function loadFiltersConfig(config: DeepPartial<TCustomConfig>): AppConfig['filters'] {
+  const raw = config.filters;
+  if (raw === undefined) {
+    return undefined;
+  }
+
+  const parsed = filtersConfigSchema.safeParse(raw);
+  if (!parsed.success) {
+    logger.warn('[AppService] Invalid filters config', parsed.error.flatten());
+    throw new Error('Invalid filters config');
+  }
+
+  return parsed.data;
+}
+
 export type Paths = {
   root: string;
   uploads: string;
@@ -149,6 +165,7 @@ export const AppService = async (params?: {
   const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
   const speech = config.speech;
+  const filters = loadFiltersConfig(config);
   const messageFilter = config.messageFilter;
   const langfuse = loadLangfuseConfig(config);
 
@@ -168,6 +185,7 @@ export const AppService = async (params?: {
     transactions,
     filteredTools,
     includedTools,
+    filters,
     langfuse,
     messageFilter,
     summarization,

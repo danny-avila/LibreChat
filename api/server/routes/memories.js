@@ -1,5 +1,11 @@
 const express = require('express');
-const { Tokenizer, generateCheckAccess } = require('@librechat/api');
+const {
+  Tokenizer,
+  generateCheckAccess,
+  inspectContent,
+  extractMemoryContent,
+  contentFilterBlockResponse,
+} = require('@librechat/api');
 const {
   PermissionTypes,
   PermissionBits,
@@ -54,6 +60,20 @@ router.use(requireJwtAuth);
 /** Normalizes the optional agent partition param; undefined = shared personal pool */
 const getAgentIdParam = (value) =>
   typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+
+const blockFilteredMemoryContent = (req, res, memory) => {
+  if (req.config?.filters == null) {
+    return false;
+  }
+  const finding = inspectContent(extractMemoryContent(memory), {
+    filters: req.config.filters,
+  });
+  if (finding == null) {
+    return false;
+  }
+  res.status(400).json(contentFilterBlockResponse(finding));
+  return true;
+};
 
 /** Resolves agent display names for agent-partitioned memories, restricted
  *  to agents the requester can VIEW — `agentId` is caller-supplied on write,
@@ -155,6 +175,11 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
     return res.status(400).json({
       error: `Value exceeds maximum length of ${charLimit} characters. Current length: ${value.length} characters.`,
     });
+  }
+
+  const normalizedMemory = { key: key.trim(), value: value.trim() };
+  if (blockFilteredMemoryContent(req, res, normalizedMemory)) {
+    return;
   }
 
   try {
@@ -263,6 +288,10 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
     return res.status(400).json({
       error: `Value exceeds maximum length of ${charLimit} characters. Current length: ${value.length} characters.`,
     });
+  }
+
+  if (blockFilteredMemoryContent(req, res, { key: newKey, value })) {
+    return;
   }
 
   try {

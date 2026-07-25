@@ -11,13 +11,53 @@ export interface LegacyPiiInspector {
   inspect(fragments: Iterable<TextContentFragment>): ProtectionFinding | null;
 }
 
+const LEGACY_INSPECTOR_CACHE = new WeakMap<object, LegacyPiiInspector>();
+
+export function isLegacyPiiFragment(fragment: TextContentFragment): boolean {
+  if (fragment.source === 'assembled_context' && fragment.id === 'chat.assembled.quote-text') {
+    return true;
+  }
+  if (fragment.source === 'tool_argument') {
+    return /^chat\.decision\.\d+\.arguments$/.test(fragment.id);
+  }
+  if (fragment.source !== 'message') {
+    return false;
+  }
+  return (
+    fragment.id === 'chat.text' ||
+    fragment.id === 'chat.answer' ||
+    /^chat\.quote\.\d+$/.test(fragment.id) ||
+    /^chat\.decision\.\d+\.(?:response|reason)$/.test(fragment.id) ||
+    /^external-message\.\d+\.(?:content|part\.\d+)$/.test(fragment.id)
+  );
+}
+
 export function createLegacyPiiInspector(
   config: MessageFilterPiiConfig | undefined,
 ): LegacyPiiInspector | null {
   if (config == null) {
     return null;
   }
-  return createPatternContentInspector(config);
+  const cached = LEGACY_INSPECTOR_CACHE.get(config);
+  if (cached != null) {
+    return cached;
+  }
+  const patternInspector = createPatternContentInspector(config);
+  const inspector: LegacyPiiInspector = {
+    inspect(fragments) {
+      return patternInspector.inspect(
+        (function* legacyFragments() {
+          for (const fragment of fragments) {
+            if (isLegacyPiiFragment(fragment)) {
+              yield fragment;
+            }
+          }
+        })(),
+      );
+    },
+  };
+  LEGACY_INSPECTOR_CACHE.set(config, inspector);
+  return inspector;
 }
 
 export function inspectLegacyPii(

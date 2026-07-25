@@ -11,7 +11,21 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
+jest.mock('@librechat/data-schemas', () => {
+  const actual = jest.requireActual('@librechat/data-schemas');
+  return {
+    ...actual,
+    logger: {
+      error: jest.fn(),
+      warn: jest.fn(),
+      info: jest.fn(),
+      debug: jest.fn(),
+    },
+  };
+});
+
 const { EModelEndpoint, parseCompactConvo } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
 
 const mockBuildOptions = jest.fn((_endpoint, parsedBody) => ({
   ...parsedBody,
@@ -463,6 +477,35 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     const parsedResult = parseCompactConvo.mock.results[0].value;
     expect(parsedResult.maxOutputTokens).toBeUndefined();
     expect(parsedResult.max_tokens).toBe(4096);
+  });
+
+  it('does not log submitted content when compact conversation parsing fails', async () => {
+    const secret = 'PRIVATE-SUBMITTED-CONTENT';
+    const parseError = new Error('Invalid compact conversation');
+    parseCompactConvo.mockImplementationOnce(() => {
+      throw parseError;
+    });
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: secret,
+        endpointType: EModelEndpoint.custom,
+        text: secret,
+      },
+      { modelSpecs: null },
+    );
+    const res = createRes();
+    const { handleError } = require('@librechat/api');
+
+    await buildEndpointOption(req, res, jest.fn());
+
+    expect(logger.error).toHaveBeenCalledWith('Error parsing compact conversation', parseError);
+    expect(logger.debug).not.toHaveBeenCalled();
+    expect(JSON.stringify([...logger.error.mock.calls, ...logger.debug.mock.calls])).not.toContain(
+      secret,
+    );
+    expect(handleError).toHaveBeenCalledWith(res, { text: 'Error parsing conversation' });
   });
 
   it('should scope non-agent chat attachment usage updates to the authenticated user', async () => {

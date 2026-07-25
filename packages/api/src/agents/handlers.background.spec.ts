@@ -1,5 +1,7 @@
 import { z } from 'zod';
+import { logger } from '@librechat/data-schemas';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
+import type { FiltersConfig } from 'librechat-data-provider';
 import { CHECK_BACKGROUND_TASK_NAME } from './background';
 import { createToolExecuteHandler } from './handlers';
 
@@ -34,8 +36,15 @@ const makeSearchTool = (state: { calls: number; lastInput?: Record<string, unkno
     },
   }) as unknown as StructuredToolInterface;
 
-const buildConfig = (backgroundToolNames: string[] = ['search_mcp_docs']) => ({
-  req: { user: { id: 'exec_user' }, body: { conversationId: 'exec_convo' } },
+const buildConfig = (
+  backgroundToolNames: string[] = ['search_mcp_docs'],
+  filters?: FiltersConfig,
+) => ({
+  req: {
+    user: { id: 'exec_user' },
+    body: { conversationId: 'exec_convo' },
+    ...(filters != null ? { config: { filters } } : {}),
+  },
   backgroundToolNames,
 });
 
@@ -107,6 +116,251 @@ describe('createToolExecuteHandler — background tool calls', () => {
     const polled = JSON.parse(pollResults[0].content);
     expect(polled.status).toBe('completed');
     expect(polled.result).toContain('RESULT for librechat');
+  });
+
+  it('blocks normalized arguments before registering or dispatching a background task', async () => {
+    const protectedValue = 'PROTECTED-BACKGROUND';
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const searchTool = makeSearchTool(state);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [searchTool] }),
+    });
+    const configurable = buildConfig(['search_mcp_docs'], {
+      toolArguments: {
+        pii: {
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'protected-value',
+              label: 'protected value',
+              regex: 'PROTECTED-[A-Z]+',
+            },
+          ],
+        },
+      },
+    });
+
+    const results = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_filtered_background',
+          name: 'search_mcp_docs',
+          args: { q: protectedValue, run_in_background: true },
+        },
+      ],
+      agentId: 'agent_1',
+      configurable,
+      metadata: { thread_id: 'exec_convo_filtered' },
+    });
+    const result = results[0] as {
+      content: string;
+      status?: string;
+      errorMessage?: string;
+    };
+
+    await flushMicrotasks();
+    expect(result.status).toBe('error');
+    expect(result.content).toBe('');
+    expect(result.errorMessage).toContain('protected value');
+    expect(result.errorMessage).not.toContain(protectedValue);
+    expect(state.calls).toBe(0);
+  });
+
+  it('blocks background tool output before registry delivery', async () => {
+    const protectedValue = 'PROTECTED-BACKGROUND-OUTPUT';
+    const state = { calls: 0 } as { calls: number; lastInput?: Record<string, unknown> };
+    const searchTool = makeSearchTool(state);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [searchTool] }),
+    });
+    const configurable = buildConfig(['search_mcp_docs'], {
+      toolArguments: {
+        pii: {
+          fields: ['output'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'protected-output',
+              label: 'protected output',
+              regex: 'PROTECTED-[A-Z-]+',
+            },
+          ],
+        },
+      },
+    });
+    const metadata = { thread_id: 'exec_convo_filtered_output' };
+
+    const dispatchResults = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_filtered_background_output',
+          name: 'search_mcp_docs',
+          args: { q: protectedValue, run_in_background: true },
+        },
+      ],
+      agentId: 'agent_1',
+      configurable,
+      metadata,
+    });
+    const handle = JSON.parse(dispatchResults[0].content);
+
+    await flushMicrotasks();
+    const pollResults = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll_filtered_output',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: handle.background_task_id },
+        },
+      ],
+      agentId: 'agent_1',
+      configurable,
+      metadata,
+    });
+    const polled = JSON.parse(pollResults[0].content);
+
+    expect(state.calls).toBe(1);
+    expect(polled.status).toBe('error');
+    expect(polled.error).toContain('protected output');
+    expect(JSON.stringify(polled)).not.toContain(protectedValue);
+  });
+
+  it('filters poll arguments before reading the background task registry', async () => {
+    const protectedValue = 'PROTECTED-POLL-ARGUMENT';
+    const debugSpy = jest.spyOn(logger, 'debug').mockReturnValue(logger);
+    try {
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({ loadedTools: [] }),
+      });
+      const configurable = buildConfig(['search_mcp_docs'], {
+        toolArguments: {
+          pii: {
+            fields: ['arguments'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'protected-argument',
+                label: 'protected argument',
+                regex: 'PROTECTED-[A-Z-]+',
+              },
+            ],
+          },
+        },
+      });
+
+      const [result] = (await runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call_filtered_poll_argument',
+            name: CHECK_BACKGROUND_TASK_NAME,
+            args: { submitted_selector: protectedValue },
+          },
+        ],
+        agentId: 'agent_1',
+        configurable,
+        metadata: { thread_id: 'exec_convo_filtered_poll_argument' },
+      })) as Array<{ content: string; status?: string; errorMessage?: string }>;
+
+      expect(result.status).toBe('error');
+      expect(result.content).toBe('');
+      expect(result.errorMessage).toContain('protected argument');
+      expect(result.errorMessage).not.toContain(protectedValue);
+      expect(
+        debugSpy.mock.calls.some(([message]) =>
+          String(message).includes('check_background_task listed'),
+        ),
+      ).toBe(false);
+    } finally {
+      debugSpy.mockRestore();
+    }
+  });
+
+  it('re-inspects a pre-policy background artifact before poll callbacks or delivery', async () => {
+    const protectedValue = 'PROTECTED-TIGHTENED-POLL';
+    const artifact = { files: [protectedValue] };
+    const tool = {
+      name: 'search_mcp_docs',
+      description: 'returns historical protected output',
+      schema: z.object({ q: z.string() }),
+      invoke: async () => ({ content: 'safe historical result', artifact }),
+    } as unknown as StructuredToolInterface;
+    const toolEndCallback = jest.fn();
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      toolEndCallback,
+    });
+    const metadata = { thread_id: 'exec_convo_tightened_poll' };
+    const dispatchConfig = buildConfig(['search_mcp_docs']);
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_pre_policy_background',
+          name: 'search_mcp_docs',
+          args: { q: 'historical', run_in_background: true },
+        },
+      ],
+      agentId: 'agent_1',
+      configurable: dispatchConfig,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const taskId = JSON.parse(dispatch.content).background_task_id;
+
+    const tightenedConfig = buildConfig(['search_mcp_docs'], {
+      toolArguments: {
+        pii: {
+          fields: ['output'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'protected-output',
+              label: 'protected output',
+              regex: 'PROTECTED-[A-Z-]+',
+            },
+          ],
+        },
+      },
+    });
+    const [blockedPoll] = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_tightened_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: taskId },
+        },
+      ],
+      agentId: 'agent_1',
+      configurable: tightenedConfig,
+      metadata,
+    })) as Array<{ content: string; status?: string; errorMessage?: string }>;
+
+    expect(blockedPoll.status).toBe('error');
+    expect(blockedPoll.content).toBe('');
+    expect(blockedPoll.errorMessage).toContain('protected output');
+    expect(blockedPoll.errorMessage).not.toContain(protectedValue);
+    expect(toolEndCallback).not.toHaveBeenCalled();
+
+    const [allowedPoll] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_unfiltered_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: taskId },
+        },
+      ],
+      agentId: 'agent_1',
+      configurable: dispatchConfig,
+      metadata,
+    });
+    expect(JSON.parse(allowedPoll.content).result).toBe('safe historical result');
+    expect(toolEndCallback).toHaveBeenCalledTimes(1);
+    expect(toolEndCallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        output: expect.objectContaining({ artifact }),
+      }),
+      expect.any(Object),
+    );
   });
 
   it('does not double-dispatch when the same tool call re-executes (resume/replay)', async () => {
@@ -537,6 +791,7 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
   interface CodeToolState {
     calls: number;
     throwError?: boolean;
+    errorMessage?: string;
     lastInput?: Record<string, unknown>;
     lastConfig?: { toolCall?: Record<string, unknown> };
   }
@@ -559,7 +814,7 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
         state.lastInput = input;
         state.lastConfig = config;
         if (state.throwError) {
-          throw new Error('Execution error:\n\nboom');
+          throw new Error(state.errorMessage ?? 'Execution error:\n\nboom');
         }
         return { content: 'stdout:\nhello', artifact: CODE_ARTIFACT };
       },
@@ -695,6 +950,107 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
         attachments: [{ file_id: 'f1', toolCallId: 'call_code' }],
       }),
     );
+  });
+
+  it('blocks a pre-policy code artifact before poll claim, emission, or re-persistence', async () => {
+    const protectedValue = 'PROTECTED-CODE-ARTIFACT';
+    const artifact = {
+      session_id: 'exec-protected',
+      files: [{ id: 'f-protected', name: protectedValue }],
+    };
+    const codeTool = {
+      name: 'execute_code',
+      description: 'run code',
+      schema: z.object({ lang: z.string(), code: z.string() }),
+      invoke: async () => ({ content: 'safe stdout', artifact }),
+    } as unknown as StructuredToolInterface;
+    const persistCalls: Array<Record<string, unknown>> = [];
+    const emitted: unknown[] = [];
+    const toolEndCallback = jest.fn();
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [codeTool] }),
+      toolEndCallback,
+      persistBackgroundCodeResult: async (params) => {
+        persistCalls.push(params as unknown as Record<string, unknown>);
+        return { attachments: [{ file_id: 'f-protected', name: 'safe attachment' }] };
+      },
+      emitAttachment: (attachment) => {
+        emitted.push(attachment);
+      },
+    });
+    const metadata = { thread_id: 'exec_convo_tightened_code', run_id: 'msg-dispatch' };
+    const dispatchConfig = buildConfig(['execute_code']);
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_pre_policy_code' })],
+      agentId: 'a',
+      configurable: dispatchConfig,
+      metadata,
+    });
+    const taskId = JSON.parse(dispatch.content).background_task_id;
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(persistCalls).toHaveLength(1);
+    persistCalls.length = 0;
+
+    const tightenedConfig = buildConfig(['execute_code'], {
+      toolArguments: {
+        pii: {
+          fields: ['output'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'protected-output',
+              label: 'protected output',
+              regex: 'PROTECTED-[A-Z-]+',
+            },
+          ],
+        },
+      },
+    });
+    const [blockedPoll] = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_tightened_code_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: taskId },
+        },
+      ],
+      agentId: 'a',
+      configurable: tightenedConfig,
+      metadata: { thread_id: 'exec_convo_tightened_code', run_id: 'msg-poll' },
+    })) as Array<{
+      content: string;
+      status?: string;
+      errorMessage?: string;
+      artifact?: unknown;
+    }>;
+    await flushMicrotasks();
+
+    expect(blockedPoll.status).toBe('error');
+    expect(blockedPoll.content).toBe('');
+    expect(blockedPoll.errorMessage).toContain('protected output');
+    expect(blockedPoll.errorMessage).not.toContain(protectedValue);
+    expect(blockedPoll.artifact).toBeUndefined();
+    expect(toolEndCallback).not.toHaveBeenCalled();
+    expect(emitted).toEqual([]);
+    expect(persistCalls).toEqual([]);
+
+    const [allowedPoll] = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_allowed_code_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: taskId },
+        },
+      ],
+      agentId: 'a',
+      configurable: dispatchConfig,
+      metadata: { thread_id: 'exec_convo_tightened_code', run_id: 'msg-poll-allowed' },
+    })) as Array<{ content: string; artifact?: unknown }>;
+    expect(JSON.parse(allowedPoll.content).result).toBe('safe stdout');
+    expect(allowedPoll.artifact).toEqual(artifact);
   });
 
   it('does not gate task completion on the harvest (same-turn polls see completed)', async () => {
@@ -836,6 +1192,76 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
       expect.objectContaining({ reapply: true, toolCallId: 'call_code_errheal' }),
     );
     expect(String(persistCalls[1].output)).toContain('boom');
+  });
+
+  it('filters thrown background errors before registry, harvest, and persistence', async () => {
+    const protectedValue = 'PROTECTED-BACKGROUND-ERROR';
+    const state: CodeToolState = {
+      calls: 0,
+      throwError: true,
+      errorMessage: protectedValue,
+    };
+    const persistCalls: Array<Record<string, unknown>> = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      persistBackgroundCodeResult: async (params) => {
+        persistCalls.push(params as unknown as Record<string, unknown>);
+        return { attachments: [] };
+      },
+    });
+    const configurable = buildConfig(['execute_code'], {
+      toolArguments: {
+        pii: {
+          fields: ['output'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'protected-output',
+              label: 'protected output',
+              regex: 'PROTECTED-[A-Z-]+',
+            },
+          ],
+        },
+      },
+    });
+    const metadata = {
+      thread_id: 'exec_convo_filtered_background_error',
+      run_id: 'msg-filtered-error',
+    };
+
+    const [dispatch] = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_filtered_background_error' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(persistCalls).toHaveLength(1);
+    expect(String(persistCalls[0].output)).toContain('protected output');
+    expect(JSON.stringify(persistCalls)).not.toContain(protectedValue);
+
+    const [poll] = await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll_filtered_background_error',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: JSON.parse(dispatch.content).background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: {
+        thread_id: 'exec_convo_filtered_background_error',
+        run_id: 'msg-filtered-error-poll',
+      },
+    });
+    const polled = JSON.parse(poll.content);
+    expect(polled.status).toBe('error');
+    expect(polled.error).toContain('protected output');
+    expect(JSON.stringify(polled)).not.toContain(protectedValue);
   });
 
   it('re-anchors reaped (timed-out) tasks with the client-recognized failure wrapper', async () => {

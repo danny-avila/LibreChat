@@ -32,11 +32,14 @@ import type {
 } from '@librechat/data-schemas';
 import type { BaseMessage, ToolMessage } from '@librechat/agents/langchain/messages';
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
-import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
+import type { TAttachment, FiltersConfig, MemoryArtifact } from 'librechat-data-provider';
 import type { Response as ServerResponse } from 'express';
 import type { ServerRequest, RunLLMConfig } from '~/types';
+import { extractMemoryContent } from '~/protection/adapters/submissions';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
+import { contentFilterBlockResponse } from '~/middleware/contentFilter';
 import { resolveConfigHeaders, createSafeUser } from '~/utils';
+import { inspectContent } from '~/protection/runtime';
 import { checkAccess } from '~/middleware/access';
 import { isMemoryEnabled } from '~/memory';
 import Tokenizer from '~/utils/tokenizer';
@@ -125,6 +128,7 @@ export const createMemoryTool = ({
   charLimit,
   tokenLimit,
   totalTokens = 0,
+  filters,
   onWrite,
 }: {
   userId: string | ObjectId;
@@ -135,6 +139,7 @@ export const createMemoryTool = ({
   charLimit?: number;
   tokenLimit?: number;
   totalTokens?: number;
+  filters?: FiltersConfig;
   onWrite?: () => void;
 }): DynamicStructuredTool => {
   /** Running token total, advanced after each successful write. Writes are
@@ -152,15 +157,6 @@ export const createMemoryTool = ({
     async ({ key, value }) => {
       const run = async (): Promise<[string, MemoryArtifactRecord?]> => {
         try {
-          if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {
-            logger.warn(
-              `Memory Agent failed to set memory: Invalid key "${key}". Must be one of: ${validKeys.join(
-                ', ',
-              )}`,
-            );
-            return [`Invalid key "${key}". Must be one of: ${validKeys.join(', ')}`, undefined];
-          }
-
           /** Mirror the REST memory routes' size guards so inline writes can't
            *  persist values the normal memory UI/API would reject. */
           if (key.length > MEMORY_KEY_CHAR_LIMIT) {
@@ -171,6 +167,22 @@ export const createMemoryTool = ({
           }
           if (charLimit && value.length > charLimit) {
             return [`Value exceeds maximum length of ${charLimit} characters.`, undefined];
+          }
+
+          const finding =
+            filters == null
+              ? null
+              : inspectContent(extractMemoryContent({ key, value }), { filters });
+          if (finding != null) {
+            return [contentFilterBlockResponse(finding).message, undefined];
+          }
+
+          if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {
+            logger.warn('Memory Agent rejected an invalid memory key', {
+              keyLength: key.length,
+              allowedKeyCount: validKeys.length,
+            });
+            return [`Invalid key "${key}". Must be one of: ${validKeys.join(', ')}`, undefined];
           }
 
           const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
@@ -691,6 +703,7 @@ export async function buildInlineMemoryTool({
     charLimit,
     tokenLimit,
     totalTokens,
+    filters: req.config?.filters,
     onWrite: () => invalidateRequestMemories(req, memoryAgentId),
   });
 }
@@ -734,6 +747,7 @@ export async function processMemory({
   llmConfig,
   tokenLimit,
   totalTokens = 0,
+  filters,
   streamId = null,
   jobCreatedAt,
   user,
@@ -752,6 +766,7 @@ export async function processMemory({
   instructions: string;
   tokenLimit?: number;
   totalTokens?: number;
+  filters?: FiltersConfig;
   llmConfig?: Partial<LLMConfig>;
   streamId?: string | null;
   jobCreatedAt?: number;
@@ -765,6 +780,7 @@ export async function processMemory({
       setMemory,
       validKeys,
       totalTokens,
+      filters,
     });
     const deleteMemoryTool = createDeleteMemoryTool({
       userId,
@@ -966,6 +982,7 @@ export async function createMemoryProcessor({
   memoryMethods,
   conversationId,
   config = {},
+  filters,
   streamId = null,
   jobCreatedAt,
   user,
@@ -978,6 +995,7 @@ export async function createMemoryProcessor({
   agentId?: string;
   memoryMethods: RequiredMemoryMethods;
   config?: MemoryConfig;
+  filters?: FiltersConfig;
   streamId?: string | null;
   jobCreatedAt?: number;
   user?: IUser;
@@ -1008,6 +1026,7 @@ export async function createMemoryProcessor({
           conversationId,
           memory: withKeys,
           totalTokens: totalTokens || 0,
+          filters,
           instructions: finalInstructions,
           setMemory: memoryMethods.setMemory,
           deleteMemory: memoryMethods.deleteMemory,

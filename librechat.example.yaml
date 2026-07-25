@@ -1112,11 +1112,67 @@ endpoints:
 #     # model_parameters:
 #     #   temperature: 0.1
 
-# Reject chat messages whose text matches credential-shaped patterns
-# before they reach moderation, the model, or persistence. Filter
-# types live under `messageFilter.<type>`; today only `pii` ships, but
-# the namespace is structured so future filter types can plug in.
-# Omit the whole section to disable.
+# Apply opt-in content filters to source-classified submitted and reusable content.
+# `filters` is base-config-only: database overrides and tombstones cannot add,
+# change, or remove this policy for individual users, groups, or roles.
+# Omit `filters`, a source, or its `pii` block to leave that scope disabled.
+# Omit `fields` to filter every supported field for an enabled source.
+# `starterPatterns` and `customPatterns` can be configured independently
+# under any source so each input surface can use a different policy. Starter
+# ids are closed to the catalog below. Custom regexes use bounded,
+# linear-time syntax; unsupported constructs are rejected at config load.
+# Omit `starterPatterns` to enable the full starter catalog; set it to `[]`
+# to disable starters while retaining any configured custom patterns.
+# filters:
+#   messages:
+#     pii:
+#       fields: [name, text, summary, quote, answer, decision_response, decision_reason, content_part, attachment_reference, assembled_context]
+#       starterPatterns: [sk_prefix, bearer_header, api_key_header]
+#       customPatterns:
+#         - id: organization_identifier
+#           label: Organization identifier
+#           regex: "ORG-[A-Z0-9]{12}"
+#   prompts:
+#     pii:
+#       fields: [name, description, oneliner, category, command, text, preset_text, system, context, instructions, additional_instructions, greeting, example_input, example_output]
+#   agentInstructions:
+#     pii:
+#       fields: [name, category, description, instructions, additional_instructions, edge_description, edge_prompt, edge_prompt_key, artifacts, support_contact_name, support_contact_email]
+#   conversationStarters:
+#     pii:
+#       fields: [text]
+#   conversationTitles:
+#     pii:
+#       fields: [title]
+#   feedback:
+#     pii:
+#       fields: [text]
+#   skills:
+#     pii:
+#       fields: [name, display_title, description, category, frontmatter, instructions, imported_text, file_name, file_text]
+#   memories:
+#     pii:
+#       fields: [key, value, summary]
+#   files:
+#     pii:
+#       fields: [name, content, extracted_text, transcript, uri]
+#       # `allow` is the compatibility default. `block` rejects opaque or
+#       # oversized selected file content before provider/storage side effects.
+#       uninspectable: block
+#   toolArguments:
+#     pii:
+#       fields: [name, arguments, output]
+#   modelParameters:
+#     pii:
+#       fields: [stop, request_fields, response_format, metadata]
+#   actionMetadata:
+#     pii:
+#       fields: [raw_spec, domain, privacy_policy_url, authorization_type, custom_auth_header, authorization_content_type, authorization_url, client_url, scope, token_exchange_method, api_key, oauth_client_id, oauth_client_secret]
+
+# Legacy message-only filter configuration. Existing deployments can continue
+# using this shape while migrating message policy into `filters.messages`.
+# When both shapes are configured, both policies apply. Prefer
+# `filters.messages` for centrally managed source-aware policy.
 # messageFilter:
 #   pii:
 #     # (optional) Pick a subset of the starter catalog by id; omit to

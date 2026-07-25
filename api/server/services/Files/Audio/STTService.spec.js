@@ -2,14 +2,42 @@
 jest.mock('axios');
 jest.mock('form-data');
 jest.mock('https-proxy-agent');
-jest.mock('@librechat/data-schemas', () => ({ logger: { warn: jest.fn(), error: jest.fn() } }));
-jest.mock('@librechat/api', () => ({ genAzureEndpoint: jest.fn(), logAxiosError: jest.fn() }));
+jest.mock('@librechat/data-schemas', () => ({
+  logger: { warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+jest.mock('@librechat/api', () => ({
+  inspectContent: jest.fn(),
+  extractFileContent: jest.fn((input) => [input]),
+  genAzureEndpoint: jest.fn(),
+  logAxiosError: jest.fn(),
+  applyAxiosProxyConfig: jest.fn(),
+  contentFilterBlockResponse: jest.fn((finding) => ({
+    error: 'content_filter_block',
+    message: 'Submitted content contains a protected value. Remove it and try again.',
+    source: finding.source,
+    field: finding.field,
+  })),
+  getBlockedUninspectableFileField: jest.fn(),
+  contentFilterUninspectableResponse: jest.fn((field) => ({
+    error: 'content_filter_uninspectable',
+    source: 'file',
+    field,
+  })),
+}));
 jest.mock('librechat-data-provider', () => ({
   extractEnvVariable: jest.fn(),
   STTProviders: {},
 }));
 jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
 
+const fs = require('fs').promises;
+const {
+  inspectContent,
+  extractFileContent,
+  contentFilterBlockResponse,
+  contentFilterUninspectableResponse,
+  getBlockedUninspectableFileField,
+} = require('@librechat/api');
 const { STTService, getFileExtensionFromMime, MIME_TO_EXTENSION_MAP } = require('./STTService');
 
 describe('getFileExtensionFromMime', () => {
@@ -144,5 +172,140 @@ describe('STT audio format validation with MIME normalization', () => {
     expect(isFormatAccepted('text/webm')).toBe(false);
     expect(isFormatAccepted('text/plain')).toBe(false);
     expect(isFormatAccepted('application/json')).toBe(false);
+  });
+});
+
+describe('STT transcript content filtering', () => {
+  let readFileSpy;
+  let unlinkSpy;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    readFileSpy = jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('audio'));
+    unlinkSpy = jest.spyOn(fs, 'unlink').mockResolvedValue();
+    inspectContent.mockReturnValue(null);
+    getBlockedUninspectableFileField.mockReturnValue(null);
+  });
+
+  afterEach(() => {
+    readFileSpy.mockRestore();
+    unlinkSpy.mockRestore();
+  });
+
+  const createRequest = (config) => ({
+    config,
+    file: {
+      path: '/tmp/audio.webm',
+      originalname: 'audio.webm',
+      mimetype: 'audio/webm',
+      size: 5,
+    },
+    body: {},
+  });
+
+  const createResponse = () => ({
+    status: jest.fn().mockReturnThis(),
+    json: jest.fn(),
+    sendStatus: jest.fn(),
+  });
+
+  const createService = (transcript) => {
+    const service = new STTService();
+    jest.spyOn(service, 'getProviderSchema').mockResolvedValue(['openai', {}]);
+    jest.spyOn(service, 'sttRequest').mockResolvedValue(transcript);
+    return service;
+  };
+
+  it('blocks a configured transcript before returning it to the client', async () => {
+    const filters = { files: { pii: {} } };
+    const finding = {
+      label: 'protected value',
+      source: 'file',
+      field: 'transcript',
+    };
+    inspectContent.mockReturnValueOnce(null).mockReturnValueOnce(finding);
+    const service = createService('submitted transcript');
+    const res = createResponse();
+
+    await service.processSpeechToText(createRequest({ filters }), res);
+
+    expect(extractFileContent).toHaveBeenCalledWith({ transcript: 'submitted transcript' });
+    expect(inspectContent).toHaveBeenCalledWith([{ transcript: 'submitted transcript' }], {
+      filters,
+    });
+    expect(contentFilterBlockResponse).toHaveBeenCalledWith(finding);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'content_filter_block',
+      message: 'Submitted content contains a protected value. Remove it and try again.',
+      source: 'file',
+      field: 'transcript',
+    });
+    expect(unlinkSpy).toHaveBeenCalledWith('/tmp/audio.webm');
+  });
+
+  it('blocks a configured filename before reading or sending the audio', async () => {
+    const filters = { files: { pii: { fields: ['name'] } } };
+    const finding = {
+      label: 'protected value',
+      source: 'file',
+      field: 'name',
+    };
+    inspectContent.mockReturnValueOnce(finding);
+    const service = createService('submitted transcript');
+    const res = createResponse();
+
+    await service.processSpeechToText(createRequest({ filters }), res);
+
+    expect(extractFileContent).toHaveBeenCalledWith({ name: 'audio.webm' });
+    expect(inspectContent).toHaveBeenCalledWith([{ name: 'audio.webm' }], { filters });
+    expect(contentFilterBlockResponse).toHaveBeenCalledWith(finding);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(readFileSpy).not.toHaveBeenCalled();
+    expect(service.getProviderSchema).not.toHaveBeenCalled();
+    expect(service.sttRequest).not.toHaveBeenCalled();
+    expect(unlinkSpy).toHaveBeenCalledWith('/tmp/audio.webm');
+  });
+
+  it('blocks uninspectable audio before sending it to the speech provider', async () => {
+    const filters = {
+      files: {
+        pii: {
+          fields: ['transcript'],
+          uninspectable: 'block',
+        },
+      },
+    };
+    getBlockedUninspectableFileField.mockReturnValueOnce('transcript');
+    const service = createService('submitted transcript');
+    const res = createResponse();
+
+    await service.processSpeechToText(createRequest({ filters }), res);
+
+    expect(getBlockedUninspectableFileField).toHaveBeenCalledWith(filters, [
+      'content',
+      'transcript',
+    ]);
+    expect(contentFilterUninspectableResponse).toHaveBeenCalledWith('transcript');
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'content_filter_uninspectable',
+      source: 'file',
+      field: 'transcript',
+    });
+    expect(readFileSpy).not.toHaveBeenCalled();
+    expect(service.getProviderSchema).not.toHaveBeenCalled();
+    expect(service.sttRequest).not.toHaveBeenCalled();
+    expect(unlinkSpy).toHaveBeenCalledWith('/tmp/audio.webm');
+  });
+
+  it('preserves the default-off transcript response path', async () => {
+    const service = createService('submitted transcript');
+    const res = createResponse();
+
+    await service.processSpeechToText(createRequest({}), res);
+
+    expect(inspectContent).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ text: 'submitted transcript' });
   });
 });

@@ -9,6 +9,9 @@ const {
   validateActionOAuthMetadata,
   ACTION_CREDENTIAL_REFRESH_MESSAGE,
   buildActionOAuthTokenDeleteQueries,
+  inspectContent,
+  extractAssistantActionContent,
+  contentFilterBlockResponse,
 } = require('@librechat/api');
 const {
   Permissions,
@@ -97,6 +100,14 @@ router.post(
       const { functions, action_id: _action_id, metadata: _metadata } = req.body;
       if (!functions.length) {
         return res.status(400).json({ message: 'No functions provided' });
+      }
+
+      const contentFinding = inspectContent(
+        extractAssistantActionContent({ functions, metadata: _metadata }),
+        { filters: req.config?.filters },
+      );
+      if (contentFinding != null) {
+        return res.status(400).json(contentFilterBlockResponse(contentFinding));
       }
 
       const metadata = await encryptMetadata(removeNullishValues(_metadata, true));

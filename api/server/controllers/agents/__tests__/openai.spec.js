@@ -184,7 +184,25 @@ jest.mock('@librechat/api', () => ({
   resolveRecursionLimit: jest.fn().mockReturnValue(50),
   createToolExecuteHandler: jest.fn().mockReturnValue({ handle: jest.fn() }),
   isChatCompletionValidationFailure: jest.fn().mockReturnValue(false),
-  findPiiMatchInMessages: jest.fn().mockReturnValue(null),
+  inspectContent: jest.fn().mockReturnValue(null),
+  extractMessageContent: jest.fn().mockReturnValue([]),
+  extractModelParameterContent: jest.fn().mockReturnValue([]),
+  extractSkillContent: jest.fn().mockReturnValue([]),
+  getBlockedOpaqueFileField: jest.fn().mockReturnValue(null),
+  isContentTraversalLimitError: jest.fn((error) => error?.code === 'content_filter_uninspectable'),
+  isNestedMessageTraversalProtected: jest.fn().mockReturnValue(true),
+  assertModelBoundContent: jest.fn(),
+  isContentFilterError: jest.fn((error) => error?.code === 'content_filter_block'),
+  contentFilterBlockResponse: jest.fn().mockReturnValue({
+    error: 'content_filter_block',
+    message: 'Submitted content was blocked.',
+  }),
+  contentFilterUninspectableResponse: jest.fn().mockReturnValue({
+    error: 'content_filter_uninspectable',
+    message: 'Submitted file content could not be inspected before processing.',
+    source: 'file',
+    field: 'content',
+  }),
   discoverConnectedAgents: jest.fn().mockResolvedValue({
     agentConfigs: new Map(),
     edges: [],
@@ -398,6 +416,191 @@ describe('OpenAIChatCompletionController', () => {
     onSubagentUsage({ input_tokens: 25, output_tokens: 10 });
     expect(aggregator.usage.promptTokens).toBe(initialPromptTokens + 25);
     expect(aggregator.usage.completionTokens).toBe(initialCompletionTokens + 10);
+  });
+
+  describe('content filtering', () => {
+    it('blocks opaque inline media before text inspection or agent loading', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      const messages = [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: { url: 'data:image/png;base64,do-not-echo' },
+            },
+          ],
+        },
+      ];
+      api.validateRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', messages, stream: false },
+      });
+      api.getBlockedOpaqueFileField.mockReturnValueOnce('content');
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(api.getBlockedOpaqueFileField).toHaveBeenCalledWith(req.config.filters, messages);
+      expect(api.extractMessageContent).not.toHaveBeenCalled();
+      expect(db.getAgent).not.toHaveBeenCalled();
+      expect(api.createErrorResponse).toHaveBeenCalledWith(
+        'Submitted file content could not be inspected before processing.',
+        'invalid_request_error',
+        'content_filter_uninspectable',
+      );
+      expect(JSON.stringify(api.createErrorResponse.mock.calls)).not.toContain('do-not-echo');
+    });
+
+    it('returns a raw-free error when nested message inspection exhausts its budget', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      req.config.filters = { messages: { pii: { starterPatterns: [] } } };
+      api.extractMessageContent.mockImplementationOnce(() => {
+        throw {
+          code: 'content_filter_uninspectable',
+          statusCode: 400,
+          body: {
+            error: 'content_filter_uninspectable',
+            message: 'Submitted content could not be completely inspected before processing.',
+            source: 'message',
+            field: 'content_part',
+          },
+        };
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(db.getAgent).not.toHaveBeenCalled();
+      expect(api.createErrorResponse).toHaveBeenCalledWith(
+        'Submitted content could not be completely inspected before processing.',
+        'invalid_request_error',
+        'content_filter_uninspectable',
+      );
+    });
+
+    it('preserves field granularity when the exhausted nested field is not selected', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      req.config.filters = {
+        messages: { pii: { fields: ['text'], starterPatterns: [] } },
+      };
+      api.extractMessageContent.mockImplementationOnce(() => {
+        throw {
+          code: 'content_filter_uninspectable',
+          statusCode: 400,
+          body: {
+            error: 'content_filter_uninspectable',
+            message: 'Submitted content could not be completely inspected before processing.',
+            source: 'message',
+            field: 'content_part',
+          },
+        };
+      });
+      api.isNestedMessageTraversalProtected.mockReturnValueOnce(false);
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(db.getAgent).toHaveBeenCalled();
+      expect(api.createErrorResponse).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'invalid_request_error',
+        'content_filter_uninspectable',
+      );
+    });
+
+    it('blocks submitted messages and model parameters before loading the agent', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      api.validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [],
+          stream: false,
+          stop: ['submitted stop sequence'],
+        },
+      });
+      api.inspectContent.mockReturnValueOnce({
+        detectorId: 'pii-pattern',
+        ruleId: 'sk_prefix',
+        label: 'sk- prefix token',
+        source: 'model_parameter',
+        field: 'stop',
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(api.extractMessageContent).toHaveBeenCalled();
+      expect(api.extractModelParameterContent).toHaveBeenCalledWith(
+        expect.objectContaining({ stop: ['submitted stop sequence'] }),
+      );
+      expect(db.getAgent).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(api.createErrorResponse).toHaveBeenCalledWith(
+        'Submitted content was blocked.',
+        'invalid_request_error',
+        'content_filter_block',
+      );
+    });
+
+    it('blocks manually selected skill names before resolving the skill', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      req.body.manualSkills = ['PRIVATE-SKILL'];
+      api.extractManualSkills.mockReturnValueOnce(['PRIVATE-SKILL']);
+      api.inspectContent.mockReturnValueOnce({
+        detectorId: 'pii-pattern',
+        ruleId: 'private',
+        label: 'private value',
+        source: 'skill',
+        field: 'name',
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(api.extractSkillContent).toHaveBeenCalledWith({ name: 'PRIVATE-SKILL' });
+      expect(db.getAgent).not.toHaveBeenCalled();
+      expect(api.createErrorResponse).toHaveBeenCalledWith(
+        'Submitted content was blocked.',
+        'invalid_request_error',
+        'content_filter_block',
+      );
+    });
+
+    it('rejects filtered model-bound context before starting a streaming response', async () => {
+      const api = require('@librechat/api');
+      api.validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [],
+          stream: true,
+        },
+      });
+      api.assertModelBoundContent.mockImplementationOnce(() => {
+        throw Object.assign(new Error('Submitted content contains a private value.'), {
+          code: 'content_filter_block',
+          statusCode: 400,
+          body: {
+            error: 'content_filter_block',
+            message: 'Submitted content contains a private value. Remove it and try again.',
+            source: 'agent_instruction',
+            field: 'instructions',
+          },
+        });
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(api.createErrorResponse).toHaveBeenCalledWith(
+        'Submitted content contains a private value. Remove it and try again.',
+        'invalid_request_error',
+        'content_filter_block',
+      );
+      expect(res.setHeader).not.toHaveBeenCalled();
+      expect(res.flushHeaders).not.toHaveBeenCalled();
+      expect(api.writeSSE).not.toHaveBeenCalled();
+      expect(api.createRun).not.toHaveBeenCalled();
+    });
   });
 
   describe('conversation ownership validation', () => {

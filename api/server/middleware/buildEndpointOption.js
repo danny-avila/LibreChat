@@ -48,10 +48,7 @@ async function buildEndpointOption(req, res, next) {
       defaultParamsEndpoint,
     });
   } catch (error) {
-    logger.error(`Error parsing compact conversation for endpoint ${endpoint}`, error);
-    logger.debug({
-      'Error parsing compact conversation': { endpoint, endpointType, conversation: req.body },
-    });
+    logger.error('Error parsing compact conversation', error);
     return handleError(res, { text: 'Error parsing conversation' });
   }
 
@@ -94,7 +91,7 @@ async function buildEndpointOption(req, res, next) {
       parsedBody = result.parsedBody;
       appliedModelSpecPrivateFields = result.appliedPrivateFields;
     } catch (error) {
-      logger.error(`Error parsing model spec for endpoint ${endpoint}`, error);
+      logger.error('Error parsing model spec', error);
       return handleError(res, { text: 'Error parsing model spec' });
     }
   } else if (parsedBody.spec && appConfig.modelSpecs?.list) {
@@ -115,7 +112,7 @@ async function buildEndpointOption(req, res, next) {
         parsedBody = result.parsedBody;
         appliedModelSpecPrivateFields = result.appliedPrivateFields;
       } catch (error) {
-        logger.error(`Error parsing model spec for endpoint ${endpoint}`, error);
+        logger.error('Error parsing model spec', error);
         return handleError(res, { text: 'Error parsing model spec' });
       }
     }
@@ -147,10 +144,7 @@ async function buildEndpointOption(req, res, next) {
 
     next();
   } catch (error) {
-    logger.error(
-      `Error building endpoint option for endpoint ${endpoint} with type ${endpointType}`,
-      error,
-    );
+    logger.error('Error building endpoint option', error);
     return handleError(res, { text: 'Error building endpoint option' });
   }
 }

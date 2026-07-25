@@ -1,5 +1,16 @@
 const { Constants, ForkOptions } = require('librechat-data-provider');
 
+const mockLogger = {
+  debug: jest.fn(),
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+};
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
+  logger: mockLogger,
+}));
+
 jest.mock('~/models', () => ({
   getConvo: jest.fn(),
   bulkSaveConvos: jest.fn(),
@@ -274,6 +285,41 @@ describe('forkConversation', () => {
     // bulkIncrementTagCounts will be called with empty array
     expect(bulkIncrementTagCounts).toHaveBeenCalledWith('user1', []);
   });
+
+  test('blocks filtered cloned content before writing any fork records', async () => {
+    getMessages.mockResolvedValue([
+      {
+        messageId: 'private-message',
+        parentMessageId: Constants.NO_PARENT,
+        text: 'PRIVATE-SENTINEL',
+        createdAt: '2021-01-01',
+      },
+    ]);
+
+    await expect(
+      forkConversation({
+        originalConvoId: 'abc123',
+        targetMessageId: 'private-message',
+        requestUserId: 'user1',
+        option: ForkOptions.DIRECT_PATH,
+        filters: {
+          messages: {
+            pii: {
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+            },
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: expect.objectContaining({ source: 'message', field: 'text' }),
+    });
+
+    expect(bulkSaveConvos).not.toHaveBeenCalled();
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+    expect(bulkIncrementTagCounts).not.toHaveBeenCalled();
+  });
 });
 
 describe('duplicateConversation', () => {
@@ -354,6 +400,49 @@ describe('duplicateConversation', () => {
     });
 
     expect(bulkSaveConvos.mock.calls[0][0][0]).not.toHaveProperty('subagentThread');
+  });
+
+  test('does not log a submitted duplicate title', async () => {
+    await duplicateConversation({
+      userId: 'user1',
+      conversationId: 'abc123',
+      title: 'PRIVATE-SENTINEL',
+    });
+
+    expect(JSON.stringify(mockLogger.debug.mock.calls)).not.toContain('PRIVATE-SENTINEL');
+  });
+
+  test('blocks filtered cloned content before writing any duplicate records', async () => {
+    getMessages.mockResolvedValue([
+      {
+        messageId: 'private-message',
+        parentMessageId: Constants.NO_PARENT,
+        text: 'PRIVATE-SENTINEL',
+        createdAt: '2021-01-01',
+      },
+    ]);
+
+    await expect(
+      duplicateConversation({
+        userId: 'user1',
+        conversationId: 'abc123',
+        filters: {
+          messages: {
+            pii: {
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+            },
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: expect.objectContaining({ source: 'message', field: 'text' }),
+    });
+
+    expect(bulkSaveConvos).not.toHaveBeenCalled();
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+    expect(bulkIncrementTagCounts).not.toHaveBeenCalled();
   });
 });
 
@@ -470,6 +559,38 @@ describe('forkSharedConversation', () => {
 
     expect(getConvo).toHaveBeenCalledWith('user1', savedConvos[0].conversationId);
     expect(result).toMatchObject({ conversation: mockConversation, messages: mockSharedMessages });
+  });
+
+  test('applies the requesting tenant content filters before saving a shared fork', async () => {
+    const { getAppConfig } = require('~/server/services/Config');
+    getAppConfig.mockResolvedValueOnce({
+      interfaceConfig: {},
+      filters: {
+        messages: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+          },
+        },
+      },
+    });
+    getSharedMessages.mockResolvedValueOnce({
+      ...mockShare,
+      messages: [{ ...mockSharedMessages[0], text: 'PRIVATE-SENTINEL' }],
+    });
+
+    await expect(
+      forkSharedConversation({
+        shareId: 'share123',
+        shareResourceId: 'resource123',
+        requestUserId: 'user1',
+      }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: expect.objectContaining({ source: 'message', field: 'text' }),
+    });
+    expect(bulkSaveConvos).not.toHaveBeenCalled();
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
   });
 
   test('should use an available endpoint when the deployment does not expose OpenAI', async () => {
@@ -621,7 +742,7 @@ describe('forkSharedConversation', () => {
       userId: 'user1',
       tenantId: 'tenant-viewer',
     });
-    expect(builderFactory).toHaveBeenCalledWith('user1', interfaceConfig);
+    expect(builderFactory).toHaveBeenCalledWith('user1', interfaceConfig, undefined);
   });
 
   test('should resolve the app config under the requesting user tenant', async () => {

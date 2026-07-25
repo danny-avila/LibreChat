@@ -33,6 +33,7 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Types } from 'mongoose';
+import { logger } from '@librechat/data-schemas';
 import { HumanMessage, AIMessage } from '@librechat/agents/langchain/messages';
 import {
   scopeSkillIds,
@@ -1299,6 +1300,25 @@ describe('resolveManualSkills', () => {
       userId,
     });
     expect(result).toEqual([{ _id: real._id, name: 'real', body: 'body of real' }]);
+  });
+
+  it('does not log a raw submitted name when the requested skill cannot be resolved', async () => {
+    const submittedName = 'PRIVATE-SKILL-NAME';
+    const warn = jest.spyOn(logger, 'warn');
+
+    const result = await resolveManualSkills({
+      names: [submittedName],
+      getSkillByName: buildGetSkillByName({}),
+      accessibleSkillIds: [new Types.ObjectId()],
+      userId,
+    });
+
+    expect(result).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(
+      '[resolveManualSkills] Requested skill not found or not accessible',
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(submittedName);
+    warn.mockRestore();
   });
 
   it('silently skips skills with userInvocable: false, preserving the rest of the batch', async () => {

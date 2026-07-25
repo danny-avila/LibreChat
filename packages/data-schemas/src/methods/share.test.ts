@@ -4,7 +4,12 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Constants, ContentTypes, Tools } from 'librechat-data-provider';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
-import { createShareMethods, anonymizeSharedContent, type ShareMethods } from './share';
+import {
+  createShareMethods,
+  anonymizeSharedContent,
+  type ShareMethods,
+  type SharedLinkContentSnapshot,
+} from './share';
 
 describe('Share Methods', () => {
   let mongoServer: MongoMemoryServer;
@@ -380,6 +385,46 @@ describe('Share Methods', () => {
         code: 'TARGET_MESSAGE_NOT_FOUND',
         message: 'Target message not found',
       });
+      expect(await SharedLink.countDocuments({ conversationId })).toBe(0);
+    });
+
+    test('runs content preflight before creating any shared-link record', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const rejection = new Error('blocked by current policy');
+
+      await Conversation.create({
+        conversationId,
+        title: 'Protected Conversation',
+        user: userId,
+      });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'PRIVATE-SENTINEL',
+        isCreatedByUser: true,
+      });
+
+      const preflight = jest.fn(async (snapshot: SharedLinkContentSnapshot) => {
+        expect(snapshot.title).toBe('Protected Conversation');
+        expect(snapshot.messages).toHaveLength(1);
+        expect(snapshot.messages[0]?.text).toBe('PRIVATE-SENTINEL');
+        throw rejection;
+      });
+
+      await expect(
+        shareMethods.createSharedLink(
+          userId,
+          conversationId,
+          undefined,
+          undefined,
+          true,
+          preflight,
+        ),
+      ).rejects.toBe(rejection);
+
+      expect(preflight).toHaveBeenCalledTimes(1);
       expect(await SharedLink.countDocuments({ conversationId })).toBe(0);
     });
   });
@@ -1877,6 +1922,44 @@ describe('Share Methods', () => {
       const originalShare = await SharedLink.findOne({ shareId });
       expect(originalShare).toBeDefined();
       expect(originalShare?.user).toBe(ownerUserId);
+    });
+
+    test('runs content preflight before mutating a shared-link record', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const rejection = new Error('blocked by current policy');
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        title: 'Protected Share',
+        user: userId,
+        messages: [],
+      });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'PRIVATE-SENTINEL',
+        isCreatedByUser: true,
+      });
+
+      const preflight = jest.fn(async (snapshot: SharedLinkContentSnapshot) => {
+        expect(snapshot.title).toBe('Protected Share');
+        expect(snapshot.messages).toHaveLength(1);
+        expect(snapshot.messages[0]?.text).toBe('PRIVATE-SENTINEL');
+        throw rejection;
+      });
+
+      await expect(
+        shareMethods.updateSharedLink(userId, shareId, undefined, undefined, true, preflight),
+      ).rejects.toBe(rejection);
+
+      expect(preflight).toHaveBeenCalledTimes(1);
+      expect(await SharedLink.countDocuments({ conversationId })).toBe(1);
+      const untouched = await SharedLink.findOne({ shareId }).lean();
+      expect(untouched?.messages).toHaveLength(0);
     });
   });
 

@@ -14,6 +14,7 @@ function fragment(id: string, text: string): TextContentFragment {
     text,
     path: `/${id}`,
     source: 'message',
+    field: 'text',
     format: 'plain',
     treatment: 'replaceable',
     provenance: 'user',
@@ -23,16 +24,20 @@ function fragment(id: string, text: string): TextContentFragment {
 describe('legacy content protection', () => {
   it('returns a raw-free finding and converts it to the public legacy match', () => {
     const secret = 'sk-proj-FAKE1234567890ABCDEF';
-    const finding = inspectLegacyPii([fragment('message', `my key is ${secret}`)], {});
+    const finding = inspectLegacyPii(
+      [fragment('external-message.0.content', `my key is ${secret}`)],
+      {},
+    );
 
     expect(finding).toEqual({
       detectorId: 'legacy-pattern',
       ruleId: 'sk_prefix',
       label: 'sk- prefix token',
       source: 'message',
+      field: 'text',
       provenance: 'user',
-      fragmentId: 'message',
-      fragmentPath: '/message',
+      fragmentId: 'external-message.0.content',
+      fragmentPath: '/external-message.0.content',
     });
     expect(JSON.stringify(finding)).not.toContain(secret);
     expect(toLegacyPiiMatch(finding)).toEqual({
@@ -51,12 +56,15 @@ describe('legacy content protection', () => {
     };
 
     const finding = inspectLegacyPii(
-      [fragment('first-field', 'VALUE-B'), fragment('second-field', 'VALUE-A')],
+      [
+        fragment('external-message.0.content', 'VALUE-B'),
+        fragment('external-message.1.content', 'VALUE-A'),
+      ],
       config,
     );
 
     expect(finding?.ruleId).toBe('second-rule');
-    expect(finding?.fragmentId).toBe('first-field');
+    expect(finding?.fragmentId).toBe('external-message.0.content');
   });
 
   it('does not read later message content after the first finding', () => {
@@ -77,6 +85,38 @@ describe('legacy content protection', () => {
 
     expect(finding?.ruleId).toBe('sk_prefix');
     expect(readLaterContent).not.toHaveBeenCalled();
+  });
+
+  it('keeps legacy matching limited to the fields it historically inspected', () => {
+    const config: MessageFilterPiiConfig = {};
+    const inspector = createLegacyPiiInspector(config);
+    const secret = 'sk-proj-FAKE1234567890ABCDEF';
+
+    expect(
+      inspector?.inspect([
+        {
+          ...fragment('external-message.0.name', secret),
+          field: 'name',
+        },
+        {
+          ...fragment('external-message.0.part.0.attachment.filename', secret),
+          field: 'attachment_reference',
+        },
+        {
+          ...fragment('external-message.0.tool-call.0.arguments', secret),
+          source: 'tool_argument',
+          field: 'arguments',
+        },
+      ]),
+    ).toBeNull();
+    expect(
+      inspector?.inspect([
+        {
+          ...fragment('external-message.0.content', secret),
+          field: 'text',
+        },
+      ]),
+    ).not.toBeNull();
   });
 
   it('compiles once per config identity and warns once for an invalid pattern', () => {

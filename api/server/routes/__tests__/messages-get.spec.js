@@ -7,8 +7,15 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  createContentFilter: jest.fn(() => (req, res, next) => next()),
+  inspectContent: jest.fn(() => null),
+  extractChatContent: jest.fn(() => []),
+  extractFeedbackContent: jest.fn(() => []),
+  extractStoredMessageContent: jest.fn(() => []),
+  contentFilterBlockResponse: jest.fn(),
   unescapeLaTeX: jest.fn((x) => x),
   countTokens: jest.fn().mockResolvedValue(10),
+  mergeQuotedTextForCount: jest.fn((text) => text),
   sendFeedbackScore: jest.fn().mockResolvedValue(undefined),
   traceIdForMessage: jest.fn((messageId) => `trace-${messageId}`),
   CHILD_THREAD_READ_ONLY_ERROR: 'Child thread is view-only.',
@@ -76,7 +83,18 @@ jest.mock('~/server/middleware', () => {
     canReadActiveJobConversation,
     sendValidationResponse,
     prepareMessageRequestValidation,
-    configMiddleware: (req, res, next) => next(),
+    configMiddleware: (req, res, next) => {
+      req.config = {
+        filters: {
+          messages: {
+            pii: {
+              starterPatterns: [],
+            },
+          },
+        },
+      };
+      next();
+    },
   };
 });
 
@@ -92,20 +110,35 @@ describe('message route conversation ownership filters', () => {
   let app;
   const {
     getConvoOwnership,
+    getMessage,
     getMessages,
     getMessagesByCursor,
     saveConvo,
     saveMessage,
+    updateMessage,
   } = require('~/models');
+  const {
+    createContentFilter,
+    inspectContent,
+    extractChatContent,
+    extractStoredMessageContent,
+    contentFilterBlockResponse,
+  } = require('@librechat/api');
+  const {
+    findAllArtifacts,
+    replaceArtifactContent,
+  } = require('~/server/services/Artifacts/update');
   const {
     canReadActiveJobConversation,
     prepareMessageRequestValidation,
   } = require('~/server/middleware');
+  let storedMessageFilterOptions;
 
   const authenticatedUserId = 'user-owner-123';
 
   beforeAll(() => {
     const messagesRouter = require('../messages');
+    storedMessageFilterOptions = createContentFilter.mock.calls[0][0];
 
     app = express();
     app.use(express.json());
@@ -127,6 +160,15 @@ describe('message route conversation ownership filters', () => {
       };
       next();
     });
+  });
+
+  it('preflights opaque content from the direct stored-message request body', () => {
+    const body = { content: [{ type: 'input_file', file_data: 'opaque-data' }] };
+
+    expect(storedMessageFilterOptions.getOpaqueFileInput({ body })).toBe(body);
+    expect(storedMessageFilterOptions.getMessageRoles({ body: { role: 'system' } })).toEqual([
+      'system',
+    ]);
   });
 
   it('should pass only mutable conversation fields to saveConvo', async () => {
@@ -382,5 +424,142 @@ describe('message route conversation ownership filters', () => {
       { conversationId: 'convo-1', messageId: 'message-1', user: authenticatedUserId },
       CLIENT_MESSAGE_SELECT,
     );
+  });
+
+  it('should classify indexed text edits as message content parts', async () => {
+    getMessages.mockResolvedValue([
+      {
+        conversationId: 'convo-1',
+        content: [{ type: 'text', text: 'old content' }],
+        tokenCount: 10,
+      },
+    ]);
+    updateMessage.mockResolvedValue({ messageId: 'message-1' });
+
+    const response = await request(app).put('/api/messages/convo-1/message-1').send({
+      text: 'new content',
+      index: 0,
+      model: 'test-model',
+    });
+
+    expect(response.status).toBe(200);
+    expect(extractStoredMessageContent).toHaveBeenCalledWith({
+      content: [{ text: 'new content' }],
+    });
+    expect(updateMessage).toHaveBeenCalled();
+  });
+
+  it('filters indexed edits after recombining all persisted content parts', async () => {
+    const finding = {
+      detectorId: 'pii-pattern',
+      ruleId: 'assembled-secret',
+      label: 'assembled secret',
+      source: 'assembled_context',
+      field: 'assembled_context',
+    };
+    getMessages.mockResolvedValue([
+      {
+        conversationId: 'convo-1',
+        content: [
+          { type: 'text', text: 'api-key:' },
+          { type: 'text', text: 'old value' },
+        ],
+        tokenCount: 10,
+      },
+    ]);
+    inspectContent.mockReturnValueOnce(null).mockReturnValueOnce(finding);
+    contentFilterBlockResponse.mockReturnValue({
+      error: 'content_filter_block',
+      message: 'Submitted content is blocked.',
+      source: 'assembled_context',
+      field: 'assembled_context',
+    });
+
+    const response = await request(app).put('/api/messages/convo-1/message-1').send({
+      text: 'secret',
+      index: 1,
+      model: 'test-model',
+    });
+
+    expect(response.status).toBe(400);
+    expect(extractStoredMessageContent).toHaveBeenLastCalledWith({
+      content: [
+        { type: 'text', text: 'api-key:' },
+        { type: 'text', text: 'secret' },
+      ],
+    });
+    expect(updateMessage).not.toHaveBeenCalled();
+  });
+
+  it('filters the final artifact text assembled from existing and submitted content', async () => {
+    const finding = {
+      detectorId: 'pii-pattern',
+      ruleId: 'secret',
+      label: 'protected value',
+      source: 'message',
+      field: 'content_part',
+    };
+    getMessage.mockResolvedValue({
+      conversationId: 'convo-1',
+      content: [{ type: 'text', text: 'existing artifact' }],
+      text: '',
+    });
+    findAllArtifacts.mockReturnValue([{ source: 'content', partIndex: 0 }]);
+    replaceArtifactContent.mockReturnValue('sk-secret');
+    inspectContent.mockReturnValueOnce(null).mockReturnValueOnce(finding);
+    contentFilterBlockResponse.mockReturnValue({
+      error: 'content_filter_block',
+      message: 'Submitted content is blocked.',
+      source: 'message',
+      field: 'content_part',
+    });
+
+    const response = await request(app).post('/api/messages/artifact/message-1').send({
+      index: 0,
+      original: 'existing',
+      updated: 'secret',
+    });
+
+    expect(response.status).toBe(400);
+    expect(extractStoredMessageContent).toHaveBeenLastCalledWith({
+      content: [{ text: 'sk-secret' }],
+    });
+    expect(saveMessage).not.toHaveBeenCalled();
+  });
+
+  it('filters edited text after recombining persisted user quotes', async () => {
+    const finding = {
+      detectorId: 'pii-pattern',
+      ruleId: 'assembled-secret',
+      label: 'assembled secret',
+      source: 'assembled_context',
+      field: 'assembled_context',
+    };
+    getMessages.mockResolvedValue([
+      {
+        conversationId: 'convo-1',
+        quotes: ['api-key:'],
+        isCreatedByUser: true,
+      },
+    ]);
+    inspectContent.mockReturnValueOnce(null).mockReturnValueOnce(finding);
+    contentFilterBlockResponse.mockReturnValue({
+      error: 'content_filter_block',
+      message: 'Submitted content is blocked.',
+      source: 'assembled_context',
+      field: 'assembled_context',
+    });
+
+    const response = await request(app).put('/api/messages/convo-1/message-1').send({
+      text: 'secret',
+      model: 'test-model',
+    });
+
+    expect(response.status).toBe(400);
+    expect(extractChatContent).toHaveBeenCalledWith({
+      text: 'secret',
+      quotes: ['api-key:'],
+    });
+    expect(updateMessage).not.toHaveBeenCalled();
   });
 });

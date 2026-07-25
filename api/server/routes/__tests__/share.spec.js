@@ -15,8 +15,11 @@ const mockGetAppConfig = jest.fn();
 const mockGetTenantId = jest.fn(() => undefined);
 const mockParseSharedLinksPageSize = jest.fn(() => 10);
 const mockIsValidSharedLinksCursor = jest.fn(() => true);
+const mockAssertConversationContentAllowed = jest.fn();
+const mockAssertModelBoundContent = jest.fn();
 
 jest.mock('@librechat/api', () => ({
+  assertModelBoundContent: (...args) => mockAssertModelBoundContent(...args),
   isEnabled: jest.fn(() => true),
   generateCheckAccess: jest.fn(() => mockSharedLinksAccess),
   grantCreationPermissions: (...args) => mockGrantCreationPermissions(...args),
@@ -36,6 +39,10 @@ jest.mock('@librechat/api', () => ({
   buildShareFileEtag: (file) =>
     `"share-${file.file_id}-${file.previewRevision ?? 0}-${file.bytes ?? 0}-${file.filepath ?? ''}"`,
   MAX_SHARED_LINK_SEARCH_LENGTH: 256,
+  isContentFilterError: jest.fn(
+    (error) =>
+      error?.code === 'content_filter_block' || error?.code === 'content_filter_uninspectable',
+  ),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -127,6 +134,9 @@ jest.mock('~/server/middleware/limiters', () => ({
 jest.mock('~/server/utils/import/fork', () => ({
   forkSharedConversation: jest.fn(),
 }));
+jest.mock('~/server/utils/import/importBatchBuilder', () => ({
+  assertConversationContentAllowed: (...args) => mockAssertConversationContentAllowed(...args),
+}));
 
 const { Readable } = require('stream');
 const { RetentionMode } = require('librechat-data-provider');
@@ -152,17 +162,32 @@ const shareRouter = require('../share');
 
 const activeExpiration = new Date('2030-01-01T00:00:00.000Z');
 const expiredExpiration = new Date('2020-01-01T00:00:00.000Z');
+const contentFilters = {
+  messages: {
+    pii: {
+      starterPatterns: [],
+      customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+    },
+  },
+};
 
 const lean = (value) => ({
   lean: jest.fn().mockResolvedValue(value),
 });
 
-const buildApp = ({ retentionMode = RetentionMode.TEMPORARY, user = { id: 'user-123' } } = {}) => {
+const buildApp = ({
+  retentionMode = RetentionMode.TEMPORARY,
+  user = { id: 'user-123' },
+  filters,
+} = {}) => {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
     req.user = user;
-    req.config = { interfaceConfig: { retentionMode } };
+    req.config = {
+      interfaceConfig: { retentionMode },
+      ...(filters == null ? {} : { filters }),
+    };
     next();
   });
   app.use('/api/share', shareRouter);
@@ -296,6 +321,55 @@ describe('share routes', () => {
     expect(response.body).toEqual({ message: 'Error getting shared links' });
   });
 
+  it('reapplies the current content policy before serving an existing share', async () => {
+    const share = {
+      shareId: 'share-123',
+      title: 'Protected Conversation',
+      messages: [{ text: 'safe message' }],
+    };
+    getSharedMessages.mockResolvedValue(share);
+
+    const response = await request(buildApp({ filters: contentFilters })).get(
+      '/api/share/share-123',
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(contentFilters, {
+      conversations: [{ title: share.title }],
+      messages: share.messages,
+    });
+  });
+
+  it('returns a raw-free 400 when an existing share fails the current policy', async () => {
+    const error = Object.assign(new Error('PRIVATE-SENTINEL'), {
+      code: 'content_filter_block',
+      statusCode: 400,
+      body: {
+        error: 'content_filter_block',
+        message: 'Submitted content contains a private value. Remove it and try again.',
+        source: 'message',
+        field: 'text',
+      },
+    });
+    getSharedMessages.mockResolvedValue({
+      shareId: 'share-123',
+      title: 'Protected Conversation',
+      messages: [{ text: 'PRIVATE-SENTINEL' }],
+    });
+    mockAssertConversationContentAllowed.mockImplementationOnce(() => {
+      throw error;
+    });
+
+    const response = await request(buildApp({ filters: contentFilters })).get(
+      '/api/share/share-123',
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(error.body);
+    expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
   it('expires new shares for retained non-temporary conversations', async () => {
     mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
     createSharedLink.mockResolvedValue({ _id: 'link-123', shareId: 'share-123' });
@@ -380,6 +454,42 @@ describe('share routes', () => {
     expect(response.body).toEqual({ message: 'Share already exists' });
   });
 
+  it('returns a raw-free 400 when the exact create snapshot fails policy preflight', async () => {
+    const error = Object.assign(new Error('PRIVATE-SENTINEL'), {
+      code: 'content_filter_block',
+      statusCode: 400,
+      body: {
+        error: 'content_filter_block',
+        message: 'Submitted content contains a private value. Remove it and try again.',
+        source: 'message',
+        field: 'text',
+      },
+    });
+    const messages = [{ text: 'PRIVATE-SENTINEL' }];
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    mockAssertConversationContentAllowed.mockImplementationOnce(() => {
+      throw error;
+    });
+    createSharedLink.mockImplementationOnce(async (...args) => {
+      await args[5]({ title: 'Protected Conversation', messages });
+      return { _id: 'link-123', shareId: 'share-123' };
+    });
+
+    const response = await request(buildApp({ filters: contentFilters }))
+      .post('/api/share/convo-123')
+      .send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(error.body);
+    expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(contentFilters, {
+      conversations: [{ title: 'Protected Conversation' }],
+      messages,
+    });
+    expect(mockGrantCreationPermissions).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
   it('does not snapshot files when the user opts out (snapshotFiles=false)', async () => {
     mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
     createSharedLink.mockResolvedValue({ _id: 'link-123', shareId: 'share-123' });
@@ -431,6 +541,43 @@ describe('share routes', () => {
       expect.anything(),
       false,
     );
+  });
+
+  it('returns a raw-free 400 when the exact update snapshot fails policy preflight', async () => {
+    const error = Object.assign(new Error('PRIVATE-SENTINEL'), {
+      code: 'content_filter_uninspectable',
+      statusCode: 400,
+      body: {
+        error: 'content_filter_uninspectable',
+        message: 'Submitted file content could not be inspected before processing.',
+        source: 'file',
+        field: 'content',
+      },
+    });
+    const messages = [{ files: [{ file_id: 'file_PRIVATE-SENTINEL' }] }];
+    mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    mockAssertConversationContentAllowed.mockImplementationOnce(() => {
+      throw error;
+    });
+    updateSharedLink.mockImplementationOnce(async (...args) => {
+      await args[5]({ title: 'Protected Share', messages });
+      return { _id: 'link-456', shareId: 'share-456' };
+    });
+
+    const response = await request(buildApp({ filters: contentFilters })).patch(
+      '/api/share/share-123',
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(error.body);
+    expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(contentFilters, {
+      conversations: [{ title: 'Protected Share' }],
+      messages,
+    });
+    expect(mockUpdateSharedLinkPermissionsExpiration).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it('rejects new shares when the retained conversation expired', async () => {
@@ -903,6 +1050,75 @@ describe('share-scoped file routes', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers['etag']).not.toBe(first.headers['etag']);
+  });
+
+  it('reapplies the current file policy before serving a snapshotted file', async () => {
+    const liveFile = {
+      file_id: 'file-1',
+      status: 'ready',
+      filename: 'report.pdf',
+      text: 'safe extracted text',
+    };
+    getSharedLinkFile.mockResolvedValue({
+      file: {
+        file_id: 'file-1',
+        source: 'local',
+        filepath: '/uploads/owner/file-1',
+        type: 'application/pdf',
+        filename: 'report.pdf',
+      },
+      hasSnapshots: true,
+    });
+    getFiles.mockResolvedValue([liveFile]);
+
+    const response = await request(buildApp({ filters: contentFilters })).get(
+      '/api/share/share-123/files/file-1/download',
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockAssertModelBoundContent).toHaveBeenCalledWith({
+      filters: contentFilters,
+      files: [liveFile],
+    });
+  });
+
+  it('returns a raw-free 400 before serving a file that fails the current policy', async () => {
+    const error = Object.assign(new Error('PRIVATE-SENTINEL'), {
+      code: 'content_filter_uninspectable',
+      statusCode: 400,
+      body: {
+        error: 'content_filter_uninspectable',
+        message: 'Submitted file content could not be inspected before processing.',
+        source: 'file',
+        field: 'content',
+      },
+    });
+    getSharedLinkFile.mockResolvedValue({
+      file: {
+        file_id: 'file-1',
+        source: 'local',
+        filepath: '/uploads/owner/file-1',
+        type: 'application/pdf',
+        filename: 'PRIVATE-SENTINEL.pdf',
+      },
+      hasSnapshots: true,
+    });
+    getFiles.mockResolvedValue([
+      { file_id: 'file-1', status: 'ready', filename: 'PRIVATE-SENTINEL.pdf' },
+    ]);
+    mockAssertModelBoundContent.mockImplementationOnce(() => {
+      throw error;
+    });
+
+    const response = await request(buildApp({ filters: contentFilters })).get(
+      '/api/share/share-123/files/file-1/download',
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(error.body);
+    expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
+    expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it('forces attachment for unsafe inline types (no stored XSS)', async () => {

@@ -1,4 +1,5 @@
 const express = require('express');
+const fs = require('fs').promises;
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
@@ -389,7 +390,12 @@ describe('File Routes - Agent Files Endpoint', () => {
     /**
      * Helper to create an Express app with specific user context
      */
-    const createAppWithUser = (userId, userRole = SystemRoles.USER) => {
+    const createAppWithUser = (
+      userId,
+      userRole = SystemRoles.USER,
+      config = {},
+      fileOverrides = {},
+    ) => {
       const testApp = express();
       testApp.use(express.json());
 
@@ -401,6 +407,7 @@ describe('File Routes - Agent Files Endpoint', () => {
             mimetype: 'text/plain',
             size: 100,
             path: '/tmp/test.txt',
+            ...fileOverrides,
           };
           req.file_id = uuidv4();
         }
@@ -410,7 +417,7 @@ describe('File Routes - Agent Files Endpoint', () => {
       testApp.use((req, res, next) => {
         req.user = { id: userId.toString(), role: userRole };
         req.app = { locals: {} };
-        req.config = { fileStrategy: 'local' };
+        req.config = { fileStrategy: 'local', ...config };
         next();
       });
 
@@ -464,6 +471,191 @@ describe('File Routes - Agent Files Endpoint', () => {
 
       expect(response.status).toBe(200);
       expect(processAgentFileUpload).toHaveBeenCalled();
+    });
+
+    it('inspects mislabeled text content before upload processing', async () => {
+      const readFile = jest
+        .spyOn(fs, 'readFile')
+        .mockResolvedValueOnce(Buffer.from('Contains PRIVATE-1234'));
+      const testApp = createAppWithUser(
+        authorId,
+        SystemRoles.USER,
+        {
+          filters: {
+            files: {
+              pii: {
+                fields: ['content'],
+                starterPatterns: [],
+                customPatterns: [
+                  { id: 'private_token', label: 'private token', regex: 'PRIVATE-\\d+' },
+                ],
+              },
+            },
+          },
+        },
+        { mimetype: 'application/octet-stream' },
+      );
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'file',
+          field: 'content',
+        }),
+      );
+      expect(processAgentFileUpload).not.toHaveBeenCalled();
+      readFile.mockRestore();
+    });
+
+    it('blocks opaque file content before upload processing when configured fail-closed', async () => {
+      const readFile = jest
+        .spyOn(fs, 'readFile')
+        .mockResolvedValueOnce(Buffer.from([0, 255, 0, 137, 80, 78, 71]));
+      const testApp = createAppWithUser(
+        authorId,
+        SystemRoles.USER,
+        {
+          filters: {
+            files: {
+              pii: {
+                fields: ['content'],
+                uninspectable: 'block',
+              },
+            },
+          },
+        },
+        { mimetype: 'application/octet-stream' },
+      );
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        error: 'content_filter_uninspectable',
+        message: 'Submitted file content could not be inspected before processing.',
+        source: 'file',
+        field: 'content',
+      });
+      expect(processAgentFileUpload).not.toHaveBeenCalled();
+      readFile.mockRestore();
+    });
+
+    it('detects opaque content after a long printable file prefix', async () => {
+      const readFile = jest
+        .spyOn(fs, 'readFile')
+        .mockResolvedValueOnce(Buffer.concat([Buffer.alloc(8192, 'a'), Buffer.from([0, 255])]));
+      const testApp = createAppWithUser(
+        authorId,
+        SystemRoles.USER,
+        {
+          filters: {
+            files: {
+              pii: {
+                fields: ['content'],
+                uninspectable: 'block',
+              },
+            },
+          },
+        },
+        { mimetype: 'application/octet-stream', size: 8194 },
+      );
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('content_filter_uninspectable');
+      expect(processAgentFileUpload).not.toHaveBeenCalled();
+      readFile.mockRestore();
+    });
+
+    it('allows oversized text content when uninspectable content is allowed', async () => {
+      await createAgent({
+        id: agentCustomId,
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+      });
+      const readFile = jest.spyOn(fs, 'readFile');
+      const testApp = createAppWithUser(
+        authorId,
+        SystemRoles.USER,
+        {
+          filters: {
+            files: {
+              pii: {
+                fields: ['content'],
+                uninspectable: 'allow',
+              },
+            },
+          },
+        },
+        { size: 15 * 1024 * 1024 + 1 },
+      );
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(200);
+      expect(readFile).not.toHaveBeenCalled();
+      expect(processAgentFileUpload).toHaveBeenCalled();
+      readFile.mockRestore();
+    });
+
+    it('blocks an uninspected transcript before audio reaches upload processing', async () => {
+      const testApp = createAppWithUser(
+        authorId,
+        SystemRoles.USER,
+        {
+          filters: {
+            files: {
+              pii: {
+                fields: ['transcript'],
+                uninspectable: 'block',
+              },
+            },
+          },
+        },
+        { originalname: 'recording.mp3', mimetype: 'audio/mpeg' },
+      );
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        error: 'content_filter_uninspectable',
+        message: 'Submitted file content could not be inspected before processing.',
+        source: 'file',
+        field: 'transcript',
+      });
+      expect(processAgentFileUpload).not.toHaveBeenCalled();
     });
 
     it('should allow file upload to agent for user with EDIT permission', async () => {

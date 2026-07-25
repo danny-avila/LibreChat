@@ -11,10 +11,21 @@ import type { CodeEnvFile, ToolSessionMap, CodeSessionContext } from '@librechat
 import type { Types } from 'mongoose';
 import type { CodeExecutionContext } from './execution';
 import type { ServerRequest } from '~/types';
+import {
+  extractFileContent,
+  extractSkillContent,
+  getBlockedUninspectableFileField,
+  inspectContent,
+  UninspectableFileError,
+} from '~/protection';
 import { seedCodeFilesIntoSessions, type CodeExecutionProfileRoute } from './codeFilesSession';
+import { ContentFilterError, isContentFilterError } from '~/middleware/contentFilter';
 import { createConcurrencyLimiter, logAxiosError } from '~/utils';
 import { extractInvokedSkillsFromPayload } from './run';
+import { isBinaryBuffer } from '~/skills/binary';
 import { SKILL_FILE_PREFIX } from './skills';
+
+const MAX_INSPECTABLE_SKILL_FILE_BYTES = 10 * 1024 * 1024;
 
 export interface SkillFileRecord {
   relativePath: string;
@@ -149,7 +160,10 @@ async function retryOn429<T>(attempt: () => Promise<T>, label: string): Promise<
 /** Opens SKILL.md and bundled-file streams for one upload attempt. Called
  *  per attempt — a failed upload consumes the streams, so a retry must
  *  re-acquire them. */
-async function collectSkillUploadFiles(params: PrimeSkillFilesParams): Promise<SkillUploadFiles> {
+async function collectSkillUploadFiles(
+  params: PrimeSkillFilesParams,
+  inspectedBuffers: ReadonlyMap<SkillFileRecord, Buffer>,
+): Promise<SkillUploadFiles> {
   const { skill, skillFiles, req, getStrategyFunctions } = params;
   const filesToUpload: SkillUploadFiles = [];
 
@@ -163,6 +177,13 @@ async function collectSkillUploadFiles(params: PrimeSkillFilesParams): Promise<S
   // Bundled files from storage (parallel stream acquisition)
   const streamResults = await Promise.allSettled(
     skillFiles.map(async (file) => {
+      const inspected = inspectedBuffers.get(file);
+      if (inspected != null) {
+        return {
+          stream: Readable.from(inspected),
+          filename: `${SKILL_FILE_PREFIX}${skill.name}/${file.relativePath}`,
+        };
+      }
       const strategy = getStrategyFunctions(file.source);
       if (!strategy.getDownloadStream) {
         logger.warn(
@@ -183,6 +204,102 @@ async function collectSkillUploadFiles(params: PrimeSkillFilesParams): Promise<S
   }
 
   return filesToUpload;
+}
+
+function assertStoredSkillBodyAllowed(
+  skill: PrimeSkillFilesParams['skill'],
+  req: ServerRequest,
+): void {
+  const filters = req.config?.filters;
+  if (filters?.skills?.pii == null && filters?.files?.pii == null) {
+    return;
+  }
+  const finding = inspectContent(
+    [
+      ...extractSkillContent({ name: skill.name, body: skill.body }),
+      ...extractFileContent({
+        filename: `${SKILL_FILE_PREFIX}${skill.name}/SKILL.md`,
+        content: skill.body,
+      }),
+    ],
+    { filters },
+  );
+  if (finding != null) {
+    throw new ContentFilterError(finding);
+  }
+}
+
+function assertStoredSkillFileAllowed(
+  file: SkillFileRecord,
+  buffer: Buffer,
+  req: ServerRequest,
+): void {
+  const filters = req.config?.filters;
+  const isBinary = isBinaryBuffer(buffer);
+  const content = isBinary ? undefined : buffer.toString('utf8');
+  const finding = inspectContent(
+    [
+      ...extractSkillContent({
+        files: [{ name: file.filename, filename: file.relativePath, content }],
+      }),
+      ...extractFileContent({
+        name: file.filename,
+        filename: file.relativePath,
+        content,
+      }),
+    ],
+    { filters },
+  );
+  if (finding != null) {
+    throw new ContentFilterError(finding);
+  }
+
+  if (isBinary) {
+    const field = getBlockedUninspectableFileField(filters, ['content']);
+    if (field != null) {
+      throw new UninspectableFileError(field);
+    }
+  }
+}
+
+function assertStoredSkillFileNameAllowed(file: SkillFileRecord, req: ServerRequest): void {
+  const filters = req.config?.filters;
+  const finding = inspectContent(
+    [
+      ...extractSkillContent({
+        files: [{ name: file.filename, filename: file.relativePath }],
+      }),
+      ...extractFileContent({
+        name: file.filename,
+        filename: file.relativePath,
+      }),
+    ],
+    { filters },
+  );
+  if (finding != null) {
+    throw new ContentFilterError(finding);
+  }
+}
+
+function throwIfStoredSkillFileMustBeInspectable(req: ServerRequest): void {
+  const field = getBlockedUninspectableFileField(req.config?.filters, ['content']);
+  if (field != null) {
+    throw new UninspectableFileError(field);
+  }
+}
+
+async function bufferSkillFileStream(stream: NodeJS.ReadableStream): Promise<Buffer | null> {
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of stream as AsyncIterable<Uint8Array | string>) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += buffer.length;
+    if (bytes > MAX_INSPECTABLE_SKILL_FILE_BYTES) {
+      return null;
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks);
 }
 
 /**
@@ -227,6 +344,7 @@ async function executePrimeSkillFiles(
     skill,
     skillFiles,
     req,
+    getStrategyFunctions,
     batchUploadCodeEnvFiles,
     getSessionInfo,
     checkIfActive,
@@ -234,6 +352,47 @@ async function executePrimeSkillFiles(
     codeExecutionContext,
   } = params;
   const executionProfile = codeExecutionContext?.executionProfile ?? 'default';
+  const filters = req.config?.filters;
+  const inspectBundledFiles = filters?.skills?.pii != null || filters?.files?.pii != null;
+  const inspectedBuffers = new Map<SkillFileRecord, Buffer>();
+
+  assertStoredSkillBodyAllowed(skill, req);
+
+  if (inspectBundledFiles) {
+    for (const file of skillFiles) {
+      assertStoredSkillFileNameAllowed(file, req);
+      if (file.bytes > MAX_INSPECTABLE_SKILL_FILE_BYTES) {
+        throwIfStoredSkillFileMustBeInspectable(req);
+        continue;
+      }
+      try {
+        const strategy = getStrategyFunctions(file.source);
+        if (!strategy.getDownloadStream) {
+          throwIfStoredSkillFileMustBeInspectable(req);
+          logger.warn(
+            `[primeSkillFiles] No download stream for "${file.relativePath}" (source: ${file.source})`,
+          );
+          continue;
+        }
+        const sourceStream = await strategy.getDownloadStream(req, file.filepath);
+        const buffer = await bufferSkillFileStream(sourceStream);
+        if (buffer == null) {
+          throwIfStoredSkillFileMustBeInspectable(req);
+          continue;
+        }
+        assertStoredSkillFileAllowed(file, buffer, req);
+        inspectedBuffers.set(file, buffer);
+      } catch (error) {
+        if (isContentFilterError(error)) {
+          throw error;
+        }
+        throwIfStoredSkillFileMustBeInspectable(req);
+        logger.error(
+          `[primeSkillFiles] Failed to inspect bundled file "${file.relativePath}" before use`,
+        );
+      }
+    }
+  }
 
   /* Cache-hit path: every skillFile carries a `codeEnvRef` from the
    * previous prime. Check freshness against codeapi for every distinct
@@ -305,7 +464,7 @@ async function executePrimeSkillFiles(
      * uploads process-wide across both prime call sites. */
     const uploaded = await uploadSlots(() =>
       retryOn429(async () => {
-        const filesToUpload = await collectSkillUploadFiles(params);
+        const filesToUpload = await collectSkillUploadFiles(params, inspectedBuffers);
         if (filesToUpload.length === 0) {
           return null;
         }
@@ -508,6 +667,7 @@ export async function primeInvokedSkills(
   }> = [];
   for (const r of resolveResults) {
     if (r.status === 'fulfilled' && r.value) {
+      assertStoredSkillBodyAllowed(r.value, deps.req);
       skills.set(r.value.name, r.value.body);
       resolvedSkills.push(r.value);
     } else if (r.status === 'rejected') {
@@ -520,6 +680,8 @@ export async function primeInvokedSkills(
   const skillsWithFiles = resolvedSkills.filter((s) => s.fileCount > 0);
 
   if (deps.codeEnvAvailable && skillsWithFiles.length > 0) {
+    const filters = deps.req.config?.filters;
+    const inspectStoredSkills = filters?.skills?.pii != null || filters?.files?.pii != null;
     // Parallel file list lookups (R2 fix)
     const fileListResults = await Promise.all(
       skillsWithFiles.map(async (skill) => ({
@@ -532,8 +694,8 @@ export async function primeInvokedSkills(
     // (each file carries its own session_id, fetched independently). We check
     // ALL distinct sessions for freshness. If all are active, return cached
     // references with zero re-uploads. If any expired, re-upload everything.
-    if (deps.getSessionInfo && deps.checkIfActive) {
-      const executionProfile = deps.codeExecutionContext?.executionProfile ?? 'default';
+    const executionProfile = deps.codeExecutionContext?.executionProfile ?? 'default';
+    if (!inspectStoredSkills && deps.getSessionInfo && deps.checkIfActive) {
       const allResolved = fileListResults.flatMap((r) =>
         r.files.map((f) => ({
           skillName: r.skill.name,
@@ -650,6 +812,9 @@ export async function primeInvokedSkills(
           });
         }
       } else if (r.status === 'rejected') {
+        if (isContentFilterError(r.reason)) {
+          throw r.reason;
+        }
         logger.warn('[primeInvokedSkills] Failed to prime skill files:', r.reason);
       } else {
         /* Fulfilled-null: primeSkillFiles swallowed an upload failure (429,

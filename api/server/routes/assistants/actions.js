@@ -1,7 +1,13 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { isActionDomainAllowed, validateActionOAuthMetadata } = require('@librechat/api');
+const {
+  inspectContent,
+  isActionDomainAllowed,
+  extractAssistantActionContent,
+  validateActionOAuthMetadata,
+  contentFilterBlockResponse,
+} = require('@librechat/api');
 const { actionDelimiter, EModelEndpoint, removeNullishValues } = require('librechat-data-provider');
 const {
   legacyDomainEncode,
@@ -31,6 +37,14 @@ router.post('/:assistant_id', async (req, res) => {
     const { functions, action_id: _action_id, metadata: _metadata } = req.body;
     if (!functions.length) {
       return res.status(400).json({ message: 'No functions provided' });
+    }
+
+    const contentFinding = inspectContent(
+      extractAssistantActionContent({ functions, metadata: _metadata }),
+      { filters: req.config?.filters },
+    );
+    if (contentFinding != null) {
+      return res.status(400).json(contentFilterBlockResponse(contentFinding));
     }
 
     let metadata = await encryptMetadata(removeNullishValues(_metadata, true));

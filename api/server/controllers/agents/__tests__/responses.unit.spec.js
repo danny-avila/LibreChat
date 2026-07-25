@@ -190,7 +190,28 @@ jest.mock('@librechat/api', () => ({
   buildResponse: jest.fn().mockReturnValue({ id: 'resp_123', output: [] }),
   generateResponseId: jest.fn().mockReturnValue('resp_mock-123'),
   isValidationFailure: jest.fn().mockReturnValue(false),
-  findPiiMatchInMessages: jest.fn().mockReturnValue(null),
+  inspectContent: jest.fn().mockReturnValue(null),
+  extractAgentContent: jest.fn().mockReturnValue([]),
+  extractFileContent: jest.fn().mockReturnValue([]),
+  extractMessageContent: jest.fn().mockReturnValue([]),
+  extractModelParameterContent: jest.fn().mockReturnValue([]),
+  extractSkillContent: jest.fn().mockReturnValue([]),
+  extractToolArgumentContent: jest.fn().mockReturnValue([]),
+  getBlockedOpaqueFileField: jest.fn().mockReturnValue(null),
+  isContentTraversalLimitError: jest.fn((error) => error?.code === 'content_filter_uninspectable'),
+  isNestedMessageTraversalProtected: jest.fn().mockReturnValue(true),
+  assertModelBoundContent: jest.fn(),
+  isContentFilterError: jest.fn((error) => error?.code === 'content_filter_block'),
+  contentFilterBlockResponse: jest.fn().mockReturnValue({
+    error: 'content_filter_block',
+    message: 'Submitted content was blocked.',
+  }),
+  contentFilterUninspectableResponse: jest.fn().mockReturnValue({
+    error: 'content_filter_uninspectable',
+    message: 'Submitted file content could not be inspected before processing.',
+    source: 'file',
+    field: 'content',
+  }),
   emitResponseCreated: jest.fn(),
   createResponseContext: jest.fn().mockReturnValue({ responseId: 'resp_123' }),
   createResponseTracker: jest.fn().mockReturnValue({
@@ -581,6 +602,221 @@ describe('createResponse controller', () => {
 
       expect(sendResponsesErrorResponse).toHaveBeenCalledWith(res, 400, message, 'invalid_request');
       expect(initializeAgent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('content filtering', () => {
+    it('blocks opaque response input before conversion or agent loading', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      const input = [
+        {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_file', file_data: 'do-not-echo' }],
+        },
+      ];
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input, stream: false },
+      });
+      api.getBlockedOpaqueFileField.mockReturnValueOnce('extracted_text');
+      api.contentFilterUninspectableResponse.mockReturnValueOnce({
+        error: 'content_filter_uninspectable',
+        message: 'Submitted file content could not be inspected before processing.',
+        source: 'file',
+        field: 'extracted_text',
+      });
+
+      await createResponse(req, res);
+
+      expect(api.getBlockedOpaqueFileField).toHaveBeenCalledWith(req.config.filters, input);
+      expect(api.convertInputToMessages).not.toHaveBeenCalled();
+      expect(db.getAgent).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'Submitted file content could not be inspected before processing.',
+        'invalid_request',
+        'content_filter_uninspectable',
+      );
+      expect(JSON.stringify(api.sendResponsesErrorResponse.mock.calls)).not.toContain(
+        'do-not-echo',
+      );
+    });
+
+    it('returns a raw-free error when nested response input exhausts its budget', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      req.config.filters = { messages: { pii: { starterPatterns: [] } } };
+      api.extractMessageContent.mockImplementationOnce(() => {
+        throw {
+          code: 'content_filter_uninspectable',
+          statusCode: 400,
+          body: {
+            error: 'content_filter_uninspectable',
+            message: 'Submitted content could not be completely inspected before processing.',
+            source: 'message',
+            field: 'content_part',
+          },
+        };
+      });
+
+      await createResponse(req, res);
+
+      expect(db.getAgent).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'Submitted content could not be completely inspected before processing.',
+        'invalid_request',
+        'content_filter_uninspectable',
+      );
+    });
+
+    it('blocks instructions and input before loading the agent', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          metadata: { label: 'submitted metadata' },
+          text: {
+            format: {
+              type: 'json_schema',
+              json_schema: { description: 'submitted response schema' },
+            },
+          },
+        },
+      });
+      api.inspectContent.mockReturnValueOnce({
+        detectorId: 'pii-pattern',
+        ruleId: 'sk_prefix',
+        label: 'sk- prefix token',
+        source: 'agent_instruction',
+        field: 'instructions',
+      });
+
+      await createResponse(req, res);
+
+      expect(api.extractAgentContent).toHaveBeenCalled();
+      expect(api.extractMessageContent).toHaveBeenCalled();
+      expect(api.extractModelParameterContent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: { label: 'submitted metadata' },
+          response_format: {
+            type: 'json_schema',
+            json_schema: { description: 'submitted response schema' },
+          },
+        }),
+      );
+      expect(db.getAgent).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'Submitted content was blocked.',
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('blocks manually selected skill names before resolving the skill', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      req.body.manualSkills = ['PRIVATE-SKILL'];
+      api.extractManualSkills.mockReturnValueOnce(['PRIVATE-SKILL']);
+      api.inspectContent.mockReturnValueOnce({
+        detectorId: 'pii-pattern',
+        ruleId: 'private',
+        label: 'private value',
+        source: 'skill',
+        field: 'name',
+      });
+
+      await createResponse(req, res);
+
+      expect(api.extractSkillContent).toHaveBeenCalledWith({ name: 'PRIVATE-SKILL' });
+      expect(db.getAgent).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'Submitted content was blocked.',
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('blocks previously stored model-bound content before provider invocation', async () => {
+      const api = require('@librechat/api');
+      const blockedError = Object.assign(
+        new Error('Submitted content contains a private value. Remove it and try again.'),
+        {
+          code: 'content_filter_block',
+          statusCode: 400,
+          body: {
+            error: 'content_filter_block',
+            message: 'Submitted content contains a private value. Remove it and try again.',
+            source: 'message',
+            field: 'text',
+          },
+        },
+      );
+      api.assertModelBoundContent.mockImplementationOnce(() => {
+        throw blockedError;
+      });
+
+      await createResponse(req, res);
+
+      expect(api.assertModelBoundContent).toHaveBeenCalled();
+      expect(api.createRun).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        blockedError.body.message,
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('re-inspects agents after dynamic context is applied', async () => {
+      const api = require('@librechat/api');
+      const blockedError = Object.assign(new Error('Submitted content was blocked.'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted content was blocked.',
+          source: 'agent_instruction',
+          field: 'instructions',
+        },
+      });
+      mockApplyContextToAgent.mockImplementationOnce(async ({ agent }) => {
+        agent.instructions = 'PRIVATE-DYNAMIC-INSTRUCTION';
+      });
+      api.assertModelBoundContent
+        .mockImplementationOnce(() => undefined)
+        .mockImplementationOnce(({ agents }) => {
+          if (agents?.some((agent) => agent.instructions === 'PRIVATE-DYNAMIC-INSTRUCTION')) {
+            throw blockedError;
+          }
+        });
+
+      await createResponse(req, res);
+
+      expect(api.assertModelBoundContent).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          agents: [expect.objectContaining({ instructions: 'PRIVATE-DYNAMIC-INSTRUCTION' })],
+        }),
+      );
+      expect(api.createRun).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        blockedError.body.message,
+        'invalid_request',
+        'content_filter_block',
+      );
     });
   });
 
