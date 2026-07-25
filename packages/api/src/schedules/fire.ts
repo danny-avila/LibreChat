@@ -252,6 +252,20 @@ export async function fireSchedule(
     }
   };
 
+  /**
+   * Steps aside from a superseded fire (owner edit/delete, or a lease-expiry re-claim).
+   * `advance()` is fenced on the OLD claim token, which the edit rotated, so it no-ops
+   * and would leave this worker's lease held until its TTL — reporting the edited
+   * schedule / Run now as "already in progress" though no run was dispatched. Releasing
+   * by HOLDER makes it immediately re-claimable, and correctly no-ops after a takeover
+   * (leaseBy changed) so the new holder's lease is never stripped.
+   */
+  const releaseSupersededLease = async () => {
+    if (schedule.leaseBy != null) {
+      await methods.releaseLeaseByHolder(schedule.id, schedule.leaseBy);
+    }
+  };
+
   if (nextRunAt == null) {
     await methods.disableSchedule(schedule.id, 'invalid_schedule', claimToken);
     await advance();
@@ -368,6 +382,23 @@ export async function fireSchedule(
       (id) => !files.some((file) => file.file_id === id),
     );
 
+    // Revalidate BEFORE reserving, not only before the POST below. The preflight above
+    // (user, config, permission, balance, attachment queries) can outlast the 5-minute
+    // lease, and a stale worker that reserves anyway wins the occurrence's unique row:
+    // the fresh claimer then sees `duplicate` and advances without firing, while this
+    // worker's own revalidation fails and rollbackReservation deliberately RETAINS the
+    // row (the lease takeover changed leaseBy). The occurrence is lost and its global
+    // capacity slot stays held until the 30-minute orphan sweep. Nothing is reserved yet
+    // here, so a superseded fire simply steps aside.
+    if (
+      claimToken != null &&
+      !(await methods.revalidateClaim(schedule.id, claimToken, !options?.manual))
+    ) {
+      await releaseSupersededLease();
+      await advance();
+      return { fired: false, skipped: 'superseded' as const };
+    }
+
     // Pre-generate the conversation id and reserve the run row up front. The
     // loopback POST reuses it (streamId === conversationId), so reconciliation can
     // ALWAYS locate this occurrence's job — even if the post-accept detail write
@@ -457,15 +488,7 @@ export async function fireSchedule(
       !(await methods.revalidateClaim(schedule.id, claimToken, !options?.manual))
     ) {
       await rollbackReservation();
-      // This fire is superseded (owner edit/delete). advance() is fenced on the OLD
-      // claim token, which the edit rotated, so it no-ops and would leave this
-      // worker's lease held until its TTL — reporting the edited schedule / Run now
-      // as "already in progress" though no run was dispatched. Release our own lease
-      // by holder (leaseBy) so it's immediately re-claimable; a takeover changed
-      // leaseBy, so this correctly no-ops there and never strips the new holder's lease.
-      if (schedule.leaseBy != null) {
-        await methods.releaseLeaseByHolder(schedule.id, schedule.leaseBy);
-      }
+      await releaseSupersededLease();
       await advance();
       return { fired: false, skipped: 'superseded' as const };
     }

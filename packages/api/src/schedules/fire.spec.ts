@@ -413,11 +413,32 @@ describe('fireSchedule', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it('does not reserve a run when the claim already lapsed during preflight', async () => {
+    const { methods, runs } = makeMethods();
+    // The preflight (user/config/permission/balance/attachment queries) outlasted the
+    // 5-minute lease and another worker re-claimed the occurrence.
+    (methods.revalidateClaim as jest.Mock).mockResolvedValue(false);
+    mockFetch(async () => okResponse());
+    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
+    expect(result.skipped).toBe('superseded');
+    // Reserving here would win the occurrence's unique row: the FRESH claimer would then
+    // see `duplicate` and advance without firing, while this worker's own revalidation
+    // fails and rollbackReservation deliberately retains the row (leaseBy changed). The
+    // occurrence would be lost with its capacity slot held until the orphan sweep.
+    expect(methods.reserveStartedRun).not.toHaveBeenCalled();
+    expect([...runs.entries()].some(([k]) => k.startsWith('sched-1:'))).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
+    // The lease is handed back by holder so the fresh claimer is not left waiting.
+    expect(methods.releaseLeaseByHolder).toHaveBeenCalledWith('sched-1', 'inst-1');
+  });
+
   it('preserves the reserved run for reconcile when the lease was taken over', async () => {
     const { methods, runs } = makeMethods();
     // An owner edit/takeover superseded this fire after it reserved its run, which is
     // the path that now drives rollbackReservation (capacity no longer inserts at all).
-    (methods.revalidateClaim as jest.Mock).mockResolvedValue(false);
+    // Valid at the pre-reserve check, superseded by the pre-POST one: that ordering IS
+    // the scenario, since a claim already dead before reserving never reserves at all.
+    (methods.revalidateClaim as jest.Mock).mockResolvedValueOnce(true).mockResolvedValue(false);
     // Simulate a lease takeover: this worker no longer holds the claim.
     (methods.holdsLease as jest.Mock).mockResolvedValue(false);
     mockFetch(async () => okResponse());
@@ -433,7 +454,7 @@ describe('fireSchedule', () => {
     const { methods, runs } = makeMethods();
     // Account deletion hard-deleted the schedule after this fire reserved its run:
     // revalidation fails, the lease is not held AND the schedule no longer exists.
-    (methods.revalidateClaim as jest.Mock).mockResolvedValue(false);
+    (methods.revalidateClaim as jest.Mock).mockResolvedValueOnce(true).mockResolvedValue(false);
     (methods.holdsLease as jest.Mock).mockResolvedValue(false);
     (methods.scheduleExists as jest.Mock).mockResolvedValue(false);
     mockFetch(async () => okResponse());
