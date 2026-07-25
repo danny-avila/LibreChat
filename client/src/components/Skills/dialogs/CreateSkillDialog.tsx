@@ -1,6 +1,5 @@
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
-import type { FormEvent } from 'react';
 import {
   Button,
   OGDialog,
@@ -14,6 +13,7 @@ import {
   SKILL_DESCRIPTION_MAX_LENGTH,
 } from 'librechat-data-provider';
 import type { TSkill } from 'librechat-data-provider';
+import type { FormEvent } from 'react';
 import { useCreateSkillMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
