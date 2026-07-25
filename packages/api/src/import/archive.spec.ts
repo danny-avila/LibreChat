@@ -3,8 +3,6 @@ import os from 'os';
 import path from 'path';
 import JSZip from 'jszip';
 
-import type { Readable } from 'stream';
-
 import { assertSafeName, openArchive, ZipBombError } from './archive';
 
 const createdDirs: string[] = [];
@@ -20,15 +18,6 @@ async function writeZip(files: Record<string, string>): Promise<string> {
   const filepath = path.join(dir, 'export.zip');
   fs.writeFileSync(filepath, buffer);
   return filepath;
-}
-
-function consumeStream(readable: Readable): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    readable.on('data', (chunk: Buffer) => chunks.push(chunk));
-    readable.on('error', reject);
-    readable.on('end', () => resolve(Buffer.concat(chunks)));
-  });
 }
 
 afterEach(() => {
@@ -79,44 +68,12 @@ describe('openArchive', () => {
     archive.close();
   });
 
-  it('streams a normal entry fully intact through stream()', async () => {
-    const filepath = await writeZip({ 'a.json': '{"ok":true}' });
-    const archive = await openArchive(filepath);
-
-    const readable = await archive.stream('a.json');
-    const result = await consumeStream(readable);
-    expect(result.toString()).toBe('{"ok":true}');
-
-    archive.close();
-  });
-
-  it('rejects an entry larger than the per-entry cap while streaming via stream()', async () => {
-    const filepath = await writeZip({ 'big.json': 'x'.repeat(5000) });
-    const archive = await openArchive(filepath, { maxEntryBytes: 100 });
-
-    const readable = await archive.stream('big.json');
-    await expect(consumeStream(readable)).rejects.toThrow(ZipBombError);
-
-    archive.close();
-  });
-
   it('accumulates actual decompressed bytes across repeated reads and rejects once the aggregate cap is exceeded', async () => {
     const filepath = await writeZip({ 'a.json': 'x'.repeat(60) });
     const archive = await openArchive(filepath, { maxTotalBytes: 100 });
 
     await archive.read('a.json');
     await expect(archive.read('a.json')).rejects.toThrow(ZipBombError);
-
-    archive.close();
-  });
-
-  it('shares the aggregate byte counter between read() and stream()', async () => {
-    const filepath = await writeZip({ 'a.json': 'x'.repeat(60) });
-    const archive = await openArchive(filepath, { maxTotalBytes: 100 });
-
-    await archive.read('a.json');
-    const readable = await archive.stream('a.json');
-    await expect(consumeStream(readable)).rejects.toThrow(ZipBombError);
 
     archive.close();
   });
@@ -137,17 +94,6 @@ describe('openArchive (bare / non-zip upload)', () => {
 
     expect(archive.entries).toEqual([{ name: 'my-export.json', bytes: 11 }]);
     expect((await archive.read('my-export.json')).toString()).toBe('{"ok":true}');
-
-    archive.close();
-  });
-
-  it('streams a bare JSON file fully intact through stream()', async () => {
-    const filepath = writeBareFile('{"ok":true}', 'export.json');
-    const archive = await openArchive(filepath);
-
-    const readable = await archive.stream('export.json');
-    const result = await consumeStream(readable);
-    expect(result.toString()).toBe('{"ok":true}');
 
     archive.close();
   });

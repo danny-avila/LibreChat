@@ -1,10 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import yauzl from 'yauzl';
-import { Transform } from 'stream';
 import { megabyte } from 'librechat-data-provider';
 
-import type { Readable, TransformCallback } from 'stream';
+import type { Readable } from 'stream';
 
 import { ZipBombError } from '~/files/documents/zipSafety';
 
@@ -33,16 +32,14 @@ export interface ArchiveOptions {
 export interface Archive {
   entries: ArchiveEntry[];
   read(name: string): Promise<Buffer>;
-  stream(name: string): Promise<Readable>;
   close(): void;
 }
 
 type ArchiveLimits = Required<ArchiveOptions>;
 
 /** Actual decompressed bytes delivered so far, shared by every `read()`
- * and `stream()` call on one archive instance so the aggregate cap is
- * enforced against real bytes rather than the (spoofable) central
- * directory total. */
+ * call on one archive instance so the aggregate cap is enforced against
+ * real bytes rather than the (spoofable) central directory total. */
 interface ArchiveTotals {
   bytesRead: number;
 }
@@ -115,7 +112,7 @@ function indexEntries(
       /** Cheap early reject from the central directory's declared sizes.
        * This field is attacker-controlled and not trusted on its own —
        * `ArchiveTotals` re-checks the real, streamed byte count on every
-       * `read()`/`stream()` call regardless of what this loop found. */
+       * `read()` call regardless of what this loop found. */
       total += entry.uncompressedSize;
       if (total > options.maxTotalBytes) {
         reject(new ZipBombError('Archive exceeds the maximum decompressed size'));
@@ -150,38 +147,6 @@ function ensureWithinTotalBudget(name: string, limits: ArchiveLimits, totals: Ar
   }
 }
 
-/**
- * Wraps a raw entry stream in a counting `Transform` so `.stream()`
- * enforces the same per-entry and aggregate caps as `.read()`, against
- * actual decompressed bytes as they flow rather than declared sizes.
- * Exceeding either cap destroys the stream with a `ZipBombError` instead
- * of forwarding the chunk that crossed it.
- */
-function createCappingTransform(
-  name: string,
-  limits: ArchiveLimits,
-  totals: ArchiveTotals,
-): Transform {
-  let entryBytes = 0;
-
-  return new Transform({
-    transform(chunk: Buffer, _encoding: BufferEncoding, callback: TransformCallback) {
-      entryBytes += chunk.byteLength;
-      totals.bytesRead += chunk.byteLength;
-
-      if (entryBytes > limits.maxEntryBytes) {
-        callback(new ZipBombError(`Entry ${name} exceeds the maximum decompressed size`));
-        return;
-      }
-      if (totals.bytesRead > limits.maxTotalBytes) {
-        callback(new ZipBombError('Archive exceeds the maximum decompressed size'));
-        return;
-      }
-      callback(null, chunk);
-    },
-  });
-}
-
 async function isZipFile(filepath: string): Promise<boolean> {
   const handle = await fs.promises.open(filepath, 'r');
   try {
@@ -195,8 +160,8 @@ async function isZipFile(filepath: string): Promise<boolean> {
 
 /**
  * Wraps a bare (non-zip) upload in the same `Archive` interface a real zip
- * exposes: one entry, named after the uploaded file, readable/streamable
- * under the same per-entry and aggregate byte caps. `resolveLayout`'s
+ * exposes: one entry, named after the uploaded file, readable under the
+ * same per-entry and aggregate byte caps. `resolveLayout`'s
  * lone-json fallback then treats it exactly like a single-file zip export,
  * so a bare `.json` upload and a `.zip` upload share one inspect/import
  * pipeline instead of two.
@@ -250,26 +215,9 @@ async function openSingleFileArchive(
     });
   }
 
-  async function stream(entryName: string): Promise<Readable> {
-    assertKnownEntry(entryName);
-    ensureWithinTotalBudget(entryName, limits, totals);
-    const readStream = fs.createReadStream(filepath);
-    const capped = createCappingTransform(entryName, limits, totals);
-
-    readStream.on('error', (error) => capped.destroy(error));
-    capped.on('close', () => {
-      if (!readStream.destroyed) {
-        readStream.destroy();
-      }
-    });
-
-    return readStream.pipe(capped);
-  }
-
   return {
     entries: [{ name, bytes: stat.size }],
     read,
-    stream,
     close: () => undefined,
   };
 }
@@ -305,22 +253,6 @@ export async function openArchive(
       throw new Error(`Entry not found in archive: ${name}`);
     }
     return entry;
-  }
-
-  async function stream(name: string): Promise<Readable> {
-    ensureWithinTotalBudget(name, limits, totals);
-    const entry = entryOf(name);
-    const readStream = await openEntryStream(zipfile, entry);
-    const capped = createCappingTransform(name, limits, totals);
-
-    readStream.on('error', (error) => capped.destroy(error));
-    capped.on('close', () => {
-      if (!readStream.destroyed) {
-        readStream.destroy();
-      }
-    });
-
-    return readStream.pipe(capped);
   }
 
   async function read(name: string): Promise<Buffer> {
@@ -359,7 +291,6 @@ export async function openArchive(
       bytes: entry.uncompressedSize,
     })),
     read,
-    stream,
     close: () => zipfile.close(),
   };
 }
