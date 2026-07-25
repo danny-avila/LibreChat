@@ -48,6 +48,9 @@ export interface ActionToolDefinition {
   name: string;
   description?: string;
   parameters?: JsonSchemaType;
+  /** True when the action authenticates via OAuth — its calls may block on an
+   *  interactive login prompt, so it must never be dispatched in the background. */
+  oauth?: boolean;
 }
 
 export interface LoadToolDefinitionsDeps {
@@ -66,6 +69,8 @@ export interface LoadToolDefinitionsResult {
   toolDefinitions: (ToolDefinition | LCTool)[];
   toolRegistry: LCToolRegistry;
   hasDeferredTools: boolean;
+  /** Action tool names backed by OAuth — excluded from background dispatch. */
+  oauthActionToolNames: string[];
 }
 
 const mcpToolPattern = /_mcp_/;
@@ -105,6 +110,7 @@ export async function loadToolDefinitions(
     toolDefinitions: [],
     toolRegistry: new Map(),
     hasDeferredTools: false,
+    oauthActionToolNames: [],
   };
 
   if (!tools || tools.length === 0) {
@@ -193,13 +199,19 @@ export async function loadToolDefinitions(
     }
   }
 
+  const oauthActionToolNames: string[] = [];
   if (actionToolNames.length > 0 && getActionToolDefinitions) {
     const fetchedActionDefs = await getActionToolDefinitions(agentId, actionToolNames);
-    actionToolDefs = fetchedActionDefs.map((def) => ({
-      name: def.name,
-      description: def.description,
-      parameters: def.parameters,
-    }));
+    actionToolDefs = fetchedActionDefs.map((def) => {
+      if (def.oauth === true) {
+        oauthActionToolNames.push(def.name);
+      }
+      return {
+        name: def.name,
+        description: def.description,
+        parameters: def.parameters,
+      };
+    });
   }
 
   const loadedTools = mcpToolDefs.map((def) => ({
@@ -256,5 +268,6 @@ export async function loadToolDefinitions(
     toolDefinitions: allDefinitions,
     toolRegistry,
     hasDeferredTools,
+    oauthActionToolNames,
   };
 }

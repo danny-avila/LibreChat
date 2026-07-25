@@ -36,6 +36,7 @@ import type { AgentToolOptions } from 'librechat-data-provider';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from './tools';
+import { normalizeActionToolName } from '~/actions/tools';
 import { truncateMiddle } from '~/utils';
 
 /** Argument the model sets on a tool call to dispatch it in the background. */
@@ -123,6 +124,27 @@ function expandCodeToolOptions(toolOptions?: AgentToolOptions): AgentToolOptions
       run_in_background: true,
     },
   };
+}
+
+/**
+ * Agents persist action tool names with the raw encoded domain (`---` for short
+ * hostnames), while the runtime definitions those names must match against are
+ * always `_`-collapsed. The builder writes `tool_options` keyed by the persisted
+ * name, so alias every action-shaped key to its normalized form; without this
+ * the opt-in silently never resolves for short-hostname actions. Aliasing (not
+ * rewriting) keeps an already-normalized key authoritative.
+ */
+function expandActionToolOptions(toolOptions: AgentToolOptions): AgentToolOptions {
+  let expanded: AgentToolOptions | undefined;
+  for (const [name, options] of Object.entries(toolOptions)) {
+    const normalized = normalizeActionToolName(name);
+    if (normalized === name || toolOptions[normalized] != null) {
+      continue;
+    }
+    expanded = expanded ?? { ...toolOptions };
+    expanded[normalized] = options;
+  }
+  return expanded ?? toolOptions;
 }
 
 /**
@@ -379,7 +401,8 @@ export function applyBackgroundToolCalls(params: {
   excludeTool?: (toolName: string) => boolean;
 }): { toolDefinitions: LCTool[]; backgroundToolNames: string[] } {
   const { toolRegistry, excludeTool } = params;
-  const toolOptions = expandCodeToolOptions(params.toolOptions);
+  const codeExpanded = expandCodeToolOptions(params.toolOptions);
+  const toolOptions = codeExpanded && expandActionToolOptions(codeExpanded);
   const defs = params.toolDefinitions ?? [];
   if (!toolOptions || !Object.values(toolOptions).some((o) => o?.run_in_background === true)) {
     return { toolDefinitions: defs, backgroundToolNames: [] };

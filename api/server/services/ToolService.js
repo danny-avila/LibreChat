@@ -28,6 +28,7 @@ const {
   buildMCPAuthRunStepDeltaEvent,
   buildMCPAuthRunStepCompletedEvent,
   isFileAuthoringToolDefinition,
+  normalizeActionToolName,
   ASK_USER_QUESTION_TOOL_NAME,
 } = require('@librechat/api');
 const {
@@ -38,6 +39,7 @@ const {
   ErrorTypes,
   ContentTypes,
   imageGenTools,
+  AuthTypeEnum,
   EModelEndpoint,
   EToolResources,
   isActionTool,
@@ -78,32 +80,6 @@ const { getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
-
-/**
- * Collapse every `actionDomainSeparator` sequence in the encoded-domain
- * suffix of a fully-qualified action tool name to an underscore. Agents
- * can store tool names in the raw `domainParser(..., true)` output,
- * which for short hostnames is a `---`-separated string (e.g.
- * `medium---com`). The lookup maps below are always keyed with the
- * `_`-collapsed domain, so every read must normalize that suffix or
- * short-hostname tools silently fail to resolve.
- *
- * The operationId portion (everything before the last `actionDelimiter`)
- * is deliberately left untouched: `openapiToFunction` preserves hyphens
- * in generated operationIds, so two specs can legitimately produce
- * operationIds that differ only in hyphens-vs-underscores (e.g.
- * `get_foo---bar` vs `get_foo_bar`). Collapsing the operationId would
- * merge those into a single map slot and silently drop one tool.
- */
-const normalizeActionToolName = (toolName) => {
-  const delimiterIndex = toolName.lastIndexOf(actionDelimiter);
-  if (delimiterIndex === -1) {
-    return toolName;
-  }
-  const prefixEnd = delimiterIndex + actionDelimiter.length;
-  const encodedDomain = toolName.slice(prefixEnd);
-  return toolName.slice(0, prefixEnd) + encodedDomain.replace(domainSeparatorRegex, '_');
-};
 
 /**
  * Populate a `toolToAction` map with one slot per fully-qualified tool
@@ -854,6 +830,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           name: toolName,
           description: sig.description,
           parameters: sig.parameters,
+          oauth: action.metadata.auth?.type === AuthTypeEnum.OAuth,
         });
       }
     }
@@ -861,23 +838,24 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     return definitions;
   };
 
-  let { toolDefinitions, toolRegistry, hasDeferredTools } = await loadToolDefinitions(
-    {
-      userId: req.user.id,
-      agentId: agent.id,
-      tools: filteredTools,
-      toolOptions: agent.tool_options,
-      deferredToolsEnabled,
-      programmaticToolsEnabled,
-      codeExecutionEnabled,
-      provider: agent.provider,
-    },
-    {
-      isBuiltInTool,
-      getOrFetchMCPServerTools,
-      getActionToolDefinitions,
-    },
-  );
+  let { toolDefinitions, toolRegistry, hasDeferredTools, oauthActionToolNames } =
+    await loadToolDefinitions(
+      {
+        userId: req.user.id,
+        agentId: agent.id,
+        tools: filteredTools,
+        toolOptions: agent.tool_options,
+        deferredToolsEnabled,
+        programmaticToolsEnabled,
+        codeExecutionEnabled,
+        provider: agent.provider,
+      },
+      {
+        isBuiltInTool,
+        getOrFetchMCPServerTools,
+        getActionToolDefinitions,
+      },
+    );
 
   for (const serverName of getMCPServerNamesFromTools(filteredTools)) {
     if (pendingOAuthServers.has(serverName)) {
@@ -963,6 +941,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       toolDefinitions = reloadResult.toolDefinitions;
       toolRegistry = reloadResult.toolRegistry;
       hasDeferredTools = reloadResult.hasDeferredTools;
+      oauthActionToolNames = reloadResult.oauthActionToolNames;
     }
   }
 
@@ -1061,6 +1040,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     hasDeferredTools,
     actionsEnabled,
     primedCodeFiles,
+    oauthActionToolNames,
   };
 }
 

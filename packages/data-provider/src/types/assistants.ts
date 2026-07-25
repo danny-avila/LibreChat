@@ -303,6 +303,8 @@ export type Agent = {
   owner_contact?: AgentOwnerContact;
   /** Per-tool configuration options (deferred loading, allowed callers, etc.) */
   tool_options?: AgentToolOptions;
+  /** Attached action registrations, each `${encodedDomain}${actionDelimiter}${action_id}` */
+  actions?: string[];
   /** Optional allowlist of skill ObjectIds. Only applies when `skills_enabled`. */
   skills?: string[];
   /** Master toggle for skill use on this agent. `true` = active (full catalog unless
