@@ -354,10 +354,17 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
         }
         return true;
       }
-      await GenerationJobManager.abortJob(conversationId, {
+      // Carry the stamp of the generation whose identity was just checked. The check
+      // above and the abort's side effects are separated by awaits, so without this an
+      // interactive turn replacing the job at this conversationId in that window would
+      // receive the abort signal, terminal event and cleanup meant for the scheduled
+      // run. A refused abort reports false, matching the unreachable-job case: the
+      // caller learns the abort was not delivered rather than assuming it landed.
+      const aborted = await GenerationJobManager.abortJob(conversationId, {
         preserveForReconcile: options?.preserve ?? true,
+        expectedCreatedAt: job.createdAt,
       });
-      return true;
+      return aborted.success;
     },
     clearReconciledJob: async (conversationId, identity) => {
       const store = GenerationJobManager.getJobStore();

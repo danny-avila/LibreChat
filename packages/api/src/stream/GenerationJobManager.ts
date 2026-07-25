@@ -866,6 +866,13 @@ class GenerationJobManagerClass {
        * failed can still observe the abort. The reconciler deletes it afterward.
        */
       preserveForReconcile?: boolean;
+      /**
+       * Generation fence. A streamId is reused across generations, so a caller that
+       * decided to abort based on an EARLIER observation (the scheduler checks a job's
+       * scheduled identity, then awaits) must carry the stamp it saw: without it an
+       * interactive turn replacing the job in that window is aborted instead.
+       */
+      expectedCreatedAt?: number;
     },
   ): Promise<AbortResult> {
     const jobData = await this.jobStore.getJob(streamId);
@@ -873,6 +880,22 @@ class GenerationJobManagerClass {
 
     if (!jobData) {
       logger.warn(`[GenerationJobManager] Cannot abort - job not found: ${streamId}`);
+      recordGenerationJob(this.storeLabel, 'abort_failed');
+      return {
+        text: '',
+        content: [],
+        jobData: null,
+        success: false,
+        finalEvent: null,
+        collectedUsage: [],
+      };
+    }
+
+    // Checked against a FRESH read and before any side effect (abort signal, local
+    // controller, terminal write), so a caller's stale decision cannot reach a
+    // replacement generation.
+    if (options?.expectedCreatedAt != null && jobData.createdAt !== options.expectedCreatedAt) {
+      logger.debug(`[GenerationJobManager] Abort skipped (generation mismatch): ${streamId}`);
       recordGenerationJob(this.storeLabel, 'abort_failed');
       return {
         text: '',
@@ -992,7 +1015,10 @@ class GenerationJobManagerClass {
     if (this._cleanupOnComplete && !options?.preserveForReconcile) {
       this.runtimeState.delete(streamId);
       // Don't cleanup eventTransport here - let the abort event fully transmit first.
-      await this.jobStore.deleteJob(streamId);
+      // Fenced on the generation this abort actually OBSERVED, derived here rather than
+      // taken from the caller: everything above operated on `jobData`, so a turn that
+      // replaced the job while the abort was unwinding must not have its hash deleted.
+      await this.jobStore.deleteJob(streamId, jobData.createdAt);
     } else if (options?.preserveForReconcile) {
       // Retain WITHOUT completedAt so the finished-job sweep can't reap it before
       // the schedules reconciler observes the abort; the reconciler deletes it.
