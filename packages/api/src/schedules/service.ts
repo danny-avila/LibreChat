@@ -14,7 +14,7 @@ import type {
 import type { SerializableJobData } from '../stream/interfaces/IJobStore';
 import type { BalanceUpdateFields } from '../types/balance';
 import type { GetAppConfigOptions } from '../app/service';
-import { generateShortLivedToken, SCHEDULE_FIRE_SCOPE } from '../crypto/jwt';
+import { generateShortLivedToken, SCHEDULE_FIRE_SCOPE, SCHEDULE_MANUAL_CLAIM } from '../crypto/jwt';
 import { GenerationJobManager } from '../stream/GenerationJobManager';
 import { buildBalanceUpdateFields } from '../middleware/balance';
 import { deleteAgentCheckpoint } from '../agents/checkpointer';
@@ -316,8 +316,13 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
         source: file.source,
       }));
     },
-    mintFireToken: (userId) =>
-      generateShortLivedToken(userId, SCHEDULE_FIRE_TOKEN_TTL, { scope: SCHEDULE_FIRE_SCOPE }),
+    mintFireToken: (userId, options) =>
+      generateShortLivedToken(userId, SCHEDULE_FIRE_TOKEN_TTL, {
+        scope: SCHEDULE_FIRE_SCOPE,
+        // Signed, so the limiter can trust it: Run Now must not inherit the automatic
+        // occurrence's exemption from the interactive message limiters.
+        ...(options?.manual ? { [SCHEDULE_MANUAL_CLAIM]: '1' } : {}),
+      }),
     getSelfUrl: () =>
       process.env.SCHEDULES_SELF_URL ?? `http://127.0.0.1:${process.env.PORT ?? 3080}`,
     runInTenantContext: (user, fn) =>

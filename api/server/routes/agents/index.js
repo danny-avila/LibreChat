@@ -10,7 +10,7 @@ const {
   deleteAgentCheckpoint,
   attachAskUserQuestionArgs,
   createMessageFilterPii,
-  isScheduleFireRequest,
+  readScheduleFireClaims,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -488,29 +488,43 @@ const chatRouter = express.Router();
 // of re-verifying a token that may have expired in-flight, which would otherwise
 // throttle/limit a legitimate fire and record schedule errors toward auto-disable.
 chatRouter.use((req, _res, next) => {
-  req._isScheduledFire = isScheduleFireRequest(req);
+  const claims = readScheduleFireClaims(req);
+  req._isScheduledFire = claims.scheduled;
+  req._isManualScheduledFire = claims.manual;
   next();
 });
 chatRouter.use(configMiddleware);
 
 /**
- * Scheduled fires are exempt from interactive message limiters (the token's
- * scope claim is signature-verified): the scheduler's own caps govern them,
- * and stacking both throttles would record legitimate fires as errors that
- * walk schedules toward auto-disable. Reads the flag captured above so a token
- * that expired during config/middleware still exempts a valid fire.
+ * AUTOMATIC scheduled fires are exempt from the interactive message limiters (the
+ * token's scope claim is signature-verified): the scheduler's own caps govern them
+ * (cadence floor, global fireConcurrency), and stacking both throttles would record
+ * legitimate fires as errors that walk schedules toward auto-disable.
+ *
+ * Run Now is NOT exempt. It dispatches the same billed generation over the same
+ * schedule-scoped token, but it enforces no cadence floor and no per-user time window,
+ * so a permitted user could re-trigger as prior runs finish — or rotate across their
+ * schedules — and bypass LIMIT_MESSAGE_USER/LIMIT_MESSAGE_IP entirely. It is user-paced
+ * request volume wearing a scheduled token, so it belongs under the interactive limits.
+ *
+ * Reads the flags captured above so a token that expired during config/middleware still
+ * classifies a valid fire; the re-read fallback is fail-safe (an unverifiable token
+ * limits rather than exempts).
  */
-const skipScheduledFires = (limiter) => (req, res, next) =>
-  (typeof req._isScheduledFire === 'boolean' ? req._isScheduledFire : isScheduleFireRequest(req))
-    ? next()
-    : limiter(req, res, next);
+const skipAutomaticFires = (limiter) => (req, res, next) => {
+  const claims =
+    typeof req._isScheduledFire === 'boolean'
+      ? { scheduled: req._isScheduledFire, manual: req._isManualScheduledFire === true }
+      : readScheduleFireClaims(req);
+  return claims.scheduled && !claims.manual ? next() : limiter(req, res, next);
+};
 
 if (isEnabled(LIMIT_MESSAGE_IP)) {
-  chatRouter.use(skipScheduledFires(messageIpLimiter));
+  chatRouter.use(skipAutomaticFires(messageIpLimiter));
 }
 
 if (isEnabled(LIMIT_MESSAGE_USER)) {
-  chatRouter.use(skipScheduledFires(messageUserLimiter));
+  chatRouter.use(skipAutomaticFires(messageUserLimiter));
 }
 
 chatRouter.use('/', chat);

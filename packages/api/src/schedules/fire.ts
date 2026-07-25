@@ -76,6 +76,7 @@ async function postChatMessage(
   scheduledFor: Date,
   files: Awaited<ReturnType<ScheduleEngineDeps['resolveFiles']>>,
   conversationId: string,
+  manual: boolean,
 ): Promise<{ conversationId: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FIRE_REQUEST_TIMEOUT_MS);
@@ -85,6 +86,7 @@ async function postChatMessage(
   try {
     return await postChatMessageInner(deps, schedule, userId, scheduledFor, files, conversationId, {
       controller,
+      manual,
     });
   } finally {
     clearTimeout(timeout);
@@ -98,7 +100,7 @@ async function postChatMessageInner(
   scheduledFor: Date,
   files: Awaited<ReturnType<ScheduleEngineDeps['resolveFiles']>>,
   conversationId: string,
-  { controller }: { controller: AbortController },
+  { controller, manual }: { controller: AbortController; manual: boolean },
 ): Promise<{ conversationId: string }> {
   let response: Response;
   try {
@@ -107,7 +109,7 @@ async function postChatMessageInner(
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${deps.mintFireToken(userId)}`,
+        Authorization: `Bearer ${deps.mintFireToken(userId, { manual })}`,
         'x-lc-scheduled': '1',
         // The agents router runs uaParser (rejects non-browser requests as
         // "Illegal request") before the scheduled-fire exemption, and Node/undici
@@ -494,7 +496,15 @@ export async function fireSchedule(
     }
 
     try {
-      await postChatMessage(deps, schedule, user.id, scheduledFor, files, conversationId);
+      await postChatMessage(
+        deps,
+        schedule,
+        user.id,
+        scheduledFor,
+        files,
+        conversationId,
+        options?.manual === true,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const ambiguous = error instanceof ScheduleFireError && error.ambiguous;

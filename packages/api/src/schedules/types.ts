@@ -53,7 +53,7 @@ export interface ScheduleEngineDeps {
   /** Re-resolves stored file_ids to attachment payloads; missing files are simply absent. */
   resolveFiles: (fileIds: string[], user: ScheduleUserContext) => Promise<ScheduleFileRef[]>;
   /** Mints the schedule-scoped short-lived JWT accepted by requireJwtAuth. */
-  mintFireToken: (userId: string) => string;
+  mintFireToken: (userId: string, options?: { manual?: boolean }) => string;
   /** Base URL of this server for the loopback fire POST. */
   getSelfUrl: () => string;
   /** Runs fn inside the owner's tenant ALS context. */

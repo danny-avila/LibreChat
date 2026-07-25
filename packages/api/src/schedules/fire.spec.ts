@@ -221,6 +221,28 @@ describe('fireSchedule', () => {
     expect([...runs.values()][0].status).toBe('started');
   });
 
+  it('mints a MANUAL fire token for Run Now', async () => {
+    const { methods } = makeMethods();
+    mockFetch(async () => okResponse());
+    const mintFireToken = jest.fn(() => 'tok');
+    await fireSchedule(makeDeps(methods, { mintFireToken }), makeSchedule(), LIMITS, dueAt(), {
+      manual: true,
+    });
+    // Run Now dispatches the same billed generation over the same scoped token but
+    // enforces no cadence floor and no per-user window, so it must NOT inherit the
+    // automatic occurrence's exemption from the interactive message limiters.
+    expect(mintFireToken).toHaveBeenCalledWith('user-1', { manual: true });
+  });
+
+  it('mints a NON-manual token for an automatic occurrence', async () => {
+    const { methods } = makeMethods();
+    mockFetch(async () => okResponse());
+    const mintFireToken = jest.fn(() => 'tok');
+    await fireSchedule(makeDeps(methods, { mintFireToken }), makeSchedule(), LIMITS, dueAt());
+    // The scheduler's own caps govern these, which is what justifies the exemption.
+    expect(mintFireToken).toHaveBeenCalledWith('user-1', { manual: false });
+  });
+
   it('carries the claimed config revision on the loopback POST', async () => {
     const { methods } = makeMethods();
     mockFetch(async () => okResponse());

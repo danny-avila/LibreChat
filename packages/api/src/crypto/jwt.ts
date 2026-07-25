@@ -23,22 +23,47 @@ export const generateShortLivedToken = (
 
 export const SCHEDULE_FIRE_SCOPE = 'schedule_fire';
 
-/** True when the request bears a server-minted schedule-fire token (scope claim verified). */
-export const isScheduleFireRequest = (req: {
+/** Claim marking a fire a USER-triggered Run Now rather than an automatic occurrence. */
+export const SCHEDULE_MANUAL_CLAIM = 'manual';
+
+export interface ScheduleFireClaims {
+  /** A server-minted schedule fire of either kind. */
+  scheduled: boolean;
+  /**
+   * Triggered by the owner clicking Run Now. Automatic occurrences are governed by the
+   * scheduler's own caps (cadence floor, fireConcurrency), which is what justifies
+   * exempting them from the interactive limiters. Run Now has neither, so it is
+   * user-paced request volume wearing a scheduled token and must NOT inherit that
+   * exemption.
+   */
+  manual: boolean;
+}
+
+/** Verifies a request's schedule-fire token and reports which kind of fire it is. */
+export const readScheduleFireClaims = (req: {
   headers: Record<string, string | string[] | undefined>;
-}): boolean => {
+}): ScheduleFireClaims => {
+  const none: ScheduleFireClaims = { scheduled: false, manual: false };
   if (req.headers['x-lc-scheduled'] !== '1') {
-    return false;
+    return none;
   }
   const auth = req.headers.authorization;
   const token = typeof auth === 'string' && auth.startsWith('Bearer ') ? auth.slice(7) : undefined;
   if (!token) {
-    return false;
+    return none;
   }
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET!, { algorithms: ['HS256'] });
-    return typeof payload === 'object' && payload?.scope === SCHEDULE_FIRE_SCOPE;
+    if (typeof payload !== 'object' || payload?.scope !== SCHEDULE_FIRE_SCOPE) {
+      return none;
+    }
+    return { scheduled: true, manual: payload[SCHEDULE_MANUAL_CLAIM] === '1' };
   } catch {
-    return false;
+    return none;
   }
 };
+
+/** True when the request bears a server-minted schedule-fire token (scope claim verified). */
+export const isScheduleFireRequest = (req: {
+  headers: Record<string, string | string[] | undefined>;
+}): boolean => readScheduleFireClaims(req).scheduled;
