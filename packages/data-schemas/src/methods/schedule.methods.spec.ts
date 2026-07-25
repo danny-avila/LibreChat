@@ -217,11 +217,9 @@ describe('reserveStartedRun (single-active overlap guard)', () => {
     expect('run' in first).toBe(true);
     expect(second).toEqual({ conflict: 'overlap' });
     // Once the first terminalizes it leaves the active index, so the next occurrence reserves.
-    await methods.transitionRunStatus(
-      schedule.id,
-      new Date('2026-07-20T12:00:00Z'),
-      'started',
-      'success',
+    await ScheduleRun.updateOne(
+      { scheduleId: schedule.id, scheduledFor: new Date('2026-07-20T12:00:00Z') },
+      { $set: { status: 'success' } },
     );
     const third = await methods.reserveStartedRun(
       runData(schedule, { scheduledFor: new Date('2026-07-21T12:00:00Z') }),
@@ -233,7 +231,10 @@ describe('reserveStartedRun (single-active overlap guard)', () => {
     const schedule = await methods.createSchedule(scheduleData());
     const when = new Date('2026-07-20T12:00:00Z');
     await methods.reserveStartedRun(runData(schedule, { scheduledFor: when }));
-    await methods.transitionRunStatus(schedule.id, when, 'started', 'success');
+    await ScheduleRun.updateOne(
+      { scheduleId: schedule.id, scheduledFor: when },
+      { $set: { status: 'success' } },
+    );
     const again = await methods.reserveStartedRun(runData(schedule, { scheduledFor: when }));
     expect(again).toEqual({ conflict: 'duplicate' });
   });
@@ -500,49 +501,6 @@ describe('recordSkippedRun', () => {
   });
 });
 
-describe('transitionRunStatus', () => {
-  it('only transitions from the expected status (CAS)', async () => {
-    const schedule = await methods.createSchedule(scheduleData());
-    const scheduledFor = new Date('2026-07-20T12:00:00Z');
-    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
-
-    const wrongFrom = await methods.transitionRunStatus(
-      schedule.id,
-      scheduledFor,
-      'requires_action',
-      'success',
-    );
-    expect(wrongFrom).toBe(false);
-    expect((await getRun(schedule.id, scheduledFor)).status).toBe('started');
-
-    const paused = await methods.transitionRunStatus(
-      schedule.id,
-      scheduledFor,
-      'started',
-      'requires_action',
-    );
-    expect(paused).toBe(true);
-    expect((await getRun(schedule.id, scheduledFor)).status).toBe('requires_action');
-
-    const staleFrom = await methods.transitionRunStatus(
-      schedule.id,
-      scheduledFor,
-      'started',
-      'success',
-    );
-    expect(staleFrom).toBe(false);
-
-    const resumed = await methods.transitionRunStatus(
-      schedule.id,
-      scheduledFor,
-      'requires_action',
-      'success',
-    );
-    expect(resumed).toBe(true);
-    expect((await getRun(schedule.id, scheduledFor)).status).toBe('success');
-  });
-});
-
 describe('countActiveRuns', () => {
   it('counts started runs across all schedules for the fire cap', async () => {
     expect(await methods.countActiveRuns()).toBe(0);
@@ -559,25 +517,6 @@ describe('countActiveRuns', () => {
       autoDisableAfterFailures: 3,
     });
     expect(await methods.countActiveRuns()).toBe(1);
-  });
-});
-
-describe('hasActiveRun', () => {
-  it('is true only while a started run exists', async () => {
-    const schedule = await methods.createSchedule(scheduleData());
-    expect(await methods.hasActiveRun(schedule.id)).toBe(false);
-
-    const scheduledFor = new Date('2026-07-20T12:00:00Z');
-    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
-    expect(await methods.hasActiveRun(schedule.id)).toBe(true);
-
-    await methods.transitionRunStatus(schedule.id, scheduledFor, 'started', 'requires_action');
-    expect(await methods.hasActiveRun(schedule.id)).toBe(false);
-
-    await methods.insertScheduleRun(
-      runData(schedule, { scheduledFor: new Date('2026-07-21T12:00:00Z'), status: 'success' }),
-    );
-    expect(await methods.hasActiveRun(schedule.id)).toBe(false);
   });
 });
 
@@ -955,23 +894,6 @@ describe('holdsLease (owner-edit vs lease-takeover discriminator)', () => {
   });
 });
 
-describe('hasOtherActiveRun (excludes the run itself)', () => {
-  it('excludes the checked occurrence and detects a different active one', async () => {
-    const schedule = await methods.createSchedule(scheduleData());
-    const paused = new Date('2026-07-20T12:00:00Z');
-    const active = new Date('2026-07-21T12:00:00Z');
-    // A paused occurrence coexists with a different, active (started) occurrence.
-    await ScheduleRun.create(
-      runData(schedule, { scheduledFor: paused, status: 'requires_action' }),
-    );
-    await methods.reserveStartedRun(runData(schedule, { scheduledFor: active }));
-    // Resuming the paused occurrence: the OTHER started occurrence is an overlap.
-    expect(await methods.hasOtherActiveRun(schedule.id, paused)).toBe(true);
-    // Checking the active occurrence itself: its own started row is excluded.
-    expect(await methods.hasOtherActiveRun(schedule.id, active)).toBe(false);
-  });
-});
-
 describe('deletion quiescing (soft-delete, drain, erase)', () => {
   it('markScheduleDeleting hides + un-claims; erase waits for active runs to drain', async () => {
     const schedule = await methods.createScheduleWithSlot(scheduleData(), 10);
@@ -992,7 +914,10 @@ describe('deletion quiescing (soft-delete, drain, erase)', () => {
     expect(await Schedule.findOne({ id: sched.id }).lean()).not.toBeNull();
 
     // Once the run terminalizes, the schedule and its runs erase.
-    await methods.transitionRunStatus(sched.id, when, 'started', 'interrupted');
+    await ScheduleRun.updateOne(
+      { scheduleId: sched.id, scheduledFor: when },
+      { $set: { status: 'interrupted' } },
+    );
     expect(await methods.eraseScheduleIfDrained(sched.id)).toBe(true);
     expect(await Schedule.findOne({ id: sched.id }).lean()).toBeNull();
     expect(await ScheduleRun.countDocuments({ scheduleId: sched.id })).toBe(0);

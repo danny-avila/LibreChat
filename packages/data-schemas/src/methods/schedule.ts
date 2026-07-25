@@ -81,9 +81,6 @@ export type StartedRunReservation =
   | { run: IScheduleRun }
   | { conflict: 'duplicate' | 'overlap' | 'slot-taken' };
 
-/** Outcome of promoting a paused occurrence back into the single active slot. */
-export type PromoteRunResult = 'promoted' | 'overlap' | 'missing';
-
 export type ScheduleMethods = {
   ensureScheduleIndexes: () => Promise<void>;
   createSchedule: (data: Partial<ISchedule>) => Promise<ISchedule>;
@@ -112,8 +109,6 @@ export type ScheduleMethods = {
   releaseLeaseByHolder: (id: string, leaseBy: string) => Promise<void>;
   revalidateClaim: (id: string, claimToken: string, requireEnabled?: boolean) => Promise<boolean>;
   holdsLease: (id: string, leaseBy: string) => Promise<boolean>;
-  hasOtherActiveRun: (scheduleId: string, scheduledFor: Date) => Promise<boolean>;
-  isOccurrenceStarted: (scheduleId: string, scheduledFor: Date) => Promise<boolean>;
   advanceSchedule: (
     id: string,
     nextRunAt: Date | null,
@@ -129,13 +124,11 @@ export type ScheduleMethods = {
   reserveStartedRun: (data: Partial<IScheduleRun>) => Promise<StartedRunReservation>;
   getCapacityOccupancy: () => Promise<{ takenSlots: number[]; unslotted: number }>;
   requestRunAbort: (scheduleId: string, scheduledFor: Date) => Promise<boolean>;
-  getRun: (scheduleId: string, scheduledFor: Date) => Promise<IScheduleRun | null>;
   setRunFireDetails: (
     scheduleId: string,
     scheduledFor: Date,
     details: { conversationId: string; droppedFileIds?: string[] },
   ) => Promise<void>;
-  hasActiveRun: (scheduleId: string) => Promise<boolean>;
   countActiveRuns: () => Promise<number>;
   deleteScheduleRun: (
     scheduleId: string,
@@ -161,12 +154,6 @@ export type ScheduleMethods = {
     balanceSkipDisableThreshold?: number,
   ) => Promise<void>;
   getRunsForReconciliation: (olderThan: Date, limit: number) => Promise<IScheduleRun[]>;
-  transitionRunStatus: (
-    scheduleId: string,
-    scheduledFor: Date,
-    from: ScheduleRunStatus,
-    to: ScheduleRunStatus,
-  ) => Promise<boolean>;
 };
 
 export function createScheduleMethods(mongoose: typeof import('mongoose')): ScheduleMethods {
@@ -457,34 +444,6 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   }
 
   /**
-   * Whether a DIFFERENT occurrence of the schedule is currently `started`. Used by
-   * the HITL resume overlap check so a paused run whose own row is still `started`
-   * (e.g. its pause bookkeeping failed transiently) is not mistaken for an overlap
-   * with itself — only a truly concurrent occurrence blocks the resume.
-   */
-  async function hasOtherActiveRun(scheduleId: string, scheduledFor: Date): Promise<boolean> {
-    const row = await ScheduleRun()
-      .findOne({ scheduleId, status: 'started', scheduledFor: { $ne: scheduledFor } })
-      .select('_id')
-      .lean();
-    return row != null;
-  }
-
-  /**
-   * Whether THIS occurrence's own run row is already `started`. Lets the HITL resume
-   * capacity gate discount a self-active row (e.g. one whose pause bookkeeping failed
-   * transiently): resuming it adds no new active run, so it must not be blocked by a
-   * global count that already includes it.
-   */
-  async function isOccurrenceStarted(scheduleId: string, scheduledFor: Date): Promise<boolean> {
-    const row = await ScheduleRun()
-      .findOne({ scheduleId, scheduledFor, status: 'started' })
-      .select('_id')
-      .lean();
-    return row != null;
-  }
-
-  /**
    * Advances past a fired (or skipped) occurrence and releases the lease. When
    * `expectedNextRunAt` is given, the update is predicated on the schedule still
    * sitting on the claimed occurrence; when `expectedClaimToken` is given it is
@@ -607,17 +566,6 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       [{ $set: { abortRequestedAt: { $ifNull: ['$abortRequestedAt', '$$NOW'] } } }],
     );
     return (result.matchedCount ?? 0) > 0;
-  }
-
-  /** The occurrence's run row, or null. Used to read the revision/epoch a run
-   *  started under before writing its outcome. */
-  async function getRun(scheduleId: string, scheduledFor: Date): Promise<IScheduleRun | null> {
-    return ScheduleRun().findOne({ scheduleId, scheduledFor }).lean<IScheduleRun>();
-  }
-
-  async function hasActiveRun(scheduleId: string): Promise<boolean> {
-    const row = await ScheduleRun().findOne({ scheduleId, status: 'started' }).select('_id').lean();
-    return row != null;
   }
 
   /** Count of in-flight scheduled runs (across all schedules) for the fire cap. */
@@ -1049,19 +997,6 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     await Schedule().deleteMany({ user: userId });
   }
 
-  async function transitionRunStatus(
-    scheduleId: string,
-    scheduledFor: Date,
-    from: ScheduleRunStatus,
-    to: ScheduleRunStatus,
-  ): Promise<boolean> {
-    const result = await ScheduleRun().updateOne(
-      { scheduleId, scheduledFor, status: from },
-      { $set: { status: to } },
-    );
-    return (result.modifiedCount ?? 0) > 0;
-  }
-
   return {
     ensureScheduleIndexes,
     createSchedule,
@@ -1078,17 +1013,13 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     releaseLeaseByHolder,
     revalidateClaim,
     holdsLease,
-    hasOtherActiveRun,
-    isOccurrenceStarted,
     advanceSchedule,
     disableSchedule,
     insertScheduleRun,
     reserveStartedRun,
     getCapacityOccupancy,
     requestRunAbort,
-    getRun,
     setRunFireDetails,
-    hasActiveRun,
     countActiveRuns,
     deleteScheduleRun,
     markScheduleDeleting,
@@ -1103,6 +1034,5 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     recordRunOutcome,
     recordSkippedRun,
     getRunsForReconciliation,
-    transitionRunStatus,
   };
 }
