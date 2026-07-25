@@ -364,11 +364,15 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     if (engine != null) {
       return engine;
     }
-    // EXPERIMENTAL default-off: do not arm the engine unless the base config enables the
-    // feature. Keeps "off" meaning the scheduler genuinely is not running (no tick loop,
-    // no claims), rather than running and refusing at the last step.
-    if (!(await getLimits()).enabled) {
-      logger.info('[schedules] disabled by config; engine not started (set interface.schedules)');
+    // Arm unless GLOBALLY stopped. Deliberately not gated on the base config's `enabled`:
+    // schedules can be enabled for a role/user/tenant while the base YAML stays
+    // default-off, and gating here would never start the engine for those principals (and
+    // would leave schedulesReady false, rejecting their writes entirely). The per-owner
+    // limits are re-resolved in the fire path, which skips owners who have it disabled,
+    // and the write handlers reject them too — so default-off still holds behaviorally
+    // without breaking principal-scoped enables.
+    if (await engineDeps.isGloballyDisabled()) {
+      logger.info('[schedules] globally disabled; engine not started');
       return undefined;
     }
     // Explicitly build the Schedule/ScheduleRun indexes first — the unique

@@ -386,8 +386,14 @@ const deleteUserController = async (req, res) => {
         `[deleteUserController] Deferring destructive deletion for ${user.id}: scheduled runs ` +
           'did not confirm settlement. The deletion barrier remains in place.',
       );
-      return res.status(202).json({
-        message: 'Account deletion started; in-flight work is still settling.',
+      // MUST be non-2xx: the client's delete mutation treats any 2xx as success and
+      // calls logout(), so a 202 would log the user out believing the account was gone
+      // when it was only deferred. 503 + Retry-After tells the client to try again.
+      res.set('Retry-After', '30');
+      return res.status(503).json({
+        message:
+          'Account deletion could not finish because scheduled work is still settling. ' +
+          'Please try again shortly.',
       });
     }
 

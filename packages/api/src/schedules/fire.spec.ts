@@ -237,6 +237,28 @@ describe('fireSchedule', () => {
     expect(body.scheduleConfigRevision).toBe(7);
   });
 
+  it('treats a pre-start controller abort as superseded, not a fault', async () => {
+    const { methods, calls } = makeMethods();
+    // The controller's own liveness/revision fence refused the fire and already recorded
+    // the occurrence. Its 200 body carries a conversationId, which previously made the
+    // parser count a never-started generation as a successful fire.
+    mockFetch(
+      async () =>
+        ({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ conversationId: 'c1', status: 'aborted' }),
+        }) as Response,
+    );
+    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
+    expect(result.fired).toBe(false);
+    expect(result.skipped).toBe('superseded');
+    // A delete/edit is not a schedule FAULT: no error outcome, nothing toward auto-disable.
+    expect(calls.recordOutcome).toHaveLength(0);
+    // The occurrence is done, so the schedule still advances past it.
+    expect(calls.advance).toBe(1);
+  });
+
   it('records a definite HTTP rejection as error', async () => {
     const { methods, calls } = makeMethods();
     mockFetch(async () => ({ ok: false, status: 500, text: async () => 'boom' }) as Response);

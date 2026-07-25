@@ -41,11 +41,28 @@ describe('v1 experimental gate, asserted at real entry points', () => {
     delete process.env.SCHEDULES_DISABLED;
   });
 
-  it('is OFF when the admin never opted in, and does not arm the engine', async () => {
-    const service = makeService({});
-    expect((await service.getLimits()).enabled).toBe(false);
-    // The engine must not merely refuse to fire — it must not start at all.
+  it('is OFF for limits when the admin never opted in', async () => {
+    expect((await makeService({}).getLimits()).enabled).toBe(false);
+  });
+
+  it('does NOT arm the engine when globally stopped by the base config', async () => {
+    const service = makeService({ interfaceConfig: { schedules: false } });
     expect(await service.initializeScheduleEngine()).toBeUndefined();
+  });
+
+  it('does NOT arm the engine under the SCHEDULES_DISABLED lever', async () => {
+    process.env.SCHEDULES_DISABLED = 'true';
+    const service = makeService({ interfaceConfig: { schedules: true } });
+    expect(await service.initializeScheduleEngine()).toBeUndefined();
+  });
+
+  it('DOES arm the engine when the base is merely absent, so principal-scoped enables work', async () => {
+    // Gating engine start on the base config would never start it for a role/user that
+    // enables schedules via override, and would leave schedulesReady false so their
+    // writes are rejected outright. Absent base is not a global stop; the fire path and
+    // write handlers still refuse owners who do not have it enabled.
+    const service = makeService({}, { interfaceConfig: { schedules: { use: true } } });
+    expect(await service.initializeScheduleEngine()).toBeDefined();
   });
 
   it('stays OFF for an explicit false', async () => {

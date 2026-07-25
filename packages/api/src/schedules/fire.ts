@@ -22,6 +22,11 @@ class ScheduleFireError extends Error {
   constructor(
     message: string,
     readonly ambiguous: boolean,
+    /** The controller's own pre-start fence refused this fire (the schedule was deleted
+     *  or edited between revalidateClaim and the POST landing). Nothing started, and the
+     *  controller already recorded the occurrence's outcome — so this is a SKIP, not a
+     *  fault, and must not count toward auto-disable. */
+    readonly preStartAbort = false,
   ) {
     super(message);
   }
@@ -167,11 +172,19 @@ async function postChatMessageInner(
   // started, so classify it non-ambiguous — the run terminalizes as `error` and can
   // auto-disable, instead of lingering until the orphan sweep and recording `interrupted`.
   const raw = await response.text().catch(() => '');
-  let payload: { conversationId?: string };
+  let payload: { conversationId?: string; status?: string };
   try {
-    payload = raw ? (JSON.parse(raw) as { conversationId?: string }) : {};
+    payload = raw ? (JSON.parse(raw) as { conversationId?: string; status?: string }) : {};
   } catch {
     throw new ScheduleFireError(`Fire denied before start: ${raw.slice(0, 300)}`, false);
+  }
+  // The controller answers 200 with `status: 'aborted'` when its own pre-start fence
+  // rejects the fire (e.g. the schedule was deleted or edited between revalidateClaim
+  // and the POST landing). It carries a conversationId, so accepting the body on that
+  // alone counted a never-started generation as a successful fire. Nothing was billed
+  // and the controller already recorded the outcome, so treat it as a definite refusal.
+  if (payload.status === 'aborted') {
+    throw new ScheduleFireError('Fire aborted before start by the controller fence', false, true);
   }
   if (!payload.conversationId) {
     throw new ScheduleFireError('Fire POST returned no conversationId', true);
@@ -447,6 +460,15 @@ export async function fireSchedule(
         );
         await advance();
         return { fired: false, error: message };
+      }
+      if (error instanceof ScheduleFireError && error.preStartAbort) {
+        // The controller refused this fire at its own liveness/revision fence and has
+        // already recorded the occurrence's outcome. Advancing is all that's left:
+        // recording `error` here would count a delete/edit as a schedule FAULT and walk
+        // it toward auto-disable.
+        logger.info(`[schedules] fire aborted pre-start for ${schedule.id} (superseded)`);
+        await advance();
+        return { fired: false, skipped: 'superseded' as const };
       }
       // Definite rejection (an error response was received): nothing started.
       logger.error(`[schedules] fire rejected for ${schedule.id}:`, error);
