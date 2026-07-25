@@ -30,7 +30,10 @@ import { isEnabled } from '../utils/common';
 type ScheduleRunOutcomeStatus = Parameters<ScheduleMethods['recordRunOutcome']>[0]['status'];
 
 /** Whether a persisted job still carries a given scheduled occurrence's identity. */
-function jobMatchesIdentity(job: SerializableJobData, identity: JobIdentity): boolean {
+function jobMatchesIdentity(
+  job: Pick<SerializableJobData, 'scheduleId' | 'scheduledFor'>,
+  identity: JobIdentity,
+): boolean {
   if (job.scheduleId !== identity.scheduleId || job.scheduledFor == null) {
     return false;
   }
@@ -605,13 +608,25 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     const active = await methods.getActiveRunsForUser(userId);
     const unconfirmed: string[] = [];
     for (const run of active) {
+      // A RESUMED run's row is still `requires_action`: the resume controller promotes
+      // only the job-store record to `running` and the row is not terminalized until the
+      // resumed generation finishes. So the row status alone cannot tell a genuinely
+      // paused run from one actively generating, and the shortcut below would skip
+      // waiting for a live generation that can still persist messages. Read the live job
+      // BEFORE aborting, which settles or deletes it and would erase this evidence.
+      const live = run.conversationId
+        ? await engineDeps.getJobStatus(run.conversationId).catch(() => null)
+        : null;
+      const generating =
+        live?.status === 'running' &&
+        jobMatchesIdentity(live, { scheduleId: run.scheduleId, scheduledFor: run.scheduledFor });
       // Do NOT preserve for reconcile: account deletion hard-deletes these run
       // rows, so no reconcile pass will ever finalize/clear a retained job — a
       // preserved job would leak in the store. Let the abort settle it directly.
       const aborted = await abortActiveRun(run, false);
-      if (run.status === 'requires_action') {
-        // A PAUSED run has no live generation to drain: its approval will never be
-        // consumed for an account being deleted. Terminalize it here, or it stays in
+      if (run.status === 'requires_action' && !generating) {
+        // A genuinely PAUSED run has no live generation to drain: its approval will never
+        // be consumed for an account being deleted. Terminalize it here, or it stays in
         // the active set forever and the drain below can never confirm — which made a
         // single paused run block the account's deletion permanently.
         await methods
