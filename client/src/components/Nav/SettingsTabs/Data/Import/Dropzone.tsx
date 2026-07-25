@@ -149,12 +149,12 @@ export default function Dropzone({ onFile, isUploading, focusOnMount = false }: 
       {/* Always mounted so the fade runs on the way out as well as in;
           conditionally rendering it would snap straight to the end state.
           The insets cancel the row wrapper's `px-4 py-3` so the tint reaches
-          the section card's edges, where its `overflow-hidden rounded-xl`
-          clips the corners for us — hence no border or radius of its own. */}
+          the section card's edges. `rounded-t-xl` matches the card's own
+          `rounded-xl`, since this row sits at the top of its section. */}
       <div
         aria-hidden="true"
         className={cn(
-          'pointer-events-none absolute -inset-x-4 -inset-y-3 z-10',
+          'pointer-events-none absolute -inset-x-4 -inset-y-3 z-10 rounded-t-xl',
           'flex items-center justify-center gap-2 text-sm font-medium',
           'transition-opacity duration-200 ease-out motion-reduce:transition-none',
           /* Alpha modifiers do not work on the `surface-*` tokens: they are
