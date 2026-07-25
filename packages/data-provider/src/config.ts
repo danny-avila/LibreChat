@@ -2045,6 +2045,7 @@ const sharedOpenAIModels = [
 
 const sharedAnthropicModels = [
   'claude-fable-5',
+  'claude-opus-5',
   'claude-opus-4-8',
   'claude-opus-4-7',
   'claude-sonnet-5',
@@ -2069,19 +2070,25 @@ const sharedAnthropicModels = [
   'claude-3-5-sonnet-latest',
 ];
 
+/**
+ * Claude 4+ models are not invocable on-demand by their bare foundation-model
+ * ID on the Converse path — Bedrock rejects those with "Invocation of model ID
+ * ... with on-demand throughput isn't supported. Retry your request with the ID
+ * or ARN of an inference profile that contains this model." Default to the
+ * `global.` cross-region profile (no regional pricing premium, widest
+ * availability); Opus 4.1 has no global profile, so it uses `us.`.
+ */
 export const bedrockModels = [
-  'anthropic.claude-fable-5',
-  'anthropic.claude-opus-4-8',
-  'anthropic.claude-opus-4-7',
-  'anthropic.claude-sonnet-5',
-  'anthropic.claude-sonnet-4-6',
-  'anthropic.claude-opus-4-6-v1',
-  'anthropic.claude-sonnet-4-5-20250929-v1:0',
-  'anthropic.claude-haiku-4-5-20251001-v1:0',
-  'anthropic.claude-opus-4-1-20250805-v1:0',
-  'anthropic.claude-3-5-sonnet-20241022-v2:0',
-  'anthropic.claude-3-5-sonnet-20240620-v1:0',
-  'anthropic.claude-3-5-haiku-20241022-v1:0',
+  'global.anthropic.claude-fable-5',
+  'global.anthropic.claude-opus-5',
+  'global.anthropic.claude-opus-4-8',
+  'global.anthropic.claude-opus-4-7',
+  'global.anthropic.claude-sonnet-5',
+  'global.anthropic.claude-sonnet-4-6',
+  'global.anthropic.claude-opus-4-6-v1',
+  'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+  'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+  'us.anthropic.claude-opus-4-1-20250805-v1:0',
   // 'cohere.command-text-v14', // no conversation history
   // 'cohere.command-light-text-v14', // no conversation history
   'cohere.command-r-v1:0',

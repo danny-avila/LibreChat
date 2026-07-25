@@ -2443,6 +2443,75 @@ describe('Claude Model Tests', () => {
     );
   });
 
+  it('should return correct prompt and completion rates for Claude Opus 5', () => {
+    expect(getMultiplier({ model: 'claude-opus-5', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-opus-5'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-opus-5', tokenType: 'completion' })).toBe(
+      tokenValues['claude-opus-5'].completion,
+    );
+  });
+
+  it('should handle Claude Opus 5 model name variations', () => {
+    const modelVariations = [
+      'claude-opus-5',
+      'claude-opus-5-20260701',
+      'claude-opus-5-latest',
+      'anthropic/claude-opus-5',
+      'claude-opus-5/anthropic',
+      'claude-opus-5-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-opus-5');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-opus-5'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-opus-5'].completion,
+      );
+    });
+  });
+
+  it('should not confuse Claude Opus 5 with Claude Opus 4.5', () => {
+    expect(getValueKey('claude-opus-5')).toBe('claude-opus-5');
+    expect(getValueKey('claude-opus-4-5')).toBe('claude-opus-4-5');
+  });
+
+  it('should return correct cache rates for Claude Opus 5', () => {
+    expect(getCacheMultiplier({ model: 'claude-opus-5', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-opus-5'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-opus-5', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-opus-5'].read,
+    );
+  });
+
+  it('should price Bedrock cross-region inference profile IDs like their base model', () => {
+    const profileToBase: Array<[string, string]> = [
+      ['global.anthropic.claude-opus-5', 'claude-opus-5'],
+      ['us.anthropic.claude-opus-5', 'claude-opus-5'],
+      ['global.anthropic.claude-opus-4-8', 'claude-opus-4-8'],
+      ['global.anthropic.claude-sonnet-5', 'claude-sonnet-5'],
+      ['global.anthropic.claude-sonnet-4-6', 'claude-sonnet-4-6'],
+      ['global.anthropic.claude-fable-5', 'claude-fable-5'],
+    ];
+
+    profileToBase.forEach(([profileId, base]) => {
+      expect(getValueKey(profileId)).toBe(base);
+      expect(getMultiplier({ model: profileId, tokenType: 'prompt' })).toBe(
+        tokenValues[base].prompt,
+      );
+      expect(getMultiplier({ model: profileId, tokenType: 'completion' })).toBe(
+        tokenValues[base].completion,
+      );
+      expect(getCacheMultiplier({ model: profileId, cacheType: 'write' })).toBe(
+        cacheTokenValues[base].write,
+      );
+    });
+  });
+
   it('should return correct prompt and completion rates for Claude Fable 5', () => {
     expect(getMultiplier({ model: 'claude-fable-5', tokenType: 'prompt' })).toBe(
       tokenValues['claude-fable-5'].prompt,
@@ -2602,6 +2671,7 @@ describe('Premium Token Pricing', () => {
       'claude-opus-4-6',
       'claude-opus-4-7',
       'claude-opus-4-8',
+      'claude-opus-5',
       'claude-fable-5',
       'claude-mythos-5',
       'claude-sonnet-4-6',
