@@ -66,6 +66,26 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  'approval_probe',
+  {
+    description:
+      'Echoes reviewed input so LibreChat mock end-to-end tests can verify tool approval decisions.',
+    inputSchema: {
+      value: z.string(),
+      review: z.string().optional(),
+    },
+  },
+  async ({ value }) => ({
+    content: [
+      {
+        type: 'text',
+        text: `E2E approval probe executed: ${value}`,
+      },
+    ],
+  }),
+);
+
 async function main() {
   await server.connect(new StdioServerTransport());
 }

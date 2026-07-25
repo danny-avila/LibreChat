@@ -110,6 +110,17 @@ export default function ToolCallGroup({
   const count = parts.length;
 
   const toolMetadata = useMemo(() => parts.map((p) => getToolMeta(p.part)), [parts]);
+  const hasPendingApproval = useMemo(
+    () =>
+      parts.some(({ part }) => {
+        if (part.type !== ContentTypes.TOOL_CALL) {
+          return false;
+        }
+        const toolCall = part[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined;
+        return toolCall?.approval != null && (toolCall.output?.length ?? 0) === 0;
+      }),
+    [parts],
+  );
   const allCompleted = useMemo(
     () => toolMetadata.every((m) => m?.hasOutput === true),
     [toolMetadata],
@@ -223,13 +234,16 @@ export default function ToolCallGroup({
       if (event.target !== event.currentTarget) {
         return;
       }
-      if (isExpanded) {
+      if (isExpanded || hasPendingApproval) {
         return;
       }
+      // Approval controls own unsent local form state. Keep unresolved cards
+      // mounted (the collapsed panel is inert/hidden) so collapsing a batch
+      // cannot erase decisions the reviewer already made.
       setShouldRenderBody(false);
       notifyLayoutChange();
     },
-    [isExpanded, notifyLayoutChange],
+    [hasPendingApproval, isExpanded, notifyLayoutChange],
   );
 
   /** Category-aware header verb: subagents and questions read as their own

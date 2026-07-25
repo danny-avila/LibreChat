@@ -83,6 +83,21 @@ const makePart = (
     },
   }) as unknown as TMessageContentParts;
 
+const makePendingApprovalPart = (id: string): TMessageContentParts =>
+  ({
+    type: ContentTypes.TOOL_CALL,
+    [ContentTypes.TOOL_CALL]: {
+      id,
+      name: 'approval_probe',
+      args: {},
+      output: '',
+      approval: {
+        actionId: 'action-1',
+        allowed_decisions: ['approve', 'reject'],
+      },
+    },
+  }) as unknown as TMessageContentParts;
+
 const imageAttachment: TAttachment = {
   filename: 'foo.png',
   filepath: '/files/foo.png',
@@ -209,6 +224,33 @@ describe('ToolCallGroup image hoisting', () => {
     fireEvent.transitionEnd(collapsible);
 
     expect(screen.queryByTestId('inner-0')).not.toBeInTheDocument();
+  });
+
+  it('keeps unresolved approval bodies mounted while the group is collapsed', () => {
+    const approvalParts = [
+      { part: makePendingApprovalPart('t1'), idx: 0 },
+      { part: makePendingApprovalPart('t2'), idx: 1 },
+    ];
+    renderGroup({
+      ...baseProps,
+      parts: approvalParts,
+      renderPart: (_p: TMessageContentParts, idx: number) => (
+        <div data-testid={`approval-${idx}`} key={idx}>
+          {'approval'}
+        </div>
+      ),
+    });
+
+    const button = screen.getByRole('button', { name: 'Used 2 tools' });
+    const collapsible = button.nextElementSibling as HTMLElement;
+    expect(screen.getByTestId('approval-0')).toBeInTheDocument();
+
+    fireEvent.click(button);
+    fireEvent.transitionEnd(collapsible);
+
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId('approval-0')).toBeInTheDocument();
+    expect(screen.getByTestId('approval-1')).toBeInTheDocument();
   });
 
   it('reconciles layout after the group collapses from an expanded state', async () => {
