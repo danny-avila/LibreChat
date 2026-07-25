@@ -24,6 +24,14 @@ export function getThemeFromEnv() {
   if (getEnv('TEXT_TERTIARY')) theme['rgb-text-tertiary'] = getEnv('TEXT_TERTIARY');
   if (getEnv('TEXT_WARNING')) theme['rgb-text-warning'] = getEnv('TEXT_WARNING');
 
+  // Link and accent colors
+  if (getEnv('LINK')) theme['rgb-link'] = getEnv('LINK');
+  if (getEnv('LINK_HOVER')) theme['rgb-link-hover'] = getEnv('LINK_HOVER');
+  if (getEnv('LINK_VISITED')) theme['rgb-link-visited'] = getEnv('LINK_VISITED');
+  if (getEnv('ACCENT_PRIMARY')) theme['rgb-accent-primary'] = getEnv('ACCENT_PRIMARY');
+  if (getEnv('ACCENT_PRIMARY_HOVER'))
+    theme['rgb-accent-primary-hover'] = getEnv('ACCENT_PRIMARY_HOVER');
+
   // Surface colors
   if (getEnv('SURFACE_PRIMARY')) theme['rgb-surface-primary'] = getEnv('SURFACE_PRIMARY');
   if (getEnv('SURFACE_SECONDARY')) theme['rgb-surface-secondary'] = getEnv('SURFACE_SECONDARY');

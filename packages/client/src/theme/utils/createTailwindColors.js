@@ -11,9 +11,11 @@
  * client/src/style.css (`html`, `.dark`, `.gizmo` blocks). Those variables hold
  * bare `R G B` channel triplets, so `cssVar` wraps them as
  * `rgb(var(--x) / <alpha-value>)`. This makes opacity modifiers work, e.g.
- * `bg-surface-primary/50`. shadcn-compatible tokens still hold HSL triplets, so
- * they are wrapped in `hsl(...)`; any direct `var(--token)` usage in plain CSS
- * must wrap the channel triplet itself, e.g. `color: rgb(var(--text-primary))`.
+ * `bg-surface-primary/50`. Tokens with an intrinsic alpha use a companion
+ * `--x-alpha` variable that is multiplied by Tailwind's opacity modifier.
+ * shadcn-compatible tokens still hold HSL triplets, so they are wrapped in
+ * `hsl(...)`; any direct `var(--token)` usage in plain CSS must wrap the channel
+ * triplet itself, e.g. `color: rgb(var(--text-primary))`.
  */
 
 const palette = {
@@ -47,6 +49,7 @@ const palette = {
 };
 
 const cssVar = (name) => `rgb(var(${name}) / <alpha-value>)`;
+const cssVarWithAlpha = (name) => `rgb(var(${name}) / calc(var(${name}-alpha, 1) * <alpha-value>))`;
 const hslVar = (name) => `hsl(var(${name}))`;
 
 /**
@@ -105,11 +108,11 @@ function createTailwindColors() {
     'surface-fixed-hover': cssVar('--surface-fixed-hover'),
     'text-fixed': cssVar('--text-fixed'),
 
-    'border-light': cssVar('--border-light'),
-    'border-medium': cssVar('--border-medium'),
+    'border-light': cssVarWithAlpha('--border-light'),
+    'border-medium': cssVarWithAlpha('--border-medium'),
     'border-medium-alt': cssVar('--border-medium-alt'),
-    'border-heavy': cssVar('--border-heavy'),
-    'border-xheavy': cssVar('--border-xheavy'),
+    'border-heavy': cssVarWithAlpha('--border-heavy'),
+    'border-xheavy': cssVarWithAlpha('--border-xheavy'),
     'border-destructive': cssVar('--border-destructive'),
 
     'status-success': cssVar('--status-success'),

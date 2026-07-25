@@ -205,6 +205,8 @@ REACT_APP_THEME_TEXT_PRIMARY=33 33 33
 REACT_APP_THEME_TEXT_SECONDARY=66 66 66
 REACT_APP_THEME_SURFACE_PRIMARY=255 255 255
 REACT_APP_THEME_SURFACE_SUBMIT=4 120 87
+REACT_APP_THEME_LINK=37 99 235
+REACT_APP_THEME_ACCENT_PRIMARY=18 110 107
 ```
 
 ### 2. Create a Theme Loader
@@ -470,4 +472,4 @@ When adding new theme colors:
 
 ## License
 
-This theme system is part of the @librechat/client package. 
+This theme system is part of the @librechat/client package.

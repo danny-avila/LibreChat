@@ -12,6 +12,13 @@ export const defaultTheme: IThemeRGB = {
   'rgb-text-tertiary': '89 89 89', // #595959 (gray-500)
   'rgb-text-warning': '245 158 11', // #f59e0b (amber-500)
 
+  // Link and accent colors
+  'rgb-link': '37 99 235', // #2563eb (blue-600)
+  'rgb-link-hover': '29 78 216', // #1d4ed8 (blue-700)
+  'rgb-link-visited': '147 51 234', // #9333ea (purple-600)
+  'rgb-accent-primary': '18 110 107', // #126e6b
+  'rgb-accent-primary-hover': '10 79 83', // #0a4f53
+
   // Ring colors
   'rgb-ring-primary': '89 89 89', // #595959 (gray-500)
 

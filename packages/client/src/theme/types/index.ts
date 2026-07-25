@@ -10,6 +10,13 @@ export interface IThemeRGB {
   'rgb-text-tertiary'?: string;
   'rgb-text-warning'?: string;
 
+  // Link and accent colors
+  'rgb-link'?: string;
+  'rgb-link-hover'?: string;
+  'rgb-link-visited'?: string;
+  'rgb-accent-primary'?: string;
+  'rgb-accent-primary-hover'?: string;
+
   // Ring colors
   'rgb-ring-primary'?: string;
 
@@ -66,6 +73,11 @@ export interface IThemeVariables {
   '--text-secondary-alt': string;
   '--text-tertiary': string;
   '--text-warning': string;
+  '--link': string;
+  '--link-hover': string;
+  '--link-visited': string;
+  '--accent-primary': string;
+  '--accent-primary-hover': string;
   '--ring-primary': string;
   '--header-primary': string;
   '--header-hover': string;
@@ -94,10 +106,14 @@ export interface IThemeVariables {
   '--surface-fixed-hover': string;
   '--text-fixed': string;
   '--border-light': string;
+  '--border-light-alpha': string;
   '--border-medium': string;
+  '--border-medium-alpha': string;
   '--border-medium-alt': string;
   '--border-heavy': string;
+  '--border-heavy-alpha': string;
   '--border-xheavy': string;
+  '--border-xheavy-alpha': string;
   '--brand-purple': string;
   '--presentation': string;
 }
@@ -111,6 +127,11 @@ export interface IThemeColors {
   'text-secondary-alt'?: string;
   'text-tertiary'?: string;
   'text-warning'?: string;
+  link?: string;
+  'link-hover'?: string;
+  'link-visited'?: string;
+  'accent-primary'?: string;
+  'accent-primary-hover'?: string;
   'ring-primary'?: string;
   'header-primary'?: string;
   'header-hover'?: string;

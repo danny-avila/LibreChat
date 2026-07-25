@@ -7,7 +7,7 @@
   border-radius: 1rem;
   border-width: 1px;
   border-style: solid;
-  border-color: rgb(var(--border-light));
+  border-color: rgb(var(--border-light) / var(--border-light-alpha, 1));
   background-color: rgb(var(--surface-primary));
   padding: 0.5rem;
   color: rgb(var(--text-primary));

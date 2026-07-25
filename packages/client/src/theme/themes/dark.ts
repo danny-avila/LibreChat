@@ -12,6 +12,13 @@ export const darkTheme: IThemeRGB = {
   'rgb-text-tertiary': '89 89 89', // #595959 (gray-500)
   'rgb-text-warning': '245 158 11', // #f59e0b (amber-500)
 
+  // Link and accent colors
+  'rgb-link': '96 165 250', // #60a5fa (blue-400)
+  'rgb-link-hover': '147 197 253', // #93c5fd (blue-300)
+  'rgb-link-visited': '192 132 252', // #c084fc (purple-400)
+  'rgb-accent-primary': '65 167 157', // #41a79d
+  'rgb-accent-primary-hover': '109 200 185', // #6dc8b9
+
   // Ring colors (not defined in dark mode, using default)
   'rgb-ring-primary': '89 89 89', // #595959 (gray-500)
 
