@@ -17,10 +17,12 @@ const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
  * Factory function for creating an instance of ImportBatchBuilder.
  * @param {string} requestUserId - The ID of the user making the request.
  * @param {object} [interfaceConfig] - Runtime interface config for import retention.
+ * @param {object} [options] - Builder options.
+ * @param {number} [options.flushThreshold=250] - Number of buffered conversations that triggers an automatic flush.
  * @returns {ImportBatchBuilder} - The newly created ImportBatchBuilder instance.
  */
-function createImportBatchBuilder(requestUserId, interfaceConfig) {
-  return new ImportBatchBuilder(requestUserId, interfaceConfig);
+function createImportBatchBuilder(requestUserId, interfaceConfig, options) {
+  return new ImportBatchBuilder(requestUserId, interfaceConfig, options);
 }
 
 /**
@@ -31,13 +33,16 @@ class ImportBatchBuilder {
    * Creates an instance of ImportBatchBuilder.
    * @param {string} requestUserId - The ID of the user making the import request.
    * @param {object} [interfaceConfig] - Runtime interface config for import retention.
+   * @param {object} [options] - Builder options.
+   * @param {number} [options.flushThreshold=250] - Number of buffered conversations that triggers an automatic flush.
    */
-  constructor(requestUserId, interfaceConfig) {
+  constructor(requestUserId, interfaceConfig, options = {}) {
     this.requestUserId = requestUserId;
     this.interfaceConfig = interfaceConfig;
     this.conversations = [];
     this.messages = [];
     this.retentionFields = undefined;
+    this.flushThreshold = options.flushThreshold ?? 250;
   }
 
   getRetentionFields() {
@@ -133,30 +138,62 @@ class ImportBatchBuilder {
   }
 
   /**
-   * Saves the batch of conversations and messages to the DB.
+   * Flushes whatever conversations and messages are currently buffered to the DB.
    * Also increments tag counts for any existing tags.
-   * @returns {Promise<void>} A promise that resolves when the batch is saved.
+   * Clears the buffers before awaiting the writes so a concurrent saveMessage
+   * call cannot be silently dropped or double-written.
+   * @returns {Promise<void>} A promise that resolves when the flush completes.
    * @throws {Error} If there is an error saving the batch.
    */
-  async saveBatch() {
+  async flush() {
+    if (this.conversations.length === 0 && this.messages.length === 0) {
+      return;
+    }
+
+    const conversations = this.conversations;
+    const messages = this.messages;
+    this.conversations = [];
+    this.messages = [];
+
     try {
-      const promises = [];
-      promises.push(bulkSaveConvos(this.conversations));
-      promises.push(bulkSaveMessages(this.messages, true));
-      promises.push(
+      await Promise.all([
+        bulkSaveConvos(conversations),
+        bulkSaveMessages(messages, true),
         bulkIncrementTagCounts(
           this.requestUserId,
-          this.conversations.flatMap((convo) => convo.tags),
+          conversations.flatMap((convo) => convo.tags),
         ),
-      );
-      await Promise.all(promises);
+      ]);
       logger.debug(
-        `user: ${this.requestUserId} | Added ${this.conversations.length} conversations and ${this.messages.length} messages to the DB.`,
+        `user: ${this.requestUserId} | Added ${conversations.length} conversations and ${messages.length} messages to the DB.`,
       );
     } catch (error) {
       logger.error('Error saving batch', error);
       throw error;
     }
+  }
+
+  /**
+   * Flushes the buffered batch once the number of buffered conversations
+   * reaches flushThreshold. Intended to be called periodically while importing
+   * to bound peak memory and Mongo op size.
+   * @returns {Promise<void>} A promise that resolves once any triggered flush completes.
+   */
+  async maybeFlush() {
+    if (this.conversations.length < this.flushThreshold) {
+      return;
+    }
+    await this.flush();
+  }
+
+  /**
+   * Saves whatever remains in the batch to the DB. Safe to call on an empty
+   * builder, in which case it is a no-op.
+   * @returns {Promise<void>} A promise that resolves when the batch is saved.
+   * @throws {Error} If there is an error saving the batch.
+   */
+  async saveBatch() {
+    await this.flush();
   }
 
   /**

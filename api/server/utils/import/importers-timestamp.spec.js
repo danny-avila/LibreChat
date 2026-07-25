@@ -10,6 +10,8 @@ jest.mock('~/models', () => ({
   bulkIncrementTagCounts: jest.fn(),
 }));
 
+const { bulkSaveMessages } = require('~/models');
+
 const mockGetEndpointsConfig = jest.fn().mockResolvedValue(null);
 jest.mock('~/server/services/Config', () => ({
   getEndpointsConfig: (...args) => mockGetEndpointsConfig(...args),
@@ -62,8 +64,8 @@ describe('Import Timestamp Ordering', () => {
       const importer = getImporter(jsonData);
       await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-      // Check the actual messages stored in the builder
-      const savedMessages = importBatchBuilder.messages;
+      // Check the actual messages persisted (buffers are cleared once flushed)
+      const savedMessages = bulkSaveMessages.mock.calls[0][0];
 
       const parent = savedMessages.find((msg) => msg.text === 'Parent Message');
       const child = savedMessages.find((msg) => msg.text === 'Child Message');
@@ -148,7 +150,7 @@ describe('Import Timestamp Ordering', () => {
       const importer = getImporter(jsonData);
       await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-      const savedMessages = importBatchBuilder.messages;
+      const savedMessages = bulkSaveMessages.mock.calls[0][0];
 
       // Verify that timestamps are preserved as-is (not corrected)
       const root1 = savedMessages.find((msg) => msg.text === 'Root 1');
@@ -212,7 +214,7 @@ describe('Import Timestamp Ordering', () => {
       const importer = getImporter(jsonData);
       await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-      const savedMessages = importBatchBuilder.messages;
+      const savedMessages = bulkSaveMessages.mock.calls[0][0];
 
       // Messages should be saved
       expect(savedMessages).toHaveLength(3);
@@ -291,7 +293,7 @@ describe('Import Timestamp Ordering', () => {
       const importer = getImporter(jsonData);
       await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-      const savedMessages = importBatchBuilder.messages;
+      const savedMessages = bulkSaveMessages.mock.calls[0][0];
       const parent = savedMessages.find((msg) => msg.text === 'Parent message');
       const child = savedMessages.find((msg) => msg.text === 'Child message');
 
@@ -352,7 +354,7 @@ describe('Import Timestamp Ordering', () => {
       const importer = getImporter(jsonData);
       await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-      const savedMessages = importBatchBuilder.messages;
+      const savedMessages = bulkSaveMessages.mock.calls[0][0];
       const nullTimeMsg = savedMessages.find((msg) => msg.text === 'Message with null time');
       const validTimeMsg = savedMessages.find((msg) => msg.text === 'Message with valid time');
 
@@ -415,7 +417,7 @@ describe('Import Timestamp Ordering', () => {
       const importer = getImporter(jsonData);
       await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-      const { messages } = importBatchBuilder;
+      const messages = bulkSaveMessages.mock.calls[0][0];
       expect(messages).toHaveLength(2);
 
       const msgA = messages.find((m) => m.text === 'Message A');
@@ -490,7 +492,7 @@ describe('Import Timestamp Ordering', () => {
       const importer = getImporter(jsonData);
       await importer(jsonData, 'user-123', () => importBatchBuilder);
 
-      const realMsg = importBatchBuilder.messages.find((m) => m.text === 'Hello');
+      const realMsg = bulkSaveMessages.mock.calls[0][0].find((m) => m.text === 'Hello');
       expect(realMsg).toBeDefined();
       expect(realMsg.parentMessageId).toBe(Constants.NO_PARENT);
     });

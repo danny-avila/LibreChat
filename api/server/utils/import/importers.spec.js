@@ -9,7 +9,7 @@ const {
 } = require('librechat-data-provider');
 const { getImporter, processAssistantMessage } = require('./importers');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
-const { bulkSaveMessages, bulkSaveConvos: _bulkSaveConvos } = require('~/models');
+const { bulkSaveMessages, bulkSaveConvos } = require('~/models');
 
 const mockGetEndpointsConfig = jest.fn().mockResolvedValue({
   [EModelEndpoint.openAI]: { userProvide: false },
@@ -923,8 +923,8 @@ describe('importLibreChatConvo', () => {
     const importer = getImporter(jsonData);
     await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-    // Get the imported messages
-    const messages = importBatchBuilder.messages;
+    // Get the imported messages as persisted (buffers are cleared once flushed)
+    const messages = bulkSaveMessages.mock.calls[0][0];
     expect(messages.length).toBeGreaterThan(0);
 
     // Build maps for verification
@@ -1031,7 +1031,7 @@ describe('importLibreChatConvo', () => {
     expect(importBatchBuilder.finishConversation).toHaveBeenCalledTimes(1);
 
     const [_title, createdAt, originalConvo] = importBatchBuilder.finishConversation.mock.calls[0];
-    const convo = importBatchBuilder.conversations[0];
+    const convo = bulkSaveConvos.mock.calls[0][0][0];
 
     expect(convo).toEqual({
       ...jsonDataNonRecursiveBranches.options,
@@ -1615,8 +1615,8 @@ describe('importClaudeConvo', () => {
     const importer = getImporter(jsonData);
     await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-    expect(importBatchBuilder.conversations).toHaveLength(1);
-    const convo = importBatchBuilder.conversations[0];
+    expect(bulkSaveConvos.mock.calls[0][0]).toHaveLength(1);
+    const convo = bulkSaveConvos.mock.calls[0][0][0];
     expect(convo.endpoint).toBe(EModelEndpoint.anthropic);
     expect(convo.model).toBe(anthropicSettings.model.default);
     expect(convo.model).not.toBe(openAISettings.model.default);
@@ -1649,7 +1649,7 @@ describe('importClaudeConvo', () => {
     const importer = getImporter(jsonData);
     await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-    const convo = importBatchBuilder.conversations[0];
+    const convo = bulkSaveConvos.mock.calls[0][0][0];
     expect(convo.endpoint).toBe(EModelEndpoint.anthropic);
     expect(convo.model).toBe('claude-opus-4-7');
   });
@@ -1681,7 +1681,7 @@ describe('importClaudeConvo', () => {
     const importer = getImporter(jsonData);
     await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-    const convo = importBatchBuilder.conversations[0];
+    const convo = bulkSaveConvos.mock.calls[0][0][0];
     expect(convo.endpoint).toBe(EModelEndpoint.anthropic);
     expect(convo.model).toBe(anthropicSettings.model.default);
   });
@@ -1711,7 +1711,7 @@ describe('importClaudeConvo', () => {
     const importer = getImporter(jsonData);
     await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-    const convo = importBatchBuilder.conversations[0];
+    const convo = bulkSaveConvos.mock.calls[0][0][0];
     expect(convo.endpoint).toBe(EModelEndpoint.anthropic);
     expect(convo.model).toBe(anthropicSettings.model.default);
   });
