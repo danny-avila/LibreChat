@@ -41,7 +41,8 @@ export async function inspectExport(
       if (!Array.isArray(parsed)) {
         throw new Error('Unsupported import type');
       }
-      tallyShard(parsed as ChatGptConversation[], totals);
+      const conversations = parsed as ChatGptConversation[];
+      tallyShard(conversations, totals);
     }
 
     let assetBytes = 0;
@@ -52,7 +53,7 @@ export async function inspectExport(
     return {
       layout,
       summary: {
-        source: 'chatgpt',
+        source: layout.version === null ? 'chatgpt-legacy' : 'chatgpt',
         manifestVersion: layout.version,
         conversations: totals.conversations,
         shards: layout.conversationShards.length,

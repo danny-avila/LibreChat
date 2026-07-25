@@ -25,8 +25,37 @@ describe('inspectExport', () => {
     const { summary } = await inspectExport(filepath);
 
     expect(summary.manifestVersion).toBeNull();
-    expect(summary.source).toBe('chatgpt');
+    expect(summary.source).toBe('chatgpt-legacy');
     expect(summary.conversations).toBe(2);
+  });
+
+  it('rejects a shard with non-array JSON', async () => {
+    const JSZip = (await import('jszip')).default;
+    const fs = await import('fs');
+    const os = await import('os');
+    const path = await import('path');
+
+    const zip = new JSZip();
+    zip.file('conversations-000.json', JSON.stringify({ conversations: [] }));
+    zip.file(
+      'export_manifest.json',
+      JSON.stringify({
+        version: 1,
+        manifest_file: 'export_manifest.json',
+        logical_files: {
+          'conversations.json': {
+            files: ['conversations-000.json'],
+            sharded: true,
+          },
+        },
+      }),
+    );
+    const buffer = await zip.generateAsync({ type: 'nodebuffer' });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-import-nonarr-'));
+    const filepath = path.join(dir, 'non-array-shard.zip');
+    fs.writeFileSync(filepath, buffer);
+
+    await expect(inspectExport(filepath)).rejects.toThrow(/Unsupported import type/);
   });
 
   it('rejects an archive with no recognizable conversations', async () => {
