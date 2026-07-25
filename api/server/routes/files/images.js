@@ -3,6 +3,7 @@ const fs = require('fs').promises;
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const {
+  getSafeErrorMetadata,
   shouldUseUploadSse,
   startUploadSseStream,
   resolveUploadErrorMessage,
@@ -76,9 +77,15 @@ router.post('/', async (req, res) => {
     await processImageFile({ req, res, metadata, sseStream });
   } catch (error) {
     // TODO: delete remote file if it exists
-    logger.error('[/files/images] Error processing file:', error);
+    logger.error('[/files/images] Error processing file:', getSafeErrorMetadata(error));
 
-    const message = resolveUploadErrorMessage(error);
+    const contentProtectionActive =
+      req.config?.filters?.files?.pii != null || req.config?.messageFilter?.pii != null;
+    const message = resolveUploadErrorMessage(
+      error,
+      'Error processing file',
+      contentProtectionActive,
+    );
 
     try {
       const filepath = path.join(
@@ -87,8 +94,8 @@ router.post('/', async (req, res) => {
         path.basename(req.file.filename),
       );
       await fs.unlink(filepath);
-    } catch (error) {
-      logger.error('[/files/images] Error deleting file:', error);
+    } catch (cleanupError) {
+      logger.error('[/files/images] Error deleting file:', getSafeErrorMetadata(cleanupError));
     }
     if (sseStream) {
       sseStream.sendError({

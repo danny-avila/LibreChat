@@ -4,6 +4,9 @@ const {
   findModelSpecByName,
   isModelSpecEndpointMatch,
   resolveModelSpecPromptPrefixVariables,
+  inspectContent,
+  extractChatContent,
+  contentFilterBlockResponse,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -24,6 +27,34 @@ const buildFunction = {
   [EModelEndpoint.assistants]: assistants.buildOptions,
   [EModelEndpoint.azureAssistants]: azureAssistants.buildOptions,
 };
+
+/**
+ * Inspects only the user-authored value substituted for `{{current_user}}`.
+ * The surrounding model-spec prompt is administrator-authored, so treating the
+ * entire resolved prompt as user provenance would incorrectly apply user
+ * content policy to static deployment configuration.
+ *
+ * `extractChatContent` deliberately gives prompt prefixes both prompt and
+ * agent-instruction semantics, preserving the source-specific field controls
+ * for the exact value that becomes model-bound.
+ *
+ * @param {ServerRequest} req
+ * @param {unknown} promptPrefixTemplate
+ * @returns {import('@librechat/api').ProtectionFinding | null}
+ */
+function inspectResolvedCurrentUser(req, promptPrefixTemplate) {
+  if (
+    typeof promptPrefixTemplate !== 'string' ||
+    !/{{\s*current_user\s*}}/i.test(promptPrefixTemplate) ||
+    !req.user?.name
+  ) {
+    return null;
+  }
+
+  return inspectContent(extractChatContent({ promptPrefix: String(req.user.name) }), {
+    filters: req.config?.filters,
+  });
+}
 
 async function buildEndpointOption(req, res, next) {
   const { endpoint, endpointType } = req.body;
@@ -119,11 +150,16 @@ async function buildEndpointOption(req, res, next) {
   }
 
   if (!isAgents && appliedModelSpecPrivateFields.has('promptPrefix')) {
+    const promptPrefixTemplate = parsedBody.promptPrefix;
     parsedBody = resolveModelSpecPromptPrefixVariables(
       parsedBody,
       req.user,
       req.body.clientTimestamp,
     );
+    const finding = inspectResolvedCurrentUser(req, promptPrefixTemplate);
+    if (finding != null) {
+      return res.status(400).json(contentFilterBlockResponse(finding));
+    }
   }
 
   try {

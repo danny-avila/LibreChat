@@ -803,6 +803,10 @@ export const tMessageSchema = z.object({
   /** @deprecated */
   generation: z.string().nullable().optional(),
   isCreatedByUser: z.boolean(),
+  /** True when the complete stored row came from outside the model. */
+  isUserSubmitted: z.boolean().optional(),
+  /** JSON pointers to caller-authored fields in an otherwise mixed model response. */
+  userSubmittedPaths: z.array(z.string().startsWith('/')).optional(),
   isTemporary: z.boolean().optional(),
   expiredAt: z.string().nullable().optional(),
   error: z.boolean().optional(),

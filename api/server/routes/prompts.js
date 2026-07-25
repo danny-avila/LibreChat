@@ -54,18 +54,70 @@ const { hasCapability } = require('~/server/middleware/roles/capabilities');
 
 const router = express.Router();
 
-const blockFilteredPromptContent = (req, res, promptData) => {
+const getFilteredPromptContent = (req, promptData) => {
   if (req.config?.filters == null) {
-    return false;
+    return null;
   }
-  const finding = inspectContent(extractPromptContent(promptData), {
+  return inspectContent(extractPromptContent(promptData), {
     filters: req.config.filters,
   });
+};
+
+const blockFilteredPromptContent = (req, res, promptData) => {
+  const finding = getFilteredPromptContent(req, promptData);
   if (finding == null) {
     return false;
   }
   res.status(400).json(contentFilterBlockResponse(finding));
   return true;
+};
+
+/**
+ * Removes user-authored prompt fields from an older stored record that no
+ * longer satisfies the active prompt policy. Structural fields remain so an
+ * editor can select the version and replace it with a compliant one.
+ */
+const redactFilteredStoredPrompt = (req, prompt) => {
+  if (prompt == null || getFilteredPromptContent(req, { prompt }) == null) {
+    return prompt;
+  }
+
+  const {
+    name: _name,
+    description: _description,
+    oneliner: _oneliner,
+    category: _category,
+    command: _command,
+    prompt: _prompt,
+    ...metadata
+  } = prompt;
+  return {
+    ...metadata,
+    prompt: '',
+    contentFilterBlocked: true,
+  };
+};
+
+/**
+ * Prompt group metadata is required to identify a group, so groups whose
+ * metadata is blocked are omitted from collection responses. A blocked
+ * production prompt can be redacted in management responses, while the reuse
+ * response omits the group entirely.
+ */
+const prepareStoredPromptGroup = (req, group, { forReuse = false } = {}) => {
+  if (group == null || getFilteredPromptContent(req, { group }) != null) {
+    return null;
+  }
+
+  const productionPrompt = redactFilteredStoredPrompt(req, group.productionPrompt);
+  if (forReuse && productionPrompt?.contentFilterBlocked === true) {
+    return null;
+  }
+
+  return {
+    ...group,
+    productionPrompt,
+  };
 };
 
 const checkPromptAccess = generateCheckAccess({
@@ -97,6 +149,7 @@ router.get(
   canAccessPromptGroupResource({
     requiredPermission: PermissionBits.VIEW,
   }),
+  configMiddleware,
   async (req, res) => {
     const { groupId } = req.params;
 
@@ -107,7 +160,11 @@ router.get(
         return res.status(404).send({ message: 'Prompt group not found' });
       }
 
-      res.status(200).send(group);
+      if (blockFilteredPromptContent(req, res, { group })) {
+        return;
+      }
+
+      res.status(200).send(prepareStoredPromptGroup(req, group));
     } catch (error) {
       logger.error('Error getting prompt group', error);
       res.status(500).send({ message: 'Error getting prompt group' });
@@ -119,7 +176,7 @@ router.get(
  * Route to fetch all prompt groups (ACL-aware)
  * GET /all
  */
-router.get('/all', async (req, res) => {
+router.get('/all', configMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
     const { name, category } = req.query;
@@ -164,7 +221,13 @@ router.get('/all', async (req, res) => {
       return res.status(200).send([]);
     }
 
-    const groupsWithPublicFlag = markPublicPromptGroups(promptGroups, publiclyAccessibleIds);
+    const readablePromptGroups = promptGroups
+      .map((group) => prepareStoredPromptGroup(req, group, { forReuse: true }))
+      .filter(Boolean);
+    const groupsWithPublicFlag = markPublicPromptGroups(
+      readablePromptGroups,
+      publiclyAccessibleIds,
+    );
     res.status(200).send(groupsWithPublicFlag);
   } catch (error) {
     logger.error(error);
@@ -176,7 +239,7 @@ router.get('/all', async (req, res) => {
  * Route to fetch paginated prompt groups with filters (ACL-aware)
  * GET /groups
  */
-router.get('/groups', async (req, res) => {
+router.get('/groups', configMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
     const { pageSize, limit, cursor, name, category } = req.query;
@@ -240,7 +303,13 @@ router.get('/groups', async (req, res) => {
     }
 
     const { data: promptGroups = [], has_more = false, after = null } = result;
-    const groupsWithPublicFlag = markPublicPromptGroups(promptGroups, publiclyAccessibleIds);
+    const readablePromptGroups = promptGroups
+      .map((group) => prepareStoredPromptGroup(req, group))
+      .filter(Boolean);
+    const groupsWithPublicFlag = markPublicPromptGroups(
+      readablePromptGroups,
+      publiclyAccessibleIds,
+    );
 
     const response = formatPromptGroupsResponse({
       promptGroups: groupsWithPublicFlag,
@@ -454,9 +523,14 @@ router.patch(
     requiredPermission: PermissionBits.EDIT,
     resourceIdParam: 'promptId',
   }),
+  configMiddleware,
   async (req, res) => {
     try {
       const { promptId } = req.params;
+      const prompt = await getPrompt({ _id: promptId });
+      if (blockFilteredPromptContent(req, res, { prompt })) {
+        return;
+      }
       const result = await makePromptProduction(promptId);
       res.status(200).send(result);
     } catch (error) {
@@ -472,14 +546,18 @@ router.get(
     requiredPermission: PermissionBits.VIEW,
     resourceIdParam: 'promptId',
   }),
+  configMiddleware,
   async (req, res) => {
     const { promptId } = req.params;
     const prompt = await getPrompt({ _id: promptId });
+    if (blockFilteredPromptContent(req, res, { prompt })) {
+      return;
+    }
     res.status(200).send(prompt);
   },
 );
 
-router.get('/', async (req, res) => {
+router.get('/', configMiddleware, async (req, res) => {
   try {
     const author = req.user.id;
     const { groupId } = req.query;
@@ -505,7 +583,10 @@ router.get('/', async (req, res) => {
 
       // If user has access, fetch all prompts in the group (not just their own)
       const prompts = await getPrompts({ groupId: new ObjectId(groupId) });
-      return res.status(200).send(prompts);
+      const readablePrompts = Array.isArray(prompts)
+        ? prompts.map((prompt) => redactFilteredStoredPrompt(req, prompt))
+        : prompts;
+      return res.status(200).send(readablePrompts);
     }
 
     // If no groupId, return user's own prompts
@@ -521,7 +602,10 @@ router.get('/', async (req, res) => {
       delete query.author;
     }
     const prompts = await getPrompts(query);
-    res.status(200).send(prompts);
+    const readablePrompts = Array.isArray(prompts)
+      ? prompts.map((prompt) => redactFilteredStoredPrompt(req, prompt))
+      : prompts;
+    res.status(200).send(readablePrompts);
   } catch (error) {
     logger.error(error);
     res.status(500).send({ error: 'Error getting prompts' });

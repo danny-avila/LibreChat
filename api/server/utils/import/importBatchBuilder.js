@@ -2,13 +2,14 @@ const { v4: uuidv4 } = require('uuid');
 const {
   ContentFilterError,
   UninspectableFileError,
+  assertModelBoundContent,
   extractConversationImportContent,
-  extractStoredMessageContent,
   getBlockedOpaqueFileField,
   getContentTraversalFragments,
   inspectContent,
   isContentTraversalLimitError,
   isNestedMessageTraversalProtected,
+  resolveCanonicalFileReferences,
 } = require('@librechat/api');
 const {
   logger,
@@ -21,7 +22,7 @@ const {
   RetentionMode,
   openAISettings,
 } = require('librechat-data-provider');
-const { bulkIncrementTagCounts, bulkSaveConvos, bulkSaveMessages } = require('~/models');
+const { bulkIncrementTagCounts, bulkSaveConvos, bulkSaveMessages, getFiles } = require('~/models');
 const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
 
 /**
@@ -41,20 +42,20 @@ function createImportBatchBuilder(requestUserId, interfaceConfig, filters) {
  * @param {object} snapshot - Conversation content that would be persisted.
  * @param {object[]} snapshot.conversations - Conversation metadata records.
  * @param {object[]} snapshot.messages - Message records.
- * @returns {void}
+ * @param {object} [resolutionContext] - Owner-aware canonical file resolution dependencies.
+ * @param {{ id?: string, tenantId?: string }} [resolutionContext.user] - Snapshot owner.
+ * @param {Function} [resolutionContext.getFiles] - Canonical file lookup.
+ * @param {object[]} [resolutionContext.liveFiles] - Already hydrated canonical rows.
+ * @returns {Promise<void>}
  * @throws {ContentFilterError|UninspectableFileError|import('@librechat/api').ContentTraversalLimitError}
  */
-function assertConversationContentAllowed(filters, { conversations, messages }) {
+async function assertConversationContentAllowed(
+  filters,
+  { conversations, messages },
+  resolutionContext = {},
+) {
   if (filters == null) {
     return;
-  }
-
-  const uninspectableField = getBlockedOpaqueFileField(filters, {
-    conversations,
-    messages,
-  });
-  if (uninspectableField != null) {
-    throw new UninspectableFileError(uninspectableField);
   }
 
   const conversationFinding = inspectContent(
@@ -68,33 +69,87 @@ function assertConversationContentAllowed(filters, { conversations, messages }) 
     throw new ContentFilterError(conversationFinding);
   }
 
-  for (const message of messages) {
-    let fragments;
+  /**
+   * Imports mark every external row `isUserSubmitted`, while native
+   * copy/fork/share snapshots retain durable whole-row/path provenance.
+   * Reuse the final model-bound invariant so copied model prose is not
+   * retroactively classified as caller-authored content.
+   */
+  let storedMessages = messages;
+  let resolvedFiles = [];
+  if (filters.files?.pii != null) {
+    const fileInspection = await resolveCanonicalFileReferences({
+      filters,
+      input: messages,
+      user: resolutionContext.user,
+      liveFiles: resolutionContext.liveFiles,
+      getFiles: resolutionContext.getFiles ?? (async () => []),
+    });
+    storedMessages = fileInspection.sanitizedInput;
+    resolvedFiles = fileInspection.hydratedFiles;
+  }
+
+  for (const message of storedMessages) {
     try {
-      fragments = extractStoredMessageContent(message);
+      assertModelBoundContent({
+        filters,
+        storedMessages: [message],
+        resolvedFiles,
+      });
     } catch (error) {
       if (!isContentTraversalLimitError(error)) {
         throw error;
       }
-      const partialFinding = inspectContent(getContentTraversalFragments(error), {
-        filters,
-      });
-      if (partialFinding != null) {
-        throw new ContentFilterError(partialFinding);
+
+      const explicitPaths = Array.isArray(message.userSubmittedPaths)
+        ? message.userSubmittedPaths.filter(
+            (path) => typeof path === 'string' && path.startsWith('/'),
+          )
+        : [];
+      if (Array.isArray(message.content)) {
+        for (let index = 0; index < message.content.length; index++) {
+          if (message.content[index]?.type === 'steer') {
+            explicitPaths.push(`/content/${index}`);
+          }
+        }
       }
+      const isWholeMessageSubmitted =
+        message.isCreatedByUser === true ||
+        message.isUserSubmitted === true ||
+        new Set(explicitPaths).size > 256;
+      const relevantFragments = getContentTraversalFragments(error).filter(
+        (fragment) =>
+          isWholeMessageSubmitted ||
+          fragment.source === 'tool_argument' ||
+          explicitPaths.some(
+            (path) => fragment.path === path || fragment.path.startsWith(`${path}/`),
+          ),
+      );
+      const messageFinding = inspectContent(relevantFragments, { filters });
+      if (messageFinding != null) {
+        throw new ContentFilterError(messageFinding);
+      }
+
+      if (isWholeMessageSubmitted) {
+        const uninspectableField = getBlockedOpaqueFileField(filters, message);
+        if (uninspectableField != null) {
+          throw new UninspectableFileError(uninspectableField);
+        }
+      }
+
+      const traversalFilters =
+        isWholeMessageSubmitted || explicitPaths.length > 0
+          ? filters
+          : { ...filters, messages: undefined };
       if (
         isNestedMessageTraversalProtected({
-          filters,
-          roles: [message.role],
+          filters: traversalFilters,
+          roles:
+            isWholeMessageSubmitted || explicitPaths.length > 0 ? ['user'] : [message.role, 'tool'],
         })
       ) {
         throw error;
       }
-      continue;
-    }
-    const messageFinding = inspectContent(fragments, { filters });
-    if (messageFinding != null) {
-      throw new ContentFilterError(messageFinding);
     }
   }
 }
@@ -158,7 +213,12 @@ class ImportBatchBuilder {
    * @returns {object} The saved message object.
    */
   addUserMessage(text) {
-    const message = this.saveMessage({ text, sender: 'user', isCreatedByUser: true });
+    const message = this.saveMessage({
+      text,
+      sender: 'user',
+      isCreatedByUser: true,
+      isUserSubmitted: true,
+    });
     return message;
   }
 
@@ -174,6 +234,7 @@ class ImportBatchBuilder {
       text,
       sender,
       isCreatedByUser: false,
+      isUserSubmitted: true,
       model: model || openAISettings.model.default,
     });
     return message;
@@ -218,10 +279,17 @@ class ImportBatchBuilder {
    * @throws {Error} If there is an error saving the batch.
    */
   async saveBatch() {
-    assertConversationContentAllowed(this.filters, {
-      conversations: this.conversations,
-      messages: this.messages,
-    });
+    await assertConversationContentAllowed(
+      this.filters,
+      {
+        conversations: this.conversations,
+        messages: this.messages,
+      },
+      {
+        user: { id: this.requestUserId },
+        getFiles,
+      },
+    );
 
     try {
       const promises = [];

@@ -419,6 +419,28 @@ export interface InjectSkillCatalogParams {
   defaultActiveOnShare?: boolean;
   /** Admin-configured cap on the model-visible catalog. Defaults to 100. */
   maxCatalogSkills?: number;
+  /** Read-only catalog snapshot preloaded for current-policy inspection. */
+  resolvedCatalog?: ResolvedSkillCatalog;
+}
+
+export type SkillCatalogSummary = Awaited<
+  ReturnType<NonNullable<TListSkillsByAccess>>
+>['skills'][number];
+
+export interface ResolvedSkillCatalog {
+  activeSkills: SkillCatalogSummary[];
+  catalogLimit: number;
+  visibleCount: number;
+  reachedEnd: boolean;
+}
+
+export interface ResolveSkillCatalogParams {
+  accessibleSkillIds: Types.ObjectId[];
+  listSkillsByAccess: TListSkillsByAccess | undefined;
+  userId?: string;
+  skillStates?: Record<string, boolean>;
+  defaultActiveOnShare?: boolean;
+  maxCatalogSkills?: number;
 }
 
 export interface InjectSkillCatalogResult {
@@ -455,28 +477,17 @@ export interface InjectSkillCatalogResult {
 }
 
 /**
- * Queries accessible skills, formats a budget-aware catalog, appends it to the
- * agent's additional_instructions, and registers the SkillTool definition.
- * Returns updated toolDefinitions and the skill count.
- *
- * No tool instance is created — SkillTool is event-driven only. The tool
- * definition in toolDefinitions is sufficient for the LLM to see and call it;
- * the host handler intercepts the call via ON_TOOL_EXECUTE.
- *
- * The caller is responsible for gating on the skills capability before calling.
+ * Loads the exact active catalog snapshot without mutating an agent or tool
+ * registry. Callers may inspect this user-authored content before performing
+ * provider/resource side effects, then pass the snapshot to
+ * `injectSkillCatalog` to avoid a second query and TOCTOU drift.
  */
-export async function injectSkillCatalog(
-  params: InjectSkillCatalogParams,
-): Promise<InjectSkillCatalogResult> {
+export async function resolveSkillCatalog(
+  params: ResolveSkillCatalogParams,
+): Promise<ResolvedSkillCatalog> {
   const {
-    agent,
-    toolDefinitions: inputDefs,
-    toolRegistry,
     accessibleSkillIds,
-    contextWindowTokens,
     listSkillsByAccess,
-    codeEnvAvailable,
-    statefulSessions,
     userId,
     skillStates,
     defaultActiveOnShare = false,
@@ -486,20 +497,17 @@ export async function injectSkillCatalog(
 
   if (!listSkillsByAccess || accessibleSkillIds.length === 0) {
     return {
-      toolDefinitions: inputDefs,
-      skillCount: 0,
-      toolNames: [],
-      activeSkillIds: [],
-      activeSkillNames: new Set<string>(),
+      activeSkills: [],
+      catalogLimit,
+      visibleCount: 0,
+      reachedEnd: true,
     };
   }
 
-  type SkillSummary = Awaited<ReturnType<NonNullable<typeof listSkillsByAccess>>>['skills'][number];
+  const isActive = (skill: SkillCatalogSummary): boolean =>
+    resolveSkillActive({ skill, skillStates, userId, defaultActiveOnShare });
 
-  const isActive = (s: SkillSummary): boolean =>
-    resolveSkillActive({ skill: s, skillStates, userId, defaultActiveOnShare });
-
-  const activeSkills: SkillSummary[] = [];
+  const activeSkills: SkillCatalogSummary[] = [];
   /**
    * Catalog cap counts only model-visible (non-`disable-model-invocation`)
    * skills. Counting against the merged active set would let a tenant
@@ -549,6 +557,54 @@ export async function injectSkillCatalog(
     cursor = page.after;
     pages += 1;
   }
+
+  return {
+    activeSkills,
+    catalogLimit,
+    visibleCount,
+    reachedEnd,
+  };
+}
+
+/**
+ * Queries accessible skills, formats a budget-aware catalog, appends it to the
+ * agent's additional_instructions, and registers the SkillTool definition.
+ * Returns updated toolDefinitions and the skill count.
+ *
+ * No tool instance is created — SkillTool is event-driven only. The tool
+ * definition in toolDefinitions is sufficient for the LLM to see and call it;
+ * the host handler intercepts the call via ON_TOOL_EXECUTE.
+ *
+ * The caller is responsible for gating on the skills capability before calling.
+ */
+export async function injectSkillCatalog(
+  params: InjectSkillCatalogParams,
+): Promise<InjectSkillCatalogResult> {
+  const {
+    agent,
+    toolDefinitions: inputDefs,
+    toolRegistry,
+    accessibleSkillIds,
+    contextWindowTokens,
+    listSkillsByAccess,
+    codeEnvAvailable,
+    statefulSessions,
+    userId,
+    skillStates,
+    defaultActiveOnShare = false,
+    maxCatalogSkills,
+    resolvedCatalog,
+  } = params;
+  const { activeSkills, catalogLimit, visibleCount, reachedEnd } =
+    resolvedCatalog ??
+    (await resolveSkillCatalog({
+      accessibleSkillIds,
+      listSkillsByAccess,
+      userId,
+      skillStates,
+      defaultActiveOnShare,
+      maxCatalogSkills,
+    }));
 
   if (activeSkills.length === 0) {
     return {

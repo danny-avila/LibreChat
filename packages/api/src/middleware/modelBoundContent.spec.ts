@@ -11,7 +11,37 @@ const filters: FiltersConfig = {
   },
 };
 
+const makeTraversalOverflowContent = () => [
+  {
+    type: 'custom',
+    payload: Array.from({ length: 4_200 }, (_, index) => `safe-value-${index}`),
+  },
+];
+
 describe('assertModelBoundContent', () => {
+  it('does not traverse model-bound content for a zero-rule configuration', () => {
+    const message = {
+      isCreatedByUser: true,
+      get text(): string {
+        throw new Error('model-bound extraction should be bypassed');
+      },
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          skills: {
+            pii: {
+              fields: ['file_text'],
+              starterPatterns: [],
+            },
+          },
+        },
+        storedMessages: [message],
+      }),
+    ).not.toThrow();
+  });
+
   it('blocks persisted model-bound messages after a policy is enabled', () => {
     expect(() =>
       assertModelBoundContent({
@@ -27,17 +57,284 @@ describe('assertModelBoundContent', () => {
     ).toThrow('Submitted content contains a private value');
   });
 
-  it('does not treat persisted model output as user-submitted content', () => {
+  it('blocks assistant-role prose that was previously submitted by a user', () => {
     expect(() =>
       assertModelBoundContent({
         filters,
         storedMessages: [
           {
             isCreatedByUser: false,
+            isUserSubmitted: true,
             role: 'assistant',
-            text: 'Model generated PRIVATE-VALUE',
+            text: 'Imported before policy enablement: PRIVATE-VALUE',
           },
         ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('inspects only marked user-authored fields in a mixed assistant response', () => {
+    const mixedFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['text', 'content_part'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+        },
+      },
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: mixedFilters,
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            text: 'Model generated PRIVATE-MODEL',
+            content: [{ type: 'text', text: 'User edited PRIVATE-USER' }],
+            userSubmittedPaths: ['/content/0/text'],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: mixedFilters,
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            text: 'Model generated PRIVATE-MODEL',
+            content: [{ type: 'text', text: 'Safe user edit' }],
+            userSubmittedPaths: ['/content/0/text'],
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('assembles only marked user-authored leaves in a mixed assistant response', () => {
+    const assembledFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['assembled_context'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-VALUE' }],
+        },
+      },
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: assembledFilters,
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            content: [
+              { type: 'text', text: 'Model generated PRIVATE-MODEL' },
+              { type: 'text', text: 'PRIVATE-' },
+              { type: 'text', text: 'VALUE' },
+            ],
+            userSubmittedPaths: ['/content/1/text', '/content/2/text'],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: assembledFilters,
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            content: [
+              { type: 'text', text: 'PRIVATE-' },
+              { type: 'text', text: 'VALUE' },
+              { type: 'text', text: 'Safe user edit' },
+            ],
+            userSubmittedPaths: ['/content/2/text'],
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('treats persisted steer parts as user-submitted without classifying neighboring model prose', () => {
+    const mixedFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['content_part'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+        },
+      },
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: mixedFilters,
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            content: [
+              { type: 'text', text: 'Model generated PRIVATE-MODEL' },
+              { type: 'steer', steer: 'User supplied PRIVATE-STEER' },
+            ],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: mixedFilters,
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            content: [
+              { type: 'text', text: 'Model generated PRIVATE-MODEL' },
+              { type: 'steer', steer: 'Safe steer' },
+            ],
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('restores message policy semantics for user-authored HITL tool outputs', () => {
+    const hitlMessage = {
+      isCreatedByUser: false,
+      content: [
+        {
+          type: 'tool_call',
+          tool_call: {
+            id: 'approval-1',
+            args: 'PRIVATE-EDITED-ARGUMENT',
+            output: 'PRIVATE-HUMAN-RESPONSE',
+          },
+        },
+      ],
+    };
+    const messageFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['content_part'],
+          starterPatterns: [],
+          customPatterns: [
+            { id: 'private', label: 'private value', regex: 'PRIVATE-HUMAN-[A-Z]+' },
+          ],
+        },
+      },
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: messageFilters,
+        storedMessages: [
+          {
+            ...hitlMessage,
+            userSubmittedPaths: ['/content/0/tool_call/output'],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: messageFilters,
+        storedMessages: [
+          {
+            ...hitlMessage,
+            userSubmittedPaths: ['/content/0/tool_call/args'],
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('applies fail-close file policy only to marked fields in mixed assistant responses', () => {
+    const fileFilters: FiltersConfig = {
+      files: {
+        pii: {
+          fields: ['content'],
+          starterPatterns: [],
+          uninspectable: 'block',
+        },
+      },
+    };
+    const storedMessage = {
+      isCreatedByUser: false,
+      content: [
+        { type: 'input_file', file_id: 'model-file' },
+        { type: 'text', text: 'User-edited text' },
+      ],
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: fileFilters,
+        storedMessages: [{ ...storedMessage, userSubmittedPaths: ['/content/1/text'] }],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: fileFilters,
+        storedMessages: [{ ...storedMessage, userSubmittedPaths: ['/content/0'] }],
+      }),
+    ).toThrow('Submitted file content could not be inspected before processing.');
+  });
+
+  it('fails safe by inspecting the full row when provenance paths exceed the bound', () => {
+    const boundedPaths = Array.from({ length: 256 }, (_, index) => `/content/${index}/text`);
+    const storedMessage = {
+      isCreatedByUser: false,
+      text: 'Model generated PRIVATE-MODEL',
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters,
+        storedMessages: [{ ...storedMessage, userSubmittedPaths: boundedPaths }],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundContent({
+        filters,
+        storedMessages: [
+          {
+            ...storedMessage,
+            userSubmittedPaths: [...boundedPaths, '/content/256/text'],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it.each([
+    {
+      name: 'legacy unmarked assistant prose',
+      message: {
+        isCreatedByUser: false,
+        role: 'assistant',
+        text: 'Legacy model output PRIVATE-VALUE',
+      },
+    },
+    {
+      name: 'explicitly model-authored assistant prose',
+      message: {
+        isCreatedByUser: false,
+        isUserSubmitted: false,
+        role: 'assistant',
+        text: 'Model generated PRIVATE-VALUE',
+      },
+    },
+  ])('does not treat $name as user-submitted content', ({ message }) => {
+    expect(() =>
+      assertModelBoundContent({
+        filters,
+        storedMessages: [message],
       }),
     ).not.toThrow();
   });
@@ -132,6 +429,83 @@ describe('assertModelBoundContent', () => {
     ).toThrow('Submitted file content could not be inspected before processing.');
   });
 
+  it('accepts stored file locators only when backed by inspectable owner-resolved rows', () => {
+    const fileFilters: FiltersConfig = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          uninspectable: 'block',
+        },
+      },
+    };
+    const historicalMessage = {
+      isCreatedByUser: true,
+      role: 'user',
+      files: [{ file_id: 'file-owned' }, { file_id: 'file-missing' }],
+    };
+    const ownedFile = {
+      file_id: 'file-owned',
+      filename: 'owned.txt',
+      filepath: '/uploads/owned.txt',
+      text: 'safe canonical content',
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: fileFilters,
+        storedMessages: [{ ...historicalMessage, files: [{ file_id: 'file-owned' }] }],
+        resolvedFiles: [ownedFile],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: fileFilters,
+        storedMessages: [historicalMessage],
+        resolvedFiles: [ownedFile],
+      }),
+    ).toThrow('Submitted file content could not be inspected before processing.');
+  });
+
+  it('inspects owner-resolved file content before authorizing its stored locator', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'private-file',
+                  label: 'private file value',
+                  regex: 'PRIVATE-FILE',
+                },
+              ],
+              uninspectable: 'block',
+            },
+          },
+        },
+        storedMessages: [
+          {
+            isCreatedByUser: true,
+            role: 'user',
+            files: [{ file_id: 'file-owned' }],
+          },
+        ],
+        resolvedFiles: [
+          {
+            file_id: 'file-owned',
+            filename: 'owned.txt',
+            filepath: '/uploads/owned.txt',
+            text: 'PRIVATE-FILE',
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private file value');
+  });
+
   it('does not apply persisted-user policy to historical model output', () => {
     expect(() =>
       assertModelBoundContent({
@@ -207,6 +581,101 @@ describe('assertModelBoundContent', () => {
         files: [{ file_id: 'file-agent-context' } as never],
       }),
     ).toThrow('Submitted file content could not be inspected before processing.');
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: failClosedFilters,
+        files: [
+          {
+            file_id: 'file-agent-context',
+            filename: 'context.txt',
+            filepath: '/uploads/context.txt',
+            text: 'safe canonical context',
+          } as never,
+        ],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'private-context',
+                  label: 'private context',
+                  regex: 'PRIVATE-CONTEXT',
+                },
+              ],
+              uninspectable: 'block',
+            },
+          },
+        },
+        files: [
+          {
+            file_id: 'file-agent-context',
+            filename: 'context.txt',
+            filepath: '/uploads/context.txt',
+            text: 'PRIVATE-CONTEXT',
+          } as never,
+        ],
+      }),
+    ).toThrow('Submitted content contains a private context');
+  });
+
+  it('accepts only agent resource IDs backed by inspectable hydrated resource files', () => {
+    const filters: FiltersConfig = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          uninspectable: 'block',
+        },
+      },
+    };
+    const hydratedFile = {
+      file_id: 'file-agent-context',
+      filename: 'context.txt',
+      filepath: '/uploads/context.txt',
+      text: 'safe canonical context',
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters,
+        agents: [
+          {
+            tool_resources: {
+              context: {
+                file_ids: ['file-agent-context'],
+                files: [hydratedFile],
+              },
+            },
+            agentContextAttachments: [hydratedFile],
+          } as never,
+        ],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundContent({
+        filters,
+        agents: [
+          {
+            tool_resources: {
+              context: {
+                file_ids: ['file-agent-context', 'unresolved-file'],
+                files: [hydratedFile],
+              },
+            },
+            agentContextAttachments: [hydratedFile],
+          } as never,
+        ],
+      }),
+    ).toThrow('Submitted file content could not be inspected before processing.');
   });
 
   it('does not let unrelated source policy or excluded file fields interfere', () => {
@@ -237,6 +706,136 @@ describe('assertModelBoundContent', () => {
         storedMessages: [opaqueUserMessage],
       }),
     ).not.toThrow();
+  });
+
+  it('does not fail a model-only row when nested model prose exceeds the traversal budget', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+            },
+          },
+        },
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            role: 'assistant',
+            content: makeTraversalOverflowContent(),
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('does not fail submitted message traversal for an unrelated source policy', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          conversationTitles: {
+            pii: {
+              fields: ['title'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+            },
+          },
+        },
+        storedMessages: [
+          {
+            isCreatedByUser: true,
+            role: 'user',
+            content: makeTraversalOverflowContent(),
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('fails closed when protected submitted message content exceeds the traversal budget', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+            },
+          },
+        },
+        storedMessages: [
+          {
+            isCreatedByUser: true,
+            role: 'user',
+            content: makeTraversalOverflowContent(),
+          },
+        ],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+  });
+
+  it('still inspects structured tool arguments after overflowing model-only content', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['arguments'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+            },
+          },
+        },
+        storedMessages: [
+          {
+            isCreatedByUser: false,
+            role: 'assistant',
+            content: makeTraversalOverflowContent(),
+            tool_calls: [
+              {
+                function: {
+                  name: 'submit',
+                  arguments: '{"value":"PRIVATE-TOOL"}',
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('still inspects submitted API tool arguments after overflowing nested content', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['arguments'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+            },
+          },
+        },
+        submittedMessages: [
+          {
+            role: 'assistant',
+            content: makeTraversalOverflowContent(),
+            tool_calls: [
+              {
+                function: {
+                  name: 'submit',
+                  arguments: '{"value":"PRIVATE-TOOL"}',
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
   });
 
   it('blocks initialized action schemas before they become model-bound', () => {

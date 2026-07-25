@@ -59,7 +59,7 @@ import {
   stripIntentLabelsFromToolDefinitions,
   INTENT_ARG,
 } from './intent';
-import { logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
+import { getSafeErrorMetadata, logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
@@ -142,6 +142,7 @@ export interface ToolExecuteOptions {
   ) => Promise<{
     body: string;
     name: string;
+    description?: string;
     _id: Types.ObjectId;
     /** Monotonic counter on the skill record. Threaded into
      *  `codeEnvRef.version` so codeapi's sessionKey scopes the cache
@@ -168,6 +169,7 @@ export interface ToolExecuteOptions {
   getAuthorSkillByName?: (params: { req: ServerRequest; name: string }) => Promise<{
     body: string;
     name: string;
+    description?: string;
     _id: Types.ObjectId;
     version: number;
     fileCount: number;
@@ -746,26 +748,48 @@ function filteredSkillResult(
   return filteredContentResult(tc, req, extractSkillContent(input));
 }
 
+function filteredFileNameResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  filename: string,
+): ToolExecuteResult | null {
+  if (req?.config?.filters?.files?.pii == null) {
+    return null;
+  }
+  return filteredContentResult(tc, req, extractFileContent({ filename }));
+}
+
+function uninspectableFileResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+): ToolExecuteResult | null {
+  const field = getBlockedUninspectableFileField(req?.config?.filters, ['content']);
+  return field == null ? null : errorResult(tc, contentFilterUninspectableResponse(field).message);
+}
+
+function filteredBinaryFileResult(
+  tc: ToolCallRequest,
+  req: ServerRequest | undefined,
+  filename: string,
+): ToolExecuteResult | null {
+  return filteredFileNameResult(tc, req, filename) ?? uninspectableFileResult(tc, req);
+}
+
 function filteredFileResult(
   tc: ToolCallRequest,
   req: ServerRequest | undefined,
   filename: string,
   content: string,
 ): ToolExecuteResult | null {
-  const filters = req?.config?.filters;
-  if (filters?.files?.pii == null) {
+  if (req?.config?.filters?.files?.pii == null) {
     return null;
   }
-  const filteredName = filteredContentResult(tc, req, extractFileContent({ filename }));
+  const filteredName = filteredFileNameResult(tc, req, filename);
   if (filteredName != null) {
     return filteredName;
   }
   if (looksBinary(content)) {
-    const field = getBlockedUninspectableFileField(filters, ['content']);
-    if (field != null) {
-      return errorResult(tc, contentFilterUninspectableResponse(field).message);
-    }
-    return null;
+    return uninspectableFileResult(tc, req);
   }
   return filteredContentResult(tc, req, extractFileContent({ content }));
 }
@@ -1615,6 +1639,11 @@ async function handleSandboxImageRead(
   codeExecutionContext?: CodeExecutionContext,
   onSuccess?: () => void,
 ): Promise<ToolExecuteResult> {
+  const filtered = filteredBinaryFileResult(tc, req, filePath);
+  if (filtered != null) {
+    return filtered;
+  }
+
   const { readSandboxImage } = options;
   const binaryHint = (): ToolExecuteResult => ({
     toolCallId: tc.id,
@@ -1707,6 +1736,10 @@ async function handleSandboxFileFallback(
   if (SANDBOX_IMAGE_EXTENSIONS.has(ext)) {
     return handleSandboxImageRead(tc, filePath, ext, options, req, codeExecutionContext, onSuccess);
   }
+  const filteredName = filteredFileNameResult(tc, req, filePath);
+  if (filteredName != null) {
+    return filteredName;
+  }
   if (BINARY_EXTENSIONS_NEVER_READABLE.has(ext)) {
     return {
       toolCallId: tc.id,
@@ -1743,6 +1776,10 @@ async function handleSandboxFileFallback(
         errorMessage: `Failed to read "${filePath}" from the code-execution sandbox. Try \`bash_tool\` (e.g. \`cat ${filePath}\`).`,
       };
     }
+    const filtered = filteredFileResult(tc, req, filePath, result.content);
+    if (filtered != null) {
+      return filtered;
+    }
     if (looksBinary(result.content)) {
       return {
         toolCallId: tc.id,
@@ -1778,7 +1815,7 @@ async function handleSandboxFileFallback(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger.warn(`[handleReadFileCall] Sandbox fallback failed for "${filePath}": ${message}`);
+    logger.warn('[handleReadFileCall] Sandbox fallback failed', getSafeErrorMetadata(error));
     return {
       toolCallId: tc.id,
       status: 'error',
@@ -1938,7 +1975,7 @@ async function loadSandboxTextForAuthoring({
       return { status: 'missing' };
     }
     const message = getThrownValueMessage(error);
-    logger.warn(`[file_authoring] Sandbox read failed for "${filePath}": ${message}`);
+    logger.warn('[file_authoring] Sandbox read failed', getSafeErrorMetadata(error));
     return {
       status: 'error',
       message: `Error reading "${filePath}" from the code-execution sandbox: ${message}.`,
@@ -1990,7 +2027,7 @@ async function writeSandboxTextForAuthoring({
     });
   } catch (error) {
     const message = getThrownValueMessage(error);
-    logger.warn(`[file_authoring] Sandbox write failed for "${filePath}": ${message}`);
+    logger.warn('[file_authoring] Sandbox write failed', getSafeErrorMetadata(error));
     return errorResult(
       tc,
       `Error writing "${filePath}" to the code-execution sandbox: ${message}.`,
@@ -3479,6 +3516,13 @@ async function handleReadFileCall(
       content: '',
       errorMessage: `File not found: "${relativePath}" in skill "${skillName}"`,
     };
+  }
+
+  const fileFiltered = IMAGE_MIMES.has(file.mimeType)
+    ? filteredBinaryFileResult(tc, req, args.path)
+    : filteredFileNameResult(tc, req, args.path);
+  if (fileFiltered != null) {
+    return fileFiltered;
   }
 
   // Known binary — serve images as artifacts, others as metadata

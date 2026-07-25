@@ -9,7 +9,10 @@ import type { ProtectionFinding, TextContentFragment } from '../protection/types
 import {
   contentFilterUninspectableResponse,
   getBlockedOpaqueFileField,
+  resolveCanonicalFileReferences,
   UninspectableFileError,
+  type CanonicalFileInspectionFile,
+  type GetCanonicalFilesForInspection,
 } from '../protection/files';
 import {
   ContentTraversalLimitError,
@@ -17,7 +20,8 @@ import {
   isContentTraversalLimitError,
   isNestedMessageTraversalProtected,
 } from '../protection/adapters/nested';
-import { inspectContent } from '../protection/runtime';
+import { createConfiguredContentInspector } from '../protection/runtime';
+import { extractFileContent } from '../protection/adapters/submissions';
 
 export interface ContentFilterBlockResponse {
   readonly error: 'content_filter_block';
@@ -64,36 +68,71 @@ export interface CreateContentFilterOptions {
   getLegacyPii?: (req: ServerRequest) => MessageFilterPiiConfig | undefined;
   getMessageRoles?: (req: ServerRequest) => readonly (string | undefined)[];
   getOpaqueFileInput?: (req: ServerRequest) => unknown;
+  getFiles?: GetCanonicalFilesForInspection;
   extract: (req: ServerRequest) => Iterable<TextContentFragment>;
 }
 
 export function createContentFilter(options: CreateContentFilterOptions): RequestHandler {
-  return function contentFilter(req: ServerRequest, res: ServerResponse, next: NextFunction): void {
+  return async function contentFilter(
+    req: ServerRequest,
+    res: ServerResponse,
+    next: NextFunction,
+  ): Promise<void> {
     const filters = options.getFilters(req);
     const legacyPii = options.getLegacyPii?.(req);
-    if (filters == null && legacyPii == null) {
+    const inspector = createConfiguredContentInspector({ filters, legacyPii });
+    let opaqueFileInput = options.getOpaqueFileInput?.(req);
+    if (inspector == null && opaqueFileInput == null) {
       next();
       return;
     }
 
+    let hydratedFiles: CanonicalFileInspectionFile[] = [];
+    if (opaqueFileInput != null && options.getFiles != null && filters?.files?.pii != null) {
+      try {
+        const fileInspection = await resolveCanonicalFileReferences({
+          filters,
+          input: opaqueFileInput,
+          user: (
+            req as ServerRequest & {
+              user?: { id?: string; tenantId?: string | null };
+            }
+          ).user,
+          getFiles: options.getFiles,
+        });
+        opaqueFileInput = fileInspection.sanitizedInput;
+        hydratedFiles = fileInspection.hydratedFiles;
+      } catch (error) {
+        if (error instanceof UninspectableFileError) {
+          res.status(error.statusCode).json(error.body);
+          return;
+        }
+        next(error);
+        return;
+      }
+    }
+
     const uninspectableField =
-      options.getOpaqueFileInput == null
-        ? null
-        : getBlockedOpaqueFileField(filters, options.getOpaqueFileInput(req));
+      opaqueFileInput == null ? null : getBlockedOpaqueFileField(filters, opaqueFileInput);
     if (uninspectableField != null) {
       res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
+      return;
+    }
+    if (inspector == null) {
+      next();
       return;
     }
 
     let finding: ProtectionFinding | null;
     try {
-      finding = inspectContent(options.extract(req), { filters, legacyPii });
+      const fragments = [...options.extract(req)];
+      for (const file of hydratedFiles) {
+        fragments.push(...extractFileContent(file));
+      }
+      finding = inspector.inspect(fragments);
     } catch (error) {
       if (isContentTraversalLimitError(error)) {
-        const partialFinding = inspectContent(getContentTraversalFragments(error), {
-          filters,
-          legacyPii,
-        });
+        const partialFinding = inspector.inspect(getContentTraversalFragments(error));
         if (partialFinding != null) {
           res.status(400).json(contentFilterBlockResponse(partialFinding));
           return;

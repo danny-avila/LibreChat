@@ -234,6 +234,215 @@ describe('extractMessageContent', () => {
     expect(fragments.some(({ text }) => text.includes(dataUri))).toBe(false);
   });
 
+  it('dual-routes provider-native URLs as file URIs and message attachment references', () => {
+    const sharedUri = 'https://example.test/shared.png?token=ORG-SHARED';
+    const dataUri = 'data:image/png;base64,ORG-OPAQUE';
+    const fragments = Array.from(
+      extractMessageContent([
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              image_url: sharedUri,
+              source: { type: 'url', data: sharedUri },
+            },
+            {
+              type: 'document',
+              source: { type: 'url', data: 'https://example.test/ORG-DOCUMENT.pdf' },
+            },
+            { type: 'image', source: { type: 'base64', data: 'ORG-BINARY' } },
+            { type: 'document', source: { type: 'url', data: dataUri } },
+            { type: 'document', source_type: 'text', text: dataUri },
+          ],
+        },
+      ]),
+    );
+
+    expect(
+      fragments.filter(({ text, field }) => text === sharedUri && field === 'attachment_reference'),
+    ).toHaveLength(1);
+    expect(fragments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: '/0/content/1/source/data',
+          text: 'https://example.test/ORG-DOCUMENT.pdf',
+          source: 'message',
+          field: 'attachment_reference',
+          format: 'uri',
+        }),
+        expect.objectContaining({
+          path: '/0/content/1/source/data',
+          text: 'https://example.test/ORG-DOCUMENT.pdf',
+          source: 'file',
+          field: 'uri',
+          format: 'uri',
+        }),
+      ]),
+    );
+    expect(
+      fragments.some(({ text }) => text.includes('ORG-BINARY') || text.includes('ORG-OPAQUE')),
+    ).toBe(false);
+
+    const customPatterns = [
+      {
+        id: 'provider-url',
+        label: 'provider URL',
+        regex: 'ORG-DOCUMENT',
+      },
+    ];
+    expect(
+      inspectContent(fragments, {
+        filters: {
+          files: { pii: { fields: ['uri'], starterPatterns: [], customPatterns } },
+        },
+      }),
+    ).toMatchObject({
+      source: 'file',
+      field: 'uri',
+      fragmentPath: '/0/content/1/source/data',
+    });
+    expect(
+      inspectContent(fragments, {
+        filters: {
+          messages: {
+            pii: { fields: ['attachment_reference'], starterPatterns: [], customPatterns },
+          },
+        },
+      }),
+    ).toMatchObject({
+      source: 'message',
+      field: 'attachment_reference',
+      fragmentPath: '/0/content/1/source/data',
+    });
+  });
+
+  it('routes inline provider documents through file and message content policies', () => {
+    const fragments = Array.from(
+      extractMessageContent([
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'document',
+              source: { type: 'text', data: 'ANTHROPIC-CONTENT' },
+            },
+            {
+              type: 'document',
+              source_type: 'text',
+              text: 'LANGCHAIN-EXTRACTED',
+            },
+          ],
+        },
+      ]),
+    );
+
+    expect(fragments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: '/0/content/0/source/data',
+          text: 'ANTHROPIC-CONTENT',
+          source: 'message',
+          field: 'content_part',
+        }),
+        expect.objectContaining({
+          path: '/0/content/0/source/data',
+          text: 'ANTHROPIC-CONTENT',
+          source: 'file',
+          field: 'content',
+        }),
+        expect.objectContaining({
+          path: '/0/content/1/text',
+          text: 'LANGCHAIN-EXTRACTED',
+          source: 'message',
+          field: 'content_part',
+        }),
+        expect.objectContaining({
+          path: '/0/content/1/text',
+          text: 'LANGCHAIN-EXTRACTED',
+          source: 'file',
+          field: 'extracted_text',
+        }),
+        expect.objectContaining({
+          text: 'ANTHROPIC-CONTENTLANGCHAIN-EXTRACTED',
+          source: 'assembled_context',
+          field: 'assembled_context',
+        }),
+      ]),
+    );
+    expect(
+      fragments.filter(
+        ({ path, source, field }) =>
+          path === '/0/content/0/source/data' && source === 'message' && field === 'content_part',
+      ),
+    ).toHaveLength(1);
+    expect(fragments.some(({ field }) => field === 'attachment_reference')).toBe(false);
+
+    expect(
+      inspectContent(fragments, {
+        filters: {
+          files: {
+            pii: {
+              fields: ['content'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'inline-content',
+                  label: 'inline content',
+                  regex: 'ANTHROPIC-CONTENT',
+                },
+              ],
+            },
+          },
+        },
+      }),
+    ).toMatchObject({
+      source: 'file',
+      field: 'content',
+      fragmentPath: '/0/content/0/source/data',
+    });
+    expect(
+      inspectContent(fragments, {
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'inline-extracted',
+                  label: 'inline extracted text',
+                  regex: 'LANGCHAIN-EXTRACTED',
+                },
+              ],
+            },
+          },
+        },
+      }),
+    ).toMatchObject({
+      source: 'file',
+      field: 'extracted_text',
+      fragmentPath: '/0/content/1/text',
+    });
+  });
+
+  it('retains traversal fail-close for unclassified provider source fields', () => {
+    const content = [
+      {
+        type: 'document',
+        source: {
+          type: 'url',
+          data: 'https://example.test/document.pdf',
+          metadata: Array.from({ length: 5000 }, (_, index) => `submitted-${index}`),
+        },
+      },
+    ];
+
+    expect(() => Array.from(extractMessageContent([{ role: 'user', content }]))).toThrow(
+      ContentTraversalLimitError,
+    );
+  });
+
   it('extracts unknown nested textual leaves without rescanning structural or encoded payloads', () => {
     const cyclicPart: { type: string; payload: unknown; self?: unknown } = {
       type: 'vendor_content',
@@ -356,7 +565,7 @@ describe('extractMessageContent', () => {
     expect(
       isNestedMessageTraversalProtected({
         filters: {
-          toolArguments: { pii: { fields: ['output'], starterPatterns: ['email'] } },
+          toolArguments: { pii: { fields: ['output'], starterPatterns: ['sk_prefix'] } },
         },
         roles: ['tool'],
       }),

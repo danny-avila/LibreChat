@@ -337,6 +337,26 @@ describe('processAgentFileUpload', () => {
       expect(db.createFile).not.toHaveBeenCalled();
     });
 
+    it('persists the original audio MIME type as transcript provenance', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ sttSupportedMimeTypes: ['audio/webm'] }));
+      const sttService = {};
+      const { STTService } = require('~/server/services/Files/Audio/STTService');
+      STTService.getInstance.mockResolvedValueOnce(sttService);
+      processAudioFile.mockResolvedValueOnce({ text: 'submitted transcript', bytes: 20 });
+      const req = makeReq({ mimetype: 'audio/webm' });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'audio/webm',
+          source: FileSources.text,
+          text: 'submitted transcript',
+        }),
+        true,
+      );
+    });
+
     it('preserves the default-off path without inspecting extracted text', async () => {
       const req = makeReq();
 

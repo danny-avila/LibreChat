@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
-const { createContentFilter, extractPresetContent } = require('@librechat/api');
+const { createContentFilter, extractPresetContent, inspectContent } = require('@librechat/api');
 const { getPresets, savePreset, deletePresets } = require('~/models');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
 
@@ -11,10 +11,64 @@ const filterPresetContent = createContentFilter({
   extract: (req) => extractPresetContent(req.body),
 });
 
+const getFilteredPresetContent = (req, preset) => {
+  if (req.config?.filters == null) {
+    return null;
+  }
+  return inspectContent(extractPresetContent(preset), {
+    filters: req.config.filters,
+  });
+};
+
+/**
+ * Removes policy-covered fields from an older stored preset that no longer
+ * satisfies the active policy. Structural fields remain so the preset can
+ * still be selected for replacement or deletion.
+ */
+const redactFilteredStoredPreset = (req, preset) => {
+  if (preset == null || getFilteredPresetContent(req, preset) == null) {
+    return preset;
+  }
+
+  const {
+    name: _name,
+    description: _description,
+    oneliner: _oneliner,
+    category: _category,
+    command: _command,
+    prompt: _prompt,
+    title: _title,
+    promptPrefix: _promptPrefix,
+    system: _system,
+    context: _context,
+    instructions: _instructions,
+    additional_instructions: _additionalInstructions,
+    greeting: _greeting,
+    examples: _examples,
+    stop: _stop,
+    additionalModelRequestFields: _additionalModelRequestFields,
+    additional_model_request_fields: _additionalModelRequestFieldsSnakeCase,
+    response_format: _responseFormat,
+    responseFormat: _responseFormatCamelCase,
+    metadata: _metadata,
+    model_parameters: _modelParameters,
+    options: _options,
+    ...structuralFields
+  } = preset;
+
+  return {
+    ...structuralFields,
+    title: '',
+    contentFilterBlocked: true,
+  };
+};
+
 router.use(requireJwtAuth);
 
-router.get('/', async (req, res) => {
-  const presets = (await getPresets(req.user.id)).map((preset) => preset);
+router.get('/', configMiddleware, async (req, res) => {
+  const presets = (await getPresets(req.user.id)).map((preset) =>
+    redactFilteredStoredPreset(req, preset),
+  );
   res.status(200).json(presets);
 });
 

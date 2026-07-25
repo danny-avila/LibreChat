@@ -2,6 +2,7 @@ import {
   AgentCapabilities,
   EModelEndpoint,
   filtersConfigSchema,
+  hasActiveFiltersConfig,
   getConfigDefaults,
   langfuseConfigSchema,
   skillSyncConfigSchema,
@@ -102,7 +103,7 @@ export function loadFiltersConfig(config: DeepPartial<TCustomConfig>): AppConfig
     throw new Error('Invalid filters config');
   }
 
-  return parsed.data;
+  return hasActiveFiltersConfig(parsed.data) ? parsed.data : undefined;
 }
 
 export type Paths = {

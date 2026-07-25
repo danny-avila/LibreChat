@@ -570,6 +570,39 @@ describe('createImportHandler', () => {
     expect(deps.createSkill).not.toHaveBeenCalled();
   });
 
+  it('fails closed for oversized Markdown selected by the skill file_text policy', async () => {
+    const deps = mockImportDeps({ maxContentInspectionBytes: 64 });
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+    const config = mockAppConfig({
+      skills: {
+        pii: {
+          fields: ['file_text'],
+          starterPatterns: [],
+        },
+      },
+    });
+    const markdown = [
+      '---',
+      'name: oversized-skill',
+      'description: An oversized skill used by tests.',
+      '---',
+      'A'.repeat(128),
+    ].join('\n');
+
+    await handler(mockMarkdownRequest(markdown, 'oversized-skill.md', config), res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        error: 'content_filter_uninspectable',
+        source: 'file',
+        field: 'content',
+      }),
+    );
+    expect(deps.createSkill).not.toHaveBeenCalled();
+  });
+
   it('preflights all known-text archive files before creating or storing content', async () => {
     const deps = mockImportDeps();
     const handler = createImportHandler(deps);
@@ -688,6 +721,49 @@ describe('createImportHandler', () => {
     expect(deps.upsertSkillFile).not.toHaveBeenCalled();
   });
 
+  it('fails closed beyond the archive budget when skill file_text is selected', async () => {
+    const kib = 1024;
+    const deps = mockImportDeps({
+      maxZipBytes: 1024 * kib,
+      maxEntries: 50,
+      maxSingleFileBytes: 16 * kib,
+      maxDecompressedBytes: 128 * kib,
+      maxContentInspectionBytes: 3 * kib,
+    });
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+    const config = mockAppConfig({
+      skills: {
+        pii: {
+          fields: ['file_text'],
+          starterPatterns: [],
+        },
+      },
+      files: {
+        pii: {
+          fields: ['content'],
+          starterPatterns: [],
+          uninspectable: 'allow',
+        },
+      },
+    });
+    const buffer = await zipWithAdditionalFiles(10, 2 * kib);
+
+    await handler(mockZipRequest(buffer, config), res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        error: 'content_filter_uninspectable',
+        source: 'file',
+        field: 'content',
+      }),
+    );
+    expect(deps.createSkill).not.toHaveBeenCalled();
+    expect(deps.saveBuffer).not.toHaveBeenCalled();
+    expect(deps.upsertSkillFile).not.toHaveBeenCalled();
+  });
+
   it('does not apply the content inspection budget to filename-only filters', async () => {
     const kib = 1024;
     const deps = mockImportDeps({
@@ -781,6 +857,47 @@ describe('createImportHandler', () => {
     } finally {
       streamSpy.mockRestore();
     }
+  });
+
+  it('fails closed for binary archive entries selected by skill file_text', async () => {
+    const deps = mockImportDeps();
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+    const config = mockAppConfig({
+      skills: {
+        pii: {
+          fields: ['file_text'],
+          starterPatterns: [],
+        },
+      },
+    });
+    const zip = new JSZip();
+    zip.file(
+      'SKILL.md',
+      [
+        '---',
+        'name: binary-skill-filter',
+        'description: Binary skill filtering test.',
+        '---',
+        '# Safe instructions',
+      ].join('\n'),
+    );
+    zip.file('assets/private.png', Buffer.from([0, 255, 0, 137, 80, 78, 71]));
+    const buffer = await zip.generateAsync({ type: 'nodebuffer' });
+
+    await handler(mockZipRequest(buffer, config), res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        error: 'content_filter_uninspectable',
+        source: 'file',
+        field: 'content',
+      }),
+    );
+    expect(deps.createSkill).not.toHaveBeenCalled();
+    expect(deps.saveBuffer).not.toHaveBeenCalled();
+    expect(deps.upsertSkillFile).not.toHaveBeenCalled();
   });
 
   it('blocks opaque archive entries before creating or storing a skill when fail-closed', async () => {

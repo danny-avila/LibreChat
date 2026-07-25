@@ -14,18 +14,20 @@ import type { ServerRequest } from '~/types';
 import {
   extractFileContent,
   extractSkillContent,
-  getBlockedUninspectableFileField,
+  getBlockedUninspectableSkillFileField,
   inspectContent,
   UninspectableFileError,
 } from '~/protection';
 import { seedCodeFilesIntoSessions, type CodeExecutionProfileRoute } from './codeFilesSession';
 import { ContentFilterError, isContentFilterError } from '~/middleware/contentFilter';
-import { createConcurrencyLimiter, logAxiosError } from '~/utils';
+import { createConcurrencyLimiter, getSafeErrorMetadata } from '~/utils';
 import { extractInvokedSkillsFromPayload } from './run';
 import { isBinaryBuffer } from '~/skills/binary';
 import { SKILL_FILE_PREFIX } from './skills';
 
 const MAX_INSPECTABLE_SKILL_FILE_BYTES = 10 * 1024 * 1024;
+const SKILL_FILE_CONTENT_FIELDS = ['file_text'] as const;
+const FILE_CONTENT_FIELDS = ['content', 'extracted_text'] as const;
 
 export interface SkillFileRecord {
   relativePath: string;
@@ -199,7 +201,7 @@ async function collectSkillUploadFiles(
     if (result.status === 'fulfilled' && result.value) {
       filesToUpload.push(result.value);
     } else if (result.status === 'rejected') {
-      logger.error('[primeSkillFiles] Failed to get stream:', result.reason);
+      logger.error('[primeSkillFiles] Failed to get stream:', getSafeErrorMetadata(result.reason));
     }
   }
 
@@ -220,6 +222,7 @@ function assertStoredSkillBodyAllowed(
       ...extractFileContent({
         filename: `${SKILL_FILE_PREFIX}${skill.name}/SKILL.md`,
         content: skill.body,
+        extractedText: skill.body,
       }),
     ],
     { filters },
@@ -246,6 +249,7 @@ function assertStoredSkillFileAllowed(
         name: file.filename,
         filename: file.relativePath,
         content,
+        extractedText: content,
       }),
     ],
     { filters },
@@ -255,10 +259,7 @@ function assertStoredSkillFileAllowed(
   }
 
   if (isBinary) {
-    const field = getBlockedUninspectableFileField(filters, ['content']);
-    if (field != null) {
-      throw new UninspectableFileError(field);
-    }
+    throwIfStoredSkillFileMustBeInspectable(req);
   }
 }
 
@@ -281,10 +282,30 @@ function assertStoredSkillFileNameAllowed(file: SkillFileRecord, req: ServerRequ
   }
 }
 
+function includesSelectedField(
+  fields: readonly string[] | undefined,
+  candidates: readonly string[],
+): boolean {
+  return fields == null || candidates.some((field) => fields.includes(field));
+}
+
+function shouldInspectStoredSkillFileContent(req: ServerRequest): boolean {
+  const filters = req.config?.filters;
+  const skillPii = filters?.skills?.pii;
+  const filePii = filters?.files?.pii;
+  return (
+    (skillPii != null && includesSelectedField(skillPii.fields, SKILL_FILE_CONTENT_FIELDS)) ||
+    (filePii != null && includesSelectedField(filePii.fields, FILE_CONTENT_FIELDS))
+  );
+}
+
 function throwIfStoredSkillFileMustBeInspectable(req: ServerRequest): void {
-  const field = getBlockedUninspectableFileField(req.config?.filters, ['content']);
-  if (field != null) {
-    throw new UninspectableFileError(field);
+  const blockedField = getBlockedUninspectableSkillFileField(
+    req.config?.filters,
+    FILE_CONTENT_FIELDS,
+  );
+  if (blockedField != null) {
+    throw new UninspectableFileError(blockedField);
   }
 }
 
@@ -353,14 +374,20 @@ async function executePrimeSkillFiles(
   } = params;
   const executionProfile = codeExecutionContext?.executionProfile ?? 'default';
   const filters = req.config?.filters;
-  const inspectBundledFiles = filters?.skills?.pii != null || filters?.files?.pii != null;
+  const inspectStoredMetadata = filters?.skills?.pii != null || filters?.files?.pii != null;
+  const inspectBundledFileContent = shouldInspectStoredSkillFileContent(req);
   const inspectedBuffers = new Map<SkillFileRecord, Buffer>();
 
   assertStoredSkillBodyAllowed(skill, req);
 
-  if (inspectBundledFiles) {
+  if (inspectStoredMetadata) {
     for (const file of skillFiles) {
       assertStoredSkillFileNameAllowed(file, req);
+    }
+  }
+
+  if (inspectBundledFileContent) {
+    for (const file of skillFiles) {
       if (file.bytes > MAX_INSPECTABLE_SKILL_FILE_BYTES) {
         throwIfStoredSkillFileMustBeInspectable(req);
         continue;
@@ -369,9 +396,7 @@ async function executePrimeSkillFiles(
         const strategy = getStrategyFunctions(file.source);
         if (!strategy.getDownloadStream) {
           throwIfStoredSkillFileMustBeInspectable(req);
-          logger.warn(
-            `[primeSkillFiles] No download stream for "${file.relativePath}" (source: ${file.source})`,
-          );
+          logger.warn('[primeSkillFiles] No download stream for stored skill file');
           continue;
         }
         const sourceStream = await strategy.getDownloadStream(req, file.filepath);
@@ -387,9 +412,7 @@ async function executePrimeSkillFiles(
           throw error;
         }
         throwIfStoredSkillFileMustBeInspectable(req);
-        logger.error(
-          `[primeSkillFiles] Failed to inspect bundled file "${file.relativePath}" before use`,
-        );
+        logger.error('[primeSkillFiles] Failed to inspect bundled file before use');
       }
     }
   }
@@ -517,13 +540,10 @@ async function executePrimeSkillFiles(
     // files cause follow-up bash/read calls to fail at runtime with missing paths.
     const expectedCount = filesToUpload.filter((f) => !f.filename.endsWith('/SKILL.md')).length;
     if (files.length < expectedCount) {
-      const uploadedNames = new Set(result.files.map((f) => f.filename));
-      const missingNames = filesToUpload
-        .filter((f) => !f.filename.endsWith('/SKILL.md') && !uploadedNames.has(f.filename))
-        .map((f) => f.filename);
-      logger.error(
-        `[primeSkillFiles] Partial upload failure for skill "${skill.name}": ${missingNames.length} file(s) missing: ${missingNames.join(', ')}`,
-      );
+      logger.error('[primeSkillFiles] Partial upload failure', {
+        expectedCount,
+        uploadedCount: files.length,
+      });
       return null;
     }
 
@@ -570,20 +590,17 @@ async function executePrimeSkillFiles(
         try {
           await updateSkillFileCodeEnvIds(updates);
         } catch (err: unknown) {
-          logAxiosError({
-            message: `[primeSkillFiles] Failed to persist codeEnvRefs`,
-            error: err,
-          });
+          logger.error(
+            '[primeSkillFiles] Failed to persist codeEnvRefs',
+            getSafeErrorMetadata(err),
+          );
         }
       }
     }
 
     return { storage_session_id: result.storage_session_id, files };
   } catch (error) {
-    logAxiosError({
-      message: `[primeSkillFiles] Batch upload failed for skill "${skill.name}"`,
-      error,
-    });
+    logger.error('[primeSkillFiles] Batch upload failed', getSafeErrorMetadata(error));
     return null;
   }
 }
@@ -671,7 +688,7 @@ export async function primeInvokedSkills(
       skills.set(r.value.name, r.value.body);
       resolvedSkills.push(r.value);
     } else if (r.status === 'rejected') {
-      logger.warn('[primeInvokedSkills] Skill resolution failed:', r.reason);
+      logger.warn('[primeInvokedSkills] Skill resolution failed:', getSafeErrorMetadata(r.reason));
     }
   }
 
@@ -681,7 +698,8 @@ export async function primeInvokedSkills(
 
   if (deps.codeEnvAvailable && skillsWithFiles.length > 0) {
     const filters = deps.req.config?.filters;
-    const inspectStoredSkills = filters?.skills?.pii != null || filters?.files?.pii != null;
+    const inspectStoredMetadata = filters?.skills?.pii != null || filters?.files?.pii != null;
+    const inspectStoredSkillFileContent = shouldInspectStoredSkillFileContent(deps.req);
     // Parallel file list lookups (R2 fix)
     const fileListResults = await Promise.all(
       skillsWithFiles.map(async (skill) => ({
@@ -690,12 +708,20 @@ export async function primeInvokedSkills(
       })),
     );
 
+    if (inspectStoredMetadata && !inspectStoredSkillFileContent) {
+      for (const { files } of fileListResults) {
+        for (const file of files) {
+          assertStoredSkillFileNameAllowed(file, deps.req);
+        }
+      }
+    }
+
     // Session freshness check: the code env natively handles mixed sessions
     // (each file carries its own session_id, fetched independently). We check
     // ALL distinct sessions for freshness. If all are active, return cached
     // references with zero re-uploads. If any expired, re-upload everything.
     const executionProfile = deps.codeExecutionContext?.executionProfile ?? 'default';
-    if (!inspectStoredSkills && deps.getSessionInfo && deps.checkIfActive) {
+    if (!inspectStoredSkillFileContent && deps.getSessionInfo && deps.checkIfActive) {
       const allResolved = fileListResults.flatMap((r) =>
         r.files.map((f) => ({
           skillName: r.skill.name,
@@ -815,7 +841,10 @@ export async function primeInvokedSkills(
         if (isContentFilterError(r.reason)) {
           throw r.reason;
         }
-        logger.warn('[primeInvokedSkills] Failed to prime skill files:', r.reason);
+        logger.warn(
+          '[primeInvokedSkills] Failed to prime skill files:',
+          getSafeErrorMetadata(r.reason),
+        );
       } else {
         /* Fulfilled-null: primeSkillFiles swallowed an upload failure (429,
          * partial batch). The run proceeds without this skill's files. */

@@ -1,4 +1,8 @@
-const { assertModelBoundContent, ContentTraversalLimitError } = require('@librechat/api');
+const {
+  assertModelBoundContent,
+  ContentTraversalLimitError,
+  resolveCanonicalFileReferences,
+} = require('@librechat/api');
 
 const PAGE_LIMIT = 100;
 const MAX_THREAD_PAGES = 100;
@@ -129,7 +133,34 @@ async function preflightAssistantRunContent({ req, openai, assistantId, threadId
   return assistant;
 }
 
+/**
+ * Re-inspects the exact user message after locally persisted conversation file
+ * references have been attached. Canonical rows are owner-scoped before their
+ * durable locators are trusted.
+ */
+async function preflightAssistantUserMessageContent({ req, message, getFiles }) {
+  const filters = req.config?.filters;
+  if (filters?.files?.pii == null) {
+    return;
+  }
+
+  const fileInspection = await resolveCanonicalFileReferences({
+    filters,
+    input: message,
+    user: req.user,
+    getFiles,
+  });
+
+  assertModelBoundContent({
+    filters,
+    legacyPii: req.config?.messageFilter?.pii,
+    submittedMessages: [fileInspection.sanitizedInput],
+    resolvedFiles: fileInspection.hydratedFiles,
+  });
+}
+
 module.exports = {
   loadThreadUserMessages,
   preflightAssistantRunContent,
+  preflightAssistantUserMessageContent,
 };

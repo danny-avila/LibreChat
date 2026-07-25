@@ -706,6 +706,34 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
         await racingManager.destroy();
       }
     });
+
+    test('abort final events preserve HITL paths and derive applied steer paths', async () => {
+      const streamId = 'steer-abort-provenance';
+      await manager.createJob(streamId, 'user-1');
+      await jobStore.updateJob(streamId, {
+        conversationId: streamId,
+        createdEventEmitted: true,
+        responseMessageId: 'response-1',
+        userMessage: { messageId: 'user-1' },
+        userSubmittedPaths: ['/content/0/tool_call/output'],
+      });
+      manager.setContentParts(streamId, [
+        {
+          type: 'tool_call',
+          tool_call: { id: 'call-1', output: 'Human response' },
+        },
+        { type: 'steer', steer: 'Change direction' },
+      ] as unknown as Agents.MessageContentComplex[]);
+
+      const result = await manager.abortJob(streamId);
+
+      expect(
+        (result.finalEvent as { responseMessage?: { userSubmittedPaths?: string[] } } | undefined)
+          ?.responseMessage,
+      ).toMatchObject({
+        userSubmittedPaths: ['/content/0/tool_call/output', '/content/1'],
+      });
+    });
   });
 
   describe('synthesizeAppliedSteerEvents (snapshot→subscribe gap)', () => {

@@ -4,6 +4,8 @@ import {
   contentFilterUninspectableResponse,
   getBlockedOpaqueFileField,
   getBlockedUninspectableFileField,
+  getBlockedUninspectableSkillFileField,
+  resolveCanonicalFileReferences,
   UninspectableFileError,
 } from './files';
 
@@ -37,6 +39,34 @@ describe('file content inspection policy', () => {
         { files: { pii: { fields: ['content'] } } } as FiltersConfig,
         ['content'],
       ),
+    ).toBeNull();
+  });
+
+  it('fails closed for selected skill file text independently of file compatibility mode', () => {
+    const filters = {
+      skills: {
+        pii: {
+          fields: ['file_text'],
+        },
+      },
+      files: {
+        pii: {
+          fields: ['content'],
+          uninspectable: 'allow',
+        },
+      },
+    } as FiltersConfig;
+
+    expect(getBlockedUninspectableSkillFileField(filters)).toBe('content');
+    expect(
+      getBlockedUninspectableSkillFileField({
+        skills: { pii: { fields: ['file_name'] } },
+      } as FiltersConfig),
+    ).toBeNull();
+    expect(
+      getBlockedUninspectableSkillFileField({
+        skills: { pii: { fields: ['file_text'], starterPatterns: [] } },
+      } as FiltersConfig),
     ).toBeNull();
   });
 
@@ -264,5 +294,229 @@ describe('file content inspection policy', () => {
         { content: hostile },
       ),
     ).toBeNull();
+  });
+
+  it('owner-scopes and hydrates durable file references before opaque checks', async () => {
+    const filters = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          uninspectable: 'block',
+        },
+      },
+    } as FiltersConfig;
+    const getFiles = jest.fn().mockResolvedValue([
+      {
+        file_id: 'owned-file',
+        filename: 'report.txt',
+        filepath: '/uploads/report.txt',
+        text: 'safe extracted text',
+      },
+    ]);
+
+    const inspection = await resolveCanonicalFileReferences({
+      filters,
+      input: {
+        files: [
+          {
+            file_id: 'owned-file',
+            filepath: '/uploads/report.txt',
+            type: 'text/plain',
+          },
+        ],
+      },
+      user: { id: 'user-1', tenantId: 'tenant-1' },
+      getFiles,
+    });
+
+    expect(getFiles).toHaveBeenCalledWith(
+      {
+        file_id: { $in: ['owned-file'] },
+        user: 'user-1',
+        tenantId: 'tenant-1',
+      },
+      {},
+      {},
+    );
+    expect(inspection.sanitizedInput).toEqual({
+      files: [{ type: 'text/plain' }],
+    });
+    expect(inspection.hydratedFiles).toEqual([
+      expect.objectContaining({
+        file_id: 'owned-file',
+        text: 'safe extracted text',
+      }),
+    ]);
+    expect(inspection.hydratedFilters?.files?.pii?.uninspectable).toBe('allow');
+    expect(getBlockedOpaqueFileField(filters, inspection.sanitizedInput)).toBeNull();
+  });
+
+  it('reuses an inspected text upload when every file field is enabled fail-closed', async () => {
+    const filters = {
+      files: {
+        pii: {
+          uninspectable: 'block',
+        },
+      },
+    } as FiltersConfig;
+    const canonicalTextFile = {
+      file_id: 'owned-text-file',
+      filename: 'notes.txt',
+      filepath: '/uploads/notes.txt',
+      type: 'text/plain',
+      source: 'text',
+      text: 'safe submitted text',
+    };
+
+    await expect(
+      resolveCanonicalFileReferences({
+        filters,
+        input: {
+          files: [{ file_id: canonicalTextFile.file_id }],
+        },
+        user: { id: 'user-1' },
+        getFiles: jest.fn().mockResolvedValue([canonicalTextFile]),
+      }),
+    ).resolves.toMatchObject({
+      sanitizedInput: { files: [{}] },
+      hydratedFiles: [canonicalTextFile],
+    });
+  });
+
+  it('keeps raw binary content fail-closed when a legacy preview text is present', async () => {
+    const filters = {
+      files: {
+        pii: {
+          fields: ['content'],
+          uninspectable: 'block',
+        },
+      },
+    } as FiltersConfig;
+
+    await expect(
+      resolveCanonicalFileReferences({
+        filters,
+        input: { files: [{ file_id: 'legacy-binary-file' }] },
+        user: { id: 'user-1' },
+        getFiles: jest.fn().mockResolvedValue([
+          {
+            file_id: 'legacy-binary-file',
+            filename: 'report.pdf',
+            type: 'application/pdf',
+            source: 'local',
+            text: 'legacy preview text',
+          },
+        ]),
+      }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: {
+        source: 'file',
+        field: 'content',
+      },
+    });
+  });
+
+  it('keeps audio transcripts fail-closed without text-extraction provenance', async () => {
+    const filters = {
+      files: {
+        pii: {
+          fields: ['transcript'],
+          uninspectable: 'block',
+        },
+      },
+    } as FiltersConfig;
+
+    await expect(
+      resolveCanonicalFileReferences({
+        filters,
+        input: { files: [{ file_id: 'legacy-audio-file' }] },
+        user: { id: 'user-1' },
+        getFiles: jest.fn().mockResolvedValue([
+          {
+            file_id: 'legacy-audio-file',
+            filename: 'recording.webm',
+            type: 'audio/webm',
+            source: 'local',
+            text: 'unclassified legacy text',
+          },
+        ]),
+      }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: {
+        source: 'file',
+        field: 'transcript',
+      },
+    });
+  });
+
+  it('resolves canonical file_ids arrays but leaves unresolved opaque IDs fail-closed', async () => {
+    const filters = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          uninspectable: 'block',
+        },
+      },
+    } as FiltersConfig;
+    const getFiles = jest.fn().mockResolvedValue([
+      {
+        file_id: 'owned-file',
+        filename: 'report.txt',
+        filepath: '/uploads/report.txt',
+        text: 'safe extracted text',
+      },
+    ]);
+
+    await expect(
+      resolveCanonicalFileReferences({
+        filters,
+        input: {
+          tool_resources: {
+            file_search: {
+              file_ids: ['owned-file', 'unresolved-file'],
+            },
+          },
+        },
+        user: { id: 'user-1' },
+        getFiles,
+      }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: {
+        source: 'file',
+        field: 'extracted_text',
+      },
+    });
+  });
+
+  it('does not let a resolved file ID hide a sibling opaque payload', async () => {
+    const filters = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          uninspectable: 'block',
+        },
+      },
+    } as FiltersConfig;
+
+    const inspection = await resolveCanonicalFileReferences({
+      filters,
+      input: {
+        files: [{ file_id: 'owned-file' }, { file_data: 'opaque-file-data' }],
+      },
+      user: { id: 'user-1' },
+      getFiles: jest.fn().mockResolvedValue([
+        {
+          file_id: 'owned-file',
+          filename: 'report.txt',
+          filepath: '/uploads/report.txt',
+          text: 'safe extracted text',
+        },
+      ]),
+    });
+
+    expect(getBlockedOpaqueFileField(filters, inspection.sanitizedInput)).toBe('extracted_text');
   });
 });

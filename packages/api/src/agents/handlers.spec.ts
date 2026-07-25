@@ -88,6 +88,29 @@ function skillsInScope(): unknown[] {
   return [new Types.ObjectId()];
 }
 
+function protectedToolOutputRequest() {
+  return {
+    user: { id: 'user-1' },
+    config: {
+      filters: {
+        toolArguments: {
+          pii: {
+            fields: ['output'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'protected-output',
+                label: 'protected output',
+                regex: 'PROTECTED-[A-Z-]+',
+              },
+            ],
+          },
+        },
+      },
+    },
+  } as never;
+}
+
 describe('createToolExecuteHandler', () => {
   describe('code execution session context passthrough', () => {
     it('passes session_id and _injected_files from codeSessionContext to toolCallConfig', async () => {
@@ -480,7 +503,7 @@ describe('createToolExecuteHandler', () => {
 
       expect(loadTools).toHaveBeenCalledTimes(1);
       expect(loadTools).toHaveBeenCalledWith(['allowed_tool'], undefined);
-      expect(JSON.stringify(loadTools.mock.calls)).not.toContain(protectedName);
+      expect(JSON.stringify(jest.mocked(loadTools).mock.calls)).not.toContain(protectedName);
       expect(results[0]).toEqual(
         expect.objectContaining({
           status: 'error',
@@ -3210,6 +3233,90 @@ describe('createToolExecuteHandler', () => {
       expect(writeSandboxFile).not.toHaveBeenCalled();
     });
 
+    it('filters sandbox authoring read failures before logging details', async () => {
+      const protectedValue = 'PROTECTED-SANDBOX-AUTHORING-READ';
+      const sandboxError = Object.assign(new Error(protectedValue), {
+        response: { status: 502, data: protectedValue },
+      });
+      const warnSpy = jest.spyOn(logger, 'warn').mockReturnValue(logger);
+      try {
+        const handler = makeSandboxAuthoringHandler(
+          {
+            readSandboxFile: jest.fn(async () => {
+              throw sandboxError;
+            }),
+            writeSandboxFile: jest.fn(),
+          },
+          { req: protectedToolOutputRequest() },
+        );
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_filtered_authoring_read_error',
+            name: 'edit_file',
+            args: {
+              path: '/mnt/data/private.txt',
+              old_text: 'old',
+              new_text: 'new',
+            },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('protected output');
+        expect(result.errorMessage).not.toContain(protectedValue);
+        expect(warnSpy).toHaveBeenCalledWith('[file_authoring] Sandbox read failed', {
+          type: 'Error',
+          status: 502,
+        });
+        expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(protectedValue);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('filters sandbox authoring write failures before logging details', async () => {
+      const protectedValue = 'PROTECTED-SANDBOX-AUTHORING-WRITE';
+      const sandboxError = Object.assign(new Error(protectedValue), {
+        response: { status: 503, data: protectedValue },
+      });
+      const warnSpy = jest.spyOn(logger, 'warn').mockReturnValue(logger);
+      try {
+        const handler = makeSandboxAuthoringHandler(
+          {
+            readSandboxFile: jest.fn(async () => ({ content: 'old\n' })),
+            writeSandboxFile: jest.fn(async () => {
+              throw sandboxError;
+            }),
+          },
+          { req: protectedToolOutputRequest() },
+        );
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_filtered_authoring_write_error',
+            name: 'edit_file',
+            args: {
+              path: '/mnt/data/private.txt',
+              old_text: 'old',
+              new_text: 'new',
+            },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('protected output');
+        expect(result.errorMessage).not.toContain(protectedValue);
+        expect(warnSpy).toHaveBeenCalledWith('[file_authoring] Sandbox write failed', {
+          type: 'Error',
+          status: 503,
+        });
+        expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(protectedValue);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
     it('applies the uninspectable file policy before writing binary-like sandbox content', async () => {
       const writeSandboxFile = jest.fn();
       const filteredReq = {
@@ -3885,6 +3992,70 @@ describe('createToolExecuteHandler', () => {
       expect(result.content).not.toContain('/mnt/data/brand-skill/references/guide.docx');
     });
 
+    it('blocks legacy skill image bytes under a files-only fail-close policy', async () => {
+      const image = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        'base64',
+      );
+      const getDownloadStream = jest.fn(async () => Readable.from(image));
+      const getSkillByName = jest.fn(async () => ({
+        _id: '507f1f77bcf86cd799439099' as unknown as never,
+        name: 'legacy-image-skill',
+        body: '# Legacy image skill',
+        fileCount: 1,
+        version: 1,
+      }));
+      const getSkillFileByPath = jest.fn(async () => ({
+        mimeType: 'image/png',
+        bytes: image.length,
+        filepath: '/storage/legacy-image-skill/references/chart.png',
+        source: 'local',
+        relativePath: 'references/chart.png',
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools: jest.fn(async () => ({
+          loadedTools: [],
+          configurable: {
+            req: {
+              user: { id: 'user-1' },
+              config: {
+                filters: {
+                  files: {
+                    pii: {
+                      fields: ['content'],
+                      starterPatterns: [],
+                      uninspectable: 'block',
+                    },
+                  },
+                },
+              },
+            },
+            codeEnvAvailable: true,
+            accessibleSkillIds: skillsInScope(),
+            activeSkillNames: new Set(['legacy-image-skill']),
+          },
+        })),
+        getSkillByName,
+        getSkillFileByPath,
+        getStrategyFunctions: jest.fn(() => ({ getDownloadStream })),
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_legacy_skill_image',
+          name: Constants.READ_FILE,
+          args: { path: 'skills/legacy-image-skill/references/chart.png' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toBe(
+        'Submitted file content could not be inspected before processing.',
+      );
+      expect(result.artifact).toBeUndefined();
+      expect(getDownloadStream).not.toHaveBeenCalled();
+    });
+
     it('routes through sandbox when skills are not effectively enabled (empty accessibleSkillIds)', async () => {
       /**
        * `accessibleSkillIds: []` is what `resolveAgentScopedSkillIds`
@@ -4151,6 +4322,51 @@ describe('createToolExecuteHandler', () => {
       expect(result.content).toContain('sentinel-XYZ-1234');
     });
 
+    it('filters the full sandbox text before truncating the model-visible result', async () => {
+      const protectedValue = 'PROTECTED-SANDBOX-TAIL';
+      const readSandboxFile = jest.fn(async () => ({
+        content: `${'a'.repeat(300_000)}${protectedValue}`,
+      }));
+      const handler = makeReadFileHandler({
+        req: {
+          user: { id: 'user-1' },
+          config: {
+            filters: {
+              files: {
+                pii: {
+                  fields: ['content'],
+                  starterPatterns: [],
+                  customPatterns: [
+                    {
+                      id: 'protected-sandbox-tail',
+                      label: 'protected sandbox tail',
+                      regex: 'PROTECTED-SANDBOX-TAIL',
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        readSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_filtered_sandbox_tail',
+          name: Constants.READ_FILE,
+          args: { path: '/mnt/data/large.txt' },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('protected sandbox tail');
+      expect(result.errorMessage).not.toContain(protectedValue);
+      expect(result.content).toBe('');
+    });
+
     it('surfaces sandbox fallback failures with a bash_tool retry hint', async () => {
       const readSandboxFile = jest.fn(async () => null);
       const handler = makeReadFileHandler({
@@ -4170,6 +4386,43 @@ describe('createToolExecuteHandler', () => {
       expect(result.status).toBe('error');
       expect(result.errorMessage).toContain('Failed to read');
       expect(result.errorMessage).toContain('bash_tool');
+    });
+
+    it('filters sandbox fallback failures before logging details', async () => {
+      const protectedValue = 'PROTECTED-SANDBOX-FALLBACK-ERROR';
+      const sandboxError = Object.assign(new Error(protectedValue), {
+        response: { status: 504, data: protectedValue },
+      });
+      const warnSpy = jest.spyOn(logger, 'warn').mockReturnValue(logger);
+      try {
+        const handler = makeReadFileHandler({
+          req: protectedToolOutputRequest(),
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxFile: jest.fn(async () => {
+            throw sandboxError;
+          }),
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_filtered_sandbox_fallback_error',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/private.txt' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('protected output');
+        expect(result.errorMessage).not.toContain(protectedValue);
+        expect(warnSpy).toHaveBeenCalledWith('[handleReadFileCall] Sandbox fallback failed', {
+          type: 'Error',
+          status: 504,
+        });
+        expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(protectedValue);
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
 
     describe('binary file guard', () => {
@@ -4245,6 +4498,88 @@ describe('createToolExecuteHandler', () => {
         expect(result.artifact).toMatchObject({
           content: [{ type: 'image_url', image_url: { url: `data:image/png;base64,${PNG_B64}` } }],
         });
+      });
+
+      it('filters a sandbox image name before reading or returning its bytes', async () => {
+        const protectedValue = 'PROTECTED-CHART';
+        const readSandboxImage = jest.fn(async () => ({ base64: PNG_B64, bytes: pngBytes }));
+        const handler = makeReadFileHandler({
+          req: {
+            user: { id: 'user-1' },
+            config: {
+              filters: {
+                files: {
+                  pii: {
+                    fields: ['name'],
+                    starterPatterns: [],
+                    customPatterns: [
+                      {
+                        id: 'protected-image-name',
+                        label: 'protected image name',
+                        regex: 'PROTECTED-[A-Z]+',
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_filtered_image_name',
+            name: Constants.READ_FILE,
+            args: { path: `/mnt/data/${protectedValue}.png` },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('protected image name');
+        expect(result.errorMessage).not.toContain(protectedValue);
+        expect(result.artifact).toBeUndefined();
+        expect(readSandboxImage).not.toHaveBeenCalled();
+      });
+
+      it('blocks sandbox image bytes when the file policy is fail-close', async () => {
+        const readSandboxImage = jest.fn(async () => ({ base64: PNG_B64, bytes: pngBytes }));
+        const handler = makeReadFileHandler({
+          req: {
+            user: { id: 'user-1' },
+            config: {
+              filters: {
+                files: {
+                  pii: {
+                    fields: ['content'],
+                    starterPatterns: [],
+                    uninspectable: 'block',
+                  },
+                },
+              },
+            },
+          },
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_blocked_image_bytes',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/chart.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toBe(
+          'Submitted file content could not be inspected before processing.',
+        );
+        expect(result.artifact).toBeUndefined();
+        expect(readSandboxImage).not.toHaveBeenCalled();
       });
 
       it.each([

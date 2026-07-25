@@ -7,12 +7,14 @@ const validateConvoAccess = require('~/server/middleware/validate/convoAccess');
 const guardSubagentThreadTurn = require('~/server/middleware/validate/subagentThreadTurn');
 const validateAssistant = require('~/server/middleware/assistants/validate');
 const chatController = require('~/server/controllers/assistants/chatV1');
+const { getFiles } = require('~/models');
 
 router.post('/abort', handleAbort());
 
 const filterMessageContent = createMessageFilterPii({
   getConfig: (req) => req.config?.messageFilter?.pii,
   getFilters: (req) => req.config?.filters,
+  getFiles,
 });
 
 /**

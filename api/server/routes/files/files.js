@@ -3,6 +3,7 @@ const express = require('express');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   logAxiosError,
+  getSafeErrorMetadata,
   getApprovalTtlMs,
   refreshS3FileUrls,
   handleFilesUsageRequest,
@@ -792,7 +793,7 @@ router.post('/', async (req, res) => {
     try {
       skipUploadAuth = await hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS);
     } catch (err) {
-      logger.warn(`[/files] capability check failed, denying bypass: ${err.message}`);
+      logger.warn('[/files] capability check failed, denying bypass:', getSafeErrorMetadata(err));
     }
 
     if (!skipUploadAuth) {
@@ -811,20 +812,29 @@ router.post('/', async (req, res) => {
     openSseStreamIfRequested();
     return await processAgentFileUpload({ req, res, metadata, sseStream });
   } catch (error) {
-    const message = resolveUploadErrorMessage(error);
-    logger.error('[/files] Error processing file:', error);
+    const contentProtectionActive =
+      req.config?.filters?.files?.pii != null || req.config?.messageFilter?.pii != null;
+    const message = resolveUploadErrorMessage(
+      error,
+      'Error processing file',
+      contentProtectionActive,
+    );
+    logger.error('[/files] Error processing file:', getSafeErrorMetadata(error));
 
     try {
       await fs.unlink(req.file.path);
       cleanup = false;
-    } catch (error) {
-      logger.error('[/files] Error deleting file:', error);
+    } catch (cleanupError) {
+      logger.error('[/files] Error deleting file:', getSafeErrorMetadata(cleanupError));
     }
 
-    let errorStatusCode = 500;
-    if (error.userErrorStatusCode) {
-      errorStatusCode = error.userErrorStatusCode;
-    }
+    const userErrorStatusCode = error?.userErrorStatusCode;
+    const errorStatusCode =
+      Number.isInteger(userErrorStatusCode) &&
+      userErrorStatusCode >= 400 &&
+      userErrorStatusCode <= 599
+        ? userErrorStatusCode
+        : 500;
 
     if (sseStream) {
       sseStream.sendError({
@@ -842,7 +852,10 @@ router.post('/', async (req, res) => {
       try {
         await fs.unlink(req.file.path);
       } catch (error) {
-        logger.error('[/files] Error deleting file after file processing:', error);
+        logger.error(
+          '[/files] Error deleting file after file processing:',
+          getSafeErrorMetadata(error),
+        );
       }
     } else {
       logger.debug('[/files] File processing completed without cleanup');

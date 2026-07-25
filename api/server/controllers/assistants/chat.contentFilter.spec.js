@@ -8,6 +8,8 @@ const mockSendResponse = jest.fn();
 const mockHandleError = jest.fn();
 const mockRetrieveAssistant = jest.fn();
 const mockListThreadMessages = jest.fn();
+const mockGetConvo = jest.fn();
+const mockGetFiles = jest.fn();
 const mockGetOpenAIClient = jest.fn().mockResolvedValue({
   openai: {
     beta: {
@@ -113,7 +115,8 @@ jest.mock('~/models', () => ({
   upsertBalanceFields: jest.fn(),
   getTransactions: jest.fn(),
   getMultiplier: jest.fn(),
-  getConvo: jest.fn(),
+  getConvo: (...args) => mockGetConvo(...args),
+  getFiles: (...args) => mockGetFiles(...args),
 }));
 
 jest.mock('~/cache', () => ({
@@ -276,6 +279,146 @@ describe.each([
     expect(mockListThreadMessages).toHaveBeenCalledWith('thread-existing', {
       limit: 100,
       order: 'asc',
+    });
+  });
+
+  describe('V1 final conversation-file preflight', () => {
+    beforeEach(() => {
+      req.config.filters = {
+        files: {
+          pii: {
+            fields: ['content'],
+            starterPatterns: [],
+            uninspectable: 'block',
+            customPatterns: [
+              {
+                id: 'private',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z]+',
+              },
+            ],
+          },
+        },
+      };
+      req.body.conversationId = 'conversation-existing';
+      mockGetConvo.mockResolvedValue({
+        conversationId: 'conversation-existing',
+        file_ids: ['stored-file'],
+      });
+    });
+
+    it('blocks canonical stored-conversation file content before initThread', async () => {
+      mockGetFiles.mockResolvedValue([
+        {
+          file_id: 'stored-file',
+          user: 'user-1',
+          filename: 'stored.txt',
+          type: 'text/plain',
+          source: 'text',
+          text: 'Stored PRIVATE-FILE',
+        },
+      ]);
+
+      await chatV1(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'file',
+          field: 'content',
+        }),
+      );
+      expect(mockGetFiles).toHaveBeenCalledWith(
+        {
+          file_id: { $in: ['stored-file'] },
+          user: 'user-1',
+        },
+        {},
+        {},
+      );
+      expect(mockInitThread).not.toHaveBeenCalled();
+      expect(mockSaveUserMessage).not.toHaveBeenCalled();
+      expect(mockCreateRun).not.toHaveBeenCalled();
+      expect(mockRunAssistant).not.toHaveBeenCalled();
+    });
+
+    it.each(['missing', 'foreign'])(
+      'fails closed for a %s stored-conversation file before initThread',
+      async () => {
+        mockGetFiles.mockResolvedValue([]);
+
+        await chatV1(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({
+          error: 'content_filter_uninspectable',
+          message: 'Submitted file content could not be inspected before processing.',
+          source: 'file',
+          field: 'content',
+        });
+        expect(mockInitThread).not.toHaveBeenCalled();
+        expect(mockSaveUserMessage).not.toHaveBeenCalled();
+        expect(mockCreateRun).not.toHaveBeenCalled();
+        expect(mockRunAssistant).not.toHaveBeenCalled();
+      },
+    );
+
+    it('reuses the persisted assistant read before initializing a safe file-backed message', async () => {
+      mockRetrieveAssistant.mockResolvedValueOnce({
+        id: 'asst-1',
+        instructions: 'Safe',
+        tools: [],
+      });
+      mockGetFiles.mockResolvedValue([
+        {
+          file_id: 'stored-file',
+          user: 'user-1',
+          filename: 'stored.txt',
+          type: 'text/plain',
+          source: 'text',
+          text: 'Safe stored file',
+        },
+      ]);
+      req.body.endpointOption.attachments = Promise.resolve([{ source: 'local' }]);
+      mockInitThread.mockRejectedValueOnce(new Error('stop after initThread'));
+
+      await chatV1(req, res);
+
+      expect(mockRetrieveAssistant).toHaveBeenCalledTimes(1);
+      expect(mockInitThread).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({
+            messages: [
+              expect.objectContaining({
+                role: 'user',
+                file_ids: ['stored-file'],
+              }),
+            ],
+          }),
+        }),
+      );
+    });
+
+    it('preserves the disabled file-policy path without resolving canonical rows', async () => {
+      req.config.filters = {};
+      mockInitThread.mockRejectedValueOnce(new Error('stop after initThread'));
+
+      await chatV1(req, res);
+
+      expect(mockGetFiles).not.toHaveBeenCalled();
+      expect(mockInitThread).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({
+            messages: [
+              expect.objectContaining({
+                role: 'user',
+                file_ids: ['stored-file'],
+              }),
+            ],
+          }),
+        }),
+      );
     });
   });
 });

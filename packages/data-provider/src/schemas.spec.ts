@@ -6,6 +6,7 @@ import {
   googleSettings,
   anthropicSettings,
   compactGoogleSchema,
+  tMessageSchema,
   eAnthropicEffortSchema,
   eReasoningEffortSchema,
   eReasoningModeSchema,
@@ -646,6 +647,41 @@ describe('subagentThreadLineageSchema', () => {
     ).toThrow();
     expect(() =>
       subagentThreadLineageSchema.parse({ ...lineage, parentConversationId: '' }),
+    ).toThrow();
+  });
+});
+
+describe('tMessageSchema user-submitted provenance', () => {
+  const message = {
+    messageId: 'message-1',
+    conversationId: 'conversation-1',
+    parentMessageId: null,
+    text: 'Assistant-role text',
+    isCreatedByUser: false,
+  };
+
+  it('preserves an explicit user-submitted marker', () => {
+    expect(
+      tMessageSchema.parse({
+        ...message,
+        isUserSubmitted: true,
+        userSubmittedPaths: ['/text', '/content/0/steer'],
+      }),
+    ).toMatchObject({
+      isCreatedByUser: false,
+      isUserSubmitted: true,
+      userSubmittedPaths: ['/text', '/content/0/steer'],
+    });
+  });
+
+  it('keeps the marker optional for legacy messages', () => {
+    expect(tMessageSchema.parse(message)).not.toHaveProperty('isUserSubmitted');
+    expect(tMessageSchema.parse(message)).not.toHaveProperty('userSubmittedPaths');
+  });
+
+  it('rejects provenance paths that are not JSON pointers', () => {
+    expect(() =>
+      tMessageSchema.parse({ ...message, userSubmittedPaths: ['content/0/text'] }),
     ).toThrow();
   });
 });

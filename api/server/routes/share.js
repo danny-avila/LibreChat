@@ -113,14 +113,41 @@ const getShareStartupPayload = async () => {
   return buildSharedLinkStartupPayload(appConfig);
 };
 
-const createShareContentPreflight = (filters) =>
-  filters == null
-    ? undefined
-    : ({ title, messages }) =>
-        assertConversationContentAllowed(filters, {
-          conversations: [{ title }],
-          messages,
-        });
+const omitUnsharedMessageFiles = (messages) =>
+  messages.map(({ files: _files, attachments: _attachments, ...message }) => ({
+    ...message,
+    ...(Array.isArray(message.content)
+      ? {
+          content: message.content.map((part) => {
+            if (part?.type !== 'steer' || part.files === undefined) {
+              return part;
+            }
+            const { files: _partFiles, ...rest } = part;
+            return rest;
+          }),
+        }
+      : {}),
+  }));
+
+const createShareContentPreflight = (filters, options = {}) => {
+  if (filters == null) {
+    return undefined;
+  }
+  return async ({ title, messages }) => {
+    const snapshot = {
+      conversations: [{ title }],
+      messages: options.snapshotFiles === false ? omitUnsharedMessageFiles(messages) : messages,
+    };
+    if (options.user == null) {
+      await assertConversationContentAllowed(filters, snapshot);
+      return;
+    }
+    await assertConversationContentAllowed(filters, snapshot, {
+      user: options.user,
+      getFiles,
+    });
+  };
+};
 
 const enforceSharedFileContentPolicy = (req, res, next) => {
   try {
@@ -346,7 +373,13 @@ if (allowSharedLinks) {
           snapshotFiles: !isFileSnapshotKillSwitchActive(),
         });
         if (share) {
-          createShareContentPreflight(req.config?.filters)?.(share);
+          /**
+           * The message payload is already stripped of unshared files. Live file
+           * bytes are rechecked by the share-scoped file routes when requested.
+           */
+          await createShareContentPreflight(req.config?.filters, {
+            snapshotFiles: false,
+          })?.(share);
           res.set('Cache-Control', 'private, no-store');
           res.status(200).json(share);
         } else {
@@ -598,7 +631,10 @@ router.post(
       // Per-link opt-out: snapshot only when the feature is enabled AND the user
       // did not uncheck "share files" (body flag absent defaults to enabled).
       const snapshotFiles = isFileSnapshotEnabled(req.config) && requestedSnapshotFiles !== false;
-      const contentPreflight = createShareContentPreflight(req.config?.filters);
+      const contentPreflight = createShareContentPreflight(req.config?.filters, {
+        snapshotFiles,
+        user: req.user,
+      });
 
       const created = await createSharedLink(
         req.user.id,
@@ -665,13 +701,17 @@ router.patch(
         await updateSharedLinkPermissionsExpiration(existing._id, expiredAt);
       }
 
-      const contentPreflight = createShareContentPreflight(req.config?.filters);
+      const snapshotFiles = isFileSnapshotEnabled(req.config) && requestedSnapshotFiles !== false;
+      const contentPreflight = createShareContentPreflight(req.config?.filters, {
+        snapshotFiles,
+        user: req.user,
+      });
       const updatedShare = await updateSharedLink(
         req.user.id,
         req.params.shareId,
         targetMessageId,
         expiredAt,
-        isFileSnapshotEnabled(req.config) && requestedSnapshotFiles !== false,
+        snapshotFiles,
         ...(contentPreflight == null ? [] : [contentPreflight]),
       );
       if (!updatedShare) {

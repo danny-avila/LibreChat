@@ -482,12 +482,67 @@ describe('share routes', () => {
     expect(response.status).toBe(400);
     expect(response.body).toEqual(error.body);
     expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
-    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(contentFilters, {
-      conversations: [{ title: 'Protected Conversation' }],
-      messages,
-    });
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(
+      contentFilters,
+      {
+        conversations: [{ title: 'Protected Conversation' }],
+        messages,
+      },
+      {
+        user: { id: 'user-123' },
+        getFiles,
+      },
+    );
     expect(mockGrantCreationPermissions).not.toHaveBeenCalled();
     expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('preflights only the exact text snapshot when shared files are opted out', async () => {
+    const messages = [
+      {
+        text: 'safe message',
+        files: [{ file_id: 'file-top-level' }],
+        attachments: [{ file_id: 'attachment-top-level' }],
+        content: [
+          { type: 'text', text: 'safe model content' },
+          {
+            type: 'steer',
+            steer: 'safe user steer',
+            files: [{ file_id: 'steer-file' }],
+          },
+        ],
+      },
+    ];
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    createSharedLink.mockImplementationOnce(async (...args) => {
+      await args[5]({ title: 'Protected Conversation', messages });
+      return { _id: 'link-123', shareId: 'share-123' };
+    });
+
+    const response = await request(buildApp({ filters: contentFilters }))
+      .post('/api/share/convo-123')
+      .send({ snapshotFiles: false });
+
+    expect(response.status).toBe(200);
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(
+      contentFilters,
+      {
+        conversations: [{ title: 'Protected Conversation' }],
+        messages: [
+          {
+            text: 'safe message',
+            content: [
+              { type: 'text', text: 'safe model content' },
+              { type: 'steer', steer: 'safe user steer' },
+            ],
+          },
+        ],
+      },
+      {
+        user: { id: 'user-123' },
+        getFiles,
+      },
+    );
   });
 
   it('does not snapshot files when the user opts out (snapshotFiles=false)', async () => {
@@ -572,10 +627,17 @@ describe('share routes', () => {
     expect(response.status).toBe(400);
     expect(response.body).toEqual(error.body);
     expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
-    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(contentFilters, {
-      conversations: [{ title: 'Protected Share' }],
-      messages,
-    });
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(
+      contentFilters,
+      {
+        conversations: [{ title: 'Protected Share' }],
+        messages,
+      },
+      {
+        user: { id: 'user-123' },
+        getFiles,
+      },
+    );
     expect(mockUpdateSharedLinkPermissionsExpiration).not.toHaveBeenCalled();
     expect(logger.error).not.toHaveBeenCalled();
   });

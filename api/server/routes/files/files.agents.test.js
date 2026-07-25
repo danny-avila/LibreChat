@@ -4,7 +4,7 @@ const request = require('supertest');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { createMethods, SystemCapabilities } = require('@librechat/data-schemas');
+const { createMethods, logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   SystemRoles,
   AccessRoleIds,
@@ -786,6 +786,56 @@ describe('File Routes - Agent Files Endpoint', () => {
 
       expect(response.status).toBe(200);
       expect(processAgentFileUpload).toHaveBeenCalled();
+    });
+
+    it('uses a normalized upload error when file protection is active', async () => {
+      const rawProviderDetail = 'PRIVATE-UPLOAD echoed in provider failure';
+      const providerError = Object.assign(new Error(rawProviderDetail), {
+        response: {
+          status: 502,
+          data: rawProviderDetail,
+          headers: { 'x-provider-debug': rawProviderDetail },
+        },
+        userErrorStatusCode: 799,
+      });
+      processAgentFileUpload.mockRejectedValueOnce(providerError);
+      const errorLogSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
+      const testApp = createAppWithUser(otherUserId, SystemRoles.USER, {
+        filters: {
+          files: {
+            pii: {
+              fields: ['name'],
+            },
+          },
+        },
+      });
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ message: 'Error processing file' });
+      expect(JSON.stringify(response.body)).not.toContain(rawProviderDetail);
+      expect(JSON.stringify(errorLogSpy.mock.calls)).not.toContain(rawProviderDetail);
+      errorLogSpy.mockRestore();
+    });
+
+    it('preserves legacy upload error details when file protection is inactive', async () => {
+      const legacyMessage = 'Invalid file format: .legacy';
+      processAgentFileUpload.mockRejectedValueOnce(
+        Object.assign(new Error(legacyMessage), { userErrorStatusCode: 400 }),
+      );
+      const testApp = createAppWithUser(otherUserId);
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ message: legacyMessage });
     });
 
     it('should allow file upload with agent_id but no tool_resource (message attachment)', async () => {

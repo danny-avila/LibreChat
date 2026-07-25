@@ -77,6 +77,8 @@ export type SharedMessage = Pick<
   | 'content'
   | 'iconURL'
   | 'isCreatedByUser'
+  | 'isUserSubmitted'
+  | 'userSubmittedPaths'
   | 'createdAt'
   | 'updatedAt'
   | 'tokenCount'

@@ -341,6 +341,7 @@ jest.mock('~/models', () => ({
   getAgent: jest.fn(),
   getMultiplier: jest.fn(),
   getFiles: jest.fn(),
+  getMessages: jest.fn(),
   getRoleByName: jest.fn(),
   getUserMemories: jest.fn(),
   getFormattedMemories: jest.fn(),
@@ -1188,8 +1189,16 @@ describe('AgentClient - titleConvo', () => {
       expect(result).toBe('Untitled Conversation');
     });
 
-    it('should handle errors gracefully and return undefined', async () => {
-      mockRun.generateTitle.mockRejectedValue(new Error('Title generation failed'));
+    it('does not log provider error content when title generation fails', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      const privateValue = 'PRIVATE-TITLE-PROMPT';
+      const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+      mockRun.generateTitle.mockRejectedValue(
+        Object.assign(new Error(`Provider echoed ${privateValue}`), {
+          code: 'ERR_REMOTE',
+          response: { status: 422, data: { prompt: privateValue } },
+        }),
+      );
 
       const text = 'Test conversation text';
       const abortController = new AbortController();
@@ -1197,6 +1206,12 @@ describe('AgentClient - titleConvo', () => {
       const result = await client.titleConvo({ text, abortController });
 
       expect(result).toBeUndefined();
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateValue);
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[api/server/controllers/agents/client.js #titleConvo] Error',
+        { type: 'Error', status: 422 },
+      );
+      errorSpy.mockRestore();
     });
 
     it('should skip title generation when titleConvo is set to false', async () => {
@@ -2524,6 +2539,292 @@ describe('AgentClient - titleConvo', () => {
       client.useMemory = jest.fn().mockResolvedValue(undefined);
     });
 
+    it.each(['primary', 'handoff'])(
+      'blocks %s agent dynamic tool context before it becomes model-bound',
+      async (agentScope) => {
+        const privateContext = 'PRIVATE-DYNAMIC-TOOL-CONTEXT';
+        mockReq.config.filters = {
+          files: {
+            pii: {
+              fields: ['content'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'private-dynamic-context',
+                  label: 'private dynamic context',
+                  regex: privateContext,
+                },
+              ],
+            },
+          },
+        };
+        const dynamicToolContextMap = {
+          empty: '',
+          dynamic: privateContext,
+          ignored: 123,
+        };
+        if (agentScope === 'primary') {
+          client.options.agent.dynamicToolContextMap = dynamicToolContextMap;
+        } else {
+          client.agentConfigs = new Map([
+            [
+              'handoff-agent',
+              {
+                ...mockAgent,
+                id: 'handoff-agent',
+                dynamicToolContextMap,
+              },
+            ],
+          ]);
+        }
+
+        await expect(
+          client.buildMessages(
+            [
+              {
+                messageId: 'msg-1',
+                parentMessageId: null,
+                sender: 'User',
+                text: 'Hello',
+                isCreatedByUser: true,
+              },
+            ],
+            'msg-1',
+            {},
+          ),
+        ).rejects.toMatchObject({
+          code: 'content_filter_block',
+          body: { source: 'file', field: 'content' },
+        });
+      },
+    );
+
+    it('blocks a late-loaded tool definition on a nested pure subagent', async () => {
+      const privateDescription = 'PRIVATE-NESTED-TOOL-DEFINITION';
+      mockReq.config.filters = {
+        agentInstructions: {
+          pii: {
+            fields: ['description'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private-nested-tool-definition',
+                label: 'private nested tool definition',
+                regex: privateDescription,
+              },
+            ],
+          },
+        },
+      };
+      const nestedPureSubagent = {
+        ...mockAgent,
+        id: 'nested-pure-subagent',
+        toolDefinitions: [
+          {
+            name: 'nested_lookup',
+            description: privateDescription,
+            parameters: { type: 'object' },
+          },
+        ],
+      };
+      client.options.agent.subagentAgentConfigs = [
+        {
+          ...mockAgent,
+          id: 'pure-subagent',
+          subagentAgentConfigs: [nestedPureSubagent],
+        },
+      ];
+
+      await expect(
+        client.buildMessages(
+          [
+            {
+              messageId: 'msg-1',
+              parentMessageId: null,
+              sender: 'User',
+              text: 'Hello',
+              isCreatedByUser: true,
+            },
+          ],
+          'msg-1',
+          {},
+        ),
+      ).rejects.toMatchObject({
+        code: 'content_filter_block',
+        body: { source: 'agent_instruction', field: 'description' },
+      });
+    });
+
+    it('blocks dynamic tool context on a nested pure subagent', async () => {
+      const privateContext = 'PRIVATE-NESTED-DYNAMIC-CONTEXT';
+      mockReq.config.filters = {
+        files: {
+          pii: {
+            fields: ['content'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private-nested-dynamic-context',
+                label: 'private nested dynamic context',
+                regex: privateContext,
+              },
+            ],
+          },
+        },
+      };
+      client.options.agent.subagentAgentConfigs = [
+        {
+          ...mockAgent,
+          id: 'pure-subagent',
+          subagentAgentConfigs: [
+            {
+              ...mockAgent,
+              id: 'nested-pure-subagent',
+              dynamicToolContextMap: { nested_lookup: privateContext },
+            },
+          ],
+        },
+      ];
+
+      await expect(
+        client.buildMessages(
+          [
+            {
+              messageId: 'msg-1',
+              parentMessageId: null,
+              sender: 'User',
+              text: 'Hello',
+              isCreatedByUser: true,
+            },
+          ],
+          'msg-1',
+          {},
+        ),
+      ).rejects.toMatchObject({
+        code: 'content_filter_block',
+        body: { source: 'file', field: 'content' },
+      });
+    });
+
+    it('blocks hydrated file context on a nested pure subagent', async () => {
+      const privateFileText = 'PRIVATE-NESTED-HYDRATED-FILE';
+      mockReq.config.filters = {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private-nested-hydrated-file',
+                label: 'private nested hydrated file',
+                regex: privateFileText,
+              },
+            ],
+          },
+        },
+      };
+      client.options.agent.subagentAgentConfigs = [
+        {
+          ...mockAgent,
+          id: 'pure-subagent',
+          subagentAgentConfigs: [
+            {
+              ...mockAgent,
+              id: 'nested-pure-subagent',
+              agentContextAttachments: [makeTextFile('nested-file', 'nested.txt', privateFileText)],
+            },
+          ],
+        },
+      ];
+
+      await expect(
+        client.buildMessages(
+          [
+            {
+              messageId: 'msg-1',
+              parentMessageId: null,
+              sender: 'User',
+              text: 'Hello',
+              isCreatedByUser: true,
+            },
+          ],
+          'msg-1',
+          {},
+        ),
+      ).rejects.toMatchObject({
+        code: 'content_filter_block',
+        body: { source: 'file', field: 'extracted_text' },
+      });
+    });
+
+    it('blocks loaded memory from a nested pure subagent partition', async () => {
+      const privateMemory = 'PRIVATE-NESTED-MEMORY';
+      mockReq.config.filters = {
+        memories: {
+          pii: {
+            fields: ['value'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private-nested-memory',
+                label: 'private nested memory',
+                regex: privateMemory,
+              },
+            ],
+          },
+        },
+      };
+      client.useMemory.mockResolvedValue({
+        withKeys: 'safe shared memory',
+        withoutKeys: 'safe shared memory',
+      });
+      require('~/models').getFormattedMemories.mockImplementation(({ agentId }) =>
+        Promise.resolve(
+          agentId === 'nested-pure-subagent'
+            ? { withKeys: privateMemory, withoutKeys: privateMemory }
+            : { withKeys: 'safe memory', withoutKeys: 'safe memory' },
+        ),
+      );
+      require('~/models').getUserMemories.mockImplementation(({ agentId }) =>
+        Promise.resolve(
+          agentId === 'nested-pure-subagent' ? [{ key: 'private', value: privateMemory }] : [],
+        ),
+      );
+      client.options.agent.subagentAgentConfigs = [
+        {
+          ...mockAgent,
+          id: 'pure-subagent',
+          subagentAgentConfigs: [
+            {
+              ...mockAgent,
+              id: 'nested-pure-subagent',
+              memory_scope: 'agent',
+              memoryToolsRegistered: true,
+            },
+          ],
+        },
+      ];
+
+      await expect(
+        client.buildMessages(
+          [
+            {
+              messageId: 'msg-1',
+              parentMessageId: null,
+              sender: 'User',
+              text: 'Hello',
+              isCreatedByUser: true,
+            },
+          ],
+          'msg-1',
+          {},
+        ),
+      ).rejects.toMatchObject({
+        code: 'content_filter_block',
+        body: { source: 'memory', field: 'value' },
+      });
+    });
+
     it('blocks current attachment content before attachment processing', async () => {
       const privateFilename = 'PRIVATE-FILE.txt';
       mockReq.config.filters = {
@@ -2559,6 +2860,71 @@ describe('AgentClient - titleConvo', () => {
 
       expect(client.addFileContextToMessage).not.toHaveBeenCalled();
       expect(client.processAttachments).not.toHaveBeenCalled();
+    });
+
+    it('accepts an owner-resolved historical file under fail-closed inspection', async () => {
+      mockReq.config.filters = {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            uninspectable: 'block',
+          },
+        },
+      };
+      const historicalFile = makeTextFile(
+        'historical-file',
+        'history.txt',
+        'Safe canonical content',
+      );
+      client.authorizedHistoricalFiles = new Map([['historical-file', historicalFile]]);
+
+      await expect(
+        client.buildMessages(
+          [
+            {
+              messageId: 'msg-1',
+              parentMessageId: null,
+              sender: 'User',
+              text: 'Use the historical file.',
+              isCreatedByUser: true,
+              files: [{ file_id: 'historical-file' }],
+            },
+          ],
+          'msg-1',
+          {},
+        ),
+      ).resolves.toEqual(expect.objectContaining({ prompt: expect.any(Array) }));
+    });
+
+    it('ignores historical file refs when this agent does not replay files', async () => {
+      mockReq.config.filters = {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            uninspectable: 'block',
+          },
+        },
+      };
+      client.options.resendFiles = false;
+
+      await expect(
+        client.buildMessages(
+          [
+            {
+              messageId: 'msg-1',
+              parentMessageId: null,
+              sender: 'User',
+              text: 'Continue without the deleted file.',
+              isCreatedByUser: true,
+              files: [{ file_id: 'deleted-historical-file' }],
+            },
+          ],
+          'msg-1',
+          {},
+        ),
+      ).resolves.toEqual(expect.objectContaining({ prompt: expect.any(Array) }));
     });
 
     it('blocks historical attachment content before re-encoding it', async () => {
@@ -2628,49 +2994,74 @@ describe('AgentClient - titleConvo', () => {
       ).rejects.toMatchObject({ code: 'content_filter_block' });
     });
 
-    it.each(['fails', 'returns no rows'])(
-      'inspects formatted memory text when canonical memory loading %s',
-      async (canonicalResult) => {
-        const privateMemory = 'PRIVATE-MEMORY';
-        mockReq.config.filters = {
-          memories: {
-            pii: {
-              fields: ['value'],
-              starterPatterns: [],
-              customPatterns: [{ id: 'private', label: 'private value', regex: privateMemory }],
-            },
+    it('fails closed when canonical memory loading fails under active policy', async () => {
+      mockReq.config.filters = {
+        memories: {
+          pii: {
+            fields: ['key'],
+            starterPatterns: ['sk_prefix'],
           },
-        };
-        if (canonicalResult === 'fails') {
-          require('~/models').getUserMemories.mockRejectedValue(new Error('memory read failed'));
-        } else {
-          require('~/models').getUserMemories.mockResolvedValue([]);
-        }
-        client.useMemory.mockResolvedValue({
-          withKeys: privateMemory,
-          withoutKeys: privateMemory,
-        });
+        },
+      };
+      require('~/models').getUserMemories.mockRejectedValue(new Error('memory read failed'));
+      client.useMemory.mockResolvedValue({
+        withKeys: '["key": "sk-private-memory"]',
+        withoutKeys: 'safe value',
+      });
 
-        await expect(
-          client.buildMessages(
-            [
-              {
-                messageId: 'msg-1',
-                parentMessageId: null,
-                sender: 'User',
-                text: 'Use my preferences.',
-                isCreatedByUser: true,
-              },
-            ],
-            'msg-1',
-            {},
-          ),
-        ).rejects.toMatchObject({
-          code: 'content_filter_block',
-          body: { source: 'memory', field: 'value' },
-        });
-      },
-    );
+      await expect(
+        client.buildMessages(
+          [
+            {
+              messageId: 'msg-1',
+              parentMessageId: null,
+              sender: 'User',
+              text: 'Use my preferences.',
+              isCreatedByUser: true,
+            },
+          ],
+          'msg-1',
+          {},
+        ),
+      ).rejects.toThrow('memory read failed');
+    });
+
+    it('inspects formatted memory text when canonical loading returns no rows', async () => {
+      const privateMemory = 'PRIVATE-MEMORY';
+      mockReq.config.filters = {
+        memories: {
+          pii: {
+            fields: ['value'],
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: privateMemory }],
+          },
+        },
+      };
+      require('~/models').getUserMemories.mockResolvedValue([]);
+      client.useMemory.mockResolvedValue({
+        withKeys: privateMemory,
+        withoutKeys: privateMemory,
+      });
+
+      await expect(
+        client.buildMessages(
+          [
+            {
+              messageId: 'msg-1',
+              parentMessageId: null,
+              sender: 'User',
+              text: 'Use my preferences.',
+              isCreatedByUser: true,
+            },
+          ],
+          'msg-1',
+          {},
+        ),
+      ).rejects.toMatchObject({
+        code: 'content_filter_block',
+        body: { source: 'memory', field: 'value' },
+      });
+    });
 
     it.each([
       ['CSV', 'csv-file', 'sample.csv', 'text/csv'],
@@ -4032,8 +4423,10 @@ describe('AgentClient - titleConvo', () => {
       expect(client.processMemory).toBeUndefined();
       expect(errorSpy).toHaveBeenCalledWith(
         '[api/server/controllers/agents/client.js #useMemory] Error loading memories',
-        expect.any(Error),
+        { type: 'Error' },
       );
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('DB connection failed');
+      errorSpy.mockRestore();
     });
 
     it('should create ephemeral agent when no id but model and provider are specified', async () => {
@@ -4345,6 +4738,10 @@ describe('AgentClient - resumeCompletion content protection', () => {
     collectedUsage: [],
     pendingSubagentEmits: [],
     getEncoding: jest.fn(() => 'o200k_base'),
+    buildSteerWiring: jest.fn(),
+    buildSubagentUsageEmitter: jest.fn(),
+    handleRunInterrupt: jest.fn().mockResolvedValue(undefined),
+    applyHideSequentialOutputsFilter: jest.fn(),
     finalizeSubagentContent: jest.fn(),
     recordCollectedUsage: jest.fn().mockResolvedValue(undefined),
   });
@@ -4353,6 +4750,18 @@ describe('AgentClient - resumeCompletion content protection', () => {
     jest.clearAllMocks();
     mockCreateRun.mockReset();
     mockGetAgentCheckpointer.mockReset();
+    require('~/models')
+      .getMessages.mockReset()
+      .mockResolvedValue([
+        {
+          messageId: 'parent-123',
+          parentMessageId: Constants.NO_PARENT,
+          isCreatedByUser: true,
+          role: 'user',
+          text: 'safe',
+        },
+      ]);
+    require('~/models').getFiles.mockReset().mockResolvedValue([]);
   });
 
   it('blocks checkpoint user content before rebuilding the run', async () => {
@@ -4387,6 +4796,394 @@ describe('AgentClient - resumeCompletion content protection', () => {
       code: 'content_filter_block',
       body: { source: 'message', field: 'text' },
     });
+    expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it('blocks a path-marked assistant fragment restored from the exact persisted branch', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    require('~/models').getMessages.mockResolvedValue([
+      {
+        messageId: 'root',
+        parentMessageId: Constants.NO_PARENT,
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'safe',
+      },
+      {
+        messageId: 'assistant-1',
+        parentMessageId: 'root',
+        isCreatedByUser: false,
+        role: 'assistant',
+        content: [
+          { type: ContentTypes.TEXT, text: 'ordinary model prose' },
+          { type: ContentTypes.TEXT, text: 'PRIVATE-RESUME-EDIT' },
+        ],
+        userSubmittedPaths: ['/content/1/text'],
+      },
+      {
+        messageId: 'parent-123',
+        parentMessageId: 'assistant-1',
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'continue',
+      },
+    ]);
+    const context = makeContext({
+      messages: {
+        pii: {
+          fields: ['content_part'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'private-resume-edit',
+              label: 'private resume edit',
+              regex: 'PRIVATE-RESUME-EDIT',
+            },
+          ],
+        },
+      },
+    });
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: { source: 'message', field: 'content_part' },
+    });
+    expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the persisted resume branch has a missing ancestor', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    require('~/models').getMessages.mockResolvedValue([
+      {
+        messageId: 'parent-123',
+        parentMessageId: 'missing-ancestor',
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'continue',
+      },
+    ]);
+    const context = makeContext({
+      messages: {
+        pii: {
+          fields: ['text'],
+          starterPatterns: ['email'],
+        },
+      },
+    });
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: { source: 'message', field: 'content_part' },
+    });
+    expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it('allows unmarked model prose and ignores a marked sibling branch on resume', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    require('~/models').getMessages.mockResolvedValue([
+      {
+        messageId: 'root',
+        parentMessageId: Constants.NO_PARENT,
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'safe',
+      },
+      {
+        messageId: 'target-assistant',
+        parentMessageId: 'root',
+        isCreatedByUser: false,
+        role: 'assistant',
+        text: 'PRIVATE-MODEL-PROSE',
+      },
+      {
+        messageId: 'parent-123',
+        parentMessageId: 'target-assistant',
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'continue target branch',
+      },
+      {
+        messageId: 'sibling-assistant',
+        parentMessageId: 'root',
+        isCreatedByUser: false,
+        role: 'assistant',
+        content: [{ type: ContentTypes.TEXT, text: 'PRIVATE-MODEL-PROSE' }],
+        userSubmittedPaths: ['/content/0/text'],
+      },
+      {
+        messageId: 'sibling-user',
+        parentMessageId: 'sibling-assistant',
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'continue sibling branch',
+      },
+    ]);
+    const resume = jest.fn().mockResolvedValue(undefined);
+    mockCreateRun.mockResolvedValue({
+      resume,
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    const context = makeContext({
+      messages: {
+        pii: {
+          fields: ['text', 'content_part'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'private-model-prose',
+              label: 'private model prose',
+              regex: 'PRIVATE-MODEL-PROSE',
+            },
+          ],
+        },
+      },
+    });
+
+    await AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
+
+    expect(mockCreateRun).toHaveBeenCalledTimes(1);
+    expect(resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks handoff dynamic tool context before rebuilding a resumed run', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    const context = makeContext({
+      files: {
+        pii: {
+          fields: ['content'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'private-resume-dynamic-context',
+              label: 'private resume dynamic context',
+              regex: 'PRIVATE-RESUME-DYNAMIC-CONTEXT',
+            },
+          ],
+        },
+      },
+    });
+    context.agentConfigs = new Map([
+      [
+        'handoff-agent',
+        {
+          id: 'handoff-agent',
+          model_parameters: { model: 'gpt-4' },
+          dynamicToolContextMap: {
+            ignored: 42,
+            web_search: 'PRIVATE-RESUME-DYNAMIC-CONTEXT',
+          },
+        },
+      ],
+    ]);
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: { source: 'file', field: 'content' },
+    });
+    expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it('blocks a nested pure subagent tool definition before rebuilding a resumed run', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    const context = makeContext({
+      agentInstructions: {
+        pii: {
+          fields: ['description'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'private-resume-subagent-tool',
+              label: 'private resume subagent tool',
+              regex: 'PRIVATE-RESUME-SUBAGENT-TOOL',
+            },
+          ],
+        },
+      },
+    });
+    context.options.agent.subagentAgentConfigs = [
+      {
+        id: 'pure-subagent',
+        model_parameters: { model: 'gpt-4' },
+        subagentAgentConfigs: [
+          {
+            id: 'nested-pure-subagent',
+            model_parameters: { model: 'gpt-4' },
+            toolDefinitions: [
+              {
+                name: 'resume_lookup',
+                description: 'PRIVATE-RESUME-SUBAGENT-TOOL',
+                parameters: { type: 'object' },
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: { source: 'agent_instruction', field: 'description' },
+    });
+    expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it('re-inspects current extracted file text when policy tightens while paused', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    require('~/models').getMessages.mockResolvedValue([
+      {
+        messageId: 'parent-123',
+        parentMessageId: Constants.NO_PARENT,
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'inspect the attached file',
+        files: [{ file_id: 'file-paused', filename: 'report.txt' }],
+      },
+    ]);
+    require('~/models').getFiles.mockResolvedValue([
+      {
+        file_id: 'file-paused',
+        filename: 'report.txt',
+        text: 'PRIVATE-EXTRACTED-TEXT',
+      },
+    ]);
+    const context = makeContext({
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'private-extracted-text',
+              label: 'private extracted text',
+              regex: 'PRIVATE-EXTRACTED-TEXT',
+            },
+          ],
+          uninspectable: 'block',
+        },
+      },
+    });
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: { source: 'file', field: 'extracted_text' },
+    });
+    expect(require('~/models').getFiles).toHaveBeenCalledWith(
+      {
+        file_id: { $in: ['file-paused'] },
+        user: 'user-123',
+      },
+      {},
+      {},
+    );
+    expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a paused file reference cannot be rehydrated', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    require('~/models').getMessages.mockResolvedValue([
+      {
+        messageId: 'parent-123',
+        parentMessageId: Constants.NO_PARENT,
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'inspect the attached file',
+        files: [{ file_id: 'missing-paused-file' }],
+      },
+    ]);
+    const context = makeContext({
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          uninspectable: 'block',
+        },
+      },
+    });
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: { source: 'file', field: 'extracted_text' },
+    });
+    expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when resume file-reference traversal exceeds its depth bound', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    let nested = { file_id: 'deep-paused-file' };
+    for (let depth = 0; depth < 30; depth++) {
+      nested = { nested };
+    }
+    require('~/models').getMessages.mockResolvedValue([
+      {
+        messageId: 'parent-123',
+        parentMessageId: Constants.NO_PARENT,
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'inspect the nested file',
+        content: [{ type: ContentTypes.TEXT, nested }],
+      },
+    ]);
+    const context = makeContext({
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          uninspectable: 'block',
+        },
+      },
+    });
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: { source: 'file', field: 'extracted_text' },
+    });
+    expect(require('~/models').getFiles).not.toHaveBeenCalled();
     expect(mockCreateRun).not.toHaveBeenCalled();
   });
 
@@ -4430,5 +5227,45 @@ describe('AgentClient - resumeCompletion content protection', () => {
       body: { source: 'tool_argument', field: 'arguments' },
     });
     expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it('does not log or persist provider error content while resuming', async () => {
+    const { logger } = require('@librechat/data-schemas');
+    const privateValue = 'PRIVATE-RESUME-PROVIDER-CONTENT';
+    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+    mockCreateRun.mockRejectedValue(
+      Object.assign(new Error(`Provider echoed ${privateValue}`), {
+        code: 'ERR_REMOTE',
+        response: { status: 422, data: { prompt: privateValue } },
+      }),
+    );
+    const context = makeContext({});
+
+    await AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
+
+    expect(context.contentParts).toContainEqual({
+      type: ContentTypes.ERROR,
+      [ContentTypes.ERROR]: 'An error occurred while resuming the request',
+    });
+    expect(JSON.stringify(context.contentParts)).not.toContain(privateValue);
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateValue);
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
+      { type: 'Error', status: 422 },
+    );
+    errorSpy.mockRestore();
+  });
+
+  it('preserves provider error detail when content protection is disabled', async () => {
+    const providerMessage = 'Legacy provider detail';
+    mockCreateRun.mockRejectedValue(new Error(providerMessage));
+    const context = makeContext(undefined);
+
+    await AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
+
+    expect(context.contentParts).toContainEqual({
+      type: ContentTypes.ERROR,
+      [ContentTypes.ERROR]: `An error occurred while resuming the request: ${providerMessage}`,
+    });
   });
 });

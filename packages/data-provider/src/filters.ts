@@ -131,6 +131,64 @@ export type ToolArgumentFilterField = z.infer<typeof toolArgumentFilterFieldSche
 export type ModelParameterFilterField = z.infer<typeof modelParameterFilterFieldSchema>;
 export type ActionMetadataFilterField = z.infer<typeof actionMetadataFilterFieldSchema>;
 
+type PiiPatternSelection = {
+  readonly starterPatterns?: readonly unknown[];
+  readonly customPatterns?: readonly unknown[];
+};
+
+const UNINSPECTABLE_FILE_FIELDS = new Set<FileFilterField>([
+  'content',
+  'extracted_text',
+  'transcript',
+]);
+
+/**
+ * An omitted starter selection enables the built-in catalog. An explicit
+ * empty selection disables it, so a source is active only when custom rules
+ * remain. This mirrors the documented filter semantics without compiling
+ * regular expressions.
+ */
+export function hasActivePiiPatterns(config: PiiPatternSelection | null | undefined): boolean {
+  return (
+    config != null &&
+    (config.starterPatterns == null ||
+      config.starterPatterns.length > 0 ||
+      (config.customPatterns?.length ?? 0) > 0)
+  );
+}
+
+/**
+ * Returns whether a parsed source-aware config can enforce any rule. An
+ * explicit fail-close file policy remains active even without text patterns.
+ */
+export function hasActiveFiltersConfig(filters: FiltersConfig | null | undefined): boolean {
+  if (filters == null) {
+    return false;
+  }
+  const sourcePatterns = [
+    filters.messages?.pii,
+    filters.prompts?.pii,
+    filters.agentInstructions?.pii,
+    filters.conversationStarters?.pii,
+    filters.conversationTitles?.pii,
+    filters.feedback?.pii,
+    filters.skills?.pii,
+    filters.memories?.pii,
+    filters.files?.pii,
+    filters.toolArguments?.pii,
+    filters.modelParameters?.pii,
+    filters.actionMetadata?.pii,
+  ];
+  if (sourcePatterns.some(hasActivePiiPatterns)) {
+    return true;
+  }
+  const filePii = filters.files?.pii;
+  return (
+    filePii?.uninspectable === 'block' &&
+    (filePii.fields == null || filePii.fields.some((field) => UNINSPECTABLE_FILE_FIELDS.has(field)))
+  );
+}
+
 export const filterPiiRegexSchema = z
   .string()
   .min(1)

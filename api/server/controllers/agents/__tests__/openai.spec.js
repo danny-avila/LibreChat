@@ -19,6 +19,13 @@ const mockBuildAgentContextAttachmentsByAgentId = jest.fn().mockReturnValue(new 
 const mockBuildInlineMemoryContext = jest.fn().mockResolvedValue('');
 const mockApplyContextToAgent = jest.fn().mockResolvedValue(undefined);
 const mockInitialSessions = new Map([['execute_code', { session_id: 'seeded' }]]);
+const mockGetSafeErrorMetadata = jest.fn((error) => {
+  const status = error?.status ?? error?.statusCode ?? error?.response?.status;
+  return {
+    type: error instanceof Error ? 'Error' : 'UnknownError',
+    ...(Number.isInteger(status) && status >= 100 && status <= 599 && { status }),
+  };
+});
 class MockAgentRunEnvelopeError extends TypeError {
   constructor(message) {
     super(message);
@@ -107,6 +114,21 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  collectReachableAgents: (roots) => {
+    const agents = [];
+    const pending = [...roots];
+    const visited = new Set();
+    for (let index = 0; index < pending.length; index++) {
+      const agent = pending[index];
+      if (!agent || visited.has(agent)) {
+        continue;
+      }
+      visited.add(agent);
+      agents.push(agent);
+      pending.push(...(agent.subagentAgentConfigs ?? []));
+    }
+    return agents;
+  },
   /** Pass-through: the controller strips UI-only activity-label parts
    *  before SDK formatting; the mock must expose it like any other used
    *  export or the call throws before the assertions run. */
@@ -193,6 +215,7 @@ jest.mock('@librechat/api', () => ({
   isNestedMessageTraversalProtected: jest.fn().mockReturnValue(true),
   assertModelBoundContent: jest.fn(),
   isContentFilterError: jest.fn((error) => error?.code === 'content_filter_block'),
+  getSafeErrorMetadata: mockGetSafeErrorMetadata,
   contentFilterBlockResponse: jest.fn().mockReturnValue({
     error: 'content_filter_block',
     message: 'Submitted content was blocked.',
@@ -600,6 +623,275 @@ describe('OpenAIChatCompletionController', () => {
       expect(res.flushHeaders).not.toHaveBeenCalled();
       expect(api.writeSSE).not.toHaveBeenCalled();
       expect(api.createRun).not.toHaveBeenCalled();
+    });
+
+    it('preflights file-derived content from every reachable agent under a files-only policy', async () => {
+      const api = require('@librechat/api');
+      const primaryRequestFile = { filename: 'primary-request.txt', content: 'primary request' };
+      const primaryContextFile = { filename: 'primary-context.txt', content: 'primary context' };
+      const handoffRequestFile = { filename: 'handoff-request.txt', content: 'handoff request' };
+      const handoffContextFile = {
+        filename: 'handoff-context.txt',
+        content: 'sk-handoff-context',
+      };
+      const nestedRequestFile = { filename: 'nested-request.txt', content: 'nested request' };
+      const nestedPureSubagent = {
+        id: 'agent-nested-pure',
+        model: 'gpt-4',
+        model_parameters: {},
+        requestAttachments: [nestedRequestFile],
+        dynamicToolContextMap: { nested_lookup: 'nested dynamic context' },
+      };
+      const pureSubagent = {
+        id: 'agent-pure',
+        model: 'gpt-4',
+        model_parameters: {},
+        subagentAgentConfigs: [nestedPureSubagent],
+      };
+      const blockedError = Object.assign(new Error('Submitted file content was blocked.'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted file content was blocked.',
+          source: 'file',
+          field: 'content',
+        },
+      });
+      req.config.filters = {
+        files: { pii: { fields: ['content'], starterPatterns: ['sk-'] } },
+      };
+      api.validateRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', messages: [], stream: true },
+      });
+      api.initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'gpt-4',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [{ source: 'agent-123', target: 'agent-handoff' }],
+        requestAttachments: [primaryRequestFile],
+        agentContextAttachments: [primaryContextFile],
+        dynamicToolContextMap: { execute_code: 'primary dynamic context' },
+        subagentAgentConfigs: [pureSubagent],
+      });
+      api.discoverConnectedAgents.mockResolvedValueOnce({
+        agentConfigs: new Map([
+          [
+            'agent-handoff',
+            {
+              id: 'agent-handoff',
+              model: 'gpt-4',
+              model_parameters: {},
+              requestAttachments: [handoffRequestFile],
+              agentContextAttachments: [handoffContextFile],
+              dynamicToolContextMap: { file_search: 'handoff dynamic context' },
+            },
+          ],
+        ]),
+        edges: [],
+        skippedAgentIds: new Set(),
+        userMCPAuthMap: undefined,
+      });
+      api.assertModelBoundContent.mockImplementationOnce(({ filters, agents, files }) => {
+        expect(filters).toEqual(req.config.filters);
+        expect(agents.map(({ id }) => id)).toEqual([
+          'agent-123',
+          'agent-handoff',
+          'agent-pure',
+          'agent-nested-pure',
+        ]);
+        expect(files).toEqual([
+          primaryRequestFile,
+          primaryContextFile,
+          { content: 'primary dynamic context' },
+          handoffRequestFile,
+          handoffContextFile,
+          { content: 'handoff dynamic context' },
+          nestedRequestFile,
+          { content: 'nested dynamic context' },
+        ]);
+        throw blockedError;
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(api.createRun).not.toHaveBeenCalled();
+      expect(res.setHeader).not.toHaveBeenCalled();
+      expect(res.flushHeaders).not.toHaveBeenCalled();
+      expect(api.createErrorResponse).toHaveBeenCalledWith(
+        blockedError.body.message,
+        'invalid_request_error',
+        'content_filter_block',
+      );
+    });
+
+    it('preflights the exact synthesized dynamic tool context as file content', async () => {
+      const api = require('@librechat/api');
+      const blockedError = Object.assign(new Error('Submitted file content was blocked.'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted file content was blocked.',
+          source: 'file',
+          field: 'content',
+        },
+      });
+      req.config.filters = {
+        files: { pii: { fields: ['content'], starterPatterns: ['sk-'] } },
+      };
+      api.validateRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', messages: [], stream: true },
+      });
+      api.initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'gpt-4',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [],
+        dynamicToolContextMap: {
+          execute_code: '  safe context',
+          ignored_empty: '',
+          file_search: 'sk-dynamic-file-context  ',
+          ignored_non_string: 42,
+        },
+      });
+      api.assertModelBoundContent.mockImplementationOnce(({ filters, files }) => {
+        expect(filters).toEqual(req.config.filters);
+        expect(files).toEqual([{ content: 'safe context\nsk-dynamic-file-context' }]);
+        throw blockedError;
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(api.createRun).not.toHaveBeenCalled();
+      expect(res.setHeader).not.toHaveBeenCalled();
+      expect(res.flushHeaders).not.toHaveBeenCalled();
+      expect(api.createErrorResponse).toHaveBeenCalledWith(
+        blockedError.body.message,
+        'invalid_request_error',
+        'content_filter_block',
+      );
+    });
+  });
+
+  describe('safe error logging', () => {
+    it('logs bounded metadata and returns a raw-free provider error', async () => {
+      const api = require('@librechat/api');
+      const { logger } = require('@librechat/data-schemas');
+      const rawValue = 'PRIVATE-OPENAI-PROVIDER-PAYLOAD';
+      const providerError = Object.assign(new Error(`Provider echoed ${rawValue}`), {
+        code: 'ERR_REMOTE',
+        response: {
+          status: 502,
+          headers: { authorization: rawValue },
+          data: { prompt: rawValue },
+        },
+      });
+      req.config.filters = { messages: { pii: {} } };
+      mockProcessStream.mockRejectedValueOnce(providerError);
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(mockGetSafeErrorMetadata).toHaveBeenCalledWith(providerError);
+      const errorLog = logger.error.mock.calls.find(
+        ([message]) => message === '[OpenAI API] Error:',
+      );
+      expect(errorLog).toEqual(['[OpenAI API] Error:', { type: 'Error', status: 502 }]);
+      expect(JSON.stringify(errorLog)).not.toContain(rawValue);
+      expect(api.createErrorResponse).toHaveBeenCalledWith(
+        'An error occurred while processing the request',
+        'server_error',
+        null,
+      );
+      expect(JSON.stringify(api.createErrorResponse.mock.calls)).not.toContain(rawValue);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    it('streams a raw-free provider error after headers are sent', async () => {
+      const api = require('@librechat/api');
+      const rawValue = 'PRIVATE-OPENAI-STREAM-PAYLOAD';
+      api.validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [{ role: 'user', content: 'Hello' }],
+          stream: true,
+        },
+      });
+      req.config.filters = { messages: { pii: {} } };
+      res.flushHeaders.mockImplementationOnce(() => {
+        res.headersSent = true;
+      });
+      mockProcessStream.mockRejectedValueOnce(new Error(`Provider echoed ${rawValue}`));
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(api.createChunk).toHaveBeenCalledWith(
+        expect.any(Object),
+        { content: '\n\nError: An error occurred while processing the request' },
+        'stop',
+      );
+      expect(JSON.stringify(api.createChunk.mock.calls)).not.toContain(rawValue);
+      expect(JSON.stringify(api.writeSSE.mock.calls)).not.toContain(rawValue);
+    });
+
+    it('preserves the legacy provider error when protection is inactive', async () => {
+      const api = require('@librechat/api');
+      const rawValue = 'LEGACY-OPENAI-PROVIDER-ERROR';
+      mockProcessStream.mockRejectedValueOnce(new Error(rawValue));
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(api.createErrorResponse).toHaveBeenCalledWith(rawValue, 'server_error', null);
+    });
+
+    it('preserves the legacy streamed provider error when protection is inactive', async () => {
+      const api = require('@librechat/api');
+      const rawValue = 'LEGACY-OPENAI-STREAM-ERROR';
+      api.validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [{ role: 'user', content: 'Hello' }],
+          stream: true,
+        },
+      });
+      res.flushHeaders.mockImplementationOnce(() => {
+        res.headersSent = true;
+      });
+      mockProcessStream.mockRejectedValueOnce(new Error(rawValue));
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(api.createChunk).toHaveBeenCalledWith(
+        expect.any(Object),
+        { content: `\n\nError: ${rawValue}` },
+        'stop',
+      );
+    });
+
+    it('logs bounded metadata for tool callback failures', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      const rawValue = 'PRIVATE-OPENAI-TOOL-PAYLOAD';
+      const toolError = Object.assign(new Error(`Tool echoed ${rawValue}`), {
+        code: 'ERR_TOOL',
+        response: { status: 422, data: { output: rawValue } },
+      });
+      mockProcessStream.mockImplementationOnce(async (_input, _config, options) => {
+        options.callbacks.TOOL_ERROR({}, toolError, 'execute_code');
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(mockGetSafeErrorMetadata).toHaveBeenCalledWith(toolError);
+      const errorLog = logger.error.mock.calls.find(([message]) =>
+        message.includes('Tool Error "execute_code"'),
+      );
+      expect(errorLog).toEqual([
+        '[OpenAI API] Tool Error "execute_code"',
+        { type: 'Error', status: 422 },
+      ]);
+      expect(JSON.stringify(errorLog)).not.toContain(rawValue);
     });
   });
 

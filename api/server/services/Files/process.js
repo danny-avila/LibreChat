@@ -901,7 +901,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     if (shouldUseSTT) {
       const sttService = await STTService.getInstance();
       const { text, bytes } = await processAudioFile({ req, file, sttService });
-      return await createTextFile({ text, bytes, isTranscript: true });
+      return await createTextFile({ text, bytes, type: file.mimetype, isTranscript: true });
     }
 
     const shouldUseText = fileConfig.checkType(

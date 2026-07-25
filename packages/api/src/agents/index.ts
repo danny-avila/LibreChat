@@ -25,6 +25,7 @@ export * from './parameters';
 export * from './prewarm';
 export * from './openai';
 export * from './transactions';
+export * from './traversal';
 export * from './usage';
 export * from './resources';
 export * from './responses';

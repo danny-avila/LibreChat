@@ -144,6 +144,12 @@ describe('configured content inspection', () => {
     expect(
       inspectContent([fragment('message', 'text', 'sk-project-EXPLICITLY-DISABLED')], { filters }),
     ).toBeNull();
+    expect(createConfiguredContentInspector({ filters })).toBeNull();
+    expect(
+      createConfiguredContentInspector({
+        legacyPii: { starterPatterns: [] },
+      }),
+    ).toBeNull();
   });
 
   it.each([

@@ -47,9 +47,13 @@ const {
   getTransactions,
   getMultiplier,
   getConvo,
+  getFiles,
 } = require('~/models');
 const { logViolation, getLogStores } = require('~/cache');
-const { preflightAssistantRunContent } = require('./contentFilter');
+const {
+  preflightAssistantRunContent,
+  preflightAssistantUserMessageContent,
+} = require('./contentFilter');
 const { getOpenAIClient } = require('./helpers');
 
 /**
@@ -458,10 +462,16 @@ const chatV1 = async (req, res) => {
 
     /** @type {Promise<Run>|undefined} */
     let userMessagePromise;
+    const inspectFinalMessageFiles = req.config?.filters?.files?.pii != null;
 
     const initializeThread = async () => {
-      /** @type {[ undefined | MongoFile[]]}*/
-      const [processedFiles] = await Promise.all([addVisionPrompt(), getRequestFileIds()]);
+      /** @type {undefined | MongoFile[]} */
+      let processedFiles;
+      if (inspectFinalMessageFiles) {
+        processedFiles = await addVisionPrompt();
+      } else {
+        [processedFiles] = await Promise.all([addVisionPrompt(), getRequestFileIds()]);
+      }
       // TODO: may allow multiple messages to be created beforehand in a future update
       const initThreadBody = {
         messages: [userMessage],
@@ -530,6 +540,23 @@ const chatV1 = async (req, res) => {
         conversation.file_ids = file_ids;
       }
     };
+
+    if (inspectFinalMessageFiles) {
+      await getRequestFileIds();
+      try {
+        await preflightAssistantUserMessageContent({
+          req,
+          message: userMessage,
+          getFiles,
+        });
+      } catch (error) {
+        if (!isContentFilterError(error)) {
+          throw error;
+        }
+        contentRejected = true;
+        return res.status(error.statusCode).json(error.body);
+      }
+    }
 
     const promises = [initializeThread(), checkBalanceBeforeRun()];
     await Promise.all(promises);

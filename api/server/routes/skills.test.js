@@ -746,6 +746,43 @@ describe('Skill routes', () => {
       });
       expect(await SkillFile.countDocuments()).toBe(0);
     });
+
+    it('blocks opaque uploads when the skill file_text policy is enabled', async () => {
+      const created = await createSkillAsOwner();
+      mockFilters = {
+        skills: {
+          pii: {
+            fields: ['file_text'],
+            starterPatterns: [],
+          },
+        },
+        files: {
+          pii: {
+            fields: ['content'],
+            uninspectable: 'allow',
+          },
+        },
+      };
+      const binary = Buffer.from([0, 255, 0, 137, 80, 78, 71]);
+
+      const res = await request(app)
+        .post(`/api/skills/${created.body._id}/files`)
+        .field('relativePath', 'assets/private.png')
+        .attach('file', binary, {
+          filename: 'private.png',
+          contentType: 'image/png',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_uninspectable',
+          source: 'file',
+          field: 'content',
+        }),
+      );
+      expect(await SkillFile.countDocuments()).toBe(0);
+    });
   });
 
   describe('GET /api/skills/:id/files/*relativePath', () => {

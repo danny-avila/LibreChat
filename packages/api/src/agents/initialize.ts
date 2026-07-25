@@ -36,6 +36,7 @@ import type {
 import type {
   ResolvedManualSkill,
   ResolvedAlwaysApplySkill,
+  ResolvedSkillCatalog,
   TListSkillsByAccess,
   TGetSkillByName,
 } from './skills';
@@ -44,6 +45,7 @@ import type { TFilterFilesByAgentAccess } from './resources';
 import type { MCPToolAlias } from '~/tools/classification';
 import {
   injectSkillCatalog,
+  resolveSkillCatalog,
   resolveManualSkills,
   resolveAlwaysApplySkills,
   unionPrimeAllowedTools,
@@ -75,9 +77,13 @@ import {
   createStatefulCodeEnvironmentPolicyError,
   isFatalAgentInitializationError,
 } from './errors';
+import { extractAgentContent, extractSkillContent } from '../protection/adapters/submissions';
+import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
+import { ContentFilterError } from '../middleware/contentFilter';
 import { applyBackgroundToolCalls } from './background';
+import { inspectContent } from '../protection/runtime';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
@@ -631,6 +637,22 @@ export async function initializeAgent(
   }
 
   /**
+   * Reject the stored agent definition before initialization performs usage
+   * accounting, resource priming, tool/MCP loading, or provider setup. Inspect
+   * definition fragments directly here: the raw agent may still contain
+   * canonical file IDs that can only be validated after resource hydration.
+   */
+  const agentDefinitionFinding = inspectContent(
+    extractAgentContent(agent as unknown as Parameters<typeof extractAgentContent>[0]),
+    {
+      filters: req.config?.filters,
+    },
+  );
+  if (agentDefinitionFinding != null) {
+    throw new ContentFilterError(agentDefinitionFinding);
+  }
+
+  /**
    * Heal legacy MCP tool keys ONCE, before anything reads them: model-facing
    * keys embed the normalized server name (cache keys, definition names,
    * runtime instance names), so an agent document persisted with raw-named
@@ -712,6 +734,70 @@ export async function initializeAgent(
     );
   }
 
+  /**
+   * Manual and always-apply skill resolution is read-only. Resolve and inspect
+   * those exact model-bound skill bodies before file usage/resource priming or
+   * tool loading, then reuse the results below when expanding allowed tools.
+   */
+  const hasSkillAccess = (params.accessibleSkillIds?.length ?? 0) > 0;
+  const skillAuthoringAvailable = params.skillAuthoringAvailable === true;
+  let manualSkillPrimes: ResolvedManualSkill[] | undefined;
+  let alwaysApplySkillPrimes: ResolvedAlwaysApplySkill[] | undefined;
+  let extraAllowedToolNames: string[] = [];
+  let perSkillExtras: Map<string, string[]> = new Map();
+  let resolvedSkillCatalog: ResolvedSkillCatalog | undefined;
+  if (hasSkillAccess) {
+    const [manualPrimesResult, alwaysApplyPrimesResult, catalogResult] = await Promise.all([
+      params.manualSkills?.length && db.getSkillByName
+        ? resolveManualSkills({
+            names: params.manualSkills,
+            getSkillByName: db.getSkillByName,
+            accessibleSkillIds: params.accessibleSkillIds!,
+            userId: req.user?.id,
+            skillStates: params.skillStates,
+            defaultActiveOnShare: params.defaultActiveOnShare,
+          })
+        : Promise.resolve<ResolvedManualSkill[] | undefined>(undefined),
+      db.listAlwaysApplySkills
+        ? resolveAlwaysApplySkills({
+            listAlwaysApplySkills: db.listAlwaysApplySkills,
+            accessibleSkillIds: params.accessibleSkillIds!,
+            userId: req.user?.id,
+            skillStates: params.skillStates,
+            defaultActiveOnShare: params.defaultActiveOnShare,
+          })
+        : Promise.resolve<ResolvedAlwaysApplySkill[] | undefined>(undefined),
+      req.config?.filters?.skills?.pii != null
+        ? resolveSkillCatalog({
+            accessibleSkillIds: params.accessibleSkillIds!,
+            listSkillsByAccess: db.listSkillsByAccess,
+            userId: req.user?.id,
+            skillStates: params.skillStates,
+            defaultActiveOnShare: params.defaultActiveOnShare,
+            maxCatalogSkills: getMaxCatalogSkills(req),
+          })
+        : Promise.resolve<ResolvedSkillCatalog | undefined>(undefined),
+    ]);
+
+    manualSkillPrimes = manualPrimesResult;
+    alwaysApplySkillPrimes = alwaysApplyPrimesResult;
+    resolvedSkillCatalog = catalogResult;
+
+    const skillFinding = inspectContent(
+      [
+        ...(manualSkillPrimes ?? []),
+        ...(alwaysApplySkillPrimes ?? []),
+        ...(resolvedSkillCatalog?.activeSkills.filter(
+          (skill) => skill.disableModelInvocation !== true,
+        ) ?? []),
+      ].flatMap((skill) => extractSkillContent(skill)),
+      { filters: req.config?.filters },
+    );
+    if (skillFinding != null) {
+      throw new ContentFilterError(skillFinding);
+    }
+  }
+
   let currentFiles: IMongoFile[] | undefined;
 
   const _modelOptions = structuredClone(
@@ -755,6 +841,14 @@ export async function initializeAgent(
     agentId: agent.id,
     conversationId,
   });
+  const requestFileIds = [
+    ...new Set(
+      requestFiles
+        .map((file) => file.file_id)
+        .filter((fileId): fileId is string => typeof fileId === 'string' && fileId.length > 0),
+    ),
+  ];
+  const toolFileIds: string[] = [];
 
   /**
    * Load conversation files for ALL agents, not just the initial agent.
@@ -842,34 +936,54 @@ export async function initializeAgent(
     ]);
 
     const allToolFiles = toolFiles.concat(codeGeneratedFiles, userCodeFiles);
-    if (requestFiles.length || allToolFiles.length) {
-      const requestUsageFiles =
-        requestFiles.length && requestFileOwnerId
-          ? ((await db.updateFilesUsage(requestFiles, undefined, {
-              user: requestFileOwnerId,
-              tenantId: req.user?.tenantId,
-            })) as IMongoFile[])
-          : [];
-      const requestUsageFileIds = new Set(requestUsageFiles.map((file) => file.file_id));
-      const trustedToolFiles = allToolFiles.filter(
-        (file) => !requestUsageFileIds.has(file.file_id),
-      );
-      let toolUsageFiles: IMongoFile[] = [];
-      if (trustedToolFiles.length > 0 && requestFileOwnerId) {
-        toolUsageFiles = (await db.updateFilesUsage(trustedToolFiles, undefined, {
-          user: requestFileOwnerId,
-          tenantId: req.user?.tenantId,
-        })) as IMongoFile[];
+    const snapshotFileIds = new Set(requestFileIds);
+    for (const file of allToolFiles) {
+      if (typeof file.file_id !== 'string' || snapshotFileIds.has(file.file_id)) {
+        continue;
       }
-      currentFiles = requestUsageFiles.concat(toolUsageFiles);
+      snapshotFileIds.add(file.file_id);
+      toolFileIds.push(file.file_id);
     }
-  } else if (requestFiles.length) {
-    currentFiles = requestFileOwnerId
-      ? ((await db.updateFilesUsage(requestFiles, undefined, {
-          user: requestFileOwnerId,
-          tenantId: req.user?.tenantId,
-        })) as IMongoFile[])
-      : [];
+  }
+
+  /**
+   * Hydrate the complete candidate set through one owner-scoped, read-only
+   * query. Some discovery queries intentionally omit file text; this snapshot
+   * includes the content fields needed by policy checks. `updateFilesUsage`
+   * both mutates usage and returns hydrated rows, so it cannot be the hydrator:
+   * keep this exact snapshot authoritative for inspection, priming, and the
+   * later usage update to avoid a post-inspection re-read.
+   */
+  const snapshotFileIds = [...requestFileIds, ...toolFileIds];
+  let requestUsageFiles: IMongoFile[] = [];
+  let toolUsageFiles: IMongoFile[] = [];
+  if (requestFileOwnerScope && snapshotFileIds.length > 0) {
+    const hydratedFiles =
+      ((await db.getFiles(
+        {
+          file_id: { $in: snapshotFileIds },
+          user: requestFileOwnerScope.userId,
+          ...(requestFileOwnerScope.tenantId != null && {
+            tenantId: requestFileOwnerScope.tenantId,
+          }),
+        },
+        {},
+        {},
+      )) as IMongoFile[] | null) ?? [];
+    const hydratedFilesById = new Map(
+      hydratedFiles
+        .filter((file) => snapshotFileIds.includes(file.file_id))
+        .map((file) => [file.file_id, file]),
+    );
+    requestUsageFiles = requestFileIds
+      .map((fileId) => hydratedFilesById.get(fileId))
+      .filter((file): file is IMongoFile => file != null);
+    toolUsageFiles = toolFileIds
+      .map((fileId) => hydratedFilesById.get(fileId))
+      .filter((file): file is IMongoFile => file != null);
+  }
+  if (requestFiles.length > 0 || toolFileIds.length > 0) {
+    currentFiles = requestUsageFiles.concat(toolUsageFiles);
   }
 
   if (currentFiles && currentFiles.length) {
@@ -882,6 +996,30 @@ export async function initializeAgent(
       files: currentFiles,
       endpoint: agent.endpoint ?? '',
       endpointType,
+    });
+  }
+
+  assertModelBoundContent({
+    filters: req.config?.filters,
+    files: currentFiles,
+  });
+
+  /**
+   * Usage accounting is the first file mutation. It runs only after every
+   * hydrated file in the exact snapshot above has passed endpoint filtering
+   * and current content policy checks. Ignore returned rows so priming cannot
+   * observe a different post-inspection snapshot.
+   */
+  if (requestFileOwnerId && requestUsageFiles.length > 0) {
+    await db.updateFilesUsage(requestUsageFiles, undefined, {
+      user: requestFileOwnerId,
+      tenantId: req.user?.tenantId,
+    });
+  }
+  if (requestFileOwnerId && toolUsageFiles.length > 0) {
+    await db.updateFilesUsage(toolUsageFiles, undefined, {
+      user: requestFileOwnerId,
+      tenantId: req.user?.tenantId,
     });
   }
 
@@ -924,38 +1062,7 @@ export async function initializeAgent(
    * go first so their names win on dedup (primes earlier in the list
    * contribute before the same name gets deduped on a later prime).
    */
-  const hasSkillAccess = (params.accessibleSkillIds?.length ?? 0) > 0;
-  const skillAuthoringAvailable = params.skillAuthoringAvailable === true;
-  let manualSkillPrimes: ResolvedManualSkill[] | undefined;
-  let alwaysApplySkillPrimes: ResolvedAlwaysApplySkill[] | undefined;
-  let extraAllowedToolNames: string[] = [];
-  let perSkillExtras: Map<string, string[]> = new Map();
   if (hasSkillAccess) {
-    const [manualPrimesResult, alwaysApplyPrimesResult] = await Promise.all([
-      params.manualSkills?.length && db.getSkillByName
-        ? resolveManualSkills({
-            names: params.manualSkills,
-            getSkillByName: db.getSkillByName,
-            accessibleSkillIds: params.accessibleSkillIds!,
-            userId: req.user?.id,
-            skillStates: params.skillStates,
-            defaultActiveOnShare: params.defaultActiveOnShare,
-          })
-        : Promise.resolve<ResolvedManualSkill[] | undefined>(undefined),
-      db.listAlwaysApplySkills
-        ? resolveAlwaysApplySkills({
-            listAlwaysApplySkills: db.listAlwaysApplySkills,
-            accessibleSkillIds: params.accessibleSkillIds!,
-            userId: req.user?.id,
-            skillStates: params.skillStates,
-            defaultActiveOnShare: params.defaultActiveOnShare,
-          })
-        : Promise.resolve<ResolvedAlwaysApplySkill[] | undefined>(undefined),
-    ]);
-
-    manualSkillPrimes = manualPrimesResult;
-    alwaysApplySkillPrimes = alwaysApplyPrimesResult;
-
     /**
      * Cross-list dedup: when a user `$`-invokes a skill that is also
      * marked `always-apply`, the always-apply copy is dropped here so
@@ -1460,6 +1567,7 @@ export async function initializeAgent(
       skillStates: params.skillStates,
       defaultActiveOnShare: params.defaultActiveOnShare,
       maxCatalogSkills: getMaxCatalogSkills(req),
+      resolvedCatalog: resolvedSkillCatalog,
     });
     toolDefinitions = skillResult.toolDefinitions;
     skillCount = skillResult.skillCount;

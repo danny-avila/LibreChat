@@ -14,6 +14,7 @@ interface CompiledPattern {
 }
 
 export interface PatternContentInspector {
+  readonly active: boolean;
   inspect(fragments: Iterable<TextContentFragment>): ProtectionFinding | null;
 }
 
@@ -52,6 +53,7 @@ function selectStarter(ids?: readonly string[]): readonly CompiledPattern[] {
 
 function createInspector(patterns: readonly CompiledPattern[]): PatternContentInspector {
   return {
+    active: patterns.length > 0,
     inspect(fragments) {
       if (patterns.length === 0) {
         return null;
@@ -93,19 +95,12 @@ export function createPatternContentInspector(
   const starter = selectStarter(config.starterPatterns);
   const custom: CompiledPattern[] = [];
   for (const pattern of config.customPatterns ?? []) {
-    if (options.linearTime === true) {
-      custom.push({
-        id: pattern.id,
-        label: pattern.label,
-        pattern: RE2JS.compile(pattern.regex),
-      });
-      continue;
-    }
     try {
       custom.push({
         id: pattern.id,
         label: pattern.label,
-        pattern: new RegExp(pattern.regex),
+        pattern:
+          options.linearTime === true ? RE2JS.compile(pattern.regex) : new RegExp(pattern.regex),
       });
     } catch (error) {
       logger.warn(

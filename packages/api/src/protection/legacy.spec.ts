@@ -8,7 +8,10 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
-function fragment(id: string, text: string): TextContentFragment {
+function fragment(
+  id: string,
+  text: string,
+): Extract<TextContentFragment, { readonly source: 'message' }> {
   return {
     id,
     text,
@@ -120,6 +123,7 @@ describe('legacy content protection', () => {
   });
 
   it('compiles once per config identity and warns once for an invalid pattern', () => {
+    jest.mocked(logger.warn).mockClear();
     const config = {
       starterPatterns: [],
       customPatterns: [{ id: 'broken', label: 'Broken', regex: '(' }],
@@ -132,6 +136,31 @@ describe('legacy content protection', () => {
     expect(logger.warn).toHaveBeenCalledTimes(1);
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('[messageFilter.pii] dropping invalid customPattern "broken":'),
+    );
+  });
+
+  it('runs legacy custom patterns through the linear-time engine', () => {
+    jest.mocked(logger.warn).mockClear();
+    const nestedQuantifier = {
+      starterPatterns: [],
+      customPatterns: [{ id: 'nested', label: 'Nested', regex: '(a+)+$' }],
+    } as MessageFilterPiiConfig;
+    const nativeOnly = {
+      starterPatterns: [],
+      customPatterns: [{ id: 'lookahead', label: 'Lookahead', regex: '(?=PRIVATE)PRIVATE' }],
+    } as MessageFilterPiiConfig;
+
+    expect(
+      inspectLegacyPii(
+        [fragment('external-message.0.content', `${'a'.repeat(50_000)}!`)],
+        nestedQuantifier,
+      ),
+    ).toBeNull();
+    expect(
+      inspectLegacyPii([fragment('external-message.0.content', 'PRIVATE')], nativeOnly),
+    ).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('[messageFilter.pii] dropping invalid customPattern "lookahead":'),
     );
   });
 });

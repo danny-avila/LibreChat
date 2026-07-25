@@ -1,4 +1,8 @@
-const { loadThreadUserMessages, preflightAssistantRunContent } = require('./contentFilter');
+const {
+  loadThreadUserMessages,
+  preflightAssistantRunContent,
+  preflightAssistantUserMessageContent,
+} = require('./contentFilter');
 
 function createOpenAI({ assistant, firstPage }) {
   return {
@@ -273,4 +277,104 @@ describe('Assistants model-bound content preflight', () => {
     });
     expect(repeatedPage.getNextPage).toHaveBeenCalledTimes(1);
   });
+
+  it('does not resolve final message files when file policy is disabled', async () => {
+    const getFiles = jest.fn();
+
+    await expect(
+      preflightAssistantUserMessageContent({
+        req: { config: {}, user: { id: 'user-1' } },
+        message: { role: 'user', content: 'safe', file_ids: ['file-1'] },
+        getFiles,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(getFiles).not.toHaveBeenCalled();
+  });
+
+  it('owner-resolves and blocks canonical content in the final user message', async () => {
+    const getFiles = jest.fn().mockResolvedValue([
+      {
+        file_id: 'file-1',
+        user: 'user-1',
+        filename: 'notes.txt',
+        type: 'text/plain',
+        source: 'text',
+        text: 'Stored PRIVATE-FILE',
+      },
+    ]);
+
+    await expect(
+      preflightAssistantUserMessageContent({
+        req: {
+          config: {
+            filters: {
+              files: {
+                pii: {
+                  fields: ['content'],
+                  starterPatterns: [],
+                  customPatterns: [
+                    { id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' },
+                  ],
+                },
+              },
+            },
+          },
+          user: { id: 'user-1', tenantId: 'tenant-1' },
+        },
+        message: { role: 'user', content: 'safe', file_ids: ['file-1'] },
+        getFiles,
+      }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: {
+        source: 'file',
+        field: 'content',
+      },
+    });
+
+    expect(getFiles).toHaveBeenCalledWith(
+      {
+        file_id: { $in: ['file-1'] },
+        user: 'user-1',
+        tenantId: 'tenant-1',
+      },
+      {},
+      {},
+    );
+  });
+
+  it.each(['missing', 'foreign'])(
+    'fails closed when a final user message references a %s canonical file',
+    async () => {
+      const getFiles = jest.fn().mockResolvedValue([]);
+
+      await expect(
+        preflightAssistantUserMessageContent({
+          req: {
+            config: {
+              filters: {
+                files: {
+                  pii: {
+                    fields: ['content'],
+                    starterPatterns: [],
+                    uninspectable: 'block',
+                  },
+                },
+              },
+            },
+            user: { id: 'user-1' },
+          },
+          message: { role: 'user', content: 'safe', file_ids: ['file-unresolved'] },
+          getFiles,
+        }),
+      ).rejects.toMatchObject({
+        code: 'content_filter_uninspectable',
+        body: {
+          source: 'file',
+          field: 'content',
+        },
+      });
+    },
+  );
 });

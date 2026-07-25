@@ -184,8 +184,8 @@ describe('Agent Context Utilities', () => {
       expect(mockLogger.error).toHaveBeenCalledWith(
         '[AgentContext] Failed to get MCP instructions',
       );
-      expect(JSON.stringify(mockLogger.error.mock.calls)).not.toContain(error.message);
-      expect(JSON.stringify(mockLogger.error.mock.calls)).not.toContain('server1');
+      expect(JSON.stringify(jest.mocked(mockLogger.error).mock.calls)).not.toContain(error.message);
+      expect(JSON.stringify(jest.mocked(mockLogger.error).mock.calls)).not.toContain('server1');
     });
 
     it('should work without logger', async () => {

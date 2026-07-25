@@ -68,6 +68,11 @@ describe('Share Methods', () => {
         user: { type: String, required: true },
         text: String,
         isCreatedByUser: Boolean,
+        isUserSubmitted: Boolean,
+        userSubmittedPaths: {
+          type: [String],
+          default: undefined,
+        },
         model: String,
         iconURL: String,
         endpoint: String,
@@ -427,6 +432,77 @@ describe('Share Methods', () => {
       expect(preflight).toHaveBeenCalledTimes(1);
       expect(await SharedLink.countDocuments({ conversationId })).toBe(0);
     });
+
+    test('preflights only messages selected by a branch target', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const rootMessageId = `msg_${nanoid()}`;
+      const targetMessageId = `msg_${nanoid()}`;
+      const siblingMessageId = `msg_${nanoid()}`;
+
+      await Conversation.create({
+        conversationId,
+        title: 'Branched Conversation',
+        user: userId,
+      });
+      await Message.create([
+        {
+          messageId: rootMessageId,
+          conversationId,
+          user: userId,
+          text: 'Root prompt',
+          isCreatedByUser: true,
+          parentMessageId: Constants.NO_PARENT,
+        },
+        {
+          messageId: targetMessageId,
+          conversationId,
+          user: userId,
+          text: 'Selected answer',
+          isCreatedByUser: false,
+          parentMessageId: rootMessageId,
+        },
+        {
+          messageId: siblingMessageId,
+          conversationId,
+          user: userId,
+          text: 'Sibling answer',
+          isCreatedByUser: false,
+          parentMessageId: rootMessageId,
+        },
+        {
+          messageId: `msg_${nanoid()}`,
+          conversationId,
+          user: userId,
+          text: 'Unselected sibling branch tail',
+          isCreatedByUser: true,
+          parentMessageId: siblingMessageId,
+        },
+      ]);
+
+      const preflight = jest.fn(async (snapshot: SharedLinkContentSnapshot) => {
+        expect(snapshot.messages).toHaveLength(3);
+        expect(snapshot.messages.map((message) => message.text)).toEqual(
+          expect.arrayContaining(['Root prompt', 'Selected answer', 'Sibling answer']),
+        );
+        expect(snapshot.messages.map((message) => message.text)).not.toContain(
+          'Unselected sibling branch tail',
+        );
+      });
+
+      const result = await shareMethods.createSharedLink(
+        userId,
+        conversationId,
+        targetMessageId,
+        undefined,
+        true,
+        preflight,
+      );
+      const storedShare = await SharedLink.findOne({ shareId: result.shareId }).lean();
+
+      expect(preflight).toHaveBeenCalledTimes(1);
+      expect(storedShare?.messages).toHaveLength(4);
+    });
   });
 
   describe('getSharedMessages', () => {
@@ -451,6 +527,8 @@ describe('Share Methods', () => {
           user: userId,
           text: 'World',
           isCreatedByUser: false,
+          isUserSubmitted: true,
+          userSubmittedPaths: ['/text'],
           model: 'gpt-4',
           parentMessageId: Constants.NO_PARENT,
         },
@@ -479,6 +557,18 @@ describe('Share Methods', () => {
         expect(msg.conversationId).toBe(result.conversationId);
         expect((msg as Record<string, unknown>).user).toBeUndefined(); // User should be removed
       });
+      expect(result?.messages.find((message) => message.text === 'World')?.isUserSubmitted).toBe(
+        true,
+      );
+      expect(
+        result?.messages.find((message) => message.text === 'World')?.userSubmittedPaths,
+      ).toEqual(['/text']);
+      expect(result?.messages.find((message) => message.text === 'Hello')).not.toHaveProperty(
+        'isUserSubmitted',
+      );
+      expect(result?.messages.find((message) => message.text === 'Hello')).not.toHaveProperty(
+        'userSubmittedPaths',
+      );
     });
 
     test('should return null for non-existent share', async () => {
@@ -1960,6 +2050,82 @@ describe('Share Methods', () => {
       expect(await SharedLink.countDocuments({ conversationId })).toBe(1);
       const untouched = await SharedLink.findOne({ shareId }).lean();
       expect(untouched?.messages).toHaveLength(0);
+    });
+
+    test('preflights only messages selected by the stored branch target', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const rootMessageId = `msg_${nanoid()}`;
+      const targetMessageId = `msg_${nanoid()}`;
+      const siblingMessageId = `msg_${nanoid()}`;
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        title: 'Branched Share',
+        user: userId,
+        messages: [],
+        targetMessageId,
+      });
+      await Message.create([
+        {
+          messageId: rootMessageId,
+          conversationId,
+          user: userId,
+          text: 'Root prompt',
+          isCreatedByUser: true,
+          parentMessageId: Constants.NO_PARENT,
+        },
+        {
+          messageId: targetMessageId,
+          conversationId,
+          user: userId,
+          text: 'Selected answer',
+          isCreatedByUser: false,
+          parentMessageId: rootMessageId,
+        },
+        {
+          messageId: siblingMessageId,
+          conversationId,
+          user: userId,
+          text: 'Sibling answer',
+          isCreatedByUser: false,
+          parentMessageId: rootMessageId,
+        },
+        {
+          messageId: `msg_${nanoid()}`,
+          conversationId,
+          user: userId,
+          text: 'Unselected sibling branch tail',
+          isCreatedByUser: true,
+          parentMessageId: siblingMessageId,
+        },
+      ]);
+
+      const preflight = jest.fn(async (snapshot: SharedLinkContentSnapshot) => {
+        expect(snapshot.messages).toHaveLength(3);
+        expect(snapshot.messages.map((message) => message.text)).toEqual(
+          expect.arrayContaining(['Root prompt', 'Selected answer', 'Sibling answer']),
+        );
+        expect(snapshot.messages.map((message) => message.text)).not.toContain(
+          'Unselected sibling branch tail',
+        );
+      });
+
+      const result = await shareMethods.updateSharedLink(
+        userId,
+        shareId,
+        undefined,
+        undefined,
+        true,
+        preflight,
+      );
+      const storedShare = await SharedLink.findOne({ shareId: result.shareId }).lean();
+
+      expect(preflight).toHaveBeenCalledTimes(1);
+      expect(result.targetMessageId).toBe(targetMessageId);
+      expect(storedShare?.messages).toHaveLength(4);
     });
   });
 

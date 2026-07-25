@@ -9,7 +9,10 @@ jest.mock('@librechat/api', () => ({
   inspectContent: jest.fn(),
   extractFileContent: jest.fn((input) => [input]),
   genAzureEndpoint: jest.fn(),
-  logAxiosError: jest.fn(),
+  getSafeErrorMetadata: jest.fn((error) => ({
+    type: error instanceof Error ? 'Error' : 'UnknownError',
+    ...(Number.isInteger(error?.response?.status) && { status: error.response.status }),
+  })),
   applyAxiosProxyConfig: jest.fn(),
   contentFilterBlockResponse: jest.fn((finding) => ({
     error: 'content_filter_block',
@@ -31,9 +34,12 @@ jest.mock('librechat-data-provider', () => ({
 jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
 
 const fs = require('fs').promises;
+const axios = require('axios');
+const { logger } = require('@librechat/data-schemas');
 const {
   inspectContent,
   extractFileContent,
+  getSafeErrorMetadata,
   contentFilterBlockResponse,
   contentFilterUninspectableResponse,
   getBlockedUninspectableFileField,
@@ -175,6 +181,55 @@ describe('STT audio format validation with MIME normalization', () => {
   });
 });
 
+describe('STT error disclosure protection', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('does not log a submitted invalid language value', () => {
+    const submittedLanguage = 'PRIVATE-LANGUAGE@example.com';
+    const service = new STTService();
+
+    service.openAIProvider({ model: 'whisper-1' }, Buffer.from('audio'), {}, submittedLanguage);
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Invalid language format'));
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(submittedLanguage);
+  });
+
+  it('logs only bounded metadata when the speech provider rejects a request', async () => {
+    const rawProviderDetail = 'PRIVATE-AUDIO provider echoed submitted content';
+    const providerError = Object.assign(new Error(rawProviderDetail), {
+      response: {
+        status: 502,
+        data: rawProviderDetail,
+        headers: { 'x-provider-debug': rawProviderDetail },
+      },
+    });
+    const service = new STTService();
+    service.providerStrategies.test = () => ['https://provider.test/stt', Buffer.from('audio'), {}];
+    axios.post.mockRejectedValueOnce(providerError);
+
+    await expect(
+      service.sttRequest(
+        'test',
+        {},
+        {
+          audioBuffer: Buffer.from('audio'),
+          audioFile: { mimetype: 'audio/webm' },
+          language: '',
+        },
+      ),
+    ).rejects.toBe(providerError);
+
+    expect(getSafeErrorMetadata).toHaveBeenCalledWith(providerError);
+    expect(logger.error).toHaveBeenCalledWith('[STT] Request failed for provider test:', {
+      type: 'Error',
+      status: 502,
+    });
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain(rawProviderDetail);
+  });
+});
+
 describe('STT transcript content filtering', () => {
   let readFileSpy;
   let unlinkSpy;
@@ -307,5 +362,24 @@ describe('STT transcript content filtering', () => {
 
     expect(inspectContent).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ text: 'submitted transcript' });
+  });
+
+  it('logs only bounded metadata when speech processing fails', async () => {
+    const rawProviderDetail = 'PRIVATE-TRANSCRIPT echoed by provider';
+    const providerError = Object.assign(new Error(rawProviderDetail), {
+      response: { status: 503, data: rawProviderDetail },
+    });
+    const service = createService('');
+    service.sttRequest.mockRejectedValueOnce(providerError);
+    const res = createResponse();
+
+    await service.processSpeechToText(createRequest({}), res);
+
+    expect(res.sendStatus).toHaveBeenCalledWith(500);
+    expect(logger.error).toHaveBeenCalledWith(
+      '[STT] An error occurred while processing the audio:',
+      { type: 'Error', status: 503 },
+    );
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain(rawProviderDetail);
   });
 });

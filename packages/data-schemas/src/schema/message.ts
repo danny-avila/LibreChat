@@ -63,6 +63,13 @@ const messageSchema: Schema<IMessage> = new Schema(
       required: true,
       default: false,
     },
+    isUserSubmitted: {
+      type: Boolean,
+    },
+    userSubmittedPaths: {
+      type: [String],
+      default: undefined,
+    },
     isTemporary: {
       type: Boolean,
       default: false,

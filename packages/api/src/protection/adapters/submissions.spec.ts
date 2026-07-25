@@ -261,6 +261,12 @@ describe('submitted content adapters', () => {
         path: '/functions/0/name',
       }),
       expect.objectContaining({
+        source: 'tool_argument',
+        field: 'name',
+        text: 'direct_function',
+        path: '/functions/0/name',
+      }),
+      expect.objectContaining({
         source: 'agent_instruction',
         field: 'description',
         text: 'Direct function description',
@@ -595,6 +601,46 @@ describe('submitted content adapters', () => {
         text: 'title text',
       }),
     ]);
+  });
+
+  it('normalizes persisted text by MIME and extraction provenance for field-level inspection', () => {
+    expect(
+      fieldValues(
+        extractFileContent({
+          file_id: 'text-file',
+          type: 'text/plain',
+          source: 'text',
+          text: 'submitted text',
+        }),
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'content', text: 'submitted text' }),
+        expect.objectContaining({ field: 'extracted_text', text: 'submitted text' }),
+      ]),
+    );
+
+    expect(
+      fieldValues(
+        extractFileContent({
+          file_id: 'audio-file',
+          type: 'audio/webm',
+          source: 'text',
+          text: 'submitted transcript',
+        }),
+      ),
+    ).toEqual([expect.objectContaining({ field: 'transcript', text: 'submitted transcript' })]);
+
+    expect(
+      fieldValues(
+        extractFileContent({
+          file_id: 'legacy-binary-file',
+          type: 'application/pdf',
+          source: 'local',
+          text: 'legacy preview text',
+        }),
+      ),
+    ).toEqual([expect.objectContaining({ field: 'extracted_text', text: 'legacy preview text' })]);
   });
 
   it('extracts only registered provider-bound model parameter strings through stored wrappers', () => {

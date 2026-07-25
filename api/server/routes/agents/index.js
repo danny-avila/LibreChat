@@ -37,7 +37,7 @@ const {
   getServerGenerationProtocol,
   negotiateExistingGenerationProtocol,
 } = require('~/server/controllers/agents/protocol');
-const { saveMessage } = require('~/models');
+const { getFiles, saveMessage } = require('~/models');
 const {
   recordScheduleOutcome,
   beginScheduledStop,
@@ -773,6 +773,10 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
               unfinished: true,
               error: false,
               isCreatedByUser: false,
+              ...(Array.isArray(jobData.userSubmittedPaths) &&
+                jobData.userSubmittedPaths.length > 0 && {
+                  userSubmittedPaths: jobData.userSubmittedPaths,
+                }),
               user: userId,
             };
 
@@ -1015,6 +1019,7 @@ router.post(
   createMessageFilterPii({
     getConfig: (req) => req.config?.messageFilter?.pii,
     getFilters: (req) => req.config?.filters,
+    getFiles,
   }),
   moderateText,
   SteerController,
@@ -1031,7 +1036,11 @@ router.post(
   '/chat/steer/deliver',
   configMiddleware,
   ...steerLimiters,
-  createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }),
+  createMessageFilterPii({
+    getConfig: (req) => req.config?.messageFilter?.pii,
+    getFilters: (req) => req.config?.filters,
+    getFiles,
+  }),
   moderateText,
   SteerController.SteerDeliveryController,
 );

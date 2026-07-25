@@ -9,10 +9,19 @@ import {
 export interface ExternalMessagePart {
   readonly type?: string;
   readonly text?: string;
+  readonly data?: string;
+  readonly url?: string;
+  readonly source_type?: string;
   readonly image_url?: string | { readonly url?: string };
   readonly file_id?: string;
   readonly file_data?: string;
   readonly filename?: string;
+  readonly source?: {
+    readonly type?: string;
+    readonly data?: string;
+    readonly url?: string;
+    readonly [key: string]: unknown;
+  };
   readonly input_audio?: {
     readonly data?: string;
     readonly format?: string;
@@ -60,9 +69,118 @@ function createMessageFragment<Source extends ContentSource>(
   } as Extract<TextContentFragment, { source: Source }>;
 }
 
+type InlineFileTextField = 'content' | 'extracted_text';
+
+interface ProviderReference {
+  readonly key: string;
+  readonly value: string;
+  readonly path: TextContentFragment['path'];
+}
+
+interface InspectableReference {
+  readonly key: string;
+  readonly value: string | undefined;
+  readonly path: TextContentFragment['path'];
+  readonly format: TextContentFragment['format'];
+  readonly fileField: ContentFieldMap['file'] | undefined;
+}
+
+interface ProviderInlineText {
+  readonly key: string;
+  readonly value: string;
+  readonly path: TextContentFragment['path'];
+  readonly fileField: InlineFileTextField;
+  readonly includeAsMessageContent: boolean;
+}
+
+interface ProviderPartClassification {
+  readonly handledPaths: ReadonlySet<string>;
+  readonly references: readonly ProviderReference[];
+  readonly inlineTexts: readonly ProviderInlineText[];
+}
+
+const PROVIDER_ATTACHMENT_TYPES = new Set(['document', 'file', 'image']);
+const PROVIDER_DOCUMENT_TYPES = new Set(['document', 'file']);
+
+function classifyProviderPart(
+  part: ExternalMessagePart,
+  basePath: TextContentFragment['path'],
+): ProviderPartClassification {
+  const handledPaths = new Set<string>();
+  const references: ProviderReference[] = [];
+  const inlineTexts: ProviderInlineText[] = [];
+  if (!PROVIDER_ATTACHMENT_TYPES.has(part.type ?? '')) {
+    return { handledPaths, references, inlineTexts };
+  }
+
+  const seenReferences = new Set<string>();
+  const addReference = (
+    key: string,
+    value: string | undefined,
+    path: TextContentFragment['path'],
+  ): void => {
+    handledPaths.add(path);
+    if (
+      typeof value !== 'string' ||
+      value.length === 0 ||
+      isDataUri(value) ||
+      seenReferences.has(value)
+    ) {
+      return;
+    }
+    seenReferences.add(value);
+    references.push({ key, value, path });
+  };
+  const addInlineText = (
+    key: string,
+    value: string | undefined,
+    path: TextContentFragment['path'],
+    fileField: InlineFileTextField,
+    includeAsMessageContent: boolean,
+  ): void => {
+    handledPaths.add(path);
+    if (typeof value !== 'string' || value.length === 0 || isDataUri(value)) {
+      return;
+    }
+    inlineTexts.push({ key, value, path, fileField, includeAsMessageContent });
+  };
+
+  const sourceType = part.source?.type;
+  if (sourceType === 'url') {
+    addReference('source-data', part.source?.data, `${basePath}/source/data`);
+    addReference('source-url', part.source?.url, `${basePath}/source/url`);
+  } else if (sourceType === 'text' && PROVIDER_DOCUMENT_TYPES.has(part.type ?? '')) {
+    addInlineText(
+      'source-data',
+      part.source?.data,
+      `${basePath}/source/data`,
+      'content',
+      part.source?.data !== part.text,
+    );
+  } else if (sourceType === 'base64') {
+    handledPaths.add(`${basePath}/source/data`);
+  }
+
+  if (typeof part.source_type !== 'string') {
+    return { handledPaths, references, inlineTexts };
+  }
+  handledPaths.add(`${basePath}/source_type`);
+  if (part.source_type === 'url') {
+    addReference('data', part.data, `${basePath}/data`);
+    addReference('url', part.url, `${basePath}/url`);
+  } else if (part.source_type === 'text' && PROVIDER_DOCUMENT_TYPES.has(part.type ?? '')) {
+    addInlineText('text', part.text, `${basePath}/text`, 'extracted_text', false);
+  } else if (part.source_type === 'base64') {
+    handledPaths.add(`${basePath}/data`);
+  }
+
+  return { handledPaths, references, inlineTexts };
+}
+
 export function* extractMessageContent(
   messages: readonly (ExternalChatMessage | null | undefined)[],
 ): Generator<TextContentFragment, void, undefined> {
+  let traversalComplete = true;
   for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
     const message = messages[messageIndex];
     if (message == null) {
@@ -113,12 +231,14 @@ export function* extractMessageContent(
     if (Array.isArray(content)) {
       for (let partIndex = 0; partIndex < content.length; partIndex++) {
         const part = content[partIndex];
-        if (typeof part?.text === 'string') {
-          assembledText.push(part.text);
+        const directText =
+          typeof part?.text === 'string' && !isDataUri(part.text) ? part.text : undefined;
+        if (directText != null) {
+          assembledText.push(directText);
           yield createMessageFragment(
             `external-message.${messageIndex}.part.${partIndex}`,
             `/${messageIndex}/content/${partIndex}/text`,
-            part.text,
+            directText,
             'message',
             'content_part',
           );
@@ -126,7 +246,7 @@ export function* extractMessageContent(
             yield createMessageFragment(
               `external-message.${messageIndex}.part.${partIndex}.instruction`,
               `/${messageIndex}/content/${partIndex}/text`,
-              part.text,
+              directText,
               'agent_instruction',
               'instructions',
             );
@@ -135,7 +255,7 @@ export function* extractMessageContent(
             yield createMessageFragment(
               `external-message.${messageIndex}.part.${partIndex}.tool-output`,
               `/${messageIndex}/content/${partIndex}/text`,
-              part.text,
+              directText,
               'tool_argument',
               'output',
               'plain',
@@ -149,8 +269,10 @@ export function* extractMessageContent(
         } else if (typeof part?.image_url?.url === 'string') {
           uri = part.image_url.url;
         }
+        const basePath = `/${messageIndex}/content/${partIndex}` as const;
+        const providerPart = part == null ? undefined : classifyProviderPart(part, basePath);
         const inspectableUri = uri != null && !isDataUri(uri) ? uri : undefined;
-        const references = [
+        const references: InspectableReference[] = [
           {
             key: 'uri',
             value: inspectableUri,
@@ -186,37 +308,93 @@ export function* extractMessageContent(
             format: 'plain' as const,
             fileField: 'name' as const,
           },
+          ...(providerPart?.references.map((reference) => ({
+            ...reference,
+            format: 'uri' as const,
+            fileField: 'uri' as const,
+          })) ?? []),
         ];
+        const seenAttachmentReferences = new Set<string>();
+        const seenFileReferences = new Set<string>();
         for (const reference of references) {
           if (typeof reference.value !== 'string' || reference.value.length === 0) {
             continue;
           }
-          yield createMessageFragment(
-            `external-message.${messageIndex}.part.${partIndex}.attachment.${reference.key}`,
-            reference.path as TextContentFragment['path'],
-            reference.value,
-            'message',
-            'attachment_reference',
-            reference.format,
-            'inspect_only',
-          );
-          if (reference.fileField != null) {
+          if (!seenAttachmentReferences.has(reference.value)) {
+            seenAttachmentReferences.add(reference.value);
             yield createMessageFragment(
-              `external-message.${messageIndex}.part.${partIndex}.file.${reference.key}`,
-              reference.path as TextContentFragment['path'],
+              `external-message.${messageIndex}.part.${partIndex}.attachment.${reference.key}`,
+              reference.path,
               reference.value,
-              'file',
-              reference.fileField,
+              'message',
+              'attachment_reference',
               reference.format,
               'inspect_only',
             );
           }
+          if (
+            reference.fileField == null ||
+            seenFileReferences.has(`${reference.fileField}:${reference.value}`)
+          ) {
+            continue;
+          }
+          seenFileReferences.add(`${reference.fileField}:${reference.value}`);
+          yield createMessageFragment(
+            `external-message.${messageIndex}.part.${partIndex}.file.${reference.key}`,
+            reference.path,
+            reference.value,
+            'file',
+            reference.fileField,
+            reference.format,
+            'inspect_only',
+          );
+        }
+
+        for (const inlineText of providerPart?.inlineTexts ?? []) {
+          if (inlineText.includeAsMessageContent) {
+            assembledText.push(inlineText.value);
+            yield createMessageFragment(
+              `external-message.${messageIndex}.part.${partIndex}.provider.${inlineText.key}`,
+              inlineText.path,
+              inlineText.value,
+              'message',
+              'content_part',
+            );
+            if (isInstruction) {
+              yield createMessageFragment(
+                `external-message.${messageIndex}.part.${partIndex}.provider.${inlineText.key}.instruction`,
+                inlineText.path,
+                inlineText.value,
+                'agent_instruction',
+                'instructions',
+              );
+            }
+            if (message.role === 'tool') {
+              yield createMessageFragment(
+                `external-message.${messageIndex}.part.${partIndex}.provider.${inlineText.key}.tool-output`,
+                inlineText.path,
+                inlineText.value,
+                'tool_argument',
+                'output',
+                'plain',
+                'inspect_only',
+              );
+            }
+          }
+          yield createMessageFragment(
+            `external-message.${messageIndex}.part.${partIndex}.file.${inlineText.key}`,
+            inlineText.path,
+            inlineText.value,
+            'file',
+            inlineText.fileField,
+            'plain',
+            'inspect_only',
+          );
         }
 
         if (part == null) {
           continue;
         }
-        const basePath = `/${messageIndex}/content/${partIndex}` as const;
         const handledPaths = new Set([
           `${basePath}/type`,
           `${basePath}/text`,
@@ -229,6 +407,7 @@ export function* extractMessageContent(
           `${basePath}/file/file_id`,
           `${basePath}/file/file_data`,
           `${basePath}/file/filename`,
+          ...(providerPart?.handledPaths ?? []),
         ]);
         let nestedIndex = 0;
         const nestedFragments: TextContentFragment[] = [];
@@ -274,13 +453,15 @@ export function* extractMessageContent(
           },
           {
             includeKeys: true,
-            shouldVisit: ({ path }) => !handledPaths.has(path),
+            shouldVisit: ({ path, value }) =>
+              !handledPaths.has(path) &&
+              !(path === `${basePath}/source` && typeof value === 'string' && value === 'source'),
             shouldInclude: shouldIncludeNestedSubmittedText,
           },
         );
         yield* nestedFragments;
         if (!complete) {
-          throw new ContentTraversalLimitError();
+          traversalComplete = false;
         }
       }
     }
@@ -351,5 +532,8 @@ export function* extractMessageContent(
         'inspect_only',
       );
     }
+  }
+  if (!traversalComplete) {
+    throw new ContentTraversalLimitError();
   }
 }

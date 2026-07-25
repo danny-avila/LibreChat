@@ -9,7 +9,9 @@ interface CompiledFilter {
   readonly sources: ReadonlySet<ContentSource>;
   readonly fields: ReadonlySet<string> | null;
   readonly applies?: (fragment: TextContentFragment) => boolean;
-  readonly inspector: ReturnType<typeof createPatternContentInspector>;
+  readonly inspector: {
+    inspect(fragments: Iterable<TextContentFragment>): ProtectionFinding | null;
+  };
 }
 
 export interface ContentInspectionConfig {
@@ -22,7 +24,7 @@ export interface ConfiguredContentInspector {
 }
 
 const FILTER_CACHE = new WeakMap<object, readonly CompiledFilter[]>();
-const LEGACY_CACHE = new WeakMap<object, CompiledFilter>();
+const LEGACY_CACHE = new WeakMap<object, CompiledFilter | null>();
 const FILTER_INSPECTOR_CACHE = new WeakMap<object, ConfiguredContentInspector>();
 const LEGACY_INSPECTOR_CACHE = new WeakMap<object, ConfiguredContentInspector>();
 const COMBINED_INSPECTOR_CACHE = new WeakMap<object, WeakMap<object, ConfiguredContentInspector>>();
@@ -30,12 +32,16 @@ const COMBINED_INSPECTOR_CACHE = new WeakMap<object, WeakMap<object, ConfiguredC
 function compileFilter(
   config: PatternContentInspectorConfig & { readonly fields?: readonly string[] },
   sources: readonly ContentSource[],
-): CompiledFilter {
+): CompiledFilter | null {
+  const inspector = createPatternContentInspector(config, { linearTime: true });
+  if (!inspector.active) {
+    return null;
+  }
   return {
     detectorId: 'pii-pattern',
     sources: new Set(sources),
     fields: config.fields == null ? null : new Set(config.fields),
-    inspector: createPatternContentInspector(config, { linearTime: true }),
+    inspector,
   };
 }
 
@@ -51,7 +57,10 @@ function compileFilters(filters: FiltersConfig): readonly CompiledFilter[] {
     sources: readonly ContentSource[],
   ) => {
     if (config != null) {
-      compiled.push(compileFilter(config, sources));
+      const rule = compileFilter(config, sources);
+      if (rule != null) {
+        compiled.push(rule);
+      }
     }
   };
 
@@ -72,17 +81,21 @@ function compileFilters(filters: FiltersConfig): readonly CompiledFilter[] {
   return compiled;
 }
 
-function compileLegacy(config: MessageFilterPiiConfig): CompiledFilter {
-  const cached = LEGACY_CACHE.get(config);
-  if (cached != null) {
-    return cached;
+function compileLegacy(config: MessageFilterPiiConfig): CompiledFilter | null {
+  if (LEGACY_CACHE.has(config)) {
+    return LEGACY_CACHE.get(config) ?? null;
+  }
+  const inspector = createLegacyPiiInspector(config);
+  if (inspector == null) {
+    LEGACY_CACHE.set(config, null);
+    return null;
   }
   const compiled: CompiledFilter = {
     detectorId: 'legacy-pattern',
     sources: new Set<ContentSource>(['message', 'assembled_context', 'tool_argument']),
     fields: null,
     applies: isLegacyPiiFragment,
-    inspector: createLegacyPiiInspector(config)!,
+    inspector,
   };
   LEGACY_CACHE.set(config, compiled);
   return compiled;
@@ -141,7 +154,12 @@ export function createConfiguredContentInspector(
     if (cached != null) {
       return cached;
     }
-    const inspector = createInspector([compileLegacy(legacyPii), ...compileFilters(filters)]);
+    const legacyRule = compileLegacy(legacyPii);
+    const rules = [...(legacyRule == null ? [] : [legacyRule]), ...compileFilters(filters)];
+    if (rules.length === 0) {
+      return null;
+    }
+    const inspector = createInspector(rules);
     byLegacy.set(legacyPii, inspector);
     return inspector;
   }
@@ -151,7 +169,11 @@ export function createConfiguredContentInspector(
     if (cached != null) {
       return cached;
     }
-    const inspector = createInspector(compileFilters(filters));
+    const rules = compileFilters(filters);
+    if (rules.length === 0) {
+      return null;
+    }
+    const inspector = createInspector(rules);
     FILTER_INSPECTOR_CACHE.set(filters, inspector);
     return inspector;
   }
@@ -161,7 +183,11 @@ export function createConfiguredContentInspector(
   if (cached != null) {
     return cached;
   }
-  const inspector = createInspector([compileLegacy(legacy)]);
+  const legacyRule = compileLegacy(legacy);
+  if (legacyRule == null) {
+    return null;
+  }
+  const inspector = createInspector([legacyRule]);
   LEGACY_INSPECTOR_CACHE.set(legacy, inspector);
   return inspector;
 }

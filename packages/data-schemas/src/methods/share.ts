@@ -546,6 +546,12 @@ function anonymizeMessages(
       ...(message.iconURL && { iconURL: message.iconURL }),
       ...(model && { model }),
       isCreatedByUser: message.isCreatedByUser,
+      ...(typeof message.isUserSubmitted === 'boolean' && {
+        isUserSubmitted: message.isUserSubmitted,
+      }),
+      ...(Array.isArray(message.userSubmittedPaths) && {
+        userSubmittedPaths: message.userSubmittedPaths,
+      }),
       createdAt: message.createdAt,
       updatedAt: message.updatedAt,
       tokenCount: message.tokenCount,
@@ -1115,20 +1121,17 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const title = conversation.title || 'Untitled';
 
       const messagesForSnapshot = conversationMessages as unknown as t.IMessage[];
+      const messagesToShare = targetMessageId
+        ? getMessagesUpToTarget(messagesForSnapshot, targetMessageId)
+        : messagesForSnapshot;
       try {
-        await preflight?.({ title, messages: messagesForSnapshot });
+        await preflight?.({ title, messages: messagesToShare });
       } catch (error) {
         preflightFailed = true;
         throw error;
       }
       const fileSnapshots = snapshotFiles
-        ? await buildFileSnapshots(
-            mongoose,
-            targetMessageId
-              ? getMessagesUpToTarget(messagesForSnapshot, targetMessageId)
-              : messagesForSnapshot,
-            user,
-          )
+        ? await buildFileSnapshots(mongoose, messagesToShare, user)
         : [];
 
       const shareId = nanoid();
@@ -1277,23 +1280,20 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
             )
           : undefined);
       const messagesForSnapshot = updatedMessages as unknown as t.IMessage[];
+      const messagesToShare = resolvedTargetMessageId
+        ? getMessagesUpToTarget(messagesForSnapshot, resolvedTargetMessageId)
+        : messagesForSnapshot;
       try {
         await preflight?.({
           title: share.title || 'Untitled',
-          messages: messagesForSnapshot,
+          messages: messagesToShare,
         });
       } catch (error) {
         preflightFailed = true;
         throw error;
       }
       const fileSnapshots = snapshotFiles
-        ? await buildFileSnapshots(
-            mongoose,
-            resolvedTargetMessageId
-              ? getMessagesUpToTarget(messagesForSnapshot, resolvedTargetMessageId)
-              : messagesForSnapshot,
-            user,
-          )
+        ? await buildFileSnapshots(mongoose, messagesToShare, user)
         : [];
       // Clear any prior snapshot when snapshotting is off so a disabled-feature
       // update can't keep serving stale file ids that the update dropped.

@@ -7,10 +7,15 @@ const mockCache = {
   delete: jest.fn((key) => mockCacheStore.delete(key)),
 };
 const mockSaveConvo = jest.fn();
+const mockInspectContent = jest.fn();
 
 jest.mock('@librechat/api', () => ({
   isEnabled: (val) => val === true || val === 'true',
   sanitizeTitle: (title) => title,
+  extractConversationTitleContent: ({ title }) => [
+    { source: 'conversation_title', field: 'title', text: title },
+  ],
+  inspectContent: (...args) => mockInspectContent(...args),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -42,6 +47,7 @@ describe('agents addTitle', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCacheStore.clear();
+    mockInspectContent.mockReturnValue(null);
   });
 
   it('uses the explicit conversationId for the cache key and saveConvo (immediate mode)', async () => {
@@ -179,6 +185,43 @@ describe('agents addTitle', () => {
     await pending;
 
     expect(order).toEqual(['cache', 'title-event', 'save']);
+  });
+
+  it('replaces a blocked generated title before caching, emitting, or saving it', async () => {
+    const client = makeClient('BLOCKED-TITLE');
+    const req = makeReq();
+    req.config.filters = {
+      conversationTitles: {
+        pii: {
+          starterPatterns: [],
+          customPatterns: [{ id: 'blocked', label: 'blocked', regex: 'BLOCKED' }],
+        },
+      },
+    };
+    const onTitleGenerated = jest.fn();
+    mockInspectContent.mockImplementation((fragments) =>
+      fragments[0]?.text === 'BLOCKED-TITLE' ? { detectorId: 'pii-pattern' } : null,
+    );
+
+    await addTitle(req, {
+      text: 'hello',
+      client,
+      conversationId: 'cid-filtered',
+      immediate: true,
+      convoReady: Promise.resolve(),
+      onTitleGenerated,
+    });
+
+    expect(mockCache.set).toHaveBeenCalledWith('user-1-cid-filtered', 'New Chat', 120000);
+    expect(onTitleGenerated).toHaveBeenCalledWith({
+      conversationId: 'cid-filtered',
+      title: 'New Chat',
+    });
+    expect(mockSaveConvo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ conversationId: 'cid-filtered', title: 'New Chat' }),
+      expect.objectContaining({ noUpsert: true }),
+    );
   });
 
   it('skips generation when the endpoint disables titleConvo', async () => {

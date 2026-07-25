@@ -80,6 +80,29 @@ describe('contentFilter middleware', () => {
     expect(captured).toEqual({});
   });
 
+  it('does not extract content for present but zero-rule configurations', () => {
+    const extract = jest.fn<Iterable<TextContentFragment>, [Request]>(() => {
+      throw new Error('content extraction should be bypassed');
+    });
+
+    for (const config of [
+      { filters: {} as FiltersConfig },
+      {
+        filters: {
+          messages: { pii: { starterPatterns: [] } },
+        } as FiltersConfig,
+      },
+      {
+        legacyPii: { starterPatterns: [] },
+      },
+    ]) {
+      const { captured, next } = runMiddleware({ ...config, extract });
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(captured).toEqual({});
+    }
+    expect(extract).not.toHaveBeenCalled();
+  });
+
   it('honors per-field selection and passes non-selected content through', () => {
     const filters: FiltersConfig = {
       prompts: {
@@ -221,6 +244,64 @@ describe('contentFilter middleware', () => {
     });
 
     expect(extract).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(captured).toEqual({});
+  });
+
+  it('hydrates an owned canonical file before filtering a stored-message mutation', async () => {
+    const filters = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          uninspectable: 'block',
+        },
+      },
+    } as FiltersConfig;
+    const getFiles = jest.fn().mockResolvedValue([
+      {
+        file_id: 'owned-file',
+        filename: 'report.txt',
+        filepath: '/uploads/report.txt',
+        text: 'safe extracted text',
+      },
+    ]);
+    const captured: CapturedResponse = {};
+    const middleware = createContentFilter({
+      getFilters: () => filters,
+      getOpaqueFileInput: (req) => req.body,
+      getFiles,
+      extract: () => [],
+    });
+    const response = {
+      status(code: number) {
+        captured.status = code;
+        return this;
+      },
+      json(body: unknown) {
+        captured.body = body;
+        return this;
+      },
+    } as Response;
+    const next = jest.fn() as jest.MockedFunction<NextFunction>;
+
+    await middleware(
+      {
+        body: { files: [{ file_id: 'owned-file' }] },
+        user: { id: 'user-1', tenantId: 'tenant-1' },
+      } as unknown as Request,
+      response,
+      next,
+    );
+
+    expect(getFiles).toHaveBeenCalledWith(
+      {
+        file_id: { $in: ['owned-file'] },
+        user: 'user-1',
+        tenantId: 'tenant-1',
+      },
+      {},
+      {},
+    );
     expect(next).toHaveBeenCalledTimes(1);
     expect(captured).toEqual({});
   });

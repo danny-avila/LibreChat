@@ -23,7 +23,11 @@ const {
   validateActionDomain,
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
-const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
+const {
+  decryptMetadata,
+  encryptMetadata,
+  domainParser,
+} = require('~/server/services/ActionService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { attachOwnerContacts } = require('~/server/services/Agents/ownerContact');
 const db = require('~/models');
@@ -191,6 +195,17 @@ router.post(
         previousLegacyDomain: legacyActionDomainEncode(storedAction?.metadata?.domain),
         storedAction,
       });
+
+      const finalContentFinding = inspectContent(
+        extractAssistantActionContent({
+          functions: plannedUpdate.tools.map((name) => ({ function: { name } })),
+          metadata: await decryptMetadata(plannedUpdate.metadata),
+        }),
+        { filters: req.config?.filters },
+      );
+      if (finalContentFinding != null) {
+        return res.status(400).json(contentFilterBlockResponse(finalContentFinding));
+      }
 
       if (plannedUpdate.requiresCredentialRefresh) {
         return res.status(400).json({

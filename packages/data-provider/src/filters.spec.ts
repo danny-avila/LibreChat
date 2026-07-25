@@ -12,6 +12,8 @@ import {
   TOOL_ARGUMENT_FILTER_FIELDS,
   MODEL_PARAMETER_FILTER_FIELDS,
   ACTION_METADATA_FILTER_FIELDS,
+  hasActiveFiltersConfig,
+  hasActivePiiPatterns,
 } from './filters';
 import { configSchema, messageFilterPiiSchema } from './config';
 
@@ -43,6 +45,46 @@ describe('filtersConfigSchema', () => {
   it('treats source and PII omission as disabled', () => {
     expect(filtersConfigSchema.parse({})).toEqual({});
     expect(filtersConfigSchema.parse({ messages: {} })).toEqual({ messages: {} });
+    expect(hasActiveFiltersConfig({})).toBe(false);
+    expect(hasActiveFiltersConfig({ messages: {} })).toBe(false);
+    expect(hasActivePiiPatterns({ starterPatterns: [] })).toBe(false);
+    expect(
+      hasActiveFiltersConfig({
+        skills: { pii: { fields: ['file_text'], starterPatterns: [] } },
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps default patterns, custom patterns, and explicit file fail-close active', () => {
+    expect(hasActivePiiPatterns({})).toBe(true);
+    expect(
+      hasActivePiiPatterns({
+        starterPatterns: [],
+        customPatterns: [{ id: 'custom', label: 'custom', regex: 'CUSTOM' }],
+      }),
+    ).toBe(true);
+    expect(
+      hasActiveFiltersConfig({
+        files: {
+          pii: {
+            fields: ['content'],
+            starterPatterns: [],
+            uninspectable: 'block',
+          },
+        },
+      }),
+    ).toBe(true);
+    expect(
+      hasActiveFiltersConfig({
+        files: {
+          pii: {
+            fields: ['name'],
+            starterPatterns: [],
+            uninspectable: 'block',
+          },
+        },
+      }),
+    ).toBe(false);
   });
 
   it('accepts user-submitted agent categories and message names as explicit fields', () => {

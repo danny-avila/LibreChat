@@ -15,6 +15,7 @@ const {
   encodeAndFormatDocuments,
   getLangfuseTraceMessageFields,
   assertModelBoundContent,
+  resolveCanonicalFileReferences,
 } = require('@librechat/api');
 const {
   Constants,
@@ -70,25 +71,29 @@ const collectHistoricalFileIds = (messages) => {
   return Array.from(fileIds);
 };
 
-const collectHistoricalSteerFileIds = (messages) => {
-  const fileIds = new Set();
-  for (const message of messages) {
-    if (!Array.isArray(message.content)) {
-      continue;
-    }
-    for (const part of message.content) {
-      if (part?.type !== ContentTypes.STEER || !Array.isArray(part.files)) {
-        continue;
-      }
-      for (const file of part.files) {
-        if (file?.file_id) {
-          fileIds.add(file.file_id);
+const omitUnreplayedHistoricalFiles = (messages) =>
+  messages.map(({ files: _files, attachments: _attachments, ...message }) => ({
+    ...message,
+    ...(Array.isArray(message.content)
+      ? {
+          content: message.content.map((part) => {
+            if (part?.type !== ContentTypes.STEER || part.files === undefined) {
+              return part;
+            }
+            const { files: _partFiles, ...rest } = part;
+            return rest;
+          }),
         }
-      }
-    }
-  }
-  return fileIds;
-};
+      : {}),
+  }));
+
+const mergeUserSubmittedPaths = (...pathLists) => [
+  ...new Set(
+    pathLists
+      .flat()
+      .filter((path) => typeof path === 'string' && path.startsWith('/') && path.length <= 2048),
+  ),
+];
 
 const buildOwnerFileFilter = (fileIds, user) => {
   if (!user?.id || fileIds.length === 0) {
@@ -227,6 +232,10 @@ class BaseClient {
 
   setOptions() {
     throw new Error("Method 'setOptions' must be implemented.");
+  }
+
+  getModelBoundStoredMessages(messages) {
+    return this.options.resendFiles === false ? omitUnreplayedHistoricalFiles(messages) : messages;
   }
 
   async getCompletion() {
@@ -646,6 +655,35 @@ class BaseClient {
      */
     const parentMessageId = isEdited ? head : userMessage.messageId;
     this.parentMessageId = parentMessageId;
+    const modelBoundStoredMessages = this.getModelBoundStoredMessages(this.currentMessages);
+    let resolvedHistoricalFiles =
+      this.options.resendFiles === false
+        ? []
+        : Array.from(this.authorizedHistoricalFiles?.values?.() ?? []);
+    if (
+      this.options.resendFiles !== false &&
+      appConfig?.filters?.files?.pii != null &&
+      this.authorizedHistoricalFiles == null
+    ) {
+      const fileInspection = await resolveCanonicalFileReferences({
+        filters: appConfig.filters,
+        input: modelBoundStoredMessages,
+        user: this.options.req?.user,
+        getFiles: db.getFiles,
+      });
+      resolvedHistoricalFiles = fileInspection.hydratedFiles;
+      this.authorizedHistoricalFiles = new Map(
+        resolvedHistoricalFiles
+          .filter((file) => typeof file?.file_id === 'string' && file.file_id.length > 0)
+          .map((file) => [file.file_id, file]),
+      );
+    }
+    assertModelBoundContent({
+      filters: this.options.req?.config?.filters,
+      legacyPii: this.options.req?.config?.messageFilter?.pii,
+      storedMessages: modelBoundStoredMessages,
+      resolvedFiles: resolvedHistoricalFiles,
+    });
     let {
       prompt: payload,
       tokenCountMap,
@@ -780,6 +818,8 @@ class BaseClient {
       ...(this.metadata ?? {}),
       metadata: Object.keys(metadata ?? {}).length > 0 ? metadata : undefined,
     };
+    let editedSourceMessage;
+    let editedSourceContentLength = 0;
 
     if (typeof completion === 'string') {
       responseMessage.text = completion;
@@ -797,6 +837,8 @@ class BaseClient {
         if (!latestMessage?.content) {
           responseMessage.content = completion;
         } else {
+          editedSourceMessage = latestMessage;
+          editedSourceContentLength = latestMessage.content.length;
           const existingContent = [...latestMessage.content];
           const { type: editedType } = opts.editedContent;
           responseMessage.content = this.mergeEditedContent(
@@ -808,6 +850,41 @@ class BaseClient {
       }
     } else if (Array.isArray(completion)) {
       responseMessage.text = completion.join('');
+    }
+
+    if (Array.isArray(responseMessage.content)) {
+      const userSubmittedPaths = [];
+      for (let index = 0; index < responseMessage.content.length; index++) {
+        if (responseMessage.content[index]?.type === ContentTypes.STEER) {
+          userSubmittedPaths.push(`/content/${index}`);
+        }
+      }
+      if (editedSourceMessage != null) {
+        userSubmittedPaths.push(
+          ...(editedSourceMessage.userSubmittedPaths ?? []).filter((path) => {
+            const match = /^\/content\/(\d+)(?:\/|$)/.exec(path);
+            return match != null && Number(match[1]) < editedSourceContentLength;
+          }),
+        );
+        if (editedSourceMessage.isUserSubmitted === true) {
+          for (let index = 0; index < editedSourceContentLength; index++) {
+            userSubmittedPaths.push(`/content/${index}`);
+          }
+        }
+        const editedIndex = opts.editedContent?.index;
+        const editedType = opts.editedContent?.type;
+        if (
+          Number.isInteger(editedIndex) &&
+          editedIndex >= 0 &&
+          editedIndex < editedSourceContentLength &&
+          (editedType === ContentTypes.TEXT || editedType === ContentTypes.THINK)
+        ) {
+          userSubmittedPaths.push(`/content/${editedIndex}/${editedType}`);
+        }
+      }
+      if (userSubmittedPaths.length > 0) {
+        responseMessage.userSubmittedPaths = mergeUserSubmittedPaths(userSubmittedPaths);
+      }
     }
 
     if (tokenCountMap && this.recordTokenUsage && this.getTokenCountForResponse) {
@@ -1571,22 +1648,34 @@ class BaseClient {
     }
 
     const historicalFileIds = collectHistoricalFileIds(_messages);
-    const fileFilter = buildOwnerFileFilter(historicalFileIds, this.options.req?.user);
     const authorizedFilesById = new Map();
-    if (fileFilter) {
-      const files = (await db.getFiles(fileFilter, {}, {})) ?? [];
-      for (const file of files) {
+    const filters = this.options.req?.config?.filters;
+    if (filters?.files?.pii != null) {
+      const fileInspection = await resolveCanonicalFileReferences({
+        filters,
+        input: _messages,
+        user: this.options.req?.user,
+        getFiles: db.getFiles,
+      });
+      for (const file of fileInspection.hydratedFiles) {
         if (file?.file_id) {
           authorizedFilesById.set(file.file_id, file);
         }
       }
+    } else {
+      const fileFilter = buildOwnerFileFilter(historicalFileIds, this.options.req?.user);
+      if (fileFilter) {
+        const files = (await db.getFiles(fileFilter, {}, {})) ?? [];
+        for (const file of files) {
+          if (file?.file_id) {
+            authorizedFilesById.set(file.file_id, file);
+          }
+        }
+      }
     }
-    const historicalSteerFiles = [...collectHistoricalSteerFileIds(_messages)]
-      .map((fileId) => authorizedFilesById.get(fileId))
-      .filter(Boolean);
     assertModelBoundContent({
-      filters: this.options.req?.config?.filters,
-      files: historicalSteerFiles,
+      filters,
+      resolvedFiles: [...authorizedFilesById.values()],
     });
     /** Owner-scoped docs for THIS turn, including steer-part refs — the steer
      *  replay stamp consumes this instead of issuing a second query. */

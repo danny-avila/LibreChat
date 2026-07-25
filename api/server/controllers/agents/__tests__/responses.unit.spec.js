@@ -34,6 +34,13 @@ const mockCreateAgentRunEnvelope = jest.fn(
     payload: JSON.parse(JSON.stringify(payload)),
   }),
 );
+const mockGetSafeErrorMetadata = jest.fn((error) => {
+  const status = error?.status ?? error?.statusCode ?? error?.response?.status;
+  return {
+    type: error instanceof Error ? 'Error' : 'UnknownError',
+    ...(Number.isInteger(status) && status >= 100 && status <= 599 && { status }),
+  };
+});
 const mockBuildSkillPrimedIdsByName = jest.fn((manualSkillPrimes, alwaysApplySkillPrimes) => {
   const primed = {};
   for (const skill of alwaysApplySkillPrimes ?? []) {
@@ -114,6 +121,21 @@ jest.mock('@librechat/api', () => ({
    *  before SDK formatting; the mock must expose it like any other used
    *  export or the call throws before the assertions run. */
   stripActivityLabelParts: jest.fn((payload) => payload),
+  collectReachableAgents: (roots) => {
+    const agents = [];
+    const pending = [...roots];
+    const visited = new Set();
+    for (let index = 0; index < pending.length; index++) {
+      const agent = pending[index];
+      if (!agent || visited.has(agent)) {
+        continue;
+      }
+      visited.add(agent);
+      agents.push(agent);
+      pending.push(...(agent.subagentAgentConfigs ?? []));
+    }
+    return agents;
+  },
   createRun: jest.fn().mockResolvedValue({
     processStream: jest.fn().mockResolvedValue(undefined),
   }),
@@ -191,6 +213,9 @@ jest.mock('@librechat/api', () => ({
   generateResponseId: jest.fn().mockReturnValue('resp_mock-123'),
   isValidationFailure: jest.fn().mockReturnValue(false),
   inspectContent: jest.fn().mockReturnValue(null),
+  extractConversationTitleContent: jest.fn(({ title }) => [
+    { source: 'conversation_title', field: 'title', text: title },
+  ]),
   extractAgentContent: jest.fn().mockReturnValue([]),
   extractFileContent: jest.fn().mockReturnValue([]),
   extractMessageContent: jest.fn().mockReturnValue([]),
@@ -202,6 +227,7 @@ jest.mock('@librechat/api', () => ({
   isNestedMessageTraversalProtected: jest.fn().mockReturnValue(true),
   assertModelBoundContent: jest.fn(),
   isContentFilterError: jest.fn((error) => error?.code === 'content_filter_block'),
+  getSafeErrorMetadata: mockGetSafeErrorMetadata,
   contentFilterBlockResponse: jest.fn().mockReturnValue({
     error: 'content_filter_block',
     message: 'Submitted content was blocked.',
@@ -362,6 +388,7 @@ describe('createResponse controller', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGlobalDiscoveredAgentConfigs = null;
+    require('@librechat/api').inspectContent.mockReset().mockReturnValue(null);
 
     const controller = require('../responses');
     createResponse = controller.createResponse;
@@ -606,6 +633,48 @@ describe('createResponse controller', () => {
   });
 
   describe('content filtering', () => {
+    it('replaces a blocked agent-derived conversation title before persistence', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          store: true,
+        },
+      });
+      api.inspectContent.mockImplementation((fragments) =>
+        fragments[0]?.source === 'conversation_title' && fragments[0]?.text === 'BLOCKED-AGENT'
+          ? { detectorId: 'pii-pattern' }
+          : null,
+      );
+      db.getAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        name: 'BLOCKED-AGENT',
+        model: 'claude-3',
+        provider: 'anthropic',
+      });
+      req.config.filters = {
+        conversationTitles: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: [{ id: 'blocked', label: 'blocked', regex: 'BLOCKED' }],
+          },
+        },
+      };
+
+      await createResponse(req, res);
+
+      expect(db.saveConvo).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          title: 'New Chat',
+        }),
+        expect.anything(),
+      );
+    });
+
     it('blocks opaque response input before conversion or agent loading', async () => {
       const api = require('@librechat/api');
       const db = require('~/models');
@@ -779,6 +848,344 @@ describe('createResponse controller', () => {
       );
     });
 
+    it('preserves imported whole-assistant provenance and blocks its stored text', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      const storedMessage = {
+        messageId: 'imported-assistant',
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+        text: 'sk-imported-secret',
+      };
+      const blockedError = Object.assign(new Error('Submitted content was blocked.'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted content was blocked.',
+          source: 'message',
+          field: 'text',
+        },
+      });
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          previous_response_id: 'resp_imported',
+        },
+      });
+      db.getConvo.mockResolvedValueOnce({ conversationId: 'resp_imported', user: 'user-123' });
+      db.getMessages.mockResolvedValueOnce([storedMessage]);
+      api.assertModelBoundContent
+        .mockImplementationOnce(() => undefined)
+        .mockImplementationOnce(({ storedMessages }) => {
+          expect(storedMessages).toEqual([
+            expect.objectContaining({
+              messageId: 'imported-assistant',
+              isCreatedByUser: false,
+              isUserSubmitted: true,
+              text: 'sk-imported-secret',
+              content: 'sk-imported-secret',
+            }),
+          ]);
+          throw blockedError;
+        });
+
+      await createResponse(req, res);
+
+      expect(api.createRun).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        blockedError.body.message,
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('preserves path-marked assistant content and blocks only the submitted block', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      const content = [
+        { type: 'text', text: 'neighboring model prose' },
+        { type: 'text', text: 'sk-path-secret' },
+      ];
+      const blockedError = Object.assign(new Error('Submitted content was blocked.'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted content was blocked.',
+          source: 'message',
+          field: 'content_part',
+        },
+      });
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          previous_response_id: 'resp_path_marked',
+        },
+      });
+      db.getConvo.mockResolvedValueOnce({
+        conversationId: 'resp_path_marked',
+        user: 'user-123',
+      });
+      db.getMessages.mockResolvedValueOnce([
+        {
+          messageId: 'mixed-assistant',
+          isCreatedByUser: false,
+          text: 'assistant summary text',
+          content,
+          userSubmittedPaths: ['/content/1/text'],
+        },
+      ]);
+      api.assertModelBoundContent
+        .mockImplementationOnce(() => undefined)
+        .mockImplementationOnce(({ storedMessages }) => {
+          expect(storedMessages).toEqual([
+            expect.objectContaining({
+              text: 'assistant summary text',
+              content,
+              userSubmittedPaths: ['/content/1/text'],
+            }),
+          ]);
+          throw blockedError;
+        });
+
+      await createResponse(req, res);
+
+      expect(api.createRun).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        blockedError.body.message,
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('allows neighboring unmarked assistant prose when marked content is safe', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      const content = [
+        { type: 'text', text: 'sk-model-generated-prose' },
+        { type: 'text', text: 'safe submitted correction' },
+      ];
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          previous_response_id: 'resp_neighboring_model_output',
+        },
+      });
+      db.getConvo.mockResolvedValueOnce({
+        conversationId: 'resp_neighboring_model_output',
+        user: 'user-123',
+      });
+      db.getMessages.mockResolvedValueOnce([
+        {
+          messageId: 'mixed-assistant',
+          isCreatedByUser: false,
+          content,
+          userSubmittedPaths: ['/content/1/text'],
+        },
+      ]);
+      api.assertModelBoundContent
+        .mockImplementationOnce(() => undefined)
+        .mockImplementationOnce(({ storedMessages }) => {
+          const [message] = storedMessages;
+          expect(message.content).toEqual(content);
+          expect(message.userSubmittedPaths).toEqual(['/content/1/text']);
+          expect(message.content[1].text).toBe('safe submitted correction');
+        });
+
+      await createResponse(req, res);
+
+      expect(api.createRun).toHaveBeenCalledTimes(1);
+      expect(api.sendResponsesErrorResponse).not.toHaveBeenCalledWith(
+        res,
+        400,
+        expect.anything(),
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('preflights request and context attachments from every run agent under a files-only policy', async () => {
+      const api = require('@librechat/api');
+      const primaryRequestFile = { filename: 'primary-request.txt', content: 'primary request' };
+      const primaryContextFile = { filename: 'primary-context.txt', content: 'primary context' };
+      const handoffRequestFile = { filename: 'handoff-request.txt', content: 'handoff request' };
+      const handoffContextFile = {
+        filename: 'handoff-context.txt',
+        content: 'sk-handoff-context',
+      };
+      const blockedError = Object.assign(new Error('Submitted file content was blocked.'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted file content was blocked.',
+          source: 'file',
+          field: 'content',
+        },
+      });
+      req.config.filters = {
+        files: { pii: { fields: ['content'], starterPatterns: ['sk-'] } },
+      };
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input: 'Hello', stream: true },
+      });
+      api.initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [{ source: 'agent-123', target: 'agent-handoff' }],
+        requestAttachments: [primaryRequestFile],
+        agentContextAttachments: [primaryContextFile],
+      });
+      mockGlobalDiscoveredAgentConfigs = new Map([
+        [
+          'agent-handoff',
+          {
+            id: 'agent-handoff',
+            model: 'claude-3',
+            model_parameters: {},
+            requestAttachments: [handoffRequestFile],
+            agentContextAttachments: [handoffContextFile],
+          },
+        ],
+      ]);
+      api.assertModelBoundContent
+        .mockImplementationOnce(() => undefined)
+        .mockImplementationOnce(({ filters, files }) => {
+          expect(filters).toEqual(req.config.filters);
+          expect(files).toEqual([
+            primaryRequestFile,
+            primaryContextFile,
+            handoffRequestFile,
+            handoffContextFile,
+          ]);
+          throw blockedError;
+        });
+
+      await createResponse(req, res);
+
+      expect(api.createRun).not.toHaveBeenCalled();
+      expect(api.setupStreamingResponse).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        blockedError.body.message,
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
+    it('preflights each exact synthesized dynamic tool context as file content', async () => {
+      const api = require('@librechat/api');
+      const nestedPureSubagent = {
+        id: 'agent-nested-pure',
+        model: 'claude-3',
+        model_parameters: {},
+        toolDefinitions: [
+          {
+            name: 'nested_lookup',
+            description: 'late-loaded nested tool definition',
+            parameters: { type: 'object' },
+          },
+        ],
+        dynamicToolContextMap: {
+          nested_lookup: 'sk-nested-dynamic-context',
+        },
+      };
+      const blockedError = Object.assign(new Error('Submitted file content was blocked.'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted file content was blocked.',
+          source: 'file',
+          field: 'content',
+        },
+      });
+      req.config.filters = {
+        files: { pii: { fields: ['content'], starterPatterns: ['sk-'] } },
+      };
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input: 'Hello', stream: true },
+      });
+      api.initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [{ source: 'agent-123', target: 'agent-handoff' }],
+        dynamicToolContextMap: {
+          execute_code: '  primary safe context',
+          ignored_empty: '',
+          file_search: 'primary context  ',
+          ignored_non_string: 42,
+        },
+        subagentAgentConfigs: [
+          {
+            id: 'agent-pure',
+            model: 'claude-3',
+            model_parameters: {},
+            subagentAgentConfigs: [nestedPureSubagent],
+          },
+        ],
+      });
+      mockGlobalDiscoveredAgentConfigs = new Map([
+        [
+          'agent-handoff',
+          {
+            id: 'agent-handoff',
+            model: 'claude-3',
+            model_parameters: {},
+            dynamicToolContextMap: {
+              execute_code: 'handoff safe context',
+              file_search: 'sk-handoff-dynamic-context',
+            },
+          },
+        ],
+      ]);
+      api.assertModelBoundContent
+        .mockImplementationOnce(() => undefined)
+        .mockImplementationOnce(({ filters, agents, files }) => {
+          expect(filters).toEqual(req.config.filters);
+          expect(agents.map(({ id }) => id)).toEqual([
+            'agent-123',
+            'agent-handoff',
+            'agent-pure',
+            'agent-nested-pure',
+          ]);
+          expect(files).toEqual([
+            { content: 'primary safe context\nprimary context' },
+            { content: 'handoff safe context\nsk-handoff-dynamic-context' },
+            { content: 'sk-nested-dynamic-context' },
+          ]);
+          throw blockedError;
+        });
+
+      await createResponse(req, res);
+
+      expect(api.createRun).not.toHaveBeenCalled();
+      expect(api.setupStreamingResponse).not.toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        blockedError.body.message,
+        'invalid_request',
+        'content_filter_block',
+      );
+    });
+
     it('re-inspects agents after dynamic context is applied', async () => {
       const api = require('@librechat/api');
       const blockedError = Object.assign(new Error('Submitted content was blocked.'), {
@@ -817,6 +1224,82 @@ describe('createResponse controller', () => {
         'invalid_request',
         'content_filter_block',
       );
+    });
+  });
+
+  describe('safe error logging', () => {
+    it('logs bounded metadata and returns a raw-free provider error', async () => {
+      const api = require('@librechat/api');
+      const { logger } = require('@librechat/data-schemas');
+      const rawValue = 'PRIVATE-RESPONSES-PROVIDER-PAYLOAD';
+      const providerError = Object.assign(new Error(`Provider echoed ${rawValue}`), {
+        code: 'ERR_REMOTE',
+        response: {
+          status: 502,
+          headers: { authorization: rawValue },
+          data: { prompt: rawValue },
+        },
+      });
+      req.config.filters = { messages: { pii: {} } };
+      api.createRun.mockRejectedValueOnce(providerError);
+
+      await createResponse(req, res);
+
+      expect(mockGetSafeErrorMetadata).toHaveBeenCalledWith(providerError);
+      const errorLog = logger.error.mock.calls.find(
+        ([message]) => message === '[Responses API] Error:',
+      );
+      expect(errorLog).toEqual(['[Responses API] Error:', { type: 'Error', status: 502 }]);
+      expect(JSON.stringify(errorLog)).not.toContain(rawValue);
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        500,
+        'An error occurred while processing the request',
+        'server_error',
+      );
+      expect(JSON.stringify(api.sendResponsesErrorResponse.mock.calls)).not.toContain(rawValue);
+    });
+
+    it('preserves the legacy provider error when protection is inactive', async () => {
+      const api = require('@librechat/api');
+      const rawValue = 'LEGACY-RESPONSES-PROVIDER-ERROR';
+      api.createRun.mockRejectedValueOnce(new Error(rawValue));
+
+      await createResponse(req, res);
+
+      expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        500,
+        rawValue,
+        'server_error',
+      );
+    });
+
+    it('logs bounded metadata for tool callback failures', async () => {
+      const api = require('@librechat/api');
+      const { logger } = require('@librechat/data-schemas');
+      const rawValue = 'PRIVATE-RESPONSES-TOOL-PAYLOAD';
+      const toolError = Object.assign(new Error(`Tool echoed ${rawValue}`), {
+        code: 'ERR_TOOL',
+        response: { status: 422, data: { output: rawValue } },
+      });
+      api.createRun.mockResolvedValueOnce({
+        processStream: jest.fn().mockImplementation(async (_input, _config, options) => {
+          options.callbacks.TOOL_ERROR({}, toolError, 'file_search');
+        }),
+      });
+
+      await createResponse(req, res);
+
+      expect(mockGetSafeErrorMetadata).toHaveBeenCalledWith(toolError);
+      const errorLog = logger.error.mock.calls.find(([message]) =>
+        message.includes('Tool Error "file_search"'),
+      );
+      expect(errorLog).toEqual([
+        '[Responses API] Tool Error "file_search"',
+        { type: 'Error', status: 422 },
+      ]);
+      expect(JSON.stringify(errorLog)).not.toContain(rawValue);
     });
   });
 

@@ -8,6 +8,46 @@ import logger from '~/config/winston';
 
 /** Simple UUID v4 regex to replace zod validation */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_STORED_USER_SUBMITTED_PATHS = 257;
+const MAX_USER_SUBMITTED_PATH_LENGTH = 2048;
+
+function normalizeUserSubmittedPaths(paths: unknown): string[] {
+  if (!Array.isArray(paths)) {
+    return [];
+  }
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const path of paths) {
+    if (
+      typeof path !== 'string' ||
+      !path.startsWith('/') ||
+      path.length > MAX_USER_SUBMITTED_PATH_LENGTH ||
+      seen.has(path)
+    ) {
+      continue;
+    }
+    seen.add(path);
+    normalized.push(path);
+    if (normalized.length >= MAX_STORED_USER_SUBMITTED_PATHS) {
+      break;
+    }
+  }
+  return normalized;
+}
+
+function getSteerUserSubmittedPaths(content: unknown): string[] {
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  const paths: string[] = [];
+  for (let index = 0; index < content.length; index++) {
+    const part = content[index] as { type?: unknown } | null | undefined;
+    if (part?.type === 'steer') {
+      paths.push(`/content/${index}`);
+    }
+  }
+  return paths;
+}
 
 /**
  * Maximum private transcript JSON that may cross the MongoDB projection seam
@@ -228,9 +268,21 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
         update.tokenCount = 0;
       }
+      const userSubmittedPaths = normalizeUserSubmittedPaths([
+        ...(Array.isArray(params.userSubmittedPaths) ? params.userSubmittedPaths : []),
+        ...getSteerUserSubmittedPaths(params.content),
+      ]);
+      delete update.userSubmittedPaths;
+      const messageUpdate =
+        userSubmittedPaths.length > 0
+          ? {
+              $set: update,
+              $addToSet: { userSubmittedPaths: { $each: userSubmittedPaths } },
+            }
+          : update;
       const message = await Message.findOneAndUpdate(
         { messageId: params.messageId, user: userId },
-        update,
+        messageUpdate,
         { upsert: true, new: true },
       );
 
@@ -538,9 +590,20 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
       const { messageId, ...update } = message;
-      const updatedMessage = await Message.findOneAndUpdate({ messageId, user: userId }, update, {
-        new: true,
-      });
+      const submittedPaths = normalizeUserSubmittedPaths(update.userSubmittedPaths);
+      delete update.userSubmittedPaths;
+      const messageUpdate =
+        submittedPaths.length > 0
+          ? {
+              $set: update,
+              $addToSet: { userSubmittedPaths: { $each: submittedPaths } },
+            }
+          : update;
+      const updatedMessage = await Message.findOneAndUpdate(
+        { messageId, user: userId },
+        messageUpdate,
+        { new: true },
+      );
 
       if (!updatedMessage) {
         throw new Error('Message not found or user not authorized.');
@@ -553,6 +616,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         sender: updatedMessage.sender,
         text: updatedMessage.text,
         isCreatedByUser: updatedMessage.isCreatedByUser,
+        isUserSubmitted: updatedMessage.isUserSubmitted,
+        userSubmittedPaths: updatedMessage.userSubmittedPaths,
         tokenCount: updatedMessage.tokenCount,
         feedback: updatedMessage.feedback,
         endpoint: updatedMessage.endpoint,

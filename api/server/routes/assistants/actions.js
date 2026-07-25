@@ -11,6 +11,7 @@ const {
 const { actionDelimiter, EModelEndpoint, removeNullishValues } = require('librechat-data-provider');
 const {
   legacyDomainEncode,
+  decryptMetadata,
   encryptMetadata,
   domainParser,
 } = require('~/server/services/ActionService');
@@ -132,6 +133,17 @@ router.post('/:assistant_id', async (req, res) => {
           },
         })),
       );
+
+    const finalContentFinding = inspectContent(
+      extractAssistantActionContent({
+        functions: tools,
+        metadata: await decryptMetadata(metadata),
+      }),
+      { filters: req.config?.filters },
+    );
+    if (finalContentFinding != null) {
+      return res.status(400).json(contentFilterBlockResponse(finalContentFinding));
+    }
 
     let updatedAssistant = await openai.beta.assistants.update(assistant_id, { tools });
     const promises = [];

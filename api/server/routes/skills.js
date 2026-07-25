@@ -11,7 +11,7 @@ const {
   isBinaryBuffer,
   inspectContent,
   contentFilterUninspectableResponse,
-  getBlockedUninspectableFileField,
+  getBlockedUninspectableSkillFileField,
   generateCheckAccess,
   getStorageMetadata,
   resolveRequestTenantId,
@@ -200,7 +200,7 @@ function blockFilteredSkillFile(req, res, file, relativePath) {
   }
   const isBinary = isBinaryBuffer(file.buffer);
   if (isBinary) {
-    const uninspectableField = getBlockedUninspectableFileField(req.config.filters, [
+    const uninspectableField = getBlockedUninspectableSkillFileField(req.config.filters, [
       'content',
       'extracted_text',
     ]);

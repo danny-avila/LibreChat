@@ -7,7 +7,7 @@ const {
   inspectContent,
   extractFileContent,
   genAzureEndpoint,
-  logAxiosError,
+  getSafeErrorMetadata,
   applyAxiosProxyConfig,
   resolveConfigSecret,
   applySSRFSafeAgentIfDirect,
@@ -64,11 +64,11 @@ function getValidatedLanguageCode(language) {
     }
 
     logger.warn(
-      `[STT] Invalid language format "${language}". Expected ISO-639-1 locale code like "en-US" or "en". Skipping language parameter.`,
+      '[STT] Invalid language format. Expected ISO-639-1 locale code like "en-US" or "en". Skipping language parameter.',
     );
     return null;
   } catch (error) {
-    logger.error(`[STT] Error validating language code "${language}":`, error);
+    logger.error('[STT] Error validating language code:', getSafeErrorMetadata(error));
     return null;
   }
 }
@@ -330,7 +330,7 @@ class STTService {
 
       return response.data.text.trim();
     } catch (error) {
-      logAxiosError({ message: `STT request failed for provider ${provider}:`, error });
+      logger.error(`[STT] Request failed for provider ${provider}:`, getSafeErrorMetadata(error));
       throw error;
     }
   }
@@ -391,7 +391,10 @@ class STTService {
       }
       res.json({ text });
     } catch (error) {
-      logAxiosError({ message: 'An error occurred while processing the audio:', error });
+      logger.error(
+        '[STT] An error occurred while processing the audio:',
+        getSafeErrorMetadata(error),
+      );
       res.sendStatus(500);
     } finally {
       try {

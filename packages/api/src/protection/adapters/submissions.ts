@@ -6,6 +6,7 @@ import {
   shouldIncludeNestedSubmittedText,
   visitNestedStrings,
 } from './nested';
+import { getCanonicalFileInspectionCoverage } from '../files';
 
 interface AgentEdgeInput {
   readonly description?: string;
@@ -146,9 +147,12 @@ export interface MemoryContentInput {
 }
 
 export interface FileContentInput {
+  readonly file_id?: string;
   readonly name?: string;
   readonly filename?: string;
   readonly originalname?: string;
+  readonly type?: string;
+  readonly source?: string;
   readonly content?: string;
   readonly extractedText?: string;
   readonly text?: string;
@@ -485,6 +489,13 @@ function extractFunctionToolContent(
     source: 'agent_instruction',
     field: 'name',
   });
+  pushString(fragments, definition.name, {
+    id: `function-tool.tool-name.${fragments.length}`,
+    path: `${definitionPath}/name` as JsonPointer,
+    source: 'tool_argument',
+    field: 'name',
+    treatment: 'inspect_only',
+  });
   pushString(fragments, definition.description, {
     id: `function-tool.description.${fragments.length}`,
     path: `${definitionPath}/description` as JsonPointer,
@@ -731,6 +742,12 @@ export function extractFileContent(
   input: FileContentInput | null | undefined,
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
+  const coverage = input == null ? undefined : getCanonicalFileInspectionCoverage(input);
+  const normalizedTextIsTranscript =
+    input?.transcript == null &&
+    typeof input?.text === 'string' &&
+    coverage?.transcriptApplicable === true &&
+    coverage.transcript === input.text;
   for (const key of ['name', 'filename', 'originalname'] as const) {
     pushString(fragments, input?.[key], {
       id: `file.name.${key}`,
@@ -739,14 +756,17 @@ export function extractFileContent(
       field: 'name',
     });
   }
-  pushString(fragments, input?.content, {
+  pushString(fragments, coverage?.content, {
     id: 'file.content',
     path: '/content',
     source: 'file',
     field: 'content',
     treatment: 'inspect_only',
   });
-  for (const key of ['extractedText', 'text'] as const) {
+  const extractedTextKeys = normalizedTextIsTranscript
+    ? (['extractedText'] as const)
+    : (['extractedText', 'text'] as const);
+  for (const key of extractedTextKeys) {
     pushString(fragments, input?.[key], {
       id: `file.extracted-text.${key}`,
       path: `/${key}`,
@@ -755,7 +775,7 @@ export function extractFileContent(
       treatment: 'inspect_only',
     });
   }
-  pushString(fragments, input?.transcript, {
+  pushString(fragments, coverage?.transcript, {
     id: 'file.transcript',
     path: '/transcript',
     source: 'file',
@@ -812,6 +832,7 @@ export function extractStoredMessageContent(
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
   const assembledText: string[] = [];
+  let traversalComplete = true;
   const isInstruction = input?.role === 'system' || input?.role === 'developer';
   const isToolOutput = input?.role === 'tool';
   const addMessagePart = (value: unknown, id: string, path: JsonPointer) => {
@@ -1141,7 +1162,7 @@ export function extractStoredMessageContent(
         },
       );
       if (!complete) {
-        throw new ContentTraversalLimitError(fragments);
+        traversalComplete = false;
       }
     }
   }
@@ -1259,6 +1280,9 @@ export function extractStoredMessageContent(
     }
   }
   fragments.push(...extractFeedbackContent(input));
+  if (!traversalComplete) {
+    throw new ContentTraversalLimitError(fragments);
+  }
   return fragments;
 }
 

@@ -5,13 +5,14 @@ const {
   inspectContent,
 } = require('@librechat/api');
 const { EModelEndpoint } = require('librechat-data-provider');
-const { bulkIncrementTagCounts, bulkSaveConvos, bulkSaveMessages } = require('~/models');
+const { bulkIncrementTagCounts, bulkSaveConvos, bulkSaveMessages, getFiles } = require('~/models');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
 
 jest.mock('~/models', () => ({
   bulkIncrementTagCounts: jest.fn(),
   bulkSaveConvos: jest.fn(),
   bulkSaveMessages: jest.fn(),
+  getFiles: jest.fn(),
 }));
 
 const pattern = {
@@ -51,6 +52,60 @@ describe('ImportBatchBuilder content filtering', () => {
     bulkIncrementTagCounts.mockResolvedValue();
     bulkSaveConvos.mockResolvedValue();
     bulkSaveMessages.mockResolvedValue();
+    getFiles.mockResolvedValue([]);
+  });
+
+  it('marks imported user and assistant prose as user-submitted', () => {
+    const builder = new ImportBatchBuilder('user-123');
+    builder.startConversation(EModelEndpoint.openAI);
+
+    const userMessage = builder.addUserMessage('Imported user text');
+    const assistantMessage = builder.addGptMessage('Imported assistant text', 'gpt-test');
+
+    expect(userMessage).toMatchObject({ isCreatedByUser: true, isUserSubmitted: true });
+    expect(assistantMessage).toMatchObject({ isCreatedByUser: false, isUserSubmitted: true });
+  });
+
+  it('does not reclassify copied model assistant prose as user-submitted', async () => {
+    const builder = new ImportBatchBuilder('user-123', undefined, filtersFor('messages', ['text']));
+    builder.startConversation(EModelEndpoint.openAI);
+    builder.saveMessage({
+      sender: 'Assistant',
+      isCreatedByUser: false,
+      text: 'Model output contains IMPORT-SECRET',
+    });
+    builder.finishConversation('safe title', new Date('2026-01-01T00:00:00.000Z'));
+
+    await expect(builder.saveBatch()).resolves.toBeUndefined();
+    expect(bulkSaveMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks provenance-marked assistant content while ignoring adjacent model prose', async () => {
+    const builder = new ImportBatchBuilder(
+      'user-123',
+      undefined,
+      filtersFor('messages', ['content_part']),
+    );
+    builder.startConversation(EModelEndpoint.openAI);
+    builder.saveMessage({
+      sender: 'Assistant',
+      isCreatedByUser: false,
+      content: [
+        { type: 'text', text: 'Adjacent model output contains IMPORT-SECRET' },
+        { type: 'text', text: 'Human-authored IMPORT-SECRET' },
+      ],
+      userSubmittedPaths: ['/content/1/text'],
+    });
+    builder.finishConversation('safe title', new Date('2026-01-01T00:00:00.000Z'));
+
+    await expect(builder.saveBatch()).rejects.toMatchObject({
+      body: {
+        error: 'content_filter_block',
+        source: 'message',
+        field: 'content_part',
+      },
+    });
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
   });
 
   it('preserves default-off imports without inspecting normalized content', async () => {
@@ -111,6 +166,154 @@ describe('ImportBatchBuilder content filtering', () => {
     expect(bulkSaveMessages).not.toHaveBeenCalled();
     expect(bulkIncrementTagCounts).not.toHaveBeenCalled();
     expect(JSON.stringify(thrown.body)).not.toContain(opaqueValue);
+  });
+
+  it('resolves and inspects a canonical owner file reference before bulk writes', async () => {
+    const builder = createBuilder(
+      {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            uninspectable: 'block',
+          },
+        },
+      },
+      {
+        message: {
+          files: [{ file_id: 'owner-file-1' }],
+        },
+      },
+    );
+    getFiles.mockResolvedValue([
+      {
+        file_id: 'owner-file-1',
+        user: 'user-123',
+        text: 'safe extracted text',
+      },
+    ]);
+
+    await expect(builder.saveBatch()).resolves.toBeUndefined();
+
+    expect(getFiles).toHaveBeenCalledWith(
+      {
+        file_id: { $in: ['owner-file-1'] },
+        user: 'user-123',
+      },
+      {},
+      {},
+    );
+    expect(bulkSaveConvos).toHaveBeenCalledTimes(1);
+    expect(bulkSaveMessages).toHaveBeenCalledTimes(1);
+    expect(bulkIncrementTagCounts).toHaveBeenCalledTimes(1);
+  });
+
+  it('inspects resolved canonical owner file text before bulk writes', async () => {
+    const filters = filtersFor('files', ['extracted_text']);
+    filters.files.pii.uninspectable = 'block';
+    const builder = createBuilder(filters, {
+      message: {
+        files: [{ file_id: 'owner-file-1' }],
+      },
+    });
+    getFiles.mockResolvedValue([
+      {
+        file_id: 'owner-file-1',
+        user: 'user-123',
+        text: 'resolved IMPORT-SECRET',
+      },
+    ]);
+
+    await expect(builder.saveBatch()).rejects.toMatchObject({
+      code: 'content_filter_block',
+      body: {
+        source: 'file',
+        field: 'extracted_text',
+      },
+    });
+    expect(bulkSaveConvos).not.toHaveBeenCalled();
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+    expect(bulkIncrementTagCounts).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for a missing canonical file reference before bulk writes', async () => {
+    const builder = createBuilder(
+      {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            uninspectable: 'block',
+          },
+        },
+      },
+      {
+        message: {
+          files: [{ file_id: 'missing-file' }],
+        },
+      },
+    );
+
+    await expect(builder.saveBatch()).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: {
+        source: 'file',
+        field: 'extracted_text',
+      },
+    });
+    expect(bulkSaveConvos).not.toHaveBeenCalled();
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+    expect(bulkIncrementTagCounts).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for a foreign canonical file reference before bulk writes', async () => {
+    const storedFiles = [
+      {
+        file_id: 'foreign-file',
+        user: 'another-user',
+        text: 'safe extracted text',
+      },
+    ];
+    getFiles.mockImplementation(async (filter) =>
+      storedFiles.filter(
+        (file) =>
+          filter.file_id.$in.includes(file.file_id) &&
+          file.user === filter.user &&
+          (filter.tenantId == null || file.tenantId === filter.tenantId),
+      ),
+    );
+    const builder = createBuilder(
+      {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            uninspectable: 'block',
+          },
+        },
+      },
+      {
+        message: {
+          files: [{ file_id: 'foreign-file' }],
+        },
+      },
+    );
+
+    await expect(builder.saveBatch()).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: {
+        source: 'file',
+        field: 'extracted_text',
+      },
+    });
+    expect(getFiles).toHaveBeenCalledWith(
+      {
+        file_id: { $in: ['foreign-file'] },
+        user: 'user-123',
+      },
+      {},
+      {},
+    );
+    expect(bulkSaveConvos).not.toHaveBeenCalled();
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+    expect(bulkIncrementTagCounts).not.toHaveBeenCalled();
   });
 
   it('honors opaque import allow/default behavior and file-field granularity', async () => {

@@ -13,6 +13,16 @@ jest.mock('@librechat/api', () => ({
   extractFeedbackContent: jest.fn(() => []),
   extractStoredMessageContent: jest.fn(() => []),
   contentFilterBlockResponse: jest.fn(),
+  assertModelBoundContent: jest.fn(),
+  isContentFilterError: jest.fn(
+    (error) =>
+      error?.code === 'content_filter_block' || error?.code === 'content_filter_uninspectable',
+  ),
+  resolveCanonicalFileReferences: jest.fn(async ({ input, filters }) => ({
+    sanitizedInput: input,
+    hydratedFiles: [],
+    hydratedFilters: filters,
+  })),
   unescapeLaTeX: jest.fn((x) => x),
   countTokens: jest.fn().mockResolvedValue(10),
   mergeQuotedTextForCount: jest.fn((text) => text),
@@ -50,6 +60,7 @@ jest.mock('~/models', () => ({
   getConvosQueried: jest.fn(),
   searchMessages: jest.fn(),
   getMessagesByCursor: jest.fn(),
+  getFiles: jest.fn(),
 }));
 
 jest.mock('~/server/services/Artifacts/update', () => ({
@@ -123,6 +134,7 @@ describe('message route conversation ownership filters', () => {
     extractChatContent,
     extractStoredMessageContent,
     contentFilterBlockResponse,
+    assertModelBoundContent,
   } = require('@librechat/api');
   const {
     findAllArtifacts,
@@ -171,6 +183,84 @@ describe('message route conversation ownership filters', () => {
     ]);
   });
 
+  it.each([
+    { name: 'marked user-submitted assistant content', isUserSubmitted: true },
+    { name: 'legacy unmarked model content', isUserSubmitted: undefined },
+  ])('preserves provenance when branching $name', async ({ isUserSubmitted }) => {
+    getMessage.mockResolvedValue({
+      messageId: 'source-message',
+      conversationId: 'convo-1',
+      parentMessageId: 'parent-1',
+      isCreatedByUser: false,
+      ...(typeof isUserSubmitted === 'boolean' && { isUserSubmitted }),
+      attachments: [{ file_id: 'file-1' }],
+      userSubmittedPaths: ['/content/0/text', '/content/1/text', '/attachments/0/file_id'],
+      content: [
+        { type: 'text', text: 'Different agent content', agentId: 'agent-2' },
+        { type: 'text', text: 'Assistant content', agentId: 'agent-1' },
+      ],
+    });
+    saveMessage.mockImplementation(async (_ctx, message) => message);
+
+    const response = await request(app).post('/api/messages/branch').send({
+      messageId: 'source-message',
+      agentId: 'agent-1',
+    });
+
+    expect(response.status).toBe(201);
+    const savedMessage = saveMessage.mock.calls[0][1];
+    if (typeof isUserSubmitted === 'boolean') {
+      expect(savedMessage.isUserSubmitted).toBe(isUserSubmitted);
+    } else {
+      expect(savedMessage).not.toHaveProperty('isUserSubmitted');
+    }
+    expect(savedMessage.userSubmittedPaths).toEqual(['/attachments/0/file_id', '/content/0/text']);
+  });
+
+  it('rechecks branched user-authored content under the current policy before saving', async () => {
+    getMessage.mockResolvedValue({
+      messageId: 'source-message',
+      conversationId: 'convo-1',
+      parentMessageId: 'parent-1',
+      isCreatedByUser: false,
+      userSubmittedPaths: ['/content/0/text'],
+      content: [{ type: 'text', text: 'PRIVATE-BRANCH', agentId: 'agent-1' }],
+    });
+    const filterError = Object.assign(new Error('blocked'), {
+      code: 'content_filter_block',
+      statusCode: 400,
+      body: {
+        error: 'content_filter_block',
+        message: 'Submitted content is not allowed.',
+        source: 'message',
+        field: 'content_part',
+      },
+    });
+    assertModelBoundContent.mockImplementationOnce(() => {
+      throw filterError;
+    });
+
+    const response = await request(app).post('/api/messages/branch').send({
+      messageId: 'source-message',
+      agentId: 'agent-1',
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(filterError.body);
+    expect(assertModelBoundContent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filters: expect.any(Object),
+        storedMessages: [
+          expect.objectContaining({
+            userSubmittedPaths: ['/content/0/text'],
+            content: [{ type: 'text', text: 'PRIVATE-BRANCH' }],
+          }),
+        ],
+      }),
+    );
+    expect(saveMessage).not.toHaveBeenCalled();
+  });
+
   it('should pass only mutable conversation fields to saveConvo', async () => {
     const urlConversationId = '11111111-1111-4111-8111-111111111111';
     const bodyConversationId = '22222222-2222-4222-8222-222222222222';
@@ -191,14 +281,18 @@ describe('message route conversation ownership filters', () => {
     saveMessage.mockResolvedValue(savedMessage);
     saveConvo.mockResolvedValue({ conversationId: urlConversationId });
 
-    const response = await request(app).post(`/api/messages/${urlConversationId}`).send({
-      messageId: savedMessage.messageId,
-      conversationId: bodyConversationId,
-      text: savedMessage.text,
-      endpoint: savedMessage.endpoint,
-      model: savedMessage.model,
-      iconURL: savedMessage.iconURL,
-    });
+    const response = await request(app)
+      .post(`/api/messages/${urlConversationId}`)
+      .send({
+        messageId: savedMessage.messageId,
+        conversationId: bodyConversationId,
+        text: savedMessage.text,
+        endpoint: savedMessage.endpoint,
+        model: savedMessage.model,
+        iconURL: savedMessage.iconURL,
+        isUserSubmitted: false,
+        userSubmittedPaths: ['/forged/model/output'],
+      });
 
     expect(response.status).toBe(201);
     expect(saveMessage).toHaveBeenCalledWith(
@@ -207,11 +301,13 @@ describe('message route conversation ownership filters', () => {
         messageId: savedMessage.messageId,
         conversationId: urlConversationId,
         text: savedMessage.text,
+        isUserSubmitted: true,
         user: authenticatedUserId,
       }),
       { context: 'POST /api/messages/:conversationId' },
     );
     expect(saveMessage.mock.calls[0][1].conversationId).not.toBe(bodyConversationId);
+    expect(saveMessage.mock.calls[0][1]).not.toHaveProperty('userSubmittedPaths');
     expect(saveConvo).toHaveBeenCalledWith(
       expect.objectContaining({ userId: authenticatedUserId }),
       {
@@ -432,6 +528,7 @@ describe('message route conversation ownership filters', () => {
         conversationId: 'convo-1',
         content: [{ type: 'text', text: 'old content' }],
         tokenCount: 10,
+        userSubmittedPaths: ['/summary'],
       },
     ]);
     updateMessage.mockResolvedValue({ messageId: 'message-1' });
@@ -446,7 +543,36 @@ describe('message route conversation ownership filters', () => {
     expect(extractStoredMessageContent).toHaveBeenCalledWith({
       content: [{ text: 'new content' }],
     });
-    expect(updateMessage).toHaveBeenCalled();
+    expect(updateMessage).toHaveBeenCalledWith(authenticatedUserId, {
+      messageId: 'message-1',
+      content: [{ type: 'text', text: 'new content' }],
+      tokenCount: 10,
+      userSubmittedPaths: ['/summary', '/content/0/text'],
+    });
+  });
+
+  it('marks direct assistant text edits as user-submitted', async () => {
+    getMessages.mockResolvedValue([
+      {
+        isCreatedByUser: false,
+        quotes: [],
+        userSubmittedPaths: ['/content/0/text'],
+      },
+    ]);
+    updateMessage.mockResolvedValue({ messageId: 'message-1' });
+
+    const response = await request(app).put('/api/messages/convo-1/message-1').send({
+      text: 'User replacement for assistant prose',
+      model: 'test-model',
+    });
+
+    expect(response.status).toBe(200);
+    expect(updateMessage).toHaveBeenCalledWith(authenticatedUserId, {
+      messageId: 'message-1',
+      text: 'User replacement for assistant prose',
+      tokenCount: 10,
+      userSubmittedPaths: ['/content/0/text', '/text'],
+    });
   });
 
   it('filters indexed edits after recombining all persisted content parts', async () => {
@@ -503,6 +629,7 @@ describe('message route conversation ownership filters', () => {
       conversationId: 'convo-1',
       content: [{ type: 'text', text: 'existing artifact' }],
       text: '',
+      userSubmittedPaths: ['/content/1/steer'],
     });
     findAllArtifacts.mockReturnValue([{ source: 'content', partIndex: 0 }]);
     replaceArtifactContent.mockReturnValue('sk-secret');
@@ -525,6 +652,35 @@ describe('message route conversation ownership filters', () => {
       content: [{ text: 'sk-secret' }],
     });
     expect(saveMessage).not.toHaveBeenCalled();
+  });
+
+  it('marks successful assistant artifact edits as user-submitted', async () => {
+    getMessage.mockResolvedValue({
+      conversationId: 'convo-1',
+      content: [{ type: 'text', text: 'existing artifact' }],
+      text: '',
+      userSubmittedPaths: ['/content/1/steer'],
+    });
+    findAllArtifacts.mockReturnValue([{ source: 'content', partIndex: 0 }]);
+    replaceArtifactContent.mockReturnValue('updated artifact');
+    saveMessage.mockImplementation(async (_ctx, message) => message);
+
+    const response = await request(app).post('/api/messages/artifact/message-1').send({
+      index: 0,
+      original: 'existing',
+      updated: 'updated',
+    });
+
+    expect(response.status).toBe(200);
+    expect(saveMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: authenticatedUserId }),
+      expect.objectContaining({
+        messageId: 'message-1',
+        content: [{ type: 'text', text: 'updated artifact' }],
+        userSubmittedPaths: ['/content/1/steer', '/content/0/text'],
+      }),
+      { context: 'POST /api/messages/artifact/:messageId' },
+    );
   });
 
   it('filters edited text after recombining persisted user quotes', async () => {

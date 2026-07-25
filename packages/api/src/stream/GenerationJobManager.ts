@@ -310,6 +310,16 @@ function buildTerminalPersistenceReconcile(
   };
 }
 
+function getSteerUserSubmittedPaths(content: readonly TMessageContentParts[]): string[] {
+  const paths: string[] = [];
+  for (let index = 0; index < content.length; index++) {
+    if (content[index]?.type === 'steer') {
+      paths.push(`/content/${index}`);
+    }
+  }
+  return paths;
+}
+
 function getToolCallName(toolCall: unknown): unknown {
   return toolCall != null && typeof toolCall === 'object' && 'name' in toolCall
     ? toolCall.name
@@ -2530,6 +2540,7 @@ class GenerationJobManagerClass {
         responseMessageId: jobData.responseMessageId,
         isRegenerate: jobData.isRegenerate,
         mcpRequestBody: jobData.mcpRequestBody,
+        userSubmittedPaths: jobData.userSubmittedPaths,
         sender: jobData.sender,
         endpoint: jobData.endpoint,
         iconURL: jobData.iconURL,
@@ -3962,6 +3973,12 @@ class GenerationJobManagerClass {
 
       /** Final event for abort */
       const userMessageId = jobData.userMessage?.messageId;
+      const userSubmittedPaths = [
+        ...new Set([
+          ...(jobData.userSubmittedPaths ?? []),
+          ...getSteerUserSubmittedPaths(abortContent as TMessageContentParts[]),
+        ]),
+      ];
 
       const abortFinalEvent: t.ServerSentEvent = {
         final: true,
@@ -3992,6 +4009,7 @@ class GenerationJobManagerClass {
               unfinished: true,
               error: false,
               isCreatedByUser: false,
+              ...(userSubmittedPaths.length > 0 && { userSubmittedPaths }),
             },
         aborted: true,
         // Flag for early abort - no messages saved, frontend should go to new chat
@@ -6384,7 +6402,13 @@ class GenerationJobManagerClass {
     expectedCreatedAt?: number,
   ): Promise<void> {
     const generationId = expectedCreatedAt ?? this.runtimeState.get(streamId)?.createdAt;
-    await this.jobStore.updateJob(streamId, sanitizeJobMetadata(metadata), generationId);
+    const updates: Partial<SerializableJobData> = {
+      ...sanitizeJobMetadata(metadata),
+      ...(metadata.userSubmittedPaths && {
+        userSubmittedPaths: metadata.userSubmittedPaths,
+      }),
+    };
+    await this.jobStore.updateJob(streamId, updates, generationId);
   }
 
   /** Records that one exact provider segment has completed every trailing write.

@@ -291,6 +291,7 @@ describe('forkConversation', () => {
       {
         messageId: 'private-message',
         parentMessageId: Constants.NO_PARENT,
+        isCreatedByUser: true,
         text: 'PRIVATE-SENTINEL',
         createdAt: '2021-01-01',
       },
@@ -417,6 +418,7 @@ describe('duplicateConversation', () => {
       {
         messageId: 'private-message',
         parentMessageId: Constants.NO_PARENT,
+        isCreatedByUser: true,
         text: 'PRIVATE-SENTINEL',
         createdAt: '2021-01-01',
       },
@@ -1282,6 +1284,45 @@ describe('splitAtTargetLevel', () => {
 });
 
 describe('cloneMessagesWithTimestamps', () => {
+  test('should preserve user-submitted provenance without marking untouched model output', () => {
+    const messagesToClone = [
+      {
+        messageId: 'submitted-assistant',
+        parentMessageId: Constants.NO_PARENT,
+        text: 'Imported assistant prose',
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+      },
+      {
+        messageId: 'model-assistant',
+        parentMessageId: Constants.NO_PARENT,
+        text: 'Untouched model prose',
+        isCreatedByUser: false,
+      },
+      {
+        messageId: 'mixed-assistant',
+        parentMessageId: Constants.NO_PARENT,
+        text: 'Mixed assistant prose',
+        isCreatedByUser: false,
+        userSubmittedPaths: ['/content/1/steer'],
+      },
+    ];
+    const importBatchBuilder = createImportBatchBuilder('testUser');
+    importBatchBuilder.startConversation();
+
+    cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);
+
+    expect(
+      importBatchBuilder.messages.find((message) => message.text === 'Imported assistant prose'),
+    ).toMatchObject({ isCreatedByUser: false, isUserSubmitted: true });
+    expect(
+      importBatchBuilder.messages.find((message) => message.text === 'Untouched model prose'),
+    ).not.toHaveProperty('isUserSubmitted');
+    expect(
+      importBatchBuilder.messages.find((message) => message.text === 'Mixed assistant prose'),
+    ).toMatchObject({ userSubmittedPaths: ['/content/1/steer'] });
+  });
+
   test('should maintain proper timestamp order between parent and child messages', () => {
     // Create messages with out-of-order timestamps
     const messagesToClone = [

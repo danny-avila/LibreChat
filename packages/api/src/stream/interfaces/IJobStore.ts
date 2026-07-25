@@ -80,6 +80,8 @@ export interface SerializableJobData {
   isRegenerate?: boolean;
   /** Exact normalized MCP placeholder identity for this turn. */
   mcpRequestBody?: MCPRuntimeRequestBody;
+  /** Exact assistant-message fields authored by the user during this running job. */
+  userSubmittedPaths?: string[];
 
   /**
    * Whether this run has activity labels enabled (per-endpoint

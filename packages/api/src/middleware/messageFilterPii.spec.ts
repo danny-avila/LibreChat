@@ -42,6 +42,39 @@ function runMiddleware(
   return { capturedRes: captured, nextCalls };
 }
 
+async function runMiddlewareWithFiles(
+  body: unknown,
+  filters: FiltersConfig,
+  getFiles: NonNullable<Parameters<typeof createMessageFilterPii>[0]['getFiles']>,
+): Promise<{ capturedRes: CapturedResponse; nextCalls: number }> {
+  const captured: CapturedResponse = {};
+  let nextCalls = 0;
+  const mw = createMessageFilterPii({
+    getConfig: () => undefined,
+    getFilters: () => filters,
+    getFiles,
+  });
+  const req = {
+    body,
+    user: { id: 'user-1', tenantId: 'tenant-1' },
+  } as unknown as Request;
+  const res = {
+    status(code: number) {
+      captured.status = code;
+      return this;
+    },
+    json(payload: unknown) {
+      captured.body = payload;
+      return this;
+    },
+  } as unknown as Response;
+  const next: NextFunction = () => {
+    nextCalls++;
+  };
+  await mw(req, res, next);
+  return { capturedRes: captured, nextCalls };
+}
+
 function nestedPayload(depth: number): unknown {
   let value: unknown = 'safe';
   for (let index = 0; index < depth; index++) {
@@ -334,6 +367,112 @@ describe('messageFilterPii middleware', () => {
       error: 'content_filter_uninspectable',
       source: 'file',
       field: 'content',
+    });
+  });
+
+  it('allows an owned canonical agent attachment after inspecting its hydrated text', async () => {
+    const getFiles = jest.fn().mockResolvedValue([
+      {
+        file_id: 'owned-file',
+        filename: 'report.txt',
+        filepath: '/uploads/report.txt',
+        text: 'safe extracted text',
+      },
+    ]);
+    const { capturedRes, nextCalls } = await runMiddlewareWithFiles(
+      {
+        text: 'summarize the attached report',
+        files: [{ file_id: 'owned-file', filepath: '/uploads/report.txt', type: 'text/plain' }],
+      },
+      {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            uninspectable: 'block',
+          },
+        },
+      },
+      getFiles,
+    );
+
+    expect(getFiles).toHaveBeenCalledWith(
+      {
+        file_id: { $in: ['owned-file'] },
+        user: 'user-1',
+        tenantId: 'tenant-1',
+      },
+      {},
+      {},
+    );
+    expect(nextCalls).toBe(1);
+    expect(capturedRes.status).toBeUndefined();
+  });
+
+  it('blocks a canonical attachment when its hydrated text matches file policy', async () => {
+    const getFiles = jest.fn().mockResolvedValue([
+      {
+        file_id: 'owned-file',
+        filename: 'report.txt',
+        filepath: '/uploads/report.txt',
+        text: 'contains PRIVATE-DATA',
+      },
+    ]);
+    const { capturedRes, nextCalls } = await runMiddlewareWithFiles(
+      {
+        text: 'summarize the attached report',
+        files: [{ file_id: 'owned-file' }],
+      },
+      {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            uninspectable: 'block',
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private-data',
+                label: 'private data',
+                regex: 'PRIVATE-DATA',
+              },
+            ],
+          },
+        },
+      },
+      getFiles,
+    );
+
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({
+      error: 'content_filter_block',
+      source: 'file',
+      field: 'extracted_text',
+    });
+  });
+
+  it('keeps an unresolved canonical attachment fail-closed', async () => {
+    const { capturedRes, nextCalls } = await runMiddlewareWithFiles(
+      {
+        text: 'summarize the attached report',
+        files: [{ file_id: 'missing-file' }],
+      },
+      {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            uninspectable: 'block',
+          },
+        },
+      },
+      jest.fn().mockResolvedValue([]),
+    );
+
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({
+      error: 'content_filter_uninspectable',
+      source: 'file',
+      field: 'extracted_text',
     });
   });
 

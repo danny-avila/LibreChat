@@ -12,6 +12,7 @@ export interface LegacyPiiInspector {
 }
 
 const LEGACY_INSPECTOR_CACHE = new WeakMap<object, LegacyPiiInspector>();
+const INACTIVE_LEGACY_CONFIGS = new WeakSet<object>();
 
 export function isLegacyPiiFragment(fragment: TextContentFragment): boolean {
   if (fragment.source === 'assembled_context' && fragment.id === 'chat.assembled.quote-text') {
@@ -38,11 +39,18 @@ export function createLegacyPiiInspector(
   if (config == null) {
     return null;
   }
+  if (INACTIVE_LEGACY_CONFIGS.has(config)) {
+    return null;
+  }
   const cached = LEGACY_INSPECTOR_CACHE.get(config);
   if (cached != null) {
     return cached;
   }
-  const patternInspector = createPatternContentInspector(config);
+  const patternInspector = createPatternContentInspector(config, { linearTime: true });
+  if (!patternInspector.active) {
+    INACTIVE_LEGACY_CONFIGS.add(config);
+    return null;
+  }
   const inspector: LegacyPiiInspector = {
     inspect(fragments) {
       return patternInspector.inspect(

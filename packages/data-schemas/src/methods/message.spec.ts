@@ -116,6 +116,62 @@ describe('Message Operations', () => {
       const savedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
       expect(savedMessage).toBeTruthy();
       expect(savedMessage?.text).toBe('Hello, world!');
+      expect(savedMessage?.isUserSubmitted).toBeUndefined();
+    });
+
+    it('should persist optional user-submitted provenance independently of message role', async () => {
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+        userSubmittedPaths: ['/content/0/text'],
+      });
+
+      expect(result?.isCreatedByUser).toBe(false);
+      expect(result?.isUserSubmitted).toBe(true);
+      expect(result?.userSubmittedPaths).toEqual(['/content/0/text']);
+
+      const savedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
+      expect(savedMessage?.isCreatedByUser).toBe(false);
+      expect(savedMessage?.isUserSubmitted).toBe(true);
+      expect(savedMessage?.userSubmittedPaths).toEqual(['/content/0/text']);
+    });
+
+    it('bounds and validates stored user-submitted provenance paths', async () => {
+      const submittedPaths = [
+        'not-a-pointer',
+        ...Array.from({ length: 300 }, (_, index) => `/content/${index}/text`),
+      ];
+
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        userSubmittedPaths: submittedPaths,
+      });
+
+      expect(result?.userSubmittedPaths).toHaveLength(257);
+      expect(result?.userSubmittedPaths).not.toContain('not-a-pointer');
+      expect(result?.userSubmittedPaths?.[0]).toBe('/content/0/text');
+      expect(result?.userSubmittedPaths?.[256]).toBe('/content/256/text');
+    });
+
+    it('adds semantic steer paths without replacing existing field provenance', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        userSubmittedPaths: ['/text'],
+      });
+
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [
+          { type: 'text', text: 'Model response' },
+          { type: 'steer', steer: 'User direction' },
+        ],
+      });
+
+      expect(result?.userSubmittedPaths).toEqual(['/text', '/content/1']);
     });
 
     it('should throw an error for unauthenticated user', async () => {
@@ -172,6 +228,37 @@ describe('Message Operations', () => {
       // Verify in database
       const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
       expect(updatedMessage?.text).toBe('Updated text');
+    });
+
+    it('atomically merges provenance from concurrent edits to distinct fields', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [{ type: 'text', text: 'Model content' }],
+      });
+
+      await Promise.all([
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          text: 'Human-edited text',
+          userSubmittedPaths: ['/text'],
+        }),
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          content: [{ type: 'text', text: 'Human-edited content' }],
+          userSubmittedPaths: ['/content/0/text'],
+        }),
+      ]);
+
+      const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(updatedMessage?.text).toBe('Human-edited text');
+      expect(updatedMessage?.content).toEqual([
+        expect.objectContaining({ type: 'text', text: 'Human-edited content' }),
+      ]);
+      expect(updatedMessage?.userSubmittedPaths).toEqual(
+        expect.arrayContaining(['/text', '/content/0/text']),
+      );
+      expect(updatedMessage?.userSubmittedPaths).toHaveLength(2);
     });
 
     it('returns the generation-time Langfuse routing decisions with feedback updates', async () => {

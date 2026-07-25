@@ -463,6 +463,101 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(createdAgent.tool_resources.file_search.file_ids).toEqual([ownedFileId]);
     });
 
+    test('hydrates owned file_ids before fail-close agent resource inspection', async () => {
+      const File = mongoose.models.File;
+      const ownedFileId = `file_${uuidv4()}`;
+      await File.create({
+        file_id: ownedFileId,
+        user: mockReq.user.id,
+        filename: `${ownedFileId}.txt`,
+        filepath: `/tmp/${ownedFileId}`,
+        text: 'safe extracted text',
+        object: 'file',
+        type: 'text/plain',
+        bytes: 1,
+        source: FileSources.local,
+      });
+      mockReq.config = {
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              uninspectable: 'block',
+            },
+          },
+        },
+      };
+      mockReq.body = {
+        provider: 'openai',
+        model: 'gpt-4',
+        name: 'Agent with inspected files',
+        tool_resources: {
+          file_search: { file_ids: [ownedFileId] },
+        },
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      expect(mockRes.json.mock.calls[0][0].tool_resources.file_search.file_ids).toEqual([
+        ownedFileId,
+      ]);
+    });
+
+    test('blocks agent creation when hydrated resource text matches file policy', async () => {
+      const File = mongoose.models.File;
+      const ownedFileId = `file_${uuidv4()}`;
+      await File.create({
+        file_id: ownedFileId,
+        user: mockReq.user.id,
+        filename: `${ownedFileId}.txt`,
+        filepath: `/tmp/${ownedFileId}`,
+        text: 'PRIVATE-CANONICAL-CONTEXT',
+        object: 'file',
+        type: 'text/plain',
+        bytes: 1,
+        source: FileSources.local,
+      });
+      mockReq.config = {
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'private-canonical-context',
+                  label: 'private canonical context',
+                  regex: 'PRIVATE-CANONICAL-CONTEXT',
+                },
+              ],
+              uninspectable: 'block',
+            },
+          },
+        },
+      };
+      mockReq.body = {
+        provider: 'openai',
+        model: 'gpt-4',
+        name: 'Agent with blocked files',
+        tool_resources: {
+          file_search: { file_ids: [ownedFileId] },
+        },
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'file',
+          field: 'extracted_text',
+        }),
+      );
+      await expect(Agent.countDocuments()).resolves.toBe(0);
+    });
+
     test('canonicalizes hydrated tool resource files before create persistence', async () => {
       const File = mongoose.models.File;
       const ownedFileId = `file_${uuidv4()}`;

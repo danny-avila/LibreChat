@@ -85,8 +85,22 @@ describe('loadSummarizationConfig', () => {
 });
 
 describe('loadFiltersConfig', () => {
-  it('treats only omission as disabled', () => {
+  it('treats omission and zero-rule source configs as disabled', () => {
     expect(loadFiltersConfig({})).toBeUndefined();
+    expect(loadFiltersConfig({ filters: {} })).toBeUndefined();
+    expect(loadFiltersConfig({ filters: { messages: {} } })).toBeUndefined();
+    expect(
+      loadFiltersConfig({
+        filters: {
+          skills: {
+            pii: {
+              fields: ['file_text'],
+              starterPatterns: [],
+            },
+          },
+        },
+      }),
+    ).toBeUndefined();
   });
 
   it('returns a validated source-aware filter config', () => {
@@ -118,6 +132,30 @@ describe('loadFiltersConfig', () => {
               regex: 'ORG-[A-Z0-9]+',
             },
           ],
+        },
+      },
+    });
+  });
+
+  it('retains an explicit file fail-close policy without text matchers', () => {
+    expect(
+      loadFiltersConfig({
+        filters: {
+          files: {
+            pii: {
+              fields: ['content'],
+              starterPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+      }),
+    ).toEqual({
+      files: {
+        pii: {
+          fields: ['content'],
+          starterPatterns: [],
+          uninspectable: 'block',
         },
       },
     });

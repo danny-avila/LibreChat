@@ -18,6 +18,10 @@ export interface IMessage extends Document {
   text?: string;
   summary?: string;
   isCreatedByUser: boolean;
+  /** True when the complete stored row came from outside the model. */
+  isUserSubmitted?: boolean;
+  /** JSON pointers to caller-authored fields in an otherwise mixed model response. */
+  userSubmittedPaths?: string[];
   isTemporary?: boolean;
   unfinished?: boolean;
   error?: boolean;

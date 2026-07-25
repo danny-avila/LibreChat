@@ -2,7 +2,7 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { createMethods } = require('@librechat/data-schemas');
+const { createMethods, logger } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   SystemRoles,
@@ -34,7 +34,7 @@ jest.mock('fs', () => {
 });
 
 const fs = require('fs');
-const { processAgentFileUpload } = require('~/server/services/Files/process');
+const { processAgentFileUpload, processImageFile } = require('~/server/services/Files/process');
 
 const router = require('~/server/routes/files/images');
 
@@ -295,6 +295,53 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     });
 
     expect(response.status).toBe(200);
+  });
+
+  it('uses a normalized image error when file protection is active', async () => {
+    const rawProviderDetail = 'PRIVATE-IMAGE echoed in provider failure';
+    const providerError = Object.assign(new Error(rawProviderDetail), {
+      response: {
+        status: 502,
+        data: rawProviderDetail,
+        headers: { 'x-provider-debug': rawProviderDetail },
+      },
+    });
+    processImageFile.mockRejectedValueOnce(providerError);
+    const errorLogSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
+    const app = createAppWithUser(otherUserId, SystemRoles.USER, {
+      filters: {
+        files: {
+          pii: {
+            fields: ['name'],
+          },
+        },
+      },
+    });
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ message: 'Error processing file' });
+    expect(JSON.stringify(response.body)).not.toContain(rawProviderDetail);
+    expect(JSON.stringify(errorLogSpy.mock.calls)).not.toContain(rawProviderDetail);
+    errorLogSpy.mockRestore();
+  });
+
+  it('preserves legacy image error details when file protection is inactive', async () => {
+    const legacyMessage = 'Invalid file format: .legacy';
+    processImageFile.mockRejectedValueOnce(new Error(legacyMessage));
+    const app = createAppWithUser(otherUserId);
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ message: legacyMessage });
   });
 
   it('should return 404 for non-existent agent', async () => {

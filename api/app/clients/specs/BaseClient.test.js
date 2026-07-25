@@ -551,6 +551,66 @@ describe('BaseClient', () => {
       expect(response).toEqual(expectedResult);
     });
 
+    test('persists exact provenance paths for edited and steered assistant content', async () => {
+      const history = [
+        {
+          role: 'user',
+          isCreatedByUser: true,
+          text: 'Original question',
+          messageId: 'user-message',
+          parentMessageId: Constants.NO_PARENT,
+        },
+        {
+          role: 'assistant',
+          isCreatedByUser: false,
+          messageId: 'assistant-message',
+          parentMessageId: 'user-message',
+          userSubmittedPaths: ['/content/0/think'],
+          content: [
+            { type: ContentTypes.THINK, [ContentTypes.THINK]: 'Prior user-edited reasoning' },
+            { type: ContentTypes.TEXT, [ContentTypes.TEXT]: 'Original model response' },
+          ],
+        },
+      ];
+      TestClient = initializeFakeClient(apiKey, options, history);
+      TestClient.clientName = 'agents';
+      TestClient.sendCompletion.mockResolvedValue({
+        completion: [
+          { type: ContentTypes.TEXT, [ContentTypes.TEXT]: ' model continuation' },
+          { type: ContentTypes.STEER, [ContentTypes.STEER]: 'User steer' },
+        ],
+        metadata: undefined,
+      });
+
+      const response = await TestClient.sendMessage('ignored during edit', {
+        conversationId: 'conversation-1',
+        parentMessageId: 'assistant-message',
+        responseMessageId: 'assistant-message',
+        isEdited: true,
+        isContinued: true,
+        editedContent: {
+          index: 1,
+          text: 'User replacement',
+          type: ContentTypes.TEXT,
+        },
+      });
+
+      expect(response.content).toEqual([
+        { type: ContentTypes.THINK, [ContentTypes.THINK]: 'Prior user-edited reasoning' },
+        {
+          type: ContentTypes.TEXT,
+          [ContentTypes.TEXT]: 'User replacement model continuation',
+        },
+        { type: ContentTypes.STEER, [ContentTypes.STEER]: 'User steer' },
+      ]);
+      expect(response.userSubmittedPaths).toEqual([
+        '/content/2',
+        '/content/0/think',
+        '/content/1/text',
+      ]);
+      expect(response).not.toHaveProperty('isUserSubmitted');
+    });
+
     test('should replace responseMessageId with new UUID when isRegenerate is true and messageId ends with underscore', async () => {
       const mockCrypto = require('crypto');
       const newUUID = 'new-uuid-1234';
@@ -617,6 +677,320 @@ describe('BaseClient', () => {
       expect(opts.onStart).toHaveBeenCalled();
       expect(TestClient.getBuildMessagesOptions).toHaveBeenCalled();
       expect(TestClient.getSaveOptions).toHaveBeenCalled();
+    });
+
+    test('blocks persisted user text under the current policy before building messages', async () => {
+      const secret = 'PRIVATE-HISTORICAL-VALUE';
+      const history = [
+        {
+          role: 'user',
+          isCreatedByUser: true,
+          text: `Previously stored ${secret}`,
+          messageId: 'persisted-user',
+          parentMessageId: Constants.NO_PARENT,
+        },
+        {
+          role: 'assistant',
+          isCreatedByUser: false,
+          text: 'Safe model response',
+          messageId: 'persisted-assistant',
+          parentMessageId: 'persisted-user',
+        },
+      ];
+      TestClient = initializeFakeClient(
+        apiKey,
+        {
+          ...options,
+          req: {
+            config: {
+              filters: {
+                messages: {
+                  pii: {
+                    fields: ['text'],
+                    starterPatterns: [],
+                    customPatterns: [
+                      {
+                        id: 'historical-private',
+                        label: 'historical private value',
+                        regex: 'PRIVATE-HISTORICAL-[A-Z]+',
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+        history,
+      );
+
+      let error;
+      try {
+        await TestClient.sendMessage('Safe new message', {
+          conversationId: 'persisted-conversation',
+          parentMessageId: 'persisted-assistant',
+        });
+      } catch (caughtError) {
+        error = caughtError;
+      }
+
+      expect(error).toMatchObject({
+        code: 'content_filter_block',
+        body: {
+          error: 'content_filter_block',
+          source: 'message',
+          field: 'text',
+        },
+      });
+      expect(JSON.stringify({ message: error.message, body: error.body })).not.toContain(secret);
+      expect(TestClient.buildMessages).not.toHaveBeenCalled();
+      expect(TestClient.sendCompletion).not.toHaveBeenCalled();
+    });
+
+    test('blocks historical tool arguments without classifying assistant prose as user input', async () => {
+      const filters = {
+        messages: {
+          pii: {
+            fields: ['text'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'assistant-prose',
+                label: 'assistant prose value',
+                regex: 'PRIVATE-PROSE',
+              },
+            ],
+          },
+        },
+        toolArguments: {
+          pii: {
+            fields: ['arguments'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'historical-tool',
+                label: 'historical tool value',
+                regex: 'PRIVATE-TOOL',
+              },
+            ],
+          },
+        },
+      };
+      const safeUserMessage = {
+        role: 'user',
+        isCreatedByUser: true,
+        text: 'Safe historical question',
+        messageId: 'safe-user',
+        parentMessageId: Constants.NO_PARENT,
+      };
+      const assistantMessage = {
+        role: 'assistant',
+        isCreatedByUser: false,
+        text: 'Model generated PRIVATE-PROSE',
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: {
+              name: 'lookup',
+              args: { query: 'PRIVATE-TOOL' },
+            },
+          },
+        ],
+        messageId: 'assistant-with-tool',
+        parentMessageId: 'safe-user',
+      };
+      const clientOptions = {
+        ...options,
+        req: { config: { filters } },
+      };
+      TestClient = initializeFakeClient(apiKey, clientOptions, [safeUserMessage, assistantMessage]);
+
+      await expect(
+        TestClient.sendMessage('Safe new message', {
+          conversationId: 'tool-conversation',
+          parentMessageId: 'assistant-with-tool',
+        }),
+      ).rejects.toMatchObject({
+        code: 'content_filter_block',
+        body: {
+          source: 'tool_argument',
+          field: 'arguments',
+        },
+      });
+      expect(TestClient.buildMessages).not.toHaveBeenCalled();
+      expect(TestClient.sendCompletion).not.toHaveBeenCalled();
+
+      const proseOnlyClient = initializeFakeClient(apiKey, clientOptions, [
+        safeUserMessage,
+        {
+          ...assistantMessage,
+          content: undefined,
+        },
+      ]);
+      await expect(
+        proseOnlyClient.sendMessage('Safe new message', {
+          conversationId: 'prose-conversation',
+          parentMessageId: 'assistant-with-tool',
+        }),
+      ).resolves.toEqual(expect.objectContaining({ isCreatedByUser: false }));
+      expect(proseOnlyClient.buildMessages).toHaveBeenCalledTimes(1);
+      expect(proseOnlyClient.sendCompletion).toHaveBeenCalledTimes(1);
+    });
+
+    test('resolves and inspects owner-scoped historical files before building messages', async () => {
+      const historicalMessage = {
+        role: 'user',
+        isCreatedByUser: true,
+        text: 'Use my file',
+        files: [{ file_id: 'owned-file' }],
+        messageId: 'historical-file-message',
+        parentMessageId: Constants.NO_PARENT,
+      };
+      getFiles.mockReset();
+      getFiles.mockResolvedValueOnce([
+        {
+          file_id: 'owned-file',
+          filename: 'owned.txt',
+          filepath: '/uploads/owned.txt',
+          text: 'safe canonical file content',
+          user: 'user-1',
+        },
+      ]);
+      TestClient = initializeFakeClient(
+        apiKey,
+        {
+          ...options,
+          req: {
+            user: { id: 'user-1', tenantId: 'tenant-a' },
+            config: {
+              filters: {
+                files: {
+                  pii: {
+                    fields: ['extracted_text'],
+                    starterPatterns: [],
+                    uninspectable: 'block',
+                  },
+                },
+              },
+            },
+          },
+        },
+        [historicalMessage],
+      );
+
+      await expect(
+        TestClient.sendMessage('Safe new message', {
+          conversationId: 'historical-file-conversation',
+          parentMessageId: 'historical-file-message',
+        }),
+      ).resolves.toBeDefined();
+
+      expect(getFiles).toHaveBeenCalledWith(
+        {
+          file_id: { $in: ['owned-file'] },
+          user: 'user-1',
+          tenantId: 'tenant-a',
+        },
+        {},
+        {},
+      );
+      expect(TestClient.buildMessages).toHaveBeenCalled();
+    });
+
+    test('blocks missing or foreign historical file references before building messages', async () => {
+      getFiles.mockReset();
+      getFiles.mockResolvedValueOnce([]);
+      TestClient = initializeFakeClient(
+        apiKey,
+        {
+          ...options,
+          req: {
+            user: { id: 'user-1', tenantId: 'tenant-a' },
+            config: {
+              filters: {
+                files: {
+                  pii: {
+                    fields: ['extracted_text'],
+                    starterPatterns: [],
+                    uninspectable: 'block',
+                  },
+                },
+              },
+            },
+          },
+        },
+        [
+          {
+            role: 'user',
+            isCreatedByUser: true,
+            text: 'Use a foreign file',
+            files: [{ file_id: 'foreign-file' }],
+            messageId: 'foreign-file-message',
+            parentMessageId: Constants.NO_PARENT,
+          },
+        ],
+      );
+
+      await expect(
+        TestClient.sendMessage('Safe new message', {
+          conversationId: 'foreign-file-conversation',
+          parentMessageId: 'foreign-file-message',
+        }),
+      ).rejects.toMatchObject({
+        code: 'content_filter_uninspectable',
+        body: {
+          source: 'file',
+          field: 'extracted_text',
+        },
+      });
+      expect(TestClient.buildMessages).not.toHaveBeenCalled();
+      expect(TestClient.sendCompletion).not.toHaveBeenCalled();
+    });
+
+    test('ignores historical file refs when the endpoint does not resend files', async () => {
+      getFiles.mockReset();
+      TestClient = initializeFakeClient(
+        apiKey,
+        {
+          ...options,
+          resendFiles: false,
+          req: {
+            user: { id: 'user-1', tenantId: 'tenant-a' },
+            config: {
+              filters: {
+                files: {
+                  pii: {
+                    fields: ['extracted_text'],
+                    starterPatterns: [],
+                    uninspectable: 'block',
+                  },
+                },
+              },
+            },
+          },
+        },
+        [
+          {
+            role: 'user',
+            isCreatedByUser: true,
+            text: 'A prior turn referenced a file.',
+            files: [{ file_id: 'deleted-historical-file' }],
+            messageId: 'historical-file-message',
+            parentMessageId: Constants.NO_PARENT,
+          },
+        ],
+      );
+
+      await expect(
+        TestClient.sendMessage('Safe text-only continuation', {
+          conversationId: 'no-file-replay-conversation',
+          parentMessageId: 'historical-file-message',
+        }),
+      ).resolves.toBeDefined();
+
+      expect(getFiles).not.toHaveBeenCalled();
+      expect(TestClient.buildMessages).toHaveBeenCalled();
+      expect(TestClient.sendCompletion).toHaveBeenCalled();
     });
 
     test('should return chat history', async () => {
@@ -1752,6 +2126,39 @@ describe('BaseClient', () => {
       expect(message.attachments).toBeUndefined();
       expect(JSON.stringify(message)).not.toContain('victim');
       expect(JSON.stringify(message)).not.toContain('forged owner text');
+    });
+
+    test('fails closed before processing an unresolved historical file reference', async () => {
+      TestClient.options.req.config = {
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              starterPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+      };
+      getFiles.mockResolvedValueOnce([]);
+
+      await expect(
+        TestClient.addPreviousAttachments([
+          {
+            messageId: 'msg-unresolved',
+            isCreatedByUser: true,
+            files: [{ file_id: 'foreign-file' }],
+          },
+        ]),
+      ).rejects.toMatchObject({
+        code: 'content_filter_uninspectable',
+        body: {
+          source: 'file',
+          field: 'extracted_text',
+        },
+      });
+      expect(TestClient.addFileContextToMessage).not.toHaveBeenCalled();
+      expect(TestClient.processAttachments).not.toHaveBeenCalled();
     });
 
     test('strips historical file context when no authenticated owner scope is available', async () => {

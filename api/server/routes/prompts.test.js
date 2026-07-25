@@ -205,6 +205,50 @@ async function setupTestData() {
   });
 }
 
+async function createAccessiblePromptGroup({
+  name,
+  prompt,
+  production = true,
+  groupId,
+  type = 'text',
+}) {
+  let group;
+  if (groupId) {
+    group = await PromptGroup.findById(groupId);
+  } else {
+    group = await PromptGroup.create({
+      name,
+      category: 'stored-filter-test',
+      author: testUsers.owner._id,
+      authorName: testUsers.owner.name,
+      productionId: new ObjectId(),
+    });
+
+    await grantPermission({
+      principalType: PrincipalType.USER,
+      principalId: testUsers.owner._id,
+      resourceType: ResourceType.PROMPTGROUP,
+      resourceId: group._id,
+      accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+      grantedBy: testUsers.owner._id,
+    });
+  }
+
+  const promptRecord = await Prompt.create({
+    prompt,
+    author: testUsers.owner._id,
+    type,
+    groupId: group._id,
+  });
+
+  if (production) {
+    group.productionId = promptRecord._id;
+    await group.save();
+  }
+
+  return { group, prompt: promptRecord };
+}
+
 describe('Prompt Routes - ACL Permissions', () => {
   let consoleErrorSpy;
 
@@ -391,6 +435,208 @@ describe('Prompt Routes - ACL Permissions', () => {
       const response = await request(app).get(`/api/prompts/${testPrompt._id}`).expect(200);
 
       expect(response.body._id).toBe(testPrompt._id.toString());
+    });
+
+    it('should re-inspect an older stored prompt under prompt-only policy', async () => {
+      const privateValue = 'sk-stored-prompt-value';
+      testPrompt.prompt = `Use ${privateValue} for this request`;
+      await testPrompt.save();
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: testUsers.owner._id,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: testGroup._id,
+        accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER,
+        grantedBy: testUsers.owner._id,
+      });
+      mockAppConfig = {
+        filters: {
+          prompts: {
+            pii: {
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+
+      const response = await request(app).get(`/api/prompts/${testPrompt._id}`).expect(400);
+
+      expect(response.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'prompt',
+          field: 'text',
+        }),
+      );
+      expect(JSON.stringify(response.body)).not.toContain(privateValue);
+    });
+  });
+
+  describe('Stored prompt policy enforcement', () => {
+    afterEach(async () => {
+      await Prompt.deleteMany({});
+      await PromptGroup.deleteMany({});
+      await AclEntry.deleteMany({});
+    });
+
+    it('should omit filtered variable and non-variable production prompts from reuse results', async () => {
+      const safe = await createAccessiblePromptGroup({
+        name: 'Safe prompt',
+        prompt: 'Summarize this document',
+      });
+      const blockedPlain = await createAccessiblePromptGroup({
+        name: 'Blocked plain prompt',
+        prompt: 'Use sk-plain-stored-value for the request',
+      });
+      const blockedVariable = await createAccessiblePromptGroup({
+        name: 'Blocked variable prompt',
+        prompt: 'Use sk-variable-stored-value for {{customer}}',
+      });
+      mockAppConfig = {
+        filters: {
+          prompts: {
+            pii: {
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+
+      const response = await request(app).get('/api/prompts/all').expect(200);
+      const responseIds = response.body.map((group) => group._id);
+
+      expect(responseIds).toContain(safe.group._id.toString());
+      expect(responseIds).not.toContain(blockedPlain.group._id.toString());
+      expect(responseIds).not.toContain(blockedVariable.group._id.toString());
+      expect(JSON.stringify(response.body)).not.toContain('sk-plain-stored-value');
+      expect(JSON.stringify(response.body)).not.toContain('sk-variable-stored-value');
+    });
+
+    it('should keep prompt filtering disabled when the prompt scope is omitted', async () => {
+      const stored = await createAccessiblePromptGroup({
+        name: 'Stored prompt',
+        prompt: 'Use sk-allowed-by-omission for the request',
+      });
+      mockAppConfig = {
+        filters: {
+          messages: {
+            pii: {
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+
+      const response = await request(app).get('/api/prompts/all').expect(200);
+
+      expect(response.body).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            _id: stored.group._id.toString(),
+            productionPrompt: expect.objectContaining({
+              prompt: 'Use sk-allowed-by-omission for the request',
+            }),
+          }),
+        ]),
+      );
+    });
+
+    it('should redact blocked versions while preserving safe records for remediation', async () => {
+      const blocked = await createAccessiblePromptGroup({
+        name: 'Prompt with history',
+        prompt: 'Use sk-blocked-version for this request',
+      });
+      const safe = await createAccessiblePromptGroup({
+        groupId: blocked.group._id,
+        prompt: 'A safe replacement prompt',
+        production: false,
+      });
+      mockAppConfig = {
+        filters: {
+          prompts: {
+            pii: {
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+
+      const [groupResponse, groupsResponse, promptsResponse] = await Promise.all([
+        request(app).get(`/api/prompts/groups/${blocked.group._id}`).expect(200),
+        request(app).get('/api/prompts/groups').query({ limit: '10' }).expect(200),
+        request(app)
+          .get('/api/prompts')
+          .query({ groupId: blocked.group._id.toString() })
+          .expect(200),
+      ]);
+
+      expect(groupResponse.body.productionPrompt).toEqual(
+        expect.objectContaining({
+          prompt: '',
+          contentFilterBlocked: true,
+        }),
+      );
+      const listedGroup = groupsResponse.body.promptGroups.find(
+        (group) => group._id === blocked.group._id.toString(),
+      );
+      expect(listedGroup.productionPrompt).toEqual(
+        expect.objectContaining({
+          prompt: '',
+          contentFilterBlocked: true,
+        }),
+      );
+      const blockedVersion = promptsResponse.body.find(
+        (prompt) => prompt._id === blocked.prompt._id.toString(),
+      );
+      const safeVersion = promptsResponse.body.find(
+        (prompt) => prompt._id === safe.prompt._id.toString(),
+      );
+      expect(blockedVersion).toEqual(
+        expect.objectContaining({
+          prompt: '',
+          contentFilterBlocked: true,
+        }),
+      );
+      expect(safeVersion.prompt).toBe('A safe replacement prompt');
+      expect(
+        JSON.stringify([groupResponse.body, groupsResponse.body, promptsResponse.body]),
+      ).not.toContain('sk-blocked-version');
+    });
+
+    it('should reject promoting an older blocked prompt without changing production', async () => {
+      const safe = await createAccessiblePromptGroup({
+        name: 'Production prompt',
+        prompt: 'Current safe production prompt',
+      });
+      const blocked = await createAccessiblePromptGroup({
+        groupId: safe.group._id,
+        prompt: 'Use sk-blocked-production for this request',
+        production: false,
+      });
+      mockAppConfig = {
+        filters: {
+          prompts: {
+            pii: {
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+
+      const response = await request(app)
+        .patch(`/api/prompts/${blocked.prompt._id}/tags/production`)
+        .expect(400);
+
+      expect(response.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'prompt',
+          field: 'text',
+        }),
+      );
+      expect(JSON.stringify(response.body)).not.toContain('sk-blocked-production');
+      const unchangedGroup = await PromptGroup.findById(safe.group._id).lean();
+      expect(unchangedGroup.productionId.toString()).toBe(safe.prompt._id.toString());
     });
   });
 
