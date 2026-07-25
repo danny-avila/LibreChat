@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import zlib from 'zlib';
 import yauzl from 'yauzl';
 import { megabyte } from 'librechat-data-provider';
 
@@ -129,14 +130,100 @@ function indexEntries(
   });
 }
 
+/**
+ * `decompress: false` hands back a DEFLATE entry's raw (still-compressed)
+ * bytes instead of routing them through yauzl's own inflate pipe. See the
+ * module-level note above `inflateEntry` for why that pipe must never be
+ * used. yauzl rejects `decompress` outright for a STORED entry (its bytes
+ * are never inflated to begin with, so the option is meaningless) —
+ * `openReadStream(entry, callback)` already returns those raw.
+ */
 function openEntryStream(zipfile: yauzl.ZipFile, entry: yauzl.Entry): Promise<Readable> {
   return new Promise((resolve, reject) => {
-    zipfile.openReadStream(entry, (err, readStream) => {
+    const onStream = (err: Error | null, readStream: Readable | undefined): void => {
       if (err || !readStream) {
         reject(err ?? new Error(`Unable to read entry: ${entry.fileName}`));
         return;
       }
       resolve(readStream);
+    };
+
+    if (entry.compressionMethod === 0) {
+      zipfile.openReadStream(entry, onStream);
+      return;
+    }
+    zipfile.openReadStream(
+      entry,
+      { decompress: false, decrypt: null, start: null, end: null },
+      onStream,
+    );
+  });
+}
+
+/**
+ * Drains a raw (non-inflated) entry stream into a single buffer. The cap
+ * checked here is the compressed byte count, not the eventual decompressed
+ * size — for a STORED entry (`compressionMethod === 0`) the two are
+ * identical, and for a DEFLATE entry the compressed stream can only be
+ * marginally larger than the uncompressed content (deflate's stored-block
+ * fallback adds a few bytes per 64 KB block at worst), so this still
+ * catches a runaway/corrupt entry before it is held in memory in full.
+ * The authoritative per-entry cap for DEFLATE entries is enforced by
+ * `zlib.inflateRaw`'s `maxOutputLength` in `inflateEntry`.
+ */
+function readRawEntry(readStream: Readable, name: string, limits: ArchiveLimits): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+
+    readStream.on('data', (chunk: Buffer) => {
+      bytes += chunk.byteLength;
+      if (bytes > limits.maxEntryBytes) {
+        reject(new ZipBombError(`Entry ${name} exceeds the maximum decompressed size`));
+        readStream.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    readStream.on('error', reject);
+    readStream.on('end', () => resolve(Buffer.concat(chunks)));
+  });
+}
+
+/**
+ * Inflates a raw DEFLATE entry ourselves instead of letting yauzl pipe it
+ * through zlib internally.
+ *
+ * On Node 24.16.0 with yauzl 3.2.1, `openReadStream(entry, cb)` (the
+ * default, inflating path) stalls for any entry whose decompressed output
+ * needs more than one internal zlib chunk (roughly 64 KB) — the stream
+ * emits no `data`, `end`, or `error`, so a caller awaiting the read hangs
+ * forever. Confirmed against a 778 MB real ChatGPT export: a 2-byte entry
+ * completed instantly, a 453 KB entry never returned in any
+ * `lazyEntries`/`autoClose` combination, and reading the very same entry
+ * raw (`decompress: false`) and inflating it here completed in single-digit
+ * milliseconds. Do not revert to `openReadStream(entry, cb)` without first
+ * re-testing a multi-chunk entry on Node >= 24.
+ *
+ * `maxOutputLength` makes zlib itself refuse to allocate more than the
+ * per-entry cap while inflating, which is a stronger guarantee than
+ * counting decompressed chunks after the fact: the oversized buffer is
+ * never allocated at all. zlib surfaces that refusal as a `RangeError`
+ * with `code === 'ERR_BUFFER_TOO_LARGE'`, which is mapped onto the same
+ * `ZipBombError` every other cap violation in this module raises.
+ */
+function inflateEntry(raw: Buffer, name: string, maxOutputLength: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    zlib.inflateRaw(raw, { maxOutputLength }, (error, result) => {
+      if (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE') {
+          reject(new ZipBombError(`Entry ${name} exceeds the maximum decompressed size`));
+          return;
+        }
+        reject(error);
+        return;
+      }
+      resolve(result);
     });
   });
 }
@@ -259,30 +346,16 @@ export async function openArchive(
     ensureWithinTotalBudget(name, limits, totals);
     const entry = entryOf(name);
     const readStream = await openEntryStream(zipfile, entry);
+    const raw = await readRawEntry(readStream, name, limits);
+    const output =
+      entry.compressionMethod === 0 ? raw : await inflateEntry(raw, name, limits.maxEntryBytes);
 
-    return new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      let bytes = 0;
+    totals.bytesRead += output.byteLength;
+    if (totals.bytesRead > limits.maxTotalBytes) {
+      throw new ZipBombError('Archive exceeds the maximum decompressed size');
+    }
 
-      readStream.on('data', (chunk: Buffer) => {
-        bytes += chunk.byteLength;
-        totals.bytesRead += chunk.byteLength;
-
-        if (bytes > limits.maxEntryBytes) {
-          reject(new ZipBombError(`Entry ${name} exceeds the maximum decompressed size`));
-          readStream.destroy();
-          return;
-        }
-        if (totals.bytesRead > limits.maxTotalBytes) {
-          reject(new ZipBombError('Archive exceeds the maximum decompressed size'));
-          readStream.destroy();
-          return;
-        }
-        chunks.push(chunk);
-      });
-      readStream.on('error', reject);
-      readStream.on('end', () => resolve(Buffer.concat(chunks)));
-    });
+    return output;
   }
 
   return {

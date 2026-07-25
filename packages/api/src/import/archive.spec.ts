@@ -20,6 +20,43 @@ async function writeZip(files: Record<string, string>): Promise<string> {
   return filepath;
 }
 
+interface ZipEntryFixture {
+  name: string;
+  content: string;
+  compression: 'STORE' | 'DEFLATE';
+}
+
+async function writeZipEntries(files: ZipEntryFixture[]): Promise<string> {
+  const zip = new JSZip();
+  for (const file of files) {
+    zip.file(file.name, file.content, { compression: file.compression });
+  }
+  const buffer = await zip.generateAsync({ type: 'nodebuffer' });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-import-'));
+  createdDirs.push(dir);
+  const filepath = path.join(dir, 'export.zip');
+  fs.writeFileSync(filepath, buffer);
+  return filepath;
+}
+
+/**
+ * Builds compressible-but-varied JSON well over 64 KB — large enough that
+ * inflating it requires more than a single internal zlib output chunk.
+ * This is the exact shape of entry that stalled forever under yauzl
+ * 3.2.1's inflating `openReadStream` on Node 24 (see `archive.ts`); a
+ * uniform repeated-byte string is not representative enough since some
+ * naive replacements could special-case degenerate input.
+ */
+function buildVariedJson(entryCount: number): string {
+  const records = Array.from({ length: entryCount }, (_, i) => ({
+    id: i,
+    name: `item-${i}`,
+    tags: ['alpha', 'beta', 'gamma'].slice(0, (i % 3) + 1),
+    payload: `payload-value-${i}-${(i * 31) % 997}`,
+  }));
+  return JSON.stringify(records);
+}
+
 afterEach(() => {
   while (createdDirs.length > 0) {
     const dir = createdDirs.pop();
@@ -74,6 +111,42 @@ describe('openArchive', () => {
 
     await archive.read('a.json');
     await expect(archive.read('a.json')).rejects.toThrow(ZipBombError);
+
+    archive.close();
+  });
+});
+
+describe('openArchive (large / compressed entries)', () => {
+  it('reads a DEFLATE entry spanning multiple inflate chunks and returns the exact original bytes', async () => {
+    const content = buildVariedJson(4000);
+    expect(content.length).toBeGreaterThan(64 * 1024);
+
+    const filepath = await writeZipEntries([{ name: 'big.json', content, compression: 'DEFLATE' }]);
+    const archive = await openArchive(filepath);
+
+    const result = await archive.read('big.json');
+    expect(result.toString('utf8')).toBe(content);
+
+    archive.close();
+  });
+
+  it('reads a STORED (uncompressed) entry and returns the exact original bytes', async () => {
+    const content = 'hello from a stored entry';
+    const filepath = await writeZipEntries([{ name: 'stored.txt', content, compression: 'STORE' }]);
+    const archive = await openArchive(filepath);
+
+    const result = await archive.read('stored.txt');
+    expect(result.toString('utf8')).toBe(content);
+
+    archive.close();
+  });
+
+  it('rejects a DEFLATE entry whose decompressed size exceeds the per-entry cap', async () => {
+    const content = buildVariedJson(4000);
+    const filepath = await writeZipEntries([{ name: 'big.json', content, compression: 'DEFLATE' }]);
+    const archive = await openArchive(filepath, { maxEntryBytes: 1000 });
+
+    await expect(archive.read('big.json')).rejects.toThrow(ZipBombError);
 
     archive.close();
   });
