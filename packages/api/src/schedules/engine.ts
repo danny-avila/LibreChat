@@ -245,21 +245,20 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             after: new Date(dbNow),
           });
           if (next == null) {
-            // The advance below would clear nextRunAt AND the lease. If the disable
-            // failed transiently, doing that anyway leaves `enabled: true` with no
-            // nextRunAt and no disabledReason — permanently unclaimable and invisible.
-            // Bail instead: the lease expires and the occurrence is retried.
+            // Uncomputable cadence is NOT transient, so this occurrence can never run.
+            // Disable and clear nextRunAt — but only if the disable actually landed, or
+            // the advance would leave `enabled: true` with no nextRunAt and no
+            // disabledReason: permanently unclaimable and invisible.
             const disabled = await deps.methods
               .disableSchedule(schedule.id, 'invalid_schedule', schedule.claimToken)
               .then(() => true)
               .catch(() => false);
-            if (!disabled) {
-              return false;
+            if (disabled) {
+              await deps.methods
+                .advanceSchedule(schedule.id, null, scheduledFor, schedule.claimToken)
+                .catch(() => undefined);
             }
           }
-          await deps.methods
-            .advanceSchedule(schedule.id, next, scheduledFor, schedule.claimToken)
-            .catch(() => undefined);
           logger.info(`[schedules] skipped stale occurrence for ${schedule.id} (misfire grace)`);
           return false;
         }
@@ -271,10 +270,14 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             fired += 1;
           }
         } catch (error) {
-          // A transient preflight throw must not unset nextRunAt (which would
-          // leave the schedule enabled but never due again). Reschedule to the
-          // next occurrence so it retries; only disable if it is uncomputable.
-          logger.error(`[schedules] unexpected fire error for ${schedule.id}:`, error);
+          // A transient preflight throw (user/config/permission/balance/capacity query)
+          // must NOT advance past this occurrence: advancing schedules the NEXT
+          // recurrence, so the due one is discarded permanently with no ScheduleRun row
+          // and no evidence it was ever attempted. Leave nextRunAt alone and keep the
+          // claim lease as backoff — the lease expires and the SAME occurrence is
+          // re-claimed and retried, matching how the fire path already treats a
+          // transient file-resolution failure.
+          logger.error(`[schedules] unexpected fire error for ${schedule.id} (will retry):`, error);
           const next = computeNextRunAt({
             cadence: schedule.cadence,
             timezone: schedule.timezone,

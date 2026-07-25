@@ -1171,9 +1171,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             );
           }
           await GenerationJobManager.emitError(streamId, error.message || 'Generation failed');
-          GenerationJobManager.completeJob(streamId, error.message, {
+          // MUST be awaited: when recordScheduleOutcome exhausted its retries this is the
+          // only write that retains the job as reconcile evidence. Unawaited, request
+          // cleanup (or process exit) can outrun it and the run is left unreconcilable —
+          // and a store rejection would surface as an unhandled rejection.
+          await GenerationJobManager.completeJob(streamId, error.message, {
             preserveForReconcile: Boolean(scheduleId) && !errorScheduleOutcomeRecorded,
-          });
+          }).catch((completeErr) =>
+            logger.error(
+              '[ResumableAgentController] Failed to preserve outcome evidence',
+              completeErr,
+            ),
+          );
         }
 
         await finishResumableRequest(req, userId);

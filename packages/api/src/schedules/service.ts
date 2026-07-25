@@ -147,6 +147,16 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
    * when a user is supplied (routes pass req.user, the fire path passes the owner).
    */
   async function getLimits(user?: ScheduleUserContext): Promise<ScheduleLimits> {
+    // The BASE `interface.schedules: false` is a global stop and must win over any
+    // principal override. Without this a tenant/role/user override resolving to
+    // enabled would let the sidebar and CRUD handlers admit schedules that
+    // isGloballyDisabled() correctly refuses to ever fire.
+    if (
+      user != null &&
+      (await deps.getAppConfig({ baseOnly: true }))?.interfaceConfig?.schedules === false
+    ) {
+      return { ...DEFAULT_SCHEDULE_LIMITS, enabled: false };
+    }
     const appConfig = user
       ? await deps.getAppConfig(getAppConfigOptionsFromUser(user))
       : await deps.getAppConfig();
@@ -634,7 +644,18 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     }
     // Surface anything that did not drain / could not be confirmed so the deletion
     // cascade defers rather than destroying while a generation may still persist.
-    const confirmed = remaining === 0 && unconfirmed.length === 0;
+    // Re-evaluate rather than trusting the initial abort-delivery result: an abort can
+    // report false because the job was briefly unreachable, yet that generation then
+    // finishes and records a terminal outcome during the drain poll. The run is genuinely
+    // settled at that point, so keeping its id in `unconfirmed` would defer account
+    // deletion forever. The DRAIN is the authority; delivery is only a hint.
+    const confirmed = remaining === 0;
+    if (confirmed && unconfirmed.length > 0) {
+      logger.info(
+        `[schedules] ${unconfirmed.length} abort(s) were not confirmed delivered but their ` +
+          'runs settled during the drain; treating the quiesce as complete.',
+      );
+    }
     if (!confirmed) {
       logger.warn(
         `[schedules] account-deletion quiesce did not confirm ${Math.max(remaining, unconfirmed.length)} ` +

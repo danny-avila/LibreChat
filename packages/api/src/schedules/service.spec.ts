@@ -62,9 +62,11 @@ describe('quiesceUserSchedules drain wait', () => {
     // Each poll waits one interval; advance twice so the loop observes the drain.
     await jest.advanceTimersByTimeAsync(250);
     await jest.advanceTimersByTimeAsync(250);
-    // The rows drained, but this harness has no job store so the aborts could not be
-    // CONFIRMED delivered — quiesce reports false and the caller must defer destruction.
-    await expect(pending).resolves.toBe(false);
+    // The rows DRAINED, so the runs are genuinely settled even though this harness has
+    // no job store and the aborts could not be confirmed delivered. The drain is the
+    // authority; an undelivered abort whose run then settled must not defer deletion
+    // forever.
+    await expect(pending).resolves.toBe(true);
 
     // Initial read + at least one poll that observed a non-empty set + the empty one.
     expect(getActive.mock.calls.length).toBeGreaterThanOrEqual(3);
