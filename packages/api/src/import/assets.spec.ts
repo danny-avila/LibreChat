@@ -160,6 +160,126 @@ describe('ingestAssets', () => {
     archive.close();
   });
 
+  it('prefers the attachment mime_type over the filename extension', async () => {
+    const filepath = await buildFixtureExport();
+    const archive = await openArchive(filepath);
+    const layout = resolveLayout(
+      archive.entries,
+      parseManifest(await archive.read('export_manifest.json')),
+    );
+
+    const result = await ingestAssets({
+      archive: withAssetNames(archive, JSON.stringify({ 'file-one.dat': 'first.bin' })),
+      layout,
+      userId: 'u1',
+      tenantId: undefined,
+      source: 'local',
+      pointers: ['file-service://file-one'],
+      attachments: new Map([['file-one', { id: 'file-one', mime_type: 'image/heic' }]]),
+      deps: {
+        saveBuffer: async ({ fileName }) => `/uploads/u1/${fileName}`,
+        createFile: async (data) => ({ file_id: data.file_id as string }),
+      },
+    });
+
+    expect(result.map.get('file-service://file-one')?.type).toBe('image/heic');
+
+    archive.close();
+  });
+
+  it('sniffs the mime type when the asset has no name and no attachment metadata', async () => {
+    const filepath = await buildFixtureExport();
+    const archive = await openArchive(filepath);
+    const layout = resolveLayout(
+      archive.entries,
+      parseManifest(await archive.read('export_manifest.json')),
+    );
+
+    const result = await ingestAssets({
+      archive,
+      layout,
+      userId: 'u1',
+      tenantId: undefined,
+      source: 'local',
+      pointers: ['sediment://file_generated'],
+      deps: {
+        saveBuffer: async ({ fileName }) => `/uploads/u1/${fileName}`,
+        createFile: async (data) => ({ file_id: data.file_id as string }),
+      },
+    });
+
+    const asset = result.map.get('sediment://file_generated');
+    expect(asset?.filename).toBe('file_generated');
+    expect(asset?.type).toBe('image/png');
+
+    archive.close();
+  });
+
+  it('falls back to the dimensions recorded inline on the pointer', async () => {
+    const filepath = await buildFixtureExport();
+    const archive = await openArchive(filepath);
+    const layout = resolveLayout(
+      archive.entries,
+      parseManifest(await archive.read('export_manifest.json')),
+    );
+
+    const result = await ingestAssets({
+      archive,
+      layout,
+      userId: 'u1',
+      tenantId: undefined,
+      source: 'local',
+      pointers: ['sediment://file_generated'],
+      references: new Map([
+        [
+          'sediment://file_generated',
+          { pointer: 'sediment://file_generated', width: 1024, height: 1536 },
+        ],
+      ]),
+      deps: {
+        saveBuffer: async ({ fileName }) => `/uploads/u1/${fileName}`,
+        createFile: async (data) => ({ file_id: data.file_id as string }),
+      },
+    });
+
+    const asset = result.map.get('sediment://file_generated');
+    expect(asset?.width).toBe(1024);
+    expect(asset?.height).toBe(1536);
+
+    archive.close();
+  });
+
+  it('counts a pointer missing from the archive as processed, so progress reaches its total', async () => {
+    const filepath = await buildFixtureExport();
+    const archive = await openArchive(filepath);
+    const layout = resolveLayout(
+      archive.entries,
+      parseManifest(await archive.read('export_manifest.json')),
+    );
+
+    const progress: number[] = [];
+    const pointers = ['file-service://file-one', 'sediment://file_gone'];
+    await ingestAssets({
+      archive,
+      layout,
+      userId: 'u1',
+      tenantId: undefined,
+      source: 'local',
+      pointers,
+      onProgress: (done) => {
+        progress.push(done);
+      },
+      deps: {
+        saveBuffer: async ({ fileName }) => `/uploads/u1/${fileName}`,
+        createFile: async (data) => ({ file_id: data.file_id as string }),
+      },
+    });
+
+    expect(progress[progress.length - 1]).toBe(pointers.length);
+
+    archive.close();
+  });
+
   it('stops after isCancelled turns true, without touching later assets', async () => {
     const filepath = await buildFixtureExport();
     const archive = await openArchive(filepath);
@@ -324,7 +444,9 @@ describe('ingestAssets', () => {
       tenantId: undefined,
       source: 'local',
       pointers: ['file-service://file-one', 'file-service://file-two'],
-      onProgress: (done) => progress.push(done),
+      onProgress: (done) => {
+        progress.push(done);
+      },
       deps: {
         saveBuffer: async ({ fileName }) => `/uploads/u1/${fileName}`,
         createFile: async (data) => ({ file_id: data.file_id as string }),

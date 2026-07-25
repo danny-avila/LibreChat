@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import { FileContext } from 'librechat-data-provider';
 
 import type { ChatGptAttachment, ImportedAsset } from './types';
+import type { AssetReference } from './chatgpt/content';
 import type { ExportLayout } from './manifest';
 import type { Archive } from './archive';
 
@@ -49,10 +50,17 @@ export interface IngestInput {
   pointers: string[];
   deps: AssetDeps;
   /** Attachment metadata keyed by the raw id (pointer with its scheme
-   * stripped), used only to backfill `width`/`height` on the resulting
-   * `ImportedAsset` when the export recorded them. */
+   * stripped). Supplies the authoritative `mime_type` the export recorded
+   * for uploaded files, plus `width`/`height` when present. */
   attachments?: Map<string, ChatGptAttachment>;
-  onProgress?: (done: number) => void;
+  /** Dimensions recorded inline on `image_asset_pointer` parts, keyed by
+   * the full pointer. Covers generated (`sediment://`) images, which never
+   * appear in `metadata.attachments`. */
+  references?: Map<string, AssetReference>;
+  /** Called with the number of pointers processed so far — imported,
+   * missing from the archive, or failed — so the count always reaches the
+   * total the caller derived from the same pointer list. */
+  onProgress?: (done: number) => void | Promise<void>;
   isCancelled?: () => Promise<boolean>;
 }
 
@@ -83,9 +91,77 @@ export function pointerToEntry(pointer: string): string {
   return `${pointerId(pointer)}.dat`;
 }
 
-function mimeOf(filename: string): string {
+function mimeFromExtension(filename: string): string | undefined {
   const extension = filename.split('.').pop()?.toLowerCase() ?? '';
-  return MIME_BY_EXTENSION[extension] ?? 'application/octet-stream';
+  return MIME_BY_EXTENSION[extension];
+}
+
+function startsWith(buffer: Buffer, bytes: number[], offset = 0): boolean {
+  if (buffer.length < offset + bytes.length) {
+    return false;
+  }
+  for (let i = 0; i < bytes.length; i++) {
+    if (buffer[offset + i] !== bytes[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Last-resort MIME detection for assets whose original name the export
+ * dropped: `conversation_asset_file_names.json` is optional, and without it
+ * the fallback name is the bare `.dat` id, which carries no extension. An
+ * image left as `application/octet-stream` renders as a download tile
+ * instead of an image, so the magic bytes decide.
+ */
+function sniffMime(buffer: Buffer): string | undefined {
+  if (startsWith(buffer, [0x89, 0x50, 0x4e, 0x47])) {
+    return 'image/png';
+  }
+  if (startsWith(buffer, [0xff, 0xd8, 0xff])) {
+    return 'image/jpeg';
+  }
+  if (startsWith(buffer, [0x47, 0x49, 0x46, 0x38])) {
+    return 'image/gif';
+  }
+  if (startsWith(buffer, [0x52, 0x49, 0x46, 0x46])) {
+    if (startsWith(buffer, [0x57, 0x45, 0x42, 0x50], 8)) {
+      return 'image/webp';
+    }
+    if (startsWith(buffer, [0x57, 0x41, 0x56, 0x45], 8)) {
+      return 'audio/wav';
+    }
+    return undefined;
+  }
+  if (startsWith(buffer, [0x66, 0x74, 0x79, 0x70], 4)) {
+    return 'video/mp4';
+  }
+  if (startsWith(buffer, [0x49, 0x44, 0x33]) || startsWith(buffer, [0xff, 0xfb])) {
+    return 'audio/mpeg';
+  }
+  if (startsWith(buffer, [0x25, 0x50, 0x44, 0x46])) {
+    return 'application/pdf';
+  }
+  return undefined;
+}
+
+/**
+ * `metadata.attachments[].mime_type` is what ChatGPT itself recorded for the
+ * file, so it wins; the original filename's extension is the next best
+ * signal, and content sniffing covers assets that have neither.
+ */
+function resolveMime(
+  attachment: ChatGptAttachment | undefined,
+  originalName: string,
+  buffer: Buffer,
+): string {
+  return (
+    attachment?.mime_type ??
+    mimeFromExtension(originalName) ??
+    sniffMime(buffer) ??
+    'application/octet-stream'
+  );
 }
 
 async function readAssetNames(
@@ -109,13 +185,16 @@ function buildImportedAsset(
   originalName: string,
   type: string,
   attachment: ChatGptAttachment | undefined,
+  reference: AssetReference | undefined,
 ): ImportedAsset {
   const asset: ImportedAsset = { file_id: fileId, filepath, filename: originalName, type };
-  if (attachment?.width !== undefined) {
-    asset.width = attachment.width;
+  const width = attachment?.width ?? reference?.width;
+  const height = attachment?.height ?? reference?.height;
+  if (width !== undefined) {
+    asset.width = width;
   }
-  if (attachment?.height !== undefined) {
-    asset.height = attachment.height;
+  if (height !== undefined) {
+    asset.height = height;
   }
   return asset;
 }
@@ -132,7 +211,8 @@ async function ingestOne(
 ): Promise<ImportedAsset> {
   const { archive, userId, tenantId, deps } = input;
   const buffer = await archive.read(entryName);
-  const type = mimeOf(originalName);
+  const attachment = input.attachments?.get(pointerId(pointer));
+  const type = resolveMime(attachment, originalName, buffer);
   const fileId = uuidv4();
   const fileName = `${fileId}-${originalName}`;
 
@@ -153,8 +233,14 @@ async function ingestOne(
     true,
   );
 
-  const attachment = input.attachments?.get(pointerId(pointer));
-  return buildImportedAsset(fileId, filepath, originalName, type, attachment);
+  return buildImportedAsset(
+    fileId,
+    filepath,
+    originalName,
+    type,
+    attachment,
+    input.references?.get(pointer),
+  );
 }
 
 export async function ingestAssets(input: IngestInput): Promise<IngestResult> {
@@ -169,6 +255,7 @@ export async function ingestAssets(input: IngestInput): Promise<IngestResult> {
   let unavailable = 0;
 
   const unique = Array.from(new Set(pointers));
+  let processed = 0;
 
   for (const pointer of unique) {
     if (input.isCancelled && (await input.isCancelled())) {
@@ -178,6 +265,8 @@ export async function ingestAssets(input: IngestInput): Promise<IngestResult> {
     const entryName = pointerToEntry(pointer);
     if (!present.has(entryName)) {
       unavailable += 1;
+      processed += 1;
+      await input.onProgress?.(processed);
       continue;
     }
 
@@ -187,10 +276,12 @@ export async function ingestAssets(input: IngestInput): Promise<IngestResult> {
       const asset = await ingestOne(pointer, entryName, originalName, input);
       map.set(pointer, asset);
       imported += 1;
-      input.onProgress?.(imported);
     } catch (error) {
       errors.push(`${entryName}: ${sanitizeImportError(error, `import asset ${entryName}`)}`);
     }
+
+    processed += 1;
+    await input.onProgress?.(processed);
   }
 
   return { map, imported, unavailable, errors };

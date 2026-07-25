@@ -2,33 +2,53 @@ import type { ChatGptMessage, ChatGptPart, ImportedAsset } from '~/import/types'
 
 export type ContentPart = { type: 'text'; text: string };
 
-function pointerOf(part: ChatGptPart): string | null {
+/**
+ * One asset reference found on a message, carrying the dimensions the export
+ * records inline on `image_asset_pointer` parts. Generated (`sediment://`)
+ * images never appear in `metadata.attachments`, so this is the only source
+ * of their width/height.
+ */
+export interface AssetReference {
+  pointer: string;
+  width?: number;
+  height?: number;
+}
+
+function referenceOf(part: ChatGptPart): AssetReference | null {
   if (typeof part === 'string') {
     return null;
   }
   if (part.content_type === 'real_time_user_audio_video_asset_pointer') {
-    return part.audio_asset_pointer?.asset_pointer ?? null;
+    const pointer = part.audio_asset_pointer?.asset_pointer;
+    return pointer ? { pointer } : null;
   }
-  if (part.content_type === 'image_asset_pointer' || part.content_type === 'audio_asset_pointer') {
-    return part.asset_pointer;
+  if (part.content_type === 'image_asset_pointer') {
+    return { pointer: part.asset_pointer, width: part.width, height: part.height };
+  }
+  if (part.content_type === 'audio_asset_pointer') {
+    return { pointer: part.asset_pointer };
   }
   return null;
 }
 
-export function collectAssetPointers(message: ChatGptMessage): string[] {
+export function collectAssetReferences(message: ChatGptMessage): AssetReference[] {
   const parts = message.content.parts;
   if (!parts) {
     return [];
   }
 
-  const pointers: string[] = [];
+  const references: AssetReference[] = [];
   for (const part of parts) {
-    const pointer = pointerOf(part);
-    if (pointer) {
-      pointers.push(pointer);
+    const reference = referenceOf(part);
+    if (reference) {
+      references.push(reference);
     }
   }
-  return pointers;
+  return references;
+}
+
+export function collectAssetPointers(message: ChatGptMessage): string[] {
+  return collectAssetReferences(message).map((reference) => reference.pointer);
 }
 
 function convertPart(
@@ -54,12 +74,12 @@ function convertPart(
     return;
   }
 
-  const pointer = pointerOf(part);
-  if (!pointer) {
+  const reference = referenceOf(part);
+  if (!reference) {
     return;
   }
 
-  const asset = assets.get(pointer);
+  const asset = assets.get(reference.pointer);
   if (!asset) {
     return;
   }
