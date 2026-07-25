@@ -71,7 +71,7 @@ convoSchema.index({ user: 1, chatProjectId: 1, updatedAt: -1, _id: -1 });
 convoSchema.index({ user: 1, chatProjectId: 1, createdAt: -1, _id: -1 });
 convoSchema.index(
   { user: 1, 'importedFrom.source': 1, 'importedFrom.externalId': 1 },
-  { sparse: true },
+  { partialFilterExpression: { 'importedFrom.source': { $exists: true } } },
 );
 
 convoSchema.index({ user: 1, isTemporary: 1, expiredAt: 1 });
