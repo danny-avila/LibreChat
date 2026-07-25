@@ -32,7 +32,7 @@ export default function OrchestrationPattern({
 }: OrchestrationPatternProps) {
   return (
     <HoverCard openDelay={50}>
-      <div className="flex flex-col gap-3 py-4">
+      <section aria-label={title} className="flex flex-col gap-3 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-2.5">
             <span className="mt-0.5 flex-shrink-0 text-text-secondary" aria-hidden="true">
@@ -52,7 +52,7 @@ export default function OrchestrationPattern({
           )}
         </div>
         {children != null && <div className="flex flex-col gap-3">{children}</div>}
-      </div>
+      </section>
       <HoverCardPortal>
         <HoverCardContent side={ESide.Top} className="w-80">
           <div className="space-y-2">{info}</div>

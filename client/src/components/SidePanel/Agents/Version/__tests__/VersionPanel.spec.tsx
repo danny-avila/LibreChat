@@ -10,6 +10,7 @@ const mockAgentData = {
   instructions: 'Test Instructions',
   tools: ['tool1', 'tool2'],
   capabilities: ['capability1', 'capability2'],
+  edges: [{ from: 'agent-123', to: 'agent-specialist', edgeType: 'handoff' }],
 };
 
 const mockVersions = [
@@ -235,6 +236,7 @@ describe('VersionPanel', () => {
             name: 'Test Agent',
             description: 'Test Description',
             instructions: 'Test Instructions',
+            edges: [{ from: 'agent-123', to: 'agent-specialist', edgeType: 'handoff' }],
           }),
           versions: expect.arrayContaining([
             expect.objectContaining({ name: 'Version 2' }),
