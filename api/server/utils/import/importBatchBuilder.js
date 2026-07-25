@@ -142,6 +142,12 @@ class ImportBatchBuilder {
    * Also increments tag counts for any existing tags.
    * Clears the buffers before awaiting the writes so a concurrent saveMessage
    * call cannot be silently dropped or double-written.
+   * Messages are written before conversations, deliberately: the conversation
+   * record is the idempotency marker a retry uses to skip already-imported
+   * data, so it must not exist until its messages are durably saved. Writing
+   * conversations first (or concurrently) risks an empty, unrecoverable
+   * conversation if the message write fails after the conversation write
+   * succeeds.
    * @returns {Promise<void>} A promise that resolves when the flush completes.
    * @throws {Error} If there is an error saving the batch.
    */
@@ -156,9 +162,9 @@ class ImportBatchBuilder {
     this.messages = [];
 
     try {
+      await bulkSaveMessages(messages, true);
       await Promise.all([
         bulkSaveConvos(conversations),
-        bulkSaveMessages(messages, true),
         bulkIncrementTagCounts(
           this.requestUserId,
           conversations.flatMap((convo) => convo.tags),

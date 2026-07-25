@@ -59,4 +59,35 @@ describe('ImportBatchBuilder flushing', () => {
     await builder.saveBatch();
     expect(bulkSaveConvos).not.toHaveBeenCalled();
   });
+
+  it('writes messages before conversations, so the conversation acts as a commit marker', async () => {
+    const order = [];
+    bulkSaveMessages.mockImplementation(async () => {
+      order.push('messages');
+    });
+    bulkSaveConvos.mockImplementation(async () => {
+      order.push('conversations');
+    });
+
+    const builder = new ImportBatchBuilder('u1', undefined, { flushThreshold: 5 });
+    builder.startConversation();
+    builder.addUserMessage('hello');
+    builder.finishConversation('Chat', new Date());
+    await builder.saveBatch();
+
+    expect(order).toEqual(['messages', 'conversations']);
+  });
+
+  it('never writes conversations when the message write fails', async () => {
+    bulkSaveMessages.mockRejectedValueOnce(new Error('message write failed'));
+
+    const builder = new ImportBatchBuilder('u1', undefined, { flushThreshold: 5 });
+    builder.startConversation();
+    builder.addUserMessage('hello');
+    builder.finishConversation('Chat', new Date());
+
+    await expect(builder.saveBatch()).rejects.toThrow('message write failed');
+
+    expect(bulkSaveConvos).not.toHaveBeenCalled();
+  });
 });
