@@ -1,6 +1,7 @@
 import { Button, Spinner } from '@librechat/client';
 import type { TImportJob, TImportPhase } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
+import useAutoFocus from './useAutoFocus';
 import { useLocalize } from '~/hooks';
 
 const TERMINAL_PHASES = new Set<TImportPhase>(['completed', 'failed', 'cancelled']);
@@ -23,6 +24,7 @@ export default function Progress({ job, onCancel, onReset, isCancelling }: Progr
   const isTerminal = TERMINAL_PHASES.has(job.phase);
   const { done, total } = job.progress.conversations;
   const phaseLabel = localize(PHASE_LABEL_KEYS[job.phase] ?? 'com_ui_importing');
+  const statusRef = useAutoFocus<HTMLDivElement, TImportPhase>(job.phase);
 
   let statusHeading = phaseLabel;
   if (job.phase === 'cancelled') {
@@ -35,8 +37,38 @@ export default function Progress({ job, onCancel, onReset, isCancelling }: Progr
 
   return (
     <section className="flex flex-col gap-4">
-      <div aria-live="polite" className="text-sm font-medium text-text-primary">
-        {statusHeading}
+      <div
+        ref={statusRef}
+        tabIndex={-1}
+        aria-live="polite"
+        role="status"
+        className="flex flex-col gap-2 text-sm font-medium text-text-primary focus:outline-none"
+      >
+        <p>{statusHeading}</p>
+
+        {isTerminal && job.phase === 'failed' && job.error != null && (
+          <p className="font-normal text-red-500 dark:text-red-400">{job.error}</p>
+        )}
+
+        {isTerminal && job.report && (
+          <div className="flex flex-col gap-1 font-normal text-text-secondary">
+            <p>
+              {localize('com_ui_import_report', {
+                0: job.report.imported,
+                1: job.report.skipped,
+              })}
+            </p>
+            <p>
+              {localize('com_ui_import_report_assets', {
+                0: job.report.assetsImported,
+                1: job.report.assetsUnavailable,
+              })}
+            </p>
+            {job.report.errors.length > 0 && (
+              <p>{localize('com_ui_import_errors', { 0: job.report.errors.length })}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {!isTerminal && (
@@ -58,43 +90,24 @@ export default function Progress({ job, onCancel, onReset, isCancelling }: Progr
           </div>
           <div className="flex justify-end">
             <Button variant="outline" onClick={onCancel} disabled={isCancelling}>
-              {isCancelling ? <Spinner className="size-4" /> : localize('com_ui_import_cancel')}
+              {isCancelling && <Spinner className="mr-1 size-4" aria-hidden="true" />}
+              {localize('com_ui_import_cancel')}
             </Button>
           </div>
         </>
       )}
 
-      {isTerminal && job.phase === 'failed' && job.error != null && (
-        <p className="text-sm text-red-500 dark:text-red-400">{job.error}</p>
-      )}
-
-      {isTerminal && job.report && (
-        <div className="flex flex-col gap-2 text-sm text-text-secondary">
-          <p>
-            {localize('com_ui_import_report', {
-              0: job.report.imported,
-              1: job.report.skipped,
-            })}
-          </p>
-          <p>
-            {localize('com_ui_import_report_assets', {
-              0: job.report.assetsImported,
-              1: job.report.assetsUnavailable,
-            })}
-          </p>
-          {job.report.errors.length > 0 && (
-            <details>
-              <summary className="cursor-pointer">
-                {localize('com_ui_import_errors', { 0: job.report.errors.length })}
-              </summary>
-              <ul className="mt-2 list-inside list-disc">
-                {job.report.errors.map((error) => (
-                  <li key={error}>{error}</li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </div>
+      {isTerminal && job.report && job.report.errors.length > 0 && (
+        <details>
+          <summary className="cursor-pointer text-sm text-text-secondary">
+            {localize('com_ui_import_errors', { 0: job.report.errors.length })}
+          </summary>
+          <ul className="mt-2 list-inside list-disc text-sm text-text-secondary">
+            {job.report.errors.map((error, index) => (
+              <li key={index}>{error}</li>
+            ))}
+          </ul>
+        </details>
       )}
 
       {isTerminal && (

@@ -1,5 +1,6 @@
 import { Button, Spinner } from '@librechat/client';
 import type { TImportSummary } from 'librechat-data-provider';
+import useAutoFocus from './useAutoFocus';
 import { useLocalize } from '~/hooks';
 import { formatBytes } from '~/utils';
 
@@ -30,41 +31,37 @@ export default function Summary({
 }: SummaryProps) {
   const localize = useLocalize();
   const isBusy = isConfirming || isCancelling;
+  const headingRef = useAutoFocus<HTMLHeadingElement, boolean>(true);
 
   return (
     <section aria-labelledby="import-summary-heading" className="flex flex-col gap-4">
-      <h3 id="import-summary-heading" className="text-sm font-medium text-text-primary">
+      <h3
+        id="import-summary-heading"
+        ref={headingRef}
+        tabIndex={-1}
+        className="text-sm font-medium text-text-primary focus:outline-none"
+      >
         {localize('com_ui_import_detected', { 0: summary.source })}
       </h3>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm text-text-secondary">
-        <div>
-          <dt className="sr-only">{localize('com_ui_import_stat_conversations')}</dt>
-          <dd>{localize('com_ui_import_stat_conversations', { 0: summary.conversations })}</dd>
-        </div>
-        <div>
-          <dt className="sr-only">{localize('com_ui_import_assets')}</dt>
-          <dd>
-            {localize('com_ui_import_assets', {
-              0: summary.assets,
-              1: formatAssetSize(summary.assetBytes),
-            })}
-          </dd>
-        </div>
-        <div>
-          <dt className="sr-only">{localize('com_ui_import_stat_archived')}</dt>
-          <dd>{localize('com_ui_import_stat_archived', { 0: summary.archived })}</dd>
-        </div>
-        <div>
-          <dt className="sr-only">{localize('com_ui_import_stat_starred')}</dt>
-          <dd>{localize('com_ui_import_stat_starred', { 0: summary.starred })}</dd>
-        </div>
-      </dl>
+      <ul className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm text-text-secondary">
+        <li>{localize('com_ui_import_stat_conversations', { 0: summary.conversations })}</li>
+        <li>
+          {localize('com_ui_import_assets', {
+            0: summary.assets,
+            1: formatAssetSize(summary.assetBytes),
+          })}
+        </li>
+        <li>{localize('com_ui_import_stat_archived', { 0: summary.archived })}</li>
+        <li>{localize('com_ui_import_stat_starred', { 0: summary.starred })}</li>
+      </ul>
       <div className="flex justify-end gap-2">
         <Button variant="outline" onClick={onCancel} disabled={isBusy}>
-          {isCancelling ? <Spinner className="size-4" /> : localize('com_ui_import_cancel')}
+          {isCancelling && <Spinner className="mr-1 size-4" aria-hidden="true" />}
+          {localize('com_ui_import_cancel')}
         </Button>
         <Button onClick={onConfirm} disabled={isBusy}>
-          {isConfirming ? <Spinner className="size-4" /> : localize('com_ui_import')}
+          {isConfirming && <Spinner className="mr-1 size-4" aria-hidden="true" />}
+          {localize('com_ui_import')}
         </Button>
       </div>
     </section>
