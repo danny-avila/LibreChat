@@ -674,15 +674,94 @@ export type TRequestPasswordResetResponse = {
   message?: string;
 };
 
+export type TImportCounter = {
+  done: number;
+  total: number;
+};
+
+export type TImportProgress = {
+  conversations: TImportCounter;
+  messages: TImportCounter;
+  assets: TImportCounter;
+};
+
+export type TImportSummary = {
+  source: 'chatgpt' | 'chatgpt-legacy' | 'claude' | 'chatbotui' | 'librechat';
+  manifestVersion: number | null;
+  conversations: number;
+  shards: number;
+  assets: number;
+  assetBytes: number;
+  archived: number;
+  starred: number;
+};
+
+export type TImportReport = {
+  imported: number;
+  skipped: number;
+  assetsImported: number;
+  assetsUnavailable: number;
+  errors: string[];
+};
+
+export type TImportPhase =
+  | 'queued'
+  | 'inspecting'
+  | 'awaiting_confirmation'
+  | 'conversations'
+  | 'assets'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export type TImportJobStatus = 'active' | 'completed' | 'failed' | 'cancelled';
+
 /**
- * Represents the response from the import endpoint.
+ * A job record for an in-progress or finished import, as returned by the
+ * job status endpoint. `filepath` and `userId` are server-only fields the
+ * API strips before responding and must never be declared here.
  */
-export type TImportResponse = {
-  /**
-   * The message associated with the response.
-   */
+export type TImportJob = {
+  jobId: string;
+  filename: string;
+  phase: TImportPhase;
+  status: TImportJobStatus;
+  summary: TImportSummary | null;
+  progress: TImportProgress;
+  report: TImportReport | null;
+  error: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+/**
+ * Returned when the upload is a ChatGPT export (zip or bare JSON): the
+ * archive has been inspected and a job created, but nothing is imported
+ * until the job is confirmed via the start endpoint.
+ */
+export type TImportJobStarted = {
+  jobId: string;
+  summary: TImportSummary;
+};
+
+/**
+ * Returned when the upload is a Claude, ChatbotUI, or LibreChat export:
+ * these formats import synchronously and never produce a job.
+ */
+export type TImportCompleted = {
   message: string;
 };
+
+/**
+ * Response from the import endpoint. The upload is inspected by content,
+ * not extension, so the same route can either start a background job
+ * (ChatGPT exports) or complete synchronously (every other supported
+ * format) — narrow with `isImportJobStarted` rather than assuming shape.
+ */
+export type TImportResponse = TImportJobStarted | TImportCompleted;
+
+export const isImportJobStarted = (response: TImportResponse): response is TImportJobStarted =>
+  'jobId' in response;
 
 /** Prompts */
 
