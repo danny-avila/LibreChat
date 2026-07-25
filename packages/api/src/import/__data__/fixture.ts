@@ -4,11 +4,15 @@ import path from 'path';
 
 import JSZip from 'jszip';
 
-const CITE = '';
+import type { ChatGptConversation } from '~/import/types';
+
+const CITE = '';
 
 export const FIXTURE_ASSET_BYTES = 4;
 
-const SHARD_ONE = [
+const createdDirs: string[] = [];
+
+const SHARD_ONE: ChatGptConversation[] = [
   {
     conversation_id: 'ext-cited',
     title: 'Amalfi trip',
@@ -34,7 +38,7 @@ const SHARD_ONE = [
       t1: {
         id: 't1',
         parent: 'u1',
-        children: ['a1'],
+        children: ['r1'],
         message: {
           id: 't1',
           author: { role: 'assistant', name: null },
@@ -45,9 +49,23 @@ const SHARD_ONE = [
           },
         },
       },
+      r1: {
+        id: 'r1',
+        parent: 't1',
+        children: ['a1'],
+        message: {
+          id: 'r1',
+          author: { role: 'assistant', name: null },
+          create_time: 1700000002,
+          content: {
+            content_type: 'reasoning_recap',
+            content: 'Thought for 7 seconds',
+          },
+        },
+      },
       a1: {
         id: 'a1',
-        parent: 't1',
+        parent: 'r1',
         children: [],
         message: {
           id: 'a1',
@@ -79,7 +97,7 @@ const SHARD_ONE = [
   },
 ];
 
-const SHARD_TWO = [
+const SHARD_TWO: ChatGptConversation[] = [
   {
     conversation_id: 'ext-media',
     title: 'Photo review',
@@ -176,7 +194,17 @@ export async function buildFixtureExport(overrides: FixtureOverrides = {}): Prom
 
   const buffer = await zip.generateAsync({ type: 'nodebuffer' });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-import-fixture-'));
+  createdDirs.push(dir);
   const filepath = path.join(dir, 'chatgpt-export.zip');
   fs.writeFileSync(filepath, buffer);
   return filepath;
+}
+
+export function cleanupFixtureExport(): void {
+  for (const dir of createdDirs) {
+    if (fs.existsSync(dir)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  createdDirs.length = 0;
 }
