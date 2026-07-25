@@ -68,6 +68,7 @@ const namespaces = {
     CacheKeys.ADMIN_OAUTH_EXCHANGE,
     Time.THIRTY_SECONDS,
   ),
+  [CacheKeys.IMPORT_JOBS]: standardCache(CacheKeys.IMPORT_JOBS, Time.ONE_DAY),
 };
 
 /**

@@ -2554,6 +2554,10 @@ export enum CacheKeys {
    * Key for admin panel OAuth exchange codes (one-time-use, short TTL).
    */
   ADMIN_OAUTH_EXCHANGE = 'ADMIN_OAUTH_EXCHANGE',
+  /**
+   * Key for cached ChatGPT import job state.
+   */
+  IMPORT_JOBS = 'IMPORT_JOBS',
 }
 
 export const AUTH_USER_DOC_BY_ID_PREFIX = 'auth-user-doc-byid';
