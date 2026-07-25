@@ -163,6 +163,25 @@ describe('quiesceUserSchedules drain wait', () => {
     );
   });
 
+  it('does not terminalize a paused row when the job lookup FAILS', async () => {
+    jest.useFakeTimers();
+    mockJobStore = {
+      getJob: jest.fn(async () => {
+        throw new Error('redis unavailable');
+      }),
+    };
+    const getActive = jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([pausedRun()]);
+    const service = makeService(getActive);
+
+    const pending = service.quiesceUserSchedules('user-1');
+    await jest.advanceTimersByTimeAsync(10_000);
+    // A thrown lookup is evidence of NOTHING. Reading it as "genuinely paused" would
+    // terminalize a row whose resumed generation may still be running, and the drain
+    // would then permit the destructive cascade.
+    await expect(pending).resolves.toBe(false);
+    expect(recordRunOutcome).not.toHaveBeenCalled();
+  });
+
   it('terminalizes a paused row when a replacement turn took over the conversation', async () => {
     jest.useFakeTimers();
     // A replacement user turn reuses the conversationId but strips the scheduled
@@ -227,6 +246,29 @@ describe('global kill switch', () => {
     ) as unknown as SchedulesServiceDeps['getAppConfig'];
     const service = makeService(noRuns(), getAppConfig);
     expect(await service.engineDeps.isGloballyDisabled()).toBe(false);
+  });
+});
+
+describe('deployment-wide limits', () => {
+  const noRuns = () => jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]);
+
+  it('resolves a principal-less getLimits from the BASE config only', async () => {
+    const getAppConfig = jest.fn(async (options?: { baseOnly?: boolean }) =>
+      options?.baseOnly === true
+        ? { interfaceConfig: { schedules: { use: true, fireConcurrency: 1 } } }
+        : // The principal/tenant-merged view. A bare getAppConfig() resolves THIS,
+          // including whatever tenant the ALS context happens to carry.
+          { interfaceConfig: { schedules: { use: true, fireConcurrency: 5 } } },
+    ) as unknown as SchedulesServiceDeps['getAppConfig'];
+    const service = makeService(noRuns(), getAppConfig);
+    const limits = await service.getLimits();
+    // NO principal must mean the DEPLOYMENT's config. Both callers of this form run
+    // inside a tenant context (fireSchedule clamps the global capacity allocator from
+    // within runInTenantContext(owner); the engine tick budgets from within
+    // runAsSystem), so resolving the merged view would let a tenant override widen the
+    // very global cap it is clamped against.
+    expect(limits.fireConcurrency).toBe(1);
+    expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
   });
 });
 

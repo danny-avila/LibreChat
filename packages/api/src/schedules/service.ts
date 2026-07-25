@@ -160,9 +160,16 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     ) {
       return { ...DEFAULT_SCHEDULE_LIMITS, enabled: false };
     }
+    // NO principal means the DEPLOYMENT's config, so it must be read base-only. A bare
+    // getAppConfig() still resolves principals and picks up the tenant from the ALS
+    // context, and both callers of this form run inside one: fireSchedule clamps the
+    // global capacity allocator from within runInTenantContext(owner), and the engine
+    // tick budgets from within runAsSystem. Either would otherwise resolve a TENANT
+    // override as if it were the deployment-wide value, which is exactly what the
+    // global cap exists to prevent an override from widening.
     const appConfig = user
       ? await deps.getAppConfig(getAppConfigOptionsFromUser(user))
-      : await deps.getAppConfig();
+      : await deps.getAppConfig({ baseOnly: true });
     // The env kill switch is a GLOBAL stop and must be visible everywhere limits are
     // consulted (write handlers, fire path), not only at the engine tick.
     if (isEnabled(process.env.SCHEDULES_DISABLED)) {
@@ -614,17 +621,33 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       // paused run from one actively generating, and the shortcut below would skip
       // waiting for a live generation that can still persist messages. Read the live job
       // BEFORE aborting, which settles or deletes it and would erase this evidence.
+      // UNKNOWN is not ABSENT. A lookup that THREW is evidence of nothing, while one
+      // that succeeded and returned null is positive evidence that no generation holds
+      // this conversation. Collapsing the two (a bare `.catch(() => null)`) would let a
+      // transient store failure read as "genuinely paused" and terminalize a row whose
+      // resumed generation is still running — the exact hazard this check exists for.
       const live = run.conversationId
-        ? await engineDeps.getJobStatus(run.conversationId).catch(() => null)
-        : null;
-      const generating =
-        live?.status === 'running' &&
-        jobMatchesIdentity(live, { scheduleId: run.scheduleId, scheduledFor: run.scheduledFor });
+        ? await engineDeps.getJobStatus(run.conversationId).then(
+            (job) => ({ known: true, job }),
+            () => ({ known: false, job: null }),
+          )
+        : { known: true, job: null };
+      const isThisGeneration =
+        live.job != null &&
+        jobMatchesIdentity(live.job, {
+          scheduleId: run.scheduleId,
+          scheduledFor: run.scheduledFor,
+        });
+      // Settle only on POSITIVE evidence that nothing is generating: an identity-matched
+      // job that is not running, an identity MISMATCH (a replacement turn owns the
+      // conversation, so this occurrence's generation is already gone), or a confirmed
+      // absence. Anything unknown falls through and the drain waits for it.
+      const settleable = live.known && !(isThisGeneration && live.job?.status === 'running');
       // Do NOT preserve for reconcile: account deletion hard-deletes these run
       // rows, so no reconcile pass will ever finalize/clear a retained job — a
       // preserved job would leak in the store. Let the abort settle it directly.
       const aborted = await abortActiveRun(run, false);
-      if (run.status === 'requires_action' && !generating) {
+      if (run.status === 'requires_action' && settleable) {
         // A genuinely PAUSED run has no live generation to drain: its approval will never
         // be consumed for an account being deleted. Terminalize it here, or it stays in
         // the active set forever and the drain below can never confirm — which made a
