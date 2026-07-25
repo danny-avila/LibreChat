@@ -1,13 +1,14 @@
 import type { TEndpointsConfig } from './types';
-import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
-import { getEndpointFileConfig, mergeFileConfig } from './file-config';
 import {
   allowedAddressesSchema,
+  bedrockModels,
   configSchema,
   excludedKeys,
   resolveEndpointType,
   webSearchSchema,
 } from './config';
+import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
+import { getEndpointFileConfig, mergeFileConfig } from './file-config';
 
 const endpointsConfig: TEndpointsConfig = {
   [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
@@ -557,5 +558,45 @@ describe('webSearchSchema', () => {
         },
       }),
     ).toThrow();
+  });
+});
+
+describe('bedrockModels defaults', () => {
+  /**
+   * Bedrock rejects on-demand Converse invocation of Claude 4+ foundation-model
+   * IDs ("Retry your request with the ID or ARN of an inference profile"), so
+   * every Claude 4+ default must ship as a cross-region profile ID or the model
+   * fails on first use.
+   */
+  const claude4Plus =
+    /claude-(?:[4-9](?:-\d+)?-(?:sonnet|opus|haiku)|(?:sonnet|opus|haiku|fable)-[4-9])/;
+
+  it('uses a cross-region inference profile for every Claude 4+ entry', () => {
+    const bare = bedrockModels.filter(
+      (model) => claude4Plus.test(model) && !/^(?:global|us)\./.test(model),
+    );
+
+    expect(bare).toEqual([]);
+  });
+
+  it.each([
+    'anthropic.claude-3-5-sonnet-20241022-v2:0',
+    'anthropic.claude-3-5-sonnet-20240620-v1:0',
+    'anthropic.claude-3-5-haiku-20241022-v1:0',
+  ])('does not offer retired model %s', (model) => {
+    /** These reached end of life at AWS and return ResourceNotFoundException in
+     * every prefix form, so selecting one is a hard error for the user. */
+    expect(bedrockModels).not.toContain(model);
+  });
+
+  it('offers no Claude 3.x model at all', () => {
+    const claude3 = bedrockModels.filter((model) => /claude-3[-.]/.test(model));
+
+    expect(claude3).toEqual([]);
+  });
+
+  it('keeps Opus 5 available as a global profile', () => {
+    expect(bedrockModels).toContain('global.anthropic.claude-opus-5');
+    expect(bedrockModels).not.toContain('anthropic.claude-opus-5');
   });
 });
