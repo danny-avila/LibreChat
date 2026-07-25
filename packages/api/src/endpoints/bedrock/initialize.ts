@@ -18,7 +18,7 @@ import type {
   InferenceProfileConfig,
 } from '~/types';
 import { getHttpsProxyAgent } from '~/utils/proxy';
-import { checkUserKeyExpiry } from '~/utils';
+import { checkUserKeyExpiry, resolveHeaders } from '~/utils';
 
 const BEDROCK_CREDENTIALS_ERROR = 'Bedrock credentials not provided. Please provide them again.';
 
@@ -36,6 +36,26 @@ function getBedrockProxyTarget(region?: string, reverseProxy?: string): string |
   if (!trimmedRegion) return undefined;
 
   return `https://bedrock-runtime.${trimmedRegion}.amazonaws.com`;
+}
+
+/**
+ * Resolves LibreChat placeholder templates (e.g. `{{LIBRECHAT_OPENID_ID_TOKEN}}`,
+ * `{{LIBRECHAT_USER_ID}}`) in a statically-configured Bedrock bearer token at
+ * request time, forwarding a per-user identity token as the outbound
+ * `Authorization: Bearer …` credential. This is useful when Bedrock traffic is
+ * routed through an AI gateway / `BEDROCK_REVERSE_PROXY` that authenticates the
+ * caller itself (via `httpBearerAuth`) rather than AWS SigV4. Tokens without a
+ * placeholder are returned unchanged, so static Bedrock API keys are unaffected.
+ */
+function resolveBearerToken(
+  token: string,
+  user: BaseInitializeParams['req']['user'],
+  body: BaseInitializeParams['req']['body'],
+): string {
+  if (!token.includes('{{')) {
+    return token;
+  }
+  return resolveHeaders({ headers: { token }, user, body }).token;
 }
 
 function isParsedBedrockUserCredentials(value: unknown): value is ParsedBedrockUserCredentials {
@@ -95,6 +115,10 @@ function getUserCredentialValue(
  * Reverse Proxy Support:
  * - When BEDROCK_REVERSE_PROXY is set, routes Bedrock API calls through a custom endpoint
  * - Works with or without the PROXY setting
+ * - A BEDROCK_AWS_BEARER_TOKEN containing LibreChat placeholder templates (e.g.
+ *   `{{LIBRECHAT_OPENID_ID_TOKEN}}`) is resolved per request, forwarding a per-user
+ *   identity token as the `Authorization: Bearer …` credential so an AI gateway can
+ *   authenticate each caller instead of AWS SigV4
  *
  * Without Proxy:
  * - Credentials and endpoint configuration are passed separately to ChatBedrockConverse,
@@ -203,7 +227,7 @@ export async function initializeBedrock({
       checkUserKeyExpiry(expiresAt, EModelEndpoint.bedrock);
     }
   } else if (staticBearerToken) {
-    bearerToken = staticBearerToken;
+    bearerToken = resolveBearerToken(staticBearerToken, req.user, req.body);
   } else if (hasAccessKey !== hasSecretKey) {
     throw new Error(
       'Both BEDROCK_AWS_ACCESS_KEY_ID and BEDROCK_AWS_SECRET_ACCESS_KEY must be provided together.',
