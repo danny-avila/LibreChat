@@ -160,7 +160,7 @@ const {
 } = require('../ToolService');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
-const { PENDING_STALE_MS } = require('@librechat/api');
+const { ContentFilterError, PENDING_STALE_MS } = require('@librechat/api');
 
 function createMockReq(capabilities) {
   return {
@@ -300,7 +300,12 @@ describe('ToolService - Action Capability Gating', () => {
       expect(result.tool_outputs).toEqual([
         {
           tool_call_id: 'call_1',
-          output: 'Submitted content contains a private value. Remove it and try again.',
+          output: JSON.stringify({
+            error: 'content_filter_block',
+            message: 'Submitted content was blocked by content policy.',
+            source: 'tool_argument',
+            field: 'output',
+          }),
         },
       ]);
       expect(action.output).not.toContain(privateOutput);
@@ -313,6 +318,83 @@ describe('ToolService - Action Capability Gating', () => {
           }),
         }),
       );
+    });
+
+    it.each([
+      ['bearer_header', 'Authorization: Bearer required-action-token', 'Bearer token'],
+      ['api_key_header', 'api-key: required-action-token', 'api-key header'],
+    ])(
+      'returns a stable required-action %s block output',
+      async (starterPattern, privateOutput, detectorLabel) => {
+        mockLoadToolsUtil.mockResolvedValue({
+          loadedTools: [{ name: 'safe_tool', _call: jest.fn().mockResolvedValue(privateOutput) }],
+          toolContextMap: {},
+        });
+        const client = buildClient({
+          toolArguments: {
+            pii: {
+              fields: ['output'],
+              starterPatterns: [starterPattern],
+            },
+          },
+        });
+
+        const result = await processRequiredActions(client, [buildAction()]);
+        const output = result.tool_outputs[0].output;
+
+        expect(JSON.parse(output)).toEqual({
+          error: 'content_filter_block',
+          message: 'Submitted content was blocked by content policy.',
+          source: 'tool_argument',
+          field: 'output',
+        });
+        expect(output).not.toContain(privateOutput);
+        expect(output).not.toContain(detectorLabel);
+      },
+    );
+
+    it('normalizes a required-action policy error without tool-output filtering', async () => {
+      const privateOutput = 'Authorization: Bearer generated-file-token';
+      const policyError = new ContentFilterError({
+        detectorId: 'pii-pattern',
+        ruleId: 'bearer_header',
+        label: 'Bearer token',
+        source: 'file',
+        field: 'content',
+        provenance: 'tool',
+        fragmentId: 'generated-file',
+        fragmentPath: '/content',
+      });
+      mockLoadToolsUtil.mockResolvedValue({
+        loadedTools: [
+          {
+            name: 'safe_tool',
+            _call: jest.fn().mockRejectedValue(policyError),
+          },
+        ],
+        toolContextMap: {},
+      });
+      const client = buildClient({
+        files: {
+          pii: {
+            fields: ['content'],
+            starterPatterns: ['bearer_header'],
+          },
+        },
+      });
+
+      const result = await processRequiredActions(client, [buildAction()]);
+      const output = result.tool_outputs[0].output;
+
+      expect(JSON.parse(output)).toEqual({
+        error: 'content_filter_block',
+        message: 'Submitted content was blocked by content policy.',
+        source: 'file',
+        field: 'content',
+      });
+      expect(output).not.toContain(privateOutput);
+      expect(output).not.toContain('Bearer token');
+      expect(output).not.toContain('bearer_header');
     });
 
     it('blocks persisted Assistant action metadata before required-action execution', async () => {

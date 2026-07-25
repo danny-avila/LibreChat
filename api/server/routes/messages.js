@@ -65,14 +65,27 @@ const blockFilteredMessageContent = (req, res, messageData) => {
   if (filters == null) {
     return false;
   }
-  const finding = inspectContent(extractStoredMessageContent(messageData), {
-    filters,
-  });
-  if (finding == null) {
-    return false;
+  let fragments;
+  let traversalError;
+  try {
+    fragments = extractStoredMessageContent(messageData);
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    fragments = getContentTraversalFragments(error);
+    traversalError = error;
   }
-  res.status(400).json(contentFilterBlockResponse(finding));
-  return true;
+  const finding = inspectContent(fragments, { filters });
+  if (finding != null) {
+    res.status(400).json(contentFilterBlockResponse(finding));
+    return true;
+  }
+  if (traversalError != null && isContentTraversalProtected({ error: traversalError, filters })) {
+    res.status(traversalError.statusCode).json(traversalError.body);
+    return true;
+  }
+  return false;
 };
 
 const blockFilteredChatContent = (req, res, chatData) => {

@@ -40,6 +40,17 @@ export function contentFilterBlockResponse(finding: ProtectionFinding): ContentF
   };
 }
 
+export function contentFilterModelBoundBlockResponse(
+  finding: Pick<ProtectionFinding, 'source' | 'field'>,
+): ContentFilterBlockResponse {
+  return {
+    error: 'content_filter_block',
+    message: 'Submitted content was blocked by content policy.',
+    source: finding.source,
+    field: finding.field,
+  };
+}
+
 export class ContentFilterError extends Error {
   public readonly code = 'content_filter_block';
   public readonly statusCode = 400;

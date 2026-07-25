@@ -13,6 +13,9 @@ jest.mock('@librechat/api', () => ({
   extractFeedbackContent: jest.fn(() => []),
   extractStoredMessageContent: jest.fn(() => []),
   contentFilterBlockResponse: jest.fn(),
+  getContentTraversalFragments: jest.fn((error) => error.fragments ?? []),
+  isContentTraversalLimitError: jest.fn((error) => error?.code === 'content_filter_uninspectable'),
+  isContentTraversalProtected: jest.fn(() => false),
   assertModelBoundContent: jest.fn(),
   isContentFilterError: jest.fn(
     (error) =>
@@ -134,6 +137,8 @@ describe('message route conversation ownership filters', () => {
     extractChatContent,
     extractStoredMessageContent,
     contentFilterBlockResponse,
+    getContentTraversalFragments,
+    isContentTraversalProtected,
     assertModelBoundContent,
   } = require('@librechat/api');
   const {
@@ -617,6 +622,110 @@ describe('message route conversation ownership filters', () => {
     expect(updateMessage).not.toHaveBeenCalled();
   });
 
+  it('filters partial fragments when indexed stored-message traversal exceeds its bound', async () => {
+    const partialFragment = {
+      id: 'stored-message.content.1.nested.0',
+      path: '/content/1/output/secret',
+      text: 'PRIVATE-PARTIAL',
+      source: 'message',
+      field: 'content_part',
+      format: 'plain',
+      treatment: 'send',
+    };
+    const traversalError = Object.assign(new Error('Traversal limit exceeded'), {
+      code: 'content_filter_uninspectable',
+      statusCode: 400,
+      body: {
+        error: 'content_filter_uninspectable',
+        message: 'Submitted content could not be completely inspected before processing.',
+        source: 'message',
+        field: 'content_part',
+      },
+      fragments: [partialFragment],
+    });
+    const finding = {
+      detectorId: 'pii-pattern',
+      ruleId: 'partial-secret',
+      label: 'protected value',
+      source: 'message',
+      field: 'content_part',
+    };
+    getMessages.mockResolvedValue([
+      {
+        content: [
+          { type: 'text', text: 'old content' },
+          { type: 'text', text: 'existing output' },
+        ],
+        tokenCount: 10,
+      },
+    ]);
+    extractStoredMessageContent.mockReturnValueOnce([]).mockImplementationOnce(() => {
+      throw traversalError;
+    });
+    inspectContent.mockReturnValueOnce(null).mockReturnValueOnce(finding);
+    contentFilterBlockResponse.mockReturnValue({
+      error: 'content_filter_block',
+      message: 'Submitted content is blocked.',
+      source: 'message',
+      field: 'content_part',
+    });
+
+    const response = await request(app).put('/api/messages/convo-1/message-1').send({
+      text: 'replacement',
+      index: 0,
+      model: 'test-model',
+    });
+
+    expect(response.status).toBe(400);
+    expect(getContentTraversalFragments).toHaveBeenCalledWith(traversalError);
+    expect(inspectContent).toHaveBeenLastCalledWith([partialFragment], {
+      filters: expect.any(Object),
+    });
+    expect(isContentTraversalProtected).not.toHaveBeenCalled();
+    expect(updateMessage).not.toHaveBeenCalled();
+  });
+
+  it('allows indexed edits when a bounded traversal only affects unprotected scopes', async () => {
+    const traversalError = Object.assign(new Error('Traversal limit exceeded'), {
+      code: 'content_filter_uninspectable',
+      statusCode: 400,
+      body: {
+        error: 'content_filter_uninspectable',
+        message: 'Submitted content could not be completely inspected before processing.',
+        source: 'tool_argument',
+        field: 'output',
+      },
+      fragments: [],
+    });
+    getMessages.mockResolvedValue([
+      {
+        content: [
+          { type: 'text', text: 'old content' },
+          { type: 'text', text: 'existing output' },
+        ],
+        tokenCount: 10,
+      },
+    ]);
+    updateMessage.mockResolvedValue({ messageId: 'message-1' });
+    extractStoredMessageContent.mockReturnValueOnce([]).mockImplementationOnce(() => {
+      throw traversalError;
+    });
+    isContentTraversalProtected.mockReturnValueOnce(false);
+
+    const response = await request(app).put('/api/messages/convo-1/message-1').send({
+      text: 'replacement',
+      index: 0,
+      model: 'test-model',
+    });
+
+    expect(response.status).toBe(200);
+    expect(isContentTraversalProtected).toHaveBeenCalledWith({
+      error: traversalError,
+      filters: expect.any(Object),
+    });
+    expect(updateMessage).toHaveBeenCalled();
+  });
+
   it('filters the final artifact text assembled from existing and submitted content', async () => {
     const finding = {
       detectorId: 'pii-pattern',
@@ -650,6 +759,46 @@ describe('message route conversation ownership filters', () => {
     expect(response.status).toBe(400);
     expect(extractStoredMessageContent).toHaveBeenLastCalledWith({
       content: [{ text: 'sk-secret' }],
+    });
+    expect(saveMessage).not.toHaveBeenCalled();
+  });
+
+  it('returns a raw-free traversal response when artifact content cannot be fully inspected', async () => {
+    const traversalError = Object.assign(new Error('Traversal limit exceeded'), {
+      code: 'content_filter_uninspectable',
+      statusCode: 400,
+      body: {
+        error: 'content_filter_uninspectable',
+        message: 'Submitted content could not be completely inspected before processing.',
+        source: 'message',
+        field: 'content_part',
+      },
+      fragments: [],
+    });
+    getMessage.mockResolvedValue({
+      conversationId: 'convo-1',
+      content: [{ type: 'text', text: 'existing artifact' }],
+      text: '',
+    });
+    findAllArtifacts.mockReturnValue([{ source: 'content', partIndex: 0 }]);
+    replaceArtifactContent.mockReturnValue('updated artifact');
+    extractStoredMessageContent.mockReturnValueOnce([]).mockImplementationOnce(() => {
+      throw traversalError;
+    });
+    isContentTraversalProtected.mockReturnValueOnce(true);
+
+    const response = await request(app).post('/api/messages/artifact/message-1').send({
+      index: 0,
+      original: 'existing',
+      updated: 'replacement',
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(traversalError.body);
+    expect(response.text).not.toContain('updated artifact');
+    expect(isContentTraversalProtected).toHaveBeenCalledWith({
+      error: traversalError,
+      filters: expect.any(Object),
     });
     expect(saveMessage).not.toHaveBeenCalled();
   });

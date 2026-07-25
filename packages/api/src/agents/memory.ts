@@ -36,9 +36,9 @@ import type { TAttachment, FiltersConfig, MemoryArtifact } from 'librechat-data-
 import type { Response as ServerResponse } from 'express';
 import type { ServerRequest, RunLLMConfig } from '~/types';
 import { resolveConfigHeaders, createSafeUser, getSafeErrorMetadata } from '~/utils';
+import { contentFilterModelBoundBlockResponse } from '~/middleware/contentFilter';
 import { extractMemoryContent } from '~/protection/adapters/submissions';
 import { assertModelBoundContent } from '~/middleware/modelBoundContent';
-import { contentFilterBlockResponse } from '~/middleware/contentFilter';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import { inspectContent } from '~/protection/runtime';
 import { checkAccess } from '~/middleware/access';
@@ -175,7 +175,7 @@ export const createMemoryTool = ({
               ? null
               : inspectContent(extractMemoryContent({ key, value }), { filters });
           if (finding != null) {
-            return [contentFilterBlockResponse(finding).message, undefined];
+            return [JSON.stringify(contentFilterModelBoundBlockResponse(finding)), undefined];
           }
 
           if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {

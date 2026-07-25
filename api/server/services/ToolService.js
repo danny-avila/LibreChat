@@ -31,7 +31,7 @@ const {
   ContentFilterError,
   assertModelBoundContent,
   extractToolArgumentContent,
-  contentFilterBlockResponse,
+  contentFilterModelBoundBlockResponse,
   getSafeErrorMetadata,
   isFileAuthoringToolDefinition,
   ASK_USER_QUESTION_TOOL_NAME,
@@ -336,13 +336,13 @@ const getSafeRequiredActionOutput = (client, currentAction, output) => {
   if (finding == null) {
     return output;
   }
-  const blockResponse = contentFilterBlockResponse(finding);
+  const blockResponse = contentFilterModelBoundBlockResponse(finding);
   logger.warn('[required actions] Blocked tool output', {
     toolCallId: currentAction.toolCallId,
     source: blockResponse.source,
     field: blockResponse.field,
   });
-  return blockResponse.message;
+  return JSON.stringify(blockResponse);
 };
 
 /**
@@ -626,6 +626,12 @@ async function processRequiredActions(client, requiredActions) {
         errorName: error?.name,
         errorCode: error?.code,
       });
+      if (error instanceof ContentFilterError) {
+        return {
+          tool_call_id: currentAction.toolCallId,
+          output: JSON.stringify(contentFilterModelBoundBlockResponse(error.body)),
+        };
+      }
       const output = getSafeRequiredActionOutput(
         client,
         currentAction,

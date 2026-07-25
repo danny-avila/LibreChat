@@ -201,7 +201,12 @@ describe('createMemoryTool', () => {
       const result = await tool.func({ key: protectedValue, value: 'some value' });
 
       expect(result).toEqual([
-        'Submitted content contains a secret token. Remove it and try again.',
+        JSON.stringify({
+          error: 'content_filter_block',
+          message: 'Submitted content was blocked by content policy.',
+          source: 'memory',
+          field: 'key',
+        }),
         undefined,
       ]);
       expect(JSON.stringify(warn.mock.calls)).not.toContain(protectedValue);
@@ -262,7 +267,12 @@ describe('createMemoryTool', () => {
       const blocked = await tool.func({ key: 'preferences', value: 'Keep ORG-SECRET' });
 
       expect(blocked).toEqual([
-        'Submitted content contains a secret token. Remove it and try again.',
+        JSON.stringify({
+          error: 'content_filter_block',
+          message: 'Submitted content was blocked by content policy.',
+          source: 'memory',
+          field: 'value',
+        }),
         undefined,
       ]);
       expect(tokenCount).not.toHaveBeenCalled();
@@ -279,6 +289,49 @@ describe('createMemoryTool', () => {
         }),
       );
     });
+
+    it.each([
+      ['bearer_header', 'Authorization: Bearer memory-token', 'Bearer token'],
+      ['api_key_header', 'api-key: memory-token', 'api-key header'],
+    ] as const)(
+      'returns a stable %s block result that can be reused safely',
+      async (starterPattern, protectedValue, detectorLabel) => {
+        const tool = createMemoryTool({
+          userId: 'test-user',
+          setMemory: mockSetMemory,
+          filters: {
+            memories: {
+              pii: {
+                fields: ['value'],
+                starterPatterns: [starterPattern],
+              },
+            },
+          },
+        });
+
+        const blocked = await tool.func({ key: 'preferences', value: protectedValue });
+
+        expect(JSON.parse(blocked[0])).toEqual({
+          error: 'content_filter_block',
+          message: 'Submitted content was blocked by content policy.',
+          source: 'memory',
+          field: 'value',
+        });
+        expect(blocked[0]).not.toContain(protectedValue);
+        expect(blocked[0]).not.toContain(detectorLabel);
+        expect(mockSetMemory).not.toHaveBeenCalled();
+
+        await tool.func({ key: 'policy_result', value: blocked[0] });
+
+        expect(mockSetMemory).toHaveBeenCalledTimes(1);
+        expect(mockSetMemory).toHaveBeenCalledWith(
+          expect.objectContaining({
+            key: 'policy_result',
+            value: blocked[0],
+          }),
+        );
+      },
+    );
   });
 });
 
@@ -343,7 +396,12 @@ describe('processMemory - GPT-5+ handling', () => {
       value: 'Keep ORG-SECRET',
     });
     expect(blocked).toEqual([
-      'Submitted content contains a secret token. Remove it and try again.',
+      JSON.stringify({
+        error: 'content_filter_block',
+        message: 'Submitted content was blocked by content policy.',
+        source: 'memory',
+        field: 'value',
+      }),
       undefined,
     ]);
     expect(tokenCount).not.toHaveBeenCalled();

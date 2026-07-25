@@ -1,20 +1,32 @@
-const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
+const LOCAL_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+const ZONED_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
+
+function hasValidWallClock(timestamp) {
+  const wallClock = timestamp.slice(0, 19);
+  const parsed = new Date(`${wallClock}Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 19) === wallClock;
+}
 
 /**
- * Converts a bounded, strict ISO timestamp to a canonical UTC value. Invalid
- * client text is never interpolated into model instructions.
+ * Validates a bounded timestamp while preserving the client's local wall-clock
+ * format or canonicalizing an explicitly zoned value to UTC.
  *
  * @param {unknown} clientTimestamp
  * @returns {string | undefined}
  */
 function normalizeClientTimestamp(clientTimestamp) {
-  if (
-    typeof clientTimestamp !== 'string' ||
-    clientTimestamp.length > 64 ||
-    !ISO_TIMESTAMP.test(clientTimestamp)
-  ) {
+  if (typeof clientTimestamp !== 'string' || clientTimestamp.length > 64) {
     return undefined;
   }
+
+  if (LOCAL_TIMESTAMP.test(clientTimestamp)) {
+    return hasValidWallClock(clientTimestamp) ? clientTimestamp : undefined;
+  }
+
+  if (!ZONED_TIMESTAMP.test(clientTimestamp) || !hasValidWallClock(clientTimestamp)) {
+    return undefined;
+  }
+
   const parsed = new Date(clientTimestamp);
   if (Number.isNaN(parsed.getTime())) {
     return undefined;

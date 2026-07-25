@@ -13,6 +13,7 @@ import type {
 import type { CodeExecutionContext } from './execution';
 import { createToolExecuteHandler, ToolExecuteOptions } from './handlers';
 import { markSandboxReady } from './prewarm';
+import { ContentFilterError } from '../middleware/contentFilter';
 
 function createMockTool(
   name: string,
@@ -415,7 +416,7 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(result.status).toBe('error');
-      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(tool.invoke).not.toHaveBeenCalled();
     });
@@ -458,7 +459,7 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(result.status).toBe('error');
-      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedName);
       expect(tool.invoke).not.toHaveBeenCalled();
     });
@@ -508,7 +509,7 @@ describe('createToolExecuteHandler', () => {
         expect.objectContaining({
           status: 'error',
           content: '',
-          errorMessage: expect.stringContaining('protected name'),
+          errorMessage: expect.stringContaining('content_filter_block'),
         }),
       );
       expect(results[0].errorMessage).not.toContain(protectedName);
@@ -554,7 +555,7 @@ describe('createToolExecuteHandler', () => {
 
       expect(loadTools).not.toHaveBeenCalled();
       expect(result.status).toBe('error');
-      expect(result.errorMessage).toContain('protected name');
+      expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedName);
     });
 
@@ -596,7 +597,7 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(result.status).toBe('error');
-      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedName);
       expect(JSON.stringify(warn.mock.calls)).not.toContain(protectedName);
     });
@@ -648,11 +649,69 @@ describe('createToolExecuteHandler', () => {
       expect(tool.invoke).toHaveBeenCalledTimes(1);
       expect(result.status).toBe('error');
       expect(result.content).toBe('');
-      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(result.artifact).toBeUndefined();
       expect(toolEndCallback).not.toHaveBeenCalled();
     });
+
+    it.each([
+      ['bearer_header', 'Authorization: Bearer contract-token', 'Bearer token'],
+      ['api_key_header', 'api-key: contract-token', 'api-key header'],
+    ] as const)(
+      'returns a stable %s block result that is safe to inspect again',
+      async (starterPattern, protectedValue, detectorLabel) => {
+        let output: string = protectedValue;
+        const tool = {
+          name: 'filtered_output_tool',
+          invoke: jest.fn(async () => ({ content: output })),
+        };
+        const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+          loadedTools: [tool] as never[],
+          configurable: {
+            req: {
+              config: {
+                filters: {
+                  toolArguments: {
+                    pii: {
+                      fields: ['output'],
+                      starterPatterns: [starterPattern],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }));
+        const handler = createToolExecuteHandler({ loadTools });
+
+        const [blocked] = await invokeHandler(handler, [
+          { id: `call_${starterPattern}_blocked`, name: tool.name, args: {} },
+        ]);
+
+        expect(blocked.status).toBe('error');
+        expect(JSON.parse(blocked.errorMessage ?? '')).toEqual({
+          error: 'content_filter_block',
+          message: 'Submitted content was blocked by content policy.',
+          source: 'tool_argument',
+          field: 'output',
+        });
+        expect(blocked.errorMessage).not.toContain(protectedValue);
+        expect(blocked.errorMessage).not.toContain(detectorLabel);
+
+        output = blocked.errorMessage ?? '';
+        const [reinspected] = await invokeHandler(handler, [
+          { id: `call_${starterPattern}_reinspected`, name: tool.name, args: {} },
+        ]);
+
+        expect(reinspected).toEqual(
+          expect.objectContaining({
+            status: 'success',
+            content: blocked.errorMessage,
+          }),
+        );
+      },
+    );
 
     it('blocks protected string leaves in cyclic tool output', async () => {
       const protectedValue = 'PROTECTED-CYCLIC-OUTPUT';
@@ -696,7 +755,7 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(result.status).toBe('error');
-      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(result.artifact).toBeUndefined();
       expect(toolEndCallback).not.toHaveBeenCalled();
@@ -834,6 +893,50 @@ describe('createToolExecuteHandler', () => {
   });
 
   describe('tool error handling', () => {
+    it.each([
+      ['Bearer token', 'bearer_header'],
+      ['api-key header', 'api_key_header'],
+    ])(
+      'normalizes a thrown %s content-filter error without requiring output filtering',
+      async (label, ruleId) => {
+        const handler = createToolExecuteHandler({
+          loadTools: async () => ({
+            loadedTools: [
+              {
+                name: 'policy_rejected_tool',
+                invoke: async () => {
+                  throw new ContentFilterError({
+                    detectorId: 'pii-pattern',
+                    ruleId,
+                    label,
+                    source: 'file',
+                    field: 'content',
+                    provenance: 'tool',
+                    fragmentId: 'generated-file',
+                    fragmentPath: '/content',
+                  });
+                },
+              },
+            ] as never[],
+          }),
+        });
+
+        const [result] = await invokeHandler(handler, [
+          { id: `call_thrown_${ruleId}`, name: 'policy_rejected_tool', args: {} },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(JSON.parse(result.errorMessage ?? '')).toEqual({
+          error: 'content_filter_block',
+          message: 'Submitted content was blocked by content policy.',
+          source: 'file',
+          field: 'content',
+        });
+        expect(result.errorMessage).not.toContain(label);
+        expect(result.errorMessage).not.toContain(ruleId);
+      },
+    );
+
     it('filters missing-tool error output before lookup warnings', async () => {
       const protectedName = 'PROTECTED-MISSING-OUTPUT';
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
@@ -869,7 +972,7 @@ describe('createToolExecuteHandler', () => {
         );
 
         expect(result.status).toBe('error');
-        expect(result.errorMessage).toContain('protected output');
+        expect(result.errorMessage).toContain('content_filter_block');
         expect(result.errorMessage).not.toContain(protectedName);
         expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(protectedName);
       } finally {
@@ -919,7 +1022,7 @@ describe('createToolExecuteHandler', () => {
         );
 
         expect(result.status).toBe('error');
-        expect(result.errorMessage).toContain('protected output');
+        expect(result.errorMessage).toContain('content_filter_block');
         expect(result.errorMessage).not.toContain(protectedValue);
         expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(protectedValue);
         expect(errorSpy).toHaveBeenCalledWith(
@@ -1168,7 +1271,7 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(result.status).toBe('error');
-      expect(result.errorMessage).toContain('private value');
+      expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(result.injectedMessages).toBeUndefined();
       expect(result.artifact).toBeUndefined();
@@ -1223,7 +1326,7 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(result.status).toBe('error');
-      expect(result.errorMessage).toContain('protected output');
+      expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
     });
 
@@ -1260,7 +1363,7 @@ describe('createToolExecuteHandler', () => {
         ]);
 
         expect(result.status).toBe('error');
-        expect(result.errorMessage).toContain('protected output');
+        expect(result.errorMessage).toContain('content_filter_block');
         expect(result.errorMessage).not.toContain(protectedValue);
         expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(protectedValue);
         expect(errorSpy).toHaveBeenCalledWith(
@@ -1813,7 +1916,7 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(result.status).toBe('error');
-      expect(result.errorMessage).toContain('sk- prefix token');
+      expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(result.injectedMessages).toBeUndefined();
       expect(result.artifact).toBeUndefined();
@@ -2028,7 +2131,7 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(result.status).toBe('error');
-      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(createSkill).not.toHaveBeenCalled();
     });
@@ -2225,7 +2328,7 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(result.status).toBe('error');
-      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(saveSkillFileContent).not.toHaveBeenCalled();
     });
@@ -3183,6 +3286,84 @@ describe('createToolExecuteHandler', () => {
       });
     });
 
+    it('contains a file-artifact policy rejection to its call without rejecting the batch', async () => {
+      const detectorLabel = 'generated-file bearer token';
+      const detectorRule = 'generated-file-bearer';
+      const readSandboxFile = jest.fn(async () => {
+        throw new Error('cat: No such file or directory');
+      });
+      const writeSandboxFile = jest.fn(async (params: Record<string, unknown>) => {
+        const path = String(params.file_path);
+        const filename = path.slice(path.lastIndexOf('/') + 1) || 'output.txt';
+        return {
+          stdout: `WROTE file to ${path}\n`,
+          session_id: `sess-${filename}`,
+          files: [{ id: `file-${filename}`, name: filename, storage_session_id: 'store-1' }],
+        };
+      });
+      const toolEndCallback = jest.fn(async (data: { output?: { tool_call_id?: string } }) => {
+        if (data.output?.tool_call_id !== 'call_blocked_artifact') {
+          return;
+        }
+        throw new ContentFilterError({
+          detectorId: 'pii-pattern',
+          ruleId: detectorRule,
+          label: detectorLabel,
+          source: 'file',
+          field: 'content',
+          provenance: 'tool',
+          fragmentId: 'generated-file',
+          fragmentPath: '/content',
+        });
+      });
+      const handler = makeSandboxAuthoringHandler({
+        readSandboxFile,
+        writeSandboxFile,
+        toolEndCallback: toolEndCallback as unknown as ToolExecuteOptions['toolEndCallback'],
+      });
+
+      const results = await invokeHandler(handler, [
+        {
+          id: 'call_blocked_artifact',
+          name: 'create_file',
+          args: {
+            path: '/mnt/data/blocked.txt',
+            content: 'blocked callback content',
+          },
+        },
+        {
+          id: 'call_safe_artifact',
+          name: 'create_file',
+          args: {
+            path: '/mnt/data/safe.txt',
+            content: 'safe callback content',
+          },
+        },
+      ]);
+
+      expect(results[0]).toEqual(
+        expect.objectContaining({
+          status: 'error',
+          content: '',
+        }),
+      );
+      expect(results[0].artifact).toBeUndefined();
+      expect(JSON.parse(results[0].errorMessage ?? '')).toEqual({
+        error: 'content_filter_block',
+        message: 'Submitted content was blocked by content policy.',
+        source: 'file',
+        field: 'content',
+      });
+      expect(results[0].errorMessage).not.toContain(detectorLabel);
+      expect(results[0].errorMessage).not.toContain(detectorRule);
+      expect(results[1].status).toBe('success');
+      expect(results[1].artifact).toBeDefined();
+      expect(writeSandboxFile).toHaveBeenCalledTimes(2);
+      expect(toolEndCallback).toHaveBeenCalledTimes(2);
+      expect(JSON.stringify(writeSandboxFile.mock.calls[1][0])).not.toContain('blocked.txt');
+      expect(JSON.stringify(writeSandboxFile.mock.calls[1][0])).not.toContain('file-blocked.txt');
+    });
+
     it('blocks filtered file content before writing to the sandbox', async () => {
       const protectedValue = 'PROTECTED-SANDBOX';
       const readSandboxFile = jest.fn(async () => {
@@ -3228,7 +3409,7 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(result.status).toBe('error');
-      expect(result.errorMessage).toContain('protected value');
+      expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(writeSandboxFile).not.toHaveBeenCalled();
     });
@@ -3263,7 +3444,7 @@ describe('createToolExecuteHandler', () => {
         ]);
 
         expect(result.status).toBe('error');
-        expect(result.errorMessage).toContain('protected output');
+        expect(result.errorMessage).toContain('content_filter_block');
         expect(result.errorMessage).not.toContain(protectedValue);
         expect(warnSpy).toHaveBeenCalledWith('[file_authoring] Sandbox read failed', {
           type: 'Error',
@@ -3305,7 +3486,7 @@ describe('createToolExecuteHandler', () => {
         ]);
 
         expect(result.status).toBe('error');
-        expect(result.errorMessage).toContain('protected output');
+        expect(result.errorMessage).toContain('content_filter_block');
         expect(result.errorMessage).not.toContain(protectedValue);
         expect(warnSpy).toHaveBeenCalledWith('[file_authoring] Sandbox write failed', {
           type: 'Error',
@@ -4362,7 +4543,7 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(result.status).toBe('error');
-      expect(result.errorMessage).toContain('protected sandbox tail');
+      expect(result.errorMessage).toContain('content_filter_block');
       expect(result.errorMessage).not.toContain(protectedValue);
       expect(result.content).toBe('');
     });
@@ -4413,7 +4594,7 @@ describe('createToolExecuteHandler', () => {
         ]);
 
         expect(result.status).toBe('error');
-        expect(result.errorMessage).toContain('protected output');
+        expect(result.errorMessage).toContain('content_filter_block');
         expect(result.errorMessage).not.toContain(protectedValue);
         expect(warnSpy).toHaveBeenCalledWith('[handleReadFileCall] Sandbox fallback failed', {
           type: 'Error',
@@ -4538,7 +4719,7 @@ describe('createToolExecuteHandler', () => {
         ]);
 
         expect(result.status).toBe('error');
-        expect(result.errorMessage).toContain('protected image name');
+        expect(result.errorMessage).toContain('content_filter_block');
         expect(result.errorMessage).not.toContain(protectedValue);
         expect(result.artifact).toBeUndefined();
         expect(readSandboxImage).not.toHaveBeenCalled();

@@ -1,17 +1,18 @@
 import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
 import type { NextFunction, Request, Response } from 'express';
-import type { TextContentFragment } from '../protection/types';
+import type { ProtectionFinding, TextContentFragment } from '../protection/types';
+import {
+  contentFilterBlockResponse,
+  contentFilterModelBoundBlockResponse,
+  createContentFilter,
+  isContentFilterError,
+} from './contentFilter';
 import {
   ContentTraversalLimitError,
   getContentTraversalFragments,
 } from '../protection/adapters/nested';
-import { UninspectableFileError } from '../protection/files';
 import { extractAssistantContent, extractPresetContent } from '../protection/adapters/submissions';
-import {
-  contentFilterBlockResponse,
-  createContentFilter,
-  isContentFilterError,
-} from './contentFilter';
+import { UninspectableFileError } from '../protection/files';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
@@ -196,6 +197,32 @@ describe('contentFilter middleware', () => {
     });
     expect(JSON.stringify(response)).not.toContain('ORG-SECRET');
     expect(JSON.stringify(response)).not.toContain('private-rule');
+  });
+
+  it.each([
+    ['Bearer token', 'bearer_header'],
+    ['api-key header', 'api_key_header'],
+  ])('builds a stable model-bound response without the %s detector label', (label, ruleId) => {
+    const finding: ProtectionFinding = {
+      detectorId: 'pii-pattern',
+      ruleId,
+      label,
+      source: 'tool_argument',
+      field: 'output',
+      provenance: 'tool',
+      fragmentId: 'tool.output',
+      fragmentPath: '/output',
+    };
+    const response = contentFilterModelBoundBlockResponse(finding);
+
+    expect(response).toEqual({
+      error: 'content_filter_block',
+      message: 'Submitted content was blocked by content policy.',
+      source: 'tool_argument',
+      field: 'output',
+    });
+    expect(JSON.stringify(response)).not.toContain(label);
+    expect(JSON.stringify(response)).not.toContain(ruleId);
   });
 
   it('blocks opaque stored-message input before textual extraction', () => {
