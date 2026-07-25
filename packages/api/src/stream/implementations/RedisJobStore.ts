@@ -69,21 +69,38 @@ const IDEMPOTENCY_CLAIM_LUA =
  * dies with it) or the fully initialized replacement with an empty queue, so
  * a steer accepted against one run can never be drained into another.
  *
+ * It ALSO allocates the generation stamp (`createdAt`), because allocation and
+ * creation must be one operation. `createdAt` is the generation fence and a streamId
+ * is reused across generations, so a read-then-compute in the client would let two
+ * concurrent creates mint the same stamp. Reserving it in a SEPARATE prior script is
+ * no better: a create that then fails leaves the reservation committed on its own,
+ * which either re-fences a still-live job so its own owner can no longer perform
+ * guarded transitions, or leaves a partial, TTL-less hash that is absent from
+ * `runningJobs` and therefore invisible to the periodic cleanup. Allocating here means
+ * the stamp only ever exists as part of a committed job. The stamp is written AFTER
+ * the caller's pairs so it wins, and returned so the caller's job object matches.
+ *
  *   KEYS: [job, steers, parkedSteers]
- *   ARGV: [ttl, hdelCount, ...hdelFields, ...hsetPairs]
+ *   ARGV: [ttl, hdelCount, callerNowMs, ...hdelFields, ...hsetPairs]
+ *   Returns: the allocated stamp
  */
 const JOB_CREATE_LUA =
+  'local prev = redis.call("HGET", KEYS[1], "createdAt") ' +
+  'local now = tonumber(ARGV[3]) ' +
+  'local stamp = now ' +
+  'if prev and tonumber(prev) and tonumber(prev) >= now then stamp = tonumber(prev) + 1 end ' +
   'redis.call("DEL", KEYS[2]) ' +
   'redis.call("DEL", KEYS[3]) ' +
   'local ttl = tonumber(ARGV[1]) ' +
   'local hdelCount = tonumber(ARGV[2]) ' +
-  'local idx = 3 ' +
+  'local idx = 4 ' +
   'for i = 1, hdelCount do redis.call("HDEL", KEYS[1], ARGV[idx]) idx = idx + 1 end ' +
   'local hset = {} ' +
   'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
   'redis.call("HSET", KEYS[1], unpack(hset)) ' +
+  'redis.call("HSET", KEYS[1], "createdAt", stamp) ' +
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
-  'return 1';
+  'return stamp';
 
 /**
  * XADD a chunk + set the chunk-stream TTL to the right window WITHOUT ever shrinking it.
@@ -192,23 +209,6 @@ const JOB_DELETE_LUA =
   'redis.call("DEL", KEYS[1]) redis.call("DEL", KEYS[2]) ' +
   'redis.call("DEL", KEYS[3]) redis.call("DEL", KEYS[4]) ' +
   'return 1';
-
-/**
- * RESERVES a strictly monotonic generation stamp for a stream, atomically. It must WRITE
- * the stamp, not merely compute it: the job hash is not persisted until the separate
- * create script runs, so a read-only allocator lets two concurrent creates observe the
- * same prior `createdAt` and receive the SAME stamp — exactly the collision the stamp
- * exists to prevent, and enough for a stale generation-fenced abort/delete to match the
- * replacement. Writing here makes the second caller observe the first's reservation.
- * ARGV[1] is the caller's wall clock.
- */
-const JOB_STAMP_LUA =
-  'local prev = redis.call("HGET", KEYS[1], "createdAt") ' +
-  'local now = tonumber(ARGV[1]) ' +
-  'local stamp = now ' +
-  'if prev and tonumber(prev) and tonumber(prev) >= now then stamp = tonumber(prev) + 1 end ' +
-  'redis.call("HSET", KEYS[1], "createdAt", stamp) ' +
-  'return stamp';
 
 const STEER_DRAIN_LUA =
   'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {} end ' +
@@ -456,18 +456,15 @@ export class RedisJobStore implements IJobStore {
     conversationId?: string,
     tenantId?: string,
   ): Promise<SerializableJobData> {
-    // STRICTLY monotonic per streamId, allocated ATOMICALLY inside Redis: createdAt is
-    // the generation fence and a streamId is reused across generations, so a read-then-
-    // compute in the client would let two concurrent creates mint the same stamp.
-    const allocated = await this.redis
-      .eval(JOB_STAMP_LUA, 1, KEYS.job(streamId), String(Date.now()))
-      .catch(() => null);
+    // `createdAt` is allocated by JOB_CREATE_LUA below, atomically with the create
+    // itself, and this placeholder is overwritten with what that script returns. It is
+    // only here so the field takes part in the serialized pair list.
     const job: SerializableJobData = {
       streamId,
       userId,
       ...(tenantId && { tenantId }),
       status: 'running',
-      createdAt: typeof allocated === 'number' ? allocated : nextGenerationStamp(),
+      createdAt: nextGenerationStamp(),
       conversationId,
       syncSent: false,
     };
@@ -514,7 +511,7 @@ export class RedisJobStore implements IJobStore {
     // inherit the replaced run's undrained steers nor lose/steal a steer
     // 202-accepted against either run (see JOB_CREATE_LUA).
     const hsetPairs = Object.entries(this.serializeJob(job)).flat();
-    await this.redis.eval(
+    const stamp = await this.redis.eval(
       JOB_CREATE_LUA,
       3,
       key,
@@ -522,9 +519,15 @@ export class RedisJobStore implements IJobStore {
       KEYS.parkedSteers(streamId),
       String(this.ttl.running),
       String(staleHitlFields.length),
+      String(Date.now()),
       ...staleHitlFields,
       ...hsetPairs,
     );
+    // The script owns the generation fence; adopt what it committed so this job object
+    // and every fenced operation derived from it agree with the persisted hash.
+    if (typeof stamp === 'number') {
+      job.createdAt = stamp;
+    }
     // Set-membership bookkeeping lives on other slots; ordering after the
     // atomic hash write is safe (scanners tolerate momentary lag).
     if (this.isCluster) {
