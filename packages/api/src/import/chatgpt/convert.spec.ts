@@ -171,6 +171,142 @@ describe('convertConversation', () => {
     expect(answer.attachments?.[0].web_search.turn).toBe(0);
   });
 
+  it('gives a cited assistant message content even with no thinking, so citations resolve', () => {
+    const result = convertConversation(
+      conversation({
+        root: { id: 'root', message: null, parent: null, children: ['a'] },
+        a: {
+          id: 'a',
+          message: {
+            id: 'a',
+            author: { role: 'assistant', name: null },
+            create_time: 1700000002,
+            content: { content_type: 'text', parts: [`Answer.${CITE}turn0search0`] },
+            metadata: {
+              model_slug: 'gpt-4o',
+              content_references: [
+                { type: 'webpage', alt: null, url: 'https://a.com', title: 'A', snippet: null },
+              ],
+            },
+          },
+          parent: 'root',
+          children: [],
+        },
+      }),
+      OPTIONS,
+    );
+
+    const [answer] = result.messages;
+    expect(answer.content).toEqual([{ type: 'text', text: answer.text }]);
+  });
+
+  it('leaves a plain assistant message without content, on the renderer it already used', () => {
+    const result = convertConversation(
+      conversation({
+        root: { id: 'root', message: null, parent: null, children: ['a'] },
+        a: {
+          id: 'a',
+          message: {
+            id: 'a',
+            author: { role: 'assistant', name: null },
+            create_time: 1700000002,
+            content: { content_type: 'text', parts: ['Just prose.'] },
+            metadata: { model_slug: 'gpt-4o' },
+          },
+          parent: 'root',
+          children: [],
+        },
+      }),
+      OPTIONS,
+    );
+
+    expect(result.messages[0].content).toBeUndefined();
+    expect(result.messages[0].text).toBe('Just prose.');
+  });
+
+  it('emits a nested image_file content part for an assistant image, not just message.files', () => {
+    const asset: ImportedAsset = {
+      file_id: 'file-9',
+      filepath: '/uploads/file-9.png',
+      filename: 'coast.png',
+      type: 'image/png',
+      width: 1024,
+      height: 1536,
+    };
+    const assets = new Map<string, ImportedAsset>([['sediment://file_gen', asset]]);
+
+    const result = convertConversation(
+      conversation({
+        root: { id: 'root', message: null, parent: null, children: ['a'] },
+        a: {
+          id: 'a',
+          message: {
+            id: 'a',
+            author: { role: 'assistant', name: null },
+            create_time: 1700000002,
+            content: {
+              content_type: 'multimodal_text',
+              parts: [
+                'Here it is.',
+                { content_type: 'image_asset_pointer', asset_pointer: 'sediment://file_gen' },
+              ],
+            },
+            metadata: { model_slug: 'gpt-4o' },
+          },
+          parent: 'root',
+          children: [],
+        },
+      }),
+      { ...OPTIONS, assets },
+    );
+
+    const [answer] = result.messages;
+    expect(answer.content).toEqual([
+      { type: 'text', text: 'Here it is.' },
+      { type: 'image_file', image_file: asset },
+    ]);
+    expect(answer.files).toEqual([asset]);
+  });
+
+  it('keeps a non-image assistant asset on message.files with no content part', () => {
+    const asset: ImportedAsset = {
+      file_id: 'file-8',
+      filepath: '/uploads/file-8.wav',
+      filename: 'reply.wav',
+      type: 'audio/wav',
+    };
+    const assets = new Map<string, ImportedAsset>([['sediment://file_audio', asset]]);
+
+    const result = convertConversation(
+      conversation({
+        root: { id: 'root', message: null, parent: null, children: ['a'] },
+        a: {
+          id: 'a',
+          message: {
+            id: 'a',
+            author: { role: 'assistant', name: null },
+            create_time: 1700000002,
+            content: {
+              content_type: 'multimodal_text',
+              parts: [
+                { content_type: 'audio_transcription', text: 'Spoken reply', direction: 'out' },
+                { content_type: 'audio_asset_pointer', asset_pointer: 'sediment://file_audio' },
+              ],
+            },
+            metadata: { model_slug: 'gpt-4o' },
+          },
+          parent: 'root',
+          children: [],
+        },
+      }),
+      { ...OPTIONS, assets },
+    );
+
+    const [answer] = result.messages;
+    expect(answer.content).toBeUndefined();
+    expect(answer.files).toEqual([asset]);
+  });
+
   it('reports asset pointers for later ingestion', () => {
     const result = convertConversation(
       conversation({

@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Tools, Constants } from 'librechat-data-provider';
+import { Tools, Constants, ContentTypes } from 'librechat-data-provider';
 import type { SearchResultData } from 'librechat-data-provider';
 import type {
   ChatGptNode,
@@ -19,9 +19,15 @@ export interface ImportAttachment {
   [Tools.web_search]: SearchResultData;
 }
 
+export interface ImageFilePart {
+  type: ContentTypes.IMAGE_FILE;
+  [ContentTypes.IMAGE_FILE]: ImportedAsset;
+}
+
 export type ConvertedContentPart =
   | { type: 'think'; think: string }
   | { type: 'text'; text: string }
+  | ImageFilePart
   | ContentPart;
 
 export interface ConvertedMessage {
@@ -129,6 +135,49 @@ function buildAttachments(citations: ImportedCitations[]): ImportAttachment[] | 
     type: Tools.web_search,
     [Tools.web_search]: citation.data,
   }));
+}
+
+/**
+ * Assistant images render from nested `image_file` content parts
+ * (`Part.tsx`), not from `message.files` — the only consumer of that field
+ * is gated on `isCreatedByUser`. Non-image assets stay on `message.files`,
+ * which the legacy renderer surfaces for messages that carry no content.
+ */
+function buildImageParts(files: ImportedAsset[]): ImageFilePart[] {
+  const parts: ImageFilePart[] = [];
+  for (const file of files) {
+    if (file.type.startsWith('image/')) {
+      parts.push({ type: ContentTypes.IMAGE_FILE, [ContentTypes.IMAGE_FILE]: file });
+    }
+  }
+  return parts;
+}
+
+/**
+ * Citations resolve through `SearchContext`, which only the content-part
+ * renderer mounts: an assistant message routed to the legacy renderer
+ * (`MultiMessage` dispatches on `message.content`) drops every anchor.
+ * So content is emitted whenever the message carries reasoning, citation
+ * attachments, or images — and withheld otherwise, leaving plain text on
+ * the exact path it rendered on before.
+ */
+function buildContent(
+  text: string,
+  thinking: string | null,
+  attachments: ImportAttachment[] | undefined,
+  imageParts: ImageFilePart[],
+): ConvertedContentPart[] | undefined {
+  if (!thinking && !attachments && imageParts.length === 0) {
+    return undefined;
+  }
+
+  const content: ConvertedContentPart[] = [];
+  if (thinking) {
+    content.push({ type: 'think', think: thinking });
+  }
+  content.push({ type: 'text', text });
+  content.push(...imageParts);
+  return content;
 }
 
 function buildById(messages: ConvertedMessage[]): Map<string, ConvertedMessage> {
@@ -239,16 +288,16 @@ export function convertConversation(
       assetPointers: collectAssetPointers(message),
     };
 
-    const thinking = isCreatedByUser ? null : findThinking(node.parent, mapping);
-    if (thinking) {
-      converted.content = [
-        { type: 'think', think: thinking },
-        { type: 'text', text },
-      ];
-    }
-
     if (!isCreatedByUser) {
-      converted.attachments = buildAttachments(cited.citations);
+      const thinking = findThinking(node.parent, mapping);
+      const attachments = buildAttachments(cited.citations);
+      const content = buildContent(text, thinking, attachments, buildImageParts(files));
+      if (attachments) {
+        converted.attachments = attachments;
+      }
+      if (content) {
+        converted.content = content;
+      }
     }
 
     if (files.length > 0) {
