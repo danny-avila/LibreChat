@@ -288,6 +288,13 @@ export async function fireSchedule(
       return { fired: false, skipped: 'permission_revoked' as const };
     }
 
+    // The owner-config generation this occurrence was CLAIMED under, stamped onto every
+    // run row (fired or skipped) so bookkeeping can derive its fence from the row.
+    const claimedRevision =
+      typeof schedule.configRevision === 'number'
+        ? { configRevision: schedule.configRevision }
+        : {};
+
     const baseRun = {
       scheduleId: schedule.id,
       user: schedule.user,
@@ -308,7 +315,7 @@ export async function fireSchedule(
 
     if (await deps.isOutOfBalance(user)) {
       await methods.recordSkippedRun(
-        { ...baseRun, status: 'skipped_balance' },
+        { ...baseRun, status: 'skipped_balance', ...claimedRevision },
         BALANCE_SKIP_DISABLE_THRESHOLD,
       );
       await advance();
@@ -385,7 +392,11 @@ export async function fireSchedule(
       if (reservation.conflict === 'overlap') {
         // Another occurrence of this schedule is already active. Record the skip
         // (its own occurrence row) and advance past this one.
-        await methods.recordSkippedRun({ ...baseRun, status: 'skipped_overlap' });
+        await methods.recordSkippedRun({
+          ...baseRun,
+          status: 'skipped_overlap',
+          ...claimedRevision,
+        });
         await advance();
         return { fired: false, skipped: 'overlap' as const };
       }

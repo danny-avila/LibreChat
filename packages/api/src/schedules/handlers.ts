@@ -249,6 +249,21 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       });
       return;
     }
+    // POST-INSERT barrier re-check with compensating delete. The admission check at the
+    // top of this handler shrinks the window to roughly one request, but cannot close it:
+    // account deletion can raise the barrier after we passed that check and before this
+    // insert landed, and its one-shot disable scan would not have seen a row that did not
+    // exist yet. Re-checking AFTER the write is what makes the barrier authoritative;
+    // compensating here keeps a deleted account from retaining a live schedule.
+    if (await deps.isUserDeleting(user.id)) {
+      await deps.methods
+        .deleteScheduleById(id, user.id)
+        .catch((err) =>
+          logger.error(`[schedules] failed to compensate create for deleting user: ${id}`, err),
+        );
+      res.status(410).json({ error: 'This account is being deleted' });
+      return;
+    }
     logger.info(`[schedules] created ${id} for user ${user.id}`);
     res.status(201).json(toWireSchedule(created));
   }

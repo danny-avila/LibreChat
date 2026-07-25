@@ -756,20 +756,27 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // walk it toward auto-disable). The streak $inc is separately guarded per
     // occurrence by `countedFor`, so a genuine same-skip retry can't double-count.
     const inserted = await insertScheduleRun({ ...data, firedAt });
+    let rowRevision = inserted?.configRevision;
     if (inserted == null) {
       const existing = await ScheduleRun()
         .findOne({ scheduleId: data.scheduleId, scheduledFor: data.scheduledFor })
-        .select('status')
-        .lean<{ status?: ScheduleRunStatus }>();
+        .select('status configRevision')
+        .lean<Pick<IScheduleRun, 'status' | 'configRevision'>>();
       if (existing == null || existing.status !== data.status) {
         return;
       }
+      rowRevision = existing.configRevision;
     }
+    // Same single seam as recordRunOutcome: the config fence is DERIVED from the row,
+    // never passed by the caller. A skip decided under an older owner config must not
+    // stamp the card (or walk the balance streak toward auto-disable) on a schedule the
+    // owner has since edited. Absent on either side disables the fence.
+    const skipRevisionFilter = rowRevision != null ? { configRevision: rowRevision } : {};
     // Surface the skip on the card (its chip reads schedule.lastRun). An overlap
     // skip is an intervening non-balance outcome, so it BREAKS the balance-skip
     // streak (the counter is for CONSECUTIVE balance skips).
     await Schedule().updateOne(
-      { id: data.scheduleId },
+      { id: data.scheduleId, ...skipRevisionFilter },
       {
         $set: {
           lastRun: { status: data.status, firedAt },
@@ -785,7 +792,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // terminal counters use; an occurrence is only ever skipped OR fired, never both).
     const schedule = await Schedule()
       .findOneAndUpdate(
-        { id: data.scheduleId, countedFor: { $ne: data.scheduledFor } },
+        { id: data.scheduleId, countedFor: { $ne: data.scheduledFor }, ...skipRevisionFilter },
         {
           $inc: { balanceSkipCount: 1 },
           $push: { countedFor: { $each: [data.scheduledFor], $slice: -COUNTED_FOR_WINDOW } },

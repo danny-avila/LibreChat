@@ -593,6 +593,23 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       // rows, so no reconcile pass will ever finalize/clear a retained job — a
       // preserved job would leak in the store. Let the abort settle it directly.
       const aborted = await abortActiveRun(run, false);
+      if (run.status === 'requires_action') {
+        // A PAUSED run has no live generation to drain: its approval will never be
+        // consumed for an account being deleted. Terminalize it here, or it stays in
+        // the active set forever and the drain below can never confirm — which made a
+        // single paused run block the account's deletion permanently.
+        await methods
+          .recordRunOutcome({
+            scheduleId: run.scheduleId,
+            scheduledFor: run.scheduledFor,
+            status: 'interrupted',
+            conversationId: run.conversationId,
+            error: 'Account deleted while awaiting approval',
+            autoDisableAfterFailures: DEFAULT_SCHEDULE_LIMITS.autoDisableAfterFailures,
+          })
+          .catch((err) => logger.warn('[schedules] failed to settle paused run on quiesce:', err));
+        continue;
+      }
       if (!aborted && run.conversationId) {
         unconfirmed.push(run.conversationId);
       }

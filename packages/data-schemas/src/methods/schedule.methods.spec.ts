@@ -1082,3 +1082,55 @@ describe('config fence is DERIVED at the seam, not passed by callers', () => {
     expect((await getSchedule(schedule.id)).failureCount).toBe(0);
   });
 });
+
+describe('skip bookkeeping is fenced by the same derived seam', () => {
+  const scheduledFor = new Date('2026-07-20T12:00:00Z');
+
+  it('does not stamp the card when the owner edited after the occurrence was claimed', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    // Owner edits AFTER the worker claimed at the old revision.
+    await methods.updateScheduleById(schedule.id, schedule.user, { name: 'edited' });
+
+    await methods.recordSkippedRun({
+      scheduleId: schedule.id,
+      user: schedule.user,
+      scheduledFor,
+      status: 'skipped_overlap',
+      configRevision: schedule.configRevision ?? 0, // the CLAIMED revision, now stale
+    });
+
+    // The skip row still exists as evidence, but the schedule card is untouched.
+    expect((await getRun(schedule.id, scheduledFor)).status).toBe('skipped_overlap');
+    expect((await getSchedule(schedule.id)).lastRun).toBeUndefined();
+  });
+
+  it('stamps the card normally when the revision still matches', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.recordSkippedRun({
+      scheduleId: schedule.id,
+      user: schedule.user,
+      scheduledFor,
+      status: 'skipped_overlap',
+      configRevision: schedule.configRevision ?? 0,
+    });
+    expect((await getSchedule(schedule.id)).lastRun?.status).toBe('skipped_overlap');
+  });
+
+  it('does not walk the balance streak toward auto-disable under a stale revision', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.updateScheduleById(schedule.id, schedule.user, { name: 'edited' });
+    await methods.recordSkippedRun(
+      {
+        scheduleId: schedule.id,
+        user: schedule.user,
+        scheduledFor,
+        status: 'skipped_balance',
+        configRevision: schedule.configRevision ?? 0,
+      },
+      1, // threshold of 1 would disable immediately if the fence did not hold
+    );
+    const after = await getSchedule(schedule.id);
+    expect(after.balanceSkipCount).toBe(0);
+    expect(after.enabled).toBe(true);
+  });
+});
