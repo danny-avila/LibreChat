@@ -138,6 +138,17 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
         'kept for the live run',
       ]);
     });
+
+    test('peek with a stale expectedCreatedAt hides and preserves the live queue', async () => {
+      const streamId = 'steer-peek-stale';
+      const job = await manager.createJob(streamId, 'user-1');
+      await manager.steering.enqueue(streamId, buildSteer('kept for the live run'));
+
+      expect(await manager.steering.peek(streamId, job.createdAt - 1)).toEqual([]);
+      expect((await manager.steering.peek(streamId, job.createdAt)).map((s) => s.text)).toEqual([
+        'kept for the live run',
+      ]);
+    });
   });
 
   describe('cancel', () => {
@@ -655,6 +666,41 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       expect(peekSpy).not.toHaveBeenCalled();
       expect(result.resumeState?.pendingSteers).toBeUndefined();
       expect(result.pendingEvents).toEqual([]);
+    });
+
+    test('cancels when a replacement becomes durable after attachment', async () => {
+      const streamId = 'steer-gap-replaced';
+      const predecessor = await manager.createJob(streamId, 'user-1');
+      const predecessorSteer = buildSteer('predecessor queue');
+      await manager.steering.enqueue(streamId, predecessorSteer);
+      jest
+        .spyOn(manager, 'getResumeState')
+        .mockResolvedValue(staleSnapshot(streamId, [toPendingSteer(predecessorSteer)]));
+
+      const getJob = jobStore.getJob.bind(jobStore);
+      const peekSpy = jest.spyOn(jobStore, 'peekSteers');
+      const contentSpy = jest.spyOn(jobStore, 'getContentParts');
+      let jobReadCount = 0;
+      let replacementCreatedAt: number | undefined;
+      jest.spyOn(jobStore, 'getJob').mockImplementation(async (requestedStreamId) => {
+        jobReadCount++;
+        if (jobReadCount === 3) {
+          const replacement = await jobStore.createJob(requestedStreamId, 'user-1');
+          replacementCreatedAt = replacement.createdAt;
+          await jobStore.enqueueSteer(requestedStreamId, buildSteer('replacement queue'));
+          return replacement;
+        }
+        return getJob(requestedStreamId);
+      });
+
+      const result = await manager.subscribeWithResume(streamId, jest.fn());
+
+      expect(result.subscription).toBeNull();
+      expect(result.pendingEvents).toEqual([]);
+      expect(result.resumeState?.pendingSteers).toEqual([toPendingSteer(predecessorSteer)]);
+      expect(peekSpy).not.toHaveBeenCalled();
+      expect(contentSpy).not.toHaveBeenCalled();
+      expect(replacementCreatedAt).toBeGreaterThan(predecessor.createdAt);
     });
   });
 

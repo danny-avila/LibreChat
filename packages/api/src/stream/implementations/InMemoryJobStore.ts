@@ -141,6 +141,7 @@ export class InMemoryJobStore implements IJobStore {
     };
 
     this.jobs.set(streamId, job);
+    this.contentState.delete(streamId);
     // Clear any prior activity timestamp so a replacement reusing this streamId
     // (the controller handles job replacement) falls back to the fresh createdAt
     // and isn't reaped on the previous generation's stale last-activity time.
@@ -459,7 +460,10 @@ export class InMemoryJobStore implements IJobStore {
    * Set the graph reference for a job.
    * Uses WeakRef to allow garbage collection when graph is no longer needed.
    */
-  setGraph(streamId: string, graph: StandardGraph): void {
+  setGraph(streamId: string, graph: StandardGraph, expectedCreatedAt?: number): void {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return;
+    }
     const existing = this.contentState.get(streamId);
     if (existing) {
       existing.graphRef = new WeakRef(graph);
@@ -475,7 +479,14 @@ export class InMemoryJobStore implements IJobStore {
   /**
    * Set content parts reference for a job.
    */
-  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void {
+  setContentParts(
+    streamId: string,
+    contentParts: Agents.MessageContentComplex[],
+    expectedCreatedAt?: number,
+  ): void {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return;
+    }
     const existing = this.contentState.get(streamId);
     if (existing) {
       existing.contentParts = contentParts;
@@ -487,7 +498,14 @@ export class InMemoryJobStore implements IJobStore {
   /**
    * Set collected usage reference for a job.
    */
-  setCollectedUsage(streamId: string, collectedUsage: UsageMetadata[]): void {
+  setCollectedUsage(
+    streamId: string,
+    collectedUsage: UsageMetadata[],
+    expectedCreatedAt?: number,
+  ): void {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return;
+    }
     const existing = this.contentState.get(streamId);
     if (existing) {
       existing.collectedUsage = collectedUsage;
@@ -499,7 +517,10 @@ export class InMemoryJobStore implements IJobStore {
   /**
    * Get collected usage for a job.
    */
-  getCollectedUsage(streamId: string): UsageMetadata[] {
+  getCollectedUsage(streamId: string, expectedCreatedAt?: number): UsageMetadata[] {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return [];
+    }
     const state = this.contentState.get(streamId);
     return state?.collectedUsage ?? [];
   }
@@ -508,9 +529,15 @@ export class InMemoryJobStore implements IJobStore {
    * Get content parts for a job.
    * Returns live content from stored reference.
    */
-  async getContentParts(streamId: string): Promise<{
+  async getContentParts(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<{
     content: Agents.MessageContentComplex[];
   } | null> {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return null;
+    }
     const state = this.contentState.get(streamId);
     if (!state?.contentParts) {
       return null;
@@ -524,7 +551,10 @@ export class InMemoryJobStore implements IJobStore {
    * Get run steps for a job from graph.contentData.
    * Uses WeakRef - may return empty if graph has been GC'd.
    */
-  async getRunSteps(streamId: string): Promise<Agents.RunStep[]> {
+  async getRunSteps(streamId: string, expectedCreatedAt?: number): Promise<Agents.RunStep[]> {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return [];
+    }
     const state = this.contentState.get(streamId);
     if (!state?.graphRef) {
       return [];
@@ -602,7 +632,10 @@ export class InMemoryJobStore implements IJobStore {
     return this.drainSteers(streamId);
   }
 
-  async peekSteers(streamId: string): Promise<SteerQueueItem[]> {
+  async peekSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return [];
+    }
     const queue = this.steerQueues.get(streamId);
     return queue ? [...queue] : [];
   }

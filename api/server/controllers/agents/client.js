@@ -123,6 +123,8 @@ class AgentClient extends BaseClient {
 
     /** @deprecated @type {true} - Is a Chat Completion Request */
     this.isChatCompletion = true;
+    /** @type {number | undefined} */
+    this.jobCreatedAt = options.jobCreatedAt;
 
     /** @type {AgentRun} */
     this.run;
@@ -1884,7 +1886,7 @@ class AgentClient extends BaseClient {
         }
 
         if (streamId && run.Graph) {
-          GenerationJobManager.setGraph(streamId, run.Graph);
+          GenerationJobManager.setGraph(streamId, run.Graph, this.jobCreatedAt);
         }
 
         if (userMCPAuthMap != null) {
@@ -2214,7 +2216,7 @@ class AgentClient extends BaseClient {
       // introspection fall back to the durable chunk reconstruction, which is complete.
       // `setContentParts` still points the in-memory store at the seeded client content.
       if (streamId && this.contentParts) {
-        GenerationJobManager.setContentParts(streamId, this.contentParts);
+        GenerationJobManager.setContentParts(streamId, this.contentParts, this.jobCreatedAt);
       }
 
       // Carry the user's MCP auth into the rebuilt run so an approved MCP tool executes

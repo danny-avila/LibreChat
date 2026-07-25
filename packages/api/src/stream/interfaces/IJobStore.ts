@@ -501,7 +501,7 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    * @param graph - The StandardGraph instance
    */
-  setGraph(streamId: string, graph: StandardGraph): void;
+  setGraph(streamId: string, graph: StandardGraph, expectedCreatedAt?: number): void;
 
   /**
    * Set content parts reference for a job.
@@ -512,7 +512,11 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    * @param contentParts - The content parts array
    */
-  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void;
+  setContentParts(
+    streamId: string,
+    contentParts: Agents.MessageContentComplex[],
+    expectedCreatedAt?: number,
+  ): void;
 
   /**
    * Get aggregated content for a job.
@@ -523,7 +527,10 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    * @returns Content parts or null if not available
    */
-  getContentParts(streamId: string): Promise<{
+  getContentParts(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<{
     content: Agents.MessageContentComplex[];
   } | null>;
 
@@ -536,7 +543,7 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    * @returns Run steps or empty array
    */
-  getRunSteps(streamId: string): Promise<Agents.RunStep[]>;
+  getRunSteps(streamId: string, expectedCreatedAt?: number): Promise<Agents.RunStep[]>;
 
   /**
    * Append a streaming chunk for later reconstruction.
@@ -584,7 +591,11 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    * @param collectedUsage - Array of usage metadata from all models
    */
-  setCollectedUsage(streamId: string, collectedUsage: UsageMetadata[]): void;
+  setCollectedUsage(
+    streamId: string,
+    collectedUsage: UsageMetadata[],
+    expectedCreatedAt?: number,
+  ): void;
 
   /**
    * Get collected usage for a job.
@@ -592,7 +603,7 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    * @returns Array of usage metadata or empty array
    */
-  getCollectedUsage(streamId: string): UsageMetadata[];
+  getCollectedUsage(streamId: string, expectedCreatedAt?: number): UsageMetadata[];
 
   // ===== Steering Queue Methods =====
   // FIFO queue of mid-run user messages, keyed by streamId. Writable from any
@@ -625,8 +636,12 @@ export interface IJobStore {
    */
   closeAndDrainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
 
-  /** Non-destructive FIFO read of the queued steers (status/resume surfaces). */
-  peekSteers(streamId: string): Promise<SteerQueueItem[]>;
+  /**
+   * Non-destructive FIFO read of the queued steers (status/resume surfaces).
+   * With `expectedCreatedAt`, returns an empty snapshot if the stream belongs
+   * to another generation.
+   */
+  peekSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
 
   /** Remove ONE queued steer by id (user-cancelled before injection).
    *  False when it was no longer queued — already drained or run ended. */
@@ -718,9 +733,14 @@ export interface IEventTransport {
    * Register callback for abort signals from any replica (Redis mode).
    * Called when abort is triggered from any replica.
    * An async implementation resolves only after it can receive abort messages.
+   * The returned function removes only this registration, allowing a terminal
+   * generation to release its channel without affecting a same-stream replacement.
    * Optional - only implemented in Redis transport.
    */
-  onAbort?(streamId: string, callback: (generationId?: number) => void): void | Promise<void>;
+  onAbort?(
+    streamId: string,
+    callback: (generationId?: number) => void,
+  ): void | (() => void) | Promise<void | (() => void)>;
 
   /** Get subscriber count for a stream */
   getSubscriberCount(streamId: string): number;

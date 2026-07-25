@@ -130,9 +130,9 @@ export class SteeringLifecycle {
     return this.store.closeAndDrainSteers(streamId, expectedCreatedAt);
   }
 
-  /** Non-destructive FIFO read (status/resume surfaces). */
-  peek(streamId: string): Promise<SteerQueueItem[]> {
-    return this.store.peekSteers(streamId);
+  /** Non-destructive FIFO read, optionally scoped to one generation. */
+  peek(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
+    return this.store.peekSteers(streamId, expectedCreatedAt);
   }
 
   /**

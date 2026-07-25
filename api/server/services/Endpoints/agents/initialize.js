@@ -112,8 +112,9 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
  * @param {Express.Response} params.res
  * @param {AbortSignal} params.signal
  * @param {Object} params.endpointOption
+ * @param {number} [params.jobCreatedAt]
  */
-const initializeClient = async ({ req, res, signal, endpointOption }) => {
+const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt }) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
   }
@@ -1039,10 +1040,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     usageEmitSink,
     startupTelemetry,
     toolInputValidationErrors,
+    jobCreatedAt,
   });
 
   if (streamId) {
-    GenerationJobManager.setCollectedUsage(streamId, collectedUsage);
+    GenerationJobManager.setCollectedUsage(streamId, collectedUsage, jobCreatedAt);
   }
 
   return { client, userMCPAuthMap };

@@ -126,6 +126,209 @@ describe('RedisEventTransport', () => {
     transport.destroy();
   });
 
+  it('disposes only the owning abort callback and releases an unused channel', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'abort-registration-disposal';
+    const firstAbort = jest.fn();
+    const secondAbort = jest.fn();
+    const disposeFirst = await transport.onAbort(streamId, firstAbort);
+    const disposeSecond = await transport.onAbort(streamId, secondAbort);
+    const messageHandler = getMessageHandler(mockSubscriber);
+    const channel = `stream:{${streamId}}:events`;
+
+    disposeFirst();
+    messageHandler(channel, JSON.stringify({ type: 'abort', generationId: 2 }));
+
+    expect(firstAbort).not.toHaveBeenCalled();
+    expect(secondAbort).toHaveBeenCalledWith(2);
+    expect(mockSubscriber.unsubscribe).not.toHaveBeenCalled();
+
+    disposeFirst();
+    disposeSecond();
+
+    expect(mockSubscriber.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(mockSubscriber.unsubscribe).toHaveBeenCalledWith(channel);
+
+    transport.destroy();
+  });
+
+  it('releases each generation abort subscription after successful completion', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const manager = new GenerationJobManagerClass({
+      jobStore: new InMemoryJobStore(),
+      eventTransport: transport,
+    });
+    const streamId = 'completed-generation-abort-cleanup';
+    const channel = `stream:{${streamId}}:events`;
+
+    const first = await manager.createJob(streamId, 'user-1');
+    await manager.completeJob(streamId, undefined, first.createdAt);
+
+    expect(mockSubscriber.unsubscribe).toHaveBeenNthCalledWith(1, channel);
+
+    const second = await manager.createJob(streamId, 'user-1');
+    await manager.completeJob(streamId, undefined, second.createdAt);
+
+    expect(mockSubscriber.subscribe).toHaveBeenCalledTimes(2);
+    expect(mockSubscriber.unsubscribe).toHaveBeenCalledTimes(2);
+    expect(mockSubscriber.unsubscribe).toHaveBeenNthCalledWith(2, channel);
+
+    await manager.destroy();
+  });
+
+  it('does not register an abort listener for a lazily loaded terminal job', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const terminalJob = await jobStore.createJob('lazy-terminal-job', 'user-1');
+    await jobStore.transitionStatus('lazy-terminal-job', {
+      from: 'running',
+      to: 'complete',
+      expectCreatedAt: terminalJob.createdAt,
+      patch: { completedAt: Date.now() },
+    });
+    const manager = new GenerationJobManagerClass({
+      jobStore,
+      eventTransport: transport,
+      cleanupOnComplete: false,
+    });
+
+    await expect(manager.getJob('lazy-terminal-job')).resolves.toBeDefined();
+    expect(mockSubscriber.subscribe).not.toHaveBeenCalled();
+
+    await manager.destroy();
+  });
+
+  it('releases an equal-epoch lazy runtime when a later lookup observes it terminal', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const streamId = 'lazy-equal-epoch-terminal';
+    const durableJob = await jobStore.createJob(streamId, 'user-1');
+    const manager = new GenerationJobManagerClass({
+      jobStore,
+      eventTransport: transport,
+      cleanupOnComplete: false,
+    });
+    const lazyJob = await manager.getJob(streamId);
+
+    await jobStore.transitionStatus(streamId, {
+      from: 'running',
+      to: 'error',
+      expectCreatedAt: durableJob.createdAt,
+      patch: { completedAt: Date.now(), error: 'remote terminal' },
+    });
+    await expect(manager.getJob(streamId)).resolves.toMatchObject({
+      createdAt: durableJob.createdAt,
+      status: 'error',
+    });
+
+    expect(lazyJob?.abortController.signal.aborted).toBe(true);
+    expect(mockSubscriber.unsubscribe).toHaveBeenCalledWith(`stream:{${streamId}}:events`);
+
+    await manager.destroy();
+  });
+
+  it('releases a lazy abort runtime when cleanup observes a retained terminal job', async () => {
+    jest.useFakeTimers();
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 3_600_000 });
+    const streamId = 'lazy-remote-terminal-cleanup';
+    const durableJob = await jobStore.createJob(streamId, 'user-1');
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore,
+      eventTransport: transport,
+      isRedis: true,
+      cleanupOnComplete: false,
+    });
+    manager.initialize();
+
+    try {
+      const lazyJob = await manager.getJob(streamId);
+      expect(lazyJob?.abortController.signal.aborted).toBe(false);
+      expect(mockSubscriber.subscribe).toHaveBeenCalledTimes(1);
+
+      await jobStore.transitionStatus(streamId, {
+        from: 'running',
+        to: 'complete',
+        expectCreatedAt: durableJob.createdAt,
+        patch: { completedAt: Date.now() },
+      });
+      await jest.advanceTimersByTimeAsync(60_000);
+
+      expect(lazyJob?.abortController.signal.aborted).toBe(true);
+      expect(mockSubscriber.unsubscribe).toHaveBeenCalledWith(`stream:{${streamId}}:events`);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+      await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
+        createdAt: durableJob.createdAt,
+        status: 'complete',
+      });
+    } finally {
+      await manager.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('releases a subscriber-only abort listener when tagged terminal delivery arrives', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const streamId = 'subscriber-only-terminal-cleanup';
+    const durableJob = await jobStore.createJob(streamId, 'user-1');
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore,
+      eventTransport: transport,
+      isRedis: true,
+      cleanupOnComplete: false,
+    });
+    const onDone = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, onDone);
+    const channel = `stream:{${streamId}}:events`;
+
+    deliverSequencedMessage(getMessageHandler(mockSubscriber), streamId, {
+      type: 'done',
+      seq: 0,
+      data: { final: true },
+      generationId: durableJob.createdAt,
+    });
+
+    expect(onDone).toHaveBeenCalledWith({ final: true });
+    expect(mockSubscriber.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(mockSubscriber.unsubscribe).toHaveBeenCalledWith(channel);
+
+    subscription?.unsubscribe();
+    await manager.destroy();
+  });
+
   it('filters tagged predecessor chunks from a current generation subscription', async () => {
     const now = jest.spyOn(Date, 'now').mockReturnValue(200);
     const transport = new InMemoryEventTransport();
@@ -500,7 +703,57 @@ describe('RedisEventTransport', () => {
     await manager.destroy();
   });
 
-  it('keeps remote abort active after SSE disconnect until forced cleanup', async () => {
+  it('releases a registration that loses initialization without detaching its replacement', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    let signalSubscriptionStarted: (() => void) | undefined;
+    const subscriptionStarted = new Promise<void>((resolve) => {
+      signalSubscriptionStarted = resolve;
+    });
+    let releaseSubscription: (() => void) | undefined;
+    const subscriptionGate = new Promise<void>((resolve) => {
+      releaseSubscription = resolve;
+    });
+    mockSubscriber.subscribe.mockImplementationOnce(() => {
+      signalSubscriptionStarted?.();
+      return subscriptionGate;
+    });
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const manager = new GenerationJobManagerClass({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60_000 }),
+      eventTransport: transport,
+    });
+    const streamId = 'abort-registration-replacement-race';
+    const predecessorCreation = manager.createJob(streamId, 'user-1');
+
+    await subscriptionStarted;
+
+    const replacementCreation = manager.createJob(streamId, 'user-1');
+    await Promise.resolve();
+    releaseSubscription?.();
+
+    await expect(predecessorCreation).rejects.toThrow(
+      'Generation job was replaced during initialization',
+    );
+    const replacement = await replacementCreation;
+
+    expect(mockSubscriber.unsubscribe).not.toHaveBeenCalled();
+
+    getMessageHandler(mockSubscriber)(
+      `stream:{${streamId}}:events`,
+      JSON.stringify({ type: 'abort', generationId: replacement.createdAt }),
+    );
+
+    expect(replacement.abortController.signal.aborted).toBe(true);
+    expect(mockSubscriber.unsubscribe).toHaveBeenCalledTimes(1);
+
+    await manager.destroy();
+  });
+
+  it('keeps remote abort active after SSE disconnect and releases it after delivery', async () => {
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();
     const transport = new RedisEventTransport(
@@ -527,8 +780,6 @@ describe('RedisEventTransport', () => {
     );
 
     expect(job.abortController.signal.aborted).toBe(true);
-
-    transport.cleanup(streamId);
     expect(mockSubscriber.unsubscribe).toHaveBeenCalledWith(`stream:{${streamId}}:events`);
 
     await manager.destroy();

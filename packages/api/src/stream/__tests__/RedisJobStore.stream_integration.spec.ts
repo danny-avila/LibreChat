@@ -193,9 +193,38 @@ describe('RedisJobStore Integration Tests', () => {
 
       try {
         const original = await store.createJob(streamId, 'user-1', streamId);
+        await store.appendChunk(streamId, predecessorChunk, original.createdAt);
+        await store.saveRunSteps?.(
+          streamId,
+          predecessorRunSteps as Agents.RunStep[],
+          original.createdAt,
+        );
+        await store.updateJob(
+          streamId,
+          {
+            finalEvent: JSON.stringify({ final: true, generation: 'predecessor' }),
+            titleEvent: JSON.stringify({ event: 'title', data: { title: 'Predecessor' } }),
+            completedAt: original.createdAt,
+            error: 'predecessor error',
+          },
+          original.createdAt,
+        );
+        store.setCollectedUsage(streamId, [{ input_tokens: 10 }], original.createdAt);
 
         const replacement = await store.createJob(streamId, 'user-1', streamId);
         expect(replacement.createdAt).toBe(original.createdAt + 1);
+        expect(await ioredisClient.xlen(`stream:{${streamId}}:chunks`)).toBe(0);
+        await expect(store.getRunSteps(streamId)).resolves.toEqual([]);
+        const replacementJob = await store.getJob(streamId);
+        expect(replacementJob).toMatchObject({
+          createdAt: replacement.createdAt,
+          status: 'running',
+        });
+        expect(replacementJob?.finalEvent).toBeUndefined();
+        expect(replacementJob?.titleEvent).toBeUndefined();
+        expect(replacementJob?.completedAt).toBeUndefined();
+        expect(replacementJob?.error).toBeUndefined();
+        expect(store.getCollectedUsage(streamId, replacement.createdAt)).toEqual([]);
         await store.appendChunk(streamId, replacementChunk, replacement.createdAt);
         await store.appendChunk(streamId, predecessorChunk, original.createdAt);
         await store.saveRunSteps?.(
@@ -208,6 +237,24 @@ describe('RedisJobStore Integration Tests', () => {
           predecessorRunSteps as Agents.RunStep[],
           original.createdAt,
         );
+        const replacementContent = [{ type: 'text', text: 'replacement local content' }];
+        const replacementUsage = [{ input_tokens: 20 }];
+        store.setContentParts(streamId, replacementContent, replacement.createdAt);
+        store.setCollectedUsage(streamId, replacementUsage, replacement.createdAt);
+        store.setContentParts(
+          streamId,
+          [{ type: 'text', text: 'stale predecessor content' }],
+          original.createdAt,
+        );
+        store.setCollectedUsage(streamId, [{ input_tokens: 30 }], original.createdAt);
+        store.clearContentState(streamId, original.createdAt);
+
+        await expect(store.getContentParts(streamId, replacement.createdAt)).resolves.toEqual({
+          content: replacementContent,
+        });
+        expect(store.getCollectedUsage(streamId, replacement.createdAt)).toBe(replacementUsage);
+        await expect(store.getContentParts(streamId, original.createdAt)).resolves.toBeNull();
+        await expect(store.getRunSteps(streamId, original.createdAt)).resolves.toEqual([]);
 
         await store.updateJob(
           streamId,
@@ -223,7 +270,9 @@ describe('RedisJobStore Integration Tests', () => {
         const chunks = await ioredisClient.xrange(`stream:{${streamId}}:chunks`, '-', '+');
         expect(chunks).toHaveLength(1);
         expect(chunks[0]?.[1]).toContain(JSON.stringify(replacementChunk));
-        await expect(store.getRunSteps(streamId)).resolves.toEqual(replacementRunSteps);
+        await expect(store.getRunSteps(streamId, replacement.createdAt)).resolves.toEqual(
+          replacementRunSteps,
+        );
 
         await expect(store.deleteJob(streamId, replacement.createdAt)).resolves.toBe(true);
         await expect(store.getJob(streamId)).resolves.toBeNull();
@@ -2144,11 +2193,16 @@ describe('RedisJobStore Integration Tests', () => {
       await store.initialize();
 
       const streamId = `steer-replace-${Date.now()}`;
-      await store.createJob(streamId, 'steer-user', streamId);
+      const predecessor = await store.createJob(streamId, 'steer-user', streamId);
       await store.enqueueSteer(streamId, buildSteer('s1', 'old run steer'));
 
-      await store.createJob(streamId, 'steer-user', streamId);
-      expect(await store.peekSteers(streamId)).toEqual([]);
+      const replacement = await store.createJob(streamId, 'steer-user', streamId);
+      await store.enqueueSteer(streamId, buildSteer('s2', 'replacement steer'));
+
+      expect(await store.peekSteers(streamId, predecessor.createdAt)).toEqual([]);
+      expect(
+        (await store.peekSteers(streamId, replacement.createdAt)).map((steer) => steer.text),
+      ).toEqual(['replacement steer']);
 
       await store.destroy();
     });

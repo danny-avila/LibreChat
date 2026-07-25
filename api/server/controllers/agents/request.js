@@ -465,6 +465,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       endpointOption,
       // Use the job's abort controller signal - allows abort via GenerationJobManager.abortJob()
       signal: job.abortController.signal,
+      jobCreatedAt,
     });
     startupTelemetry?.mark('client_initialized');
     client = result.client;
@@ -516,7 +517,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     // Store reference to client's contentParts - graph will be set when run is created
     if (client?.contentParts) {
-      GenerationJobManager.setContentParts(streamId, client.contentParts);
+      GenerationJobManager.setContentParts(streamId, client.contentParts, jobCreatedAt);
     }
 
     let userMessage;
@@ -1329,6 +1330,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
     // streamId === conversationId (pre-generated above)
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
     jobCreatedAt = job.createdAt;
+    client.jobCreatedAt = jobCreatedAt;
 
     // Store endpoint metadata for abort handling
     GenerationJobManager.updateMetadata(
@@ -1344,7 +1346,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
 
     // Store content parts reference for abort
     if (client?.contentParts) {
-      GenerationJobManager.setContentParts(streamId, client.contentParts);
+      GenerationJobManager.setContentParts(streamId, client.contentParts, jobCreatedAt);
     }
 
     const closeHandler = createCloseHandler(job.abortController);

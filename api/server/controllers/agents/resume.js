@@ -659,6 +659,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       res,
       endpointOption: req.body.endpointOption,
       signal: job.abortController.signal,
+      jobCreatedAt: job.createdAt,
     });
     client = result.client;
 
@@ -688,7 +689,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       );
     }
     if (client.contentParts) {
-      GenerationJobManager.setContentParts(streamId, client.contentParts);
+      GenerationJobManager.setContentParts(streamId, client.contentParts, job.createdAt);
     }
 
     await client.resumeCompletion({

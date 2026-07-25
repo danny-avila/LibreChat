@@ -31,8 +31,8 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 }
 
 function jobHashFromCreationCall(call: unknown[]): Record<string, string> {
-  const clearCount = Number(call[7]);
-  const fields = call.slice(8 + clearCount);
+  const keyCount = Number(call[1]);
+  const fields = call.slice(4 + keyCount);
   return Object.fromEntries(
     Array.from({ length: fields.length / 2 }, (_, index) => [
       String(fields[index * 2]),
@@ -103,8 +103,40 @@ describe('RedisJobStore', () => {
     ]);
   });
 
+  test('guards steer peeks with the expected creation epoch in one Redis script', async () => {
+    const queuedSteer = {
+      steerId: 'steer-1',
+      text: 'keep me',
+      userId: 'user-1',
+      createdAt: 123,
+    };
+    const evalPeek = jest.fn().mockResolvedValue([JSON.stringify(queuedSteer)]);
+    const lrange = jest.fn();
+    const redis = {
+      isCluster: true,
+      eval: evalPeek,
+      lrange,
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(store.peekSteers('stream-peek', 123)).resolves.toEqual([queuedSteer]);
+
+    const [script, keyCount, jobKey, steersKey, expectedCreatedAt] = evalPeek.mock.calls[0];
+    expect(script).toContain('HGET", KEYS[1], "createdAt"');
+    expect(script).toContain('LRANGE", KEYS[2], 0, -1');
+    expect([keyCount, jobKey, steersKey, expectedCreatedAt]).toEqual([
+      2,
+      'stream:{stream-peek}:job',
+      'stream:{stream-peek}:steers',
+      '123',
+    ]);
+    expect(lrange).not.toHaveBeenCalled();
+  });
+
   test('writes initial metadata in the atomic job creation', async () => {
-    const evalJobCreation = jest.fn().mockImplementation((...args: unknown[]) => ['', '', args[6]]);
+    const evalJobCreation = jest
+      .fn()
+      .mockImplementation((...args: unknown[]) => ['', '', args[Number(args[1]) + 3]]);
     const redis = {
       isCluster: true,
       eval: evalJobCreation,
@@ -152,13 +184,7 @@ describe('RedisJobStore', () => {
     });
 
     const creationArgs = evalJobCreation.mock.calls[0];
-    const clearCount = Number(creationArgs[7]);
-    const storedFields = Object.fromEntries(
-      Array.from({ length: (creationArgs.length - 8 - clearCount) / 2 }, (_, index) => [
-        creationArgs[8 + clearCount + index * 2],
-        creationArgs[9 + clearCount + index * 2],
-      ]),
-    );
+    const storedFields = jobHashFromCreationCall(creationArgs);
     expect(storedFields).toMatchObject({
       conversationId: 'conversation-1',
       responseMessageId: 'response-1',
@@ -167,6 +193,152 @@ describe('RedisJobStore', () => {
       promptTokens: '0',
       discoveredTools: '[]',
     });
+  });
+
+  test('atomically resets predecessor state when creating a replacement', async () => {
+    const evalJobCreation = jest
+      .fn()
+      .mockImplementation((...args: unknown[]) => ['user-1', '', args[Number(args[1]) + 3]]);
+    const redis = {
+      isCluster: true,
+      eval: evalJobCreation,
+      hgetall: jest.fn(() => jobHashFromCreationCall(evalJobCreation.mock.calls[0])),
+      sadd: jest.fn().mockResolvedValue(1),
+      srem: jest.fn().mockResolvedValue(1),
+      expire: jest.fn().mockResolvedValue(1),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+    store.setCollectedUsage('stream-replacement', [{ input_tokens: 10 }]);
+
+    await store.createJob('stream-replacement', 'user-1');
+
+    const [script, keyCount, ...args] = evalJobCreation.mock.calls[0];
+    expect(script).toContain('redis.call("DEL", KEYS[1], KEYS[2], KEYS[3], KEYS[4], KEYS[5])');
+    expect([keyCount, ...args.slice(0, 5)]).toEqual([
+      5,
+      'stream:{stream-replacement}:job',
+      'stream:{stream-replacement}:chunks',
+      'stream:{stream-replacement}:runsteps',
+      'stream:{stream-replacement}:steers',
+      'stream:{stream-replacement}:parked',
+    ]);
+    expect(store.getCollectedUsage('stream-replacement')).toEqual([]);
+  });
+
+  test('an older overlapping create cannot clear a newer local cache', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(100);
+    const redis = {
+      isCluster: true,
+      eval: jest.fn().mockResolvedValue(['user-1', '', '100']),
+      hgetall: jest.fn().mockResolvedValue({
+        streamId: 'stream-overlap',
+        userId: 'user-1',
+        status: 'running',
+        createdAt: '101',
+        syncSent: '0',
+      }),
+      sadd: jest.fn().mockResolvedValue(1),
+      srem: jest.fn().mockResolvedValue(1),
+      expire: jest.fn().mockResolvedValue(1),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+    const newerUsage = [{ input_tokens: 20 }];
+    store.setCollectedUsage('stream-overlap', newerUsage, 101);
+
+    try {
+      await expect(store.createJob('stream-overlap', 'user-1')).rejects.toThrow(
+        'Generation job was replaced during creation',
+      );
+      expect(store.getCollectedUsage('stream-overlap', 101)).toBe(newerUsage);
+      expect(store.getCollectedUsage('stream-overlap', 100)).toEqual([]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  test('rejects creation when its durable epoch is already terminal', async () => {
+    const redis = {
+      isCluster: true,
+      eval: jest.fn().mockResolvedValue(['', '', '100']),
+      hgetall: jest.fn().mockResolvedValue({
+        streamId: 'stream-terminal-create',
+        userId: 'user-1',
+        status: 'complete',
+        createdAt: '100',
+        syncSent: '0',
+      }),
+      sadd: jest.fn().mockResolvedValue(1),
+      srem: jest.fn().mockResolvedValue(1),
+      expire: jest.fn().mockResolvedValue(1),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(store.createJob('stream-terminal-create', 'user-1')).rejects.toThrow(
+      'Generation job was replaced during creation',
+    );
+  });
+
+  test('guards local content caches by creation epoch', async () => {
+    const evalRedis = jest.fn().mockResolvedValue(false);
+    const redis = {
+      isCluster: true,
+      eval: evalRedis,
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+    const replacementContent = [{ type: 'text', text: 'replacement' }];
+    const replacementUsage = [{ input_tokens: 20 }];
+    const replacementGraph = {
+      getContentParts: () => replacementContent,
+      getRunSteps: () => [{ id: 'replacement-step' }],
+    };
+    const staleGraph = {
+      getContentParts: () => [{ type: 'text', text: 'predecessor' }],
+      getRunSteps: () => [{ id: 'predecessor-step' }],
+    };
+
+    store.setContentParts('stream-local-epoch', replacementContent, 101);
+    store.setCollectedUsage('stream-local-epoch', replacementUsage, 101);
+    store.setGraph('stream-local-epoch', replacementGraph as never, 101);
+
+    store.setContentParts('stream-local-epoch', [{ type: 'text', text: 'predecessor' }], 100);
+    store.setCollectedUsage('stream-local-epoch', [{ input_tokens: 10 }], 100);
+    store.setGraph('stream-local-epoch', staleGraph as never, 100);
+    store.setCollectedUsage('stream-local-epoch', [{ input_tokens: 30 }]);
+    store.clearContentState('stream-local-epoch', 100);
+
+    await expect(store.getContentParts('stream-local-epoch', 101)).resolves.toEqual({
+      content: replacementContent,
+    });
+    expect(store.getCollectedUsage('stream-local-epoch', 101)).toBe(replacementUsage);
+    await expect(store.getRunSteps('stream-local-epoch', 101)).resolves.toEqual([
+      { id: 'replacement-step' },
+    ]);
+    await expect(store.getContentParts('stream-local-epoch', 100)).resolves.toBeNull();
+    expect(store.getCollectedUsage('stream-local-epoch', 100)).toEqual([]);
+    await expect(store.getRunSteps('stream-local-epoch', 100)).resolves.toEqual([]);
+
+    store.clearContentState('stream-local-epoch', 101);
+    await expect(store.getContentParts('stream-local-epoch', 101)).resolves.toBeNull();
+    expect(store.getCollectedUsage('stream-local-epoch', 101)).toEqual([]);
+
+    const chunkRead = evalRedis.mock.calls.find(([script]) => String(script).includes('XRANGE'));
+    expect(chunkRead).toEqual([
+      expect.stringContaining('HGET", KEYS[1], "createdAt"'),
+      2,
+      'stream:{stream-local-epoch}:job',
+      'stream:{stream-local-epoch}:chunks',
+      '100',
+    ]);
+    const runStepsRead = evalRedis.mock.calls.find(([script]) =>
+      String(script).includes('GET", KEYS[2]'),
+    );
+    expect(runStepsRead).toEqual([
+      expect.stringContaining('HGET", KEYS[1], "createdAt"'),
+      2,
+      'stream:{stream-local-epoch}:job',
+      'stream:{stream-local-epoch}:runsteps',
+      '100',
+    ]);
   });
 
   test('parallelizes Redis Cluster membership bookkeeping with ordered user TTL', async () => {
@@ -461,5 +633,17 @@ describe('RedisJobStore', () => {
     } finally {
       now.mockRestore();
     }
+  });
+
+  test('in-memory replacement clears predecessor content state', async () => {
+    const store = new InMemoryJobStore();
+    await store.createJob('stream-memory-content', 'user-1');
+    store.setContentParts('stream-memory-content', [{ type: 'text', text: 'predecessor' }]);
+    store.setCollectedUsage('stream-memory-content', [{ input_tokens: 10 }]);
+
+    await store.createJob('stream-memory-content', 'user-1');
+
+    await expect(store.getContentParts('stream-memory-content')).resolves.toBeNull();
+    expect(store.getCollectedUsage('stream-memory-content')).toEqual([]);
   });
 });

@@ -174,6 +174,8 @@ export interface CreateGenerationJobOptions {
 interface RuntimeJobState {
   createdAt: number;
   abortController: AbortController;
+  /** Removes this generation's cross-replica abort listener without touching a replacement. */
+  abortUnsubscribe?: () => void;
   readyPromise: Promise<void>;
   resolveReady: () => void;
   startupTelemetry?: AgentStartupTelemetry;
@@ -342,6 +344,7 @@ class GenerationJobManagerClass {
       for (const runtime of this.runtimeState.values()) {
         runtime.startupTelemetry?.end('aborted');
         runtime.startupTelemetry = undefined;
+        this.releaseAbortSubscription(runtime);
         runtime.abortController.abort();
       }
 
@@ -429,6 +432,86 @@ class GenerationJobManagerClass {
     return released;
   }
 
+  private releaseAbortSubscription(runtime: RuntimeJobState): void {
+    const unsubscribe = runtime.abortUnsubscribe;
+    runtime.abortUnsubscribe = undefined;
+    if (!unsubscribe) {
+      return;
+    }
+
+    try {
+      unsubscribe();
+    } catch (err) {
+      logger.error('[GenerationJobManager] Failed to release abort subscription:', err);
+    }
+  }
+
+  private reconcileInactiveGeneration(
+    streamId: string,
+    createdAt: number,
+    currentJob: SerializableJobData | null,
+    observedRuntime?: RuntimeJobState,
+  ): void {
+    if (currentJob?.createdAt === createdAt) {
+      if (currentJob.status === 'running') {
+        return;
+      }
+      if (currentJob.status === 'requires_action') {
+        this.releaseJobOwnership(streamId, createdAt);
+        return;
+      }
+    }
+
+    if (
+      observedRuntime?.createdAt === createdAt &&
+      this.runtimeState.get(streamId) === observedRuntime
+    ) {
+      this.releaseAbortSubscription(observedRuntime);
+      observedRuntime.abortController.abort();
+    }
+    this.releaseJobOwnership(streamId, createdAt);
+  }
+
+  private async reconcileLostTerminalTransition(
+    streamId: string,
+    createdAt: number,
+    observedRuntime?: RuntimeJobState,
+  ): Promise<void> {
+    const currentJob = await this.jobStore.getJob(streamId);
+    this.reconcileInactiveGeneration(streamId, createdAt, currentJob, observedRuntime);
+  }
+
+  private async registerAbortSubscription(
+    streamId: string,
+    runtime: RuntimeJobState,
+  ): Promise<void> {
+    if (!this.eventTransport.onAbort) {
+      return;
+    }
+
+    const unsubscribe = await this.eventTransport.onAbort(streamId, (generationId) => {
+      const currentRuntime = this.runtimeState.get(streamId);
+      if (
+        currentRuntime !== runtime ||
+        (generationId != null && currentRuntime.createdAt !== generationId) ||
+        currentRuntime.abortController.signal.aborted
+      ) {
+        return;
+      }
+
+      logger.debug(`[GenerationJobManager] Received cross-replica abort for ${streamId}`);
+      currentRuntime.abortController.abort();
+      this.releaseAbortSubscription(currentRuntime);
+    });
+
+    if (typeof unsubscribe === 'function') {
+      runtime.abortUnsubscribe = unsubscribe;
+    }
+    if (this.runtimeState.get(streamId) !== runtime || runtime.abortController.signal.aborted) {
+      this.releaseAbortSubscription(runtime);
+    }
+  }
+
   private rejectSubscriptionDuringShutdown(
     subscriptionType: 'initial' | 'resume',
     onError?: t.ErrorHandler,
@@ -503,7 +586,7 @@ class GenerationJobManagerClass {
     }
 
     try {
-      const result = await this.jobStore.getContentParts(streamId);
+      const result = await this.jobStore.getContentParts(streamId, runtime.createdAt);
       const parts = result?.content ?? [];
       const handlerResults = await Promise.allSettled(
         handlers.map((handler) => Promise.resolve().then(() => handler(parts))),
@@ -581,16 +664,32 @@ class GenerationJobManagerClass {
       safeTenantId,
       initialMetadata,
     );
-    this.acquireJobOwnership(streamId, jobData.createdAt);
-    recordGenerationJob(this.storeLabel, 'created');
+    const currentRuntimeBeforeInstall = this.runtimeState.get(streamId);
+    const ownedCreatedAtBeforeInstall = this.ownedJobs.get(streamId);
+    if (
+      (currentRuntimeBeforeInstall != null &&
+        currentRuntimeBeforeInstall.createdAt > jobData.createdAt) ||
+      (ownedCreatedAtBeforeInstall != null && ownedCreatedAtBeforeInstall > jobData.createdAt)
+    ) {
+      throw new Error('Generation job was replaced during initialization');
+    }
     if (this.shuttingDown) {
+      await this.jobStore.transitionStatus(streamId, {
+        from: 'running',
+        to: 'error',
+        patch: { completedAt: Date.now(), error: SHUTDOWN_JOB_ERROR },
+        expectCreatedAt: jobData.createdAt,
+      });
       throw new Error(SHUTTING_DOWN_ERROR);
     }
+    this.acquireJobOwnership(streamId, jobData.createdAt);
+    recordGenerationJob(this.storeLabel, 'created');
 
     const replacedRuntime = this.runtimeState.get(streamId);
     if (replacedRuntime) {
       replacedRuntime.startupTelemetry?.end('replaced');
       replacedRuntime.startupTelemetry = undefined;
+      this.releaseAbortSubscription(replacedRuntime);
       replacedRuntime.abortController.abort();
     }
 
@@ -630,25 +729,17 @@ class GenerationJobManagerClass {
     try {
       this.registerAllSubscribersLeft(streamId);
 
-      /**
-       * Set up cross-replica abort listener (Redis mode only).
-       * When abort is triggered on ANY replica, this replica receives the signal
-       * and aborts its local AbortController (if it's the one running generation).
-       */
-      if (this.eventTransport.onAbort) {
-        await this.eventTransport.onAbort(streamId, (generationId) => {
-          const currentRuntime = this.runtimeState.get(streamId);
-          if (
-            currentRuntime === runtime &&
-            (generationId == null || currentRuntime.createdAt === generationId) &&
-            !currentRuntime.abortController.signal.aborted
-          ) {
-            logger.debug(`[GenerationJobManager] Received cross-replica abort for ${streamId}`);
-            currentRuntime.abortController.abort();
-          }
-        });
-      }
+      await this.registerAbortSubscription(streamId, runtime);
       if (this.runtimeState.get(streamId) !== runtime) {
+        throw new Error('Generation job was replaced during initialization');
+      }
+      const confirmedJobData = await this.jobStore.getJob(streamId);
+      if (
+        this.runtimeState.get(streamId) !== runtime ||
+        !confirmedJobData ||
+        confirmedJobData.createdAt !== runtime.createdAt ||
+        confirmedJobData.status !== 'running'
+      ) {
         throw new Error('Generation job was replaced during initialization');
       }
       if (this.shuttingDown) {
@@ -658,14 +749,21 @@ class GenerationJobManagerClass {
       // The durable job already exists, but the caller has not received its
       // generation identity yet. Finalize that exact epoch here so a controller
       // catch never needs to issue an unsafe unscoped terminal mutation.
+      let message = SHUTDOWN_JOB_ERROR;
       if (!this.shuttingDown) {
-        const message = error instanceof Error ? error.message : String(error);
-        await this.completeJob(streamId, message, jobData.createdAt).catch((finalizeError) => {
-          logger.error(
-            `[GenerationJobManager] Failed to finalize partially initialized job ${streamId}:`,
-            finalizeError,
-          );
-        });
+        message = error instanceof Error ? error.message : String(error);
+      }
+      await this.completeJob(streamId, message, jobData.createdAt).catch((finalizeError) => {
+        logger.error(
+          `[GenerationJobManager] Failed to finalize partially initialized job ${streamId}:`,
+          finalizeError,
+        );
+      });
+      if (this.runtimeState.get(streamId) === runtime) {
+        this.releaseAbortSubscription(runtime);
+        runtime.abortController.abort();
+        this.runtimeState.delete(streamId);
+        this.releaseJobOwnership(streamId, runtime.createdAt);
       }
       throw error;
     }
@@ -790,7 +888,6 @@ class GenerationJobManagerClass {
   private async getOrCreateRuntimeState(
     streamId: string,
     knownJobData?: SerializableJobData | null,
-    runtimeBeforeLookup = this.runtimeState.get(streamId),
   ): Promise<RuntimeJobState | null> {
     const jobData =
       knownJobData === undefined ? await this.jobStore.getJob(streamId) : knownJobData;
@@ -799,15 +896,17 @@ class GenerationJobManagerClass {
     }
 
     const concurrentRuntime = this.runtimeState.get(streamId);
-    if (concurrentRuntime && concurrentRuntime !== runtimeBeforeLookup) {
+    if (concurrentRuntime?.createdAt === jobData.createdAt) {
+      this.reconcileInactiveGeneration(streamId, jobData.createdAt, jobData, concurrentRuntime);
       return concurrentRuntime;
     }
-    if (concurrentRuntime?.createdAt === jobData.createdAt) {
+    if (concurrentRuntime && concurrentRuntime.createdAt > jobData.createdAt) {
       return concurrentRuntime;
     }
     if (concurrentRuntime) {
       concurrentRuntime.startupTelemetry?.end('replaced');
       concurrentRuntime.startupTelemetry = undefined;
+      this.releaseAbortSubscription(concurrentRuntime);
       concurrentRuntime.abortController.abort();
     }
 
@@ -851,22 +950,8 @@ class GenerationJobManagerClass {
 
     this.registerAllSubscribersLeft(streamId);
 
-    // Set up cross-replica abort listener (Redis mode only)
-    // This ensures lazily-initialized jobs can receive abort signals
-    if (this.eventTransport.onAbort) {
-      await this.eventTransport.onAbort(streamId, (generationId) => {
-        const currentRuntime = this.runtimeState.get(streamId);
-        if (
-          currentRuntime === runtime &&
-          (generationId == null || currentRuntime.createdAt === generationId) &&
-          !currentRuntime.abortController.signal.aborted
-        ) {
-          logger.debug(
-            `[GenerationJobManager] Received cross-replica abort for lazily-init job ${streamId}`,
-          );
-          currentRuntime.abortController.abort();
-        }
-      });
+    if (jobData.status === 'running' || jobData.status === 'requires_action') {
+      await this.registerAbortSubscription(streamId, runtime);
     }
 
     const runtimeAfterAbortRegistration = this.runtimeState.get(streamId);
@@ -885,13 +970,20 @@ class GenerationJobManagerClass {
       return this.runtimeState.get(streamId) ?? null;
     }
     if (!confirmedJobData) {
+      this.releaseAbortSubscription(runtime);
       runtime.abortController.abort();
       this.runtimeState.delete(streamId);
       return null;
     }
     if (confirmedJobData.createdAt !== runtime.createdAt) {
-      return this.getOrCreateRuntimeState(streamId, confirmedJobData, runtime);
+      return this.getOrCreateRuntimeState(streamId, confirmedJobData);
     }
+    this.reconcileInactiveGeneration(
+      streamId,
+      confirmedJobData.createdAt,
+      confirmedJobData,
+      runtime,
+    );
 
     return runtime;
   }
@@ -900,13 +992,12 @@ class GenerationJobManagerClass {
    * Get a job by streamId.
    */
   async getJob(streamId: string): Promise<t.GenerationJob | undefined> {
-    const runtimeBeforeLookup = this.runtimeState.get(streamId);
     const jobData = await this.jobStore.getJob(streamId);
     if (!jobData) {
       return undefined;
     }
 
-    const runtime = await this.getOrCreateRuntimeState(streamId, jobData, runtimeBeforeLookup);
+    const runtime = await this.getOrCreateRuntimeState(streamId, jobData);
     if (
       !runtime ||
       this.runtimeState.get(streamId) !== runtime ||
@@ -974,12 +1065,16 @@ class GenerationJobManagerClass {
     const targetCreatedAt = expectedCreatedAt ?? observedRuntime?.createdAt;
     const jobData = await this.jobStore.getJob(streamId);
     if (!jobData || (targetCreatedAt != null && jobData.createdAt !== targetCreatedAt)) {
+      if (targetCreatedAt != null) {
+        this.reconcileInactiveGeneration(streamId, targetCreatedAt, jobData, observedRuntime);
+      }
       logger.debug(
         `[GenerationJobManager] Skipping stale completion for replaced job: ${streamId}`,
       );
       return;
     }
     if (jobData.status !== 'running') {
+      this.reconcileInactiveGeneration(streamId, jobData.createdAt, jobData, observedRuntime);
       logger.debug(
         `[GenerationJobManager] Skipping completion for non-running job ${streamId}: ${jobData.status}`,
       );
@@ -1020,6 +1115,7 @@ class GenerationJobManagerClass {
         patch: { completedAt: Date.now(), error },
       });
       if (!finalized) {
+        await this.reconcileLostTerminalTransition(streamId, createdAt, runtime);
         return;
       }
       if (runtime && this.runtimeState.get(streamId) === runtime) {
@@ -1046,6 +1142,7 @@ class GenerationJobManagerClass {
         }
       }
       if (runtime && this.runtimeState.get(streamId) === runtime) {
+        this.releaseAbortSubscription(runtime);
         runtime.abortController.abort();
         runtime.startupTelemetry?.end('error', new Error(error));
         runtime.startupTelemetry = undefined;
@@ -1071,6 +1168,7 @@ class GenerationJobManagerClass {
       patch: { completedAt: Date.now() },
     });
     if (!completed) {
+      await this.reconcileLostTerminalTransition(streamId, createdAt, runtime);
       return;
     }
     if (this._cleanupOnComplete) {
@@ -1080,6 +1178,7 @@ class GenerationJobManagerClass {
     }
 
     if (runtime && this.runtimeState.get(streamId) === runtime) {
+      this.releaseAbortSubscription(runtime);
       runtime.abortController.abort();
       runtime.startupTelemetry?.end('completed_without_delta');
       runtime.startupTelemetry = undefined;
@@ -1117,10 +1216,18 @@ class GenerationJobManagerClass {
       transformAbortContent?: (content: TMessageContentParts[]) => TMessageContentParts[];
     },
   ): Promise<AbortResult> {
-    const jobData = await this.jobStore.getJob(streamId);
     const observedRuntime = this.runtimeState.get(streamId);
+    const jobData = await this.jobStore.getJob(streamId);
 
     if (!jobData) {
+      if (observedRuntime) {
+        this.reconcileInactiveGeneration(
+          streamId,
+          observedRuntime.createdAt,
+          jobData,
+          observedRuntime,
+        );
+      }
       logger.warn(`[GenerationJobManager] Cannot abort - job not found: ${streamId}`);
       recordGenerationJob(this.storeLabel, 'abort_failed');
       return {
@@ -1135,6 +1242,7 @@ class GenerationJobManagerClass {
 
     const abortableStatus = jobData.status;
     if (abortableStatus !== 'running' && abortableStatus !== 'requires_action') {
+      this.reconcileInactiveGeneration(streamId, jobData.createdAt, jobData, observedRuntime);
       logger.debug(
         `[GenerationJobManager] Cannot abort terminal job ${streamId}: ${jobData.status}`,
       );
@@ -1177,7 +1285,7 @@ class GenerationJobManagerClass {
     );
 
     /** Content before clearing state */
-    const result = await this.jobStore.getContentParts(streamId);
+    const result = await this.jobStore.getContentParts(streamId, jobData.createdAt);
     const content = result?.content ?? [];
     let abortContent = filterPersistableAbortContent(content);
     if (options?.transformAbortContent) {
@@ -1188,7 +1296,7 @@ class GenerationJobManagerClass {
     const shouldPersistAbortContent = abortContent.length > 0;
 
     /** Collected usage for all models */
-    const collectedUsage = this.jobStore.getCollectedUsage(streamId);
+    const collectedUsage = this.jobStore.getCollectedUsage(streamId, jobData.createdAt);
 
     /** Text from content parts for fallback token counting; the persisted
      *  abort record keeps steered words (they reached the model context). */
@@ -1249,6 +1357,7 @@ class GenerationJobManagerClass {
       patch: { completedAt: Date.now() },
     });
     if (!finalized) {
+      await this.reconcileLostTerminalTransition(streamId, jobData.createdAt, runtime);
       return {
         success: false,
         jobData,
@@ -1265,6 +1374,9 @@ class GenerationJobManagerClass {
     // same-stream replacement on another replica.
     if (this.eventTransport.emitAbort) {
       this.eventTransport.emitAbort(streamId, jobData.createdAt);
+    }
+    if (runtime) {
+      this.releaseAbortSubscription(runtime);
     }
     runtime?.abortController.abort();
 
@@ -1364,7 +1476,6 @@ class GenerationJobManagerClass {
     // Read the durable generation first, then reconcile any lazily-created
     // runtime against it. This also avoids the historical second Redis lookup
     // when a cross-replica subscriber has no local runtime yet.
-    const runtimeBeforeLookup = this.runtimeState.get(streamId);
     const jobData = prepared ? prepared.jobData : await this.jobStore.getJob(streamId);
     if (options?.signal?.aborted) {
       recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'error');
@@ -1374,9 +1485,7 @@ class GenerationJobManagerClass {
       return null;
     }
 
-    const runtime =
-      prepared?.runtime ??
-      (await this.getOrCreateRuntimeState(streamId, jobData, runtimeBeforeLookup));
+    const runtime = prepared?.runtime ?? (await this.getOrCreateRuntimeState(streamId, jobData));
     if (options?.signal?.aborted) {
       recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'error');
       return null;
@@ -1408,6 +1517,17 @@ class GenerationJobManagerClass {
       unsubscribe: t.UnsubscribeFn;
       activate?: () => void;
     } | null = null;
+    const releaseSubscriberOnlyAbortSubscription = (generationId?: number): void => {
+      if (
+        generationId == null ||
+        generationId !== runtime.createdAt ||
+        this.ownedJobs.get(streamId) === runtime.createdAt
+      ) {
+        return;
+      }
+      this.releaseAbortSubscription(runtime);
+      runtime.abortController.abort();
+    };
     const deliverChunk = (event: t.ServerSentEvent): void => {
       if (!subscriptionActive || terminalEventDelivered) {
         return;
@@ -1533,8 +1653,14 @@ class GenerationJobManagerClass {
             queueChunk(e);
           }
         },
-        onDone: (event, generationId) => queueDone(event as t.ServerSentEvent, generationId),
-        onError: queueError,
+        onDone: (event, generationId) => {
+          releaseSubscriberOnlyAbortSubscription(generationId);
+          queueDone(event as t.ServerSentEvent, generationId);
+        },
+        onError: (error, generationId) => {
+          releaseSubscriberOnlyAbortSubscription(generationId);
+          queueError(error, generationId);
+        },
       },
       {
         // Redis can publish an early buffered event before the EVAL response carrying its
@@ -2074,6 +2200,9 @@ class GenerationJobManagerClass {
       if (options?.signal?.aborted || this.detachSubscriptionDuringShutdown(subscription)) {
         return cancelResumeSubscription();
       }
+      if (!liveJob || liveJob.createdAt !== runtime.createdAt) {
+        return cancelResumeSubscription();
+      }
       if (!resumeState?.pendingAction) {
         if (
           liveJob?.status === 'requires_action' &&
@@ -2102,7 +2231,7 @@ class GenerationJobManagerClass {
       const jobActive = liveJob?.status === 'running' || liveJob?.status === 'requires_action';
       if (resumeState != null && jobActive) {
         const snapshotSteers = resumeState.pendingSteers ?? [];
-        const liveQueue = await this.jobStore.peekSteers(streamId);
+        const liveQueue = await this.jobStore.peekSteers(streamId, liveJob.createdAt);
         if (options?.signal?.aborted || this.detachSubscriptionDuringShutdown(subscription)) {
           return cancelResumeSubscription();
         }
@@ -2115,7 +2244,7 @@ class GenerationJobManagerClass {
           resumeState.pendingSteers = livePending.length > 0 ? livePending : undefined;
         }
         if (queueChanged || liveQueue.length > 0) {
-          const contentResult = await this.jobStore.getContentParts(streamId);
+          const contentResult = await this.jobStore.getContentParts(streamId, liveJob.createdAt);
           if (options?.signal?.aborted || this.detachSubscriptionDuringShutdown(subscription)) {
             return cancelResumeSubscription();
           }
@@ -2756,35 +2885,43 @@ class GenerationJobManagerClass {
   /**
    * Set reference to the graph's contentParts array.
    */
-  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void {
-    // Use runtime state check for performance (sync check)
-    if (!this.runtimeState.has(streamId)) {
+  setContentParts(
+    streamId: string,
+    contentParts: Agents.MessageContentComplex[],
+    expectedCreatedAt?: number,
+  ): void {
+    const runtime = this.runtimeState.get(streamId);
+    if (!runtime || (expectedCreatedAt != null && runtime.createdAt !== expectedCreatedAt)) {
       return;
     }
-    this.jobStore.setContentParts(streamId, contentParts);
+    this.jobStore.setContentParts(streamId, contentParts, runtime.createdAt);
   }
 
   /**
    * Set reference to the collectedUsage array.
    * This array accumulates token usage from all models during generation.
    */
-  setCollectedUsage(streamId: string, collectedUsage: UsageMetadata[]): void {
-    // Use runtime state check for performance (sync check)
-    if (!this.runtimeState.has(streamId)) {
+  setCollectedUsage(
+    streamId: string,
+    collectedUsage: UsageMetadata[],
+    expectedCreatedAt?: number,
+  ): void {
+    const runtime = this.runtimeState.get(streamId);
+    if (!runtime || (expectedCreatedAt != null && runtime.createdAt !== expectedCreatedAt)) {
       return;
     }
-    this.jobStore.setCollectedUsage(streamId, collectedUsage);
+    this.jobStore.setCollectedUsage(streamId, collectedUsage, runtime.createdAt);
   }
 
   /**
    * Set reference to the graph instance.
    */
-  setGraph(streamId: string, graph: StandardGraph): void {
-    // Use runtime state check for performance (sync check)
-    if (!this.runtimeState.has(streamId)) {
+  setGraph(streamId: string, graph: StandardGraph, expectedCreatedAt?: number): void {
+    const runtime = this.runtimeState.get(streamId);
+    if (!runtime || (expectedCreatedAt != null && runtime.createdAt !== expectedCreatedAt)) {
       return;
     }
-    this.jobStore.setGraph(streamId, graph);
+    this.jobStore.setGraph(streamId, graph, runtime.createdAt);
   }
 
   /**
@@ -2828,9 +2965,9 @@ class GenerationJobManagerClass {
      *  Safe despite readCachedGraph's cache-drop side effect — each call catches its own
      *  unusable-graph throw and falls back to reconstruction, so ordering cannot change the result. */
     const [result, runSteps, queuedSteers] = await Promise.all([
-      this.jobStore.getContentParts(streamId),
-      this.jobStore.getRunSteps(streamId),
-      this.jobStore.peekSteers(streamId),
+      this.jobStore.getContentParts(streamId, jobData.createdAt),
+      this.jobStore.getRunSteps(streamId, jobData.createdAt),
+      this.jobStore.peekSteers(streamId, jobData.createdAt),
     ]);
     const aggregatedContent = result?.content ?? [];
     let titleEvent: t.ResumeState['titleEvent'];
@@ -3053,6 +3190,10 @@ class GenerationJobManagerClass {
         }
       }
     }
+    if (runtime?.createdAt === createdAt) {
+      this.releaseAbortSubscription(runtime);
+      runtime.abortController.abort();
+    }
   }
 
   private async expireStaleApprovals(): Promise<void> {
@@ -3111,53 +3252,86 @@ class GenerationJobManagerClass {
 
     // Cleanup runtime state for deleted jobs
     for (const [streamId, observedRuntime] of this.runtimeState) {
-      if (!(await this.jobStore.hasJob(streamId))) {
-        // A replacement generation can reuse the same streamId while hasJob()
-        // is in flight. Never reap the replacement runtime based on the stale
-        // absence observed for its predecessor.
-        if (this.runtimeState.get(streamId) !== observedRuntime) {
-          if (!observedRuntime.abortController.signal.aborted) {
-            observedRuntime.abortController.abort();
-          }
+      const jobExists = await this.jobStore.hasJob(streamId);
+      if (jobExists) {
+        const shouldInspectRemoteTerminal =
+          this.ownedJobs.get(streamId) !== observedRuntime.createdAt &&
+          this.eventTransport.getSubscriberCount(streamId) === 0;
+        if (!shouldInspectRemoteTerminal) {
           continue;
         }
-        /**
-         * Abort any still-pending generation whose job has been reaped (e.g. a
-         * stale "running" job removed by the store's failsafe timeout). This
-         * unwinds the hung in-flight work so its client/graph references can be
-         * garbage collected, rather than leaking via the pending promise.
-         */
+
+        const currentJob = await this.jobStore.getJob(streamId);
+        const isRetainedTerminal =
+          currentJob?.createdAt === observedRuntime.createdAt &&
+          currentJob.status !== 'running' &&
+          currentJob.status !== 'requires_action';
+        if (!isRetainedTerminal || this.runtimeState.get(streamId) !== observedRuntime) {
+          continue;
+        }
+
+        this.reconcileInactiveGeneration(
+          streamId,
+          observedRuntime.createdAt,
+          currentJob,
+          observedRuntime,
+        );
+        this.runtimeState.delete(streamId);
+        this.runStepBuffers?.delete(streamId);
+        this.replayEventWriteQueues.delete(streamId);
+        this.tokenUsageWriteQueues.delete(streamId);
+        this.jobStore.clearContentState(streamId, observedRuntime.createdAt);
+        this.eventTransport.cleanup(streamId);
+        continue;
+      }
+
+      // A replacement generation can reuse the same streamId while hasJob()
+      // is in flight. Never reap the replacement runtime based on the stale
+      // absence observed for its predecessor.
+      if (this.runtimeState.get(streamId) !== observedRuntime) {
+        this.releaseAbortSubscription(observedRuntime);
         if (!observedRuntime.abortController.signal.aborted) {
           observedRuntime.abortController.abort();
         }
-        // If a client is still attached when the job is reaped, send a terminal
-        // error first so the SSE connection closes instead of hanging open with no
-        // final/done event (the route only ends the response from onDone/onError).
-        if (this.eventTransport.getSubscriberCount(streamId) > 0) {
-          try {
-            await this.eventTransport.emitError(
-              streamId,
-              REAPED_JOB_ERROR,
-              observedRuntime.createdAt,
-            );
-            observedRuntime.startupTelemetry?.mark('first_response_event_queued');
-          } catch (err) {
-            logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);
-          }
-        }
-        // emitError() is asynchronous; a replacement may have appeared while
-        // the terminal event was being published.
-        if (this.runtimeState.get(streamId) !== observedRuntime) {
-          continue;
-        }
-        observedRuntime.startupTelemetry?.end('error', new Error(REAPED_JOB_ERROR));
-        observedRuntime.startupTelemetry = undefined;
-        this.runtimeState.delete(streamId);
-        runningJobsChanged = this.ownedJobs.delete(streamId) || runningJobsChanged;
-        this.runStepBuffers?.delete(streamId);
-        this.jobStore.clearContentState(streamId, observedRuntime.createdAt);
-        this.eventTransport.cleanup(streamId);
+        continue;
       }
+      /**
+       * Abort any still-pending generation whose job has been reaped (e.g. a
+       * stale "running" job removed by the store's failsafe timeout). This
+       * unwinds the hung in-flight work so its client/graph references can be
+       * garbage collected, rather than leaking via the pending promise.
+       */
+      if (!observedRuntime.abortController.signal.aborted) {
+        observedRuntime.abortController.abort();
+      }
+      // If a client is still attached when the job is reaped, send a terminal
+      // error first so the SSE connection closes instead of hanging open with no
+      // final/done event (the route only ends the response from onDone/onError).
+      if (this.eventTransport.getSubscriberCount(streamId) > 0) {
+        try {
+          await this.eventTransport.emitError(
+            streamId,
+            REAPED_JOB_ERROR,
+            observedRuntime.createdAt,
+          );
+          observedRuntime.startupTelemetry?.mark('first_response_event_queued');
+        } catch (err) {
+          logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);
+        }
+      }
+      // emitError() is asynchronous; a replacement may have appeared while
+      // the terminal event was being published.
+      if (this.runtimeState.get(streamId) !== observedRuntime) {
+        continue;
+      }
+      observedRuntime.startupTelemetry?.end('error', new Error(REAPED_JOB_ERROR));
+      observedRuntime.startupTelemetry = undefined;
+      this.releaseAbortSubscription(observedRuntime);
+      this.runtimeState.delete(streamId);
+      runningJobsChanged = this.ownedJobs.delete(streamId) || runningJobsChanged;
+      this.runStepBuffers?.delete(streamId);
+      this.jobStore.clearContentState(streamId, observedRuntime.createdAt);
+      this.eventTransport.cleanup(streamId);
     }
 
     // Also check runStepBuffers for any orphaned entries (Redis mode only)
@@ -3200,7 +3374,7 @@ class GenerationJobManagerClass {
       return null;
     }
 
-    const result = await this.jobStore.getContentParts(streamId);
+    const result = await this.jobStore.getContentParts(streamId, jobData.createdAt);
     const aggregatedContent = result?.content ?? [];
 
     return {
@@ -3291,6 +3465,7 @@ class GenerationJobManagerClass {
 
         if (runtime?.createdAt === createdAt) {
           runtime.errorEvent = SHUTDOWN_JOB_ERROR;
+          this.releaseAbortSubscription(runtime);
         }
         try {
           await this.eventTransport.emitError(streamId, SHUTDOWN_JOB_ERROR, createdAt);
@@ -3360,6 +3535,7 @@ class GenerationJobManagerClass {
     for (const runtime of this.runtimeState.values()) {
       runtime.startupTelemetry?.end('aborted');
       runtime.startupTelemetry = undefined;
+      this.releaseAbortSubscription(runtime);
       runtime.abortController.abort();
     }
 

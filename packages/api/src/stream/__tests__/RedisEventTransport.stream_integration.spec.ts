@@ -948,6 +948,59 @@ describe('RedisEventTransport Integration Tests', () => {
       }
     });
 
+    test('should replace a disposed abort listener without stale cleanup detaching it', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber1 = (ioredisClient as Redis).duplicate();
+      const subscriber2 = (ioredisClient as Redis).duplicate();
+      const transport1 = new RedisEventTransport(ioredisClient, subscriber1);
+      const transport2 = new RedisEventTransport(ioredisClient, subscriber2);
+      const streamId = `abort-listener-reuse-${Date.now()}`;
+      let predecessorCalled = false;
+      let resolveReplacement!: () => void;
+      const replacementCalled = new Promise<void>((resolve) => {
+        resolveReplacement = resolve;
+      });
+      let abortTimeout: ReturnType<typeof setTimeout> | undefined;
+
+      try {
+        const disposePredecessor = await transport1.onAbort(streamId, () => {
+          predecessorCalled = true;
+        });
+        disposePredecessor();
+
+        const disposeReplacement = await transport1.onAbort(streamId, () => {
+          resolveReplacement();
+        });
+        disposePredecessor();
+        transport2.emitAbort(streamId);
+
+        await Promise.race([
+          replacementCalled,
+          new Promise<never>((_, reject) => {
+            abortTimeout = setTimeout(
+              () => reject(new Error('Timed out waiting for replacement abort listener')),
+              2000,
+            );
+          }),
+        ]);
+
+        expect(predecessorCalled).toBe(false);
+        disposeReplacement();
+      } finally {
+        clearTimeout(abortTimeout);
+        transport1.destroy();
+        transport2.destroy();
+        subscriber1.disconnect();
+        subscriber2.disconnect();
+      }
+    });
+
     test('should call multiple abort callbacks', async () => {
       if (!ioredisClient) {
         console.warn('Redis not available, skipping test');

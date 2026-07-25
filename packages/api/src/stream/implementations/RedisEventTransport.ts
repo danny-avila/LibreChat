@@ -57,6 +57,10 @@ interface ReorderBuffer {
   deliveryDeferred: boolean;
 }
 
+interface AbortRegistration {
+  callback: (generationId?: number) => void;
+}
+
 /**
  * Allocate a sequence number and publish the event in a single round trip.
  *
@@ -113,7 +117,7 @@ interface StreamSubscribers {
   /** Replaced when a stream runtime is replaced; only the current lifecycle owns cleanup. */
   allSubscribersLeftCallback?: () => void;
   /** Abort callbacks - called when abort signal is received from any replica */
-  abortCallbacks: Array<(generationId?: number) => void>;
+  abortCallbacks: Set<AbortRegistration>;
   /** Reorder buffer for handling out-of-order delivery in Redis Cluster */
   reorderBuffer: ReorderBuffer;
 }
@@ -567,12 +571,12 @@ export class RedisEventTransport implements IEventTransport {
     }
 
     if (message.type === EventTypes.ABORT) {
-      for (const callback of streamState.abortCallbacks) {
+      for (const registration of streamState.abortCallbacks) {
         try {
           if (message.generationId == null) {
-            callback();
+            registration.callback();
           } else {
-            callback(message.generationId);
+            registration.callback(message.generationId);
           }
         } catch (err) {
           logger.error(`[RedisEventTransport] Error in abort callback:`, err);
@@ -584,19 +588,29 @@ export class RedisEventTransport implements IEventTransport {
   private detachStreamSubscribers(streamId: string, state: StreamSubscribers): void {
     this.resetReorderBuffer(streamId);
 
-    if (state.abortCallbacks.length === 0) {
-      const channel = CHANNELS.events(streamId);
-      this.subscriber.unsubscribe(channel).catch((err) => {
-        logger.error(`[RedisEventTransport] Failed to unsubscribe from ${channel}:`, err);
-      });
-      this.channelSubscriptions.delete(channel);
-    }
+    this.unsubscribeUnusedChannel(streamId, state);
 
     try {
       state.allSubscribersLeftCallback?.();
     } catch (err) {
       logger.error(`[RedisEventTransport] Error in allSubscribersLeft callback:`, err);
     }
+  }
+
+  private unsubscribeUnusedChannel(streamId: string, state: StreamSubscribers): void {
+    if (this.streams.get(streamId) !== state || state.count > 0 || state.abortCallbacks.size > 0) {
+      return;
+    }
+
+    const channel = CHANNELS.events(streamId);
+    if (!this.channelSubscriptions.has(channel)) {
+      return;
+    }
+
+    this.subscriber.unsubscribe(channel).catch((err) => {
+      logger.error(`[RedisEventTransport] Failed to unsubscribe from ${channel}:`, err);
+    });
+    this.channelSubscriptions.delete(channel);
   }
 
   /**
@@ -625,7 +639,7 @@ export class RedisEventTransport implements IEventTransport {
       this.streams.set(streamId, {
         count: 0,
         handlers: new Map(),
-        abortCallbacks: [],
+        abortCallbacks: new Set(),
         reorderBuffer: {
           nextSeq: 0,
           pending: new Map(),
@@ -790,7 +804,7 @@ export class RedisEventTransport implements IEventTransport {
         count: 0,
         handlers: new Map(),
         allSubscribersLeftCallback: callback,
-        abortCallbacks: [],
+        abortCallbacks: new Set(),
         reorderBuffer: {
           nextSeq: 0,
           pending: new Map(),
@@ -826,7 +840,7 @@ export class RedisEventTransport implements IEventTransport {
    * @param streamId - The stream identifier
    * @param callback - Called when abort signal is received
    */
-  onAbort(streamId: string, callback: (generationId?: number) => void): Promise<void> {
+  async onAbort(streamId: string, callback: (generationId?: number) => void): Promise<() => void> {
     const channel = CHANNELS.events(streamId);
     let state = this.streams.get(streamId);
 
@@ -834,7 +848,7 @@ export class RedisEventTransport implements IEventTransport {
       state = {
         count: 0,
         handlers: new Map(),
-        abortCallbacks: [],
+        abortCallbacks: new Set(),
         reorderBuffer: {
           nextSeq: 0,
           pending: new Map(),
@@ -845,8 +859,23 @@ export class RedisEventTransport implements IEventTransport {
       this.streams.set(streamId, state);
     }
 
-    state.abortCallbacks.push(callback);
-    return this.ensureChannelSubscription(channel);
+    const registration = { callback };
+    state.abortCallbacks.add(registration);
+
+    try {
+      await this.ensureChannelSubscription(channel);
+    } catch (error) {
+      state.abortCallbacks.delete(registration);
+      this.unsubscribeUnusedChannel(streamId, state);
+      throw error;
+    }
+
+    return () => {
+      if (this.streams.get(streamId) !== state || !state.abortCallbacks.delete(registration)) {
+        return;
+      }
+      this.unsubscribeUnusedChannel(streamId, state);
+    };
   }
 
   /**
@@ -873,7 +902,7 @@ export class RedisEventTransport implements IEventTransport {
     if (state) {
       state.handlers.clear();
       state.allSubscribersLeftCallback = undefined;
-      state.abortCallbacks = [];
+      state.abortCallbacks.clear();
     }
 
     this.resetReorderBuffer(streamId);
