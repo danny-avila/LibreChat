@@ -67,3 +67,44 @@ export const readScheduleFireClaims = (req: {
 export const isScheduleFireRequest = (req: {
   headers: Record<string, string | string[] | undefined>;
 }): boolean => readScheduleFireClaims(req).scheduled;
+
+/**
+ * A request whose fire classification the chat router already captured. Re-verifying
+ * downstream would demote a valid fire whose short-lived token expired during the
+ * slower middleware chain, so the captured decision wins when present.
+ */
+interface ClassifiedFireRequest {
+  headers: Record<string, string | string[] | undefined>;
+  _isScheduledFire?: boolean;
+  _isManualScheduledFire?: boolean;
+}
+
+const classify = (req: ClassifiedFireRequest): ScheduleFireClaims =>
+  typeof req._isScheduledFire === 'boolean'
+    ? { scheduled: req._isScheduledFire, manual: req._isManualScheduledFire === true }
+    : readScheduleFireClaims(req);
+
+/**
+ * Whether the IP-based message limiter should be SKIPPED.
+ *
+ * Every fire — automatic or manual — reaches the chat router over the server's own
+ * loopback, so its address is never the initiating client's. Keying an IP limiter there
+ * would put all users in ONE bucket, letting any user's Run Now volume reject everyone
+ * else's. Manual runs are IP-limited at `/api/schedules/:id/run` instead, where the real
+ * address is still on the request.
+ */
+export const exemptFromIpLimiter = (req: ClassifiedFireRequest): boolean => classify(req).scheduled;
+
+/**
+ * Whether the USER-based message limiter should be SKIPPED.
+ *
+ * Only AUTOMATIC occurrences are exempt: the scheduler's own caps (cadence floor, global
+ * fireConcurrency) already bound them, and limiting them again would record legitimate
+ * fires as errors that walk schedules toward auto-disable. Run Now has neither cap, and
+ * this limiter keys on the authenticated id, which the fire token carries intact across
+ * the loopback — so it is the one that actually bounds manual volume.
+ */
+export const exemptFromUserLimiter = (req: ClassifiedFireRequest): boolean => {
+  const claims = classify(req);
+  return claims.scheduled && !claims.manual;
+};

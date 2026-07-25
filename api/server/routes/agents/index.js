@@ -11,6 +11,8 @@ const {
   attachAskUserQuestionArgs,
   createMessageFilterPii,
   readScheduleFireClaims,
+  exemptFromIpLimiter,
+  exemptFromUserLimiter,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -495,36 +497,16 @@ chatRouter.use((req, _res, next) => {
 });
 chatRouter.use(configMiddleware);
 
-/**
- * AUTOMATIC scheduled fires are exempt from the interactive message limiters (the
- * token's scope claim is signature-verified): the scheduler's own caps govern them
- * (cadence floor, global fireConcurrency), and stacking both throttles would record
- * legitimate fires as errors that walk schedules toward auto-disable.
- *
- * Run Now is NOT exempt. It dispatches the same billed generation over the same
- * schedule-scoped token, but it enforces no cadence floor and no per-user time window,
- * so a permitted user could re-trigger as prior runs finish — or rotate across their
- * schedules — and bypass LIMIT_MESSAGE_USER/LIMIT_MESSAGE_IP entirely. It is user-paced
- * request volume wearing a scheduled token, so it belongs under the interactive limits.
- *
- * Reads the flags captured above so a token that expired during config/middleware still
- * classifies a valid fire; the re-read fallback is fail-safe (an unverifiable token
- * limits rather than exempts).
- */
-const skipAutomaticFires = (limiter) => (req, res, next) => {
-  const claims =
-    typeof req._isScheduledFire === 'boolean'
-      ? { scheduled: req._isScheduledFire, manual: req._isManualScheduledFire === true }
-      : readScheduleFireClaims(req);
-  return claims.scheduled && !claims.manual ? next() : limiter(req, res, next);
-};
+/** Applies `limiter` unless `isExempt` says this fire should skip it. */
+const unless = (isExempt, limiter) => (req, res, next) =>
+  isExempt(req) ? next() : limiter(req, res, next);
 
 if (isEnabled(LIMIT_MESSAGE_IP)) {
-  chatRouter.use(skipAutomaticFires(messageIpLimiter));
+  chatRouter.use(unless(exemptFromIpLimiter, messageIpLimiter));
 }
 
 if (isEnabled(LIMIT_MESSAGE_USER)) {
-  chatRouter.use(skipAutomaticFires(messageUserLimiter));
+  chatRouter.use(unless(exemptFromUserLimiter, messageUserLimiter));
 }
 
 chatRouter.use('/', chat);

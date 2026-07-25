@@ -1,7 +1,7 @@
 const express = require('express');
 const { Permissions, PermissionTypes } = require('librechat-data-provider');
-const { createSchedulesHandlers, generateCheckAccess } = require('@librechat/api');
-const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
+const { isEnabled, createSchedulesHandlers, generateCheckAccess } = require('@librechat/api');
+const { requireJwtAuth, configMiddleware, messageIpLimiter } = require('~/server/middleware');
 const {
   getLimits,
   fireScheduleNow,
@@ -71,6 +71,16 @@ router.post('/', checkSchedulesCreate, handlers.createSchedule);
 router.patch('/:id', checkSchedulesCreate, handlers.updateSchedule);
 router.delete('/:id', checkSchedulesCreate, handlers.deleteSchedule);
 // Run-now mutates runtime state; gate it on CREATE like the UI does (not USE).
-router.post('/:id/run', checkSchedulesCreate, handlers.runScheduleNow);
+// This is also where LIMIT_MESSAGE_IP has to apply to a manual run: the fire itself is a
+// loopback POST carrying the server's address, so limiting by IP there would pool every
+// user into one bucket. Here the initiating client's address is still on the request.
+// The USER limiter is NOT duplicated here; the fire token carries the authenticated id,
+// so the chat router applies it to the loopback exactly once.
+router.post(
+  '/:id/run',
+  ...(isEnabled(process.env.LIMIT_MESSAGE_IP) ? [messageIpLimiter] : []),
+  checkSchedulesCreate,
+  handlers.runScheduleNow,
+);
 
 module.exports = router;
