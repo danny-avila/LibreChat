@@ -65,6 +65,19 @@ interface ChatFormProps {
   stopGenerating: () => void;
 }
 
+  // Auto focus input on mobile devices on route change (#3874)
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+      const timer = setTimeout(() => {
+        const textarea = document.querySelector('textarea');
+        if (textarea) {
+          textarea.focus();
+        }
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
 const ChatForm = memo(function ChatForm({
   index,
   placeholder,
