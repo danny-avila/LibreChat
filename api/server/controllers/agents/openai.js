@@ -56,6 +56,7 @@ const {
   createToolExecuteHandler,
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
+  completionUsageBreakdown,
   resolveAgentScopedSkillIds,
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
@@ -908,14 +909,13 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         }
       }),
 
-      // Usage tracking
+      /* Usage tracking: `collectedUsage` is the single source for both billing
+         and the reported totals, so no separate tracker/aggregator counting. */
       on_chat_model_end: {
         handle: (_event, data, metadata, graph) => {
           const usage = data?.output?.usage_metadata;
           if (usage) {
-            const agentContext = graph?.getAgentContext?.(metadata);
-            const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
-            collectedUsage.push(taggedUsage);
+            collectedUsage.push(markSummarizationUsage(usage, metadata));
           }
         },
       },
@@ -1051,7 +1051,10 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       logger.error('[OpenAI API] Error recording usage:', getSafeErrorMetadata(err));
     });
 
-    const usage = buildCompletionUsage(collectedUsage);
+    /* Reported from `collectedUsage` rather than the tracker/aggregator so
+       isolated subagent child runs — billed above, but never seen by
+       `on_chat_model_end` — are part of the totals the client receives. */
+    const usage = completionUsageBreakdown(collectedUsage);
 
     // Finalize response
     const duration = Date.now() - requestStartTime;
