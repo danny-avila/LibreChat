@@ -7,20 +7,23 @@ import type {
   Agents,
 } from 'librechat-data-provider';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
+import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
-import { mapAttachments, groupSequentialToolCalls } from '~/utils';
 import { MessageContext, SearchContext } from '~/Providers';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import { EditTextPart, EmptyText } from './Parts';
 import ApprovalProvider from './ApprovalContext';
 import MemoryArtifacts from './MemoryArtifacts';
-import PendingSteers from './PendingSteers';
 import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
 import Part from './Part';
 
 const getToolCallId = (part: TMessageContentParts): string =>
   (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+
+const getPartAgentId = (part: TMessageContentParts): string | undefined =>
+  (part as { agentId?: string })?.agentId ??
+  (part?.[ContentTypes.TOOL_CALL] as { agentId?: string } | undefined)?.agentId;
 
 const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string => {
   const firstPart = parts[0];
@@ -150,9 +153,6 @@ const ContentParts = memo(function ContentParts({
 }: ContentPartsProps) {
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
-  /** In-thread slot for not-yet-applied steers, only on the live streaming
-   *  message — everywhere else the persisted STEER parts are the record. */
-  const showPendingSteers = !isCreatedByUser && isLatestMessage === true && effectiveIsSubmitting;
   const toolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
   const fallbackScopeRef = useRef({ messageId, scope: 0 });
   if (fallbackScopeRef.current.messageId !== messageId) {
@@ -247,7 +247,10 @@ const ContentParts = memo(function ContentParts({
           isCreatedByUser={isCreatedByUser}
           nextType={content?.[idx + 1]?.type}
           isSubmitting={effectiveIsSubmitting}
-          partAttachments={attachmentMap[getToolCallId(part)]}
+          partAttachments={filterAttachmentsForPart(
+            attachmentMap[getToolCallId(part)],
+            getPartAgentId(part),
+          )}
         />
       );
     },
@@ -278,7 +281,10 @@ const ContentParts = memo(function ContentParts({
           isCreatedByUser={isCreatedByUser}
           nextType={content?.[idx + 1]?.type}
           isSubmitting={effectiveIsSubmitting}
-          partAttachments={attachmentMap[getToolCallId(part)]}
+          partAttachments={filterAttachmentsForPart(
+            attachmentMap[getToolCallId(part)],
+            getPartAgentId(part),
+          )}
           hideAttachments
           onToolExpand={onToolExpand}
         />
@@ -317,7 +323,9 @@ const ContentParts = memo(function ContentParts({
         }
         const groupId = getToolGroupId(group.parts, fallbackScope);
         const groupAttachments = group.parts.flatMap(
-          ({ part }) => attachmentMap[getToolCallId(part)] ?? [],
+          ({ part }) =>
+            filterAttachmentsForPart(attachmentMap[getToolCallId(part)], getPartAgentId(part)) ??
+            [],
         );
         return { ...group, groupId, groupAttachments };
       }),
@@ -390,7 +398,6 @@ const ContentParts = memo(function ContentParts({
           isSubmitting={effectiveIsSubmitting}
           renderPart={renderPart}
         />
-        {showPendingSteers && <PendingSteers conversationId={conversationId} />}
       </ApprovalProvider>
     );
   }
@@ -426,7 +433,6 @@ const ContentParts = memo(function ContentParts({
             />
           );
         })}
-        {showPendingSteers && <PendingSteers conversationId={conversationId} />}
       </SearchContext.Provider>
     </ApprovalProvider>
   );

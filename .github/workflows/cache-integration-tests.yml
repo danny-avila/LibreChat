@@ -14,6 +14,7 @@ on:
       - 'packages/api/src/stream/**'
       - 'redis-config/**'
       - '.github/workflows/cache-integration-tests.yml'
+      - '!**.md'
 
 permissions:
   contents: read

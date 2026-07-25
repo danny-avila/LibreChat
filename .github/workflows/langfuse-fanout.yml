@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/langfuse-fanout.yml'
       - 'otel/langfuse-fanout/**'
+      - '!**.md'
 
 permissions:
   contents: read

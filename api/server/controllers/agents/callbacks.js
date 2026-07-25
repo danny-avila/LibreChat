@@ -20,9 +20,11 @@ const {
   GenerationJobManager,
   writeAttachmentEvent,
   createToolExecuteHandler,
+  createBackgroundCodeResultHandler: createCodeHarvestHandler,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
   shouldSignalSandboxStart,
+  getToolInputValidationDetails,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
@@ -314,6 +316,10 @@ function feedSubagentAggregator(aggregator, event) {
  * @param {Object} options - The options object.
  * @param {ServerResponse} options.res - The server response object.
  * @param {ContentAggregator} options.aggregateContent - Content aggregator function.
+ * @param {Array<Object>} [options.contentParts] - Aggregated message content parts.
+ * @param {Map<string, Object>} [options.stepMap] - Run steps keyed by step ID.
+ * @param {Map<string, import('@librechat/api').ToolInputValidationError>} [options.toolInputValidationErrors]
+ *   Schema-validation errors keyed by tool-call ID at the execution error boundary.
  * @param {ToolEndCallback} options.toolEndCallback - Callback to use when tool ends.
  * @param {Array<UsageMetadata>} options.collectedUsage - The list of collected usage metadata.
  * @param {string | null} [options.streamId] - The stream ID for resumable mode, or null for standard mode.
@@ -330,6 +336,9 @@ function feedSubagentAggregator(aggregator, event) {
 function getDefaultHandlers({
   res,
   aggregateContent,
+  contentParts = null,
+  stepMap = null,
+  toolInputValidationErrors = null,
   toolEndCallback,
   collectedUsage,
   collectedThoughtSignatures = null,
@@ -441,7 +450,32 @@ function getDefaultHandlers({
        * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
       handle: async (event, data, metadata) => {
+        const toolCallId = data?.result?.tool_call?.id;
+        const validationError =
+          typeof toolCallId === 'string' ? toolInputValidationErrors?.get(toolCallId) : null;
+        const validationDetails = getToolInputValidationDetails(data?.result, validationError);
+        if (typeof toolCallId === 'string') {
+          toolInputValidationErrors?.delete(toolCallId);
+        }
+        if (validationDetails != null) {
+          if (data?.result?.tool_call != null) {
+            data.result.tool_call.inputValidationError = true;
+          }
+          logger.debug('[AgentToolValidation] Tool input rejected', {
+            ...validationDetails,
+            runId: metadata?.run_id,
+            conversationId: metadata?.thread_id,
+            agentId: metadata?.agent_id,
+          });
+        }
         aggregateContent({ event, data });
+        if (validationDetails != null) {
+          const runStep = stepMap?.get(data?.result?.id);
+          const toolCall = contentParts?.[runStep?.index]?.tool_call;
+          if (toolCall != null) {
+            toolCall.inputValidationError = true;
+          }
+        }
         if (data?.result != null) {
           await emitEvent(res, streamId, { event, data });
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
@@ -942,6 +976,55 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
 }
 
 /**
+ * Emitter for `attachment` SSE events on the current request's live stream,
+ * for re-emitting background-harvested attachments on a poll turn. Safe to
+ * call after the stream closes (silently dropped).
+ *
+ * @param {Object} params
+ * @param {ServerResponse} params.res
+ * @param {string | null} [params.streamId]
+ * @returns {(attachment: Object) => void}
+ */
+function createAttachmentEmitter({ res, streamId = null }) {
+  return (attachment) => {
+    if (!attachment || !isStreamWritable(res, streamId)) {
+      return;
+    }
+    writeAttachment(res, streamId, attachment);
+  };
+}
+
+/**
+ * Leading sub-second retries cover the common case of a fast background task
+ * settling moments before the dispatch turn finalizes its message row — an
+ * immediate follow-up turn should find the attachments already anchored.
+ * The long tail covers dispatch turns that keep running for minutes.
+ */
+/**
+ * Thin wrapper binding the host file services into the TS harvest
+ * implementation (`@librechat/api` `createBackgroundCodeResultHandler`).
+ *
+ * @param {Object} params
+ * @param {ServerRequest} params.req
+ * @param {(params: {
+ *   userId: string;
+ *   messageId: string;
+ *   conversationId: string;
+ *   toolCallId: string;
+ *   output?: string;
+ *   attachments?: Object[];
+ * }) => Promise<boolean>} params.updateToolCallResult
+ */
+function createBackgroundCodeResultHandler({ req, updateToolCallResult }) {
+  return createCodeHarvestHandler({
+    req,
+    updateToolCallResult,
+    processCodeOutput,
+    runPreviewFinalize,
+  });
+}
+
+/**
  * Helper to write attachment events in Open Responses format (librechat:attachment)
  * @param {ServerResponse} res - The server response object
  * @param {Object} tracker - The response tracker with sequence number
@@ -1277,6 +1360,8 @@ module.exports = {
   agentLogHandlerObj,
   getDefaultHandlers,
   createToolEndCallback,
+  createAttachmentEmitter,
+  createBackgroundCodeResultHandler,
   isStreamWritable,
   markSummarizationUsage,
   buildSummarizationHandlers,

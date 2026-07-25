@@ -413,10 +413,10 @@ describe('loadAgent', () => {
       deps,
     );
 
-    // eligible MCP tool opts in; excluded built-ins (web_search, execute_code) do not
+    // eligible tools opt in (MCP + code execution); excluded built-ins (web_search) do not
     expect(result?.tool_options?.crm_lookup).toEqual({ run_in_background: true });
     expect(result?.tool_options?.web_search).toBeUndefined();
-    expect(result?.tool_options?.execute_code).toBeUndefined();
+    expect(result?.tool_options?.execute_code).toEqual({ run_in_background: true });
   });
 
   test('synthesizes background tool_options from a model spec (runInBackground: true), and not without it', async () => {

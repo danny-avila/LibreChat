@@ -34,6 +34,7 @@ import type {
 } from 'librechat-data-provider';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
+import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
 import {
@@ -990,6 +991,8 @@ function buildSubagentConfigs(
         child.description ??
         `Delegate a subtask to the ${child.name ?? child.id} agent in an isolated context.`,
       agentInputs: childInputs,
+      /** Preserve the child's resolved subagent configs when the SDK builds its isolated graph. */
+      allowNested: true,
       /** Honor each child agent's own resolved recursion limit. */
       maxTurns: resolveSubagentMaxTurns(agentsEConfig, child),
     });
@@ -1034,6 +1037,7 @@ export async function createRun({
   subagentUsageSink,
   steering,
   hitlCapable = false,
+  toolInputValidationErrors,
   streaming = true,
   streamUsage = true,
 }: {
@@ -1099,6 +1103,8 @@ export async function createRun({
    * final response / `[DONE]` with the tool call left unresolved).
    */
   hitlCapable?: boolean;
+  /** Request-scoped tool input failures consumed by the completion handler. */
+  toolInputValidationErrors?: Map<string, ToolInputValidationError>;
 } & Pick<
   RunConfig,
   'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
@@ -1282,7 +1288,9 @@ export async function createRun({
         toolRegistry.delete(ASK_USER_QUESTION_TOOL_NAME);
       }
       if (hitlCapable && !isSubagent && !askToolAdminDisabled) {
-        askGraphTools = [createAskUserQuestionTool() as unknown as GenericTool];
+        askGraphTools = [
+          createAskUserQuestionTool(toolInputValidationErrors) as unknown as GenericTool,
+        ];
       }
     }
 
@@ -1344,6 +1352,8 @@ export async function createRun({
     );
     if (subagentConfigs.length > 0) {
       agentInput.subagentConfigs = subagentConfigs;
+      /** Seed the SDK countdown that bounds nested delegation across isolated child graphs. */
+      agentInput.maxSubagentDepth = MAX_SUBAGENT_DEPTH;
     }
     agentInputs.push(agentInput);
   }
@@ -1505,7 +1515,17 @@ export async function createRun({
     // API's per-user default runtime session and cannot see files bash_tool
     // just wrote in the conversation's session. Requires @librechat/agents
     // with codeSessionToolNames support (agents#283); older versions ignore it.
-    codeSessionToolNames: [CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME, Constants.READ_FILE],
+    // `check_background_task` participates so a backgrounded code call's exec
+    // session/files (returned as the poll result's artifact when claimed) fold
+    // into the shared code session, keeping same-run continuity for later
+    // foreground code calls. Poll results carry an artifact only for code
+    // tasks, so non-code polls never touch the session.
+    codeSessionToolNames: [
+      CREATE_FILE_TOOL_NAME,
+      EDIT_FILE_TOOL_NAME,
+      Constants.READ_FILE,
+      CHECK_BACKGROUND_TASK_NAME,
+    ],
     // Derive the Langfuse trace id deterministically from runId so message
     // feedback can be scored against the trace without a lookup (see the
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse

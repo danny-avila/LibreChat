@@ -2361,6 +2361,7 @@ describe('createToolExecuteHandler', () => {
       skillAuthoringAvailable?: boolean;
       req?: unknown;
       readSandboxFile?: ToolExecuteOptions['readSandboxFile'];
+      readSandboxImage?: ToolExecuteOptions['readSandboxImage'];
       getSkillByName?: ToolExecuteOptions['getSkillByName'];
       getAuthorSkillByName?: ToolExecuteOptions['getAuthorSkillByName'];
     }) {
@@ -2380,6 +2381,7 @@ describe('createToolExecuteHandler', () => {
         getSkillByName: params.getSkillByName,
         getAuthorSkillByName: params.getAuthorSkillByName,
         readSandboxFile: params.readSandboxFile,
+        readSandboxImage: params.readSandboxImage,
       });
     }
 
@@ -2964,16 +2966,214 @@ describe('createToolExecuteHandler', () => {
     });
 
     describe('binary file guard', () => {
+      /* 1x1 transparent PNG; decoded bytes start with the PNG magic so the
+       * handler's `sniffImageMime` resolves `image/png` regardless of the
+       * path extension. `pngBytes` feeds the integrity check that guards
+       * against codeapi truncating a large `/exec` stdout. */
+      const PNG_B64 =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      const pngBytes = Buffer.from(PNG_B64, 'base64').length;
+
+      /* Minimal magic-byte headers for the other supported formats — enough
+       * for `sniffImageMime` to resolve the MIME from the actual bytes. The
+       * `read_file` MIME is always sniffed, never taken from the extension. */
+      const b64 = (bytes: number[]) => Buffer.from(bytes).toString('base64');
+      const JPEG_B64 = b64([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+      const GIF_B64 = b64([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00]);
+      /* RIFF container with a size field (bytes 4-7 LE = 12) that matches the
+       * 20-byte total, so the completeness check accepts it as intact. */
+      const WEBP_B64 = b64([
+        0x52, 0x49, 0x46, 0x46, 0x0c, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0, 0, 0, 0, 0, 0, 0, 0,
+      ]);
+      /* PNG magic header with NO IEND trailer — a truncated/interrupted write. */
+      const TRUNCATED_PNG_B64 = b64([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+      /* Plausible text bytes with no image magic — a file mislabeled `.png`. */
+      const NOT_IMAGE_B64 = Buffer.from('plainly text, not an image at all', 'utf8').toString(
+        'base64',
+      );
+
+      const imageUrlOf = (result: { artifact?: unknown }): string => {
+        const artifact = result.artifact as { content?: Array<{ image_url?: { url?: string } }> };
+        return artifact?.content?.[0]?.image_url?.url ?? '';
+      };
+
       /**
-       * Regression for the matplotlib-shape bug where `read_file` on
-       * `/mnt/data/simple_graph.png` shelled `cat` through codeapi and
-       * line-numbered the lossy-string-decoded PNG bytes back to the
-       * model. The guard short-circuits BEFORE the network call for any
-       * extension that can never round-trip through codeapi's JSON
-       * `/exec` transport, and falls back to a NUL-byte sniff after the
-       * read for unknown extensions.
+       * `read_file` on a sandbox image returns the bytes as an `image_url`
+       * artifact the model can see. The SDK folds `artifact.content` into
+       * the model-visible message and the host tool-end callback saves the
+       * same data URL as a viewable attachment. `readSandboxFile` (the text
+       * `cat` path) must NOT be used — its JSON transport corrupts image
+       * bytes, which was the matplotlib-shape mojibake regression.
        */
-      it('rejects images by extension without ever calling readSandboxFile', async () => {
+      it('returns a sandbox image as an image_url artifact the model can see', async () => {
+        const readSandboxFile = jest.fn();
+        const readSandboxImage = jest.fn(async () => ({ base64: PNG_B64, bytes: pngBytes }));
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxFile,
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_png',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/simple_graph.png' },
+            codeSessionContext: { session_id: 'sess-Z', files: [] },
+          } as unknown as ToolCallRequest,
+        ]);
+
+        expect(readSandboxFile).not.toHaveBeenCalled();
+        expect(readSandboxImage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            file_path: '/mnt/data/simple_graph.png',
+            session_id: 'sess-Z',
+            maxBytes: expect.any(Number),
+          }),
+        );
+        expect(result.status).toBe('success');
+        expect(result.content).toContain('Image:');
+        expect(result.content).toContain('image/png');
+        expect(result.artifact).toMatchObject({
+          content: [{ type: 'image_url', image_url: { url: `data:image/png;base64,${PNG_B64}` } }],
+        });
+      });
+
+      it.each([
+        ['png', '.png', PNG_B64, 'image/png'],
+        ['jpeg', '.jpg', JPEG_B64, 'image/jpeg'],
+        ['jpeg (.jpeg)', '.jpeg', JPEG_B64, 'image/jpeg'],
+        ['gif', '.gif', GIF_B64, 'image/gif'],
+        ['webp', '.webp', WEBP_B64, 'image/webp'],
+      ])(
+        'inlines a %s image with the MIME sniffed from its bytes',
+        async (_label, ext, base64, expectedMime) => {
+          const bytes = Buffer.from(base64, 'base64').length;
+          const readSandboxImage = jest.fn(async () => ({ base64, bytes }));
+          const handler = makeReadFileHandler({
+            codeEnvAvailable: true,
+            accessibleSkillIds: skillsInScope(),
+            readSandboxImage,
+          });
+
+          const [result] = await invokeHandler(handler, [
+            {
+              id: `call_${ext}`,
+              name: Constants.READ_FILE,
+              args: { path: `/mnt/data/asset${ext}` },
+            },
+          ]);
+
+          expect(result.status).toBe('success');
+          expect(result.content).toContain(expectedMime);
+          expect(imageUrlOf(result)).toBe(`data:${expectedMime};base64,${base64}`);
+        },
+      );
+
+      it('declares the sniffed MIME, not the extension, when they disagree (.png holding JPEG bytes)', async () => {
+        /* matplotlib/PIL commonly re-encode to a different format than the
+         * filename suggests. The declared type must match the bytes or the
+         * provider rejects the image. */
+        const bytes = Buffer.from(JPEG_B64, 'base64').length;
+        const readSandboxImage = jest.fn(async () => ({ base64: JPEG_B64, bytes }));
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_mismatch',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/actually_jpeg.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('success');
+        expect(imageUrlOf(result)).toBe(`data:image/jpeg;base64,${JPEG_B64}`);
+      });
+
+      it('refuses a non-image mislabeled with an image extension (bytes sniff to nothing)', async () => {
+        /* A renamed .txt/.pdf routed here by its `.png` name: the bytes match
+         * no supported image header, so we must NOT ship them declared as an
+         * image (the provider would reject) — return the bash hint instead. */
+        const bytes = Buffer.from(NOT_IMAGE_B64, 'base64').length;
+        const readSandboxImage = jest.fn(async () => ({ base64: NOT_IMAGE_B64, bytes }));
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_fake_png',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/notes.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.artifact).toBeUndefined();
+        expect(result.errorMessage).toContain('image file');
+        expect(result.errorMessage).toContain('bash_tool');
+      });
+
+      it('refuses a truncated image (valid magic header, missing trailer)', async () => {
+        /* A PNG whose write was interrupted keeps the magic prefix but lacks
+         * the IEND trailer; shipping it would fail saveBase64Image / the next
+         * provider request, so it must degrade to the bash hint. */
+        const bytes = Buffer.from(TRUNCATED_PNG_B64, 'base64').length;
+        const readSandboxImage = jest.fn(async () => ({ base64: TRUNCATED_PNG_B64, bytes }));
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_truncated_png',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/half_written.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.artifact).toBeUndefined();
+        expect(result.errorMessage).toContain('image file');
+        expect(result.errorMessage).toContain('bash_tool');
+      });
+
+      it('routes to the image reader case-insensitively (.PNG)', async () => {
+        const readSandboxFile = jest.fn();
+        const readSandboxImage = jest.fn(async () => ({ base64: PNG_B64, bytes: pngBytes }));
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxFile,
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_uppercase',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/CHART.PNG' },
+          },
+        ]);
+
+        expect(readSandboxFile).not.toHaveBeenCalled();
+        expect(readSandboxImage).toHaveBeenCalledWith(
+          expect.objectContaining({ file_path: '/mnt/data/CHART.PNG' }),
+        );
+        expect(result.status).toBe('success');
+        expect(result.artifact).toBeDefined();
+      });
+
+      it('degrades to a bash-pointing image hint when no sandbox image reader is wired', async () => {
         const readSandboxFile = jest.fn();
         const handler = makeReadFileHandler({
           codeEnvAvailable: true,
@@ -2994,16 +3194,91 @@ describe('createToolExecuteHandler', () => {
         expect(result.status).toBe('error');
         expect(result.errorMessage).toContain('image file');
         expect(result.errorMessage).toContain('.png');
-        expect(result.errorMessage).toContain('already attached');
+        expect(result.errorMessage).toContain('bash_tool');
+        expect(result.errorMessage).not.toContain('already attached');
+      });
+
+      it('reports an over-limit image without transferring bytes', async () => {
+        const readSandboxImage = jest.fn(async () => ({
+          tooLarge: true as const,
+          bytes: 9_000_000,
+        }));
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_big',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/huge.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('success');
+        expect(result.artifact).toBeUndefined();
+        expect(result.content).toContain('inline limit');
+        expect(result.content).toContain('bash_tool');
+      });
+
+      it('degrades to the image hint when decoded bytes are truncated (integrity guard)', async () => {
+        /* Simulate codeapi clipping a large `/exec` stdout: the reported
+         * size does not match the decoded base64 length, so the bytes are
+         * unsafe to forward and we fall back to the bash hint. */
+        const readSandboxImage = jest.fn(async () => ({ base64: PNG_B64, bytes: pngBytes + 100 }));
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_trunc',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/clipped.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.artifact).toBeUndefined();
+        expect(result.errorMessage).toContain('image file');
         expect(result.errorMessage).toContain('bash_tool');
       });
 
-      it('rejects non-image binary types with a bash-pointing message (not the image-attachment hint)', async () => {
+      it('degrades to the image hint when the image reader throws', async () => {
+        const readSandboxImage = jest.fn(async () => {
+          throw new Error('codeapi unreachable');
+        });
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_throw',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/broken.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('image file');
+        expect(result.errorMessage).toContain('bash_tool');
+      });
+
+      it('rejects non-image binary types with a bash-pointing message (not the image path)', async () => {
         const readSandboxFile = jest.fn();
+        const readSandboxImage = jest.fn();
         const handler = makeReadFileHandler({
           codeEnvAvailable: true,
           accessibleSkillIds: skillsInScope(),
           readSandboxFile,
+          readSandboxImage,
         });
 
         const [result] = await invokeHandler(handler, [
@@ -3015,32 +3290,12 @@ describe('createToolExecuteHandler', () => {
         ]);
 
         expect(readSandboxFile).not.toHaveBeenCalled();
+        expect(readSandboxImage).not.toHaveBeenCalled();
         expect(result.status).toBe('error');
         expect(result.errorMessage).toContain('binary file');
         expect(result.errorMessage).toContain('.zip');
         expect(result.errorMessage).not.toContain('already attached');
         expect(result.errorMessage).toContain('bash_tool');
-      });
-
-      it('is case-insensitive on the extension match (PNG vs .png)', async () => {
-        const readSandboxFile = jest.fn();
-        const handler = makeReadFileHandler({
-          codeEnvAvailable: true,
-          accessibleSkillIds: skillsInScope(),
-          readSandboxFile,
-        });
-
-        const [result] = await invokeHandler(handler, [
-          {
-            id: 'call_uppercase',
-            name: Constants.READ_FILE,
-            args: { path: '/mnt/data/CHART.PNG' },
-          },
-        ]);
-
-        expect(readSandboxFile).not.toHaveBeenCalled();
-        expect(result.status).toBe('error');
-        expect(result.errorMessage).toContain('image file');
       });
 
       it('rejects binary content (NUL bytes) post-fetch when the extension was unknown', async () => {

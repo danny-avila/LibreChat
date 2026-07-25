@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { useRecoilValue } from 'recoil';
 import type { VoiceOption } from '~/common';
+import { subscribeSpeechVoices, getSpeechVoicesSnapshot } from '~/utils';
 import store from '~/store';
 
 function useTextToSpeechBrowser({
@@ -9,63 +10,19 @@ function useTextToSpeechBrowser({
   setIsSpeaking: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   const voiceName = useRecoilValue(store.voice);
-  const [voices, setVoices] = useState<VoiceOption[]>([]);
   const cloudBrowserVoices = useRecoilValue(store.cloudBrowserVoices);
-  const [isSpeechSynthesisSupported, setIsSpeechSynthesisSupported] = useState(true);
+  const { voices: availableVoices, supported: isSpeechSynthesisSupported } = useSyncExternalStore(
+    subscribeSpeechVoices,
+    getSpeechVoicesSnapshot,
+    getSpeechVoicesSnapshot,
+  );
 
-  const updateVoices = useCallback(() => {
-    const synth = window.speechSynthesis as SpeechSynthesis | undefined;
-    if (!synth) {
-      setIsSpeechSynthesisSupported(false);
-      return;
-    }
-
-    try {
-      const availableVoices = synth.getVoices();
-      if (!Array.isArray(availableVoices)) {
-        console.error('getVoices() did not return an array');
-        return;
-      }
-
-      const filteredVoices = availableVoices.filter(
-        (v) => cloudBrowserVoices || v.localService === true,
-      );
-      const voiceOptions: VoiceOption[] = filteredVoices.map((v) => ({
-        value: v.name,
-        label: v.name,
-      }));
-
-      setVoices(voiceOptions);
-    } catch (error) {
-      console.error('Error updating voices:', error);
-      setIsSpeechSynthesisSupported(false);
-    }
-  }, [cloudBrowserVoices]);
-
-  useEffect(() => {
-    const synth = window.speechSynthesis as SpeechSynthesis | undefined;
-    if (!synth) {
-      setIsSpeechSynthesisSupported(false);
-      return;
-    }
-
-    try {
-      if (synth.getVoices().length) {
-        updateVoices();
-      } else {
-        synth.onvoiceschanged = updateVoices;
-      }
-    } catch (error) {
-      console.error('Error in useEffect:', error);
-      setIsSpeechSynthesisSupported(false);
-    }
-
-    return () => {
-      if (synth.onvoiceschanged) {
-        synth.onvoiceschanged = null;
-      }
-    };
-  }, [updateVoices]);
+  const voices = useMemo(() => {
+    const filteredVoices = availableVoices.filter(
+      (v) => cloudBrowserVoices || v.localService === true,
+    );
+    return filteredVoices.map((v): VoiceOption => ({ value: v.name, label: v.name }));
+  }, [availableVoices, cloudBrowserVoices]);
 
   const generateSpeechLocal = (text: string) => {
     if (!isSpeechSynthesisSupported) {

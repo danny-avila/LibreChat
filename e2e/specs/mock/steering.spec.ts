@@ -25,10 +25,9 @@ const messageInput = (page: Page) => page.getByRole('textbox', { name: 'Message 
 const duringRunSendButton = (page: Page) => page.getByTestId('during-run-send-button');
 const queuedRows = (page: Page) => page.getByTestId('queued-message-row');
 const messageTurns = (page: Page) => messagesView(page).locator('.message-render');
-const pendingSteerParts = (page: Page) =>
-  messagesView(page).locator('[data-testid="steer-part"][data-steer-pending="true"]');
-const appliedSteerParts = (page: Page) =>
-  messagesView(page).locator('[data-testid="steer-part"]:not([data-steer-pending])');
+/** In-flight steers are anchored above the composer, not in the thread. */
+const inFlightSteers = (page: Page) => page.getByTestId('in-flight-steer');
+const appliedSteerParts = (page: Page) => messagesView(page).getByTestId('steer-part');
 
 function isSteerRequest(response: Response) {
   return (
@@ -70,13 +69,13 @@ test.describe('mid-run steering and queuing', () => {
   /**
    * The applied-steer contract (requires @librechat/agents ≥ 3.2.63, where
    * top-level `PostToolBatch` hook inputs carry no subagent-scope `agentId`):
-   * a steer submitted mid-run appears in-thread immediately as an optimistic
-   * user message, is injected at the next tool-batch boundary — the pending
-   * marker drops as `on_steer_applied` swaps in the persisted part — and
+   * a steer submitted mid-run appears immediately as a bubble anchored above
+   * the composer, is injected at the next tool-batch boundary — the bubble
+   * drops as `on_steer_applied` lands the persisted part in-thread — and
    * SURVIVES inside the response after run end, with no degradation to a
    * queued follow-up turn.
    */
-  test('steers mid-run: pending part appears immediately and applies at the next tool boundary', async ({
+  test('steers mid-run: anchored bubble appears immediately and applies at the next tool boundary', async ({
     page,
   }) => {
     test.setTimeout(150000);
@@ -102,16 +101,18 @@ test.describe('mid-run steering and queuing', () => {
     ]);
     expect(steerResponse.status()).toBe(202);
 
-    // The steer shows in-thread immediately as an optimistic user-style part.
-    await expect(pendingSteerParts(page).filter({ hasText: steerText })).toHaveCount(1, {
+    // The steer shows immediately as a bubble anchored above the composer.
+    await expect(inFlightSteers(page).filter({ hasText: steerText })).toHaveCount(1, {
       timeout: 10000,
     });
+    await expect(appliedSteerParts(page)).toHaveCount(0);
 
-    // Injected at the tool-batch boundary: the optimistic entry becomes the
-    // persisted part (pending marker drops) while the run is still going.
+    // Injected at the tool-batch boundary: the anchored bubble gives way to the
+    // persisted in-thread part while the run is still going.
     await expect(appliedSteerParts(page).filter({ hasText: steerText })).toHaveCount(1, {
       timeout: 60000,
     });
+    await expect(inFlightSteers(page)).toHaveCount(0);
     await expect(messagesView(page).getByRole('button', { name: /remember_fact/ })).toBeVisible({
       timeout: 60000,
     });
@@ -123,7 +124,7 @@ test.describe('mid-run steering and queuing', () => {
     // its injection point, not a queued follow-up turn (4 turns: the setup
     // pair plus this pair).
     await expect(messageTurns(page)).toHaveCount(4);
-    await expect(pendingSteerParts(page)).toHaveCount(0);
+    await expect(inFlightSteers(page)).toHaveCount(0);
     await expect(appliedSteerParts(page).filter({ hasText: steerText })).toHaveCount(1);
     await expect(queuedRows(page)).toHaveCount(0);
   });
@@ -148,7 +149,7 @@ test.describe('mid-run steering and queuing', () => {
     const row = queuedRows(page).filter({ hasText: queueText });
     await expect(row).toBeVisible({ timeout: 10000 });
     // Queued means NOT injected into the live thread.
-    await expect(pendingSteerParts(page)).toHaveCount(0);
+    await expect(inFlightSteers(page)).toHaveCount(0);
 
     // Clean completion drains exactly one queued message as a new user turn.
     await expect(row).toHaveCount(0, { timeout: 60000 });

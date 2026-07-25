@@ -42,11 +42,15 @@ const textFixture: UploadFixture = {
   buffer: Buffer.from('This text attachment should be available to the mock model.\n'),
 };
 
+// Valid 16x16 PNG. The previous 1x1 fixture had a corrupt IDAT CRC that older
+// libpng silently accepted but sharp 0.35.3's newer libpng rejects during
+// server-side image processing ("vipspng: libpng read error"). Keep this a
+// spec-conformant PNG (correct chunk CRCs).
 const imageFixture: UploadFixture = {
   name: 'provider-context.png',
   mimeType: 'image/png',
   buffer: Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+    'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHUlEQVQ4jWNwaDjwnxLMMGrA/9EwODAaBg3DIgwACY9/HwbtciYAAAAASUVORK5CYII=',
     'base64',
   ),
 };

@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import copy from 'copy-to-clipboard';
 import { useRecoilValue } from 'recoil';
 import type { TAttachment } from 'librechat-data-provider';
+import { parseBackgroundHandle, splitBackgroundAttachments } from './handle';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import parseJsonField, { areToolCallArgsComplete } from './parseJsonField';
 import CopyButton from '~/components/Messages/Content/CopyButton';
@@ -45,6 +46,23 @@ export default function BashCall({
 
   const highlighted = useLazyHighlight(command || undefined, 'bash');
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
+  /** A backgrounded call's persisted output stays the dispatch handle until
+   *  the detached run settles and patches it; render a background state
+   *  instead of the handle JSON. Completion arrives live as the status marker
+   *  attachment (also covers stdout-only runs) or as harvested files. */
+  const backgroundHandle = useMemo(() => parseBackgroundHandle(output), [output]);
+  const { fileAttachments, backgroundStatus } = useMemo(
+    () => splitBackgroundAttachments(attachments, toolCallId),
+    [attachments, toolCallId],
+  );
+  const backgroundFailed = backgroundHandle != null && backgroundStatus === 'error';
+  const backgroundFinishedText = backgroundHandle
+    ? localize(
+        backgroundStatus != null || (fileAttachments?.length ?? 0) > 0
+          ? 'com_ui_background_finished'
+          : 'com_ui_background_running',
+      )
+    : null;
 
   const [isCopied, setIsCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -75,9 +93,15 @@ export default function BashCall({
           onClick={toggleCode}
           inProgressText={inProgressText}
           finishedText={
-            cancelled ? localize('com_ui_cancelled') : localize('com_ui_command_finished')
+            cancelled
+              ? localize('com_ui_cancelled')
+              : (backgroundFinishedText ?? localize('com_ui_command_finished'))
           }
-          errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
+          errorSuffix={
+            (hasError && !cancelled) || backgroundFailed
+              ? localize('com_ui_tool_failed')
+              : undefined
+          }
           icon={
             <LangIcon
               lang="bash"
@@ -112,7 +136,7 @@ export default function BashCall({
                 </pre>
               </div>
             )}
-            {hasOutput && (
+            {hasOutput && backgroundHandle == null && (
               <div className={cn(command && 'border-t border-border-light')}>
                 <pre
                   className={cn(
@@ -127,8 +151,8 @@ export default function BashCall({
           </div>
         </div>
       </div>
-      {!hideAttachments && attachments && attachments.length > 0 && (
-        <AttachmentGroup attachments={attachments} />
+      {!hideAttachments && fileAttachments && fileAttachments.length > 0 && (
+        <AttachmentGroup attachments={fileAttachments} />
       )}
     </>
   );

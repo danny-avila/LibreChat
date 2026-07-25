@@ -17,6 +17,7 @@ on:
       - 'packages/client/**'
       - 'packages/data-provider/**'
       - 'packages/data-schemas/**'
+      - '!**.md'
 
 permissions:
   contents: read

@@ -158,6 +158,7 @@ jest.mock('~/hooks/SSE/useEventHandlers', () => {
       resetContentHandler: jest.fn(),
       syncStepMessage: jest.fn(),
       clearStepMaps: mockClearStepMaps,
+      flushPendingDeltas: jest.fn(),
       messageHandler: jest.fn(),
       setIsSubmitting: mockSetIsSubmitting,
       setShowStopButton: jest.fn(),
@@ -426,6 +427,50 @@ describe('useResumableSSE', () => {
       pageParams: [],
     });
     expect(result.pages[0].conversations).toEqual([{ conversationId: 'other' }]);
+    unmount();
+  });
+
+  it('reconciles conversations via refetch instead of removing them on a resume 404', async () => {
+    mockFindAll.mockReturnValue([{ queryKey: [QueryKeys.allConversations] }]);
+    // A deduped start returns status: 'resumed', so the client subscribes with resume=true.
+    (request.post as jest.Mock).mockResolvedValue({ streamId: 'stream-123', status: 'resumed' });
+    const submission = buildSubmission({
+      conversation: {},
+      userMessage: {
+        messageId: 'msg-1',
+        conversationId: null,
+        text: 'Hello',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: Constants.NO_PARENT,
+      },
+      initialResponse: {
+        messageId: 'msg-1_',
+        conversationId: null,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('error', { responseCode: 404 });
+    });
+
+    // Reconcile against the server (refetch) rather than dropping a possibly-persisted
+    // conversation. The handler is a mutually-exclusive isResume ? invalidate : remove, so
+    // asserting the invalidate proves the immediate removal did not run.
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.allConversations],
+    });
     unmount();
   });
 
@@ -1192,6 +1237,177 @@ describe('useResumableSSE', () => {
 
     expect(mockTitleHandler).toHaveBeenCalledWith(titleEvent);
     unmount();
+  });
+
+  describe('sync content reconciliation', () => {
+    const DB_CONTENT = [{ type: 'text', text: 'streamed before the reload' }];
+
+    const renderWithLoadedResponse = () => {
+      const submission = buildSubmission();
+      const chatHelpers = buildChatHelpers();
+      chatHelpers.getMessages.mockReturnValue([
+        {
+          messageId: 'msg-1',
+          conversationId: CONV_ID,
+          isCreatedByUser: true,
+          text: 'Hello',
+        },
+        {
+          messageId: 'resp-1',
+          parentMessageId: 'msg-1',
+          conversationId: CONV_ID,
+          isCreatedByUser: false,
+          text: '',
+          content: DB_CONTENT,
+        },
+      ] as unknown as TMessage[]);
+      return { submission, chatHelpers };
+    };
+
+    const emitSync = async (aggregatedContent: unknown[]) => {
+      const sse = getLastSSE();
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            sync: true,
+            resumeState: {
+              runSteps: [],
+              aggregatedContent,
+              responseMessageId: 'resp-1',
+            },
+          }),
+        });
+      });
+    };
+
+    const syncedResponse = (chatHelpers: ReturnType<typeof buildChatHelpers>) => {
+      const call = chatHelpers.setMessages.mock.calls
+        .map(([messages]) => messages as TMessage[])
+        .reverse()
+        .find((messages) => messages?.some((m) => m.messageId === 'resp-1'));
+      return call?.find((m) => m.messageId === 'resp-1');
+    };
+
+    /**
+     * An empty snapshot is what a resuming client gets when the conversation's job was
+     * replaced mid-flight. Assigning it erased the content the messages query had already
+     * loaded, leaving a message that renders as a bare cursor forever.
+     */
+    it('keeps already-loaded content when the resume snapshot is empty', async () => {
+      const { submission, chatHelpers } = renderWithLoadedResponse();
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      await emitSync([]);
+
+      expect(syncedResponse(chatHelpers)?.content).toEqual(DB_CONTENT);
+      unmount();
+    });
+
+    /**
+     * Regenerate: the new run's response id is not in the loaded history yet, so the
+     * parent-based fallback lands on the answer being REPLACED. Preserving that row's
+     * content would make the regenerated run's deltas append to the stale answer, so an
+     * empty snapshot must still clear a row we only matched heuristically.
+     */
+    it('does not preserve content on a row matched only by the parent fallback', async () => {
+      const submission = buildSubmission();
+      const chatHelpers = buildChatHelpers();
+      chatHelpers.getMessages.mockReturnValue([
+        {
+          messageId: 'msg-1',
+          conversationId: CONV_ID,
+          isCreatedByUser: true,
+          text: 'Hello',
+        },
+        {
+          messageId: 'resp-previous',
+          parentMessageId: 'msg-1',
+          conversationId: CONV_ID,
+          isCreatedByUser: false,
+          text: '',
+          content: [{ type: 'text', text: 'the answer being regenerated' }],
+        },
+      ] as unknown as TMessage[]);
+
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const sse = getLastSSE();
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            sync: true,
+            resumeState: {
+              runSteps: [],
+              aggregatedContent: [],
+              responseMessageId: 'resp-regenerated',
+            },
+          }),
+        });
+      });
+
+      const synced = chatHelpers.setMessages.mock.calls
+        .map(([messages]) => messages as TMessage[])
+        .reverse()
+        .find((messages) => messages?.some((m) => m.messageId === 'resp-previous'))
+        ?.find((m) => m.messageId === 'resp-previous');
+      expect(synced?.content).toEqual([]);
+      unmount();
+    });
+
+    /**
+     * A row with no `content` array must still be assigned the snapshot's array. Handing it
+     * `undefined` would flip which renderer `MultiMessage` selects (it branches on
+     * `message.content` truthiness, and `[]` is truthy while `undefined` is not).
+     */
+    it('assigns the snapshot when the matched row has no content array', async () => {
+      const submission = buildSubmission();
+      const chatHelpers = buildChatHelpers();
+      chatHelpers.getMessages.mockReturnValue([
+        {
+          messageId: 'msg-1',
+          conversationId: CONV_ID,
+          isCreatedByUser: true,
+          text: 'Hello',
+        },
+        {
+          messageId: 'resp-1',
+          parentMessageId: 'msg-1',
+          conversationId: CONV_ID,
+          isCreatedByUser: false,
+          text: 'legacy text-only row',
+        },
+      ] as unknown as TMessage[]);
+
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      await emitSync([]);
+
+      expect(syncedResponse(chatHelpers)?.content).toEqual([]);
+      unmount();
+    });
+
+    it('still applies the resume snapshot when it carries content', async () => {
+      const { submission, chatHelpers } = renderWithLoadedResponse();
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const resumed = [{ type: 'text', text: 'authoritative resumed content' }];
+      await emitSync(resumed);
+
+      expect(syncedResponse(chatHelpers)?.content).toEqual(resumed);
+      unmount();
+    });
   });
 
   it('replays OAuth run step delta events from resume state sync', async () => {

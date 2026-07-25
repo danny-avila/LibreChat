@@ -564,12 +564,17 @@ describe('requireJwtAuth tenant context chaining', () => {
         fallback_strategy: 'jwt',
         fallback_attempted: true,
         fallback_succeeded: false,
+        // The real openidJwt failure is surfaced alongside the fallback's reason so a
+        // reused-token failure is not misattributed to the `jwt` fallback's error (#14311).
+        primary_failure_reason: 'jwt expired',
+        primary_failure_error_name: 'TokenExpiredError',
         reason: 'invalid signature',
         error_name: 'JsonWebTokenError',
         status: 401,
       }),
     );
     expect(logger.warn.mock.calls[0][0]).toContain('"reason":"invalid signature"');
+    expect(logger.warn.mock.calls[0][0]).toContain('"primary_failure_reason":"jwt expired"');
     expect(logger.warn.mock.calls[0][0]).toContain('"path":"/api/ask"');
   });
 

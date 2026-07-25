@@ -29,7 +29,6 @@
   "com_agents_description_card": "Mô tả: {{description}}",
   "com_agents_description_placeholder": "Tùy chọn: Mô tả Agent của bạn ở đây",
   "com_agents_empty_state_heading": "Không tìm thấy agents",
-  "com_agents_enable_file_search": "Bật Tìm kiếm Tệp",
   "com_agents_error_bad_request_message": "Yêu cầu không thể được xử lý.",
   "com_agents_error_bad_request_suggestion": "Vui lòng kiểm tra lại thông tin bạn đã nhập và thử lại.",
   "com_agents_error_category_title": "Lỗi danh mục",

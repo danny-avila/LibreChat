@@ -104,6 +104,10 @@ export default function Parameters() {
         }
       });
 
+      if (updatedKeys.length === 0) {
+        return prev;
+      }
+
       logger.log('parameters', 'parameters effect, updated keys:', updatedKeys);
 
       return updatedConversation;

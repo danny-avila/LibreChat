@@ -80,6 +80,8 @@ export namespace Agents {
     id?: string;
     /** If provided, the output of the tool call */
     output?: string;
+    /** The tool call was rejected before execution because its input failed schema validation. */
+    inputValidationError?: true;
     /** Auth URL */
     auth?: string;
     /** Expiration time */
