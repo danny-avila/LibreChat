@@ -381,8 +381,16 @@ export async function fireSchedule(
     // a count read before the write. The allocator advances to the next free slot when
     // another admission wins one, and reports 'capacity' only when genuinely saturated.
     // Occupancy is read system-scoped so the cap stays global across tenants.
+    // CLAMPED to the deployment-wide cap. The slots are global across every owner, so a
+    // role/user/tenant override must never be able to WIDEN them: manual Run Now resolves
+    // the owner's limits and bypasses the engine tick's base-config budget entirely, so
+    // an override of 5 against a base of 1 would otherwise let concurrent clicks occupy
+    // slots 0-4 and run five billed generations at once. Re-read without a principal for
+    // the base value (the same read the tick budgets from); a STRICTER owner value still
+    // applies, since only widening is the defect.
+    const deploymentLimits = await deps.getLimits();
     const allocation = await deps.withGlobalCapacitySlot(
-      ownerLimits.fireConcurrency,
+      Math.min(ownerLimits.fireConcurrency, deploymentLimits.fireConcurrency),
       async (capacitySlot) => {
         const attempt = await methods.reserveStartedRun({
           ...baseRun,

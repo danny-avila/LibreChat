@@ -346,6 +346,38 @@ describe('fireSchedule', () => {
     expect(methods.deleteScheduleRun).not.toHaveBeenCalled();
   });
 
+  it('does not let a principal override widen the global capacity cap', async () => {
+    const { methods, runs } = makeMethods();
+    // The single deployment-wide slot is already occupied.
+    runs.set('other-0:x', { status: 'started', capacitySlot: 0 });
+    mockFetch(async () => okResponse());
+    const deps = makeDeps(methods, {
+      // Base allows 1 concurrent scheduled generation; this owner's role/tenant
+      // override raises their limit to 5.
+      getLimits: async (user) => ({ ...LIMITS, fireConcurrency: user ? 5 : 1 }),
+    });
+    // Run Now resolves the OWNER's limits and skips the tick's base-config budget, so
+    // without the clamp the override would hand out slots 1-4 and run five billed
+    // generations against a deployment that advertises a cap of one.
+    const result = await fireSchedule(deps, makeSchedule(), LIMITS, dueAt());
+    expect(result.skipped).toBe('capacity');
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(methods.reserveStartedRun).not.toHaveBeenCalled();
+  });
+
+  it('still honors an owner override that is STRICTER than the deployment cap', async () => {
+    const { methods, runs } = makeMethods();
+    runs.set('other-0:x', { status: 'started', capacitySlot: 0 });
+    mockFetch(async () => okResponse());
+    const deps = makeDeps(methods, {
+      getLimits: async (user) => ({ ...LIMITS, fireConcurrency: user ? 1 : 5 }),
+    });
+    // Only WIDENING is the defect; a tenant that wants less concurrency than the
+    // deployment allows must still get it.
+    const result = await fireSchedule(deps, makeSchedule(), LIMITS, dueAt());
+    expect(result.skipped).toBe('capacity');
+  });
+
   it('claims a free slot and never exceeds the cap when slots collide', async () => {
     const { methods, runs } = makeMethods();
     // Slots 0 and 2 are taken; the allocator must land the fire on slot 1.
