@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { createContentAggregator } from '@librechat/agents';
-import type { Agents, TPendingSteer } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
+import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
 import type {
   SerializableJobData,
@@ -20,35 +20,80 @@ import {
   isPendingActionStale,
 } from '~/stream/interfaces/IJobStore';
 import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
-import { toPendingSteer } from '~/stream/SteeringLifecycle';
 
 /**
  * Atomic compare-and-set on the job hash — the single-winner decision for a
- * status transition. The job and event-sequence keys share the stream hash tag,
- * so updating the job and extending the counter TTL is atomic on both single-node
- * Redis and Redis Cluster (cross-slot membership sets are reconciled afterward).
+ * status transition. All supplied keys share the stream hash tag, so updating
+ * the job and terminal stream cleanup are atomic on both single-node Redis and
+ * Redis Cluster (cross-slot membership sets self-heal during cleanup).
  *
- * Guards on the current `status` and, when ARGV[2] is non-empty, on the flat
- * `pendingActionId` field — so a stale decision targeting a different action
- * loses. On success: removes `clear` fields, writes `status`+patch pairs,
- * refreshes the job-hash TTL. Returns 1 if it fired, 0 otherwise.
+ * Guards on the current `status` and, when supplied, on the flat
+ * `pendingActionId` and `createdAt` fields — so a stale decision targeting a
+ * different action or replacement epoch loses. On success: removes `clear`
+ * fields, writes `status`+patch pairs, refreshes the job-hash TTL, and performs
+ * terminal cleanup of same-slot stream state. Returns 1 if it fired, 0 otherwise.
  *
- *   KEYS: [job, eventSequence]
- *   ARGV: [from, expectActionId | "", ttl, hdelCount, ...hdelFields, ...hsetPairs]
+ *   KEYS: [job, eventSequence, chunks, runSteps, steers, parkedSteers]
+ *   ARGV: [
+ *     from,
+ *     expectActionId | "",
+ *     expectCreatedAt | "",
+ *     ttl,
+ *     terminal ("0" | "1"),
+ *     chunksAfterComplete,
+ *     runStepsAfterComplete,
+ *     parkedSteersTtl,
+ *     hdelCount,
+ *     ...hdelFields,
+ *     ...hsetPairs
+ *   ]
  */
 const JOB_CAS_LUA =
   'if redis.call("HGET", KEYS[1], "status") ~= ARGV[1] then return 0 end ' +
   'if ARGV[2] ~= "" and redis.call("HGET", KEYS[1], "pendingActionId") ~= ARGV[2] then return 0 end ' +
-  'local ttl = tonumber(ARGV[3]) ' +
-  'local hdelCount = tonumber(ARGV[4]) ' +
-  'local idx = 5 ' +
+  'if ARGV[3] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[3] then return 0 end ' +
+  'local ttl = tonumber(ARGV[4]) ' +
+  'local terminal = ARGV[5] == "1" ' +
+  'local chunksTtl = tonumber(ARGV[6]) ' +
+  'local runStepsTtl = tonumber(ARGV[7]) ' +
+  'local parkedTtl = tonumber(ARGV[8]) ' +
+  'local hdelCount = tonumber(ARGV[9]) ' +
+  'local idx = 10 ' +
   'for i = 1, hdelCount do redis.call("HDEL", KEYS[1], ARGV[idx]) idx = idx + 1 end ' +
   'local hset = {} ' +
   'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
   'if #hset > 0 then redis.call("HSET", KEYS[1], unpack(hset)) end ' +
+  'local ownerUserId = redis.call("HGET", KEYS[1], "userId") ' +
+  'local ownerTenantId = redis.call("HGET", KEYS[1], "tenantId") ' +
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
   'local seqTtl = redis.call("TTL", KEYS[2]) ' +
   'if seqTtl >= 0 and seqTtl < ttl then redis.call("EXPIRE", KEYS[2], ttl) end ' +
+  'if terminal then ' +
+  'local queued = redis.call("LRANGE", KEYS[5], 0, -1) ' +
+  'if #queued > 0 then ' +
+  'local steers = {} ' +
+  'for i = 1, #queued do ' +
+  'local decoded, item = pcall(cjson.decode, queued[i]) ' +
+  'if decoded and type(item) == "table" then ' +
+  'local projected = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
+  'if item.files then projected.files = item.files end ' +
+  'steers[#steers + 1] = projected ' +
+  'end ' +
+  'end ' +
+  'if #steers > 0 then ' +
+  'local parked = { userId = ownerUserId, steers = steers } ' +
+  'if ownerTenantId then parked.tenantId = ownerTenantId end ' +
+  'redis.call("SET", KEYS[6], cjson.encode(parked), "EX", parkedTtl) ' +
+  'end ' +
+  'end ' +
+  'redis.call("DEL", KEYS[5]) ' +
+  'if chunksTtl == 0 then redis.call("DEL", KEYS[3]) else redis.call("EXPIRE", KEYS[3], chunksTtl) end ' +
+  'if runStepsTtl == 0 then redis.call("DEL", KEYS[4]) else redis.call("EXPIRE", KEYS[4], runStepsTtl) end ' +
+  'else ' +
+  'redis.call("EXPIRE", KEYS[3], ttl) ' +
+  'redis.call("EXPIRE", KEYS[4], ttl) ' +
+  'redis.call("EXPIRE", KEYS[5], ttl) ' +
+  'end ' +
   'return 1';
 
 /**
@@ -72,19 +117,110 @@ const IDEMPOTENCY_CLAIM_LUA =
  * a steer accepted against one run can never be drained into another.
  *
  *   KEYS: [job, steers, parkedSteers]
- *   ARGV: [ttl, hdelCount, ...hdelFields, ...hsetPairs]
+ *   ARGV: [ttl, requestedCreatedAt, hdelCount, ...hdelFields, ...hsetPairs]
+ *   Returns: [previousUserId | "", previousTenantId | "", createdAt]
  */
 const JOB_CREATE_LUA =
+  'local previousUserId = redis.call("HGET", KEYS[1], "userId") ' +
+  'local previousTenantId = redis.call("HGET", KEYS[1], "tenantId") ' +
+  'local previousCreatedAt = tonumber(redis.call("HGET", KEYS[1], "createdAt")) ' +
+  'local createdAt = tonumber(ARGV[2]) ' +
+  'if previousCreatedAt and previousCreatedAt >= createdAt then createdAt = previousCreatedAt + 1 end ' +
   'redis.call("DEL", KEYS[2]) ' +
   'redis.call("DEL", KEYS[3]) ' +
   'local ttl = tonumber(ARGV[1]) ' +
-  'local hdelCount = tonumber(ARGV[2]) ' +
-  'local idx = 3 ' +
+  'local hdelCount = tonumber(ARGV[3]) ' +
+  'local idx = 4 ' +
   'for i = 1, hdelCount do redis.call("HDEL", KEYS[1], ARGV[idx]) idx = idx + 1 end ' +
   'local hset = {} ' +
   'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
   'redis.call("HSET", KEYS[1], unpack(hset)) ' +
+  'redis.call("HSET", KEYS[1], "createdAt", tostring(createdAt)) ' +
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
+  'return { previousUserId or "", previousTenantId or "", tostring(createdAt) }';
+
+/**
+ * Epoch-guarded field update. Terminal writes reclaim same-slot content in the
+ * same atomic step, so a replacement cannot appear between the guarded write
+ * and content cleanup.
+ *
+ *   KEYS: [job, chunks, runSteps, steers]
+ *   ARGV: [
+ *     expectCreatedAt | "",
+ *     terminal ("0" | "1"),
+ *     completedTtl,
+ *     chunksAfterComplete,
+ *     runStepsAfterComplete,
+ *     ...hsetPairs
+ *   ]
+ */
+const JOB_UPDATE_LUA =
+  'if redis.call("EXISTS", KEYS[1]) == 0 then return 0 end ' +
+  'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'local hset = {} ' +
+  'for i = 6, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
+  'if #hset > 0 then redis.call("HSET", KEYS[1], unpack(hset)) end ' +
+  'if ARGV[2] == "1" then ' +
+  'local completedTtl = tonumber(ARGV[3]) ' +
+  'local chunksTtl = tonumber(ARGV[4]) ' +
+  'local runStepsTtl = tonumber(ARGV[5]) ' +
+  'redis.call("EXPIRE", KEYS[1], completedTtl) ' +
+  'redis.call("DEL", KEYS[4]) ' +
+  'if chunksTtl == 0 then redis.call("DEL", KEYS[2]) else redis.call("EXPIRE", KEYS[2], chunksTtl) end ' +
+  'if runStepsTtl == 0 then redis.call("DEL", KEYS[3]) else redis.call("EXPIRE", KEYS[3], runStepsTtl) end ' +
+  'end ' +
+  'return 1';
+
+/**
+ * Epoch-guarded hard deletion. `expectMissing` makes an unguarded cleanup of
+ * already-absent state safe against a replacement appearing after the read.
+ * Parked steers intentionally survive: completion parks before deleting.
+ *
+ *   KEYS: [job, chunks, runSteps, steers]
+ *   ARGV: [expectCreatedAt | "", expectMissing ("0" | "1")]
+ */
+const JOB_DELETE_LUA =
+  'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'local existed = redis.call("EXISTS", KEYS[1]) ' +
+  'if ARGV[2] == "1" and existed == 1 then return 0 end ' +
+  'redis.call("DEL", KEYS[1], KEYS[2], KEYS[3], KEYS[4]) ' +
+  'return existed';
+
+/**
+ * Atomic stale-running reap. The liveness and epoch checks, steer projection
+ * and parking, and same-slot deletion are one operation. A replacement either
+ * lands before the script and fails the guard, or lands afterward and clears
+ * the predecessor's parked payload in {@link JOB_CREATE_LUA}.
+ *
+ *   KEYS: [job, chunks, runSteps, steers, parkedSteers]
+ *   ARGV: [expectCreatedAt, nowMs, staleAfterMs, parkedSteersTtl]
+ */
+const STALE_JOB_DELETE_LUA =
+  'if redis.call("HGET", KEYS[1], "status") ~= "running" then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'local liveSince = tonumber(redis.call("HGET", KEYS[1], "lastActiveAt")) ' +
+  'if not liveSince then liveSince = tonumber(redis.call("HGET", KEYS[1], "createdAt")) end ' +
+  'if not liveSince or tonumber(ARGV[2]) - liveSince <= tonumber(ARGV[3]) then return 0 end ' +
+  'local ownerUserId = redis.call("HGET", KEYS[1], "userId") ' +
+  'local ownerTenantId = redis.call("HGET", KEYS[1], "tenantId") ' +
+  'local queued = redis.call("LRANGE", KEYS[4], 0, -1) ' +
+  'if #queued > 0 and ownerUserId then ' +
+  'local steers = {} ' +
+  'for i = 1, #queued do ' +
+  'local decoded, item = pcall(cjson.decode, queued[i]) ' +
+  'if decoded and type(item) == "table" then ' +
+  'local projected = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
+  'if item.files then projected.files = item.files end ' +
+  'steers[#steers + 1] = projected ' +
+  'end ' +
+  'end ' +
+  'if #steers > 0 then ' +
+  'local parked = { userId = ownerUserId, steers = steers } ' +
+  'if ownerTenantId then parked.tenantId = ownerTenantId end ' +
+  'redis.call("SET", KEYS[5], cjson.encode(parked), "EX", tonumber(ARGV[4])) ' +
+  'end ' +
+  'end ' +
+  'redis.call("DEL", KEYS[1], KEYS[2], KEYS[3], KEYS[4]) ' +
   'return 1';
 
 /**
@@ -114,9 +250,10 @@ const JOB_CREATE_LUA =
  * stays `run`.
  *
  *   KEYS: [chunks, job]
- *   ARGV: [eventJson, runningTtl]
+ *   ARGV: [eventJson, runningTtl, expectCreatedAt | ""]
  */
 const CHUNK_APPEND_LUA =
+  'if ARGV[3] ~= "" and redis.call("HGET", KEYS[2], "createdAt") ~= ARGV[3] then return 0 end ' +
   'redis.call("XADD", KEYS[1], "*", "event", ARGV[1]) ' +
   'local run = tonumber(ARGV[2]) ' +
   'local target = run ' +
@@ -139,9 +276,10 @@ const CHUNK_APPEND_LUA =
  * `transitionStatus` set); a normally-running job keeps the short running TTL.
  *
  *   KEYS: [runSteps, job]
- *   ARGV: [runStepsJson, runningTtl]
+ *   ARGV: [runStepsJson, runningTtl, expectCreatedAt | ""]
  */
 const RUNSTEPS_SAVE_LUA =
+  'if ARGV[3] ~= "" and redis.call("HGET", KEYS[2], "createdAt") ~= ARGV[3] then return 0 end ' +
   'redis.call("SET", KEYS[1], ARGV[1]) ' +
   'local run = tonumber(ARGV[2]) ' +
   'local target = run ' +
@@ -150,6 +288,19 @@ const RUNSTEPS_SAVE_LUA =
   'if jt > target then target = jt end ' +
   'end ' +
   'redis.call("EXPIRE", KEYS[1], target) ' +
+  'return 1';
+
+/**
+ * Clear same-slot content unless the stream already belongs to a replacement.
+ * A missing job is safe: terminal deletion may remove the hash before this
+ * best-effort cache cleanup, and Redis executes the check + deletes atomically.
+ *
+ *   KEYS: [chunks, runSteps, job]
+ *   ARGV: [expectCreatedAt | ""]
+ */
+const CONTENT_CLEAR_LUA =
+  'if ARGV[1] ~= "" and redis.call("EXISTS", KEYS[3]) == 1 and redis.call("HGET", KEYS[3], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'redis.call("DEL", KEYS[1], KEYS[2]) ' +
   'return 1';
 
 /**
@@ -241,6 +392,20 @@ const CLAIM_PARKED_LUA =
   'return v';
 
 /**
+ * Park leftovers only while the generation that drained them still owns the
+ * stream ID. If a replacement already exists, writing its parked key would
+ * leak predecessor state into the new run. A replacement created afterward
+ * atomically clears this key in {@link JOB_CREATE_LUA}.
+ *
+ *   KEYS: [job, parkedSteers]
+ *   ARGV: [expectedCreatedAt | "", payload, ttl]
+ */
+const PARK_STEERS_LUA =
+  'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'redis.call("SET", KEYS[2], ARGV[2], "EX", ARGV[3]) ' +
+  'return 1';
+
+/**
  * Terminal close-then-drain in one atomic step: mark the queue closed on the
  * job hash (only when the hash still exists — a bare HSET would resurrect a
  * deleted job as a stray hash), then take the whole queue. Once closed,
@@ -267,6 +432,9 @@ const KNOWN_INTERRUPT_TYPES = new Set(['tool_approval', 'ask_user_question']);
  *  configured to 0 — Redis rejects `EX 0`, which would silently kill
  *  park-based recovery. */
 const PARKED_RECOVERY_TTL_S: number = 300;
+
+/** Bound pathological replacement churn without leaving the request unbounded. */
+const MEMBERSHIP_RECONCILE_MAX_ATTEMPTS: number = 8;
 
 /**
  * Key prefixes for Redis storage.
@@ -445,7 +613,6 @@ export class RedisJobStore implements IJobStore {
     };
 
     const key = KEYS.job(streamId);
-    const userJobsKey = KEYS.userJobs(userId, tenantId);
 
     // A reused streamId overlays onto any existing hash, so per-turn fields from a
     // prior generation could survive. Drop the HITL fields so the fresh running job
@@ -480,40 +647,36 @@ export class RedisJobStore implements IJobStore {
     // inherit the replaced run's undrained steers nor lose/steal a steer
     // 202-accepted against either run (see JOB_CREATE_LUA).
     const hsetPairs = Object.entries(this.serializeJob(job)).flat();
-    await this.redis.eval(
+    const previousOwner = await this.redis.eval(
       JOB_CREATE_LUA,
       3,
       key,
       KEYS.steers(streamId),
       KEYS.parkedSteers(streamId),
       String(this.ttl.running),
+      String(job.createdAt),
       String(staleHitlFields.length),
       ...staleHitlFields,
       ...hsetPairs,
     );
-    // Set-membership bookkeeping lives on other slots; ordering after the
-    // atomic hash write is safe (scanners tolerate momentary lag).
-    if (this.isCluster) {
-      await Promise.all([
-        this.redis.sadd(KEYS.runningJobs, streamId),
-        this.redis.srem(KEYS.requiresActionJobs, streamId),
-        (async () => {
-          await this.redis.sadd(userJobsKey, streamId);
-          if (this.ttl.userJobsSet > 0) {
-            await this.redis.expire(userJobsKey, this.ttl.userJobsSet);
-          }
-        })(),
-      ]);
-    } else {
-      const pipeline = this.redis.pipeline();
-      pipeline.sadd(KEYS.runningJobs, streamId);
-      pipeline.srem(KEYS.requiresActionJobs, streamId);
-      pipeline.sadd(userJobsKey, streamId);
-      if (this.ttl.userJobsSet > 0) {
-        pipeline.expire(userJobsKey, this.ttl.userJobsSet);
-      }
-      await pipeline.exec();
-    }
+    const previousUserId =
+      Array.isArray(previousOwner) && typeof previousOwner[0] === 'string' ? previousOwner[0] : '';
+    const previousTenantId =
+      Array.isArray(previousOwner) && typeof previousOwner[1] === 'string' ? previousOwner[1] : '';
+    const createdAt =
+      Array.isArray(previousOwner) &&
+      (typeof previousOwner[2] === 'string' || typeof previousOwner[2] === 'number')
+        ? Number(previousOwner[2])
+        : job.createdAt;
+    job.createdAt = Number.isFinite(createdAt) ? createdAt : job.createdAt;
+    const previousUserKeys =
+      previousUserId !== ''
+        ? [KEYS.userJobs(previousUserId, previousTenantId || undefined)]
+        : undefined;
+    // Cross-slot membership cannot join the creation Lua transaction. Reconcile
+    // from the durable hash and verify after writing so an overlapping status
+    // transition or same-stream replacement always gets the final word.
+    await this.reconcileJobMembership(streamId, { initialJob: job, previousUserKeys });
 
     logger.debug(`[RedisJobStore] Created job: ${streamId}`);
     return job;
@@ -527,89 +690,206 @@ export class RedisJobStore implements IJobStore {
     return this.deserializeJob(data);
   }
 
-  async updateJob(streamId: string, updates: Partial<SerializableJobData>): Promise<void> {
+  async updateJob(
+    streamId: string,
+    updates: Partial<SerializableJobData>,
+    expectedCreatedAt?: number,
+  ): Promise<void> {
     const key = KEYS.job(streamId);
 
     // Plain field writer. The membership-aware status transitions
     // (running ⇄ requires_action — sets, TTLs, the actionId guard) go solely
-    // through transitionStatus, the single race-safe path. updateJob still
-    // handles terminal status writes (complete/error/aborted) + their cleanup.
+    // through transitionStatus. The optional epoch guard keeps late metadata
+    // and terminal-event persistence from mutating a same-stream replacement.
     const serialized = this.serializeJob(updates as SerializableJobData);
     if (Object.keys(serialized).length === 0) {
       return;
     }
 
+    const terminal =
+      updates.status != null && ['complete', 'error', 'aborted'].includes(updates.status);
+    const observedJob = terminal ? await this.getJob(streamId) : null;
     const fields = Object.entries(serialized).flat();
-    const updated = await this.updateExistingJobHash(key, fields);
-    if (!updated) {
+    const updated = await this.redis.eval(
+      JOB_UPDATE_LUA,
+      4,
+      key,
+      KEYS.chunks(streamId),
+      KEYS.runSteps(streamId),
+      KEYS.steers(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+      terminal ? '1' : '0',
+      String(this.ttl.completed),
+      String(this.ttl.chunksAfterComplete),
+      String(this.ttl.runStepsAfterComplete),
+      ...fields,
+    );
+    if (updated !== 1) {
       return;
     }
 
-    if (updates.status && ['complete', 'error', 'aborted'].includes(updates.status)) {
-      await this.applyTerminalContentCleanup(streamId);
+    if (terminal) {
+      const currentJob = await this.reconcileJobMembership(streamId, {
+        previousJob: observedJob,
+      });
+      this.clearLocalStateUnlessActive(streamId, currentJob);
     }
   }
 
-  /**
-   * Terminal cleanup shared by `updateJob` (complete/error/aborted) and the
-   * terminal path of `transitionStatus` (approval expiry → aborted): drop the
-   * job from both membership sets and the user-active set, shorten the job-hash
-   * TTL to the completed window, and del/shorten the chunk + run-step keys per
-   * the configured after-complete TTLs. Without sharing this, an expired
-   * approval left Redis stream contents around for the full running TTL.
-   */
-  private async applyTerminalContentCleanup(streamId: string): Promise<void> {
-    const key = KEYS.job(streamId);
-    // Proactively remove from user's job set (requires reading userId from the job hash)
-    const job = await this.getJob(streamId);
-    const userJobsKey = job?.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
+  private sameMembershipSource(
+    left: SerializableJobData | null,
+    right: SerializableJobData | null,
+  ): boolean {
+    if (left == null || right == null) {
+      return left === right;
+    }
+    return (
+      left.createdAt === right.createdAt &&
+      left.status === right.status &&
+      left.userId === right.userId &&
+      left.tenantId === right.tenantId
+    );
+  }
+
+  private addObservedUserKey(keys: Set<string>, job: SerializableJobData | null): void {
+    if (job?.userId) {
+      keys.add(KEYS.userJobs(job.userId, job.tenantId));
+    }
+  }
+
+  private async applyMembershipSnapshot(
+    streamId: string,
+    job: SerializableJobData | null,
+    observedUserKeys: Set<string>,
+  ): Promise<SerializableJobData | null> {
+    const statusKey = job ? this.statusSetKey(job.status) : null;
+    const activeUserKey = job && statusKey != null ? KEYS.userJobs(job.userId, job.tenantId) : null;
 
     if (this.isCluster) {
-      await this.redis.expire(key, this.ttl.completed);
-      await this.redis.srem(KEYS.runningJobs, streamId);
-      await this.redis.srem(KEYS.requiresActionJobs, streamId);
-      await this.redis.del(KEYS.steers(streamId));
-
-      if (this.ttl.chunksAfterComplete === 0) {
-        await this.redis.del(KEYS.chunks(streamId));
-      } else {
-        await this.redis.expire(KEYS.chunks(streamId), this.ttl.chunksAfterComplete);
+      const operations: Promise<unknown>[] = [
+        statusKey === KEYS.runningJobs
+          ? this.redis.sadd(KEYS.runningJobs, streamId)
+          : this.redis.srem(KEYS.runningJobs, streamId),
+        statusKey === KEYS.requiresActionJobs
+          ? this.redis.sadd(KEYS.requiresActionJobs, streamId)
+          : this.redis.srem(KEYS.requiresActionJobs, streamId),
+      ];
+      for (const userJobsKey of observedUserKeys) {
+        if (userJobsKey !== activeUserKey) {
+          operations.push(this.redis.srem(userJobsKey, streamId));
+        }
       }
-
-      if (this.ttl.runStepsAfterComplete === 0) {
-        await this.redis.del(KEYS.runSteps(streamId));
-      } else {
-        await this.redis.expire(KEYS.runSteps(streamId), this.ttl.runStepsAfterComplete);
+      if (activeUserKey) {
+        operations.push(
+          (async () => {
+            await this.redis.sadd(activeUserKey, streamId);
+            if (this.ttl.userJobsSet > 0) {
+              await this.redis.expire(activeUserKey, this.ttl.userJobsSet);
+            }
+          })(),
+        );
       }
+      await Promise.all(operations);
+      return this.getJob(streamId);
+    }
 
-      if (userJobsKey) {
-        await this.redis.srem(userJobsKey, streamId);
-      }
+    const pipeline = this.redis.pipeline();
+    if (statusKey === KEYS.runningJobs) {
+      pipeline.sadd(KEYS.runningJobs, streamId);
     } else {
-      const pipeline = this.redis.pipeline();
-      pipeline.expire(key, this.ttl.completed);
       pipeline.srem(KEYS.runningJobs, streamId);
+    }
+    if (statusKey === KEYS.requiresActionJobs) {
+      pipeline.sadd(KEYS.requiresActionJobs, streamId);
+    } else {
       pipeline.srem(KEYS.requiresActionJobs, streamId);
-      pipeline.del(KEYS.steers(streamId));
-
-      if (this.ttl.chunksAfterComplete === 0) {
-        pipeline.del(KEYS.chunks(streamId));
-      } else {
-        pipeline.expire(KEYS.chunks(streamId), this.ttl.chunksAfterComplete);
-      }
-
-      if (this.ttl.runStepsAfterComplete === 0) {
-        pipeline.del(KEYS.runSteps(streamId));
-      } else {
-        pipeline.expire(KEYS.runSteps(streamId), this.ttl.runStepsAfterComplete);
-      }
-
-      if (userJobsKey) {
+    }
+    for (const userJobsKey of observedUserKeys) {
+      if (userJobsKey !== activeUserKey) {
         pipeline.srem(userJobsKey, streamId);
       }
-
-      await pipeline.exec();
     }
+    if (activeUserKey) {
+      pipeline.sadd(activeUserKey, streamId);
+      if (this.ttl.userJobsSet > 0) {
+        pipeline.expire(activeUserKey, this.ttl.userJobsSet);
+      }
+    }
+    // Keep the verification read in this network flush. Redis executes it
+    // after the membership commands, preserving the guarded loop without an
+    // extra round trip on the default single-node deployment.
+    pipeline.hgetall(KEYS.job(streamId));
+    const results = await pipeline.exec();
+    const verification = results?.[results.length - 1];
+    if (verification?.[0]) {
+      throw verification[0];
+    }
+    const data = verification?.[1] as Record<string, string> | null | undefined;
+    if (!data || Object.keys(data).length === 0) {
+      return null;
+    }
+    return this.deserializeJob(data);
+  }
+
+  /**
+   * Cross-slot sets are derived state, so every mutation writes the membership
+   * implied by the durable job hash and then reads the hash again. If a status
+   * change or replacement crossed that window, the loop repairs from the newer
+   * source. Because every writer uses this path, the final writer always
+   * converges even when an older reconciliation finishes later.
+   */
+  private async reconcileJobMembership(
+    streamId: string,
+    options: {
+      initialJob?: SerializableJobData | null;
+      previousJob?: SerializableJobData | null;
+      previousUserKeys?: string[];
+    } = {},
+  ): Promise<SerializableJobData | null | undefined> {
+    const observedUserKeys = new Set(options.previousUserKeys ?? []);
+    this.addObservedUserKey(observedUserKeys, options.previousJob ?? null);
+    let currentJob = options.initialJob ?? null;
+    try {
+      if (options.initialJob === undefined) {
+        currentJob = await this.getJob(streamId);
+      }
+
+      for (let attempt = 0; attempt < MEMBERSHIP_RECONCILE_MAX_ATTEMPTS; attempt++) {
+        this.addObservedUserKey(observedUserKeys, currentJob);
+        const verifiedJob = await this.applyMembershipSnapshot(
+          streamId,
+          currentJob,
+          observedUserKeys,
+        );
+        this.addObservedUserKey(observedUserKeys, verifiedJob);
+        if (this.sameMembershipSource(currentJob, verifiedJob)) {
+          return verifiedJob;
+        }
+        currentJob = verifiedJob;
+      }
+
+      logger.warn(
+        `[RedisJobStore] Membership reconciliation did not stabilize after ${MEMBERSHIP_RECONCILE_MAX_ATTEMPTS} attempts: ${streamId}`,
+      );
+    } catch (err) {
+      logger.warn(`[RedisJobStore] Failed to reconcile job membership ${streamId}:`, err);
+    }
+    return undefined;
+  }
+
+  private clearLocalStateUnlessActive(
+    streamId: string,
+    currentJob: SerializableJobData | null | undefined,
+  ): void {
+    if (currentJob === undefined) {
+      return;
+    }
+    if (currentJob && this.statusSetKey(currentJob.status)) {
+      return;
+    }
+    this.localGraphCache.delete(streamId);
+    this.localContentParts.delete(streamId);
+    this.localCollectedUsageCache.delete(streamId);
   }
 
   /**
@@ -642,7 +922,7 @@ export class RedisJobStore implements IJobStore {
   }
 
   async transitionStatus(streamId: string, args: JobStatusTransition): Promise<boolean> {
-    const { from, to, patch, clear, expectActionId } = args;
+    const { from, to, patch, clear, expectActionId, expectCreatedAt } = args;
     const key = KEYS.job(streamId);
 
     // status + patch become HSET pairs; serializeJob skips undefined, so
@@ -652,9 +932,7 @@ export class RedisJobStore implements IJobStore {
     ).flat();
     const clearFields = (clear ?? []).map(String);
 
-    const remSet = this.statusSetKey(from);
-    const addSet = this.statusSetKey(to);
-    const terminal = addSet === null;
+    const terminal = this.statusSetKey(to) === null;
     let ttl = terminal ? this.ttl.completed : this.ttl.running;
     if (to === 'requires_action') {
       // A paused job must outlive its approval window, even when that window is
@@ -662,18 +940,28 @@ export class RedisJobStore implements IJobStore {
       // decision can resume it.
       ttl = this.pauseTtlSeconds(patch?.pendingAction);
     }
+    const terminalJob = terminal ? await this.getJob(streamId) : null;
 
     // 1) Single-winner decision: an atomic CAS on the single-slot job hash.
     //    Works identically on cluster and single-node, so two concurrent
     //    resolves can never both win (and drive the run twice).
     const won = await this.redis.eval(
       JOB_CAS_LUA,
-      2,
+      6,
       key,
       KEYS.sequence(streamId),
+      KEYS.chunks(streamId),
+      KEYS.runSteps(streamId),
+      KEYS.steers(streamId),
+      KEYS.parkedSteers(streamId),
       from,
       expectActionId ?? '',
+      expectCreatedAt != null ? String(expectCreatedAt) : '',
       String(ttl),
+      terminal ? '1' : '0',
+      String(this.ttl.chunksAfterComplete),
+      String(this.ttl.runStepsAfterComplete),
+      String(this.ttl.completed > 0 ? this.ttl.completed : PARKED_RECOVERY_TTL_S),
       String(clearFields.length),
       ...clearFields,
       ...fields,
@@ -682,39 +970,13 @@ export class RedisJobStore implements IJobStore {
       return false;
     }
 
-    // 2) Reconcile derived state. Only the winner reaches here; membership is
-    //    self-healed by periodic cleanup, so this non-atomic cross-slot step is
-    //    safe. A terminal target (e.g. approval expiry → aborted) gets the same
-    //    content cleanup as updateJob's terminal path.
+    // 2) Same-slot TTL/content changes happened atomically in the CAS. Cross-slot
+    //    indexes are reconciled last and verified against the durable hash.
+    const currentJob = await this.reconcileJobMembership(streamId, {
+      previousJob: terminalJob,
+    });
     if (terminal) {
-      await this.applyTerminalContentCleanup(streamId);
-      return true;
-    }
-    if (this.isCluster) {
-      if (remSet) {
-        await this.redis.srem(remSet, streamId);
-      }
-      if (addSet) {
-        await this.redis.sadd(addSet, streamId);
-      }
-      await this.redis.expire(KEYS.chunks(streamId), ttl);
-      await this.redis.expire(KEYS.runSteps(streamId), ttl);
-      // Steers queued before a pause must survive the whole approval window
-      // (they inject at the first tool boundary after resume). EXPIRE on a
-      // missing key is a no-op.
-      await this.redis.expire(KEYS.steers(streamId), ttl);
-    } else {
-      const pipeline = this.redis.pipeline();
-      if (remSet) {
-        pipeline.srem(remSet, streamId);
-      }
-      if (addSet) {
-        pipeline.sadd(addSet, streamId);
-      }
-      pipeline.expire(KEYS.chunks(streamId), ttl);
-      pipeline.expire(KEYS.runSteps(streamId), ttl);
-      pipeline.expire(KEYS.steers(streamId), ttl);
-      await pipeline.exec();
+      this.clearLocalStateUnlessActive(streamId, currentJob);
     }
     return true;
   }
@@ -746,56 +1008,61 @@ export class RedisJobStore implements IJobStore {
     await this.redis.del(KEYS.idempotency(key));
   }
 
-  private async updateExistingJobHash(key: string, fields: string[]): Promise<boolean> {
-    const updated = await this.redis.eval(
-      'if redis.call("EXISTS", KEYS[1]) == 1 then redis.call("HSET", KEYS[1], unpack(ARGV)) return 1 else return 0 end',
-      1,
-      key,
-      ...fields,
+  async deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean> {
+    const observedJob = await this.getJob(streamId);
+    const targetCreatedAt = expectedCreatedAt ?? observedJob?.createdAt;
+    const expectMissing = expectedCreatedAt == null && observedJob == null;
+    const deleted = await this.redis.eval(
+      JOB_DELETE_LUA,
+      4,
+      KEYS.job(streamId),
+      KEYS.chunks(streamId),
+      KEYS.runSteps(streamId),
+      KEYS.steers(streamId),
+      targetCreatedAt != null ? String(targetCreatedAt) : '',
+      expectMissing ? '1' : '0',
     );
-    return updated === 1;
-  }
-
-  async deleteJob(streamId: string): Promise<void> {
-    this.localGraphCache.delete(streamId);
-    this.localContentParts.delete(streamId);
-    this.localCollectedUsageCache.delete(streamId);
-    const job = await this.getJob(streamId);
-    const userJobsKey = job?.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
-    return this.deleteJobInternal(streamId, userJobsKey);
-  }
-
-  private async deleteJobInternal(streamId: string, userJobsKey: string | null): Promise<void> {
-    this.localGraphCache.delete(streamId);
-    this.localContentParts.delete(streamId);
-    this.localCollectedUsageCache.delete(streamId);
-
-    if (this.isCluster) {
-      const pipeline = this.redis.pipeline();
-      pipeline.del(KEYS.job(streamId));
-      pipeline.del(KEYS.chunks(streamId));
-      pipeline.del(KEYS.runSteps(streamId));
-      pipeline.del(KEYS.steers(streamId));
-      await pipeline.exec();
-      await this.redis.srem(KEYS.runningJobs, streamId);
-      await this.redis.srem(KEYS.requiresActionJobs, streamId);
-      if (userJobsKey) {
-        await this.redis.srem(userJobsKey, streamId);
-      }
-    } else {
-      const pipeline = this.redis.pipeline();
-      pipeline.del(KEYS.job(streamId));
-      pipeline.del(KEYS.chunks(streamId));
-      pipeline.del(KEYS.runSteps(streamId));
-      pipeline.del(KEYS.steers(streamId));
-      pipeline.srem(KEYS.runningJobs, streamId);
-      pipeline.srem(KEYS.requiresActionJobs, streamId);
-      if (userJobsKey) {
-        pipeline.srem(userJobsKey, streamId);
-      }
-      await pipeline.exec();
+    if (deleted !== 1) {
+      return false;
     }
+
+    const currentJob = await this.reconcileJobMembership(streamId, {
+      initialJob: null,
+      previousJob: observedJob,
+    });
+    this.clearLocalStateUnlessActive(streamId, currentJob);
     logger.debug(`[RedisJobStore] Deleted job: ${streamId}`);
+    return true;
+  }
+
+  private async deleteStaleRunningJob(
+    streamId: string,
+    observedJob: SerializableJobData,
+    now: number,
+  ): Promise<boolean> {
+    const deleted = await this.redis.eval(
+      STALE_JOB_DELETE_LUA,
+      5,
+      KEYS.job(streamId),
+      KEYS.chunks(streamId),
+      KEYS.runSteps(streamId),
+      KEYS.steers(streamId),
+      KEYS.parkedSteers(streamId),
+      String(observedJob.createdAt),
+      String(now),
+      String(this.ttl.running * 1000),
+      String(this.ttl.completed > 0 ? this.ttl.completed : PARKED_RECOVERY_TTL_S),
+    );
+    if (deleted !== 1) {
+      return false;
+    }
+
+    const currentJob = await this.reconcileJobMembership(streamId, {
+      initialJob: null,
+      previousJob: observedJob,
+    });
+    this.clearLocalStateUnlessActive(streamId, currentJob);
+    return true;
   }
 
   async hasJob(streamId: string): Promise<boolean> {
@@ -841,20 +1108,21 @@ export class RedisJobStore implements IJobStore {
 
           // Job no longer exists (TTL expired) - remove from set
           if (!job) {
-            await this.redis.srem(KEYS.runningJobs, streamId);
-            await this.redis.srem(KEYS.requiresActionJobs, streamId);
-            this.localGraphCache.delete(streamId);
-            this.localContentParts.delete(streamId);
-            this.localCollectedUsageCache.delete(streamId);
+            const currentJob = await this.reconcileJobMembership(streamId, { initialJob: null });
+            this.clearLocalStateUnlessActive(streamId, currentJob);
             return 1;
           }
 
           if (job.status === 'requires_action') {
-            await this.redis.srem(KEYS.runningJobs, streamId);
-            await this.redis.sadd(KEYS.requiresActionJobs, streamId);
-            this.localGraphCache.delete(streamId);
-            this.localContentParts.delete(streamId);
-            this.localCollectedUsageCache.delete(streamId);
+            const currentJob = await this.reconcileJobMembership(streamId, { initialJob: job });
+            if (
+              currentJob !== undefined &&
+              (!currentJob || currentJob.createdAt === job.createdAt)
+            ) {
+              this.localGraphCache.delete(streamId);
+              this.localContentParts.delete(streamId);
+              this.localCollectedUsageCache.delete(streamId);
+            }
             return 1;
           }
 
@@ -862,14 +1130,16 @@ export class RedisJobStore implements IJobStore {
           // Only remove from tracking sets — do NOT delete the job hash, which has
           // its own completedTtl so clients can still poll for final status.
           if (job.status !== 'running') {
-            await this.redis.srem(KEYS.runningJobs, streamId);
-            await this.redis.srem(KEYS.requiresActionJobs, streamId);
-            if (job.userId) {
-              await this.redis.srem(KEYS.userJobs(job.userId, job.tenantId), streamId);
+            const currentJob = await this.reconcileJobMembership(streamId, {
+              initialJob: job,
+              previousJob: job,
+            });
+            if (
+              currentJob !== undefined &&
+              (!currentJob || currentJob.createdAt === job.createdAt)
+            ) {
+              this.clearLocalStateUnlessActive(streamId, currentJob);
             }
-            this.localGraphCache.delete(streamId);
-            this.localContentParts.delete(streamId);
-            this.localCollectedUsageCache.delete(streamId);
             return 1;
           }
 
@@ -879,17 +1149,10 @@ export class RedisJobStore implements IJobStore {
           const liveSince = job.lastActiveAt ?? job.createdAt;
           if (now - liveSince > this.ttl.running * 1000) {
             logger.warn(`[RedisJobStore] Cleaning up stale job: ${streamId}`);
-            // A crashed/hung run never reached a finalization drain — park the
-            // 202-accepted queue before the delete drops it, so the owner can
-            // still recover the words via /chat/status.
-            await this.parkSteerSnapshot(
-              streamId,
-              job,
-              await this.snapshotParkableSteers(streamId),
-            );
-            const userJobsKey = job.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
-            await this.deleteJobInternal(streamId, userJobsKey);
-            return 1;
+            // Re-check liveness + epoch, park queued steers, and delete same-slot
+            // state in one script. A replacement cannot land in the old
+            // park-then-unconditional-delete gap.
+            return (await this.deleteStaleRunningJob(streamId, job, now)) ? 1 : 0;
           }
 
           return 0;
@@ -925,32 +1188,26 @@ export class RedisJobStore implements IJobStore {
           const job = await this.getJob(streamId);
 
           if (!job) {
-            await this.redis.srem(KEYS.requiresActionJobs, streamId);
-            this.localGraphCache.delete(streamId);
-            this.localContentParts.delete(streamId);
-            this.localCollectedUsageCache.delete(streamId);
+            const currentJob = await this.reconcileJobMembership(streamId, { initialJob: null });
+            this.clearLocalStateUnlessActive(streamId, currentJob);
             return 1;
           }
 
           if (job.status !== 'requires_action') {
-            await this.redis.srem(KEYS.requiresActionJobs, streamId);
-            if (job.status === 'running') {
-              await this.redis.sadd(KEYS.runningJobs, streamId);
-            }
+            await this.reconcileJobMembership(streamId, {
+              initialJob: job,
+              previousJob: job,
+            });
             return 1;
           }
 
           // Stale approval (expired, or missing/malformed pendingAction):
           // finalize it (aborted) so it stops occupying the slot and its stream
           // contents are reclaimed, mirroring ApprovalLifecycle.expire().
-          // transitionStatus runs the terminal content cleanup (sets, chunks,
-          // run-steps, userJobs, completed TTL).
+          // transitionStatus atomically applies the terminal state and same-slot
+          // content cleanup. Cross-slot membership indexes self-heal on read or
+          // during the next cleanup pass.
           if (isPendingActionStale(job)) {
-            // Snapshot 202-accepted steers BEFORE the terminal cleanup DELs the
-            // queue key; enqueue is frozen while paused, so this is exact.
-            // Parked only if the CAS wins — a lost CAS means the run resumed
-            // and the live queue must stay untouched.
-            const parkableSteers = await this.snapshotParkableSteers(streamId);
             const expired = await this.transitionStatus(streamId, {
               from: 'requires_action',
               to: 'aborted',
@@ -965,11 +1222,9 @@ export class RedisJobStore implements IJobStore {
               // valid new pause. (Undefined for a missing/malformed pendingAction — nothing
               // to protect — so it falls back to the status-only check.)
               expectActionId: job.pendingAction?.actionId,
+              expectCreatedAt: job.createdAt,
             });
-            if (expired) {
-              await this.parkSteerSnapshot(streamId, job, parkableSteers);
-            }
-            return 1;
+            return expired ? 1 : 0;
           }
 
           return 0;
@@ -990,7 +1245,7 @@ export class RedisJobStore implements IJobStore {
 
   async getJobCount(): Promise<number> {
     const [runningCount, requiresActionCount] = await Promise.all([
-      this.redis.scard(KEYS.runningJobs),
+      this.countJobsInStatusSet(KEYS.runningJobs, 'running'),
       this.countJobsInStatusSet(KEYS.requiresActionJobs, 'requires_action'),
     ]);
     return runningCount + requiresActionCount;
@@ -998,7 +1253,7 @@ export class RedisJobStore implements IJobStore {
 
   async getJobCountByStatus(status: JobStatus): Promise<number> {
     if (status === 'running') {
-      return this.redis.scard(KEYS.runningJobs);
+      return this.countJobsInStatusSet(KEYS.runningJobs, status);
     }
 
     if (status === 'requires_action') {
@@ -1015,18 +1270,19 @@ export class RedisJobStore implements IJobStore {
     }
 
     let count = 0;
-    const staleIds: string[] = [];
     for (const streamId of streamIds) {
       const job = await this.getJob(streamId);
       if (job?.status === status) {
         count++;
       } else {
-        staleIds.push(streamId);
+        const currentJob = await this.reconcileJobMembership(streamId, {
+          initialJob: job,
+          previousJob: job,
+        });
+        if (currentJob?.status === status) {
+          count++;
+        }
       }
-    }
-
-    if (staleIds.length > 0) {
-      await this.redis.srem(setKey, ...staleIds);
     }
 
     return count;
@@ -1049,7 +1305,7 @@ export class RedisJobStore implements IJobStore {
     }
 
     const activeIds: string[] = [];
-    const staleIds: string[] = [];
+    let healed = 0;
 
     for (const streamId of trackedIds) {
       const job = await this.getJob(streamId);
@@ -1058,22 +1314,38 @@ export class RedisJobStore implements IJobStore {
       // only while its prompt is live: a past-`expiresAt` approval no longer
       // counts as active (cleanup/expiry will finalize it), so the client stops
       // polling and can complete.
-      if (job && (job.status === 'running' || job.status === 'requires_action')) {
+      const belongsToUser =
+        job?.userId === userId && (job.tenantId ?? undefined) === (tenantId ?? undefined);
+      if (belongsToUser && job && (job.status === 'running' || job.status === 'requires_action')) {
         if (job.status === 'requires_action' && isPendingActionStale(job)) {
           continue;
         }
         activeIds.push(streamId);
       } else {
-        // Self-healing: job completed/deleted but mapping wasn't cleaned - mark for removal
-        staleIds.push(streamId);
+        // Self-heal from durable state instead of a raw SREM, which could remove
+        // a replacement's membership after the read.
+        const currentJob = await this.reconcileJobMembership(streamId, {
+          initialJob: job,
+          previousJob: job,
+          previousUserKeys: [userJobsKey],
+        });
+        const currentBelongsToUser =
+          currentJob?.userId === userId &&
+          (currentJob.tenantId ?? undefined) === (tenantId ?? undefined);
+        if (
+          currentBelongsToUser &&
+          currentJob &&
+          (currentJob.status === 'running' || currentJob.status === 'requires_action') &&
+          !(currentJob.status === 'requires_action' && isPendingActionStale(currentJob))
+        ) {
+          activeIds.push(streamId);
+        }
+        healed++;
       }
     }
 
-    if (staleIds.length > 0) {
-      await this.redis.srem(userJobsKey, ...staleIds);
-      logger.debug(
-        `[RedisJobStore] Self-healed ${staleIds.length} stale job entries for user ${userId}`,
-      );
+    if (healed > 0) {
+      logger.debug(`[RedisJobStore] Self-healed ${healed} stale job entries for user ${userId}`);
     }
 
     return activeIds;
@@ -1342,14 +1614,14 @@ export class RedisJobStore implements IJobStore {
    * Clear content state for a job.
    * Removes both local cache and Redis data.
    */
-  clearContentState(streamId: string): void {
+  clearContentState(streamId: string, expectedCreatedAt?: number): void {
     // Clear local caches immediately
     this.localGraphCache.delete(streamId);
     this.localContentParts.delete(streamId);
     this.localCollectedUsageCache.delete(streamId);
 
     // Fire and forget - async cleanup for Redis
-    this.clearContentStateAsync(streamId).catch((err) => {
+    this.clearContentStateAsync(streamId, expectedCreatedAt).catch((err) => {
       logger.error(`[RedisJobStore] Failed to clear content state for ${streamId}:`, err);
     });
   }
@@ -1357,11 +1629,18 @@ export class RedisJobStore implements IJobStore {
   /**
    * Clear content state async.
    */
-  private async clearContentStateAsync(streamId: string): Promise<void> {
-    const pipeline = this.redis.pipeline();
-    pipeline.del(KEYS.chunks(streamId));
-    pipeline.del(KEYS.runSteps(streamId));
-    await pipeline.exec();
+  private async clearContentStateAsync(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<void> {
+    await this.redis.eval(
+      CONTENT_CLEAR_LUA,
+      3,
+      KEYS.chunks(streamId),
+      KEYS.runSteps(streamId),
+      KEYS.job(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+    );
   }
 
   // ===== Steering Queue Methods =====
@@ -1426,46 +1705,17 @@ export class RedisJobStore implements IJobStore {
     return removed === 1;
   }
 
-  async parkSteers(streamId: string, payload: string): Promise<void> {
+  async parkSteers(streamId: string, payload: string, expectedCreatedAt?: number): Promise<void> {
     const ttl = this.ttl.completed > 0 ? this.ttl.completed : PARKED_RECOVERY_TTL_S;
-    await this.redis.set(KEYS.parkedSteers(streamId), payload, 'EX', ttl);
-  }
-
-  /** Best-effort FIFO snapshot of the queued steers as client projections. */
-  private async snapshotParkableSteers(streamId: string): Promise<TPendingSteer[]> {
-    try {
-      return (await this.peekSteers(streamId)).map(toPendingSteer);
-    } catch (err) {
-      logger.warn(`[RedisJobStore] Failed to snapshot steers for parking ${streamId}:`, err);
-      return [];
-    }
-  }
-
-  /**
-   * Parks an owner-carrying snapshot so /chat/status can recover 202-accepted
-   * steers after the job record is gone (approval expiry, stale-running reap).
-   * Best-effort: a park failure must not block the cleanup path that called it.
-   */
-  private async parkSteerSnapshot(
-    streamId: string,
-    job: SerializableJobData,
-    steers: TPendingSteer[],
-  ): Promise<void> {
-    if (steers.length === 0) {
-      return;
-    }
-    try {
-      await this.parkSteers(
-        streamId,
-        JSON.stringify({
-          userId: job.userId,
-          ...(job.tenantId != null && { tenantId: job.tenantId }),
-          steers,
-        }),
-      );
-    } catch (err) {
-      logger.warn(`[RedisJobStore] Failed to park steers ${streamId}:`, err);
-    }
+    await this.redis.eval(
+      PARK_STEERS_LUA,
+      2,
+      KEYS.job(streamId),
+      KEYS.parkedSteers(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+      payload,
+      String(ttl),
+    );
   }
 
   async claimParkedSteers(streamId: string, ownerFragment: string): Promise<string | undefined> {
@@ -1503,7 +1753,7 @@ export class RedisJobStore implements IJobStore {
    * Uses XADD for efficient append-only storage.
    * Sets TTL on first chunk to ensure cleanup if job crashes.
    */
-  async appendChunk(streamId: string, event: unknown): Promise<void> {
+  async appendChunk(streamId: string, event: unknown, expectedCreatedAt?: number): Promise<void> {
     const key = KEYS.chunks(streamId);
     const jobKey = KEYS.job(streamId);
     // XADD + derive-and-extend-only EXPIRE in a single atomic eval. Refreshing the TTL on
@@ -1522,6 +1772,7 @@ export class RedisJobStore implements IJobStore {
       jobKey,
       JSON.stringify(event),
       String(this.ttl.running),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
     );
   }
 
@@ -1553,7 +1804,11 @@ export class RedisJobStore implements IJobStore {
    * key to the short running TTL (which would drop the tool timeline on a reload of a
    * still-live approval — mirrors the chunk-stream no-shrink behavior).
    */
-  async saveRunSteps(streamId: string, runSteps: Agents.RunStep[]): Promise<void> {
+  async saveRunSteps(
+    streamId: string,
+    runSteps: Agents.RunStep[],
+    expectedCreatedAt?: number,
+  ): Promise<void> {
     await this.redis.eval(
       RUNSTEPS_SAVE_LUA,
       2,
@@ -1561,6 +1816,7 @@ export class RedisJobStore implements IJobStore {
       KEYS.job(streamId),
       JSON.stringify(runSteps),
       String(this.ttl.running),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
     );
   }
 

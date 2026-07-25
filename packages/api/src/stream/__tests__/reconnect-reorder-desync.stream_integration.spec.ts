@@ -933,10 +933,10 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
      * A producer replica can tear down its local transport after generation 1 while a
      * subscriber on another replica is still attached with nextSeq=10. Since stream IDs
      * are conversation IDs, generation 2 reuses the same Redis ordering namespace. The
-     * shared counter must continue at 10; resetting it to 0 makes the lingering consumer
-     * reject every regenerated chunk as an old duplicate.
+     * shared counter must continue at 10 for the new attachment, while generation tags
+     * keep the abandoned generation-1 subscriber from receiving generation-2 content.
      */
-    test('regenerated turn reaches a lingering cross-replica subscriber after producer cleanup', async () => {
+    test('regenerated turn preserves sequence without leaking to a lingering predecessor subscriber', async () => {
       if (!ioredisClient) {
         console.warn('Redis not available, skipping test');
         return;
@@ -1021,7 +1021,7 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
         firstGeneration
           .filter((event) => JSON.stringify(event).includes('"generation":2'))
           .map((event) => (event as { data: { index: number } }).data.index),
-      ).toEqual([0, 1, 2, 3, 4]);
+      ).toEqual([]);
       expect(await ioredisClient.get(sequenceKey)).toBe('15');
 
       lingering?.unsubscribe();

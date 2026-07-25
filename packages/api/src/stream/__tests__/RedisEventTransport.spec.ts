@@ -1,5 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import type { Redis } from 'ioredis';
+import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { emitChunkWithReceipt } from '~/stream/internal/chunkPublication';
@@ -28,6 +29,7 @@ interface SequencedTestMessage {
   seq: number;
   data?: object;
   error?: string;
+  generationId?: number;
 }
 
 function deliverSequencedMessage(
@@ -39,6 +41,123 @@ function deliverSequencedMessage(
 }
 
 describe('RedisEventTransport', () => {
+  it('delivers tagged events and preserves legacy in-memory callback arity', () => {
+    const transport = new InMemoryEventTransport();
+    const onChunk = jest.fn();
+    const onDone = jest.fn();
+    const onError = jest.fn();
+    const streamId = 'in-memory-terminal-identity';
+    const subscription = transport.subscribe(streamId, {
+      onChunk,
+      onDone,
+      onError,
+    });
+    const taggedChunk = { delta: 'tagged' };
+    const legacyChunk = { delta: 'legacy' };
+    const taggedDone = { final: 'tagged' };
+    const legacyDone = { final: 'legacy' };
+
+    transport.emitChunk(streamId, taggedChunk, 123456);
+    transport.emitChunk(streamId, legacyChunk);
+    transport.emitDone(streamId, taggedDone, 123456);
+    transport.emitDone(streamId, legacyDone);
+    transport.emitError(streamId, 'tagged error', 123456);
+    transport.emitError(streamId, 'legacy error');
+
+    expect(onChunk).toHaveBeenNthCalledWith(1, taggedChunk, 123456);
+    expect(onChunk).toHaveBeenNthCalledWith(2, legacyChunk);
+    expect(onDone).toHaveBeenNthCalledWith(1, taggedDone, 123456);
+    expect(onDone).toHaveBeenNthCalledWith(2, legacyDone);
+    expect(onError).toHaveBeenNthCalledWith(1, 'tagged error', 123456);
+    expect(onError).toHaveBeenNthCalledWith(2, 'legacy error');
+
+    subscription.unsubscribe();
+    transport.destroy();
+  });
+
+  it('round-trips tagged events and preserves legacy Redis callback arity', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'redis-terminal-identity';
+    const onChunk = jest.fn();
+    const onDone = jest.fn();
+    const onError = jest.fn();
+    const onAbort = jest.fn();
+    const subscription = transport.subscribe(streamId, {
+      onChunk,
+      onDone,
+      onError,
+    });
+    const messageHandler = getMessageHandler(mockSubscriber);
+    mockPublisher.publish.mockImplementation(async (channel: string, payload: string) => {
+      messageHandler(channel, payload);
+      return 1;
+    });
+
+    await subscription.ready;
+    await transport.onAbort(streamId, onAbort);
+    const taggedChunk = { delta: 'tagged' };
+    const legacyChunk = { delta: 'legacy' };
+    const taggedDone = { final: 'tagged' };
+    const legacyDone = { final: 'legacy' };
+    await transport.emitChunk(streamId, taggedChunk, 654321);
+    await transport.emitChunk(streamId, legacyChunk);
+    await transport.emitDone(streamId, taggedDone, 654321);
+    await transport.emitDone(streamId, legacyDone);
+    await transport.emitError(streamId, 'tagged error', 654321);
+    await transport.emitError(streamId, 'legacy error');
+    transport.emitAbort(streamId, 654321);
+    transport.emitAbort(streamId);
+
+    expect(onChunk).toHaveBeenNthCalledWith(1, taggedChunk, 654321);
+    expect(onChunk).toHaveBeenNthCalledWith(2, legacyChunk);
+    expect(onDone).toHaveBeenNthCalledWith(1, taggedDone, 654321);
+    expect(onDone).toHaveBeenNthCalledWith(2, legacyDone);
+    expect(onError).toHaveBeenNthCalledWith(1, 'tagged error', 654321);
+    expect(onError).toHaveBeenNthCalledWith(2, 'legacy error');
+    expect(onAbort).toHaveBeenNthCalledWith(1, 654321);
+    expect(onAbort).toHaveBeenNthCalledWith(2);
+
+    subscription.unsubscribe();
+    transport.destroy();
+  });
+
+  it('filters tagged predecessor chunks from a current generation subscription', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(200);
+    const transport = new InMemoryEventTransport();
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60_000 }),
+      eventTransport: transport,
+      isRedis: false,
+    });
+    manager.initialize();
+
+    try {
+      const streamId = 'manager-chunk-generation-filter';
+      const job = await manager.createJob(streamId, 'user-1');
+      const received: unknown[] = [];
+      const subscription = await manager.subscribe(streamId, (event) => received.push(event));
+      const stale = { event: 'on_message_delta', data: { text: 'stale' } };
+      const current = { event: 'on_message_delta', data: { text: 'current' } };
+      const legacy = { event: 'on_message_delta', data: { text: 'legacy' } };
+
+      transport.emitChunk(streamId, stale, job.createdAt - 1);
+      transport.emitChunk(streamId, current, job.createdAt);
+      transport.emitChunk(streamId, legacy);
+
+      expect(received).toEqual([current, legacy]);
+      subscription?.unsubscribe();
+    } finally {
+      now.mockRestore();
+      await manager.destroy();
+    }
+  });
+
   it('defers ordered delivery until the replay frontier is synchronized', async () => {
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();
@@ -472,8 +591,22 @@ describe('RedisEventTransport', () => {
     );
 
     await expect(transport.emitChunk('stream-1', { text: 'Hello' })).resolves.toBeUndefined();
-    await expect(emitChunkWithReceipt(transport, 'stream-1', { text: 'World' })).resolves.toBe(1);
+    await expect(emitChunkWithReceipt(transport, 'stream-1', { text: 'World' }, 777)).resolves.toBe(
+      1,
+    );
+    const guardedPublish = mockPublisher.eval.mock.calls[1];
+    expect(guardedPublish[0]).toContain('redis.call("HGET", KEYS[2], "createdAt") ~= ARGV[5]');
+    expect(guardedPublish[8]).toBe('777');
+    expect(JSON.parse(`${guardedPublish[5]}1${guardedPublish[6]}`)).toMatchObject({
+      type: 'chunk',
+      data: { text: 'World' },
+      generationId: 777,
+    });
 
+    mockPublisher.eval.mockResolvedValueOnce(-1);
+    await expect(
+      emitChunkWithReceipt(transport, 'replaced-stream', { text: 'stale' }, 111),
+    ).resolves.toBe(false);
     mockPublisher.eval.mockRejectedValue(new Error('publish failed'));
     await expect(transport.emitChunk('failed-stream', { text: 'Hello' })).resolves.toBeUndefined();
     await expect(emitChunkWithReceipt(transport, 'failed-stream', { text: 'Hello' })).resolves.toBe(

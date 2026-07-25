@@ -869,6 +869,32 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
   });
 
+  it('does not finalize an unscoped generation when job creation rejects before returning', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue({ claimed: true });
+    mockGenerationJobManager.createJob.mockRejectedValue(new Error('create failed before return'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Fail before receiving a job epoch.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: 'create failed before return' });
+    expect(mockGenerationJobManager.emitError).not.toHaveBeenCalled();
+    expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
+    expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith('user-123', 'req-abc');
+    expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
+  });
+
   it('finalizes the failed job before releasing the idempotency claim', async () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue({ claimed: true });
     const initializeClient = jest.fn().mockRejectedValue(new Error('init boom after res.json'));
@@ -890,6 +916,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
       expect.any(String),
+      1000,
     );
     expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith('user-123', 'req-abc');
     // completeJob must finalize the failed job BEFORE the claim is released, or a racing
@@ -945,6 +972,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
       'init boom after res.json',
+      1000,
     );
     expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith('user-123', 'req-abc');
     expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
@@ -995,6 +1023,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       conversationId,
       'Request aborted during initialization',
+      1000,
     );
     expect(mockDecrementPendingRequest).not.toHaveBeenCalled();
     expect(mockDisposeClient).not.toHaveBeenCalled();
@@ -1045,6 +1074,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.emitError).toHaveBeenCalledWith(
       'conversation-123',
       generationError.message,
+      1000,
     );
     expect(mockDecrementPendingRequest).not.toHaveBeenCalled();
     expect(mockDisposeClient).not.toHaveBeenCalled();
@@ -1055,6 +1085,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
       generationError.message,
+      1000,
     );
     expect(mockGenerationJobManager.completeJob.mock.invocationCallOrder[0]).toBeLessThan(
       mockDecrementPendingRequest.mock.invocationCallOrder[0],

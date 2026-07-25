@@ -2033,10 +2033,6 @@ describe('GenerationJobManager Integration Tests', () => {
       const streamId = `cross-live-${Date.now()}`;
       await replicaA.createJob(streamId, 'user-1');
 
-      const replicaBJobStore = new RedisJobStore(ioredisClient!);
-      await replicaBJobStore.initialize();
-      await replicaBJobStore.createJob(streamId, 'user-1');
-
       const receivedOnB: unknown[] = [];
       const subB = await replicaB.subscribe(streamId, (event: unknown) => receivedOnB.push(event));
 
@@ -2057,7 +2053,6 @@ describe('GenerationJobManager Integration Tests', () => {
       }
 
       subB?.unsubscribe();
-      replicaBJobStore.destroy();
       await replicaA.destroy();
       await replicaB.destroy();
     });
@@ -2082,9 +2077,6 @@ describe('GenerationJobManager Integration Tests', () => {
       const streamId = `cross-seq-safe-${Date.now()}`;
 
       await replicaA.createJob(streamId, 'user-1');
-      const replicaBJobStore = new RedisJobStore(ioredisClient!);
-      await replicaBJobStore.initialize();
-      await replicaBJobStore.createJob(streamId, 'user-1');
 
       const receivedOnB: unknown[] = [];
       const subB = await replicaB.subscribe(streamId, (event: unknown) => receivedOnB.push(event));
@@ -2136,7 +2128,6 @@ describe('GenerationJobManager Integration Tests', () => {
 
       subA?.unsubscribe();
       subB?.unsubscribe();
-      replicaBJobStore.destroy();
       await replicaA.destroy();
       await replicaB.destroy();
     });
@@ -2175,10 +2166,6 @@ describe('GenerationJobManager Integration Tests', () => {
       replicaB.configure(servicesB);
       replicaB.initialize();
 
-      const replicaBJobStore = new RedisJobStore(ioredisClient!);
-      await replicaBJobStore.initialize();
-      await replicaBJobStore.createJob(streamId, 'user-1');
-
       const receivedOnB: unknown[] = [];
       const subB = await replicaB.subscribe(streamId, (event: unknown) => receivedOnB.push(event));
 
@@ -2200,7 +2187,6 @@ describe('GenerationJobManager Integration Tests', () => {
 
       subA?.unsubscribe();
       subB?.unsubscribe();
-      replicaBJobStore.destroy();
       await replicaA.destroy();
       await replicaB.destroy();
     });

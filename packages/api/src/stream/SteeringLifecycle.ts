@@ -160,7 +160,12 @@ export class SteeringLifecycle {
    * using the final/abort event copy; recovery is idempotent (queued chips
    * dedupe by steer id).
    */
-  async park(streamId: string, steers: TPendingSteer[], owner: SteerOwner): Promise<void> {
+  async park(
+    streamId: string,
+    steers: TPendingSteer[],
+    owner: SteerOwner,
+    expectedCreatedAt?: number,
+  ): Promise<void> {
     if (steers.length === 0) {
       return;
     }
@@ -170,7 +175,7 @@ export class SteeringLifecycle {
       steers,
     };
     try {
-      await this.store.parkSteers(streamId, JSON.stringify(payload));
+      await this.store.parkSteers(streamId, JSON.stringify(payload), expectedCreatedAt);
     } catch (error) {
       logger.warn(`[SteeringLifecycle] Failed to park leftover steers: ${streamId}`, error);
     }

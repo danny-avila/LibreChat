@@ -1,5 +1,5 @@
-import type { GenerationJobMetadata } from '~/types';
 import type { JobMetadataPatch } from './interfaces/IJobStore';
+import type { GenerationJobMetadata } from '~/types';
 
 export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): JobMetadataPatch {
   const patch: JobMetadataPatch = {};

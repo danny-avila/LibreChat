@@ -38,6 +38,8 @@ interface PubSubMessage {
   seq?: number;
   data?: unknown;
   error?: string;
+  /** Immutable identity of the generation that emitted the event. */
+  generationId?: number;
 }
 
 /**
@@ -73,10 +75,11 @@ interface ReorderBuffer {
  * not need to be a key for Cluster correctness.
  *
  *   KEYS: [sequence, job]
- *   ARGV: [channel, payloadPrefix, payloadSuffix, sequenceTtlSeconds]
- *   RETURNS: the 0-indexed seq assigned to this event
+ *   ARGV: [channel, payloadPrefix, payloadSuffix, sequenceTtlSeconds, expectCreatedAt | ""]
+ *   RETURNS: the 0-indexed seq assigned to this event, or -1 when the generation guard fails
  */
 const PUBLISH_SEQ_LUA =
+  'if ARGV[5] ~= "" and redis.call("HGET", KEYS[2], "createdAt") ~= ARGV[5] then return -1 end ' +
   'local val = redis.call("INCR", KEYS[1]) ' +
   'local ttl = tonumber(ARGV[4]) ' +
   'local seqTtl = redis.call("TTL", KEYS[1]) ' +
@@ -102,15 +105,15 @@ interface StreamSubscribers {
   handlers: Map<
     string,
     {
-      onChunk: (event: unknown) => void;
-      onDone?: (event: unknown) => void;
-      onError?: (error: string) => void;
+      onChunk: (event: unknown, generationId?: number) => void;
+      onDone?: (event: unknown, generationId?: number) => void;
+      onError?: (error: string, generationId?: number) => void;
     }
   >;
   /** Replaced when a stream runtime is replaced; only the current lifecycle owns cleanup. */
   allSubscribersLeftCallback?: () => void;
   /** Abort callbacks - called when abort signal is received from any replica */
-  abortCallbacks: Array<() => void>;
+  abortCallbacks: Array<(generationId?: number) => void>;
   /** Reorder buffer for handling out-of-order delivery in Redis Cluster */
   reorderBuffer: ReorderBuffer;
 }
@@ -158,8 +161,8 @@ export class RedisEventTransport implements IEventTransport {
   constructor(publisher: Redis | Cluster, subscriber: Redis | Cluster) {
     this.publisher = instrumentIORedisClient(publisher, RedisUseCases.GENERATION_STREAM);
     this.subscriber = instrumentIORedisClient(subscriber, RedisUseCases.GENERATION_STREAM);
-    registerChunkPublicationCapability(this, (streamId, event) =>
-      this.publishChunkWithReceipt(streamId, event),
+    registerChunkPublicationCapability(this, (streamId, event, generationId) =>
+      this.publishChunkWithReceipt(streamId, event, generationId),
     );
 
     // Set up message handler for all subscriptions
@@ -195,6 +198,7 @@ export class RedisEventTransport implements IEventTransport {
   private async publishWithSequence(
     streamId: string,
     message: Omit<PubSubMessage, 'seq'>,
+    expectedGenerationId?: number,
   ): Promise<number> {
     const [prefix, suffix] = RedisEventTransport.buildPayloadParts(message);
     const seq = await this.publisher.eval(
@@ -206,18 +210,30 @@ export class RedisEventTransport implements IEventTransport {
       prefix,
       suffix,
       String(RedisEventTransport.SEQUENCE_TTL_SECONDS),
+      expectedGenerationId != null ? String(expectedGenerationId) : '',
     );
     return seq as number;
   }
 
-  private publishChunkWithReceipt(streamId: string, event: unknown): Promise<number | false> {
-    return this.publishWithSequence(streamId, {
-      type: EventTypes.CHUNK,
-      data: event,
-    }).catch((err) => {
-      logger.error(`[RedisEventTransport] Failed to publish chunk:`, err);
-      return false;
-    });
+  private publishChunkWithReceipt(
+    streamId: string,
+    event: unknown,
+    generationId?: number,
+  ): Promise<number | false> {
+    return this.publishWithSequence(
+      streamId,
+      {
+        type: EventTypes.CHUNK,
+        data: event,
+        ...(generationId != null && { generationId }),
+      },
+      generationId,
+    )
+      .then((sequence) => (sequence === -1 ? false : sequence))
+      .catch((err) => {
+        logger.error(`[RedisEventTransport] Failed to publish chunk:`, err);
+        return false;
+      });
   }
 
   private ensureChannelSubscription(channel: string): Promise<void> {
@@ -525,13 +541,25 @@ export class RedisEventTransport implements IEventTransport {
     for (const [, handlers] of streamState.handlers) {
       switch (message.type) {
         case EventTypes.CHUNK:
-          handlers.onChunk(message.data);
+          if (message.generationId == null) {
+            handlers.onChunk(message.data);
+          } else {
+            handlers.onChunk(message.data, message.generationId);
+          }
           break;
         case EventTypes.DONE:
-          handlers.onDone?.(message.data);
+          if (message.generationId == null) {
+            handlers.onDone?.(message.data);
+          } else {
+            handlers.onDone?.(message.data, message.generationId);
+          }
           break;
         case EventTypes.ERROR:
-          handlers.onError?.(message.error ?? 'Unknown error');
+          if (message.generationId == null) {
+            handlers.onError?.(message.error ?? 'Unknown error');
+          } else {
+            handlers.onError?.(message.error ?? 'Unknown error', message.generationId);
+          }
           break;
         case EventTypes.ABORT:
           break;
@@ -541,7 +569,11 @@ export class RedisEventTransport implements IEventTransport {
     if (message.type === EventTypes.ABORT) {
       for (const callback of streamState.abortCallbacks) {
         try {
-          callback();
+          if (message.generationId == null) {
+            callback();
+          } else {
+            callback(message.generationId);
+          }
         } catch (err) {
           logger.error(`[RedisEventTransport] Error in abort callback:`, err);
         }
@@ -575,9 +607,9 @@ export class RedisEventTransport implements IEventTransport {
   subscribe(
     streamId: string,
     handlers: {
-      onChunk: (event: unknown) => void;
-      onDone?: (event: unknown) => void;
-      onError?: (error: string) => void;
+      onChunk: (event: unknown, generationId?: number) => void;
+      onDone?: (event: unknown, generationId?: number) => void;
+      onError?: (error: string, generationId?: number) => void;
     },
     options?: {
       deferSequenceDelivery?: boolean;
@@ -663,17 +695,21 @@ export class RedisEventTransport implements IEventTransport {
    * Performance: sequence allocation and publish share one round trip. This runs per streamed
    * delta, so the saved round trip is multiplied by the token count of every response.
    */
-  emitChunk(streamId: string, event: unknown): Promise<void> {
-    return this.publishChunkWithReceipt(streamId, event).then(() => undefined);
+  emitChunk(streamId: string, event: unknown, generationId?: number): Promise<void> {
+    return this.publishChunkWithReceipt(streamId, event, generationId).then(() => undefined);
   }
 
   /**
    * Publish a done event to all subscribers.
    * Includes sequence number to ensure delivery after all chunks.
    */
-  async emitDone(streamId: string, event: unknown): Promise<void> {
+  async emitDone(streamId: string, event: unknown, generationId?: number): Promise<void> {
     try {
-      await this.publishWithSequence(streamId, { type: EventTypes.DONE, data: event });
+      await this.publishWithSequence(streamId, {
+        type: EventTypes.DONE,
+        data: event,
+        ...(generationId != null && { generationId }),
+      });
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish done:`, err);
       throw err;
@@ -684,9 +720,13 @@ export class RedisEventTransport implements IEventTransport {
    * Publish an error event to all subscribers.
    * Includes sequence number to ensure delivery after all chunks.
    */
-  async emitError(streamId: string, error: string): Promise<void> {
+  async emitError(streamId: string, error: string, generationId?: number): Promise<void> {
     try {
-      await this.publishWithSequence(streamId, { type: EventTypes.ERROR, error });
+      await this.publishWithSequence(streamId, {
+        type: EventTypes.ERROR,
+        error,
+        ...(generationId != null && { generationId }),
+      });
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish error:`, err);
       throw err;
@@ -766,9 +806,12 @@ export class RedisEventTransport implements IEventTransport {
    * This enables cross-replica abort: when a user aborts on Replica B,
    * the generating Replica A receives the signal and stops.
    */
-  emitAbort(streamId: string): void {
+  emitAbort(streamId: string, generationId?: number): void {
     const channel = CHANNELS.events(streamId);
-    const message: PubSubMessage = { type: EventTypes.ABORT };
+    const message: PubSubMessage = {
+      type: EventTypes.ABORT,
+      ...(generationId != null && { generationId }),
+    };
 
     this.publisher.publish(channel, JSON.stringify(message)).catch((err) => {
       logger.error(`[RedisEventTransport] Failed to publish abort:`, err);
@@ -783,7 +826,7 @@ export class RedisEventTransport implements IEventTransport {
    * @param streamId - The stream identifier
    * @param callback - Called when abort signal is received
    */
-  onAbort(streamId: string, callback: () => void): Promise<void> {
+  onAbort(streamId: string, callback: (generationId?: number) => void): Promise<void> {
     const channel = CHANNELS.events(streamId);
     let state = this.streams.get(streamId);
 

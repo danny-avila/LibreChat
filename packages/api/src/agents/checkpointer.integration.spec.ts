@@ -5,6 +5,7 @@ import { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb';
 import { emptyCheckpoint, ERROR, INTERRUPT } from '@langchain/langgraph-checkpoint';
 import {
   getAgentCheckpointer,
+  captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
   deleteAgentCheckpoints,
   LazyMongoSaver,
@@ -119,6 +120,39 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
 
     expect(await saver!.getTuple(readConfig(threadA))).toBeUndefined();
     expect(await saver!.getTuple(readConfig(threadB))).toBeDefined();
+  });
+
+  it('generation-scoped cleanup preserves a replacement checkpoint on the same thread', async () => {
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+    const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    const resumed = await seedInterruptCheckpoint(saver!, threadId);
+    const generation = await captureAgentCheckpointGeneration(threadId, MONGO_CFG);
+
+    const replacement = await seedInterruptCheckpoint(saver!, threadId);
+    await deleteAgentCheckpoint(threadId, MONGO_CFG, generation);
+
+    expect(await saver!.getTuple(readConfig(threadId))).toMatchObject({
+      checkpoint: { id: replacement.id },
+    });
+    expect(
+      await saver!.getTuple({
+        configurable: {
+          thread_id: threadId,
+          checkpoint_ns: '',
+          checkpoint_id: resumed.id,
+        },
+      }),
+    ).toBeUndefined();
+    expect(
+      await mongoose.connection
+        .db!.collection('agent_checkpoint_writes')
+        .countDocuments({ thread_id: threadId, checkpoint_id: replacement.id }),
+    ).toBe(1);
+    expect(
+      await mongoose.connection
+        .db!.collection('agent_checkpoint_writes')
+        .countDocuments({ thread_id: threadId, checkpoint_id: resumed.id }),
+    ).toBe(0);
   });
 
   it('deleteAgentCheckpoint is a no-op for an undefined threadId', async () => {

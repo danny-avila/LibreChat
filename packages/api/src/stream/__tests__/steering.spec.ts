@@ -232,6 +232,22 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       expect(await manager.steering.claim(streamId, owner)).toEqual([]);
     });
 
+    test('a stale generation cannot park leftovers onto a replacement', async () => {
+      const streamId = 'steer-park-stale';
+      const oldJob = await manager.createJob(streamId, 'user-1');
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      const replacement = await manager.createJob(streamId, 'user-1');
+      const leftovers: TPendingSteer[] = [
+        { steerId: 'old', text: 'belongs to predecessor', createdAt: Date.now() },
+      ];
+
+      await manager.steering.park(streamId, leftovers, owner, oldJob.createdAt);
+      expect(await manager.steering.claim(streamId, owner)).toEqual([]);
+
+      await manager.steering.park(streamId, leftovers, owner, replacement.createdAt);
+      expect(await manager.steering.claim(streamId, owner)).toEqual(leftovers);
+    });
+
     test('parked leftovers survive completeJob within the terminal TTL', async () => {
       const streamId = 'steer-park-terminal';
       await manager.createJob(streamId, 'user-1');
@@ -410,6 +426,55 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
         ),
       ).toEqual(['unsent one', 'unsent two']);
       expect(await manager.steering.peek(streamId)).toEqual([]);
+    });
+
+    test('abortJob publishes nothing when natural completion wins its terminal CAS', async () => {
+      const streamId = 'steer-abort-loses-terminal-race';
+      const eventTransport = new InMemoryEventTransport();
+      const emitDone = jest.spyOn(eventTransport, 'emitDone');
+      const racingManager = new GenerationJobManagerClass();
+      racingManager.configure({
+        jobStore,
+        eventTransport,
+        isRedis: false,
+        cleanupOnComplete: false,
+      });
+      racingManager.initialize();
+      const job = await racingManager.createJob(streamId, 'user-1');
+      const originalGetContentParts = jobStore.getContentParts.bind(jobStore);
+      let signalSnapshotStarted: (() => void) | undefined;
+      const snapshotStarted = new Promise<void>((resolve) => {
+        signalSnapshotStarted = resolve;
+      });
+      let releaseSnapshot: (() => void) | undefined;
+      const snapshotGate = new Promise<void>((resolve) => {
+        releaseSnapshot = resolve;
+      });
+      jest.spyOn(jobStore, 'getContentParts').mockImplementationOnce(async (...args) => {
+        signalSnapshotStarted?.();
+        await snapshotGate;
+        return originalGetContentParts(...args);
+      });
+
+      try {
+        const aborting = racingManager.abortJob(streamId);
+        await snapshotStarted;
+        await racingManager.completeJob(streamId, undefined, job.createdAt);
+        releaseSnapshot?.();
+
+        await expect(aborting).resolves.toMatchObject({
+          success: false,
+          finalEvent: null,
+        });
+        await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
+          createdAt: job.createdAt,
+          status: 'complete',
+        });
+        expect(emitDone).not.toHaveBeenCalled();
+      } finally {
+        releaseSnapshot?.();
+        await racingManager.destroy();
+      }
     });
   });
 
@@ -644,7 +709,7 @@ describe('emitChunk durability (Redis-mode chunk log)', () => {
     const redisModeManager = buildRedisModeManager(store, transport);
     try {
       const streamId = 'steer-durable';
-      await redisModeManager.createJob(streamId, 'user-1');
+      const job = await redisModeManager.createJob(streamId, 'user-1');
 
       let resolveAppend!: () => void;
       const appendGate = new Promise<void>((resolve) => {
@@ -665,7 +730,7 @@ describe('emitChunk durability (Redis-mode chunk log)', () => {
       resolveAppend();
       await emit;
       expect(settled).toBe(true);
-      expect(publishSpy).toHaveBeenCalledWith(streamId, steerEvent);
+      expect(publishSpy).toHaveBeenCalledWith(streamId, steerEvent, job.createdAt);
     } finally {
       await redisModeManager.destroy();
     }
@@ -677,15 +742,53 @@ describe('emitChunk durability (Redis-mode chunk log)', () => {
     const redisModeManager = buildRedisModeManager(store, transport);
     try {
       const streamId = 'steer-fire-and-forget';
-      await redisModeManager.createJob(streamId, 'user-1');
+      const job = await redisModeManager.createJob(streamId, 'user-1');
 
       // Never resolves: the per-delta hot path must not gate on durability.
       jest.spyOn(store, 'appendChunk').mockReturnValue(new Promise<void>(() => undefined));
       const publishSpy = jest.spyOn(transport, 'emitChunk');
 
       await redisModeManager.emitChunk(streamId, steerEvent);
-      expect(publishSpy).toHaveBeenCalledWith(streamId, steerEvent);
+      expect(publishSpy).toHaveBeenCalledWith(streamId, steerEvent, job.createdAt);
     } finally {
+      await redisModeManager.destroy();
+    }
+  });
+
+  test('a durable predecessor emission stops when the runtime is replaced during append', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(100);
+    const store = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+    const transport = new InMemoryEventTransport();
+    const redisModeManager = buildRedisModeManager(store, transport);
+    let resolveAppend: (() => void) | undefined;
+
+    try {
+      const streamId = 'steer-durable-replaced';
+      const predecessor = await redisModeManager.createJob(streamId, 'user-1');
+      const appendStarted = new Promise<void>((resolve) => {
+        jest.spyOn(store, 'appendChunk').mockImplementationOnce(
+          () =>
+            new Promise<void>((resolveAppendPromise) => {
+              resolveAppend = resolveAppendPromise;
+              resolve();
+            }),
+        );
+      });
+      const publishSpy = jest.spyOn(transport, 'emitChunk');
+      const staleEmission = redisModeManager.emitChunk(streamId, steerEvent, { durable: true });
+      await appendStarted;
+
+      now.mockReturnValue(200);
+      const replacement = await redisModeManager.createJob(streamId, 'user-1');
+      resolveAppend?.();
+      await staleEmission;
+
+      expect(predecessor.abortController.signal.aborted).toBe(true);
+      expect(replacement.abortController.signal.aborted).toBe(false);
+      expect(publishSpy).not.toHaveBeenCalled();
+    } finally {
+      resolveAppend?.();
+      now.mockRestore();
       await redisModeManager.destroy();
     }
   });

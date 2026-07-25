@@ -3,17 +3,22 @@ import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTr
 import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
+import { ApprovalLifecycle } from '~/stream/ApprovalLifecycle';
 
 jest.spyOn(console, 'log').mockImplementation();
 
 describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () => {
   let manager: GenerationJobManagerClass;
+  let jobStore: InMemoryJobStore;
+  let eventTransport: InMemoryEventTransport;
 
   beforeEach(() => {
+    jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+    eventTransport = new InMemoryEventTransport();
     manager = new GenerationJobManagerClass();
     manager.configure({
-      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
-      eventTransport: new InMemoryEventTransport(),
+      jobStore,
+      eventTransport,
       isRedis: false,
       cleanupOnComplete: false,
     });
@@ -223,108 +228,126 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
     });
   });
 
-  describe('expireApproval → approval-expired handler', () => {
-    // The host registers this to prune the paused run's durable checkpoint eagerly on
-    // expiry (sweeper or stale submit) instead of waiting out the checkpoint TTL.
-    test('fires the registered handler with the streamId after a successful expiry', async () => {
-      const streamId = 'stream-expire-handler';
-      await manager.createJob(streamId, 'user-1');
-      await manager.approvals.pause(streamId, buildAction(streamId, { actionId: 'action-A' }));
+  describe('expireApproval notification', () => {
+    test('publishes a generation-tagged expiry to local and remote subscribers', async () => {
+      const streamId = 'stream-expire-local-notification';
+      const job = await manager.createJob(streamId, 'user-1');
+      const onError = jest.fn();
+      const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+      await manager.approvals.pause(streamId, buildAction(streamId));
+      const broadcast = jest.spyOn(eventTransport, 'emitError');
 
-      const handler = jest.fn();
-      manager.setApprovalExpiredHandler(handler);
+      expect(await manager.expireApproval(streamId)).toBe(true);
+      expect(onError).toHaveBeenCalledWith('Approval expired before a decision was made');
+      expect(broadcast).toHaveBeenCalledWith(
+        streamId,
+        'Approval expired before a decision was made',
+        job.createdAt,
+      );
 
-      expect(await manager.expireApproval(streamId, 'action-A')).toBe(true);
-      expect(handler).toHaveBeenCalledTimes(1);
-      // The expired job rides along so the host can resolve tenant/user-scoped config.
-      expect(handler).toHaveBeenCalledWith(streamId, expect.objectContaining({ userId: 'user-1' }));
-
-      // The aborted job outlives the expiry (completed-job TTL), so the next sweep enters
-      // the relay branch for the SAME approval — the cleanup must not run a second time.
-      await (
-        manager as unknown as { expireStaleApprovals(): Promise<void> }
-      ).expireStaleApprovals();
-      expect(handler).toHaveBeenCalledTimes(1);
+      subscription?.unsubscribe();
     });
 
-    test('relays a store-won expiry through the handler (multi-replica path)', async () => {
-      const streamId = 'stream-expire-relay';
+    test('delivers the stored expiry error to a late subscriber', async () => {
+      const streamId = 'stream-expire-late-subscriber';
       await manager.createJob(streamId, 'user-1');
       await manager.approvals.pause(streamId, buildAction(streamId));
-
-      // Another replica's store cleanup wins the expiry CAS: the status flips via the
-      // lifecycle primitive with NO emit, NO handler, and no errorEvent on this replica.
       expect(await manager.approvals.expire(streamId)).toBe(true);
 
-      const handler = jest.fn();
-      manager.setApprovalExpiredHandler(handler);
-      // This replica's sweep observes the already-aborted expiry and relays it.
-      await (
-        manager as unknown as { expireStaleApprovals(): Promise<void> }
-      ).expireStaleApprovals();
+      const onError = jest.fn();
+      const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+      await new Promise<void>((resolve) => setImmediate(resolve));
 
-      expect(handler).toHaveBeenCalledTimes(1);
-      expect(handler).toHaveBeenCalledWith(
-        streamId,
-        expect.objectContaining({ userId: 'user-1', status: 'aborted' }),
-      );
-
-      // Repeated sweeps must not re-run the (idempotent but not free) cleanup.
-      await (
-        manager as unknown as { expireStaleApprovals(): Promise<void> }
-      ).expireStaleApprovals();
-      expect(handler).toHaveBeenCalledTimes(1);
+      expect(onError).toHaveBeenCalledWith('Approval expired before a decision was made');
+      subscription?.unsubscribe();
     });
 
-    test('relay cleanup still runs when the terminal error is already cached (reconnect)', async () => {
-      const streamId = 'stream-expire-relay-cached';
+    test('notifies the observed runtime when zero terminal TTL removes the job hash', async () => {
+      const streamId = 'stream-expire-zero-terminal-ttl';
       await manager.createJob(streamId, 'user-1');
+      const onError = jest.fn();
+      const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
       await manager.approvals.pause(streamId, buildAction(streamId));
-      expect(await manager.approvals.expire(streamId)).toBe(true); // store-won CAS
-
-      // A reconnect seeds runtime.errorEvent from the aborted job BEFORE any sweep —
-      // that must gate the relay emit, not the checkpoint cleanup.
-      const internals = manager as unknown as {
-        runtimeState: Map<string, { errorEvent?: string }>;
-        expireStaleApprovals(): Promise<void>;
-      };
-      const runtime = internals.runtimeState.get(streamId);
-      expect(runtime).toBeDefined();
-      runtime!.errorEvent = 'cached-terminal-error';
-
-      const handler = jest.fn();
-      manager.setApprovalExpiredHandler(handler);
-      await internals.expireStaleApprovals();
-
-      expect(handler).toHaveBeenCalledTimes(1);
-      expect(handler).toHaveBeenCalledWith(
-        streamId,
-        expect.objectContaining({ status: 'aborted' }),
-      );
-    });
-
-    test('does NOT fire when nothing was expired (failed CAS)', async () => {
-      const streamId = 'stream-expire-handler-noop';
-      await manager.createJob(streamId, 'user-1'); // running — no pending action to expire
-
-      const handler = jest.fn();
-      manager.setApprovalExpiredHandler(handler);
-
-      expect(await manager.expireApproval(streamId)).toBe(false);
-      expect(handler).not.toHaveBeenCalled();
-    });
-
-    test('a throwing handler never breaks the expiry itself', async () => {
-      const streamId = 'stream-expire-handler-throws';
-      await manager.createJob(streamId, 'user-1');
-      await manager.approvals.pause(streamId, buildAction(streamId));
-
-      manager.setApprovalExpiredHandler(() => {
-        throw new Error('prune failed');
+      const originalGetJob = jobStore.getJob.bind(jobStore);
+      jest.spyOn(jobStore, 'getJob').mockImplementation(async (...args) => {
+        const job = await originalGetJob(...args);
+        return job?.status === 'aborted' ? null : job;
       });
 
       expect(await manager.expireApproval(streamId)).toBe(true);
-      expect(await manager.getJobStatus(streamId)).toBe('aborted');
+      expect(onError).toHaveBeenCalledWith('Approval expired before a decision was made');
+      subscription?.unsubscribe();
+    });
+
+    test('notifies after the manager pre-read fails and the expiry CAS removes the job hash', async () => {
+      const streamId = 'stream-expire-read-failure-zero-terminal-ttl';
+      await manager.createJob(streamId, 'user-1');
+      const onError = jest.fn();
+      const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+      await manager.approvals.pause(streamId, buildAction(streamId));
+      const originalGetJob = jobStore.getJob.bind(jobStore);
+      jest
+        .spyOn(jobStore, 'getJob')
+        .mockRejectedValueOnce(new Error('transient read failure'))
+        .mockImplementation(async (...args) => {
+          const job = await originalGetJob(...args);
+          return job?.status === 'aborted' ? null : job;
+        });
+
+      expect(await manager.expireApproval(streamId)).toBe(true);
+      expect(onError).toHaveBeenCalledWith('Approval expired before a decision was made');
+      subscription?.unsubscribe();
+    });
+
+    test('does not notify or mutate a replacement created after the expiry CAS', async () => {
+      const streamId = 'stream-expire-replacement-notification';
+      const now = jest.spyOn(Date, 'now').mockReturnValue(1000);
+      const originalTransition = jobStore.transitionStatus.bind(jobStore);
+      let signalExpired: (() => void) | undefined;
+      const expired = new Promise<void>((resolve) => {
+        signalExpired = resolve;
+      });
+      let releaseTransition: (() => void) | undefined;
+      const transitionGate = new Promise<void>((resolve) => {
+        releaseTransition = resolve;
+      });
+      jest.spyOn(jobStore, 'transitionStatus').mockImplementation(async (...args) => {
+        const transitioned = await originalTransition(...args);
+        if (args[1].to === 'aborted' && transitioned) {
+          signalExpired?.();
+          await transitionGate;
+        }
+        return transitioned;
+      });
+
+      try {
+        await manager.createJob(streamId, 'user-1');
+        await manager.approvals.pause(streamId, buildAction(streamId));
+        const expiring = manager.expireApproval(streamId);
+        await expired;
+
+        now.mockReturnValue(2000);
+        await manager.createJob(streamId, 'user-1');
+        const replacementError = jest.fn();
+        const replacementSubscription = await manager.subscribe(
+          streamId,
+          () => undefined,
+          undefined,
+          replacementError,
+        );
+
+        releaseTransition?.();
+        await expect(expiring).resolves.toBe(true);
+        await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
+          createdAt: 2000,
+          status: 'running',
+        });
+        expect(replacementError).not.toHaveBeenCalled();
+        replacementSubscription?.unsubscribe();
+      } finally {
+        releaseTransition?.();
+        now.mockRestore();
+      }
     });
   });
 
@@ -374,6 +397,29 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
 });
 
 describe('InMemoryJobStore — approval expiry cleanup', () => {
+  test('guards status transitions against a replaced job epoch', async () => {
+    const store = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+    const job = await store.createJob('epoch-guard', 'u1');
+
+    expect(
+      await store.transitionStatus('epoch-guard', {
+        from: 'running',
+        to: 'error',
+        expectCreatedAt: job.createdAt + 1,
+      }),
+    ).toBe(false);
+    expect((await store.getJob('epoch-guard'))?.status).toBe('running');
+
+    expect(
+      await store.transitionStatus('epoch-guard', {
+        from: 'running',
+        to: 'error',
+        expectCreatedAt: job.createdAt,
+      }),
+    ).toBe(true);
+    expect((await store.getJob('epoch-guard'))?.status).toBe('error');
+  });
+
   test('cleanup() finalizes and reclaims a past-expiry pending-approval job', async () => {
     const store = new InMemoryJobStore({ ttlAfterComplete: 0 });
     await store.createJob('s1', 'u1');
@@ -391,6 +437,81 @@ describe('InMemoryJobStore — approval expiry cleanup', () => {
     // A past-expiry approval must be finalized + reclaimed, not left resident.
     await store.cleanup();
     expect(await store.getJob('s1')).toBeNull();
+  });
+});
+
+describe('ApprovalLifecycle ownership callbacks', () => {
+  test('notifies ownership changes only after successful lifecycle transitions', async () => {
+    const store = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+    const callbacks = {
+      onPaused: jest.fn(),
+      onResumed: jest.fn(),
+      onExpired: jest.fn(),
+    };
+    const lifecycle = new ApprovalLifecycle(store, callbacks);
+    const streamId = 'ownership-callbacks';
+    const job = await store.createJob(streamId, 'u1');
+    const action = buildPendingAction(
+      buildToolApprovalPayload([{ name: 'shell', arguments: {}, tool_call_id: 'c1' }]),
+      { streamId },
+    );
+
+    expect(await lifecycle.pause(streamId, action)).toBe(true);
+    expect(await lifecycle.pause(streamId, action)).toBe(false);
+    expect(callbacks.onPaused).toHaveBeenCalledTimes(1);
+    expect(callbacks.onPaused).toHaveBeenCalledWith(streamId, job.createdAt);
+
+    expect(await lifecycle.resolve(streamId, action.actionId)).toBe(true);
+    expect(await lifecycle.resolve(streamId, action.actionId)).toBe(false);
+    expect(callbacks.onResumed).toHaveBeenCalledTimes(1);
+    expect(callbacks.onResumed).toHaveBeenCalledWith(streamId, job.createdAt);
+
+    const nextAction = { ...action, actionId: 'next-action' };
+    expect(await lifecycle.pause(streamId, nextAction)).toBe(true);
+    expect(await lifecycle.expire(streamId, nextAction.actionId)).toBe(true);
+    expect(await lifecycle.expire(streamId, nextAction.actionId)).toBe(false);
+    expect(callbacks.onExpired).toHaveBeenCalledTimes(1);
+    expect(callbacks.onExpired).toHaveBeenCalledWith(streamId, job.createdAt);
+  });
+
+  test('does not resume a replacement that appeared after the pending action was read', async () => {
+    const store = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+    const onResumed = jest.fn();
+    const lifecycle = new ApprovalLifecycle(store, { onResumed });
+    const streamId = 'resolve-replacement-guard';
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1000);
+
+    try {
+      await store.createJob(streamId, 'u1');
+      const action = buildPendingAction(
+        buildToolApprovalPayload([{ name: 'shell', arguments: {}, tool_call_id: 'c1' }]),
+        { streamId },
+      );
+      await lifecycle.pause(streamId, action);
+      const observedJob = await store.getJob(streamId);
+      if (!observedJob) {
+        throw new Error('Expected paused job');
+      }
+
+      now.mockReturnValue(2000);
+      const replacement = await store.createJob(streamId, 'u1');
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: action, pendingActionId: action.actionId },
+      });
+
+      jest.spyOn(store, 'getJob').mockResolvedValueOnce(observedJob);
+
+      expect(await lifecycle.resolve(streamId, action.actionId)).toBe(false);
+      expect(await store.getJob(streamId)).toMatchObject({
+        createdAt: replacement.createdAt,
+        status: 'requires_action',
+      });
+      expect(onResumed).not.toHaveBeenCalled();
+    } finally {
+      now.mockRestore();
+    }
   });
 });
 

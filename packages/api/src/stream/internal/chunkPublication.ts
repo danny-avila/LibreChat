@@ -9,6 +9,7 @@ export type ChunkPublicationReceipt = number | false | void;
 type ChunkPublicationCapability = (
   streamId: string,
   event: unknown,
+  generationId?: number,
 ) => Promise<ChunkPublicationReceipt>;
 
 /**
@@ -32,10 +33,11 @@ export function emitChunkWithReceipt(
   transport: IEventTransport,
   streamId: string,
   event: unknown,
+  generationId?: number,
 ): Promise<ChunkPublicationReceipt> {
   const capability = chunkPublicationCapabilities.get(transport);
   if (capability) {
-    return capability(streamId, event);
+    return capability(streamId, event, generationId);
   }
-  return Promise.resolve(transport.emitChunk(streamId, event));
+  return Promise.resolve(transport.emitChunk(streamId, event, generationId));
 }

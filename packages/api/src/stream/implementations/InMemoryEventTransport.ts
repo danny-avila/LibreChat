@@ -28,16 +28,34 @@ export class InMemoryEventTransport implements IEventTransport {
   subscribe(
     streamId: string,
     handlers: {
-      onChunk: (event: unknown) => void;
-      onDone?: (event: unknown) => void;
-      onError?: (error: string) => void;
+      onChunk: (event: unknown, generationId?: number) => void;
+      onDone?: (event: unknown, generationId?: number) => void;
+      onError?: (error: string, generationId?: number) => void;
     },
   ): { unsubscribe: () => void; ready?: Promise<void> } {
     const state = this.getOrCreateStream(streamId);
 
-    const chunkHandler = (event: unknown) => handlers.onChunk(event);
-    const doneHandler = (event: unknown) => handlers.onDone?.(event);
-    const errorHandler = (error: string) => handlers.onError?.(error);
+    const chunkHandler = (event: unknown, generationId?: number) => {
+      if (generationId == null) {
+        handlers.onChunk(event);
+        return;
+      }
+      handlers.onChunk(event, generationId);
+    };
+    const doneHandler = (event: unknown, generationId?: number) => {
+      if (generationId == null) {
+        handlers.onDone?.(event);
+        return;
+      }
+      handlers.onDone?.(event, generationId);
+    };
+    const errorHandler = (error: string, generationId?: number) => {
+      if (generationId == null) {
+        handlers.onError?.(error);
+        return;
+      }
+      handlers.onError?.(error, generationId);
+    };
 
     state.emitter.on('chunk', chunkHandler);
     state.emitter.on('done', doneHandler);
@@ -73,22 +91,22 @@ export class InMemoryEventTransport implements IEventTransport {
     };
   }
 
-  emitChunk(streamId: string, event: unknown): void {
+  emitChunk(streamId: string, event: unknown, generationId?: number): void {
     const state = this.streams.get(streamId);
-    state?.emitter.emit('chunk', event);
+    state?.emitter.emit('chunk', event, generationId);
   }
 
-  emitDone(streamId: string, event: unknown): void {
+  emitDone(streamId: string, event: unknown, generationId?: number): void {
     const state = this.streams.get(streamId);
-    state?.emitter.emit('done', event);
+    state?.emitter.emit('done', event, generationId);
   }
 
-  emitError(streamId: string, error: string): void {
+  emitError(streamId: string, error: string, generationId?: number): void {
     const state = this.streams.get(streamId);
     // Only emit if there are listeners - Node.js throws on unhandled 'error' events
     // This is intentional for the race condition where error occurs before client connects
     if (state?.emitter.listenerCount('error') ?? 0 > 0) {
-      state?.emitter.emit('error', error);
+      state?.emitter.emit('error', error, generationId);
     }
   }
 

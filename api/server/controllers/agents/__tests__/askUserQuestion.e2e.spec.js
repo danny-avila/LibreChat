@@ -201,13 +201,9 @@ beforeAll(async () => {
 
   GenerationJobManager.configure({ ...createStreamServices(), cleanupOnComplete: false });
   GenerationJobManager.initialize();
-  GenerationJobManager.setApprovalExpiredHandler(async (conversationId) => {
-    await deleteAgentCheckpoint(conversationId, MONGO_CFG);
-  });
 }, 60000);
 
 afterAll(async () => {
-  GenerationJobManager.setApprovalExpiredHandler(null);
   await GenerationJobManager.destroy();
   await mongoose.disconnect();
   await mongoServer.stop();

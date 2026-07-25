@@ -1500,9 +1500,13 @@ class AgentClient extends BaseClient {
       if (Array.isArray(runMessages) && runMessages.length > 0) {
         const discovered = extractDiscoveredToolsFromHistory(runMessages);
         if (discovered.size > 0) {
-          await GenerationJobManager.updateMetadata(streamId, {
-            discoveredTools: Array.from(discovered),
-          });
+          await GenerationJobManager.updateMetadata(
+            streamId,
+            {
+              discoveredTools: Array.from(discovered),
+            },
+            this.jobCreatedAt,
+          );
         }
       }
     } catch (err) {

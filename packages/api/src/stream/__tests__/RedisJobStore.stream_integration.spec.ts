@@ -168,6 +168,175 @@ describe('RedisJobStore Integration Tests', () => {
 
       await store.destroy();
     });
+
+    test('stale generation update and delete cannot affect a same-stream replacement', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `stale-write-epoch-${Date.now()}`;
+      const now = jest.spyOn(Date, 'now').mockReturnValue(1000);
+      const replacementChunk = {
+        event: 'on_message_delta',
+        data: { text: 'replacement generation' },
+      };
+      const predecessorChunk = {
+        event: 'on_message_delta',
+        data: { text: 'stale predecessor generation' },
+      };
+      const replacementRunSteps = [{ id: 'replacement-step', type: 'tool_call' }];
+      const predecessorRunSteps = [{ id: 'predecessor-step', type: 'tool_call' }];
+
+      try {
+        const original = await store.createJob(streamId, 'user-1', streamId);
+
+        const replacement = await store.createJob(streamId, 'user-1', streamId);
+        expect(replacement.createdAt).toBe(original.createdAt + 1);
+        await store.appendChunk(streamId, replacementChunk, replacement.createdAt);
+        await store.appendChunk(streamId, predecessorChunk, original.createdAt);
+        await store.saveRunSteps?.(
+          streamId,
+          replacementRunSteps as Agents.RunStep[],
+          replacement.createdAt,
+        );
+        await store.saveRunSteps?.(
+          streamId,
+          predecessorRunSteps as Agents.RunStep[],
+          original.createdAt,
+        );
+
+        await store.updateJob(
+          streamId,
+          { status: 'complete', completedAt: 1000, sender: 'stale generation' },
+          original.createdAt,
+        );
+        await expect(store.deleteJob(streamId, original.createdAt)).resolves.toBe(false);
+
+        await expect(store.getJob(streamId)).resolves.toMatchObject({
+          createdAt: replacement.createdAt,
+          status: 'running',
+        });
+        const chunks = await ioredisClient.xrange(`stream:{${streamId}}:chunks`, '-', '+');
+        expect(chunks).toHaveLength(1);
+        expect(chunks[0]?.[1]).toContain(JSON.stringify(replacementChunk));
+        await expect(store.getRunSteps(streamId)).resolves.toEqual(replacementRunSteps);
+
+        await expect(store.deleteJob(streamId, replacement.createdAt)).resolves.toBe(true);
+        await expect(store.getJob(streamId)).resolves.toBeNull();
+        expect(await ioredisClient.xlen(`stream:{${streamId}}:chunks`)).toBe(0);
+      } finally {
+        now.mockRestore();
+        await store.destroy();
+      }
+    });
+
+    test('terminal CAS cleanup cannot delete a replacement job epoch', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `terminal-epoch-${Date.now()}`;
+      const userId = 'terminal-epoch-user';
+      const now = jest.spyOn(Date, 'now').mockReturnValue(1000);
+      const originalEval = ioredisClient.eval.bind(ioredisClient) as (
+        script: string | Buffer,
+        numberOfKeys: number,
+        ...args: Array<string | number | Buffer>
+      ) => Promise<unknown>;
+      let signalCasApplied: (() => void) | undefined;
+      const casApplied = new Promise<void>((resolve) => {
+        signalCasApplied = resolve;
+      });
+      let releaseTransition: (() => void) | undefined;
+      const transitionGate = new Promise<void>((resolve) => {
+        releaseTransition = resolve;
+      });
+      let restoreEval: (() => void) | undefined;
+
+      try {
+        const originalJob = await store.createJob(streamId, userId, streamId);
+        await store.appendChunk(streamId, {
+          event: 'on_message_delta',
+          data: { text: 'old generation' },
+        });
+        await store.enqueueSteer(streamId, {
+          steerId: 'old-steer',
+          text: 'do not leak this',
+          userId,
+          createdAt: Date.now(),
+        });
+
+        let gateFirstEval = true;
+        const evalSpy = jest.spyOn(ioredisClient, 'eval').mockImplementation((async (
+          script,
+          numberOfKeys,
+          ...args
+        ) => {
+          const result = await originalEval(
+            script as string | Buffer,
+            Number(numberOfKeys),
+            ...(args as Array<string | number | Buffer>),
+          );
+          if (gateFirstEval) {
+            gateFirstEval = false;
+            signalCasApplied?.();
+            await transitionGate;
+          }
+          return result;
+        }) as typeof ioredisClient.eval);
+        restoreEval = () => evalSpy.mockRestore();
+
+        const finalizing = store.transitionStatus(streamId, {
+          from: 'running',
+          to: 'error',
+          expectCreatedAt: originalJob.createdAt,
+          patch: { error: 'old generation stopped', completedAt: Date.now() },
+        });
+        await casApplied;
+
+        now.mockReturnValue(2000);
+        const replacement = await store.createJob(streamId, userId, streamId);
+        await store.appendChunk(streamId, {
+          event: 'on_message_delta',
+          data: { text: 'replacement generation' },
+        });
+        await store.enqueueSteer(streamId, {
+          steerId: 'replacement-steer',
+          text: 'keep replacement state',
+          userId,
+          createdAt: Date.now(),
+        });
+
+        releaseTransition?.();
+        await expect(finalizing).resolves.toBe(true);
+        await expect(store.getJob(streamId)).resolves.toMatchObject({
+          createdAt: replacement.createdAt,
+          status: 'running',
+        });
+        expect(await ioredisClient.xlen(`stream:{${streamId}}:chunks`)).toBe(1);
+        expect((await store.peekSteers(streamId)).map((steer) => steer.steerId)).toEqual([
+          'replacement-steer',
+        ]);
+        await expect(
+          store.claimParkedSteers(streamId, `"userId":"${userId}"`),
+        ).resolves.toBeUndefined();
+        expect(await ioredisClient.smembers('stream:running')).toContain(streamId);
+        expect(await store.getActiveJobIdsByUser(userId)).toContain(streamId);
+      } finally {
+        releaseTransition?.();
+        restoreEval?.();
+        now.mockRestore();
+        await store.destroy();
+      }
+    });
   });
 
   describe('Requires Action Status Tracking', () => {
@@ -1014,6 +1183,27 @@ describe('RedisJobStore Integration Tests', () => {
       expect(activeJobs).toHaveLength(2);
       expect(activeJobs).toContain(streamId1);
       expect(activeJobs).toContain(streamId2);
+
+      await store.destroy();
+    });
+
+    test('same-stream replacement transfers active membership to the new owner', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `owner-replacement-${Date.now()}`;
+      const oldUserId = `old-owner-${Date.now()}`;
+      const newUserId = `new-owner-${Date.now()}`;
+      await store.createJob(streamId, oldUserId, streamId);
+      await store.createJob(streamId, newUserId, streamId);
+
+      await expect(store.getActiveJobIdsByUser(oldUserId)).resolves.not.toContain(streamId);
+      await expect(store.getActiveJobIdsByUser(newUserId)).resolves.toContain(streamId);
 
       await store.destroy();
     });
@@ -2182,6 +2372,87 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('terminal CAS with zero completed TTL keeps parked steers owner-claimable', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { completedTtl: 0 });
+      await store.initialize();
+
+      const streamId = `steer-zero-terminal-${Date.now()}`;
+      const userId = 'zero-terminal-user';
+      const job = await store.createJob(streamId, userId, streamId, 'tenant-1');
+      await store.enqueueSteer(streamId, buildSteer('s1', 'survive immediate job expiry'));
+
+      await expect(
+        store.transitionStatus(streamId, {
+          from: 'running',
+          to: 'error',
+          expectCreatedAt: job.createdAt,
+          patch: { error: 'stopped', completedAt: Date.now() },
+        }),
+      ).resolves.toBe(true);
+
+      await expect(store.getJob(streamId)).resolves.toBeNull();
+      expect(await ioredisClient.smembers('stream:running')).not.toContain(streamId);
+      expect(await store.getActiveJobIdsByUser(userId, 'tenant-1')).not.toContain(streamId);
+
+      const claimed = await store.claimParkedSteers(streamId, `"userId":"${userId}"`);
+      expect(claimed).toBeDefined();
+      expect(JSON.parse(claimed as string)).toMatchObject({
+        userId,
+        tenantId: 'tenant-1',
+        steers: [{ steerId: 's1', text: 'survive immediate job expiry' }],
+      });
+
+      await store.destroy();
+    });
+
+    test('terminal CAS skips malformed steers while parking valid leftovers', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `steer-malformed-terminal-${Date.now()}`;
+      const userId = 'malformed-terminal-user';
+      const job = await store.createJob(streamId, userId, streamId, 'tenant-1');
+      await store.enqueueSteer(streamId, buildSteer('valid-steer', 'preserve valid input'));
+      await ioredisClient.rpush(`stream:{${streamId}}:steers`, '{malformed-json');
+
+      await expect(
+        store.transitionStatus(streamId, {
+          from: 'running',
+          to: 'error',
+          expectCreatedAt: job.createdAt,
+          patch: { error: 'stopped', completedAt: Date.now() },
+        }),
+      ).resolves.toBe(true);
+
+      await expect(store.getJob(streamId)).resolves.toMatchObject({ status: 'error' });
+      expect(await ioredisClient.exists(`stream:{${streamId}}:steers`)).toBe(0);
+
+      const claimed = await store.claimParkedSteers(streamId, `"userId":"${userId}"`);
+      expect(claimed).toBeDefined();
+      expect(JSON.parse(claimed as string)).toMatchObject({
+        userId,
+        tenantId: 'tenant-1',
+        steers: [
+          {
+            steerId: 'valid-steer',
+            text: 'preserve valid input',
+          },
+        ],
+      });
+
+      await store.destroy();
+    });
+
     test('stale-running reap parks queued steers before deleting the job', async () => {
       if (!ioredisClient) {
         return;
@@ -2220,6 +2491,95 @@ describe('RedisJobStore Integration Tests', () => {
       expect(parsed.steers.map((s) => s.text)).toEqual(['crash survivor']);
 
       await store.destroy();
+    });
+
+    test('stale-running reap cannot delete a replacement created after observation', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient, { runningTtl: 1 });
+      await store.initialize();
+
+      const streamId = `stale-replacement-guard-${Date.now()}`;
+      const userId = 'stale-replacement-user';
+      await store.createJob(streamId, userId, streamId);
+      await store.enqueueSteer(streamId, buildSteer('old-steer', 'old generation'));
+      await ioredisClient.hset(
+        `stream:{${streamId}}:job`,
+        'createdAt',
+        String(Date.now() - 10_000),
+      );
+
+      const originalEval = ioredisClient.eval.bind(ioredisClient) as (
+        script: string | Buffer,
+        numberOfKeys: number,
+        ...args: Array<string | number | Buffer>
+      ) => Promise<unknown>;
+      let signalCleanupReady: (() => void) | undefined;
+      const cleanupReady = new Promise<void>((resolve) => {
+        signalCleanupReady = resolve;
+      });
+      let releaseCleanup: (() => void) | undefined;
+      const cleanupGate = new Promise<void>((resolve) => {
+        releaseCleanup = resolve;
+      });
+      let restoreEval: (() => void) | undefined;
+
+      try {
+        let gated = false;
+        const evalSpy = jest.spyOn(ioredisClient, 'eval').mockImplementation((async (
+          script,
+          numberOfKeys,
+          ...args
+        ) => {
+          if (!gated && String(script).includes('tonumber(ARGV[2]) - liveSince')) {
+            gated = true;
+            signalCleanupReady?.();
+            await cleanupGate;
+          }
+          return originalEval(
+            script as string | Buffer,
+            Number(numberOfKeys),
+            ...(args as Array<string | number | Buffer>),
+          );
+        }) as typeof ioredisClient.eval);
+        restoreEval = () => evalSpy.mockRestore();
+
+        const cleaning = store.cleanup();
+        await cleanupReady;
+
+        const replacement = await store.createJob(streamId, userId, streamId);
+        await store.appendChunk(streamId, {
+          event: 'on_message_delta',
+          data: { text: 'replacement generation' },
+        });
+        await store.enqueueSteer(
+          streamId,
+          buildSteer('replacement-steer', 'keep replacement state'),
+        );
+
+        releaseCleanup?.();
+        await cleaning;
+
+        await expect(store.getJob(streamId)).resolves.toMatchObject({
+          createdAt: replacement.createdAt,
+          status: 'running',
+        });
+        expect(await ioredisClient.xlen(`stream:{${streamId}}:chunks`)).toBe(1);
+        expect((await store.peekSteers(streamId)).map((steer) => steer.steerId)).toEqual([
+          'replacement-steer',
+        ]);
+        await expect(
+          store.claimParkedSteers(streamId, `"userId":"${userId}"`),
+        ).resolves.toBeUndefined();
+        expect(await ioredisClient.smembers('stream:running')).toContain(streamId);
+      } finally {
+        releaseCleanup?.();
+        restoreEval?.();
+        await store.destroy();
+      }
     });
 
     test('parkSteers falls back to a positive recovery TTL when completedTtl is 0', async () => {

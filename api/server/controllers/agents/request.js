@@ -336,6 +336,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   startupTelemetry?.mark('request_admitted');
 
   let client = null;
+  let jobCreatedAt;
 
   try {
     logger.debug(`[ResumableAgentController] Creating job`, {
@@ -369,7 +370,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     startupTelemetry?.mark('job_created');
     acceptAgentStartupTelemetry(req, streamId);
     startupTelemetry?.mark('metadata_persisted');
-    const jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
+    jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
     req._resumableStreamId = streamId;
     getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
 
@@ -472,6 +473,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       await GenerationJobManager.completeJob(
         streamId,
         'Request aborted during initialization',
+        jobCreatedAt,
       ).catch((completeErr) => {
         logger.warn(
           '[ResumableAgentController] completeJob failed after initialization abort',
@@ -503,7 +505,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     });
 
     if (client?.sender) {
-      void GenerationJobManager.updateMetadata(streamId, { sender: client.sender }).catch((err) => {
+      void GenerationJobManager.updateMetadata(
+        streamId,
+        { sender: client.sender },
+        jobCreatedAt,
+      ).catch((err) => {
         logger.warn('[ResumableAgentController] Failed to persist response sender', err);
       });
     }
@@ -603,32 +609,36 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           userMessage = userMsg;
 
           // Store userMessage and responseMessageId upfront for resume capability
-          GenerationJobManager.updateMetadata(streamId, {
-            responseMessageId: respMsgId,
-            userMessage: {
-              messageId: userMsg.messageId,
-              parentMessageId: userMsg.parentMessageId,
-              conversationId: userMsg.conversationId,
-              text: userMsg.text,
-              quotes: userMsg.quotes,
-              // Persist the turn's uploaded files here (authoritative job metadata) so a
-              // HITL resume sources them from the job, not the user DB row — which the
-              // approval prompt can race (the row save may still be in flight when a fast
-              // /resume reads it). Without this an approved tool run can rebuild without the
-              // paused turn's files.
-              ...(Array.isArray(req.body?.files) &&
-                req.body.files.length > 0 && { files: req.body.files }),
-              // Skill selections aren't on `userMsg` yet at onStart (BaseClient adds them
-              // later), so source them from the request — otherwise this update overwrites
-              // the preliminary metadata and a HITL-resumed turn loses its skill pills.
-              ...(Array.isArray(req.body?.manualSkills) &&
-                req.body.manualSkills.length > 0 && { manualSkills: req.body.manualSkills }),
-              ...(Array.isArray(req.body?.alwaysAppliedSkills) &&
-                req.body.alwaysAppliedSkills.length > 0 && {
-                  alwaysAppliedSkills: req.body.alwaysAppliedSkills,
-                }),
+          GenerationJobManager.updateMetadata(
+            streamId,
+            {
+              responseMessageId: respMsgId,
+              userMessage: {
+                messageId: userMsg.messageId,
+                parentMessageId: userMsg.parentMessageId,
+                conversationId: userMsg.conversationId,
+                text: userMsg.text,
+                quotes: userMsg.quotes,
+                // Persist the turn's uploaded files here (authoritative job metadata) so a
+                // HITL resume sources them from the job, not the user DB row — which the
+                // approval prompt can race (the row save may still be in flight when a fast
+                // /resume reads it). Without this an approved tool run can rebuild without the
+                // paused turn's files.
+                ...(Array.isArray(req.body?.files) &&
+                  req.body.files.length > 0 && { files: req.body.files }),
+                // Skill selections aren't on `userMsg` yet at onStart (BaseClient adds them
+                // later), so source them from the request — otherwise this update overwrites
+                // the preliminary metadata and a HITL-resumed turn loses its skill pills.
+                ...(Array.isArray(req.body?.manualSkills) &&
+                  req.body.manualSkills.length > 0 && { manualSkills: req.body.manualSkills }),
+                ...(Array.isArray(req.body?.alwaysAppliedSkills) &&
+                  req.body.alwaysAppliedSkills.length > 0 && {
+                    alwaysAppliedSkills: req.body.alwaysAppliedSkills,
+                  }),
+              },
             },
-          }).catch((err) => {
+            jobCreatedAt,
+          ).catch((err) => {
             logger.error('[ResumableAgentController] Failed to persist start metadata', err);
           });
 
@@ -916,10 +926,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             // Parked BEFORE the final event: a client with no live subscriber
             // recovers these via /chat/status (claim-on-read) within the
             // recovery TTL — the SSE copy alone is transient.
-            await GenerationJobManager.steering.park(streamId, pendingSteers, {
-              userId,
-              tenantId: req.user?.tenantId,
-            });
+            await GenerationJobManager.steering.park(
+              streamId,
+              pendingSteers,
+              {
+                userId,
+                tenantId: req.user?.tenantId,
+              },
+              jobCreatedAt,
+            );
           }
         } catch (err) {
           logger.warn(`[ResumableAgentController] Failed to drain leftover steers`, err);
@@ -943,9 +958,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             conversationId: conversation?.conversationId,
           });
 
-          await GenerationJobManager.emitDone(streamId, finalEvent);
+          await GenerationJobManager.emitDone(streamId, finalEvent, jobCreatedAt);
           startupTelemetry?.end('completed_without_delta');
-          void GenerationJobManager.completeJob(streamId).catch((err) => {
+          void GenerationJobManager.completeJob(streamId, undefined, jobCreatedAt).catch((err) => {
             logger.warn('[ResumableAgentController] Failed to finalize completed job', err);
           });
           await finishResumableRequest(req, userId);
@@ -967,11 +982,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             conversationId: conversation?.conversationId,
           });
 
-          await GenerationJobManager.emitDone(streamId, finalEvent);
+          await GenerationJobManager.emitDone(streamId, finalEvent, jobCreatedAt);
           startupTelemetry?.end('aborted');
-          void GenerationJobManager.completeJob(streamId, 'Request aborted').catch((err) => {
-            logger.warn('[ResumableAgentController] Failed to finalize aborted job', err);
-          });
+          void GenerationJobManager.completeJob(streamId, 'Request aborted', jobCreatedAt).catch(
+            (err) => {
+              logger.warn('[ResumableAgentController] Failed to finalize aborted job', err);
+            },
+          );
           await finishResumableRequest(req, userId);
         }
 
@@ -1044,6 +1061,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 streamId,
                 erroredLeftovers.map(toPendingSteer),
                 { userId, tenantId: req.user?.tenantId },
+                jobCreatedAt,
               );
             }
           } catch (drainErr) {
@@ -1053,7 +1071,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             );
           }
           try {
-            await GenerationJobManager.emitError(streamId, error.message || 'Generation failed');
+            await GenerationJobManager.emitError(
+              streamId,
+              error.message || 'Generation failed',
+              jobCreatedAt,
+            );
           } catch (notificationError) {
             logger.warn(
               '[ResumableAgentController] Failed to notify client of generation error',
@@ -1062,12 +1084,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           } finally {
             startupTelemetry?.end('error', error);
           }
-          await GenerationJobManager.completeJob(streamId, error.message).catch((completeErr) => {
-            logger.warn(
-              '[ResumableAgentController] completeJob failed during generation-error cleanup',
-              completeErr,
-            );
-          });
+          await GenerationJobManager.completeJob(streamId, error.message, jobCreatedAt).catch(
+            (completeErr) => {
+              logger.warn(
+                '[ResumableAgentController] completeJob failed during generation-error cleanup',
+                completeErr,
+              );
+            },
+          );
         }
 
         try {
@@ -1087,12 +1111,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         `[ResumableAgentController] Unhandled error in background generation: ${err.message}`,
       );
       startupTelemetry?.end('error', err);
-      await GenerationJobManager.completeJob(streamId, err.message).catch((completeErr) => {
-        logger.warn(
-          '[ResumableAgentController] completeJob failed during background-error cleanup',
-          completeErr,
-        );
-      });
+      await GenerationJobManager.completeJob(streamId, err.message, jobCreatedAt).catch(
+        (completeErr) => {
+          logger.warn(
+            '[ResumableAgentController] completeJob failed during background-error cleanup',
+            completeErr,
+          );
+        },
+      );
       try {
         await finishResumableRequest(req, userId);
       } finally {
@@ -1104,11 +1130,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     try {
       if (!res.headersSent) {
         res.status(500).json({ error: error.message || 'Failed to start generation' });
-      } else {
+      } else if (jobCreatedAt != null) {
         // JSON already sent, emit error to stream so client can receive it
         await GenerationJobManager.emitError(
           streamId,
           error.message || 'Failed to start generation',
+          jobCreatedAt,
         );
       }
     } catch (notificationError) {
@@ -1121,17 +1148,21 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
     // Finalize THIS failed job before releasing the idempotency claim. Releasing first would
     // let the client's retry win the same key and createJob() the same streamId while we are
-    // still here — and completeJob() is not guarded by the original createdAt, so it would
-    // abort/error that replacement. A completeJob() rejection (store hiccup) must NOT skip the
+    // still here. The generation guard is defense-in-depth around that ordering. A
+    // completeJob() rejection (store hiccup) must NOT skip the
     // release + pending-request decrement below, or the retry stays wedged behind the claim
     // and the concurrency slot leaks — so swallow its error. (A failed completeJob did not
     // finalize anything, so releasing afterward can't let it abort a later replacement.)
-    await GenerationJobManager.completeJob(streamId, error.message).catch((completeErr) => {
-      logger.warn(
-        '[ResumableAgentController] completeJob failed during init-error cleanup',
-        completeErr,
+    if (jobCreatedAt != null) {
+      await GenerationJobManager.completeJob(streamId, error.message, jobCreatedAt).catch(
+        (completeErr) => {
+          logger.warn(
+            '[ResumableAgentController] completeJob failed during init-error cleanup',
+            completeErr,
+          );
+        },
       );
-    });
+    }
     if (ownsIdempotencyClaim) {
       await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
     }
@@ -1178,6 +1209,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
   let userMessageId;
   let responseMessageId;
   let client = null;
+  let jobCreatedAt;
   let cleanupHandlers = [];
 
   // Match the same logic used for conversationId generation above
@@ -1206,9 +1238,9 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
         responseMessageId = data[key];
       } else if (key === 'promptTokens') {
         // Update job metadata with prompt tokens for abort handling
-        GenerationJobManager.updateMetadata(streamId, { promptTokens: data[key] });
+        GenerationJobManager.updateMetadata(streamId, { promptTokens: data[key] }, jobCreatedAt);
       } else if (key === 'sender') {
-        GenerationJobManager.updateMetadata(streamId, { sender: data[key] });
+        GenerationJobManager.updateMetadata(streamId, { sender: data[key] }, jobCreatedAt);
       }
       // conversationId is pre-generated, no need to update from callback
     }
@@ -1230,9 +1262,9 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
     }
 
     // Complete the job in GenerationJobManager
-    if (streamId) {
+    if (jobCreatedAt != null) {
       logger.debug('[AgentController] Completing job in GenerationJobManager');
-      await GenerationJobManager.completeJob(streamId);
+      await GenerationJobManager.completeJob(streamId, undefined, jobCreatedAt);
     }
 
     // Dispose client properly
@@ -1296,14 +1328,19 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
     // Create job in GenerationJobManager for abort handling
     // streamId === conversationId (pre-generated above)
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
+    jobCreatedAt = job.createdAt;
 
     // Store endpoint metadata for abort handling
-    GenerationJobManager.updateMetadata(streamId, {
-      endpoint: endpointOption.endpoint,
-      iconURL: getEndpointIconURL(req, endpointOption),
-      model: getAgentResponseModel(req, endpointOption),
-      sender: client?.sender,
-    });
+    GenerationJobManager.updateMetadata(
+      streamId,
+      {
+        endpoint: endpointOption.endpoint,
+        iconURL: getEndpointIconURL(req, endpointOption),
+        model: getAgentResponseModel(req, endpointOption),
+        sender: client?.sender,
+      },
+      jobCreatedAt,
+    );
 
     // Store content parts reference for abort
     if (client?.contentParts) {
@@ -1330,16 +1367,20 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
       responseMessageId = respMsgId;
 
       // Store metadata for abort handling (conversationId is pre-generated)
-      GenerationJobManager.updateMetadata(streamId, {
-        responseMessageId: respMsgId,
-        userMessage: {
-          messageId: userMsg.messageId,
-          parentMessageId: userMsg.parentMessageId,
-          conversationId,
-          text: userMsg.text,
-          quotes: userMsg.quotes,
+      GenerationJobManager.updateMetadata(
+        streamId,
+        {
+          responseMessageId: respMsgId,
+          userMessage: {
+            messageId: userMsg.messageId,
+            parentMessageId: userMsg.parentMessageId,
+            conversationId,
+            text: userMsg.text,
+            quotes: userMsg.quotes,
+          },
         },
-      });
+        jobCreatedAt,
+      );
     };
 
     const messageOptions = {
