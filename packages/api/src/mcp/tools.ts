@@ -43,6 +43,15 @@ export interface MCPToolCacheService {
   ) => Promise<LCAvailableTools | null>;
 }
 
+export function sanitizeInputSchema(schema?: JsonSchemaType): JsonSchemaType {
+  if (!schema || typeof schema !== 'object') {
+    return (schema ?? { type: 'object', properties: {} }) as JsonSchemaType;
+  }
+  const sanitized = { ...schema };
+  delete (sanitized as Record<string, unknown>)['$schema'];
+  return sanitized as JsonSchemaType;
+}
+
 export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheService {
   const { getCachedTools, setCachedTools, getServerConfig } = deps;
 
@@ -95,7 +104,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           ['function']: {
             name,
             description: tool.description ?? '',
-            parameters: tool.inputSchema ?? ({ type: 'object', properties: {} } as JsonSchemaType),
+            parameters: sanitizeInputSchema(tool.inputSchema),
           },
         };
         serverTools[name] = entry;
