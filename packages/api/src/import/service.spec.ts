@@ -130,6 +130,34 @@ describe('runImport', () => {
     expect(cited?.attachments).toHaveLength(1);
   });
 
+  it('carries width, height, and filename from attachment metadata through to message.files', async () => {
+    const filepath = await buildFixtureExport();
+    const { sink, recorded } = recorder();
+
+    await runImport({
+      filepath,
+      userId: 'u1',
+      source: 'local',
+      defaultModel: 'gpt-4o',
+      deps: DEPS,
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    const withPhotos = recorded.messages.find((message) => message.text === 'compare these');
+    expect(withPhotos?.files).toHaveLength(2);
+    expect(withPhotos?.files?.[0]).toMatchObject({
+      filename: 'first.jpg',
+      width: 768,
+      height: 1560,
+    });
+    expect(withPhotos?.files?.[1]).toMatchObject({
+      filename: 'second.jpg',
+      width: 1080,
+      height: 2340,
+    });
+  });
+
   it('skips conversations already imported from the same export', async () => {
     const filepath = await buildFixtureExport();
     const { sink, recorded } = recorder();
@@ -244,6 +272,34 @@ describe('runImport', () => {
     expect(report.errors[0]).toContain('conversations-000.json');
     expect(recorded.conversations).toHaveLength(1);
     expect(recorded.conversations[0].title).toBe('Good convo');
+  });
+
+  it('records a shard that parses but is not an array and still imports the other shard', async () => {
+    const filepath = await writeZip({
+      'conversations-000.json': JSON.stringify({ not: 'an array' }),
+      'conversations-001.json': JSON.stringify([
+        textConversation('ext-good3', 'Good convo three', 1700007000),
+      ]),
+      'export_manifest.json': shardedManifest(['conversations-000.json', 'conversations-001.json']),
+    });
+
+    const { sink, recorded } = recorder();
+    const report = await runImport({
+      filepath,
+      userId: 'u1',
+      source: 'local',
+      defaultModel: 'gpt-4o',
+      deps: DEPS,
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    expect(report.imported).toBe(1);
+    expect(report.errors).toHaveLength(1);
+    expect(report.errors[0]).toContain('conversations-000.json');
+    expect(report.errors[0]).toContain('expected an array');
+    expect(recorded.conversations).toHaveLength(1);
+    expect(recorded.conversations[0].title).toBe('Good convo three');
   });
 
   it('records a conversation that fails to convert and still imports the others', async () => {

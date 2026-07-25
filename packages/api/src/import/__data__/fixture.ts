@@ -124,8 +124,22 @@ const SHARD_TWO: ChatGptConversation[] = [
           },
           metadata: {
             attachments: [
-              { id: 'file-one', name: 'first.jpg', mime_type: 'image/jpeg', size: 4 },
-              { id: 'file-two', name: 'second.jpg', mime_type: 'image/jpeg', size: 4 },
+              {
+                id: 'file-one',
+                name: 'first.jpg',
+                mime_type: 'image/jpeg',
+                size: 4,
+                width: 768,
+                height: 1560,
+              },
+              {
+                id: 'file-two',
+                name: 'second.jpg',
+                mime_type: 'image/jpeg',
+                size: 4,
+                width: 1080,
+                height: 2340,
+              },
             ],
           },
         },

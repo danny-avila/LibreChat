@@ -1,7 +1,13 @@
 import { logger } from '@librechat/data-schemas';
 import { EModelEndpoint } from 'librechat-data-provider';
 
-import type { ChatGptConversation, ImportedAsset, ImportProgress, ImportReport } from './types';
+import type {
+  ChatGptAttachment,
+  ChatGptConversation,
+  ImportedAsset,
+  ImportProgress,
+  ImportReport,
+} from './types';
 import type { ConvertedMessage } from './chatgpt/convert';
 import type { AssetDeps } from './assets';
 import type { Archive } from './archive';
@@ -59,14 +65,22 @@ export interface RunImportInput {
   isCancelled?: () => Promise<boolean>;
 }
 
+interface AssetContext {
+  pointers: string[];
+  attachments: Map<string, ChatGptAttachment>;
+}
+
 /**
- * Gathers every asset pointer referenced across all shards up front, reusing
- * `collectAssetPointers` per message rather than re-deriving the pointer
- * branches here, so `ingestAssets` can run once before conversion instead of
- * resolving pointers message-by-message during the conversion pass.
+ * Single pass over every message: gathers both the asset pointer set (reusing
+ * `collectAssetPointers` rather than re-deriving its branches here) and the
+ * `metadata.attachments` map keyed by id, the same key `assets.ts` looks up
+ * via `pointerId(pointer)`. Doing both in one walk lets `ingestAssets` run
+ * once before conversion, resolving pointers and backfilling width/height
+ * together instead of a second traversal over the same conversations.
  */
-function collectPointers(conversations: ChatGptConversation[]): string[] {
+function collectAssetContext(conversations: ChatGptConversation[]): AssetContext {
   const pointers = new Set<string>();
+  const attachments = new Map<string, ChatGptAttachment>();
 
   for (const conv of conversations) {
     for (const node of Object.values(conv.mapping ?? {})) {
@@ -76,10 +90,13 @@ function collectPointers(conversations: ChatGptConversation[]): string[] {
       for (const pointer of collectAssetPointers(node.message)) {
         pointers.add(pointer);
       }
+      for (const attachment of node.message.metadata?.attachments ?? []) {
+        attachments.set(attachment.id, attachment);
+      }
     }
   }
 
-  return Array.from(pointers);
+  return { pointers: Array.from(pointers), attachments };
 }
 
 /**
@@ -190,13 +207,16 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
       assets: { done: 0, total: layout.assetEntries.length },
     };
 
+    const assetContext = collectAssetContext(conversations);
+
     const assetResult = await ingestAssets({
       archive,
       layout,
       userId: input.userId,
       tenantId: input.tenantId,
       source: input.source,
-      pointers: collectPointers(conversations),
+      pointers: assetContext.pointers,
+      attachments: assetContext.attachments,
       deps: input.deps,
       isCancelled: input.isCancelled,
       onProgress: (done) => {
