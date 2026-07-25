@@ -1,6 +1,11 @@
 import type { ChatGptConversation, ImportSummary } from './types';
 import type { ExportLayout } from './manifest';
-import { MANIFEST_ENTRY, parseManifest, resolveLayout } from './manifest';
+import {
+  MANIFEST_ENTRY,
+  parseManifest,
+  resolveLayout,
+  hasChatGptConversationShape,
+} from './manifest';
 import { openArchive } from './archive';
 
 interface ShardTotals {
@@ -39,6 +44,9 @@ export async function inspectExport(
     for (const shard of layout.conversationShards) {
       const parsed = JSON.parse((await archive.read(shard)).toString('utf8'));
       if (!Array.isArray(parsed)) {
+        throw new Error('Unsupported import type');
+      }
+      if (!hasChatGptConversationShape(parsed)) {
         throw new Error('Unsupported import type');
       }
       const conversations = parsed as ChatGptConversation[];

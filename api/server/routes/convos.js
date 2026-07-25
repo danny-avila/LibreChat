@@ -10,6 +10,7 @@ const {
   inspectExport,
   ImportJobStore,
   deleteAgentCheckpoints,
+  sanitizeImportError,
   resolveImportMaxFileSize,
   restoreTenantContextFromReq,
   deleteAllSharedLinksWithCleanup,
@@ -340,18 +341,21 @@ async function loadExistingExternalIds(userId) {
  * Runs a confirmed import job to completion in the background, updating the
  * job record as it progresses. Never throws: failures are recorded on the job
  * itself so a polling client observes a `failed` phase instead of a dropped
- * connection.
+ * connection. Every step — including building the storage strategy and
+ * batch builder — runs inside the try/finally so a synchronous setup
+ * failure still marks the job `failed` and still cleans up the temp file,
+ * instead of leaving the job pinned at `phase: 'conversations'` forever.
  * @param {object} req - The Express request that created/confirmed the job.
  * @param {import('@librechat/api').ImportJob} job
  * @returns {Promise<void>}
  */
 async function runImportJob(req, job) {
-  const appConfig = req.config;
-  const source = getFileStrategy(appConfig, { isImage: true });
-  const { saveBuffer } = getStrategyFunctions(source);
-  const batch = createImportBatchBuilder(req.user.id, appConfig?.interfaceConfig);
-
   try {
+    const appConfig = req.config;
+    const source = getFileStrategy(appConfig, { isImage: true });
+    const { saveBuffer } = getStrategyFunctions(source);
+    const batch = createImportBatchBuilder(req.user.id, appConfig?.interfaceConfig);
+
     const defaultModel = await resolveImportDefaultModel({
       endpoint: EModelEndpoint.openAI,
       requestUserId: req.user.id,
@@ -379,11 +383,14 @@ async function runImportJob(req, job) {
       status: 'completed',
     });
   } catch (error) {
-    logger.error('Error running import job', error);
+    const message = sanitizeImportError(
+      error,
+      `Import job ${job.jobId} failed for user ${req.user.id}`,
+    );
     await importJobs.patch(req.user.id, job.jobId, {
       phase: 'failed',
       status: 'failed',
-      error: error.message,
+      error: message,
     });
   } finally {
     await fs.promises.unlink(job.filepath).catch(() => undefined);
@@ -391,19 +398,47 @@ async function runImportJob(req, job) {
 }
 
 /**
+ * Imports a bare ChatGPT-legacy export synchronously through the old,
+ * un-jobbed importer. Reached only for uploads that are neither a zip nor
+ * recognizable ChatGPT content: Claude, ChatbotUI, and LibreChat exports
+ * are all detected by CONTENT (`getImporter`, invoked inside
+ * `importConversations`), not by file extension.
+ * @param {object} req
+ * @param {object} res
+ * @returns {Promise<void>}
+ */
+async function importLegacyConversation(req, res) {
+  try {
+    /* TODO: optimize to return imported conversations and add manually */
+    await importConversations({
+      filepath: req.file.path,
+      requestUserId: req.user.id,
+      userRole: req.user.role,
+      interfaceConfig: req.config?.interfaceConfig,
+    });
+    res.status(201).json({ message: 'Conversation(s) imported successfully' });
+  } catch (error) {
+    logger.error('Error processing file', error);
+    res.status(500).send('Error processing file');
+  }
+}
+
+/**
  * Imports a conversation export and saves it to the database.
  *
- * Plain `.json` uploads (Claude, ChatbotUI, LibreChat, and legacy
- * un-zipped ChatGPT exports) are still imported synchronously, as before:
- * `inspectExport`/`runImport` only understand the zipped ChatGPT export
- * layout, so routing every upload through them would 400 every JSON
- * import. `.zip` uploads go through the new background job API: this
- * request only inspects the archive and returns a summary awaiting
- * confirmation; the actual import runs after POST /import/jobs/:jobId/start.
+ * `.zip` uploads and bare `.json` ChatGPT exports share one pipeline:
+ * `openArchive` wraps a non-zip file in a single-entry archive, so
+ * `inspectExport` sees the same shape either way and this request only
+ * inspects the upload and returns a summary awaiting confirmation — the
+ * actual import runs after POST /import/jobs/:jobId/start. A bare `.json`
+ * upload that is not ChatGPT-shaped (Claude, ChatbotUI, LibreChat) falls
+ * back to the legacy synchronous importer, since `inspectExport`/`runImport`
+ * only understand the ChatGPT export layout.
  * @route POST /import
  * @param {Express.Multer.File} req.file - The uploaded export file.
- * @returns {object} 201 - legacy JSON import succeeded
- * @returns {object} 202 - zip archive inspected, job awaiting confirmation
+ * @returns {object} 201 - legacy (non-ChatGPT) JSON import succeeded
+ * @returns {object} 202 - archive inspected, job awaiting confirmation
+ * @returns {object} 400 - the upload could not be read as any supported format
  */
 router.post(
   '/import',
@@ -413,21 +448,20 @@ router.post(
   handleUpload,
   restoreTenantContextFromReq,
   async (req, res) => {
-    const extension = path.extname(req.file.originalname).toLowerCase();
-    if (extension !== '.zip') {
-      try {
-        /* TODO: optimize to return imported conversations and add manually */
-        await importConversations({
-          filepath: req.file.path,
-          requestUserId: req.user.id,
-          userRole: req.user.role,
-          interfaceConfig: req.config?.interfaceConfig,
-        });
-        res.status(201).json({ message: 'Conversation(s) imported successfully' });
-      } catch (error) {
-        logger.error('Error processing file', error);
-        res.status(500).send('Error processing file');
+    const isZip = path.extname(req.file.originalname).toLowerCase() === '.zip';
+
+    let inspected;
+    try {
+      inspected = await inspectExport(req.file.path);
+    } catch (error) {
+      if (!isZip && error instanceof Error && error.message === 'Unsupported import type') {
+        await importLegacyConversation(req, res);
+        return;
       }
+      await fs.promises.unlink(req.file.path).catch(() => undefined);
+      res.status(400).json({
+        message: sanitizeImportError(error, `Error inspecting import file for user ${req.user.id}`),
+      });
       return;
     }
 
@@ -437,39 +471,49 @@ router.post(
         filepath: req.file.path,
         filename: req.file.originalname,
       });
-
-      const { summary } = await inspectExport(req.file.path);
       const updated = await importJobs.patch(req.user.id, job.jobId, {
-        summary,
+        summary: inspected.summary,
         phase: 'awaiting_confirmation',
       });
-
       res.status(202).json({ jobId: job.jobId, summary: updated.summary });
     } catch (error) {
-      logger.error('Error inspecting import file', error);
       await fs.promises.unlink(req.file.path).catch(() => undefined);
-      res.status(400).json({ message: error.message || 'Unsupported import type' });
+      res.status(400).json({
+        message: sanitizeImportError(error, `Error creating import job for user ${req.user.id}`),
+      });
     }
   },
 );
 
 /**
  * Confirms an inspected import job and starts running it in the background.
+ * The phase transition out of `awaiting_confirmation` is atomic (see
+ * `ImportJobStore.confirmStart`), so a second `/start` call for the same
+ * job — a double-click, a client retry, a replay — never launches a
+ * second background run over the same archive: `importedFrom` is not a
+ * unique index (a deliberate choice, see Task 13), so a duplicate run
+ * would otherwise duplicate conversations the first run has not yet
+ * committed.
  * @route POST /import/jobs/:jobId/start
  * @returns {object} 202 - the job has started
  * @returns {object} 404 - no such job for this user
+ * @returns {object} 409 - the job already started, completed, failed, or was cancelled
  */
 router.post('/import/jobs/:jobId/start', configMiddleware, async (req, res) => {
-  const job = await importJobs.get(req.user.id, req.params.jobId);
-  if (!job) {
+  const result = await importJobs.confirmStart(req.user.id, req.params.jobId);
+
+  if (result.status === 'not_found') {
     res.status(404).json({ message: 'Import job not found' });
     return;
   }
+  if (result.status === 'conflict') {
+    res.status(409).json({ message: 'Import job is not awaiting confirmation' });
+    return;
+  }
 
-  await importJobs.patch(req.user.id, job.jobId, { phase: 'conversations' });
-  res.status(202).json({ jobId: job.jobId });
+  res.status(202).json({ jobId: result.job.jobId });
 
-  runImportJob(req, job);
+  runImportJob(req, result.job);
 });
 
 /**

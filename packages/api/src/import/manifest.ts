@@ -84,6 +84,23 @@ function shardsFromFilenames(entries: ArchiveEntry[], present: Set<string>): str
   return jsonEntries.length === 1 ? [jsonEntries[0].name] : [];
 }
 
+/**
+ * Shallow content check mirroring `getImporter`'s ChatGPT detection
+ * (`api/server/utils/import/importers.js`): an empty array is trivially
+ * fine, otherwise the first element must look like a ChatGPT conversation
+ * (a `mapping` tree), not a Claude (`chat_messages`) or other export
+ * shape. Without this, a shard that merely satisfies `Array.isArray`
+ * would be silently misread as ChatGPT and produce conversations with no
+ * messages instead of a reported error.
+ */
+export function hasChatGptConversationShape(conversations: unknown[]): boolean {
+  if (conversations.length === 0) {
+    return true;
+  }
+  const [first] = conversations;
+  return typeof first === 'object' && first !== null && 'mapping' in first;
+}
+
 export function resolveLayout(
   entries: ArchiveEntry[],
   manifest: ExportManifest | null,

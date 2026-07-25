@@ -73,4 +73,64 @@ describe('inspectExport', () => {
 
     await expect(inspectExport(filepath)).rejects.toThrow(/Unsupported import type/);
   });
+
+  it('rejects a shard whose conversations are not ChatGPT-shaped (e.g. a Claude export)', async () => {
+    const JSZip = (await import('jszip')).default;
+    const fs = await import('fs');
+    const os = await import('os');
+    const path = await import('path');
+
+    const zip = new JSZip();
+    zip.file(
+      'conversations-000.json',
+      JSON.stringify([{ uuid: 'c1', chat_messages: [{ sender: 'human', text: 'hi' }] }]),
+    );
+    zip.file(
+      'export_manifest.json',
+      JSON.stringify({
+        version: 1,
+        manifest_file: 'export_manifest.json',
+        logical_files: {
+          'conversations.json': { files: ['conversations-000.json'], sharded: true },
+        },
+      }),
+    );
+    const buffer = await zip.generateAsync({ type: 'nodebuffer' });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-import-claude-shaped-'));
+    const filepath = path.join(dir, 'claude-shaped.zip');
+    fs.writeFileSync(filepath, buffer);
+
+    await expect(inspectExport(filepath)).rejects.toThrow(/Unsupported import type/);
+  });
+
+  it('inspects a bare (non-zip) ChatGPT .json upload identically to a zip', async () => {
+    const fs = await import('fs');
+    const os = await import('os');
+    const path = await import('path');
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-import-bare-inspect-'));
+    const filepath = path.join(dir, 'bare-export.json');
+    fs.writeFileSync(
+      filepath,
+      JSON.stringify([
+        {
+          conversation_id: 'bare-1',
+          title: 'Bare',
+          create_time: 1700000000,
+          update_time: 1700000100,
+          default_model_slug: 'gpt-4o',
+          is_archived: false,
+          is_starred: false,
+          pinned_time: null,
+          mapping: {},
+        },
+      ]),
+    );
+
+    const { summary } = await inspectExport(filepath);
+
+    expect(summary.source).toBe('chatgpt-legacy');
+    expect(summary.conversations).toBe(1);
+    expect(summary.shards).toBe(1);
+  });
 });

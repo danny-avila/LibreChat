@@ -153,6 +153,71 @@ async function waitForPhase(app, jobId, notPhase, attempts = 20) {
   throw new Error(`Job ${jobId} never left phase ${notPhase}`);
 }
 
+function bareChatGptExport() {
+  return Buffer.from(
+    JSON.stringify([
+      {
+        conversation_id: 'ext-bare',
+        title: 'Bare export',
+        create_time: 1700000000,
+        update_time: 1700000100,
+        default_model_slug: 'gpt-4o',
+        is_archived: false,
+        is_starred: false,
+        pinned_time: null,
+        mapping: {
+          root: { id: 'root', message: null, parent: null, children: ['u1'] },
+          u1: {
+            id: 'u1',
+            parent: 'root',
+            children: [],
+            message: {
+              id: 'u1',
+              author: { role: 'user', name: null },
+              create_time: 1700000001,
+              content: { content_type: 'text', parts: ['Hello'] },
+            },
+          },
+        },
+      },
+    ]),
+  );
+}
+
+function claudeExport() {
+  return Buffer.from(
+    JSON.stringify([
+      {
+        uuid: 'claude-1',
+        name: 'Claude convo',
+        created_at: '2024-01-01T00:00:00Z',
+        chat_messages: [
+          { sender: 'human', text: 'Hi there', created_at: '2024-01-01T00:00:00Z' },
+          { sender: 'assistant', text: 'Hello!', created_at: '2024-01-01T00:00:01Z' },
+        ],
+      },
+    ]),
+  );
+}
+
+function chatbotUiExport() {
+  return Buffer.from(
+    JSON.stringify({
+      version: 1,
+      history: [
+        {
+          model: { id: 'gpt-4o-mini' },
+          name: 'Chatbot UI convo',
+          messages: [
+            { role: 'user', content: 'Hi' },
+            { role: 'assistant', content: 'Hello!' },
+          ],
+        },
+      ],
+    }),
+  );
+}
+
 describe('conversation import job API (real router, real Mongo)', () => {
   let app;
   let mongoServer;
@@ -259,5 +324,131 @@ describe('conversation import job API (real router, real Mongo)', () => {
 
     userId = new mongoose.Types.ObjectId().toString();
     await request(app).get(`/api/convos/import/jobs/${uploaded.body.jobId}`).expect(404);
+  });
+
+  it('imports a bare ChatGPT .json upload through the job API, matching the zip pipeline', async () => {
+    const uploaded = await request(app)
+      .post('/api/convos/import')
+      .attach('file', bareChatGptExport(), 'bare-export.json')
+      .expect(202);
+
+    expect(uploaded.body.jobId).toBeDefined();
+    expect(uploaded.body.summary.conversations).toBe(1);
+    expect(uploaded.body.summary.source).toBe('chatgpt-legacy');
+
+    await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
+    const completed = await waitForPhase(app, uploaded.body.jobId, 'conversations');
+    expect(completed.body.phase).toBe('completed');
+    expect(completed.body.report.imported).toBe(1);
+
+    const savedConvos = await Conversation.countDocuments({ user: userId });
+    expect(savedConvos).toBe(1);
+  });
+
+  it('still imports a Claude-shaped .json upload through the legacy synchronous path', async () => {
+    const res = await request(app)
+      .post('/api/convos/import')
+      .attach('file', claudeExport(), 'claude-export.json')
+      .expect(201);
+
+    expect(res.body.message).toBe('Conversation(s) imported successfully');
+    const savedConvos = await Conversation.countDocuments({ user: userId });
+    expect(savedConvos).toBe(1);
+  });
+
+  it('still imports a ChatbotUI-shaped .json upload through the legacy synchronous path', async () => {
+    const res = await request(app)
+      .post('/api/convos/import')
+      .attach('file', chatbotUiExport(), 'chatbotui-export.json')
+      .expect(201);
+
+    expect(res.body.message).toBe('Conversation(s) imported successfully');
+    const savedConvos = await Conversation.countDocuments({ user: userId });
+    expect(savedConvos).toBe(1);
+  });
+
+  it('returns a sanitized message, not the raw archive error, when a zip fails to open', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-import-corrupt-'));
+    const corrupt = path.join(dir, 'corrupt.zip');
+    fs.writeFileSync(
+      corrupt,
+      Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('not a real zip body')]),
+    );
+
+    const res = await request(app).post('/api/convos/import').attach('file', corrupt).expect(400);
+
+    expect(typeof res.body.message).toBe('string');
+    expect(res.body.message).not.toContain(dir);
+    expect(res.body.message).not.toContain(corrupt);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('never leaks the server upload path in job.error when the underlying file disappears before start', async () => {
+    const beforeUpload = uploadDirs.length;
+    const filepath = await buildFixtureExport();
+
+    const uploaded = await request(app)
+      .post('/api/convos/import')
+      .attach('file', filepath)
+      .expect(202);
+
+    const requestUploadDir = uploadDirs[beforeUpload];
+    const storedFilepath = path.join(requestUploadDir, 'temp', userId, 'chatgpt-export.zip');
+    expect(fs.existsSync(storedFilepath)).toBe(true);
+    fs.rmSync(storedFilepath);
+
+    await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
+
+    const failed = await waitForPhase(app, uploaded.body.jobId, 'conversations');
+    expect(failed.body.phase).toBe('failed');
+    expect(typeof failed.body.error).toBe('string');
+    expect(failed.body.error).not.toContain(requestUploadDir);
+    expect(failed.body.error).not.toContain(storedFilepath);
+    expect(JSON.stringify(failed.body)).not.toContain(requestUploadDir);
+  });
+
+  it('marks the job failed and removes the temp file when job setup throws synchronously', async () => {
+    const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+    getStrategyFunctions.mockImplementationOnce(() => {
+      throw new Error('Invalid file source: boom');
+    });
+
+    const beforeUpload = uploadDirs.length;
+    const filepath = await buildFixtureExport();
+    const uploaded = await request(app)
+      .post('/api/convos/import')
+      .attach('file', filepath)
+      .expect(202);
+
+    const requestUploadDir = uploadDirs[beforeUpload];
+    const storedFilepath = path.join(requestUploadDir, 'temp', userId, 'chatgpt-export.zip');
+    expect(fs.existsSync(storedFilepath)).toBe(true);
+
+    await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
+
+    const failed = await waitForPhase(app, uploaded.body.jobId, 'conversations');
+    expect(failed.body.phase).toBe('failed');
+    expect(typeof failed.body.error).toBe('string');
+    expect(fs.existsSync(storedFilepath)).toBe(false);
+  });
+
+  it('rejects a second /start call for the same job with 409 and does not double-run the import', async () => {
+    const filepath = await buildFixtureExport();
+    const uploaded = await request(app)
+      .post('/api/convos/import')
+      .attach('file', filepath)
+      .expect(202);
+
+    const [first, second] = await Promise.all([
+      request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`),
+      request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`),
+    ]);
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual([202, 409]);
+
+    await waitForPhase(app, uploaded.body.jobId, 'conversations');
+    const savedConvos = await Conversation.countDocuments({ user: userId });
+    expect(savedConvos).toBe(2);
   });
 });

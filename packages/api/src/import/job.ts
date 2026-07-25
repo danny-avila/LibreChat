@@ -13,9 +13,20 @@ function emptyProgress(): ImportJob['progress'] {
   };
 }
 
+export type StartTransitionResult =
+  | { status: 'started'; job: ImportJob }
+  | { status: 'not_found' }
+  | { status: 'conflict'; job: ImportJob };
+
 export class ImportJobStore {
   private readonly store: Keyv;
   private readonly ttl: number;
+  /** Serializes `confirmStart` calls sharing the same job key. `Keyv`'s
+   * `get`/`set` pair is not itself atomic — without this, two racing
+   * `/start` requests can both read `awaiting_confirmation` before either
+   * write lands, launching the background run twice over the same
+   * archive. Scoped to this process; see `confirmStart`. */
+  private readonly transitionLocks = new Map<string, Promise<void>>();
 
   constructor(store: Keyv, ttl: number = DEFAULT_TTL) {
     this.store = store;
@@ -78,5 +89,47 @@ export class ImportJobStore {
   async isCancelled(userId: string, jobId: string): Promise<boolean> {
     const job = await this.get(userId, jobId);
     return job?.status === 'cancelled';
+  }
+
+  private async withTransitionLock<T>(lockKey: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.transitionLocks.get(lockKey) ?? Promise.resolve();
+    const settled = previous.then(fn);
+    const tracked: Promise<void> = settled.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.transitionLocks.set(lockKey, tracked);
+    try {
+      return await settled;
+    } finally {
+      if (this.transitionLocks.get(lockKey) === tracked) {
+        this.transitionLocks.delete(lockKey);
+      }
+    }
+  }
+
+  /**
+   * Atomically moves a job out of `awaiting_confirmation` so at most one
+   * caller ever launches the background run for it. A second, racing call
+   * for the same job — a double-click, a client retry, or a replay —
+   * observes the job already out of that phase and gets `status:
+   * 'conflict'` instead of silently re-running the import over the same
+   * archive.
+   */
+  async confirmStart(userId: string, jobId: string): Promise<StartTransitionResult> {
+    return this.withTransitionLock(this.key(userId, jobId), async () => {
+      const existing = await this.get(userId, jobId);
+      if (!existing) {
+        return { status: 'not_found' };
+      }
+      if (existing.phase !== 'awaiting_confirmation') {
+        return { status: 'conflict', job: existing };
+      }
+      const updated = await this.patch(userId, jobId, { phase: 'conversations' });
+      if (!updated) {
+        return { status: 'not_found' };
+      }
+      return { status: 'started', job: updated };
+    });
   }
 }

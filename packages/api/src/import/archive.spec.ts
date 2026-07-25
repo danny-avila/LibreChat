@@ -122,6 +122,58 @@ describe('openArchive', () => {
   });
 });
 
+describe('openArchive (bare / non-zip upload)', () => {
+  function writeBareFile(content: string, filename: string): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-import-bare-'));
+    createdDirs.push(dir);
+    const filepath = path.join(dir, filename);
+    fs.writeFileSync(filepath, content);
+    return filepath;
+  }
+
+  it('wraps a bare JSON file as a single entry named after the upload', async () => {
+    const filepath = writeBareFile('{"ok":true}', 'my-export.json');
+    const archive = await openArchive(filepath);
+
+    expect(archive.entries).toEqual([{ name: 'my-export.json', bytes: 11 }]);
+    expect((await archive.read('my-export.json')).toString()).toBe('{"ok":true}');
+
+    archive.close();
+  });
+
+  it('streams a bare JSON file fully intact through stream()', async () => {
+    const filepath = writeBareFile('{"ok":true}', 'export.json');
+    const archive = await openArchive(filepath);
+
+    const readable = await archive.stream('export.json');
+    const result = await consumeStream(readable);
+    expect(result.toString()).toBe('{"ok":true}');
+
+    archive.close();
+  });
+
+  it('rejects a bare JSON file larger than the per-entry cap while reading', async () => {
+    const filepath = writeBareFile('x'.repeat(5000), 'big.json');
+    const archive = await openArchive(filepath, { maxEntryBytes: 100 });
+
+    await expect(archive.read('big.json')).rejects.toThrow(ZipBombError);
+  });
+
+  it('rejects immediately when a bare JSON file exceeds the total-bytes cap by its own size', async () => {
+    const filepath = writeBareFile('x'.repeat(200), 'huge.json');
+
+    await expect(openArchive(filepath, { maxTotalBytes: 100 })).rejects.toThrow(ZipBombError);
+  });
+
+  it('throws a clear error for an unknown entry name on a bare JSON file', async () => {
+    const filepath = writeBareFile('{}', 'export.json');
+    const archive = await openArchive(filepath);
+
+    await expect(archive.read('nope.json')).rejects.toThrow(/nope\.json/);
+    archive.close();
+  });
+});
+
 describe('assertSafeName', () => {
   it('rejects a relative traversal segment', () => {
     expect(() => assertSafeName('../evil.json')).toThrow(/traversal/i);

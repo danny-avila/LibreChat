@@ -7,6 +7,7 @@ import type { ExportLayout } from './manifest';
 import type { Archive } from './archive';
 
 import { ASSET_NAMES_ENTRY } from './manifest';
+import { sanitizeImportError } from './errors';
 
 export interface SaveBufferInput {
   userId: string;
@@ -188,7 +189,7 @@ export async function ingestAssets(input: IngestInput): Promise<IngestResult> {
       imported += 1;
       input.onProgress?.(imported);
     } catch (error) {
-      errors.push(`${entryName}: ${error instanceof Error ? error.message : String(error)}`);
+      errors.push(`${entryName}: ${sanitizeImportError(error, `import asset ${entryName}`)}`);
     }
   }
 

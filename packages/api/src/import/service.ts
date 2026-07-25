@@ -12,9 +12,15 @@ import type { ConvertedMessage } from './chatgpt/convert';
 import type { AssetDeps } from './assets';
 import type { Archive } from './archive';
 
-import { MANIFEST_ENTRY, parseManifest, resolveLayout } from './manifest';
+import {
+  MANIFEST_ENTRY,
+  parseManifest,
+  resolveLayout,
+  hasChatGptConversationShape,
+} from './manifest';
 import { collectAssetPointers } from './chatgpt/content';
 import { convertConversation } from './chatgpt/convert';
+import { sanitizeImportError } from './errors';
 import { openArchive } from './archive';
 import { ingestAssets } from './assets';
 
@@ -118,9 +124,13 @@ async function readConversations(
         errors.push(`${shard}: expected an array of conversations`);
         continue;
       }
+      if (!hasChatGptConversationShape(parsed)) {
+        errors.push(`${shard}: expected ChatGPT conversation objects`);
+        continue;
+      }
       conversations.push(...(parsed as ChatGptConversation[]));
     } catch (error) {
-      errors.push(`${shard}: ${error instanceof Error ? error.message : String(error)}`);
+      errors.push(`${shard}: ${sanitizeImportError(error, `import shard ${shard}`)}`);
     }
   }
 
@@ -244,7 +254,7 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
         report.imported += 1;
       } catch (error) {
         report.errors.push(
-          `${conv.conversation_id}: ${error instanceof Error ? error.message : String(error)}`,
+          `${conv.conversation_id}: ${sanitizeImportError(error, `import conversation ${conv.conversation_id}`)}`,
         );
       }
 

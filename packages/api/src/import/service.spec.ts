@@ -302,6 +302,34 @@ describe('runImport', () => {
     expect(recorded.conversations[0].title).toBe('Good convo three');
   });
 
+  it('records a shard whose entries are not ChatGPT-shaped (e.g. a Claude export) and still imports the other shard', async () => {
+    const filepath = await writeZip({
+      'conversations-000.json': JSON.stringify([{ uuid: 'c1', chat_messages: [] }]),
+      'conversations-001.json': JSON.stringify([
+        textConversation('ext-good5', 'Good convo five', 1700009000),
+      ]),
+      'export_manifest.json': shardedManifest(['conversations-000.json', 'conversations-001.json']),
+    });
+
+    const { sink, recorded } = recorder();
+    const report = await runImport({
+      filepath,
+      userId: 'u1',
+      source: 'local',
+      defaultModel: 'gpt-4o',
+      deps: DEPS,
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    expect(report.imported).toBe(1);
+    expect(report.errors).toHaveLength(1);
+    expect(report.errors[0]).toContain('conversations-000.json');
+    expect(report.errors[0]).toContain('expected ChatGPT conversation objects');
+    expect(recorded.conversations).toHaveLength(1);
+    expect(recorded.conversations[0].title).toBe('Good convo five');
+  });
+
   it('records a conversation that fails to convert and still imports the others', async () => {
     const good = textConversation('ext-good2', 'Good convo two', 1700003000);
     const broken = {
@@ -380,7 +408,10 @@ describe('runImport', () => {
     expect(report.assetsImported).toBe(1);
     expect(report.assetsUnavailable).toBe(1);
     expect(report.errors).toHaveLength(1);
-    expect(report.errors[0]).toContain('quota exceeded');
+    // The raw storage-driver message ('quota exceeded') is never returned to the
+    // client; only a stable, sanitized category message is (see errors.spec.ts).
+    expect(report.errors[0]).not.toContain('quota exceeded');
+    expect(report.errors[0]).toContain('The import could not be completed');
     expect(recorded.conversations).toHaveLength(2);
   });
 

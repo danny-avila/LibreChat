@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import yauzl from 'yauzl';
 import { Transform } from 'stream';
@@ -12,6 +13,11 @@ export { ZipBombError };
 const DEFAULT_MAX_ENTRIES = 20000;
 const DEFAULT_MAX_ENTRY_BYTES = 512 * megabyte;
 const DEFAULT_MAX_TOTAL_BYTES = 4096 * megabyte;
+/** Local file header signature every ZIP file begins with. Its absence
+ * means the upload is a bare file (e.g. a legacy un-zipped ChatGPT
+ * `.json` export), not that it is malformed — `openArchive` wraps it in a
+ * single-entry `Archive` instead of attempting to parse it as a zip. */
+const ZIP_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 
 export interface ArchiveEntry {
   name: string;
@@ -176,6 +182,98 @@ function createCappingTransform(
   });
 }
 
+async function isZipFile(filepath: string): Promise<boolean> {
+  const handle = await fs.promises.open(filepath, 'r');
+  try {
+    const buffer = Buffer.alloc(ZIP_SIGNATURE.length);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    return bytesRead === buffer.length && buffer.equals(ZIP_SIGNATURE);
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Wraps a bare (non-zip) upload in the same `Archive` interface a real zip
+ * exposes: one entry, named after the uploaded file, readable/streamable
+ * under the same per-entry and aggregate byte caps. `resolveLayout`'s
+ * lone-json fallback then treats it exactly like a single-file zip export,
+ * so a bare `.json` upload and a `.zip` upload share one inspect/import
+ * pipeline instead of two.
+ */
+async function openSingleFileArchive(
+  filepath: string,
+  limits: ArchiveLimits,
+  totals: ArchiveTotals,
+): Promise<Archive> {
+  const name = path.basename(filepath);
+  const stat = await fs.promises.stat(filepath);
+
+  if (stat.size > limits.maxTotalBytes) {
+    throw new ZipBombError('Archive exceeds the maximum decompressed size');
+  }
+
+  function assertKnownEntry(entryName: string): void {
+    if (entryName !== name) {
+      throw new Error(`Entry not found in archive: ${entryName}`);
+    }
+  }
+
+  async function read(entryName: string): Promise<Buffer> {
+    assertKnownEntry(entryName);
+    ensureWithinTotalBudget(entryName, limits, totals);
+    const readStream = fs.createReadStream(filepath);
+
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+
+      readStream.on('data', (chunk: Buffer | string) => {
+        const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+        bytes += buffer.byteLength;
+        totals.bytesRead += buffer.byteLength;
+
+        if (bytes > limits.maxEntryBytes) {
+          reject(new ZipBombError(`Entry ${entryName} exceeds the maximum decompressed size`));
+          readStream.destroy();
+          return;
+        }
+        if (totals.bytesRead > limits.maxTotalBytes) {
+          reject(new ZipBombError('Archive exceeds the maximum decompressed size'));
+          readStream.destroy();
+          return;
+        }
+        chunks.push(buffer);
+      });
+      readStream.on('error', reject);
+      readStream.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+  }
+
+  async function stream(entryName: string): Promise<Readable> {
+    assertKnownEntry(entryName);
+    ensureWithinTotalBudget(entryName, limits, totals);
+    const readStream = fs.createReadStream(filepath);
+    const capped = createCappingTransform(entryName, limits, totals);
+
+    readStream.on('error', (error) => capped.destroy(error));
+    capped.on('close', () => {
+      if (!readStream.destroyed) {
+        readStream.destroy();
+      }
+    });
+
+    return readStream.pipe(capped);
+  }
+
+  return {
+    entries: [{ name, bytes: stat.size }],
+    read,
+    stream,
+    close: () => undefined,
+  };
+}
+
 export async function openArchive(
   filepath: string,
   options: ArchiveOptions = {},
@@ -186,6 +284,10 @@ export async function openArchive(
     maxTotalBytes: options.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES,
   };
   const totals: ArchiveTotals = { bytesRead: 0 };
+
+  if (!(await isZipFile(filepath))) {
+    return openSingleFileArchive(filepath, limits, totals);
+  }
 
   const zipfile = await openZip(filepath);
 

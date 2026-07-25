@@ -123,7 +123,10 @@ describe('ingestAssets', () => {
 
     expect(result.imported).toBe(1);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain('quota exceeded');
+    // The raw storage-driver message never reaches the client; only a
+    // stable, sanitized category message does (see errors.spec.ts).
+    expect(result.errors[0]).not.toContain('quota exceeded');
+    expect(result.errors[0]).toContain('The import could not be completed');
 
     archive.close();
   });
