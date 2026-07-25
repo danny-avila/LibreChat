@@ -363,16 +363,17 @@ const startServer = async () => {
       // Ensures indexes before the first tick; failures are logged, not fatal.
       // v1 is single-process: this entrypoint owns the scheduler outright.
       const scheduleEngine = await initializeScheduleEngine();
-      // Only accept schedule writes once the engine confirmed its unique idempotency
-      // + TTL indexes exist. If index creation failed the engine is left undefined and
-      // schedule writes keep returning 503 (the app otherwise runs normally).
-      // The engine refuses to arm on an unsafe clustered topology, so a null engine
-      // already means "not scheduling here"; the write gate follows it.
+      // Only accept schedule writes once the engine actually armed. It refuses when its
+      // unique idempotency + TTL indexes could not be created, and when the topology
+      // cannot be shown safe — this entrypoint arms the scheduler in EVERY replica, which
+      // only works if replicas share a stream store or the operator asserts a single one.
+      // Either way a null engine means "not scheduling here", and the write gate follows
+      // it; the engine logs which case applies. The app otherwise runs normally.
       schedulesReady = scheduleEngine != null;
       if (!schedulesReady) {
         logger.warn(
-          '[schedules] engine not initialized (index creation failed) — schedule writes will ' +
-            'be rejected with 503 until an operator resolves the index and restarts.',
+          '[schedules] engine not initialized — schedule writes will be rejected with 503 ' +
+            'until an operator resolves the cause logged above and restarts.',
         );
       }
       logger.info('Server readiness checks passing.');

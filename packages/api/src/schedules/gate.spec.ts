@@ -1,8 +1,17 @@
 import type { SchedulesServiceDeps } from './service';
 import { createSchedulesService } from './service';
 
+/** Swappable per test: whether the stream store is SHARED across replicas. */
+let mockIsRedis = false;
+
 jest.mock('../stream/GenerationJobManager', () => ({
-  GenerationJobManager: { getJobStore: () => null, abortJob: jest.fn(), isRedis: false },
+  GenerationJobManager: {
+    getJobStore: () => null,
+    abortJob: jest.fn(),
+    get isRedis() {
+      return mockIsRedis;
+    },
+  },
 }));
 
 type Cfg = { interfaceConfig?: { schedules?: unknown } };
@@ -37,8 +46,33 @@ const limits = {
 };
 
 describe('v1 experimental gate, asserted at real entry points', () => {
+  beforeEach(() => {
+    // The harness mocks an in-memory job store, so every arming assertion below needs
+    // the single-replica assertion the topology gate demands (see isTopologySafeToArm).
+    process.env.SCHEDULES_SINGLE_PROCESS = 'true';
+  });
+
   afterEach(() => {
+    mockIsRedis = false;
     delete process.env.SCHEDULES_DISABLED;
+    delete process.env.SCHEDULES_SINGLE_PROCESS;
+  });
+
+  it('REFUSES to arm on a process-local job store with no single-replica assertion', async () => {
+    delete process.env.SCHEDULES_SINGLE_PROCESS;
+    // The standard entrypoint arms the scheduler in EVERY replica. With a process-local
+    // store a peer sees the globally visible `started` row but not its job, and after the
+    // orphan cutoff marks a still-running generation interrupted and frees its capacity.
+    // A process cannot count its own replicas, so unproven means refuse.
+    const service = makeService({ interfaceConfig: { schedules: true } });
+    expect(await service.initializeScheduleEngine()).toBeUndefined();
+  });
+
+  it('arms on a SHARED job store without any assertion, since replicas see each other', async () => {
+    delete process.env.SCHEDULES_SINGLE_PROCESS;
+    mockIsRedis = true;
+    const service = makeService({ interfaceConfig: { schedules: true } });
+    expect(await service.initializeScheduleEngine()).toBeDefined();
   });
 
   it('is OFF for limits when the admin never opted in', async () => {

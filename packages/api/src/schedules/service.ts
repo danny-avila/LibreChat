@@ -29,6 +29,24 @@ import { isEnabled } from '../utils/common';
 /** Recordable terminal/paused run outcome, as accepted by `recordRunOutcome`. */
 type ScheduleRunOutcomeStatus = Parameters<ScheduleMethods['recordRunOutcome']>[0]['status'];
 
+/**
+ * Whether this process may arm the scheduler at all.
+ *
+ * v1 is single-process by design, but the standard entrypoint runs
+ * `initializeScheduleEngine` in EVERY replica and nothing stops an operator from scaling
+ * it. That is only safe when replicas can see each other's generations: a shared stream
+ * store (Redis) gives every replica the same job view, so reconciliation and
+ * deletion-time aborts reach the run's real owner. With the process-local store a peer
+ * sees the globally visible `started` row but no job, and after the orphan cutoff it
+ * marks a still-running generation interrupted and frees its capacity slot.
+ *
+ * A single replica with the in-memory store is perfectly safe, but a process cannot
+ * observe its own replica count, so that case needs an explicit operator assertion.
+ */
+function isTopologySafeToArm(): boolean {
+  return GenerationJobManager.isRedis || isEnabled(process.env.SCHEDULES_SINGLE_PROCESS);
+}
+
 /** Whether a persisted job still carries a given scheduled occurrence's identity. */
 function jobMatchesIdentity(
   job: Pick<SerializableJobData, 'scheduleId' | 'scheduledFor'>,
@@ -113,8 +131,9 @@ export interface SchedulesService {
    */
   quiesceUserSchedules: (userId: string) => Promise<boolean>;
   /** Arms the scheduler for THIS process. v1 is single-process only; the clustered
-   *  entrypoint does not start it. Returns undefined when disabled by config or when
-   *  index creation failed. */
+   *  entrypoint does not start it. Returns undefined when index creation failed, or when
+   *  the topology cannot be shown safe (process-local job store with no single-process
+   *  assertion) — see isTopologySafeToArm. */
   initializeScheduleEngine: () => Promise<ReturnType<typeof startScheduleEngine> | undefined>;
 }
 
@@ -403,6 +422,19 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     // unique {scheduleId, scheduledFor} guard may be absent, so leave the engine
     // DISABLED rather than firing without duplicate protection — the app still
     // runs; schedules simply don't fire until an operator resolves the index.
+    if (!isTopologySafeToArm()) {
+      logger.error(
+        "[schedules] scheduler NOT started: this process cannot see other replicas' generations. " +
+          'The job store is process-local (Redis is off), but nothing here proves this is the only ' +
+          'replica — and the standard server arms the scheduler in EVERY replica. A peer would ' +
+          'reconcile runs whose jobs it cannot see, eventually marking a still-running generation ' +
+          'interrupted and releasing its capacity, and deletions routed elsewhere could not abort ' +
+          'the generation at all. Enable a shared stream store (USE_REDIS_STREAMS), or set ' +
+          'SCHEDULES_SINGLE_PROCESS=true to assert this deployment runs exactly one replica. ' +
+          'Schedule writes are refused (503) until then.',
+      );
+      return undefined;
+    }
     try {
       await runAsSystem(() => methods.ensureScheduleIndexes());
     } catch (err) {

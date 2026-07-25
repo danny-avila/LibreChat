@@ -130,6 +130,9 @@ export default defineConfig({
     {
       command: `node ${serverPath}`,
       cwd: rootPath,
+      // The harness is one backend process with no Redis, so the scheduler's topology
+      // gate needs this assertion to arm; without it schedule writes answer 503.
+      env: { ...process.env, SCHEDULES_SINGLE_PROCESS: 'true' },
       url: baseURL,
       stdout: 'pipe',
       ignoreHTTPSErrors: true,
