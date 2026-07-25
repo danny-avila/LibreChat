@@ -27,6 +27,40 @@ describe('parseManifest', () => {
   it('returns null on malformed JSON rather than throwing', () => {
     expect(parseManifest(Buffer.from('not json'))).toBeNull();
   });
+
+  it('returns null when logical_files entries have invalid files structure', () => {
+    const manifest = parseManifest(
+      Buffer.from(
+        JSON.stringify({
+          version: 1,
+          logical_files: {
+            'conversations.json': {
+              files: 'nope',
+              sharded: true,
+            },
+          },
+        }),
+      ),
+    );
+    expect(manifest).toBeNull();
+  });
+
+  it('returns null when logical_files entries contain non-string filenames', () => {
+    const manifest = parseManifest(
+      Buffer.from(
+        JSON.stringify({
+          version: 1,
+          logical_files: {
+            'conversations.json': {
+              files: ['conversations-000.json', 123],
+              sharded: true,
+            },
+          },
+        }),
+      ),
+    );
+    expect(manifest).toBeNull();
+  });
 });
 
 describe('resolveLayout', () => {
@@ -47,7 +81,7 @@ describe('resolveLayout', () => {
     expect(layout.version).toBe(1);
   });
 
-  it('sorts shards naturally when there is no manifest', () => {
+  it('sorts shards naturally when there is no manifest (zero-padded)', () => {
     const layout = resolveLayout(
       entries('conversations-010.json', 'conversations-002.json', 'conversations-001.json'),
       null,
@@ -56,6 +90,18 @@ describe('resolveLayout', () => {
       'conversations-001.json',
       'conversations-002.json',
       'conversations-010.json',
+    ]);
+  });
+
+  it('sorts shards numerically, not lexicographically (unpadded)', () => {
+    const layout = resolveLayout(
+      entries('conversations-10.json', 'conversations-2.json', 'conversations-1.json'),
+      null,
+    );
+    expect(layout.conversationShards).toEqual([
+      'conversations-1.json',
+      'conversations-2.json',
+      'conversations-10.json',
     ]);
   });
 
@@ -97,5 +143,56 @@ describe('resolveLayout', () => {
       'file-abc.dat',
       'file_000.dat',
     ]);
+  });
+
+  it('falls back to filename detection when manifest result is empty', () => {
+    const layout = resolveLayout(
+      entries('conversations-001.json', 'conversations-002.json', 'export_manifest.json'),
+      {
+        version: 1,
+        logical_files: {
+          'conversations.json': {
+            files: ['conversations-000.json'],
+            sharded: true,
+          },
+        },
+      },
+    );
+    expect(layout.conversationShards).toEqual(['conversations-001.json', 'conversations-002.json']);
+  });
+
+  it('prefers conversations.json over sharded files when both are present', () => {
+    const layout = resolveLayout(
+      entries('conversations.json', 'conversations-000.json', 'conversations-001.json'),
+      null,
+    );
+    expect(layout.conversationShards).toEqual(['conversations.json']);
+  });
+
+  it('does not trigger bare-json fallback when multiple json siblings are present', () => {
+    const layout = resolveLayout(
+      entries(
+        'user.json',
+        'shared_conversations.json',
+        'message_feedback.json',
+        'group_chats.json',
+        'library_files.json',
+      ),
+      null,
+    );
+    expect(layout.conversationShards).toEqual([]);
+  });
+
+  it('falls back to filename detection when malformed manifest is passed', () => {
+    const layout = resolveLayout(entries('conversations-001.json', 'conversations-002.json'), {
+      version: 1,
+      logical_files: {
+        'conversations.json': {
+          files: 'nope',
+          sharded: true,
+        } as unknown as { files: string[]; sharded: boolean },
+      },
+    });
+    expect(layout.conversationShards).toEqual(['conversations-001.json', 'conversations-002.json']);
   });
 });
