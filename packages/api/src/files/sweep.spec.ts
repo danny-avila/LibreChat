@@ -1,6 +1,14 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { EModelEndpoint, FileSources } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import { getFileRetentionSweepInterval, startExpiredFileSweep, sweepExpiredFiles } from './sweep';
+import {
+  sweepExpiredFiles,
+  startExpiredFileSweep,
+  sweepStaleTempUploads,
+  getFileRetentionSweepInterval,
+} from './sweep';
 
 describe('expired file sweep helpers', () => {
   const logger = {
@@ -74,6 +82,51 @@ describe('expired file sweep helpers', () => {
 
   it('falls back to the default interval for sub-millisecond values', () => {
     expect(getFileRetentionSweepInterval('0.5')).toBe(60 * 60 * 1000);
+  });
+
+  describe('sweepStaleTempUploads', () => {
+    let uploadsDir: string;
+
+    beforeEach(() => {
+      uploadsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-sweep-uploads-'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(uploadsDir, { recursive: true, force: true });
+    });
+
+    it('is a no-op when no uploads path is configured', async () => {
+      const result = await sweepStaleTempUploads(undefined, { logger });
+      expect(result).toEqual({ scanned: 0, deleted: 0, failed: 0 });
+    });
+
+    it('is a no-op when the temp directory does not exist yet', async () => {
+      const result = await sweepStaleTempUploads(uploadsDir, { logger });
+      expect(result).toEqual({ scanned: 0, deleted: 0, failed: 0 });
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it('deletes stale uploads but keeps recent ones', async () => {
+      const userDir = path.join(uploadsDir, 'temp', 'user-123');
+      fs.mkdirSync(userDir, { recursive: true });
+
+      const staleFile = path.join(userDir, 'stale-export.zip');
+      fs.writeFileSync(staleFile, 'stale');
+      const staleTime = new Date(Date.now() - 25 * 60 * 60 * 1000);
+      fs.utimesSync(staleFile, staleTime, staleTime);
+
+      const freshFile = path.join(userDir, 'fresh-export.zip');
+      fs.writeFileSync(freshFile, 'fresh');
+
+      const result = await sweepStaleTempUploads(uploadsDir, {
+        logger,
+        maxAgeMs: 24 * 60 * 60 * 1000,
+      });
+
+      expect(result).toEqual({ scanned: 2, deleted: 1, failed: 0 });
+      expect(fs.existsSync(staleFile)).toBe(false);
+      expect(fs.existsSync(freshFile)).toBe(true);
+    });
   });
 
   it('does not start the interval when the sweep is disabled', () => {

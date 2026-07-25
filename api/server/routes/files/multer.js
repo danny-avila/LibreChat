@@ -28,14 +28,21 @@ const storage = multer.diskStorage({
   },
 });
 
+const IMPORT_EXTENSIONS = new Set(['.json', '.zip']);
+
+/**
+ * Accepts `.json` and `.zip` conversation exports. The extension is
+ * authoritative: browsers frequently send `application/octet-stream` for
+ * `.zip` uploads, so trusting the MIME type alone would let any file
+ * through under that generic type.
+ */
 const importFileFilter = (req, file, cb) => {
-  if (file.mimetype === 'application/json') {
+  const extension = path.extname(file.originalname).toLowerCase();
+  if (IMPORT_EXTENSIONS.has(extension)) {
     cb(null, true);
-  } else if (path.extname(file.originalname).toLowerCase() === '.json') {
-    cb(null, true);
-  } else {
-    cb(new Error('Only JSON files are allowed'), false);
+    return;
   }
+  cb(new Error('Only JSON or ZIP files are allowed'), false);
 };
 
 const normalizeUploadMimeType = (file) => {

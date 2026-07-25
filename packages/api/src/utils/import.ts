@@ -1,9 +1,9 @@
 import { logger } from '@librechat/data-schemas';
 
-/** 250 MiB — default max file size for conversation imports */
-export const DEFAULT_IMPORT_MAX_FILE_SIZE = 262144000;
+/** 1 GiB — default max file size for conversation imports */
+export const DEFAULT_IMPORT_MAX_FILE_SIZE = 1073741824;
 
-/** Resolves the import file-size limit from the env var, falling back to the 250 MiB default */
+/** Resolves the import file-size limit from the env var, falling back to the 1 GiB default */
 export function resolveImportMaxFileSize(): number {
   const raw = process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES;
   if (!raw) {

@@ -1,8 +1,14 @@
+const fs = require('fs');
+const path = require('path');
 const multer = require('multer');
 const express = require('express');
+const mongoose = require('mongoose');
 const { sleep } = require('@librechat/agents');
 const {
   isEnabled,
+  runImport,
+  inspectExport,
+  ImportJobStore,
   deleteAgentCheckpoints,
   resolveImportMaxFileSize,
   restoreTenantContextFromReq,
@@ -17,8 +23,12 @@ const {
   createForkLimiters,
   configMiddleware,
 } = require('~/server/middleware');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { createImportBatchBuilder } = require('~/server/utils/import/importBatchBuilder');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
+const { resolveImportDefaultModel } = require('~/server/utils/import/defaults');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
+const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
 const getLogStores = require('~/cache/getLogStores');
@@ -297,6 +307,7 @@ const upload = multer({
   limits: { fileSize: importMaxFileSize },
 });
 const uploadSingle = upload.single('file');
+const importJobs = new ImportJobStore(getLogStores(CacheKeys.IMPORT_JOBS));
 
 function handleUpload(req, res, next) {
   uploadSingle(req, res, (err) => {
@@ -304,17 +315,95 @@ function handleUpload(req, res, next) {
       return res.status(413).json({ message: 'File exceeds the maximum allowed size' });
     }
     if (err) {
-      return next(err);
+      return res.status(400).json({ message: err.message || 'Invalid upload' });
     }
     next();
   });
 }
 
 /**
- * Imports a conversation from a JSON file and saves it to the database.
+ * Existing `importedFrom.externalId` values already saved for this user, used
+ * to skip conversations a prior (interrupted or re-run) import already wrote.
+ * @param {string} userId
+ * @returns {Promise<Set<string>>}
+ */
+async function loadExistingExternalIds(userId) {
+  const Conversation = mongoose.models.Conversation;
+  const rows = await Conversation.find(
+    { user: userId, 'importedFrom.source': 'chatgpt' },
+    { 'importedFrom.externalId': 1 },
+  ).lean();
+  return new Set(rows.map((row) => row.importedFrom?.externalId).filter(Boolean));
+}
+
+/**
+ * Runs a confirmed import job to completion in the background, updating the
+ * job record as it progresses. Never throws: failures are recorded on the job
+ * itself so a polling client observes a `failed` phase instead of a dropped
+ * connection.
+ * @param {object} req - The Express request that created/confirmed the job.
+ * @param {import('@librechat/api').ImportJob} job
+ * @returns {Promise<void>}
+ */
+async function runImportJob(req, job) {
+  const appConfig = req.config;
+  const source = getFileStrategy(appConfig, { isImage: true });
+  const { saveBuffer } = getStrategyFunctions(source);
+  const batch = createImportBatchBuilder(req.user.id, appConfig?.interfaceConfig);
+
+  try {
+    const defaultModel = await resolveImportDefaultModel({
+      endpoint: EModelEndpoint.openAI,
+      requestUserId: req.user.id,
+      userRole: req.user.role,
+    });
+
+    const report = await runImport({
+      filepath: job.filepath,
+      userId: req.user.id,
+      tenantId: req.user.tenantId,
+      source,
+      defaultModel,
+      deps: { saveBuffer, createFile: db.createFile },
+      batch,
+      existingExternalIds: await loadExistingExternalIds(req.user.id),
+      isCancelled: () => importJobs.isCancelled(req.user.id, job.jobId),
+      onProgress: async (progress) => {
+        await importJobs.patch(req.user.id, job.jobId, { progress });
+      },
+    });
+
+    await importJobs.patch(req.user.id, job.jobId, {
+      report,
+      phase: 'completed',
+      status: 'completed',
+    });
+  } catch (error) {
+    logger.error('Error running import job', error);
+    await importJobs.patch(req.user.id, job.jobId, {
+      phase: 'failed',
+      status: 'failed',
+      error: error.message,
+    });
+  } finally {
+    await fs.promises.unlink(job.filepath).catch(() => undefined);
+  }
+}
+
+/**
+ * Imports a conversation export and saves it to the database.
+ *
+ * Plain `.json` uploads (Claude, ChatbotUI, LibreChat, and legacy
+ * un-zipped ChatGPT exports) are still imported synchronously, as before:
+ * `inspectExport`/`runImport` only understand the zipped ChatGPT export
+ * layout, so routing every upload through them would 400 every JSON
+ * import. `.zip` uploads go through the new background job API: this
+ * request only inspects the archive and returns a summary awaiting
+ * confirmation; the actual import runs after POST /import/jobs/:jobId/start.
  * @route POST /import
- * @param {Express.Multer.File} req.file - The JSON file to import.
- * @returns {object} 201 - success response - application/json
+ * @param {Express.Multer.File} req.file - The uploaded export file.
+ * @returns {object} 201 - legacy JSON import succeeded
+ * @returns {object} 202 - zip archive inspected, job awaiting confirmation
  */
 router.post(
   '/import',
@@ -324,21 +413,102 @@ router.post(
   handleUpload,
   restoreTenantContextFromReq,
   async (req, res) => {
+    const extension = path.extname(req.file.originalname).toLowerCase();
+    if (extension !== '.zip') {
+      try {
+        /* TODO: optimize to return imported conversations and add manually */
+        await importConversations({
+          filepath: req.file.path,
+          requestUserId: req.user.id,
+          userRole: req.user.role,
+          interfaceConfig: req.config?.interfaceConfig,
+        });
+        res.status(201).json({ message: 'Conversation(s) imported successfully' });
+      } catch (error) {
+        logger.error('Error processing file', error);
+        res.status(500).send('Error processing file');
+      }
+      return;
+    }
+
     try {
-      /* TODO: optimize to return imported conversations and add manually */
-      await importConversations({
+      const job = await importJobs.create({
+        userId: req.user.id,
         filepath: req.file.path,
-        requestUserId: req.user.id,
-        userRole: req.user.role,
-        interfaceConfig: req.config?.interfaceConfig,
+        filename: req.file.originalname,
       });
-      res.status(201).json({ message: 'Conversation(s) imported successfully' });
+
+      const { summary } = await inspectExport(req.file.path);
+      const updated = await importJobs.patch(req.user.id, job.jobId, {
+        summary,
+        phase: 'awaiting_confirmation',
+      });
+
+      res.status(202).json({ jobId: job.jobId, summary: updated.summary });
     } catch (error) {
-      logger.error('Error processing file', error);
-      res.status(500).send('Error processing file');
+      logger.error('Error inspecting import file', error);
+      await fs.promises.unlink(req.file.path).catch(() => undefined);
+      res.status(400).json({ message: error.message || 'Unsupported import type' });
     }
   },
 );
+
+/**
+ * Confirms an inspected import job and starts running it in the background.
+ * @route POST /import/jobs/:jobId/start
+ * @returns {object} 202 - the job has started
+ * @returns {object} 404 - no such job for this user
+ */
+router.post('/import/jobs/:jobId/start', configMiddleware, async (req, res) => {
+  const job = await importJobs.get(req.user.id, req.params.jobId);
+  if (!job) {
+    res.status(404).json({ message: 'Import job not found' });
+    return;
+  }
+
+  await importJobs.patch(req.user.id, job.jobId, { phase: 'conversations' });
+  res.status(202).json({ jobId: job.jobId });
+
+  runImportJob(req, job);
+});
+
+/**
+ * Returns the status of an import job. `filepath` and `userId` are always
+ * stripped: the former is a server filesystem path that must never reach a
+ * client, and the latter is redundant once the route is scoped to `req.user.id`.
+ * @route GET /import/jobs/:jobId
+ * @returns {object} 200 - the job status
+ * @returns {object} 404 - no such job for this user (also returned once the
+ *   job's TTL has expired, since an expired job is indistinguishable from one
+ *   that never existed; a polling client should treat both as "stop polling"
+ *   rather than hang waiting for a state that will never arrive)
+ */
+router.get('/import/jobs/:jobId', async (req, res) => {
+  const job = await importJobs.get(req.user.id, req.params.jobId);
+  if (!job) {
+    res.status(404).json({ message: 'Import job not found' });
+    return;
+  }
+  const { filepath: _filepath, userId: _userId, ...safe } = job;
+  res.status(200).json(safe);
+});
+
+/**
+ * Cancels an in-progress import job and removes its temporary upload.
+ * @route DELETE /import/jobs/:jobId
+ * @returns {object} 200 - the job was cancelled
+ * @returns {object} 404 - no such job for this user
+ */
+router.delete('/import/jobs/:jobId', async (req, res) => {
+  const job = await importJobs.get(req.user.id, req.params.jobId);
+  if (!job) {
+    res.status(404).json({ message: 'Import job not found' });
+    return;
+  }
+  await importJobs.cancel(req.user.id, job.jobId);
+  await fs.promises.unlink(job.filepath).catch(() => undefined);
+  res.status(200).json({ jobId: job.jobId });
+});
 
 /**
  * POST /fork

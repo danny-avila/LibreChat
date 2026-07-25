@@ -12,6 +12,12 @@ jest.mock('~/server/middleware/requireJwtAuth', () => require(MOCKS).requireJwtA
 jest.mock('~/server/middleware', () => require(MOCKS).middlewarePassthrough());
 jest.mock('~/server/utils/import/fork', () => require(MOCKS).forkUtils());
 jest.mock('~/server/utils/import', () => require(MOCKS).importUtils());
+jest.mock('~/server/utils/import/defaults', () => require(MOCKS).importDefaults());
+jest.mock('~/server/utils/import/importBatchBuilder', () =>
+  require(MOCKS).importBatchBuilderUtil(),
+);
+jest.mock('~/server/services/Files/strategies', () => require(MOCKS).filesStrategies());
+jest.mock('~/server/utils/getFileStrategy', () => require(MOCKS).getFileStrategyUtil());
 jest.mock('~/cache/getLogStores', () => require(MOCKS).logStores());
 jest.mock('~/server/routes/files/multer', () => require(MOCKS).multerSetup());
 jest.mock('multer', () => require(MOCKS).multerLib());

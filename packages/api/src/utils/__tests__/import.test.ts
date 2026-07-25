@@ -21,10 +21,10 @@ describe('resolveImportMaxFileSize', () => {
     }
   });
 
-  it('returns 262144000 (250 MiB) when env var is not set', () => {
+  it('returns 1073741824 (1 GiB) when env var is not set', () => {
     delete process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES;
-    expect(resolveImportMaxFileSize()).toBe(262144000);
-    expect(DEFAULT_IMPORT_MAX_FILE_SIZE).toBe(262144000);
+    expect(resolveImportMaxFileSize()).toBe(1073741824);
+    expect(DEFAULT_IMPORT_MAX_FILE_SIZE).toBe(1073741824);
   });
 
   it('returns default when env var is empty string', () => {

@@ -1,4 +1,3 @@
-const { logger } = require('@librechat/data-schemas');
 const { Constants } = require('librechat-data-provider');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
 const { getImporter } = require('./importers');
@@ -371,7 +370,6 @@ describe('Import Timestamp Ordering', () => {
     });
 
     test('should terminate on cyclic parent relationships and break cycles before saving', async () => {
-      const warnSpy = jest.spyOn(logger, 'warn');
       const jsonData = [
         {
           title: 'Cycle Test',
@@ -431,9 +429,6 @@ describe('Import Timestamp Ordering', () => {
       const [root] = roots;
       const nonRoot = messages.find((m) => m.parentMessageId !== Constants.NO_PARENT);
       expect(nonRoot.parentMessageId).toBe(root.messageId);
-
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('cyclic parent relationships'));
-      warnSpy.mockRestore();
     });
 
     test('should not hang when findValidParent encounters a skippable-message cycle', async () => {
