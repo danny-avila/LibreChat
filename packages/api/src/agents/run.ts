@@ -47,6 +47,7 @@ import {
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
 import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
+import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
@@ -60,7 +61,6 @@ import { resolveSubagentMaxTurns } from '~/agents/config';
 import { buildLangfuseConfig } from '~/langfuse/config';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { applyTestRunHook } from '~/agents/testHook';
-import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { isUserProvided } from '~/utils/common';
 
 /** Expected shape of JSON tool search results */
