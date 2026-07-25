@@ -422,7 +422,7 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
       quickSuggestions: !readOnly,
       suggestOnTriggerCharacters: !readOnly,
       parameterHints: { enabled: !readOnly },
-      hover: { enabled: readOnly ? 'off' : 'on' },
+      hover: { enabled: !readOnly },
       matchBrackets: readOnly ? 'never' : 'always',
     }),
     [readOnly],
