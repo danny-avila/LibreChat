@@ -579,6 +579,22 @@ describe('bedrockModels defaults', () => {
     expect(bare).toEqual([]);
   });
 
+  it.each([
+    'anthropic.claude-3-5-sonnet-20241022-v2:0',
+    'anthropic.claude-3-5-sonnet-20240620-v1:0',
+    'anthropic.claude-3-5-haiku-20241022-v1:0',
+  ])('does not offer retired model %s', (model) => {
+    /** These reached end of life at AWS and return ResourceNotFoundException in
+     * every prefix form, so selecting one is a hard error for the user. */
+    expect(bedrockModels).not.toContain(model);
+  });
+
+  it('offers no Claude 3.x model at all', () => {
+    const claude3 = bedrockModels.filter((model) => /claude-3[-.]/.test(model));
+
+    expect(claude3).toEqual([]);
+  });
+
   it('keeps Opus 5 available as a global profile', () => {
     expect(bedrockModels).toContain('global.anthropic.claude-opus-5');
     expect(bedrockModels).not.toContain('anthropic.claude-opus-5');
