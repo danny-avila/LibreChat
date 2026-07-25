@@ -29,6 +29,32 @@ export interface SchedulesHandlersDeps {
 }
 
 /**
+ * Rolls back a create that raced past the account-deletion cascade. Hard-deletes first;
+ * if that write fails, falls back to the durable soft-delete, which makes the row
+ * non-claimable at once and hands it to the reconciler's `deleting` sweep for erasure.
+ * Returns false only when BOTH fail, which the caller must surface rather than
+ * answering a clean 410.
+ */
+async function compensateLateCreate(
+  deps: SchedulesHandlersDeps,
+  id: string,
+  userId: string,
+): Promise<boolean> {
+  const deleted = await deps.methods.deleteScheduleById(id, userId).catch((err) => {
+    logger.error(`[schedules] compensating delete failed for late create ${id}`, err);
+    return false;
+  });
+  if (deleted) {
+    return true;
+  }
+  const marked = await deps.methods.markScheduleDeleting(id, userId).catch((err) => {
+    logger.error(`[schedules] compensating soft-delete failed for late create ${id}`, err);
+    return null;
+  });
+  return marked != null;
+}
+
+/**
  * Refuses a scheduling WRITE once the owner's account deletion has begun. A one-shot
  * disable scan can never close this race (a create landing after the scan is simply not
  * in it), so admission consults the durable user-level barrier instead. Fail-closed.
@@ -256,11 +282,14 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     // exist yet. Re-checking AFTER the write is what makes the barrier authoritative;
     // compensating here keeps a deleted account from retaining a live schedule.
     if (await deps.isUserDeleting(user.id)) {
-      await deps.methods
-        .deleteScheduleById(id, user.id)
-        .catch((err) =>
-          logger.error(`[schedules] failed to compensate create for deleting user: ${id}`, err),
-        );
+      // FAIL CLOSED: this compensation is the ONLY cleanup for a row inserted after
+      // deleteSchedulesByUser already ran. Swallowing its failure would answer 410 as
+      // though the row were gone while the deleted user's prompt and attachments stayed
+      // in a live, non-TTL schedule indefinitely.
+      if (!(await compensateLateCreate(deps, id, user.id))) {
+        res.status(500).json({ error: 'Failed to roll back schedule creation' });
+        return;
+      }
       res.status(410).json({ error: 'This account is being deleted' });
       return;
     }
