@@ -6,6 +6,7 @@ import {
   computeUsageCostUSD,
   aggregateEmittedUsage,
   createSubagentUsageSink,
+  completionUsageBreakdown,
   recordCollectedUsage,
   resolveAgentTokenConfig,
   buildPersistedContextUsage,
@@ -1558,6 +1559,134 @@ describe('createSubagentUsageSink', () => {
       { promptTokens: 900, completionTokens: 700 },
     );
     expect(result).toEqual({ input_tokens: 120, output_tokens: 40 });
+  });
+});
+
+describe('completionUsageBreakdown', () => {
+  it('reports zeroed buckets when no model call was collected', () => {
+    expect(completionUsageBreakdown([])).toEqual({
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      primary: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      subagent: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    });
+  });
+
+  it('sums every primary call and skips null entries', () => {
+    const collectedUsage = [
+      { input_tokens: 100, output_tokens: 50 },
+      null,
+      { input_tokens: 180, output_tokens: 20 },
+    ] as unknown as UsageMetadata[];
+
+    expect(completionUsageBreakdown(collectedUsage)).toEqual({
+      prompt_tokens: 280,
+      completion_tokens: 70,
+      total_tokens: 350,
+      primary: { prompt_tokens: 280, completion_tokens: 70, total_tokens: 350 },
+      subagent: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    });
+  });
+
+  it('buckets summarization and sequential calls as primary', () => {
+    const collectedUsage: UsageMetadata[] = [
+      { input_tokens: 100, output_tokens: 50 },
+      { input_tokens: 40, output_tokens: 10, usage_type: 'summarization' },
+      { input_tokens: 30, output_tokens: 5, usage_type: 'sequential' },
+    ];
+
+    const breakdown = completionUsageBreakdown(collectedUsage);
+
+    expect(breakdown.primary).toEqual({
+      prompt_tokens: 170,
+      completion_tokens: 65,
+      total_tokens: 235,
+    });
+    expect(breakdown.subagent).toEqual({
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+    });
+  });
+
+  it('reports subagent-only turns in both the bucket and the standard totals', () => {
+    const collectedUsage: UsageMetadata[] = [
+      { input_tokens: 900, output_tokens: 700, usage_type: 'subagent' },
+    ];
+
+    expect(completionUsageBreakdown(collectedUsage)).toEqual({
+      prompt_tokens: 900,
+      completion_tokens: 700,
+      total_tokens: 1600,
+      primary: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      subagent: { prompt_tokens: 900, completion_tokens: 700, total_tokens: 1600 },
+    });
+  });
+
+  it('splits a mixed turn while keeping the standard totals inclusive', () => {
+    const collectedUsage: UsageMetadata[] = [
+      { input_tokens: 120, output_tokens: 40 },
+      { input_tokens: 900, output_tokens: 700, usage_type: 'subagent' },
+      { input_tokens: 1100, output_tokens: 300, usage_type: 'subagent' },
+    ];
+
+    expect(completionUsageBreakdown(collectedUsage)).toEqual({
+      prompt_tokens: 2120,
+      completion_tokens: 1040,
+      total_tokens: 3160,
+      primary: { prompt_tokens: 120, completion_tokens: 40, total_tokens: 160 },
+      subagent: { prompt_tokens: 2000, completion_tokens: 1000, total_tokens: 3000 },
+    });
+  });
+
+  it('counts additive-provider cache tokens toward the prompt total, as billing does', () => {
+    const collectedUsage: UsageMetadata[] = [
+      {
+        input_tokens: 200,
+        output_tokens: 80,
+        provider: 'bedrock',
+        input_token_details: { cache_creation: 60, cache_read: 30 },
+      },
+    ];
+
+    expect(completionUsageBreakdown(collectedUsage).primary).toEqual({
+      prompt_tokens: 290,
+      completion_tokens: 80,
+      total_tokens: 370,
+    });
+  });
+
+  it('repairs output undercounted by the provider', () => {
+    const collectedUsage: UsageMetadata[] = [
+      { input_tokens: 64, output_tokens: 2674, total_tokens: 3379, provider: 'vertexai' },
+    ];
+
+    expect(completionUsageBreakdown(collectedUsage).completion_tokens).toBe(3315);
+  });
+
+  it('adds reasoning token details across primary and subagent calls', () => {
+    const collectedUsage: UsageMetadata[] = [
+      { input_tokens: 64, output_tokens: 3315, output_token_details: { reasoning: 641 } },
+      {
+        input_tokens: 900,
+        output_tokens: 700,
+        usage_type: 'subagent',
+        output_token_details: { reasoning: 120 },
+      },
+    ];
+
+    expect(completionUsageBreakdown(collectedUsage).completion_tokens_details).toEqual({
+      reasoning_tokens: 761,
+    });
+  });
+
+  it('omits reasoning details when no call reported reasoning tokens', () => {
+    const collectedUsage: UsageMetadata[] = [{ input_tokens: 100, output_tokens: 50 }];
+
+    expect(completionUsageBreakdown(collectedUsage)).not.toHaveProperty(
+      'completion_tokens_details',
+    );
   });
 });
 

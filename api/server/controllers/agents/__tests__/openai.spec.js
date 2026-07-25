@@ -9,6 +9,14 @@ const mockSpendStructuredTokens = jest.fn().mockResolvedValue({});
 const mockRecordCollectedUsage = jest
   .fn()
   .mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
+const mockUsageBreakdown = {
+  prompt_tokens: 1020,
+  completion_tokens: 740,
+  total_tokens: 1760,
+  primary: { prompt_tokens: 120, completion_tokens: 40, total_tokens: 160 },
+  subagent: { prompt_tokens: 900, completion_tokens: 700, total_tokens: 1600 },
+};
+const mockCompletionUsageBreakdown = jest.fn().mockReturnValue(mockUsageBreakdown);
 const mockGetBalanceConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockGetTransactionsConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockBuildSkillPrimedIdsByName = jest.fn((manualSkillPrimes, alwaysApplySkillPrimes) => {
@@ -106,6 +114,7 @@ jest.mock('@librechat/api', () => ({
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
   createSubagentUsageSink: jest.fn().mockReturnValue(jest.fn()),
+  completionUsageBreakdown: mockCompletionUsageBreakdown,
   extractManualSkills: jest.fn().mockReturnValue(undefined),
   injectSkillPrimes: jest.fn().mockReturnValue({
     initialMessages: [],
@@ -380,6 +389,33 @@ describe('OpenAIChatCompletionController', () => {
       expect(deps).toHaveProperty('bulkWriteOps');
       expect(deps.bulkWriteOps).toHaveProperty('insertMany', mockBulkInsertTransactions);
       expect(deps.bulkWriteOps).toHaveProperty('updateBalance', mockUpdateBalance);
+    });
+
+    it('should report the collectedUsage breakdown as the non-streaming response usage', async () => {
+      const { buildNonStreamingResponse } = require('@librechat/api');
+
+      await OpenAIChatCompletionController(req, res);
+
+      const [, params] = mockRecordCollectedUsage.mock.calls[0];
+      expect(mockCompletionUsageBreakdown).toHaveBeenCalledWith(params.collectedUsage);
+      expect(buildNonStreamingResponse).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        mockUsageBreakdown,
+      );
+    });
+
+    it('should report the collectedUsage breakdown in the final streamed chunk', async () => {
+      const { validateRequest, sendFinalChunk } = require('@librechat/api');
+      validateRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', messages: [], stream: true },
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(sendFinalChunk).toHaveBeenCalledWith(expect.anything(), 'stop', mockUsageBreakdown);
     });
 
     it('should include model from primaryConfig in recordCollectedUsage params', async () => {

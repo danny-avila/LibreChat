@@ -434,11 +434,15 @@ export function createOpenAIHandlers(
 }
 
 /**
- * Send the final chunk with finish_reason and optional usage
+ * Send the final chunk with finish_reason and optional usage.
+ *
+ * `usageOverride` lets callers that track usage outside the stream handlers
+ * (e.g. isolated subagent child runs) report totals the tracker never saw.
  */
 export function sendFinalChunk(
   config: OpenAIStreamHandlerConfig,
   finishReason: ChatCompletionChunkChoice['finish_reason'] = 'stop',
+  usageOverride?: CompletionUsage,
 ): void {
   const { res, context, tracker } = config;
 
@@ -449,14 +453,14 @@ export function sendFinalChunk(
   }
 
   // Build usage object with reasoning token details (OpenRouter/OpenAI convention)
-  const usage: CompletionUsage = {
+  const usage: CompletionUsage = usageOverride ?? {
     prompt_tokens: tracker.usage.promptTokens,
     completion_tokens: tracker.usage.completionTokens,
     total_tokens: tracker.usage.promptTokens + tracker.usage.completionTokens,
   };
 
   // Add reasoning token breakdown if there are reasoning tokens
-  if (tracker.usage.reasoningTokens > 0) {
+  if (usageOverride == null && tracker.usage.reasoningTokens > 0) {
     usage.completion_tokens_details = {
       reasoning_tokens: tracker.usage.reasoningTokens,
     };
