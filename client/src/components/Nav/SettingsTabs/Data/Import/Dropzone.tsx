@@ -146,29 +146,26 @@ export default function Dropzone({ onFile, isUploading, focusOnMount = false }: 
         onChange={handleFileInput}
       />
 
-      {/* Always mounted so the fade and lift run on the way out as well as in;
-          conditionally rendering it would snap straight to the end state. */}
+      {/* Always mounted so the fade runs on the way out as well as in;
+          conditionally rendering it would snap straight to the end state.
+          The insets cancel the row wrapper's `px-4 py-3` so the tint reaches
+          the section card's edges, where its `overflow-hidden rounded-xl`
+          clips the corners for us — hence no border or radius of its own. */}
       <div
         aria-hidden="true"
         className={cn(
-          'pointer-events-none absolute -inset-3 z-10 flex items-center justify-center gap-2',
-          'rounded-xl border border-dashed text-sm font-medium',
-          'transition-all duration-200 ease-out motion-reduce:transition-none',
+          'pointer-events-none absolute -inset-x-4 -inset-y-3 z-10',
+          'flex items-center justify-center gap-2 text-sm font-medium',
+          'transition-opacity duration-200 ease-out motion-reduce:transition-none',
           /* Alpha modifiers do not work on the `surface-*` tokens: they are
              plain `var()` colors with no `<alpha-value>`, so `bg-surface-*\/75`
              computes to fully transparent. Core palette colors take alpha. */
           isDragging
-            ? 'scale-100 border-border-heavy bg-white/70 opacity-100 backdrop-blur-sm dark:bg-black/60'
-            : 'scale-[0.98] border-transparent bg-transparent opacity-0',
+            ? 'bg-white/70 opacity-100 backdrop-blur-sm dark:bg-black/60'
+            : 'bg-transparent opacity-0',
         )}
       >
-        <Upload
-          className={cn(
-            'size-4 shrink-0 text-text-primary',
-            'transition-transform duration-200 ease-out motion-reduce:transition-none',
-            isDragging ? 'translate-y-0' : 'translate-y-1',
-          )}
-        />
+        <Upload className="size-4 shrink-0 text-text-primary" />
         <span className="text-text-primary">{localize('com_ui_import_drop')}</span>
       </div>
     </div>
