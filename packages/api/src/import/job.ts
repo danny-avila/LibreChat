@@ -52,7 +52,11 @@ export class ImportJobStore {
     return job ?? null;
   }
 
-  async patch(userId: string, jobId: string, patch: Partial<ImportJob>): Promise<ImportJob | null> {
+  async patch(
+    userId: string,
+    jobId: string,
+    patch: Omit<Partial<ImportJob>, 'userId' | 'jobId'>,
+  ): Promise<ImportJob | null> {
     const existing = await this.get(userId, jobId);
     if (!existing) {
       return null;

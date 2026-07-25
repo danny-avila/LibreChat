@@ -69,4 +69,32 @@ describe('ImportJobStore', () => {
   it('returns null when patching a job that does not exist', async () => {
     expect(await store.patch('u1', 'missing', { phase: 'failed' })).toBeNull();
   });
+
+  it('keeps identity fields matching the storage key after a patch', async () => {
+    const job = await store.create({ userId: 'u1', filepath: '/tmp/a.zip', filename: 'a.zip' });
+
+    const patched = await store.patch('u1', job.jobId, { phase: 'assets' });
+
+    expect(patched?.userId).toBe('u1');
+    expect(patched?.jobId).toBe(job.jobId);
+  });
+
+  it('does not report another user’s job as cancelled', async () => {
+    const job = await store.create({ userId: 'u1', filepath: '/tmp/a.zip', filename: 'a.zip' });
+    await store.cancel('u1', job.jobId);
+
+    expect(await store.isCancelled('u2', job.jobId)).toBe(false);
+  });
+
+  it('does not patch another user’s job and leaves the owner’s record untouched', async () => {
+    const job = await store.create({ userId: 'u1', filepath: '/tmp/a.zip', filename: 'a.zip' });
+
+    const result = await store.patch('u2', job.jobId, { phase: 'assets', status: 'failed' });
+
+    expect(result).toBeNull();
+    const owned = await store.get('u1', job.jobId);
+    expect(owned?.phase).toBe(job.phase);
+    expect(owned?.status).toBe(job.status);
+    expect(owned?.updatedAt).toBe(job.updatedAt);
+  });
 });
