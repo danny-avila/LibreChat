@@ -150,6 +150,11 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     const appConfig = user
       ? await deps.getAppConfig(getAppConfigOptionsFromUser(user))
       : await deps.getAppConfig();
+    // The env kill switch is a GLOBAL stop and must be visible everywhere limits are
+    // consulted (write handlers, fire path), not only at the engine tick.
+    if (isEnabled(process.env.SCHEDULES_DISABLED)) {
+      return { ...DEFAULT_SCHEDULE_LIMITS, enabled: false };
+    }
     const config = appConfig?.interfaceConfig?.schedules;
     // EXPERIMENTAL, default-OFF (v1): scheduled chats are disabled unless an admin
     // explicitly enables them. Absence, null, or `false` all resolve to disabled, so a
@@ -364,17 +369,14 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     if (engine != null) {
       return engine;
     }
-    // Arm unless GLOBALLY stopped. Deliberately not gated on the base config's `enabled`:
-    // schedules can be enabled for a role/user/tenant while the base YAML stays
-    // default-off, and gating here would never start the engine for those principals (and
-    // would leave schedulesReady false, rejecting their writes entirely). The per-owner
-    // limits are re-resolved in the fire path, which skips owners who have it disabled,
-    // and the write handlers reject them too — so default-off still holds behaviorally
-    // without breaking principal-scoped enables.
-    if (await engineDeps.isGloballyDisabled()) {
-      logger.info('[schedules] globally disabled; engine not started');
-      return undefined;
-    }
+    // Always arm. The engine owns BOTH firing and reconciliation, and reconciliation must
+    // run even while firing is stopped: a previous process can leave `started` rows and
+    // preserved terminal jobs that would otherwise never settle until scheduling is
+    // re-enabled. Firing is gated separately — runTick refuses to claim while globally
+    // disabled, and getLimits reports disabled to the write handlers and the fire path —
+    // so "off" still means nothing fires, without stranding prior state.
+    // Deliberately not gated on the base config either: schedules can be enabled for a
+    // role/user/tenant while the base YAML stays default-off.
     // Explicitly build the Schedule/ScheduleRun indexes first — the unique
     // idempotency index and TTL retention index would otherwise never exist when
     // MONGO_AUTO_INDEX is disabled (the production default). If this fails the

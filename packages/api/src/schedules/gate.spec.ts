@@ -45,15 +45,22 @@ describe('v1 experimental gate, asserted at real entry points', () => {
     expect((await makeService({}).getLimits()).enabled).toBe(false);
   });
 
-  it('does NOT arm the engine when globally stopped by the base config', async () => {
+  it('STILL arms the engine when globally stopped, so reconciliation can settle prior state', async () => {
+    // The engine owns firing AND reconciliation. Refusing to start would strand `started`
+    // rows and preserved jobs left by a previous process until scheduling is re-enabled.
+    // Firing is gated separately (runTick + getLimits), so nothing fires.
     const service = makeService({ interfaceConfig: { schedules: false } });
-    expect(await service.initializeScheduleEngine()).toBeUndefined();
+    expect(await service.initializeScheduleEngine()).toBeDefined();
+    expect((await service.getLimits()).enabled).toBe(false);
   });
 
-  it('does NOT arm the engine under the SCHEDULES_DISABLED lever', async () => {
+  it('reports limits DISABLED under the SCHEDULES_DISABLED lever, so writes and fires refuse', async () => {
     process.env.SCHEDULES_DISABLED = 'true';
+    // Even with an explicit opt-in, the env stop must be visible wherever limits are
+    // consulted — not only at the engine tick.
     const service = makeService({ interfaceConfig: { schedules: true } });
-    expect(await service.initializeScheduleEngine()).toBeUndefined();
+    expect((await service.getLimits()).enabled).toBe(false);
+    expect(await service.engineDeps.isGloballyDisabled()).toBe(true);
   });
 
   it('DOES arm the engine when the base is merely absent, so principal-scoped enables work', async () => {

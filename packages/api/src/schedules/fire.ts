@@ -327,10 +327,19 @@ export async function fireSchedule(
     }
 
     if (await deps.isOutOfBalance(user)) {
-      await methods.recordSkippedRun(
-        { ...baseRun, status: 'skipped_balance', ...claimedRevision },
-        BALANCE_SKIP_DISABLE_THRESHOLD,
-      );
+      // Skip rows carry no `bookkept:false` marker, so the reconciler has no path to
+      // repair a half-applied skip. If the schedule-side bookkeeping throws, do NOT
+      // advance: leave the occurrence due so the next claim retries it (the insert is
+      // duplicate-guarded and the same-skip retry path is idempotent).
+      try {
+        await methods.recordSkippedRun(
+          { ...baseRun, status: 'skipped_balance', ...claimedRevision },
+          BALANCE_SKIP_DISABLE_THRESHOLD,
+        );
+      } catch (skipError) {
+        logger.error(`[schedules] balance-skip bookkeeping failed for ${schedule.id}:`, skipError);
+        return { fired: false, skipped: 'balance' as const };
+      }
       await advance();
       return { fired: false, skipped: 'balance' as const };
     }
@@ -405,11 +414,21 @@ export async function fireSchedule(
       if (reservation.conflict === 'overlap') {
         // Another occurrence of this schedule is already active. Record the skip
         // (its own occurrence row) and advance past this one.
-        await methods.recordSkippedRun({
-          ...baseRun,
-          status: 'skipped_overlap',
-          ...claimedRevision,
-        });
+        try {
+          await methods.recordSkippedRun({
+            ...baseRun,
+            status: 'skipped_overlap',
+            ...claimedRevision,
+          });
+        } catch (skipError) {
+          // Same reasoning as the balance skip: no reconciliation path repairs a
+          // half-applied skip, so leave the occurrence due rather than advancing past it.
+          logger.error(
+            `[schedules] overlap-skip bookkeeping failed for ${schedule.id}:`,
+            skipError,
+          );
+          return { fired: false, skipped: 'overlap' as const };
+        }
         await advance();
         return { fired: false, skipped: 'overlap' as const };
       }

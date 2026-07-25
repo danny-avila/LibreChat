@@ -422,6 +422,10 @@ const deleteUserController = async (req, res) => {
       logger.error('[deleteUserController] Error deleting user convos, likely no convos', error);
     }
     await deleteUserPluginAuth(user.id, null, true);
+    // BEFORE the irreversible user delete: if this throws afterwards the user document
+    // is already gone, so they can no longer authenticate to retry the cascade and their
+    // schedule prompts (which have no TTL) would persist indefinitely.
+    await db.deleteSchedulesByUser(user.id);
     await db.deleteUserById(user.id);
     await deleteAllSharedLinksWithCleanup(user.id);
     await deleteUserFiles(req);
@@ -434,7 +438,6 @@ const deleteUserController = async (req, res) => {
     await db.deleteAllUserMemories(user.id);
     await db.deleteUserPrompts(user.id);
     await db.deleteUserSkills(user.id);
-    await db.deleteSchedulesByUser(user.id);
     await deleteUserMcpServers(user.id);
     await db.deleteActions({ user: user.id });
     await db.deleteTokens({ userId: user.id });

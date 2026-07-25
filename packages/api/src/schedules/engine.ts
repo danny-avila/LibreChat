@@ -245,9 +245,17 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             after: new Date(dbNow),
           });
           if (next == null) {
-            await deps.methods
+            // The advance below would clear nextRunAt AND the lease. If the disable
+            // failed transiently, doing that anyway leaves `enabled: true` with no
+            // nextRunAt and no disabledReason — permanently unclaimable and invisible.
+            // Bail instead: the lease expires and the occurrence is retried.
+            const disabled = await deps.methods
               .disableSchedule(schedule.id, 'invalid_schedule', schedule.claimToken)
-              .catch(() => undefined);
+              .then(() => true)
+              .catch(() => false);
+            if (!disabled) {
+              return false;
+            }
           }
           await deps.methods
             .advanceSchedule(schedule.id, next, scheduledFor, schedule.claimToken)

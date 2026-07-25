@@ -194,16 +194,21 @@ const JOB_DELETE_LUA =
   'return 1';
 
 /**
- * Allocates a STRICTLY monotonic generation stamp for a stream, atomically. Reading the
- * prior createdAt in TS and computing the next value in the client is a race: two
- * concurrent creates observe the same prior and mint the same stamp, which is exactly
- * the collision the stamp exists to prevent. ARGV[1] is the caller's wall clock.
+ * RESERVES a strictly monotonic generation stamp for a stream, atomically. It must WRITE
+ * the stamp, not merely compute it: the job hash is not persisted until the separate
+ * create script runs, so a read-only allocator lets two concurrent creates observe the
+ * same prior `createdAt` and receive the SAME stamp — exactly the collision the stamp
+ * exists to prevent, and enough for a stale generation-fenced abort/delete to match the
+ * replacement. Writing here makes the second caller observe the first's reservation.
+ * ARGV[1] is the caller's wall clock.
  */
 const JOB_STAMP_LUA =
   'local prev = redis.call("HGET", KEYS[1], "createdAt") ' +
   'local now = tonumber(ARGV[1]) ' +
-  'if prev and tonumber(prev) and tonumber(prev) >= now then return tonumber(prev) + 1 end ' +
-  'return now';
+  'local stamp = now ' +
+  'if prev and tonumber(prev) and tonumber(prev) >= now then stamp = tonumber(prev) + 1 end ' +
+  'redis.call("HSET", KEYS[1], "createdAt", stamp) ' +
+  'return stamp';
 
 const STEER_DRAIN_LUA =
   'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {} end ' +
