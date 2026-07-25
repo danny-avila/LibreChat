@@ -8,6 +8,10 @@ const mockGetMCPManager = jest.fn();
 const mockGetFlowStateManager = jest.fn();
 const mockGetMCPServersRegistry = jest.fn();
 
+jest.mock('~/server/services/Schedules', () => ({
+  quiesceUserSchedules: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), info: jest.fn(), warn: jest.fn() },
   getTenantId: jest.fn(),

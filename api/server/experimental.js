@@ -10,17 +10,15 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
   apiNotFound,
   ErrorController,
-  GenerationJobManager,
   QUERY_DEVTOOLS_HEADER,
   performStartupChecks,
   handleJsonParseError,
-  deleteAgentCheckpoint,
   initializeFileStorage,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
@@ -41,6 +39,7 @@ const {
   sweepOrphanedPreviews,
 } = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
+const { configureGenerationStreams } = require('@librechat/api');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const createSpaFallback = require('./utils/fallback');
@@ -253,6 +252,24 @@ if (cluster.isMaster) {
   let shouldStartExpiredFileSweep = false;
   let expiredFileSweepOptions = null;
   let expiredFileSweepStarted = false;
+  let schedulesReady = false;
+  const SCHEDULE_WRITE_READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+  /**
+   * Refuse schedule WRITES in this clustered entrypoint. v1 supports single-process
+   * scheduling only, and this process never arms the engine, so accepting a create or
+   * run-now here would persist a schedule nothing will ever fire. Reads stay open so an
+   * operator can still inspect existing schedules.
+   */
+  const rejectScheduleWritesUntilReady = (req, res, next) => {
+    if (schedulesReady || SCHEDULE_WRITE_READ_ONLY_METHODS.has(req.method)) {
+      return next();
+    }
+    return res.status(501).json({
+      code: 'SCHEDULES_NOT_SUPPORTED',
+      error: 'Scheduled chats are not available in clustered mode.',
+    });
+  };
 
   const startExpiredFileSweepOnce = () => {
     if (!shouldStartExpiredFileSweep || expiredFileSweepStarted || !expiredFileSweepOptions) {
@@ -313,22 +330,13 @@ if (cluster.isMaster) {
     await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
       basePath: path.resolve(__dirname, '../..'),
     });
-    // Prune the paused run's durable checkpoint when its approval EXPIRES (a stale submit —
-    // this startup never runs the periodic sweeper) instead of leaving it until the Mongo
-    // TTL. Mirrors api/server/index.js's configureGenerationStreams wiring; safe here even
-    // though this startup runs the manager on constructor defaults (the setter never resets
-    // services). streamId === conversationId === the LangGraph thread_id.
-    GenerationJobManager.setApprovalExpiredHandler(async (conversationId, job) => {
-      // Resolve config in the PAUSED JOB's tenant/user scope (mirrors index.js): enter the
-      // tenant ALS context — getAppConfig args alone only key the cache.
-      await tenantStorage.run({ tenantId: job?.tenantId, userId: job?.userId }, async () => {
-        const currentConfig = await getAppConfig({
-          userId: job?.userId,
-          tenantId: job?.tenantId,
-        });
-        await deleteAgentCheckpoint(conversationId, currentConfig?.endpoints?.agents?.checkpointer);
-      });
-    });
+    // Configure + initialize the generation stream services. This worker previously
+    // only set the approval-expiry handler and NEVER called configure()/initialize(),
+    // so every worker silently ran on the unconfigured default (private in-memory)
+    // store even with USE_REDIS_STREAMS — making the multiworker scheduler private,
+    // so cross-worker aborts and orphan recovery could not work. Shared with
+    // api/server/index.js so both topologies initialize identically.
+    configureGenerationStreams({ getAppConfig });
     expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
     startExpiredFileSweepOnce();
     await performStartupChecks(appConfig);
@@ -454,6 +462,7 @@ if (cluster.isMaster) {
     app.use('/api/agents', routes.agents);
     app.use('/api/banner', routes.banner);
     app.use('/api/memories', routes.memories);
+    app.use('/api/schedules', rejectScheduleWritesUntilReady, routes.schedules);
     app.use('/api/permissions', routes.accessPermissions);
     app.use('/api/tags', routes.tags);
     app.use('/api/mcp', routes.mcp);
@@ -492,6 +501,11 @@ if (cluster.isMaster) {
         await initializeMCPs();
         await initializeOAuthReconnectManager();
         await checkMigrations();
+        // v1 scope: scheduled chats are SINGLE-PROCESS only, so this clustered
+        // entrypoint deliberately does not arm the scheduler. Running it per worker
+        // needs cross-worker abort + orphan recovery over a shared stream store, which
+        // is a fast-follow. schedulesReady stays false, so schedule writes are refused
+        // here rather than silently accepted by a process that will never fire them.
       } catch (initErr) {
         logger.error(`Worker ${process.pid} post-listen initialization failed:`, initErr);
         process.exit(1);

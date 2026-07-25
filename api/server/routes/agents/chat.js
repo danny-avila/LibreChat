@@ -71,6 +71,10 @@ const restoreResumeContext = async (req, res, next) => {
   next();
 };
 
+// `req._isScheduledFire` is captured earlier, on the parent chatRouter (before
+// configMiddleware and the interactive limiters), so it's already set here and the
+// controller reads it. Re-capturing at this later point would risk overwriting the
+// good early decision with a stale re-verify once the short-lived token expired.
 router.use(restoreResumeContext);
 router.use(createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }));
 router.use(moderateText);

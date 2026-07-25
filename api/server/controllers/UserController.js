@@ -24,6 +24,8 @@ const { verifyEmail, resendVerificationEmail } = require('~/server/services/Auth
 const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
 const { processDeleteRequest } = require('~/server/services/Files/process');
+const { quiesceUserSchedules } = require('~/server/services/Schedules');
+const { markUserDeleting } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
@@ -343,6 +345,52 @@ const deleteUserController = async (req, res) => {
       }
     }
 
+    // Quiesce scheduled chats FIRST: mark all the user's schedules non-claimable
+    // (so the engine can't fire a new occurrence mid-cascade) and abort any
+    // in-flight loopback runs, so a scheduled generation can't persist messages
+    // after the messages/conversations below are deleted. Best-effort — a failure
+    // here must not block account deletion (deleteSchedulesByUser still erases rows).
+    // BARRIER FIRST, before anything slow. Quiescing takes time, and the whole drain
+    // window has to already be refusing new work: a one-shot disable scan cannot close
+    // the create race (a schedule created after the scan simply is not in it), so every
+    // scheduling admission consults this durable user-level flag instead. Raising it
+    // also invalidates the auth user-doc cache, without which the barrier would only be
+    // as strong as the shortest cache TTL.
+    let barrierRaised = true;
+    try {
+      await markUserDeleting(user.id);
+    } catch (error) {
+      barrierRaised = false;
+      logger.error('[deleteUserController] Failed to raise the deletion barrier', error);
+    }
+    if (!barrierRaised) {
+      // FAIL CLOSED. Without the barrier we cannot promise that admission is refused for
+      // the rest of the cascade, so destroying now could let concurrently-created work
+      // outlive the account. Refuse rather than proceed on an unenforced guarantee.
+      return res.status(503).json({
+        message: 'Could not start account deletion. Please retry.',
+      });
+    }
+
+    const quiesced = await quiesceUserSchedules(user.id).catch((error) => {
+      logger.error('[deleteUserController] Failed to quiesce scheduled chats', error);
+      return false;
+    });
+    if (!quiesced) {
+      // DEFER rather than destroy on an unconfirmed drain. A scheduled generation that
+      // could not be confirmed settled may still persist messages, and deleting now
+      // would let it resurrect data for a deleted account. The barrier is durable and
+      // stays up, so nothing new accumulates; `getUsersPendingDeletion` makes this a
+      // resumable work list for a later pass to finish.
+      logger.warn(
+        `[deleteUserController] Deferring destructive deletion for ${user.id}: scheduled runs ` +
+          'did not confirm settlement. The deletion barrier remains in place.',
+      );
+      return res.status(202).json({
+        message: 'Account deletion started; in-flight work is still settling.',
+      });
+    }
+
     await db.deleteMessages({ user: user.id });
     await db.deleteAllUserSessions({ userId: user.id });
     await db.deleteTransactions({ user: user.id });
@@ -380,6 +428,7 @@ const deleteUserController = async (req, res) => {
     await db.deleteAllUserMemories(user.id);
     await db.deleteUserPrompts(user.id);
     await db.deleteUserSkills(user.id);
+    await db.deleteSchedulesByUser(user.id);
     await deleteUserMcpServers(user.id);
     await db.deleteActions({ user: user.id });
     await db.deleteTokens({ userId: user.id });

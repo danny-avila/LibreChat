@@ -112,6 +112,7 @@ jest.mock('@librechat/api', () => ({
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   sanitizeMessageForTransmit: jest.fn((message) => message),
   checkAndIncrementPendingRequest: (...args) => mockCheckAndIncrementPendingRequest(...args),
+  isScheduleFireRequest: jest.fn(() => false),
   isUnpersistedPreliminaryParent: async ({
     userId,
     conversationId,
@@ -146,6 +147,10 @@ jest.mock('~/server/middleware', () => ({
 
 jest.mock('~/cache', () => ({
   logViolation: jest.fn(),
+}));
+
+jest.mock('~/server/services/Schedules', () => ({
+  recordScheduleOutcome: jest.fn(() => Promise.resolve()),
 }));
 
 jest.mock('~/models', () => ({
@@ -779,6 +784,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
       expect.any(String),
+      { preserveForReconcile: false },
     );
     expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith('user-123', 'req-abc');
     // completeJob must finalize the failed job BEFORE the claim is released, or a racing

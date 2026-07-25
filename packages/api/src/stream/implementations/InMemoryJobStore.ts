@@ -18,6 +18,7 @@ import {
   isPendingActionStale,
 } from '~/stream/interfaces/IJobStore';
 import { toPendingSteer } from '~/stream/SteeringLifecycle';
+import { nextGenerationStamp } from '../generationStamp';
 
 /** Recovery window for parked steers (mirrors Redis's completed-job TTL). */
 export const PARKED_STEERS_TTL_MS: number = 5 * 60 * 1000;
@@ -130,7 +131,11 @@ export class InMemoryJobStore implements IJobStore {
       userId,
       ...(tenantId && { tenantId }),
       status: 'running',
-      createdAt: Date.now(),
+      // STRICTLY monotonic per streamId. createdAt is the generation fence, and a
+      // streamId is deliberately reused across generations, so two createJob calls
+      // landing in the same millisecond would otherwise mint identical tokens and let
+      // a stale caller's guard pass against the replacement.
+      createdAt: nextGenerationStamp(this.jobs.get(streamId)?.createdAt),
       conversationId,
       syncSent: false,
     };
@@ -217,13 +222,21 @@ export class InMemoryJobStore implements IJobStore {
     this.idempotencyClaims.delete(key);
   }
 
-  async deleteJob(streamId: string): Promise<void> {
+  async deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean> {
+    // Generation-fenced: an omitted guard behaves exactly as before. Read-check-write
+    // in one synchronous block, so no replacement can land in between.
+    // Guard BEFORE any teardown: a refused delete must leave the replacement
+    // generation's state completely untouched.
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return false;
+    }
     this.jobs.delete(streamId);
     this.contentState.delete(streamId);
     this.lastActivity.delete(streamId);
     this.steerQueues.delete(streamId);
     this.closedSteerQueues.delete(streamId);
     logger.debug(`[InMemoryJobStore] Deleted job: ${streamId}`);
+    return true;
   }
 
   /**
@@ -287,12 +300,19 @@ export class InMemoryJobStore implements IJobStore {
         // deleting the job would silently drop them otherwise.
         this.parkQueuedSteers(streamId, job, now);
         job.status = 'aborted';
-        job.completedAt = now;
         job.error = 'Approval expired before a decision was made';
         delete job.pendingAction;
         delete job.pendingActionId;
-        if (this.ttlAfterComplete === 0) {
-          toDelete.push(streamId);
+        if (job.scheduleId) {
+          // Scheduled fire: retain the aborted job WITHOUT completedAt so the
+          // schedules reconciler can observe it and settle the requires_action run
+          // promptly (it deletes the job afterward), instead of the run waiting out
+          // the 25-hour abandonment window once this terminal job is reaped here.
+        } else {
+          job.completedAt = now;
+          if (this.ttlAfterComplete === 0) {
+            toDelete.push(streamId);
+          }
         }
       } else if (this.staleJobTimeout > 0 && job.status === 'running') {
         // Failsafe: reap jobs stuck in "running" with no generation activity for

@@ -20,6 +20,7 @@ import {
 } from '~/stream/interfaces/IJobStore';
 import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
 import { toPendingSteer } from '~/stream/SteeringLifecycle';
+import { nextGenerationStamp } from '../generationStamp';
 
 /**
  * Atomic compare-and-set on the job hash — the single-winner decision for a
@@ -183,6 +184,29 @@ const STEER_ENQUEUE_LUA =
  *   ARGV: [expectedCreatedAt or ""]
  *   Returns: array of item JSON strings (possibly empty)
  */
+/**
+ * Generation-fenced job delete. All four keys share the `{streamId}` hash tag, so this
+ * is a single-slot atomic operation on Cluster. An empty ARGV[1] means "no guard" and
+ * behaves exactly like the previous unconditional delete. Returns 1 when it fired.
+ */
+const JOB_DELETE_LUA =
+  'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+  'redis.call("DEL", KEYS[1]) redis.call("DEL", KEYS[2]) ' +
+  'redis.call("DEL", KEYS[3]) redis.call("DEL", KEYS[4]) ' +
+  'return 1';
+
+/**
+ * Allocates a STRICTLY monotonic generation stamp for a stream, atomically. Reading the
+ * prior createdAt in TS and computing the next value in the client is a race: two
+ * concurrent creates observe the same prior and mint the same stamp, which is exactly
+ * the collision the stamp exists to prevent. ARGV[1] is the caller's wall clock.
+ */
+const JOB_STAMP_LUA =
+  'local prev = redis.call("HGET", KEYS[1], "createdAt") ' +
+  'local now = tonumber(ARGV[1]) ' +
+  'if prev and tonumber(prev) and tonumber(prev) >= now then return tonumber(prev) + 1 end ' +
+  'return now';
+
 const STEER_DRAIN_LUA =
   'if ARGV[1] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return {} end ' +
   'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
@@ -431,12 +455,18 @@ export class RedisJobStore implements IJobStore {
     conversationId?: string,
     tenantId?: string,
   ): Promise<SerializableJobData> {
+    // STRICTLY monotonic per streamId, allocated ATOMICALLY inside Redis: createdAt is
+    // the generation fence and a streamId is reused across generations, so a read-then-
+    // compute in the client would let two concurrent creates mint the same stamp.
+    const allocated = await this.redis
+      .eval(JOB_STAMP_LUA, 1, KEYS.job(streamId), String(Date.now()))
+      .catch(() => null);
     const job: SerializableJobData = {
       streamId,
       userId,
       ...(tenantId && { tenantId }),
       status: 'running',
-      createdAt: Date.now(),
+      createdAt: typeof allocated === 'number' ? allocated : nextGenerationStamp(),
       conversationId,
       syncSent: false,
     };
@@ -468,6 +498,12 @@ export class RedisJobStore implements IJobStore {
       // A replacement must start with an open steer channel — the closed flag
       // belongs to the finalized run this hash is being reused from.
       'steersClosed',
+      // updateMetadata only writes these for a verified scheduled fire, so a
+      // reused hash from a prior scheduled run would otherwise leak its schedule
+      // identity onto a later normal turn — whose pause/resume would then record
+      // a bogus success/error against the old schedule occurrence.
+      'scheduleId',
+      'scheduledFor',
     ];
 
     // For cluster mode, we can't pipeline keys on different slots
@@ -539,7 +575,10 @@ export class RedisJobStore implements IJobStore {
     }
 
     if (updates.status && ['complete', 'error', 'aborted'].includes(updates.status)) {
-      await this.applyTerminalContentCleanup(streamId);
+      // A terminal write WITHOUT completedAt is the preserveForReconcile signal
+      // (see GenerationJobManager.completeJob/abortJob) — retain the job hash on
+      // the longer running TTL so reconcile can still observe it.
+      await this.applyTerminalContentCleanup(streamId, updates.completedAt == null);
     }
   }
 
@@ -551,14 +590,19 @@ export class RedisJobStore implements IJobStore {
    * the configured after-complete TTLs. Without sharing this, an expired
    * approval left Redis stream contents around for the full running TTL.
    */
-  private async applyTerminalContentCleanup(streamId: string): Promise<void> {
+  private async applyTerminalContentCleanup(streamId: string, preserve = false): Promise<void> {
     const key = KEYS.job(streamId);
+    // A preserved terminal job (kept WITHOUT completedAt for reconciliation) must
+    // outlive the short completed TTL, or the retained evidence expires before the
+    // scheduler's reconcile window; use the longer running TTL. The reconciler
+    // deletes it after finalizing, so this is a bounded upper limit, not a leak.
+    const jobKeyTtl = preserve ? this.ttl.running : this.ttl.completed;
     // Proactively remove from user's job set (requires reading userId from the job hash)
     const job = await this.getJob(streamId);
     const userJobsKey = job?.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
 
     if (this.isCluster) {
-      await this.redis.expire(key, this.ttl.completed);
+      await this.redis.expire(key, jobKeyTtl);
       await this.redis.srem(KEYS.runningJobs, streamId);
       await this.redis.srem(KEYS.requiresActionJobs, streamId);
       await this.redis.del(KEYS.steers(streamId));
@@ -580,7 +624,7 @@ export class RedisJobStore implements IJobStore {
       }
     } else {
       const pipeline = this.redis.pipeline();
-      pipeline.expire(key, this.ttl.completed);
+      pipeline.expire(key, jobKeyTtl);
       pipeline.srem(KEYS.runningJobs, streamId);
       pipeline.srem(KEYS.requiresActionJobs, streamId);
       pipeline.del(KEYS.steers(streamId));
@@ -648,7 +692,12 @@ export class RedisJobStore implements IJobStore {
     const remSet = this.statusSetKey(from);
     const addSet = this.statusSetKey(to);
     const terminal = addSet === null;
-    let ttl = terminal ? this.ttl.completed : this.ttl.running;
+    // A terminal transition WITHOUT completedAt is the preserveForReconcile signal
+    // (mirrors updateJob): keep it on the longer running TTL and skip the
+    // completed-sweep, so an out-of-band reconciler can still observe it (e.g. a
+    // scheduled fire's expired approval settled promptly instead of after 25 h).
+    const preserveTerminal = terminal && patch?.completedAt == null;
+    let ttl = terminal && !preserveTerminal ? this.ttl.completed : this.ttl.running;
     if (to === 'requires_action') {
       // A paused job must outlive its approval window, even when that window is
       // longer than the running TTL — otherwise Redis evicts it before a
@@ -680,7 +729,7 @@ export class RedisJobStore implements IJobStore {
     //    safe. A terminal target (e.g. approval expiry → aborted) gets the same
     //    content cleanup as updateJob's terminal path.
     if (terminal) {
-      await this.applyTerminalContentCleanup(streamId);
+      await this.applyTerminalContentCleanup(streamId, preserveTerminal);
       return true;
     }
     if (this.isCluster) {
@@ -749,27 +798,47 @@ export class RedisJobStore implements IJobStore {
     return updated === 1;
   }
 
-  async deleteJob(streamId: string): Promise<void> {
-    this.localGraphCache.delete(streamId);
-    this.localContentParts.delete(streamId);
-    this.localCollectedUsageCache.delete(streamId);
+  async deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean> {
+    // Local caches are dropped only AFTER the guarded delete fires (see
+    // deleteJobInternal): clearing them up front would wipe the REPLACEMENT
+    // generation's cached graph/content when the guard refuses this delete.
     const job = await this.getJob(streamId);
+    // Cheap pre-check so a mismatched generation costs no round trip; the Lua guard
+    // below is what actually makes it atomic.
+    if (expectedCreatedAt != null && job?.createdAt !== expectedCreatedAt) {
+      return false;
+    }
     const userJobsKey = job?.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
-    return this.deleteJobInternal(streamId, userJobsKey);
+    return this.deleteJobInternal(streamId, userJobsKey, expectedCreatedAt);
   }
 
-  private async deleteJobInternal(streamId: string, userJobsKey: string | null): Promise<void> {
+  private async deleteJobInternal(
+    streamId: string,
+    userJobsKey: string | null,
+    expectedCreatedAt?: number,
+  ): Promise<boolean> {
+    // The four per-stream keys share the {streamId} hash tag, so the guarded delete is
+    // one atomic single-slot script (safe on Cluster). The three SREMs are cross-slot
+    // and stay OUTSIDE the script, running only when the script actually deleted —
+    // the same atomic-decision-then-best-effort-reconcile split transitionStatus uses.
+    const deleted = await this.redis.eval(
+      JOB_DELETE_LUA,
+      4,
+      KEYS.job(streamId),
+      KEYS.chunks(streamId),
+      KEYS.runSteps(streamId),
+      KEYS.steers(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+    );
+    if (deleted !== 1) {
+      logger.debug(`[RedisJobStore] Delete skipped (generation mismatch): ${streamId}`);
+      return false;
+    }
+    // Safe now: this delete owned the generation.
     this.localGraphCache.delete(streamId);
     this.localContentParts.delete(streamId);
     this.localCollectedUsageCache.delete(streamId);
-
     if (this.isCluster) {
-      const pipeline = this.redis.pipeline();
-      pipeline.del(KEYS.job(streamId));
-      pipeline.del(KEYS.chunks(streamId));
-      pipeline.del(KEYS.runSteps(streamId));
-      pipeline.del(KEYS.steers(streamId));
-      await pipeline.exec();
       await this.redis.srem(KEYS.runningJobs, streamId);
       await this.redis.srem(KEYS.requiresActionJobs, streamId);
       if (userJobsKey) {
@@ -777,10 +846,6 @@ export class RedisJobStore implements IJobStore {
       }
     } else {
       const pipeline = this.redis.pipeline();
-      pipeline.del(KEYS.job(streamId));
-      pipeline.del(KEYS.chunks(streamId));
-      pipeline.del(KEYS.runSteps(streamId));
-      pipeline.del(KEYS.steers(streamId));
       pipeline.srem(KEYS.runningJobs, streamId);
       pipeline.srem(KEYS.requiresActionJobs, streamId);
       if (userJobsKey) {
@@ -789,6 +854,7 @@ export class RedisJobStore implements IJobStore {
       await pipeline.exec();
     }
     logger.debug(`[RedisJobStore] Deleted job: ${streamId}`);
+    return true;
   }
 
   async hasJob(streamId: string): Promise<boolean> {
@@ -950,7 +1016,11 @@ export class RedisJobStore implements IJobStore {
               clear: ['pendingAction', 'pendingActionId'],
               patch: {
                 error: 'Approval expired before a decision was made',
-                completedAt: Date.now(),
+                // Scheduled fires: omit completedAt so the aborted job is preserved
+                // (running TTL, no completed-sweep) and the schedules reconciler can
+                // read jobStatus === 'aborted' and settle the requires_action run
+                // promptly, instead of it waiting the 25-h abandoned-pause cutoff.
+                ...(job.scheduleId ? {} : { completedAt: Date.now() }),
               },
               // Scope the CAS to the action we observed as stale: if the user resolved it
               // and the run re-paused on a fresh action between the read and here, the
@@ -1797,6 +1867,9 @@ export class RedisJobStore implements IJobStore {
       promptTokens: data.promptTokens ? parseInt(data.promptTokens, 10) : undefined,
       agent_id: data.agent_id || undefined,
       isTemporary: data.isTemporary != null ? data.isTemporary === '1' : undefined,
+      // Scheduled-fire bookkeeping so a Redis-backed HITL resume can record outcome.
+      scheduleId: data.scheduleId || undefined,
+      scheduledFor: data.scheduledFor || undefined,
       // Deferred tools discovered before a HITL pause; replayed into createRun on resume.
       discoveredTools: data.discoveredTools ? JSON.parse(data.discoveredTools) : undefined,
       titleEvent: data.titleEvent || undefined,

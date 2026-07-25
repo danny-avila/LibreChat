@@ -536,6 +536,8 @@ class GenerationJobManagerClass {
         conversationId: jobData.conversationId,
         userMessage: jobData.userMessage,
         responseMessageId: jobData.responseMessageId,
+        scheduleId: jobData.scheduleId,
+        scheduledFor: jobData.scheduledFor,
         sender: jobData.sender,
         endpoint: jobData.endpoint,
         iconURL: jobData.iconURL,
@@ -743,8 +745,18 @@ class GenerationJobManagerClass {
    * Note: eventTransport is NOT cleaned up here to allow the final event to be
    * fully transmitted. It will be cleaned up when subscribers disconnect or
    * by the periodic cleanup job.
+   *
+   * `preserveForReconcile` retains the completed job record (as `complete`, WITHOUT
+   * `completedAt`) instead of deleting it, so an out-of-band reconciler can still
+   * observe the completion after an inline finalize hook failed transiently. The
+   * `completedAt` omission keeps the 0-TTL sweep from reaping it before the
+   * reconciler's own min-age window; the job store's LRU bound caps accumulation.
    */
-  async completeJob(streamId: string, error?: string): Promise<void> {
+  async completeJob(
+    streamId: string,
+    error?: string,
+    options?: { preserveForReconcile?: boolean },
+  ): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
 
     // Abort the controller to signal all pending operations (e.g., OAuth flow monitors)
@@ -793,7 +805,11 @@ class GenerationJobManagerClass {
     if (error) {
       await this.jobStore.updateJob(streamId, {
         status: 'error',
-        completedAt: Date.now(),
+        // preserveForReconcile: omit completedAt so the finished-job sweep can't
+        // reap this error job before an out-of-band reconciler observes it (an
+        // error job otherwise lives only to the next ~60s cleanup, inside the
+        // reconciler's min-age window). The reconciler deletes it after finalizing.
+        ...(options?.preserveForReconcile ? {} : { completedAt: Date.now() }),
         error,
       });
       this.runningJobs.delete(streamId);
@@ -807,11 +823,16 @@ class GenerationJobManagerClass {
     }
 
     // Immediate cleanup if configured (default: true) - only for successful completions
-    if (this._cleanupOnComplete) {
+    if (this._cleanupOnComplete && !options?.preserveForReconcile) {
       this.runtimeState.delete(streamId);
       // Don't cleanup eventTransport here - let the done event fully transmit first.
       // EventTransport will be cleaned up when subscribers disconnect or by periodic cleanup.
       await this.jobStore.deleteJob(streamId);
+    } else if (options?.preserveForReconcile) {
+      // Retain WITHOUT completedAt so the finished-job sweep (which reaps by
+      // completedAt) can't remove it before an out-of-band reconciler observes
+      // the completion.
+      await this.jobStore.updateJob(streamId, { status: 'complete' });
     } else {
       // Only update status if keeping the job around
       await this.jobStore.updateJob(streamId, {
@@ -844,6 +865,12 @@ class GenerationJobManagerClass {
     streamId: string,
     options?: {
       transformAbortContent?: (content: TMessageContentParts[]) => TMessageContentParts[];
+      /**
+       * Retain the aborted job record (as `aborted`, WITHOUT `completedAt`) instead
+       * of deleting it, so a scheduled-fire reconciler whose inline outcome write
+       * failed can still observe the abort. The reconciler deletes it afterward.
+       */
+      preserveForReconcile?: boolean;
     },
   ): Promise<AbortResult> {
     const jobData = await this.jobStore.getJob(streamId);
@@ -967,10 +994,14 @@ class GenerationJobManagerClass {
     this.tokenUsageWriteQueues.delete(streamId);
 
     // Immediate cleanup if configured (default: true)
-    if (this._cleanupOnComplete) {
+    if (this._cleanupOnComplete && !options?.preserveForReconcile) {
       this.runtimeState.delete(streamId);
       // Don't cleanup eventTransport here - let the abort event fully transmit first.
       await this.jobStore.deleteJob(streamId);
+    } else if (options?.preserveForReconcile) {
+      // Retain WITHOUT completedAt so the finished-job sweep can't reap it before
+      // the schedules reconciler observes the abort; the reconciler deletes it.
+      await this.jobStore.updateJob(streamId, { status: 'aborted' });
     } else {
       // Only update status if keeping the job around
       await this.jobStore.updateJob(streamId, {
@@ -1672,6 +1703,12 @@ class GenerationJobManagerClass {
     }
     if (metadata.isTemporary !== undefined) {
       updates.isTemporary = metadata.isTemporary;
+    }
+    if (metadata.scheduleId) {
+      updates.scheduleId = metadata.scheduleId;
+    }
+    if (metadata.scheduledFor) {
+      updates.scheduledFor = metadata.scheduledFor;
     }
     if (metadata.promptTokens !== undefined) {
       updates.promptTokens = metadata.promptTokens;

@@ -1,6 +1,7 @@
 import {
   BASE_ONLY_CONFIG_SECTIONS,
   INTERFACE_PERMISSION_FIELDS,
+  RUNTIME_CONFIG_INTERFACE_FIELDS,
   PERMISSION_SUB_KEYS,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
@@ -171,6 +172,30 @@ function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0,
         depth,
         currentPath,
       );
+    } else if (
+      typeof sourceVal === 'boolean' &&
+      targetVal != null &&
+      typeof targetVal === 'object' &&
+      !Array.isArray(targetVal) &&
+      RUNTIME_CONFIG_INTERFACE_FIELDS.has(key)
+    ) {
+      // A runtime-config interface field (e.g. schedules) toggled by a boolean
+      // override is a runtime enable/disable, not a replacement of its config. Fold
+      // the boolean into the `use` flag so inherited object-form limits (maxPerUser,
+      // minIntervalMinutes, ...) survive instead of collapsing to global defaults.
+      result[key] = { ...(targetVal as AnyObject), use: sourceVal };
+    } else if (
+      typeof targetVal === 'boolean' &&
+      sourceVal != null &&
+      typeof sourceVal === 'object' &&
+      !Array.isArray(sourceVal) &&
+      RUNTIME_CONFIG_INTERFACE_FIELDS.has(key)
+    ) {
+      // Symmetric case: an OBJECT override (e.g. tuning maxPerUser) on top of a
+      // BOOLEAN base must inherit the base's enable state unless it sets `use`
+      // explicitly — otherwise setting a limit on a globally-disabled feature
+      // (`schedules: false`) would silently re-enable it.
+      result[key] = { use: targetVal, ...(sourceVal as AnyObject) };
     } else {
       result[key] = sourceVal;
     }
@@ -234,8 +259,12 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
               if (Object.keys(uiOnly).length > 0) {
                 filtered[field] = uiOnly;
               }
+            } else if (RUNTIME_CONFIG_INTERFACE_FIELDS.has(field)) {
+              // Dual-purpose field: the boolean form is a runtime disable, not a
+              // permission toggle, so preserve it (e.g. schedules: false).
+              filtered[field] = fieldVal;
             }
-            // boolean permission fields (e.g. runCode: false) are fully stripped
+            // other boolean permission fields (e.g. runCode: false) are fully stripped
           }
           if (Object.keys(filtered).length > 0) {
             remapped[mappedKey] = filtered;

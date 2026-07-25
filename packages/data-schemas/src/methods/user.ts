@@ -116,6 +116,13 @@ export function createUserMethods(
   getUserById: (userId: string, fieldsToSelect?: string | string[] | null) => Promise<IUser | null>;
   generateToken: (user: IUser, expiresIn?: number) => Promise<string>;
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
+  /** Raises the one-way account-deletion barrier (monotonic) and invalidates the
+   *  auth user-doc cache. Returns the effective timestamp. */
+  markUserDeleting: (userId: string) => Promise<Date | null>;
+  /** Whether deletion has begun for this user. Fail-closed: unknown means true. */
+  isUserDeleting: (userId: string) => Promise<boolean>;
+  /** Users whose barrier is up but whose document still exists (unfinished cascades). */
+  getUsersPendingDeletion: (limit: number) => Promise<IUser[]>;
   updateUserPlugins: (
     userId: string,
     plugins: string[] | undefined,
@@ -292,6 +299,65 @@ export function createUserMethods(
     } catch {
       // Cache invalidation must not make a user update fail.
     }
+  }
+
+  /**
+   * Raises the durable account-deletion barrier. ONE-WAY and monotonic: the timestamp
+   * is stamped only when absent, so a repeated or concurrent deletion request never
+   * moves it and there is no un-delete race. Returns the effective timestamp.
+   *
+   * Must be called BEFORE quiescing anything: quiescing is the slow part, and the
+   * whole drain window has to already be refusing new work. The auth user-doc cache is
+   * invalidated here because the barrier is only as strong as the shortest cache TTL —
+   * a request holding a stale user document would otherwise sail straight past it.
+   */
+  async function markUserDeleting(userId: string): Promise<Date | null> {
+    const User = mongoose.models.User;
+    const updated = await User.findOneAndUpdate(
+      { _id: userId, deletionRequestedAt: { $exists: false } },
+      { $set: { deletionRequestedAt: new Date() } },
+      { new: true },
+    ).lean<IUser>();
+    await invalidateAuthUserDocCache(userId);
+    if (updated?.deletionRequestedAt != null) {
+      return updated.deletionRequestedAt;
+    }
+    // Already raised by a prior/concurrent request: report the existing timestamp
+    // rather than overwriting it, so the barrier stays monotonic.
+    const existing = await User.findById(userId)
+      .select('deletionRequestedAt')
+      .lean<Pick<IUser, 'deletionRequestedAt'>>();
+    return existing?.deletionRequestedAt ?? null;
+  }
+
+  /**
+   * Whether this user's account deletion has begun. FAIL-CLOSED: a lookup failure or a
+   * missing user reports `true`, because refusing work for a live user is recoverable
+   * (the caller retries) while admitting work for a deleting one is not.
+   */
+  async function isUserDeleting(userId: string): Promise<boolean> {
+    const User = mongoose.models.User;
+    try {
+      const user = await User.findById(userId)
+        .select('deletionRequestedAt')
+        .lean<Pick<IUser, 'deletionRequestedAt'>>();
+      return user == null || user.deletionRequestedAt != null;
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * Users whose deletion barrier is up but whose document still exists, i.e. cascades
+   * that never finished (deferred on an unconfirmed quiesce, or crashed part-way).
+   * Makes the destructive cascade a resumable work list instead of a one-shot.
+   */
+  async function getUsersPendingDeletion(limit: number): Promise<IUser[]> {
+    const User = mongoose.models.User;
+    return User.find({ deletionRequestedAt: { $exists: true } })
+      .sort({ deletionRequestedAt: 1 })
+      .limit(limit)
+      .lean<IUser[]>();
   }
 
   /**
@@ -588,6 +654,9 @@ export function createUserMethods(
     getUserById,
     generateToken,
     deleteUserById,
+    markUserDeleting,
+    isUserDeleting,
+    getUsersPendingDeletion,
     updateUserPlugins,
     toggleUserMemories,
   };

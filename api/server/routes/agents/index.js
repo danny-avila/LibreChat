@@ -10,6 +10,7 @@ const {
   deleteAgentCheckpoint,
   attachAskUserQuestionArgs,
   createMessageFilterPii,
+  isScheduleFireRequest,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -23,6 +24,7 @@ const {
   messageUserLimiter,
 } = require('~/server/middleware');
 const SteerController = require('~/server/controllers/agents/steer');
+const { recordScheduleOutcome } = require('~/server/services/Schedules');
 const { saveMessage } = require('~/models');
 const responses = require('./responses');
 const openai = require('./openai');
@@ -323,12 +325,28 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
     // chunk log, which never saw the pause-time stamp applied to the in-process
     // contentParts — stamping inside abortJob (not after) means the LIVE client
     // gets the question too, not just the saved message on reload.
+    // Finalize the schedule side of an aborted scheduled run (incl. a paused one)
+    // BEFORE abortJob deletes the job, so it doesn't linger as requires_action/
+    // started until the abandonment sweep. If the outcome write fails (Mongo down
+    // across its retries), preserve the aborted job below so reconcile finalizes it
+    // rather than waiting out the 30-min/25-h orphan sweeps.
+    let scheduleOutcomeRecorded = true;
+    if (job.metadata?.scheduleId) {
+      scheduleOutcomeRecorded = await recordScheduleOutcome({
+        scheduleId: job.metadata.scheduleId,
+        scheduledFor: job.metadata.scheduledFor,
+        status: 'interrupted',
+        conversationId: jobStreamId,
+      });
+    }
+
     const abortedAskPayload = job.metadata?.pendingAction?.payload;
     const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
       transformAbortContent: (content) =>
         abortedAskPayload?.type === 'ask_user_question' && Array.isArray(content)
           ? attachAskUserQuestionArgs(content, abortedAskPayload.question)
           : content,
+      preserveForReconcile: Boolean(job.metadata?.scheduleId) && !scheduleOutcomeRecorded,
     });
     logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
       abortResultSuccess: abortResult.success,
@@ -463,14 +481,36 @@ router.post(
 router.use('/', v1);
 
 const chatRouter = express.Router();
+// Verify the scheduled-fire token identity as EARLY as possible — right after the
+// global auth middleware, before configMiddleware, the interactive limiters, and
+// the slower chat chain can outlast the short-lived fire token. Everything
+// downstream (limiter exemption, the controller) reads this captured flag instead
+// of re-verifying a token that may have expired in-flight, which would otherwise
+// throttle/limit a legitimate fire and record schedule errors toward auto-disable.
+chatRouter.use((req, _res, next) => {
+  req._isScheduledFire = isScheduleFireRequest(req);
+  next();
+});
 chatRouter.use(configMiddleware);
 
+/**
+ * Scheduled fires are exempt from interactive message limiters (the token's
+ * scope claim is signature-verified): the scheduler's own caps govern them,
+ * and stacking both throttles would record legitimate fires as errors that
+ * walk schedules toward auto-disable. Reads the flag captured above so a token
+ * that expired during config/middleware still exempts a valid fire.
+ */
+const skipScheduledFires = (limiter) => (req, res, next) =>
+  (typeof req._isScheduledFire === 'boolean' ? req._isScheduledFire : isScheduleFireRequest(req))
+    ? next()
+    : limiter(req, res, next);
+
 if (isEnabled(LIMIT_MESSAGE_IP)) {
-  chatRouter.use(messageIpLimiter);
+  chatRouter.use(skipScheduledFires(messageIpLimiter));
 }
 
 if (isEnabled(LIMIT_MESSAGE_USER)) {
-  chatRouter.use(messageUserLimiter);
+  chatRouter.use(skipScheduledFires(messageUserLimiter));
 }
 
 chatRouter.use('/', chat);

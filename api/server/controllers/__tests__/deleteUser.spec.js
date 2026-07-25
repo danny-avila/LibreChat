@@ -42,7 +42,12 @@ jest.mock('@librechat/api', () => ({
   deleteAllSharedLinksWithCleanup: (...args) => mockDeleteAllSharedLinksWithCleanup(...args),
 }));
 
+jest.mock('~/server/services/Schedules', () => ({
+  quiesceUserSchedules: jest.fn().mockResolvedValue(true),
+}));
+
 jest.mock('~/models', () => ({
+  markUserDeleting: jest.fn().mockResolvedValue(new Date()),
   deleteAllUserSessions: (...args) => mockDeleteAllUserSessions(...args),
   deleteAllSharedLinks: (...args) => mockDeleteAllSharedLinks(...args),
   updateUserPlugins: (...args) => mockUpdateUserPlugins(...args),
@@ -60,6 +65,7 @@ jest.mock('~/models', () => ({
   deleteUserAgents: (...args) => mockDeleteUserAgents(...args),
   deleteUserPrompts: (...args) => mockDeleteUserPrompts(...args),
   deleteUserSkills: (...args) => mockDeleteUserSkills(...args),
+  deleteSchedulesByUser: jest.fn().mockResolvedValue(undefined),
   deleteTransactions: jest.fn(),
   deleteBalances: jest.fn(),
   deleteAllAgentApiKeys: jest.fn(),

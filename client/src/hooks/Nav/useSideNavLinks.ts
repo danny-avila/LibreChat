@@ -6,6 +6,7 @@ import {
   Bookmark,
   NotebookPen,
   ScrollText,
+  CalendarClock,
   ArrowRightToLine,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -29,6 +30,7 @@ import MCPBuilderPanel from '~/components/SidePanel/MCPBuilder/MCPBuilderPanel';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
 import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
+import { SchedulePanel } from '~/components/SidePanel/Schedules';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import { MemoryPanel } from '~/components/SidePanel/Memories';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
@@ -87,6 +89,10 @@ export default function useSideNavLinks({
   const hasAccessToCreateMCP = useHasAccess({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.CREATE,
+  });
+  const hasAccessToSchedules = useHasAccess({
+    permissionType: PermissionTypes.SCHEDULES,
+    permission: Permissions.USE,
   });
   const { availableMCPServers } = useMCPServerManager();
 
@@ -160,6 +166,28 @@ export default function useSideNavLinks({
       });
     }
 
+    // Hide the panel when schedules are disabled by EITHER the boolean form
+    // (`false`) or the runtime-config object form (`{ use: false, ... }`) — the
+    // server treats both as disabled, so the nav gate must match to avoid showing
+    // an entry whose create/run operations the backend rejects.
+    const schedulesConfig = interfaceConfig.schedules;
+    const schedulesEnabled =
+      schedulesConfig !== false &&
+      !(
+        typeof schedulesConfig === 'object' &&
+        schedulesConfig != null &&
+        schedulesConfig.use === false
+      );
+    if (hasAccessToSchedules && schedulesEnabled) {
+      links.push({
+        title: 'com_ui_schedules',
+        label: '',
+        icon: CalendarClock,
+        id: 'schedules',
+        Component: SchedulePanel,
+      });
+    }
+
     if (hasAccessToBookmarks) {
       links.push({
         title: 'com_sidepanel_conversation_tags',
@@ -228,6 +256,8 @@ export default function useSideNavLinks({
     skillsEnabled,
     hasAccessToMemories,
     hasAccessToReadMemories,
+    hasAccessToSchedules,
+    interfaceConfig.schedules,
     interfaceConfig.parameters,
     endpointType,
     hasAccessToBookmarks,

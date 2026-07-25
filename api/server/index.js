@@ -9,7 +9,7 @@ const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
-const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   isEnabled,
   apiNotFound,
@@ -18,10 +18,7 @@ const {
   memoryDiagnostics,
   performStartupChecks,
   handleJsonParseError,
-  GenerationJobManager,
   QUERY_DEVTOOLS_HEADER,
-  createStreamServices,
-  deleteAgentCheckpoint,
   initializeFileStorage,
   initializeDeploymentSkills,
   loadToolApprovalHooks,
@@ -42,6 +39,8 @@ const { capabilityContextMiddleware } = require('./middleware/roles/capabilities
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
+const { initializeScheduleEngine } = require('./services/Schedules');
+const { configureGenerationStreams: configureSharedGenerationStreams } = require('@librechat/api');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { checkMigrations } = require('./services/start/migration');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
@@ -62,9 +61,12 @@ const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default 
 
 const app = express();
 let serverReady = false;
+let schedulesReady = false;
 
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
+const SCHEDULES_NOT_READY_CODE = 'SCHEDULES_NOT_READY';
 const CHAT_START_RETRY_AFTER_SECONDS = '1';
+const READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 const rejectChatStartsUntilReady = (req, res, next) => {
   if (serverReady || req.method !== 'POST' || req.path === '/abort') {
@@ -78,26 +80,29 @@ const rejectChatStartsUntilReady = (req, res, next) => {
   });
 };
 
+/**
+ * Reject schedule WRITES until the engine (and thus its unique idempotency + TTL
+ * indexes) is up. With MONGO_AUTO_INDEX disabled those indexes are created only by
+ * initializeScheduleEngine, which runs after the server starts listening — so a
+ * create/run-now that lands in that window would persist without duplicate
+ * protection. Reads stay open; writers get a 503 + Retry-After.
+ */
+const rejectScheduleWritesUntilReady = (req, res, next) => {
+  if (schedulesReady || READ_ONLY_METHODS.has(req.method)) {
+    return next();
+  }
+
+  res.set('Retry-After', CHAT_START_RETRY_AFTER_SECONDS);
+  return res.status(503).json({
+    code: SCHEDULES_NOT_READY_CODE,
+    error: 'Scheduler is still starting. Please retry shortly.',
+  });
+};
+
 const configureGenerationStreams = () => {
-  const streamServices = createStreamServices();
-  GenerationJobManager.configure({
-    ...streamServices,
-    cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
-  });
-  GenerationJobManager.initialize();
-  // Prune the paused run's durable checkpoint when its approval EXPIRES (periodic sweeper
-  // or a stale submit) instead of leaving it until the Mongo TTL. streamId === conversationId
-  // === the LangGraph thread_id. Config is resolved lazily per expiry so the prune always
-  // targets the currently configured checkpoint collections.
-  GenerationJobManager.setApprovalExpiredHandler(async (conversationId, job) => {
-    // Resolve config in the PAUSED JOB's tenant/user scope — the expiry runs outside any
-    // request context. Passing ids to getAppConfig only keys the cache; the Config query
-    // itself is ALS-scoped by the tenant-isolation plugin, so ENTER the tenant context.
-    await tenantStorage.run({ tenantId: job?.tenantId, userId: job?.userId }, async () => {
-      const appConfig = await getAppConfig({ userId: job?.userId, tenantId: job?.tenantId });
-      await deleteAgentCheckpoint(conversationId, appConfig?.endpoints?.agents?.checkpointer);
-    });
-  });
+  // Shared with the clustered entrypoint (experimental.js) so both topologies get the
+  // same stream services; returns whether the resulting store is genuinely shared.
+  return configureSharedGenerationStreams({ getAppConfig });
 };
 
 const startServer = async () => {
@@ -294,6 +299,7 @@ const startServer = async () => {
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
   app.use('/api/memories', routes.memories);
+  app.use('/api/schedules', rejectScheduleWritesUntilReady, routes.schedules);
   app.use('/api/permissions', routes.accessPermissions);
 
   app.use('/api/tags', routes.tags);
@@ -351,6 +357,24 @@ const startServer = async () => {
         memoryDiagnostics.start();
       }
       serverReady = true;
+      // Arm the scheduler only after readiness: an earlier tick could fire
+      // loopback chats at a server that is not yet listening/accepting starts,
+      // recording spurious errors that could auto-disable valid schedules.
+      // Ensures indexes before the first tick; failures are logged, not fatal.
+      // v1 is single-process: this entrypoint owns the scheduler outright.
+      const scheduleEngine = await initializeScheduleEngine();
+      // Only accept schedule writes once the engine confirmed its unique idempotency
+      // + TTL indexes exist. If index creation failed the engine is left undefined and
+      // schedule writes keep returning 503 (the app otherwise runs normally).
+      // The engine refuses to arm on an unsafe clustered topology, so a null engine
+      // already means "not scheduling here"; the write gate follows it.
+      schedulesReady = scheduleEngine != null;
+      if (!schedulesReady) {
+        logger.warn(
+          '[schedules] engine not initialized (index creation failed) — schedule writes will ' +
+            'be rejected with 503 until an operator resolves the index and restarts.',
+        );
+      }
       logger.info('Server readiness checks passing.');
     } catch (initErr) {
       serverReady = false;

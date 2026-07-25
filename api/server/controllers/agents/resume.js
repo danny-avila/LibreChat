@@ -23,6 +23,7 @@ const {
   getMCPRequestContext,
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
+const { recordScheduleOutcome } = require('~/server/services/Schedules');
 const { saveMessage, getConvo, getMessages } = require('~/models');
 
 /**
@@ -392,10 +393,27 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
   };
 
   await GenerationJobManager.emitDone(streamId, finalEvent);
+  // Record the schedule outcome from the paused job's metadata BEFORE completeJob
+  // deletes the job: for a scheduled fire that paused for approval, this resume is
+  // the completion point, and the reconciler can't see it (the job record is gone).
+  // If the write fails (transient Mongo outage across its retries), preserve the
+  // completed job so reconcile finalizes success instead of the paused run being
+  // mislabeled interrupted once its job is gone.
+  let scheduleOutcomeRecorded = true;
+  if (meta.scheduleId) {
+    scheduleOutcomeRecorded = await recordScheduleOutcome({
+      scheduleId: meta.scheduleId,
+      scheduledFor: meta.scheduledFor,
+      status: 'success',
+      conversationId,
+    });
+  }
   // Awaited (not fire-and-forget) so the job's terminal write lands before the
   // checkpoint prune, and so a failure here doesn't race the controller's error path.
   try {
-    await GenerationJobManager.completeJob(streamId);
+    await GenerationJobManager.completeJob(streamId, undefined, {
+      preserveForReconcile: Boolean(meta.scheduleId) && !scheduleOutcomeRecorded,
+    });
   } catch (completeErr) {
     logger.error('[ResumeAgentController] Failed to complete resumed turn', completeErr);
   }
@@ -518,14 +536,17 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     return res.status(429).json({ error: 'Too many concurrent requests' });
   }
 
+  // v1 scope: the scheduler does NOT orchestrate resumes. A scheduled run that pauses
+  // for approval released its capacity slot on pause and is handed off — from here it is
+  // an ordinary paused conversation the user resumes through the chat UI. The scheduler
+  // only OBSERVES the eventual outcome below (so the schedule card reflects it); it does
+  // not reserve, lease, or fence this resume. Scheduled HITL orchestration is a
+  // fast-follow behind the experimental flag.
   // Atomically claim the resume. The single winner drives the run; a racing second
   // submit (double-click, two tabs) gets false and must not re-drive — that would
-  // re-execute tools and double-bill.
-  //
-  // The claim runs AFTER the slot increment above but BEFORE the run's own try/finally
-  // that releases it, so a store/Redis error here (unlike the clean `!claimed` branch)
-  // would leak the concurrency slot until the counter TTL expires — spuriously 429'ing
-  // the user when they retry the still-paused approval. Release the slot on that path too.
+  // re-execute tools and double-bill. Do NOT release the reservation on a lost claim:
+  // the claim winner drives the `started` run this (or the concurrent same-pause)
+  // request reserved, and an unreserved-but-promoted row is healed by the reconciler.
   let claimed;
   try {
     claimed = await GenerationJobManager.approvals.resolve(streamId, pendingAction.actionId);
@@ -678,6 +699,16 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       // resume) drops them, so an expiring re-pause doesn't lose them; finalize later
       // overwrites content and merges attachments onto the saved message.
       await persistRePauseProgress({ req, client, job, streamId, conversationId });
+      // Move the scheduled run back to `requires_action`: it paused again, so it
+      // should stop counting as active (started) for overlap/capacity.
+      if (job.metadata?.scheduleId) {
+        await recordScheduleOutcome({
+          scheduleId: job.metadata.scheduleId,
+          scheduledFor: job.metadata.scheduledFor,
+          status: 'requires_action',
+          conversationId,
+        });
+      }
       return;
     }
 
@@ -733,8 +764,25 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       } catch (emitErr) {
         logger.error('[ResumeAgentController] Failed to emit resume error', emitErr);
       }
+      // Record the schedule error now: for a scheduled fire that paused and
+      // then failed on resume, this is the terminal point, and the job is about
+      // to be deleted (the reconciler wouldn't see the error). If the write fails
+      // (Mongo down across its retries), preserve the completed job so reconcile
+      // records the failure instead of the run lingering to the abandonment sweep.
+      let scheduleOutcomeRecorded = true;
+      if (job.metadata?.scheduleId) {
+        scheduleOutcomeRecorded = await recordScheduleOutcome({
+          scheduleId: job.metadata.scheduleId,
+          scheduledFor: job.metadata.scheduledFor,
+          status: 'error',
+          conversationId: streamId,
+          error: err?.message ?? 'Resume failed',
+        });
+      }
       try {
-        await GenerationJobManager.completeJob(streamId, err?.message ?? 'Resume failed');
+        await GenerationJobManager.completeJob(streamId, err?.message ?? 'Resume failed', {
+          preserveForReconcile: Boolean(job.metadata?.scheduleId) && !scheduleOutcomeRecorded,
+        });
       } catch (completeErr) {
         logger.error('[ResumeAgentController] Failed to finalize failed resume', completeErr);
         // Last resort: force a terminal state so the job isn't orphaned in `running`.

@@ -43,6 +43,10 @@ export interface SerializableJobData {
   /** Response message ID for reconnection */
   responseMessageId?: string;
 
+  /** Schedule bookkeeping for a scheduled fire, so a HITL resume can record its outcome. */
+  scheduleId?: string;
+  scheduledFor?: string;
+
   /**
    * Deferred-tool names discovered (via `tool_search`) before a HITL pause, captured
    * so a resume can replay them into `createRun` — the rebuilt graph uses `messages: []`
@@ -408,7 +412,13 @@ export interface IJobStore {
   releaseIdempotencyKey(key: string): Promise<void>;
 
   /** Delete a job */
-  deleteJob(streamId: string): Promise<void>;
+  /**
+   * Deletes a job. When `expectedCreatedAt` is supplied the delete is GENERATION-FENCED:
+   * it fires only if the stored job is still that generation, so a stale caller cannot
+   * destroy a replacement generation that reused this streamId. Returns whether it fired.
+   * Omitting the guard preserves the previous unconditional behavior.
+   */
+  deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean>;
 
   /** Check if job exists */
   hasJob(streamId: string): Promise<boolean>;

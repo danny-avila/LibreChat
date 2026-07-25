@@ -390,6 +390,11 @@ export const getCategories = () => `${BASE_URL}/api/categories`;
 
 export const getAllPromptGroups = () => `${prompts()}/all`;
 
+/* Scheduled chats */
+export const schedules = () => `${BASE_URL}/api/schedules`;
+export const schedule = (id: string) => `${schedules()}/${encodeURIComponent(id)}`;
+export const runSchedule = (id: string) => `${schedule(id)}/run`;
+
 /* Skills */
 export const skills = () => `${BASE_URL}/api/skills`;
 export const importSkill = () => `${skills()}/import`;

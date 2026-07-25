@@ -13,6 +13,7 @@ const {
   sanitizeMessageForTransmit,
   checkAndIncrementPendingRequest,
   isUnpersistedPreliminaryParent,
+  isScheduleFireRequest,
 } = require('@librechat/api');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const {
@@ -21,6 +22,7 @@ const {
 } = require('~/server/services/MCPRequestContext');
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
+const { recordScheduleOutcome, isScheduleLive } = require('~/server/services/Schedules');
 const { saveMessage, getMessages, getConvo } = require('~/models');
 
 function createCloseHandler(abortController) {
@@ -172,7 +174,12 @@ async function finishResumableRequest(req, userId) {
   try {
     await cleanupMCPRequestContextForReq(req);
   } finally {
-    await decrementPendingRequest(userId);
+    // Scheduled fires never incremented the concurrent-request counter (they are
+    // governed by the scheduler's own caps), so they must not decrement it. Use
+    // the decision captured at request start, not a re-check of the expiring token.
+    if (!req._isScheduledFire) {
+      await decrementPendingRequest(userId);
+    }
   }
 }
 
@@ -222,7 +229,28 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     parentMessageId = null,
     overrideParentMessageId = null,
     responseMessageId: editedResponseMessageId = null,
+    scheduleId: bodyScheduleId = null,
+    scheduledFor: bodyScheduledFor = null,
+    scheduleConfigRevision: bodyScheduleConfigRevision = null,
   } = req.body;
+
+  // Only honor schedule bookkeeping fields on a server-minted scheduled fire
+  // (scope-claim verified). A normal chat could otherwise pass an arbitrary
+  // scheduleId and corrupt another schedule's lastRun/counters via the hook.
+  // Prefer the decision the chat route captured right after auth: the short-lived
+  // fire token can expire during the slower chat middleware, so re-verifying here
+  // would wrongly demote a valid fire to an ordinary chat and orphan its run.
+  const isScheduledFire =
+    typeof req._isScheduledFire === 'boolean' ? req._isScheduledFire : isScheduleFireRequest(req);
+  // Capture the decision on req: the short-lived fire token expires mid-run, so
+  // cleanup must not re-verify it (an expired token would read as non-scheduled
+  // and wrongly decrement the concurrent-request counter it never incremented).
+  req._isScheduledFire = isScheduledFire;
+  const scheduleId = isScheduledFire ? bodyScheduleId : null;
+  const scheduledFor = isScheduledFire ? bodyScheduledFor : null;
+  const scheduleConfigRevision = isScheduledFire
+    ? (bodyScheduleConfigRevision ?? undefined)
+    : undefined;
 
   const userId = req.user.id;
 
@@ -246,7 +274,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   // Generate conversationId upfront if not provided - streamId === conversationId always
   // Treat "new" as a placeholder that needs a real UUID (frontend may send "new" for new convos)
   const isNewConvo = !reqConversationId || reqConversationId === 'new';
-  const conversationId = isNewConvo ? crypto.randomUUID() : reqConversationId;
+  // A verified scheduled fire may supply its own new-conversation id so its run row
+  // can record the id BEFORE the request runs (making the occurrence's job findable
+  // by reconciliation even if the post-accept detail write fails). Gated on the fire
+  // flag so an ordinary chat can't pin an arbitrary conversation id.
+  const scheduledNewConversationId =
+    req._isScheduledFire && typeof req.body?.newConversationId === 'string'
+      ? req.body.newConversationId
+      : null;
+  const conversationId = isNewConvo
+    ? (scheduledNewConversationId ?? crypto.randomUUID())
+    : reqConversationId;
   const streamId = conversationId;
   req.body.conversationId = conversationId;
 
@@ -330,14 +368,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
   }
 
-  const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
-  if (!allowed) {
-    if (ownsIdempotencyClaim) {
-      await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
+  // Scheduled fires bypass the interactive concurrent-request limiter (like the
+  // message-rate limiters): a user with active chats or several schedules due at
+  // once would otherwise get 429s recorded as schedule errors, walking valid
+  // schedules toward auto-disable. Scheduler caps govern their concurrency.
+  if (!isScheduledFire) {
+    const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
+    if (!allowed) {
+      if (ownsIdempotencyClaim) {
+        await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
+      }
+      const violationInfo = getViolationInfo(pendingRequests, limit);
+      await logViolation(req, res, ViolationTypes.CONCURRENT, violationInfo, violationInfo.score);
+      return res.status(429).json(violationInfo);
     }
-    const violationInfo = getViolationInfo(pendingRequests, limit);
-    await logViolation(req, res, ViolationTypes.CONCURRENT, violationInfo, violationInfo.score);
-    return res.status(429).json(violationInfo);
   }
 
   let client = null;
@@ -352,8 +396,45 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
     const jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
+
+    // Re-fence a scheduled fire against a delete/quiesce that landed in the claim ->
+    // POST window (the reservation row existed but this job did not yet, so the
+    // deletion's identity-guarded abort could not have seen it). Attach the schedule
+    // identity to the job FIRST — so a concurrent quiesce can now identity-match and
+    // abort THIS job — then re-check liveness: if a delete landed in the tiny
+    // createJob -> metadata window (before its abort could match), terminalize the
+    // run and tear the job down BEFORE any messages are persisted. Scoped to
+    // scheduled fires (scheduleId is null for interactive chat), so this never
+    // affects it.
+    if (scheduleId) {
+      await GenerationJobManager.updateMetadata(streamId, { scheduleId, scheduledFor });
+      if (!(await isScheduleLive(scheduleId, scheduleConfigRevision))) {
+        logger.info(
+          `[AgentController] Scheduled fire aborted before start; schedule ${scheduleId} no longer active`,
+        );
+        const outcomeRecorded = await recordScheduleOutcome({
+          scheduleId,
+          scheduledFor,
+          status: 'interrupted',
+          conversationId: streamId,
+        });
+        // Terminalize as ABORTED, not complete: if the outcome write failed a
+        // preserved `complete` job would be mapped to `success` by the schedules
+        // reconciler, mislabeling this pre-start abort as a successful run. abortJob
+        // stores it as `aborted` (reconcile -> interrupted), and preserves it for
+        // reconcile only when the outcome write failed so the evidence survives.
+        await GenerationJobManager.abortJob(streamId, {
+          preserveForReconcile: !outcomeRecorded,
+        }).catch(() => undefined);
+        return res.json({ streamId, conversationId, status: 'aborted' });
+      }
+    }
+
     req._resumableStreamId = streamId;
     getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
+
+    // The schedule identifiers were already persisted into the job metadata above
+    // (before the liveness re-check); the bulk updateMetadata below re-affirms them.
 
     // Send JSON response IMMEDIATELY so client can connect to SSE stream
     // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive
@@ -376,6 +457,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       // Persist temporary-chat state so a HITL resume keeps the resumed response
       // non-persisted instead of trusting the resume request to re-send the flag.
       isTemporary: req.body?.isTemporary,
+      // Persist schedule bookkeeping so a HITL resume can record the outcome
+      // (the resume request carries no scheduleId). Only set for verified fires.
+      ...(scheduleId ? { scheduleId, scheduledFor } : {}),
       responseMessageId: preliminaryResponseMessageId,
       userMessage: preliminaryUserMessage,
     });
@@ -466,7 +550,25 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     });
 
     if (job.abortController.signal.aborted) {
-      GenerationJobManager.completeJob(streamId, 'Request aborted during initialization');
+      if (scheduleId) {
+        // A scheduled fire aborted during initialization (e.g. a delete/quiesce now
+        // identity-matches this job) must record its terminal outcome and preserve
+        // the aborted job when that write fails — otherwise the `started` ScheduleRun
+        // row consumes global capacity until the orphan sweep and the aborted
+        // evidence can be reaped before the reconciler sees it. Mirror the
+        // liveness-abort path (abortJob -> reconcile 'interrupted', not 'success').
+        const recorded = await recordScheduleOutcome({
+          scheduleId,
+          scheduledFor,
+          status: 'interrupted',
+          conversationId: streamId,
+        });
+        await GenerationJobManager.abortJob(streamId, {
+          preserveForReconcile: !recorded,
+        }).catch(() => undefined);
+      } else {
+        GenerationJobManager.completeJob(streamId, 'Request aborted during initialization');
+      }
       await finishResumableRequest(req, userId);
       return;
     }
@@ -748,11 +850,23 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // (so a fast /resume isn't 429'd); only release here if that didn't happen.
           // Always run the MCP request-context cleanup.
           await cleanupMCPRequestContextForReq(req);
-          if (!client?.pendingRequestReleased) {
+          if (!isScheduledFire && !client?.pendingRequestReleased) {
             await decrementPendingRequest(userId);
           }
           if (client) {
             disposeClient(client);
+          }
+          // Record a scheduled fire's pause as `requires_action` NOW (not on the
+          // next reconcile sweep): overlap/capacity checks key on `started`, so a
+          // run left `started` while paused would wrongly block a run-now or the
+          // next occurrence. A failed write just falls back to reconcile marking it.
+          if (scheduleId) {
+            await recordScheduleOutcome({
+              scheduleId,
+              scheduledFor,
+              status: 'requires_action',
+              conversationId: streamId,
+            });
           }
           logger.debug(
             `[ResumableAgentController] Turn paused for approval; awaiting resume: ${streamId}`,
@@ -909,7 +1023,25 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           });
 
           await GenerationJobManager.emitDone(streamId, finalEvent);
-          GenerationJobManager.completeJob(streamId);
+          // Record the schedule success BEFORE completeJob: the default job
+          // manager deletes completed jobs immediately, so if this write ran
+          // after and the process died in between, reconciliation would see no
+          // job for the still-`started` run and mislabel a success as interrupted.
+          // If the write itself fails (transient Mongo outage across its retries),
+          // preserve the completed job so the reconciler can finalize it as
+          // success from the retained job status instead of deleting the evidence.
+          let scheduleOutcomeRecorded = true;
+          if (scheduleId) {
+            scheduleOutcomeRecorded = await recordScheduleOutcome({
+              scheduleId,
+              scheduledFor,
+              status: 'success',
+              conversationId: conversation?.conversationId,
+            });
+          }
+          GenerationJobManager.completeJob(streamId, undefined, {
+            preserveForReconcile: !scheduleOutcomeRecorded,
+          });
           await finishResumableRequest(req, userId);
         } else {
           const finalEvent = {
@@ -930,7 +1062,24 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           });
 
           await GenerationJobManager.emitDone(streamId, finalEvent);
-          GenerationJobManager.completeJob(streamId, 'Request aborted');
+          // Record the abort BEFORE completeJob so the run doesn't linger as
+          // `started` (blocking run-now/overlap until the 30-minute orphan cutoff).
+          let abortOutcomeRecorded = true;
+          if (scheduleId) {
+            abortOutcomeRecorded = await recordScheduleOutcome({
+              scheduleId,
+              scheduledFor,
+              status: 'interrupted',
+              conversationId: conversation?.conversationId,
+            });
+          }
+          // Only finalize/clean the job when the outcome is recorded. When it isn't
+          // (Mongo down), leave any reconcile evidence the abort route preserved
+          // (an `aborted` job) intact — overwriting it here as an `error` job would
+          // make reconcile count a user stop toward failure auto-disable.
+          if (abortOutcomeRecorded) {
+            GenerationJobManager.completeJob(streamId, 'Request aborted');
+          }
           await finishResumableRequest(req, userId);
         }
 
@@ -980,6 +1129,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // Check if this was an abort (not a real error)
         const wasAborted = job.abortController.signal.aborted || error.message?.includes('abort');
 
+        let errorScheduleOutcomeRecorded = true;
+        if (scheduleId) {
+          errorScheduleOutcomeRecorded = await recordScheduleOutcome({
+            scheduleId,
+            scheduledFor,
+            status: wasAborted ? 'interrupted' : 'error',
+            conversationId: streamId,
+            error: wasAborted ? undefined : error.message,
+          });
+        }
+
         if (wasAborted) {
           logger.debug(`[ResumableAgentController] Generation aborted for ${streamId}`);
           // abortJob already handled emitDone and completeJob
@@ -1011,7 +1171,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             );
           }
           await GenerationJobManager.emitError(streamId, error.message || 'Generation failed');
-          GenerationJobManager.completeJob(streamId, error.message);
+          GenerationJobManager.completeJob(streamId, error.message, {
+            preserveForReconcile: Boolean(scheduleId) && !errorScheduleOutcomeRecorded,
+          });
         }
 
         await finishResumableRequest(req, userId);
@@ -1048,6 +1210,22 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       // JSON already sent, emit error to stream so client can receive it
       await GenerationJobManager.emitError(streamId, error.message || 'Failed to start generation');
     }
+    // A scheduled fire whose run row is already `started` (inserted before the
+    // early 200) must be terminalized here — an init failure after acceptance
+    // would otherwise leave it running until orphan reconciliation. Before
+    // completeJob deletes the job (same ordering rationale as the success path).
+    // If the outcome write fails (Mongo down across its retries), preserve the
+    // completed job so reconcile records the failure instead of losing the count.
+    let initScheduleOutcomeRecorded = true;
+    if (scheduleId) {
+      initScheduleOutcomeRecorded = await recordScheduleOutcome({
+        scheduleId,
+        scheduledFor,
+        status: 'error',
+        error: error.message,
+        conversationId: streamId,
+      });
+    }
     // Finalize THIS failed job before releasing the idempotency claim. Releasing first would
     // let the client's retry win the same key and createJob() the same streamId while we are
     // still here — and completeJob() is not guarded by the original createdAt, so it would
@@ -1055,7 +1233,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // release + pending-request decrement below, or the retry stays wedged behind the claim
     // and the concurrency slot leaks — so swallow its error. (A failed completeJob did not
     // finalize anything, so releasing afterward can't let it abort a later replacement.)
-    await GenerationJobManager.completeJob(streamId, error.message).catch((completeErr) => {
+    await GenerationJobManager.completeJob(streamId, error.message, {
+      preserveForReconcile: Boolean(scheduleId) && !initScheduleOutcomeRecorded,
+    }).catch((completeErr) => {
       logger.warn(
         '[ResumableAgentController] completeJob failed during init-error cleanup',
         completeErr,
