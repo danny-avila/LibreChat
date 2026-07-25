@@ -99,15 +99,24 @@ export function resolveActivityConfig(
   const endpoints = appConfig?.endpoints as
     | (Record<string, TEndpoint | undefined> & { all?: TEndpoint })
     | undefined;
-  const config: Partial<TEndpoint> | undefined =
-    endpoints?.all ?? endpoints?.[endpoint] ?? customEndpointConfig;
+  /**
+   * Resolved FIELD BY FIELD rather than by picking one config object whole.
+   * Selecting wholesale means any `endpoints.all` block — even one carrying
+   * nothing but `headers` — shadows the named/custom endpoint entirely and
+   * silently disables activity labels everywhere. Global still wins per
+   * field, so a real `all.activityLabel` keeps overriding the endpoint.
+   */
+  const all = endpoints?.all as Partial<TEndpoint> | undefined;
+  const named = (endpoints?.[endpoint] ?? customEndpointConfig) as Partial<TEndpoint> | undefined;
+  const pick = <K extends keyof TEndpoint>(key: K): TEndpoint[K] | undefined =>
+    all?.[key] ?? named?.[key];
   return {
-    enabled: config?.activityLabel === true,
-    model: config?.activityModel,
-    endpoint: config?.activityEndpoint,
-    prompt: config?.activityPrompt,
-    maxPerRun: config?.activityMaxPerRun,
-    charLimit: config?.activityCharLimit,
+    enabled: pick('activityLabel') === true,
+    model: pick('activityModel'),
+    endpoint: pick('activityEndpoint'),
+    prompt: pick('activityPrompt'),
+    maxPerRun: pick('activityMaxPerRun'),
+    charLimit: pick('activityCharLimit'),
     /** `titleModel` is the documented fallback below, not a field here. */
   };
 }

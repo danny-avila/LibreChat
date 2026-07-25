@@ -70,19 +70,21 @@ export function groupSequentialToolCalls(parts: PartWithIndex[]): GroupedPart[] 
       continue;
     }
     if (item.part.type === ContentTypes.ACTIVITY_LABEL) {
-      /** A reserved-but-unfilled slot (and a failed/blank fill) still
-       *  DELIMITS its batch, so grouping does not re-shuffle when the text
-       *  lands — but it is not attached as a labelPart, leaving the group to
-       *  render its generic verb exactly as it would without the feature. */
       const hasText = getActivityLabelText(getActivityLabelPart(item.part)).length > 0;
+      if (!hasText) {
+        /** A reserved-but-unfilled slot (and a failed/blank fill) must be
+         *  INVISIBLE. Every batch now publishes its reservation immediately,
+         *  so forming a group here would wrap even a single tool call and pull
+         *  THINK parts inside it while generation is still pending. Flushing
+         *  the legacy way instead delimits the batch AND re-splits it exactly
+         *  as it renders with the feature off. */
+        flushWithoutLabel();
+        continue;
+      }
       if (currentBlock.length > 0) {
-        result.push({
-          type: 'tool-group',
-          parts: [...currentBlock],
-          ...(hasText && { labelPart: item }),
-        });
+        result.push({ type: 'tool-group', parts: [...currentBlock], labelPart: item });
         currentBlock = [];
-      } else if (hasText) {
+      } else {
         /** Orphan label (block parts hidden/filtered): renders standalone. */
         result.push({ type: 'single', part: item });
       }

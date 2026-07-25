@@ -810,9 +810,16 @@ export default function useResumableSSE(
          *  the run starts, and the server indexes only the NEW content — so
          *  run steps offset by that prefix (`useStepHandler`). The label index
          *  is claimed in the same server-side space and needs the identical
-         *  shift, or it lands inside the prefix and overwrites kept content. */
+         *  shift, or it lands inside the prefix and overwrites kept content.
+         *
+         *  NOT on a resume: the sync replaces `initialResponse.content` with
+         *  the server's `aggregatedContent`, which already contains the prefix
+         *  AND everything generated since. Its length is not the prefix
+         *  length, and the indices reconciled from that snapshot are already
+         *  absolute — offsetting again would push the label past its slot and
+         *  overwrite a later part. */
         const initialContent =
-          currentSubmission.editedContent != null
+          !isResume && currentSubmission.editedContent != null
             ? ((currentSubmission.initialResponse as TMessage | undefined)?.content ?? [])
             : [];
         const offsetEvent =
