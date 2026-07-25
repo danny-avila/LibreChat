@@ -1,8 +1,9 @@
 import path from 'path';
 import yauzl from 'yauzl';
+import { Transform } from 'stream';
 import { megabyte } from 'librechat-data-provider';
 
-import type { Readable } from 'stream';
+import type { Readable, TransformCallback } from 'stream';
 
 import { ZipBombError } from '~/files/documents/zipSafety';
 
@@ -30,7 +31,17 @@ export interface Archive {
   close(): void;
 }
 
-function assertSafeName(name: string): void {
+type ArchiveLimits = Required<ArchiveOptions>;
+
+/** Actual decompressed bytes delivered so far, shared by every `read()`
+ * and `stream()` call on one archive instance so the aggregate cap is
+ * enforced against real bytes rather than the (spoofable) central
+ * directory total. */
+interface ArchiveTotals {
+  bytesRead: number;
+}
+
+export function assertSafeName(name: string): void {
   if (path.isAbsolute(name) || /^[a-zA-Z]:[\\/]/.test(name)) {
     throw new Error(`Refusing absolute path in archive: ${name}`);
   }
@@ -71,7 +82,7 @@ function openZip(filepath: string): Promise<yauzl.ZipFile> {
 
 function indexEntries(
   zipfile: yauzl.ZipFile,
-  options: Required<ArchiveOptions>,
+  options: ArchiveLimits,
 ): Promise<Map<string, yauzl.Entry>> {
   return new Promise((resolve, reject) => {
     const index = new Map<string, yauzl.Entry>();
@@ -95,6 +106,10 @@ function indexEntries(
         return;
       }
 
+      /** Cheap early reject from the central directory's declared sizes.
+       * This field is attacker-controlled and not trusted on its own —
+       * `ArchiveTotals` re-checks the real, streamed byte count on every
+       * `read()`/`stream()` call regardless of what this loop found. */
       total += entry.uncompressedSize;
       if (total > options.maxTotalBytes) {
         reject(new ZipBombError('Archive exceeds the maximum decompressed size'));
@@ -123,15 +138,54 @@ function openEntryStream(zipfile: yauzl.ZipFile, entry: yauzl.Entry): Promise<Re
   });
 }
 
+function ensureWithinTotalBudget(name: string, limits: ArchiveLimits, totals: ArchiveTotals): void {
+  if (totals.bytesRead > limits.maxTotalBytes) {
+    throw new ZipBombError(`Archive exceeds the maximum decompressed size before reading ${name}`);
+  }
+}
+
+/**
+ * Wraps a raw entry stream in a counting `Transform` so `.stream()`
+ * enforces the same per-entry and aggregate caps as `.read()`, against
+ * actual decompressed bytes as they flow rather than declared sizes.
+ * Exceeding either cap destroys the stream with a `ZipBombError` instead
+ * of forwarding the chunk that crossed it.
+ */
+function createCappingTransform(
+  name: string,
+  limits: ArchiveLimits,
+  totals: ArchiveTotals,
+): Transform {
+  let entryBytes = 0;
+
+  return new Transform({
+    transform(chunk: Buffer, _encoding: BufferEncoding, callback: TransformCallback) {
+      entryBytes += chunk.byteLength;
+      totals.bytesRead += chunk.byteLength;
+
+      if (entryBytes > limits.maxEntryBytes) {
+        callback(new ZipBombError(`Entry ${name} exceeds the maximum decompressed size`));
+        return;
+      }
+      if (totals.bytesRead > limits.maxTotalBytes) {
+        callback(new ZipBombError('Archive exceeds the maximum decompressed size'));
+        return;
+      }
+      callback(null, chunk);
+    },
+  });
+}
+
 export async function openArchive(
   filepath: string,
   options: ArchiveOptions = {},
 ): Promise<Archive> {
-  const limits: Required<ArchiveOptions> = {
+  const limits: ArchiveLimits = {
     maxEntries: options.maxEntries ?? DEFAULT_MAX_ENTRIES,
     maxEntryBytes: options.maxEntryBytes ?? DEFAULT_MAX_ENTRY_BYTES,
     maxTotalBytes: options.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES,
   };
+  const totals: ArchiveTotals = { bytesRead: 0 };
 
   const zipfile = await openZip(filepath);
 
@@ -152,10 +206,23 @@ export async function openArchive(
   }
 
   async function stream(name: string): Promise<Readable> {
-    return openEntryStream(zipfile, entryOf(name));
+    ensureWithinTotalBudget(name, limits, totals);
+    const entry = entryOf(name);
+    const readStream = await openEntryStream(zipfile, entry);
+    const capped = createCappingTransform(name, limits, totals);
+
+    readStream.on('error', (error) => capped.destroy(error));
+    capped.on('close', () => {
+      if (!readStream.destroyed) {
+        readStream.destroy();
+      }
+    });
+
+    return readStream.pipe(capped);
   }
 
   async function read(name: string): Promise<Buffer> {
+    ensureWithinTotalBudget(name, limits, totals);
     const entry = entryOf(name);
     const readStream = await openEntryStream(zipfile, entry);
 
@@ -165,8 +232,15 @@ export async function openArchive(
 
       readStream.on('data', (chunk: Buffer) => {
         bytes += chunk.byteLength;
+        totals.bytesRead += chunk.byteLength;
+
         if (bytes > limits.maxEntryBytes) {
           reject(new ZipBombError(`Entry ${name} exceeds the maximum decompressed size`));
+          readStream.destroy();
+          return;
+        }
+        if (totals.bytesRead > limits.maxTotalBytes) {
+          reject(new ZipBombError('Archive exceeds the maximum decompressed size'));
           readStream.destroy();
           return;
         }
