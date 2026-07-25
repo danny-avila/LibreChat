@@ -166,18 +166,16 @@ export default function useSideNavLinks({
       });
     }
 
-    // Hide the panel when schedules are disabled by EITHER the boolean form
-    // (`false`) or the runtime-config object form (`{ use: false, ... }`) — the
-    // server treats both as disabled, so the nav gate must match to avoid showing
-    // an entry whose create/run operations the backend rejects.
+    // Scheduled chats are EXPERIMENTAL and default-OFF: the server enables them only
+    // when an admin opts in explicitly, so ABSENT config means disabled here too.
+    // Mirrors getLimits exactly — absent/null/`false` are all off, `true` is on, and the
+    // object form is on unless it sets `use: false`. Any mismatch would show an entry
+    // whose create/run operations the backend rejects.
     const schedulesConfig = interfaceConfig.schedules;
     const schedulesEnabled =
+      schedulesConfig != null &&
       schedulesConfig !== false &&
-      !(
-        typeof schedulesConfig === 'object' &&
-        schedulesConfig != null &&
-        schedulesConfig.use === false
-      );
+      !(typeof schedulesConfig === 'object' && schedulesConfig.use === false);
     if (hasAccessToSchedules && schedulesEnabled) {
       links.push({
         title: 'com_ui_schedules',

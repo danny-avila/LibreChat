@@ -33,6 +33,9 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/models', () => ({
   saveMessage: jest.fn(async (req, message) => message),
+  // The schedules service validates its deps at construction; these suites load it
+  // transitively, so the mock must supply the account-deletion barrier probe.
+  isUserDeleting: jest.fn(async () => false),
   getConvo: jest.fn(async () => null),
   getMessages: jest.fn(async () => []),
 }));
