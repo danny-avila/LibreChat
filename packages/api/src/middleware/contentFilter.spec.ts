@@ -6,6 +6,7 @@ import {
   getContentTraversalFragments,
 } from '../protection/adapters/nested';
 import { UninspectableFileError } from '../protection/files';
+import { extractAssistantContent, extractPresetContent } from '../protection/adapters/submissions';
 import {
   contentFilterBlockResponse,
   createContentFilter,
@@ -38,6 +39,7 @@ function runMiddleware(params: {
   filters?: FiltersConfig;
   legacyPii?: MessageFilterPiiConfig;
   opaqueFileInput?: unknown;
+  body?: unknown;
   extract: jest.Mock<Iterable<TextContentFragment>, [Request]>;
 }): {
   readonly captured: CapturedResponse;
@@ -63,8 +65,16 @@ function runMiddleware(params: {
   } as Response;
   const next = jest.fn() as jest.MockedFunction<NextFunction>;
 
-  middleware({ body: {} } as Request, response, next);
+  middleware({ body: params.body ?? {} } as Request, response, next);
   return { captured, next };
+}
+
+function nestedValue(depth: number): unknown {
+  let value: unknown = 'safe';
+  for (let index = 0; index < depth; index++) {
+    value = { nested: value };
+  }
+  return value;
 }
 
 describe('contentFilter middleware', () => {
@@ -306,6 +316,61 @@ describe('contentFilter middleware', () => {
     expect(captured).toEqual({});
   });
 
+  it('does not read canonical files for an explicitly inactive file policy', async () => {
+    const filters: FiltersConfig = {
+      files: {
+        pii: {
+          starterPatterns: [],
+        },
+      },
+      prompts: {
+        pii: {
+          fields: ['instructions'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'private',
+              label: 'private value',
+              regex: 'PRIVATE-[A-Z]+',
+            },
+          ],
+        },
+      },
+    };
+    const getFiles = jest.fn().mockResolvedValue([]);
+    const captured: CapturedResponse = {};
+    const middleware = createContentFilter({
+      getFilters: () => filters,
+      getOpaqueFileInput: (req) => req.body,
+      getFiles,
+      extract: () => [],
+    });
+    const response = {
+      status(code: number) {
+        captured.status = code;
+        return this;
+      },
+      json(body: unknown) {
+        captured.body = body;
+        return this;
+      },
+    } as Response;
+    const next = jest.fn() as jest.MockedFunction<NextFunction>;
+
+    await middleware(
+      {
+        body: { files: [{ file_id: 'owned-file' }] },
+        user: { id: 'user-1', tenantId: 'tenant-1' },
+      } as unknown as Request,
+      response,
+      next,
+    );
+
+    expect(getFiles).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(captured).toEqual({});
+  });
+
   it('classifies the raw-free opaque error for existing import error handling', () => {
     expect(isContentFilterError(new UninspectableFileError('content'))).toBe(true);
     expect(isContentFilterError(new ContentTraversalLimitError())).toBe(true);
@@ -376,6 +441,140 @@ describe('contentFilter middleware', () => {
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(captured).toEqual({});
+  });
+
+  it('fails closed when selected model request fields exceed the traversal budget', () => {
+    const filters: FiltersConfig = {
+      modelParameters: {
+        pii: {
+          fields: ['request_fields'],
+        },
+      },
+    };
+    const extract = jest.fn<Iterable<TextContentFragment>, [Request]>((req) =>
+      extractPresetContent(req.body),
+    );
+
+    const { captured, next } = runMiddleware({
+      filters,
+      body: { options: { provider_option: nestedValue(30) } },
+      extract,
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(captured).toEqual({
+      status: 400,
+      body: {
+        error: 'content_filter_uninspectable',
+        message: 'Submitted content could not be completely inspected before processing.',
+        source: 'model_parameter',
+        field: 'request_fields',
+      },
+    });
+  });
+
+  it('allows traversal exhaustion from an unselected model parameter field', () => {
+    const filters: FiltersConfig = {
+      modelParameters: {
+        pii: {
+          fields: ['stop'],
+        },
+      },
+    };
+    const extract = jest.fn<Iterable<TextContentFragment>, [Request]>((req) =>
+      extractPresetContent(req.body),
+    );
+
+    const { captured, next } = runMiddleware({
+      filters,
+      body: { options: { provider_option: nestedValue(30) } },
+      extract,
+    });
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(captured).toEqual({});
+  });
+
+  it('still blocks earlier prompt content when unrelated model traversal is exhausted', () => {
+    const filters: FiltersConfig = {
+      prompts: {
+        pii: {
+          fields: ['instructions'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'private',
+              label: 'private value',
+              regex: 'PRIVATE-[A-Z]+',
+            },
+          ],
+        },
+      },
+    };
+    const extract = jest.fn<Iterable<TextContentFragment>, [Request]>((req) =>
+      extractPresetContent(req.body),
+    );
+
+    const { captured, next } = runMiddleware({
+      filters,
+      body: {
+        instructions: 'Previously submitted PRIVATE-PROMPT',
+        options: { provider_option: nestedValue(30) },
+      },
+      extract,
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(captured.body).toMatchObject({
+      error: 'content_filter_block',
+      source: 'prompt',
+      field: 'instructions',
+    });
+  });
+
+  it('still blocks later assistant tools when unrelated model traversal is exhausted', () => {
+    const filters: FiltersConfig = {
+      agentInstructions: {
+        pii: {
+          fields: ['description'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'private',
+              label: 'private value',
+              regex: 'PRIVATE-[A-Z]+',
+            },
+          ],
+        },
+      },
+    };
+    const extract = jest.fn<Iterable<TextContentFragment>, [Request]>((req) =>
+      extractAssistantContent(req.body),
+    );
+
+    const { captured, next } = runMiddleware({
+      filters,
+      body: {
+        options: { provider_option: nestedValue(30) },
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'submit_record',
+              description: 'Previously submitted PRIVATE-TOOL',
+            },
+          },
+        ],
+      },
+      extract,
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(captured.body).toMatchObject({
+      error: 'content_filter_block',
+      source: 'agent_instruction',
+      field: 'description',
+    });
   });
 
   it('still inspects known partial fragments before handling traversal exhaustion', () => {

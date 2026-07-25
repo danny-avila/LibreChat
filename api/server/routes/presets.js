@@ -1,7 +1,14 @@
 const crypto = require('crypto');
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
-const { createContentFilter, extractPresetContent, inspectContent } = require('@librechat/api');
+const {
+  createContentFilter,
+  extractPresetContent,
+  getContentTraversalFragments,
+  inspectContent,
+  isContentTraversalLimitError,
+  isContentTraversalProtected,
+} = require('@librechat/api');
 const { getPresets, savePreset, deletePresets } = require('~/models');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
 
@@ -11,13 +18,32 @@ const filterPresetContent = createContentFilter({
   extract: (req) => extractPresetContent(req.body),
 });
 
-const getFilteredPresetContent = (req, preset) => {
+const isPresetContentFiltered = (req, preset) => {
   if (req.config?.filters == null) {
-    return null;
+    return false;
   }
-  return inspectContent(extractPresetContent(preset), {
+  let fragments;
+  let traversalError;
+  try {
+    fragments = extractPresetContent(preset);
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    fragments = getContentTraversalFragments(error);
+    traversalError = error;
+  }
+  const finding = inspectContent(fragments, {
     filters: req.config.filters,
   });
+  return (
+    finding != null ||
+    (traversalError != null &&
+      isContentTraversalProtected({
+        error: traversalError,
+        filters: req.config.filters,
+      }))
+  );
 };
 
 /**
@@ -26,7 +52,7 @@ const getFilteredPresetContent = (req, preset) => {
  * still be selected for replacement or deletion.
  */
 const redactFilteredStoredPreset = (req, preset) => {
-  if (preset == null || getFilteredPresetContent(req, preset) == null) {
+  if (preset == null || !isPresetContentFiltered(req, preset)) {
     return preset;
   }
 

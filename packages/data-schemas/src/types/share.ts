@@ -24,6 +24,9 @@ export interface SharedFileSnapshot {
    * was reused/overwritten by a later turn), so a link can't surface post-share
    * content. */
   previewRevision?: string;
+  /** Stable generation marker stamped whenever a source artifact is dispatched.
+   * Unlike `updatedAt`, preview finalization does not change this value. */
+  sourceDispatchedAt?: number;
   tenantId?: string;
 }
 

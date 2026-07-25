@@ -1033,6 +1033,150 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
     });
 
+    it('blocks protected values nested in cyclic checkpoint tool arguments', async () => {
+      requestConfigOverrides = {
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['arguments'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      const cyclicArguments = { token: 'sk-cyclic-checkpoint-secret' };
+      cyclicArguments.self = cyclicArguments;
+      const job = makeToolApprovalJob();
+      job.metadata.userMessage.parentMessageId = Constants.NO_PARENT;
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockCheckpointGetTuple.mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: [
+              {
+                role: 'assistant',
+                content: '',
+                tool_calls: [{ name: 'lookup', args: cyclicArguments }],
+              },
+            ],
+          },
+        },
+      });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_block',
+          source: 'tool_argument',
+          field: 'arguments',
+        }),
+      );
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when selected checkpoint tool arguments cannot be fully traversed', async () => {
+      requestConfigOverrides = {
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['arguments'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      const deepArguments = {};
+      let current = deepArguments;
+      for (let depth = 0; depth < 30; depth++) {
+        current.nested = {};
+        current = current.nested;
+      }
+      Object.defineProperty(deepArguments, 'toJSON', {
+        value: () => {
+          throw new Error('cannot serialize');
+        },
+      });
+      const job = makeToolApprovalJob();
+      job.metadata.userMessage.parentMessageId = Constants.NO_PARENT;
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockCheckpointGetTuple.mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: [
+              {
+                role: 'assistant',
+                content: '',
+                tool_calls: [{ name: 'lookup', args: deepArguments }],
+              },
+            ],
+          },
+        },
+      });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'content_filter_uninspectable',
+          source: 'tool_argument',
+          field: 'arguments',
+        }),
+      );
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('allows incomplete checkpoint arguments when only tool output is selected', async () => {
+      requestConfigOverrides = {
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['output'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
+      const deepArguments = {};
+      let current = deepArguments;
+      for (let depth = 0; depth < 30; depth++) {
+        current.nested = {};
+        current = current.nested;
+      }
+      Object.defineProperty(deepArguments, 'toJSON', {
+        value: () => {
+          throw new Error('cannot serialize');
+        },
+      });
+      const job = makeToolApprovalJob();
+      job.metadata.userMessage.parentMessageId = Constants.NO_PARENT;
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockCheckpointGetTuple.mockResolvedValue({
+        checkpoint: {
+          channel_values: {
+            messages: [
+              {
+                role: 'assistant',
+                content: '',
+                tool_calls: [{ name: 'lookup', args: deepArguments }],
+              },
+            ],
+          },
+        },
+      });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+      expect(mockInitializeClient).toHaveBeenCalledTimes(1);
+    });
+
     it('blocks legacy seed tool content before initializeClient', async () => {
       requestConfigOverrides = {
         filters: {

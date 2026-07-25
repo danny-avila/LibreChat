@@ -199,6 +199,44 @@ describe('messageFilterPii middleware', () => {
     });
   });
 
+  it('returns 400 when selected chat model parameters exhaust traversal', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      undefined,
+      { options: { provider_option: nestedPayload(30) } },
+      {
+        modelParameters: {
+          pii: {
+            fields: ['request_fields'],
+          },
+        },
+      },
+    );
+
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.body).toMatchObject({
+      error: 'content_filter_uninspectable',
+      source: 'model_parameter',
+      field: 'request_fields',
+    });
+  });
+
+  it('allows exhausted chat model parameters when only stop is selected', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      undefined,
+      { options: { provider_option: nestedPayload(30) } },
+      {
+        modelParameters: {
+          pii: {
+            fields: ['stop'],
+          },
+        },
+      },
+    );
+
+    expect(nextCalls).toBe(1);
+    expect(capturedRes).toEqual({});
+  });
+
   it('rejects with 400 when an sk- token is present (default starters)', () => {
     const { capturedRes, nextCalls } = runMiddleware(
       {},
@@ -406,6 +444,41 @@ describe('messageFilterPii middleware', () => {
     );
     expect(nextCalls).toBe(1);
     expect(capturedRes.status).toBeUndefined();
+  });
+
+  it('does not read canonical files for an explicitly inactive file policy', async () => {
+    const getFiles = jest.fn().mockResolvedValue([]);
+    const { capturedRes, nextCalls } = await runMiddlewareWithFiles(
+      {
+        text: 'summarize the attached report',
+        files: [{ file_id: 'owned-file' }],
+      },
+      {
+        files: {
+          pii: {
+            starterPatterns: [],
+          },
+        },
+        messages: {
+          pii: {
+            fields: ['text'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'private',
+                label: 'private value',
+                regex: 'PRIVATE-[A-Z]+',
+              },
+            ],
+          },
+        },
+      },
+      getFiles,
+    );
+
+    expect(getFiles).not.toHaveBeenCalled();
+    expect(nextCalls).toBe(1);
+    expect(capturedRes).toEqual({});
   });
 
   it('blocks a canonical attachment when its hydrated text matches file policy', async () => {

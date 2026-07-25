@@ -3299,6 +3299,142 @@ describe('AgentClient - titleConvo', () => {
     });
   });
 
+  describe('provider-native YouTube file preflight', () => {
+    const youtubeUrl = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+
+    const createClient = ({ provider, filters }) => {
+      const req = {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents },
+        config: {
+          memory: { disabled: true },
+          ...(filters && { filters }),
+        },
+      };
+      const client = new AgentClient({
+        req,
+        res: {},
+        endpoint: EModelEndpoint.agents,
+        agent: {
+          id: `${provider}-agent`,
+          endpoint: EModelEndpoint.agents,
+          provider,
+          instructions: 'Summarize the submitted video.',
+          model_parameters: { model: 'gemini-2.5-flash' },
+          tools: [{ urlContext: {} }],
+        },
+      });
+      const invokeModel = jest.fn().mockResolvedValue({ completion: [], metadata: {} });
+
+      client.shouldSummarize = false;
+      client.maxContextTokens = 4096;
+      client.useMemory = jest.fn().mockResolvedValue(undefined);
+      client.loadHistory = jest.fn().mockResolvedValue([]);
+      client.skipSaveUserMessage = true;
+      client.saveMessageToDatabase = jest.fn().mockResolvedValue({});
+      client.recordTokenUsage = jest.fn().mockResolvedValue(undefined);
+      client.getTokenCountForResponse = jest.fn(() => 0);
+      client.sendCompletion = invokeModel;
+
+      return { client, invokeModel };
+    };
+
+    const sendYouTubeMessage = (client) =>
+      client.sendMessage(`Summarize ${youtubeUrl}`, {
+        conversationId: 'youtube-conversation',
+        parentMessageId: Constants.NO_PARENT,
+        user: 'user-123',
+      });
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockFormatInstructions.mockResolvedValue('');
+      require('@librechat/api').countFormattedMessageTokens.mockImplementation(() => 42);
+      require('~/models').getFiles.mockReset().mockResolvedValue([]);
+      require('~/models').getUserMemories.mockReset().mockResolvedValue([]);
+    });
+
+    it.each([Providers.GOOGLE, Providers.VERTEXAI])(
+      'blocks a late %s fileUri before model invocation under strict content policy',
+      async (provider) => {
+        const { client, invokeModel } = createClient({
+          provider,
+          filters: {
+            files: {
+              pii: {
+                fields: ['content'],
+                starterPatterns: [],
+                uninspectable: 'block',
+              },
+            },
+          },
+        });
+
+        await expect(sendYouTubeMessage(client)).rejects.toMatchObject({
+          code: 'content_filter_uninspectable',
+          body: { source: 'file', field: 'content' },
+        });
+        expect(invokeModel).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([Providers.GOOGLE, Providers.VERTEXAI])(
+      'keeps late %s fileUri compatible when file protection is off',
+      async (provider) => {
+        const { client, invokeModel } = createClient({ provider });
+
+        await expect(sendYouTubeMessage(client)).resolves.toMatchObject({
+          isCreatedByUser: false,
+        });
+        expect(invokeModel).toHaveBeenCalledTimes(1);
+        expect(invokeModel.mock.calls[0][0]).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              role: 'user',
+              content: expect.arrayContaining([
+                expect.objectContaining({ type: 'media', fileUri: youtubeUrl }),
+              ]),
+            }),
+          ]),
+        );
+      },
+    );
+
+    it('allows a known non-audio Vertex fileUri under transcript-only strict policy', async () => {
+      const { client, invokeModel } = createClient({
+        provider: Providers.VERTEXAI,
+        filters: {
+          files: {
+            pii: {
+              fields: ['transcript'],
+              starterPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+      });
+
+      await expect(sendYouTubeMessage(client)).resolves.toMatchObject({
+        isCreatedByUser: false,
+      });
+      expect(invokeModel).toHaveBeenCalledTimes(1);
+      expect(invokeModel.mock.calls[0][0]).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: 'user',
+            content: expect.arrayContaining([
+              expect.objectContaining({
+                type: 'media',
+                mimeType: 'video/mp4',
+                fileUri: youtubeUrl,
+              }),
+            ]),
+          }),
+        ]),
+      );
+    });
+  });
+
   describe('runMemory method', () => {
     let client;
     let mockReq;
@@ -5224,6 +5360,52 @@ describe('AgentClient - resumeCompletion content protection', () => {
       }),
     ).rejects.toMatchObject({
       code: 'content_filter_block',
+      body: { source: 'tool_argument', field: 'arguments' },
+    });
+    expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when selected seeded tool arguments cannot be fully traversed', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    const deepArguments = {};
+    let current = deepArguments;
+    for (let depth = 0; depth < 30; depth++) {
+      current.nested = {};
+      current = current.nested;
+    }
+    Object.defineProperty(deepArguments, 'toJSON', {
+      value: () => {
+        throw new Error('cannot serialize');
+      },
+    });
+    const context = makeContext({
+      toolArguments: {
+        pii: {
+          fields: ['arguments'],
+          starterPatterns: ['sk_prefix'],
+        },
+      },
+    });
+
+    await expect(
+      AgentClient.prototype.resumeCompletion.call(context, {
+        resumeValue: {},
+        seedContent: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            tool_call: {
+              name: 'example_tool',
+              arguments: deepArguments,
+            },
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
       body: { source: 'tool_argument', field: 'arguments' },
     });
     expect(mockCreateRun).not.toHaveBeenCalled();

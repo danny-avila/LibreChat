@@ -1,8 +1,15 @@
 import type { ContentFieldMap, ContentSource, JsonPointer, TextContentFragment } from '../types';
+import type { ContentTraversalScope } from './nested';
 import {
+  CONTENT_TRAVERSAL_MAX_DEPTH,
+  CONTENT_TRAVERSAL_MAX_NODES,
   ContentTraversalLimitError,
   escapeJsonPointer,
+  getBoundedOwnEnumerableEntries,
+  getContentTraversalFragments,
+  getContentTraversalScopes,
   isDataUri,
+  prependContentTraversalFragments,
   shouldIncludeNestedSubmittedText,
   visitNestedStrings,
 } from './nested';
@@ -153,12 +160,14 @@ export interface FileContentInput {
   readonly originalname?: string;
   readonly type?: string;
   readonly source?: string;
-  readonly content?: string;
-  readonly extractedText?: string;
-  readonly text?: string;
-  readonly transcript?: string;
+  readonly content?: string | null;
+  readonly extractedText?: string | null;
+  readonly text?: string | null;
+  readonly transcript?: string | null;
   readonly uri?: string;
   readonly filepath?: string;
+  readonly url?: string;
+  readonly preview?: string;
 }
 
 export interface FeedbackContentInput {
@@ -237,6 +246,8 @@ interface StoredFileReferenceInput {
   readonly originalname?: string;
   readonly filepath?: string;
   readonly uri?: string;
+  readonly url?: string;
+  readonly preview?: string;
 }
 
 export interface StoredMessageContentInput extends FeedbackContentInput {
@@ -331,6 +342,81 @@ function appendPointer(path: JsonPointer | '', key: string): JsonPointer {
   return `${path}/${escapeJsonPointer(key)}` as JsonPointer;
 }
 
+const MODEL_PARAMETER_FIELD_BY_KEY = new Map<string, ContentFieldMap['model_parameter']>([
+  ['stop', 'stop'],
+  ['additionalModelRequestFields', 'request_fields'],
+  ['additional_model_request_fields', 'request_fields'],
+  ['response_format', 'response_format'],
+  ['responseFormat', 'response_format'],
+  ['metadata', 'metadata'],
+]);
+const ALL_MODEL_PARAMETER_FIELDS = [
+  'stop',
+  'request_fields',
+  'response_format',
+  'metadata',
+] as const satisfies readonly ContentFieldMap['model_parameter'][];
+
+function getModelParameterWrapperFields(
+  value: object,
+): readonly ContentFieldMap['model_parameter'][] {
+  const pending: { readonly value: object; readonly depth: number }[] = [{ value, depth: 0 }];
+  const seen = new WeakSet<object>();
+  const fields = new Set<ContentFieldMap['model_parameter']>();
+  let visitedNodes = 0;
+  let incomplete = false;
+
+  while (pending.length > 0 && visitedNodes < CONTENT_TRAVERSAL_MAX_NODES) {
+    const current = pending.pop();
+    if (current == null || seen.has(current.value)) {
+      continue;
+    }
+    seen.add(current.value);
+    visitedNodes++;
+
+    const remainingNodes = Math.max(0, CONTENT_TRAVERSAL_MAX_NODES - visitedNodes - pending.length);
+    const boundedEntries = getBoundedOwnEnumerableEntries(current.value, remainingNodes);
+    const entries = boundedEntries.entries;
+    if (!boundedEntries.complete) {
+      incomplete = true;
+    }
+    for (const [key, entryValue] of entries) {
+      const registeredField = MODEL_PARAMETER_FIELD_BY_KEY.get(key);
+      if (registeredField != null) {
+        fields.add(registeredField);
+        continue;
+      }
+      if (key !== 'model_parameters' && key !== 'options') {
+        fields.add('request_fields');
+        continue;
+      }
+      if (
+        entryValue == null ||
+        typeof entryValue !== 'object' ||
+        Array.isArray(entryValue) ||
+        current.depth >= CONTENT_TRAVERSAL_MAX_DEPTH ||
+        visitedNodes + pending.length >= CONTENT_TRAVERSAL_MAX_NODES
+      ) {
+        if (entryValue != null && typeof entryValue === 'object' && !Array.isArray(entryValue)) {
+          incomplete = true;
+        } else {
+          fields.add('request_fields');
+        }
+        continue;
+      }
+      pending.push({ value: entryValue, depth: current.depth + 1 });
+    }
+  }
+
+  if (pending.length > 0) {
+    incomplete = true;
+  }
+  if (incomplete) {
+    return ALL_MODEL_PARAMETER_FIELDS;
+  }
+  return fields.size > 0 ? [...fields] : ['request_fields'];
+}
+
 /**
  * Extracts provider-bound text without treating every field in a conversation
  * or agent object as a model parameter. Registered fields may appear directly,
@@ -343,11 +429,13 @@ export function extractModelParameterContent(
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
   const seen = new WeakSet<object>();
+  const traversalBudget = { visitedNodes: 0 };
 
   const visit = (
     value: unknown,
     currentPath: JsonPointer | '',
     classifyUnknownAsRequestFields = false,
+    wrapperDepth = 0,
   ): void => {
     if (value == null || typeof value !== 'object' || Array.isArray(value)) {
       return;
@@ -355,22 +443,33 @@ export function extractModelParameterContent(
     if (seen.has(value)) {
       return;
     }
-    seen.add(value);
-
-    let entries: [string, unknown][];
-    try {
-      entries = Object.entries(value);
-    } catch {
-      return;
+    if (
+      wrapperDepth > CONTENT_TRAVERSAL_MAX_DEPTH ||
+      traversalBudget.visitedNodes >= CONTENT_TRAVERSAL_MAX_NODES
+    ) {
+      throw new ContentTraversalLimitError(fragments, [
+        { source: 'model_parameter', fields: getModelParameterWrapperFields(value) },
+      ]);
     }
-    const values = new Map(entries);
-    const handledKeys = new Set<string>();
+    seen.add(value);
+    traversalBudget.visitedNodes++;
+
+    const boundedEntries = getBoundedOwnEnumerableEntries(
+      value,
+      Math.max(0, CONTENT_TRAVERSAL_MAX_NODES - traversalBudget.visitedNodes),
+    );
+    const entries = boundedEntries.entries;
+    if (entries.length === 0 && !boundedEntries.complete) {
+      throw new ContentTraversalLimitError(fragments, [
+        { source: 'model_parameter', fields: ALL_MODEL_PARAMETER_FIELDS },
+      ]);
+    }
     const addNested = (
       fieldValue: unknown,
       key: string,
       field: ContentFieldMap['model_parameter'],
     ) => {
-      visitNestedStrings(
+      const complete = visitNestedStrings(
         fieldValue,
         appendPointer(currentPath, key),
         (text, nestedPath) =>
@@ -381,44 +480,53 @@ export function extractModelParameterContent(
             field,
             treatment: 'inspect_only',
           }),
-        { includeKeys: true, maxDepth: Infinity, maxNodes: Infinity },
+        { includeKeys: true, budget: traversalBudget },
       );
-    };
-
-    const addRegistered = (key: string, field: ContentFieldMap['model_parameter']) => {
-      if (!values.has(key)) {
-        return;
+      if (!complete) {
+        throw new ContentTraversalLimitError(fragments, [
+          { source: 'model_parameter', fields: [field] },
+        ]);
       }
-      handledKeys.add(key);
-      addNested(values.get(key), key, field);
     };
 
-    addRegistered('stop', 'stop');
-    addRegistered('additionalModelRequestFields', 'request_fields');
-    addRegistered('additional_model_request_fields', 'request_fields');
-    addRegistered('response_format', 'response_format');
-    addRegistered('responseFormat', 'response_format');
-    addRegistered('metadata', 'metadata');
-
-    for (const key of ['model_parameters', 'options'] as const) {
-      if (!values.has(key)) {
+    for (let index = 0; index < entries.length; index++) {
+      const [key, fieldValue] = entries[index];
+      const registeredField = MODEL_PARAMETER_FIELD_BY_KEY.get(key);
+      const isWrapper = key === 'model_parameters' || key === 'options';
+      if (registeredField == null && !isWrapper && !classifyUnknownAsRequestFields) {
         continue;
       }
-      handledKeys.add(key);
-      const nested = values.get(key);
-      if (nested != null && typeof nested === 'object' && !Array.isArray(nested)) {
-        visit(nested, appendPointer(currentPath, key), true);
-      } else {
-        addNested(nested, key, 'request_fields');
+      if (traversalBudget.visitedNodes >= CONTENT_TRAVERSAL_MAX_NODES) {
+        const remainingObject = Object.fromEntries(entries.slice(index));
+        throw new ContentTraversalLimitError(fragments, [
+          {
+            source: 'model_parameter',
+            fields: boundedEntries.complete
+              ? getModelParameterWrapperFields(remainingObject)
+              : ALL_MODEL_PARAMETER_FIELDS,
+          },
+        ]);
       }
-    }
+      traversalBudget.visitedNodes++;
 
-    if (classifyUnknownAsRequestFields) {
-      for (const [key, fieldValue] of entries) {
-        if (!handledKeys.has(key)) {
+      if (registeredField != null) {
+        addNested(fieldValue, key, registeredField);
+        continue;
+      }
+      if (isWrapper) {
+        if (fieldValue != null && typeof fieldValue === 'object' && !Array.isArray(fieldValue)) {
+          visit(fieldValue, appendPointer(currentPath, key), true, wrapperDepth + 1);
+        } else {
           addNested(fieldValue, key, 'request_fields');
         }
+        continue;
       }
+      addNested(fieldValue, key, 'request_fields');
+    }
+    if (!boundedEntries.complete) {
+      throw new ContentTraversalLimitError(fragments, [
+        { source: 'model_parameter', fields: ALL_MODEL_PARAMETER_FIELDS },
+      ]);
     }
   };
 
@@ -426,10 +534,31 @@ export function extractModelParameterContent(
   return fragments;
 }
 
-export function extractAgentContent(
+function appendTraversalAwareContent(
+  fragments: TextContentFragment[],
+  extract: () => readonly TextContentFragment[],
+): void {
+  try {
+    fragments.push(...extract());
+  } catch (error) {
+    if (error instanceof ContentTraversalLimitError) {
+      prependContentTraversalFragments(error, fragments);
+    }
+    throw error;
+  }
+}
+
+function appendModelParameterContent(
+  fragments: TextContentFragment[],
+  input: ModelParameterContentInput | null | undefined,
+): void {
+  appendTraversalAwareContent(fragments, () => extractModelParameterContent(input));
+}
+
+function appendAgentDefinitionContent(
+  fragments: TextContentFragment[],
   input: AgentContentInput | null | undefined,
-): readonly TextContentFragment[] {
-  const fragments: TextContentFragment[] = [];
+): void {
   const add = (value: unknown, field: ContentFieldMap['agent_instruction'], path: JsonPointer) =>
     pushString(fragments, value, {
       id: `agent.${field}.${fragments.length}`,
@@ -462,14 +591,24 @@ export function extractAgentContent(
     add(edge?.prompt, 'edge_prompt', `/edges/${index}/prompt`);
     add(edge?.promptKey, 'edge_prompt_key', `/edges/${index}/promptKey`);
   }
-  for (let index = 0; index < (input?.toolDefinitions?.length ?? 0); index++) {
-    extractFunctionToolContent(
-      fragments,
-      input?.toolDefinitions?.[index],
-      `/toolDefinitions/${index}`,
-    );
-  }
-  fragments.push(...extractModelParameterContent(input));
+}
+
+export function extractAgentContent(
+  input: AgentContentInput | null | undefined,
+): readonly TextContentFragment[] {
+  const fragments: TextContentFragment[] = [];
+  const traversalErrors: ContentTraversalLimitError[] = [];
+  appendAgentDefinitionContent(fragments, input);
+  appendFunctionToolsContent(
+    fragments,
+    input?.toolDefinitions,
+    '/toolDefinitions',
+    traversalErrors,
+  );
+  collectTraversalAwareContent(fragments, traversalErrors, () =>
+    extractModelParameterContent(input),
+  );
+  throwCollectedTraversalErrors(fragments, traversalErrors);
   return fragments;
 }
 
@@ -502,34 +641,96 @@ function extractFunctionToolContent(
     source: 'agent_instruction',
     field: 'description',
   });
-  const serialized = stringifySubmittedValue(definition.parameters);
-  if (serialized == null) {
+  const parameterId = `function-tool.parameters.${fragments.length}`;
+  fragments.push(
+    ...extractSubmittedValueContent(
+      definition.parameters,
+      `${definitionPath}/parameters` as JsonPointer,
+      ({ text, path: parameterPath, format, index, serialized }) => [
+        fragment(
+          `${parameterId}${serialized ? '' : `.nested.${index}`}`,
+          parameterPath,
+          text,
+          'tool_argument',
+          'arguments',
+          format,
+          'inspect_only',
+        ),
+      ],
+      [{ source: 'tool_argument', fields: ['arguments'] }],
+    ),
+  );
+}
+
+function collectTraversalAwareContent(
+  fragments: TextContentFragment[],
+  traversalErrors: ContentTraversalLimitError[],
+  extract: () => readonly TextContentFragment[],
+): void {
+  try {
+    fragments.push(...extract());
+  } catch (error) {
+    if (!(error instanceof ContentTraversalLimitError)) {
+      throw error;
+    }
+    fragments.push(...getContentTraversalFragments(error));
+    traversalErrors.push(error);
+  }
+}
+
+function appendFunctionToolsContent(
+  fragments: TextContentFragment[],
+  tools: readonly (string | FunctionToolContentInput | null | undefined)[] | undefined,
+  path: JsonPointer,
+  traversalErrors: ContentTraversalLimitError[],
+): void {
+  for (let index = 0; index < (tools?.length ?? 0); index++) {
+    const tool = tools?.[index];
+    if (typeof tool === 'string') {
+      continue;
+    }
+    try {
+      extractFunctionToolContent(fragments, tool, `${path}/${index}` as JsonPointer);
+    } catch (error) {
+      if (!(error instanceof ContentTraversalLimitError)) {
+        throw error;
+      }
+      fragments.push(...getContentTraversalFragments(error));
+      traversalErrors.push(error);
+    }
+  }
+}
+
+function throwCollectedTraversalErrors(
+  fragments: readonly TextContentFragment[],
+  traversalErrors: readonly ContentTraversalLimitError[],
+): void {
+  if (traversalErrors.length === 0) {
     return;
   }
-  fragments.push(
-    fragment(
-      `function-tool.parameters.${fragments.length}`,
-      `${definitionPath}/parameters` as JsonPointer,
-      serialized.text,
-      'tool_argument',
-      'arguments',
-      serialized.format,
-      'inspect_only',
-    ),
+  throw new ContentTraversalLimitError(
+    fragments,
+    traversalErrors.flatMap((error) => getContentTraversalScopes(error)),
   );
 }
 
 export function extractAssistantContent(
   input: AssistantContentInput | null | undefined,
 ): readonly TextContentFragment[] {
-  const fragments: TextContentFragment[] = [...extractAgentContent(input)];
-  for (let index = 0; index < (input?.tools?.length ?? 0); index++) {
-    const tool = input?.tools?.[index];
-    if (typeof tool === 'string') {
-      continue;
-    }
-    extractFunctionToolContent(fragments, tool, `/tools/${index}`);
-  }
+  const fragments: TextContentFragment[] = [];
+  const traversalErrors: ContentTraversalLimitError[] = [];
+  appendAgentDefinitionContent(fragments, input);
+  appendFunctionToolsContent(
+    fragments,
+    input?.toolDefinitions,
+    '/toolDefinitions',
+    traversalErrors,
+  );
+  appendFunctionToolsContent(fragments, input?.tools, '/tools', traversalErrors);
+  collectTraversalAwareContent(fragments, traversalErrors, () =>
+    extractModelParameterContent(input),
+  );
+  throwCollectedTraversalErrors(fragments, traversalErrors);
   return fragments;
 }
 
@@ -537,32 +738,41 @@ export function extractAssistantActionContent(
   input: AssistantActionContentInput | null | undefined,
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
-  for (let index = 0; index < (input?.functions?.length ?? 0); index++) {
-    extractFunctionToolContent(fragments, input?.functions?.[index], `/functions/${index}`);
-  }
-  const serialized = stringifySubmittedValue(input?.metadata?.raw_spec);
-  if (serialized != null) {
-    fragments.push(
-      fragment(
-        'assistant-action.raw-spec',
-        '/metadata/raw_spec',
-        serialized.text,
-        'tool_argument',
-        'arguments',
-        serialized.format,
-        'inspect_only',
-      ),
-      fragment(
-        'action-metadata.raw-spec',
-        '/metadata/raw_spec',
-        serialized.text,
-        'action_metadata',
-        'raw_spec',
-        serialized.format,
-        'inspect_only',
-      ),
-    );
-  }
+  const traversalErrors: ContentTraversalLimitError[] = [];
+  appendFunctionToolsContent(fragments, input?.functions, '/functions', traversalErrors);
+  collectTraversalAwareContent(fragments, traversalErrors, () =>
+    extractSubmittedValueContent(
+      input?.metadata?.raw_spec,
+      '/metadata/raw_spec',
+      ({ text, path, format, index, serialized }) => {
+        const suffix = serialized ? '' : `.nested.${index}`;
+        return [
+          fragment(
+            `assistant-action.raw-spec${suffix}`,
+            path,
+            text,
+            'tool_argument',
+            'arguments',
+            format,
+            'inspect_only',
+          ),
+          fragment(
+            `action-metadata.raw-spec${suffix}`,
+            path,
+            text,
+            'action_metadata',
+            'raw_spec',
+            format,
+            'inspect_only',
+          ),
+        ];
+      },
+      [
+        { source: 'tool_argument', fields: ['arguments'] },
+        { source: 'action_metadata', fields: ['raw_spec'] },
+      ],
+    ),
+  );
   const addMetadata = (
     value: unknown,
     field: ContentFieldMap['action_metadata'],
@@ -603,6 +813,7 @@ export function extractAssistantActionContent(
   /** Accept legacy/direct metadata shapes without weakening the closed field
    *  catalog; current clients place these values under `metadata.auth`. */
   addAuthFields(metadata, '/metadata');
+  throwCollectedTraversalErrors(fragments, traversalErrors);
   return fragments;
 }
 
@@ -638,10 +849,11 @@ export function extractPromptContent(
   return fragments;
 }
 
-export function extractPresetContent(
+function appendPresetDefinitionContent(
+  fragments: TextContentFragment[],
   input: PresetContentInput | null | undefined,
-): readonly TextContentFragment[] {
-  const fragments: TextContentFragment[] = [...extractPromptContent(input)];
+): void {
+  fragments.push(...extractPromptContent(input));
   const add = (value: unknown, field: ContentFieldMap['prompt'], path: JsonPointer) =>
     pushString(fragments, value, {
       id: `preset.${field}.${fragments.length}`,
@@ -677,7 +889,14 @@ export function extractPresetContent(
         : `/examples/${index}/output/content`,
     );
   }
-  fragments.push(...extractModelParameterContent(input));
+}
+
+export function extractPresetContent(
+  input: PresetContentInput | null | undefined,
+): readonly TextContentFragment[] {
+  const fragments: TextContentFragment[] = [];
+  appendPresetDefinitionContent(fragments, input);
+  appendModelParameterContent(fragments, input);
   return fragments;
 }
 
@@ -706,11 +925,11 @@ export function extractSkillContent(
   add(input?.instructions, 'instructions', '/instructions');
   add(input?.importedText, 'imported_text', '/importedText', 'inspect_only');
 
-  visitNestedStrings(
+  const frontmatterComplete = visitNestedStrings(
     input?.frontmatter,
     '/frontmatter',
     (value, path) => add(value, 'frontmatter', path),
-    { includeKeys: true, maxDepth: Infinity, maxNodes: Infinity },
+    { includeKeys: true },
   );
 
   for (let index = 0; index < (input?.files?.length ?? 0); index++) {
@@ -719,6 +938,9 @@ export function extractSkillContent(
     add(file?.filename, 'file_name', `/files/${index}/filename`);
     add(file?.text, 'file_text', `/files/${index}/text`, 'inspect_only');
     add(file?.content, 'file_text', `/files/${index}/content`, 'inspect_only');
+  }
+  if (!frontmatterComplete) {
+    throw new ContentTraversalLimitError(fragments, [{ source: 'skill', fields: ['frontmatter'] }]);
   }
   return fragments;
 }
@@ -782,7 +1004,7 @@ export function extractFileContent(
     field: 'transcript',
     treatment: 'inspect_only',
   });
-  for (const key of ['uri', 'filepath'] as const) {
+  for (const key of ['uri', 'filepath', 'url', 'preview'] as const) {
     pushString(fragments, input?.[key], {
       id: `file.uri.${key}`,
       path: `/${key}`,
@@ -832,6 +1054,7 @@ export function extractStoredMessageContent(
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
   const assembledText: string[] = [];
+  const traversalScopes: ContentTraversalScope[] = [];
   let traversalComplete = true;
   const isInstruction = input?.role === 'system' || input?.role === 'developer';
   const isToolOutput = input?.role === 'tool';
@@ -869,21 +1092,20 @@ export function extractStoredMessageContent(
     id: string,
     path: JsonPointer,
   ) => {
-    const serialized = stringifySubmittedValue(value);
-    if (serialized == null) {
-      return;
+    try {
+      fragments.push(...extractToolArgumentValue(value, field, id, path));
+    } catch (error) {
+      if (!(error instanceof ContentTraversalLimitError)) {
+        throw error;
+      }
+      fragments.push(...getContentTraversalFragments(error));
+      const scopes = getContentTraversalScopes(error);
+      const fallbackScope: ContentTraversalScope = {
+        source: 'tool_argument',
+        fields: [field],
+      };
+      traversalScopes.push(...(scopes.length > 0 ? scopes : [fallbackScope]));
     }
-    fragments.push(
-      fragment(
-        id,
-        path,
-        serialized.text,
-        'tool_argument',
-        field,
-        serialized.format,
-        'inspect_only',
-      ),
-    );
   };
   const addAttachment = (
     file: StoredFileReferenceInput | null | undefined,
@@ -892,6 +1114,13 @@ export function extractStoredMessageContent(
   ) => {
     const references = [
       { key: 'uri', value: file?.uri, format: 'uri' as const, fileField: 'uri' as const },
+      { key: 'url', value: file?.url, format: 'uri' as const, fileField: 'uri' as const },
+      {
+        key: 'preview',
+        value: file?.preview,
+        format: 'uri' as const,
+        fileField: 'uri' as const,
+      },
       {
         key: 'filepath',
         value: file?.filepath,
@@ -997,14 +1226,18 @@ export function extractStoredMessageContent(
   }
   for (let index = 0; index < (input?.content?.length ?? 0); index++) {
     const part = input?.content?.[index];
-    for (const key of ['text', 'think'] as const) {
-      const value = part?.[key];
-      addMessagePart(
-        typeof value === 'string' ? value : value?.value,
-        `stored-message.content.${index}.${key}`,
-        `/content/${index}/${key}`,
-      );
+    const text = typeof part?.text === 'string' ? part.text : part?.text?.value;
+    addMessagePart(text, `stored-message.content.${index}.text`, `/content/${index}/text`);
+    if (part?.type === 'summary') {
+      pushString(fragments, text, {
+        id: `stored-message.content.${index}.summary`,
+        path: `/content/${index}/text`,
+        source: 'message',
+        field: 'summary',
+      });
     }
+    const think = typeof part?.think === 'string' ? part.think : part?.think?.value;
+    addMessagePart(think, `stored-message.content.${index}.think`, `/content/${index}/think`);
     for (const key of ['original', 'updated', 'steer', 'error'] as const) {
       addMessagePart(
         part?.[key],
@@ -1281,7 +1514,19 @@ export function extractStoredMessageContent(
   }
   fragments.push(...extractFeedbackContent(input));
   if (!traversalComplete) {
-    throw new ContentTraversalLimitError(fragments);
+    traversalScopes.push(
+      { source: 'message', fields: ['content_part'] },
+      { source: 'assembled_context', fields: ['assembled_context'] },
+    );
+    if (isInstruction) {
+      traversalScopes.push({ source: 'agent_instruction', fields: ['instructions'] });
+    }
+    if (isToolOutput) {
+      traversalScopes.push({ source: 'tool_argument', fields: ['output'] });
+    }
+  }
+  if (traversalScopes.length > 0) {
+    throw new ContentTraversalLimitError(fragments, traversalScopes);
   }
   return fragments;
 }
@@ -1289,29 +1534,168 @@ export function extractStoredMessageContent(
 export function* extractConversationImportContent(
   input: ConversationImportContentInput,
 ): Generator<TextContentFragment, void, undefined> {
+  const fragments: TextContentFragment[] = [];
+  const traversalErrors: ContentTraversalLimitError[] = [];
+  const collect = (extract: () => readonly TextContentFragment[]) => {
+    try {
+      fragments.push(...extract());
+    } catch (error) {
+      if (!(error instanceof ContentTraversalLimitError)) {
+        throw error;
+      }
+      fragments.push(...getContentTraversalFragments(error));
+      traversalErrors.push(error);
+    }
+  };
+
   for (const conversation of input.conversations) {
     if (conversation == null) {
       continue;
     }
-    yield* extractConversationTitleContent(conversation);
-    yield* extractPresetContent({
+    fragments.push(...extractConversationTitleContent(conversation));
+    appendPresetDefinitionContent(fragments, {
       promptPrefix: conversation.promptPrefix,
       system: conversation.system,
       context: conversation.context,
       greeting: conversation.greeting,
       examples: conversation.examples,
     });
-    yield* extractAgentContent({
+    appendAgentDefinitionContent(fragments, {
       instructions: conversation.instructions,
       additional_instructions: conversation.additional_instructions,
       artifacts: conversation.artifacts,
     });
-    yield* extractModelParameterContent(conversation);
-    yield* extractPresetContent(conversation.presetOverride);
+    appendPresetDefinitionContent(fragments, conversation.presetOverride);
   }
   for (const message of input.messages) {
-    yield* extractStoredMessageContent(message);
+    collect(() => extractStoredMessageContent(message));
   }
+  for (const conversation of input.conversations) {
+    if (conversation == null) {
+      continue;
+    }
+    collect(() => extractModelParameterContent(conversation));
+    collect(() => extractModelParameterContent(conversation.presetOverride));
+  }
+
+  if (traversalErrors.length > 0) {
+    const scopes = traversalErrors.flatMap((error) => {
+      const errorScopes = getContentTraversalScopes(error);
+      return errorScopes.length > 0
+        ? errorScopes
+        : [{ source: 'message' as const, fields: ['content_part'] as const }];
+    });
+    throw new ContentTraversalLimitError(fragments, scopes);
+  }
+  yield* fragments;
+}
+
+const OMIT_SUBMITTED_VALUE = Symbol('omit-submitted-value');
+
+type BoundedJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | BoundedJsonValue[]
+  | { [key: string]: BoundedJsonValue };
+
+interface BoundedJsonTraversal {
+  readonly seen: WeakSet<object>;
+  visitedNodes: number;
+}
+
+function toBoundedJsonValue(
+  value: unknown,
+  traversal: BoundedJsonTraversal,
+  depth = 0,
+): BoundedJsonValue | typeof OMIT_SUBMITTED_VALUE {
+  if (traversal.visitedNodes >= CONTENT_TRAVERSAL_MAX_NODES) {
+    return OMIT_SUBMITTED_VALUE;
+  }
+  traversal.visitedNodes++;
+
+  if (value === null) {
+    return null;
+  }
+  if (typeof value === 'string' || typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value !== 'object' || traversal.seen.has(value)) {
+    return OMIT_SUBMITTED_VALUE;
+  }
+  traversal.seen.add(value);
+
+  let isArray = false;
+  try {
+    isArray = Array.isArray(value);
+  } catch {
+    return OMIT_SUBMITTED_VALUE;
+  }
+  if (isArray) {
+    let length = 0;
+    try {
+      length = (value as readonly unknown[]).length;
+    } catch {
+      return OMIT_SUBMITTED_VALUE;
+    }
+    if (
+      (depth >= CONTENT_TRAVERSAL_MAX_DEPTH && length > 0) ||
+      length > CONTENT_TRAVERSAL_MAX_NODES - traversal.visitedNodes
+    ) {
+      return OMIT_SUBMITTED_VALUE;
+    }
+    const output: BoundedJsonValue[] = [];
+    for (let index = 0; index < length; index++) {
+      let item: unknown;
+      try {
+        item = (value as readonly unknown[])[index];
+      } catch {
+        return OMIT_SUBMITTED_VALUE;
+      }
+      const serializedItem = toBoundedJsonValue(item, traversal, depth + 1);
+      if (serializedItem === OMIT_SUBMITTED_VALUE) {
+        if (item === undefined || typeof item === 'function' || typeof item === 'symbol') {
+          output.push(null);
+          continue;
+        }
+        return OMIT_SUBMITTED_VALUE;
+      }
+      output.push(serializedItem);
+    }
+    return output;
+  }
+
+  const boundedEntries = getBoundedOwnEnumerableEntries(
+    value,
+    Math.max(0, CONTENT_TRAVERSAL_MAX_NODES - traversal.visitedNodes),
+  );
+  if (
+    !boundedEntries.complete ||
+    (depth >= CONTENT_TRAVERSAL_MAX_DEPTH && boundedEntries.entries.length > 0)
+  ) {
+    return OMIT_SUBMITTED_VALUE;
+  }
+
+  const output = Object.create(null) as { [key: string]: BoundedJsonValue };
+  for (const [key, entryValue] of boundedEntries.entries) {
+    const serializedEntry = toBoundedJsonValue(entryValue, traversal, depth + 1);
+    if (serializedEntry === OMIT_SUBMITTED_VALUE) {
+      if (
+        entryValue === undefined ||
+        typeof entryValue === 'function' ||
+        typeof entryValue === 'symbol'
+      ) {
+        continue;
+      }
+      return OMIT_SUBMITTED_VALUE;
+    }
+    output[key] = serializedEntry;
+  }
+  return output;
 }
 
 function stringifySubmittedValue(value: unknown): {
@@ -1324,12 +1708,99 @@ function stringifySubmittedValue(value: unknown): {
   if (value == null) {
     return null;
   }
+  const boundedValue = toBoundedJsonValue(value, {
+    seen: new WeakSet<object>(),
+    visitedNodes: 0,
+  });
+  if (boundedValue === OMIT_SUBMITTED_VALUE) {
+    return null;
+  }
   try {
-    const text = JSON.stringify(value);
+    const text = JSON.stringify(boundedValue);
     return typeof text === 'string' && text.length > 0 ? { text, format: 'json' } : null;
   } catch {
     return null;
   }
+}
+
+interface SubmittedValueFragment {
+  readonly text: string;
+  readonly path: JsonPointer;
+  readonly format: TextContentFragment['format'];
+  readonly index: number;
+  readonly serialized: boolean;
+}
+
+function extractSubmittedValueContent(
+  value: unknown,
+  path: JsonPointer,
+  createFragments: (value: SubmittedValueFragment) => readonly TextContentFragment[],
+  scopes: readonly ContentTraversalScope[],
+): readonly TextContentFragment[] {
+  const serialized = stringifySubmittedValue(value);
+  if (serialized != null) {
+    return createFragments({
+      text: serialized.text,
+      path,
+      format: serialized.format,
+      index: 0,
+      serialized: true,
+    });
+  }
+  if (value == null || value === '') {
+    return [];
+  }
+  if (typeof value !== 'object') {
+    throw new ContentTraversalLimitError([], scopes);
+  }
+
+  const fragments: TextContentFragment[] = [];
+  let nestedIndex = 0;
+  const complete = visitNestedStrings(
+    value,
+    path,
+    (text, nestedPath) => {
+      fragments.push(
+        ...createFragments({
+          text,
+          path: nestedPath,
+          format: 'plain',
+          index: nestedIndex,
+          serialized: false,
+        }),
+      );
+      nestedIndex++;
+    },
+    { includeKeys: true },
+  );
+  if (!complete) {
+    throw new ContentTraversalLimitError(fragments, scopes);
+  }
+  return fragments;
+}
+
+function extractToolArgumentValue(
+  value: unknown,
+  field: ContentFieldMap['tool_argument'],
+  id: string,
+  path: JsonPointer,
+): readonly TextContentFragment[] {
+  return extractSubmittedValueContent(
+    value,
+    path,
+    ({ text, path: fragmentPath, format, index, serialized }) => [
+      fragment(
+        `${id}${serialized ? '' : `.nested.${index}`}`,
+        fragmentPath,
+        text,
+        'tool_argument',
+        field,
+        format,
+        'inspect_only',
+      ),
+    ],
+    [{ source: 'tool_argument', fields: [field] }],
+  );
 }
 
 export function extractToolArgumentContent(
@@ -1337,48 +1808,16 @@ export function extractToolArgumentContent(
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
   for (const field of ['name', 'arguments', 'output'] as const) {
-    const value = input?.[field];
-    const serialized = stringifySubmittedValue(value);
-    if (serialized == null) {
-      if (value == null || typeof value !== 'object') {
-        continue;
-      }
-      let nestedIndex = 0;
-      const complete = visitNestedStrings(
-        value,
-        `/${field}`,
-        (text, path) => {
-          fragments.push(
-            fragment(
-              `tool-argument.${field}.nested.${nestedIndex}`,
-              path,
-              text,
-              'tool_argument',
-              field,
-              'plain',
-              'inspect_only',
-            ),
-          );
-          nestedIndex++;
-        },
-        { includeKeys: true },
+    try {
+      fragments.push(
+        ...extractToolArgumentValue(input?.[field], field, `tool-argument.${field}`, `/${field}`),
       );
-      if (!complete) {
-        throw new ContentTraversalLimitError(fragments);
+    } catch (error) {
+      if (error instanceof ContentTraversalLimitError) {
+        prependContentTraversalFragments(error, fragments);
       }
-      continue;
+      throw error;
     }
-    fragments.push(
-      fragment(
-        `tool-argument.${field}`,
-        `/${field}`,
-        serialized.text,
-        'tool_argument',
-        field,
-        serialized.format,
-        'inspect_only',
-      ),
-    );
   }
   return fragments;
 }

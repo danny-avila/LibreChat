@@ -1,8 +1,8 @@
 import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
-import type { JsonPointer, TextContentFragment } from '../types';
+import type { ContentFieldMap, ContentSource, JsonPointer, TextContentFragment } from '../types';
 
-const DEFAULT_MAX_DEPTH = 24;
-const DEFAULT_MAX_NODES = 4096;
+export const CONTENT_TRAVERSAL_MAX_DEPTH = 24;
+export const CONTENT_TRAVERSAL_MAX_NODES = 4096;
 const DATA_URI_PREFIX = 'data:';
 const BASE64_VALUE = /^[A-Za-z0-9+/]+={0,2}$/;
 const STRUCTURAL_CONTENT_KEYS = new Set([
@@ -27,39 +27,81 @@ export interface NestedStringContext {
   readonly path: JsonPointer;
 }
 
+export interface VisitNestedStringsBudget {
+  visitedNodes: number;
+}
+
 export interface VisitNestedStringsOptions {
   readonly includeKeys?: boolean;
   readonly maxDepth?: number;
   readonly maxNodes?: number;
+  readonly budget?: VisitNestedStringsBudget;
   readonly shouldVisit?: (context: NestedStringContext & { readonly value: unknown }) => boolean;
   readonly shouldInclude?: (value: string, context: NestedStringContext) => boolean;
+}
+
+export function getBoundedOwnEnumerableEntries(
+  value: object,
+  limit: number,
+): { readonly entries: [string, unknown][]; readonly complete: boolean } {
+  const entries: [string, unknown][] = [];
+  if (limit !== Number.POSITIVE_INFINITY && (!Number.isSafeInteger(limit) || limit < 0)) {
+    return { entries, complete: false };
+  }
+  try {
+    for (const key in value) {
+      if (!Object.prototype.hasOwnProperty.call(value, key)) {
+        continue;
+      }
+      if (entries.length >= limit) {
+        return { entries, complete: false };
+      }
+      entries.push([key, (value as { readonly [key: string]: unknown })[key]]);
+    }
+  } catch {
+    return { entries, complete: false };
+  }
+  return { entries, complete: true };
 }
 
 export interface UninspectableNestedContentResponse {
   readonly error: 'content_filter_uninspectable';
   readonly message: string;
-  readonly source: 'message';
-  readonly field: 'content_part';
+  readonly source: ContentSource;
+  readonly field: ContentFieldMap[ContentSource];
 }
 
+export type ContentTraversalScope = {
+  [Source in ContentSource]: {
+    readonly source: Source;
+    readonly fields: readonly ContentFieldMap[Source][];
+  };
+}[ContentSource];
+
 const CONTENT_TRAVERSAL_FRAGMENTS = new WeakMap<object, readonly TextContentFragment[]>();
+const CONTENT_TRAVERSAL_SCOPES = new WeakMap<object, readonly ContentTraversalScope[]>();
 
 export class ContentTraversalLimitError extends Error {
   public readonly code = 'content_filter_uninspectable';
   public readonly statusCode = 400;
   public readonly body: UninspectableNestedContentResponse;
 
-  constructor(fragments: readonly TextContentFragment[] = []) {
+  constructor(
+    fragments: readonly TextContentFragment[] = [],
+    scopes: readonly ContentTraversalScope[] = [],
+  ) {
+    const primaryScope = scopes.find(({ fields }) => fields.length > 0);
     const body: UninspectableNestedContentResponse = {
       error: 'content_filter_uninspectable',
       message: 'Submitted content could not be completely inspected before processing.',
-      source: 'message',
-      field: 'content_part',
+      source: primaryScope?.source ?? 'message',
+      field: primaryScope?.fields[0] ?? 'content_part',
     };
     super(body.message);
     this.name = 'ContentTraversalLimitError';
     this.body = body;
     CONTENT_TRAVERSAL_FRAGMENTS.set(this, fragments);
+    CONTENT_TRAVERSAL_SCOPES.set(this, scopes);
     Object.setPrototypeOf(this, ContentTraversalLimitError.prototype);
   }
 }
@@ -72,6 +114,25 @@ export function getContentTraversalFragments(
   error: ContentTraversalLimitError,
 ): readonly TextContentFragment[] {
   return CONTENT_TRAVERSAL_FRAGMENTS.get(error) ?? [];
+}
+
+export function prependContentTraversalFragments(
+  error: ContentTraversalLimitError,
+  fragments: readonly TextContentFragment[],
+): void {
+  if (fragments.length === 0) {
+    return;
+  }
+  CONTENT_TRAVERSAL_FRAGMENTS.set(error, [
+    ...fragments,
+    ...(CONTENT_TRAVERSAL_FRAGMENTS.get(error) ?? []),
+  ]);
+}
+
+export function getContentTraversalScopes(
+  error: ContentTraversalLimitError,
+): readonly ContentTraversalScope[] {
+  return CONTENT_TRAVERSAL_SCOPES.get(error) ?? [];
 }
 
 function isFieldEnabled(
@@ -95,6 +156,31 @@ function hasActivePatterns(
     (pii.starterPatterns == null ||
       pii.starterPatterns.length > 0 ||
       (pii.customPatterns?.length ?? 0) > 0)
+  );
+}
+
+function isScopedTraversalProtected(
+  scopes: readonly ContentTraversalScope[],
+  source: ContentSource,
+  pii:
+    | {
+        readonly fields?: readonly string[];
+        readonly starterPatterns?: readonly string[];
+        readonly customPatterns?: readonly unknown[];
+      }
+    | null
+    | undefined,
+): boolean {
+  if (!hasActivePatterns(pii)) {
+    return false;
+  }
+  const sourceScopes = scopes.filter((scope) => scope.source === source);
+  if (sourceScopes.length === 0) {
+    return false;
+  }
+  return (
+    pii?.fields == null ||
+    sourceScopes.some(({ fields }) => fields.some((field) => pii.fields?.includes(field) === true))
   );
 }
 
@@ -124,6 +210,69 @@ export function isNestedMessageTraversalProtected(params: {
     hasActivePatterns(params.filters?.toolArguments?.pii) &&
     isFieldEnabled(params.filters?.toolArguments?.pii, 'output')
   );
+}
+
+export function isModelParameterTraversalProtected(params: {
+  readonly error: ContentTraversalLimitError;
+  readonly filters?: FiltersConfig;
+}): boolean {
+  const pii = params.filters?.modelParameters?.pii;
+  if (!hasActivePatterns(pii)) {
+    return false;
+  }
+  const scopes = getContentTraversalScopes(params.error).filter(
+    (scope): scope is Extract<ContentTraversalScope, { readonly source: 'model_parameter' }> =>
+      scope.source === 'model_parameter',
+  );
+  if (scopes.length === 0) {
+    return false;
+  }
+  return (
+    pii?.fields == null ||
+    scopes.some(({ fields }) => fields.some((field) => pii.fields?.includes(field) === true))
+  );
+}
+
+export function isContentTraversalProtected(params: {
+  readonly error: ContentTraversalLimitError;
+  readonly filters?: FiltersConfig;
+  readonly legacyPii?: MessageFilterPiiConfig;
+  readonly roles?: readonly (string | undefined)[];
+}): boolean {
+  const scopes = getContentTraversalScopes(params.error);
+  if (isModelParameterTraversalProtected(params)) {
+    return true;
+  }
+  if (
+    isScopedTraversalProtected(scopes, 'tool_argument', params.filters?.toolArguments?.pii) ||
+    isScopedTraversalProtected(scopes, 'message', params.filters?.messages?.pii) ||
+    isScopedTraversalProtected(scopes, 'assembled_context', params.filters?.messages?.pii) ||
+    isScopedTraversalProtected(
+      scopes,
+      'agent_instruction',
+      params.filters?.agentInstructions?.pii,
+    ) ||
+    isScopedTraversalProtected(scopes, 'skill', params.filters?.skills?.pii) ||
+    isScopedTraversalProtected(scopes, 'action_metadata', params.filters?.actionMetadata?.pii)
+  ) {
+    return true;
+  }
+  if (
+    scopes.length > 0 &&
+    hasActivePatterns(params.legacyPii) &&
+    scopes.some(
+      (scope) =>
+        scope.source === 'message' ||
+        scope.source === 'assembled_context' ||
+        (scope.source === 'tool_argument' && scope.fields.includes('output')),
+    )
+  ) {
+    return true;
+  }
+  if (scopes.length > 0) {
+    return false;
+  }
+  return isNestedMessageTraversalProtected(params);
 }
 
 interface PendingValue {
@@ -186,14 +335,15 @@ export function visitNestedStrings(
   onString: (value: string, path: JsonPointer) => void,
   options: VisitNestedStringsOptions = {},
 ): boolean {
-  const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
-  const maxNodes = options.maxNodes ?? DEFAULT_MAX_NODES;
+  const maxDepth = options.maxDepth ?? CONTENT_TRAVERSAL_MAX_DEPTH;
+  const maxNodes = options.maxNodes ?? CONTENT_TRAVERSAL_MAX_NODES;
   const pending: PendingValue[] = [{ value, path, key: undefined, parent: undefined, depth: 0 }];
   const seen = new WeakSet<object>();
   let visitedNodes = 0;
   let complete = true;
+  const getVisitedNodes = () => options.budget?.visitedNodes ?? visitedNodes;
 
-  while (pending.length > 0 && visitedNodes < maxNodes) {
+  while (pending.length > 0 && getVisitedNodes() < maxNodes) {
     const current = pending.pop();
     if (current == null) {
       continue;
@@ -203,6 +353,9 @@ export function visitNestedStrings(
       continue;
     }
     visitedNodes++;
+    if (options.budget != null) {
+      options.budget.visitedNodes++;
+    }
 
     const context = {
       key: current.key,
@@ -231,7 +384,7 @@ export function visitNestedStrings(
         complete = false;
         continue;
       }
-      const availableNodes = Math.max(0, maxNodes - visitedNodes - pending.length);
+      const availableNodes = Math.max(0, maxNodes - getVisitedNodes() - pending.length);
       const scheduledNodes = Math.min(current.value.length, availableNodes);
       if (scheduledNodes < current.value.length) {
         complete = false;
@@ -252,22 +405,17 @@ export function visitNestedStrings(
       continue;
     }
 
-    let entries: [string, unknown][];
-    try {
-      entries = Object.entries(current.value);
-    } catch {
+    const availableNodes = Math.max(0, maxNodes - getVisitedNodes() - pending.length);
+    const boundedEntries = getBoundedOwnEnumerableEntries(current.value, availableNodes);
+    const entries = boundedEntries.entries;
+    if (!boundedEntries.complete) {
+      complete = false;
+    }
+    if (current.depth >= maxDepth && (entries.length > 0 || !boundedEntries.complete)) {
       complete = false;
       continue;
     }
-    if (current.depth >= maxDepth && entries.length > 0) {
-      complete = false;
-      continue;
-    }
-    const availableNodes = Math.max(0, maxNodes - visitedNodes - pending.length);
-    const scheduledNodes = Math.min(entries.length, availableNodes);
-    if (scheduledNodes < entries.length) {
-      complete = false;
-    }
+    const scheduledNodes = entries.length;
     if (options.includeKeys === true) {
       for (let index = 0; index < scheduledNodes; index++) {
         const [key] = entries[index];

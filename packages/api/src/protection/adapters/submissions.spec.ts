@@ -15,7 +15,14 @@ import {
   extractStoredMessageContent,
   extractToolArgumentContent,
 } from './submissions';
-import { ContentTraversalLimitError } from './nested';
+import {
+  CONTENT_TRAVERSAL_MAX_DEPTH,
+  CONTENT_TRAVERSAL_MAX_NODES,
+  ContentTraversalLimitError,
+  getContentTraversalFragments,
+  getContentTraversalScopes,
+  isContentTraversalProtected,
+} from './nested';
 import { inspectContent } from '../runtime';
 
 function fieldValues(
@@ -54,6 +61,48 @@ describe('submitted content adapters', () => {
       field: 'assembled_context',
       label: 'split token',
     });
+  });
+
+  it('classifies persisted and imported summary content parts as message summaries', () => {
+    const message = {
+      content: [{ type: 'summary', text: 'persisted summary text' }],
+    };
+
+    expect(fieldValues(extractStoredMessageContent(message))).toEqual(
+      expect.arrayContaining([
+        {
+          source: 'message',
+          field: 'content_part',
+          text: 'persisted summary text',
+          path: '/content/0/text',
+        },
+        {
+          source: 'message',
+          field: 'summary',
+          text: 'persisted summary text',
+          path: '/content/0/text',
+        },
+      ]),
+    );
+    expect(
+      fieldValues(
+        Array.from(
+          extractConversationImportContent({
+            conversations: [],
+            messages: [message],
+          }),
+        ),
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        {
+          source: 'message',
+          field: 'summary',
+          text: 'persisted summary text',
+          path: '/content/0/text',
+        },
+      ]),
+    );
   });
 
   it('registers agent metadata, instructions, edges, and conversation starters separately', () => {
@@ -424,6 +473,90 @@ describe('submitted content adapters', () => {
     );
   });
 
+  it('keeps bounded fragments and exact scopes for oversized tool definitions', () => {
+    const createDeepValue = (visible: string): Record<string, unknown> => {
+      const root: Record<string, unknown> = { visible };
+      let current = root;
+      for (let depth = 0; depth < CONTENT_TRAVERSAL_MAX_DEPTH; depth++) {
+        const nested: Record<string, unknown> = {};
+        current.nested = nested;
+        current = nested;
+      }
+      current.nested = { hidden: 'ORG-HIDDEN-OVERFLOW' };
+      return root;
+    };
+    const captureTraversalError = (extract: () => unknown): ContentTraversalLimitError => {
+      try {
+        extract();
+      } catch (error) {
+        if (error instanceof ContentTraversalLimitError) {
+          return error;
+        }
+        throw error;
+      }
+      throw new Error('Expected bounded traversal to fail closed');
+    };
+
+    const parameterError = captureTraversalError(() =>
+      extractAssistantContent({
+        name: 'visible assistant name',
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'visible_function',
+              parameters: createDeepValue('ORG-VISIBLE-PARAMETER'),
+            },
+          },
+        ],
+      }),
+    );
+    expect(getContentTraversalScopes(parameterError)).toEqual([
+      { source: 'tool_argument', fields: ['arguments'] },
+    ]);
+    expect(getContentTraversalFragments(parameterError)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'agent_instruction',
+          field: 'name',
+          text: 'visible assistant name',
+        }),
+        expect.objectContaining({
+          source: 'tool_argument',
+          field: 'arguments',
+          text: 'ORG-VISIBLE-PARAMETER',
+          path: '/tools/0/function/parameters/visible',
+        }),
+      ]),
+    );
+
+    const actionError = captureTraversalError(() =>
+      extractAssistantActionContent({
+        metadata: { raw_spec: createDeepValue('ORG-VISIBLE-SPEC') },
+      }),
+    );
+    expect(getContentTraversalScopes(actionError)).toEqual([
+      { source: 'tool_argument', fields: ['arguments'] },
+      { source: 'action_metadata', fields: ['raw_spec'] },
+    ]);
+    expect(getContentTraversalFragments(actionError)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'tool_argument',
+          field: 'arguments',
+          text: 'ORG-VISIBLE-SPEC',
+          path: '/metadata/raw_spec/visible',
+        }),
+        expect.objectContaining({
+          source: 'action_metadata',
+          field: 'raw_spec',
+          text: 'ORG-VISIBLE-SPEC',
+          path: '/metadata/raw_spec/visible',
+        }),
+      ]),
+    );
+  });
+
   it('extracts prompt records and the real nested preset example shape', () => {
     expect(
       fieldValues(
@@ -557,6 +690,77 @@ describe('submitted content adapters', () => {
     expect(fragments.some(({ text }) => text === input.unregisteredCredential)).toBe(false);
   });
 
+  it('fails closed with the skill frontmatter scope when bounded traversal is incomplete', () => {
+    type NestedFrontmatter = Record<string, unknown> & {
+      nested?: NestedFrontmatter;
+    };
+
+    const frontmatter: NestedFrontmatter = {
+      visible: 'ORG-VISIBLE-FRONTMATTER',
+    };
+    let current: NestedFrontmatter = frontmatter;
+    for (let depth = 0; depth < CONTENT_TRAVERSAL_MAX_DEPTH; depth++) {
+      current.nested = {};
+      current = current.nested;
+    }
+    let overflowValueRead = false;
+    const overflow: Record<string, unknown> = {};
+    Object.defineProperty(overflow, 'protected_value', {
+      enumerable: true,
+      get() {
+        overflowValueRead = true;
+        return 'ORG-OVERFLOW-FRONTMATTER';
+      },
+    });
+    current.nested = overflow;
+
+    let traversalError: ContentTraversalLimitError | null = null;
+    try {
+      extractSkillContent({ frontmatter });
+    } catch (error) {
+      if (error instanceof ContentTraversalLimitError) {
+        traversalError = error;
+      } else {
+        throw error;
+      }
+    }
+
+    const error = traversalError as ContentTraversalLimitError;
+    expect(getContentTraversalScopes(error)).toEqual([
+      { source: 'skill', fields: ['frontmatter'] },
+    ]);
+    expect(getContentTraversalFragments(error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'skill',
+          field: 'frontmatter',
+          text: 'ORG-VISIBLE-FRONTMATTER',
+          path: '/frontmatter/visible',
+        }),
+      ]),
+    );
+    expect(overflowValueRead).toBe(false);
+
+    const broadFrontmatter = Object.fromEntries(
+      Array.from({ length: CONTENT_TRAVERSAL_MAX_NODES - 1 }, (_, index) => [
+        `field_${index}`,
+        'safe',
+      ]),
+    );
+    let overflowNodeRead = false;
+    Object.defineProperty(broadFrontmatter, 'overflow_node', {
+      enumerable: true,
+      get() {
+        overflowNodeRead = true;
+        return 'ORG-OVERFLOW-NODE';
+      },
+    });
+    expect(() => extractSkillContent({ frontmatter: broadFrontmatter })).toThrow(
+      ContentTraversalLimitError,
+    );
+    expect(overflowNodeRead).toBe(false);
+  });
+
   it('extracts memory, file, feedback, and title fields without collapsing supplied aliases', () => {
     expect(fieldValues(extractMemoryContent({ key: 'k', value: 'v', summary: 's' }))).toEqual([
       expect.objectContaining({ source: 'memory', field: 'key', text: 'k' }),
@@ -575,6 +779,8 @@ describe('submitted content adapters', () => {
           transcript: 'transcript',
           uri: 'https://example.test/file',
           filepath: '/tmp/file',
+          url: 'https://example.test/url-alias',
+          preview: 'https://example.test/preview-alias',
         }),
       ),
     ).toEqual(
@@ -586,6 +792,16 @@ describe('submitted content adapters', () => {
         expect.objectContaining({ source: 'file', field: 'extracted_text', text: 'text alias' }),
         expect.objectContaining({ source: 'file', field: 'transcript', text: 'transcript' }),
         expect.objectContaining({ source: 'file', field: 'uri', text: '/tmp/file' }),
+        expect.objectContaining({
+          source: 'file',
+          field: 'uri',
+          text: 'https://example.test/url-alias',
+        }),
+        expect.objectContaining({
+          source: 'file',
+          field: 'uri',
+          text: 'https://example.test/preview-alias',
+        }),
       ]),
     );
     expect(
@@ -746,6 +962,247 @@ describe('submitted content adapters', () => {
     expect(fragments.filter(({ path }) => path === '/options/metadata/label')).toHaveLength(2);
   });
 
+  it('fails closed when registered model parameter content exceeds the depth budget', () => {
+    interface NestedModelParameter {
+      nested?: NestedModelParameter;
+    }
+
+    const metadata: NestedModelParameter = {};
+    let current = metadata;
+    for (let depth = 0; depth < 25; depth++) {
+      current.nested = {};
+      current = current.nested;
+    }
+
+    expect(() => extractModelParameterContent({ metadata })).toThrow(ContentTraversalLimitError);
+  });
+
+  it('fails closed when nested model parameter wrappers exceed the depth budget', () => {
+    let nested: Parameters<typeof extractModelParameterContent>[0] = {};
+    for (let depth = 0; depth < 25; depth++) {
+      nested = { model_parameters: nested };
+    }
+
+    expect(() => extractModelParameterContent({ options: nested })).toThrow(
+      ContentTraversalLimitError,
+    );
+  });
+
+  it('fails closed when a model parameter wrapper exceeds the node budget', () => {
+    const options = Object.fromEntries(
+      Array.from({ length: 4096 }, (_, index) => [`provider_option_${index}`, 'value']),
+    );
+
+    expect(() => extractModelParameterContent({ options })).toThrow(ContentTraversalLimitError);
+  });
+
+  it('does not read model parameter properties beyond the traversal budget', () => {
+    const options = Object.fromEntries(
+      Array.from({ length: CONTENT_TRAVERSAL_MAX_NODES }, (_, index) => [
+        `provider_option_${index}`,
+        'value',
+      ]),
+    );
+    let overflowValueRead = false;
+    Object.defineProperty(options, 'overflow_value', {
+      enumerable: true,
+      get() {
+        overflowValueRead = true;
+        return 'PRIVATE-OVERFLOW';
+      },
+    });
+
+    expect(() => extractModelParameterContent({ options })).toThrow(ContentTraversalLimitError);
+    expect(overflowValueRead).toBe(false);
+  });
+
+  it('shares the node budget across sibling model-parameter subtrees', () => {
+    const options = {
+      first_provider_option: Array.from({ length: 1_500 }, (_, index) => `first-${index}`),
+      second_provider_option: Array.from({ length: 1_500 }, (_, index) => `second-${index}`),
+      third_provider_option: Array.from({ length: 1_500 }, (_, index) => `third-${index}`),
+    };
+
+    let traversalError: ContentTraversalLimitError | null = null;
+    try {
+      extractModelParameterContent({ options });
+    } catch (error) {
+      if (error instanceof ContentTraversalLimitError) {
+        traversalError = error;
+      } else {
+        throw error;
+      }
+    }
+
+    expect(getContentTraversalScopes(traversalError as ContentTraversalLimitError)).toEqual([
+      { source: 'model_parameter', fields: ['request_fields'] },
+    ]);
+    expect(getContentTraversalFragments(traversalError as ContentTraversalLimitError)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: 'first-1499' }),
+        expect.objectContaining({ text: 'second-1499' }),
+      ]),
+    );
+  });
+
+  it('reports the exact model parameter field whose traversal was incomplete', () => {
+    let value: unknown = 'safe';
+    for (let depth = 0; depth < 30; depth++) {
+      value = { nested: value };
+    }
+
+    let traversalError: ContentTraversalLimitError | null = null;
+    try {
+      extractModelParameterContent({ options: { provider_option: value } });
+    } catch (error) {
+      if (error instanceof ContentTraversalLimitError) {
+        traversalError = error;
+      } else {
+        throw error;
+      }
+    }
+
+    expect(traversalError).not.toBeNull();
+    expect(getContentTraversalScopes(traversalError as ContentTraversalLimitError)).toEqual([
+      { source: 'model_parameter', fields: ['request_fields'] },
+    ]);
+    expect((traversalError as ContentTraversalLimitError).body).toMatchObject({
+      source: 'model_parameter',
+      field: 'request_fields',
+    });
+  });
+
+  it('keeps an exhausted unknown wrapper branch scoped away from inspected stop content', () => {
+    let value: unknown = 'safe';
+    for (let depth = 0; depth < 30; depth++) {
+      value = { nested: value };
+    }
+
+    let traversalError: ContentTraversalLimitError | null = null;
+    try {
+      extractModelParameterContent({
+        options: {
+          stop: 'safe stop value',
+          provider_option: value,
+        },
+      });
+    } catch (error) {
+      if (error instanceof ContentTraversalLimitError) {
+        traversalError = error;
+      } else {
+        throw error;
+      }
+    }
+
+    expect(getContentTraversalScopes(traversalError as ContentTraversalLimitError)).toEqual([
+      { source: 'model_parameter', fields: ['request_fields'] },
+    ]);
+    expect(getContentTraversalFragments(traversalError as ContentTraversalLimitError)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: 'stop',
+          text: 'safe stop value',
+        }),
+      ]),
+    );
+  });
+
+  it('conservatively scopes an exhausted wrapper chain to every possible field', () => {
+    let nested: unknown = { stop: 'PRIVATE-SENTINEL' };
+    for (let depth = 0; depth < 60; depth++) {
+      nested = { options: nested };
+    }
+
+    let traversalError: ContentTraversalLimitError | null = null;
+    try {
+      extractModelParameterContent({ options: nested });
+    } catch (error) {
+      if (error instanceof ContentTraversalLimitError) {
+        traversalError = error;
+      } else {
+        throw error;
+      }
+    }
+
+    expect(getContentTraversalScopes(traversalError as ContentTraversalLimitError)).toEqual([
+      {
+        source: 'model_parameter',
+        fields: ['stop', 'request_fields', 'response_format', 'metadata'],
+      },
+    ]);
+  });
+
+  it('fails closed when the root model-parameter object cannot be enumerated', () => {
+    const opaqueRoot = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Error('unavailable');
+        },
+      },
+    );
+
+    let traversalError: ContentTraversalLimitError | null = null;
+    try {
+      extractModelParameterContent(opaqueRoot);
+    } catch (error) {
+      if (error instanceof ContentTraversalLimitError) {
+        traversalError = error;
+      } else {
+        throw error;
+      }
+    }
+
+    expect(getContentTraversalScopes(traversalError as ContentTraversalLimitError)).toEqual([
+      {
+        source: 'model_parameter',
+        fields: ['stop', 'request_fields', 'response_format', 'metadata'],
+      },
+    ]);
+  });
+
+  it('retains later import content when an earlier model parameter traversal is incomplete', () => {
+    let value: unknown = 'safe';
+    for (let depth = 0; depth < 30; depth++) {
+      value = { nested: value };
+    }
+
+    let traversalError: ContentTraversalLimitError | null = null;
+    try {
+      Array.from(
+        extractConversationImportContent({
+          conversations: [
+            { options: { provider_option: value } },
+            { presetOverride: { instructions: 'later prompt content' } },
+          ],
+          messages: [{ text: 'later message content' }],
+        }),
+      );
+    } catch (error) {
+      if (error instanceof ContentTraversalLimitError) {
+        traversalError = error;
+      } else {
+        throw error;
+      }
+    }
+
+    const fragments = getContentTraversalFragments(traversalError as ContentTraversalLimitError);
+    expect(fragments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'prompt',
+          field: 'instructions',
+          text: 'later prompt content',
+        }),
+        expect.objectContaining({
+          source: 'message',
+          field: 'text',
+          text: 'later message content',
+        }),
+      ]),
+    );
+  });
+
   it('extracts stored message parts, attachment references, and every tool argument shape', () => {
     const dataUri = `data:image/png;base64,${'a'.repeat(1024)}`;
     const fragments = fieldValues(
@@ -804,7 +1261,13 @@ describe('submitted content adapters', () => {
             output: 'ORG-TOP-OUTPUT',
           },
         ],
-        attachments: [{ uri: 'https://example.test/file?token=ORG-URI' }],
+        attachments: [
+          {
+            uri: 'https://example.test/file?token=ORG-URI',
+            url: 'https://example.test/file?token=ORG-URL',
+            preview: 'https://example.test/file?token=ORG-PREVIEW',
+          },
+        ],
       }),
     );
 
@@ -843,6 +1306,26 @@ describe('submitted content adapters', () => {
           source: 'file',
           field: 'uri',
           text: 'https://example.test/file?token=ORG-URI',
+        }),
+        expect.objectContaining({
+          source: 'message',
+          field: 'attachment_reference',
+          text: 'https://example.test/file?token=ORG-URL',
+        }),
+        expect.objectContaining({
+          source: 'file',
+          field: 'uri',
+          text: 'https://example.test/file?token=ORG-URL',
+        }),
+        expect.objectContaining({
+          source: 'message',
+          field: 'attachment_reference',
+          text: 'https://example.test/file?token=ORG-PREVIEW',
+        }),
+        expect.objectContaining({
+          source: 'file',
+          field: 'uri',
+          text: 'https://example.test/file?token=ORG-PREVIEW',
         }),
         expect.objectContaining({
           source: 'tool_argument',
@@ -1159,6 +1642,176 @@ describe('submitted content adapters', () => {
         }),
       ]),
     );
+  });
+
+  it('bounds normal acyclic tool serialization before reading deeper values', () => {
+    interface NestedArguments {
+      nested?: NestedArguments;
+    }
+
+    const argumentsValue: NestedArguments & { visible: string } = {
+      visible: 'ORG-VISIBLE-ARGUMENT',
+    };
+    let current: NestedArguments = argumentsValue;
+    for (let depth = 0; depth < CONTENT_TRAVERSAL_MAX_DEPTH; depth++) {
+      current.nested = {};
+      current = current.nested;
+    }
+    let overflowValueRead = false;
+    const overflow: Record<string, unknown> = {};
+    Object.defineProperty(overflow, 'protected_value', {
+      enumerable: true,
+      get() {
+        overflowValueRead = true;
+        return 'ORG-OVERFLOW-ARGUMENT';
+      },
+    });
+    current.nested = overflow;
+
+    let traversalError: ContentTraversalLimitError | null = null;
+    try {
+      extractToolArgumentContent({ arguments: argumentsValue });
+    } catch (error) {
+      if (error instanceof ContentTraversalLimitError) {
+        traversalError = error;
+      } else {
+        throw error;
+      }
+    }
+
+    const error = traversalError as ContentTraversalLimitError;
+    expect(getContentTraversalScopes(error)).toEqual([
+      { source: 'tool_argument', fields: ['arguments'] },
+    ]);
+    expect(getContentTraversalFragments(error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'tool_argument',
+          field: 'arguments',
+          text: 'ORG-VISIBLE-ARGUMENT',
+          path: '/arguments/visible',
+        }),
+      ]),
+    );
+    expect(overflowValueRead).toBe(false);
+  });
+
+  it('does not serialize normal tool properties beyond the shared node budget', () => {
+    const argumentsValue = Object.fromEntries(
+      Array.from({ length: CONTENT_TRAVERSAL_MAX_NODES - 1 }, (_, index) => [
+        `field_${index}`,
+        'safe',
+      ]),
+    );
+    let overflowValueRead = false;
+    Object.defineProperty(argumentsValue, 'overflow_value', {
+      enumerable: true,
+      get() {
+        overflowValueRead = true;
+        return 'ORG-OVERFLOW-ARGUMENT';
+      },
+    });
+
+    expect(() => extractToolArgumentContent({ arguments: argumentsValue })).toThrow(
+      ContentTraversalLimitError,
+    );
+    expect(overflowValueRead).toBe(false);
+  });
+
+  it('traverses cyclic stored tool arguments and preserves their message paths', () => {
+    const cyclic: { protectedValue: string; self?: object } = {
+      protectedValue: 'ORG-STORED-CYCLIC',
+    };
+    cyclic.self = cyclic;
+
+    expect(
+      extractStoredMessageContent({
+        role: 'assistant',
+        tool_calls: [{ arguments: cyclic }],
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'tool_argument',
+          field: 'arguments',
+          text: 'protectedValue',
+          path: '/tool_calls/0/arguments/protectedValue',
+        }),
+        expect.objectContaining({
+          source: 'tool_argument',
+          field: 'arguments',
+          text: 'ORG-STORED-CYCLIC',
+          path: '/tool_calls/0/arguments/protectedValue',
+        }),
+      ]),
+    );
+  });
+
+  it('fails closed only for the selected field when stored tool traversal is incomplete', () => {
+    interface DeepArguments {
+      nested?: DeepArguments;
+    }
+    const argumentsValue: DeepArguments = {};
+    let current = argumentsValue;
+    for (let depth = 0; depth < 30; depth++) {
+      current.nested = {};
+      current = current.nested;
+    }
+    Object.defineProperty(argumentsValue, 'toJSON', {
+      value: () => {
+        throw new Error('cannot serialize');
+      },
+    });
+
+    let traversalError: ContentTraversalLimitError | null = null;
+    try {
+      extractStoredMessageContent({
+        role: 'assistant',
+        original: 'later message content',
+        tool_calls: [{ arguments: argumentsValue }],
+      });
+    } catch (error) {
+      if (error instanceof ContentTraversalLimitError) {
+        traversalError = error;
+      } else {
+        throw error;
+      }
+    }
+
+    const error = traversalError as ContentTraversalLimitError;
+    expect(getContentTraversalScopes(error)).toEqual([
+      { source: 'tool_argument', fields: ['arguments'] },
+    ]);
+    expect(getContentTraversalFragments(error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'message',
+          field: 'content_part',
+          text: 'later message content',
+        }),
+      ]),
+    );
+    expect(
+      isContentTraversalProtected({
+        error,
+        filters: {
+          toolArguments: {
+            pii: { fields: ['arguments'], starterPatterns: ['sk_prefix'] },
+          },
+        },
+      }),
+    ).toBe(true);
+    expect(
+      isContentTraversalProtected({
+        error,
+        filters: {
+          toolArguments: {
+            pii: { fields: ['output'], starterPatterns: ['sk_prefix'] },
+          },
+        },
+      }),
+    ).toBe(false);
+    expect(isContentTraversalProtected({ error })).toBe(false);
   });
 
   it('fails closed when a non-serializable tool value cannot be fully traversed', () => {

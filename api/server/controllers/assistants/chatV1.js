@@ -9,6 +9,8 @@ const {
   getModelMaxTokens,
   ATTACHMENT_ONLY_TEXT,
   isContentFilterError,
+  preflightAssistantRunContent,
+  preflightAssistantUserMessageContent,
 } = require('@librechat/api');
 const {
   Time,
@@ -50,10 +52,6 @@ const {
   getFiles,
 } = require('~/models');
 const { logViolation, getLogStores } = require('~/cache');
-const {
-  preflightAssistantRunContent,
-  preflightAssistantUserMessageContent,
-} = require('./contentFilter');
 const { getOpenAIClient } = require('./helpers');
 
 /**
@@ -334,10 +332,12 @@ const chatV1 = async (req, res) => {
     let persistedAssistant;
     try {
       persistedAssistant = await preflightAssistantRunContent({
-        req,
+        config: req.config,
         openai,
+        user: req.user,
         assistantId: assistant_id,
         threadId: _thread_id,
+        getFiles,
       });
     } catch (error) {
       if (!isContentFilterError(error)) {
@@ -346,8 +346,6 @@ const chatV1 = async (req, res) => {
       contentRejected = true;
       return res.status(error.statusCode).json(error.body);
     }
-    setHeaders(req, res, () => {});
-
     if (previousMessages.length) {
       parentMessageId = previousMessages[previousMessages.length - 1].messageId;
     }
@@ -545,7 +543,8 @@ const chatV1 = async (req, res) => {
       await getRequestFileIds();
       try {
         await preflightAssistantUserMessageContent({
-          req,
+          config: req.config,
+          user: req.user,
           message: userMessage,
           getFiles,
         });
@@ -647,6 +646,23 @@ const chatV1 = async (req, res) => {
       response = streamRunManager;
     };
 
+    try {
+      await preflightAssistantRunContent({
+        config: req.config,
+        openai,
+        user: req.user,
+        assistantId: assistant_id,
+        threadId: thread_id,
+        getFiles,
+      });
+    } catch (error) {
+      if (!isContentFilterError(error)) {
+        throw error;
+      }
+      contentRejected = true;
+      return res.status(error.statusCode).json(error.body);
+    }
+    setHeaders(req, res, () => {});
     await processRun();
     logger.debug('[/assistants/chat/] response', {
       run: response.run,

@@ -1,4 +1,9 @@
 import { inspectContent } from '../runtime';
+import {
+  ContentTraversalLimitError,
+  getContentTraversalFragments,
+  getContentTraversalScopes,
+} from './nested';
 import { extractChatContent } from './chat';
 
 describe('extractChatContent', () => {
@@ -394,8 +399,10 @@ describe('extractChatContent', () => {
     );
   });
 
-  it('ignores unstringifiable edited arguments without dropping other fields', () => {
-    const editedArguments: { self?: object } = {};
+  it('inspects cyclic edited arguments without dropping other fields', () => {
+    const editedArguments: { protectedValue: string; self?: object } = {
+      protectedValue: 'ORG-CYCLIC',
+    };
     editedArguments.self = editedArguments;
 
     const fragments = extractChatContent({
@@ -403,11 +410,76 @@ describe('extractChatContent', () => {
       decisions: [{ editedArguments }],
     });
 
-    expect(fragments).toHaveLength(1);
-    expect(fragments[0]).toMatchObject({
-      id: 'chat.answer',
-      text: 'safe answer',
+    expect(fragments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'chat.answer',
+          text: 'safe answer',
+        }),
+        expect.objectContaining({
+          id: 'chat.decision.0.arguments.nested.0',
+          path: '/decisions/0/editedArguments/protectedValue',
+          source: 'tool_argument',
+          field: 'arguments',
+          text: 'protectedValue',
+        }),
+        expect.objectContaining({
+          path: '/decisions/0/editedArguments/protectedValue',
+          source: 'tool_argument',
+          field: 'arguments',
+          text: 'ORG-CYCLIC',
+        }),
+      ]),
+    );
+  });
+
+  it('retains partial chat content and fails closed for over-deep edited arguments', () => {
+    interface DeepArguments {
+      nested?: DeepArguments;
+    }
+    const editedArguments: DeepArguments = {};
+    let current = editedArguments;
+    for (let depth = 0; depth < 30; depth++) {
+      current.nested = {};
+      current = current.nested;
+    }
+    Object.defineProperty(editedArguments, 'toJSON', {
+      value: () => {
+        throw new Error('cannot serialize');
+      },
     });
+
+    let traversalError: ContentTraversalLimitError | null = null;
+    try {
+      extractChatContent({
+        answer: 'safe answer',
+        decisions: [{ editedArguments }],
+      });
+    } catch (error) {
+      if (error instanceof ContentTraversalLimitError) {
+        traversalError = error;
+      } else {
+        throw error;
+      }
+    }
+
+    expect(getContentTraversalScopes(traversalError as ContentTraversalLimitError)).toEqual([
+      { source: 'tool_argument', fields: ['arguments'] },
+    ]);
+    expect(getContentTraversalFragments(traversalError as ContentTraversalLimitError)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'chat.answer',
+          text: 'safe answer',
+        }),
+        expect.objectContaining({
+          path: '/decisions/0/editedArguments/nested',
+          source: 'tool_argument',
+          field: 'arguments',
+          text: 'nested',
+        }),
+      ]),
+    );
   });
 
   it('retains source indices when quote normalization drops unsupported entries', () => {

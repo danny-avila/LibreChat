@@ -2,6 +2,7 @@ import { Constants, MAX_SUBAGENT_GRAPH_NODES } from 'librechat-data-provider';
 import type { Agent, FiltersConfig, TMessage } from 'librechat-data-provider';
 import type { AppConfig, IMongoFile, IUser } from '@librechat/data-schemas';
 import {
+  hasActiveFilePolicy,
   resolveCanonicalFileReferences,
   type GetCanonicalFilesForInspection,
 } from '~/protection/files';
@@ -52,6 +53,9 @@ export interface ResumeContentInspectionInput {
   supplementalMessages: ResumeMessage[];
   submittedMessages: ResumeMessage[];
   liveFiles: ResumeFile[];
+  /** True only for files assembled from server-side attachment hydration.
+   * Request/job metadata must leave this false. */
+  trustLiveFileContent?: boolean;
   isTemporary: boolean;
   getMessages: GetResumeMessages;
   getFiles: GetCanonicalFilesForInspection;
@@ -185,7 +189,7 @@ function hasResumeHistoryPolicy(appConfig: AppConfig | undefined): boolean {
     appConfig?.messageFilter?.pii != null ||
     appConfig?.filters?.messages?.pii != null ||
     appConfig?.filters?.toolArguments?.pii != null ||
-    appConfig?.filters?.files?.pii != null
+    hasActiveFilePolicy(appConfig?.filters)
   );
 }
 
@@ -329,7 +333,7 @@ async function getResumeFileInspection(
   storedMessages: ResumeMessage[],
 ): Promise<ResumeContentInspection> {
   const filters = input.appConfig?.filters;
-  if (filters?.files?.pii == null) {
+  if (!hasActiveFilePolicy(filters)) {
     return {
       storedMessages,
       submittedMessages: input.submittedMessages,
@@ -344,7 +348,9 @@ async function getResumeFileInspection(
     filters,
     input: originalInput,
     user: input.user,
-    liveFiles: input.liveFiles,
+    ...(input.trustLiveFileContent === true && {
+      trustedLiveFiles: input.liveFiles,
+    }),
     getFiles: input.getFiles,
   });
   const sanitizedMessages = fileInspection.sanitizedInput as ResumeMessage[];

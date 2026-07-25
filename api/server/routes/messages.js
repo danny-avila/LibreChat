@@ -23,6 +23,9 @@ const {
   extractStoredMessageContent,
   contentFilterBlockResponse,
   assertModelBoundContent,
+  getContentTraversalFragments,
+  isContentTraversalLimitError,
+  isContentTraversalProtected,
   isContentFilterError,
   resolveCanonicalFileReferences,
 } = require('@librechat/api');
@@ -77,12 +80,27 @@ const blockFilteredChatContent = (req, res, chatData) => {
   if (filters == null) {
     return false;
   }
-  const finding = inspectContent(extractChatContent(chatData), { filters });
-  if (finding == null) {
-    return false;
+  let fragments;
+  let traversalError;
+  try {
+    fragments = extractChatContent(chatData);
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    fragments = getContentTraversalFragments(error);
+    traversalError = error;
   }
-  res.status(400).json(contentFilterBlockResponse(finding));
-  return true;
+  const finding = inspectContent(fragments, { filters });
+  if (finding != null) {
+    res.status(400).json(contentFilterBlockResponse(finding));
+    return true;
+  }
+  if (traversalError != null && isContentTraversalProtected({ error: traversalError, filters })) {
+    res.status(traversalError.statusCode).json(traversalError.body);
+    return true;
+  }
+  return false;
 };
 
 const mergeUserSubmittedPaths = (...pathLists) => [

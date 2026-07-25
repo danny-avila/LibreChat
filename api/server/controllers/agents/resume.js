@@ -41,6 +41,8 @@ const {
   inspectContent,
   ContentFilterError,
   ContentTraversalLimitError,
+  getContentTraversalFragments,
+  isContentTraversalProtected,
   isContentFilterError,
   agentHasInlineMemoryTools,
   getMemoryAgentId,
@@ -247,53 +249,53 @@ function assertResumeToolContentAllowed(filters, messages, seedContent, resumeVa
     return;
   }
   const fragments = [];
+  const traversalErrors = [];
+  const collectStoredMessage = (message) => {
+    try {
+      fragments.push(...extractStoredMessageContent(message));
+    } catch (error) {
+      if (!(error instanceof ContentTraversalLimitError)) {
+        throw error;
+      }
+      fragments.push(...getContentTraversalFragments(error));
+      traversalErrors.push({ error, role: message.role });
+    }
+  };
   for (const message of messages) {
     const content = message?.content;
-    fragments.push(
-      ...extractStoredMessageContent({
-        role: getCheckpointMessageRole(message),
-        text: typeof content === 'string' ? content : undefined,
-        content: Array.isArray(content) ? content : undefined,
-        tool_calls: normalizeCheckpointToolCalls(message),
-      }),
-    );
+    collectStoredMessage({
+      role: getCheckpointMessageRole(message),
+      text: typeof content === 'string' ? content : undefined,
+      content: Array.isArray(content) ? content : undefined,
+      tool_calls: normalizeCheckpointToolCalls(message),
+    });
   }
-  fragments.push(
-    ...extractStoredMessageContent({
-      role: 'assistant',
-      content: Array.isArray(seedContent) ? seedContent : undefined,
-    }),
-  );
+  collectStoredMessage({
+    role: 'assistant',
+    content: Array.isArray(seedContent) ? seedContent : undefined,
+  });
   if (typeof resumeValue?.answer === 'string') {
-    fragments.push(
-      ...extractStoredMessageContent({
-        role: 'tool',
-        content: [{ text: resumeValue.answer }],
-      }),
-    );
+    collectStoredMessage({
+      role: 'tool',
+      content: [{ text: resumeValue.answer }],
+    });
   }
   for (const decision of Object.values(resumeValue ?? {})) {
     if (decision?.type === 'edit') {
-      fragments.push(
-        ...extractStoredMessageContent({
-          role: 'assistant',
-          tool_calls: [{ arguments: decision.updatedInput }],
-        }),
-      );
+      collectStoredMessage({
+        role: 'assistant',
+        tool_calls: [{ arguments: decision.updatedInput }],
+      });
     } else if (decision?.type === 'respond' && typeof decision.responseText === 'string') {
-      fragments.push(
-        ...extractStoredMessageContent({
-          role: 'tool',
-          content: [{ text: decision.responseText }],
-        }),
-      );
+      collectStoredMessage({
+        role: 'tool',
+        content: [{ text: decision.responseText }],
+      });
     } else if (decision?.type === 'reject' && typeof decision.reason === 'string') {
-      fragments.push(
-        ...extractStoredMessageContent({
-          role: 'tool',
-          content: [{ text: decision.reason }],
-        }),
-      );
+      collectStoredMessage({
+        role: 'tool',
+        content: [{ text: decision.reason }],
+      });
     }
   }
   const finding = inspectContent(fragments, {
@@ -304,6 +306,16 @@ function assertResumeToolContentAllowed(filters, messages, seedContent, resumeVa
   });
   if (finding != null) {
     throw new ContentFilterError(finding);
+  }
+  const protectedTraversal = traversalErrors.find(({ error, role }) =>
+    isContentTraversalProtected({
+      error,
+      filters,
+      roles: [role],
+    }),
+  );
+  if (protectedTraversal != null) {
+    throw protectedTraversal.error;
   }
 }
 

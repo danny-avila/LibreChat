@@ -211,8 +211,9 @@ jest.mock('@librechat/api', () => ({
   extractModelParameterContent: jest.fn().mockReturnValue([]),
   extractSkillContent: jest.fn().mockReturnValue([]),
   getBlockedOpaqueFileField: jest.fn().mockReturnValue(null),
+  getContentTraversalFragments: jest.fn().mockReturnValue([]),
+  isContentTraversalProtected: jest.fn().mockReturnValue(true),
   isContentTraversalLimitError: jest.fn((error) => error?.code === 'content_filter_uninspectable'),
-  isNestedMessageTraversalProtected: jest.fn().mockReturnValue(true),
   assertModelBoundContent: jest.fn(),
   isContentFilterError: jest.fn((error) => error?.code === 'content_filter_block'),
   getSafeErrorMetadata: mockGetSafeErrorMetadata,
@@ -519,7 +520,34 @@ describe('OpenAIChatCompletionController', () => {
           },
         };
       });
-      api.isNestedMessageTraversalProtected.mockReturnValueOnce(false);
+      api.isContentTraversalProtected.mockReturnValueOnce(false);
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(db.getAgent).toHaveBeenCalled();
+      expect(api.createErrorResponse).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'invalid_request_error',
+        'content_filter_uninspectable',
+      );
+    });
+
+    it('continues when exhausted model parameters are outside the active policy', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      api.extractModelParameterContent.mockImplementationOnce(() => {
+        throw {
+          code: 'content_filter_uninspectable',
+          statusCode: 400,
+          body: {
+            error: 'content_filter_uninspectable',
+            message: 'Submitted content could not be completely inspected before processing.',
+            source: 'model_parameter',
+            field: 'request_fields',
+          },
+        };
+      });
+      api.isContentTraversalProtected.mockReturnValueOnce(false);
 
       await OpenAIChatCompletionController(req, res);
 

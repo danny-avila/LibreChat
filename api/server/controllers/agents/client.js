@@ -110,6 +110,8 @@ const {
   inspectContent,
   ContentFilterError,
   ContentTraversalLimitError,
+  getContentTraversalFragments,
+  isContentTraversalProtected,
   collectReachableAgents,
   getDynamicToolContexts,
   getResumeContentInspection,
@@ -227,28 +229,46 @@ function assertResumeToolContentAllowed(filters, messages, seedContent) {
     return;
   }
   const fragments = [];
+  const traversalErrors = [];
+  const collectStoredMessage = (message) => {
+    try {
+      fragments.push(...extractStoredMessageContent(message));
+    } catch (error) {
+      if (!(error instanceof ContentTraversalLimitError)) {
+        throw error;
+      }
+      fragments.push(...getContentTraversalFragments(error));
+      traversalErrors.push({ error, role: message.role });
+    }
+  };
   for (const message of messages) {
     const content = message?.content;
-    fragments.push(
-      ...extractStoredMessageContent({
-        role: getCheckpointMessageRole(message),
-        text: typeof content === 'string' ? content : undefined,
-        content: Array.isArray(content) ? content : undefined,
-        tool_calls: normalizeCheckpointToolCalls(message),
-      }),
-    );
+    collectStoredMessage({
+      role: getCheckpointMessageRole(message),
+      text: typeof content === 'string' ? content : undefined,
+      content: Array.isArray(content) ? content : undefined,
+      tool_calls: normalizeCheckpointToolCalls(message),
+    });
   }
-  fragments.push(
-    ...extractStoredMessageContent({
-      role: 'assistant',
-      content: Array.isArray(seedContent) ? seedContent : undefined,
-    }),
-  );
+  collectStoredMessage({
+    role: 'assistant',
+    content: Array.isArray(seedContent) ? seedContent : undefined,
+  });
   const finding = inspectContent(fragments, {
     filters: { toolArguments: filters.toolArguments },
   });
   if (finding != null) {
     throw new ContentFilterError(finding);
+  }
+  const protectedTraversal = traversalErrors.find(({ error, role }) =>
+    isContentTraversalProtected({
+      error,
+      filters: { toolArguments: filters.toolArguments },
+      roles: [role],
+    }),
+  );
+  if (protectedTraversal != null) {
+    throw protectedTraversal.error;
   }
 }
 
@@ -1848,6 +1868,15 @@ class AgentClient extends BaseClient {
         content: latestFormatted.content,
         max,
         mimeType,
+      });
+      /** The provider-native `fileData.fileUri` parts are injected after the
+       * earlier canonical-message preflight. Reinspect the exact transformed
+       * user payload so strict file policy cannot be skipped by a late media
+       * adapter. */
+      assertModelBoundContent({
+        filters: this.options.req.config?.filters,
+        legacyPii: this.options.req.config?.messageFilter?.pii,
+        submittedMessages: [{ role: 'user', content: latestFormatted.content }],
       });
       /** Google rejects an unusable video with a generic `INVALID_ARGUMENT` that names no cause,
        *  so `#sendCompletion` can only attribute one by knowing this turn carried a video. */
@@ -3902,6 +3931,7 @@ class AgentClient extends BaseClient {
         supplementalMessages: storedMessages,
         submittedMessages: checkpointUserMessages,
         liveFiles,
+        trustLiveFileContent: true,
         isTemporary: this.options.req.body?.isTemporary === true,
         getMessages: db.getMessages,
         getFiles: db.getFiles,

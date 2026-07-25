@@ -1,6 +1,12 @@
 import type { ContentFieldMap, ContentSource, TextContentFragment } from '../types';
+import type { ModelParameterContentInput } from './submissions';
+import { extractModelParameterContent, extractToolArgumentContent } from './submissions';
+import {
+  ContentTraversalLimitError,
+  getContentTraversalFragments,
+  getContentTraversalScopes,
+} from './nested';
 import { getReferencedQuoteEntries, mergeQuotedText } from '../../utils/quotes';
-import { extractModelParameterContent, type ModelParameterContentInput } from './submissions';
 
 export interface ChatSubmissionDecision {
   readonly responseText?: string;
@@ -66,10 +72,26 @@ function createFragment<Source extends ContentSource>(
   } as Extract<TextContentFragment, { source: Source }>;
 }
 
+function remapEditedArgumentFragments(
+  fragments: readonly TextContentFragment[],
+  decisionIndex: number,
+): readonly TextContentFragment[] {
+  const sourcePath = '/arguments';
+  const targetPath = `/decisions/${decisionIndex}/editedArguments`;
+  return fragments.map((fragment) => ({
+    ...fragment,
+    id: fragment.id.replace('tool-argument.arguments', `chat.decision.${decisionIndex}.arguments`),
+    path: `${targetPath}${
+      fragment.path.startsWith(sourcePath) ? fragment.path.slice(sourcePath.length) : ''
+    }` as TextContentFragment['path'],
+  }));
+}
+
 export function extractChatContent(
   body: ChatSubmissionBody | null | undefined,
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
+  const traversalErrors: ContentTraversalLimitError[] = [];
   const text = typeof body?.text === 'string' ? body.text : '';
 
   if (text.length > 0) {
@@ -302,58 +324,67 @@ export function extractChatContent(
       ),
     );
   }
-  fragments.push(...extractModelParameterContent(body));
-
-  if (!Array.isArray(body?.decisions)) {
-    return fragments;
-  }
-
-  for (let index = 0; index < body.decisions.length; index++) {
-    const decision = body.decisions[index];
-    if (typeof decision?.responseText === 'string' && decision.responseText.length > 0) {
-      fragments.push(
-        createFragment(
-          `chat.decision.${index}.response`,
-          `/decisions/${index}/responseText`,
-          decision.responseText,
-          'message',
-          'decision_response',
-        ),
-      );
-    }
-    if (typeof decision?.reason === 'string' && decision.reason.length > 0) {
-      fragments.push(
-        createFragment(
-          `chat.decision.${index}.reason`,
-          `/decisions/${index}/reason`,
-          decision.reason,
-          'message',
-          'decision_reason',
-        ),
-      );
-    }
-    if (decision?.editedArguments == null) {
-      continue;
-    }
-    try {
-      const editedArguments = JSON.stringify(decision.editedArguments);
-      if (typeof editedArguments !== 'string' || editedArguments.length === 0) {
+  if (Array.isArray(body?.decisions)) {
+    for (let index = 0; index < body.decisions.length; index++) {
+      const decision = body.decisions[index];
+      if (typeof decision?.responseText === 'string' && decision.responseText.length > 0) {
+        fragments.push(
+          createFragment(
+            `chat.decision.${index}.response`,
+            `/decisions/${index}/responseText`,
+            decision.responseText,
+            'message',
+            'decision_response',
+          ),
+        );
+      }
+      if (typeof decision?.reason === 'string' && decision.reason.length > 0) {
+        fragments.push(
+          createFragment(
+            `chat.decision.${index}.reason`,
+            `/decisions/${index}/reason`,
+            decision.reason,
+            'message',
+            'decision_reason',
+          ),
+        );
+      }
+      if (decision?.editedArguments == null) {
         continue;
       }
-      fragments.push(
-        createFragment(
-          `chat.decision.${index}.arguments`,
-          `/decisions/${index}/editedArguments`,
-          editedArguments,
-          'tool_argument',
-          'arguments',
-          'json',
-          'inspect_only',
-        ),
-      );
-    } catch {
-      continue;
+      try {
+        fragments.push(
+          ...remapEditedArgumentFragments(
+            extractToolArgumentContent({ arguments: decision.editedArguments }),
+            index,
+          ),
+        );
+      } catch (error) {
+        if (!(error instanceof ContentTraversalLimitError)) {
+          throw error;
+        }
+        fragments.push(...remapEditedArgumentFragments(getContentTraversalFragments(error), index));
+        traversalErrors.push(error);
+      }
     }
+  }
+
+  try {
+    fragments.push(...extractModelParameterContent(body));
+  } catch (error) {
+    if (!(error instanceof ContentTraversalLimitError)) {
+      throw error;
+    }
+    fragments.push(...getContentTraversalFragments(error));
+    traversalErrors.push(error);
+  }
+
+  if (traversalErrors.length > 0) {
+    const scopes = traversalErrors.flatMap((error) => getContentTraversalScopes(error));
+    if (scopes.length === 0) {
+      scopes.push({ source: 'tool_argument', fields: ['arguments'] });
+    }
+    throw new ContentTraversalLimitError(fragments, scopes);
   }
 
   return fragments;

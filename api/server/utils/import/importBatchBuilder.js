@@ -7,6 +7,7 @@ const {
   getBlockedOpaqueFileField,
   getContentTraversalFragments,
   inspectContent,
+  isContentTraversalProtected,
   isContentTraversalLimitError,
   isNestedMessageTraversalProtected,
   resolveCanonicalFileReferences,
@@ -45,7 +46,7 @@ function createImportBatchBuilder(requestUserId, interfaceConfig, filters) {
  * @param {object} [resolutionContext] - Owner-aware canonical file resolution dependencies.
  * @param {{ id?: string, tenantId?: string }} [resolutionContext.user] - Snapshot owner.
  * @param {Function} [resolutionContext.getFiles] - Canonical file lookup.
- * @param {object[]} [resolutionContext.liveFiles] - Already hydrated canonical rows.
+ * @param {object[]} [resolutionContext.trustedLiveFiles] - Server-hydrated canonical rows.
  * @returns {Promise<void>}
  * @throws {ContentFilterError|UninspectableFileError|import('@librechat/api').ContentTraversalLimitError}
  */
@@ -58,15 +59,33 @@ async function assertConversationContentAllowed(
     return;
   }
 
-  const conversationFinding = inspectContent(
-    extractConversationImportContent({
+  let conversationFragments;
+  let conversationTraversalError;
+  try {
+    conversationFragments = extractConversationImportContent({
       conversations,
       messages: [],
-    }),
-    { filters },
-  );
+    });
+    conversationFragments = [...conversationFragments];
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    conversationFragments = getContentTraversalFragments(error);
+    conversationTraversalError = error;
+  }
+  const conversationFinding = inspectContent(conversationFragments, { filters });
   if (conversationFinding != null) {
     throw new ContentFilterError(conversationFinding);
+  }
+  if (
+    conversationTraversalError != null &&
+    isContentTraversalProtected({
+      error: conversationTraversalError,
+      filters,
+    })
+  ) {
+    throw conversationTraversalError;
   }
 
   /**
@@ -82,11 +101,18 @@ async function assertConversationContentAllowed(
       filters,
       input: messages,
       user: resolutionContext.user,
-      liveFiles: resolutionContext.liveFiles,
+      trustedLiveFiles: resolutionContext.trustedLiveFiles,
       getFiles: resolutionContext.getFiles ?? (async () => []),
     });
     storedMessages = fileInspection.sanitizedInput;
     resolvedFiles = fileInspection.hydratedFiles;
+  }
+
+  if (resolvedFiles.length > 0) {
+    assertModelBoundContent({
+      filters,
+      resolvedFiles,
+    });
   }
 
   for (const message of storedMessages) {
@@ -94,7 +120,6 @@ async function assertConversationContentAllowed(
       assertModelBoundContent({
         filters,
         storedMessages: [message],
-        resolvedFiles,
       });
     } catch (error) {
       if (!isContentTraversalLimitError(error)) {

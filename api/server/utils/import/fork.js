@@ -402,6 +402,7 @@ function isSameRevision(storedUpdatedAt, clientRevision) {
  * @param {number} [params.targetMessageIndex] - Index, within the shared payload, of the message at the tip of the branch the viewer has active. When set, only the direct path to that message is cloned so the fork continues the branch that was actually shown rather than the newest sibling. An index is used (not id or `createdAt`) because shared ids are re-anonymized per request while `getSharedMessages` returns a deterministic, stable order, so the same index resolves to the same message on the server.
  * @param {string} [params.shareRevision] - `updatedAt` of the payload the viewer is forking from. A shareId now survives an update, so an owner republishing between the GET and the fork would silently shift `targetMessageIndex` onto a different branch; a mismatch is rejected instead of cloning content the viewer never saw.
  * @param {boolean} [params.snapshotFiles] - When `false`, file/attachment metadata is omitted from the cloned messages, mirroring the GET share route so the global shared-file kill switch is honored.
+ * @param {(snapshot: object) => Promise<void>} [params.sharedContentPreflight] - Reapplies current policy to the exact public projection before a legacy shared-file snapshot is persisted.
  * @param {(userId: string, interfaceConfig?: object, filters?: object) => ImportBatchBuilder} [params.builderFactory] - Optional factory function for creating an ImportBatchBuilder instance.
  * @param {(options: object) => Promise<object>} [params.loadAppConfig] - Resolves the app config; injectable for tests. Called inside the requesting user's tenant context so retention policy is read from the viewer's tenant, not the share owner's.
  * @returns {Promise<TForkConvoResponse | null>} The new conversation and messages, or null when the share is missing or empty.
@@ -415,13 +416,17 @@ async function forkSharedConversation({
   targetMessageIndex,
   shareRevision,
   snapshotFiles,
+  sharedContentPreflight,
   builderFactory = createImportBatchBuilder,
   loadAppConfig = getAppConfig,
 }) {
   // Mirror the GET share route: when the shared-file snapshot is globally
   // disabled, omit file/attachment metadata so a fork can't persist filenames
   // or share file URLs into the new conversation while file serving is off.
-  const share = await getSharedMessages(shareId, shareResourceId, { snapshotFiles });
+  const share = await getSharedMessages(shareId, shareResourceId, {
+    snapshotFiles,
+    preflight: sharedContentPreflight,
+  });
   if (!share?.messages?.length) {
     return null;
   }

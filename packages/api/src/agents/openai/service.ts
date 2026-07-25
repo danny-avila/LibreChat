@@ -50,9 +50,10 @@ import {
   extractMessageContent,
   extractModelParameterContent,
   getBlockedOpaqueFileField,
+  getContentTraversalFragments,
   inspectContent,
+  isContentTraversalProtected,
   isContentTraversalLimitError,
-  isNestedMessageTraversalProtected,
 } from '~/protection';
 import {
   createOpenAIContentAggregator,
@@ -312,7 +313,7 @@ function inspectSubmittedRequest(
   }
 
   const messageFragments: TextContentFragment[] = [];
-  let traversalError: ContentTraversalLimitError | null = null;
+  const traversalErrors: ContentTraversalLimitError[] = [];
   try {
     for (const fragment of extractMessageContent(messages)) {
       messageFragments.push(fragment);
@@ -321,10 +322,20 @@ function inspectSubmittedRequest(
     if (!isContentTraversalLimitError(error)) {
       throw error;
     }
-    traversalError = error;
+    messageFragments.push(...getContentTraversalFragments(error));
+    traversalErrors.push(error);
+  }
+  try {
+    messageFragments.push(...extractModelParameterContent(request));
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    messageFragments.push(...getContentTraversalFragments(error));
+    traversalErrors.push(error);
   }
 
-  const finding = inspectContent([...messageFragments, ...extractModelParameterContent(request)], {
+  const finding = inspectContent(messageFragments, {
     filters,
     legacyPii,
   });
@@ -343,14 +354,15 @@ function inspectSubmittedRequest(
     return true;
   }
 
-  if (
-    traversalError != null &&
-    isNestedMessageTraversalProtected({
+  const traversalError = traversalErrors.find((error) =>
+    isContentTraversalProtected({
+      error,
       filters,
       legacyPii,
       roles: messages.map((message) => message.role),
-    })
-  ) {
+    }),
+  );
+  if (traversalError != null) {
     sendErrorResponse(
       res,
       traversalError.statusCode,

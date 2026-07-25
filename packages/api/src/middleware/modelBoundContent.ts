@@ -11,6 +11,7 @@ import type {
 import type { ContentTraversalLimitError } from '../protection/adapters/nested';
 import type { JsonPointer, TextContentFragment } from '../protection/types';
 import type { ExternalChatMessage } from '../protection/adapters/messages';
+import type { CanonicalFileInspectionFile } from '../protection/files';
 import {
   extractAgentContent,
   extractAssistantActionContent,
@@ -30,6 +31,7 @@ import {
 } from '../protection/files';
 import {
   getContentTraversalFragments,
+  isContentTraversalProtected,
   isContentTraversalLimitError,
   isNestedMessageTraversalProtected,
 } from '../protection/adapters/nested';
@@ -46,6 +48,8 @@ type StoredModelBoundMessage = StoredMessageContentInput & {
   readonly isUserSubmitted?: boolean;
   readonly userSubmittedPaths?: readonly string[];
 };
+
+type ModelBoundCanonicalFile = FileContentInput & CanonicalFileInspectionFile;
 
 export interface ModelBoundContentInput {
   readonly filters?: FiltersConfig;
@@ -65,7 +69,7 @@ export interface ModelBoundContentInput {
    * stored messages. The rows are inspected before their IDs are omitted from
    * the fail-close traversal copy.
    */
-  readonly resolvedFiles?: readonly (FileContentInput | null | undefined)[];
+  readonly resolvedFiles?: readonly (ModelBoundCanonicalFile | null | undefined)[];
 }
 
 function normalizeRole(message: ModelBoundMessage): string | undefined {
@@ -103,12 +107,14 @@ type RuntimeAgentFileContainer = AgentContentInput & {
   >;
 };
 
-function getHydratedAgentFiles(agent: AgentContentInput | null | undefined): FileContentInput[] {
+function getHydratedAgentFiles(
+  agent: AgentContentInput | null | undefined,
+): ModelBoundCanonicalFile[] {
   if (agent == null) {
     return [];
   }
   const runtimeAgent = agent as RuntimeAgentFileContainer;
-  const files: FileContentInput[] = [];
+  const files: ModelBoundCanonicalFile[] = [];
   const append = (values: readonly (FileContentInput | null | undefined)[] | undefined) => {
     for (const file of values ?? []) {
       if (file != null) {
@@ -296,8 +302,29 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
   }
   const fragments: TextContentFragment[] = [];
   const traversalErrors: ContentTraversalLimitError[] = [];
-  const resolvedFileIds = new Set<string>();
-  const appendFile = (file: FileContentInput | string | null | undefined): string | undefined => {
+  const appendExtractedContent = (extract: () => readonly TextContentFragment[]) => {
+    try {
+      fragments.push(...extract());
+    } catch (error) {
+      if (!isContentTraversalLimitError(error)) {
+        throw error;
+      }
+      fragments.push(...getContentTraversalFragments(error));
+      if (
+        isContentTraversalProtected({
+          error,
+          filters: input.filters,
+          legacyPii: input.legacyPii,
+        })
+      ) {
+        traversalErrors.push(error);
+      }
+    }
+  };
+  const resolvedFilesById = new Map<string, ModelBoundCanonicalFile>();
+  const appendFile = (
+    file: FileContentInput | string | null | undefined,
+  ): ModelBoundCanonicalFile | undefined => {
     if (file == null) {
       return undefined;
     }
@@ -314,12 +341,12 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
     fragments.push(
       ...extractFileContent(typeof file === 'string' ? { content: file, text: file } : file),
     );
-    return isHydratedCanonicalFile ? (file as { file_id: string }).file_id : undefined;
+    return isHydratedCanonicalFile ? (file as ModelBoundCanonicalFile) : undefined;
   };
   for (const file of input.resolvedFiles ?? []) {
-    const fileId = appendFile(file);
-    if (fileId != null) {
-      resolvedFileIds.add(fileId);
+    const resolvedFile = appendFile(file);
+    if (resolvedFile?.file_id != null) {
+      resolvedFilesById.set(resolvedFile.file_id, resolvedFile);
     }
   }
   if (input.submittedMessages != null) {
@@ -376,7 +403,7 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
       if (projectedMessage != null) {
         assertInspectableFileInput(
           input.filters,
-          omitResolvedCanonicalFileLocators(projectedMessage, resolvedFileIds),
+          omitResolvedCanonicalFileLocators(projectedMessage, resolvedFilesById),
         );
       }
       /** Legacy unmarked assistant rows are treated as model-generated to avoid
@@ -406,7 +433,8 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
           traversalFilters = { ...traversalFilters, messages: undefined };
         }
         if (
-          isNestedMessageTraversalProtected({
+          isContentTraversalProtected({
+            error: traversalError,
             filters: traversalFilters,
             legacyPii: userSubmittedPaths.length > 0 ? input.legacyPii : undefined,
             roles: userSubmittedPaths.length > 0 ? ['user'] : [message.role],
@@ -421,7 +449,8 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
     fragments.push(...messageFragments);
     if (
       traversalError != null &&
-      isNestedMessageTraversalProtected({
+      isContentTraversalProtected({
+        error: traversalError,
         filters: input.filters,
         legacyPii: input.legacyPii,
         roles: [message.role ?? 'user'],
@@ -432,31 +461,31 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
   }
   assertInspectableFileInput(
     input.filters,
-    omitResolvedCanonicalFileLocators(storedUserMessages, resolvedFileIds),
+    omitResolvedCanonicalFileLocators(storedUserMessages, resolvedFilesById),
   );
   for (const agent of input.agents ?? []) {
-    const resolvedFileIds = new Set<string>();
+    const agentFilesById = new Map<string, ModelBoundCanonicalFile>();
     for (const file of getHydratedAgentFiles(agent)) {
-      const fileId = appendFile(file);
-      if (fileId != null) {
-        resolvedFileIds.add(fileId);
+      const resolvedFile = appendFile(file);
+      if (resolvedFile?.file_id != null) {
+        agentFilesById.set(resolvedFile.file_id, resolvedFile);
       }
     }
     assertInspectableFileInput(
       input.filters,
-      omitResolvedCanonicalFileLocators(agent, resolvedFileIds),
+      omitResolvedCanonicalFileLocators(agent, agentFilesById),
     );
-    fragments.push(...extractAgentContent(agent));
+    appendExtractedContent(() => extractAgentContent(agent));
   }
   for (const assistant of input.assistants ?? []) {
     assertInspectableFileInput(input.filters, assistant);
-    fragments.push(...extractAssistantContent(assistant));
+    appendExtractedContent(() => extractAssistantContent(assistant));
   }
   for (const action of input.actions ?? []) {
-    fragments.push(...extractAssistantActionContent(action));
+    appendExtractedContent(() => extractAssistantActionContent(action));
   }
   for (const skill of input.skills ?? []) {
-    fragments.push(...extractSkillContent(skill));
+    appendExtractedContent(() => extractSkillContent(skill));
   }
   for (const memory of input.memories ?? []) {
     fragments.push(

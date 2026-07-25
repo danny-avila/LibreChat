@@ -30,6 +30,9 @@ const {
   contentFilterUninspectableResponse,
   getBlockedOpaqueFileField,
   getBlockedUninspectableFileField,
+  getContentTraversalFragments,
+  isContentTraversalProtected,
+  isContentTraversalLimitError,
   resolveCanonicalFileReferences,
 } = require('@librechat/api');
 const {
@@ -186,14 +189,29 @@ const blockFilteredAgentContent = async (req, res, agentData) => {
   if (typeof avatarPath === 'string' && !avatarPath.toLowerCase().startsWith('data:')) {
     fileFragments.push(...extractFileContent({ filepath: avatarPath }));
   }
-  const finding = inspectContent([...extractAgentContent(agentData), ...fileFragments], {
+  let agentFragments;
+  let traversalError;
+  try {
+    agentFragments = extractAgentContent(agentData);
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    agentFragments = getContentTraversalFragments(error);
+    traversalError = error;
+  }
+  const finding = inspectContent([...agentFragments, ...fileFragments], {
     filters,
   });
-  if (finding == null) {
-    return false;
+  if (finding != null) {
+    res.status(400).json(contentFilterBlockResponse(finding));
+    return true;
   }
-  res.status(400).json(contentFilterBlockResponse(finding));
-  return true;
+  if (traversalError != null && isContentTraversalProtected({ error: traversalError, filters })) {
+    res.status(traversalError.statusCode).json(traversalError.body);
+    return true;
+  }
+  return false;
 };
 
 const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {

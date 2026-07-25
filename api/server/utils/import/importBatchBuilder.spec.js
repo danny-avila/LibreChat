@@ -1,3 +1,13 @@
+const actualApi = jest.requireActual('@librechat/api');
+const mockAssertModelBoundContent = jest.fn((...args) =>
+  actualApi.assertModelBoundContent(...args),
+);
+
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
+  assertModelBoundContent: (...args) => mockAssertModelBoundContent(...args),
+}));
+
 const {
   ContentFilterError,
   contentFilterBlockResponse,
@@ -31,6 +41,14 @@ function filtersFor(source, fields) {
       },
     },
   };
+}
+
+function deepValue(depth = 30) {
+  let value = 'safe';
+  for (let index = 0; index < depth; index++) {
+    value = { nested: value };
+  }
+  return value;
 }
 
 function createBuilder(filters, { conversation = {}, message = {} } = {}) {
@@ -233,6 +251,41 @@ describe('ImportBatchBuilder content filtering', () => {
     expect(bulkSaveConvos).not.toHaveBeenCalled();
     expect(bulkSaveMessages).not.toHaveBeenCalled();
     expect(bulkIncrementTagCounts).not.toHaveBeenCalled();
+  });
+
+  it('inspects hydrated files once instead of replaying them for every message', async () => {
+    const filters = filtersFor('files', ['extracted_text']);
+    filters.files.pii.uninspectable = 'block';
+    const canonicalFile = {
+      file_id: 'owner-file-1',
+      user: 'user-123',
+      text: 'safe extracted text',
+    };
+    const builder = createBuilder(filters, {
+      message: {
+        files: [{ file_id: canonicalFile.file_id }],
+      },
+    });
+    builder.saveMessage({
+      sender: 'user',
+      isCreatedByUser: true,
+      text: 'another safe message',
+      files: [{ file_id: canonicalFile.file_id }],
+    });
+    getFiles.mockResolvedValue([canonicalFile]);
+
+    await expect(builder.saveBatch()).resolves.toBeUndefined();
+
+    const fileCalls = mockAssertModelBoundContent.mock.calls.filter(
+      ([input]) => input.resolvedFiles != null,
+    );
+    const messageCalls = mockAssertModelBoundContent.mock.calls.filter(
+      ([input]) => input.storedMessages != null,
+    );
+    expect(fileCalls).toEqual([[{ filters, resolvedFiles: [canonicalFile] }]]);
+    expect(messageCalls).toHaveLength(2);
+    expect(messageCalls.every(([input]) => input.storedMessages.length === 1)).toBe(true);
+    expect(messageCalls.every(([input]) => input.resolvedFiles == null)).toBe(true);
   });
 
   it('fails closed for a missing canonical file reference before bulk writes', async () => {
@@ -440,6 +493,107 @@ describe('ImportBatchBuilder content filtering', () => {
     expect(bulkSaveMessages).not.toHaveBeenCalled();
   });
 
+  it('fails closed when selected imported model request fields exhaust traversal', async () => {
+    const builder = createBuilder(filtersFor('modelParameters', ['request_fields']), {
+      conversation: {
+        options: { provider_option: deepValue() },
+      },
+    });
+
+    await expect(builder.saveBatch()).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      statusCode: 400,
+    });
+    expect(bulkSaveConvos).not.toHaveBeenCalled();
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+  });
+
+  it('allows exhausted imported request fields when only model stop is selected', async () => {
+    const builder = createBuilder(filtersFor('modelParameters', ['stop']), {
+      conversation: {
+        options: { provider_option: deepValue() },
+      },
+    });
+
+    await expect(builder.saveBatch()).resolves.toBeUndefined();
+    expect(bulkSaveConvos).toHaveBeenCalledTimes(1);
+    expect(bulkSaveMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('still blocks later imported prompts after unrelated model traversal exhaustion', async () => {
+    const builder = createBuilder(filtersFor('prompts', ['instructions']), {
+      conversation: {
+        options: { provider_option: deepValue() },
+        presetOverride: { instructions: 'later IMPORT-SECRET prompt' },
+      },
+    });
+
+    await expect(builder.saveBatch()).rejects.toMatchObject({
+      body: {
+        error: 'content_filter_block',
+        source: 'prompt',
+        field: 'instructions',
+      },
+    });
+    expect(bulkSaveConvos).not.toHaveBeenCalled();
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+  });
+
+  it('keeps traversal isolation after the one-time hydrated file inspection', async () => {
+    const filters = {
+      ...filtersFor('messages', ['text']),
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          uninspectable: 'block',
+        },
+      },
+    };
+    const canonicalFile = {
+      file_id: 'owner-file-1',
+      user: 'user-123',
+      text: 'safe extracted text',
+    };
+    const builder = createBuilder(filters, {
+      message: {
+        text: 'safe message',
+        files: [{ file_id: canonicalFile.file_id }],
+      },
+    });
+    builder.saveMessage({
+      sender: 'user',
+      isCreatedByUser: true,
+      text: 'IMPORT-SECRET',
+      files: [{ file_id: canonicalFile.file_id }],
+    });
+    getFiles.mockResolvedValue([canonicalFile]);
+    mockAssertModelBoundContent
+      .mockImplementationOnce((...args) => actualApi.assertModelBoundContent(...args))
+      .mockImplementationOnce(() => {
+        throw new actualApi.ContentTraversalLimitError();
+      });
+
+    await expect(builder.saveBatch()).rejects.toMatchObject({
+      body: {
+        error: 'content_filter_block',
+        source: 'message',
+        field: 'text',
+      },
+    });
+
+    const fileCalls = mockAssertModelBoundContent.mock.calls.filter(
+      ([input]) => input.resolvedFiles != null,
+    );
+    const messageCalls = mockAssertModelBoundContent.mock.calls.filter(
+      ([input]) => input.storedMessages != null,
+    );
+    expect(fileCalls).toEqual([[{ filters, resolvedFiles: [canonicalFile] }]]);
+    expect(messageCalls).toHaveLength(2);
+    expect(messageCalls.every(([input]) => input.storedMessages.length === 1)).toBe(true);
+    expect(messageCalls.every(([input]) => input.resolvedFiles == null)).toBe(true);
+    expect(bulkSaveMessages).not.toHaveBeenCalled();
+  });
+
   it.each([
     {
       name: 'message text',
@@ -466,6 +620,15 @@ describe('ImportBatchBuilder content filtering', () => {
       name: 'message summary',
       filters: filtersFor('messages', ['summary']),
       input: { message: { summary: 'IMPORT-SECRET' } },
+      source: 'message',
+      field: 'summary',
+    },
+    {
+      name: 'structured message summary',
+      filters: filtersFor('messages', ['summary']),
+      input: {
+        message: { content: [{ type: 'summary', text: 'IMPORT-SECRET' }] },
+      },
       source: 'message',
       field: 'summary',
     },

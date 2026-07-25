@@ -4,6 +4,7 @@ import type { StructuredToolInterface } from '@librechat/agents/langchain/tools'
 import type { FiltersConfig } from 'librechat-data-provider';
 import { CHECK_BACKGROUND_TASK_NAME } from './background';
 import { createToolExecuteHandler } from './handlers';
+import { ContentFilterError } from '../middleware/contentFilter';
 
 interface BatchInput {
   toolCalls: Array<{
@@ -1098,13 +1099,11 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     expect(polled.status).toBe('completed');
     expect(polled.result).toContain('hello');
     expect(polled.note).toContain('being attached');
-    // harvest hasn't landed: no file attachments yet and no poll-identity
-    // fallback — but the completion marker fires (execution IS finished)
-    expect(emitted).toEqual([
-      expect.objectContaining({ type: 'background_task_status', status: 'completed' }),
-    ]);
+    // Harvest has not landed: no artifact, attachments, status marker, or
+    // poll-identity fallback may cross the live boundary before file inspection.
+    expect(emitted).toEqual([]);
     expect(toolEndCalls).toHaveLength(0);
-    expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
+    expect(poll[0].artifact).toBeUndefined();
   });
 
   it('falls back to poll-turn delivery when the harvest fails (files not lost)', async () => {
@@ -1149,6 +1148,272 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     expect(toolEndCalls).toHaveLength(1);
     expect(toolEndCalls[0].artifact).toEqual(CODE_ARTIFACT);
     expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
+  });
+
+  it('makes a completion-time generated-file policy rejection terminal across polls', async () => {
+    const protectedValue = 'PROTECTED-GENERATED-FILE-BYTES';
+    const blockedArtifact = {
+      session_id: 'exec-blocked',
+      files: [{ id: 'f-blocked', name: 'output.txt', opaqueBytes: protectedValue }],
+    };
+    const codeTool = {
+      name: 'execute_code',
+      description: 'run code',
+      schema: z.object({ lang: z.string(), code: z.string() }),
+      invoke: async () => ({ content: 'safe stdout', artifact: blockedArtifact }),
+    } as unknown as StructuredToolInterface;
+    const persistBackgroundCodeResult = jest.fn(async () => {
+      throw new ContentFilterError({
+        detectorId: 'custom',
+        ruleId: 'blocked-generated-file',
+        label: 'protected generated-file content',
+        source: 'file',
+        field: 'content',
+        provenance: 'tool',
+        fragmentId: 'generated-file',
+        fragmentPath: '/content',
+      });
+    });
+    const toolEndCallback = jest.fn();
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [codeTool] }),
+      toolEndCallback,
+      persistBackgroundCodeResult,
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = {
+      thread_id: 'exec_convo_code_policy_reject',
+      run_id: 'msg-policy-reject',
+    };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_policy_reject' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    const taskId = JSON.parse(dispatch[0].content).background_task_id;
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    for (const pollId of ['call_policy_poll_1', 'call_policy_poll_2']) {
+      const [poll] = (await runBatch(handler, {
+        toolCalls: [
+          {
+            id: pollId,
+            name: CHECK_BACKGROUND_TASK_NAME,
+            args: { background_task_id: taskId },
+          },
+        ],
+        agentId: 'a',
+        configurable,
+        metadata: {
+          thread_id: 'exec_convo_code_policy_reject',
+          run_id: `msg-${pollId}`,
+        },
+      })) as Array<{ content: string; artifact?: unknown }>;
+      const polled = JSON.parse(poll.content);
+
+      expect(polled).toEqual(
+        expect.objectContaining({
+          status: 'error',
+          error:
+            'Submitted content contains a protected generated-file content. Remove it and try again.',
+        }),
+      );
+      expect(polled.result).toBeUndefined();
+      expect(poll.artifact).toBeUndefined();
+      expect(JSON.stringify(poll)).not.toContain(protectedValue);
+    }
+
+    expect(persistBackgroundCodeResult).toHaveBeenCalledTimes(1);
+    expect(toolEndCallback).not.toHaveBeenCalled();
+  });
+
+  it('withholds code-session artifacts while completion-time file inspection is pending', async () => {
+    const protectedValue = 'PROTECTED-PENDING-HARVEST-BYTES';
+    const blockedArtifact = {
+      session_id: 'exec-pending-blocked',
+      files: [{ id: 'f-pending-blocked', name: 'output.txt', opaqueBytes: protectedValue }],
+    };
+    const codeTool = {
+      name: 'execute_code',
+      description: 'run code',
+      schema: z.object({ lang: z.string(), code: z.string() }),
+      invoke: async () => ({ content: 'safe stdout', artifact: blockedArtifact }),
+    } as unknown as StructuredToolInterface;
+    let rejectInspection: (error: Error) => void = () => undefined;
+    const persistBackgroundCodeResult = jest.fn(
+      () =>
+        new Promise<never>((_resolve, reject) => {
+          rejectInspection = reject;
+        }),
+    );
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [codeTool] }),
+      persistBackgroundCodeResult,
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = {
+      thread_id: 'exec_convo_code_pending_policy',
+      run_id: 'msg-pending-policy',
+    };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_pending_policy' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    const taskId = JSON.parse(dispatch[0].content).background_task_id;
+    await flushMicrotasks();
+
+    const [pendingPoll] = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_pending_policy_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: taskId },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: {
+        thread_id: 'exec_convo_code_pending_policy',
+        run_id: 'msg-pending-policy-poll',
+      },
+    })) as Array<{ content: string; artifact?: unknown }>;
+
+    expect(JSON.parse(pendingPoll.content).status).toBe('completed');
+    expect(pendingPoll.artifact).toBeUndefined();
+    expect(JSON.stringify(pendingPoll)).not.toContain(protectedValue);
+
+    rejectInspection(
+      new ContentFilterError({
+        detectorId: 'custom',
+        ruleId: 'blocked-pending-file',
+        label: 'protected generated-file content',
+        source: 'file',
+        field: 'content',
+        provenance: 'tool',
+        fragmentId: 'pending-generated-file',
+        fragmentPath: '/content',
+      }),
+    );
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const [blockedPoll] = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_blocked_after_pending_poll',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: taskId },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: {
+        thread_id: 'exec_convo_code_pending_policy',
+        run_id: 'msg-blocked-after-pending',
+      },
+    })) as Array<{ content: string; artifact?: unknown }>;
+
+    expect(JSON.parse(blockedPoll.content)).toEqual(
+      expect.objectContaining({
+        status: 'error',
+        error:
+          'Submitted content contains a protected generated-file content. Remove it and try again.',
+      }),
+    );
+    expect(blockedPoll.artifact).toBeUndefined();
+    expect(JSON.stringify(blockedPoll)).not.toContain(protectedValue);
+  });
+
+  it('makes a poll-time generated-file policy rejection terminal without delivering bytes', async () => {
+    const protectedValue = 'PROTECTED-POLL-FALLBACK-BYTES';
+    const blockedArtifact = {
+      session_id: 'exec-poll-blocked',
+      files: [{ id: 'f-poll-blocked', name: 'output.txt', opaqueBytes: protectedValue }],
+    };
+    const codeTool = {
+      name: 'execute_code',
+      description: 'run code',
+      schema: z.object({ lang: z.string(), code: z.string() }),
+      invoke: async () => ({ content: 'safe stdout', artifact: blockedArtifact }),
+    } as unknown as StructuredToolInterface;
+    const persistBackgroundCodeResult = jest.fn(async () => {
+      throw new Error('temporary harvest storage failure');
+    });
+    const toolEndCallback = jest.fn(async () => {
+      throw new ContentFilterError({
+        detectorId: 'custom',
+        ruleId: 'blocked-poll-file',
+        label: 'protected generated-file content',
+        source: 'file',
+        field: 'content',
+        provenance: 'tool',
+        fragmentId: 'poll-generated-file',
+        fragmentPath: '/content',
+      });
+    });
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [codeTool] }),
+      toolEndCallback: toolEndCallback as unknown as Parameters<
+        typeof createToolExecuteHandler
+      >[0]['toolEndCallback'],
+      persistBackgroundCodeResult,
+    });
+    const configurable = buildConfig(['execute_code']);
+    const metadata = {
+      thread_id: 'exec_convo_code_poll_policy_reject',
+      run_id: 'msg-poll-policy-reject',
+    };
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_poll_policy_reject' })],
+      agentId: 'a',
+      configurable,
+      metadata,
+    });
+    const taskId = JSON.parse(dispatch[0].content).background_task_id;
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    for (const pollId of ['call_poll_policy_reject_1', 'call_poll_policy_reject_2']) {
+      const [poll] = (await runBatch(handler, {
+        toolCalls: [
+          {
+            id: pollId,
+            name: CHECK_BACKGROUND_TASK_NAME,
+            args: { background_task_id: taskId },
+          },
+        ],
+        agentId: 'a',
+        configurable,
+        metadata: {
+          thread_id: 'exec_convo_code_poll_policy_reject',
+          run_id: `msg-${pollId}`,
+        },
+      })) as Array<{ content: string; artifact?: unknown }>;
+      const polled = JSON.parse(poll.content);
+
+      expect(polled).toEqual(
+        expect.objectContaining({
+          status: 'error',
+          error:
+            'Submitted content contains a protected generated-file content. Remove it and try again.',
+        }),
+      );
+      expect(polled.result).toBeUndefined();
+      expect(poll.artifact).toBeUndefined();
+      expect(JSON.stringify(poll)).not.toContain(protectedValue);
+    }
+
+    expect(persistBackgroundCodeResult).toHaveBeenCalledTimes(1);
+    expect(toolEndCallback).toHaveBeenCalledTimes(1);
   });
 
   it('re-anchors failed code tasks on poll (error output heals like success)', async () => {

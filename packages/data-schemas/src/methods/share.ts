@@ -66,6 +66,17 @@ export type SharedLinkContentPreflight = (
   snapshot: SharedLinkContentSnapshot,
 ) => void | Promise<void>;
 
+export type SharedMessagesPreflight = (snapshot: t.SharedMessagesResult) => void | Promise<void>;
+
+export interface GetSharedMessagesOptions {
+  readonly snapshotFiles?: boolean;
+  /**
+   * Runs against the exact public projection before a legacy file snapshot is
+   * persisted. This keeps a policy-rejected read side-effect free.
+   */
+  readonly preflight?: SharedMessagesPreflight;
+}
+
 function memoizedAnonymizeId(prefix: string) {
   const memo = new Map<string, string>();
   return (id: string) => {
@@ -243,6 +254,7 @@ async function buildFileSnapshots(
       height: file.height,
       model: file.model,
       previewRevision: file.previewRevision,
+      sourceDispatchedAt: file.metadata?.sourceDispatchedAt,
       tenantId: file.tenantId,
     });
   }
@@ -380,16 +392,19 @@ function applyShareFileRoute(
       // clients must preview the database-backed payload as text, not the original MIME.
       ...(textSourceIds?.has(fileId) && { source: FileSources.text }),
     };
-    if (file.preview !== undefined) {
-      next.preview = route;
+    for (const key of ['preview', 'uri', 'url'] as const) {
+      if (file[key] !== undefined) {
+        next[key] = route;
+      }
     }
     return next;
   }
   // Not snapshotted (e.g. a non-streamable source on an included link): neutralize
   // the render URLs so the owner's original path can't be loaded through the share.
   const next: t.SharedFile = { ...file };
-  delete next.filepath;
-  delete next.preview;
+  for (const key of ['filepath', 'preview', 'uri', 'url'] as const) {
+    delete next[key];
+  }
   return next;
 }
 
@@ -779,7 +794,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
   getSharedMessages: (
     shareId: string,
     shareObjectId?: string,
-    options?: { snapshotFiles?: boolean },
+    options?: GetSharedMessagesOptions,
   ) => Promise<t.SharedMessagesResult | null>;
   getSharedLinkFile: (
     shareId: string,
@@ -803,8 +818,9 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
   async function getSharedMessages(
     shareId: string,
     shareObjectId?: string,
-    options?: { snapshotFiles?: boolean },
+    options?: GetSharedMessagesOptions,
   ): Promise<t.SharedMessagesResult | null> {
+    let preflightFailed = false;
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
       const query = shareObjectId
@@ -851,12 +867,10 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const perLinkEnabled = share.snapshotFiles !== false;
       const includeFiles = adminEnabled && perLinkEnabled;
       let fileSnapshots = share.fileSnapshots;
+      let shouldPersistFileSnapshots = false;
       if (includeFiles && fileSnapshots === undefined && share._id) {
-        fileSnapshots = await persistBackfilledSnapshots(
-          SharedLink,
-          { _id: share._id },
-          await buildFileSnapshots(mongoose, messagesToShare, share.user),
-        );
+        fileSnapshots = await buildFileSnapshots(mongoose, messagesToShare, share.user);
+        shouldPersistFileSnapshots = true;
       }
       const snapshotIds = includeFiles
         ? new Set<string>((fileSnapshots ?? []).map((snapshot) => snapshot.file_id))
@@ -886,8 +900,22 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         ),
       };
 
+      try {
+        await options?.preflight?.(result);
+      } catch (error) {
+        preflightFailed = true;
+        throw error;
+      }
+
+      if (shouldPersistFileSnapshots) {
+        await persistBackfilledSnapshots(SharedLink, { _id: share._id }, fileSnapshots ?? []);
+      }
+
       return result;
     } catch (error) {
+      if (preflightFailed) {
+        throw error;
+      }
       logger.error('[getSharedMessages] Error getting share link', {
         error: error instanceof Error ? error.message : 'Unknown error',
         shareId,

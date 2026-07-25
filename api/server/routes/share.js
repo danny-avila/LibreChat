@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const express = require('express');
 const {
   assertModelBoundContent,
+  assertSharedFileMetadataAllowed,
   isEnabled,
   isContentFilterError,
   generateCheckAccess,
@@ -133,18 +134,33 @@ const createShareContentPreflight = (filters, options = {}) => {
   if (filters == null) {
     return undefined;
   }
-  return async ({ title, messages }) => {
+  return async ({ title, messages, shareId }) => {
+    const inspectSharedFileMetadata = options.sharedFileMetadata === true;
+    const inspectSharedFiles =
+      inspectSharedFileMetadata && options.sharedFileMetadataFiles !== false;
     const snapshot = {
       conversations: [{ title }],
-      messages: options.snapshotFiles === false ? omitUnsharedMessageFiles(messages) : messages,
+      messages:
+        options.snapshotFiles === false || inspectSharedFiles
+          ? omitUnsharedMessageFiles(messages)
+          : messages,
     };
     if (options.user == null) {
       await assertConversationContentAllowed(filters, snapshot);
+    } else {
+      await assertConversationContentAllowed(filters, snapshot, {
+        user: options.user,
+        getFiles,
+      });
+    }
+    if (!inspectSharedFileMetadata) {
       return;
     }
-    await assertConversationContentAllowed(filters, snapshot, {
-      user: options.user,
-      getFiles,
+    assertSharedFileMetadataAllowed({
+      filters,
+      messages: options.snapshotFiles === false ? omitUnsharedMessageFiles(messages) : messages,
+      shareId,
+      ...(options.sharedFileMetadataFiles === false && { includeFiles: false }),
     });
   };
 };
@@ -224,15 +240,17 @@ const resolveShareFile = async (req, res, next) => {
 
     // Pin to the snapshotted version so an old link can't surface post-share content
     // after a reused file_id (e.g. code-exec same-filename outputs) is overwritten.
-    // previewRevision changes for deferred/office files; `bytes` catches other
-    // overwrites that change size, and is stable across S3 URL refresh and the
-    // pending->ready transition (which don't alter file size). Same-size content
-    // swaps remain a best-effort gap inherent to the no-byte-copy design.
+    // sourceDispatchedAt changes for every source artifact emit; previewRevision
+    // covers deferred/office generations, while `bytes` covers legacy records
+    // without either marker and stays stable across URL refresh/preview updates.
     const revisionChanged =
       (snapshot.previewRevision ?? null) !== (liveFile.previewRevision ?? null);
+    const sourceGenerationChanged =
+      snapshot.sourceDispatchedAt != null &&
+      snapshot.sourceDispatchedAt !== (liveFile.metadata?.sourceDispatchedAt ?? null);
     const bytesChanged =
       snapshot.bytes != null && liveFile.bytes != null && snapshot.bytes !== liveFile.bytes;
-    if (revisionChanged || bytesChanged) {
+    if (revisionChanged || sourceGenerationChanged || bytesChanged) {
       logger.warn(
         `[shareFileAccess] Snapshot version mismatch for file ${file_id} (share ${shareId})`,
       );
@@ -367,19 +385,16 @@ if (allowSharedLinks) {
     configMiddleware,
     async (req, res) => {
       try {
+        const contentPreflight = createShareContentPreflight(req.config?.filters, {
+          sharedFileMetadata: true,
+        });
         const share = await getSharedMessages(req.params.shareId, req.shareResourceId, {
           // Viewer-independent: the per-link choice (stored on the share) decides
           // file inclusion; only a global env kill switch can force it off here.
           snapshotFiles: !isFileSnapshotKillSwitchActive(),
+          preflight: contentPreflight,
         });
         if (share) {
-          /**
-           * The message payload is already stripped of unshared files. Live file
-           * bytes are rechecked by the share-scoped file routes when requested.
-           */
-          await createShareContentPreflight(req.config?.filters, {
-            snapshotFiles: false,
-          })?.(share);
           res.set('Cache-Control', 'private, no-store');
           res.status(200).json(share);
         } else {
@@ -400,6 +415,7 @@ if (allowSharedLinks) {
     requireJwtAuth,
     forkIpLimiter,
     forkUserLimiter,
+    configMiddleware,
     canAccessSharedLink,
     async (req, res) => {
       try {
@@ -414,6 +430,9 @@ if (allowSharedLinks) {
           // Viewer-independent: honor the global shared-file kill switch, matching
           // the GET share route so disabled file snapshots aren't copied into forks.
           snapshotFiles: !isFileSnapshotKillSwitchActive(),
+          sharedContentPreflight: createShareContentPreflight(req.config?.filters, {
+            sharedFileMetadata: true,
+          }),
         });
         if (!result) {
           return res.status(404).json({ message: 'Shared conversation not found' });
@@ -634,6 +653,8 @@ router.post(
       const contentPreflight = createShareContentPreflight(req.config?.filters, {
         snapshotFiles,
         user: req.user,
+        sharedFileMetadata: true,
+        sharedFileMetadataFiles: false,
       });
 
       const created = await createSharedLink(
@@ -705,6 +726,8 @@ router.patch(
       const contentPreflight = createShareContentPreflight(req.config?.filters, {
         snapshotFiles,
         user: req.user,
+        sharedFileMetadata: true,
+        sharedFileMetadataFiles: false,
       });
       const updatedShare = await updateSharedLink(
         req.user.id,

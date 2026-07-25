@@ -1,8 +1,9 @@
-import { hasActivePiiPatterns } from 'librechat-data-provider';
+import { FILE_FILTER_FIELDS, hasActivePiiPatterns } from 'librechat-data-provider';
 import type { FileFilterField, FiltersConfig } from 'librechat-data-provider';
 import {
   ContentTraversalLimitError,
   escapeJsonPointer,
+  getBoundedOwnEnumerableEntries,
   isDataUri,
   isLikelyEncodedPayload,
 } from './adapters/nested';
@@ -26,23 +27,32 @@ interface PendingOpaqueValue {
   readonly depth: number;
 }
 
+interface MutableUnknownDictionary {
+  [key: string]: unknown;
+}
+
 export interface CanonicalFileInspectionFile {
   readonly file_id?: string;
   readonly filename?: string;
   readonly filepath?: string;
+  readonly uri?: string;
+  readonly url?: string;
+  readonly preview?: string;
   readonly type?: string;
   readonly source?: string;
-  readonly content?: string;
-  readonly extractedText?: string;
-  readonly text?: string;
-  readonly transcript?: string;
+  readonly content?: string | null;
+  readonly extractedText?: string | null;
+  readonly text?: string | null;
+  readonly transcript?: string | null;
 }
 
 export interface CanonicalFileInspectionCoverage {
   readonly content?: string;
   readonly extractedText?: string;
   readonly transcript?: string;
-  readonly transcriptApplicable: boolean;
+  /** `null` means the MIME is absent or malformed, so strict transcript
+   * policy must fail closed instead of assuming the file is non-audio. */
+  readonly transcriptApplicable: boolean | null;
 }
 
 export interface CanonicalFileInspectionUser {
@@ -64,7 +74,12 @@ export interface CanonicalFileReferenceInspectionInput<T> {
   readonly filters?: FiltersConfig;
   readonly input: T;
   readonly user?: CanonicalFileInspectionUser;
-  readonly liveFiles?: readonly CanonicalFileInspectionFile[];
+  /**
+   * Server-derived runtime rows whose extraction fields belong to the exact
+   * model-bound generation. Never populate this from request or resumable-job
+   * metadata: a matching file_id alone is not an extraction attestation.
+   */
+  readonly trustedLiveFiles?: readonly CanonicalFileInspectionFile[];
   readonly getFiles: GetCanonicalFilesForInspection;
 }
 
@@ -90,6 +105,21 @@ const TEXTUAL_APPLICATION_MIME_TYPES = new Set([
 
 function getFilePii(filters: FiltersConfig | undefined): FilePiiConfig | undefined {
   return filters?.files?.pii as FilePiiConfig | undefined;
+}
+
+/**
+ * A file policy needs canonical file hydration only when it can inspect text
+ * patterns or fail closed for one of the derived content surfaces.
+ */
+export function hasActiveFilePolicy(filters: FiltersConfig | undefined): boolean {
+  const pii = getFilePii(filters);
+  if (hasActivePiiPatterns(pii)) {
+    return true;
+  }
+  return (
+    pii?.uninspectable === 'block' &&
+    DERIVED_FILE_FIELDS.some((field) => pii.fields == null || pii.fields.includes(field))
+  );
 }
 
 export function isFileFilterFieldEnabled(
@@ -172,23 +202,66 @@ function hasSubmittedPayload(value: unknown): boolean {
   if (value == null || typeof value !== 'object') {
     return false;
   }
-  let entries: [string, unknown][];
-  try {
-    entries = Object.entries(value);
-  } catch {
-    return false;
-  }
-  return entries.some(
-    ([key, entryValue]) =>
-      ['data', 'file_data', 'file_id', 'uri', 'url'].includes(key) &&
-      typeof entryValue === 'string' &&
-      entryValue.length > 0,
+  const boundedEntries = getBoundedOwnEnumerableEntries(value, 32);
+  return (
+    !boundedEntries.complete ||
+    boundedEntries.entries.some(
+      ([key, entryValue]) =>
+        ['data', 'file_data', 'filedata', 'file_id', 'file_uri', 'fileuri', 'uri', 'url'].includes(
+          key.toLowerCase(),
+        ) &&
+        typeof entryValue === 'string' &&
+        entryValue.length > 0,
+    )
   );
 }
 
 function getObjectType(entries: readonly [string, unknown][]): string {
-  const type = entries.find(([key]) => key === 'type')?.[1];
+  const type = entries.find(([key]) => key.toLowerCase() === 'type')?.[1];
   return typeof type === 'string' ? type.toLowerCase() : '';
+}
+
+function getObjectMimeType(entries: readonly [string, unknown][]): string {
+  const explicitMimeType = entries.find(
+    ([key]) => key.toLowerCase() === 'mimetype' || key.toLowerCase() === 'mime_type',
+  )?.[1];
+  const mimeType =
+    explicitMimeType ??
+    entries.find(
+      ([key, entryValue]) =>
+        key.toLowerCase() === 'type' && typeof entryValue === 'string' && entryValue.includes('/'),
+    )?.[1];
+  return typeof mimeType === 'string' ? mimeType.split(';', 1)[0].trim().toLowerCase() : '';
+}
+
+function getMediaFields(parentType: string, parentMimeType: string): readonly FileFilterField[] {
+  if (parentType.includes('audio') || parentMimeType.startsWith('audio/')) {
+    return AUDIO_FIELDS;
+  }
+  if (
+    parentType.includes('image') ||
+    parentType.includes('video') ||
+    parentMimeType.startsWith('image/') ||
+    parentMimeType.startsWith('video/')
+  ) {
+    return CONTENT_FIELDS;
+  }
+  return DERIVED_FILE_FIELDS;
+}
+
+function hasBoundedNonEmptyString(values: readonly unknown[]): boolean {
+  const inspectedLength = Math.min(values.length, MAX_OPAQUE_NODES);
+  try {
+    for (let index = 0; index < inspectedLength; index++) {
+      const value = values[index];
+      if (typeof value === 'string' && value.length > 0) {
+        return true;
+      }
+    }
+  } catch {
+    return true;
+  }
+  return inspectedLength < values.length;
 }
 
 function isRemoteUri(value: string): boolean {
@@ -206,15 +279,17 @@ function getOpaqueFields(
   value: unknown,
   path: string,
   parentType: string,
+  parentMimeType: string,
 ): readonly FileFilterField[] | null {
+  const normalizedKey = key.toLowerCase();
   if (
-    (key === 'file_ids' || key === 'vector_store_ids') &&
+    (normalizedKey === 'file_ids' || normalizedKey === 'vector_store_ids') &&
     Array.isArray(value) &&
-    value.some((item) => typeof item === 'string' && item.length > 0)
+    hasBoundedNonEmptyString(value)
   ) {
     return DERIVED_FILE_FIELDS;
   }
-  if (key === 'file_id' && typeof value === 'string' && value.length > 0) {
+  if (normalizedKey === 'file_id' && typeof value === 'string' && value.length > 0) {
     const pathLower = path.toLowerCase();
     if (
       parentType.includes('image') ||
@@ -228,16 +303,34 @@ function getOpaqueFields(
     }
     return DERIVED_FILE_FIELDS;
   }
-  if (key === 'file_data' && hasSubmittedPayload(value)) {
+  if (
+    (normalizedKey === 'file_data' || normalizedKey === 'filedata') &&
+    hasSubmittedPayload(value)
+  ) {
+    if (value != null && typeof value === 'object' && !Array.isArray(value)) {
+      const payloadEntries = getBoundedOwnEnumerableEntries(value, 32);
+      if (payloadEntries.complete) {
+        return getMediaFields(
+          getObjectType(payloadEntries.entries),
+          getObjectMimeType(payloadEntries.entries),
+        );
+      }
+    }
     return DERIVED_FILE_FIELDS;
   }
-  if (key === 'input_audio' && hasSubmittedPayload(value)) {
+  if (normalizedKey === 'document_url' && hasSubmittedPayload(value)) {
+    return DERIVED_FILE_FIELDS;
+  }
+  if (normalizedKey === 'input_audio' && hasSubmittedPayload(value)) {
     return AUDIO_FIELDS;
   }
-  if ((key === 'image_url' || key === 'video_url') && hasSubmittedPayload(value)) {
+  if (
+    (normalizedKey === 'image_url' || normalizedKey === 'video_url') &&
+    hasSubmittedPayload(value)
+  ) {
     return CONTENT_FIELDS;
   }
-  if (key === 'audio_url' && hasSubmittedPayload(value)) {
+  if (normalizedKey === 'audio_url' && hasSubmittedPayload(value)) {
     return AUDIO_FIELDS;
   }
   if (typeof value !== 'string' || value.length === 0) {
@@ -248,7 +341,10 @@ function getOpaqueFields(
   }
 
   const pathLower = path.toLowerCase();
-  if (key === 'data') {
+  if (normalizedKey === 'data') {
+    if (parentType === 'media') {
+      return getMediaFields(parentType, parentMimeType);
+    }
     if (parentType.includes('audio') || pathLower.includes('/input_audio/')) {
       return AUDIO_FIELDS;
     }
@@ -272,7 +368,14 @@ function getOpaqueFields(
     }
   }
   if (
-    (key === 'uri' || key === 'filepath') &&
+    normalizedKey === 'fileuri' ||
+    normalizedKey === 'file_uri' ||
+    normalizedKey === 'document_url'
+  ) {
+    return getMediaFields(parentType, parentMimeType);
+  }
+  if (
+    (normalizedKey === 'uri' || normalizedKey === 'filepath' || normalizedKey === 'preview') &&
     (isRemoteUri(value) ||
       pathLower.includes('/attachments/') ||
       pathLower.includes('/files/') ||
@@ -283,7 +386,13 @@ function getOpaqueFields(
     }
     return DERIVED_FILE_FIELDS;
   }
-  if (key === 'url' && isRemoteUri(value)) {
+  if (
+    normalizedKey === 'url' &&
+    (isRemoteUri(value) ||
+      pathLower.includes('/attachments/') ||
+      pathLower.includes('/files/') ||
+      pathLower.includes('/image_file/'))
+  ) {
     if (parentType.includes('audio') || pathLower.includes('/audio_url/')) {
       return AUDIO_FIELDS;
     }
@@ -296,8 +405,42 @@ function getOpaqueFields(
     ) {
       return parentType === 'url' ? DERIVED_FILE_FIELDS : CONTENT_FIELDS;
     }
+    if (
+      parentType.includes('file') ||
+      parentType.includes('document') ||
+      pathLower.includes('/attachments/') ||
+      pathLower.includes('/files/')
+    ) {
+      return DERIVED_FILE_FIELDS;
+    }
   }
   return null;
+}
+
+/**
+ * Live runtime rows can carry extraction results that have not reached the
+ * durable file record yet. They may supplement an owner-resolved row, but
+ * never define its identity or canonical locators.
+ */
+function mergeOwnerResolvedFileMetadata(
+  resolvedFile: CanonicalFileInspectionFile,
+  liveFile: CanonicalFileInspectionFile,
+): CanonicalFileInspectionFile {
+  return {
+    ...resolvedFile,
+    ...(Object.prototype.hasOwnProperty.call(liveFile, 'content') && {
+      content: liveFile.content,
+    }),
+    ...(Object.prototype.hasOwnProperty.call(liveFile, 'extractedText') && {
+      extractedText: liveFile.extractedText,
+    }),
+    ...(Object.prototype.hasOwnProperty.call(liveFile, 'text') && {
+      text: liveFile.text,
+    }),
+    ...(Object.prototype.hasOwnProperty.call(liveFile, 'transcript') && {
+      transcript: liveFile.transcript,
+    }),
+  };
 }
 
 /**
@@ -372,27 +515,22 @@ export function getBlockedOpaqueFileField(
       continue;
     }
 
-    let entries: [string, unknown][];
-    try {
-      entries = Object.entries(current.value);
-    } catch {
+    const availableNodes = Math.max(0, MAX_OPAQUE_NODES - visitedNodes - pending.length);
+    const boundedEntries = getBoundedOwnEnumerableEntries(current.value, availableNodes);
+    const entries = boundedEntries.entries;
+    if (!boundedEntries.complete) {
       traversalTruncated = true;
-      continue;
     }
     if (current.depth >= MAX_OPAQUE_DEPTH && entries.length > 0) {
       traversalTruncated = true;
       continue;
     }
     const parentType = getObjectType(entries);
-    const availableNodes = Math.max(0, MAX_OPAQUE_NODES - visitedNodes - pending.length);
-    const scheduledNodes = Math.min(entries.length, availableNodes);
-    if (scheduledNodes < entries.length) {
-      traversalTruncated = true;
-    }
-    for (let index = scheduledNodes - 1; index >= 0; index--) {
+    const parentMimeType = getObjectMimeType(entries);
+    for (let index = entries.length - 1; index >= 0; index--) {
       const [key, value] = entries[index];
       const path = `${current.path}/${escapeJsonPointer(key)}`;
-      const fields = getOpaqueFields(key, value, path, parentType);
+      const fields = getOpaqueFields(key, value, path, parentType, parentMimeType);
       if (fields != null) {
         const blockedField = getBlockedUninspectableFileField(filters, fields);
         if (blockedField != null) {
@@ -412,18 +550,32 @@ export function getBlockedOpaqueFileField(
 interface CanonicalReferenceTraversal {
   readonly fileIds: Set<string>;
   readonly incomplete: boolean;
+  readonly fileRelevantIncomplete: boolean;
+}
+
+function isLikelyFileReferenceContainer(key: string): boolean {
+  return /(?:file|attach|document|audio|image|video|media|resource)/i.test(key);
 }
 
 function getCanonicalFileReferenceIds(input: unknown): CanonicalReferenceTraversal {
   if (input == null || typeof input !== 'object') {
-    return { fileIds: new Set(), incomplete: false };
+    return { fileIds: new Set(), incomplete: false, fileRelevantIncomplete: false };
   }
 
   const fileIds = new Set<string>();
-  const pending: Array<{ value: object; depth: number }> = [{ value: input, depth: 0 }];
+  const pending: Array<{ value: object; depth: number; fileRelevant: boolean }> = [
+    { value: input, depth: 0, fileRelevant: false },
+  ];
   const seen = new WeakSet<object>();
   let visited = 0;
   let incomplete = false;
+  let fileRelevantIncomplete = false;
+  const markIncomplete = (fileRelevant: boolean): void => {
+    incomplete = true;
+    if (fileRelevant) {
+      fileRelevantIncomplete = true;
+    }
+  };
 
   while (pending.length > 0 && visited < MAX_OPAQUE_NODES) {
     const current = pending.pop();
@@ -431,26 +583,27 @@ function getCanonicalFileReferenceIds(input: unknown): CanonicalReferenceTravers
       continue;
     }
     if (current.depth > MAX_OPAQUE_DEPTH) {
-      incomplete = true;
+      markIncomplete(current.fileRelevant);
       continue;
     }
     seen.add(current.value);
     visited++;
 
-    let entries: [string, unknown][];
-    try {
-      entries = Object.entries(current.value);
-    } catch {
-      incomplete = true;
-      continue;
+    const availableNodes = Math.max(0, MAX_OPAQUE_NODES - visited - pending.length);
+    const boundedEntries = getBoundedOwnEnumerableEntries(current.value, availableNodes);
+    const entries = boundedEntries.entries;
+    if (!boundedEntries.complete) {
+      markIncomplete(current.fileRelevant || current.depth === 0);
     }
 
+    const ordinaryChildren: object[] = [];
+    const fileChildren: object[] = [];
     for (const [key, value] of entries) {
       if (key === 'file_id' && typeof value === 'string' && value.length > 0) {
         if (fileIds.size < MAX_OPAQUE_NODES || fileIds.has(value)) {
           fileIds.add(value);
         } else {
-          incomplete = true;
+          markIncomplete(true);
         }
       } else if (key === 'file_ids' && Array.isArray(value)) {
         const remainingIds = Math.max(0, MAX_OPAQUE_NODES - fileIds.size);
@@ -460,26 +613,45 @@ function getCanonicalFileReferenceIds(input: unknown): CanonicalReferenceTravers
             if (fileIds.size < MAX_OPAQUE_NODES || fileIds.has(fileId)) {
               fileIds.add(fileId);
             } else {
-              incomplete = true;
+              markIncomplete(true);
               break;
             }
           }
         }
         if (inspectedIds.length < value.length) {
-          incomplete = true;
+          markIncomplete(true);
         }
         continue;
       }
       if (value != null && typeof value === 'object') {
-        pending.push({ value, depth: current.depth + 1 });
+        (current.fileRelevant || isLikelyFileReferenceContainer(key)
+          ? fileChildren
+          : ordinaryChildren
+        ).push(value);
       }
+    }
+    for (const value of ordinaryChildren) {
+      pending.push({ value, depth: current.depth + 1, fileRelevant: false });
+    }
+    for (const value of fileChildren) {
+      pending.push({ value, depth: current.depth + 1, fileRelevant: true });
     }
   }
 
+  const pendingFileReference = pending.some(({ fileRelevant }) => fileRelevant);
   return {
     fileIds,
     incomplete: incomplete || pending.length > 0,
+    fileRelevantIncomplete: fileRelevantIncomplete || pendingFileReference,
   };
+}
+
+function getActivePatternFileField(filters: FiltersConfig | undefined): FileFilterField | null {
+  const pii = getFilePii(filters);
+  if (!hasActivePiiPatterns(pii)) {
+    return null;
+  }
+  return pii?.fields?.[0] ?? (pii?.fields == null ? FILE_FILTER_FIELDS[0] : null);
 }
 
 function getRequiredOpaqueFileField(
@@ -508,6 +680,8 @@ export function getCanonicalFileInspectionCoverage(
 ): CanonicalFileInspectionCoverage {
   const mimeType = getNormalizedMimeType(file);
   const isAudio = mimeType.startsWith('audio/');
+  const hasValidMimeShape = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(mimeType);
+  const transcriptApplicable = hasValidMimeShape ? isAudio : null;
   const isTextual = mimeType.startsWith('text/') || TEXTUAL_APPLICATION_MIME_TYPES.has(mimeType);
   const hasExtractedTextProvenance =
     typeof file.source === 'string' && file.source.toLowerCase() === 'text';
@@ -519,7 +693,7 @@ export function getCanonicalFileInspectionCoverage(
     content: content ?? (hasExtractedTextProvenance && isTextual ? text : undefined),
     extractedText: typeof file.extractedText === 'string' ? file.extractedText : text,
     transcript: transcript ?? (hasExtractedTextProvenance && isAudio ? text : undefined),
-    transcriptApplicable: isAudio,
+    transcriptApplicable,
   };
 }
 
@@ -539,7 +713,11 @@ function getMissingInspectableFileField(
   if (enabled('extracted_text') && coverage.extractedText == null) {
     return 'extracted_text';
   }
-  if (enabled('transcript') && coverage.transcriptApplicable && coverage.transcript == null) {
+  if (
+    enabled('transcript') &&
+    coverage.transcriptApplicable !== false &&
+    coverage.transcript == null
+  ) {
     return 'transcript';
   }
   return null;
@@ -557,7 +735,7 @@ export function assertHydratedFileInspectable(
 
 function omitResolvedFileLocators(
   value: unknown,
-  resolvedFileIds: ReadonlySet<string>,
+  resolvedFilesById: ReadonlyMap<string, CanonicalFileInspectionFile>,
   depth = 0,
   state?: {
     readonly seen: WeakMap<object, unknown>;
@@ -568,12 +746,12 @@ function omitResolvedFileLocators(
     return value;
   }
   if (depth > MAX_OPAQUE_DEPTH) {
-    return value;
+    throw new ContentTraversalLimitError();
   }
 
   const traversal = state ?? { seen: new WeakMap<object, unknown>(), visited: 0 };
   if (traversal.visited >= MAX_OPAQUE_NODES) {
-    return value;
+    throw new ContentTraversalLimitError();
   }
   const seenValue = traversal.seen.get(value);
   if (seenValue !== undefined) {
@@ -582,56 +760,80 @@ function omitResolvedFileLocators(
   traversal.visited++;
 
   if (Array.isArray(value)) {
+    const remainingNodes = MAX_OPAQUE_NODES - traversal.visited;
+    if (value.length > remainingNodes) {
+      throw new ContentTraversalLimitError();
+    }
     const cloned: unknown[] = [];
     traversal.seen.set(value, cloned);
     for (const item of value) {
-      cloned.push(omitResolvedFileLocators(item, resolvedFileIds, depth + 1, traversal));
+      cloned.push(omitResolvedFileLocators(item, resolvedFilesById, depth + 1, traversal));
     }
     return cloned;
   }
 
-  let entries: [string, unknown][];
-  try {
-    entries = Object.entries(value);
-  } catch {
-    return value;
+  const remainingNodes = MAX_OPAQUE_NODES - traversal.visited;
+  const boundedEntries = getBoundedOwnEnumerableEntries(value, remainingNodes);
+  if (!boundedEntries.complete) {
+    throw new ContentTraversalLimitError();
   }
+  const entries = boundedEntries.entries;
 
-  const cloned: Record<string, unknown> = {};
+  const cloned: MutableUnknownDictionary = {};
   traversal.seen.set(value, cloned);
-  const resolvedSingleFileId =
-    typeof (value as { file_id?: unknown }).file_id === 'string' &&
-    resolvedFileIds.has((value as { file_id: string }).file_id);
+  const fileId = entries.find(([key]) => key === 'file_id')?.[1];
+  const resolvedFile = typeof fileId === 'string' ? resolvedFilesById.get(fileId) : undefined;
+  const matchesResolvedLocator = (locator: unknown): boolean => {
+    if (typeof locator !== 'string' || resolvedFile == null) {
+      return false;
+    }
+    return (
+      resolvedFile.filepath === locator ||
+      resolvedFile.uri === locator ||
+      resolvedFile.url === locator ||
+      resolvedFile.preview === locator
+    );
+  };
 
   for (const [key, child] of entries) {
+    if (resolvedFile != null && key === 'file_id') {
+      continue;
+    }
     if (
-      resolvedSingleFileId &&
-      (key === 'file_id' || key === 'uri' || key === 'url' || key === 'filepath')
+      resolvedFile != null &&
+      (key === 'uri' || key === 'url' || key === 'filepath' || key === 'preview') &&
+      matchesResolvedLocator(child)
     ) {
       continue;
     }
     if (key === 'file_ids' && Array.isArray(child)) {
-      const unresolvedFileIds = child.filter(
-        (fileId) => typeof fileId !== 'string' || !resolvedFileIds.has(fileId),
-      );
+      if (child.length > MAX_OPAQUE_NODES - traversal.visited) {
+        throw new ContentTraversalLimitError();
+      }
+      const unresolvedFileIds: unknown[] = [];
+      for (const childFileId of child) {
+        if (typeof childFileId !== 'string' || !resolvedFilesById.has(childFileId)) {
+          unresolvedFileIds.push(childFileId);
+        }
+      }
       if (unresolvedFileIds.length > 0) {
         cloned[key] = unresolvedFileIds;
       }
       continue;
     }
-    cloned[key] = omitResolvedFileLocators(child, resolvedFileIds, depth + 1, traversal);
+    cloned[key] = omitResolvedFileLocators(child, resolvedFilesById, depth + 1, traversal);
   }
   return cloned;
 }
 
 export function omitResolvedCanonicalFileLocators<T>(
   input: T,
-  resolvedFileIds: ReadonlySet<string>,
+  resolvedFilesById: ReadonlyMap<string, CanonicalFileInspectionFile>,
 ): T {
-  if (resolvedFileIds.size === 0) {
+  if (resolvedFilesById.size === 0) {
     return input;
   }
-  return omitResolvedFileLocators(input, resolvedFileIds) as T;
+  return omitResolvedFileLocators(input, resolvedFilesById) as T;
 }
 
 export function allowHydratedFileReferences(
@@ -662,7 +864,7 @@ export async function resolveCanonicalFileReferences<T>(
   input: CanonicalFileReferenceInspectionInput<T>,
 ): Promise<CanonicalFileReferenceInspection<T>> {
   const filters = input.filters;
-  if (getFilePii(filters) == null) {
+  if (!hasActiveFilePolicy(filters)) {
     return {
       sanitizedInput: input.input,
       hydratedFiles: [],
@@ -676,7 +878,12 @@ export async function resolveCanonicalFileReferences<T>(
     if (blockedField != null) {
       throw new UninspectableFileError(blockedField);
     }
-    throw new ContentTraversalLimitError();
+  }
+  if (references.fileRelevantIncomplete) {
+    const patternField = getActivePatternFileField(filters);
+    if (patternField != null) {
+      throw new UninspectableFileError(patternField);
+    }
   }
 
   const currentById = new Map<string, CanonicalFileInspectionFile>();
@@ -690,7 +897,11 @@ export async function resolveCanonicalFileReferences<T>(
     try {
       const currentFiles = (await input.getFiles(filter, {}, {})) ?? [];
       for (const file of currentFiles) {
-        if (typeof file?.file_id === 'string' && file.file_id.length > 0) {
+        if (
+          typeof file?.file_id === 'string' &&
+          file.file_id.length > 0 &&
+          references.fileIds.has(file.file_id)
+        ) {
           currentById.set(file.file_id, file);
         }
       }
@@ -700,9 +911,13 @@ export async function resolveCanonicalFileReferences<T>(
     }
   }
 
-  for (const file of input.liveFiles ?? []) {
-    if (typeof file?.file_id === 'string' && !currentById.has(file.file_id)) {
-      currentById.set(file.file_id, file);
+  for (const file of input.trustedLiveFiles ?? []) {
+    if (typeof file?.file_id !== 'string' || file.file_id.length === 0) {
+      continue;
+    }
+    const resolvedFile = currentById.get(file.file_id);
+    if (resolvedFile != null) {
+      currentById.set(file.file_id, mergeOwnerResolvedFileMetadata(resolvedFile, file));
     }
   }
 
@@ -717,7 +932,7 @@ export async function resolveCanonicalFileReferences<T>(
 
   const hydratedFiles = [
     ...currentById.values(),
-    ...(input.liveFiles ?? []).filter(
+    ...(input.trustedLiveFiles ?? []).filter(
       (file) => typeof file?.file_id !== 'string' || file.file_id.length === 0,
     ),
   ];
@@ -725,12 +940,25 @@ export async function resolveCanonicalFileReferences<T>(
     assertHydratedFileInspectable(filters, file);
   }
 
-  const resolvedFileIds = new Set(currentById.keys());
+  let sanitizedInput = input.input;
+  if (currentById.size > 0) {
+    try {
+      sanitizedInput = omitResolvedCanonicalFileLocators(input.input, currentById);
+    } catch (error) {
+      if (!(error instanceof ContentTraversalLimitError)) {
+        throw error;
+      }
+      /**
+       * Canonical hydration is supplemental for pattern-only name/URI policy.
+       * If an unrelated oversized subtree prevents cloning the whole request,
+       * keep the original projection and inspect the owner-resolved rows
+       * separately. Derived-content fail-close was handled above.
+       */
+    }
+  }
+
   return {
-    sanitizedInput:
-      resolvedFileIds.size > 0
-        ? omitResolvedCanonicalFileLocators(input.input, resolvedFileIds)
-        : input.input,
+    sanitizedInput,
     hydratedFiles,
     hydratedFilters: allowHydratedFileReferences(filters),
   };

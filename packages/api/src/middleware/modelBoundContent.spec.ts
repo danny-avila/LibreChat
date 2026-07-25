@@ -18,6 +18,14 @@ const makeTraversalOverflowContent = () => [
   },
 ];
 
+const makeDeepModelParameter = () => {
+  let value: unknown = 'safe';
+  for (let depth = 0; depth < 30; depth++) {
+    value = { nested: value };
+  }
+  return value;
+};
+
 describe('assertModelBoundContent', () => {
   it('does not traverse model-bound content for a zero-rule configuration', () => {
     const message = {
@@ -468,6 +476,181 @@ describe('assertModelBoundContent', () => {
     ).toThrow('Submitted file content could not be inspected before processing.');
   });
 
+  it('accepts a submitted locator only when it exactly matches the owner-resolved row', () => {
+    const canonicalFile = {
+      file_id: 'file-owned',
+      filename: 'owned.txt',
+      filepath: '/uploads/owned.txt',
+      text: 'safe canonical content',
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              starterPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+        storedMessages: [
+          {
+            isCreatedByUser: true,
+            role: 'user',
+            files: [
+              {
+                file_id: canonicalFile.file_id,
+                filepath: canonicalFile.filepath,
+              },
+            ],
+          },
+        ],
+        resolvedFiles: [canonicalFile],
+      }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    ['remote uri', { uri: 'https://attacker.example/private.txt' }],
+    ['remote url', { url: 'https://attacker.example/private.txt' }],
+    ['relative url', { url: '/api/files/untrusted' }],
+    ['remote filepath', { filepath: 'https://attacker.example/private.txt' }],
+    ['remote preview', { preview: 'https://attacker.example/private.txt' }],
+    ['data URI', { uri: 'data:text/plain;base64,U0VDUkVU' }],
+  ])('rejects an owned ID paired with a conflicting %s', (_name, locator) => {
+    const canonicalFile = {
+      file_id: 'file-owned',
+      filename: 'owned.txt',
+      filepath: '/uploads/owned.txt',
+      type: 'text/plain',
+      source: 'text',
+      text: 'safe canonical content',
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          files: {
+            pii: {
+              starterPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+        storedMessages: [
+          {
+            isCreatedByUser: true,
+            role: 'user',
+            files: [{ file_id: canonicalFile.file_id, ...locator }],
+          },
+        ],
+        resolvedFiles: [canonicalFile],
+      }),
+    ).toThrow('Submitted file content could not be inspected before processing.');
+  });
+
+  it.each([
+    ['url', { url: 'https://attacker.example/PRIVATE-FILE.txt' }],
+    ['relative url', { url: '/api/files/PRIVATE-FILE.txt' }],
+    ['preview', { preview: 'https://attacker.example/PRIVATE-FILE.txt' }],
+  ])('inspects a conflicting %s alias in pattern mode', (_name, locator) => {
+    const pattern = {
+      starterPatterns: [],
+      customPatterns: [
+        {
+          id: 'private-file',
+          label: 'private file value',
+          regex: 'PRIVATE-FILE',
+        },
+      ],
+    };
+    const policyVariants: FiltersConfig[] = [
+      {
+        files: {
+          pii: {
+            ...pattern,
+            fields: ['uri'],
+          },
+        },
+      },
+      {
+        messages: {
+          pii: {
+            ...pattern,
+            fields: ['attachment_reference'],
+          },
+        },
+      },
+    ];
+
+    for (const policy of policyVariants) {
+      expect(() =>
+        assertModelBoundContent({
+          filters: policy,
+          storedMessages: [
+            {
+              isCreatedByUser: true,
+              role: 'user',
+              files: [{ file_id: 'file-owned', ...locator }],
+            },
+          ],
+          resolvedFiles: [
+            {
+              file_id: 'file-owned',
+              filename: 'owned.txt',
+              filepath: '/uploads/owned.txt',
+              text: 'safe canonical content',
+            },
+          ],
+        }),
+      ).toThrow('Submitted content contains a private file value');
+    }
+  });
+
+  it('preserves default allow behavior for a nonmatching conflicting locator', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          files: {
+            pii: {
+              fields: ['uri'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'private-file',
+                  label: 'private file value',
+                  regex: 'PRIVATE-FILE',
+                },
+              ],
+            },
+          },
+        },
+        storedMessages: [
+          {
+            isCreatedByUser: true,
+            role: 'user',
+            files: [
+              {
+                file_id: 'file-owned',
+                url: 'https://attacker.example/public.txt',
+              },
+            ],
+          },
+        ],
+        resolvedFiles: [
+          {
+            file_id: 'file-owned',
+            filename: 'owned.txt',
+            filepath: '/uploads/owned.txt',
+            text: 'safe canonical content',
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
   it('inspects owner-resolved file content before authorizing its stored locator', () => {
     expect(() =>
       assertModelBoundContent({
@@ -731,6 +914,124 @@ describe('assertModelBoundContent', () => {
     ).not.toThrow();
   });
 
+  it('fails closed only for the selected uninspectable tool output on an assistant row', () => {
+    const uninspectableOutput = new Proxy(
+      { visible: 'safe' },
+      {
+        ownKeys() {
+          throw new Error('opaque tool output');
+        },
+      },
+    );
+    const storedMessages = [
+      {
+        isCreatedByUser: false,
+        role: 'assistant',
+        tool_calls: [{ output: uninspectableOutput }],
+      },
+    ];
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['output'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+            },
+          },
+        },
+        storedMessages,
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['arguments'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+            },
+          },
+        },
+        storedMessages,
+      }),
+    ).not.toThrow();
+  });
+
+  it('applies bounded skill and action errors only to their selected fields', () => {
+    const createDeepValue = (visible: string): Record<string, unknown> => {
+      const root: Record<string, unknown> = { visible };
+      let current = root;
+      for (let depth = 0; depth < 30; depth++) {
+        const nested: Record<string, unknown> = {};
+        current.nested = nested;
+        current = nested;
+      }
+      return root;
+    };
+    const skill = { frontmatter: createDeepValue('visible skill value') };
+    const action = { metadata: { raw_spec: createDeepValue('visible action value') } };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: { skills: { pii: { fields: ['frontmatter'] } } },
+        skills: [skill],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+    expect(() =>
+      assertModelBoundContent({
+        filters: { skills: { pii: { fields: ['instructions'] } } },
+        skills: [skill],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: { actionMetadata: { pii: { fields: ['raw_spec'] } } },
+        actions: [action],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+    expect(() =>
+      assertModelBoundContent({
+        filters: { actionMetadata: { pii: { fields: ['domain'] } } },
+        actions: [action],
+      }),
+    ).not.toThrow();
+
+    const privatePattern = {
+      starterPatterns: [],
+      customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z-]+' }],
+    };
+    expect(() =>
+      assertModelBoundContent({
+        filters: { skills: { pii: { ...privatePattern, fields: ['file_text'] } } },
+        skills: [
+          {
+            ...skill,
+            files: [{ text: 'PRIVATE-SKILL-FILE' }],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(() =>
+      assertModelBoundContent({
+        filters: { actionMetadata: { pii: { ...privatePattern, fields: ['domain'] } } },
+        actions: [
+          {
+            metadata: {
+              raw_spec: action.metadata.raw_spec,
+              domain: 'PRIVATE-ACTION-DOMAIN',
+            },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
   it('does not fail submitted message traversal for an unrelated source policy', () => {
     expect(() =>
       assertModelBoundContent({
@@ -894,6 +1195,78 @@ describe('assertModelBoundContent', () => {
                 parameters: { type: 'object' },
               },
             ],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('fails closed for exhausted selected model request fields', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          modelParameters: {
+            pii: {
+              fields: ['request_fields'],
+            },
+          },
+        },
+        agents: [{ options: { provider_option: makeDeepModelParameter() } }],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+  });
+
+  it('allows exhausted model request fields when only stop is selected', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          modelParameters: {
+            pii: {
+              fields: ['stop'],
+            },
+          },
+        },
+        agents: [{ options: { provider_option: makeDeepModelParameter() } }],
+      }),
+    ).not.toThrow();
+  });
+
+  it('fails closed when an exhausted wrapper chain could contain selected stop content', () => {
+    let nested: unknown = { stop: 'PRIVATE-STOP' };
+    for (let depth = 0; depth < 30; depth++) {
+      nested = { options: nested };
+    }
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          modelParameters: {
+            pii: {
+              fields: ['stop'],
+            },
+          },
+        },
+        agents: [{ options: nested }],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+  });
+
+  it('still inspects agent fields when unrelated model traversal is exhausted', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          agentInstructions: {
+            pii: {
+              fields: ['instructions'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+            },
+          },
+        },
+        agents: [
+          {
+            instructions: 'Previously stored PRIVATE-INSTRUCTION',
+            options: { provider_option: makeDeepModelParameter() },
           },
         ],
       }),

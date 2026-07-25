@@ -9,6 +9,7 @@ import type { ProtectionFinding, TextContentFragment } from '../protection/types
 import {
   contentFilterUninspectableResponse,
   getBlockedOpaqueFileField,
+  hasActiveFilePolicy,
   resolveCanonicalFileReferences,
   UninspectableFileError,
   type CanonicalFileInspectionFile,
@@ -17,8 +18,8 @@ import {
 import {
   ContentTraversalLimitError,
   getContentTraversalFragments,
+  isContentTraversalProtected,
   isContentTraversalLimitError,
-  isNestedMessageTraversalProtected,
 } from '../protection/adapters/nested';
 import { createConfiguredContentInspector } from '../protection/runtime';
 import { extractFileContent } from '../protection/adapters/submissions';
@@ -88,7 +89,7 @@ export function createContentFilter(options: CreateContentFilterOptions): Reques
     }
 
     let hydratedFiles: CanonicalFileInspectionFile[] = [];
-    if (opaqueFileInput != null && options.getFiles != null && filters?.files?.pii != null) {
+    if (opaqueFileInput != null && options.getFiles != null && hasActiveFilePolicy(filters)) {
       try {
         const fileInspection = await resolveCanonicalFileReferences({
           filters,
@@ -138,7 +139,8 @@ export function createContentFilter(options: CreateContentFilterOptions): Reques
           return;
         }
         if (
-          isNestedMessageTraversalProtected({
+          isContentTraversalProtected({
+            error,
             filters,
             legacyPii,
             roles: options.getMessageRoles?.(req),

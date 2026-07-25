@@ -4256,16 +4256,25 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         );
                         return;
                       }
-                      const attachments = persisted.attachments;
-                      if (attachments != null && attachments.length > 0) {
-                        backgroundTaskRegistry.attachHarvest(
+                      backgroundTaskRegistry.finishHarvest(
+                        backgroundUserId,
+                        backgroundConversationId,
+                        task.id,
+                        persisted.attachments,
+                      );
+                    } catch (persistError) {
+                      if (isContentFilterError(persistError)) {
+                        backgroundTaskRegistry.blockArtifact(
                           backgroundUserId,
                           backgroundConversationId,
                           task.id,
-                          attachments,
+                          persistError.body.message,
                         );
+                        logger.warn(
+                          `[background] Generated code output for task ${task.id} was blocked by content policy.`,
+                        );
+                        return;
                       }
-                    } catch (persistError) {
                       logger.warn(
                         `[background] Failed to persist code result for task ${task.id}:`,
                         persistError,
@@ -4465,6 +4474,26 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           } as ToolEndCallbackMetadata,
                         );
                       } catch (callbackError) {
+                        if (isContentFilterError(callbackError)) {
+                          backgroundTaskRegistry.blockArtifact(
+                            backgroundUserId,
+                            backgroundConversationId,
+                            pending.taskId,
+                            callbackError.body.message,
+                          );
+                          logger.warn(
+                            `[background] Artifact delivery for task ${pending.taskId} was blocked by content policy.`,
+                          );
+                          return reportResult({
+                            toolCallId: tc.id,
+                            status: 'success' as const,
+                            content: runCheckBackgroundTask({
+                              userId: backgroundUserId,
+                              conversationId: backgroundConversationId,
+                              args: tc.args,
+                            }),
+                          });
+                        }
                         /** Only synchronous callback throws land here (e.g. a
                          *  malformed artifact shape); the callback's downstream
                          *  persistence is fire-and-forget, so a storage failure

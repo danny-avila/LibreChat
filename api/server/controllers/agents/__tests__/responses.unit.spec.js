@@ -223,8 +223,10 @@ jest.mock('@librechat/api', () => ({
   extractSkillContent: jest.fn().mockReturnValue([]),
   extractToolArgumentContent: jest.fn().mockReturnValue([]),
   getBlockedOpaqueFileField: jest.fn().mockReturnValue(null),
+  getContentTraversalFragments: jest.fn().mockReturnValue([]),
+  isContentTraversalProtected: jest.fn().mockReturnValue(true),
   isContentTraversalLimitError: jest.fn((error) => error?.code === 'content_filter_uninspectable'),
-  isNestedMessageTraversalProtected: jest.fn().mockReturnValue(true),
+  prependContentTraversalFragments: jest.fn(),
   assertModelBoundContent: jest.fn(),
   isContentFilterError: jest.fn((error) => error?.code === 'content_filter_block'),
   getSafeErrorMetadata: mockGetSafeErrorMetadata,
@@ -742,6 +744,35 @@ describe('createResponse controller', () => {
       );
     });
 
+    it('continues when exhausted response parameters are outside the active policy', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      api.extractModelParameterContent.mockImplementationOnce(() => {
+        throw {
+          code: 'content_filter_uninspectable',
+          statusCode: 400,
+          body: {
+            error: 'content_filter_uninspectable',
+            message: 'Submitted content could not be completely inspected before processing.',
+            source: 'model_parameter',
+            field: 'request_fields',
+          },
+        };
+      });
+      api.isContentTraversalProtected.mockReturnValueOnce(false);
+
+      await createResponse(req, res);
+
+      expect(db.getAgent).toHaveBeenCalled();
+      expect(api.sendResponsesErrorResponse).not.toHaveBeenCalledWith(
+        res,
+        400,
+        expect.anything(),
+        'invalid_request',
+        'content_filter_uninspectable',
+      );
+    });
+
     it('blocks instructions and input before loading the agent', async () => {
       const api = require('@librechat/api');
       const db = require('~/models');
@@ -877,23 +908,26 @@ describe('createResponse controller', () => {
       });
       db.getConvo.mockResolvedValueOnce({ conversationId: 'resp_imported', user: 'user-123' });
       db.getMessages.mockResolvedValueOnce([storedMessage]);
-      api.assertModelBoundContent
-        .mockImplementationOnce(() => undefined)
-        .mockImplementationOnce(({ storedMessages }) => {
-          expect(storedMessages).toEqual([
-            expect.objectContaining({
-              messageId: 'imported-assistant',
-              isCreatedByUser: false,
-              isUserSubmitted: true,
-              text: 'sk-imported-secret',
-              content: 'sk-imported-secret',
-            }),
-          ]);
-          throw blockedError;
-        });
+      api.assertModelBoundContent.mockImplementationOnce(({ storedMessages }) => {
+        expect(storedMessages).toEqual([
+          expect.objectContaining({
+            messageId: 'imported-assistant',
+            isCreatedByUser: false,
+            isUserSubmitted: true,
+            text: 'sk-imported-secret',
+            content: 'sk-imported-secret',
+          }),
+        ]);
+        throw blockedError;
+      });
 
       await createResponse(req, res);
 
+      expect(api.initializeAgent).not.toHaveBeenCalled();
+      expect(api.discoverConnectedAgents).not.toHaveBeenCalled();
+      expect(mockBuildAgentScopedContext).not.toHaveBeenCalled();
+      expect(mockApplyContextToAgent).not.toHaveBeenCalled();
+      expect(db.updateFilesUsage).not.toHaveBeenCalled();
       expect(api.createRun).not.toHaveBeenCalled();
       expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
         res,
@@ -942,21 +976,20 @@ describe('createResponse controller', () => {
           userSubmittedPaths: ['/content/1/text'],
         },
       ]);
-      api.assertModelBoundContent
-        .mockImplementationOnce(() => undefined)
-        .mockImplementationOnce(({ storedMessages }) => {
-          expect(storedMessages).toEqual([
-            expect.objectContaining({
-              text: 'assistant summary text',
-              content,
-              userSubmittedPaths: ['/content/1/text'],
-            }),
-          ]);
-          throw blockedError;
-        });
+      api.assertModelBoundContent.mockImplementationOnce(({ storedMessages }) => {
+        expect(storedMessages).toEqual([
+          expect.objectContaining({
+            text: 'assistant summary text',
+            content,
+            userSubmittedPaths: ['/content/1/text'],
+          }),
+        ]);
+        throw blockedError;
+      });
 
       await createResponse(req, res);
 
+      expect(api.initializeAgent).not.toHaveBeenCalled();
       expect(api.createRun).not.toHaveBeenCalled();
       expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
         res,
@@ -994,14 +1027,12 @@ describe('createResponse controller', () => {
           userSubmittedPaths: ['/content/1/text'],
         },
       ]);
-      api.assertModelBoundContent
-        .mockImplementationOnce(() => undefined)
-        .mockImplementationOnce(({ storedMessages }) => {
-          const [message] = storedMessages;
-          expect(message.content).toEqual(content);
-          expect(message.userSubmittedPaths).toEqual(['/content/1/text']);
-          expect(message.content[1].text).toBe('safe submitted correction');
-        });
+      api.assertModelBoundContent.mockImplementationOnce(({ storedMessages }) => {
+        const [message] = storedMessages;
+        expect(message.content).toEqual(content);
+        expect(message.userSubmittedPaths).toEqual(['/content/1/text']);
+        expect(message.content[1].text).toBe('safe submitted correction');
+      });
 
       await createResponse(req, res);
 

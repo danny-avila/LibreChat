@@ -7,24 +7,29 @@ import type {
   Response as ServerResponse,
 } from 'express';
 import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
+import type { TextContentFragment } from '../protection/types';
 import { createLegacyPiiInspector, toLegacyPiiMatch } from '../protection/legacy';
 import { extractMessageContent } from '../protection/adapters/messages';
-import { extractStoredMessageContent } from '../protection/adapters/submissions';
+import {
+  extractFileContent,
+  extractStoredMessageContent,
+} from '../protection/adapters/submissions';
 import { extractChatContent } from '../protection/adapters/chat';
 import {
   contentFilterUninspectableResponse,
   getBlockedOpaqueFileField,
+  hasActiveFilePolicy,
   resolveCanonicalFileReferences,
   UninspectableFileError,
   type CanonicalFileInspectionFile,
   type GetCanonicalFilesForInspection,
 } from '../protection/files';
 import {
+  ContentTraversalLimitError,
   getContentTraversalFragments,
+  isContentTraversalProtected,
   isContentTraversalLimitError,
-  isNestedMessageTraversalProtected,
 } from '../protection/adapters/nested';
-import { extractFileContent } from '../protection/adapters/submissions';
 import { inspectContent } from '../protection/runtime';
 import { serializeAskUserAnswerVariants } from '../agents/hitl/resume';
 import { contentFilterBlockResponse } from './contentFilter';
@@ -117,7 +122,7 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
 
     let opaqueFileInput = req.body;
     let hydratedFiles: CanonicalFileInspectionFile[] = [];
-    if (options.getFiles != null && filters?.files?.pii != null) {
+    if (options.getFiles != null && hasActiveFilePolicy(filters)) {
       try {
         const fileInspection = await resolveCanonicalFileReferences({
           filters,
@@ -146,7 +151,25 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
       res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
       return;
     }
-    const fragments = [...extractChatContent(req.body)];
+    const fragments: TextContentFragment[] = [];
+    const traversalErrors: ContentTraversalLimitError[] = [];
+    const collect = (extract: () => Iterable<TextContentFragment>) => {
+      try {
+        fragments.push(...extract());
+        return true;
+      } catch (error) {
+        if (!isContentTraversalLimitError(error)) {
+          next(error);
+          return false;
+        }
+        fragments.push(...getContentTraversalFragments(error));
+        traversalErrors.push(error);
+        return true;
+      }
+    };
+    if (!collect(() => extractChatContent(req.body))) {
+      return;
+    }
     if (
       req.body?.answers != null &&
       typeof req.body.answers === 'object' &&
@@ -165,55 +188,33 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
     for (const file of hydratedFiles) {
       fragments.push(...extractFileContent(file));
     }
-    if (filters != null) {
-      try {
-        fragments.push(...extractStoredMessageContent(req.body));
-      } catch (error) {
-        if (!isContentTraversalLimitError(error)) {
-          next(error);
-          return;
-        }
-        fragments.push(...getContentTraversalFragments(error));
-        const partialFinding = inspectContent(fragments, { filters, legacyPii });
-        if (partialFinding != null) {
-          if (partialFinding.detectorId === 'legacy-pattern') {
-            res.status(400).json({
-              error: 'message_filter_pii_block',
-              message: `Message contains a ${partialFinding.label}. Remove it and try again.`,
-            });
-          } else {
-            res.status(400).json(contentFilterBlockResponse(partialFinding));
-          }
-          return;
-        }
-        if (
-          isNestedMessageTraversalProtected({
-            filters,
-            legacyPii,
-            roles: [req.body?.role],
-          })
-        ) {
-          res.status(error.statusCode).json(error.body);
-          return;
-        }
-      }
-    }
-    if (fragments.length === 0) {
-      next();
+    if (filters != null && !collect(() => extractStoredMessageContent(req.body))) {
       return;
     }
     const finding = inspectContent(fragments, { filters, legacyPii });
-    if (finding == null) {
-      next();
+    if (finding != null) {
+      if (finding.detectorId !== 'legacy-pattern') {
+        res.status(400).json(contentFilterBlockResponse(finding));
+        return;
+      }
+      res.status(400).json({
+        error: 'message_filter_pii_block',
+        message: `Message contains a ${finding.label}. Remove it and try again.`,
+      });
       return;
     }
-    if (finding.detectorId !== 'legacy-pattern') {
-      res.status(400).json(contentFilterBlockResponse(finding));
+    const protectedError = traversalErrors.find((error) =>
+      isContentTraversalProtected({
+        error,
+        filters,
+        legacyPii,
+        roles: [req.body?.role],
+      }),
+    );
+    if (protectedError != null) {
+      res.status(protectedError.statusCode).json(protectedError.body);
       return;
     }
-    res.status(400).json({
-      error: 'message_filter_pii_block',
-      message: `Message contains a ${finding.label}. Remove it and try again.`,
-    });
+    next();
   };
 }

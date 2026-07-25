@@ -42,8 +42,10 @@ const {
   contentFilterUninspectableResponse,
   discoverConnectedAgents,
   getBlockedOpaqueFileField,
+  getContentTraversalFragments,
+  isContentTraversalProtected,
   isContentTraversalLimitError,
-  isNestedMessageTraversalProtected,
+  prependContentTraversalFragments,
   assertModelBoundContent,
   isContentFilterError,
   getSafeErrorMetadata,
@@ -205,15 +207,6 @@ function extractResponseRequestContent(request, messageFragments) {
   const fragments = [
     ...extractAgentContent({ instructions: request.instructions }),
     ...messageFragments,
-    ...extractModelParameterContent({
-      metadata: request.metadata,
-      response_format: request.text?.format,
-      additionalModelRequestFields: {
-        user: request.user,
-        tool_choice: request.tool_choice,
-        reasoning: request.reasoning,
-      },
-    }),
   ];
 
   if (Array.isArray(request.input)) {
@@ -248,6 +241,25 @@ function extractResponseRequestContent(request, messageFragments) {
       }),
       ...extractToolArgumentContent({ arguments: tool.parameters }),
     );
+  }
+
+  try {
+    fragments.push(
+      ...extractModelParameterContent({
+        metadata: request.metadata,
+        response_format: request.text?.format,
+        additionalModelRequestFields: {
+          user: request.user,
+          tool_choice: request.tool_choice,
+          reasoning: request.reasoning,
+        },
+      }),
+    );
+  } catch (error) {
+    if (isContentTraversalLimitError(error)) {
+      prependContentTraversalFragments(error, fragments);
+    }
+    throw error;
   }
 
   return fragments;
@@ -461,7 +473,7 @@ const executeResponse = async (envelope, { req, res }) => {
     typeof request.input === 'string' ? request.input : request.input,
   );
   const messageFragments = [];
-  let traversalError = null;
+  const traversalErrors = [];
   try {
     for (const fragment of extractMessageContent(inputMessages)) {
       messageFragments.push(fragment);
@@ -470,13 +482,21 @@ const executeResponse = async (envelope, { req, res }) => {
     if (!isContentTraversalLimitError(error)) {
       throw error;
     }
-    traversalError = error;
+    messageFragments.push(...getContentTraversalFragments(error));
+    traversalErrors.push(error);
+  }
+  let requestFragments;
+  try {
+    requestFragments = extractResponseRequestContent(request, messageFragments);
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    requestFragments = getContentTraversalFragments(error);
+    traversalErrors.push(error);
   }
   const contentFinding = inspectContent(
-    [
-      ...extractResponseRequestContent(request, messageFragments),
-      ...(manualSkills ?? []).flatMap((name) => extractSkillContent({ name })),
-    ],
+    [...requestFragments, ...(manualSkills ?? []).flatMap((name) => extractSkillContent({ name }))],
     {
       filters: appConfig?.filters,
       legacyPii: appConfig?.messageFilter?.pii,
@@ -495,14 +515,15 @@ const executeResponse = async (envelope, { req, res }) => {
       isLegacyFilter ? 'message_filter_pii_block' : blockResponse.error,
     );
   }
-  if (
-    traversalError != null &&
-    isNestedMessageTraversalProtected({
+  const traversalError = traversalErrors.find((error) =>
+    isContentTraversalProtected({
+      error,
       filters: appConfig?.filters,
       legacyPii: appConfig?.messageFilter?.pii,
       roles: inputMessages.map((message) => message?.role),
-    })
-  ) {
+    }),
+  );
+  if (traversalError != null) {
     return sendResponsesErrorResponse(
       res,
       traversalError.statusCode,
@@ -575,6 +596,16 @@ const executeResponse = async (envelope, { req, res }) => {
     const parentMessageId = null;
     const mcpRequestBody = createMCPRuntimeRequestBody({ messageId: responseId, conversationId });
     const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
+    const previousMessages = request.previous_response_id
+      ? await loadPreviousMessages(request.previous_response_id, principal.userId)
+      : [];
+    if (request.previous_response_id) {
+      assertModelBoundContent({
+        filters: appConfig?.filters,
+        legacyPii: appConfig?.messageFilter?.pii,
+        storedMessages: previousMessages,
+      });
+    }
 
     // Build allowed providers set
     const allowedProviders = new Set(agentsEConfig?.allowedProviders);
@@ -878,13 +909,6 @@ const executeResponse = async (envelope, { req, res }) => {
     const streamingDisabled = !!primaryConfig.model_parameters?.disableStreaming;
     const actuallyStreaming = isStreaming && !streamingDisabled;
 
-    // Load previous messages if previous_response_id is provided
-    let previousMessages = [];
-    if (request.previous_response_id) {
-      const userId = principal.userId;
-      previousMessages = await loadPreviousMessages(request.previous_response_id, userId);
-    }
-
     // Merge previous messages with new input
     const allMessages = [...previousMessages, ...inputMessages];
 
@@ -930,7 +954,6 @@ const executeResponse = async (envelope, { req, res }) => {
       filters: appConfig?.filters,
       legacyPii: appConfig?.messageFilter?.pii,
       submittedMessages: inputMessages,
-      storedMessages: previousMessages,
       agents: modelBoundAgents,
       skills: [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])],
       files: collectModelBoundAgentFiles(modelBoundAgents),

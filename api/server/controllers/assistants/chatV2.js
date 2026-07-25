@@ -9,6 +9,8 @@ const {
   getModelMaxTokens,
   ATTACHMENT_ONLY_TEXT,
   isContentFilterError,
+  preflightAssistantRunContent,
+  preflightAssistantUserMessageContent,
 } = require('@librechat/api');
 const {
   Time,
@@ -42,9 +44,9 @@ const {
   findBalanceByUser,
   upsertBalanceFields,
   createAutoRefillTransaction,
+  getFiles,
 } = require('~/models');
 const { logViolation, getLogStores } = require('~/cache');
-const { preflightAssistantRunContent } = require('./contentFilter');
 const { getOpenAIClient } = require('./helpers');
 
 /**
@@ -202,10 +204,12 @@ const chatV2 = async (req, res) => {
     await validateAuthor({ req, openai });
     try {
       await preflightAssistantRunContent({
-        req,
+        config: req.config,
         openai,
+        user: req.user,
         assistantId: assistant_id,
         threadId: _thread_id,
+        getFiles,
       });
     } catch (error) {
       if (!isContentFilterError(error)) {
@@ -214,8 +218,6 @@ const chatV2 = async (req, res) => {
       contentRejected = true;
       return res.status(error.statusCode).json(error.body);
     }
-    setHeaders(req, res, () => {});
-
     if (previousMessages.length) {
       parentMessageId = previousMessages[previousMessages.length - 1].messageId;
     }
@@ -248,10 +250,19 @@ const chatV2 = async (req, res) => {
       clientTimestamp,
     });
 
+    let existingConversationPromise;
+    const getExistingConversation = () => {
+      if (!convoId) {
+        return Promise.resolve(null);
+      }
+      existingConversationPromise ??= getConvo(req.user.id, convoId);
+      return existingConversationPromise;
+    };
+
     const getRequestFileIds = async () => {
       let thread_file_ids = [];
       if (convoId) {
-        const convo = await getConvo(req.user.id, convoId);
+        const convo = await getExistingConversation();
         if (convo && convo.file_ids) {
           thread_file_ids = convo.file_ids;
         }
@@ -298,9 +309,12 @@ const chatV2 = async (req, res) => {
 
     /** @type {Promise<Run>|undefined} */
     let userMessagePromise;
+    const inspectFinalMessageFiles = req.config?.filters?.files?.pii != null;
 
     const initializeThread = async () => {
-      await getRequestFileIds();
+      if (!inspectFinalMessageFiles) {
+        await getRequestFileIds();
+      }
 
       // TODO: may allow multiple messages to be created beforehand in a future update
       const initThreadBody = {
@@ -356,6 +370,25 @@ const chatV2 = async (req, res) => {
         conversation.file_ids = file_ids;
       }
     };
+
+    if (inspectFinalMessageFiles) {
+      await getRequestFileIds();
+      try {
+        await preflightAssistantUserMessageContent({
+          config: req.config,
+          user: req.user,
+          message: userMessage,
+          fileIds: [...attachedFileIds, ...file_ids],
+          getFiles,
+        });
+      } catch (error) {
+        if (!isContentFilterError(error)) {
+          throw error;
+        }
+        contentRejected = true;
+        return res.status(error.statusCode).json(error.body);
+      }
+    }
 
     const promises = [initializeThread(), checkBalanceBeforeRun()];
     await Promise.all(promises);
@@ -452,6 +485,23 @@ const chatV2 = async (req, res) => {
       response.text = streamRunManager.intermediateText;
     };
 
+    try {
+      await preflightAssistantRunContent({
+        config: req.config,
+        openai,
+        user: req.user,
+        assistantId: assistant_id,
+        threadId: thread_id,
+        getFiles,
+      });
+    } catch (error) {
+      if (!isContentFilterError(error)) {
+        throw error;
+      }
+      contentRejected = true;
+      return res.status(error.statusCode).json(error.body);
+    }
+    setHeaders(req, res, () => {});
     await processRun();
     logger.debug('[/assistants/chat/] response', {
       run: response.run,

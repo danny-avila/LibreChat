@@ -532,6 +532,7 @@ describe('forkSharedConversation', () => {
 
     expect(getSharedMessages).toHaveBeenCalledWith('share123', 'resource123', {
       snapshotFiles: undefined,
+      preflight: undefined,
     });
 
     const savedMessages = bulkSaveMessages.mock.calls[0][0];
@@ -667,6 +668,23 @@ describe('forkSharedConversation', () => {
 
     expect(getSharedMessages).toHaveBeenCalledWith('share123', 'resource123', {
       snapshotFiles: false,
+      preflight: undefined,
+    });
+  });
+
+  test('forwards shared-content preflight before a legacy snapshot can be persisted', async () => {
+    const sharedContentPreflight = jest.fn();
+
+    await forkSharedConversation({
+      shareId: 'share123',
+      shareResourceId: 'resource123',
+      requestUserId: 'user1',
+      sharedContentPreflight,
+    });
+
+    expect(getSharedMessages).toHaveBeenCalledWith('share123', 'resource123', {
+      snapshotFiles: undefined,
+      preflight: sharedContentPreflight,
     });
   });
 
