@@ -116,7 +116,7 @@ export function convertClaudeConversation(
     unavailable += entry.converted.unavailable;
   }
 
-  let previousId = Constants.NO_PARENT;
+  let previousId: string = Constants.NO_PARENT;
 
   for (const entry of order) {
     const { message, converted } = entry;
