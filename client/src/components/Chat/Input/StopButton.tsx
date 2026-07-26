@@ -20,7 +20,7 @@ export default memo(function StopButton({
           type="button"
           data-testid="stop-generation-button"
           className={cn(
-            'rounded-full bg-text-primary p-1.5 text-text-primary outline-offset-4 transition-all duration-200 disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10',
+            'flex size-9 items-center justify-center rounded-full bg-text-primary text-text-primary outline-offset-4 transition-all duration-200 disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-30',
           )}
           aria-label={localize('com_nav_stop_generating')}
           onClick={(e) => {
@@ -34,7 +34,7 @@ export default memo(function StopButton({
             viewBox="0 0 24 24"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
-            className="icon-lg text-surface-primary"
+            className="size-6 text-surface-primary"
           >
             <rect x="7" y="7" width="10" height="10" rx="1.25" fill="currentColor"></rect>
           </svg>

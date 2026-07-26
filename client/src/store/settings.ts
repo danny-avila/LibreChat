@@ -57,6 +57,9 @@ const localStorageAtoms = {
   modularChat: atomWithLocalStorage('modularChat', true),
   LaTeXParsing: atomWithLocalStorage('LaTeXParsing', true),
   centerFormOnLanding: atomWithLocalStorage('centerFormOnLanding', true),
+  /** The line of keyboard hints under the composer. Off by default: it is
+   *  discovery copy, and the shortcuts it names stay available either way. */
+  showComposerTips: atomWithLocalStorage('showComposerTips', false),
   showFooter: atomWithLocalStorage('showFooter', true),
 
   // Commands settings

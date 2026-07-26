@@ -43,6 +43,8 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
+  /** Room an open composer popover needs below the composer; see the atom. */
+  const composerLift = useRecoilValue(store.composerLiftFamily(index));
 
   const methods = useForm<ChatFormValues>({
     defaultValues: { text: '' },
@@ -128,10 +130,22 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
               <Header />
               <>
                 <div
+                  /* Greeting and composer rise together to clear an open
+                     composer popover, rather than the page growing a scrollbar
+                     under one. Applied here rather than to the composer's own
+                     wrapper so the greeting travels with it instead of being
+                     slid underneath. Off the landing screen the composer already
+                     sits at the foot of a scrolling thread, which has room of
+                     its own. */
+                  style={
+                    isLandingPage && composerLift > 0
+                      ? { transform: `translateY(-${composerLift}px)` }
+                      : undefined
+                  }
                   className={cn(
                     'flex flex-col',
                     isLandingPage
-                      ? 'flex-1 items-center justify-end sm:justify-center'
+                      ? 'flex-1 items-center justify-end transition-transform duration-200 ease-out sm:justify-center'
                       : 'h-full overflow-y-auto',
                   )}
                 >
@@ -139,7 +153,8 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                   <div
                     className={cn(
                       'w-full',
-                      isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
+                      isLandingPage &&
+                        'max-w-3xl transition-all duration-200 ease-out xl:max-w-4xl',
                     )}
                   >
                     {isProjectLandingPage && project && <ProjectLandingChip project={project} />}

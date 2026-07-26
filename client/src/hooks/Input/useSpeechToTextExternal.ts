@@ -18,6 +18,9 @@ const useSpeechToTextExternal = (
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
   const audioChunksRef = useRef<Blob[]>([]);
+  /** Read by the recorder's `stop` handler, which fires a tick after the call
+   *  that ended capture and cannot otherwise tell an abort from a stop. */
+  const abortedRef = useRef(false);
   const [permission, setPermission] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isRequestBeingMade, setIsRequestBeingMade] = useState(false);
@@ -110,6 +113,13 @@ const useSpeechToTextExternal = (
   };
 
   const handleStop = () => {
+    if (abortedRef.current) {
+      abortedRef.current = false;
+      audioChunksRef.current = [];
+      cleanup();
+      return;
+    }
+
     if (audioChunksRef.current.length > 0) {
       const audioBlob = new Blob(audioChunksRef.current, { type: audioMimeType });
       const fileExtension = getFileExtension(audioMimeType);
@@ -175,6 +185,7 @@ const useSpeechToTextExternal = (
     if (audioStream.current) {
       try {
         audioChunksRef.current = [];
+        abortedRef.current = false;
         const bestMimeType = getBestSupportedMimeType();
         setAudioMimeType(bestMimeType);
 
@@ -241,6 +252,31 @@ const useSpeechToTextExternal = (
     stopRecording();
   };
 
+  /**
+   * Drops the take without transcribing it. `handleStop` is where the audio is
+   * packed into a FormData and uploaded, so an abort has to reach it: the flag
+   * is what stops a discarded take from spending a transcription request.
+   */
+  const externalAbortRecording = () => {
+    abortedRef.current = true;
+    audioChunksRef.current = [];
+
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+    }
+
+    audioStream.current?.getTracks().forEach((track) => track.stop());
+    audioStream.current = null;
+
+    if (animationFrameIdRef.current !== null) {
+      window.cancelAnimationFrame(animationFrameIdRef.current);
+      animationFrameIdRef.current = null;
+    }
+
+    setIsListening(false);
+  };
+
   const handleKeyDown = async (e: KeyboardEvent) => {
     if (e.shiftKey && e.altKey && e.code === 'KeyL' && isExternalSTTEnabled) {
       if (!window.MediaRecorder) {
@@ -274,6 +310,7 @@ const useSpeechToTextExternal = (
   return {
     isListening,
     externalStopRecording,
+    externalAbortRecording,
     externalStartRecording,
     isLoading: isProcessing,
   };
