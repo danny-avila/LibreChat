@@ -4,6 +4,7 @@ const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const {
   refreshS3Url,
+  splitMCPToolKey,
   agentCreateSchema,
   agentUpdateSchema,
   refreshListAvatars,
@@ -262,8 +263,8 @@ const filterAuthorizedTools = async ({
       }
     }
 
-    const parts = tool.split(Constants.mcp_delimiter);
-    if (parts.length !== 2) {
+    const [, serverName] = splitMCPToolKey(tool);
+    if (!serverName) {
       logger.warn(
         `[filterAuthorizedTools] Rejected malformed MCP tool key "${tool}" for user ${userId}`,
       );
@@ -275,8 +276,7 @@ const filterAuthorizedTools = async ({
       continue;
     }
 
-    const [, serverName] = parts;
-    if (!serverName || !Object.hasOwn(mcpServerConfigs, serverName)) {
+    if (!Object.hasOwn(mcpServerConfigs, serverName)) {
       logger.warn(
         `[filterAuthorizedTools] Rejected MCP tool "${tool}" — server "${serverName}" not accessible to user ${userId}`,
       );
