@@ -45,6 +45,7 @@ import StreamAudio from './StreamAudio';
 import ToolDialogs from './ToolDialogs';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
+import Queue from './Composer/Queue';
 import Tray from './Composer/Tray';
 import Bar from './Composer/Bar';
 import Mention from './Mention';
@@ -524,6 +525,14 @@ const ChatForm = memo(function ChatForm({
             <InFlightSteers
               steering={steering}
               conversationId={conversationId}
+              onRestoreToComposer={restoreReclaimedSteer}
+            />
+          )}
+          {steering.enabled && (
+            <Queue
+              steering={steering}
+              conversationId={conversationId}
+              onEditToComposer={editToComposer}
               onRestoreToComposer={restoreReclaimedSteer}
             />
           )}
