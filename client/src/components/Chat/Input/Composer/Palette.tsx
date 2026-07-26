@@ -110,6 +110,10 @@ interface PaletteProps {
   /** Composer index, so a split view lifts only the side that opened a popup. */
   index: number;
   disabled?: boolean;
+  /** A recording is running: the button drops the take instead of opening the
+   *  palette, and its glyph turns into the close mark to say so. */
+  dictating?: boolean;
+  onCancel?: () => void;
   agentId?: string | null;
   endpoint?: string | null;
   endpointType?: EModelEndpoint | string;
@@ -147,6 +151,8 @@ interface PaletteProps {
 function Palette({
   index,
   disabled,
+  dictating = false,
+  onCancel,
   agentId,
   endpoint,
   endpointType,
@@ -629,10 +635,24 @@ function Palette({
           <Ariakit.PopoverDisclosure
             ref={disclosureRef}
             disabled={disabled}
-            aria-label={localize('com_ui_composer_palette')}
+            aria-label={dictating ? localize('com_ui_cancel') : localize('com_ui_composer_palette')}
+            /* Kept as the disclosure while dictating rather than swapped for a
+               plain cancel button: a swap would mount a fresh element already
+               at its final angle, and the turn is the whole point. Ariakit
+               honours `defaultPrevented`, so claiming the click here stops the
+               popover from opening. */
+            onClick={(event) => {
+              if (!dictating) {
+                return;
+              }
+              event.preventDefault();
+              onCancel?.();
+            }}
             render={
               <TooltipAnchor
-                description={localize('com_ui_composer_palette')}
+                description={
+                  dictating ? localize('com_ui_cancel') : localize('com_ui_composer_palette')
+                }
                 render={<button type="button" />}
               />
             }
@@ -649,7 +669,7 @@ function Palette({
                 mark, so the button reads as one control changing state rather
                 than two icons swapping. */}
             <Plus
-              className={cn('animate-composer-icon size-5', open && 'rotate-45')}
+              className={cn('animate-composer-icon size-5', (open || dictating) && 'rotate-45')}
               aria-hidden="true"
             />
           </Ariakit.PopoverDisclosure>
