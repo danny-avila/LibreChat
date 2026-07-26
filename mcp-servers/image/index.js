@@ -7,7 +7,7 @@ import {
 
 const DASHSCOPE_API_KEY = process.env.DASHSCOPE_API_KEY;
 const DASHSCOPE_BASE_URL = process.env.DASHSCOPE_BASE_URL || 'https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation';
-const MODEL = process.env.QWEN_IMAGE_MODEL || 'qwen-image-2.0-pro';
+const MODEL = process.env.IMAGE_MODEL || 'qwen-image-2.0-pro';
 
 if (!DASHSCOPE_API_KEY) {
   console.error('Error: DASHSCOPE_API_KEY environment variable is required');
@@ -16,7 +16,7 @@ if (!DASHSCOPE_API_KEY) {
 
 const server = new Server(
   {
-    name: 'qwen-image',
+    name: 'image',
     version: '1.0.0',
   },
   {
@@ -31,7 +31,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'generate_image',
-        description: 'Generate an image using Qwen Image model (qwen-image-2.0-pro). Returns a high-quality image based on the text prompt.',
+        description: 'Generate an image using Qwen Image model. Returns a high-quality image based on the text prompt.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -228,7 +228,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Qwen Image MCP server running on stdio');
+  console.error('Image MCP server running on stdio');
 }
 
 main().catch((error) => {
