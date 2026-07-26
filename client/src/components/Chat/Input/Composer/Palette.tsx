@@ -662,7 +662,10 @@ function Palette({
               'hover:bg-surface-hover hover:text-text-primary',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
               'disabled:cursor-not-allowed disabled:opacity-40',
-              open && 'bg-surface-hover text-text-primary',
+              /* The close mark carries the same weight whichever job it is
+                 doing: dimmer and unbacked while dictating read as a smaller
+                 glyph next to the one the open palette shows. */
+              (open || dictating) && 'bg-surface-hover text-text-primary',
             )}
           >
             {/* The same glyph turned a quarter of the way round is the close

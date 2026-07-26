@@ -10,6 +10,10 @@ import useLocalize from '../useLocalize';
 
 const isExternalSTT = (speechToTextEndpoint: string) => speechToTextEndpoint === 'external';
 
+/** How long to hold the recording layout after a stop before giving up on a
+ *  transcription request ever being reported. */
+const SETTLE_MS = 500;
+
 /** How the in-flight transcription should be spent once recording ends. */
 type StopMode = 'compose' | 'send' | 'cancel';
 
@@ -123,6 +127,27 @@ export default function useDictation({
   const active = isListening === true;
   const levels = useAudioLevels(active);
 
+  /* Bridges the gap between the recorder being told to stop and the upload
+     starting: `isListening` clears synchronously, while the recorder's own
+     `stop` event, which is what begins the transcription request, arrives a
+     tick later. Without this the composer reads as idle for that tick and every
+     control it had put away flashes back in and out again. */
+  const [settling, setSettling] = useState(false);
+  useEffect(() => {
+    if (!settling) {
+      return;
+    }
+    if (isLoading === true) {
+      setSettling(false);
+      return;
+    }
+    /* Backstop for the engines that never report a request at all: the browser
+       recogniser hands its transcript straight over, so nothing else would ever
+       clear this. */
+    const timer = setTimeout(() => setSettling(false), SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [settling, isLoading]);
+
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (!active) {
@@ -142,6 +167,7 @@ export default function useDictation({
   const stopWith = useCallback(
     (mode: StopMode) => {
       modeRef.current = mode;
+      setSettling(true);
       stopRecording();
     },
     [stopRecording],
@@ -153,6 +179,7 @@ export default function useDictation({
      that was already in flight lands anyway. */
   const cancel = useCallback(() => {
     modeRef.current = 'cancel';
+    setSettling(false);
     abortRecording();
     reset({ text: existingTextRef.current });
     existingTextRef.current = '';
@@ -160,7 +187,7 @@ export default function useDictation({
 
   return {
     active,
-    transcribing: isLoading === true,
+    transcribing: isLoading === true || settling,
     levels,
     elapsed,
     start,
