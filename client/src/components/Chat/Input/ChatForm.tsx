@@ -33,7 +33,6 @@ import useDictation from '~/hooks/Input/useDictation';
 import { useGetStartupConfig } from '~/data-provider';
 import useSteering from '~/hooks/Chat/useSteering';
 import { BadgeRowProvider } from '~/Providers';
-import InFlightSteers from './InFlightSteers';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
 import SkillsCommand from './SkillsCommand';
@@ -516,18 +515,7 @@ const ChatForm = memo(function ChatForm({
       <div className="relative flex h-full min-w-0 flex-1 items-stretch md:flex-col">
         {/* Primary composer owns the selection popup so split-view doesn't double it. */}
         {index === 0 && quotesEnabled && <QuoteButton conversationId={conversationId} />}
-        {/* `relative` anchors the in-flight steer overlay, which floats above
-            the composer (`bottom-full`) over the bottom of the thread. */}
         <div className="relative flex w-full flex-col">
-          {/* Run-scoped: `enabled` alone is any primary composer on a steerable
-              endpoint, so a chip that outlives the run would strand a bubble. */}
-          {steering.enabled && isSubmitting && (
-            <InFlightSteers
-              steering={steering}
-              conversationId={conversationId}
-              onRestoreToComposer={restoreReclaimedSteer}
-            />
-          )}
           {steering.enabled && (
             <Queue
               steering={steering}
