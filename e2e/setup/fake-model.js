@@ -1173,7 +1173,9 @@ module.exports = function fakeModelHook(run, context) {
     sleep,
     toolCalls,
     thrownError,
-    resolveOnStream: (streamMessages) =>
-      approvalOutcomeResponses(streamMessages) ?? resolveOnStream?.(streamMessages) ?? null,
+    resolveOnStream: (streamMessages, streamOptions, runManager) =>
+      approvalOutcomeResponses(streamMessages) ??
+      resolveOnStream?.(streamMessages, streamOptions, runManager) ??
+      null,
   });
 };
