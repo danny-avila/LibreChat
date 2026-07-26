@@ -100,7 +100,6 @@ const ChatForm = memo(function ChatForm({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [, setIsScrollable] = useState(false);
   const [visualRowCount, setVisualRowCount] = useState(1);
-  const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
 
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
@@ -183,15 +182,6 @@ const ChatForm = memo(function ChatForm({
       setIsCollapsed(false);
     }
   }, [isCollapsed]);
-
-  const handleTextareaFocus = useCallback(() => {
-    handleFocusOrClick();
-    setIsTextAreaFocused(true);
-  }, [handleFocusOrClick]);
-
-  const handleTextareaBlur = useCallback(() => {
-    setIsTextAreaFocused(false);
-  }, []);
 
   const answerMode = useAskAnswerMode(conversationId);
   const answerPlaceholder = answerMode.batchMode
@@ -679,8 +669,7 @@ const ChatForm = memo(function ChatForm({
                       tabIndex={0}
                       data-testid="text-input"
                       rows={1}
-                      onFocus={handleTextareaFocus}
-                      onBlur={handleTextareaBlur}
+                      onFocus={handleFocusOrClick}
                       aria-label={localize('com_ui_message_input')}
                       aria-describedby={COMPOSER_HINT_ID}
                       onClick={handleFocusOrClick}
