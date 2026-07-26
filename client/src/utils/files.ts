@@ -7,6 +7,7 @@ import {
   SheetPaths,
 } from '@librechat/client';
 import {
+  Tools,
   megabyte,
   Providers,
   QueryKeys,
@@ -15,6 +16,7 @@ import {
   EToolResources,
   EModelEndpoint,
   retrievalMimeTypes,
+  isEphemeralAgentId,
   isBedrockDocumentType,
   isPermissiveMimeConfig,
   codeInterpreterMimeTypes,
@@ -392,6 +394,29 @@ const isContextType = (type: string, fileConfig: FileConfig | null): boolean =>
  * Each option requires every file to be valid for it, so the caller can decide between
  * auto-routing (one option), prompting (multiple), or rejecting (none).
  */
+/**
+ * Which tool destinations an upload may be routed to, before the files
+ * themselves are considered.
+ *
+ * A saved agent's tool list is the authority: it can only receive uploads for
+ * the tools it was built with. Everywhere else the destination is offered
+ * whether or not the tool is currently switched on, because choosing it is what
+ * switches it on.
+ *
+ * Shared by the `+` menu and the drag-and-drop router so a file has the same
+ * destinations however it arrives.
+ */
+export const getUploadToolAllowances = (
+  agentId: string | null | undefined,
+  tools: string[] | undefined,
+): { fileSearchAllowedByAgent: boolean; codeAllowedByAgent: boolean } => {
+  const isSavedAgent = agentId != null && agentId !== '' && !isEphemeralAgentId(agentId);
+  return {
+    fileSearchAllowedByAgent: !isSavedAgent || (tools?.includes(Tools.file_search) ?? false),
+    codeAllowedByAgent: !isSavedAgent || (tools?.includes(Tools.execute_code) ?? false),
+  };
+};
+
 export const getViableUploadOptions = (
   fileList: File[],
   ctx: UploadOptionContext,
