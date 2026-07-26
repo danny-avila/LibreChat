@@ -21,12 +21,37 @@ export function createToolRegistry(): ToolRegistry {
   return { byId: new Map(), pending: [] };
 }
 
-function stringifyInput(input: object | null | undefined): string {
+/**
+ * `FileAuthoringCall` reads `file_path` and `content`, but Claude exports the
+ * same call as `path` and `file_text` (measured: 453 of 457 `create_file`
+ * blocks send `{description, file_text, path}`). Renaming here — rather than
+ * teaching the shared card a second vocabulary — keeps the adapter's knowledge
+ * of the export format inside the importer.
+ */
+const ARG_ALIASES: Record<string, Record<string, string>> = {
+  create_file: { path: 'file_path', file_text: 'content' },
+  edit_file: { path: 'file_path', file_text: 'content' },
+};
+
+function normalizeInput(name: string | null | undefined, input: object): object {
+  const aliases = name != null ? ARG_ALIASES[name] : undefined;
+  if (!aliases) {
+    return input;
+  }
+
+  const normalized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    normalized[aliases[key] ?? key] = value;
+  }
+  return normalized;
+}
+
+function stringifyInput(name: string | null | undefined, input: object | null | undefined): string {
   if (input == null) {
     return '';
   }
   try {
-    return JSON.stringify(input);
+    return JSON.stringify(normalizeInput(name, input));
   } catch {
     return '';
   }
@@ -41,7 +66,7 @@ function stringifyInput(input: object | null | undefined): string {
 export function beginToolCall(registry: ToolRegistry, block: ClaudeContentBlock): ToolCallPart {
   const data: ToolCallData = {
     name: block.name || UNNAMED_TOOL,
-    args: stringifyInput(block.input),
+    args: stringifyInput(block.name, block.input),
     progress: 1,
     type: ToolCallTypes.TOOL_CALL,
   };

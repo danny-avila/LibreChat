@@ -159,3 +159,37 @@ describe('completeToolCall', () => {
     });
   });
 });
+
+describe('file-authoring arg aliases', () => {
+  it('renames Claude create_file args to the keys FileAuthoringCall reads', () => {
+    const registry = createToolRegistry();
+    const part = beginToolCall(registry, {
+      type: 'tool_use',
+      name: 'create_file',
+      id: 'tu_1',
+      input: { path: 'src/app.ts', file_text: 'export const a = 1;', description: 'add file' },
+    } as ClaudeContentBlock);
+
+    const args = JSON.parse(part[ContentTypes.TOOL_CALL].args as string);
+    expect(args.file_path).toBe('src/app.ts');
+    expect(args.content).toBe('export const a = 1;');
+    expect(args.description).toBe('add file');
+    expect(args.path).toBeUndefined();
+    expect(args.file_text).toBeUndefined();
+  });
+
+  it('leaves other tools’ args untouched', () => {
+    const registry = createToolRegistry();
+    const part = beginToolCall(registry, {
+      type: 'tool_use',
+      name: 'bash_tool',
+      id: 'tu_2',
+      input: { command: 'ls -la', path: 'keep-me' },
+    } as ClaudeContentBlock);
+
+    const args = JSON.parse(part[ContentTypes.TOOL_CALL].args as string);
+    expect(args.command).toBe('ls -la');
+    expect(args.path).toBe('keep-me');
+    expect(args.file_path).toBeUndefined();
+  });
+});
