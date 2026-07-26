@@ -2259,12 +2259,45 @@ export class MCPConnection extends EventEmitter {
   }
 
   async fetchResources(): Promise<t.MCPResource[]> {
+    const resources: t.MCPResource[] = [];
+    const seenCursors = new Set<string>();
+    let cursor: string | undefined;
+
     try {
-      const { resources } = await this.client.listResources();
-      return resources;
+      for (;;) {
+        const result = await this.client.listResources(cursor != null ? { cursor } : undefined, {
+          timeout: this.timeout,
+        });
+        resources.push(...result.resources);
+
+        if (!result.nextCursor) {
+          return resources;
+        }
+        if (seenCursors.has(result.nextCursor)) {
+          logger.warn(`${this.getLogPrefix()} Stopping resource pagination due to repeated cursor`);
+          return resources;
+        }
+        seenCursors.add(result.nextCursor);
+        cursor = result.nextCursor;
+      }
     } catch (error) {
       this.emitError(error, 'Failed to fetch resources');
-      return [];
+      return resources;
+    }
+  }
+
+  async readResource(uri: string): Promise<t.MCPReadResourceResult> {
+    try {
+      return await this.client.readResource(
+        { uri },
+        {
+          timeout: this.timeout,
+          resetTimeoutOnProgress: true,
+        },
+      );
+    } catch (error) {
+      this.emitError(error, `Failed to read resource ${uri}`);
+      throw error;
     }
   }
 

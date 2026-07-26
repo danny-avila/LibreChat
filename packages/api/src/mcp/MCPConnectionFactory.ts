@@ -28,6 +28,7 @@ import { mcpConfig } from './mcpConfig';
 
 export interface ToolDiscoveryResult {
   tools: Tool[] | null;
+  resources?: t.MCPResource[] | null;
   connection: MCPConnection | null;
   oauthRequired: boolean;
   oauthUrl: string | null;
@@ -200,9 +201,12 @@ export class MCPConnectionFactory {
       );
 
       if (await connection.isConnected()) {
-        const tools = await connection.fetchTools();
+        const [tools, resources] = await Promise.all([
+          connection.fetchTools(),
+          connection.fetchResources(),
+        ]);
         connection.removeListener('oauthRequired', oauthHandler);
-        return { tools, connection, oauthRequired: false, oauthUrl: null };
+        return { tools, resources, connection, oauthRequired: false, oauthUrl: null };
       }
     } catch {
       MCPConnection.decrementCycleCount(this.serverName);
@@ -223,7 +227,7 @@ export class MCPConnectionFactory {
         } catch {
           // Ignore cleanup errors
         }
-        return { tools, connection: null, oauthRequired, oauthUrl };
+        return { tools, resources: null, connection: null, oauthRequired, oauthUrl };
       }
       MCPConnection.decrementCycleCount(this.serverName);
     } catch (listError) {
@@ -239,7 +243,7 @@ export class MCPConnectionFactory {
       // Ignore cleanup errors
     }
 
-    return { tools: null, connection: null, oauthRequired, oauthUrl };
+    return { tools: null, resources: null, connection: null, oauthRequired, oauthUrl };
   }
 
   protected async attemptUnauthenticatedToolListing(): Promise<Tool[] | null> {

@@ -32,6 +32,8 @@ export function createMockConnection(serverName: string): jest.Mocked<MCPConnect
   return {
     client: mockClient,
     fetchTools: jest.fn().mockResolvedValue(tools),
+    fetchResources: jest.fn().mockResolvedValue([]),
+    readResource: jest.fn().mockResolvedValue({ contents: [] }),
     disconnect: jest.fn().mockResolvedValue(undefined),
   } as unknown as jest.Mocked<MCPConnection>;
 }

@@ -127,8 +127,11 @@ export class MCPManager extends UserConnectionManager {
     try {
       const existingAppConnection = await this.appConnections?.get(serverName);
       if (existingAppConnection && (await existingAppConnection.isConnected())) {
-        const tools = await existingAppConnection.fetchTools();
-        return { tools, oauthRequired: false, oauthUrl: null };
+        const [tools, resources] = await Promise.all([
+          existingAppConnection.fetchTools(),
+          existingAppConnection.fetchResources(),
+        ]);
+        return { tools, resources, oauthRequired: false, oauthUrl: null };
       }
     } catch {
       logger.debug(`${logPrefix} [Discovery] App connection not available, trying discovery mode`);
@@ -193,6 +196,7 @@ export class MCPManager extends UserConnectionManager {
       }
       return {
         tools: result.tools,
+        resources: result.resources,
         oauthRequired: result.oauthRequired,
         oauthUrl: result.oauthUrl,
       };
@@ -553,5 +557,293 @@ Please follow these instructions when using tools from the respective MCP server
         }
       }
     }
+  }
+
+  async listResources({
+    user,
+    serverName,
+    serverConfig: providedConfig,
+    options,
+    tokenMethods,
+    requestBody,
+    requestScopedConnections,
+    flowManager,
+    oauthStart,
+    oauthEnd,
+    customUserVars,
+    graphTokenResolver,
+    oboTokenResolver,
+    oboTrustChecker,
+  }: {
+    user?: IUser;
+    serverName: string;
+    serverConfig?: t.ParsedServerConfig;
+    options?: RequestOptions;
+    requestBody?: RequestBody;
+    requestScopedConnections?: t.RequestScopedMCPConnectionStore;
+    tokenMethods?: TokenMethods;
+    customUserVars?: Record<string, string>;
+    flowManager: FlowStateManager<MCPOAuthTokens | null>;
+    oauthStart?: t.OAuthStartHandler;
+    oauthEnd?: () => Promise<void>;
+    graphTokenResolver?: GraphTokenResolver;
+    oboTokenResolver?: OboTokenResolver;
+    oboTrustChecker?: OboTrustChecker;
+  }): Promise<t.MCPResource[]> {
+    const { connection, disconnectAfterCall, cleanup } = await this.getResourceConnection({
+      user,
+      serverName,
+      serverConfig: providedConfig,
+      options,
+      tokenMethods,
+      requestBody,
+      requestScopedConnections,
+      flowManager,
+      oauthStart,
+      oauthEnd,
+      customUserVars,
+      graphTokenResolver,
+      oboTokenResolver,
+      oboTrustChecker,
+      operation: 'resources/list',
+    });
+
+    try {
+      return await connection.fetchResources();
+    } finally {
+      cleanup?.();
+      if (disconnectAfterCall) {
+        await connection.disconnect();
+      }
+    }
+  }
+
+  async readResource({
+    user,
+    serverName,
+    serverConfig: providedConfig,
+    uri,
+    options,
+    tokenMethods,
+    requestBody,
+    requestScopedConnections,
+    flowManager,
+    oauthStart,
+    oauthEnd,
+    customUserVars,
+    graphTokenResolver,
+    oboTokenResolver,
+    oboTrustChecker,
+  }: {
+    user?: IUser;
+    serverName: string;
+    serverConfig?: t.ParsedServerConfig;
+    uri: string;
+    options?: RequestOptions;
+    requestBody?: RequestBody;
+    requestScopedConnections?: t.RequestScopedMCPConnectionStore;
+    tokenMethods?: TokenMethods;
+    customUserVars?: Record<string, string>;
+    flowManager: FlowStateManager<MCPOAuthTokens | null>;
+    oauthStart?: t.OAuthStartHandler;
+    oauthEnd?: () => Promise<void>;
+    graphTokenResolver?: GraphTokenResolver;
+    oboTokenResolver?: OboTokenResolver;
+    oboTrustChecker?: OboTrustChecker;
+  }): Promise<t.MCPReadResourceResult> {
+    const { connection, disconnectAfterCall, cleanup } = await this.getResourceConnection({
+      user,
+      serverName,
+      serverConfig: providedConfig,
+      options,
+      tokenMethods,
+      requestBody,
+      requestScopedConnections,
+      flowManager,
+      oauthStart,
+      oauthEnd,
+      customUserVars,
+      graphTokenResolver,
+      oboTokenResolver,
+      oboTrustChecker,
+      operation: 'resources/read',
+    });
+
+    try {
+      return await connection.readResource(uri);
+    } finally {
+      cleanup?.();
+      if (disconnectAfterCall) {
+        await connection.disconnect();
+      }
+    }
+  }
+
+  private async getResourceConnection({
+    user,
+    serverName,
+    serverConfig: providedConfig,
+    options,
+    tokenMethods,
+    requestBody,
+    requestScopedConnections,
+    flowManager,
+    oauthStart,
+    oauthEnd,
+    customUserVars,
+    graphTokenResolver,
+    oboTokenResolver,
+    oboTrustChecker,
+    operation,
+  }: {
+    user?: IUser;
+    serverName: string;
+    serverConfig?: t.ParsedServerConfig;
+    options?: RequestOptions;
+    requestBody?: RequestBody;
+    requestScopedConnections?: t.RequestScopedMCPConnectionStore;
+    tokenMethods?: TokenMethods;
+    customUserVars?: Record<string, string>;
+    flowManager: FlowStateManager<MCPOAuthTokens | null>;
+    oauthStart?: t.OAuthStartHandler;
+    oauthEnd?: () => Promise<void>;
+    graphTokenResolver?: GraphTokenResolver;
+    oboTokenResolver?: OboTokenResolver;
+    oboTrustChecker?: OboTrustChecker;
+    operation: 'resources/list' | 'resources/read';
+  }): Promise<{
+    connection: MCPConnection;
+    disconnectAfterCall: boolean;
+    cleanup?: () => void;
+  }> {
+    const userId = user?.id;
+    const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
+
+    if (userId && user) this.updateUserLastActivity(userId);
+
+    const connection = await this.getConnection({
+      serverName,
+      user,
+      flowManager,
+      tokenMethods,
+      oauthStart,
+      oauthEnd,
+      oboTokenResolver,
+      oboTrustChecker,
+      graphTokenResolver,
+      signal: options?.signal,
+      customUserVars,
+      requestBody,
+      requestScopedConnections,
+      serverConfig: providedConfig,
+    });
+
+    if (!(await connection.isConnected())) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `${logPrefix} Connection is not active. Cannot execute ${operation}.`,
+      );
+    }
+
+    const registry = MCPServersRegistry.getInstance();
+    const rawConfig = providedConfig ?? (await registry.getServerConfig(serverName, userId));
+    if (!rawConfig) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Configuration for server "${serverName}" not found.`,
+      );
+    }
+
+    const isDbSourced = isUserSourced(rawConfig);
+    const disconnectAfterCall =
+      !!userId && requiresEphemeralUserConnection(rawConfig) && !requestScopedConnections;
+    const graphProcessedConfig = isDbSourced
+      ? (rawConfig as t.MCPOptions)
+      : await preProcessGraphTokens(rawConfig as t.MCPOptions, {
+          user,
+          graphTokenResolver,
+          scopes: process.env.GRAPH_API_SCOPES,
+        });
+    const currentOptions = processMCPEnv({
+      user,
+      body: requestBody,
+      dbSourced: isDbSourced,
+      options: graphProcessedConfig,
+      customUserVars,
+    });
+
+    const resolvedHeaders: Record<string, string> =
+      'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
+
+    const oboConfig = rawConfig.obo;
+    if (oboConfig && oboTokenResolver && user) {
+      const oboTrusted = oboTrustChecker
+        ? await oboTrustChecker({
+            source: rawConfig.source,
+            author: rawConfig.author,
+            dbId: rawConfig.dbId,
+          })
+        : true;
+      if (!oboTrusted) {
+        logger.warn(
+          `${logPrefix} OBO config not trusted (author lacks ${PermissionTypes.MCP_SERVERS}.${Permissions.CONFIGURE_OBO}); refusing to mint a downstream token`,
+        );
+        throw new McpError(
+          ErrorCode.InternalError,
+          `${logPrefix} OBO is not permitted for server "${serverName}". The user who configured it no longer has permission to use OBO.`,
+        );
+      }
+      try {
+        const oboTokens = await resolveOboToken(user, oboConfig, oboTokenResolver);
+        if (!oboTokens.access_token) {
+          throw new McpError(
+            ErrorCode.InternalError,
+            `${logPrefix} OBO token refresh failed. Cannot execute ${operation}. Re-authenticate the user and retry.`,
+          );
+        }
+        resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
+      } catch (error) {
+        if (error instanceof OboTokenResolutionError) {
+          throw new McpError(
+            ErrorCode.InternalError,
+            `${logPrefix} ${error.userMessage} Cannot execute ${operation}. Re-authenticate the user and retry.`,
+          );
+        }
+        throw error;
+      }
+    }
+
+    let cleanup: (() => void) | undefined;
+    if (userId && user && oauthStart && flowManager && isOAuthServer(currentOptions)) {
+      const registry = MCPServersRegistry.getInstance();
+      const { allowedDomains, allowedAddresses, useSSRFProtection } =
+        await registry.resolveAllowlists({ userId, role: user?.role });
+      cleanup = MCPConnectionFactory.attachRequestOAuthHandler(
+        {
+          serverName,
+          serverConfig: currentOptions,
+          dbSourced: isDbSourced,
+          skipEnvProcessing: true,
+          useSSRFProtection,
+          allowedDomains,
+          allowedAddresses,
+        },
+        {
+          useOAuth: true,
+          user,
+          flowManager,
+          tokenMethods,
+          signal: options?.signal,
+          oauthStart,
+          oauthEnd,
+          customUserVars,
+          requestBody,
+        },
+        connection,
+      );
+    }
+
+    connection.setRequestHeaders(resolvedHeaders);
+    return { connection, disconnectAfterCall, cleanup };
   }
 }

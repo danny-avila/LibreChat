@@ -112,6 +112,7 @@ describe('MCPConnectionFactory', () => {
     mockConnectionInstance = {
       connect: jest.fn(),
       isConnected: jest.fn(),
+      fetchResources: jest.fn().mockResolvedValue([]),
       setOAuthTokens: jest.fn(),
       on: jest.fn().mockReturnValue(mockConnectionInstance),
       once: jest.fn().mockReturnValue(mockConnectionInstance),
