@@ -68,7 +68,6 @@ function Tray({ items, conversation, files, setFiles, setFilesLoading, isRTL }: 
 
   return (
     <div
-      role="list"
       aria-label={localize('com_ui_composer_staged_context')}
       data-testid="composer-tray"
       className="flex flex-col gap-1.5 px-2 pt-2"

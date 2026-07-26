@@ -8,14 +8,12 @@ import { cn } from '~/utils';
  * identical across kinds — only the leading icon carries the accent — so the
  * tray reads as one list rather than four stacked systems.
  */
-export type ChipTone = 'file' | 'quote' | 'skill' | 'queued' | 'failed' | 'tool';
+export type ChipTone = 'file' | 'quote' | 'skill' | 'tool';
 
 const TONE_ICON: Record<ChipTone, string> = {
   file: 'text-text-secondary',
   quote: 'text-cyan-500',
   skill: 'text-purple-500',
-  queued: 'text-cyan-500',
-  failed: 'text-red-500',
   /** Tools carry their own accent; this is only the fallback (MCP servers,
    *  whose icons are their own branding and shouldn't be tinted). */
   tool: 'text-text-primary',
@@ -35,9 +33,6 @@ export interface ChipProps {
   iconClassName?: string;
   /** Square preview rendered in place of `icon`, used by image attachments. */
   thumbnail?: ReactNode;
-  /** Stretches the chip to fill the tray width, for queued and failed rows
-   *  whose actions do not fit an inline pill. */
-  block?: boolean;
   /** Rendered between the label and the remove button. */
   trailing?: ReactNode;
   onRemove?: () => void;
@@ -53,7 +48,6 @@ function Chip({
   icon,
   iconClassName,
   thumbnail,
-  block = false,
   trailing,
   onRemove,
   removeLabel,
@@ -65,12 +59,7 @@ function Chip({
       role="listitem"
       data-testid={testId}
       data-tone={tone}
-      className={cn(
-        BASE_CLASS,
-        block ? 'flex w-full px-3 py-2' : 'max-w-full px-2.5 py-1',
-        tone === 'failed' ? 'border-red-500/60' : 'border-border-light',
-        className,
-      )}
+      className={cn(BASE_CLASS, 'max-w-full border-border-light px-2.5 py-1', className)}
     >
       {thumbnail ?? (
         <span
@@ -80,10 +69,7 @@ function Chip({
           {icon}
         </span>
       )}
-      <span
-        className={cn('truncate', block ? 'min-w-0 flex-1' : 'max-w-[14rem]')}
-        title={title ?? label}
-      >
+      <span className="max-w-[14rem] truncate" title={title ?? label}>
         {label}
       </span>
       {trailing}
