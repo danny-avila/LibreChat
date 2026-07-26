@@ -1,6 +1,6 @@
 import React, { useRef, useMemo, useState, useCallback } from 'react';
-import { useRecoilState } from 'recoil';
 import { SharePointIcon } from '@librechat/client';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import {
   FileSearch,
   ImageUpIcon,
@@ -28,6 +28,7 @@ import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePo
 import { useAgentToolPermissions, useAgentCapabilities, useGetAgentsConfig } from '~/hooks';
 import { useFileHandlingNoChatContext } from '~/hooks/Files';
 import { useGetStartupConfig } from '~/data-provider';
+import { getUploadToolAllowances } from '~/utils';
 import { ephemeralAgentByConvoId } from '~/store';
 import useLocalize from '~/hooks/useLocalize';
 
@@ -113,6 +114,7 @@ export default function useAttachItems({
       { files, setFiles, setFilesLoading, conversation },
     );
 
+  const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId(conversationId));
   const { agentsConfig } = useGetAgentsConfig();
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
@@ -122,10 +124,12 @@ export default function useAttachItems({
    * Use definition for agents endpoint for ephemeral agents
    * */
   const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
-  const { fileSearchAllowedByAgent, codeAllowedByAgent, provider } = useAgentToolPermissions(
-    agentId,
-    undefined,
-  );
+  const { tools, provider } = useAgentToolPermissions(agentId, ephemeralAgent);
+  /* The same allowances the drag-and-drop router resolves, so a file reaches
+     the same destinations whether it is dropped on the composer or picked
+     through this menu. Passing no ephemeral agent here used to leave both tool
+     destinations permanently hidden in an ordinary chat. */
+  const { fileSearchAllowedByAgent, codeAllowedByAgent } = getUploadToolAllowances(agentId, tools);
 
   const handleUploadClick = useCallback(
     (fileType?: FileUploadType) => {
