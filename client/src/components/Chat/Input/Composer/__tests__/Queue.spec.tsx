@@ -93,6 +93,11 @@ describe('Queue', () => {
     renderQueue([queued({ files: [{ file_id: 'f1' }, { file_id: 'f2' }] as never })]);
     const attachmentLabel = screen.getByText('com_ui_attachment_count:2');
     expect(attachmentLabel).toBeInTheDocument();
-    expect(attachmentLabel).toHaveAttribute('title', 'com_ui_queued_attachment_count:2');
+    expect(attachmentLabel.parentElement).toHaveAttribute(
+      'title',
+      'com_ui_queued_attachment_count:2',
+    );
+    expect(attachmentLabel.parentElement).not.toHaveAttribute('aria-label');
+    expect(screen.getByText('com_ui_queued_attachment_count:2')).toHaveClass('sr-only');
   });
 });
