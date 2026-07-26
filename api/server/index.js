@@ -4,6 +4,7 @@ const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
 const axios = require('axios');
+const helmet = require('helmet');
 const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
@@ -118,6 +119,17 @@ const startServer = async () => {
 
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
+  app.use(
+    helmet({
+      // The SPA shell (client/index.html) ships inline <script> for theme
+      // detection and RUM stale-asset recovery, served as a static file
+      // with no per-request nonce injection. A default CSP would block
+      // those and break first paint. Left off until nonce-based script
+      // tagging lands; the other helmet headers (HSTS, X-Frame-Options,
+      // X-Content-Type-Options, COOP, CORP, etc.) don't depend on it.
+      contentSecurityPolicy: false,
+    }),
+  );
 
   if (isEnabled(process.env.TENANT_ISOLATION_STRICT)) {
     logger.warn(
