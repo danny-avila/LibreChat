@@ -67,11 +67,7 @@ function Tray({ items, conversation, files, setFiles, setFilesLoading, isRTL }: 
   }
 
   return (
-    <div
-      aria-label={localize('com_ui_composer_staged_context')}
-      data-testid="composer-tray"
-      className="flex flex-col gap-1.5 px-2 pt-2"
-    >
+    <div data-testid="composer-tray" className="flex flex-col gap-1.5 px-2 pt-2">
       <FileRow
         files={files}
         setFiles={setFiles}
@@ -80,7 +76,11 @@ function Tray({ items, conversation, files, setFiles, setFilesLoading, isRTL }: 
         setFilesLoading={setFilesLoading}
       />
       {items.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div
+          role="list"
+          aria-label={localize('com_ui_composer_staged_context')}
+          className="flex flex-wrap gap-1.5"
+        >
           {items.map((item) => (
             <ItemChip key={item.id} item={item} />
           ))}
