@@ -9,9 +9,9 @@ import React, {
 } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useSetRecoilState } from 'recoil';
-import { Star, Plus, Search } from 'lucide-react';
 import { AutoSizer, List } from 'react-virtualized';
 import { FileUpload, TooltipAnchor } from '@librechat/client';
+import { Star, Plus, Search, ChevronDown } from 'lucide-react';
 import type {
   TFile,
   TConversation,
@@ -60,6 +60,7 @@ const SECTION_LABEL: Record<PaletteSection, TranslationKeys> = {
 type PaletteRow =
   | { type: 'header'; key: string; label: string }
   | { type: 'attach'; key: string; entry: AttachEntry }
+  | { type: 'more'; key: string; label: string }
   | { type: 'file'; key: string; file: TFile }
   | { type: 'entry'; key: string; entry: PaletteEntry; isFavorite: boolean };
 
@@ -176,6 +177,10 @@ function Palette({
   const open = popover.useState('open');
   const mounted = popover.useState('mounted');
   const [search, setSearch] = useState('');
+  /* Kept across openings rather than reset with the search: someone who uploads
+     to a tool once will do it again, and re-expanding every time is the cost of
+     hiding it. */
+  const [showAllAttach, setShowAllAttach] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const disclosureRef = useRef<HTMLButtonElement>(null);
@@ -294,14 +299,30 @@ function Palette({
     }
 
     if (canAttach) {
+      /* Searching reaches every destination: the disclosure is there to keep the
+         resting list short, not to make a row unfindable by name. */
       const matched =
         query === ''
-          ? attach.entries
+          ? attach.entries.filter((item) => showAllAttach || item.primary === true)
           : attach.entries.filter((item) => item.label.toLowerCase().includes(query));
-      if (matched.length > 0) {
+      const folded = query === '' && attach.entries.some((item) => item.primary !== true);
+      if (matched.length > 0 || folded) {
         next.push({ type: 'header', key: 'h:attach', label: localize('com_ui_composer_attach') });
         for (const entry of matched) {
           next.push({ type: 'attach', key: entry.id, entry });
+        }
+        if (folded) {
+          next.push({
+            type: 'more',
+            key: 'attach:more',
+            /* The label carries the state rather than `aria-expanded`, which an
+               `option` may not have: the word is what a screen reader reads and
+               what a sighted user sees, so neither has to infer it from the
+               chevron alone. */
+            label: showAllAttach
+              ? localize('com_ui_composer_attach_less')
+              : localize('com_ui_composer_attach_more'),
+          });
         }
       }
     }
@@ -339,7 +360,16 @@ function Palette({
     }
 
     return next;
-  }, [entries, favorites.keys, query, attach.entries, recent.files, canAttach, localize]);
+  }, [
+    entries,
+    favorites.keys,
+    query,
+    attach.entries,
+    showAllAttach,
+    recent.files,
+    canAttach,
+    localize,
+  ]);
 
   const totalHeight = useMemo(() => {
     let height = 0;
@@ -353,10 +383,16 @@ function Palette({
 
   /** Keep the highlight on a real row as the query narrows the list. */
   const [lastRowsKey, setLastRowsKey] = useState('');
+  const [keepKey, setKeepKey] = useState('');
   const rowsKey = `${rows.length}:${rows[0]?.key ?? ''}`;
   if (rowsKey !== lastRowsKey) {
     setLastRowsKey(rowsKey);
-    setActiveIndex(firstSelectable === -1 ? 0 : firstSelectable);
+    const kept = keepKey === '' ? -1 : rows.findIndex((row) => row.key === keepKey);
+    const fallback = firstSelectable === -1 ? 0 : firstSelectable;
+    setActiveIndex(kept === -1 ? fallback : kept);
+    if (keepKey !== '') {
+      setKeepKey('');
+    }
   }
 
   /* Cleared on unmount rather than on close: the popup stays up through its
@@ -398,6 +434,14 @@ function Palette({
       if (row.type === 'attach') {
         popover.hide();
         row.entry.onSelect();
+        return;
+      }
+      /* Reveals the rest of the section in place, so the palette stays open.
+         The disclosure slides down past the rows it just revealed, so the
+         highlight is asked to follow it rather than snap back to the top. */
+      if (row.type === 'more') {
+        setShowAllAttach((shown) => !shown);
+        setKeepKey(row.key);
         return;
       }
       /* Terminal like an upload destination: the file lands in the tray, which
@@ -476,6 +520,33 @@ function Palette({
       }
 
       const isActive = index === activeIndex;
+
+      if (row.type === 'more') {
+        return (
+          <div
+            key={key}
+            style={style}
+            id={`palette-row-${index}`}
+            role="option"
+            aria-selected={isActive}
+            onClick={() => activate(index)}
+            onMouseEnter={() => setActiveIndex(index)}
+            className={cn(
+              'flex cursor-pointer items-center gap-2.5 rounded-lg px-2 text-sm text-text-secondary',
+              isActive && 'bg-surface-hover',
+            )}
+          >
+            <ChevronDown
+              aria-hidden="true"
+              className={cn(
+                'animate-composer-icon size-4 shrink-0',
+                showAllAttach && '-rotate-180',
+              )}
+            />
+            <span className="truncate">{row.label}</span>
+          </div>
+        );
+      }
 
       if (row.type === 'file') {
         const { file } = row;
@@ -619,7 +690,7 @@ function Palette({
         </div>
       );
     },
-    [rows, activeIndex, activate, favorites, localize],
+    [rows, activeIndex, activate, favorites, localize, showAllAttach],
   );
 
   return (
