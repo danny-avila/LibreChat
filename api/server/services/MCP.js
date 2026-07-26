@@ -6,6 +6,7 @@ const {
   PENDING_STALE_MS,
   MCPOAuthHandler,
   isMCPDomainAllowed,
+  splitMCPToolKey,
   normalizeServerName,
   normalizeJsonSchema,
   GenerationJobManager,
@@ -638,7 +639,7 @@ async function createMCPTool({
   onAvailableTools,
   streamId = null,
 }) {
-  const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
+  const [toolName, serverName] = splitMCPToolKey(toolKey);
 
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));

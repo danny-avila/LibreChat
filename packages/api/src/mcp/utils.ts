@@ -362,6 +362,33 @@ export function normalizeServerName(serverName: string): string {
 }
 
 /**
+ * Splits a combined MCP tool key (`${rawToolName}${mcp_delimiter}${serverName}`)
+ * back into its two parts.
+ *
+ * Uses the *last* occurrence of the delimiter, not a plain `.split()`. The
+ * server-name half is always `normalizeServerName`'s output appended once by
+ * LibreChat itself; the raw tool-name half comes from the upstream MCP
+ * server and is untrusted - it can legitimately contain the delimiter
+ * substring itself (e.g. a tool literally named `get_mcp_server_version`,
+ * or one whose name was already prefixed by a gateway sitting in front of
+ * the MCP server, such as `gitlab-get_mcp_server_version`). A naive
+ * `toolKey.split(Constants.mcp_delimiter)` then produces more than two
+ * segments, and destructuring `[toolName, serverName]` silently keeps only
+ * the first two - yielding a `serverName` that doesn't match any configured
+ * server, so the tool resolves to nothing instead of erroring.
+ *
+ * `lastIndexOf` matches `.split()`'s result whenever the delimiter occurs
+ * exactly once, so this is a drop-in replacement for the normal case.
+ */
+export function splitMCPToolKey(toolKey: string): [string, string | undefined] {
+  const idx = toolKey.lastIndexOf(Constants.mcp_delimiter);
+  if (idx === -1) {
+    return [toolKey, undefined];
+  }
+  return [toolKey.slice(0, idx), toolKey.slice(idx + Constants.mcp_delimiter.length)];
+}
+
+/**
  * Builds the synthetic tool-call name used during MCP OAuth flows.
  * Format: `oauth<mcp_delimiter><normalizedServerName>`
  *

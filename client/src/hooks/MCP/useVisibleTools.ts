@@ -29,7 +29,14 @@ export function useVisibleTools(
     for (const toolId of selectedToolIds ?? []) {
       // MCP tools/servers
       if (toolId.includes(Constants.mcp_delimiter)) {
-        const serverName = toolId.split(Constants.mcp_delimiter)[1];
+        // Split on the *last* occurrence, not `.split()[1]` - the raw tool
+        // name half (everything before the server-name suffix LibreChat
+        // appends) can itself legitimately contain the delimiter substring
+        // (e.g. a tool literally named `get_mcp_server_version`, or one
+        // already prefixed by an upstream gateway), which would otherwise
+        // shift the server name to the wrong index.
+        const delimiterIndex = toolId.lastIndexOf(Constants.mcp_delimiter);
+        const serverName = toolId.slice(delimiterIndex + Constants.mcp_delimiter.length);
         if (serverName) {
           mcpServers.add(serverName);
         }

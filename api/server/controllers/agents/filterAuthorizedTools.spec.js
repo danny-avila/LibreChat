@@ -342,23 +342,58 @@ describe('MCP Tool Authorization', () => {
       expect(result).toEqual(['web_search']);
     });
 
-    test('should not preserve malformed existing tools when registry is unavailable', async () => {
+    test('should not preserve a tool key with no delimiter at all when registry is unavailable', async () => {
+      // A key that isn't a real MCP tool key (no delimiter, so it has no
+      // resolvable server) is rejected regardless of the existing-tools
+      // fallback - unlike a key with multiple delimiters, which does have a
+      // resolvable server (the segment after the last delimiter) and is
+      // covered separately below.
       getMCPServersRegistry.mockImplementation(() => {
         throw new Error('MCPServersRegistry has not been initialized.');
       });
 
-      const malformedTool = `a${d}b${d}c`;
+      // Deliberately not named anything containing "_mcp_" - that would
+      // ironically make it an MCP tool key itself, exactly the class of
+      // naming collision this whole regression is about. (Confirmed
+      // programmatically, not just by eye - it's an easy mistake to repeat.)
+      const noDelimiterTool = 'regular_web_tool';
       const result = await filterAuthorizedTools({
-        tools: [malformedTool, `legit${d}serverA`, 'web_search'],
+        tools: [noDelimiterTool, `legit${d}serverA`, 'web_search'],
         userId,
         user: testUser,
         availableTools,
-        existingTools: [malformedTool, `legit${d}serverA`],
+        existingTools: [noDelimiterTool, `legit${d}serverA`],
       });
 
       expect(result).toContain(`legit${d}serverA`);
       expect(result).toContain('web_search');
-      expect(result).not.toContain(malformedTool);
+      expect(result).not.toContain(noDelimiterTool);
+    });
+
+    test('should preserve an existing MCP tool key with multiple delimiters when registry is unavailable', async () => {
+      // Regression test for https://github.com/danny-avila/LibreChat/issues/14440:
+      // a tool key with more than one delimiter occurrence is not inherently
+      // malformed - it just means the raw tool-name half (everything before
+      // the *last* delimiter) itself contains the delimiter substring, which
+      // legitimately happens with some upstream MCP tool names. The
+      // registry-unavailable fallback should treat it like any other
+      // previously-persisted tool, not single it out as broken.
+      getMCPServersRegistry.mockImplementation(() => {
+        throw new Error('MCPServersRegistry has not been initialized.');
+      });
+
+      const multiDelimiterTool = `a${d}b${d}c`;
+      const result = await filterAuthorizedTools({
+        tools: [multiDelimiterTool, `legit${d}serverA`, 'web_search'],
+        userId,
+        user: testUser,
+        availableTools,
+        existingTools: [multiDelimiterTool, `legit${d}serverA`],
+      });
+
+      expect(result).toContain(multiDelimiterTool);
+      expect(result).toContain(`legit${d}serverA`);
+      expect(result).toContain('web_search');
     });
 
     test('should gate app-level MCP tools present in the global tool cache', async () => {
@@ -398,12 +433,29 @@ describe('MCP Tool Authorization', () => {
       expect(mockGetAllServerConfigs).not.toHaveBeenCalled();
     });
 
-    test('should reject malformed MCP tool keys with multiple delimiters', async () => {
+    test('should resolve MCP tool keys with multiple delimiters using the last segment as the server name', async () => {
+      // Regression test for https://github.com/danny-avila/LibreChat/issues/14440.
+      // A tool key with more than one delimiter occurrence is not inherently
+      // malformed - it means the raw tool-name half (the part before the
+      // *last* delimiter, which is always the segment LibreChat itself
+      // appends) legitimately contains the delimiter substring. Previously
+      // any key with >2 segments was rejected outright; now the server name
+      // is always the last segment, matching how the key is actually built.
+      //
+      // `multiSegmentTool` below has an unrelated string ("victimServer")
+      // embedded in its raw-tool-name half purely to prove there's no way to
+      // spoof a *different* server via that embedded text - only the real
+      // last segment ("authorizedServer") is ever consulted for
+      // authorization, so this does not grant access to anything the user
+      // isn't already allowed to use.
+      const multiSegmentTool = `attack${d}victimServer${d}authorizedServer`;
+      const unauthorizedMultiSegmentTool = `a${d}b${d}c${d}forbiddenServer`;
+
       const result = await filterAuthorizedTools({
         tools: [
-          `attack${d}victimServer${d}authorizedServer`,
+          multiSegmentTool,
           `legit${d}authorizedServer`,
-          `a${d}b${d}c${d}d`,
+          unauthorizedMultiSegmentTool,
           'web_search',
         ],
         userId,
@@ -411,9 +463,14 @@ describe('MCP Tool Authorization', () => {
         availableTools,
       });
 
-      expect(result).toEqual([`legit${d}authorizedServer`, 'web_search']);
-      expect(result).not.toContainEqual(expect.stringContaining('victimServer'));
-      expect(result).not.toContainEqual(expect.stringContaining(`a${d}b`));
+      expect(result).toContain(multiSegmentTool);
+      expect(result).toContain(`legit${d}authorizedServer`);
+      expect(result).toContain('web_search');
+      // The unrelated embedded text does not let the key resolve to a
+      // different, unauthorized server: only the true last segment
+      // ("forbiddenServer", not in the mocked server configs) is checked,
+      // and it's correctly rejected.
+      expect(result).not.toContain(unauthorizedMultiSegmentTool);
     });
   });
 

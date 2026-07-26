@@ -6,6 +6,7 @@ const {
   createSafeUser,
   mcpToolPattern,
   loadWebSearchAuth,
+  splitMCPToolKey,
   buildInlineMemoryTool,
   getCodeApiAuthHeaders,
   buildImageToolContext,
@@ -396,7 +397,7 @@ const loadTools = async ({
         continue;
       }
 
-      const [toolName, serverName] = tool.split(Constants.mcp_delimiter);
+      const [toolName, serverName] = splitMCPToolKey(tool);
       if (toolName === Constants.mcp_server) {
         /** Placeholder used for UI purposes */
         continue;
