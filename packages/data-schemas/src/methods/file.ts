@@ -1,4 +1,4 @@
-import { EToolResources, FileContext } from 'librechat-data-provider';
+import { EToolResources, FileContext, FileSources } from 'librechat-data-provider';
 import type { FilterQuery, SortOrder, Model } from 'mongoose';
 import type { IMongoFile } from '~/types/file';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
@@ -379,6 +379,11 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     const definedFields = Object.fromEntries(
       Object.entries(fields).filter(([, value]) => value !== undefined),
     );
+    const insertDefaults = {
+      object: { $ifNull: ['$object', 'file'] },
+      usage: { $ifNull: ['$usage', 0] },
+      source: { $ifNull: ['$source', FileSources.local] },
+    };
     let expiryUpdate = {};
     if (expiredAt instanceof Date) {
       expiryUpdate = {
@@ -390,7 +395,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
 
     return File.findOneAndUpdate(
       { file_id: data.file_id },
-      [{ $set: { ...definedFields, ...expiryUpdate } }],
+      [{ $set: { ...insertDefaults, ...definedFields, ...expiryUpdate } }],
       {
         new: true,
         upsert: true,

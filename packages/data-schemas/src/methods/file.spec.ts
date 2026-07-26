@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { EToolResources, FileContext } from 'librechat-data-provider';
+import { EToolResources, FileContext, FileSources } from 'librechat-data-provider';
 import { _resetStrictCache } from '~/models/plugins/tenantIsolation';
 import { runAsSystem } from '~/config/tenantContext';
 import { createFileMethods } from './file';
@@ -63,6 +63,9 @@ describe('File Methods', () => {
       expect(file).not.toBeNull();
       expect(file?.file_id).toBe(fileId);
       expect(file?.filename).toBe('test.txt');
+      expect(file?.object).toBe('file');
+      expect(file?.usage).toBe(0);
+      expect(file?.source).toBe(FileSources.local);
       expect(file?.expiresAt).toBeDefined();
     });
 
