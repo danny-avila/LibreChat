@@ -94,10 +94,9 @@ class FakeContext {
       return new ImageData(1, 1);
     }
     const data = Uint8ClampedArray.from(icon.pixels);
-    /* `ImageData(data, width)` — the second arg is the row width in pixels, so
-     * this yields a 1-row image. `scanMonochrome` walks the flat RGBA buffer and
-     * ignores geometry, so a single row is all the detector needs. */
-    return new ImageData(data, data.length / 4);
+    /* `scanMonochrome` walks the flat RGBA buffer and ignores geometry, so a
+     * single row is all the detector needs. */
+    return new ImageData(data, data.length / 4, 1);
   }
 }
 

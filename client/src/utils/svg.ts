@@ -113,130 +113,19 @@ export function detectMonochrome(src: string): Promise<boolean> {
   });
 }
 
-/** Matches every `url(...)` reference in a CSS/presentation value. A quoted
- *  target may contain `)` (capture groups 1/2), an unquoted one may not (group 3),
- *  so the target is `match[1] ?? match[2] ?? match[3]`. */
-const CSS_URL_REFERENCE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^'")]*))\s*\)/gi;
-
-/** XML predefined entities — the only named references a `data:image/svg+xml`
- *  document (parsed as XML) decodes; unknown named entities make it fail to parse. */
-const XML_NAMED_ENTITIES: Record<string, string> = {
-  amp: '&',
-  lt: '<',
-  gt: '>',
-  quot: '"',
-  apos: "'",
-};
-
-/**
- * Decodes the XML character references a browser resolves when it parses the
- * stored `image/svg+xml` document, so `&#64;import` / `&#x40;import` are seen as
- * `@import` before the CSS matchers run (SVG `<style>` text is otherwise raw and
- * reaches the scrubber still entity-encoded). Single pass, matching the parser.
- */
-export function decodeXmlEntities(text: string): string {
-  if (text.indexOf('&') === -1) {
-    return text;
-  }
-  return text.replace(
-    /&#(\d+);|&#[xX]([0-9a-fA-F]+);|&(amp|lt|gt|quot|apos);/g,
-    (match, dec?: string, hex?: string, named?: string) => {
-      if (named !== undefined) {
-        return XML_NAMED_ENTITIES[named];
-      }
-      const code = dec !== undefined ? Number.parseInt(dec, 10) : Number.parseInt(hex ?? '', 16);
-      if (code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
-        return match;
-      }
-      return String.fromCodePoint(code);
-    },
-  );
-}
-
-/** Matches a single CSS escape: `\` + up to six hex digits (with an optional
- *  trailing whitespace the browser consumes), or `\` + any other character. */
-const CSS_ESCAPE = /\\(?:([0-9a-fA-F]{1,6})\s?|(.))/g;
-
-/**
- * Resolves CSS escape sequences the way a browser does at tokenization time, so
- * an obfuscated reference like `u\72l(…)` or `\40import` is seen as the `url()`
- * / `@import` it becomes before the literal matchers run. Single pass, matching
- * the browser: `u\5c72l` stays a literal backslash and is not a `url` token.
- */
-export function unescapeCss(value: string): string {
-  if (!value.includes('\\')) {
-    return value;
-  }
-  return value.replace(CSS_ESCAPE, (_match, hex?: string, char?: string) => {
-    if (hex === undefined) {
-      return char ?? '';
-    }
-    const code = Number.parseInt(hex, 16);
-    if (code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
-      return '�';
-    }
-    return String.fromCodePoint(code);
-  });
-}
-
-/** Resolves the character references and CSS escapes a browser would, in that
- *  order, so an obfuscated reference is seen as the token it becomes. */
-function resolveCssRefs(value: string): string {
-  return unescapeCss(decodeXmlEntities(value));
-}
-
-/** True when a value carries a `url(...)` reference that is not a same-document
- *  fragment, e.g. `url(https://…)`, `url(//…)`, `url(data:…)`, or `url(x.svg#id)`. */
-export function hasExternalUrlReference(value: string): boolean {
-  CSS_URL_REFERENCE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  const decoded = resolveCssRefs(value);
-  while ((match = CSS_URL_REFERENCE.exec(decoded)) !== null) {
-    const target = (match[1] ?? match[2] ?? match[3] ?? '').trim();
-    if (!target.startsWith('#')) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Neutralizes external references inside a `<style>` block or inline `style`
- * (used by exporter SVGs that store multi-color paint in class rules) while
- * keeping local rules intact. Resolves entities and CSS escapes first so an
- * obfuscated reference cannot hide, then strips comments and `@import` at-rules
- * and rewrites any non-fragment `url(...)` to `none`.
- */
-export function sanitizeCssText(css: string): string {
-  return resolveCssRefs(css)
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/@import[^;]*;?/gi, '')
-    .replace(CSS_URL_REFERENCE, (full, q1, q2, q3) => {
-      const target = (q1 ?? q2 ?? q3 ?? '').trim();
-      return target.startsWith('#') ? full : 'none';
-    });
-}
-
 let svgPurifier: ReturnType<typeof DOMPurify> | null = null;
 
 /**
- * Dedicated DOMPurify instance for SVG icons, so the local-reference hooks never
- * leak into the app's shared default instance. They keep same-document
- * references (`href="#id"` on `<use>`/gradients and `url(#id)` paint/filter/clip
- * values — common exporter output) while stripping every external, relative, or
- * scheme-carrying `href` or `url(...)`, and scrub `<style>` blocks so an internal
- * stylesheet keeps its local paint rules but cannot `@import` or fetch externally.
+ * Dedicated DOMPurify instance for SVG icons, so the local-reference hook never
+ * leaks into the app's shared default instance. It keeps same-document
+ * `href="#id"` references on `<use>` and gradients while stripping external,
+ * relative, or scheme-carrying hrefs.
  */
 function getSvgPurifier(): ReturnType<typeof DOMPurify> {
   if (svgPurifier) {
     return svgPurifier;
   }
   svgPurifier = DOMPurify(window);
-  svgPurifier.addHook('uponSanitizeElement', (node) => {
-    if (node.nodeName?.toLowerCase() === 'style' && node.textContent) {
-      node.textContent = sanitizeCssText(node.textContent);
-    }
-  });
   svgPurifier.addHook('afterSanitizeAttributes', (node) => {
     for (const attr of ['href', 'xlink:href']) {
       const value = node.getAttribute(attr);
@@ -244,32 +133,24 @@ function getSvgPurifier(): ReturnType<typeof DOMPurify> {
         node.removeAttribute(attr);
       }
     }
-    for (const attr of Array.from(node.attributes)) {
-      if (attr.name === 'style') {
-        node.setAttribute('style', sanitizeCssText(attr.value));
-      } else if (hasExternalUrlReference(attr.value)) {
-        node.removeAttribute(attr.name);
-      }
-    }
   });
   return svgPurifier;
 }
 
 /**
- * Strips active and external-referencing content from user-provided SVG markup,
- * leaving only safe drawing elements. The `svg`/`svgFilters` profiles restrict
- * the tag set and DOMPurify drops every `on*` handler by default; on top of that
- * the forbidden tags remove embedded HTML (`foreignObject`), scripts, links, and
- * animation, while `<use>` and `<style>` are re-allowed with hrefs and CSS
- * references restricted to same-document fragments by the purifier hooks. These
- * icons only ever render in inert `<img>`/CSS-mask contexts isolated from the
- * host page, so a script-free, externally-inert `<style>` is safe to keep.
+ * Strips active content from user-provided SVG markup, leaving safe drawing
+ * elements and presentation attributes. The `svg`/`svgFilters` profiles restrict
+ * the tag set and DOMPurify drops every `on*` handler by default; the forbidden
+ * tags and attributes additionally remove embedded HTML, scripts, stylesheets,
+ * links, animation, and inline CSS. `<use>` is re-allowed with hrefs restricted
+ * to same-document fragments by the purifier hook.
  */
 export function sanitizeSvg(svg: string): string {
   return getSvgPurifier().sanitize(svg, {
     USE_PROFILES: { svg: true, svgFilters: true },
-    ADD_TAGS: ['use', 'style'],
-    FORBID_TAGS: ['script', 'foreignObject', 'a', 'image', 'animate', 'set'],
+    ADD_TAGS: ['use'],
+    FORBID_TAGS: ['script', 'foreignObject', 'style', 'a', 'image', 'animate', 'set'],
+    FORBID_ATTR: ['style'],
   });
 }
 

@@ -63,11 +63,12 @@ export default function useAdaptiveIcon(
     monochrome: cachedVerdict(key),
   }));
 
-  /** Reset synchronously when the source changes so a verdict resolved for a
-   *  previous icon never tints the new one; seed from cache when available. */
-  if (state.key !== key) {
-    setState({ key, monochrome: cachedVerdict(key) });
-  }
+  useEffect(() => {
+    setState((prev) => {
+      const monochrome = cachedVerdict(key);
+      return prev.key === key && prev.monochrome === monochrome ? prev : { key, monochrome };
+    });
+  }, [key]);
 
   useEffect(() => {
     if (key == null) {

@@ -46,6 +46,13 @@ describe('CustomIcon', () => {
       expect(span?.style.maskImage).toBe('url("/a%22.svg")');
     });
 
+    it('escapes backslashes and newlines in the mask URL', () => {
+      const { container } = render(<CustomIcon src={'/a\\b\nc.svg'} alt="" monochrome />);
+
+      const span = container.querySelector('span');
+      expect(span?.style.maskImage).toBe('url("/a%5Cb%0Ac.svg")');
+    });
+
     it('does not render a probe image on the tinted path without an onError handler', () => {
       const { container } = render(<CustomIcon src="/glyph.svg" alt="" monochrome />);
 

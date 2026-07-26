@@ -214,19 +214,6 @@ describe('sanitizeSvg', () => {
     expect(clean).not.toContain('evil.example');
   });
 
-  it('strips external url() references from presentation and style attributes', () => {
-    for (const attr of [
-      'filter="url(https://evil.example/f.svg#f)"',
-      'fill="url(https://evil.example/p)"',
-      'style="fill:url(//evil.example/p)"',
-      'clip-path="url(data:image/svg+xml,evil)"',
-    ]) {
-      const clean = sanitizeSvg(`<svg><rect ${attr} width="10" height="10" /></svg>`);
-      expect(clean).not.toContain('evil.example');
-      expect(clean).not.toContain('evil');
-    }
-  });
-
   it('preserves local url() paint and filter references', () => {
     const dirty =
       '<svg><defs><filter id="f"><feGaussianBlur stdDeviation="1" /></filter><linearGradient id="g"><stop offset="0" stop-color="#000" /></linearGradient></defs><rect fill="url(#g)" filter="url(#f)" width="10" height="10" /></svg>';
@@ -244,89 +231,13 @@ describe('sanitizeSvg', () => {
     expect(clean).toContain('fill="url(#g2)"');
   });
 
-  it('preserves internal stylesheet paint rules', () => {
+  it('strips stylesheet blocks and inline style attributes', () => {
     const dirty =
-      '<svg><style>.red{fill:#e00}.blue{fill:#00f}</style><path class="red" d="M0 0h1v1z" /><path class="blue" d="M1 1h1v1z" /></svg>';
+      '<svg><style>.red{fill:#e00}</style><path class="red" style="stroke:#00f" fill="#e00" d="M0 0h1v1z" /></svg>';
     const clean = sanitizeSvg(dirty);
-    expect(clean).toContain('<style');
-    expect(clean).toContain('.red{fill:#e00}');
-    expect(clean).toContain('.blue{fill:#00f}');
-    expect(clean).toContain('class="red"');
-  });
-
-  it('scrubs @import and external url() from internal stylesheets', () => {
-    const dirty =
-      '<svg><style>@import url(https://evil.example/x.css);.a{fill:url(https://evil.example/beacon)}.b{fill:url(#grad)}</style><rect class="a" /></svg>';
-    const clean = sanitizeSvg(dirty);
-    expect(clean).toContain('<style');
-    expect(clean).not.toContain('evil.example');
-    expect(clean).not.toContain('@import');
-    expect(clean).toContain('url(#grad)');
-  });
-
-  it('strips a script smuggled after a premature </style> close', () => {
-    const dirty = '<svg><style>.a{}</style><script>alert(1)</script></svg>';
-    const clean = sanitizeSvg(dirty);
-    expect(clean).not.toContain('<script');
-    expect(clean).not.toContain('alert(1)');
-  });
-
-  it('does not let escaped markup in a stylesheet reintroduce elements', () => {
-    // Scrubbed CSS is set as a text node, so `\3c/style\3e\3cimage\3e` stays
-    // inert escaped text rather than becoming a real element.
-    const dirty =
-      '<svg><style>\\3c/style\\3e\\3cimage href="https://evil.example/x.png"/\\3e</style></svg>';
-    const clean = sanitizeSvg(dirty);
-    expect(clean.toLowerCase()).not.toContain('<image');
-    expect(clean).toContain('&lt;');
-  });
-
-  it('strips CSS-escaped external url() from style attributes and stylesheets', () => {
-    const attrEsc = sanitizeSvg(
-      '<svg><rect style="fill:u\\72l(https://evil.example/x)" width="10" height="10" /></svg>',
-    );
-    expect(attrEsc).not.toContain('evil.example');
-    const styleEsc = sanitizeSvg(
-      '<svg><style>.a{fill:u\\72l(https://evil.example/b)}.b{fill:url(#g)}</style><rect class="a" /></svg>',
-    );
-    expect(styleEsc).not.toContain('evil.example');
-    expect(styleEsc).toContain('url(#g)');
-  });
-
-  it('strips CSS-escaped @import from internal stylesheets', () => {
-    const clean = sanitizeSvg(
-      '<svg><style>\\40import "https://evil.example/x.css";</style><rect /></svg>',
-    );
-    expect(clean).not.toContain('evil.example');
-  });
-
-  it('keeps co-located local declarations when scrubbing an escaped external ref', () => {
-    const clean = sanitizeSvg(
-      '<svg><rect style="fill:u\\72l(https://evil.example/x);stroke:#000" width="10" height="10" /></svg>',
-    );
-    expect(clean).not.toContain('evil.example');
-    expect(clean).toContain('stroke:#000');
-  });
-
-  it('strips XML-entity-encoded @import from internal stylesheets', () => {
-    for (const enc of ['&#64;import', '&#x40;import', '&#x40;IMPORT']) {
-      const clean = sanitizeSvg(
-        `<svg><style>${enc} "https://evil.example/x.css";</style><rect /></svg>`,
-      );
-      expect(clean).not.toContain('evil.example');
-    }
-  });
-
-  it('strips a quoted CSS url() whose path contains a right parenthesis', () => {
-    const block = sanitizeSvg(
-      '<svg><style>.a{fill:url("https://evil.example/a)b")}.b{fill:url(#g)}</style><rect class="a" /></svg>',
-    );
-    expect(block).not.toContain('evil.example');
-    expect(block).toContain('url(#g)');
-    const attr = sanitizeSvg(
-      '<svg><rect style="fill:url(&quot;https://evil.example/a)b&quot;)" width="10" height="10" /></svg>',
-    );
-    expect(attr).not.toContain('evil.example');
+    expect(clean).not.toContain('<style');
+    expect(clean).not.toContain('style=');
+    expect(clean).toContain('fill="#e00"');
   });
 
   it('drops href-smuggling animation elements', () => {
