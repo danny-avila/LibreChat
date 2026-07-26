@@ -673,7 +673,21 @@ function Palette({
             style={{ width: 'var(--popover-anchor-width)' }}
             className="animate-composer-popover z-50 flex max-w-[95vw] flex-col overflow-hidden rounded-2xl border border-border-light bg-presentation shadow-lg outline-none"
           >
-            <div className="flex items-center gap-2 border-b border-border-light px-3 py-2">
+            {/* The whole row is the search target, not just the input: the icon
+                and the padding around it read as part of the field, so clicking
+                them has to land in the field too.
+
+                The popup is portaled but still a React descendant of the
+                composer box, so its clicks bubble through the React tree into
+                the box's own "focus the textarea" handler — which would take
+                the focus straight back off the field. */}
+            <div
+              onClick={(event) => {
+                event.stopPropagation();
+                inputRef.current?.focus();
+              }}
+              className="flex cursor-text items-center gap-2 border-b border-border-light px-3 py-2"
+            >
               <Search className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
               <input
                 ref={inputRef}
