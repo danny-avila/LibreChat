@@ -3,10 +3,10 @@ import { MAX_MCP_ICON_PATH_LENGTH } from 'librechat-data-provider';
 
 /**
  * Server-side sanitization for user-provided MCP server icons. The client
- * sanitizes uploaded SVGs before inlining them, but that runs in the browser
+ * sanitizes uploaded SVGs before encoding them as data URIs, but that runs in the browser
  * and is trivially bypassed by posting an `iconPath` straight to the API, so
  * every stored icon is re-sanitized here at the trust boundary before it is
- * persisted and served back to other users.
+ * persisted and returned to other users in MCP configuration responses.
  *
  * Only `data:image/svg+xml` values carry active content worth stripping; raster
  * data URIs, `http(s)` URLs, and relative paths render inertly through `<img>`
@@ -47,7 +47,6 @@ const ALLOWED_SVG_TAGS = [
   'pattern',
   'title',
   'desc',
-  'style',
   'filter',
   'feBlend',
   'feColorMatrix',
@@ -124,7 +123,6 @@ const ALLOWED_SVG_ATTRS = [
   'preserveAspectRatio',
   'id',
   'class',
-  'style',
   'href',
   'xlink:href',
   'filter',
@@ -181,127 +179,9 @@ const ALLOWED_SVG_ATTRS = [
   'tableValues',
 ];
 
-/** Matches every `url(...)` reference in a presentation/style value. A quoted
- *  target may contain `)` (capture groups 1/2), an unquoted one may not (group 3),
- *  so the target is `match[1] ?? match[2] ?? match[3]`. */
-const CSS_URL_REFERENCE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^'")]*))\s*\)/gi;
-
-/** The target of a `CSS_URL_REFERENCE` match, from whichever quoting group hit. */
-function urlTarget(match: RegExpExecArray | RegExpMatchArray): string {
-  return (match[1] ?? match[2] ?? match[3] ?? '').trim();
-}
-
-/** XML predefined entities — the only named references a `data:image/svg+xml`
- *  document (parsed as XML) decodes; unknown named entities make it fail to parse. */
-const XML_NAMED_ENTITIES: Record<string, string> = {
-  amp: '&',
-  lt: '<',
-  gt: '>',
-  quot: '"',
-  apos: "'",
-};
-
 /**
- * Decodes the XML character references a browser resolves when it parses the
- * stored `image/svg+xml` document, so `&#64;import` / `&#x40;import` are seen as
- * `@import` before the CSS matchers run (SVG `<style>` text is otherwise raw and
- * reaches this scrubber still entity-encoded). Single pass, matching the parser.
- */
-function decodeXmlEntities(text: string): string {
-  if (text.indexOf('&') === -1) {
-    return text;
-  }
-  return text.replace(
-    /&#(\d+);|&#[xX]([0-9a-fA-F]+);|&(amp|lt|gt|quot|apos);/g,
-    (match, dec: string | undefined, hex: string | undefined, named: string | undefined) => {
-      if (named !== undefined) {
-        return XML_NAMED_ENTITIES[named];
-      }
-      const code = dec !== undefined ? Number.parseInt(dec, 10) : Number.parseInt(hex ?? '', 16);
-      if (code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
-        return match;
-      }
-      return String.fromCodePoint(code);
-    },
-  );
-}
-
-/** Matches a single CSS escape: `\` + up to six hex digits (with an optional
- *  trailing whitespace the browser consumes), or `\` + any other character. */
-const CSS_ESCAPE = /\\(?:([0-9a-fA-F]{1,6})\s?|(.))/g;
-
-/**
- * Resolves CSS escape sequences the way a browser does at tokenization time, so
- * an obfuscated reference like `u\72l(…)` or `\40import` is seen as the `url()`
- * / `@import` it becomes before the literal matchers run. Single pass, matching
- * the browser: `u\5c72l` stays a literal backslash and is not a `url` token.
- */
-function unescapeCss(value: string): string {
-  if (!value.includes('\\')) {
-    return value;
-  }
-  return value.replace(CSS_ESCAPE, (_match, hex: string | undefined, char: string | undefined) => {
-    if (hex === undefined) {
-      return char ?? '';
-    }
-    const code = Number.parseInt(hex, 16);
-    if (code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
-      return '�';
-    }
-    return String.fromCodePoint(code);
-  });
-}
-
-/** Resolves the character references and CSS escapes a browser would, in that
- *  order, so an obfuscated reference is seen as the token it becomes. */
-function resolveCssRefs(value: string): string {
-  return unescapeCss(decodeXmlEntities(value));
-}
-
-/** True when a value carries a `url(...)` reference that is not a same-document
- *  fragment, e.g. `url(https://…)`, `url(//…)`, `url(data:…)`, or `url(x.svg#id)`. */
-function hasExternalUrlReference(value: string): boolean {
-  CSS_URL_REFERENCE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  const decoded = resolveCssRefs(value);
-  while ((match = CSS_URL_REFERENCE.exec(decoded)) !== null) {
-    if (!urlTarget(match).startsWith('#')) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/** Resolves entities/escapes, then strips comments and `@import` at-rules and
- *  rewrites external `url(...)` to `none`, keeping only local paint rules from a
- *  stylesheet or inline `style`. References are resolved first so an obfuscated
- *  one cannot hide from the matchers. */
-function sanitizeCssText(css: string): string {
-  return resolveCssRefs(css)
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/@import[^;]*;?/gi, '')
-    .replace(CSS_URL_REFERENCE, (full, q1, q2, q3) => {
-      const target = (q1 ?? q2 ?? q3 ?? '').trim();
-      return target.startsWith('#') ? full : 'none';
-    });
-}
-
-/** Scrubs the CSS inside every `<style>` block of an already-tag-sanitized SVG so
- *  an internal stylesheet keeps its local class paints but cannot fetch externally. */
-function scrubStyleBlocks(svg: string): string {
-  return svg.replace(
-    /(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi,
-    (_full, open, css, close) => `${open}${sanitizeCssText(css)}${close}`,
-  );
-}
-
-/**
- * Drops references that leave the document: any `href`/`xlink:href` that is not a
- * same-document fragment, and any single-value presentation attribute (`filter`,
- * `fill`, `mask`, `clip-path`, …) carrying a non-fragment `url(...)`. The
- * multi-declaration `style` attribute is scrubbed in place instead so its local
- * paint rules survive. All checks resolve CSS escapes first (see `unescapeCss`),
- * mirroring the client-side `sanitizeSvg` rule so stored icons cannot fetch.
+ * Drops `href`/`xlink:href` references that leave the document while preserving
+ * same-document fragments used by `<use>` and gradients.
  */
 function keepLocalReferences(tagName: string, attribs: sanitizeHtml.Attributes): sanitizeHtml.Tag {
   for (const [name, value] of Object.entries(attribs)) {
@@ -309,14 +189,6 @@ function keepLocalReferences(tagName: string, attribs: sanitizeHtml.Attributes):
       if (!value.trim().startsWith('#')) {
         delete attribs[name];
       }
-      continue;
-    }
-    if (name === 'style') {
-      attribs[name] = sanitizeCssText(value);
-      continue;
-    }
-    if (hasExternalUrlReference(value)) {
-      delete attribs[name];
     }
   }
   return { tagName, attribs };
@@ -327,17 +199,12 @@ function keepLocalReferences(tagName: string, attribs: sanitizeHtml.Attributes):
  * sensitive SVG names (`viewBox`, `linearGradient`, `clipPath`, …) survive the
  * round-trip; lowercasing them would break rendering. `allowedSchemes` is empty
  * as a second layer behind the fragment-only href transform: a fragment carries
- * no scheme, so nothing legitimate is affected. `<style>` is allowed
- * (`allowVulnerableTags`) because these icons only render in inert `<img>`/CSS-mask
- * contexts isolated from any host page — no script runs and, after `scrubStyleBlocks`
- * removes `@import`/external `url()`, no subresource loads — so an internal
- * stylesheet's local paint rules are safe to keep.
+ * no scheme, so nothing legitimate is affected.
  */
 const SVG_SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: ALLOWED_SVG_TAGS,
   allowedAttributes: { '*': ALLOWED_SVG_ATTRS },
   allowedSchemes: [],
-  allowVulnerableTags: true,
   transformTags: { '*': keepLocalReferences },
   parser: { lowerCaseTags: false, lowerCaseAttributeNames: false },
 };
@@ -410,13 +277,7 @@ export function sanitizeMcpIconPath(iconPath: string): string {
   if (svg == null) {
     return '';
   }
-  const sanitized = sanitizeHtml(svg, SVG_SANITIZE_OPTIONS);
-  const scrubbed = scrubStyleBlocks(sanitized);
-  /* `scrubStyleBlocks` splices un-escaped CSS back as raw markup, so an escaped
-   * sequence like `\3c/style\3e\3cimage/\3e` can reintroduce a real element past
-   * the allowlist. When a `<style>` block was actually rewritten, re-run the
-   * allowlist over the result to strip anything the un-escaping surfaced. */
-  const clean = scrubbed === sanitized ? sanitized : sanitizeHtml(scrubbed, SVG_SANITIZE_OPTIONS);
+  const clean = sanitizeHtml(svg, SVG_SANITIZE_OPTIONS);
   const encoded = `data:image/svg+xml;base64,${Buffer.from(clean, 'utf-8').toString('base64')}`;
   return encoded.length > MAX_MCP_ICON_PATH_LENGTH ? '' : encoded;
 }

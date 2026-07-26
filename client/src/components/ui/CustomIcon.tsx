@@ -33,7 +33,7 @@ export default function CustomIcon({
   const decorative = alt === '';
 
   if (shouldTint) {
-    const maskUrl = `url("${src.replace(/"/g, '%22')}")`;
+    const maskUrl = `url("${src.replace(/["\\\n\r\f]/g, encodeURIComponent)}")`;
     return (
       <span
         role={decorative ? undefined : 'img'}
