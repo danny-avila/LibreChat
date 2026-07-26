@@ -47,7 +47,7 @@ describe('Tray', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('renders one list holding every staged kind', () => {
+  it('groups every staged kind under one labelled chip list', () => {
     renderTray(
       [
         item({ id: 'quote:0', kind: 'quote', label: 'the second paragraph' }),
@@ -58,8 +58,9 @@ describe('Tray', () => {
 
     expect(screen.getByTestId('composer-tray')).toBeInTheDocument();
     expect(screen.getByTestId('file-row')).toBeInTheDocument();
-    expect(screen.getByTestId('composer-chip-quote')).toBeInTheDocument();
-    expect(screen.getByTestId('composer-chip-skill')).toBeInTheDocument();
+    const chipList = screen.getByRole('list', { name: 'com_ui_composer_staged_context' });
+    expect(chipList).toContainElement(screen.getByTestId('composer-chip-quote'));
+    expect(chipList).toContainElement(screen.getByTestId('composer-chip-skill'));
   });
 
   it('labels each remove button for its own kind', () => {
