@@ -221,6 +221,48 @@ export function detectInitialLanguage() {
   return normalizeLocale(cookieLang || storedLang || getNavigatorLanguage());
 }
 
+/**
+ * Per-locale UI string overrides from the server config (interface.i18nOverrides).
+ * Kept module-level so they can be re-applied whenever a locale bundle (re)loads —
+ * `ensureLocale` adds bundles with overwrite=true, which would otherwise clobber an
+ * override the first time a non-English locale is loaded after startup.
+ */
+let configuredOverrides: Partial<Record<SupportedLocale, TranslationResource>> = {};
+
+function applyOverrideFor(locale: SupportedLocale) {
+  const overrides = configuredOverrides[locale];
+  if (overrides && Object.keys(overrides).length > 0) {
+    i18n.addResourceBundle(locale, defaultNS, overrides, true, true);
+  }
+}
+
+/**
+ * Merge UI string overrides on top of the bundled translations. Safe to call
+ * repeatedly (e.g. once the per-user startup config resolves). react-i18next binds
+ * `languageChanged`/`loaded` but not `added`, so nudge a re-render with the current
+ * language after applying.
+ */
+export function applyI18nOverrides(overrides?: Record<string, Record<string, string>>): void {
+  configuredOverrides = {};
+  if (overrides) {
+    for (const [locale, map] of Object.entries(overrides)) {
+      if (map && typeof map === 'object') {
+        configuredOverrides[normalizeLocale(locale)] = map;
+      }
+    }
+  }
+  let applied = false;
+  for (const locale of Object.keys(configuredOverrides) as SupportedLocale[]) {
+    if (i18n.hasResourceBundle(locale, defaultNS)) {
+      applyOverrideFor(locale);
+      applied = true;
+    }
+  }
+  if (applied) {
+    void i18n.changeLanguage(i18n.language);
+  }
+}
+
 export async function ensureLocale(locale?: string | null): Promise<SupportedLocale> {
   const normalized = normalizeLocale(locale);
 
@@ -242,6 +284,9 @@ export async function ensureLocale(locale?: string | null): Promise<SupportedLoc
     loadingLocales[normalized] = loader()
       .then((module) => {
         i18n.addResourceBundle(normalized, defaultNS, module.default, true, true);
+        // Re-apply any configured overrides for this locale — the bundle we just
+        // added with overwrite=true would otherwise clobber them.
+        applyOverrideFor(normalized);
         loadedLocales.add(normalized);
         return normalized;
       })

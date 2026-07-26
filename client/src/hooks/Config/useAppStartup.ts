@@ -12,6 +12,7 @@ import type { TStartupConfig, TUser } from 'librechat-data-provider';
 import { useMCPToolsQuery, useMCPServersQuery } from '~/data-provider';
 import { cleanupTimestampedStorage } from '~/utils/timestamps';
 import useSpeechSettingsInit from './useSpeechSettingsInit';
+import { applyI18nOverrides } from '~/locales/i18n';
 import { useHasAccess } from '~/hooks';
 import store from '~/store';
 
@@ -55,6 +56,11 @@ export default function useAppStartup({
     }
     document.title = appTitle;
     localStorage.setItem(LocalStorageKeys.APP_TITLE, appTitle);
+  }, [startupConfig]);
+
+  /** Apply per-deployment UI string overrides (interface.i18nOverrides) */
+  useEffect(() => {
+    applyI18nOverrides(startupConfig?.interface?.i18nOverrides);
   }, [startupConfig]);
 
   /** Set the default spec's preset as default */

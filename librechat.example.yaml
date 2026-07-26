@@ -95,6 +95,14 @@ cache: true
 # Custom interface configuration
 interface:
   customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
+  # Per-locale UI string overrides, merged over the bundled translations on the
+  # client. Relabel any UI string by its i18n key without forking the client.
+  # Shape: { <locale>: { <translationKey>: <value> } }. Because `interface` resolves
+  # per principal, a role/group/user config override can carry its own overrides.
+  # i18nOverrides:
+  #   en:
+  #     com_nav_setting_mcp: 'Connectors'
+  #     com_ui_filter_mcp_servers: 'Search connectors'
   # Enable/disable file search as a chatarea selection (default: true)
   # Note: This setting does not disable the Agents File Search Capability.
   # To disable the Agents Capability, see the Agents Endpoint configuration instead.

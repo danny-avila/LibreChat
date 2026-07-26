@@ -1293,6 +1293,14 @@ export const interfaceSchema = z
       .optional(),
     termsOfService: termsOfServiceSchema.optional(),
     customWelcome: z.string().optional(),
+    /**
+     * Per-locale UI string overrides, merged over the bundled i18n resources on
+     * the client: `{ [locale]: { [translationKey]: value } }`. Lets a deployment
+     * relabel any UI string (e.g. rename "MCP Settings" to "Connectors") without
+     * forking the client. Because `interface` resolves per principal, a role/group/
+     * user config override can carry its own overrides for white-labeled tenants.
+     */
+    i18nOverrides: z.record(z.string(), z.record(z.string(), z.string())).optional(),
     mcpServers: mcpServersSchema.optional(),
     modelSelect: z.boolean().optional(),
     parameters: z.boolean().optional(),
