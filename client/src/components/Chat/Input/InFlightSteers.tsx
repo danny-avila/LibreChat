@@ -458,7 +458,9 @@ const InFlightSteer = memo(function InFlightSteer({
       /* pointer-events-auto: the overlay container disables events so wheeling
        * over the gaps reaches the messages behind; each bubble re-enables them
        * for its own controls and internal scroll. */
-      className="group pointer-events-auto flex flex-col items-end gap-1.5"
+      /* Constrain the shrink-wrapped group to the overlay width so a single
+       * unbroken word has a box against which `break-words` can wrap. */
+      className="group pointer-events-auto flex min-w-0 max-w-full flex-col items-end gap-1.5"
     >
       {(images.length > 0 || others.length > 0) && (
         <div className="flex flex-wrap items-center justify-end gap-2">

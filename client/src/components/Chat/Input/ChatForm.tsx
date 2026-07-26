@@ -31,34 +31,33 @@ import {
   useAddedChatContext,
   useAssistantsMapContext,
 } from '~/Providers';
-import PendingManualSkillsChips from './PendingManualSkillsChips';
-import usePastedTextEdit from '~/hooks/Files/usePastedTextEdit';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import InterruptSteerButton from './InterruptSteerButton';
-import PastedTextDialog from './Files/PastedTextDialog';
+import useComposerItems from '~/hooks/Input/useComposerItems';
+import { cn, getModelSpec, removeFocusRings } from '~/utils';
+import useAttachTarget from '~/hooks/Input/useAttachTarget';
+import Hints, { COMPOSER_HINT_ID } from './Composer/Hints';
 import DuringRunSendButton from './DuringRunSendButton';
 import ProjectLandingChip from '../ProjectLandingChip';
+import useDictation from '~/hooks/Input/useDictation';
 import { useGetStartupConfig } from '~/data-provider';
-import { mainTextareaId, BadgeItem } from '~/common';
-import PendingSteerChips from './PendingSteerChips';
-import PendingQuoteChips from './PendingQuoteChips';
-import AttachFileChat from './Files/AttachFileChat';
 import useSteering from '~/hooks/Chat/useSteering';
-import FileFormChat from './Files/FileFormChat';
+import { BadgeRowProvider } from '~/Providers';
 import InFlightSteers from './InFlightSteers';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
 import SkillsCommand from './SkillsCommand';
-import AudioRecorder from './AudioRecorder';
-import AutoPlayAudio from './AutoPlayAudio';
+import Waveform from './Composer/Waveform';
 import CollapseChat from './CollapseChat';
+import { mainTextareaId } from '~/common';
 import QuoteButton from './QuoteButton';
-import TokenUsage from './TokenUsage';
+import StreamAudio from './StreamAudio';
+import ToolDialogs from './ToolDialogs';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
-import EditBadges from './EditBadges';
-import BadgeRow from './BadgeRow';
+import Tray from './Composer/Tray';
+import Bar from './Composer/Bar';
 import Mention from './Mention';
 import store from '~/store';
 
@@ -92,6 +91,9 @@ const ChatForm = memo(function ChatForm({
 }: ChatFormProps) {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  /** The palette anchors to the whole composer, not to its own button, so it
+   *  spans the composer width and sits flush above it. */
+  const composerBoxRef = useRef<HTMLDivElement>(null);
   useFocusChatEffect(textAreaRef);
   const localize = useLocalize();
 
@@ -99,7 +101,6 @@ const ChatForm = memo(function ChatForm({
   const [, setIsScrollable] = useState(false);
   const [visualRowCount, setVisualRowCount] = useState(1);
   const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
-  const [backupBadges, setBackupBadges] = useState<Pick<BadgeItem, 'id'>[]>([]);
 
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
@@ -109,8 +110,6 @@ const ChatForm = memo(function ChatForm({
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
   const isTemporary = useRecoilValue(store.isTemporary);
 
-  const [badges, setBadges] = useRecoilState(store.chatBadges);
-  const [isEditingBadges, setIsEditingBadges] = useRecoilState(store.isEditingBadges);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
   const plusPopoverAtom = useMemo(() => store.showPlusPopoverFamily(index), [index]);
   const mentionPopoverAtom = useMemo(() => store.showMentionPopoverFamily(index), [index]);
@@ -133,8 +132,17 @@ const ChatForm = memo(function ChatForm({
     () => getModelSpec({ specName: conversation?.spec, startupConfig }),
     [conversation?.spec, startupConfig],
   );
-  const hideBadgeRow = modelSpec?.hideBadgeRow === true;
-  const filesLoading = useMemo(() => hasIncompleteFiles(files), [files]);
+  /** Agents and assistants carry their own tool configuration, so the composer's
+   *  ephemeral tool controls only apply elsewhere — and a spec can suppress them
+   *  outright. Same gate the old `showEphemeralBadges` prop applied. */
+  const showTools = useMemo(
+    () =>
+      !!endpoint &&
+      modelSpec?.hideBadgeRow !== true &&
+      !isAgentsEndpoint(endpoint) &&
+      !isAssistantsEndpoint(endpoint),
+    [endpoint, modelSpec?.hideBadgeRow],
+  );
   const conversationId = useMemo(
     () => conversation?.conversationId ?? Constants.NEW_CONVO,
     [conversation?.conversationId],
@@ -191,7 +199,7 @@ const ChatForm = memo(function ChatForm({
     : (answerMode.otherLabel ?? localize('com_ui_something_else'));
   /** The composer is not a plain chat composer: it either IS this pause's
    *  answer box, or is locked behind the batch card that owns the answer. A
-   *  collapsed batch is neither — it hands the composer back to the thread. */
+   *  collapsed batch is neither, it hands the composer back to the thread. */
   const composerReserved = answerMode.composerAnswers || answerMode.composerLocked;
 
   useAutoSave({
@@ -466,26 +474,20 @@ const ChatForm = memo(function ChatForm({
     }
   }, [textValue]);
 
-  useEffect(() => {
-    if (isEditingBadges && backupBadges.length === 0) {
-      setBackupBadges([...badges]);
-    }
-  }, [isEditingBadges, badges, backupBadges.length]);
-
-  const handleSaveBadges = useCallback(() => {
-    setIsEditingBadges(false);
-    setBackupBadges([]);
-  }, [setIsEditingBadges, setBackupBadges]);
-
-  const handleCancelBadges = useCallback(() => {
-    if (backupBadges.length > 0) {
-      setBadges([...backupBadges]);
-    }
-    setIsEditingBadges(false);
-    setBackupBadges([]);
-  }, [backupBadges, setBadges, setIsEditingBadges]);
-
   const isMoreThanThreeRows = visualRowCount > 3;
+
+  const composerItems = useComposerItems(conversationId);
+  const attachTarget = useAttachTarget(conversation, disableInputs);
+  const dictation = useDictation({ ask: submitMessage, methods, isSubmitting });
+  const uploadingCount = useMemo(() => {
+    let count = 0;
+    for (const file of files.values()) {
+      if (file.progress < 1) {
+        count++;
+      }
+    }
+    return count;
+  }, [files]);
 
   /** One button slot while a run is generating: with composer text the send
    *  button takes over (Enter steers/queues; hover reveals all actions);
@@ -493,14 +495,24 @@ const ChatForm = memo(function ChatForm({
   const duringRunSlot = (() => {
     if (steering.duringRunActive && (textValue?.trim() ?? '') !== '') {
       return (
-        <DuringRunSendButton
-          ref={submitButtonRef}
-          control={methods.control}
-          steering={steering}
-          getText={() => methods.getValues('text')}
-          onConsumed={() => methods.reset()}
-          disabled={filesLoading}
-        />
+        <>
+          {steering.canControlGeneration && (
+            <InterruptSteerButton
+              steering={steering}
+              getText={() => methods.getValues('text')}
+              onConsumed={() => methods.reset()}
+              disabled={filesLoading}
+            />
+          )}
+          <DuringRunSendButton
+            ref={submitButtonRef}
+            control={methods.control}
+            steering={steering}
+            getText={() => methods.getValues('text')}
+            onConsumed={() => methods.reset()}
+            disabled={filesLoading}
+          />
+        </>
       );
     }
     if (showStopButton) {
@@ -508,6 +520,13 @@ const ChatForm = memo(function ChatForm({
     }
     return null;
   })();
+
+  /* The empty-conversation screen. Drives both how far the composer floats off
+     the bottom and whether the ambient tips under it are worth their row. */
+  const isLanding =
+    (conversationId == null || conversationId === Constants.NEW_CONVO) &&
+    !isSubmitting &&
+    (conversation?.messages?.length ?? 0) === 0;
 
   const baseClasses = useMemo(
     () =>
@@ -542,15 +561,18 @@ const ChatForm = memo(function ChatForm({
       className={cn(
         'mx-auto flex w-full flex-row gap-3 transition-[max-width] duration-300 sm:px-2',
         maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
-        centerFormOnLanding &&
-          (conversationId == null || conversationId === Constants.NEW_CONVO) &&
-          !isSubmitting &&
-          conversation?.messages?.length === 0
-          ? 'transition-all duration-200 sm:mb-28'
-          : 'sm:mb-10',
+        /* In a conversation the composer sits close to the edge: the thread is
+           what the space belongs to, and the footer below already separates it
+           from the window. The landing screen keeps its float. */
+        centerFormOnLanding && isLanding ? 'transition-all duration-200 sm:mb-36' : 'sm:mb-8',
       )}
     >
-      <div className="relative flex h-full flex-1 items-stretch md:flex-col">
+      {/* `min-w-0`: a flex item's automatic minimum size is its content's
+          min-content width, and one long unbroken word in a queued message
+          propagates all the way up here — the composer stretched past the
+          thread and its chips ran off the side. Zeroing it lets the width come
+          from the form, so the chips inside truncate instead. */}
+      <div className="relative flex h-full min-w-0 flex-1 items-stretch md:flex-col">
         {/* Primary composer owns the selection popup so split-view doesn't double it. */}
         {index === 0 && quotesEnabled && <QuoteButton conversationId={conversationId} />}
         {/* `relative` anchors the in-flight steer overlay, which floats above
@@ -592,50 +614,41 @@ const ChatForm = memo(function ChatForm({
               agentId={conversation?.agent_id}
             />
             <div
+              ref={composerBoxRef}
               onClick={handleContainerClick}
               className={cn(
-                'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl pb-4 sm:rounded-3xl sm:pb-0',
-                composerSurfaceClasses(),
-                isTextAreaFocused ? composerSurfaceShadow.focused : composerSurfaceShadow.blurred,
-                /* Temporary-chat accent is a ChatForm-only override, not part of
-                   the shared composer-surface decision. */
-                isTemporary && 'border-violet-800/60 bg-violet-950/10',
+                /* Flat by default with a border-strength step on focus, rather
+                   than a growing shadow — both reference composers sit flush
+                   with the page instead of floating over it. */
+                'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl border pb-4 text-text-primary transition-all duration-200 sm:rounded-3xl sm:pb-0',
+                isTextAreaFocused && 'ring-1',
+                isTemporary
+                  ? cn(
+                      'border-violet-800/60 bg-violet-950/10',
+                      isTextAreaFocused && 'border-violet-700 ring-violet-800/40',
+                    )
+                  : cn(
+                      'bg-surface-chat',
+                      isTextAreaFocused
+                        ? 'border-border-medium ring-border-light'
+                        : 'border-border-light',
+                     ),
               )}
             >
               {project ? <ProjectLandingChip project={project} /> : null}
               <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
-              <PendingManualSkillsChips conversationId={conversationId} />
-              {quotesEnabled && <PendingQuoteChips conversationId={conversationId} />}
-              {steering.enabled && (
-                <PendingSteerChips
-                  conversationId={conversationId}
-                  steering={steering}
-                  onEditToComposer={editToComposer}
-                  onRestoreToComposer={restoreReclaimedSteer}
-                />
-              )}
-              {/* WIP */}
-              <EditBadges
-                isEditingChatBadges={isEditingBadges}
-                handleCancelBadges={handleCancelBadges}
-                handleSaveBadges={handleSaveBadges}
-                setBadges={setBadges}
-              />
-              <FileFormChat
-                index={index}
+              <Tray
+                items={composerItems}
+                conversationId={conversationId}
                 conversation={conversation}
                 files={files}
                 setFiles={setFiles}
                 setFilesLoading={setFilesLoading}
-                isPastedTextFile={isPastedTextFile}
-                isPasteActionPending={isPasteActionPending}
-                onEditPastedText={pastedTextEdit.openEditor}
-                onMovePastedTextInline={pastedTextEdit.moveInline}
-              />
-              <PastedTextDialog
-                edit={pastedTextEdit.editing}
-                onClose={pastedTextEdit.closeEditor}
-                onSave={pastedTextEdit.saveEdit}
+                isRTL={isRTL}
+                steering={steering}
+                steeringEnabled={steering.enabled}
+                onEditToComposer={editToComposer}
+                onRestoreToComposer={restoreReclaimedSteer}
               />
               {endpoint && (
                 <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
@@ -679,6 +692,7 @@ const ChatForm = memo(function ChatForm({
                       onFocus={handleTextareaFocus}
                       onBlur={handleTextareaBlur}
                       aria-label={localize('com_ui_message_input')}
+                      aria-describedby={COMPOSER_HINT_ID}
                       onClick={handleFocusOrClick}
                       style={{ height: 44, overflowY: 'auto' }}
                       className={cn(
@@ -687,92 +701,94 @@ const ChatForm = memo(function ChatForm({
                         'scrollbar-hover transition-[max-height] duration-200 disabled:cursor-not-allowed',
                       )}
                     />
-                  </div>
-                  <div className="flex flex-col items-start justify-start pr-2.5 pt-1.5">
-                    <CollapseChat
-                      isCollapsed={isCollapsed}
-                      isScrollable={isMoreThanThreeRows}
-                      setIsCollapsed={setIsCollapsed}
-                    />
+                    {dictation.active && (textValue?.trim() ?? '') === '' && (
+                      /* Stands in for the placeholder: same inset, same line, so
+                         it reads as the input listening rather than as a widget
+                         bolted on. Once words arrive the transcript takes over. */
+                      <Waveform
+                        levels={dictation.levels}
+                        className={cn(
+                          'pointer-events-none absolute inset-y-0 h-full',
+                          isMoreThanThreeRows ? 'left-5 right-2' : 'inset-x-5',
+                        )}
+                      />
+                    )}
+                    {/* Sits over the fade scrim in the corner of the input
+                        rather than in its own column beside it, so a long draft
+                        does not push an orphaned control off to the side. */}
+                    <div className="absolute bottom-1 right-2 z-10">
+                      <CollapseChat
+                        isCollapsed={isCollapsed}
+                        isScrollable={isMoreThanThreeRows}
+                        setIsCollapsed={setIsCollapsed}
+                      />
+                    </div>
                   </div>
                 </div>
               )}
-              <div
-                className={cn(
-                  '@container items-between flex gap-2 pb-2',
-                  isRTL ? 'flex-row-reverse' : 'flex-row',
-                )}
+              <BadgeRowProvider
+                conversationId={conversationId}
+                specName={conversation?.spec}
+                isSubmitting={isSubmitting}
               >
-                <div className={`${isRTL ? 'mr-2' : 'ml-2'}`}>
-                  <AttachFileChat
-                    conversation={conversation}
-                    disableInputs={disableInputs}
-                    files={files}
-                    setFiles={setFiles}
-                    setFilesLoading={setFilesLoading}
-                  />
-                </div>
-                <BadgeRow
-                  showEphemeralBadges={
-                    !!endpoint &&
-                    !hideBadgeRow &&
-                    !isAgentsEndpoint(endpoint) &&
-                    !isAssistantsEndpoint(endpoint)
-                  }
-                  isSubmitting={isSubmitting}
+                <Bar
+                  index={index}
+                  isRTL={isRTL}
+                  disabled={disableInputs}
+                  agentId={conversation?.agent_id}
+                  endpoint={endpoint}
+                  endpointType={attachTarget.endpointType}
+                  endpointFileConfig={attachTarget.endpointFileConfig}
+                  useResponsesApi={attachTarget.useResponsesApi}
                   conversationId={conversationId}
-                  specName={conversation?.spec}
-                  onChange={setBadges}
-                  isInChat={
-                    Array.isArray(conversation?.messages) && conversation.messages.length >= 1
+                  conversation={conversation}
+                  files={files}
+                  setFiles={setFiles}
+                  setFilesLoading={setFilesLoading}
+                  canAttach={attachTarget.canAttach}
+                  anchorRef={composerBoxRef}
+                  showTools={showTools}
+                  isSubmitting={isSubmitting}
+                  showSpeech={SpeechToText}
+                  speechDisabled={
+                    disableInputs || isNotAppendable || answerMode.composerLocked
+                  }
+                  dictation={dictation}
+                  actionSlot={
+                    isSubmitting &&
+                    (showStopButton || steering.duringRunActive) &&
+                    !answerMode.composerAnswers
+                      ? duringRunSlot
+                      : endpoint && (
+                          <SendButton
+                            ref={submitButtonRef}
+                            control={methods.control}
+                            fileCount={submittableFileCount}
+                            disabled={
+                              filesLoading ||
+                              disableInputs ||
+                              isNotAppendable ||
+                              answerMode.composerLocked ||
+                              (isSubmitting && !answerMode.composerAnswers)
+                            }
+                          />
+                        )
                   }
                 />
-                <div className="mx-auto flex" />
-                <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
-                {SpeechToText && (
-                  <AudioRecorder
-                    methods={methods}
-                    ask={submitMessage}
-                    disabled={disableInputs || isNotAppendable}
-                    isSubmitting={isSubmitting}
-                  />
-                )}
-                {steering.duringRunActive &&
-                  steering.canControlGeneration &&
-                  (textValue?.trim() ?? '') !== '' && (
-                    <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
-                      <InterruptSteerButton
-                        steering={steering}
-                        getText={() => methods.getValues('text')}
-                        onConsumed={() => methods.reset()}
-                        disabled={filesLoading}
-                      />
-                    </div>
-                  )}
-                <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
-                  {isSubmitting &&
-                  (showStopButton || steering.duringRunActive) &&
-                  !answerMode.composerAnswers
-                    ? duringRunSlot
-                    : endpoint && (
-                        <SendButton
-                          ref={submitButtonRef}
-                          control={methods.control}
-                          fileCount={submittableFileCount}
-                          disabled={
-                            filesLoading ||
-                            disableInputs ||
-                            isNotAppendable ||
-                            answerMode.composerLocked ||
-                            (isSubmitting && !answerMode.composerAnswers)
-                          }
-                        />
-                      )}
-                </div>
-              </div>
-              {TextToSpeech && automaticPlayback && <AutoPlayAudio index={index} />}
+                <ToolDialogs />
+              </BadgeRowProvider>
+              {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
             </div>
           </div>
+          {/* Sibling of the composer row, not a child: inside that flex-row it
+              would lay out as a narrow column beside the box. */}
+          <Hints
+            hasText={(textValue?.trim() ?? '') !== ''}
+            isSubmitting={isSubmitting}
+            duringRunActive={steering.duringRunActive}
+            answerModeActive={answerMode.active}
+            uploadingCount={uploadingCount}
+          />
         </div>
       </div>
     </form>
