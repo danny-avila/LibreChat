@@ -1,7 +1,7 @@
 import React, { memo, useMemo, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { TooltipAnchor, SendIcon } from '@librechat/client';
-import { X, Mic, Check, Square, ChevronDown } from 'lucide-react';
+import { Mic, Check, Square, ChevronDown } from 'lucide-react';
 import type { TConversation, EModelEndpoint, EndpointFileConfig } from 'librechat-data-provider';
 import type { PaletteEntry, PaletteMode } from '~/hooks/Input/usePaletteEntries';
 import type { Dictation } from '~/hooks/Input/useDictation';
@@ -243,8 +243,11 @@ function Bar({
       chipsFitInline(packedEntries, widths, rowWidth - plusWidth - controlsWidth - CHIP_GAP * 2),
     [packedEntries, widths, rowWidth, plusWidth, controlsWidth],
   );
-  const above = inlineChips ? EMPTY_ENTRIES : packedEntries;
-  const inline = inlineChips ? packedEntries : EMPTY_ENTRIES;
+  /* The recording controls take the bottom row over, so every chip moves into
+     the block above and leaves with it rather than being cut off mid-row. */
+  const dictating = dictation.active || dictation.transcribing;
+  const above = inlineChips && !dictating ? EMPTY_ENTRIES : packedEntries;
+  const inline = inlineChips && !dictating ? packedEntries : EMPTY_ENTRIES;
 
   const rowClass = cn(
     'flex flex-wrap items-center gap-1.5',
@@ -266,56 +269,43 @@ function Bar({
     />
   );
 
-  /* While dictating the bar hands its three buttons over: `+` cancels, the mic
-     stops into the composer, and send transcribes and sends. Everything else
-     steps aside so the trace gets the full width. */
-  if (dictation.active || dictation.transcribing) {
-    return (
-      <div
-        className={cn(rowClass, 'flex-nowrap px-2 pb-2')}
-        role="group"
-        aria-label={localize('com_ui_listening')}
-      >
-        <RoundButton label={localize('com_ui_cancel')} onClick={dictation.cancel}>
-          <X className="size-5" aria-hidden="true" />
-        </RoundButton>
-        <div className="flex min-w-0 flex-1 items-center px-1">
-          <span className="text-xs tabular-nums text-text-secondary">
-            {dictation.transcribing
-              ? localize('com_ui_transcribing')
-              : formatElapsed(dictation.elapsed)}
-          </span>
-        </div>
-        <RoundButton label={localize('com_ui_stop')} onClick={dictation.stopToComposer}>
-          <Square className="size-4 fill-current" aria-hidden="true" />
-        </RoundButton>
-        <RoundButton
-          primary
-          label={localize('com_nav_send_message')}
-          onClick={dictation.stopAndSend}
-        >
-          <SendIcon size={18} />
-        </RoundButton>
-      </div>
-    );
-  }
-
   return (
     <div ref={rootRef} className={barClass}>
       {/* Full-width rows, so the chips run right across the composer including
           the corner the `+` sits in. Labelled the same as the row below: one
-          set of tools that happens to need two rows to fit. */}
-      {above.length > 0 && (
-        <div role="list" aria-label={localize('com_ui_composer_tools')} className={rowClass}>
-          {above.map(renderChip)}
+          set of tools that happens to need two rows to fit.
+
+          Wrapped in a `0fr`/`1fr` grid rather than dropped outright while
+          dictating: height has nothing to animate between unless something
+          supplies the two ends, and this supplies them without measuring. */}
+      <div
+        className={cn(
+          'grid transition-[grid-template-rows,opacity] duration-200 ease-out',
+          above.length > 0 && !dictating
+            ? 'grid-rows-[1fr] opacity-100'
+            : 'grid-rows-[0fr] opacity-0',
+        )}
+      >
+        <div className="overflow-hidden">
+          <div
+            role="list"
+            aria-label={localize('com_ui_composer_tools')}
+            className={cn(rowClass, 'pb-1.5')}
+          >
+            {above.map(renderChip)}
+          </div>
         </div>
-      )}
+      </div>
       <div ref={rowRef} className={rowClass}>
+        {/* Never unmounted, so its glyph can turn into the close mark rather
+            than one icon being swapped for another. */}
         <span ref={plusRef} className="shrink-0">
           <Palette
             index={index}
             entries={entries}
             disabled={disabled}
+            dictating={dictating}
+            onCancel={dictation.cancel}
             agentId={agentId}
             endpoint={endpoint}
             endpointType={endpointType}
@@ -337,23 +327,74 @@ function Bar({
           {inline.map(renderChip)}
         </div>
         {/* Auto margin on the main-start side, so the group sits at the end of
-            the row whether or not chips share it. */}
+            the row whether or not chips share it.
+
+            The mic and the send button hold their places through a recording:
+            each takes over the job next to it (stop, and stop-and-send) rather
+            than being replaced by a control that slides in somewhere else. Only
+            what has no job during a recording actually moves. */}
         <div
           ref={controlsRef}
           className={cn('flex shrink-0 items-center gap-1.5', isRTL ? 'mr-auto' : 'ml-auto')}
         >
-          <Thinking />
-          <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
+          {/* One cell holding both: the settled controls drop out of it as the
+              elapsed time rises into their place, and the row keeps one width
+              throughout so nothing beside it shifts. */}
+          <div className="grid">
+            <div
+              aria-hidden={dictating}
+              className={cn(
+                'col-start-1 row-start-1 flex items-center justify-end gap-1.5',
+                'transition-[transform,opacity] duration-200 ease-out',
+                dictating
+                  ? 'pointer-events-none translate-y-3 opacity-0'
+                  : 'translate-y-0 opacity-100',
+              )}
+            >
+              <Thinking />
+              <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
+            </div>
+            <div
+              aria-hidden={!dictating}
+              className={cn(
+                'col-start-1 row-start-1 flex items-center justify-end px-1',
+                'transition-[transform,opacity] duration-200 ease-out',
+                dictating
+                  ? 'translate-y-0 opacity-100'
+                  : 'pointer-events-none translate-y-3 opacity-0',
+              )}
+            >
+              <span className="text-xs tabular-nums text-text-secondary">
+                {dictation.transcribing
+                  ? localize('com_ui_transcribing')
+                  : formatElapsed(dictation.elapsed)}
+              </span>
+            </div>
+          </div>
           {showSpeech && (
             <RoundButton
-              label={localize('com_ui_use_micrphone')}
-              onClick={dictation.start}
-              disabled={speechDisabled}
+              label={dictating ? localize('com_ui_stop') : localize('com_ui_use_micrphone')}
+              onClick={dictating ? dictation.stopToComposer : dictation.start}
+              disabled={speechDisabled && !dictating}
             >
-              <Mic className="size-5" aria-hidden="true" />
+              {dictating ? (
+                <Square className="size-4 fill-current" aria-hidden="true" />
+              ) : (
+                <Mic className="size-5" aria-hidden="true" />
+              )}
             </RoundButton>
           )}
-          {actionSlot}
+          {dictating ? (
+            <RoundButton
+              primary
+              label={localize('com_nav_send_message')}
+              onClick={dictation.stopAndSend}
+            >
+              <SendIcon size={18} />
+            </RoundButton>
+          ) : (
+            actionSlot
+          )}
         </div>
       </div>
       {mcpConfigProps && (
