@@ -515,15 +515,21 @@ router.put(
   },
 );
 
-router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
-  try {
-    const { conversationId, messageId } = req.params;
-    await db.deleteMessages({ messageId, conversationId, user: req.user.id });
-    res.status(204).send();
-  } catch (error) {
-    logger.error('Error deleting message:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+router.delete(
+  '/:conversationId/:messageId',
+  validateMessageReq,
+  configMiddleware,
+  async (req, res) => {
+    try {
+      const { conversationId, messageId } = req.params;
+      await db.deleteMessages({ messageId, conversationId, user: req.user.id });
+      await enforceForcedRetention(req, conversationId);
+      res.status(204).send();
+    } catch (error) {
+      logger.error('Error deleting message:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
 module.exports = router;
