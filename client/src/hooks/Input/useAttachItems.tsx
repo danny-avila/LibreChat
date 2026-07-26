@@ -59,6 +59,9 @@ export interface AttachEntry {
   id: string;
   label: string;
   icon: React.ReactNode;
+  /** Sending the file to the model, which is what nearly every upload means.
+   *  The rest go to a tool and are folded away behind a disclosure. */
+  primary?: boolean;
   onSelect: () => void;
 }
 
@@ -192,6 +195,7 @@ export default function useAttachItems({
         items.push({
           id: `${prefix}:provider`,
           label: localize('com_ui_upload_provider'),
+          primary: true,
           icon: <FileImageIcon className="icon-md" aria-hidden="true" />,
           onSelect: () => {
             setToolResource(undefined);
@@ -211,6 +215,7 @@ export default function useAttachItems({
         items.push({
           id: `${prefix}:image`,
           label: localize('com_ui_upload_image_input'),
+          primary: true,
           icon: <ImageUpIcon className="icon-md" aria-hidden="true" />,
           onSelect: () => {
             setToolResource(undefined);
@@ -269,7 +274,10 @@ export default function useAttachItems({
     for (const item of build(() => setIsSharePointDialogOpen(true), 'sharepoint')) {
       local.push({
         ...item,
-        label: `${localize('com_files_upload_sharepoint')} — ${item.label}`,
+        /* Never primary, even the provider row: SharePoint is a second way to
+           reach a destination the local picker already offers. */
+        primary: false,
+        label: `${item.label} (${localize('com_files_upload_sharepoint')})`,
         icon: <SharePointIcon className="icon-md" aria-hidden="true" />,
       });
     }
