@@ -133,6 +133,8 @@ const googleModels = {
   'gemini-3.1': 1000000,
   'gemini-3.1-flash-lite': 1000000,
   'gemini-3.5-flash': 1048576,
+  'gemini-3.5-flash-lite': 1048576,
+  'gemini-3.6-flash': 1048576,
 };
 
 const anthropicModels = {
@@ -170,6 +172,7 @@ const anthropicModels = {
   'claude-opus-4-6': 1000000,
   'claude-opus-4-7': 1000000,
   'claude-opus-4-8': 1000000,
+  'claude-opus-5': 1000000,
   'claude-fable-5': 1000000,
   'claude-mythos-5': 1000000,
 };
@@ -470,6 +473,7 @@ const anthropicMaxOutputs = {
   'claude-opus-4-6': 128000,
   'claude-opus-4-7': 128000,
   'claude-opus-4-8': 128000,
+  'claude-opus-5': 128000,
   'claude-fable-5': 128000,
   'claude-mythos-5': 128000,
   'claude-3.5-sonnet': 8192,

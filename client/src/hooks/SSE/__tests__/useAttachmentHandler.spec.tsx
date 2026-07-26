@@ -144,6 +144,37 @@ describe('useAttachmentHandler upsert-by-file_id', () => {
     expect(ctx.list).toHaveLength(2);
   });
 
+  it('keeps sibling tool calls separate when they share a file_id (distinct toolCallIds)', () => {
+    /* Two background code calls regenerated the same filename — same
+     * claimed file_id, different toolCallId. Each card anchors its own
+     * attachment, so the second emit must append, not replace. A bare
+     * update (no toolCallId) still merges by file key (wildcard). */
+    const ctx = setup();
+    ctx.handle(makeAttachment({ status: 'ready' }));
+    ctx.handle(makeAttachment({ status: 'ready', toolCallId: 'tc-2' }));
+    expect(ctx.list).toHaveLength(2);
+  });
+
+  it('keeps handoff agents separate when file_id AND toolCallId collide (distinct agentIds)', () => {
+    /* Two handoff agents both emitted `call_0` and wrote the same
+     * filename — same claimed file_id, same provider toolCallId,
+     * different agentId. Merging would overwrite the first agent's
+     * agentId and leave ContentParts one attachment short. A record
+     * with no agentId still merges (wildcard, single-agent runs). */
+    const ctx = setup();
+    ctx.handle({ ...makeAttachment({ status: 'ready' }), agentId: 'agent_a' } as TAttachment);
+    ctx.handle({ ...makeAttachment({ status: 'ready' }), agentId: 'agent_b' } as TAttachment);
+    expect(ctx.list).toHaveLength(2);
+    expect(ctx.list.map((a) => (a as { agentId?: string }).agentId).sort()).toEqual([
+      'agent_a',
+      'agent_b',
+    ]);
+    ctx.handle(makeAttachment({ status: 'failed', previewError: 'timeout' }));
+    /* Bare-agent update merged into the FIRST compatible entry, not appended. */
+    expect(ctx.list).toHaveLength(2);
+    expect((ctx.list[0] as { previewError?: string }).previewError).toBe('timeout');
+  });
+
   it('preserves fields from the first event when the second omits them', () => {
     /* The deferred preview update only carries the deltas (text, status,
      * textFormat). Fields set in the initial emit (filename, type, etc.)

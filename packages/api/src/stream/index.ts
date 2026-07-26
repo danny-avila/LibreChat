@@ -1,6 +1,7 @@
 export {
   GenerationJobManager,
   GenerationJobManagerClass,
+  type CreateGenerationJobOptions,
   type GenerationJobManagerOptions,
 } from './GenerationJobManager';
 
@@ -11,6 +12,7 @@ export type {
   UsageMetadata,
   AbortResult,
   JobStatus,
+  JobMetadataPatch,
   IJobStore,
 } from './interfaces/IJobStore';
 // Canonical "is this approval live?" predicate — one definition shared by the
@@ -24,7 +26,7 @@ export {
 export { SteeringLifecycle, toPendingSteer } from './SteeringLifecycle';
 
 export { createStreamServices } from './createStreamServices';
-export { configureGenerationStreams, type GenerationStreamsDeps } from './startup';
+export { configureGenerationStreams } from './startup';
 export type { StreamServicesConfig, StreamServices } from './createStreamServices';
 export { filterPersistableAbortContent, hasPersistableAbortContent } from './abortContent';
 

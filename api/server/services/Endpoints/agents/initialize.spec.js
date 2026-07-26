@@ -13,6 +13,14 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const mockInitializeAgent = jest.fn();
 const mockValidateAgentModel = jest.fn();
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 jest.mock('@librechat/agents', () => ({
   ...jest.requireActual('@librechat/agents'),
   createContentAggregator: jest.fn(() => ({
@@ -36,6 +44,8 @@ jest.mock('@librechat/api', () => ({
 let capturedToolExecuteOptions;
 jest.mock('~/server/controllers/agents/callbacks', () => ({
   createToolEndCallback: jest.fn(() => jest.fn()),
+  createAttachmentEmitter: jest.fn(() => jest.fn()),
+  createBackgroundCodeResultHandler: jest.fn(() => jest.fn()),
   getDefaultHandlers: jest.fn((opts) => {
     capturedToolExecuteOptions = opts?.toolExecuteOptions;
     return {};
@@ -69,7 +79,8 @@ jest.mock('~/cache', () => ({
 }));
 
 const { initializeClient } = require('./initialize');
-const { getSkillToolDeps } = require('./skillDeps');
+const { getSkillDbMethods, getSkillToolDeps } = require('./skillDeps');
+const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { logger } = require('@librechat/data-schemas');
 const { User, AclEntry } = require('~/db/models');
 const { createAgent, createSkill } = require('~/models');
@@ -313,6 +324,98 @@ describe('initializeClient — processAgent ACL gate', () => {
     const initializeParams = mockInitializeAgent.mock.calls[0][0];
     expect(initializeParams.agent.skills_enabled).toBe(true);
     expect(initializeParams.skillAuthoringAvailable).toBe(true);
+  });
+
+  it('loads model validation and skill permissions without serial waits', async () => {
+    const models = deferred();
+    const createPermission = deferred();
+    const req = makeReq();
+    req.config.endpoints.agents = { capabilities: ['skills'] };
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    getModelsConfig.mockReturnValueOnce(models.promise);
+    const canCreateSkillSpy = jest
+      .spyOn(getSkillToolDeps(), 'canCreateSkill')
+      .mockReturnValue(createPermission.promise);
+
+    try {
+      const initialization = initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      });
+
+      expect(getModelsConfig).toHaveBeenCalledWith(req);
+      expect(canCreateSkillSpy).toHaveBeenCalledWith({ req });
+
+      models.resolve({});
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(mockValidateAgentModel).toHaveBeenCalledTimes(1);
+      expect(mockInitializeAgent).not.toHaveBeenCalled();
+
+      createPermission.resolve(false);
+      await initialization;
+      expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+    } finally {
+      canCreateSkillSpy.mockRestore();
+    }
+  });
+
+  it('resolves model-spec skill names through deployment-aware skill methods', async () => {
+    const deploymentSkillId = new mongoose.Types.ObjectId();
+    await AclEntry.create({
+      principalType: PrincipalType.USER,
+      principalId: testUser._id,
+      principalModel: PrincipalModel.USER,
+      resourceType: ResourceType.SKILL,
+      resourceId: new mongoose.Types.ObjectId(),
+      permBits: PermissionBits.VIEW,
+      grantedBy: testUser._id,
+    });
+    const endpointOption = makeEndpointOption();
+    endpointOption.spec = 'spec-deployment-skill';
+    endpointOption.agent = Promise.resolve({
+      id: Constants.EPHEMERAL_AGENT_ID,
+      name: 'Ephemeral Primary',
+      provider: 'openai',
+      model: 'gpt-4',
+      tools: [],
+    });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req.config.endpoints.agents = { capabilities: ['skills'] };
+    req.config.modelSpecs = {
+      list: [{ name: 'spec-deployment-skill', skills: ['deployment-skill'] }],
+    };
+    const getSkillByNameSpy = jest.spyOn(getSkillDbMethods(), 'getSkillByName').mockResolvedValue({
+      _id: deploymentSkillId,
+      name: 'deployment-skill',
+      source: 'deployment',
+    });
+    const canCreateSkillSpy = jest
+      .spyOn(getSkillToolDeps(), 'canCreateSkill')
+      .mockResolvedValue(false);
+
+    try {
+      await initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption,
+      });
+
+      expect(getSkillByNameSpy).toHaveBeenCalledWith(
+        'deployment-skill',
+        expect.any(Array),
+        expect.any(Object),
+      );
+      const initializeParams = mockInitializeAgent.mock.calls[0][0];
+      expect(initializeParams.agent.skills_enabled).toBe(true);
+      expect(initializeParams.agent.skills).toEqual([deploymentSkillId.toString()]);
+    } finally {
+      getSkillByNameSpy.mockRestore();
+      canCreateSkillSpy.mockRestore();
+    }
   });
 });
 

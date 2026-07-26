@@ -1287,6 +1287,7 @@
  * @property {string} [proxy] - Proxy configuration
  * @property {Object} [tools] - Available tools for the agent
  * @property {Object} [eventHandlers] - Custom event handlers
+ * @property {import('@librechat/api').AgentStartupTelemetry} [startupTelemetry] - Startup latency recorder
  * @property {Object} [addParams] - Additional parameters to add to requests
  * @property {string[]} [dropParams] - Parameters to remove from requests
  * @memberof typedefs

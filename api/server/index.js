@@ -19,11 +19,15 @@ const {
   performStartupChecks,
   handleJsonParseError,
   QUERY_DEVTOOLS_HEADER,
+  GenerationJobManager,
+  agentStartupIngressMiddleware,
+  agentStartupTelemetryMiddleware,
   initializeFileStorage,
   initializeDeploymentSkills,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
+  registerShutdownTask,
   setupGracefulShutdown,
   updateInterfacePermissions,
 } = require('@librechat/api');
@@ -102,7 +106,21 @@ const rejectScheduleWritesUntilReady = (req, res, next) => {
 const configureGenerationStreams = () => {
   // Shared with the clustered entrypoint (experimental.js) so both topologies get the
   // same stream services; returns whether the resulting store is genuinely shared.
-  return configureSharedGenerationStreams({ getAppConfig });
+  const isShared = configureSharedGenerationStreams();
+  // Stop active generations and close their SSE streams while the HTTP server drains.
+  registerShutdownTask(
+    'generation job manager prepare',
+    () => GenerationJobManager.prepareForShutdown(),
+    {
+      phase: 'pre-drain',
+      priority: 100,
+    },
+  );
+  // Tear down stream resources before shared caches and telemetry exporters shut down.
+  registerShutdownTask('generation job manager', () => GenerationJobManager.destroy(), {
+    priority: 100,
+  });
+  return isShared;
 };
 
 const startServer = async () => {
@@ -202,6 +220,7 @@ const startServer = async () => {
   });
 
   /* Middleware */
+  app.use('/api/agents/chat', agentStartupIngressMiddleware);
   app.use(metricsMiddleware);
   app.use(noIndex);
   app.use(express.json({ limit: '3mb' }));
@@ -239,6 +258,7 @@ const startServer = async () => {
   if (telemetry.enabled) {
     app.use(telemetry.telemetryMiddleware);
   }
+  app.use('/api/agents/chat', agentStartupTelemetryMiddleware);
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');

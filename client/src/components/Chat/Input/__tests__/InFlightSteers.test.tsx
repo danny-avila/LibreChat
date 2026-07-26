@@ -1,8 +1,10 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
+import { getDefaultStore } from 'jotai';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import type { PendingSteer } from '~/store/families';
+import { steerOverlayHeightFamily } from '~/store/steer';
 import InFlightSteers from '../InFlightSteers';
 import store from '~/store';
 
@@ -508,5 +510,69 @@ describe('InFlightSteers', () => {
     });
     expect(screen.queryByTestId('steer-markdown')).toBeNull();
     expect(screen.getByText('**bold** steer')).toBeInTheDocument();
+  });
+
+  it('floats the stack over the thread instead of displacing it', () => {
+    // Anchored above the composer and pulled out of flow so the messages keep
+    // their full height and slide behind it when the user scrolls up.
+    renderSteers([{ steerId: 's1', text: 'scroll behind me', status: 'pending', createdAt: 1 }]);
+    const stack = screen.getByTestId('in-flight-steers');
+    expect(stack.className).toContain('absolute');
+    expect(stack.className).toContain('bottom-full');
+    // Wheeling over the gaps must reach the messages behind; bubbles opt back in.
+    expect(stack.className).toContain('pointer-events-none');
+    expect(screen.getByTestId('in-flight-steer').className).toContain('pointer-events-auto');
+  });
+
+  it('offers show more for a long steer and expands it in place', () => {
+    // jsdom does no layout, so stub scrollHeight above the collapse cap (128px)
+    // to make the content read as overflowing.
+    const scrollHeight = jest
+      .spyOn(HTMLElement.prototype, 'scrollHeight', 'get')
+      .mockReturnValue(500);
+    try {
+      renderSteers([
+        { steerId: 's1', text: 'paragraph\n\n'.repeat(20), status: 'pending', createdAt: 1 },
+      ]);
+      const toggle = screen.getByRole('button', { name: 'com_ui_show_more' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      fireEvent.click(toggle);
+      const collapse = screen.getByRole('button', { name: 'com_ui_show_less' });
+      expect(collapse).toHaveAttribute('aria-expanded', 'true');
+    } finally {
+      scrollHeight.mockRestore();
+    }
+  });
+
+  it('does not offer a toggle for a steer that fits the preview', () => {
+    // Left unstubbed, jsdom scrollHeight is 0, i.e. never overflows.
+    renderSteers([{ steerId: 's1', text: 'thank you', status: 'pending', createdAt: 1 }]);
+    expect(screen.queryByRole('button', { name: 'com_ui_show_more' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'com_ui_show_less' })).toBeNull();
+  });
+
+  it('sticks the options menu so it stays reachable while scrolling long content', () => {
+    renderSteers([{ steerId: 's1', text: 'x'.repeat(4000), status: 'pending', createdAt: 1 }]);
+    expect(screen.getByTestId('steer-controls').className).toContain('sticky');
+  });
+
+  it('publishes its height for the messages to reserve, and clears it on unmount', () => {
+    // The overlay no longer takes layout space, so it hands its measured height
+    // to `steerOverlayHeightFamily`; `MessagesView` reserves an equal band of
+    // bottom padding so the newest message rests clear of it.
+    const jotaiStore = getDefaultStore();
+    const offsetHeight = jest
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(96);
+    try {
+      const { unmount } = renderSteers([
+        { steerId: 's1', text: 'reserve for me', status: 'pending', createdAt: 1 },
+      ]);
+      expect(jotaiStore.get(steerOverlayHeightFamily(CONVO_ID))).toBe(96);
+      unmount();
+      expect(jotaiStore.get(steerOverlayHeightFamily(CONVO_ID))).toBe(0);
+    } finally {
+      offsetHeight.mockRestore();
+    }
   });
 });

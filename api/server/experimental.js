@@ -336,7 +336,7 @@ if (cluster.isMaster) {
     // store even with USE_REDIS_STREAMS — making the multiworker scheduler private,
     // so cross-worker aborts and orphan recovery could not work. Shared with
     // api/server/index.js so both topologies initialize identically.
-    configureGenerationStreams({ getAppConfig });
+    configureGenerationStreams();
     expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
     startExpiredFileSweepOnce();
     await performStartupChecks(appConfig);

@@ -2,6 +2,11 @@ name: Playwright E2E Tests
 
 on:
   pull_request:
+    paths:
+      - '**'
+      - '!**.md'
+      - '!.github/workflows/**'
+      - '.github/workflows/playwright-mock.yml'
   workflow_dispatch:
     inputs:
       reason:
@@ -22,6 +27,11 @@ env:
 
 jobs:
   e2e:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request != null &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

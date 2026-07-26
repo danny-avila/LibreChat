@@ -1678,7 +1678,7 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
-    test('should deliver live events after subscribeWithResume', async () => {
+    test('should defer live events until a resumed subscription is activated', async () => {
       const manager = createInMemoryManager();
       const streamId = `atomic-live-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
@@ -1707,6 +1707,9 @@ describe('GenerationJobManager Integration Tests', () => {
       });
 
       await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(liveEvents.length).toBe(0);
+
+      subscription?.activate();
       expect(liveEvents.length).toBe(1);
       const liveEvent = liveEvents[0] as {
         event: string;
@@ -1751,6 +1754,9 @@ describe('GenerationJobManager Integration Tests', () => {
         });
 
         await new Promise((resolve) => setTimeout(resolve, 200));
+        expect(liveEvents.length).toBe(0);
+
+        subscription?.activate();
         expect(liveEvents.length).toBe(1);
 
         subscription?.unsubscribe();
@@ -2027,10 +2033,6 @@ describe('GenerationJobManager Integration Tests', () => {
       const streamId = `cross-live-${Date.now()}`;
       await replicaA.createJob(streamId, 'user-1');
 
-      const replicaBJobStore = new RedisJobStore(ioredisClient!);
-      await replicaBJobStore.initialize();
-      await replicaBJobStore.createJob(streamId, 'user-1');
-
       const receivedOnB: unknown[] = [];
       const subB = await replicaB.subscribe(streamId, (event: unknown) => receivedOnB.push(event));
 
@@ -2051,7 +2053,6 @@ describe('GenerationJobManager Integration Tests', () => {
       }
 
       subB?.unsubscribe();
-      replicaBJobStore.destroy();
       await replicaA.destroy();
       await replicaB.destroy();
     });
@@ -2076,9 +2077,6 @@ describe('GenerationJobManager Integration Tests', () => {
       const streamId = `cross-seq-safe-${Date.now()}`;
 
       await replicaA.createJob(streamId, 'user-1');
-      const replicaBJobStore = new RedisJobStore(ioredisClient!);
-      await replicaBJobStore.initialize();
-      await replicaBJobStore.createJob(streamId, 'user-1');
 
       const receivedOnB: unknown[] = [];
       const subB = await replicaB.subscribe(streamId, (event: unknown) => receivedOnB.push(event));
@@ -2130,7 +2128,6 @@ describe('GenerationJobManager Integration Tests', () => {
 
       subA?.unsubscribe();
       subB?.unsubscribe();
-      replicaBJobStore.destroy();
       await replicaA.destroy();
       await replicaB.destroy();
     });
@@ -2169,10 +2166,6 @@ describe('GenerationJobManager Integration Tests', () => {
       replicaB.configure(servicesB);
       replicaB.initialize();
 
-      const replicaBJobStore = new RedisJobStore(ioredisClient!);
-      await replicaBJobStore.initialize();
-      await replicaBJobStore.createJob(streamId, 'user-1');
-
       const receivedOnB: unknown[] = [];
       const subB = await replicaB.subscribe(streamId, (event: unknown) => receivedOnB.push(event));
 
@@ -2194,7 +2187,6 @@ describe('GenerationJobManager Integration Tests', () => {
 
       subA?.unsubscribe();
       subB?.unsubscribe();
-      replicaBJobStore.destroy();
       await replicaA.destroy();
       await replicaB.destroy();
     });
@@ -2376,7 +2368,7 @@ describe('GenerationJobManager Integration Tests', () => {
         onDone: () => {},
       });
 
-      await sub1.ready;
+      await expect(sub1.ready).rejects.toThrow('Simulated Redis SUBSCRIBE failure');
 
       const receivedEvents: unknown[] = [];
       sub1.unsubscribe();
@@ -2388,6 +2380,7 @@ describe('GenerationJobManager Integration Tests', () => {
 
       expect(sub2.ready).toBeDefined();
       await sub2.ready;
+      expect(callCount).toBe(2);
 
       await transport.emitChunk(streamId, { event: 'test', data: { value: 'hello' } });
       await new Promise((resolve) => setTimeout(resolve, 100));

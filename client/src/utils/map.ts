@@ -24,6 +24,27 @@ export function mapAttachments(attachments: Array<t.TAttachment | null | undefin
   return attachmentMap;
 }
 
+/**
+ * Filters a part's mapped attachments to those owned by the part's agent:
+ * provider tool-call ids repeat across agents in handoff responses (e.g.
+ * `call_0`), so `toolCallId` alone can route one agent's harvested files to a
+ * sibling agent's card. An attachment without `agentId` matches any part
+ * (single-agent runs and legacy rows); a part without `agentId` accepts all.
+ */
+export function filterAttachmentsForPart(
+  attachments: t.TAttachment[] | undefined,
+  partAgentId?: string,
+): t.TAttachment[] | undefined {
+  if (!attachments || partAgentId == null) {
+    return attachments;
+  }
+  const filtered = attachments.filter((attachment) => {
+    const agentId = (attachment as { agentId?: string }).agentId;
+    return agentId == null || agentId === partAgentId;
+  });
+  return filtered.length === attachments.length ? attachments : filtered;
+}
+
 /** Maps Files by `file_id` for quick lookup */
 export function mapFiles(files: t.TFile[]) {
   const fileMap = {} as Record<string, t.TFile>;

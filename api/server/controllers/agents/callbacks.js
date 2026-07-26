@@ -20,6 +20,7 @@ const {
   GenerationJobManager,
   writeAttachmentEvent,
   createToolExecuteHandler,
+  createBackgroundCodeResultHandler: createCodeHarvestHandler,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
   shouldSignalSandboxStart,
@@ -975,6 +976,55 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
 }
 
 /**
+ * Emitter for `attachment` SSE events on the current request's live stream,
+ * for re-emitting background-harvested attachments on a poll turn. Safe to
+ * call after the stream closes (silently dropped).
+ *
+ * @param {Object} params
+ * @param {ServerResponse} params.res
+ * @param {string | null} [params.streamId]
+ * @returns {(attachment: Object) => void}
+ */
+function createAttachmentEmitter({ res, streamId = null }) {
+  return (attachment) => {
+    if (!attachment || !isStreamWritable(res, streamId)) {
+      return;
+    }
+    writeAttachment(res, streamId, attachment);
+  };
+}
+
+/**
+ * Leading sub-second retries cover the common case of a fast background task
+ * settling moments before the dispatch turn finalizes its message row — an
+ * immediate follow-up turn should find the attachments already anchored.
+ * The long tail covers dispatch turns that keep running for minutes.
+ */
+/**
+ * Thin wrapper binding the host file services into the TS harvest
+ * implementation (`@librechat/api` `createBackgroundCodeResultHandler`).
+ *
+ * @param {Object} params
+ * @param {ServerRequest} params.req
+ * @param {(params: {
+ *   userId: string;
+ *   messageId: string;
+ *   conversationId: string;
+ *   toolCallId: string;
+ *   output?: string;
+ *   attachments?: Object[];
+ * }) => Promise<boolean>} params.updateToolCallResult
+ */
+function createBackgroundCodeResultHandler({ req, updateToolCallResult }) {
+  return createCodeHarvestHandler({
+    req,
+    updateToolCallResult,
+    processCodeOutput,
+    runPreviewFinalize,
+  });
+}
+
+/**
  * Helper to write attachment events in Open Responses format (librechat:attachment)
  * @param {ServerResponse} res - The server response object
  * @param {Object} tracker - The response tracker with sequence number
@@ -1310,6 +1360,8 @@ module.exports = {
   agentLogHandlerObj,
   getDefaultHandlers,
   createToolEndCallback,
+  createAttachmentEmitter,
+  createBackgroundCodeResultHandler,
   isStreamWritable,
   markSummarizationUsage,
   buildSummarizationHandlers,

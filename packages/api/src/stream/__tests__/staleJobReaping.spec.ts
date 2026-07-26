@@ -76,6 +76,31 @@ describe('InMemoryJobStore - stale running-job failsafe', () => {
     }
   });
 
+  it('does not refresh replacement activity from a predecessor generation', async () => {
+    jest.useFakeTimers();
+    try {
+      const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+      const store = new InMemoryJobStore({ ttlAfterComplete: 0, staleJobTimeout: 1000 });
+      await store.initialize();
+
+      const predecessor = await store.createJob('s1', 'u1', 's1');
+      await jest.advanceTimersByTimeAsync(1);
+      const replacement = await store.createJob('s1', 'u1', 's1');
+      await jest.advanceTimersByTimeAsync(900);
+
+      store.recordActivity('s1', predecessor.createdAt);
+      await jest.advanceTimersByTimeAsync(101);
+
+      expect(replacement.createdAt).not.toBe(predecessor.createdAt);
+      expect(await store.cleanup()).toBe(1);
+      expect(await store.hasJob('s1')).toBe(false);
+
+      await store.destroy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('does not reap a running job within the staleJobTimeout', async () => {
     const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
     const store = new InMemoryJobStore({ staleJobTimeout: 60000 });
@@ -179,6 +204,60 @@ describe('InMemoryJobStore - stale running-job failsafe', () => {
 
     await store.destroy();
   });
+
+  it('does not delete a replacement created while cleanup awaits an earlier victim', async () => {
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const store = new InMemoryJobStore({ ttlAfterComplete: 0, staleJobTimeout: 60000 });
+    await store.initialize();
+
+    const now = jest.spyOn(Date, 'now');
+    const deleteJob = store.deleteJob.bind(store);
+    let releaseFirstDelete!: () => void;
+    let markFirstDeleteStarted!: () => void;
+    const firstDeleteStarted = new Promise<void>((resolve) => {
+      markFirstDeleteStarted = resolve;
+    });
+    const firstDeleteReleased = new Promise<void>((resolve) => {
+      releaseFirstDelete = resolve;
+    });
+
+    try {
+      now.mockReturnValue(100);
+      await store.createJob('first-victim', 'u1');
+      await store.updateJob('first-victim', { status: 'complete', completedAt: 100 });
+
+      now.mockReturnValue(200);
+      const originalLaterVictim = await store.createJob('later-victim', 'u1');
+      await store.updateJob('later-victim', { status: 'complete', completedAt: 200 });
+
+      jest.spyOn(store, 'deleteJob').mockImplementation(async (streamId, expectedCreatedAt) => {
+        if (streamId === 'first-victim') {
+          markFirstDeleteStarted();
+          await firstDeleteReleased;
+        }
+        return deleteJob(streamId, expectedCreatedAt);
+      });
+
+      now.mockReturnValue(1000);
+      const cleanup = store.cleanup();
+      await firstDeleteStarted;
+
+      now.mockReturnValue(2000);
+      const replacement = await store.createJob('later-victim', 'u1');
+      releaseFirstDelete();
+      await cleanup;
+
+      expect(replacement.createdAt).not.toBe(originalLaterVictim.createdAt);
+      await expect(store.getJob('first-victim')).resolves.toBeNull();
+      await expect(store.getJob('later-victim')).resolves.toMatchObject({
+        createdAt: replacement.createdAt,
+        status: 'running',
+      });
+    } finally {
+      now.mockRestore();
+      await store.destroy();
+    }
+  });
 });
 
 describe('GenerationJobManager - generation abort on reaping', () => {
@@ -253,6 +332,61 @@ describe('GenerationJobManager - generation abort on reaping', () => {
       await manager.destroy();
     } finally {
       jest.useRealTimers();
+    }
+  });
+
+  it('does not reap a replacement runtime from a stale hasJob result', async () => {
+    const { GenerationJobManagerClass } = await import('../GenerationJobManager');
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+
+    const store = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+    const transport = new InMemoryEventTransport();
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore: store,
+      eventTransport: transport,
+      isRedis: false,
+    });
+    manager.initialize();
+
+    const streamId = 'replacement-during-cleanup';
+    const original = await manager.createJob(streamId, 'user-1', streamId);
+
+    let releaseHasJob!: (exists: boolean) => void;
+    let markHasJobStarted!: () => void;
+    const hasJobStarted = new Promise<void>((resolve) => {
+      markHasJobStarted = resolve;
+    });
+    const hasJobSpy = jest.spyOn(store, 'hasJob').mockImplementationOnce(() => {
+      markHasJobStarted();
+      return new Promise<boolean>((resolve) => {
+        releaseHasJob = resolve;
+      });
+    });
+
+    try {
+      const cleanupPromise = (
+        manager as unknown as {
+          cleanup: () => Promise<void>;
+        }
+      ).cleanup();
+      await hasJobStarted;
+
+      // The old lookup is still in flight while a fresh generation replaces
+      // both the store record and the manager's runtime under the same ID.
+      const replacement = await manager.createJob(streamId, 'user-1', streamId);
+      releaseHasJob(false);
+      await cleanupPromise;
+
+      expect(original.abortController.signal.aborted).toBe(true);
+      expect(replacement.abortController.signal.aborted).toBe(false);
+      expect(await manager.hasJob(streamId)).toBe(true);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+      expect(manager.getRuntimeStats().eventTransportStreams).toBe(1);
+    } finally {
+      hasJobSpy.mockRestore();
+      await manager.destroy();
     }
   });
 });

@@ -9,6 +9,7 @@ on:
       - 'packages/data-provider/src/**'
       - 'packages/api/src/acl/**'
       - 'packages/api/src/shared-links/**'
+      - '!**.md'
 
 env:
   NODE_ENV: CI

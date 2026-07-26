@@ -59,6 +59,7 @@ const mockGenerationJobManager = {
 };
 
 const mockDeleteAgentCheckpoint = jest.fn();
+const mockCaptureAgentCheckpointGeneration = jest.fn();
 const mockDecrementPendingRequest = jest.fn();
 const mockCheckAndIncrementPendingRequest = jest.fn();
 
@@ -77,6 +78,7 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   GenerationJobManager: mockGenerationJobManager,
+  captureAgentCheckpointGeneration: (...args) => mockCaptureAgentCheckpointGeneration(...args),
   deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   checkAndIncrementPendingRequest: (...args) => mockCheckAndIncrementPendingRequest(...args),
@@ -112,6 +114,7 @@ function makeToolApprovalJob(overrides = {}) {
   const pendingOverrides = metaOverrides.pendingAction ?? {};
   return {
     status: 'requires_action',
+    createdAt: 1000,
     abortController: new AbortController(),
     ...overrides,
     metadata: {
@@ -182,11 +185,19 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
+    mockCaptureAgentCheckpointGeneration.mockResolvedValue({
+      threadId: CONVO_ID,
+      checkpointIds: ['checkpoint-old'],
+    });
     mockCleanupMCPRequestContextForReq.mockResolvedValue(undefined);
     mockSaveMessage.mockResolvedValue(undefined);
     mockGetConvo.mockResolvedValue(null);
     mockGetMessages.mockResolvedValue([]);
-    mockJobStore.getJob.mockResolvedValue({ tokenUsage: null, contextUsage: null });
+    mockJobStore.getJob.mockResolvedValue({
+      createdAt: 1000,
+      tokenUsage: null,
+      contextUsage: null,
+    });
     mockJobStore.updateJob.mockResolvedValue(undefined);
     mockGenerationJobManager.getResumeState.mockResolvedValue({ aggregatedContent: [] });
     mockGenerationJobManager.emitDone.mockResolvedValue(undefined);
@@ -558,6 +569,21 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
     });
 
+    it('consumes a checkpoint-snapshot rejection on the 429 early-return path', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: false });
+      mockCaptureAgentCheckpointGeneration.mockRejectedValue(new Error('mongo down'));
+
+      const res = await post(approveBody());
+      await flush();
+
+      expect(res.status).toBe(429);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[ResumeAgentController] Failed to capture checkpoint generation',
+        expect.any(Error),
+      );
+    });
+
     it('409 and releases the slot when the action was already claimed (single-winner)', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       mockGenerationJobManager.approvals.resolve.mockResolvedValue(false);
@@ -592,7 +618,13 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         conversationId: CONVO_ID,
         status: 'resuming',
       });
+      expect(mockCaptureAgentCheckpointGeneration).toHaveBeenCalledWith(CONVO_ID, {
+        type: 'mongo',
+      });
       expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledWith(CONVO_ID, ACTION_ID);
+      expect(mockCaptureAgentCheckpointGeneration.mock.invocationCallOrder[0]).toBeLessThan(
+        mockGenerationJobManager.approvals.resolve.mock.invocationCallOrder[0],
+      );
       await settled;
       await flush();
     });
@@ -735,12 +767,31 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       });
       expect(typeof finalEvent.title).toBe('string');
 
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, undefined, {
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, undefined, 1000, {
         preserveForReconcile: false,
       });
-      expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(CONVO_ID, { type: 'mongo' });
+      expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
+        CONVO_ID,
+        { type: 'mongo' },
+        { threadId: CONVO_ID, checkpointIds: ['checkpoint-old'] },
+      );
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
       expect(mockDisposeClient).toHaveBeenCalledTimes(1);
+    });
+
+    it('degrades a failed checkpoint snapshot to scoped no-op cleanup', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockCaptureAgentCheckpointGeneration.mockRejectedValue(new Error('mongo down'));
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
+        CONVO_ID,
+        { type: 'mongo' },
+        { threadId: CONVO_ID, checkpointIds: [] },
+      );
     });
 
     it('skips finalization (no save/emitDone/complete) when the job was replaced mid-resume', async () => {
@@ -946,7 +997,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(client.resumeCompletion).toHaveBeenCalledWith(
         expect.objectContaining({ resumeValue: { answer: 'call it report.pdf' } }),
       );
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, undefined, {
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, undefined, 1000, {
         preserveForReconcile: false,
       });
     });
@@ -963,7 +1014,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
 
       expect(mockAddTitle).toHaveBeenCalledTimes(1);
       // Title is emitted (and the job completed) — order matters but both must happen.
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, undefined, {
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, undefined, 1000, {
         preserveForReconcile: false,
       });
     });
@@ -982,8 +1033,12 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
 
       expect(mockLogger.error).toHaveBeenCalled();
       expect(mockSaveMessage).toHaveBeenCalledTimes(1);
-      expect(mockGenerationJobManager.emitDone).toHaveBeenCalledWith(CONVO_ID, expect.any(Object));
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, undefined, {
+      expect(mockGenerationJobManager.emitDone).toHaveBeenCalledWith(
+        CONVO_ID,
+        expect.any(Object),
+        1000,
+      );
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, undefined, 1000, {
         preserveForReconcile: false,
       });
     });
@@ -1106,11 +1161,15 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await settled;
       await flush();
 
-      expect(mockGenerationJobManager.emitError).toHaveBeenCalledWith(CONVO_ID, 'boom');
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, 'boom', {
+      expect(mockGenerationJobManager.emitError).toHaveBeenCalledWith(CONVO_ID, 'boom', 1000);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, 'boom', 1000, {
         preserveForReconcile: false,
       });
-      expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(CONVO_ID, { type: 'mongo' });
+      expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
+        CONVO_ID,
+        { type: 'mongo' },
+        { threadId: CONVO_ID, checkpointIds: ['checkpoint-old'] },
+      );
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
       expect(mockSaveMessage).not.toHaveBeenCalled();
     });
@@ -1134,6 +1193,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockJobStore.updateJob).toHaveBeenCalledWith(
         CONVO_ID,
         expect.objectContaining({ status: 'error', error: 'Resume failed' }),
+        1000,
       );
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
     });

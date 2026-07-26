@@ -28,16 +28,34 @@ export class InMemoryEventTransport implements IEventTransport {
   subscribe(
     streamId: string,
     handlers: {
-      onChunk: (event: unknown) => void;
-      onDone?: (event: unknown) => void;
-      onError?: (error: string) => void;
+      onChunk: (event: unknown, generationId?: number) => void;
+      onDone?: (event: unknown, generationId?: number) => void;
+      onError?: (error: string, generationId?: number) => void;
     },
   ): { unsubscribe: () => void; ready?: Promise<void> } {
     const state = this.getOrCreateStream(streamId);
 
-    const chunkHandler = (event: unknown) => handlers.onChunk(event);
-    const doneHandler = (event: unknown) => handlers.onDone?.(event);
-    const errorHandler = (error: string) => handlers.onError?.(error);
+    const chunkHandler = (event: unknown, generationId?: number) => {
+      if (generationId == null) {
+        handlers.onChunk(event);
+        return;
+      }
+      handlers.onChunk(event, generationId);
+    };
+    const doneHandler = (event: unknown, generationId?: number) => {
+      if (generationId == null) {
+        handlers.onDone?.(event);
+        return;
+      }
+      handlers.onDone?.(event, generationId);
+    };
+    const errorHandler = (error: string, generationId?: number) => {
+      if (generationId == null) {
+        handlers.onError?.(error);
+        return;
+      }
+      handlers.onError?.(error, generationId);
+    };
 
     state.emitter.on('chunk', chunkHandler);
     state.emitter.on('done', doneHandler);
@@ -51,6 +69,10 @@ export class InMemoryEventTransport implements IEventTransport {
       unsubscribe: () => {
         const currentState = this.streams.get(streamId);
         if (currentState) {
+          if (!currentState.emitter.listeners('chunk').includes(chunkHandler)) {
+            return;
+          }
+
           currentState.emitter.off('chunk', chunkHandler);
           currentState.emitter.off('done', doneHandler);
           currentState.emitter.off('error', errorHandler);
@@ -69,22 +91,22 @@ export class InMemoryEventTransport implements IEventTransport {
     };
   }
 
-  emitChunk(streamId: string, event: unknown): void {
+  emitChunk(streamId: string, event: unknown, generationId?: number): void {
     const state = this.streams.get(streamId);
-    state?.emitter.emit('chunk', event);
+    state?.emitter.emit('chunk', event, generationId);
   }
 
-  emitDone(streamId: string, event: unknown): void {
+  emitDone(streamId: string, event: unknown, generationId?: number): void {
     const state = this.streams.get(streamId);
-    state?.emitter.emit('done', event);
+    state?.emitter.emit('done', event, generationId);
   }
 
-  emitError(streamId: string, error: string): void {
+  emitError(streamId: string, error: string, generationId?: number): void {
     const state = this.streams.get(streamId);
     // Only emit if there are listeners - Node.js throws on unhandled 'error' events
     // This is intentional for the race condition where error occurs before client connects
     if (state?.emitter.listenerCount('error') ?? 0 > 0) {
-      state?.emitter.emit('error', error);
+      state?.emitter.emit('error', error, generationId);
     }
   }
 
@@ -106,6 +128,32 @@ export class InMemoryEventTransport implements IEventTransport {
     const count = state?.emitter.listenerCount('chunk') ?? 0;
     logger.debug(`[InMemoryEventTransport] isFirstSubscriber ${streamId}: count=${count}`);
     return count === 1;
+  }
+
+  closeLocalSubscribers(streamId: string, error: string): void {
+    const state = this.streams.get(streamId);
+    if (!state) {
+      return;
+    }
+
+    const errorListeners = state.emitter.listeners('error');
+    for (const listener of errorListeners) {
+      try {
+        listener(error);
+      } catch (err) {
+        logger.error(
+          `[InMemoryEventTransport] Failed to close local subscriber for ${streamId}:`,
+          err,
+        );
+      }
+    }
+
+    if (state.emitter.listenerCount('chunk') === 0) {
+      return;
+    }
+
+    state.emitter.removeAllListeners();
+    state.allSubscribersLeftCallback?.();
   }
 
   /**

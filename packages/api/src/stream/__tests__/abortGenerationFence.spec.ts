@@ -29,10 +29,12 @@ describe('abortJob generation fence', () => {
 
   it('refuses to abort when the observed generation was replaced', async () => {
     const manager = await makeManager();
-    const doomed = await manager.createJob('conv-1', 'user-1', 'conv-1');
-    const observedCreatedAt = (await manager.getJobStore().getJob('conv-1'))?.createdAt;
-    // An interactive turn reuses the conversation before the abort lands.
     await manager.createJob('conv-1', 'user-1', 'conv-1');
+    const observedCreatedAt = (await manager.getJobStore().getJob('conv-1'))?.createdAt;
+    // An interactive turn reuses the conversation before the abort lands. createJob
+    // signals the generation it supersedes, so the DOOMED controller is already aborted
+    // here by design — the invariant under test is that the REPLACEMENT is untouched.
+    const replacementJob = await manager.createJob('conv-1', 'user-1', 'conv-1');
     const replacement = await manager.getJobStore().getJob('conv-1');
 
     const result = await manager.abortJob('conv-1', { expectedCreatedAt: observedCreatedAt });
@@ -41,11 +43,9 @@ describe('abortJob generation fence', () => {
     // than assuming it stopped.
     expect(result.success).toBe(false);
     // The replacement keeps running: not signalled, not torn down.
+    expect(replacementJob.abortController.signal.aborted).toBe(false);
     expect((await manager.getJobStore().getJob('conv-1'))?.createdAt).toBe(replacement?.createdAt);
     expect(await manager.hasJob('conv-1')).toBe(true);
-    // The replacement's controller is a different one; the doomed generation's own
-    // controller is irrelevant here — what matters is the live turn was untouched.
-    expect(doomed.abortController.signal.aborted).toBe(false);
   });
 
   it('aborts normally when the fence matches the live generation', async () => {
