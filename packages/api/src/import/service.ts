@@ -9,7 +9,7 @@ import type {
   ImportProgress,
   ImportReport,
 } from './types';
-import type { SaveMessageDetails, RunImportInput } from './sink';
+import type { SaveMessageDetails, RunImportInput, ProviderImportContext } from './sink';
 import type { AssetReference } from './chatgpt/content';
 import type { Archive } from './archive';
 import {
@@ -22,6 +22,7 @@ import {
 import { collectAssetReferences } from './chatgpt/content';
 import { convertConversation } from './chatgpt/convert';
 import { runClaudeImport } from './claude/service';
+import { runGrokImport } from './grok/service';
 import { sanitizeImportError } from './errors';
 import { openArchive } from './archive';
 import { ingestAssets } from './assets';
@@ -35,20 +36,26 @@ interface ExportScan {
   pointers: string[];
   attachments: Map<string, ChatGptAttachment>;
   references: Map<string, AssetReference>;
-  /** The format the first shard that parsed turned out to be. A Claude export
-   * aborts the scan immediately — it has no assets to resolve, so nothing this
-   * pass collects applies to it. */
+  /** The format the first shard that parsed turned out to be. A Claude or Grok
+   * export aborts the scan immediately — neither has assets a conversation can
+   * resolve, so nothing this pass collects applies to them. */
   format: ExportFormat;
 }
 
 class ShardShapeError extends Error {}
 
-async function readShardArray(archive: Archive, shard: string): Promise<unknown[]> {
-  const parsed: unknown = JSON.parse((await archive.read(shard)).toString('utf8'));
+async function readShardJson(archive: Archive, shard: string): Promise<unknown> {
+  return JSON.parse((await archive.read(shard)).toString('utf8')) as unknown;
+}
+
+function asChatGptConversations(parsed: unknown): ChatGptConversation[] {
   if (!Array.isArray(parsed)) {
     throw new ShardShapeError('expected an array of conversations');
   }
-  return parsed;
+  if (!hasChatGptConversationShape(parsed)) {
+    throw new ShardShapeError('expected ChatGPT conversation objects');
+  }
+  return parsed as ChatGptConversation[];
 }
 
 /**
@@ -57,11 +64,7 @@ async function readShardArray(archive: Archive, shard: string): Promise<unknown[
  * at one shard rather than the whole export.
  */
 async function parseShard(archive: Archive, shard: string): Promise<ChatGptConversation[]> {
-  const parsed = await readShardArray(archive, shard);
-  if (!hasChatGptConversationShape(parsed)) {
-    throw new ShardShapeError('expected ChatGPT conversation objects');
-  }
-  return parsed as ChatGptConversation[];
+  return asChatGptConversations(await readShardJson(archive, shard));
 }
 
 function describeShardError(error: unknown, shard: string): string {
@@ -119,21 +122,17 @@ async function scanExport(
 
   for (const shard of shards) {
     try {
-      const parsed = await readShardArray(archive, shard);
+      const parsed = await readShardJson(archive, shard);
 
       if (!detected) {
         detected = true;
         scan.format = detectExportFormat(parsed) ?? 'chatgpt';
-        if (scan.format === 'claude') {
+        if (scan.format !== 'chatgpt') {
           return scan;
         }
       }
 
-      if (!hasChatGptConversationShape(parsed)) {
-        throw new ShardShapeError('expected ChatGPT conversation objects');
-      }
-
-      const conversations = parsed as ChatGptConversation[];
+      const conversations = asChatGptConversations(parsed);
       scan.shards.push(shard);
       scan.conversations += conversations.length;
       for (const conv of conversations) {
@@ -213,7 +212,7 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
     const manifest = hasManifest ? parseManifest(await archive.read(MANIFEST_ENTRY)) : null;
     const layout = resolveLayout(archive.entries, manifest);
 
-    const claudeRun = {
+    const providerRun: ProviderImportContext = {
       archive,
       shards: layout.conversationShards,
       input,
@@ -221,17 +220,25 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
     };
 
     /** `inspectExport` already identified the format and the route passes it
-     * through, so a Claude export skips the asset scan entirely rather than
-     * reading its single 86 MB shard an extra time to re-learn its shape. */
+     * through, so a Claude or Grok export skips the asset scan entirely rather
+     * than reading its single large shard an extra time to re-learn its shape. */
     if (input.format === 'claude') {
-      await runClaudeImport(claudeRun);
+      await runClaudeImport(providerRun);
+      return report;
+    }
+    if (input.format === 'grok') {
+      await runGrokImport(providerRun);
       return report;
     }
 
     const scan = await scanExport(archive, layout.conversationShards, report.errors);
 
     if (scan.format === 'claude') {
-      await runClaudeImport(claudeRun);
+      await runClaudeImport(providerRun);
+      return report;
+    }
+    if (scan.format === 'grok') {
+      await runGrokImport(providerRun);
       return report;
     }
 

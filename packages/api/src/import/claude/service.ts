@@ -1,6 +1,6 @@
 import { EModelEndpoint } from 'librechat-data-provider';
-import type { ClaudeConversation, ImportProgress, ImportReport } from '~/import/types';
-import type { SaveMessageDetails, RunImportInput } from '~/import/sink';
+import type { SaveMessageDetails, RunImportInput, ProviderImportContext } from '~/import/sink';
+import type { ClaudeConversation, ImportProgress } from '~/import/types';
 import type { ConvertedClaudeConversation } from './convert';
 import type { Archive } from '~/import/archive';
 import { hasClaudeConversationShape } from '~/import/manifest';
@@ -9,12 +9,7 @@ import { sanitizeImportError } from '~/import/errors';
 
 export const CLAUDE_SOURCE = 'claude';
 
-export interface ClaudeImportContext {
-  archive: Archive;
-  shards: string[];
-  input: RunImportInput;
-  report: ImportReport;
-}
+export type ClaudeImportContext = ProviderImportContext;
 
 class ShardShapeError extends Error {}
 
@@ -99,7 +94,7 @@ export function writeConversation(
  * total as it is converted — a single 86 MB `conversations.json` is never parsed
  * twice just to learn its length.
  */
-export async function runClaudeImport(context: ClaudeImportContext): Promise<void> {
+export async function runClaudeImport(context: ProviderImportContext): Promise<void> {
   const { archive, input, report } = context;
 
   const progress: ImportProgress = {

@@ -1,7 +1,8 @@
-import type { ChatGptConversation, ExportFormat, ImportSummary } from './types';
+import type { ChatGptConversation, ExportFormat, GrokExport, ImportSummary } from './types';
 import type { ExportLayout } from './manifest';
 import {
   MANIFEST_ENTRY,
+  isGrokExport,
   parseManifest,
   resolveLayout,
   detectExportFormat,
@@ -27,6 +28,15 @@ function tallyChatGptShard(conversations: ChatGptConversation[], totals: ShardTo
   }
 }
 
+function tallyGrokExport(parsed: GrokExport, totals: ShardTotals): void {
+  for (const entry of parsed.conversations) {
+    totals.conversations += 1;
+    if (entry.conversation?.starred === true) {
+      totals.starred += 1;
+    }
+  }
+}
+
 export async function inspectExport(
   filepath: string,
 ): Promise<{ summary: ImportSummary; layout: ExportLayout; format: ExportFormat }> {
@@ -46,22 +56,32 @@ export async function inspectExport(
      * a header — the shards have to be parsed. Each one is parsed, tallied
      * and dropped before the next is read, so peak heap stays at a single
      * shard rather than the whole export. The format is decided by the first
-     * shard's element shape, the only thing distinguishing a Claude export
-     * (whose conversations carry `chat_messages`) from a ChatGPT one. */
+     * shard's parsed shape, the only thing distinguishing a Claude export
+     * (whose conversations carry `chat_messages`) or a Grok one (an object
+     * keyed by `conversations`) from a ChatGPT one. */
     const totals: ShardTotals = { conversations: 0, archived: 0, starred: 0 };
     let format: ExportFormat | null = null;
 
     for (const shard of layout.conversationShards) {
       const parsed: unknown = JSON.parse((await archive.read(shard)).toString('utf8'));
-      if (!Array.isArray(parsed)) {
-        throw new Error('Unsupported import type');
-      }
 
       if (format === null) {
         format = detectExportFormat(parsed);
         if (format === null) {
           throw new Error('Unsupported import type');
         }
+      }
+
+      if (format === 'grok') {
+        if (!isGrokExport(parsed)) {
+          throw new Error('Unsupported import type');
+        }
+        tallyGrokExport(parsed, totals);
+        continue;
+      }
+
+      if (!Array.isArray(parsed)) {
+        throw new Error('Unsupported import type');
       }
 
       if (format === 'claude') {
@@ -73,6 +93,27 @@ export async function inspectExport(
         throw new Error('Unsupported import type');
       }
       tallyChatGptShard(parsed as ChatGptConversation[], totals);
+    }
+
+    if (format === 'grok') {
+      /** A Grok export's binaries belong to its `media_posts`, which no
+       * conversation references, and it has no archived flag — so both
+       * counters are structurally zero rather than untallied. `starred` is a
+       * real per-conversation field and is counted. */
+      return {
+        layout,
+        format,
+        summary: {
+          source: 'grok',
+          manifestVersion: null,
+          conversations: totals.conversations,
+          shards: layout.conversationShards.length,
+          assets: 0,
+          assetBytes: 0,
+          archived: 0,
+          starred: totals.starred,
+        },
+      };
     }
 
     if (format === 'claude') {

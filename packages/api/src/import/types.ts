@@ -214,6 +214,54 @@ export interface ClaudeConversation {
   chat_messages?: ClaudeMessage[] | null;
 }
 
+/** A timestamp in either shape a Grok export writes. Conversations carry an
+ * ISO string; every response carries MongoDB Extended JSON, canonical
+ * (`{ $date: { $numberLong: '1783999510820' } }`) in the exports measured so
+ * far and relaxed (`{ $date: '2026-07-14T03:25:09Z' }`) by specification. */
+export type GrokTimestamp =
+  | string
+  | number
+  | { $date?: string | number | { $numberLong?: string | number | null } | null }
+  | null;
+
+/** One turn of a Grok conversation. `message` is plain text in every response
+ * of a real export — Grok ships no content blocks — while the reasoning,
+ * search and attachment fields it can carry alongside are out of scope. */
+export interface GrokResponse {
+  _id: string;
+  message: string;
+  sender: string;
+  model?: string | null;
+  create_time?: GrokTimestamp;
+  parent_response_id?: string | null;
+}
+
+export interface GrokConversationMeta {
+  id: string;
+  title?: string | null;
+  summary?: string | null;
+  starred?: boolean | null;
+  create_time?: GrokTimestamp;
+}
+
+/** Grok wraps every response in a one-key envelope carrying an optional
+ * `share_link` beside it. */
+export interface GrokResponseEntry {
+  response: GrokResponse;
+}
+
+export interface GrokConversationEntry {
+  conversation: GrokConversationMeta;
+  responses?: GrokResponseEntry[] | null;
+}
+
+/** The root object of `prod-grok-backend.json`. `projects`, `tasks` and
+ * `media_posts` sit beside `conversations` and are out of scope, so they are
+ * deliberately absent from this type rather than parsed and ignored. */
+export interface GrokExport {
+  conversations: GrokConversationEntry[];
+}
+
 export interface ImportAttachment {
   type: Tools.web_search;
   [Tools.web_search]: SearchResultData;
@@ -270,10 +318,11 @@ export interface ConvertedConversation {
   messages: ConvertedMessage[];
 }
 
-/** Which converter an export's conversations belong to. Both ChatGPT and
- * Claude ship a `conversations.json` array, so this is resolved from the
- * element shape rather than the archive layout. */
-export type ExportFormat = 'chatgpt' | 'claude';
+/** Which converter an export's conversations belong to. ChatGPT and Claude
+ * both ship a `conversations.json` array and Grok ships an object keyed by
+ * `conversations`, so this is resolved from the parsed shape rather than the
+ * archive layout. */
+export type ExportFormat = 'chatgpt' | 'claude' | 'grok';
 
 export type ImportPhase =
   | 'queued'
@@ -296,7 +345,7 @@ export interface ImportProgress {
 }
 
 export interface ImportSummary {
-  source: 'chatgpt' | 'chatgpt-legacy' | 'claude' | 'chatbotui' | 'librechat';
+  source: 'chatgpt' | 'chatgpt-legacy' | 'claude' | 'grok' | 'chatbotui' | 'librechat';
   manifestVersion: number | null;
   conversations: number;
   shards: number;

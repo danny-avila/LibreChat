@@ -1,5 +1,5 @@
 import type { ArchiveEntry } from './archive';
-import { parseManifest, resolveLayout } from './manifest';
+import { isGrokExport, parseManifest, resolveLayout, detectExportFormat } from './manifest';
 
 function entries(...names: string[]): ArchiveEntry[] {
   return names.map((name) => ({ name, bytes: 10 }));
@@ -183,6 +183,31 @@ describe('resolveLayout', () => {
     expect(layout.conversationShards).toEqual([]);
   });
 
+  it('finds a nested Grok conversation file beside its unrelated json siblings', () => {
+    const prefix = 'ttl/30d/export_data/e618db0b/';
+    const layout = resolveLayout(
+      entries(
+        `${prefix}prod-mc-auth-mgmt-api.json`,
+        `${prefix}prod-mc-billing.json`,
+        `${prefix}prod-grok-backend.json`,
+        `${prefix}prod-mc-asset-server//0380cd07/content`,
+      ),
+      null,
+    );
+    expect(layout.conversationShards).toEqual([`${prefix}prod-grok-backend.json`]);
+    expect(layout.assetEntries).toEqual([]);
+  });
+
+  it('finds an unnested Grok conversation file', () => {
+    const layout = resolveLayout(entries('prod-grok-backend.json'), null);
+    expect(layout.conversationShards).toEqual(['prod-grok-backend.json']);
+  });
+
+  it('does not match a filename that merely ends with the Grok name', () => {
+    const layout = resolveLayout(entries('not-prod-grok-backend.json', 'other.json'), null);
+    expect(layout.conversationShards).toEqual([]);
+  });
+
   it('falls back to filename detection when malformed manifest is passed', () => {
     const layout = resolveLayout(entries('conversations-001.json', 'conversations-002.json'), {
       version: 1,
@@ -194,5 +219,39 @@ describe('resolveLayout', () => {
       },
     });
     expect(layout.conversationShards).toEqual(['conversations-001.json', 'conversations-002.json']);
+  });
+});
+
+describe('isGrokExport', () => {
+  const entry = { conversation: { id: 'c1' }, responses: [] };
+
+  it('accepts an object whose conversations carry a conversation envelope', () => {
+    expect(isGrokExport({ conversations: [entry], projects: [], media_posts: [] })).toBe(true);
+  });
+
+  it('rejects every shape that is not identifiably Grok', () => {
+    expect(isGrokExport({ conversations: [] })).toBe(false);
+    expect(isGrokExport({ conversations: 'nope' })).toBe(false);
+    expect(isGrokExport({ conversations: [{ uuid: 'c1' }] })).toBe(false);
+    expect(isGrokExport({ conversations: [null] })).toBe(false);
+    expect(isGrokExport([entry])).toBe(false);
+    expect(isGrokExport(null)).toBe(false);
+    expect(isGrokExport('conversations')).toBe(false);
+  });
+});
+
+describe('detectExportFormat', () => {
+  it('resolves each supported format from its parsed shape', () => {
+    expect(detectExportFormat([{ conversation_id: 'c1', mapping: {} }])).toBe('chatgpt');
+    expect(detectExportFormat([{ uuid: 'c1', chat_messages: [] }])).toBe('claude');
+    expect(detectExportFormat({ conversations: [{ conversation: { id: 'c1' } }] })).toBe('grok');
+    expect(detectExportFormat([])).toBe('chatgpt');
+  });
+
+  it('returns null for objects and arrays matching no format', () => {
+    expect(detectExportFormat({ version: 1, history: [] })).toBeNull();
+    expect(detectExportFormat({ conversationId: 'c1', messages: [] })).toBeNull();
+    expect(detectExportFormat([{ nothing: true }])).toBeNull();
+    expect(detectExportFormat('nope')).toBeNull();
   });
 });

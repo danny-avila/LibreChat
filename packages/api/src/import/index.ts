@@ -10,3 +10,5 @@ export * from './manifest';
 export * from './chatgpt/convert';
 export * from './claude/convert';
 export * from './claude/service';
+export * from './grok/convert';
+export * from './grok/service';

@@ -1,5 +1,12 @@
-import type { ConvertedMessage, ExportFormat, ImportProgress, ImportPhase } from './types';
+import type {
+  ExportFormat,
+  ImportPhase,
+  ImportReport,
+  ImportProgress,
+  ConvertedMessage,
+} from './types';
 import type { AssetDeps } from './assets';
+import type { Archive } from './archive';
 
 export interface SaveMessageDetails {
   messageId: string;
@@ -33,6 +40,17 @@ export interface BatchSink {
   ): void;
   maybeFlush(): Promise<void>;
   saveBatch(): Promise<void>;
+}
+
+/** Everything a per-provider run needs from `runImport`. Providers whose
+ * exports ship no binaries skip the asset phase entirely and therefore share
+ * one context: the open archive, the shards to convert, and the input and
+ * report the job pipeline is already accumulating into. */
+export interface ProviderImportContext {
+  archive: Archive;
+  shards: string[];
+  input: RunImportInput;
+  report: ImportReport;
 }
 
 export interface RunImportInput {
