@@ -1362,7 +1362,7 @@ export async function createRun({
   const graphConfig: RunConfig['graphConfig'] = {
     signal,
     agents: agentInputs,
-    edges: agents[0].edges,
+    edges: agents[0].edges ?? [],
   };
 
   if (agentInputs.length > 1 || ((graphConfig as MultiAgentGraphConfig).edges?.length ?? 0) > 0) {

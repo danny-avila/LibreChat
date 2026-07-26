@@ -121,7 +121,8 @@ export function applyCustomHandoffPromptKeyCompatibility(
     return;
   }
 
-  const hasCustomPromptKey = graphConfig.edges.some((edge) => {
+  const edges = graphConfig.edges ?? [];
+  const hasCustomPromptKey = edges.some((edge) => {
     const promptKey = edge.promptKey;
     return (
       edge.edgeType !== 'direct' &&
@@ -152,7 +153,7 @@ export function applyCustomHandoffPromptKeyCompatibility(
       return result;
     }
 
-    const labels = getCustomPromptLabels(graphConfig.edges, agentId);
+    const labels = getCustomPromptLabels(edges, agentId);
     if (labels.length === 0) {
       return result;
     }

@@ -73,6 +73,20 @@ const createSdkProcess = (): jest.MockedFunction<ProcessHandoffReception> =>
   });
 
 describe('applyCustomHandoffPromptKeyCompatibility', () => {
+  it('leaves multi-agent graphs without edges unpatched', () => {
+    const sdkProcess = createSdkProcess();
+    const { run, graph } = createRun(sdkProcess);
+    const originalProcess = graph.processHandoffReception;
+    // Persisted agents can predate `edges`, even though the current SDK type requires it.
+    const graphConfig = {
+      type: 'multi-agent',
+      agents: [],
+    } as unknown as RunConfig['graphConfig'];
+
+    expect(() => applyCustomHandoffPromptKeyCompatibility(run, graphConfig)).not.toThrow();
+    expect(graph.processHandoffReception).toBe(originalProcess);
+  });
+
   it('recovers a custom prompt key for scalar and array handoff endpoints', () => {
     const sdkProcess = createSdkProcess();
     const { run, graph } = createRun(sdkProcess);

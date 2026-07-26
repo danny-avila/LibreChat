@@ -465,6 +465,24 @@ describe('summarizationConfig field passthrough', () => {
 // Suite 5: Multi-agent + per-agent overrides
 // ---------------------------------------------------------------------------
 describe('multi-agent + per-agent overrides', () => {
+  it('normalizes missing persisted edges before creating the SDK graph', async () => {
+    await createRun({
+      agents: [makeAgent({ id: 'agent_1' }), makeAgent({ id: 'agent_2' })] as never,
+      signal: new AbortController().signal,
+      streaming: true,
+      streamUsage: true,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    const runConfig = createMock.mock.calls[0][0] as {
+      graphConfig: { type: string; edges: unknown[] };
+    };
+    expect(runConfig.graphConfig).toMatchObject({
+      type: 'multi-agent',
+      edges: [],
+    });
+  });
+
   it('different agents get different effectiveMaxContextTokens', async () => {
     const agents = await callAndCapture({
       agents: [
