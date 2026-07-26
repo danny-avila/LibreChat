@@ -8,6 +8,7 @@ import {
   request,
 } from 'librechat-data-provider';
 import type { TMessage, TSubmission } from 'librechat-data-provider';
+import type { PendingSteer } from '~/store/families';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
 
@@ -258,7 +259,7 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
-import useResumableSSE from '~/hooks/SSE/useResumableSSE';
+import useResumableSSE, { selectLocalSteersForQueue } from '~/hooks/SSE/useResumableSSE';
 
 const CONV_ID = 'conv-abc-123';
 
@@ -3851,5 +3852,69 @@ describe('useResumableSSE', () => {
       }),
     );
     unmount();
+  });
+});
+
+/**
+ * `convertLocalSteersToQueued` (the `final` handler and the intentional-close
+ * `abort` listener both call it, alongside the two failure-terminal paths
+ * covered above) is a thin `useRecoilCallback` wrapper: read the conversation's
+ * chips, run them through this selection, hand the result to `useSteerConvert`.
+ * This file's `useRecoilCallback: () => jest.fn()` mock (see above — "the
+ * hook's steer-chip/queue callbacks need a RecoilRoot; these tests render
+ * bare") makes that wrapper, and every other recoil-callback in this hook
+ * (`resolveSteerChip`, `seedSteerChips` included — neither has a direct test
+ * in this file either), inert: calling it from the `final`/`abort` source
+ * lines is invisible to `mockConvertSteersToQueued` assertions here, since the
+ * mock discards the real closure before it can ever call through. Covering
+ * the selection logic directly (this is the exact piece of logic finding 3
+ * was about — which statuses survive a run end) rather than faking a
+ * RecoilRoot-backed integration around the rest of this large hook's mocks.
+ */
+describe('selectLocalSteersForQueue', () => {
+  const chip = (over: Partial<PendingSteer> = {}): PendingSteer => ({
+    steerId: 's1',
+    text: 'default text',
+    status: 'pending',
+    createdAt: 1,
+    ...over,
+  });
+
+  it('includes pending and failed chips, excluding sending', () => {
+    const chips = [
+      chip({ steerId: 'p1', status: 'pending' }),
+      chip({ steerId: 'f1', status: 'failed' }),
+      chip({ steerId: 'sending-1', status: 'sending' }),
+    ];
+    expect(selectLocalSteersForQueue(chips).map((steer) => steer.steerId)).toEqual(['p1', 'f1']);
+  });
+
+  it('converts a failed local chip present at a run-end path into a queueable item', () => {
+    // The leak finding 3 was about: a `failed` chip carries a local-* id the
+    // server never reports, so `data.pendingSteers`/the abort response can
+    // never carry it — this selection is the ONLY place left that can catch
+    // it before the `final`/`abort` paths hand off to `useSteerConvert`.
+    const failed = chip({ steerId: 'local-failed', status: 'failed', text: 'redo this' });
+    expect(selectLocalSteersForQueue([failed])).toEqual([
+      expect.objectContaining({ steerId: 'local-failed', text: 'redo this', createdAt: 1 }),
+    ]);
+  });
+
+  it('does not sweep a sending chip: its own POST callback owns it', () => {
+    // Converting it here too would race that callback — a late ACK's re-add
+    // in `resolveAcknowledgedSteer` could then double-queue the same words.
+    const sending = chip({ steerId: 'in-flight', status: 'sending' });
+    expect(selectLocalSteersForQueue([sending])).toEqual([]);
+  });
+
+  it('carries files only when present', () => {
+    const withFiles = chip({
+      steerId: 'p2',
+      files: [{ file_id: 'f1', filename: 'a.png' }],
+    });
+    const withoutFiles = chip({ steerId: 'p3' });
+    const [withResult, withoutResult] = selectLocalSteersForQueue([withFiles, withoutFiles]);
+    expect(withResult.files).toEqual(withFiles.files);
+    expect(withoutResult.files).toBeUndefined();
   });
 });

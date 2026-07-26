@@ -32,7 +32,7 @@ import type {
   TActivityLabelEvent,
 } from 'librechat-data-provider';
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
-import type { DrainAfterAbort, QueuedMessageOrigin } from '~/store/families';
+import type { DrainAfterAbort, QueuedMessageOrigin, PendingSteer } from '~/store/families';
 import type { GenerationProtocolVersion } from '~/data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
@@ -608,6 +608,42 @@ const mergeResumeMessages = (
 };
 
 /**
+ * Local chips with no injection-boundary event left to resolve them: `pending`
+ * behind a server id that no `on_steer_applied` will ever confirm (the run
+ * ended), or `failed` and never having reached the server at all. Either one
+ * left behind survives past this run end and renders under whatever comes
+ * next — `PendingSteers` reads the same atom keyed only by conversation, not
+ * by run.
+ *
+ * `sending` chips are deliberately excluded: they have their own in-flight
+ * POST whose `onSuccess`/`onError` will settle them, and sweeping them here
+ * too would race that callback — a late ACK's re-add in
+ * `resolveAcknowledgedSteer` could then double-queue the same words.
+ */
+export function selectLocalSteersForQueue(
+  chips: PendingSteer[],
+  /** Ids the caller has already routed elsewhere this run end; matched against
+   *  both ids a chip can be known by, since either may be the one excluded. */
+  excluded: ReadonlySet<string> = new Set(),
+): TPendingSteer[] {
+  return chips
+    .filter(
+      (steer) =>
+        (steer.status === 'pending' || steer.status === 'failed') &&
+        !excluded.has(steer.steerId) &&
+        (steer.clientSteerId == null || !excluded.has(steer.clientSteerId)),
+    )
+    .map((steer) => ({
+      steerId: steer.steerId,
+      ...(steer.clientSteerId && { clientSteerId: steer.clientSteerId }),
+      text: steer.text,
+      createdAt: steer.createdAt,
+      ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+      ...(steer.queuedOrigin && { queuedOrigin: steer.queuedOrigin }),
+    }));
+}
+
+/**
  * Hook for resumable SSE streams.
  * Separates generation start (POST) from stream subscription (GET EventSource).
  * Supports auto-reconnection with exponential backoff.
@@ -938,14 +974,12 @@ export default function useResumableSSE(
    *  HTTP response consumes the same data as a fallback in useChatHelpers). */
   const convertSteersToQueued = useSteerConvert();
 
-  /** Error events carry no `pendingSteers` payload (the server drops its copy
-   *  on failure), but every acknowledged OR failed chip's text is local —
-   *  convert both to queued follow-ups so the user's words survive a failed
-   *  run. `sending` chips settle through their own POST callbacks (404 falls
-   *  back to queue/send); `pending` and `failed` chips have no such callback
-   *  waiting on them, so leaving either behind would strand it — and worse,
-   *  `PendingSteers` reads this same atom on the NEXT run's reply, so a
-   *  stranded chip would leak into a message it was never part of. */
+  /** Sweeps this conversation's local chips (see `selectLocalSteersForQueue`)
+   *  into queued follow-ups. Error events carry no `pendingSteers` payload of
+   *  their own (the server drops its copy on failure) — this is the only
+   *  source of truth for those runs; the `final` and intentional-`abort`
+   *  paths call it alongside their own server-reported list as a backstop for
+   *  `failed` chips, which never rode that list at all. */
   const convertLocalSteersToQueued = useRecoilCallback(
     ({ snapshot }) =>
       (
@@ -957,22 +991,10 @@ export default function useResumableSSE(
         },
       ) => {
         const chips = snapshot.getLoadable(store.pendingSteersByConvoId(conversationId)).getValue();
-        const excluded = new Set(options?.excludeSteerIds ?? []);
-        const settled = chips
-          .filter(
-            (steer) =>
-              (steer.status === 'pending' || steer.status === 'failed') &&
-              !excluded.has(steer.steerId) &&
-              (steer.clientSteerId == null || !excluded.has(steer.clientSteerId)),
-          )
-          .map((steer) => ({
-            steerId: steer.steerId,
-            ...(steer.clientSteerId && { clientSteerId: steer.clientSteerId }),
-            text: steer.text,
-            createdAt: steer.createdAt,
-            ...(steer.files && steer.files.length > 0 && { files: steer.files }),
-            ...(steer.queuedOrigin && { queuedOrigin: steer.queuedOrigin }),
-          }));
+        const settled = selectLocalSteersForQueue(
+          chips,
+          new Set(options?.excludeSteerIds ?? []),
+        );
         if (settled.length > 0) {
           convertSteersToQueued(conversationId, settled, {
             claimParked: options?.claimParked,
@@ -1491,6 +1513,11 @@ export default function useResumableSSE(
                 generationProtocolVersion,
               },
             );
+            // A `failed` chip never reached the server, so it never rides
+            // `data.pendingSteers` above — without this it survives a NORMAL
+            // completion and renders (with a live Retry) under the NEXT run's
+            // reply. Idempotent alongside the call above: both dedupe by id.
+            convertLocalSteersToQueued(finalConvoId);
             let finalHandled = false;
             try {
               finalHandler(data, currentSubmission as EventSubmission);
@@ -3077,6 +3104,12 @@ export default function useResumableSSE(
          *  merge into the next response in this conversation. On a resume the
          *  collected usage is re-folded via backfillUsage, so nothing is lost. */
         resetLive({ ...currentSubmission, userMessage });
+        // No final/error event fires on this path, so it's the only place left
+        // to sweep a local `failed` chip — otherwise it survives this close and
+        // renders (with a live Retry) under whatever run starts next.
+        convertLocalSteersToQueued(
+          currentSubmission.conversation?.conversationId ?? currentStreamId,
+        );
       });
 
       // Start the SSE connection
