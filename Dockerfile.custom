@@ -71,14 +71,17 @@ ENV BUILD_DATE=${BUILD_DATE}
 USER root
 
 # Copy MCP servers
-COPY mcp-servers/qwen-image/package.json /app/mcp-servers/qwen-image/package.json
-COPY mcp-servers/qwen-image/index.js /app/mcp-servers/qwen-image/index.js
+COPY mcp-servers/image/package.json /app/mcp-servers/image/package.json
+COPY mcp-servers/image/index.js /app/mcp-servers/image/index.js
+COPY mcp-servers/image-edit/package.json /app/mcp-servers/image-edit/package.json
+COPY mcp-servers/image-edit/index.js /app/mcp-servers/image-edit/index.js
 COPY mcp-servers/document-generator/package.json /app/mcp-servers/document-generator/package.json
 COPY mcp-servers/document-generator/index.js /app/mcp-servers/document-generator/index.js
 COPY mcp-servers/document-generator/generators /app/mcp-servers/document-generator/generators
 
 # Install MCP server dependencies
-RUN cd /app/mcp-servers/qwen-image && npm install --production
+RUN cd /app/mcp-servers/image && npm install --production
+RUN cd /app/mcp-servers/image-edit && npm install --production
 RUN cd /app/mcp-servers/document-generator && npm install --production
 
 # Return to node user
