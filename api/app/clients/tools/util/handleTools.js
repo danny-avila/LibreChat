@@ -32,6 +32,7 @@ const {
   // Structured Tools
   DALLE3,
   FluxAPI,
+  ExaSearch,
   OpenWeather,
   StructuredSD,
   StructuredACS,
@@ -183,6 +184,7 @@ const loadTools = async ({
 }) => {
   const toolConstructors = {
     flux: FluxAPI,
+    exa_search: ExaSearch,
     calculator: Calculator,
     google: GoogleSearchAPI,
     open_weather: OpenWeather,

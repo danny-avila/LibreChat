@@ -338,6 +338,57 @@ export const tavilySearchSchema: ExtendedJsonSchema = {
   required: ['query'],
 };
 
+/** Exa Search tool JSON schema */
+export const exaSearchSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    query: {
+      type: 'string',
+      minLength: 1,
+      description: 'The search query string.',
+    },
+    numResults: {
+      type: 'number',
+      minimum: 1,
+      maximum: 25,
+      description: 'The maximum number of search results to return. Defaults to 10.',
+    },
+    type: {
+      type: 'string',
+      enum: ['auto', 'fast', 'instant', 'deep-lite', 'deep', 'deep-reasoning'],
+      description:
+        'The search mode. `auto` balances speed and quality (default). `fast` and `instant` trade quality for lower latency. `deep-lite`, `deep`, and `deep-reasoning` trade higher latency for more reasoning and synthesis depth.',
+    },
+    category: {
+      type: 'string',
+      enum: ['company', 'research paper', 'news', 'personal site', 'financial report'],
+      description: 'Restrict results to a specialized index. Omit for general web search.',
+    },
+    includeDomains: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'A list of domains to specifically include in the search results.',
+    },
+    excludeDomains: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'A list of domains to specifically exclude from the search results.',
+    },
+    text: {
+      type: 'boolean',
+      description:
+        'Whether to return the full page text instead of highlights. Highlights are returned by default and are more token-efficient.',
+    },
+    maxAgeHours: {
+      type: 'number',
+      minimum: 0,
+      description:
+        'Maximum age of the page content in hours before it is crawled again. Use a small value only when freshness matters, as crawling increases response time.',
+    },
+  },
+  required: ['query'],
+};
+
 /** File Search tool JSON schema */
 export const fileSearchSchema: ExtendedJsonSchema = {
   type: 'object',
@@ -415,6 +466,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'A search engine optimized for comprehensive, accurate, and trusted results. Useful for when you need to answer questions about current events.',
     schema: tavilySearchSchema,
+    toolType: 'builtin',
+  },
+  exa_search: {
+    name: 'exa_search',
+    description:
+      'A neural search engine that finds web pages by meaning, returning relevant excerpts or full page content. Useful for when you need to answer questions about current events or research a topic in depth.',
+    schema: exaSearchSchema,
     toolType: 'builtin',
   },
   file_search: {

@@ -71,6 +71,19 @@
     ]
   },
   {
+    "name": "Exa Search",
+    "pluginKey": "exa_search",
+    "description": "Exa is a semantic search engine for AI agents. It retrieves web pages by meaning and returns relevant excerpts or full page content for grounding answers.",
+    "icon": "assets/exa.svg",
+    "authConfig": [
+      {
+        "authField": "EXA_API_KEY",
+        "label": "Exa API Key",
+        "description": "Get your API key here: https://dashboard.exa.ai/api-keys"
+      }
+    ]
+  },
+  {
     "name": "Tavily Search",
     "pluginKey": "tavily_search_results_json",
     "description": "Tavily Search is a robust search API tailored for LLM Agents. It seamlessly integrates with diverse data sources to ensure a superior, relevant search experience.",
