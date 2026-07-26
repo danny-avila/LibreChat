@@ -116,7 +116,11 @@ describe('useSteering', () => {
     });
 
     it('degrades to queue without a real conversation id', () => {
-      const { result } = setup({ conversationId: Constants.NEW_CONVO as string });
+      // Seed 'steer' so the assertion exercises the `canSteer ?` degrade
+      // guard itself, not just the (now default) queue value falling through.
+      const { result } = setup({ conversationId: Constants.NEW_CONVO as string }, ({ set }) => {
+        set(store.duringRunDefaultAction, 'steer');
+      });
       expect(result.current.effectiveAction).toBe('queue');
     });
 
@@ -133,7 +137,11 @@ describe('useSteering', () => {
           ],
         } as unknown as TMessage,
       ];
-      const { result } = setup();
+      // Seed 'steer' so this proves the pausedOnApproval guard forces queue,
+      // not just that the default happens to already be queue.
+      const { result } = setup({}, ({ set }) => {
+        set(store.duringRunDefaultAction, 'steer');
+      });
       expect(result.current.pausedOnApproval).toBe(true);
       expect(result.current.effectiveAction).toBe('queue');
       expect(result.current.canSteer).toBe(false);
@@ -620,7 +628,11 @@ describe('useSteering', () => {
     });
 
     it('ignores empty submissions', () => {
-      const { result } = setup();
+      // Seed 'steer' so the mockMutate assertion actually exercises the
+      // steer path's blank-text guard, not the (now default) queue path.
+      const { result } = setup({}, ({ set }) => {
+        set(store.duringRunDefaultAction, 'steer');
+      });
       let consumed = true;
       act(() => {
         consumed = result.current.submitDuringRun('   ');
@@ -1899,7 +1911,12 @@ describe('useSteering', () => {
     });
 
     it('holds during-run submits while uploads are in flight', () => {
-      const { result } = setupWithFiles({ filesLoading: true });
+      // Seed 'steer' so this covers steerFromComposer's own filesLoading
+      // guard; the queue-path guard is covered separately (queueFromComposer
+      // is exercised directly with filesLoading in the composer-draft tests).
+      const { result } = setupWithFiles({ filesLoading: true }, ({ set }) => {
+        set(store.duringRunDefaultAction, 'steer');
+      });
       let consumed = true;
       act(() => {
         consumed = result.current.steering.submitDuringRun('too early');
