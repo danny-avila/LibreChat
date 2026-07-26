@@ -3,13 +3,17 @@ import { useRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
 import SpeechRecognitionImport, { useSpeechRecognition } from 'react-speech-recognition';
+import useGetAudioSettings from './useGetAudioSettings';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
+/** `abortListening` stays optional: it is not part of what makes a module a
+ *  usable controller, so a build without it must still count as supported. */
 type SpeechRecognitionController = Pick<
   typeof SpeechRecognitionImport,
   'startListening' | 'stopListening'
->;
+> &
+  Partial<Pick<typeof SpeechRecognitionImport, 'abortListening'>>;
 type SpeechRecognitionModule = Partial<SpeechRecognitionController> & {
   default?: Partial<SpeechRecognitionController>;
 };
@@ -31,6 +35,8 @@ const useSpeechToTextBrowser = (
 ) => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const { speechToTextEndpoint } = useGetAudioSettings();
+  const isBrowserSTTEnabled = speechToTextEndpoint === 'browser';
   const { data: speechConfig } = useGetCustomConfigSpeechQuery({ enabled: true });
   const sttExternal = Boolean(speechConfig?.sttExternal);
 
@@ -137,11 +143,45 @@ const useSpeechToTextBrowser = (
     sttExternal,
   ]);
 
+  /**
+   * Drops the take without emitting a transcript. `abortListening` discards the
+   * recogniser's buffered result, and the pending auto-send timer is cleared so
+   * a transcript that already landed cannot fire after the user cancelled.
+   */
+  const abortListening = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    lastTranscript.current = null;
+    lastInterim.current = null;
+    if (hasSpeechRecognitionController(SpeechRecognition)) {
+      if (typeof SpeechRecognition.abortListening === 'function') {
+        SpeechRecognition.abortListening();
+      } else {
+        SpeechRecognition.stopListening();
+      }
+    }
+    resetTranscript();
+  }, [resetTranscript]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.shiftKey && e.altKey && e.code === 'KeyL' && !isBrowserSTTEnabled) {
+        toggleListening();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isBrowserSTTEnabled, toggleListening]);
+
   return {
     isListening,
     isLoading: false,
     startRecording: toggleListening,
     stopRecording: toggleListening,
+    abortRecording: abortListening,
   };
 };
 
