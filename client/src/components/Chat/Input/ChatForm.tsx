@@ -719,6 +719,7 @@ const ChatForm = memo(function ChatForm({
             hasText={(textValue?.trim() ?? '') !== ''}
             isSubmitting={isSubmitting}
             duringRunActive={steering.duringRunActive}
+            duringRunAction={steering.effectiveAction}
             answerModeActive={answerMode.active}
             uploadingCount={uploadingCount}
           />

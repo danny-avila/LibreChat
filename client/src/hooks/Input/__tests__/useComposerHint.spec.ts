@@ -9,6 +9,7 @@ const baseState: ComposerHintState = {
   hasText: false,
   isSubmitting: false,
   duringRunActive: false,
+  duringRunAction: 'queue' as const,
   answerModeActive: false,
   uploadingCount: 0,
 };
@@ -33,8 +34,20 @@ describe('composeHint', () => {
   });
 
   describe('during a run with text', () => {
-    it('surfaces all three modifiers', () => {
+    it('leads with queue when queue is the default', () => {
       const result = hint({ duringRunActive: true, hasText: true, isSubmitting: true });
+      expect(result).toContain('com_ui_composer_hint_queue_default');
+      expect(result).toContain('com_ui_composer_hint_send_now');
+      expect(result).toContain('com_ui_composer_hint_interrupt');
+    });
+
+    it('leads with steer when the setting is flipped', () => {
+      const result = hint({
+        duringRunActive: true,
+        hasText: true,
+        isSubmitting: true,
+        duringRunAction: 'steer',
+      });
       expect(result).toContain('com_ui_composer_hint_steer');
       expect(result).toContain('com_ui_composer_hint_queue');
       expect(result).toContain('com_ui_composer_hint_interrupt');
