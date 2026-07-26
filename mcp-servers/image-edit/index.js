@@ -4,14 +4,42 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import fs from 'fs';
+import path from 'path';
 
 const DASHSCOPE_API_KEY = process.env.DASHSCOPE_API_KEY;
 const DASHSCOPE_BASE_URL = process.env.DASHSCOPE_BASE_URL || 'https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation';
 const MODEL = process.env.IMAGE_EDIT_MODEL || 'qwen-image-edit-max';
+const IMAGES_PATH = process.env.IMAGES_PATH || '/app/generated_files/';
 
 if (!DASHSCOPE_API_KEY) {
   console.error('Error: DASHSCOPE_API_KEY environment variable is required');
   process.exit(1);
+}
+
+// Ensure images directory exists
+try {
+  fs.mkdirSync(IMAGES_PATH, { recursive: true });
+} catch (err) {
+  console.error(`Warning: Could not create images directory: ${err.message}`);
+}
+
+function generateFilename(prompt) {
+  // Create a clean filename from the prompt
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const cleanPrompt = prompt
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, '_')
+    .slice(0, 50);
+  return `edit_${timestamp}_${cleanPrompt}.png`;
+}
+
+function saveImageToDisk(base64, filename) {
+  const filepath = path.join(IMAGES_PATH, filename);
+  const buffer = Buffer.from(base64, 'base64');
+  fs.writeFileSync(filepath, buffer);
+  return filepath;
 }
 
 const server = new Server(
@@ -140,6 +168,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const imageUrl = await callDashScopeAPI(prompt, null, size, image_url);
       const { base64, contentType } = await downloadImageAsBase64(imageUrl);
 
+      // Save to disk
+      const filename = generateFilename(prompt);
+      let savedPath = null;
+      try {
+        savedPath = saveImageToDisk(base64, filename);
+      } catch (err) {
+        console.error(`Warning: Could not save image to disk: ${err.message}`);
+      }
+
+      const responseText = savedPath
+        ? `Image edited successfully. Saved to: ${filename}. Prompt: "${prompt}"`
+        : `Image edited successfully. Prompt: "${prompt}"`;
+
       return {
         content: [
           {
@@ -149,7 +190,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           },
           {
             type: 'text',
-            text: `Image edited successfully. Prompt: "${prompt}"`,
+            text: responseText,
           },
         ],
       };
