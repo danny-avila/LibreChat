@@ -7,6 +7,8 @@ const { sleep } = require('@librechat/agents');
 const {
   isEnabled,
   runImport,
+  GROK_SOURCE,
+  GROK_ENDPOINT,
   inspectExport,
   ImportJobStore,
   deleteAgentCheckpoints,
@@ -355,6 +357,11 @@ function resolveJobTarget(job) {
   if (job.summary?.source === 'claude') {
     return { format: 'claude', endpoint: EModelEndpoint.anthropic, source: 'claude' };
   }
+  /** xAI has no first-class endpoint, so Grok conversations land on OpenAI —
+   * see `GROK_ENDPOINT`, which this must stay in step with. */
+  if (job.summary?.source === 'grok') {
+    return { format: 'grok', endpoint: GROK_ENDPOINT, source: GROK_SOURCE };
+  }
   return { format: 'chatgpt', endpoint: EModelEndpoint.openAI, source: 'chatgpt' };
 }
 
@@ -440,8 +447,8 @@ async function runImportJob(req, job) {
 
 /**
  * Imports a bare export synchronously through the old, un-jobbed importer.
- * Reached only for uploads that are neither a zip nor recognizable ChatGPT or
- * Claude content: ChatbotUI and LibreChat exports are detected by CONTENT
+ * Reached only for uploads that are neither a zip nor recognizable ChatGPT,
+ * Claude or Grok content: ChatbotUI and LibreChat exports are detected by CONTENT
  * (`getImporter`, invoked inside `importConversations`), not by file extension.
  * The `.zip` exclusion is load-bearing — this path reads `req.file.path` as
  * JSON, which no archive can satisfy.
@@ -468,14 +475,14 @@ async function importLegacyConversation(req, res) {
 /**
  * Imports a conversation export and saves it to the database.
  *
- * `.zip` uploads and bare `.json` ChatGPT and Claude exports share one
+ * `.zip` uploads and bare `.json` ChatGPT, Claude and Grok exports share one
  * pipeline: `openArchive` wraps a non-zip file in a single-entry archive, so
  * `inspectExport` sees the same shape either way and this request only
  * inspects the upload and returns a summary awaiting confirmation — the
  * actual import runs after POST /import/jobs/:jobId/start. A bare `.json`
- * upload that is neither ChatGPT- nor Claude-shaped (ChatbotUI, LibreChat)
- * falls back to the legacy synchronous importer, which is the only path that
- * understands those layouts.
+ * upload matching none of those shapes (ChatbotUI, LibreChat) falls back to
+ * the legacy synchronous importer, which is the only path that understands
+ * those layouts.
  * @route POST /import
  * @param {Express.Multer.File} req.file - The uploaded export file.
  * @returns {object} 201 - legacy (non-ChatGPT) JSON import succeeded

@@ -1372,6 +1372,7 @@
   "com_ui_import_report_assets": "{{0}} attachments imported, {{1}} unavailable",
   "com_ui_import_source_chatgpt": "ChatGPT",
   "com_ui_import_source_claude": "Claude",
+  "com_ui_import_source_grok": "Grok",
   "com_ui_import_stat_archived": "{{0}} archived",
   "com_ui_import_stat_conversations": "{{0}} conversations",
   "com_ui_import_stat_starred": "{{0}} starred",

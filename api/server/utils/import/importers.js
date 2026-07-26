@@ -1,4 +1,11 @@
-const { convertConversation, convertClaudeConversation } = require('@librechat/api');
+const {
+  isGrokExport,
+  GROK_SOURCE,
+  GROK_ENDPOINT,
+  convertConversation,
+  convertGrokConversation,
+  convertClaudeConversation,
+} = require('@librechat/api');
 const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   Constants,
@@ -44,6 +51,12 @@ function getImporter(jsonData) {
   if (jsonData.conversationId && (jsonData.messagesTree || jsonData.messages)) {
     logger.info('Importing LibreChat conversation');
     return importLibreChatConvo;
+  }
+
+  // For Grok, the only export whose root is an object of conversations
+  if (isGrokExport(jsonData)) {
+    logger.info('Importing Grok conversation');
+    return importGrokConvo;
   }
 
   throw new Error('Unsupported import type');
@@ -148,6 +161,65 @@ async function importClaudeConvo(
     logger.info(`user: ${requestUserId} | Claude conversation imported`);
   } catch (error) {
     logger.error(`user: ${requestUserId} | Error creating conversation from Claude file`, error);
+    throw error;
+  }
+}
+
+/**
+ * Imports Grok conversations from provided JSON data.
+ * Delegates conversion of each conversation to `convertGrokConversation`, the
+ * same engine `runImport` uses for zipped Grok exports, so a bare
+ * `prod-grok-backend.json` upload and a zip archive produce identical messages:
+ * branching, per-message models and dropped empty generations included. The
+ * binaries a Grok export ships belong to its `media_posts` rather than to any
+ * conversation, so nothing is lost by this path not resolving assets.
+ *
+ * @param {object} jsonData - Grok export object keyed by `conversations`.
+ * @param {string} requestUserId - The ID of the user who initiated the import process.
+ * @param {Function} builderFactory - Factory function to create a new import batch builder instance.
+ * @param {string} [userRole] - The role of the importing user.
+ * @returns {Promise<void>} Promise that resolves when all conversations have been imported.
+ */
+async function importGrokConvo(
+  jsonData,
+  requestUserId,
+  builderFactory = createImportBatchBuilder,
+  userRole,
+) {
+  try {
+    const importBatchBuilder = builderFactory(requestUserId);
+    const defaultModel = await resolveImportDefaultModel({
+      endpoint: GROK_ENDPOINT,
+      requestUserId,
+      userRole,
+    });
+
+    for (const entry of jsonData.conversations) {
+      const converted = convertGrokConversation(entry, {
+        defaultModel: defaultModel || openAISettings.model.default,
+      });
+
+      importBatchBuilder.startConversation(GROK_ENDPOINT);
+      for (const message of converted.messages) {
+        importBatchBuilder.saveMessage(toSaveMessageDetails(message, GROK_ENDPOINT));
+      }
+      importBatchBuilder.finishConversation(
+        converted.title,
+        converted.createdAt,
+        {
+          isArchived: converted.isArchived,
+          pinned: converted.pinned,
+          model: converted.model,
+          importedFrom: { source: GROK_SOURCE, externalId: converted.externalId },
+        },
+        converted.model,
+      );
+    }
+
+    await importBatchBuilder.saveBatch();
+    logger.info(`user: ${requestUserId} | Grok conversation imported`);
+  } catch (error) {
+    logger.error(`user: ${requestUserId} | Error creating conversation from Grok file`, error);
     throw error;
   }
 }

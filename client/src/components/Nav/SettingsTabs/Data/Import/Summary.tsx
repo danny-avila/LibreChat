@@ -14,6 +14,7 @@ const SOURCE_LABELS: Partial<Record<TImportSummary['source'], TranslationKeys>> 
   chatgpt: 'com_ui_import_source_chatgpt',
   'chatgpt-legacy': 'com_ui_import_source_chatgpt',
   claude: 'com_ui_import_source_claude',
+  grok: 'com_ui_import_source_grok',
 };
 
 function formatAssetSize(bytes: number): string {

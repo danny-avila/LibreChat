@@ -12,6 +12,7 @@ const {
   buildClaudeExportZip,
   cleanupClaudeExportZips,
 } = require('~/test/claudeExport');
+const { bareGrokExport, buildGrokExportZip, cleanupGrokExportZips } = require('~/test/grokExport');
 const { createModels, createMethods } = require('@librechat/data-schemas');
 const { FileSources, EModelEndpoint } = require('librechat-data-provider');
 
@@ -265,6 +266,7 @@ describe('conversation import job API (real router, real Mongo)', () => {
     }
     cleanupChatGptExportZips();
     cleanupClaudeExportZips();
+    cleanupGrokExportZips();
   });
 
   beforeEach(async () => {
@@ -411,6 +413,100 @@ describe('conversation import job API (real router, real Mongo)', () => {
     expect(completed.body.report.imported).toBe(0);
     expect(completed.body.report.skipped).toBe(2);
     expect(await Conversation.countDocuments({ user: userId })).toBe(2);
+  });
+
+  it('imports a Grok export .zip through the job API on the OpenAI endpoint', async () => {
+    const filepath = await buildGrokExportZip();
+
+    const uploaded = await request(app)
+      .post('/api/convos/import')
+      .attach('file', filepath)
+      .expect(202);
+
+    expect(uploaded.body.summary).toMatchObject({
+      source: 'grok',
+      conversations: 2,
+      assets: 0,
+      archived: 0,
+      starred: 1,
+    });
+
+    await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
+    const completed = await waitForTerminal(app, uploaded.body.jobId);
+
+    expect(completed.body.phase).toBe('completed');
+    expect(completed.body.report.imported).toBe(2);
+    expect(completed.body.report.errors).toEqual([]);
+
+    const convos = await Conversation.find({ user: userId }).lean();
+    expect(convos).toHaveLength(2);
+    expect(convos.every((convo) => convo.endpoint === EModelEndpoint.openAI)).toBe(true);
+    expect(convos.map((convo) => convo.importedFrom.source).sort()).toEqual(['grok', 'grok']);
+    expect(convos.map((convo) => convo.title).sort()).toEqual([
+      'Amalfi trip planning',
+      'Recovering a cut-off script',
+    ]);
+
+    const messages = await mongoose.models.Message.find({ user: userId }).lean();
+    /** Five of six responses: the aborted, textless generation is dropped. */
+    expect(messages).toHaveLength(5);
+    const branch = messages.find((message) => message.text === 'Positano.');
+    expect(branch.sender).toBe('Grok 4.1 Thinking');
+    expect(branch.model).toBe('grok-4-1-thinking-1129');
+    expect(branch.isCreatedByUser).toBe(false);
+    const completedScript = messages.find(
+      (message) => message.text === 'Here is the completed script.',
+    );
+    const prompt = messages.find((message) => message.text === 'Complete this script.');
+    expect(completedScript.parentMessageId).toBe(prompt.messageId);
+  });
+
+  it('imports a bare prod-grok-backend.json upload through the same job API', async () => {
+    const uploaded = await request(app)
+      .post('/api/convos/import')
+      .attach('file', bareGrokExport(), 'prod-grok-backend.json')
+      .expect(202);
+
+    expect(uploaded.body.summary.source).toBe('grok');
+    expect(uploaded.body.summary.conversations).toBe(2);
+
+    await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
+    const completed = await waitForTerminal(app, uploaded.body.jobId);
+
+    expect(completed.body.phase).toBe('completed');
+    expect(completed.body.report.imported).toBe(2);
+    expect(await Conversation.countDocuments({ user: userId })).toBe(2);
+  });
+
+  it('skips a Grok conversation already imported and keeps provider id namespaces apart', async () => {
+    const first = await request(app)
+      .post('/api/convos/import')
+      .attach('file', await buildGrokExportZip())
+      .expect(202);
+    await request(app).post(`/api/convos/import/jobs/${first.body.jobId}/start`).expect(202);
+    await waitForTerminal(app, first.body.jobId);
+
+    const second = await request(app)
+      .post('/api/convos/import')
+      .attach('file', await buildGrokExportZip())
+      .expect(202);
+    await request(app).post(`/api/convos/import/jobs/${second.body.jobId}/start`).expect(202);
+    const completed = await waitForTerminal(app, second.body.jobId);
+
+    expect(completed.body.report.imported).toBe(0);
+    expect(completed.body.report.skipped).toBe(2);
+
+    /** A Claude import on top adds its own conversations rather than being
+     * suppressed by the Grok external ids already recorded. */
+    const claude = await request(app)
+      .post('/api/convos/import')
+      .attach('file', await buildClaudeExportZip())
+      .expect(202);
+    await request(app).post(`/api/convos/import/jobs/${claude.body.jobId}/start`).expect(202);
+    const claudeDone = await waitForTerminal(app, claude.body.jobId);
+
+    expect(claudeDone.body.report.imported).toBe(2);
+    expect(await Conversation.countDocuments({ user: userId })).toBe(4);
   });
 
   it('still imports a ChatbotUI-shaped .json upload through the legacy synchronous path', async () => {

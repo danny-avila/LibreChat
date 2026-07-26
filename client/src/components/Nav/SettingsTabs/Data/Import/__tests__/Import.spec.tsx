@@ -179,6 +179,26 @@ describe('Import panel', () => {
     expect(screen.getByRole('heading', { name: /detected chatgpt export/i })).toHaveFocus();
   });
 
+  it('names every provider it can detect, and falls back to the raw source', () => {
+    const labels: [TImportSummary['source'], RegExp][] = [
+      ['chatgpt', /detected chatgpt export/i],
+      ['chatgpt-legacy', /detected chatgpt export/i],
+      ['claude', /detected claude export/i],
+      ['grok', /detected grok export/i],
+      ['librechat', /detected librechat export/i],
+    ];
+
+    for (const [source, name] of labels) {
+      dataProvider.useImportJobQuery.mockReturnValue({
+        data: job({ summary: { ...summary(), source } }),
+      });
+      const { unmount } = render(<Import />);
+      expect(screen.getByRole('heading', { name })).toBeInTheDocument();
+      expect(document.body.textContent).not.toMatch(/com_ui_import_source/);
+      unmount();
+    }
+  });
+
   it('keeps the confirm and cancel buttons accessible while busy', () => {
     dataProvider.useImportJobQuery.mockReturnValue({ data: job() });
     dataProvider.useStartImportMutation.mockReturnValue({ mutate: jest.fn(), isLoading: true });

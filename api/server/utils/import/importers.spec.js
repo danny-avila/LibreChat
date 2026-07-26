@@ -1665,3 +1665,65 @@ describe('importClaudeConvo', () => {
     );
   });
 });
+
+describe('importGrokConvo', () => {
+  const { EXPORT: grokExport } = require('~/test/grokExport');
+
+  it('routes a Grok export object to the Grok importer', () => {
+    expect(getImporter(grokExport)).toBe(getImporter(grokExport));
+    expect(() => getImporter({ conversations: [] })).toThrow('Unsupported import type');
+  });
+
+  it('imports every conversation on the OpenAI endpoint with per-message models', async () => {
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    jest.spyOn(importBatchBuilder, 'startConversation');
+    jest.spyOn(importBatchBuilder, 'finishConversation');
+
+    const importer = getImporter(grokExport);
+    await importer(grokExport, requestUserId, () => importBatchBuilder);
+
+    expect(importBatchBuilder.startConversation).toHaveBeenCalledWith(EModelEndpoint.openAI);
+    /** Six responses, one of them an aborted generation with no text. */
+    expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(5);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+    const userMsg = savedMessages.find((msg) => msg.text === 'Where should I stay?');
+    expect(userMsg.isCreatedByUser).toBe(true);
+    expect(userMsg.sender).toBe('user');
+    expect(userMsg.endpoint).toBe(EModelEndpoint.openAI);
+    /** A blank model on a human turn falls back rather than persisting empty. */
+    expect(userMsg.model).toBe(openAISettings.model.default);
+
+    const upperCaseSender = savedMessages.find((msg) => msg.text === 'Positano.');
+    expect(upperCaseSender.isCreatedByUser).toBe(false);
+    expect(upperCaseSender.sender).toBe('Grok 4.1 Thinking');
+    expect(upperCaseSender.model).toBe('grok-4-1-thinking-1129');
+    expect(upperCaseSender.parentMessageId).toBe(userMsg.messageId);
+
+    const sibling = savedMessages.find((msg) => msg.text === 'Ravello.');
+    expect(sibling.parentMessageId).toBe(userMsg.messageId);
+
+    expect(importBatchBuilder.finishConversation).toHaveBeenCalledWith(
+      'Amalfi trip planning',
+      expect.any(Date),
+      {
+        isArchived: false,
+        pinned: false,
+        model: expect.any(String),
+        importedFrom: { source: 'grok', externalId: 'grok-branched' },
+      },
+      expect.any(String),
+    );
+    expect(importBatchBuilder.finishConversation).toHaveBeenCalledWith(
+      'Recovering a cut-off script',
+      expect.any(Date),
+      expect.objectContaining({
+        pinned: true,
+        importedFrom: { source: 'grok', externalId: 'grok-retried' },
+      }),
+      expect.any(String),
+    );
+  });
+});
