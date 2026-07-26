@@ -1,17 +1,34 @@
+import { useRef, useEffect, useCallback } from 'react';
 import { useRecoilCallback } from 'recoil';
 import type { PendingSteer } from '~/store/families';
+import { getSteerErrorCode, resolveAcknowledgedSteer } from '~/hooks/Chat/useSteering';
+import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useSteerMessageMutation } from '~/data-provider';
+import { carriedSteerContext } from '~/utils';
 import store from '~/store';
 
 /**
  * Retry or re-route a pending steer from OUTSIDE the composer. The thread's
- * pending block needs these two actions without dragging the whole
+ * pending block needs these actions without dragging the whole
  * `SteeringControls` object through the message tree.
  */
 export default function useSteerRecovery(conversationId: string) {
   const { mutate: steerMessage } = useSteerMessageMutation();
+  const convertSteersToQueued = useSteerConvert();
 
-  const markSending = useRecoilCallback(
+  /** `PendingSteers` only renders while `isLast && isSubmitting` is true, so
+   *  its unmount IS the run ending. A retry's ack can resolve afterward;
+   *  mirrors `composerMountedRef` in `ChatForm`, which guards the equivalent
+   *  race for a reclaimed steer whose restore resolves post-unmount. */
+  const mountedRef = useRef(true);
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+    },
+    [],
+  );
+
+  const markStatus = useRecoilCallback(
     ({ set }) =>
       (steerId: string, status: PendingSteer['status']) => {
         set(store.pendingSteersByConvoId(conversationId), (prev) =>
@@ -21,66 +38,91 @@ export default function useSteerRecovery(conversationId: string) {
     [conversationId],
   );
 
+  const acknowledgeRetry = useRecoilCallback(
+    (cbInterface) => (localId: string, steer: PendingSteer, runOver: boolean) => {
+      resolveAcknowledgedSteer(cbInterface, conversationId, localId, steer, runOver);
+    },
+    [conversationId],
+  );
+
+  /** Routes a steer straight into the queue: reused for a retry that degrades
+   *  (no active run / paused / unsupported / queue full) and for `sendAsNew`,
+   *  so both get the same id-dedup, chronological merge, and applied-id
+   *  bookkeeping as every other steer-to-queue conversion — instead of a
+   *  blind append that a late ACK could still re-mint a chip for. */
+  const queueSteer = useCallback(
+    (steer: PendingSteer) => {
+      convertSteersToQueued(conversationId, [
+        {
+          steerId: steer.steerId,
+          text: steer.text,
+          createdAt: steer.createdAt,
+          ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+          ...carriedSteerContext(steer),
+        },
+      ]);
+    },
+    [conversationId, convertSteersToQueued],
+  );
+
   const retry = useRecoilCallback(
     ({ snapshot }) =>
       (steerId: string) => {
-        const steers = snapshot
+        const steer = snapshot
           .getLoadable(store.pendingSteersByConvoId(conversationId))
-          .getValue();
-        const steer = steers.find((item) => item.steerId === steerId);
+          .getValue()
+          .find((item) => item.steerId === steerId);
         if (!steer) {
           return;
         }
-        markSending(steerId, 'sending');
+        markStatus(steerId, 'sending');
         steerMessage(
           { conversationId, text: steer.text, files: steer.files },
           {
-            onSuccess: () => markSending(steerId, 'pending'),
-            onError: () => markSending(steerId, 'failed'),
+            onSuccess: (response) => {
+              acknowledgeRetry(
+                steerId,
+                { ...steer, steerId: response.steerId, status: 'pending' },
+                !mountedRef.current,
+              );
+            },
+            onError: (error) => {
+              const code = getSteerErrorCode(error);
+              // The run ended, is paused, or can't accept a steer right now —
+              // none of that means the words are lost, just that a queued
+              // follow-up is the only way left to send them.
+              if (
+                code === 'NO_ACTIVE_RUN' ||
+                code === 'RUN_PAUSED' ||
+                code === 'STEER_UNSUPPORTED' ||
+                code === 'STEER_QUEUE_FULL'
+              ) {
+                queueSteer(steer);
+                return;
+              }
+              markStatus(steerId, 'failed');
+            },
           },
         );
       },
-    [conversationId, steerMessage, markSending],
+    [conversationId, steerMessage, markStatus, acknowledgeRetry, queueSteer],
   );
 
   /** Move a failed steer into the queue: it sends when the reply finishes. */
   const sendAsNew = useRecoilCallback(
-    ({ snapshot, set }) =>
+    ({ snapshot }) =>
       (steerId: string) => {
-        const steers = snapshot
+        const steer = snapshot
           .getLoadable(store.pendingSteersByConvoId(conversationId))
-          .getValue();
-        const steer = steers.find((item) => item.steerId === steerId);
+          .getValue()
+          .find((item) => item.steerId === steerId);
         if (!steer) {
           return;
         }
-        set(store.pendingSteersByConvoId(conversationId), (prev) =>
-          prev.filter((item) => item.steerId !== steerId),
-        );
-        set(store.queuedMessagesByConvoId(conversationId), (prev) => [
-          ...prev,
-          {
-            id: steer.steerId,
-            text: steer.text,
-            createdAt: steer.createdAt,
-            files: steer.files,
-            quotes: steer.quotes,
-            manualSkills: steer.manualSkills,
-          },
-        ]);
+        queueSteer(steer);
       },
-    [conversationId],
+    [conversationId, queueSteer],
   );
 
-  const remove = useRecoilCallback(
-    ({ set }) =>
-      (steerId: string) => {
-        set(store.pendingSteersByConvoId(conversationId), (prev) =>
-          prev.filter((item) => item.steerId !== steerId),
-        );
-      },
-    [conversationId],
-  );
-
-  return { retry, sendAsNew, remove };
+  return { retry, sendAsNew };
 }
