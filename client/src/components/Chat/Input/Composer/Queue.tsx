@@ -82,12 +82,16 @@ function Queue({ steering, conversationId, onEditToComposer, onRestoreToComposer
               <span
                 className="shrink-0 text-xs text-text-secondary"
                 title={localize('com_ui_queued_attachment_count', { 0: String(fileCount) })}
-                aria-label={localize('com_ui_queued_attachment_count', { 0: String(fileCount) })}
               >
-                {localize(
-                  fileCount === 1 ? 'com_ui_attachment_count_one' : 'com_ui_attachment_count',
-                  { count: fileCount },
-                )}
+                <span className="sr-only">
+                  {localize('com_ui_queued_attachment_count', { 0: String(fileCount) })}
+                </span>
+                <span aria-hidden="true">
+                  {localize(
+                    fileCount === 1 ? 'com_ui_attachment_count_one' : 'com_ui_attachment_count',
+                    { count: fileCount },
+                  )}
+                </span>
               </span>
             )}
             <button
