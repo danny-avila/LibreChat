@@ -330,6 +330,32 @@ describe('convertClaudeConversation', () => {
     expect(converted.messages[0].createdAt.toISOString()).toBe('2025-12-08T17:00:00.000Z');
   });
 
+  it('chains messages in array order when the export carries no parent uuids at all', () => {
+    const converted = convertClaudeConversation(
+      conversation([
+        {
+          uuid: 'm1',
+          sender: 'human',
+          created_at: '2025-12-08T17:00:05.000Z',
+          content: [{ type: 'text', text: 'First' }],
+        },
+        {
+          uuid: 'm2',
+          sender: 'assistant',
+          created_at: '2025-12-08T17:00:02.000Z',
+          content: [{ type: 'text', text: 'Second' }],
+        },
+      ]),
+      OPTIONS,
+    );
+
+    const first = byText(converted.messages, 'First');
+    const second = byText(converted.messages, 'Second');
+    expect(first.parentMessageId).toBe(Constants.NO_PARENT);
+    expect(second.parentMessageId).toBe(first.messageId);
+    expect(second.createdAt.getTime()).toBeGreaterThan(first.createdAt.getTime());
+  });
+
   it('returns no messages for a conversation with an empty message list', () => {
     const converted = convertClaudeConversation({ uuid: 'conv-3', chat_messages: [] }, OPTIONS);
     expect(converted.messages).toHaveLength(0);

@@ -7,8 +7,13 @@ const mongoose = require('mongoose');
 const multer = require('multer');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { buildChatGptExportZip, cleanupChatGptExportZips } = require('~/test/chatgptExport');
+const {
+  bareClaudeExport,
+  buildClaudeExportZip,
+  cleanupClaudeExportZips,
+} = require('~/test/claudeExport');
 const { createModels, createMethods } = require('@librechat/data-schemas');
-const { FileSources } = require('librechat-data-provider');
+const { FileSources, EModelEndpoint } = require('librechat-data-provider');
 
 jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
 jest.mock('~/server/middleware', () => ({
@@ -193,22 +198,6 @@ function bareChatGptExport() {
   );
 }
 
-function claudeExport() {
-  return Buffer.from(
-    JSON.stringify([
-      {
-        uuid: 'claude-1',
-        name: 'Claude convo',
-        created_at: '2024-01-01T00:00:00Z',
-        chat_messages: [
-          { sender: 'human', text: 'Hi there', created_at: '2024-01-01T00:00:00Z' },
-          { sender: 'assistant', text: 'Hello!', created_at: '2024-01-01T00:00:01Z' },
-        ],
-      },
-    ]),
-  );
-}
-
 function chatbotUiExport() {
   return Buffer.from(
     JSON.stringify({
@@ -275,6 +264,7 @@ describe('conversation import job API (real router, real Mongo)', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
     cleanupChatGptExportZips();
+    cleanupClaudeExportZips();
   });
 
   beforeEach(async () => {
@@ -355,15 +345,72 @@ describe('conversation import job API (real router, real Mongo)', () => {
     expect(savedConvos).toBe(1);
   });
 
-  it('still imports a Claude-shaped .json upload through the legacy synchronous path', async () => {
-    const res = await request(app)
-      .post('/api/convos/import')
-      .attach('file', claudeExport(), 'claude-export.json')
-      .expect(201);
+  it('imports a Claude export .zip through the job API', async () => {
+    const filepath = await buildClaudeExportZip();
 
-    expect(res.body.message).toBe('Conversation(s) imported successfully');
-    const savedConvos = await Conversation.countDocuments({ user: userId });
-    expect(savedConvos).toBe(1);
+    const uploaded = await request(app)
+      .post('/api/convos/import')
+      .attach('file', filepath)
+      .expect(202);
+
+    expect(uploaded.body.summary).toMatchObject({
+      source: 'claude',
+      conversations: 2,
+      assets: 0,
+      archived: 0,
+      starred: 0,
+    });
+
+    await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
+    const completed = await waitForTerminal(app, uploaded.body.jobId);
+
+    expect(completed.body.phase).toBe('completed');
+    expect(completed.body.report.imported).toBe(2);
+    expect(completed.body.report.errors).toEqual([]);
+
+    const convos = await Conversation.find({ user: userId }).lean();
+    expect(convos).toHaveLength(2);
+    expect(convos.every((convo) => convo.endpoint === EModelEndpoint.anthropic)).toBe(true);
+    expect(convos.map((convo) => convo.importedFrom.source).sort()).toEqual(['claude', 'claude']);
+  });
+
+  it('imports a bare Claude conversations.json upload through the same job API', async () => {
+    const uploaded = await request(app)
+      .post('/api/convos/import')
+      .attach('file', bareClaudeExport(), 'conversations.json')
+      .expect(202);
+
+    expect(uploaded.body.summary.source).toBe('claude');
+    expect(uploaded.body.summary.conversations).toBe(2);
+
+    await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
+    const completed = await waitForTerminal(app, uploaded.body.jobId);
+
+    expect(completed.body.phase).toBe('completed');
+    expect(completed.body.report.imported).toBe(2);
+    expect(await Conversation.countDocuments({ user: userId })).toBe(2);
+  });
+
+  it('skips a Claude conversation already imported and does not skip ChatGPT ids', async () => {
+    const filepath = await buildClaudeExportZip();
+
+    const first = await request(app)
+      .post('/api/convos/import')
+      .attach('file', filepath)
+      .expect(202);
+    await request(app).post(`/api/convos/import/jobs/${first.body.jobId}/start`).expect(202);
+    await waitForTerminal(app, first.body.jobId);
+
+    const second = await request(app)
+      .post('/api/convos/import')
+      .attach('file', await buildClaudeExportZip())
+      .expect(202);
+    await request(app).post(`/api/convos/import/jobs/${second.body.jobId}/start`).expect(202);
+    const completed = await waitForTerminal(app, second.body.jobId);
+
+    expect(completed.body.report.imported).toBe(0);
+    expect(completed.body.report.skipped).toBe(2);
+    expect(await Conversation.countDocuments({ user: userId })).toBe(2);
   });
 
   it('still imports a ChatbotUI-shaped .json upload through the legacy synchronous path', async () => {

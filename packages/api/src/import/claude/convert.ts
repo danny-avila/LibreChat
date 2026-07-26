@@ -116,13 +116,24 @@ export function convertClaudeConversation(
     unavailable += entry.converted.unavailable;
   }
 
+  let previousId = Constants.NO_PARENT;
+
   for (const entry of order) {
     const { message, converted } = entry;
     const isCreatedByUser = message.sender === HUMAN_SENDER;
 
+    /** An export that carries no `parent_message_uuid` at all (the field is
+     * absent rather than null) has no tree to rebuild, so its messages chain in
+     * array order — the shape the pre-branching importer always produced. An
+     * explicit `null` is a real root and is left alone. */
+    const parentMessageId =
+      message.parent_message_uuid === undefined
+        ? previousId
+        : findParent(message.parent_message_uuid, prepared, emitted);
+
     const built: ConvertedMessage = {
       messageId: entry.messageId,
-      parentMessageId: findParent(message.parent_message_uuid, prepared, emitted),
+      parentMessageId,
       text: converted.text,
       sender: isCreatedByUser ? 'user' : ASSISTANT_SENDER,
       isCreatedByUser,
@@ -138,6 +149,7 @@ export function convertClaudeConversation(
       built.attachments = converted.attachments;
     }
 
+    previousId = built.messageId;
     messages.push(built);
   }
 

@@ -327,16 +327,35 @@ function handleUpload(req, res, next) {
 /**
  * Existing `importedFrom.externalId` values already saved for this user, used
  * to skip conversations a prior (interrupted or re-run) import already wrote.
+ * Scoped to the export's own source: a ChatGPT conversation id can never
+ * collide with a Claude one, and treating them as one namespace would let one
+ * provider's ids suppress the other's.
  * @param {string} userId
+ * @param {string} source - `importedFrom.source` of the export being imported.
  * @returns {Promise<Set<string>>}
  */
-async function loadExistingExternalIds(userId) {
+async function loadExistingExternalIds(userId, source) {
   const Conversation = mongoose.models.Conversation;
   const rows = await Conversation.find(
-    { user: userId, 'importedFrom.source': 'chatgpt' },
+    { user: userId, 'importedFrom.source': source },
     { 'importedFrom.externalId': 1 },
   ).lean();
   return new Set(rows.map((row) => row.importedFrom?.externalId).filter(Boolean));
+}
+
+/**
+ * The converter, endpoint and `importedFrom.source` a confirmed job needs,
+ * derived from the summary `inspectExport` already recorded on it. Passing the
+ * format through means `runImport` never re-reads a shard just to re-learn a
+ * shape the inspect step already established.
+ * @param {import('@librechat/api').ImportJob} job
+ * @returns {{ format: string, endpoint: string, source: string }}
+ */
+function resolveJobTarget(job) {
+  if (job.summary?.source === 'claude') {
+    return { format: 'claude', endpoint: EModelEndpoint.anthropic, source: 'claude' };
+  }
+  return { format: 'chatgpt', endpoint: EModelEndpoint.openAI, source: 'chatgpt' };
 }
 
 /**
@@ -357,9 +376,10 @@ async function runImportJob(req, job) {
     const source = getFileStrategy(appConfig, { isImage: true });
     const { saveBuffer } = getStrategyFunctions(source);
     const batch = createImportBatchBuilder(req.user.id, appConfig?.interfaceConfig);
+    const target = resolveJobTarget(job);
 
     const defaultModel = await resolveImportDefaultModel({
-      endpoint: EModelEndpoint.openAI,
+      endpoint: target.endpoint,
       requestUserId: req.user.id,
       userRole: req.user.role,
     });
@@ -369,10 +389,11 @@ async function runImportJob(req, job) {
       userId: req.user.id,
       tenantId: req.user.tenantId,
       source,
+      format: target.format,
       defaultModel,
       deps: { saveBuffer, createFile: db.createFile },
       batch,
-      existingExternalIds: await loadExistingExternalIds(req.user.id),
+      existingExternalIds: await loadExistingExternalIds(req.user.id, target.source),
       isCancelled: () => importJobs.isCancelled(req.user.id, job.jobId),
       onProgress: async (progress) => {
         await importJobs.patch(req.user.id, job.jobId, { progress });
@@ -418,11 +439,12 @@ async function runImportJob(req, job) {
 }
 
 /**
- * Imports a bare ChatGPT-legacy export synchronously through the old,
- * un-jobbed importer. Reached only for uploads that are neither a zip nor
- * recognizable ChatGPT content: Claude, ChatbotUI, and LibreChat exports
- * are all detected by CONTENT (`getImporter`, invoked inside
- * `importConversations`), not by file extension.
+ * Imports a bare export synchronously through the old, un-jobbed importer.
+ * Reached only for uploads that are neither a zip nor recognizable ChatGPT or
+ * Claude content: ChatbotUI and LibreChat exports are detected by CONTENT
+ * (`getImporter`, invoked inside `importConversations`), not by file extension.
+ * The `.zip` exclusion is load-bearing — this path reads `req.file.path` as
+ * JSON, which no archive can satisfy.
  * @param {object} req
  * @param {object} res
  * @returns {Promise<void>}
@@ -446,14 +468,14 @@ async function importLegacyConversation(req, res) {
 /**
  * Imports a conversation export and saves it to the database.
  *
- * `.zip` uploads and bare `.json` ChatGPT exports share one pipeline:
- * `openArchive` wraps a non-zip file in a single-entry archive, so
+ * `.zip` uploads and bare `.json` ChatGPT and Claude exports share one
+ * pipeline: `openArchive` wraps a non-zip file in a single-entry archive, so
  * `inspectExport` sees the same shape either way and this request only
  * inspects the upload and returns a summary awaiting confirmation — the
  * actual import runs after POST /import/jobs/:jobId/start. A bare `.json`
- * upload that is not ChatGPT-shaped (Claude, ChatbotUI, LibreChat) falls
- * back to the legacy synchronous importer, since `inspectExport`/`runImport`
- * only understand the ChatGPT export layout.
+ * upload that is neither ChatGPT- nor Claude-shaped (ChatbotUI, LibreChat)
+ * falls back to the legacy synchronous importer, which is the only path that
+ * understands those layouts.
  * @route POST /import
  * @param {Express.Multer.File} req.file - The uploaded export file.
  * @returns {object} 201 - legacy (non-ChatGPT) JSON import succeeded

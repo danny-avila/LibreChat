@@ -1266,7 +1266,12 @@ describe('importClaudeConvo', () => {
     expect(importBatchBuilder.finishConversation).toHaveBeenCalledWith(
       'Test Conversation',
       expect.any(Date),
-      {},
+      {
+        isArchived: false,
+        pinned: false,
+        model: expect.any(String),
+        importedFrom: { source: 'claude', externalId: 'conv-123' },
+      },
       expect.any(String),
     );
 
@@ -1329,7 +1334,7 @@ describe('importClaudeConvo', () => {
     expect(assistantMsg.content[1].text).toBe('The answer is 4.');
   });
 
-  it('should not include model field (Claude exports do not contain model info)', async () => {
+  it('should save messages with the resolved anthropic model (Claude exports carry none)', async () => {
     const jsonData = [
       {
         uuid: 'conv-123',
@@ -1354,8 +1359,7 @@ describe('importClaudeConvo', () => {
     await importer(jsonData, requestUserId, () => importBatchBuilder);
 
     const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
-    // Model should not be explicitly set (will use ImportBatchBuilder default)
-    expect(savedMessages[0]).not.toHaveProperty('model');
+    expect(savedMessages[0].model).toBe(anthropicSettings.model.default);
   });
 
   it('should set the conversation endpoint and a Claude model so the chat UI loads correctly without a refresh', async () => {
@@ -1654,7 +1658,9 @@ describe('importClaudeConvo', () => {
     expect(importBatchBuilder.finishConversation).toHaveBeenCalledWith(
       'Imported Claude Chat',
       expect.any(Date),
-      {},
+      expect.objectContaining({
+        importedFrom: { source: 'claude', externalId: 'conv-123' },
+      }),
       expect.any(String),
     );
   });
