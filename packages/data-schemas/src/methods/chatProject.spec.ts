@@ -3,8 +3,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IChatProject, IConversation, IMessage, IMongoFile, ISharedLink } from '~/types';
-import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
+import {
+  createChatProjectMethods,
+  refreshChatProjectStatsForUser,
+  type ChatProjectMethods,
+} from './chatProject';
+import { createApplyForcedRetention } from '~/utils/retention';
 import { createModels } from '~/models';
+import logger from '~/config/winston';
 
 const ephemeralConfig = {
   temporaryChatRetention: 24,
@@ -40,7 +46,12 @@ beforeAll(async () => {
   Message = mongoose.models.Message as mongoose.Model<IMessage>;
   SharedLink = mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
   File = mongoose.models.File as mongoose.Model<IMongoFile>;
-  methods = createChatProjectMethods(mongoose);
+  const applyForcedRetention = createApplyForcedRetention(mongoose, {
+    logger,
+    refreshProjectStats: (userId, projectId) =>
+      refreshChatProjectStatsForUser(mongoose, userId, projectId),
+  });
+  methods = createChatProjectMethods(mongoose, applyForcedRetention);
 
   await mongoose.connect(mongoUri);
 });

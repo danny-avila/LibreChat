@@ -458,10 +458,25 @@ describe('share routes', () => {
       .send({ targetMessageId: 'msg-123' });
 
     expect(response.status).toBe(200);
-    expect(applyForcedRetention).toHaveBeenCalledWith(
-      { userId: 'user-123', interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } },
-      { conversationId: 'convo-123' },
-      expect.objectContaining({ context: expect.any(String) }),
+    expect(applyForcedRetention).toHaveBeenCalledWith('convo-123', 'user-123', {
+      retentionMode: RetentionMode.EPHEMERAL,
+    });
+    expect(applyForcedRetention).toHaveBeenCalledTimes(2);
+    expect(createSharedLink).toHaveBeenCalledWith(
+      'user-123',
+      'convo-123',
+      'msg-123',
+      undefined,
+      true,
+    );
+    expect(mockGrantCreationPermissions).toHaveBeenCalledWith(
+      'link-123',
+      'user-123',
+      true,
+      undefined,
+    );
+    expect(applyForcedRetention.mock.invocationCallOrder[1]).toBeGreaterThan(
+      mockGrantCreationPermissions.mock.invocationCallOrder[0],
     );
   });
 
@@ -479,11 +494,9 @@ describe('share routes', () => {
      * active share on retry) must still convert the touched conversation, otherwise a live
      * share could outlast a source chat that never converts.
      */
-    expect(applyForcedRetention).toHaveBeenCalledWith(
-      { userId: 'user-123', interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } },
-      { conversationId: 'convo-123' },
-      expect.objectContaining({ context: expect.any(String) }),
-    );
+    expect(applyForcedRetention).toHaveBeenCalledWith('convo-123', 'user-123', {
+      retentionMode: RetentionMode.EPHEMERAL,
+    });
     expect(applyForcedRetention.mock.invocationCallOrder[0]).toBeLessThan(
       createSharedLink.mock.invocationCallOrder[0],
     );
@@ -498,11 +511,17 @@ describe('share routes', () => {
       .patch('/api/share/share-123')
       .send({ snapshotFiles: false });
 
-    expect(applyForcedRetention).toHaveBeenCalledWith(
-      { userId: 'user-123', interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } },
-      { conversationId: 'convo-123' },
-      expect.objectContaining({ context: expect.any(String) }),
+    expect(applyForcedRetention).toHaveBeenCalledWith('convo-123', 'user-123', {
+      retentionMode: RetentionMode.EPHEMERAL,
+    });
+    expect(updateSharedLink).toHaveBeenCalledWith(
+      'user-123',
+      'share-123',
+      undefined,
+      undefined,
+      false,
     );
+    expect(mockUpdateSharedLinkPermissionsExpiration).not.toHaveBeenCalled();
   });
 
   it('rejects new shares for expired conversations in all retention mode', async () => {

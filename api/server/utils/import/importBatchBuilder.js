@@ -7,11 +7,16 @@ const {
 const {
   EModelEndpoint,
   Constants,
+  RetentionMode,
   openAISettings,
   isAllDataRetention,
-  isForcedTemporaryRetention,
 } = require('librechat-data-provider');
-const { bulkIncrementTagCounts, bulkSaveConvos, bulkSaveMessages } = require('~/models');
+const {
+  applyForcedRetention,
+  bulkIncrementTagCounts,
+  bulkSaveConvos,
+  bulkSaveMessages,
+} = require('~/models');
 const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
 
 /**
@@ -50,16 +55,19 @@ class ImportBatchBuilder {
       this.retentionFields = {};
       return this.retentionFields;
     }
+    if (this.interfaceConfig?.retentionMode === RetentionMode.EPHEMERAL) {
+      this.retentionFields = {};
+      return this.retentionFields;
+    }
 
-    const isTemporary = isForcedTemporaryRetention(this.interfaceConfig?.retentionMode);
     try {
       this.retentionFields = {
-        isTemporary,
+        isTemporary: false,
         expiredAt: createTempChatExpirationDate(this.interfaceConfig),
       };
     } catch (error) {
       logger.error('[ImportBatchBuilder] Error creating import expiration date:', error);
-      this.retentionFields = { isTemporary, expiredAt: createFallbackRetentionDate() };
+      this.retentionFields = { isTemporary: false, expiredAt: createFallbackRetentionDate() };
     }
     return this.retentionFields;
   }
@@ -152,6 +160,11 @@ class ImportBatchBuilder {
         ),
       );
       await Promise.all(promises);
+      await Promise.all(
+        this.conversations.map(({ conversationId }) =>
+          applyForcedRetention(conversationId, this.requestUserId, this.interfaceConfig),
+        ),
+      );
       logger.debug(
         `user: ${this.requestUserId} | Added ${this.conversations.length} conversations and ${this.messages.length} messages to the DB.`,
       );

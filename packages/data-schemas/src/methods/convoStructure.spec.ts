@@ -26,7 +26,7 @@ beforeAll(async () => {
   Object.assign(mongoose.models, models);
   Message = mongoose.models.Message;
 
-  const methods = createMessageMethods(mongoose);
+  const methods = createMessageMethods(mongoose, async () => null);
   getMessages = methods.getMessages;
   bulkSaveMessages = methods.bulkSaveMessages;
 

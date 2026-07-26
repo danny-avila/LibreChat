@@ -375,10 +375,27 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       delete fileData.expiresAt;
     }
 
-    return File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
-      new: true,
-      upsert: true,
-    }).lean<IMongoFile>();
+    const { expiredAt, ...fields } = fileData;
+    const definedFields = Object.fromEntries(
+      Object.entries(fields).filter(([, value]) => value !== undefined),
+    );
+    let expiryUpdate = {};
+    if (expiredAt instanceof Date) {
+      expiryUpdate = {
+        expiredAt: {
+          $min: [{ $ifNull: ['$expiredAt', expiredAt] }, expiredAt],
+        },
+      };
+    }
+
+    return File.findOneAndUpdate(
+      { file_id: data.file_id },
+      [{ $set: { ...definedFields, ...expiryUpdate } }],
+      {
+        new: true,
+        upsert: true,
+      },
+    ).lean<IMongoFile>();
   }
 
   /**

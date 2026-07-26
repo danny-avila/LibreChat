@@ -11,7 +11,11 @@ const {
 } = require('librechat-data-provider');
 const { getImporter, processAssistantMessage } = require('./importers');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
-const { bulkSaveMessages, bulkSaveConvos: _bulkSaveConvos } = require('~/models');
+const {
+  applyForcedRetention,
+  bulkSaveMessages,
+  bulkSaveConvos: _bulkSaveConvos,
+} = require('~/models');
 
 const mockGetEndpointsConfig = jest.fn().mockResolvedValue({
   [EModelEndpoint.openAI]: { userProvide: false },
@@ -29,6 +33,7 @@ jest.mock('~/server/controllers/ModelController', () => ({
 
 // Mock the database methods
 jest.mock('~/models', () => ({
+  applyForcedRetention: jest.fn().mockResolvedValue(null),
   bulkSaveConvos: jest.fn(),
   bulkSaveMessages: jest.fn(),
   bulkIncrementTagCounts: jest.fn(),
@@ -1300,7 +1305,7 @@ describe('importLibreChatConvo', () => {
       expect(result.conversation.expiredAt).toBe(message.expiredAt);
     });
 
-    it('marks imported conversations and messages temporary under ephemeral retention', () => {
+    it('routes ephemeral imports through the forced-retention chokepoint', async () => {
       const requestUserId = 'user-123';
       const builder = new ImportBatchBuilder(requestUserId, {
         retentionMode: RetentionMode.EPHEMERAL,
@@ -1310,11 +1315,17 @@ describe('importLibreChatConvo', () => {
       const message = builder.addUserMessage('Ephemeral import');
       const result = builder.finishConversation('Imported ephemeral chat');
 
-      expect(message.isTemporary).toBe(true);
-      expect(message.expiredAt).toBeInstanceOf(Date);
-      expect(result.conversation.isTemporary).toBe(true);
-      expect(result.conversation.expiredAt).toBeInstanceOf(Date);
-      expect(result.conversation.expiredAt).toBe(message.expiredAt);
+      await builder.saveBatch();
+
+      expect(message.isTemporary).toBeUndefined();
+      expect(message.expiredAt).toBeUndefined();
+      expect(result.conversation.isTemporary).toBeUndefined();
+      expect(result.conversation.expiredAt).toBeUndefined();
+      expect(applyForcedRetention).toHaveBeenCalledWith(
+        result.conversation.conversationId,
+        requestUserId,
+        { retentionMode: RetentionMode.EPHEMERAL, temporaryChatRetention: 24 },
+      );
     });
   });
 });
