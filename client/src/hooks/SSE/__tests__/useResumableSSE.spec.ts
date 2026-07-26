@@ -3870,6 +3870,14 @@ describe('useResumableSSE', () => {
  * the selection logic directly (this is the exact piece of logic finding 3
  * was about — which statuses survive a run end) rather than faking a
  * RecoilRoot-backed integration around the rest of this large hook's mocks.
+ *
+ * The `statuses` parameter pins a second contract: the `final` handler and
+ * the two error/404 terminals call `convertLocalSteersToQueued` with no
+ * override (default `pending || failed`, the run is genuinely over), while
+ * the intentional-close `abort` listener passes `{ statuses: ['failed'] }`
+ * because that listener also fires on navigation away while the run
+ * CONTINUES server-side — a server-ACK'd `pending` chip must be left alone
+ * there, not swept into the queue as a duplicate of the server's own injection.
  */
 describe('selectLocalSteersForQueue', () => {
   const chip = (over: Partial<PendingSteer> = {}): PendingSteer => ({
@@ -3880,13 +3888,28 @@ describe('selectLocalSteersForQueue', () => {
     ...over,
   });
 
-  it('includes pending and failed chips, excluding sending', () => {
+  it('final/error-path selection (default statuses) includes pending and failed chips, excluding sending', () => {
     const chips = [
       chip({ steerId: 'p1', status: 'pending' }),
       chip({ steerId: 'f1', status: 'failed' }),
       chip({ steerId: 'sending-1', status: 'sending' }),
     ];
     expect(selectLocalSteersForQueue(chips).map((steer) => steer.steerId)).toEqual(['p1', 'f1']);
+  });
+
+  it('abort-path selection (statuses: ["failed"]) sweeps only failed chips, leaving pending alone', () => {
+    // The abort listener fires on navigation away while the run CONTINUES
+    // server-side: a `pending` chip already has a server id and will be
+    // injected by the server regardless, so sweeping it here too would make
+    // `useQueueDrain` resend the same words as a duplicate turn at run end.
+    const chips = [
+      chip({ steerId: 'p1', status: 'pending' }),
+      chip({ steerId: 'f1', status: 'failed' }),
+      chip({ steerId: 'sending-1', status: 'sending' }),
+    ];
+    expect(selectLocalSteersForQueue(chips, ['failed']).map((steer) => steer.steerId)).toEqual([
+      'f1',
+    ]);
   });
 
   it('converts a failed local chip present at a run-end path into a queueable item', () => {
