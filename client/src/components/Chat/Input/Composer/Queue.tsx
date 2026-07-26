@@ -3,13 +3,22 @@ import { useRecoilValue } from 'recoil';
 import { X, Clock, Pencil } from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
-import type { RestoreToComposer } from '../InFlightSteers';
 import type { QueuedMessage } from '~/store/families';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 const ICON_BTN =
   'shrink-0 rounded-full p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy';
+
+/** Restores a message's text into the composer, or refuses (false) when the
+ *  composer is occupied / on another chat — see `restoreReclaimedSteer` in
+ *  `ChatForm`. Used by the queue rail's edit/trash actions. */
+export type RestoreToComposer = (
+  text: string,
+  files: TMessage['files'],
+  context: QueuedMessageContext,
+  originConversationId: string,
+) => boolean;
 
 interface QueueProps {
   steering: SteeringControls;
