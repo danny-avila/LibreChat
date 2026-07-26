@@ -92,6 +92,20 @@ export default function ApiKeyDialog({
         },
       },
     },
+    {
+      key: SearchProviders.EXA,
+      label: localize('com_ui_web_search_provider_exa'),
+      inputs: {
+        exaApiKey: {
+          placeholder: localize('com_ui_enter_api_key'),
+          type: 'password' as const,
+          link: {
+            url: 'https://dashboard.exa.ai/api-keys',
+            text: localize('com_ui_web_search_provider_exa_key'),
+          },
+        },
+      },
+    },
   ];
 
   const rerankerOptions: DropdownOption[] = [
@@ -176,6 +190,20 @@ export default function ApiKeyDialog({
           link: {
             url: 'https://app.tavily.com/home',
             text: localize('com_ui_web_search_scraper_tavily_key'),
+          },
+        },
+      },
+    },
+    {
+      key: ScraperProviders.EXA,
+      label: localize('com_ui_web_search_scraper_exa'),
+      inputs: {
+        exaApiKey: {
+          placeholder: localize('com_ui_enter_api_key'),
+          type: 'password' as const,
+          link: {
+            url: 'https://dashboard.exa.ai/api-keys',
+            text: localize('com_ui_web_search_scraper_exa_key'),
           },
         },
       },

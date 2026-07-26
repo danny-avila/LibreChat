@@ -665,6 +665,58 @@ describe('webSearchSchema', () => {
       }),
     ).toThrow();
   });
+
+  it('accepts Exa search and scraper options', () => {
+    const result = webSearchSchema.parse({
+      exaSearchOptions: {
+        maxResults: 7,
+        searchType: 'fast',
+        category: 'news',
+        includeDomains: ['example.com'],
+        excludeDomains: ['spam.com'],
+        text: true,
+        maxAgeHours: 24,
+        timeout: 15000,
+      },
+      exaScraperOptions: {
+        maxAgeHours: 12,
+        livecrawlTimeout: 10000,
+        timeout: 30000,
+      },
+    });
+
+    expect(result.exaSearchOptions?.maxResults).toBe(7);
+    expect(result.exaSearchOptions?.searchType).toBe('fast');
+    expect(result.exaSearchOptions?.category).toBe('news');
+    expect(result.exaSearchOptions?.text).toBe(true);
+    expect(result.exaScraperOptions?.livecrawlTimeout).toBe(10000);
+  });
+
+  it('rejects invalid Exa options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        exaSearchOptions: {
+          maxResults: 0,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        exaSearchOptions: {
+          searchType: 'deep',
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        exaScraperOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+  });
 });
 
 describe('bedrockModels defaults', () => {

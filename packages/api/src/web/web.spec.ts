@@ -450,6 +450,69 @@ describe('web.ts', () => {
       expect(result.authResult).toHaveProperty('safeSearch', SafeSearchTypes.OFF);
     });
 
+    it('should authenticate Exa as both search provider and scraper', async () => {
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'EXA_API_URL') {
+            return;
+          }
+          result[field] = field === 'EXA_API_KEY' ? 'test-exa-key' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const exaConfig = {
+        ...webSearchConfig,
+        exaApiKey: '${EXA_API_KEY}',
+        exaApiUrl: '${EXA_API_URL}',
+        searchProvider: 'exa' as SearchProviders,
+        scraperProvider: 'exa' as ScraperProviders,
+        exaSearchOptions: { maxResults: 7 },
+        exaScraperOptions: { maxAgeHours: 24 },
+      } as TWebSearchConfig;
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig: exaConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.searchProvider).toBe('exa' as SearchProviders);
+      expect(result.authResult.scraperProvider).toBe('exa' as ScraperProviders);
+      expect(result.authResult.exaApiKey).toBe('test-exa-key');
+      expect(result.authResult.exaSearchOptions).toEqual({ maxResults: 7 });
+      expect(result.authResult.exaScraperOptions).toEqual({ maxAgeHours: 24 });
+    });
+
+    it('should not authenticate Exa when no API key is resolved', async () => {
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field.startsWith('EXA_')) {
+            return;
+          }
+          result[field] = 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const exaConfig = {
+        ...webSearchConfig,
+        exaApiKey: '${EXA_API_KEY}',
+        searchProvider: 'exa' as SearchProviders,
+      } as TWebSearchConfig;
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig: exaConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(false);
+      expect(result.authResult.searchProvider).toBeUndefined();
+    });
+
     it('should set the correct service types in authResult', async () => {
       // Mock successful authentication
       mockLoadAuthValues.mockImplementation(({ authFields }) => {

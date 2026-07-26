@@ -913,6 +913,8 @@ endpoints:
 #   searxngApiKey: '${SEARXNG_API_KEY}'
 #   # Tavily (search provider and/or scraper)
 #   tavilyApiKey: '${TAVILY_API_KEY}'
+#   # Exa (search provider and/or scraper)
+#   exaApiKey: '${EXA_API_KEY}'
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
@@ -975,6 +977,28 @@ endpoints:
 #     # includeFavicon: false   # Include favicon URL for each result
 #     # format: markdown        # 'markdown' (default) or 'text' (plain text, may increase latency)
 #     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000); Tavily Extract receives seconds clamped to 1-60
+#
+# Exa as both search and scraper provider example:
+# webSearch:
+#   searchProvider: exa
+#   scraperProvider: exa
+#   exaApiKey: '${EXA_API_KEY}'
+#   # exaApiUrl: '${EXA_API_URL}'  # Optional: custom API base URL (defaults to https://api.exa.ai)
+#   exaSearchOptions:
+#     maxResults: 5             # 1-20 results per search (default: 5)
+#     # searchType: auto        # 'auto' (default), 'fast', or 'instant'
+#     # category: news          # Focus on a data category, e.g. 'news', 'company', 'research paper'
+#     # text: true              # Return full page text instead of highlights
+#     # maxAgeHours: 24         # Serve cached content up to this age, livecrawl beyond it
+#     # includeDomains:         # Restrict search to specific domains
+#     #   - 'example.com'
+#     # excludeDomains:         # Exclude specific domains from results
+#     #   - 'spam.com'
+#     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000)
+#   exaScraperOptions:
+#     # maxAgeHours: 24         # Serve cached content up to this age, livecrawl beyond it
+#     # livecrawlTimeout: 10000 # Livecrawl timeout in milliseconds
+#     # timeout: 30000          # HTTP request timeout in milliseconds (max 120000)
 
 # Memory configuration for user memories
 # memory:

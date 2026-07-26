@@ -1745,12 +1745,14 @@ export enum SearchProviders {
   SERPER = 'serper',
   SEARXNG = 'searxng',
   TAVILY = 'tavily',
+  EXA = 'exa',
 }
 
 export enum ScraperProviders {
   FIRECRAWL = 'firecrawl',
   SERPER = 'serper',
   TAVILY = 'tavily',
+  EXA = 'exa',
 }
 
 export enum RerankerTypes {
@@ -1780,6 +1782,8 @@ export const webSearchSchema = z.object({
   tavilyApiKeyPreview: apiKeyPreviewSchema,
   tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
   tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
+  exaApiKey: z.string().optional().default('${EXA_API_KEY}'),
+  exaApiUrl: z.string().optional().default('${EXA_API_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiKeyPreview: apiKeyPreviewSchema,
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
@@ -1847,6 +1851,25 @@ export const webSearchSchema = z.object({
       includeImages: z.boolean().optional(),
       includeFavicon: z.boolean().optional(),
       format: z.enum(['markdown', 'text']).optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
+    })
+    .optional(),
+  exaSearchOptions: z
+    .object({
+      maxResults: z.number().int().min(1).max(20).optional(),
+      searchType: z.enum(['auto', 'fast', 'instant']).optional(),
+      category: z.string().optional(),
+      includeDomains: z.array(z.string()).optional(),
+      excludeDomains: z.array(z.string()).optional(),
+      text: z.boolean().optional(),
+      maxAgeHours: z.number().int().nonnegative().optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
+    })
+    .optional(),
+  exaScraperOptions: z
+    .object({
+      maxAgeHours: z.number().int().nonnegative().optional(),
+      livecrawlTimeout: z.number().int().nonnegative().optional(),
       timeout: z.number().int().nonnegative().max(120000).optional(),
     })
     .optional(),

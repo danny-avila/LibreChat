@@ -26,6 +26,7 @@ const USER_PROVIDED_URL_KEYS = new Set<TWebSearchKeys>([
 const USER_PROVIDED_OPT_IN_URL_KEYS = new Set<TWebSearchKeys>([
   'tavilySearchUrl',
   'tavilyExtractUrl',
+  'exaApiUrl',
 ]);
 
 function isUserProvidedEnabled(field: string): boolean {
@@ -283,6 +284,8 @@ export async function loadWebSearchAuth({
   let scraperOptionsTimeout: number | undefined;
   if (scraperProvider === ScraperProviders.TAVILY) {
     scraperOptionsTimeout = webSearchConfig?.tavilyScraperOptions?.timeout;
+  } else if (scraperProvider === ScraperProviders.EXA) {
+    scraperOptionsTimeout = webSearchConfig?.exaScraperOptions?.timeout;
   } else if (scraperProvider === ScraperProviders.FIRECRAWL) {
     scraperOptionsTimeout = webSearchConfig?.firecrawlOptions?.timeout;
   }
@@ -295,6 +298,8 @@ export async function loadWebSearchAuth({
   authResult.firecrawlOptions = webSearchConfig?.firecrawlOptions;
   authResult.tavilySearchOptions = webSearchConfig?.tavilySearchOptions;
   authResult.tavilyScraperOptions = webSearchConfig?.tavilyScraperOptions;
+  authResult.exaSearchOptions = webSearchConfig?.exaSearchOptions;
+  authResult.exaScraperOptions = webSearchConfig?.exaScraperOptions;
 
   return {
     authTypes,
