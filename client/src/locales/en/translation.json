@@ -2223,7 +2223,7 @@
   "com_ui_steer_arm_lost_race": "The interrupt could not be armed. The steering message may already have moved on or may still be waiting for the next tool step",
   "com_ui_steer_arm_unconfirmed": "Couldn't confirm whether the interrupt was armed. The steering message may interrupt or may wait for the next tool step",
   "com_ui_steer_cancel": "Cancel steering message",
-  "com_ui_steer_cancel_failed": "Could not cancel the steering message — it may still reach the agent",
+  "com_ui_steer_cancel_failed": "Could not cancel the steering message. It may still reach the agent",
   "com_ui_steer_delivered": "Delivered",
   "com_ui_steer_delivered_info": "Delivered. Your message will join the response at the next safe moment.",
   "com_ui_steer_delivery_unconfirmed": "Delivery unconfirmed",

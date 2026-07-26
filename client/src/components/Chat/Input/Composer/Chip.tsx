@@ -5,8 +5,8 @@ import { cn } from '~/utils';
 
 /**
  * Every kind of staged context the composer can hold. The chip surface is
- * identical across kinds — only the leading icon carries the accent — so the
- * tray reads as one list rather than four stacked systems.
+ * identical across kinds — only the leading icon carries the accent — so
+ * each chip reads as one shared design rather than four separate ones.
  */
 export type ChipTone = 'file' | 'quote' | 'skill' | 'tool';
 
