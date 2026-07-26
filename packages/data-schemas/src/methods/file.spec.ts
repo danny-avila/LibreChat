@@ -122,6 +122,23 @@ describe('File Methods', () => {
       expect(file?.metadata?.codeEnvRefs?.stateful?.file_id).toBe('stateful-file');
     });
 
+    it('casts string owner ids in atomic pipeline upserts', async () => {
+      const fileId = uuidv4();
+      const userId = new mongoose.Types.ObjectId();
+
+      const file = await fileMethods.createFile({
+        file_id: fileId,
+        user: userId.toString() as unknown as mongoose.Types.ObjectId,
+        filename: 'owned.txt',
+        filepath: '/uploads/owned.txt',
+        type: 'text/plain',
+        bytes: 100,
+      });
+
+      expect(file?.user).toEqual(userId);
+      await expect(File.countDocuments({ file_id: fileId, user: userId })).resolves.toBe(1);
+    });
+
     it('updates expiredAt monotonically with an atomic minimum', async () => {
       const fileId = uuidv4();
       const userId = new mongoose.Types.ObjectId();

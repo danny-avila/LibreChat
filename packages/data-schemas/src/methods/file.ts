@@ -379,6 +379,9 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     const definedFields = Object.fromEntries(
       Object.entries(fields).filter(([, value]) => value !== undefined),
     );
+    if (definedFields.user != null) {
+      definedFields.user = File.schema.path('user').cast(definedFields.user);
+    }
     const insertDefaults = {
       object: { $ifNull: ['$object', 'file'] },
       usage: { $ifNull: ['$usage', 0] },
