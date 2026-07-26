@@ -1,24 +1,11 @@
 import {
   MAX_CHAT_PROJECT_NAME_LENGTH,
   MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
-  isForcedTemporaryRetention,
 } from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
-import type {
-  AppConfig,
-  IChatProject,
-  IChatProjectDocument,
-  IConversation,
-  IMessage,
-  IMongoFile,
-  ISharedLink,
-} from '~/types';
-import {
-  buildRetentionVisibilityFilter,
-  cascadeForcedConversationRetention,
-  cascadeForcedRetentionByProject,
-  resolveForcedRetentionDate,
-} from '~/utils/retention';
+import type { AppConfig, IChatProject, IChatProjectDocument, IConversation } from '~/types';
+import type { ApplyForcedRetention } from '~/utils/retention';
+import { buildRetentionVisibilityFilter } from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
@@ -342,59 +329,10 @@ export async function updateChatProjectLastConversationForUser(
   }
 }
 
-export function createChatProjectMethods(mongoose: typeof import('mongoose')): ChatProjectMethods {
-  /**
-   * Converts a project's conversations to the forced (ephemeral) window when the deployment runs
-   * in ephemeral mode. Assigning, removing, or bulk-unassigning a chat rewrites its row without
-   * setting `isTemporary`/`expiredAt`, so a permanent chat organized after the install switched
-   * to ephemeral would otherwise stay visible and never expire. A no-op outside forced retention.
-   */
-  function forceProjectConversationRetention(
-    user: string,
-    chatProjectId: string,
-    interfaceConfig?: AppConfig['interfaceConfig'],
-  ): Promise<void> {
-    if (!isForcedTemporaryRetention(interfaceConfig?.retentionMode)) {
-      return Promise.resolve();
-    }
-    const Conversation = mongoose.models.Conversation as Model<IConversation>;
-    const Message = mongoose.models.Message as Model<IMessage>;
-    const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
-    const File = mongoose.models.File as Model<IMongoFile>;
-    return cascadeForcedRetentionByProject(
-      Conversation,
-      Message,
-      SharedLink,
-      File,
-      user,
-      chatProjectId,
-      resolveForcedRetentionDate(interfaceConfig),
-    );
-  }
-
-  async function forceConversationRetention(
-    user: string,
-    conversationId: string,
-    interfaceConfig?: AppConfig['interfaceConfig'],
-  ): Promise<void> {
-    if (!isForcedTemporaryRetention(interfaceConfig?.retentionMode)) {
-      return;
-    }
-    const Conversation = mongoose.models.Conversation as Model<IConversation>;
-    const Message = mongoose.models.Message as Model<IMessage>;
-    const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
-    const File = mongoose.models.File as Model<IMongoFile>;
-    await cascadeForcedConversationRetention(
-      Conversation,
-      Message,
-      SharedLink,
-      File,
-      user,
-      conversationId,
-      resolveForcedRetentionDate(interfaceConfig),
-    );
-  }
-
+export function createChatProjectMethods(
+  mongoose: typeof import('mongoose'),
+  applyForcedRetention: ApplyForcedRetention,
+): ChatProjectMethods {
   async function createChatProject(
     user: string,
     input: CreateChatProjectInput,
@@ -519,7 +457,15 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
       return { deletedCount: 0, modifiedCount: 0 };
     }
 
-    await forceProjectConversationRetention(user, projectId, interfaceConfig);
+    const conversations = await Conversation.find(
+      { user, chatProjectId: projectId },
+      'conversationId',
+    ).lean<Array<Pick<IConversation, 'conversationId'>>>();
+    await Promise.all(
+      conversations.map(({ conversationId }) =>
+        applyForcedRetention(conversationId, user, interfaceConfig),
+      ),
+    );
 
     const [conversationResult, deleteResult] = await Promise.all([
       Conversation.updateMany(
@@ -573,7 +519,7 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
      * isTemporary/expiredAt fields rather than a stale pre-conversion snapshot. A no-op outside
      * forced retention.
      */
-    await forceConversationRetention(user, conversationId, interfaceConfig);
+    await applyForcedRetention(conversationId, user, interfaceConfig);
 
     const update =
       normalizedProjectId == null

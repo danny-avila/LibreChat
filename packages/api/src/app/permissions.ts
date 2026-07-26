@@ -29,10 +29,7 @@ function hasExplicitConfig(
     case PermissionTypes.AGENTS:
       return interfaceConfig?.agents !== undefined;
     case PermissionTypes.TEMPORARY_CHAT:
-      return (
-        interfaceConfig?.temporaryChat !== undefined ||
-        isForcedTemporaryRetention(interfaceConfig?.retentionMode)
-      );
+      return interfaceConfig?.temporaryChat !== undefined;
     case PermissionTypes.RUN_CODE:
       return interfaceConfig?.runCode !== undefined;
     case PermissionTypes.WEB_SEARCH:

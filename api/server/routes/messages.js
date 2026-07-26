@@ -31,12 +31,8 @@ router.use(requireJwtAuth);
  * Enforces forced (ephemeral) retention after a message-only update (edit/feedback),
  * which bypasses the saveMessage/saveConvo enforcement. No-op outside forced retention.
  */
-const enforceForcedRetention = (req, conversationId, messageId, context) =>
-  db.applyForcedRetention(
-    { userId: req?.user?.id, interfaceConfig: req?.config?.interfaceConfig },
-    { conversationId, messageId },
-    { context, capExpiryToConversation: true },
-  );
+const enforceForcedRetention = (req, conversationId) =>
+  db.applyForcedRetention(conversationId, req?.user?.id, req?.config?.interfaceConfig);
 
 router.get('/', async (req, res) => {
   try {
@@ -198,7 +194,7 @@ router.post('/branch', configMiddleware, async (req, res) => {
         interfaceConfig: req?.config?.interfaceConfig,
       },
       newMessage,
-      { context: 'POST /api/messages/branch', capExpiryToConversation: true },
+      { context: 'POST /api/messages/branch' },
     );
 
     if (!savedMessage) {
@@ -279,7 +275,7 @@ router.post('/artifact/:messageId', configMiddleware, async (req, res) => {
         content: message.content,
         user: req.user.id,
       },
-      { context: 'POST /api/messages/artifact/:messageId', capExpiryToConversation: true },
+      { context: 'POST /api/messages/artifact/:messageId' },
     );
 
     res.status(200).json({
@@ -400,12 +396,7 @@ router.put(
         );
         const tokenCount = await countTokens(textToCount, model);
         const result = await db.updateMessage(req?.user?.id, { messageId, text, tokenCount });
-        await enforceForcedRetention(
-          req,
-          conversationId,
-          messageId,
-          'PUT /api/messages - edit text',
-        );
+        await enforceForcedRetention(req, conversationId);
         return res.status(200).json(result);
       }
 
@@ -465,12 +456,7 @@ router.put(
         content: updatedContent,
         tokenCount,
       });
-      await enforceForcedRetention(
-        req,
-        conversationId,
-        messageId,
-        'PUT /api/messages - edit content',
-      );
+      await enforceForcedRetention(req, conversationId);
       return res.status(200).json(result);
     } catch (error) {
       logger.error('Error updating message:', error);
@@ -501,7 +487,7 @@ router.put(
         },
         { context: 'updateFeedback' },
       );
-      await enforceForcedRetention(req, conversationId, messageId, 'PUT /api/messages - feedback');
+      await enforceForcedRetention(req, conversationId);
 
       // Best-effort: Assistants messages do not have deterministic AgentRun traces.
       if (!isAssistantsEndpoint(updatedMessage.endpoint)) {

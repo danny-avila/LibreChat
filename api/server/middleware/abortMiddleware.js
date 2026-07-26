@@ -173,7 +173,7 @@ async function abortMessage(req, res) {
       interfaceConfig: req?.config?.interfaceConfig,
     },
     { ...responseMessage, user: userId },
-    { context: 'api/server/middleware/abortMiddleware.js', capExpiryToConversation: true },
+    { context: 'api/server/middleware/abortMiddleware.js' },
   );
 
   // Get conversation for title

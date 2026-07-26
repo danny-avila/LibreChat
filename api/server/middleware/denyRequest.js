@@ -49,10 +49,7 @@ const denyRequest = async (req, res, errorMessage) => {
         interfaceConfig: req?.config?.interfaceConfig,
       },
       { ...userMessage, user: req.user.id },
-      {
-        context: `api/server/middleware/denyRequest.js - ${responseText}`,
-        capExpiryToConversation: true,
-      },
+      { context: `api/server/middleware/denyRequest.js - ${responseText}` },
     );
   }
 

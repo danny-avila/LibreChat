@@ -1,6 +1,7 @@
 const { Constants, ForkOptions, RetentionMode } = require('librechat-data-provider');
 
 jest.mock('~/models', () => ({
+  applyForcedRetention: jest.fn().mockResolvedValue(null),
   getConvo: jest.fn(),
   bulkSaveConvos: jest.fn(),
   getMessages: jest.fn(),
@@ -37,6 +38,7 @@ const {
   cloneMessagesWithTimestamps,
 } = require('./fork');
 const {
+  applyForcedRetention,
   bulkIncrementTagCounts,
   getConvo,
   bulkSaveConvos,
@@ -116,17 +118,10 @@ describe('forkConversation', () => {
       interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL, temporaryChatRetention: 1 },
     });
 
-    expect(bulkSaveConvos).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ isTemporary: true, expiredAt: expect.any(Date) }),
-      ]),
-    );
-    expect(bulkSaveMessages).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ isTemporary: true, expiredAt: expect.any(Date) }),
-      ]),
-      true,
-    );
+    expect(applyForcedRetention).toHaveBeenCalledWith(expect.any(String), 'user1', {
+      retentionMode: RetentionMode.EPHEMERAL,
+      temporaryChatRetention: 1,
+    });
   });
 
   test('should fork conversation without branches', async () => {
@@ -293,17 +288,10 @@ describe('duplicateConversation', () => {
       interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL, temporaryChatRetention: 1 },
     });
 
-    expect(bulkSaveConvos).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ isTemporary: true, expiredAt: expect.any(Date) }),
-      ]),
-    );
-    expect(bulkSaveMessages).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ isTemporary: true, expiredAt: expect.any(Date) }),
-      ]),
-      true,
-    );
+    expect(applyForcedRetention).toHaveBeenCalledWith(expect.any(String), 'user1', {
+      retentionMode: RetentionMode.EPHEMERAL,
+      temporaryChatRetention: 1,
+    });
   });
 
   test('should duplicate conversation and increment tag counts', async () => {

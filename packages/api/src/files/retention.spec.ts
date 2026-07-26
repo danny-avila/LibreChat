@@ -52,41 +52,14 @@ describe('retention helpers', () => {
     expect(dependencies.getConvo).not.toHaveBeenCalled();
   });
 
-  it('returns a fresh expiry when retentionMode is EPHEMERAL and the conversation has no earlier deadline', async () => {
-    dependencies.getConvo.mockResolvedValue(null);
-
+  it('returns a fresh initial expiry for retentionMode EPHEMERAL', async () => {
     const result = await getRetentionExpiry(
       request({ config: { interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } } }),
       dependencies,
     );
 
     expect(result).toEqual({ expiredAt: expirationDate });
-    expect(dependencies.getConvo).toHaveBeenCalledWith('user-1', 'convo-1');
-  });
-
-  it('caps an ephemeral file to a parent conversation that expires sooner', async () => {
-    const soonerExpiry = new Date('2029-01-01T00:00:00.000Z');
-    dependencies.getConvo.mockResolvedValue({ expiredAt: soonerExpiry });
-
-    const result = await getRetentionExpiry(
-      request({ config: { interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } } }),
-      dependencies,
-    );
-
-    expect(result).toEqual({ expiredAt: soonerExpiry });
-  });
-
-  it('keeps the fresh window when an ephemeral parent expires later', async () => {
-    dependencies.getConvo.mockResolvedValue({
-      expiredAt: new Date('2031-01-01T00:00:00.000Z'),
-    });
-
-    const result = await getRetentionExpiry(
-      request({ config: { interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } } }),
-      dependencies,
-    );
-
-    expect(result).toEqual({ expiredAt: expirationDate });
+    expect(dependencies.getConvo).not.toHaveBeenCalled();
   });
 
   it('returns a fresh expiry when the conversation has an active expiration', async () => {
@@ -349,7 +322,7 @@ describe('retention helpers', () => {
     );
 
     expect(result).toEqual({ expiredAt: expirationDate });
-    expect(dependencies.getConvo).toHaveBeenCalledWith('user-1', 'convo-1');
+    expect(dependencies.getConvo).not.toHaveBeenCalled();
     expect(dependencies.createExpirationDate).toHaveBeenCalledTimes(1);
   });
 
@@ -469,25 +442,8 @@ describe('retention helpers', () => {
       expect(dependencies.createExpirationDate).not.toHaveBeenCalled();
     });
 
-    it('caps the share at an active source conversation expiration', async () => {
+    it('leaves forced-retention parent capping to the chokepoint', async () => {
       const conversationExpiredAt = new Date(Date.now() + 60 * 60 * 1000);
-      dependencies.getConvo.mockResolvedValue({ expiredAt: conversationExpiredAt });
-
-      await expect(
-        getSharedLinkExpiration(
-          {
-            req: request({
-              config: { interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } },
-            }),
-            conversationId: 'convo-1',
-          },
-          dependencies,
-        ),
-      ).resolves.toBe(conversationExpiredAt);
-    });
-
-    it('uses the fresh window when it expires before the source conversation', async () => {
-      const conversationExpiredAt = new Date('2031-01-01T00:00:00.000Z');
       dependencies.getConvo.mockResolvedValue({ expiredAt: conversationExpiredAt });
 
       await expect(
@@ -503,7 +459,7 @@ describe('retention helpers', () => {
       ).resolves.toBe(expirationDate);
     });
 
-    it('falls back to the active source expiration when creating a window throws', async () => {
+    it('returns null when creating a share expiration throws', async () => {
       const conversationExpiredAt = new Date(Date.now() + 60 * 60 * 1000);
       dependencies.getConvo.mockResolvedValue({ expiredAt: conversationExpiredAt });
       dependencies.createExpirationDate.mockImplementation(() => {
@@ -520,7 +476,7 @@ describe('retention helpers', () => {
           },
           dependencies,
         ),
-      ).resolves.toBe(conversationExpiredAt);
+      ).resolves.toBeNull();
     });
   });
 });

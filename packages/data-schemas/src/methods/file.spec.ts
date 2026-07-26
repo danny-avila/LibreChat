@@ -118,6 +118,29 @@ describe('File Methods', () => {
       expect(file?.metadata?.codeEnvRefs?.default?.file_id).toBe('default-file');
       expect(file?.metadata?.codeEnvRefs?.stateful?.file_id).toBe('stateful-file');
     });
+
+    it('updates expiredAt monotonically with an atomic minimum', async () => {
+      const fileId = uuidv4();
+      const userId = new mongoose.Types.ObjectId();
+      const firstExpiry = new Date('2030-01-01T00:00:00.000Z');
+      const laterExpiry = new Date('2031-01-01T00:00:00.000Z');
+      const soonerExpiry = new Date('2029-01-01T00:00:00.000Z');
+      const data = {
+        file_id: fileId,
+        user: userId,
+        filename: 'retained.txt',
+        filepath: '/uploads/retained.txt',
+        type: 'text/plain',
+        bytes: 100,
+      };
+
+      await fileMethods.createFile({ ...data, expiredAt: firstExpiry }, true);
+      const notExtended = await fileMethods.createFile({ ...data, expiredAt: laterExpiry }, true);
+      const shortened = await fileMethods.createFile({ ...data, expiredAt: soonerExpiry }, true);
+
+      expect(notExtended?.expiredAt?.getTime()).toBe(firstExpiry.getTime());
+      expect(shortened?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
+    });
   });
 
   describe('claimCodeFile', () => {

@@ -234,6 +234,33 @@ describe('updateInterfacePermissions - permissions', () => {
     );
   });
 
+  it('preserves customized TEMPORARY_CHAT role permissions during ephemeral mode', async () => {
+    const config = {
+      interface: {
+        retentionMode: RetentionMode.EPHEMERAL,
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: false },
+      },
+    });
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
+    for (const [, permissionsUpdate] of mockUpdateAccessPermissions.mock.calls) {
+      expect(permissionsUpdate).not.toHaveProperty(PermissionTypes.TEMPORARY_CHAT);
+    }
+  });
+
   it('should call updateAccessPermissions with false when permission types are false', async () => {
     const config = {
       interface: {
