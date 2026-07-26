@@ -89,7 +89,6 @@ const ChatForm = memo(function ChatForm({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [, setIsScrollable] = useState(false);
   const [visualRowCount, setVisualRowCount] = useState(1);
-  const [isTextAreaFocused, setIsTextAreaFocused] = useState(false);
 
   const SpeechToText = useRecoilValue(store.speechToText);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
@@ -172,15 +171,6 @@ const ChatForm = memo(function ChatForm({
       setIsCollapsed(false);
     }
   }, [isCollapsed]);
-
-  const handleTextareaFocus = useCallback(() => {
-    handleFocusOrClick();
-    setIsTextAreaFocused(true);
-  }, [handleFocusOrClick]);
-
-  const handleTextareaBlur = useCallback(() => {
-    setIsTextAreaFocused(false);
-  }, []);
 
   const answerMode = useAskAnswerMode(conversationId);
 
@@ -554,22 +544,14 @@ const ChatForm = memo(function ChatForm({
               ref={composerBoxRef}
               onClick={handleContainerClick}
               className={cn(
-                /* Flat by default with a border-strength step on focus, rather
-                   than a growing shadow — both reference composers sit flush
-                   with the page instead of floating over it. */
+                /* One flat border in every state: focus already has the caret
+                   and the placeholder to announce itself, and a ring that comes
+                   and goes around the whole box is the loudest thing on screen
+                   for the smallest news. */
                 'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl border pb-4 text-text-primary transition-all duration-200 sm:rounded-3xl sm:pb-0',
-                isTextAreaFocused && 'ring-1',
                 isTemporary
-                  ? cn(
-                      'border-violet-800/60 bg-violet-950/10',
-                      isTextAreaFocused && 'border-violet-700 ring-violet-800/40',
-                    )
-                  : cn(
-                      'bg-surface-chat',
-                      isTextAreaFocused
-                        ? 'border-border-medium ring-border-light'
-                        : 'border-border-light',
-                    ),
+                  ? 'border-violet-800/60 bg-violet-950/10'
+                  : 'border-border-light bg-surface-chat',
               )}
             >
               <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
@@ -620,8 +602,7 @@ const ChatForm = memo(function ChatForm({
                       tabIndex={0}
                       data-testid="text-input"
                       rows={1}
-                      onFocus={handleTextareaFocus}
-                      onBlur={handleTextareaBlur}
+                      onFocus={handleFocusOrClick}
                       aria-label={localize('com_ui_message_input')}
                       aria-describedby={COMPOSER_HINT_ID}
                       onClick={handleFocusOrClick}
