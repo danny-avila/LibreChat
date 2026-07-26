@@ -939,10 +939,13 @@ export default function useResumableSSE(
   const convertSteersToQueued = useSteerConvert();
 
   /** Error events carry no `pendingSteers` payload (the server drops its copy
-   *  on failure), but every acknowledged chip's text is local — convert them
-   *  to queued follow-ups so the user's words survive a failed run. `sending`
-   *  chips settle through their own POST callbacks (404 falls back to
-   *  queue/send) and `failed` chips keep their manual controls. */
+   *  on failure), but every acknowledged OR failed chip's text is local —
+   *  convert both to queued follow-ups so the user's words survive a failed
+   *  run. `sending` chips settle through their own POST callbacks (404 falls
+   *  back to queue/send); `pending` and `failed` chips have no such callback
+   *  waiting on them, so leaving either behind would strand it — and worse,
+   *  `PendingSteers` reads this same atom on the NEXT run's reply, so a
+   *  stranded chip would leak into a message it was never part of. */
   const convertLocalSteersToQueued = useRecoilCallback(
     ({ snapshot }) =>
       (
@@ -958,7 +961,7 @@ export default function useResumableSSE(
         const settled = chips
           .filter(
             (steer) =>
-              steer.status === 'pending' &&
+              (steer.status === 'pending' || steer.status === 'failed') &&
               !excluded.has(steer.steerId) &&
               (steer.clientSteerId == null || !excluded.has(steer.clientSteerId)),
           )

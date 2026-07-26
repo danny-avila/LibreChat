@@ -10,4 +10,3 @@ export { default as useQueueDrain } from './useQueueDrain';
 export { default as useSteering } from './useSteering';
 export { default as useSteerCancel, useSteerReclaim } from './useSteerCancel';
 export { default as useSteerConvert } from './useSteerConvert';
-export { default as useSteerRecovery } from './useSteerRecovery';

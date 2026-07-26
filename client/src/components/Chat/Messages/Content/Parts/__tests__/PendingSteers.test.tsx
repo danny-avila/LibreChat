@@ -1,9 +1,12 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import type { PendingSteer } from '~/store/families';
 import PendingSteers from '../PendingSteers';
 import store from '~/store';
+
+const mockRetry = jest.fn();
+const mockSendAsNew = jest.fn();
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -11,7 +14,7 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/hooks/Chat/useSteerRecovery', () => ({
   __esModule: true,
-  default: () => ({ retry: jest.fn(), sendAsNew: jest.fn(), remove: jest.fn() }),
+  default: () => ({ retry: mockRetry, sendAsNew: mockSendAsNew }),
 }));
 
 jest.mock('../SteerPart', () => ({
@@ -38,6 +41,10 @@ function renderPending(steers: PendingSteer[]) {
 }
 
 describe('PendingSteers', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('renders nothing with no pending steers', () => {
     const { container } = renderPending([]);
     expect(container).toBeEmptyDOMElement();
@@ -54,5 +61,19 @@ describe('PendingSteers', () => {
     expect(screen.getByText('com_ui_steer_failed_inline')).toBeInTheDocument();
     expect(screen.getByText('com_ui_retry')).toBeInTheDocument();
     expect(screen.getByText('com_ui_send_as_new')).toBeInTheDocument();
+  });
+
+  it('retries the failed steer by id', () => {
+    renderPending([pending({ status: 'failed', steerId: 's-failed' })]);
+    fireEvent.click(screen.getByText('com_ui_retry'));
+    expect(mockRetry).toHaveBeenCalledWith('s-failed');
+    expect(mockSendAsNew).not.toHaveBeenCalled();
+  });
+
+  it('sends the failed steer as new by id', () => {
+    renderPending([pending({ status: 'failed', steerId: 's-failed' })]);
+    fireEvent.click(screen.getByText('com_ui_send_as_new'));
+    expect(mockSendAsNew).toHaveBeenCalledWith('s-failed');
+    expect(mockRetry).not.toHaveBeenCalled();
   });
 });

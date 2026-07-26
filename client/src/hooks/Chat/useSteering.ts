@@ -4,6 +4,7 @@ import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import { Constants, ContentTypes, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation, TMessageContentParts } from 'librechat-data-provider';
+import type { CallbackInterface } from 'recoil';
 import type { RunEnd, PendingSteer, QueuedMessage, QueuedMessageOrigin } from '~/store/families';
 import type { GenerationProtocolVersion } from '~/data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
@@ -41,7 +42,7 @@ export interface QueuedMessageContext {
 /** Server-side cap on a usage touch (mirrors `FILES_USAGE_MAX_IDS`). */
 const QUEUE_USAGE_MAX_FILES = 10;
 
-type SteerErrorCode =
+export type SteerErrorCode =
   | 'NO_ACTIVE_RUN'
   | 'RUN_PAUSED'
   | 'RUN_REPLACED'
@@ -65,7 +66,7 @@ type SubmitSteerOptions = {
   generationProtocolVersion?: GenerationProtocolVersion;
 };
 
-function getSteerErrorCode(error: unknown): SteerErrorCode | undefined {
+export function getSteerErrorCode(error: unknown): SteerErrorCode | undefined {
   const response = (error as { response?: { data?: { code?: string } } } | undefined)?.response;
   return response?.data?.code;
 }
@@ -91,6 +92,53 @@ function isSameRunEpoch(a: RunEnd | null, b: RunEnd): boolean {
     return a.generationCreatedAt === b.generationCreatedAt;
   }
   return a.endedAt === b.endedAt;
+}
+
+/**
+ * Resolves a steer's 202 ACK against the applied-id set and the run's live
+ * state: on the common path the local chip is swapped for its server-assigned
+ * id (still `pending`, awaiting `on_steer_applied`). If an `on_steer_applied`
+ * event already beat the ACK, or the run itself ended before the ACK landed,
+ * no later SSE event will ever resolve a `pending` chip — so the words are
+ * routed straight into the queue instead of stranding one.
+ *
+ * Exported so an ACK originating OUTSIDE the composer (`useSteerRecovery`'s
+ * retry, for a steer that already failed once) resolves identically instead
+ * of approximating this logic.
+ */
+export function resolveAcknowledgedSteer(
+  { snapshot, set }: Pick<CallbackInterface, 'snapshot' | 'set'>,
+  conversationId: string,
+  localId: string,
+  steer: PendingSteer,
+  runOver: boolean,
+): void {
+  const applied = snapshot.getLoadable(store.appliedSteerIdsByConvoId(conversationId)).getValue();
+  const alreadyApplied = applied.includes(steer.steerId);
+  set(store.pendingSteersByConvoId(conversationId), (prev) => {
+    const next = prev.filter((item) => item.steerId !== localId);
+    // Upsert: an SSE reconnect may have reseeded the chip under the server id
+    // already — appending again would duplicate it.
+    const alreadySeeded = next.some((item) => item.steerId === steer.steerId);
+    return alreadyApplied || runOver || alreadySeeded ? next : [...next, steer];
+  });
+  if (alreadyApplied || !runOver) {
+    return;
+  }
+  set(store.queuedMessagesByConvoId(conversationId), (prev) =>
+    prev.some((queued) => queued.id === steer.steerId)
+      ? prev
+      : [
+          ...prev,
+          {
+            id: steer.steerId,
+            text: steer.text,
+            createdAt: steer.createdAt,
+            ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+            ...carriedSteerContext(steer),
+          },
+        ],
+  );
 }
 
 /** True when the latest assistant message carries an unresolved tool approval —
