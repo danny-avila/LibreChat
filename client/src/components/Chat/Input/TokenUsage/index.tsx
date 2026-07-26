@@ -101,8 +101,12 @@ function TokenUsageIndicator({
         portal
         unmountOnHide
         finalFocus={disclosureRef}
+        /* Without this the gauge could not close its own popup: mousedown on
+           the trigger counts as "outside", so Ariakit hid the popup and the
+           button's own click immediately re-opened it. */
+        hideOnInteractOutside={(event) => !disclosureRef.current?.contains(event.target as Node)}
         aria-label={localize('com_ui_context_usage')}
-        className="z-[200] rounded-xl border border-border-medium bg-surface-secondary p-3 shadow-lg focus:outline-none"
+        className="animate-composer-popover z-[200] rounded-xl border border-border-medium bg-surface-secondary p-3 shadow-lg focus:outline-none"
       >
         <Breakdown view={view} showCost={showCost} currency={currency} />
       </Ariakit.Popover>
