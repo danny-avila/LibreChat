@@ -99,10 +99,10 @@ describe('useSteering', () => {
   });
 
   describe('effectiveAction', () => {
-    it('defaults to steer during an active agents run', () => {
+    it('defaults to queue during an active agents run', () => {
       const { result } = setup();
       expect(result.current.duringRunActive).toBe(true);
-      expect(result.current.effectiveAction).toBe('steer');
+      expect(result.current.effectiveAction).toBe('queue');
     });
 
     it('honors the queue preference while keeping the steer override available', () => {
@@ -591,7 +591,9 @@ describe('useSteering', () => {
 
   describe('submitDuringRun', () => {
     it('routes to the steer POST with an optimistic sending chip', () => {
-      const { result } = setup();
+      const { result } = setup({}, ({ set }) => {
+        set(store.duringRunDefaultAction, 'steer');
+      });
       let consumed = false;
       act(() => {
         consumed = result.current.submitDuringRun('steer this');
@@ -817,7 +819,9 @@ describe('useSteering', () => {
     });
 
     it('an ordinary steer does not preempt by default', () => {
-      const { result } = setup();
+      const { result } = setup({}, ({ set }) => {
+        set(store.duringRunDefaultAction, 'steer');
+      });
       act(() => {
         result.current.submitDuringRun('just steer');
       });
@@ -829,6 +833,7 @@ describe('useSteering', () => {
 
     it('steerInterruptsByDefault makes the default Enter route preempt', () => {
       const { result } = setup({}, ({ set }) => {
+        set(store.duringRunDefaultAction, 'steer');
         set(store.steerInterruptsByDefault, true);
       });
       act(() => {
@@ -1821,7 +1826,14 @@ describe('useSteering', () => {
     };
     const queuedFiles = [{ file_id: 'file-1', filepath: '/uploads/file-1.png', type: 'image/png' }];
 
-    function setupWithFiles(params: HookParams = {}, generationCreatedAt: number | null = 41) {
+    /** Steering is gated on the active-generation epoch, so seed it by default
+     *  or every steer here is refused as pre-epoch. `null` seeds nothing, which
+     *  is the pre-epoch case itself; an initializer seeds the epoch and then
+     *  whatever else that test needs. */
+    function setupWithFiles(
+      params: HookParams = {},
+      initialize?: ((snapshot: MutableSnapshot) => void) | null,
+    ) {
       const setFiles = jest.fn();
       const files = new Map([['file-1', composerFile]]) as unknown as NonNullable<
         Parameters<typeof useSteering>[0]['files']
@@ -1830,11 +1842,14 @@ describe('useSteering', () => {
       const stopGenerating = jest.fn();
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <RecoilRoot
-          initializeState={({ set }) => {
-            if (generationCreatedAt != null) {
-              set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), generationCreatedAt);
-            }
-          }}
+          initializeState={
+            initialize === null
+              ? undefined
+              : (snapshot) => {
+                  snapshot.set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), 41);
+                  initialize?.(snapshot);
+                }
+          }
         >
           {children}
         </RecoilRoot>
@@ -1862,7 +1877,9 @@ describe('useSteering', () => {
     }
 
     it('steers with the composer attachments as one unit', () => {
-      const { result, setFiles } = setupWithFiles();
+      const { result, setFiles } = setupWithFiles({}, ({ set }) => {
+        set(store.duringRunDefaultAction, 'steer');
+      });
       let consumed = false;
       act(() => {
         consumed = result.current.steering.submitDuringRun('look at this image');
@@ -1984,7 +2001,9 @@ describe('useSteering', () => {
     });
 
     it('does not mark usage on the steer path (the 202 already marked)', () => {
-      const { result } = setupWithFiles();
+      const { result } = setupWithFiles({}, ({ set }) => {
+        set(store.duringRunDefaultAction, 'steer');
+      });
       act(() => {
         result.current.steering.submitDuringRun('steer with media');
       });
