@@ -1,9 +1,10 @@
-import type { ChatGptConversation, ImportSummary } from './types';
+import type { ChatGptConversation, ExportFormat, ImportSummary } from './types';
 import type { ExportLayout } from './manifest';
 import {
   MANIFEST_ENTRY,
   parseManifest,
   resolveLayout,
+  detectExportFormat,
   hasChatGptConversationShape,
 } from './manifest';
 import { openArchive } from './archive';
@@ -14,7 +15,7 @@ interface ShardTotals {
   starred: number;
 }
 
-function tallyShard(conversations: ChatGptConversation[], totals: ShardTotals): void {
+function tallyChatGptShard(conversations: ChatGptConversation[], totals: ShardTotals): void {
   for (const conv of conversations) {
     totals.conversations += 1;
     if (conv.is_archived === true) {
@@ -28,7 +29,7 @@ function tallyShard(conversations: ChatGptConversation[], totals: ShardTotals): 
 
 export async function inspectExport(
   filepath: string,
-): Promise<{ summary: ImportSummary; layout: ExportLayout }> {
+): Promise<{ summary: ImportSummary; layout: ExportLayout; format: ExportFormat }> {
   const archive = await openArchive(filepath);
 
   try {
@@ -44,18 +45,53 @@ export async function inspectExport(
      * shows exist nowhere but inside the shards, so they cannot be read from
      * a header — the shards have to be parsed. Each one is parsed, tallied
      * and dropped before the next is read, so peak heap stays at a single
-     * shard rather than the whole export. */
+     * shard rather than the whole export. The format is decided by the first
+     * shard's element shape, the only thing distinguishing a Claude export
+     * (whose conversations carry `chat_messages`) from a ChatGPT one. */
     const totals: ShardTotals = { conversations: 0, archived: 0, starred: 0 };
+    let format: ExportFormat | null = null;
+
     for (const shard of layout.conversationShards) {
-      const parsed = JSON.parse((await archive.read(shard)).toString('utf8'));
+      const parsed: unknown = JSON.parse((await archive.read(shard)).toString('utf8'));
       if (!Array.isArray(parsed)) {
         throw new Error('Unsupported import type');
       }
+
+      if (format === null) {
+        format = detectExportFormat(parsed);
+        if (format === null) {
+          throw new Error('Unsupported import type');
+        }
+      }
+
+      if (format === 'claude') {
+        totals.conversations += parsed.length;
+        continue;
+      }
+
       if (!hasChatGptConversationShape(parsed)) {
         throw new Error('Unsupported import type');
       }
-      const conversations = parsed as ChatGptConversation[];
-      tallyShard(conversations, totals);
+      tallyChatGptShard(parsed as ChatGptConversation[], totals);
+    }
+
+    if (format === 'claude') {
+      /** A Claude export ships no binaries and has no archived or starred
+       * flags, so those counters are structurally zero rather than untallied. */
+      return {
+        layout,
+        format,
+        summary: {
+          source: 'claude',
+          manifestVersion: null,
+          conversations: totals.conversations,
+          shards: layout.conversationShards.length,
+          assets: 0,
+          assetBytes: 0,
+          archived: 0,
+          starred: 0,
+        },
+      };
     }
 
     let assetBytes = 0;
@@ -65,6 +101,7 @@ export async function inspectExport(
 
     return {
       layout,
+      format: 'chatgpt',
       summary: {
         source: layout.version === null ? 'chatgpt-legacy' : 'chatgpt',
         manifestVersion: layout.version,

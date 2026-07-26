@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import JSZip from 'jszip';
 
-import type { SaveMessageDetails, ConversationOverrides } from './service';
+import type { SaveMessageDetails, ConversationOverrides } from './sink';
 
 import { buildFixtureExport, cleanupFixtureExport } from './__data__/fixture';
 import * as archiveModule from './archive';
@@ -415,9 +415,9 @@ describe('runImport', () => {
     expect(recorded.conversations[0].title).toBe('Good convo three');
   });
 
-  it('records a shard whose entries are not ChatGPT-shaped (e.g. a Claude export) and still imports the other shard', async () => {
+  it('records a shard whose entries match no known export shape and still imports the other shard', async () => {
     const filepath = await writeZip({
-      'conversations-000.json': JSON.stringify([{ uuid: 'c1', chat_messages: [] }]),
+      'conversations-000.json': JSON.stringify([{ uuid: 'c1', unrecognized: true }]),
       'conversations-001.json': JSON.stringify([
         textConversation('ext-good5', 'Good convo five', 1700009000),
       ]),

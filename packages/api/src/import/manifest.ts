@@ -1,6 +1,6 @@
 import { logger } from '@librechat/data-schemas';
-
 import type { ArchiveEntry } from './archive';
+import type { ExportFormat } from './types';
 
 export const MANIFEST_ENTRY = 'export_manifest.json';
 export const ASSET_NAMES_ENTRY = 'conversation_asset_file_names.json';
@@ -99,6 +99,37 @@ export function hasChatGptConversationShape(conversations: unknown[]): boolean {
   }
   const [first] = conversations;
   return typeof first === 'object' && first !== null && 'mapping' in first;
+}
+
+/**
+ * Counterpart to `hasChatGptConversationShape` for Claude exports, whose
+ * conversations carry a flat `chat_messages` array instead of a `mapping` tree.
+ */
+export function hasClaudeConversationShape(conversations: unknown[]): boolean {
+  if (conversations.length === 0) {
+    return false;
+  }
+  const [first] = conversations;
+  return typeof first === 'object' && first !== null && 'chat_messages' in first;
+}
+
+/**
+ * Decides which converter a parsed conversation shard belongs to. Both formats
+ * ship an array under `conversations.json`, so only the element shape
+ * distinguishes them. An empty array stays on the ChatGPT path: it imports
+ * nothing either way and that is the pre-existing behaviour.
+ */
+export function detectExportFormat(conversations: unknown[]): ExportFormat | null {
+  if (conversations.length === 0) {
+    return 'chatgpt';
+  }
+  if (hasClaudeConversationShape(conversations)) {
+    return 'claude';
+  }
+  if (hasChatGptConversationShape(conversations)) {
+    return 'chatgpt';
+  }
+  return null;
 }
 
 export function resolveLayout(

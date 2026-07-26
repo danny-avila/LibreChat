@@ -3,74 +3,28 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import type {
   ChatGptAttachment,
   ChatGptConversation,
+  ConvertedMessage,
+  ExportFormat,
   ImportedAsset,
   ImportProgress,
-  ImportPhase,
   ImportReport,
 } from './types';
-import type { ConvertedMessage } from './chatgpt/convert';
+import type { SaveMessageDetails, RunImportInput } from './sink';
 import type { AssetReference } from './chatgpt/content';
-import type { AssetDeps } from './assets';
 import type { Archive } from './archive';
 import {
   MANIFEST_ENTRY,
   parseManifest,
   resolveLayout,
+  detectExportFormat,
   hasChatGptConversationShape,
 } from './manifest';
 import { collectAssetReferences } from './chatgpt/content';
 import { convertConversation } from './chatgpt/convert';
+import { runClaudeImport } from './claude/service';
 import { sanitizeImportError } from './errors';
 import { openArchive } from './archive';
 import { ingestAssets } from './assets';
-
-export interface SaveMessageDetails {
-  messageId: string;
-  parentMessageId: string;
-  text: string;
-  sender: string;
-  isCreatedByUser: boolean;
-  model: string;
-  createdAt: Date;
-  endpoint: string;
-  content?: ConvertedMessage['content'];
-  attachments?: ConvertedMessage['attachments'];
-  files?: ConvertedMessage['files'];
-}
-
-export interface ConversationOverrides {
-  isArchived: boolean;
-  pinned: boolean;
-  model: string;
-  importedFrom: { source: string; externalId: string };
-}
-
-export interface BatchSink {
-  startConversation(endpoint?: string): void;
-  saveMessage(details: SaveMessageDetails): void;
-  finishConversation(
-    title: string,
-    createdAt: Date,
-    convo: ConversationOverrides,
-    model: string,
-  ): void;
-  maybeFlush(): Promise<void>;
-  saveBatch(): Promise<void>;
-}
-
-export interface RunImportInput {
-  filepath: string;
-  userId: string;
-  tenantId?: string;
-  source: string;
-  defaultModel: string;
-  deps: AssetDeps;
-  batch: BatchSink;
-  existingExternalIds: Set<string>;
-  onProgress?: (progress: ImportProgress) => Promise<void>;
-  onPhase?: (phase: ImportPhase) => Promise<void>;
-  isCancelled?: () => Promise<boolean>;
-}
 
 interface ExportScan {
   /** Shards that parsed and validated, in export order. The conversion pass
@@ -81,9 +35,21 @@ interface ExportScan {
   pointers: string[];
   attachments: Map<string, ChatGptAttachment>;
   references: Map<string, AssetReference>;
+  /** The format the first shard that parsed turned out to be. A Claude export
+   * aborts the scan immediately — it has no assets to resolve, so nothing this
+   * pass collects applies to it. */
+  format: ExportFormat;
 }
 
 class ShardShapeError extends Error {}
+
+async function readShardArray(archive: Archive, shard: string): Promise<unknown[]> {
+  const parsed: unknown = JSON.parse((await archive.read(shard)).toString('utf8'));
+  if (!Array.isArray(parsed)) {
+    throw new ShardShapeError('expected an array of conversations');
+  }
+  return parsed;
+}
 
 /**
  * Reads and validates one shard. Never retains the result: both passes drop
@@ -91,10 +57,7 @@ class ShardShapeError extends Error {}
  * at one shard rather than the whole export.
  */
 async function parseShard(archive: Archive, shard: string): Promise<ChatGptConversation[]> {
-  const parsed = JSON.parse((await archive.read(shard)).toString('utf8'));
-  if (!Array.isArray(parsed)) {
-    throw new ShardShapeError('expected an array of conversations');
-  }
+  const parsed = await readShardArray(archive, shard);
   if (!hasChatGptConversationShape(parsed)) {
     throw new ShardShapeError('expected ChatGPT conversation objects');
   }
@@ -149,12 +112,28 @@ async function scanExport(
     pointers: [],
     attachments: new Map(),
     references: new Map(),
+    format: 'chatgpt',
   };
   const seen = new Set<string>();
+  let detected = false;
 
   for (const shard of shards) {
     try {
-      const conversations = await parseShard(archive, shard);
+      const parsed = await readShardArray(archive, shard);
+
+      if (!detected) {
+        detected = true;
+        scan.format = detectExportFormat(parsed) ?? 'chatgpt';
+        if (scan.format === 'claude') {
+          return scan;
+        }
+      }
+
+      if (!hasChatGptConversationShape(parsed)) {
+        throw new ShardShapeError('expected ChatGPT conversation objects');
+      }
+
+      const conversations = parsed as ChatGptConversation[];
       scan.shards.push(shard);
       scan.conversations += conversations.length;
       for (const conv of conversations) {
@@ -234,7 +213,27 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
     const manifest = hasManifest ? parseManifest(await archive.read(MANIFEST_ENTRY)) : null;
     const layout = resolveLayout(archive.entries, manifest);
 
+    const claudeRun = {
+      archive,
+      shards: layout.conversationShards,
+      input,
+      report,
+    };
+
+    /** `inspectExport` already identified the format and the route passes it
+     * through, so a Claude export skips the asset scan entirely rather than
+     * reading its single 86 MB shard an extra time to re-learn its shape. */
+    if (input.format === 'claude') {
+      await runClaudeImport(claudeRun);
+      return report;
+    }
+
     const scan = await scanExport(archive, layout.conversationShards, report.errors);
+
+    if (scan.format === 'claude') {
+      await runClaudeImport(claudeRun);
+      return report;
+    }
 
     /** `messages.total` stays 0: the count is only known after conversion, so
      * the UI shows messages as a running count rather than a ratio.

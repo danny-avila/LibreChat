@@ -74,7 +74,7 @@ describe('inspectExport', () => {
     await expect(inspectExport(filepath)).rejects.toThrow(/Unsupported import type/);
   });
 
-  it('rejects a shard whose conversations are not ChatGPT-shaped (e.g. a Claude export)', async () => {
+  it('rejects a shard whose conversations match no known export shape', async () => {
     const JSZip = (await import('jszip')).default;
     const fs = await import('fs');
     const os = await import('os');
@@ -83,7 +83,7 @@ describe('inspectExport', () => {
     const zip = new JSZip();
     zip.file(
       'conversations-000.json',
-      JSON.stringify([{ uuid: 'c1', chat_messages: [{ sender: 'human', text: 'hi' }] }]),
+      JSON.stringify([{ uuid: 'c1', history: [{ role: 'user', content: 'hi' }] }]),
     );
     zip.file(
       'export_manifest.json',

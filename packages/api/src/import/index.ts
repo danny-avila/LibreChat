@@ -1,4 +1,6 @@
 export * from './job';
+export * from './sink';
+export * from './tree';
 export * from './assets';
 export * from './errors';
 export * from './archive';
@@ -6,3 +8,5 @@ export * from './inspect';
 export * from './service';
 export * from './manifest';
 export * from './chatgpt/convert';
+export * from './claude/convert';
+export * from './claude/service';

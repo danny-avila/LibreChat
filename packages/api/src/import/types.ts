@@ -1,3 +1,4 @@
+import { Tools, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type { SearchResultData } from 'librechat-data-provider';
 
 export interface ImportedAsset {
@@ -131,6 +132,148 @@ export interface ChatGptConversation {
   pinned_time: string | null;
   mapping: Record<string, ChatGptNode>;
 }
+
+/** Every content block a Claude export puts on a message, flattened into one
+ * optional-field shape (mirroring `ChatGptContent`) because the block union is
+ * open: `token_budget` and any future type must fall through the converter
+ * untouched rather than fail to narrow. */
+export interface ClaudeContentBlock {
+  type: string;
+  text?: string | null;
+  citations?: ClaudeCitation[] | null;
+  thinking?: string | null;
+  summaries?: ClaudeThinkingSummary[] | null;
+  name?: string | null;
+  id?: string | null;
+  input?: object | null;
+  tool_use_id?: string | null;
+  content?: ClaudeResultBlock[] | null;
+  is_error?: boolean | null;
+}
+
+/** One entry inside a `tool_result`'s `content` array. `knowledge` carries a
+ * real web source; `image`, `image_gallery` and `local_resource` reference
+ * bytes the export does not ship. */
+export interface ClaudeResultBlock {
+  type: string;
+  text?: string | null;
+  title?: string | null;
+  url?: string | null;
+  name?: string | null;
+  file_path?: string | null;
+}
+
+export interface ClaudeCitationDetails {
+  type: string;
+  url?: string | null;
+}
+
+export interface ClaudeCitation {
+  uuid?: string | null;
+  start_index: number;
+  end_index: number;
+  details?: ClaudeCitationDetails | null;
+}
+
+export interface ClaudeThinkingSummary {
+  summary?: string | null;
+}
+
+/** A file the user attached whose text Claude extracted inline. The export
+ * ships no binaries, so `extracted_content` is the only recoverable content. */
+export interface ClaudeAttachment {
+  file_name?: string | null;
+  file_type?: string | null;
+  file_size?: number | null;
+  extracted_content?: string | null;
+}
+
+export interface ClaudeFileReference {
+  file_uuid?: string | null;
+  file_name?: string | null;
+}
+
+export interface ClaudeMessage {
+  uuid: string;
+  sender: string;
+  text?: string | null;
+  content?: ClaudeContentBlock[] | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  parent_message_uuid?: string | null;
+  attachments?: ClaudeAttachment[] | null;
+  files?: ClaudeFileReference[] | null;
+}
+
+export interface ClaudeConversation {
+  uuid: string;
+  name?: string | null;
+  summary?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  chat_messages?: ClaudeMessage[] | null;
+}
+
+export interface ImportAttachment {
+  type: Tools.web_search;
+  [Tools.web_search]: SearchResultData;
+}
+
+export interface ImageFilePart {
+  type: ContentTypes.IMAGE_FILE;
+  [ContentTypes.IMAGE_FILE]: ImportedAsset;
+}
+
+/** The tool call shape `Part.tsx` renders. `progress` must be 1: every tool
+ * card reads `toolCall.progress ?? 0.1` and an imported call is finished, so
+ * anything lower renders as perpetually running. */
+export interface ToolCallPart {
+  type: ContentTypes.TOOL_CALL;
+  [ContentTypes.TOOL_CALL]: {
+    name: string;
+    args: string;
+    id?: string;
+    output?: string;
+    progress: number;
+    type: ToolCallTypes.TOOL_CALL;
+  };
+}
+
+export type ConvertedContentPart =
+  | { type: 'think'; think: string }
+  | { type: 'text'; text: string }
+  | ImageFilePart
+  | ToolCallPart;
+
+export interface ConvertedMessage {
+  messageId: string;
+  parentMessageId: string;
+  text: string;
+  sender: string;
+  isCreatedByUser: boolean;
+  model: string;
+  createdAt: Date;
+  content?: ConvertedContentPart[];
+  attachments?: ImportAttachment[];
+  files?: ImportedAsset[];
+  assetPointers: string[];
+}
+
+export interface ConvertedConversation {
+  conversationId: string;
+  externalId: string;
+  title: string;
+  createdAt: Date;
+  isArchived: boolean;
+  pinned: boolean;
+  model: string;
+  messages: ConvertedMessage[];
+}
+
+/** Which converter an export's conversations belong to. Both ChatGPT and
+ * Claude ship a `conversations.json` array, so this is resolved from the
+ * element shape rather than the archive layout. */
+export type ExportFormat = 'chatgpt' | 'claude';
 
 export type ImportPhase =
   | 'queued'
