@@ -1040,6 +1040,8 @@
   "com_ui_complete": "Complete!",
   "com_ui_complete_setup": "Complete Setup",
   "com_ui_composer_attach": "Attach",
+  "com_ui_composer_attach_less": "Fewer upload options",
+  "com_ui_composer_attach_more": "More upload options",
   "com_ui_composer_effort_faster": "Faster",
   "com_ui_composer_effort_smarter": "Smarter",
   "com_ui_composer_files": "Your files",
