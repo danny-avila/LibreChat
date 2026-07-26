@@ -35,50 +35,63 @@ export default function Progress({ job, onCancel, onReset, isCancelling }: Progr
   }
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-3">
+      {/* The live region wraps the heading AND the counts, so a screen reader
+          hears the outcome rather than just the phase name. */}
       <div
         ref={statusRef}
         tabIndex={-1}
         aria-live="polite"
         role="status"
-        className="flex flex-col gap-2 text-sm font-medium text-text-primary focus:outline-none"
+        className="flex flex-col gap-1 text-sm text-text-primary focus:outline-none"
       >
-        <p>{statusHeading}</p>
+        <div className="flex items-baseline justify-between gap-3">
+          <p className="font-medium">{statusHeading}</p>
+          {!isTerminal && total > 0 && (
+            <p className="shrink-0 tabular-nums text-text-secondary">
+              {done} / {total}
+            </p>
+          )}
+        </div>
 
         {isTerminal && job.phase === 'failed' && job.error != null && (
-          <p className="font-normal text-red-500 dark:text-red-400">{job.error}</p>
+          <p className="text-red-500 dark:text-red-400">{job.error}</p>
         )}
 
         {isTerminal && job.report && (
-          <div className="flex flex-col gap-1 font-normal text-text-secondary">
-            <p>
+          <>
+            <p className="text-text-secondary">
               {localize('com_ui_import_report', {
                 0: job.report.imported,
                 1: job.report.skipped,
               })}
             </p>
-            <p>
+            <p className="text-text-secondary">
               {localize('com_ui_import_report_assets', {
                 0: job.report.assetsImported,
                 1: job.report.assetsUnavailable,
               })}
             </p>
-            {job.report.errors.length > 0 && (
-              <p>{localize('com_ui_import_errors', { 0: job.report.errors.length })}</p>
-            )}
-          </div>
+          </>
         )}
       </div>
 
+      {/* Cancel sits inline with the bar rather than on its own row: the phase
+          name above already says what is running, so a spinner would be a
+          second indicator for one operation and a third row wastes height. */}
       {!isTerminal && (
-        <>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" className="shrink-0" onClick={onCancel} disabled={isCancelling}>
+            {isCancelling && <Spinner className="mr-1 size-4" aria-hidden="true" />}
+            {localize('com_ui_import_cancel')}
+          </Button>
           <div
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={total > 0 ? total : undefined}
             aria-valuenow={total > 0 ? done : undefined}
             aria-label={phaseLabel}
-            className="h-2 w-full overflow-hidden rounded-full bg-surface-tertiary"
+            className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-tertiary"
           >
             {total > 0 && (
               <div
@@ -87,13 +100,7 @@ export default function Progress({ job, onCancel, onReset, isCancelling }: Progr
               />
             )}
           </div>
-          <div className="flex justify-end">
-            <Button variant="outline" onClick={onCancel} disabled={isCancelling}>
-              {isCancelling && <Spinner className="mr-1 size-4" aria-hidden="true" />}
-              {localize('com_ui_import_cancel')}
-            </Button>
-          </div>
-        </>
+        </div>
       )}
 
       {isTerminal && job.report && job.report.errors.length > 0 && (
@@ -110,8 +117,10 @@ export default function Progress({ job, onCancel, onReset, isCancelling }: Progr
       )}
 
       {isTerminal && (
-        <div className="flex justify-end">
-          <Button onClick={onReset}>{localize('com_ui_import_another')}</Button>
+        <div className="flex justify-start">
+          <Button variant="submit" onClick={onReset}>
+            {localize('com_ui_import_another')}
+          </Button>
         </div>
       )}
     </section>

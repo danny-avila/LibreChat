@@ -16,7 +16,7 @@ export default function Lost({ onReset }: LostProps) {
   const ref = useAutoFocus<HTMLDivElement, boolean>(true);
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-3">
       <div
         ref={ref}
         tabIndex={-1}
@@ -26,8 +26,10 @@ export default function Lost({ onReset }: LostProps) {
       >
         {localize('com_ui_import_lost')}
       </div>
-      <div className="flex justify-end">
-        <Button onClick={onReset}>{localize('com_ui_import_another')}</Button>
+      <div className="flex justify-start">
+        <Button variant="submit" onClick={onReset}>
+          {localize('com_ui_import_another')}
+        </Button>
       </div>
     </section>
   );

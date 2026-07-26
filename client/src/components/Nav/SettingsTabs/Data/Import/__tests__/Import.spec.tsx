@@ -353,7 +353,9 @@ describe('Import panel', () => {
     });
 
     render(<Import />);
-    expect(screen.getAllByText(/1 items could not be imported/i)).toHaveLength(2);
+    /* Exactly once: the count is the <details> summary. It used to also be
+       repeated in the status block above, which this assertion enshrined. */
+    expect(screen.getAllByText(/1 items could not be imported/i)).toHaveLength(1);
     expect(screen.getByText(/conversation 11 malformed/i)).toBeInTheDocument();
     expect(screen.getByText(/archive truncated/i)).toBeInTheDocument();
   });

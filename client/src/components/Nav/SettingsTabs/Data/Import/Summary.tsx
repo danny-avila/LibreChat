@@ -54,12 +54,12 @@ export default function Summary({
         <li>{localize('com_ui_import_stat_archived', { 0: summary.archived })}</li>
         <li>{localize('com_ui_import_stat_starred', { 0: summary.starred })}</li>
       </ul>
-      <div className="flex justify-end gap-2">
+      <div className="flex items-center justify-between gap-2">
         <Button variant="outline" onClick={onCancel} disabled={isBusy}>
           {isCancelling && <Spinner className="mr-1 size-4" aria-hidden="true" />}
           {localize('com_ui_import_cancel')}
         </Button>
-        <Button onClick={onConfirm} disabled={isBusy}>
+        <Button variant="submit" onClick={onConfirm} disabled={isBusy}>
           {isConfirming && <Spinner className="mr-1 size-4" aria-hidden="true" />}
           {localize('com_ui_import')}
         </Button>
