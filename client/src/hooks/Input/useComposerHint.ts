@@ -7,6 +7,8 @@ export interface ComposerHintState {
   isSubmitting: boolean;
   /** Enter steers or queues instead of starting a turn. */
   duringRunActive: boolean;
+  /** Which action Enter takes during a run, per the effective setting. */
+  duringRunAction: 'steer' | 'queue';
   /** The composer is the answer box for a paused `ask_user_question`. */
   answerModeActive: boolean;
   uploadingCount: number;
@@ -56,12 +58,18 @@ export function composeHint(
   if (state.duringRunActive && state.hasText) {
     const mod = isMac ? '⌘⏎' : 'Ctrl+⏎';
     const alt = isMac ? '⌥⏎' : 'Alt+⏎';
+    const parts =
+      state.duringRunAction === 'steer'
+        ? [
+            localize('com_ui_composer_hint_steer'),
+            `${mod} ${localize('com_ui_composer_hint_queue')}`,
+          ]
+        : [
+            localize('com_ui_composer_hint_queue_default'),
+            `${mod} ${localize('com_ui_composer_hint_send_now')}`,
+          ];
     return {
-      text: [
-        localize('com_ui_composer_hint_steer'),
-        `${mod} ${localize('com_ui_composer_hint_queue')}`,
-        `${alt} ${localize('com_ui_composer_hint_interrupt')}`,
-      ].join(SEPARATOR),
+      text: [...parts, `${alt} ${localize('com_ui_composer_hint_interrupt')}`].join(SEPARATOR),
       kind: 'state',
     };
   }

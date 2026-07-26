@@ -1045,6 +1045,8 @@
   "com_ui_composer_hint_idle": "/ for prompts · @ for models · + to attach",
   "com_ui_composer_hint_interrupt": "interrupt & send",
   "com_ui_composer_hint_queue": "queue",
+  "com_ui_composer_hint_queue_default": "Enter queues",
+  "com_ui_composer_hint_send_now": "send now",
   "com_ui_composer_hint_steer": "Enter steers",
   "com_ui_composer_hint_stop": "Esc to stop",
   "com_ui_composer_hint_typing": "Enter to send · Shift+Enter for newline",
