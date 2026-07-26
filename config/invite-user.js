@@ -1,10 +1,10 @@
 const path = require('path');
 const mongoose = require('mongoose');
-const { checkEmailConfig } = require('@librechat/api');
+const { checkEmailConfig, createInvite } = require('@librechat/api');
 const { User } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
-const { createInvite } = require('~/models/inviteUser');
+const { createToken, findToken } = require('~/models');
 const { sendEmail } = require('~/server/utils');
 const connect = require('./connect');
 
@@ -48,7 +48,7 @@ const connect = require('./connect');
     silentExit(1);
   }
 
-  const token = await createInvite(email);
+  const token = await createInvite(email, { createToken, findToken });
   const inviteLink = `${process.env.DOMAIN_CLIENT}/register?token=${token}`;
 
   const appName = process.env.APP_TITLE || 'LibreChat';
