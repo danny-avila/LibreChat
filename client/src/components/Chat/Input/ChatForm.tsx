@@ -587,16 +587,11 @@ const ChatForm = memo(function ChatForm({
               <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
               <Tray
                 items={composerItems}
-                conversationId={conversationId}
                 conversation={conversation}
                 files={files}
                 setFiles={setFiles}
                 setFilesLoading={setFilesLoading}
                 isRTL={isRTL}
-                steering={steering}
-                steeringEnabled={steering.enabled}
-                onEditToComposer={editToComposer}
-                onRestoreToComposer={restoreReclaimedSteer}
               />
               {endpoint && (
                 <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>
