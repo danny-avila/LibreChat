@@ -607,29 +607,39 @@ const mergeResumeMessages = (
   return [...nextMessages, userMessage, responseMessage];
 };
 
+/** Default sweep for a run that has genuinely ended (final/error/404): a
+ *  `pending` chip behind a server id that no `on_steer_applied` will ever
+ *  confirm, or a `failed` chip that never reached the server at all. Either
+ *  one left behind survives past this run end and renders under whatever
+ *  comes next — `PendingSteers` reads the same atom keyed only by
+ *  conversation, not by run. */
+const RUN_ENDED_STATUSES: readonly PendingSteer['status'][] = ['pending', 'failed'];
+
 /**
- * Local chips with no injection-boundary event left to resolve them: `pending`
- * behind a server id that no `on_steer_applied` will ever confirm (the run
- * ended), or `failed` and never having reached the server at all. Either one
- * left behind survives past this run end and renders under whatever comes
- * next — `PendingSteers` reads the same atom keyed only by conversation, not
- * by run.
+ * Local chips with no injection-boundary event left to resolve them.
+ * `statuses` defaults to `RUN_ENDED_STATUSES` for terminals where the run is
+ * actually over; pass `['failed']` for a path (like intentional abort) where
+ * the run may still be live server-side and a server-ACK'd `pending` chip
+ * must be left alone — the server injects it regardless, and sweeping it here
+ * would resend the same words as a duplicate queued turn.
  *
- * `sending` chips are deliberately excluded: they have their own in-flight
- * POST whose `onSuccess`/`onError` will settle them, and sweeping them here
- * too would race that callback — a late ACK's re-add in
+ * `sending` chips are never included: they have their own in-flight POST
+ * whose `onSuccess`/`onError` will settle them, and sweeping them here too
+ * would race that callback — a late ACK's re-add in
  * `resolveAcknowledgedSteer` could then double-queue the same words.
  */
 export function selectLocalSteersForQueue(
   chips: PendingSteer[],
+  statuses: readonly PendingSteer['status'][] = RUN_ENDED_STATUSES,
   /** Ids the caller has already routed elsewhere this run end; matched against
    *  both ids a chip can be known by, since either may be the one excluded. */
   excluded: ReadonlySet<string> = new Set(),
 ): TPendingSteer[] {
+  const allowed = new Set(statuses);
   return chips
     .filter(
       (steer) =>
-        (steer.status === 'pending' || steer.status === 'failed') &&
+        allowed.has(steer.status) &&
         !excluded.has(steer.steerId) &&
         (steer.clientSteerId == null || !excluded.has(steer.clientSteerId)),
     )
@@ -977,15 +987,18 @@ export default function useResumableSSE(
   /** Sweeps this conversation's local chips (see `selectLocalSteersForQueue`)
    *  into queued follow-ups. Error events carry no `pendingSteers` payload of
    *  their own (the server drops its copy on failure) — this is the only
-   *  source of truth for those runs; the `final` and intentional-`abort`
-   *  paths call it alongside their own server-reported list as a backstop for
-   *  `failed` chips, which never rode that list at all. */
+   *  source of truth for those runs; the `final` and error/404 terminals call
+   *  it (default `statuses`, i.e. `pending || failed`) alongside their own
+   *  server-reported list as a backstop for `failed` chips, which never rode
+   *  that list at all. The intentional-abort path passes `statuses: ['failed']`
+   *  since the run may still be live server-side there (see its call site). */
   const convertLocalSteersToQueued = useRecoilCallback(
     ({ snapshot }) =>
       (
         conversationId: string,
         options?: {
           claimParked?: boolean;
+          statuses?: readonly PendingSteer['status'][];
           excludeSteerIds?: Iterable<string>;
           generationProtocolVersion?: GenerationProtocolVersion;
         },
@@ -993,6 +1006,7 @@ export default function useResumableSSE(
         const chips = snapshot.getLoadable(store.pendingSteersByConvoId(conversationId)).getValue();
         const settled = selectLocalSteersForQueue(
           chips,
+          options?.statuses,
           new Set(options?.excludeSteerIds ?? []),
         );
         if (settled.length > 0) {
@@ -3106,9 +3120,15 @@ export default function useResumableSSE(
         resetLive({ ...currentSubmission, userMessage });
         // No final/error event fires on this path, so it's the only place left
         // to sweep a local `failed` chip — otherwise it survives this close and
-        // renders (with a live Retry) under whatever run starts next.
+        // renders (with a live Retry) under whatever run starts next. `pending`
+        // chips are deliberately left alone here: this listener also fires on
+        // navigation away while the run CONTINUES server-side, so a
+        // server-ACK'd `pending` steer is not stranded — the server injects it
+        // regardless, and sweeping it into the queue too would resend the same
+        // words as a duplicate turn once `useQueueDrain` fires at run end.
         convertLocalSteersToQueued(
           currentSubmission.conversation?.conversationId ?? currentStreamId,
+          { statuses: ['failed'] },
         );
       });
 
