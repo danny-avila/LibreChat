@@ -378,14 +378,15 @@ function Bar({
               <Thinking />
               <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
             </div>
-            {/* Fades in place. The elapsed time is not one of the things that
-                stepped aside, so it has nowhere to travel from. */}
+            {/* Arrives and leaves in depth. The elapsed time is not one of the
+                things that stepped aside, so it has nowhere to travel from:
+                it comes forward into the row and recedes back out of it. */}
             <div
               aria-hidden={!dictating}
               className={cn(
-                'col-start-1 row-start-1 flex items-center justify-end px-1',
-                'transition-opacity duration-200 ease-out',
-                dictating ? 'opacity-100' : 'pointer-events-none opacity-0',
+                'col-start-1 row-start-1 flex origin-center items-center justify-end px-1',
+                'transition-[opacity,transform] duration-200 ease-out',
+                dictating ? 'scale-100 opacity-100' : 'pointer-events-none scale-90 opacity-0',
               )}
             >
               <span className="text-xs tabular-nums text-text-secondary">
