@@ -36,6 +36,7 @@ jest.mock('~/models', () => ({
   getMessages: jest.fn(),
   updateMessage: jest.fn(),
   deleteMessages: jest.fn(),
+  applyForcedRetention: jest.fn(),
   getConvosQueried: jest.fn(),
   searchMessages: jest.fn(),
   getMessagesByCursor: jest.fn(),
@@ -70,7 +71,10 @@ jest.mock('~/server/middleware', () => {
     validateMessageReq,
     sendValidationResponse,
     prepareMessageRequestValidation,
-    configMiddleware: (req, res, next) => next(),
+    configMiddleware: (req, res, next) => {
+      req.config = { interfaceConfig: { retentionMode: 'ephemeral' } };
+      next();
+    },
   };
 });
 
@@ -165,7 +169,7 @@ describe('deleteMessages – model-level IDOR prevention', () => {
 
 describe('DELETE /:conversationId/:messageId – route handler', () => {
   let app;
-  const { deleteMessages } = require('~/models');
+  const { deleteMessages, applyForcedRetention } = require('~/models');
 
   const authenticatedUserId = 'user-owner-123';
 
@@ -209,6 +213,14 @@ describe('DELETE /:conversationId/:messageId – route handler', () => {
       conversationId: 'convo-1',
       user: authenticatedUserId,
     });
+    expect(applyForcedRetention).toHaveBeenCalledWith(
+      'convo-1',
+      authenticatedUserId,
+      expect.objectContaining({ retentionMode: 'ephemeral' }),
+    );
+    expect(applyForcedRetention.mock.invocationCallOrder[0]).toBeGreaterThan(
+      deleteMessages.mock.invocationCallOrder[0],
+    );
   });
 
   it('should return 500 when deleteMessages throws', async () => {
@@ -218,5 +230,6 @@ describe('DELETE /:conversationId/:messageId – route handler', () => {
 
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ error: 'Internal server error' });
+    expect(applyForcedRetention).not.toHaveBeenCalled();
   });
 });
