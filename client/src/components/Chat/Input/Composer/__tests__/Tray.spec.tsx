@@ -1,5 +1,4 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { ComposerItem } from '~/hooks/Input/useComposerItems';
 import type { ExtendedFile } from '~/common';
@@ -29,16 +28,14 @@ const item = (overrides: Partial<ComposerItem> = {}): ComposerItem => ({
 
 function renderTray(items: ComposerItem[], files: Map<string, ExtendedFile> = new Map()) {
   return render(
-    <RecoilRoot>
-      <Tray
-        items={items}
-        conversation={null}
-        files={files}
-        setFiles={jest.fn()}
-        setFilesLoading={jest.fn()}
-        isRTL={false}
-      />
-    </RecoilRoot>,
+    <Tray
+      items={items}
+      conversation={null}
+      files={files}
+      setFiles={jest.fn()}
+      setFilesLoading={jest.fn()}
+      isRTL={false}
+    />,
   );
 }
 
