@@ -243,11 +243,20 @@ function Bar({
       chipsFitInline(packedEntries, widths, rowWidth - plusWidth - controlsWidth - CHIP_GAP * 2),
     [packedEntries, widths, rowWidth, plusWidth, controlsWidth],
   );
-  /* The recording controls take the bottom row over, so every chip moves into
-     the block above and leaves with it rather than being cut off mid-row. */
   const dictating = dictation.active || dictation.transcribing;
-  const above = inlineChips && !dictating ? EMPTY_ENTRIES : packedEntries;
-  const inline = inlineChips && !dictating ? packedEntries : EMPTY_ENTRIES;
+
+  /* The arrangement is frozen for the length of a recording. The controls
+     shrink to just the elapsed time while one runs, which would otherwise let
+     chips qualify for the bottom row and re-mount there mid-animation: a chip
+     that changes parent restarts from its new parent's resting state, which is
+     no transition at all. */
+  const [restingInline, setRestingInline] = useState(true);
+  if (!dictating && restingInline !== inlineChips) {
+    setRestingInline(inlineChips);
+  }
+  const chipsInline = dictating ? restingInline : inlineChips;
+  const above = chipsInline ? EMPTY_ENTRIES : packedEntries;
+  const inline = chipsInline ? packedEntries : EMPTY_ENTRIES;
 
   const rowClass = cn(
     'flex flex-wrap items-center gap-1.5',
@@ -287,10 +296,16 @@ function Bar({
         )}
       >
         <div className="overflow-hidden">
+          {/* Travels down as the row above closes over it, so the chips read as
+              moving out of the way rather than being wiped from the bottom up. */}
           <div
             role="list"
             aria-label={localize('com_ui_composer_tools')}
-            className={cn(rowClass, 'pb-1.5')}
+            className={cn(
+              rowClass,
+              'pb-1.5 transition-transform duration-200 ease-out',
+              dictating ? 'translate-y-3' : 'translate-y-0',
+            )}
           >
             {above.map(renderChip)}
           </div>
@@ -320,10 +335,19 @@ function Bar({
             anchorRef={anchorRef}
           />
         </span>
-        {/* `contents`, so these chips sit on the same line as the buttons rather
-            than in a box of their own. The element keeps its list semantics for
-            assistive tech; only its box is dropped. */}
-        <div role="list" aria-label={localize('com_ui_composer_tools')} className="contents">
+        {/* A box rather than `contents` so it has something to move: the split
+            only puts chips here when they all fit on this line, so wrapping as
+            one unit and wrapping as siblings come to the same layout. */}
+        <div
+          role="list"
+          aria-label={localize('com_ui_composer_tools')}
+          aria-hidden={dictating}
+          className={cn(
+            'flex min-w-0 flex-wrap items-center gap-1.5',
+            'transition-[transform,opacity] duration-200 ease-out',
+            dictating ? 'pointer-events-none translate-y-3 opacity-0' : 'translate-y-0 opacity-100',
+          )}
+        >
           {inline.map(renderChip)}
         </div>
         {/* Auto margin on the main-start side, so the group sits at the end of
@@ -354,14 +378,14 @@ function Bar({
               <Thinking />
               <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
             </div>
+            {/* Fades in place. The elapsed time is not one of the things that
+                stepped aside, so it has nowhere to travel from. */}
             <div
               aria-hidden={!dictating}
               className={cn(
                 'col-start-1 row-start-1 flex items-center justify-end px-1',
-                'transition-[transform,opacity] duration-200 ease-out',
-                dictating
-                  ? 'translate-y-0 opacity-100'
-                  : 'pointer-events-none translate-y-3 opacity-0',
+                'transition-opacity duration-200 ease-out',
+                dictating ? 'opacity-100' : 'pointer-events-none opacity-0',
               )}
             >
               <span className="text-xs tabular-nums text-text-secondary">
