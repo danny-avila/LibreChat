@@ -5,6 +5,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   refreshS3Url,
   splitMCPToolKey,
+  normalizeServerName,
   agentCreateSchema,
   agentUpdateSchema,
   refreshListAvatars,
@@ -219,6 +220,8 @@ const filterAuthorizedTools = async ({
 }) => {
   const filteredTools = [];
   let mcpServerConfigs;
+  /** normalized server name -> the raw key `mcpServerConfigs` is indexed by */
+  let configNamesByNormalized = new Map();
   let registryUnavailable = false;
   const existingToolSet = existingTools?.length ? new Set(existingTools) : null;
   const hasMCPTools = tools.some((tool) => tool?.includes(Constants.mcp_delimiter));
@@ -262,9 +265,17 @@ const filterAuthorizedTools = async ({
         mcpServerConfigs = {};
         registryUnavailable = true;
       }
+      configNamesByNormalized = new Map(
+        Object.keys(mcpServerConfigs).map((name) => [normalizeServerName(name), name]),
+      );
     }
 
-    const [, serverName] = splitMCPToolKey(tool, Object.keys(mcpServerConfigs));
+    /** Tool keys embed the normalized server name; the config is keyed by the raw name. */
+    const [, normalizedServerName] = splitMCPToolKey(
+      tool,
+      Array.from(configNamesByNormalized.keys()),
+    );
+    const serverName = configNamesByNormalized.get(normalizedServerName) ?? normalizedServerName;
     if (!serverName) {
       logger.warn(
         `[filterAuthorizedTools] Rejected malformed MCP tool key "${tool}" for user ${userId}`,

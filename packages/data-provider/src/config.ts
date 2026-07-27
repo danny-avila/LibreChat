@@ -2798,7 +2798,7 @@ export function splitMCPToolKey(
     }
   }
 
-  const idx = toolKey.indexOf(Constants.mcp_delimiter);
+  const idx = toolKey.lastIndexOf(Constants.mcp_delimiter);
   if (idx === -1) {
     return [toolKey, undefined];
   }

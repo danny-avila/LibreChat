@@ -91,3 +91,47 @@ describe('splitToolCallName with configured server names', () => {
     ]);
   });
 });
+
+describe('splitMCPToolKey boundary alignment', () => {
+  const d = Constants.mcp_delimiter;
+
+  it('ignores a configured name that is not delimiter-aligned in the key', () => {
+    /** `server` is a bare suffix of `myserver`, not a segment. Matching on
+     *  `endsWith(name)` instead of `endsWith(delimiter + name)` would route the
+     *  call to a different configured server than the agent authorized. */
+    expect(splitMCPToolKey(`search${d}myserver`, ['server'])).toEqual(['search', 'myserver']);
+  });
+
+  it('treats an empty known-name list the same as no list', () => {
+    expect(splitMCPToolKey(`gitlab-get${d}server_version${d}gitlab`, [])).toEqual([
+      `gitlab-get${d}server_version`,
+      'gitlab',
+    ]);
+  });
+
+  it('requires the configured name to be normalized to match the key', () => {
+    /** Keys embed `normalizeServerName`'s output, so callers must normalize their
+     *  candidate list; a raw name with spaces can never align. */
+    expect(splitMCPToolKey(`search${d}Google_mcp_Workspace`, ['Google_mcp_Workspace'])).toEqual([
+      'search',
+      'Google_mcp_Workspace',
+    ]);
+  });
+});
+
+describe('splitToolCallName oauth precedence', () => {
+  const d = Constants.mcp_delimiter;
+
+  it('falls back to the oauth prefix when a list is supplied but nothing matches', () => {
+    /** Pins the precedence rule: the configured branch must not return its
+     *  last-delimiter result when no configured name actually matched. */
+    expect(splitToolCallName(`oauth${d}foo${d}bar`, ['github'])).toEqual(['oauth', `foo${d}bar`]);
+  });
+
+  it('prefers a matching configured server over the oauth prefix', () => {
+    expect(splitToolCallName(`oauth${d}reset${d}github`, ['github'])).toEqual([
+      `oauth${d}reset`,
+      'github',
+    ]);
+  });
+});
