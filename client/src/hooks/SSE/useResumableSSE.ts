@@ -707,17 +707,24 @@ export default function useResumableSSE(
        * would otherwise dispatch with no offset and overwrite the content it
        * kept.
        *
-       * Keyed on the RESPONSE MESSAGE id — the only per-generation identity
-       * available here. Not `isResume`: a submission whose POST succeeded but
-       * lost its response is retried, returns `resumed: true`, and subscribes
-       * in resume mode despite being a new generation. And not the stream id:
-       * `request.js` sets `streamId = conversationId`, so every generation in
-       * a conversation shares it and the state would never clear. The
-       * response id is minted per submission and is carried through a resume
-       * unchanged, which is exactly the boundary that matters.
+       * Keyed on `clientRequestId`, the per-submission uuid. Each of the
+       * narrower keys tried before it crossed a real boundary:
+       *   - `isResume` — a submission whose POST succeeded but lost its
+       *     response retries and returns `resumed: true`, so a NEW generation
+       *     arrives in resume mode and skipped the reset.
+       *   - the stream id — `request.js` sets `streamId = conversationId`, so
+       *     every generation in a conversation shares it.
+       *   - the response message id — editing an assistant response reuses
+       *     that same id (`editedMessageId`), so re-editing one response
+       *     produced the same key twice.
+       * `clientRequestId` is minted per submission and forwarded unchanged on
+       * retries, which is exactly "new per edit attempt, stable across
+       * reconnects".
        */
       const generationId =
-        (currentSubmission.initialResponse as TMessage | undefined)?.messageId ?? currentStreamId;
+        currentSubmission.clientRequestId ??
+        (currentSubmission.initialResponse as TMessage | undefined)?.messageId ??
+        currentStreamId;
       if (prefixStateGenerationIdRef.current !== generationId) {
         prefixStateGenerationIdRef.current = generationId;
         editPrefixClearedRef.current = false;

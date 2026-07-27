@@ -156,6 +156,21 @@ export async function resolveActivityLabelModel({
     providerConfig.customEndpointConfig,
   );
 
+  /**
+   * Captured from the ORIGINATING endpoint, before any `activityEndpoint`
+   * switch — matching how `titleConvo` reads its config. The documented
+   * fallback is "this endpoint's `titleModel`", so reading it from the
+   * destination instead would let an OpenAI endpoint configured with
+   * `titleModel: claude-haiku` and `activityEndpoint: anthropic` fall through
+   * to the OpenAI run model and send that name to Anthropic, failing every
+   * label. The destination supplies credentials, not the model choice.
+   */
+  const originatingTitleModel = pickEndpointField(
+    appConfig,
+    agentEndpoint,
+    providerConfig.customEndpointConfig,
+    'titleModel',
+  );
   let endpoint = agentEndpoint;
   if (activity.endpoint != null && activity.endpoint !== agentEndpoint) {
     try {
@@ -171,15 +186,13 @@ export async function resolveActivityLabelModel({
     }
   }
 
-  /** Same per-field read as the activity settings: a partial `endpoints.all`
-   *  must not hide the resolved endpoint's `titleModel` and quietly fall the
-   *  label back to the main agent's (usually much larger) model. */
-  const titleModel = pickEndpointField(
-    appConfig,
-    endpoint,
-    providerConfig.customEndpointConfig,
-    'titleModel',
-  );
+  /** The originating endpoint's value (captured above), falling back to the
+   *  destination's own when it has none. Read per field so a partial
+   *  `endpoints.all` cannot hide it and quietly drop the label onto the
+   *  agent's (usually much larger) model. */
+  const titleModel =
+    originatingTitleModel ??
+    pickEndpointField(appConfig, endpoint, providerConfig.customEndpointConfig, 'titleModel');
   /** `current_model` means "the agent's model" for BOTH overrides. The
    *  activity options are documented as title-shaped, so an `activityModel`
    *  set to the sentinel must resolve the same way `titleModel` does — passing
