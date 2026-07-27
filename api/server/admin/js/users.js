@@ -8,6 +8,7 @@
  */
 (function () {
   const A = window.BklAdmin;
+  const range = A.createRangeFilter('range-users', () => A.reloadAll());
 
   const ui = {
     users: [],            // 병합된 사용자 목록
@@ -25,7 +26,7 @@
   async function loadUsers() {
     const [usersRes, usageRes] = await Promise.all([
       A.getJSON('/users'),
-      A.getJSON('/usage/by-user' + A.buildRangeParams('limit=2000')),
+      A.getJSON('/usage/by-user' + range.params('limit=2000')),
     ]);
     ui.usageMap = new Map(usageRes.data.map((u) => [u.user_id, u]));
     ui.users = usersRes.data.map((u) => {
@@ -108,7 +109,7 @@
     const listEl = document.getElementById('session-list');
     listEl.innerHTML = '<div class="msg-loading" style="padding:16px 18px;">세션 로딩 중...</div>';
     try {
-      const j = await A.getJSON('/sessions/by-user?user_id=' + encodeURIComponent(userId) + '&' + A.buildRangeParams().slice(1) + '&limit=200');
+      const j = await A.getJSON('/sessions/by-user?user_id=' + encodeURIComponent(userId) + '&' + range.params().slice(1) + '&limit=200');
       ui.sessions = j.data;
       renderSessions();
       // 항목 1: 새로고침 전 펼쳐두었던 세션 복원
@@ -183,7 +184,7 @@
     document.getElementById('group-insights-sub').textContent =
       (ui.group === 'all' ? '전체' : 'class ' + ui.group) + ' · 로딩 중...';
     try {
-      const rangeQ = A.buildRangeParams().slice(1);
+      const rangeQ = range.params().slice(1);
       const groupUsers = ui.group === 'all' ? ui.users : ui.users.filter((u) => String(u.user_class) === String(ui.group));
       const sids = groupUsers.map((u) => u.bkl_sid).filter(Boolean);
       const sidParam = ui.group === 'all' || !sids.length ? '' : '&user_sids=' + encodeURIComponent(sids.join(','));
@@ -227,7 +228,7 @@
         u.by_model.map((m) => `${m.model}:${m.queries}`).join(', '),
       ]),
     ]), '사용자');
-    XLSX.writeFile(wb, 'bkl_사용자_' + A.buildRangeLabel() + '.xlsx');
+    XLSX.writeFile(wb, 'bkl_사용자_' + range.label() + '.xlsx');
   }
 
   function exportSessions() {
@@ -238,7 +239,7 @@
       ['시작', '마지막', '메시지 수', '첫 질의', '제목', '삭제 여부'],
       ...ui.sessions.map((s) => [A.fmtKST(s.started_at), A.fmtKST(s.last_at), s.msg_count, s.first_query, s.title, s.deleted_at ? 'Y' : '']),
     ]), '세션');
-    XLSX.writeFile(wb, 'bkl_세션_' + (user?.name || ui.selectedUserId) + '_' + A.buildRangeLabel() + '.xlsx');
+    XLSX.writeFile(wb, 'bkl_세션_' + (user?.name || ui.selectedUserId) + '_' + range.label() + '.xlsx');
   }
 
   /* ── 로드 (항목 1: 상태 보존 리로드) ───────────────────────── */

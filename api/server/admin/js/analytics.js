@@ -10,9 +10,10 @@
 (function () {
   const A = window.BklAdmin;
   const data = {}; // 최근 로드 데이터 (엑셀용)
+  const range = A.createRangeFilter('range-analytics', () => A.reloadAll());
 
   async function loadSummary() {
-    const s = await A.getJSON('/summary' + A.buildRangeParams('compare=prev'));
+    const s = await A.getJSON('/summary' + range.params('compare=prev'));
     data.summary = s;
     const cards = document.querySelectorAll('#summary-cards .card-value');
     const cur = s.range || {};
@@ -30,7 +31,7 @@
   }
 
   async function loadDaily() {
-    const j = await A.getJSON('/usage/daily' + A.buildRangeParams('compare=prev'));
+    const j = await A.getJSON('/usage/daily' + range.params('compare=prev'));
     data.daily = j.data;
     data.dailyPrev = j.prev;
     A.makeChart('daily-chart', 'bar', j.data.map((d) => d.date), [
@@ -47,7 +48,7 @@
   }
 
   async function loadHourly() {
-    const j = await A.getJSON('/usage/hourly' + A.buildRangeParams());
+    const j = await A.getJSON('/usage/hourly' + range.params());
     const map = new Map(j.data.map((d) => [d.hour, d.queries]));
     const labels = Array.from({ length: 24 }, (_, i) => i + '시');
     A.makeChart('hourly-chart', 'bar', labels, [{
@@ -57,7 +58,7 @@
   }
 
   async function loadModel() {
-    const j = await A.getJSON('/usage/by-model' + A.buildRangeParams('compare=prev'));
+    const j = await A.getJSON('/usage/by-model' + range.params('compare=prev'));
     data.byModel = j.data;
     data.byModelPrev = j.prev;
     A.makeChart('model-chart', 'doughnut', j.data.map((d) => d.model || '(미분류)'),
@@ -67,7 +68,7 @@
 
   async function loadCategories() {
     try {
-      const j = await A.getJSON('/analytics/query-categories' + A.buildRangeParams('compare=prev'));
+      const j = await A.getJSON('/analytics/query-categories' + range.params('compare=prev'));
       data.categories = j.data;
       data.categoriesPrev = j.prev;
       A.makeChart('category-chart', 'doughnut', j.data.map((d) => d.category),
@@ -79,7 +80,7 @@
   }
 
   async function loadGroup() {
-    const j = await A.getJSON('/usage/by-group' + A.buildRangeParams());
+    const j = await A.getJSON('/usage/by-group' + range.params());
     data.byGroup = j.data;
     A.makeChart('group-chart', 'bar', j.data.map((d) => 'class ' + d.user_class), [
       { label: '질의 수', data: j.data.map((d) => d.queries), backgroundColor: 'rgba(99,102,241,.7)', borderColor: '#6366f1', borderWidth: 1 },
@@ -89,7 +90,7 @@
 
   async function loadTopDocs() {
     try {
-      const j = await A.getJSON('/analytics/top-documents' + A.buildRangeParams('limit=20'));
+      const j = await A.getJSON('/analytics/top-documents' + range.params('limit=20'));
       data.topDocs = j.data;
       const tbody = document.getElementById('topdocs-tbody');
       if (!j.data?.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="4">데이터 없음</td></tr>'; return; }
@@ -107,7 +108,7 @@
 
   async function loadTopCases() {
     try {
-      const j = await A.getJSON('/analytics/top-cases' + A.buildRangeParams('limit=20'));
+      const j = await A.getJSON('/analytics/top-cases' + range.params('limit=20'));
       data.topCases = j.data;
       const tbody = document.getElementById('topcases-tbody');
       if (!j.data?.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="4">데이터 없음</td></tr>'; return; }
@@ -124,7 +125,7 @@
   }
 
   async function loadTopUsers() {
-    const j = await A.getJSON('/usage/by-user' + A.buildRangeParams('limit=50'));
+    const j = await A.getJSON('/usage/by-user' + range.params('limit=50'));
     data.byUser = j.data;
     const tbody = document.getElementById('topusers-tbody');
     if (!j.data?.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="6">데이터 없음</td></tr>'; return; }
@@ -161,7 +162,7 @@
     btn.disabled = true;
     body.textContent = 'AI 요약 생성 중... (수십 초 걸릴 수 있습니다)';
     try {
-      const j = await A.getJSON('/analytics/ai-summary' + A.buildRangeParams(regenerate ? 'regenerate=true' : ''));
+      const j = await A.getJSON('/analytics/ai-summary' + range.params(regenerate ? 'regenerate=true' : ''));
       body.textContent = j.summary;
       btn.textContent = '재생성';
     } catch (e) {
@@ -174,7 +175,7 @@
   /* ── 엑셀 (항목 4): 화면과 동일한 시트 구성 + 기간 비교 ────── */
   function exportExcel() {
     if (!data.daily?.length && !data.summary) { alert('데이터를 먼저 로드해주세요.'); return; }
-    const range = A.buildRangeLabel();
+    const range = range.label();
     const wb = XLSX.utils.book_new();
     const s = data.summary || {};
     const cur = s.range || {};

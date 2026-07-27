@@ -51,29 +51,8 @@
           <div class="page-sub" id="analytics-sub">마지막 업데이트: —</div>
         </div>
         <div class="page-header-actions">
-          <!-- 기간 필터 (통계 탭 전용 드롭다운) -->
-          <div class="range-wrap" id="range-wrap">
-            <button class="btn-range" id="btn-range-toggle">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
-                <rect x="2" y="3" width="12" height="11" rx="2"/><path d="M5 1v3M11 1v3M2 7h12"/>
-              </svg>
-              <span id="range-label">최근 30일</span>
-              <svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg>
-            </button>
-            <div class="range-dropdown" id="range-dropdown">
-              <button class="range-option" data-preset="today">오늘</button>
-              <button class="range-option" data-preset="7d">최근 7일</button>
-              <button class="range-option active" data-preset="30d">최근 30일</button>
-              <button class="range-option" data-preset="365d">최근 1년</button>
-              <div class="range-divider"></div>
-              <div class="custom-dropdown-title">기간 직접 지정</div>
-              <div class="date-row"><label>시작</label><input type="date" id="date-from" /></div>
-              <div class="date-row"><label>종료</label><input type="date" id="date-to" /></div>
-              <div class="dropdown-actions">
-                <button class="btn-dd-apply" id="btn-dd-apply">적용</button>
-              </div>
-            </div>
-          </div>
+          <!-- 기간 필터 (통계 탭 전용 — js/core.js createRangeFilter 가 렌더링) -->
+          <div id="range-analytics"></div>
           <button class="btn-export" id="btn-export-analytics">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 2v8M5 7l3 3 3-3M2 12v1a1 1 0 001 1h10a1 1 0 001-1v-1"/></svg>
             엑셀 내보내기
@@ -156,6 +135,8 @@
         <label class="toolbar-label">그룹</label>
         <select id="group-filter" class="toolbar-select"><option value="all">전체</option></select>
         <button class="btn-refresh" id="btn-group-insights">그룹 인사이트</button>
+        <!-- 기간 필터 (사용자 탭 전용) -->
+        <div id="range-users"></div>
         <div id="user-search-wrap" class="search-wrap" style="margin-left:auto;">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6.5" cy="6.5" r="4"/><path d="M10 10l3 3"/></svg>
           <input type="text" class="search-input" id="user-search" placeholder="이름 / 이메일 검색" style="width:220px;" />
@@ -362,7 +343,11 @@
           <div class="page-title">피드백 · 설문</div>
           <div class="page-sub">메시지 피드백(👍/👎) 집계와 설문 관리</div>
         </div>
-        <button class="btn-export" id="btn-new-survey">+ 새 설문</button>
+        <div class="page-header-actions">
+          <!-- 기간 필터 (피드백·설문 탭 전용) -->
+          <div id="range-surveys"></div>
+          <button class="btn-export" id="btn-new-survey">+ 새 설문</button>
+        </div>
       </div>
       <div class="charts-row cols-2">
         <div class="chart-panel"><div class="chart-title">모델별 피드백</div><div class="chart-canvas-wrap" style="height:200px;"><canvas id="feedback-chart"></canvas></div></div>
