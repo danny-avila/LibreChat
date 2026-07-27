@@ -21,12 +21,6 @@ const connect = require('./connect');
     console.purple('--------------------------');
   }
 
-  // Check if email service is enabled
-  if (!checkEmailConfig()) {
-    console.red('Error: Email service is not enabled!');
-    silentExit(1);
-  }
-
   // Get the email of the user to be invited
   let email = '';
   if (process.argv.length >= 3) {
@@ -54,6 +48,7 @@ const connect = require('./connect');
   const appName = process.env.APP_TITLE || 'LibreChat';
 
   if (!checkEmailConfig()) {
+    console.orange('Note: Email service is not enabled, invitation email will not be sent.');
     console.green('Send this link to the user:', inviteLink);
     silentExit(0);
   }
