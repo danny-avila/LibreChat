@@ -1,8 +1,8 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
-import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import ContentParts from '../ContentParts';
 
 jest.mock('~/hooks', () => ({
@@ -20,9 +20,13 @@ jest.mock('~/hooks', () => ({
   scheduleMessageContentLayoutReconcile: jest.fn(() => jest.fn()),
 }));
 
-jest.mock('~/hooks/MCP', () => ({
-  useMCPIconMap: () => new Map(),
-}));
+jest.mock('~/hooks/MCP', () => {
+  const mcpServerNames: string[] = [];
+  return {
+    useMCPIconMap: () => new Map(),
+    useMCPServerNames: () => mcpServerNames,
+  };
+});
 
 jest.mock('../ToolOutput', () => ({
   StackedToolIcons: () => <span data-testid="stacked-icons" />,
