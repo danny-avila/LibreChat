@@ -1,4 +1,5 @@
 import type { TranslationKeys } from '~/hooks/useLocalize';
+import type { LocalizeFunction } from '~/common';
 import { isMacPlatform } from '~/utils/shortcuts';
 import useLocalize from '~/hooks/useLocalize';
 
@@ -13,8 +14,6 @@ export interface ComposerHintState {
   answerModeActive: boolean;
   uploadingCount: number;
 }
-
-type Localize = (key: TranslationKeys, options?: Record<string, string>) => string;
 
 /**
  * `tip` is ambient discovery copy, true of the composer at all times. `state`
@@ -41,7 +40,7 @@ const SEPARATOR = ' · ';
  */
 export function composeHint(
   state: ComposerHintState,
-  localize: Localize,
+  localize: LocalizeFunction,
   isMac: boolean,
 ): ComposerHint {
   if (state.answerModeActive) {
@@ -50,7 +49,12 @@ export function composeHint(
 
   if (state.uploadingCount > 0) {
     return {
-      text: localize('com_ui_composer_hint_uploading', { 0: String(state.uploadingCount) }),
+      text: localize(
+        state.uploadingCount === 1
+          ? 'com_ui_composer_hint_uploading_one'
+          : 'com_ui_composer_hint_uploading',
+        { count: state.uploadingCount },
+      ),
       kind: 'state',
     };
   }

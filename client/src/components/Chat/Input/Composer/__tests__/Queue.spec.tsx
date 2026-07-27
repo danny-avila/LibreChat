@@ -22,6 +22,7 @@ const CONVO_ID = 'convo-1';
 const mockSendQueuedNow = jest.fn();
 const mockRemoveQueued = jest.fn();
 const mockReorderQueued = jest.fn();
+const mockRestoreQueuedOrder = jest.fn();
 
 const steering = {
   queueKey: CONVO_ID,
@@ -30,6 +31,7 @@ const steering = {
   sendQueuedNow: mockSendQueuedNow,
   removeQueued: mockRemoveQueued,
   reorderQueued: mockReorderQueued,
+  restoreQueuedOrder: mockRestoreQueuedOrder,
 } as unknown as SteeringControls;
 
 const pausedSteering = { ...steering, canSteer: false } as unknown as SteeringControls;
@@ -169,11 +171,14 @@ describe('Queue', () => {
     expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
   });
 
-  it('drops the message even when the composer refuses to take it back', () => {
+  /* The composer refuses when it is occupied or the user has moved on. Dropping
+     the message anyway is the only path here that can destroy text outright. */
+  it('keeps the message queued when the composer refuses to take it back', () => {
     const onRestore = jest.fn().mockReturnValue(false);
     renderQueue([queued({ id: 'q1' })], steering, { onRestoreToComposer: onRestore });
     fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
-    expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
+    expect(onRestore).toHaveBeenCalled();
+    expect(mockRemoveQueued).not.toHaveBeenCalled();
   });
 
   it('hands the whole message to the composer to edit', () => {

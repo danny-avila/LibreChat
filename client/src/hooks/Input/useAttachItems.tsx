@@ -23,6 +23,7 @@ import type {
   EndpointFileConfig,
   MimeUploadCapability,
 } from 'librechat-data-provider';
+import type { SharePointFile } from '~/data-provider/Files/sharepoint';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 import { useAgentToolPermissions, useAgentCapabilities, useGetAgentsConfig } from '~/hooks';
@@ -65,6 +66,20 @@ export interface AttachEntry {
   onSelect: () => void;
 }
 
+export interface UseAttachItems {
+  entries: AttachEntry[];
+  /** The picker lives outside the popover, so selecting a file cannot race it
+   *  unmounting; the caller mounts it. */
+  inputRef: React.RefObject<HTMLInputElement>;
+  onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  isSharePointDialogOpen: boolean;
+  setIsSharePointDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  onSharePointFilesSelected: (files: SharePointFile[]) => Promise<void>;
+  isProcessing: boolean;
+  downloadProgress: ReturnType<typeof useSharePointFileHandlingNoChatContext>['downloadProgress'];
+  maxSelectionCount: number | undefined;
+}
+
 interface UseAttachItemsParams {
   agentId?: string | null;
   endpoint?: string | null;
@@ -98,7 +113,7 @@ export default function useAttachItems({
   files,
   setFiles,
   setFilesLoading,
-}: UseAttachItemsParams) {
+}: UseAttachItemsParams): UseAttachItems {
   const localize = useLocalize();
   const inputRef = useRef<HTMLInputElement>(null);
   const toolResourceRef = useRef<EToolResources | undefined>();
