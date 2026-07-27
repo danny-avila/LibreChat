@@ -1,0 +1,300 @@
+import React from 'react';
+import { RecoilRoot } from 'recoil';
+import { renderHook, act } from '@testing-library/react';
+import { ArtifactModes, PermissionTypes } from 'librechat-data-provider';
+import usePaletteEntries from '../usePaletteEntries';
+import store from '~/store';
+
+/**
+ * What the palette is offered, before it decides how to draw it. Every row here
+ * is gated twice — by a permission and by an agent capability — and a row that
+ * appears without both is a tool the user cannot actually use.
+ */
+
+let mockPermissions: Record<string, boolean>;
+let mockMemoryAccess: boolean;
+let mockCapabilities: Record<string, boolean>;
+let mockContext: Record<string, unknown> | null;
+let mockSkills: Array<Record<string, unknown>>;
+let mockAgentsMap: Record<string, Record<string, unknown>>;
+
+jest.mock('~/hooks', () => ({
+  useHasAccess: ({ permissionType }: { permissionType: string }) =>
+    mockPermissions[permissionType] ?? false,
+  useHasMemoryAccess: () => mockMemoryAccess,
+  useAgentCapabilities: () => mockCapabilities,
+  useSkillActiveState: () => ({ isActive: () => false }),
+}));
+
+jest.mock('~/hooks/useLocalize', () => ({
+  __esModule: true,
+  default: () => (key: string) => key,
+}));
+
+jest.mock('~/Providers', () => ({
+  useBadgeRowContext: () => mockContext,
+  useAgentsMapContext: () => mockAgentsMap,
+}));
+
+jest.mock('~/data-provider', () => ({
+  useSkillsInfiniteQuery: () => ({
+    data: { pages: [{ skills: mockSkills }] },
+    isError: false,
+    hasNextPage: false,
+    isFetchingNextPage: false,
+    fetchNextPage: jest.fn(),
+  }),
+}));
+
+jest.mock('~/components/Chat/Input/SkillsCommand', () => ({
+  filterSkillsForPopover: (skills: Array<Record<string, unknown>>) => skills,
+}));
+
+const toggle = (state: unknown) => ({ toggleState: state, debouncedChange: jest.fn() });
+
+interface ServerFixture {
+  serverName: string;
+  config?: { title?: string; description?: string; iconPath?: string };
+}
+
+interface ContextFixture {
+  mcpServerManager: {
+    selectableServers?: ServerFixture[];
+    mcpValues: string[];
+    toggleServerSelection: jest.Mock;
+  };
+  [key: string]: unknown;
+}
+
+const fullContext = (): ContextFixture => ({
+  webSearch: toggle(false),
+  codeInterpreter: toggle(false),
+  fileSearch: toggle(false),
+  skills: toggle(false),
+  memory: toggle(false),
+  artifacts: toggle(''),
+  mcpServerManager: {
+    selectableServers: [
+      { serverName: 'github', config: { title: 'Github', description: 'Repos' } },
+      { serverName: 'spotify', config: {} },
+    ],
+    mcpValues: [],
+    toggleServerSelection: jest.fn(),
+  },
+  agentsConfig: { capabilities: [] },
+});
+
+const allPermissions = {
+  [PermissionTypes.WEB_SEARCH]: true,
+  [PermissionTypes.RUN_CODE]: true,
+  [PermissionTypes.FILE_SEARCH]: true,
+  [PermissionTypes.MCP_SERVERS]: true,
+  [PermissionTypes.SKILLS]: true,
+};
+
+const allCapabilities = {
+  codeEnabled: true,
+  memoryEnabled: true,
+  webSearchEnabled: true,
+  artifactsEnabled: true,
+  fileSearchEnabled: true,
+  skillsEnabled: true,
+};
+
+const wrapper = ({ children }: { children: React.ReactNode }) => (
+  <RecoilRoot>{children}</RecoilRoot>
+);
+
+const entries = (agentId?: string | null) =>
+  renderHook(() => usePaletteEntries({ conversationId: 'convo-1', agentId }), { wrapper });
+
+const keysOf = (result: { current: Array<{ key: string }> }) =>
+  result.current.map((item) => item.key);
+
+describe('usePaletteEntries', () => {
+  beforeEach(() => {
+    mockPermissions = { ...allPermissions };
+    mockMemoryAccess = true;
+    mockCapabilities = { ...allCapabilities };
+    mockContext = fullContext();
+    mockSkills = [];
+    mockAgentsMap = {};
+  });
+
+  it('offers nothing before the badge row has a context to read', () => {
+    mockContext = null;
+    expect(keysOf(entries().result)).toEqual([]);
+  });
+
+  it('lists the built-in tools in a fixed order, servers last', () => {
+    expect(keysOf(entries().result)).toEqual([
+      'builtin:web_search',
+      'builtin:execute_code',
+      'builtin:file_search',
+      'builtin:skills',
+      'builtin:memory',
+      'builtin:artifacts',
+      'mcp:github',
+      'mcp:spotify',
+    ]);
+  });
+
+  describe('the two gates on every tool', () => {
+    it.each([
+      [PermissionTypes.WEB_SEARCH, 'builtin:web_search'],
+      [PermissionTypes.RUN_CODE, 'builtin:execute_code'],
+      [PermissionTypes.FILE_SEARCH, 'builtin:file_search'],
+      [PermissionTypes.SKILLS, 'builtin:skills'],
+      [PermissionTypes.MCP_SERVERS, 'mcp:github'],
+    ])('withholds %s without the permission', (permission, key) => {
+      mockPermissions = { ...allPermissions, [permission]: false };
+      expect(keysOf(entries().result)).not.toContain(key);
+    });
+
+    it.each([
+      ['webSearchEnabled', 'builtin:web_search'],
+      ['codeEnabled', 'builtin:execute_code'],
+      ['fileSearchEnabled', 'builtin:file_search'],
+      ['skillsEnabled', 'builtin:skills'],
+      ['memoryEnabled', 'builtin:memory'],
+      ['artifactsEnabled', 'builtin:artifacts'],
+    ])('withholds %s without the capability', (capability, key) => {
+      mockCapabilities = { ...allCapabilities, [capability]: false };
+      expect(keysOf(entries().result)).not.toContain(key);
+    });
+
+    it('withholds memory without access, whatever the capability says', () => {
+      mockMemoryAccess = false;
+      expect(keysOf(entries().result)).not.toContain('builtin:memory');
+    });
+  });
+
+  describe('on state', () => {
+    it('reads each tool from its own toggle', () => {
+      mockContext = { ...fullContext(), webSearch: toggle(true) };
+      const listed = entries().result.current;
+      expect(listed.find((item) => item.key === 'builtin:web_search')?.active).toBe(true);
+      expect(listed.find((item) => item.key === 'builtin:execute_code')?.active).toBe(false);
+    });
+
+    it('marks a server on when it is among the selected values', () => {
+      const context = fullContext();
+      context.mcpServerManager.mcpValues = ['spotify'];
+      mockContext = context;
+      const listed = entries().result.current;
+      expect(listed.find((item) => item.key === 'mcp:spotify')?.active).toBe(true);
+      expect(listed.find((item) => item.key === 'mcp:github')?.active).toBe(false);
+    });
+  });
+
+  describe('artifacts, which carries its modes on the row', () => {
+    const artifactsRow = () =>
+      entries().result.current.find((item) => item.key === 'builtin:artifacts');
+
+    it('offers no modes while it is off', () => {
+      mockContext = { ...fullContext(), artifacts: toggle('') };
+      const row = artifactsRow();
+      expect(row?.active).toBe(false);
+      expect(row?.modes).toBeUndefined();
+    });
+
+    it('offers three modes once it is on', () => {
+      mockContext = { ...fullContext(), artifacts: toggle(ArtifactModes.DEFAULT) };
+      const row = artifactsRow();
+      expect(row?.active).toBe(true);
+      expect(row?.modes?.map((mode) => mode.id)).toEqual(['default', 'shadcn', 'custom']);
+      expect(row?.modes?.find((mode) => mode.id === 'default')?.active).toBe(true);
+    });
+
+    it('marks the stored mode, and only it', () => {
+      mockContext = { ...fullContext(), artifacts: toggle(ArtifactModes.SHADCNUI) };
+      const modes = artifactsRow()?.modes;
+      expect(modes?.find((mode) => mode.id === 'shadcn')?.active).toBe(true);
+      expect(modes?.find((mode) => mode.id === 'default')?.active).toBe(false);
+    });
+
+    /* The toggle has historically also held a bare `true`, which names no mode
+       and would otherwise leave every one of them unchecked. */
+    it('reads a bare true as the default mode', () => {
+      mockContext = { ...fullContext(), artifacts: toggle(true) };
+      const row = artifactsRow();
+      expect(row?.active).toBe(true);
+      expect(row?.modes?.find((mode) => mode.id === 'default')?.active).toBe(true);
+    });
+  });
+
+  describe('skills', () => {
+    beforeEach(() => {
+      mockSkills = [
+        { _id: 's1', name: 'writer', displayTitle: 'Writing Helper', description: 'Drafts' },
+        { _id: 's2', name: 'writer', displayTitle: 'Writing Helper (copy)' },
+        { _id: 's3', name: 'researcher' },
+      ];
+    });
+
+    /* Manual skills are primed by name server-side, so records sharing a name
+       are one selectable thing however many the catalog holds. */
+    it('lists one row per name, not per record', () => {
+      expect(keysOf(entries().result).filter((key) => key.startsWith('skill:'))).toEqual([
+        'skill:s1',
+        'skill:s3',
+      ]);
+    });
+
+    it('falls back to the name when a skill has no title', () => {
+      const listed = entries().result.current;
+      expect(listed.find((item) => item.key === 'skill:s3')?.label).toBe('researcher');
+      expect(listed.find((item) => item.key === 'skill:s1')?.label).toBe('Writing Helper');
+    });
+
+    it('marks a skill on once it is staged', () => {
+      const { result } = renderHook(
+        () => usePaletteEntries({ conversationId: 'convo-1', agentId: null }),
+        {
+          wrapper: ({ children }: { children: React.ReactNode }) => (
+            <RecoilRoot
+              initializeState={({ set }) =>
+                set(store.pendingManualSkillsByConvoId('convo-1'), ['writer'])
+              }
+            >
+              {children}
+            </RecoilRoot>
+          ),
+        },
+      );
+      expect(result.current.find((item) => item.key === 'skill:s1')?.active).toBe(true);
+      expect(result.current.find((item) => item.key === 'skill:s3')?.active).toBe(false);
+    });
+
+    it('stages and unstages a skill through the same row', () => {
+      const { result } = entries(null);
+      const row = () => result.current.find((item) => item.key === 'skill:s1');
+
+      act(() => row()?.onSelect());
+      expect(row()?.active).toBe(true);
+
+      act(() => row()?.onSelect());
+      expect(row()?.active).toBe(false);
+    });
+
+    it('lists none of them when skills are not listable', () => {
+      mockCapabilities = { ...allCapabilities, skillsEnabled: false };
+      expect(keysOf(entries().result).filter((key) => key.startsWith('skill:'))).toEqual([]);
+    });
+  });
+
+  describe('servers', () => {
+    it('titles a server by its config, falling back to its name', () => {
+      const listed = entries().result.current;
+      expect(listed.find((item) => item.key === 'mcp:github')?.label).toBe('Github');
+      expect(listed.find((item) => item.key === 'mcp:spotify')?.label).toBe('spotify');
+    });
+
+    it('lists none while the manager has no selectable servers', () => {
+      const context = fullContext();
+      context.mcpServerManager = { ...context.mcpServerManager, selectableServers: undefined };
+      mockContext = context;
+      expect(keysOf(entries().result).filter((key) => key.startsWith('mcp:'))).toEqual([]);
+    });
+  });
+});
