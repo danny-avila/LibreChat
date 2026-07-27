@@ -64,6 +64,16 @@ describe('useComposerItems', () => {
     expect(result.current.quotes).toEqual(['same words']);
   });
 
+  /* An index inside the id rewrote every id after a removal, which remounts
+     those chips and drops focus off whichever one was being used. */
+  it('leaves the ids of the surviving chips alone', () => {
+    const { result } = withStaged(['first', 'second', 'third']);
+    const before = result.current.items.map((item) => item.id);
+
+    act(() => result.current.items[0].remove());
+    expect(result.current.items.map((item) => item.id)).toEqual(before.slice(1));
+  });
+
   it('carries the full text for a chip that has to truncate it', () => {
     const long = 'a quote long enough that the chip will have to cut it short somewhere';
     const { result } = withStaged([long]);

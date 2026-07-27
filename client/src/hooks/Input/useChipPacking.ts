@@ -29,58 +29,55 @@ export default function useChipPacking<T extends Keyed>(
   widths: Record<string, number>;
 } {
   const rootRef = useRef<HTMLDivElement>(null);
-  const widthsRef = useRef<Record<string, number>>({});
-  const [version, setVersion] = useState(0);
+  /* State, not a ref: the order below is render output, and deriving it from a
+     value React does not track let two passes of the same render disagree. */
+  const [widths, setWidths] = useState<Record<string, number>>({});
 
   const ordered = useMemo(() => {
-    const widths = widthsRef.current;
     /* Until every chip has been measured, leave the order alone: a partial sort
-       would shuffle on each pass and never settle. `version` is the dependency
-       that re-runs this once measuring completes. */
+       would shuffle on each pass and never settle. */
     if (items.some((item) => widths[item.key] == null)) {
       return items;
     }
     return [...items].sort((a, b) => widths[b.key] - widths[a.key]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, version]);
+  }, [items, widths]);
 
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) {
       return;
     }
-    const widths = widthsRef.current;
-    let changed = false;
+    const measured: Record<string, number> = {};
     /* Queried by role rather than walked as children: the caller may split the
        chips across rows. Document order still matches `ordered`. */
     root.querySelectorAll<HTMLElement>('[role="listitem"]').forEach((node, index) => {
       const key = ordered[index]?.key;
       const width = node.offsetWidth;
-      if (key != null && width > 0 && widths[key] !== width) {
-        widths[key] = width;
-        changed = true;
+      if (key != null && width > 0) {
+        measured[key] = width;
       }
     });
-    /* Drop stale entries so a chip that comes back later is re-measured. */
-    const live = new Set(items.map((item) => item.key));
-    for (const key of Object.keys(widths)) {
-      if (!live.has(key)) {
-        delete widths[key];
-        changed = true;
-      }
-    }
-    if (changed) {
-      setVersion((value) => value + 1);
-    }
-  }, [items, ordered]);
 
-  /* Snapshotted so a new measurement is a new identity, which is what lets the
-     caller memoize on it. */
-  const widths = useMemo(
-    () => ({ ...widthsRef.current }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [version],
-  );
+    setWidths((prev) => {
+      const next: Record<string, number> = {};
+      let changed = false;
+      /* Only live chips are carried over, so a width cannot outlive the chip it
+         belongs to and place it wrongly when it comes back. */
+      for (const item of items) {
+        const width = measured[item.key] ?? prev[item.key];
+        if (width != null) {
+          next[item.key] = width;
+        }
+        if (next[item.key] !== prev[item.key]) {
+          changed = true;
+        }
+      }
+      if (!changed && Object.keys(next).length === Object.keys(prev).length) {
+        return prev;
+      }
+      return next;
+    });
+  }, [items, ordered]);
 
   return { ordered, rootRef, widths };
 }

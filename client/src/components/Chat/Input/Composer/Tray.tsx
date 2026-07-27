@@ -17,7 +17,11 @@ const KIND_REMOVE_KEY = {
   skill: 'com_ui_remove_skill',
 } as const;
 
-function ItemChip({ item }: { item: ComposerItem }) {
+interface ItemChipProps {
+  item: ComposerItem;
+}
+
+function ItemChip({ item }: ItemChipProps) {
   const localize = useLocalize();
 
   return (

@@ -8,9 +8,10 @@ import {
   getEndpointFileConfig,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import type { TFile } from 'librechat-data-provider';
-import { useFileMapContext, useChatContext } from '~/Providers';
+import type { TFile, TConversation } from 'librechat-data-provider';
+import type { ExtendedFile, FileSetter } from '~/common';
 import { useGetFileConfig } from '~/data-provider';
+import { useFileMapContext } from '~/Providers';
 import useLocalize from '~/hooks/useLocalize';
 import useUpdateFiles from './useUpdateFiles';
 
@@ -21,11 +22,22 @@ import useUpdateFiles from './useUpdateFiles';
  * file exists, but nothing guarantees the endpoint the user has since switched
  * to accepts its storage backend, type or size.
  */
-export default function useAttachExisting(): (file: TFile) => void {
+export interface AttachExistingContext {
+  files: Map<string, ExtendedFile>;
+  setFiles: FileSetter;
+  conversation: TConversation | null;
+}
+
+/**
+ * Given rather than read from the chat context: the palette holds this hook and
+ * is mounted for the whole conversation, so subscribing there re-rendered the
+ * composer's whole tool catalog every time the context value changed.
+ */
+export default function useAttachExisting(context: AttachExistingContext): (file: TFile) => void {
   const localize = useLocalize();
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
-  const { files, setFiles, conversation } = useChatContext();
+  const { files, setFiles, conversation } = context;
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });

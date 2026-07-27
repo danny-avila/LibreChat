@@ -1,8 +1,8 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
 import { DndProvider } from 'react-dnd';
+import { RecoilRoot, useSetRecoilState } from 'recoil';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { act, render, screen, within, fireEvent } from '@testing-library/react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import type { QueuedMessage } from '~/store/families';
 import Queue from '../Queue';
@@ -24,17 +24,22 @@ const mockRemoveQueued = jest.fn();
 const mockReorderQueued = jest.fn();
 const mockRestoreQueuedOrder = jest.fn();
 
-const steering = {
-  queueKey: CONVO_ID,
-  duringRunActive: true,
-  canSteer: true,
-  sendQueuedNow: mockSendQueuedNow,
-  removeQueued: mockRemoveQueued,
-  reorderQueued: mockReorderQueued,
-  restoreQueuedOrder: mockRestoreQueuedOrder,
-} as unknown as SteeringControls;
+/** Only what the rail reads, filled out against the real type so a change to
+ *  the contract breaks compilation rather than passing quietly. */
+const steeringWith = (over: Partial<SteeringControls> = {}): SteeringControls =>
+  ({
+    queueKey: CONVO_ID,
+    duringRunActive: true,
+    canSteer: true,
+    sendQueuedNow: mockSendQueuedNow,
+    removeQueued: mockRemoveQueued,
+    reorderQueued: mockReorderQueued,
+    restoreQueuedOrder: mockRestoreQueuedOrder,
+    ...over,
+  }) as SteeringControls;
 
-const pausedSteering = { ...steering, canSteer: false } as unknown as SteeringControls;
+const steering = steeringWith();
+const pausedSteering = steeringWith({ canSteer: false });
 
 const queued = (over: Partial<QueuedMessage> = {}): QueuedMessage =>
   ({
@@ -192,6 +197,40 @@ describe('Queue', () => {
       manualSkills: ['writer'],
     });
     expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
+  });
+
+  /* The region is removed with the rail and re-inserted with its old text
+     still in it, which readers announce on insertion. */
+  it('forgets its last announcement once the queue empties', () => {
+    let setQueue: (items: QueuedMessage[]) => void = () => undefined;
+    const Driver = () => {
+      setQueue = useSetRecoilState(store.queuedMessagesByConvoId(CONVO_ID));
+      return null;
+    };
+    render(
+      <RecoilRoot
+        initializeState={({ set }) =>
+          set(store.queuedMessagesByConvoId(CONVO_ID), [queued({ id: 'q1' }), queued({ id: 'q2' })])
+        }
+      >
+        <Driver />
+        <DndProvider backend={HTML5Backend}>
+          <Queue
+            steering={steering}
+            conversationId={CONVO_ID}
+            onEditToComposer={jest.fn()}
+            onRestoreToComposer={jest.fn()}
+          />
+        </DndProvider>
+      </RecoilRoot>,
+    );
+
+    fireEvent.keyDown(screen.getAllByTestId('queued-message-grip')[0], { key: 'ArrowDown' });
+    expect(screen.getByRole('status')).toHaveTextContent('com_ui_queue_moved:2');
+
+    act(() => setQueue([]));
+    act(() => setQueue([queued({ id: 'q3', text: 'a new message' })]));
+    expect(screen.getByRole('status')).toHaveTextContent('');
   });
 
   it('shows an attachment count when files ride along', () => {

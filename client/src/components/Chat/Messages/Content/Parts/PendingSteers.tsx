@@ -16,7 +16,11 @@ const ACTION_CLASS =
  * `ContentTypes.STEER` part (`useResumableSSE` removes the pending entry), so
  * the row's whole job is to hold the position and admit it is provisional.
  */
-function PendingSteers({ conversationId }: { conversationId: string }) {
+interface PendingSteersProps {
+  conversationId: string;
+}
+
+function PendingSteers({ conversationId }: PendingSteersProps) {
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const { retry, sendAsNew } = useSteerRecovery(conversationId);

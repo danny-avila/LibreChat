@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 import { useToastContext } from '@librechat/client';
 import type { TAskFunction } from '~/common';
 import useGetAudioSettings from './useGetAudioSettings';
@@ -182,13 +182,21 @@ export default function useDictation({
     existingTextRef.current = '';
   }, [abortRecording, reset]);
 
-  return {
-    active,
-    transcribing: isLoading === true || settling,
-    elapsed,
-    start,
-    cancel,
-    stopToComposer: useCallback(() => stopWith('compose'), [stopWith]),
-    stopAndSend: useCallback(() => stopWith('send'), [stopWith]),
-  };
+  const stopToComposer = useCallback(() => stopWith('compose'), [stopWith]);
+  const stopAndSend = useCallback(() => stopWith('send'), [stopWith]);
+
+  /* Memoized so `memo(Bar)` has something that can compare equal: a fresh
+     object here re-rendered the whole bar on every keystroke in the composer. */
+  return useMemo(
+    () => ({
+      active,
+      transcribing: isLoading === true || settling,
+      elapsed,
+      start,
+      cancel,
+      stopToComposer,
+      stopAndSend,
+    }),
+    [active, isLoading, settling, elapsed, start, cancel, stopToComposer, stopAndSend],
+  );
 }

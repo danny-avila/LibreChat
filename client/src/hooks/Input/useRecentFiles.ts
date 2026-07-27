@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { TFile } from 'librechat-data-provider';
+import type { AttachExistingContext } from '~/hooks/Files/useAttachExisting';
 import useAttachExisting from '~/hooks/Files/useAttachExisting';
 import { useGetFiles } from '~/data-provider';
 
@@ -10,12 +11,15 @@ import { useGetFiles } from '~/data-provider';
  * Fetched only while the palette is open: this is the whole file list, and no
  * other part of the composer needs it.
  */
-export default function useRecentFiles(enabled: boolean): {
+export default function useRecentFiles(
+  enabled: boolean,
+  context: AttachExistingContext,
+): {
   files: TFile[];
   attach: (file: TFile) => void;
 } {
   const { data } = useGetFiles<TFile[]>({ enabled });
-  const attach = useAttachExisting();
+  const attach = useAttachExisting(context);
 
   const files = useMemo(() => {
     if (!data?.length) {
