@@ -549,25 +549,23 @@ describe('Agent Methods', () => {
       expect(newAgent.mcpServerNames).toEqual(['authorizedServer']);
     });
 
-    test('should omit ambiguous MCP keys from mcpServerNames', async () => {
+    test('should derive the server from a key whose raw tool name contains the delimiter', async () => {
       const { agentId, authorId } = createTestIds();
-      /** Either half of the key may contain the delimiter, so this key cannot be
-       *  resolved without the configured server list. `mcpServerNames` grants
-       *  agent-scoped access to a DB server by name, so it must not guess. */
-      const ambiguousTool = `search${Constants.mcp_delimiter}Google${Constants.mcp_delimiter}workspace`;
-      const plainTool = `search${Constants.mcp_delimiter}authorizedServer`;
+      /** DB server names are slugs and cannot contain the delimiter, so the trailing
+       *  segment is the real server even when the raw tool name carries one. Shared-agent
+       *  access is keyed off this field, so it must not be dropped. */
+      const gatewayTool = `get${Constants.mcp_delimiter}server_version${Constants.mcp_delimiter}gitlab`;
 
       const newAgent = await createAgent({
         id: agentId,
-        name: 'Ambiguous MCP Agent',
+        name: 'Gateway MCP Agent',
         provider: 'test',
         model: 'test-model',
         author: authorId,
-        tools: [ambiguousTool, plainTool],
+        tools: [gatewayTool],
       });
 
-      expect(newAgent.mcpServerNames).toEqual(['authorizedServer']);
-      expect(newAgent.mcpServerNames).not.toContain('workspace');
+      expect(newAgent.mcpServerNames).toEqual(['gitlab']);
     });
 
     test('should derive mcpServerNames only from MCP tools on update', async () => {

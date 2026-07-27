@@ -607,11 +607,16 @@ async function loadToolDefinitionsWrapper({
     return { toolDefinitions: [] };
   }
 
-  const { configServers, serverNames: mcpServerNames } = await resolveMcpServerContext(req);
+  /** Only MCP tool keys need the server context; a purely non-MCP agent should not
+   *  pay an app-config lookup on startup. */
+  const hasFilteredMCPTools = filteredTools.some((t) => t.includes(Constants.mcp_delimiter));
+  const { configServers, serverNames: mcpServerNames } = hasFilteredMCPTools
+    ? await resolveMcpServerContext(req)
+    : { configServers: {}, serverNames: [] };
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
-  if (filteredTools?.some((t) => t.includes(Constants.mcp_delimiter))) {
+  if (hasFilteredMCPTools) {
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: filteredTools,
       userId: req.user.id,
