@@ -343,6 +343,21 @@ export async function fireSchedule(
     }
 
     if (await deps.isOutOfBalance(user)) {
+      // Revalidate BEFORE writing the skip. Everything above (user, config, permission
+      // and balance lookups) can outlast the 5-minute lease, and a skip is not a no-op:
+      // it stamps the card and walks the balance-skip streak toward auto-disable. Under
+      // a dead claim — lease taken over, schedule deleted, account deletion begun — that
+      // is a write on behalf of a fire that no longer owns this occurrence. The reserve
+      // path below has its own revalidation for the same reason; this one guards the
+      // branch that returns before ever reaching it.
+      if (
+        claimToken != null &&
+        !(await methods.revalidateClaim(schedule.id, claimToken, !options?.manual))
+      ) {
+        await releaseSupersededLease();
+        await advance();
+        return { fired: false, skipped: 'superseded' as const };
+      }
       // Skip rows carry no `bookkept:false` marker, so the reconciler has no path to
       // repair a half-applied skip. If the schedule-side bookkeeping throws, do NOT
       // advance: leave the occurrence due so the next claim retries it (the insert is

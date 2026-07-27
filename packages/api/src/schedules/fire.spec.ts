@@ -571,6 +571,44 @@ describe('fireSchedule', () => {
   });
 
   /**
+   * A balance skip is not a no-op: it stamps the card and walks the balance-skip streak
+   * toward auto-disable. The preflight above it (user, config, permission and balance
+   * lookups) can outlast the 5-minute lease, so writing it under a dead claim is a write
+   * on behalf of a fire that no longer owns the occurrence.
+   */
+  it('does not record a balance skip under a superseded claim', async () => {
+    const { methods, calls } = makeMethods();
+    (methods.revalidateClaim as jest.Mock).mockResolvedValue(false);
+    mockFetch(async () => okResponse());
+
+    const result = await fireSchedule(
+      makeDeps(methods, { isOutOfBalance: async () => true }),
+      makeSchedule(),
+      LIMITS,
+      dueAt(),
+    );
+
+    expect(result.skipped).toBe('superseded');
+    expect(methods.recordSkippedRun).not.toHaveBeenCalled();
+    expect(calls.skipped).toEqual([]);
+  });
+
+  it('records the balance skip normally while the claim is still valid', async () => {
+    const { methods, calls } = makeMethods();
+    mockFetch(async () => okResponse());
+
+    const result = await fireSchedule(
+      makeDeps(methods, { isOutOfBalance: async () => true }),
+      makeSchedule(),
+      LIMITS,
+      dueAt(),
+    );
+
+    expect(result.skipped).toBe('balance');
+    expect(calls.skipped).toEqual(['skipped_balance']);
+  });
+
+  /**
    * A `duplicate` means ANOTHER worker holds this occurrence's row — not that the
    * occurrence is done. Advancing past it hands the occurrence away: if that other
    * worker is a stale lease holder whose own revalidation then fails, it rolls its
