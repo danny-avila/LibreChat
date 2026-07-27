@@ -3,8 +3,8 @@ import { CircleHelp } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
 import { HoverCard, HoverCardTrigger, HoverCardContent, HoverCardPortal } from '@librechat/client';
 import type { SettingDefinition, TConversation } from 'librechat-data-provider';
+import type { TSetOption, LocalizeFunction } from '~/common';
 import type { TranslationKeys } from '~/hooks';
-import type { TSetOption } from '~/common';
 import useReducedMotion from '~/hooks/Generic/useReducedMotion';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -33,8 +33,6 @@ const ARROW_STEP: Record<string, number | undefined> = {
 };
 
 const THUMB_FADE_MS = 140;
-type Localize = (key: TranslationKeys) => string;
-
 /**
  * `enumMappings` maps a raw value to a translation KEY, not to display text —
  * rendering it directly is what leaks `com_ui_medium` into the UI. Shared with
@@ -43,7 +41,7 @@ type Localize = (key: TranslationKeys) => string;
 export function resolveEffortLabel(
   setting: SettingDefinition,
   value: string,
-  localize: Localize,
+  localize: LocalizeFunction,
 ): string {
   const mapped = setting.enumMappings?.[value];
   if (mapped != null) {

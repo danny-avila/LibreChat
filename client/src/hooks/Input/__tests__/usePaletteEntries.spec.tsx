@@ -17,13 +17,16 @@ let mockCapabilities: Record<string, boolean>;
 let mockContext: Record<string, unknown> | null;
 let mockSkills: Array<Record<string, unknown>>;
 let mockAgentsMap: Record<string, Record<string, unknown>>;
+let mockSkillsActive: boolean;
 
 jest.mock('~/hooks', () => ({
   useHasAccess: ({ permissionType }: { permissionType: string }) =>
     mockPermissions[permissionType] ?? false,
   useHasMemoryAccess: () => mockMemoryAccess,
   useAgentCapabilities: () => mockCapabilities,
-  useSkillActiveState: () => ({ isActive: () => false }),
+  /* The real popover filter is used here, and it drops anything the user
+     cannot invoke or that is not active for them. */
+  useSkillActiveState: () => ({ isActive: () => mockSkillsActive }),
 }));
 
 jest.mock('~/hooks/useLocalize', () => ({
@@ -46,18 +49,25 @@ jest.mock('~/data-provider', () => ({
   }),
 }));
 
-jest.mock('~/components/Chat/Input/SkillsCommand', () => ({
-  filterSkillsForPopover: (skills: Array<Record<string, unknown>>) => skills,
-}));
-
-const toggle = (state: unknown) => ({ toggleState: state, debouncedChange: jest.fn() });
+const toggle = (state: unknown): ToggleFixture => ({
+  toggleState: state,
+  debouncedChange: jest.fn(),
+});
 
 interface ServerFixture {
   serverName: string;
   config?: { title?: string; description?: string; iconPath?: string };
 }
 
+interface ToggleFixture {
+  toggleState: unknown;
+  debouncedChange: jest.Mock;
+}
+
 interface ContextFixture {
+  webSearch: ToggleFixture;
+  codeInterpreter: ToggleFixture;
+  artifacts: ToggleFixture;
   mcpServerManager: {
     selectableServers?: ServerFixture[];
     mcpValues: string[];
@@ -119,6 +129,7 @@ describe('usePaletteEntries', () => {
     mockContext = fullContext();
     mockSkills = [];
     mockAgentsMap = {};
+    mockSkillsActive = true;
   });
 
   it('offers nothing before the badge row has a context to read', () => {
@@ -184,6 +195,37 @@ describe('usePaletteEntries', () => {
       const listed = entries().result.current;
       expect(listed.find((item) => item.key === 'mcp:spotify')?.active).toBe(true);
       expect(listed.find((item) => item.key === 'mcp:github')?.active).toBe(false);
+    });
+  });
+
+  describe('choosing a row', () => {
+    it('flips each tool through its own toggle', () => {
+      const context = fullContext();
+      mockContext = context;
+      const listed = entries().result.current;
+      act(() => listed.find((item) => item.key === 'builtin:web_search')?.onSelect());
+      expect(context.webSearch.debouncedChange).toHaveBeenCalledWith({ value: true });
+      expect(context.codeInterpreter.debouncedChange).not.toHaveBeenCalled();
+    });
+
+    it('turns a tool back off from its on state', () => {
+      const context = { ...fullContext(), webSearch: toggle(true) };
+      mockContext = context;
+      const listed = entries().result.current;
+      act(() => listed.find((item) => item.key === 'builtin:web_search')?.onSelect());
+      expect(context.webSearch.debouncedChange).toHaveBeenCalledWith({ value: false });
+    });
+
+    it('returns a mode pill to the default when it is already the stored mode', () => {
+      const context = { ...fullContext(), artifacts: toggle(ArtifactModes.SHADCNUI) };
+      mockContext = context;
+      const modes = entries().result.current.find(
+        (item) => item.key === 'builtin:artifacts',
+      )?.modes;
+      act(() => modes?.find((mode) => mode.id === 'shadcn')?.onSelect());
+      expect(context.artifacts.debouncedChange).toHaveBeenCalledWith({
+        value: ArtifactModes.DEFAULT,
+      });
     });
   });
 
@@ -283,11 +325,52 @@ describe('usePaletteEntries', () => {
     });
   });
 
+  /* A third gate, and the one that fails closed: a persisted agent sees only
+     the skills it was built with, and none at all until the map has loaded. */
+  describe('which skills an agent may see', () => {
+    beforeEach(() => {
+      mockSkills = [
+        { _id: 's1', name: 'writer', displayTitle: 'Writing Helper' },
+        { _id: 's2', name: 'researcher', displayTitle: 'Researcher' },
+      ];
+    });
+
+    const skillKeys = (agentId?: string | null) =>
+      keysOf(entries(agentId).result).filter((key) => key.startsWith('skill:'));
+
+    it('lists the whole catalog for an ephemeral agent', () => {
+      expect(skillKeys('openAI__gpt-5___GPT-5')).toEqual(['skill:s1', 'skill:s2']);
+    });
+
+    it('lists nothing for a persisted agent that has skills switched off', () => {
+      mockAgentsMap = { agent_1: { skills_enabled: false } };
+      expect(skillKeys('agent_1')).toEqual([]);
+    });
+
+    it('lists nothing while the agents map is still loading', () => {
+      mockAgentsMap = {};
+      expect(skillKeys('agent_1')).toEqual([]);
+    });
+
+    it('lists only the skills a persisted agent was built with', () => {
+      mockAgentsMap = { agent_1: { skills_enabled: true, skills: ['s2'] } };
+      expect(skillKeys('agent_1')).toEqual(['skill:s2']);
+    });
+  });
+
   describe('servers', () => {
     it('titles a server by its config, falling back to its name', () => {
       const listed = entries().result.current;
       expect(listed.find((item) => item.key === 'mcp:github')?.label).toBe('Github');
       expect(listed.find((item) => item.key === 'mcp:spotify')?.label).toBe('spotify');
+    });
+
+    it('toggles a server by its own name, not by its title', () => {
+      const context = fullContext();
+      mockContext = context;
+      const row = entries().result.current.find((item) => item.key === 'mcp:github');
+      act(() => row?.onSelect());
+      expect(context.mcpServerManager.toggleServerSelection).toHaveBeenCalledWith('github');
     });
 
     it('lists none while the manager has no selectable servers', () => {

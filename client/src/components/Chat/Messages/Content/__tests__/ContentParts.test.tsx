@@ -166,6 +166,11 @@ jest.mock('../ParallelContent', () => ({
   ),
 }));
 
+jest.mock('../Parts/PendingSteers', () => ({
+  __esModule: true,
+  default: () => <div data-testid="pending-steers" />,
+}));
+
 import ContentParts from '../ContentParts';
 
 const baseProps = {
@@ -668,7 +673,7 @@ describe('ContentParts — activity phase state', () => {
   });
 });
 
-describe('ContentParts — settled content identity across compaction', () => {
+describe('ContentParts: settled content identity across compaction', () => {
   /** Mirrors a captured run: the aggregator leaves holes at the source indexes
    *  of steps that produced nothing, and `finalHandler` swaps in the server's
    *  compacted array. Without the streamed-index stamp every index-derived key
@@ -909,5 +914,26 @@ describe('ContentParts — settled content identity across compaction', () => {
       'data-animate-entrance',
       'true',
     );
+  });
+});
+
+/* The pending block belongs to the reply being written: shown under every
+   message, or after the run has ended, it reads as unsent words piling up. */
+describe('ContentParts: pending steers', () => {
+  const withGate = (over: Partial<typeof baseProps> & { conversationId?: string }) =>
+    render(<ContentParts {...baseProps} {...over} />);
+
+  it('shows them on the last message while a run is live', () => {
+    withGate({ isLast: true, isSubmitting: true, conversationId: 'convo-1' });
+    expect(screen.getByTestId('pending-steers')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['an earlier message', { isLast: false, isSubmitting: true, conversationId: 'convo-1' }],
+    ['a finished run', { isLast: true, isSubmitting: false, conversationId: 'convo-1' }],
+    ['no conversation yet', { isLast: true, isSubmitting: true, conversationId: undefined }],
+  ])('shows nothing for %s', (_label, over) => {
+    withGate(over);
+    expect(screen.queryByTestId('pending-steers')).not.toBeInTheDocument();
   });
 });

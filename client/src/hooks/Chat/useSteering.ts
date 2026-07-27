@@ -1311,6 +1311,33 @@ export default function useSteering({
     [queueKey],
   );
 
+  /**
+   * Puts the queue back in a remembered order, for a drag the user abandoned.
+   * Ids that have since drained are skipped rather than resurrected, and
+   * anything queued mid-drag keeps its place at the back.
+   */
+  const restoreQueuedOrder = useRecoilCallback(
+    ({ set }) =>
+      (ids: readonly string[]) => {
+        set(store.queuedMessagesByConvoId(queueKey), (prev) => {
+          const byId = new Map(prev.map((item) => [item.id, item]));
+          const restored: QueuedMessage[] = [];
+          for (const id of ids) {
+            const item = byId.get(id);
+            if (item != null) {
+              restored.push(item);
+              byId.delete(id);
+            }
+          }
+          if (restored.length === 0) {
+            return prev;
+          }
+          return [...restored, ...byId.values()];
+        });
+      },
+    [queueKey],
+  );
+
   /** Once a parked source is discarded it must never be retried as a recovery
    * attempt. Downgrade the row in place so a guarded Edit that finds a newer
    * draft can leave the same words, context, identity, and queue position as
@@ -2269,6 +2296,7 @@ export default function useSteering({
       removeQueued,
       discardQueued,
       reorderQueued,
+      restoreQueuedOrder,
       sendQueuedNow,
       interruptAndSend,
       interruptSteer,
@@ -2296,6 +2324,7 @@ export default function useSteering({
       removeQueued,
       discardQueued,
       reorderQueued,
+      restoreQueuedOrder,
       sendQueuedNow,
       interruptAndSend,
       interruptSteer,

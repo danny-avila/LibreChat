@@ -1,7 +1,7 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { renderHook } from '@testing-library/react';
-import { Tools, EModelEndpoint } from 'librechat-data-provider';
+import { act, renderHook } from '@testing-library/react';
+import { Tools, EToolResources, EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import useAttachItems from '../useAttachItems';
 
@@ -23,8 +23,9 @@ jest.mock('~/hooks/useLocalize', () => ({
   default: () => (key: string) => key,
 }));
 
+const mockHandleFileChange = jest.fn();
 jest.mock('~/hooks/Files', () => ({
-  useFileHandlingNoChatContext: () => ({ handleFileChange: jest.fn() }),
+  useFileHandlingNoChatContext: () => ({ handleFileChange: mockHandleFileChange }),
 }));
 
 jest.mock('~/hooks/Files/useSharePointFileHandling', () => ({
@@ -105,6 +106,42 @@ function renderEntries(options: Options = {}): string[] {
 }
 
 const allCapabilities = { contextEnabled: true, fileSearchEnabled: true, codeEnabled: true };
+
+/** The hook, not just its entry labels, so a destination can be chosen. */
+function renderAttach(options: Options = {}) {
+  mockUseAgentToolPermissions.mockReturnValue({ tools: options.tools, provider: options.provider });
+  mockUseAgentCapabilities.mockReturnValue({
+    contextEnabled: options.contextEnabled ?? true,
+    fileSearchEnabled: options.fileSearchEnabled ?? true,
+    codeEnabled: options.codeEnabled ?? true,
+  });
+  mockUseGetAgentsConfig.mockReturnValue({ agentsConfig: { capabilities: [] } });
+  mockUseGetStartupConfig.mockReturnValue({ data: { sharePointFilePickerEnabled: false } });
+
+  return renderHook(
+    () =>
+      useAttachItems({
+        agentId: options.agentId ?? null,
+        endpoint: options.endpoint ?? null,
+        endpointType: options.endpointType,
+        useResponsesApi: options.useResponsesApi,
+        conversationId: 'convo-1',
+        conversation: { conversationId: 'convo-1' } as TConversation,
+        files: new Map(),
+        setFiles: jest.fn(),
+        setFilesLoading: jest.fn(),
+      }),
+    {
+      wrapper: ({ children }: { children: React.ReactNode }) => <RecoilRoot>{children}</RecoilRoot>,
+    },
+  );
+}
+
+/** Stands in for the picker: a real one cannot open in jsdom, and what matters
+ *  is that the change event arrives while the chosen destination is still set. */
+const pickFile = (input: HTMLInputElement, onFileChange: (e: never) => void) => {
+  onFileChange({ target: input } as never);
+};
 
 describe('useAttachItems', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -270,6 +307,53 @@ describe('useAttachItems', () => {
       expect(
         result.current.entries.find((entry) => entry.id === 'sharepoint:provider')?.primary,
       ).toBe(false);
+    });
+  });
+
+  describe('where the picked file is routed', () => {
+    /* The destination is held in a ref precisely because the picker can fire
+       its change event before React has committed any state, so losing it here
+       lands a File Search upload as a plain provider attachment. */
+    it('carries the chosen destination through the picker and then forgets it', () => {
+      const { result } = renderAttach();
+      const input = document.createElement('input');
+      Object.defineProperty(result.current.inputRef, 'current', { value: input, writable: true });
+
+      act(() => {
+        result.current.entries.find((entry) => entry.id === 'local:file_search')?.onSelect();
+      });
+      act(() => pickFile(input, result.current.onFileChange));
+      expect(mockHandleFileChange).toHaveBeenLastCalledWith(
+        expect.anything(),
+        EToolResources.file_search,
+      );
+
+      /* And the next pick is a plain one unless a destination is chosen again. */
+      act(() => {
+        result.current.entries.find((entry) => entry.id === 'local:provider')?.onSelect();
+      });
+      act(() => pickFile(input, result.current.onFileChange));
+      expect(mockHandleFileChange).toHaveBeenLastCalledWith(expect.anything(), undefined);
+    });
+
+    it('scopes the picker to what the destination can send', () => {
+      const { result } = renderAttach({ endpointType: EModelEndpoint.bedrock });
+      const input = document.createElement('input');
+      const accepts: string[] = [];
+      input.click = () => accepts.push(input.accept);
+      Object.defineProperty(result.current.inputRef, 'current', { value: input, writable: true });
+
+      act(() => {
+        result.current.entries.find((entry) => entry.id === 'local:provider')?.onSelect();
+      });
+      expect(accepts[0]).toContain('image/');
+
+      act(() => {
+        result.current.entries.find((entry) => entry.id === 'local:context')?.onSelect();
+      });
+      /* Text extraction takes anything the server can read, so it does not
+         narrow the picker at all. */
+      expect(accepts[1]).toBe('');
     });
   });
 

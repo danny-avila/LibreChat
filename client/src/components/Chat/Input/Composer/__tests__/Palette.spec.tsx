@@ -251,10 +251,17 @@ describe('Palette', () => {
       expect(keys()).toEqual(['h:tool', 'b', 'a']);
     });
 
-    it('says so when nothing matches', () => {
+    it('says so when nothing matches, out loud as well as on screen', () => {
       renderPalette();
       search('nothing matches this');
-      expect(screen.getByText('com_ui_composer_no_results')).toBeInTheDocument();
+      const empty = screen.getByText('com_ui_composer_no_results');
+      expect(empty).toBeInTheDocument();
+      expect(empty).toHaveAttribute('role', 'status');
+      /* And the field stops claiming to control a list that is not there. */
+      expect(screen.getByTestId('composer-palette-search')).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      );
     });
   });
 
