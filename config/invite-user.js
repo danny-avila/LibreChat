@@ -49,6 +49,11 @@ const connect = require('./connect');
   }
 
   const token = await createInvite(email, { createToken, findToken });
+  if (typeof token !== 'string') {
+    console.red('Error: Failed to create the invite token!');
+    silentExit(1);
+  }
+
   const inviteLink = `${process.env.DOMAIN_CLIENT}/register?token=${token}`;
 
   const appName = process.env.APP_TITLE || 'LibreChat';
