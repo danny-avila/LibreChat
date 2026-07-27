@@ -24,6 +24,11 @@ jest.mock(
         ...props
       }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string }) =>
         React.createElement('button', props, children),
+      Input: React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
+        (props, ref) => React.createElement('input', { ...props, ref }),
+      ),
+      Label: ({ children, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) =>
+        React.createElement('label', props, children),
       OGDialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
         open ? React.createElement(React.Fragment, null, children) : null,
       OGDialogContent: ({ children }: { children: ReactNode }) =>
