@@ -748,9 +748,12 @@ const updateAgentHandler = async (req, res) => {
           }
           updateData.tools = nextTools;
           /** The agent's MCP tools are retained verbatim here, so carry its resolved
-           *  names across too - re-deriving them from the keys would undo the
-           *  provenance this path never had a chance to compute. */
-          updateData.mcpServerNames = existingAgent.mcpServerNames ?? [];
+           *  names across too. Left unset when the agent has none stored, so
+           *  `updateAgent` can still derive rather than being pinned to an empty
+           *  index that would strip agent-scoped access. */
+          if (existingAgent.mcpServerNames?.length) {
+            updateData.mcpServerNames = existingAgent.mcpServerNames;
+          }
         }
       } else if (hasToolUpdate) {
         const existingToolSet = new Set(existingTools);
@@ -796,7 +799,13 @@ const updateAgentHandler = async (req, res) => {
             }
           }
         }
-        updateData.mcpServerNames = Array.from(resolvedServerNames);
+        /** Supplying `[]` would pin the index empty and suppress `updateAgent`'s
+         *  derivation, so only assert it when the result is authoritative: either we
+         *  resolved names, or no MCP tool survives and the index genuinely is empty. */
+        const retainsMCPTools = (updateData.tools ?? []).some(isMCPTool);
+        if (resolvedServerNames.size > 0 || !retainsMCPTools) {
+          updateData.mcpServerNames = Array.from(resolvedServerNames);
+        }
       }
     }
 

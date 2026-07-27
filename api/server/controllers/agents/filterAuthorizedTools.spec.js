@@ -788,6 +788,22 @@ describe('MCP Tool Authorization', () => {
       expect(agentInDb.mcpServerNames).not.toContain('Workspace');
     });
 
+    test('should let persistence derive when an unindexed agent retains MCP tools', async () => {
+      /** A legacy or partially migrated agent can hold MCP tools with no stored
+       *  mcpServerNames. Pinning the index to [] here would suppress the derivation
+       *  in updateAgent and strip agent-scoped access to its DB-backed server. */
+      await Agent.updateOne({ id: existingAgentId }, { $unset: { mcpServerNames: 1 } });
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = { tools: ['web_search', `existingTool${d}authorizedServer`] };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.tools).toContain(`existingTool${d}authorizedServer`);
+      expect(agentInDb.mcpServerNames).toEqual(['authorizedServer']);
+    });
+
     test('should not query MCP registry when no new MCP tools added', async () => {
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;
