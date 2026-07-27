@@ -262,7 +262,9 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     // Inserted WITHOUT nextRunAt regardless of `enabled`: the engine claims by
     // nextRunAt, so the row is inert until armed below. That is what makes the
     // barrier re-check durable — every failure mode leaves a row that cannot fire,
-    // rather than one that fires for an account already being erased.
+    // rather than one that fires for an account already being erased. The reconciler's
+    // unarmed sweep later arms anything left this way, so an inert row is a delay, not
+    // a permanent state.
     const created = await deps.methods.createScheduleWithSlot(
       {
         ...parsed.data,
@@ -285,9 +287,9 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     // Re-checking AFTER the write is what makes the barrier authoritative.
     if (await deps.isUserDeleting(user.id)) {
       // Best-effort tidy-up of an unarmed row. Its failure is reported but no longer
-      // load-bearing: an unarmed schedule is never claimed, so the worst case is an
-      // inert row the deletion sweep can reap later, not a live one firing billed
-      // generations for an erased account.
+      // load-bearing for BILLING: the row is unarmed, and even once the reconciler's
+      // sweep arms it, the fire path refuses it at the account-deletion barrier
+      // (isOwnerDeleting). The residual is a retained row, not a billed generation.
       if (!(await compensateLateCreate(deps, id, user.id))) {
         res.status(500).json({ error: 'Failed to roll back schedule creation' });
         return;

@@ -12,6 +12,7 @@ const {
   decrementPendingRequest,
   sanitizeMessageForTransmit,
   checkAndIncrementPendingRequest,
+  exemptFromConcurrencyLimiter,
   isUnpersistedPreliminaryParent,
   isScheduleFireRequest,
   resolveConversationAnchor,
@@ -164,7 +165,7 @@ async function finishResumableRequest(req, userId) {
     // Mirrors the increment: only an AUTOMATIC fire skipped the counter, so only it
     // must skip the decrement. Uses the decision captured at request start, not a
     // re-check of the expiring token.
-    if (!req._isScheduledFire || req._isManualScheduledFire === true) {
+    if (!exemptFromConcurrencyLimiter(req)) {
       await decrementPendingRequest(userId);
     }
   }
@@ -376,7 +377,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   // so exempting it lets one user run unbounded concurrent generations — and unlike an
   // automatic occurrence, a 429 here is surfaced to the clicking user rather than
   // booked against the schedule (see the throttled branch in fireSchedule).
-  const exemptFromConcurrency = isScheduledFire && req._isManualScheduledFire !== true;
+  // Shared predicate, not a hand-rolled copy: the acquire and both release points
+  // live in different files, and re-deriving it at each is what let them drift.
+  const exemptFromConcurrency = exemptFromConcurrencyLimiter(req);
   if (!exemptFromConcurrency) {
     const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
     if (!allowed) {
@@ -920,7 +923,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // (so a fast /resume isn't 429'd); only release here if that didn't happen.
           // Always run the MCP request-context cleanup.
           await cleanupMCPRequestContextForReq(req);
-          if (!isScheduledFire && !client?.pendingRequestReleased) {
+          // Mirrors the increment: only an AUTOMATIC fire skipped the counter. A Run Now
+          // holds a real slot, so it must release here like an interactive turn.
+          if (!exemptFromConcurrency && !client?.pendingRequestReleased) {
             await decrementPendingRequest(userId);
           }
           if (client) {

@@ -107,6 +107,9 @@ jest.mock('@librechat/api', () => ({
   buildMessageFiles: jest.fn(() => []),
   resolveTitleTiming: jest.fn(() => 'immediate'),
   resolveConversationAnchor: jest.requireActual('@librechat/api').resolveConversationAnchor,
+  // Real predicate, not a stub: it decides whether this request holds a concurrency
+  // slot, and a stub here would hide a drift between the acquire and release sites.
+  exemptFromConcurrencyLimiter: jest.requireActual('@librechat/api').exemptFromConcurrencyLimiter,
   GenerationJobManager: mockGenerationJobManager,
   getReferencedQuotes: jest.fn((quotes) => {
     if (!Array.isArray(quotes)) {

@@ -411,8 +411,10 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
   // listener is closing and the generation manager has already begun refusing new jobs.
   // A tick in that window claims a due occurrence, fails its loopback POST against a
   // server that is shutting down, and books the failure against the schedule — walking a
-  // healthy schedule toward auto-disable for nothing more than a restart. Stopping first
-  // means the last claim always has a live server to fire at.
+  // healthy schedule toward auto-disable for nothing more than a restart. This NARROWS
+  // that window rather than closing it: the listener starts closing before pre-drain
+  // runs, so a tick already in flight can still lose its POST. Occurrences skipped by
+  // stopping early are simply still due at restart, within the misfire grace.
   registerShutdownTask(
     'schedule engine',
     () => {

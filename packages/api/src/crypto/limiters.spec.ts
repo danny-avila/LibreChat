@@ -2,6 +2,7 @@ import {
   exemptFromIpLimiter,
   SCHEDULE_FIRE_SCOPE,
   exemptFromUserLimiter,
+  exemptFromConcurrencyLimiter,
   SCHEDULE_MANUAL_CLAIM,
   readScheduleFireClaims,
   generateShortLivedToken,
@@ -69,6 +70,26 @@ describe('message-limiter exemptions for scheduled fires', () => {
 
     it('does not exempt an ordinary interactive turn', () => {
       expect(exemptFromUserLimiter(request('interactive'))).toBe(false);
+    });
+  });
+
+  /**
+   * The ACQUIRE and both RELEASE points live in different files (request.js twice,
+   * client.js once on the HITL pause path). Re-deriving this rule at each site is what
+   * let them drift: the acquire became manual-aware while a release did not, so every
+   * paused Run Now leaked a slot until the counter's idle TTL expired.
+   */
+  describe('concurrency limiter', () => {
+    it('exempts an automatic occurrence, which never increments', () => {
+      expect(exemptFromConcurrencyLimiter(request('automatic'))).toBe(true);
+    });
+
+    it('does NOT exempt a Run Now, which holds a real slot and must release it', () => {
+      expect(exemptFromConcurrencyLimiter(request('manual'))).toBe(false);
+    });
+
+    it('does not exempt an ordinary interactive turn', () => {
+      expect(exemptFromConcurrencyLimiter(request('interactive'))).toBe(false);
     });
   });
 

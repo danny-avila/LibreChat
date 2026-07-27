@@ -108,3 +108,18 @@ export const exemptFromUserLimiter = (req: ClassifiedFireRequest): boolean => {
   const claims = classify(req);
   return claims.scheduled && !claims.manual;
 };
+
+/**
+ * Whether the interactive CONCURRENT-request limiter should be SKIPPED — and, by the
+ * same token, whether this request must NOT release a slot on teardown.
+ *
+ * Same rule as the user limiter: only AUTOMATIC occurrences are exempt. Run Now is
+ * user-paced and holds a real slot, so it increments and must decrement.
+ *
+ * Exported deliberately rather than re-derived at each site. The acquire and the two
+ * release points (the HITL pause path and the normal teardown) live in different files,
+ * and hand-writing the predicate at each let them drift: the acquire became manual-aware
+ * while a release did not, leaking a slot on every paused Run Now.
+ */
+export const exemptFromConcurrencyLimiter = (req: ClassifiedFireRequest): boolean =>
+  exemptFromUserLimiter(req);

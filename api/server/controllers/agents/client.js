@@ -76,6 +76,7 @@ const {
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
+  exemptFromConcurrencyLimiter,
 } = require('@librechat/api');
 const {
   Callback,
@@ -1525,10 +1526,15 @@ class AgentClient extends BaseClient {
     // teardown (request.js pause branch / resume.js finally) that would otherwise
     // release it, and `/resume` 429s under LIMIT_CONCURRENT_MESSAGES. Idempotent via
     // the flag; if it fails here, the teardown still releases (it checks the flag).
-    // A scheduled fire never acquired an interactive concurrency slot, so it must
-    // not release one on pause (that would clear a real user's counter). Mark it
+    // An AUTOMATIC scheduled fire never acquired an interactive concurrency slot, so it
+    // must not release one on pause (that would clear a real user's counter). Mark it
     // released so downstream teardown skips the decrement too.
-    if (this.options.req?._isScheduledFire) {
+    //
+    // Run Now DOES acquire one — it is user-paced and no longer exempt — so it must
+    // release like any interactive turn. Mirrors `exemptFromConcurrency` at the
+    // increment site; treating it as exempt here leaked a slot on every paused manual
+    // fire, and the pause path returns before the teardown that was made manual-aware.
+    if (exemptFromConcurrencyLimiter(this.options.req)) {
       this.pendingRequestReleased = true;
     } else if (!this.pendingRequestReleased) {
       try {
