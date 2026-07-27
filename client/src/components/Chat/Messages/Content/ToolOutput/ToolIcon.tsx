@@ -91,11 +91,11 @@ export function getToolIconType(name: string): ToolIconType {
 }
 
 /** Extracts the MCP server name from a tool name with format `tool<delimiter>server`. */
-export function getMCPServerName(toolName: string): string {
+export function getMCPServerName(toolName: string, knownServerNames?: readonly string[]): string {
   if (!toolName.includes(Constants.mcp_delimiter)) {
     return '';
   }
-  const [, serverName] = splitToolCallName(toolName);
+  const [, serverName] = splitToolCallName(toolName, knownServerNames);
   return serverName ?? '';
 }
 

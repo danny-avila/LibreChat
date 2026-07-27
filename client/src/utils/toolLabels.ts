@@ -46,9 +46,12 @@ export interface ParsedToolName {
  *   - `web_search`             → `{ mcpServer: '', toolName: 'web_search', friendlyKey: 'com_ui_tool_name_web_search' }`
  *   - `some_custom_tool`       → `{ mcpServer: '', toolName: 'some_custom_tool' }`
  */
-export function parseToolName(rawName: string): ParsedToolName {
+export function parseToolName(
+  rawName: string,
+  knownServerNames?: readonly string[],
+): ParsedToolName {
   if (rawName.includes(Constants.mcp_delimiter)) {
-    const [toolName, mcpServer = ''] = splitToolCallName(rawName);
+    const [toolName, mcpServer = ''] = splitToolCallName(rawName, knownServerNames);
     return { raw: rawName, mcpServer, toolName };
   }
   const friendlyKey = TOOL_FRIENDLY_NAME_KEYS[rawName];
@@ -72,8 +75,9 @@ export function parseToolName(rawName: string): ParsedToolName {
 export function getToolDisplayLabel(
   rawName: string,
   localize: (key: TranslationKeys) => string,
+  knownServerNames?: readonly string[],
 ): string {
-  const parsed = parseToolName(rawName);
+  const parsed = parseToolName(rawName, knownServerNames);
   if (parsed.mcpServer) return parsed.mcpServer;
   if (parsed.friendlyKey) return localize(parsed.friendlyKey);
   return parsed.toolName;
