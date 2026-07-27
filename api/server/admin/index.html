@@ -299,6 +299,19 @@
           </table>
         </div>
       </div>
+      <div class="table-panel" id="dd-files-panel" style="display:none;">
+        <div class="table-header">
+          <span class="table-title">매터 파일 목록</span>
+          <span class="table-sub" id="dd-files-sub"></span>
+          <button class="btn-refresh" style="margin-left:auto;" id="dd-files-close">닫기</button>
+        </div>
+        <div class="table-scroll" style="max-height:400px;">
+          <table>
+            <thead><tr><th>doc_id</th><th>파일명</th><th>유형</th><th>청크</th><th>작업</th></tr></thead>
+            <tbody id="dd-files-tbody"></tbody>
+          </table>
+        </div>
+      </div>
       <div class="table-panel">
         <div class="table-header">
           <span class="table-title">삭제 이력 (감사 로그)</span>
