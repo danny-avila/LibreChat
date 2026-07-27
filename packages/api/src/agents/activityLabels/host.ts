@@ -189,11 +189,15 @@ export async function resolveActivityLabelModel({
     activity.model != null && activity.model !== Constants.CURRENT_MODEL
       ? activity.model
       : undefined;
+  /** `model_parameters.model` FIRST: `initializeAgent` merges the request's
+   *  `endpointOption` override into it and the run itself gives it precedence,
+   *  so the saved `agent.model` can be a stale or entirely different model.
+   *  Reading it first is what makes "current model" mean the model the
+   *  conversation is actually running on. */
+  const runModel = agent.model_parameters?.model ?? agent.model;
   const model =
     activityModel ??
-    (titleModel != null && titleModel !== Constants.CURRENT_MODEL
-      ? titleModel
-      : (agent.model ?? agent.model_parameters?.model));
+    (titleModel != null && titleModel !== Constants.CURRENT_MODEL ? titleModel : runModel);
   const options = await providerConfig.getOptions({
     req,
     endpoint,

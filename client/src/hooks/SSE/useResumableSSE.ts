@@ -557,9 +557,11 @@ export default function useResumableSSE(
    * `editPrefixLength` must no longer be applied — by run steps or labels.
    */
   const editPrefixClearedRef = useRef(false);
-  /** Stream the cleared-prefix state above belongs to, so it is dropped when
-   *  the generation changes rather than when a subscribe happens to be live. */
-  const prefixStateStreamIdRef = useRef<string | null>(null);
+  /** Generation the cleared-prefix state above belongs to, so it is dropped
+   *  when a new generation starts rather than when a subscribe happens to be
+   *  live. Keyed by response message id — the stream id is the conversation
+   *  id and is therefore shared by every generation within it. */
+  const prefixStateGenerationIdRef = useRef<string | null>(null);
 
   /** Removes the pending chip once its steer is injected (the inline content
    *  part becomes the durable record), and records the id so a 202 ACK that
@@ -705,15 +707,19 @@ export default function useResumableSSE(
        * would otherwise dispatch with no offset and overwrite the content it
        * kept.
        *
-       * Keyed on the STREAM, not on `isResume`: a submission whose POST
-       * succeeded server-side but lost its response is retried, comes back
-       * `resumed: true`, and subscribes in resume mode despite being a new
-       * generation — so an `isResume` check skips the reset exactly when it
-       * is needed. The stream id changes with the generation and does not
-       * change across reconnects of one, which is the boundary that matters.
+       * Keyed on the RESPONSE MESSAGE id — the only per-generation identity
+       * available here. Not `isResume`: a submission whose POST succeeded but
+       * lost its response is retried, returns `resumed: true`, and subscribes
+       * in resume mode despite being a new generation. And not the stream id:
+       * `request.js` sets `streamId = conversationId`, so every generation in
+       * a conversation shares it and the state would never clear. The
+       * response id is minted per submission and is carried through a resume
+       * unchanged, which is exactly the boundary that matters.
        */
-      if (prefixStateStreamIdRef.current !== currentStreamId) {
-        prefixStateStreamIdRef.current = currentStreamId;
+      const generationId =
+        (currentSubmission.initialResponse as TMessage | undefined)?.messageId ?? currentStreamId;
+      if (prefixStateGenerationIdRef.current !== generationId) {
+        prefixStateGenerationIdRef.current = generationId;
         editPrefixClearedRef.current = false;
       }
       let { userMessage } = currentSubmission;
