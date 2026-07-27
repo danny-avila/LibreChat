@@ -259,13 +259,16 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     // maxPerUser. 'limit' means a concurrent racer took the last slot after the
     // pre-check above; the just-retained files are then unreferenced (a rare, minor
     // leak of the user's own uploads) — acceptable vs. a partial/expiring commit.
+    // Inserted WITHOUT nextRunAt regardless of `enabled`: the engine claims by
+    // nextRunAt, so the row is inert until armed below. That is what makes the
+    // barrier re-check durable — every failure mode leaves a row that cannot fire,
+    // rather than one that fires for an account already being erased.
     const created = await deps.methods.createScheduleWithSlot(
       {
         ...parsed.data,
         id,
         user: user.id as never,
         tenantId: user.tenantId,
-        ...(nextRunAt ? { nextRunAt } : {}),
       },
       limits.maxPerUser,
     );
@@ -275,17 +278,16 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       });
       return;
     }
-    // POST-INSERT barrier re-check with compensating delete. The admission check at the
-    // top of this handler shrinks the window to roughly one request, but cannot close it:
-    // account deletion can raise the barrier after we passed that check and before this
-    // insert landed, and its one-shot disable scan would not have seen a row that did not
-    // exist yet. Re-checking AFTER the write is what makes the barrier authoritative;
-    // compensating here keeps a deleted account from retaining a live schedule.
+    // POST-INSERT barrier re-check. The admission check at the top of this handler
+    // shrinks the window to roughly one request, but cannot close it: account deletion
+    // can raise the barrier after we passed that check and before this insert landed,
+    // and its one-shot disable scan would not have seen a row that did not exist yet.
+    // Re-checking AFTER the write is what makes the barrier authoritative.
     if (await deps.isUserDeleting(user.id)) {
-      // FAIL CLOSED: this compensation is the ONLY cleanup for a row inserted after
-      // deleteSchedulesByUser already ran. Swallowing its failure would answer 410 as
-      // though the row were gone while the deleted user's prompt and attachments stayed
-      // in a live, non-TTL schedule indefinitely.
+      // Best-effort tidy-up of an unarmed row. Its failure is reported but no longer
+      // load-bearing: an unarmed schedule is never claimed, so the worst case is an
+      // inert row the deletion sweep can reap later, not a live one firing billed
+      // generations for an erased account.
       if (!(await compensateLateCreate(deps, id, user.id))) {
         res.status(500).json({ error: 'Failed to roll back schedule creation' });
         return;
@@ -293,8 +295,13 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(410).json({ error: 'This account is being deleted' });
       return;
     }
+    // ARM last. A failure here leaves the schedule visible but unclaimed; the owner's
+    // next edit recomputes nextRunAt.
+    const armed = nextRunAt
+      ? ((await deps.methods.updateScheduleById(id, user.id, { nextRunAt })) ?? created)
+      : created;
     logger.info(`[schedules] created ${id} for user ${user.id}`);
-    res.status(201).json(toWireSchedule(created));
+    res.status(201).json(toWireSchedule(armed));
   }
 
   async function updateSchedule(req: ServerRequest, res: Response): Promise<void> {

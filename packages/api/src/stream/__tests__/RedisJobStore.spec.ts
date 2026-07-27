@@ -729,4 +729,52 @@ describe('RedisJobStore', () => {
     await expect(store.getContentParts('stream-memory-content')).resolves.toBeNull();
     expect(store.getCollectedUsage('stream-memory-content')).toEqual([]);
   });
+
+  /**
+   * Schedule identity is the fence EVERY scheduled-run consumer keys off:
+   * reconcile's jobIdentityMatches, clearReconciledJob, abortScheduledJob and the
+   * abort route's preserve-for-reconcile decision. Dropping it on read makes a live
+   * Redis-backed run read as "gone", so the orphan sweep interrupts it.
+   */
+  test('round-trips schedule identity through the Redis hash', async () => {
+    const scheduledFor = '2026-07-26T12:00:00.000Z';
+    const hash: Record<string, string> = {
+      streamId: 'conv-sched',
+      userId: 'user-1',
+      status: 'running',
+      createdAt: '1000',
+      scheduleId: 'sched-1',
+      scheduledFor,
+    };
+    const redis = {
+      isCluster: false,
+      hgetall: jest.fn().mockResolvedValue(hash),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(store.getJob('conv-sched')).resolves.toMatchObject({
+      scheduleId: 'sched-1',
+      scheduledFor,
+    });
+  });
+
+  test('writes schedule identity into the created job hash', async () => {
+    const evalCreate = jest.fn().mockResolvedValue(1);
+    const redis = {
+      isCluster: false,
+      eval: evalCreate,
+      hgetall: jest.fn().mockResolvedValue({}),
+      smembers: jest.fn().mockResolvedValue([]),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await store.createJob('conv-sched-create', 'user-1', 'conv-sched-create', undefined, {
+      scheduleId: 'sched-1',
+      scheduledFor: '2026-07-26T12:00:00.000Z',
+    });
+
+    const hash = jobHashFromCreationCall(evalCreate.mock.calls[0]);
+    expect(hash.scheduleId).toBe('sched-1');
+    expect(hash.scheduledFor).toBe('2026-07-26T12:00:00.000Z');
+  });
 });

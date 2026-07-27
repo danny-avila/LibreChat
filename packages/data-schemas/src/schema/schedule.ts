@@ -134,6 +134,7 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
         status: { type: String, required: true },
         error: { type: String },
         firedAt: { type: Date, required: true },
+        scheduledFor: { type: Date },
       },
       default: undefined,
       _id: false,

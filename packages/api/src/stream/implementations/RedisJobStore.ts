@@ -2234,6 +2234,11 @@ export class RedisJobStore implements IJobStore {
       pendingAction: this.parsePendingAction(data.pendingAction),
       pendingActionId: data.pendingActionId || undefined,
       lastActiveAt: data.lastActiveAt ? parseInt(data.lastActiveAt, 10) : undefined,
+      // The fence every scheduled-run consumer keys off (reconcile identity matching,
+      // clearReconciledJob, abortScheduledJob, the abort route's preserve decision).
+      // Dropping it here makes a live run read as gone and the orphan sweep interrupts it.
+      scheduleId: data.scheduleId || undefined,
+      scheduledFor: data.scheduledFor || undefined,
     };
   }
 

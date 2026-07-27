@@ -126,12 +126,18 @@ function makeMethods() {
       return { takenSlots, unslotted };
     }),
     revalidateClaim: jest.fn(async () => true),
-    holdsLease: jest.fn(async () => true),
-    scheduleExists: jest.fn(async () => true),
     releaseLeaseByHolder: jest.fn(async () => undefined),
-    deleteScheduleRun: jest.fn(async (id: string, when: Date, _status?: string) => {
-      runs.delete(key(id, when));
-    }),
+    deleteScheduleRun: jest.fn(
+      async (id: string, when: Date, _status?: string, expectedConversationId?: string) => {
+        const k = key(id, when);
+        const row = runs.get(k) as { conversationId?: string } | undefined;
+        // Mirrors the conversationId fence: a fire only deletes the row IT inserted.
+        if (expectedConversationId != null && row?.conversationId !== expectedConversationId) {
+          return;
+        }
+        runs.delete(k);
+      },
+    ),
     setRunFireDetails: jest.fn(async () => {
       calls.setFireDetails += 1;
     }),
@@ -476,36 +482,47 @@ describe('fireSchedule', () => {
     expect(methods.releaseLeaseByHolder).toHaveBeenCalledWith('sched-1', 'inst-1');
   });
 
-  it('preserves the reserved run for reconcile when the lease was taken over', async () => {
+  /**
+   * The lease can expire between the pre-reserve revalidation and the reservation
+   * itself: the capacity allocator reads occupancy in between, and the preflight
+   * before it can already have outlasted the 5-minute lease. Gating the rollback on
+   * lease ownership stranded the row — the new holder's own reserve saw `duplicate`
+   * and advanced past the occurrence without firing it, while this row held a global
+   * capacity slot until the 30-minute orphan sweep.
+   */
+  it('deletes its own undispatched reservation even after a lease takeover', async () => {
     const { methods, runs } = makeMethods();
-    // An owner edit/takeover superseded this fire after it reserved its run, which is
-    // the path that now drives rollbackReservation (capacity no longer inserts at all).
     // Valid at the pre-reserve check, superseded by the pre-POST one: that ordering IS
     // the scenario, since a claim already dead before reserving never reserves at all.
     (methods.revalidateClaim as jest.Mock).mockResolvedValueOnce(true).mockResolvedValue(false);
-    // Simulate a lease takeover: this worker no longer holds the claim.
-    (methods.holdsLease as jest.Mock).mockResolvedValue(false);
     mockFetch(async () => okResponse());
     const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
     expect(result.skipped).toBe('superseded');
-    // The reserved row must NOT be deleted (another worker owns the occurrence now);
-    // it's left for the reconciler so the occurrence stays reconcilable.
-    expect(methods.deleteScheduleRun).not.toHaveBeenCalled();
-    expect([...runs.entries()].some(([k]) => k.startsWith('sched-1:'))).toBe(true);
+    // Nothing was dispatched for this row, so it is unambiguously this fire's garbage.
+    expect(methods.deleteScheduleRun).toHaveBeenCalledWith(
+      'sched-1',
+      expect.any(Date),
+      'started',
+      expect.any(String),
+    );
+    expect([...runs.entries()].some(([k]) => k.startsWith('sched-1:'))).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('deletes the reserved run when the schedule was hard-deleted mid-fire', async () => {
     const { methods, runs } = makeMethods();
-    // Account deletion hard-deleted the schedule after this fire reserved its run:
-    // revalidation fails, the lease is not held AND the schedule no longer exists.
+    // Account deletion hard-deleted the schedule after this fire reserved its run.
     (methods.revalidateClaim as jest.Mock).mockResolvedValueOnce(true).mockResolvedValue(false);
-    (methods.holdsLease as jest.Mock).mockResolvedValue(false);
-    (methods.scheduleExists as jest.Mock).mockResolvedValue(false);
     mockFetch(async () => okResponse());
     const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
     expect(result.skipped).toBe('superseded');
     // The orphaned reservation (no schedule left to own it) is deleted, not leaked.
-    expect(methods.deleteScheduleRun).toHaveBeenCalledWith('sched-1', expect.any(Date), 'started');
+    expect(methods.deleteScheduleRun).toHaveBeenCalledWith(
+      'sched-1',
+      expect.any(Date),
+      'started',
+      expect.any(String),
+    );
     expect([...runs.entries()].some(([k]) => k.startsWith('sched-1:'))).toBe(false);
   });
 

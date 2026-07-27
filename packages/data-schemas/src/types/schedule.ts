@@ -34,6 +34,9 @@ export interface ISchedule {
     status: ScheduleRunStatus;
     error?: string;
     firedAt: Date;
+    /** The OCCURRENCE this projection came from; orders the card against delayed
+     *  outcomes (a resumed pause, a reconciler replay) arriving after a newer run. */
+    scheduledFor?: Date;
   };
   runCount: number;
   failureCount: number;

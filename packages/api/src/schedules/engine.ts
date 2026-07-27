@@ -93,8 +93,14 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           if (jobStatus === 'running') {
             continue;
           }
-          // Surface a pause on the card (lastRun → requires_action).
-          if (run.status === 'started' && jobStatus === 'requires_action') {
+          // Surface a pause on the card (lastRun → requires_action). Also re-invoked for
+          // a row ALREADY `requires_action`: recordRunOutcome flips the row before
+          // projecting the card, so a crash between the two leaves the pause invisible
+          // until this replays it. Both writes are idempotent.
+          if (
+            (run.status === 'started' || run.status === 'requires_action') &&
+            jobStatus === 'requires_action'
+          ) {
             await finalize('requires_action');
             continue;
           }

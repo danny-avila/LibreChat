@@ -96,7 +96,6 @@ export type ScheduleMethods = {
   ) => Promise<ISchedule | null>;
   deleteScheduleById: (id: string, userId: string | Types.ObjectId) => Promise<boolean>;
   getScheduleById: (id: string, userId?: string | Types.ObjectId) => Promise<ISchedule | null>;
-  scheduleExists: (id: string) => Promise<boolean>;
   getSchedulesByUser: (userId: string | Types.ObjectId) => Promise<ISchedule[]>;
   countSchedulesByUser: (userId: string | Types.ObjectId) => Promise<number>;
   claimDueSchedule: (params: ClaimDueScheduleParams) => Promise<ISchedule | null>;
@@ -108,7 +107,6 @@ export type ScheduleMethods = {
   releaseLease: (id: string, expectedClaimToken?: string) => Promise<void>;
   releaseLeaseByHolder: (id: string, leaseBy: string) => Promise<void>;
   revalidateClaim: (id: string, claimToken: string, requireEnabled?: boolean) => Promise<boolean>;
-  holdsLease: (id: string, leaseBy: string) => Promise<boolean>;
   advanceSchedule: (
     id: string,
     nextRunAt: Date | null,
@@ -134,6 +132,7 @@ export type ScheduleMethods = {
     scheduleId: string,
     scheduledFor: Date,
     expectedStatus?: ScheduleRunStatus,
+    expectedConversationId?: string,
   ) => Promise<void>;
   markScheduleDeleting: (id: string, userId: string | Types.ObjectId) => Promise<ISchedule | null>;
   getActiveRunsForSchedule: (scheduleId: string) => Promise<IScheduleRun[]>;
@@ -271,12 +270,6 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       filter.user = userId;
     }
     return Schedule().findOne(filter).lean<ISchedule>();
-  }
-
-  /** Raw existence check, ignoring the `deleting` soft-delete flag. Distinguishes a
-   *  HARD-deleted schedule (gone) from a lease takeover (schedule still present). */
-  async function scheduleExists(id: string): Promise<boolean> {
-    return (await Schedule().exists({ id })) != null;
   }
 
   async function getSchedulesByUser(userId: string | Types.ObjectId): Promise<ISchedule[]> {
@@ -423,27 +416,6 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   }
 
   /**
-   * Whether this worker STILL owns the lease it took (same `leaseBy` holder, lease
-   * unexpired). Fences a rollback delete of a reserved run row against a lease
-   * TAKEOVER while NOT skipping it on an owner edit: a takeover changes `leaseBy`
-   * (another worker re-claimed and may have advanced past the occurrence — deleting
-   * would erase the only evidence, so leave it for the reconciler), whereas an owner
-   * edit only rotates `claimToken` and leaves `leaseBy` intact, so the worker still
-   * owns the lease and should delete its own unposted reservation.
-   */
-  async function holdsLease(id: string, leaseBy: string): Promise<boolean> {
-    const row = await Schedule()
-      .findOne({
-        id,
-        leaseBy,
-        $expr: { $gt: [{ $ifNull: ['$leaseUntil', new Date(0)] }, '$$NOW'] },
-      })
-      .select('_id')
-      .lean();
-    return row != null;
-  }
-
-  /**
    * Advances past a fired (or skipped) occurrence and releases the lease. When
    * `expectedNextRunAt` is given, the update is predicated on the schedule still
    * sitting on the claimed occurrence; when `expectedClaimToken` is given it is
@@ -574,6 +546,31 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   }
 
   /**
+   * Writes an occurrence's result onto the schedule card, fenced on occurrence order
+   * so a delayed outcome can never overwrite a NEWER occurrence's projection. The
+   * fence is absent-tolerant: rows written before `lastRun.scheduledFor` existed
+   * project once and then start ordering normally.
+   */
+  async function projectLastRun(
+    scheduleId: string,
+    lastRun: NonNullable<ISchedule['lastRun']>,
+    scheduledFor: Date,
+    revisionFilter: Record<string, unknown> = {},
+  ): Promise<void> {
+    await Schedule().updateOne(
+      {
+        id: scheduleId,
+        $or: [
+          { 'lastRun.scheduledFor': { $exists: false } },
+          { 'lastRun.scheduledFor': { $lte: scheduledFor } },
+        ],
+        ...revisionFilter,
+      },
+      { $set: { lastRun: { ...lastRun, scheduledFor } } },
+    );
+  }
+
+  /**
    * Applies the schedule-side bookkeeping (lastRun + counters + auto-disable) for
    * a terminal occurrence. Idempotent via the per-occurrence `countedFor` guard:
    * the $inc lands at most once per occurrence no matter how many times it is
@@ -607,7 +604,6 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       { id: params.scheduleId, countedFor: { $ne: params.scheduledFor }, ...revisionFilter },
       {
         $set: {
-          lastRun,
           balanceSkipCount: 0,
           ...(isSuccess ? { failureCount: 0 } : {}),
         },
@@ -616,6 +612,11 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
         ...(isFailure ? { $inc: { failureCount: 1 } } : {}),
       },
     );
+    // The card projection is ORDER-fenced, unlike the counters above (idempotent and
+    // order-insensitive): a `requires_action` run doesn't block later occurrences, so a
+    // resumed pause — or a reconciler replay — routinely settles AFTER a newer run
+    // already finished, and must not roll the card back to its older result.
+    await projectLastRun(params.scheduleId, lastRun, params.scheduledFor, revisionFilter);
     // A success clears a transient disable reason ONLY while the schedule is still
     // enabled. An older run (e.g. a resumed pause) can succeed AFTER newer outcomes
     // already auto-disabled the schedule — since `requires_action` runs don't block
@@ -649,33 +650,14 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   async function recordRunOutcome(params: RecordRunOutcomeParams): Promise<void> {
     const firedAt = new Date();
     if (params.status === 'requires_action') {
-      // PAUSE (HITL): write the card BEFORE flipping the run row so the transition is
-      // crash-recoverable. If the process dies between the two writes the row is still
-      // `started`, and the reconciler's started+requires_action path re-invokes this to
-      // re-surface the pause; flipping the row first (as terminal outcomes do) would
-      // instead hide the pause from the card until some later terminal outcome. Guard on
-      // a matching active run first so a spoofed scheduleId can't write a card. Keyed on
-      // existence, not modification, so a retried pause still re-affirms the card.
-      const activeRun = await ScheduleRun()
-        .findOne({
-          scheduleId: params.scheduleId,
-          scheduledFor: params.scheduledFor,
-          status: { $in: ['started', 'requires_action'] },
-        })
-        .select('_id')
-        .lean();
-      if (activeRun == null) {
-        return;
-      }
-      await Schedule().updateOne(
-        { id: params.scheduleId },
-        {
-          $set: {
-            lastRun: { conversationId: params.conversationId, status: params.status, firedAt },
-          },
-        },
-      );
-      await ScheduleRun().updateOne(
+      // PAUSE (HITL): win the ROW transition first, then project the card. A read-then-
+      // write guard let a concurrent resume terminalize the run between the two, after
+      // which the card was pinned to "Needs approval" forever — the row update no-op'd
+      // (already terminal) while the card write had landed. Matching `requires_action`
+      // too keeps a retried pause re-affirming the card, and keeps the transition
+      // crash-recoverable: the reconciler re-invokes this for a row in either state.
+      // The match is also the anti-spoof guard a bare scheduleId would bypass.
+      const paused = await ScheduleRun().findOneAndUpdate(
         {
           scheduleId: params.scheduleId,
           scheduledFor: params.scheduledFor,
@@ -690,6 +672,15 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
           // fresh one from the allocator rather than re-adopting a possibly-taken slot.
           $unset: { capacitySlot: 1 },
         },
+        { new: false },
+      );
+      if (paused == null) {
+        return;
+      }
+      await projectLastRun(
+        params.scheduleId,
+        { conversationId: params.conversationId, status: params.status, firedAt },
+        params.scheduledFor,
       );
       return;
     }
@@ -884,16 +875,22 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   /**
    * Deletes a run row (used to roll back a capacity reservation). Status-fenced
    * when `expectedStatus` is provided so a rollback cannot delete a row a
-   * concurrent process already advanced (e.g. to a terminal outcome).
+   * concurrent process already advanced (e.g. to a terminal outcome). Fenced
+   * additionally on `expectedConversationId` so a fire only ever deletes the
+   * reservation IT inserted.
    */
   async function deleteScheduleRun(
     scheduleId: string,
     scheduledFor: Date,
     expectedStatus?: ScheduleRunStatus,
+    expectedConversationId?: string,
   ): Promise<void> {
     const filter: Record<string, unknown> = { scheduleId, scheduledFor };
     if (expectedStatus !== undefined) {
       filter.status = expectedStatus;
+    }
+    if (expectedConversationId !== undefined) {
+      filter.conversationId = expectedConversationId;
     }
     await ScheduleRun().deleteOne(filter);
   }
@@ -908,12 +905,10 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     id: string,
     userId: string | Types.ObjectId,
   ): Promise<ISchedule | null> {
-    // Keep leaseUntil/leaseBy: a fire that already leased/reserved this occurrence
-    // must be able to prove (holdsLease) it still owns the lease so it can roll back
-    // its own unposted `started` row on the superseded revalidation. Unsetting the
-    // lease here would fail that check and strand a ghost `started` row. Only clear
-    // nextRunAt (belt-and-suspenders atop enabled:false to stop new claims); the
-    // lease releases itself when the fire finishes its rollback, or via TTL.
+    // Keep leaseUntil/leaseBy so a fire that already leased this occurrence still
+    // serializes against a re-claim while it unwinds. Only clear nextRunAt
+    // (belt-and-suspenders atop enabled:false to stop new claims); the lease
+    // releases itself when the fire finishes, or via TTL.
     return Schedule()
       .findOneAndUpdate(
         { id, user: userId, deleting: { $ne: true } },
@@ -1011,7 +1006,6 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     updateScheduleById,
     deleteScheduleById,
     getScheduleById,
-    scheduleExists,
     getSchedulesByUser,
     countSchedulesByUser,
     claimDueSchedule,
@@ -1019,7 +1013,6 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     releaseLease,
     releaseLeaseByHolder,
     revalidateClaim,
-    holdsLease,
     advanceSchedule,
     disableSchedule,
     insertScheduleRun,

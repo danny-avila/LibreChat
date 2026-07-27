@@ -406,6 +406,76 @@ describe('recordRunOutcome', () => {
     expect(updated.lastRun?.status).toBe('requires_action');
     expect(updated.lastRun?.conversationId).toBe('convo-2');
   });
+
+  it('does not pin the card to Needs approval when a resume terminalizes first', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+    // The user answers instantly: the resumed generation settles the run BEFORE the
+    // pause write lands. The pause must lose, or the card shows "Needs approval" for a
+    // job that already finished (the run row is terminal, so nothing corrects it).
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'success',
+      conversationId: 'convo-1',
+      autoDisableAfterFailures: 3,
+    });
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-1',
+      autoDisableAfterFailures: 3,
+    });
+
+    const run = await getRun(schedule.id, scheduledFor);
+    expect(run.status).toBe('success');
+    const updated = await getSchedule(schedule.id);
+    expect(updated.lastRun?.status).toBe('success');
+  });
+
+  it('does not let a delayed older outcome overwrite a newer run on the card', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const older = new Date('2026-07-26T10:00:00.000Z');
+    const newer = new Date('2026-07-26T11:00:00.000Z');
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor: older }));
+    // Pausing the older occurrence is what frees the single-active-`started` slot and
+    // lets a later occurrence run at all — the interleaving under test.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: older,
+      status: 'requires_action',
+      conversationId: 'convo-older',
+      autoDisableAfterFailures: 3,
+    });
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor: newer }));
+
+    // The newer run finishes while the older one is still parked at its approval.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: newer,
+      status: 'success',
+      conversationId: 'convo-newer',
+      autoDisableAfterFailures: 3,
+    });
+    // The older one settles afterwards (resumed pause / reconciler replay).
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: older,
+      status: 'error',
+      error: 'stale',
+      conversationId: 'convo-older',
+      autoDisableAfterFailures: 3,
+    });
+
+    const updated = await getSchedule(schedule.id);
+    expect(updated.lastRun?.status).toBe('success');
+    expect(updated.lastRun?.conversationId).toBe('convo-newer');
+    // The counters are order-insensitive and still count the older failure.
+    expect(updated.failureCount).toBe(1);
+    expect(await getRun(schedule.id, older)).toMatchObject({ status: 'error' });
+  });
 });
 
 describe('recordSkippedRun', () => {
@@ -831,17 +901,6 @@ describe('acquireManualRunLease / releaseLease', () => {
     const cleared = await getSchedule(schedule.id);
     expect(cleared.leaseBy).toBeUndefined();
   });
-
-  it('scheduleExists distinguishes a hard-deleted schedule from a soft-deleting one', async () => {
-    const schedule = await methods.createSchedule(scheduleData());
-    expect(await methods.scheduleExists(schedule.id)).toBe(true);
-    // Soft-delete (deleting:true) still EXISTS — its run drains via the reconciler.
-    await methods.markScheduleDeleting(schedule.id, schedule.user);
-    expect(await methods.scheduleExists(schedule.id)).toBe(true);
-    // A hard delete makes it truly gone.
-    await methods.deleteScheduleById(schedule.id, schedule.user);
-    expect(await methods.scheduleExists(schedule.id)).toBe(false);
-  });
 });
 
 describe('claim-token fencing (stale worker cannot mutate an edited/deleted schedule)', () => {
@@ -878,19 +937,51 @@ describe('claim-token fencing (stale worker cannot mutate an edited/deleted sche
   });
 });
 
-describe('holdsLease (owner-edit vs lease-takeover discriminator)', () => {
-  it('stays true across an owner edit (token rotates, leaseBy kept) and false on takeover', async () => {
+describe('deleteScheduleRun conversation fence', () => {
+  it('deletes only the reservation the caller inserted', async () => {
     const schedule = await methods.createSchedule(scheduleData());
-    const claim = await methods.claimDueSchedule({ instanceId: 'engine-1', leaseMs: 60_000 });
-    expect(claim?.leaseBy).toBe('engine-1');
-    // Owner edit rotates the claim token but does NOT touch leaseBy -> this worker
-    // still owns the lease, so a rollback of its own reservation is safe.
-    await methods.updateScheduleById(schedule.id, schedule.user, { name: 'edited' });
-    expect(await methods.holdsLease(schedule.id, 'engine-1')).toBe(true);
-    // A different worker re-claiming (after expiry) changes leaseBy -> takeover.
-    await methods.releaseLease(schedule.id);
-    await methods.claimDueSchedule({ instanceId: 'engine-2', leaseMs: 60_000 });
-    expect(await methods.holdsLease(schedule.id, 'engine-1')).toBe(false);
+    const scheduledFor = new Date('2026-07-26T12:00:00.000Z');
+    await methods.reserveStartedRun({
+      scheduleId: schedule.id,
+      scheduledFor,
+      user: schedule.user,
+      conversationId: 'conv-mine',
+      firedAt: new Date(),
+    });
+
+    // Another fire's id must not match: this is what makes the rollback safe without
+    // consulting lease ownership, which the preflight can outlive.
+    await methods.deleteScheduleRun(schedule.id, scheduledFor, 'started', 'conv-theirs');
+    expect(await methods.getActiveRunsForSchedule(schedule.id)).toHaveLength(1);
+
+    await methods.deleteScheduleRun(schedule.id, scheduledFor, 'started', 'conv-mine');
+    expect(await methods.getActiveRunsForSchedule(schedule.id)).toHaveLength(0);
+  });
+
+  it('still honors the status fence so a settled run is never rolled back', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scheduledFor = new Date('2026-07-26T13:00:00.000Z');
+    await methods.reserveStartedRun({
+      scheduleId: schedule.id,
+      scheduledFor,
+      user: schedule.user,
+      conversationId: 'conv-mine',
+      firedAt: new Date(),
+    });
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'success',
+      autoDisableAfterFailures: 5,
+    });
+
+    await methods.deleteScheduleRun(schedule.id, scheduledFor, 'started', 'conv-mine');
+
+    const runs = await methods.getRunsForReconciliation(new Date(Date.now() + 1000), 10);
+    expect(runs).toHaveLength(0);
+    expect(await methods.getScheduleById(schedule.id)).toMatchObject({
+      lastRun: expect.objectContaining({ status: 'success' }),
+    });
   });
 });
 

@@ -24,6 +24,13 @@ const mockGenerationJobManager = {
 };
 
 const mockSaveMessage = jest.fn();
+const mockRecordScheduleOutcome = jest.fn(async () => true);
+const mockClearScheduledJob = jest.fn(async () => undefined);
+
+jest.mock('~/server/services/Schedules', () => ({
+  recordScheduleOutcome: (...args) => mockRecordScheduleOutcome(...args),
+  clearScheduledJob: (...args) => mockClearScheduledJob(...args),
+}));
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -82,6 +89,9 @@ describe('Agent Abort Endpoint', () => {
     mockGenerationJobManager.abortJob.mockReset();
     mockGenerationJobManager.getActiveJobIdsForUser.mockReset();
     mockSaveMessage.mockReset();
+    mockRecordScheduleOutcome.mockReset();
+    mockRecordScheduleOutcome.mockResolvedValue(true);
+    mockClearScheduledJob.mockReset();
   });
 
   describe('POST /chat/abort', () => {
@@ -483,6 +493,96 @@ describe('Agent Abort Endpoint', () => {
           error: 'Job not found',
           streamId: 'non-existent-job',
         });
+      });
+    });
+
+    describe('Generation fence', () => {
+      it('aborts the generation this handler observed, not whatever replaced it', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          metadata: { userId: 'test-user-123' },
+          createdAt: 1000,
+        });
+        mockGenerationJobManager.abortJob.mockResolvedValue({ success: true, content: [] });
+
+        await request(app).post('/api/agents/chat/abort').send({ conversationId: 'conv-1' });
+
+        // Without the fence, a replacement turn that reused this conversationId between
+        // the lookup and the abort receives the stop instead.
+        expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(
+          'conv-1',
+          expect.objectContaining({ expectedCreatedAt: 1000 }),
+        );
+      });
+    });
+
+    describe('Scheduled runs', () => {
+      const scheduledJob = {
+        metadata: {
+          userId: 'test-user-123',
+          scheduleId: 'sched-1',
+          scheduledFor: '2026-07-26T12:00:00.000Z',
+        },
+        createdAt: 2000,
+      };
+
+      it('does not pick a background scheduled job for an id-less stop', async () => {
+        // The stop button fires with conversationId "new" before the real id exists.
+        mockGenerationJobManager.getJob.mockImplementation(async (id) =>
+          id === 'sched-conv' ? { ...scheduledJob, status: 'running' } : null,
+        );
+        mockGenerationJobManager.getActiveJobIdsForUser.mockResolvedValue(['sched-conv']);
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: 'new' });
+
+        expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
+        expect(response.status).toBe(404);
+      });
+
+      it('records the interruption only after winning the abort', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        // Lost the CAS: a concurrent completion or resume owns this run now.
+        mockGenerationJobManager.abortJob.mockResolvedValue({ success: false, content: [] });
+
+        await request(app).post('/api/agents/chat/abort').send({ conversationId: 'sched-conv' });
+
+        // Terminalizing it as `interrupted` here would release the capacity slot and
+        // make the real outcome's write a no-op against an already-terminal row.
+        expect(mockRecordScheduleOutcome).not.toHaveBeenCalled();
+      });
+
+      it('records the interruption and clears the preserved job once the abort wins', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        mockGenerationJobManager.abortJob.mockResolvedValue({ success: true, content: [] });
+        mockRecordScheduleOutcome.mockResolvedValue(true);
+
+        await request(app).post('/api/agents/chat/abort').send({ conversationId: 'sched-conv' });
+
+        expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(
+          'sched-conv',
+          expect.objectContaining({ preserveForReconcile: true }),
+        );
+        expect(mockRecordScheduleOutcome).toHaveBeenCalledWith(
+          expect.objectContaining({ scheduleId: 'sched-1', status: 'interrupted' }),
+        );
+        // Reconcile only scans ACTIVE runs, so a preserved job whose run is now
+        // terminal has nothing left to settle it.
+        expect(mockClearScheduledJob).toHaveBeenCalledWith('sched-conv', {
+          scheduleId: 'sched-1',
+          scheduledFor: '2026-07-26T12:00:00.000Z',
+        });
+      });
+
+      it('keeps the preserved job when the outcome write exhausted its retries', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        mockGenerationJobManager.abortJob.mockResolvedValue({ success: true, content: [] });
+        mockRecordScheduleOutcome.mockResolvedValue(false);
+
+        await request(app).post('/api/agents/chat/abort').send({ conversationId: 'sched-conv' });
+
+        // The retained job is the reconciler's only evidence the run stopped.
+        expect(mockClearScheduledJob).not.toHaveBeenCalled();
       });
     });
   });

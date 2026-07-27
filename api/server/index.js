@@ -382,7 +382,9 @@ const startServer = async () => {
       // recording spurious errors that could auto-disable valid schedules.
       // Ensures indexes before the first tick; failures are logged, not fatal.
       // v1 is single-process: this entrypoint owns the scheduler outright.
-      const scheduleEngine = await initializeScheduleEngine();
+      // Pass the bound address so loopback fires target the listener that actually
+      // exists: `HOST=localhost` can bind v6-only, and PORT=0 only knows its port now.
+      const scheduleEngine = await initializeScheduleEngine({ address: server.address() });
       // Only accept schedule writes once the engine actually armed. It refuses when its
       // unique idempotency + TTL indexes could not be created, and when the topology
       // cannot be shown safe — this entrypoint arms the scheduler in EVERY replica, which

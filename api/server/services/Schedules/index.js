@@ -31,4 +31,7 @@ module.exports = {
   deleteScheduleForOwner: service.deleteScheduleForOwner,
   quiesceUserSchedules: service.quiesceUserSchedules,
   initializeScheduleEngine: service.initializeScheduleEngine,
+  // Identity-fenced delete for a job retained via `preserveForReconcile` whose run has
+  // since been settled inline; reconcile only reaches jobs whose run is still active.
+  clearScheduledJob: service.engineDeps.clearReconciledJob,
 };

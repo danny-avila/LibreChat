@@ -130,6 +130,7 @@ function makeCreateDeps(over: Partial<SchedulesHandlersDeps> = {}): SchedulesHan
     createScheduleWithSlot: jest.fn(async (data: Partial<ISchedule>) => data as ISchedule),
     deleteScheduleById: jest.fn(async () => true),
     markScheduleDeleting: jest.fn(async () => ({ id: 'sched-1' }) as ISchedule),
+    updateScheduleById: jest.fn(async () => ({ id: 'sched-1' }) as ISchedule),
   };
   return {
     methods: methods as unknown as SchedulesHandlersDeps['methods'],
@@ -180,5 +181,42 @@ describe('createSchedule late-create compensation', () => {
     // 410 would claim the row is gone while the deleted user's prompt and
     // attachments stay in a live, non-TTL schedule.
     expect(captured.status).toBe(500);
+  });
+
+  /**
+   * The compensation is best-effort by nature — when it runs, Mongo is usually the thing
+   * failing, so no durable marker can be written either. Durability has to come from the
+   * insert instead: an UNARMED row (no nextRunAt) is never claimed by the engine, so
+   * even a total compensation failure cannot leave a schedule firing billed generations
+   * for an account already being erased.
+   */
+  it('never inserts an armed row, so a failed compensation leaves an inert one', async () => {
+    const deps = makeCreateDeps();
+    (deps.methods.deleteScheduleById as jest.Mock).mockRejectedValue(new Error('mongo down'));
+    (deps.methods.markScheduleDeleting as jest.Mock).mockRejectedValue(new Error('mongo down'));
+    const { res } = makeRes();
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    const inserted = (deps.methods.createScheduleWithSlot as jest.Mock).mock.calls[0][0];
+    expect(inserted.nextRunAt).toBeUndefined();
+    // And it is never armed afterwards, because the barrier refused the create.
+    expect(deps.methods.updateScheduleById).not.toHaveBeenCalled();
+  });
+
+  it('arms the schedule only after the barrier re-check clears', async () => {
+    const deps = makeCreateDeps({
+      isUserDeleting: jest.fn(async () => false),
+    });
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    expect(captured.status).toBe(201);
+    const inserted = (deps.methods.createScheduleWithSlot as jest.Mock).mock.calls[0][0];
+    expect(inserted.nextRunAt).toBeUndefined();
+    expect(deps.methods.updateScheduleById).toHaveBeenCalledWith(
+      expect.any(String),
+      'user-1',
+      expect.objectContaining({ nextRunAt: expect.any(Date) }),
+    );
   });
 });

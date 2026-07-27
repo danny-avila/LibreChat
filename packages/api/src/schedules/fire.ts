@@ -241,28 +241,18 @@ export async function fireSchedule(
       // concurrent owner edit or a lease-expiry re-claim isn't clobbered.
       () => methods.advanceSchedule(schedule.id, nextRunAt, scheduledFor, claimToken);
 
-  // Rolls back a reserved `started` run row — but ONLY if we still OWN the lease.
-  // Fenced on the lease HOLDER (`leaseBy`), not the claim token: a lease takeover by
-  // another worker changes `leaseBy` (that worker may have advanced past this
-  // occurrence, so deleting the row would erase the only evidence — leave it for the
-  // reconciler); an owner edit only rotates the token and keeps `leaseBy`, so this
-  // worker still owns the lease and must delete its own unposted reservation (else a
-  // ghost `started` row consumes capacity/overlap until the orphan sweep).
-  const rollbackReservation = async () => {
-    if (schedule.leaseBy != null && (await methods.holdsLease(schedule.id, schedule.leaseBy))) {
-      await methods.deleteScheduleRun(schedule.id, scheduledFor, 'started');
-      return;
-    }
-    // The schedule was HARD-deleted out from under this fire (account deletion racing
-    // the claim -> reserve window): holdsLease is false because the schedule is GONE,
-    // not because the lease was taken over. The reserved row is now an orphan no
-    // reconciler will own (its schedule no longer exists), so delete it. Guarded on
-    // actual absence so a lease TAKEOVER (schedule still present, different holder)
-    // still leaves the row for whoever now holds the lease.
-    if (!(await methods.scheduleExists(schedule.id))) {
-      await methods.deleteScheduleRun(schedule.id, scheduledFor, 'started');
-    }
-  };
+  /**
+   * Rolls back the `started` row this fire reserved. Fenced on the conversation id it
+   * generated rather than on lease ownership: every call site here is a path where
+   * NOTHING was dispatched, and the row can only carry this id if this fire inserted
+   * it (the single-active partial index admits one). Lease state is the wrong fence —
+   * the preflight and capacity allocator can outlast the 5-minute lease, and gating on
+   * a takeover left the undispatched row (and its global capacity slot) stranded until
+   * the 30-minute orphan sweep while the new holder saw `duplicate` and advanced past
+   * the occurrence without firing it.
+   */
+  const rollbackReservation = (conversationId: string) =>
+    methods.deleteScheduleRun(schedule.id, scheduledFor, 'started', conversationId);
 
   /**
    * Steps aside from a superseded fire (owner edit/delete, or a lease-expiry re-claim).
@@ -499,7 +489,7 @@ export async function fireSchedule(
       claimToken != null &&
       !(await methods.revalidateClaim(schedule.id, claimToken, !options?.manual))
     ) {
-      await rollbackReservation();
+      await rollbackReservation(conversationId);
       await releaseSupersededLease();
       await advance();
       return { fired: false, skipped: 'superseded' as const };
@@ -549,7 +539,7 @@ export async function fireSchedule(
         // occurrence, so the reservation has to be rolled back or it holds its capacity
         // slot and blocks overlap until the orphan sweep.
         logger.info(`[schedules] fire refused by the message limiter for ${schedule.id}`);
-        await rollbackReservation();
+        await rollbackReservation(conversationId);
         await advance();
         return { fired: false, skipped: 'rate_limited' as const };
       }

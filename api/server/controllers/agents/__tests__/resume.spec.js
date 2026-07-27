@@ -29,6 +29,7 @@ const TENANT_ID = 'tenant-1';
 const AGENT_ID = 'agent-abc';
 const CONVO_ID = 'convo-123';
 const ACTION_ID = 'action-xyz';
+const SCHEDULED_FOR = '2026-07-26T12:00:00.000Z';
 const RESPONSE_MSG_ID = 'resp-1';
 const USER_MSG_ID = 'umsg-1';
 const THREAD_PARENT_ID = 'thread-parent-1';
@@ -95,6 +96,14 @@ jest.mock('~/models', () => ({
 
 jest.mock('~/server/cleanup', () => ({
   disposeClient: (...args) => mockDisposeClient(...args),
+}));
+
+const mockRecordScheduleOutcome = jest.fn(async () => true);
+const mockIsScheduleLive = jest.fn(async () => true);
+
+jest.mock('~/server/services/Schedules', () => ({
+  recordScheduleOutcome: (...args) => mockRecordScheduleOutcome(...args),
+  isScheduleLive: (...args) => mockIsScheduleLive(...args),
 }));
 
 jest.mock('~/server/services/MCPRequestContext', () => ({
@@ -205,6 +214,8 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockGenerationJobManager.emitChunk.mockResolvedValue(undefined);
     mockGenerationJobManager.completeJob.mockResolvedValue(undefined);
     mockGenerationJobManager.approvals.resolve.mockResolvedValue(true);
+    mockRecordScheduleOutcome.mockResolvedValue(true);
+    mockIsScheduleLive.mockResolvedValue(true);
 
     // `decrementPendingRequest` runs in the controller's `finally` on every
     // post-ACK path, so resolving on it signals the async continuation is done.
@@ -314,6 +325,48 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       const res = await post(approveBody());
       expect(res.status).toBe(404);
       expect(res.body.error).toMatch(/no paused generation/i);
+    });
+
+    /**
+     * Account deletion marks every schedule `deleting` as its FIRST step, then drains.
+     * A resume landing mid-drain would promote the job to `running` after the drain
+     * already judged it settleable, so quiesce reports the account drained while a
+     * generation is still persisting messages for it.
+     */
+    it('409 when the resumed run belongs to a schedule that is no longer live', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR } }),
+      );
+      mockIsScheduleLive.mockResolvedValue(false);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(mockIsScheduleLive).toHaveBeenCalledWith('sched-1');
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      // The prompt is retired so the stream gets a terminal event instead of hanging.
+      expect(mockGenerationJobManager.expireApproval).toHaveBeenCalledWith(CONVO_ID, ACTION_ID);
+    });
+
+    it('resumes normally while the schedule is still live', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR } }),
+      );
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(200);
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalled();
+      await settled;
+    });
+
+    it('never consults the schedule gate for an ordinary interactive pause', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      await post(approveBody());
+
+      expect(mockIsScheduleLive).not.toHaveBeenCalled();
+      await settled;
     });
 
     it('403 when the job belongs to another user', async () => {

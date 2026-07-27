@@ -26,7 +26,7 @@ const {
   messageUserLimiter,
 } = require('~/server/middleware');
 const SteerController = require('~/server/controllers/agents/steer');
-const { recordScheduleOutcome } = require('~/server/services/Schedules');
+const { recordScheduleOutcome, clearScheduledJob } = require('~/server/services/Schedules');
 const { saveMessage } = require('~/models');
 const responses = require('./responses');
 const openai = require('./openai');
@@ -316,6 +316,12 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
       if (activeJob?.status !== 'running') {
         continue;
       }
+      // A background scheduled fire shares this per-user store but is never what the
+      // stop button meant. With no conversation id to match on, picking one would abort
+      // the schedule and leave the interactive turn the user actually stopped running.
+      if (activeJob.metadata?.scheduleId) {
+        continue;
+      }
       jobStreamId = activeJobId;
       job = activeJob;
       logger.debug(`[AgentStream] Found active job for user: ${jobStreamId}`);
@@ -341,29 +347,43 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
     // chunk log, which never saw the pause-time stamp applied to the in-process
     // contentParts — stamping inside abortJob (not after) means the LIVE client
     // gets the question too, not just the saved message on reload.
-    // Finalize the schedule side of an aborted scheduled run (incl. a paused one)
-    // BEFORE abortJob deletes the job, so it doesn't linger as requires_action/
-    // started until the abandonment sweep. If the outcome write fails (Mongo down
-    // across its retries), preserve the aborted job below so reconcile finalizes it
-    // rather than waiting out the 30-min/25-h orphan sweeps.
-    let scheduleOutcomeRecorded = true;
-    if (job.metadata?.scheduleId) {
-      scheduleOutcomeRecorded = await recordScheduleOutcome({
-        scheduleId: job.metadata.scheduleId,
-        scheduledFor: job.metadata.scheduledFor,
-        status: 'interrupted',
-        conversationId: jobStreamId,
-      });
-    }
-
     const abortedAskPayload = job.metadata?.pendingAction?.payload;
+    const scheduleId = job.metadata?.scheduleId;
     const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
       transformAbortContent: (content) =>
         abortedAskPayload?.type === 'ask_user_question' && Array.isArray(content)
           ? attachAskUserQuestionArgs(content, abortedAskPayload.question)
           : content,
-      preserveForReconcile: Boolean(job.metadata?.scheduleId) && !scheduleOutcomeRecorded,
+      // Fence on the generation THIS handler observed: a replacement turn can reuse the
+      // conversationId between the lookup above and here, and must not receive the stop.
+      expectedCreatedAt: job.createdAt,
+      // Retain the terminal job until its outcome is durably recorded below — it is the
+      // reconciler's only evidence if that write fails.
+      preserveForReconcile: Boolean(scheduleId),
     });
+
+    // Settle the schedule side only after WINNING the abort. Losing the CAS means a
+    // concurrent completion or resume owns the run, and terminalizing it here as
+    // `interrupted` would release its capacity slot and reduce the real outcome's
+    // write to a no-op against an already-terminal row.
+    if (scheduleId && abortResult.success) {
+      const recorded = await recordScheduleOutcome({
+        scheduleId,
+        scheduledFor: job.metadata.scheduledFor,
+        status: 'interrupted',
+        conversationId: jobStreamId,
+      });
+      // Reconcile only scans ACTIVE runs, so once the run is terminal nothing else
+      // would ever reap the retained job.
+      if (recorded) {
+        await clearScheduledJob(jobStreamId, {
+          scheduleId,
+          scheduledFor: job.metadata.scheduledFor,
+        }).catch((err) =>
+          logger.error(`[AgentStream] Failed to clear reconciled job: ${jobStreamId}`, err),
+        );
+      }
+    }
     logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
       abortResultSuccess: abortResult.success,
       abortResultUserMessageId: abortResult.jobData?.userMessage?.messageId,

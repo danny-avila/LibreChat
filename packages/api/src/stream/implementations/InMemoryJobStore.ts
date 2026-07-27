@@ -358,9 +358,14 @@ export class InMemoryJobStore implements IJobStore {
         // A SCHEDULED fire's expired approval is retained rather than reaped: the
         // schedules reconciler observes this aborted job to settle the requires_action
         // run promptly (deleting it afterward), and without it the run waits out the
-        // 25-hour abandonment window instead.
-        if (!job.scheduleId && this.ttlAfterComplete === 0) {
-          toDelete.push({ streamId, createdAt: job.createdAt });
+        // 25-hour abandonment window instead. Withholding `completedAt` is what keeps
+        // it alive, so an ORDINARY approval must still be stamped or the TTL sweep
+        // (which only reaps terminal jobs that have one) never reclaims it.
+        if (!job.scheduleId) {
+          job.completedAt = now;
+          if (this.ttlAfterComplete === 0) {
+            toDelete.push({ streamId, createdAt: job.createdAt });
+          }
         }
       } else if (this.staleJobTimeout > 0 && job.status === 'running') {
         // Failsafe: reap jobs stuck in "running" with no generation activity for

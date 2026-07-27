@@ -272,6 +272,30 @@ describe('deployment-wide limits', () => {
   });
 });
 
+describe('loopback self URL', () => {
+  const noRuns = () => jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]);
+  const address = { address: '::1', family: 'IPv6' as const, port: 4123 };
+
+  afterEach(() => {
+    delete process.env.SCHEDULES_SELF_URL;
+  });
+
+  it('targets the address the server actually bound', async () => {
+    const service = makeService(noRuns());
+    // Resolved even though arming fails here (unsafe topology): the fire path is
+    // reachable via Run Now independently of whether the engine tick armed.
+    await service.initializeScheduleEngine({ address });
+    expect(service.engineDeps.getSelfUrl()).toBe('http://[::1]:4123');
+  });
+
+  it('still lets an operator override with SCHEDULES_SELF_URL', async () => {
+    process.env.SCHEDULES_SELF_URL = 'http://proxy.internal:9000';
+    const service = makeService(noRuns());
+    await service.initializeScheduleEngine({ address });
+    expect(service.engineDeps.getSelfUrl()).toBe('http://proxy.internal:9000');
+  });
+});
+
 describe('admission revision fence', () => {
   const noRuns = () => jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]);
 

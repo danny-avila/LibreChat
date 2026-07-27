@@ -2,6 +2,7 @@ import { logger, runAsSystem, tenantStorage } from '@librechat/data-schemas';
 import { getRefillEligibilityDate, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { ScheduleMethods, AppConfig, IBalance } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
+import type { AddressInfo } from 'net';
 import type { Types } from 'mongoose';
 import type {
   ScheduleEngineDeps,
@@ -22,6 +23,7 @@ import { fireSchedule, SCHEDULE_FIRE_TOKEN_TTL } from './fire';
 import { getAppConfigOptionsFromUser } from '../app/service';
 import { DEFAULT_SCHEDULE_LIMITS } from './types';
 import { getBalanceConfig } from '../app/config';
+import { selfOriginFromAddress } from './origin';
 import { startScheduleEngine } from './engine';
 import { withCapacitySlot } from './capacity';
 import { isEnabled } from '../utils/common';
@@ -134,7 +136,14 @@ export interface SchedulesService {
    *  entrypoint does not start it. Returns undefined when index creation failed, or when
    *  the topology cannot be shown safe (process-local job store with no single-process
    *  assertion) — see isTopologySafeToArm. */
-  initializeScheduleEngine: () => Promise<ReturnType<typeof startScheduleEngine> | undefined>;
+  initializeScheduleEngine: (
+    options?: ScheduleEngineInitOptions,
+  ) => Promise<ReturnType<typeof startScheduleEngine> | undefined>;
+}
+
+export interface ScheduleEngineInitOptions {
+  /** The listener's own `server.address()`; see selfOriginFromAddress. */
+  address?: AddressInfo | string | null;
 }
 
 /**
@@ -144,6 +153,9 @@ export interface SchedulesService {
  */
 export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesService {
   const { methods } = deps;
+
+  /** Resolved from the listener at arm time; see getSelfUrl. */
+  let boundOrigin: string | undefined;
 
   // Fail LOUDLY at construction, not per-fire. The JS adapter (api/server/services/
   // Schedules) is not typechecked against SchedulesServiceDeps, so a missing dep would
@@ -323,8 +335,12 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
         // occurrence's exemption from the interactive message limiters.
         ...(options?.manual ? { [SCHEDULE_MANUAL_CLAIM]: '1' } : {}),
       }),
+    // Operator override first (a proxy/TLS front door), then the address the server
+    // actually bound, and only then the historical guess.
     getSelfUrl: () =>
-      process.env.SCHEDULES_SELF_URL ?? `http://127.0.0.1:${process.env.PORT ?? 3080}`,
+      process.env.SCHEDULES_SELF_URL ??
+      boundOrigin ??
+      `http://127.0.0.1:${process.env.PORT ?? 3080}`,
     runInTenantContext: (user, fn) =>
       tenantStorage.run({ tenantId: user.tenantId, userId: user.id }, fn),
     getJobStatus: async (conversationId) => {
@@ -414,9 +430,12 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
 
   let engine: ReturnType<typeof startScheduleEngine> | undefined;
 
-  async function initializeScheduleEngine(): Promise<
-    ReturnType<typeof startScheduleEngine> | undefined
-  > {
+  async function initializeScheduleEngine(
+    options?: ScheduleEngineInitOptions,
+  ): Promise<ReturnType<typeof startScheduleEngine> | undefined> {
+    // Resolve the loopback target BEFORE any early return: Run Now fires through the
+    // same URL, and it must be right even on a process whose engine refused to arm.
+    boundOrigin = selfOriginFromAddress(options?.address) ?? boundOrigin;
     if (engine != null) {
       return engine;
     }

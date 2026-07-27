@@ -24,7 +24,7 @@ const {
   getMCPRequestContext,
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
-const { recordScheduleOutcome } = require('~/server/services/Schedules');
+const { recordScheduleOutcome, isScheduleLive } = require('~/server/services/Schedules');
 const { saveMessage, getConvo, getMessages } = require('~/models');
 
 /**
@@ -495,6 +495,26 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   const pendingAction = job.metadata?.pendingAction;
   if (job.status !== 'requires_action') {
     return res.status(409).json({ error: 'No live pending action to resume' });
+  }
+  // A scheduled run's approval must not start a NEW billed generation once its schedule
+  // stopped being live. Account deletion marks every schedule `deleting` as its FIRST
+  // step, before draining; without this a resume landing mid-drain promotes the job to
+  // `running` after the drain already judged it settleable, so quiesce reports the
+  // account drained while a generation is still persisting messages for it. Also covers
+  // an owner delete/edit landing while the prompt sat unanswered.
+  if (job.metadata?.scheduleId && !(await isScheduleLive(job.metadata.scheduleId))) {
+    logger.info(
+      `[ResumeAgentController] Refusing resume for a schedule no longer live: ${job.metadata.scheduleId}`,
+    );
+    try {
+      await GenerationJobManager.expireApproval(streamId, pendingAction?.actionId);
+    } catch (err) {
+      logger.warn(
+        '[ResumeAgentController] Failed to expire action on a dead schedule',
+        err?.message ?? err,
+      );
+    }
+    return res.status(409).json({ error: 'This scheduled run is no longer active' });
   }
   if (isPendingActionStale({ pendingAction })) {
     // The action expired between the pending-action SSE and this submit. Drive the expiry
