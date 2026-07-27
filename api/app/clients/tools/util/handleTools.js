@@ -46,7 +46,6 @@ const {
   createMCPTool,
   createMCPTools,
   createMCPPermissionContext,
-  resolveConfigServers,
   resolveMcpServerContext,
 } = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
