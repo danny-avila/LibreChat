@@ -99,13 +99,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         url: BASE_URL ? `${BASE_URL}/generated_files/${result.filename}` : null,
       };
 
-      const downloadInfo = BASE_URL ? `\n Descàrrega: ${BASE_URL}/generated_files/${result.filename}` : '';
+      const downloadLink = BASE_URL ? `\n[📥 Descàrrega](${BASE_URL}/generated_files/${result.filename})` : '';
 
       return {
         content: [
           {
             type: 'text',
-            text: `FILE_METADATA:${JSON.stringify(meta)}\nMarkdown document generated successfully: ${result.filename}${downloadInfo}`,
+            text: `FILE_METADATA:${JSON.stringify(meta)}\nMarkdown document generated successfully: ${result.filename}${downloadLink}`,
           },
         ],
       };
@@ -136,13 +136,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         url: BASE_URL ? `${BASE_URL}/generated_files/${result.filename}` : null,
       };
 
-      const downloadInfo = BASE_URL ? `\n Descàrrega: ${BASE_URL}/generated_files/${result.filename}` : '';
+      const downloadLink = BASE_URL ? `\n[📥 Descàrrega](${BASE_URL}/generated_files/${result.filename})` : '';
 
       return {
         content: [
           {
             type: 'text',
-            text: `FILE_METADATA:${JSON.stringify(meta)}\nPDF document generated successfully: ${result.filename}${downloadInfo}`,
+            text: `FILE_METADATA:${JSON.stringify(meta)}\nPDF document generated successfully: ${result.filename}${downloadLink}`,
           },
         ],
       };
