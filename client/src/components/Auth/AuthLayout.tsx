@@ -60,10 +60,10 @@ function AuthLayout({
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <Banner />
       <BlinkAnimation active={isFetching}>
-        {/* BKL: jade 글자·투명 배경 로고 — 흰 로그인 배경에 자연스럽게 blend */}
+        {/* BKL: 공식 로고 (teal 글자·투명 배경) — 흰 로그인 배경에 자연스럽게 blend */}
         <div className="mt-8 flex h-12 w-full items-center justify-center">
           <img
-            src="assets/bkl-logo-jade.png"
+            src="assets/bkl-logo-brand.png"
             className="h-full w-auto object-contain"
             alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
           />
