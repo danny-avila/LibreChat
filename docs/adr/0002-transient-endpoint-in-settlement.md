@@ -1,7 +1,0 @@
-# `endpoint` in the settlement path is transient, not persisted
-
-The Pre-Flight Check (`checkBalance`) always resolved rates using the request's `endpoint`; Settlement (`spendTokens`/`createTransaction` and the agents pricing helpers) never received it, so the two could resolve different rates for the same request — and Settlement had no way to know a model belonged to a custom endpoint, which the fall-through pricing warning needs to scope correctly.
-
-We threaded `endpoint` into `getMultiplier`/`getCacheMultiplier` at every settlement call site as a plain parameter, explicitly kept off the `Transaction` schema — the same pattern already used for `endpointTokenConfig` and `inputTokenCount`, which are set directly on the Mongoose document instance after construction rather than declared as schema fields, so they're used for calculation and dropped before `.save()`/`insertMany`.
-
-The alternative — adding `endpoint` as a persisted column — would give future auditing/reporting a direct answer to "which endpoint priced this transaction," which the current design can only reconstruct indirectly (via `model` and rate patterns). We chose not to: it's a schema migration for a field whose only current consumer is the rate calculation itself, and the two existing precedents (`endpointTokenConfig`, `inputTokenCount`) already establish that calculation-only context doesn't get a column here. If auditing by endpoint becomes a real requirement, that's a deliberate follow-up, not something to back into via a pricing fix.
