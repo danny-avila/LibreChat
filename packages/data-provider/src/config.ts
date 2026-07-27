@@ -2756,6 +2756,30 @@ export enum Constants {
 }
 
 /**
+ * Normalizes a server name into the character set tool keys are built from.
+ * Tool keys embed this output, so any candidate list matched against a key must
+ * be normalized the same way.
+ */
+export function normalizeServerName(serverName: string): string {
+  if (/^[a-zA-Z0-9_.-]+$/.test(serverName)) {
+    return serverName;
+  }
+
+  const normalized = serverName.replace(/[^a-zA-Z0-9_.-]/g, '_').replace(/^_+|_+$/g, '');
+  if (normalized) {
+    return normalized;
+  }
+
+  /** All characters were stripped; hash the original so the name stays unique. */
+  let hash = 0;
+  for (let i = 0; i < serverName.length; i++) {
+    hash = (hash << 5) - hash + serverName.charCodeAt(i);
+    hash |= 0;
+  }
+  return `server_${Math.abs(hash)}`;
+}
+
+/**
  * Splits a combined MCP tool key (`${rawToolName}${mcp_delimiter}${serverName}`)
  * back into its two parts.
  *

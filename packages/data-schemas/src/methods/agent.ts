@@ -73,6 +73,43 @@ function extractMCPServerNames(tools: string[] | undefined | null): string[] {
 }
 
 /**
+ * Rebuilds an agent's MCP server index across a tools update without re-deriving
+ * names from the keys.
+ *
+ * A name already on the agent was resolved against the registry when it was
+ * stored, so it is authoritative; it carries forward while some retained tool
+ * still resolves to it. Only keys that match none of them fall back to the
+ * ambiguous trailing-segment derivation, which cannot tell a config server's
+ * suffix from a real DB server name.
+ */
+function rebuildMCPServerNames(tools: string[] | undefined | null, priorNames: string[]): string[] {
+  if (priorNames.length === 0) {
+    return extractMCPServerNames(tools);
+  }
+
+  const retained = new Set<string>();
+  const unmatched: string[] = [];
+  for (const tool of tools ?? []) {
+    if (!tool || !tool.includes(mcp_delimiter) || isActionTool(tool)) {
+      continue;
+    }
+    const match = priorNames
+      .filter((name) => tool.endsWith(`${mcp_delimiter}${name}`))
+      .sort((a, b) => b.length - a.length)[0];
+    if (match) {
+      retained.add(match);
+    } else {
+      unmatched.push(tool);
+    }
+  }
+
+  for (const name of extractMCPServerNames(unmatched)) {
+    retained.add(name);
+  }
+  return Array.from(retained);
+}
+
+/**
  * Check if a version already exists in the versions array, excluding timestamp and author fields.
  */
 function isDuplicateVersion(
@@ -534,7 +571,10 @@ export function createAgentMethods(
           | undefined;
         const mcpServerNames =
           supplied ??
-          extractMCPServerNames((directUpdates as Record<string, unknown>).tools as string[]);
+          rebuildMCPServerNames(
+            (directUpdates as Record<string, unknown>).tools as string[],
+            (currentAgent.mcpServerNames as string[] | undefined) ?? [],
+          );
         (directUpdates as Record<string, unknown>).mcpServerNames = mcpServerNames;
         updateData.mcpServerNames = mcpServerNames;
       }
