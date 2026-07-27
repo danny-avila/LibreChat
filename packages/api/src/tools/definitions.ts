@@ -42,6 +42,8 @@ export interface LoadToolDefinitionsParams {
   codeExecutionEnabled?: boolean;
   /** Agent provider — Gemini/Vertex tool schemas get union-flattened for compatibility */
   provider?: Providers;
+  /** Provider-facing maximum tool/function name length */
+  toolNameMaxLength?: number;
 }
 
 export interface ActionToolDefinition {
@@ -87,6 +89,7 @@ export async function loadToolDefinitions(
     programmaticToolsEnabled = false,
     codeExecutionEnabled = false,
     provider,
+    toolNameMaxLength,
   } = params;
   const { getOrFetchMCPServerTools, isBuiltInTool, getActionToolDefinitions } = deps;
 
@@ -217,6 +220,7 @@ export async function loadToolDefinitions(
     deferredToolsEnabled,
     programmaticToolsEnabled,
     codeExecutionEnabled,
+    toolNameMaxLength,
     definitionsOnly: true,
     agentToolOptions: toolOptions,
   });
