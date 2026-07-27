@@ -215,6 +215,7 @@ const filterAuthorizedTools = async ({
   availableTools,
   existingTools,
   configServers,
+  resolvedServerNames,
 }) => {
   const filteredTools = [];
   let mcpServerConfigs;
@@ -283,6 +284,7 @@ const filterAuthorizedTools = async ({
       continue;
     }
 
+    resolvedServerNames?.add(serverName);
     filteredTools.push(tool);
   }
 
@@ -433,6 +435,9 @@ const createAgentHandler = async (req, res) => {
       hasMCPTools ? resolveConfigServers(req) : Promise.resolve(undefined),
     ]);
     const mcpPermissionContext = createMCPPermissionContext(req);
+    /** Resolved during authorization, so persistence indexes the real server rather
+     *  than a suffix guess - see the note on `filterAuthorizedTools`. */
+    const resolvedServerNames = new Set();
     agentData.tools = await filterAuthorizedTools({
       tools,
       userId,
@@ -441,7 +446,11 @@ const createAgentHandler = async (req, res) => {
       mcpPermissionContext,
       availableTools,
       configServers,
+      resolvedServerNames,
     });
+    if (hasMCPTools) {
+      agentData.mcpServerNames = Array.from(resolvedServerNames);
+    }
 
     const agent = await db.createAgent(agentData);
 
@@ -735,6 +744,7 @@ const updateAgentHandler = async (req, res) => {
             getCachedTools().then((t) => t ?? {}),
             resolveConfigServers(req),
           ]);
+          const resolvedServerNames = new Set();
           const approvedNew = await filterAuthorizedTools({
             tools: newMCPTools,
             userId: req.user.id,
@@ -743,11 +753,19 @@ const updateAgentHandler = async (req, res) => {
             mcpPermissionContext,
             availableTools,
             configServers,
+            resolvedServerNames,
           });
           const rejectedSet = new Set(newMCPTools.filter((t) => !approvedNew.includes(t)));
           if (rejectedSet.size > 0) {
             updateData.tools = updateData.tools.filter((t) => !rejectedSet.has(t));
           }
+          /** Union with what the agent already had: the new tools were resolved during
+           *  authorization, and re-deriving the rest from their keys would reintroduce
+           *  the suffix guess this avoids. */
+          for (const existingName of existingAgent.mcpServerNames ?? []) {
+            resolvedServerNames.add(existingName);
+          }
+          updateData.mcpServerNames = Array.from(resolvedServerNames);
         }
       }
     }
@@ -903,6 +921,9 @@ const duplicateAgentHandler = async (req, res) => {
         resolveConfigServers(req),
       ]);
       const mcpPermissionContext = createMCPPermissionContext(req);
+      /** The duplicate carries the source agent's `mcpServerNames`; replace it with what
+       *  this user is actually authorized for, or the copy would grant the source's servers. */
+      const resolvedServerNames = new Set();
       newAgentData.tools = await filterAuthorizedTools({
         tools: newAgentData.tools,
         userId,
@@ -912,7 +933,9 @@ const duplicateAgentHandler = async (req, res) => {
         availableTools,
         existingTools: newAgentData.tools,
         configServers,
+        resolvedServerNames,
       });
+      newAgentData.mcpServerNames = Array.from(resolvedServerNames);
     }
 
     if (newAgentData.tool_resources) {

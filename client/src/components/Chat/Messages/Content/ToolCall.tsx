@@ -12,7 +12,7 @@ import {
 import type { TAttachment } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
-import { useMCPIconMap } from '~/hooks/MCP';
+import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
@@ -67,12 +67,13 @@ export default function ToolCall({
     }
   }, [auth]);
 
+  const mcpServerNames = useMCPServerNames();
   const { function_name, domain, isMCPToolCall, mcpServerName } = useMemo(() => {
     if (typeof name !== 'string') {
       return { function_name: '', domain: null, isMCPToolCall: false, mcpServerName: '' };
     }
     if (name.includes(Constants.mcp_delimiter)) {
-      const [func, server = ''] = splitToolCallName(name);
+      const [func, server = ''] = splitToolCallName(name, mcpServerNames);
       const displayName = func === 'oauth' ? server : func;
       return {
         function_name: displayName || '',
@@ -104,7 +105,7 @@ export default function ToolCall({
       isMCPToolCall: false,
       mcpServerName: '',
     };
-  }, [name, parsedAuthUrl]);
+  }, [name, parsedAuthUrl, mcpServerNames]);
 
   const toolIconType = useMemo(() => getToolIconType(name), [name]);
   const mcpIconMap = useMCPIconMap();

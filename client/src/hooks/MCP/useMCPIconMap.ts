@@ -17,3 +17,9 @@ export function useMCPIconMap(): Map<string, string> {
     return map;
   }, [servers]);
 }
+
+/** Configured MCP server names, used to resolve the tool-key boundary exactly. */
+export function useMCPServerNames(): string[] {
+  const { data: servers } = useMCPServersQuery();
+  return useMemo(() => (servers ? Object.keys(servers) : []), [servers]);
+}

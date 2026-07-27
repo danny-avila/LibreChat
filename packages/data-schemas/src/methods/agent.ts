@@ -368,7 +368,11 @@ export function createAgentMethods(
         },
       ],
       category: (agentData.category as string) || 'general',
-      mcpServerNames: extractMCPServerNames(agentData.tools as string[] | undefined),
+      /** Callers that authorized the tools pass resolved names; deriving from the key
+       * alone cannot tell a config server's suffix from a real DB server name. */
+      mcpServerNames:
+        (agentData.mcpServerNames as string[] | undefined) ??
+        extractMCPServerNames(agentData.tools as string[] | undefined),
     };
 
     return (await Agent.create(initialAgentData)).toObject() as IAgent;
@@ -523,9 +527,14 @@ export function createAgentMethods(
 
       // Sync mcpServerNames when tools are updated
       if ((directUpdates as Record<string, unknown>).tools !== undefined) {
-        const mcpServerNames = extractMCPServerNames(
-          (directUpdates as Record<string, unknown>).tools as string[],
-        );
+        /** Callers that authorized the tools pass resolved names; deriving from the key
+         * alone cannot tell a config server's suffix from a real DB server name. */
+        const supplied = (directUpdates as Record<string, unknown>).mcpServerNames as
+          | string[]
+          | undefined;
+        const mcpServerNames =
+          supplied ??
+          extractMCPServerNames((directUpdates as Record<string, unknown>).tools as string[]);
         (directUpdates as Record<string, unknown>).mcpServerNames = mcpServerNames;
         updateData.mcpServerNames = mcpServerNames;
       }
