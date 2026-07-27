@@ -13,6 +13,7 @@ import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { clearMessagesCache } from '~/utils';
+import BklChatSearch from '~/components/Nav/BklChatSearch';
 import FavoriteItem from './FavoriteItem';
 import store from '~/store';
 
@@ -349,6 +350,8 @@ export default function FavoritesList({
                 </div>
               </div>
             )}
+            {/* BKL: 채팅 검색 row — 새 채팅/문서 검색과 같은 층위·같은 스타일 */}
+            {search.enabled === true && <BklChatSearch />}
             {/* BKL: New Chat row — sidebar 상단의 아이콘 버튼 대신 여기에 같은 층위로 노출 */}
             <div
               role="button"
