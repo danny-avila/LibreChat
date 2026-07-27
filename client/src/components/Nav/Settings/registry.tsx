@@ -508,7 +508,7 @@ export const registry: SettingEntry[] = [
     section: 'langfuse',
     labelKey: 'com_ui_langfuse_title',
     keywords: ['langfuse', 'observability', 'tracing', 'telemetry', 'traces'],
-    show: (ctx) => ctx.langfuseConnectionAccess && ctx.langfuseFanoutEnabled,
+    show: (ctx) => ctx.langfuseConnectionAccess,
     Component: LangfuseConnection,
   },
   // Data controls · Danger zone

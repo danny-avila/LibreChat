@@ -48,7 +48,6 @@ export interface SettingsContextValue {
   allowAccountDeletion: boolean;
   aboutEnabled: boolean;
   engineTTS: string;
-  langfuseFanoutEnabled: boolean;
   langfuseConnectionAccess: boolean;
 }
 
@@ -131,7 +130,7 @@ export const TABS: TabMeta[] = [
         icon: createLangfuseIcon('h-3.5 w-3.5'),
       },
     ],
-    show: (ctx) => ctx.langfuseConnectionAccess && ctx.langfuseFanoutEnabled,
+    show: (ctx) => ctx.langfuseConnectionAccess,
   },
   {
     id: SettingsTabValues.DATA,

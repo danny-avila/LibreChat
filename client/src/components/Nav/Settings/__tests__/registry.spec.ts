@@ -20,7 +20,6 @@ const settingsContext: SettingsContextValue = {
   allowAccountDeletion: true,
   aboutEnabled: false,
   engineTTS: 'browser',
-  langfuseFanoutEnabled: false,
   langfuseConnectionAccess: false,
 };
 
@@ -60,11 +59,10 @@ describe('settings registry', () => {
       });
     });
 
-    it('shows the connection when fanout is enabled and the user can manage it', () => {
+    it('shows the connection when the user can manage it', () => {
       expect(
         langfuseEntry?.show?.({
           ...settingsContext,
-          langfuseFanoutEnabled: true,
           langfuseConnectionAccess: true,
         }),
       ).toBe(true);
@@ -74,20 +72,18 @@ describe('settings registry', () => {
       expect(
         langfuseEntry?.show?.({
           ...settingsContext,
-          langfuseFanoutEnabled: true,
           langfuseConnectionAccess: false,
         }),
       ).toBe(false);
     });
 
-    it('hides the connection when fanout is disabled', () => {
+    it('shows the connection in single-tenant mode without fanout', () => {
       expect(
         langfuseEntry?.show?.({
           ...settingsContext,
-          langfuseFanoutEnabled: false,
           langfuseConnectionAccess: true,
         }),
-      ).toBe(false);
+      ).toBe(true);
     });
   });
 });

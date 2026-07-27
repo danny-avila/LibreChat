@@ -1,36 +1,22 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import {
-  isFalseEnv,
-  normalizeBoolean,
-  resolveTenantCredentials,
-  toBasicAuthorization,
-} from './utils';
-import { isLangfuseFanoutEnabled, isLangfuseTenantExportEnabled } from './config';
+  hasLangfuseEnvCredentials,
+  isLangfuseFanoutEnabled,
+  isLangfuseTenantExportEnabled,
+  isLangfuseTraceSampled,
+  usesLangfuseMultiTenantRouting,
+} from './policy';
+import { normalizeBoolean, resolveTenantCredentials, toBasicAuthorization } from './utils';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
 import { normalizeString } from '~/utils/text';
 
 const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
 
 export type LangfuseScoreDestination = {
-  name: 'central' | 'tenant';
+  name: 'central' | 'tenant' | 'connection';
   baseUrl: string;
   authorization: string;
 };
-
-function isSampleRateEnabled(value?: string): boolean {
-  if (value == null || value.trim() === '') {
-    return true;
-  }
-  const parsed = Number(value);
-  return !Number.isFinite(parsed) || parsed !== 0;
-}
-
-function isTracingEnabled(): boolean {
-  return (
-    !isFalseEnv(process.env.LANGFUSE_TRACING_ENABLED) &&
-    isSampleRateEnabled(process.env.LANGFUSE_SAMPLE_RATE)
-  );
-}
 
 function getCentralEnvBaseUrl(): string {
   return (
@@ -42,10 +28,6 @@ function getCentralEnvBaseUrl(): string {
 }
 
 function getCentralScoreDestination(): LangfuseScoreDestination | undefined {
-  if (!isTracingEnabled()) {
-    return undefined;
-  }
-
   // Central feedback scores are sent directly by the app, not through the
   // collector, so they use LibreChat's normal central Langfuse credentials.
   // LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER is intentionally collector-only.
@@ -63,9 +45,6 @@ function getCentralScoreDestination(): LangfuseScoreDestination | undefined {
 }
 
 function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestination | undefined {
-  if (!isTracingEnabled()) {
-    return undefined;
-  }
   if (!isLangfuseTenantExportEnabled()) {
     return undefined;
   }
@@ -98,11 +77,50 @@ function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestinat
   };
 }
 
+function getConfiguredScoreDestination(
+  appConfig?: AppConfig,
+): LangfuseScoreDestination | undefined {
+  const config = appConfig?.langfuse;
+  if (normalizeBoolean(config?.enabled) !== true) {
+    return undefined;
+  }
+
+  const credentials = resolveTenantCredentials(config);
+  const destination = resolveLangfuseTenantDestination(config?.destination);
+  if (!credentials || !destination) {
+    return undefined;
+  }
+
+  return {
+    name: 'connection',
+    baseUrl: destination.baseUrl,
+    authorization: toBasicAuthorization(credentials.publicKey, credentials.secretKey),
+  };
+}
+
 /**
- * Score fanout uses Langfuse's direct REST API. The deployment-level collector
- * URL is still required so tenant score fanout follows trace fanout availability.
+ * Scores use Langfuse's direct REST API. Multi-tenant score fanout follows the
+ * collector availability gate used by traces; single-tenant connections send
+ * directly to their configured destination.
  */
-export function getScoreDestinations(appConfig?: AppConfig): LangfuseScoreDestination[] {
+export function getScoreDestinations(
+  appConfig: AppConfig | undefined,
+  traceId: string,
+): LangfuseScoreDestination[] {
+  if (!isLangfuseTraceSampled(traceId)) {
+    return [];
+  }
+
+  if (!usesLangfuseMultiTenantRouting()) {
+    return hasLangfuseEnvCredentials()
+      ? [getCentralScoreDestination()].filter(
+          (destination): destination is LangfuseScoreDestination => Boolean(destination),
+        )
+      : [getConfiguredScoreDestination(appConfig)].filter(
+          (destination): destination is LangfuseScoreDestination => Boolean(destination),
+        );
+  }
+
   const destinations = [getCentralScoreDestination(), getTenantScoreDestination(appConfig)].filter(
     (destination): destination is LangfuseScoreDestination => Boolean(destination),
   );

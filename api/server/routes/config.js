@@ -1,6 +1,7 @@
 const express = require('express');
 const {
   isEnabled,
+  isLangfuseConnectionAvailable,
   isLangfuseFanoutEnabled,
   getBalanceConfig,
   getCloudFrontConfig,
@@ -251,9 +252,10 @@ router.get('/', async function (req, res) {
     const balanceConfig = getBalanceConfig(appConfig);
     const cloudFront = buildCloudFrontStartupConfig();
     const langfuseFanoutEnabled = isLangfuseFanoutEnabled();
+    const langfuseConnectionAvailable = isLangfuseConnectionAvailable();
     let langfuseConnectionAccess = false;
 
-    if (langfuseFanoutEnabled) {
+    if (langfuseConnectionAvailable) {
       try {
         const userId = req.user.id ?? req.user._id?.toString();
         if (userId) {

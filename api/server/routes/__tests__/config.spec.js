@@ -108,6 +108,11 @@ afterEach(() => {
   delete process.env.HELP_AND_FAQ_URL;
   delete process.env.LANGFUSE_FANOUT_ENABLED;
   delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+  delete process.env.LANGFUSE_PUBLIC_KEY;
+  delete process.env.LANGFUSE_SECRET_KEY;
+  delete process.env.LANGFUSE_TRACING_ENABLED;
+  delete process.env.LANGFUSE_SAMPLE_RATE;
+  delete process.env.TENANT_ISOLATION_STRICT;
 });
 
 describe('GET /api/config', () => {
@@ -398,12 +403,12 @@ describe('GET /api/config', () => {
 
       let response = await request(app).get('/api/config');
       expect(response.body.langfuseFanoutEnabled).toBe(false);
-      expect(response.body.langfuseConnectionAccess).toBe(false);
+      expect(response.body.langfuseConnectionAccess).toBe(true);
 
       process.env.LANGFUSE_FANOUT_COLLECTOR_URL = '   ';
       response = await request(app).get('/api/config');
       expect(response.body.langfuseFanoutEnabled).toBe(false);
-      expect(response.body.langfuseConnectionAccess).toBe(false);
+      expect(response.body.langfuseConnectionAccess).toBe(true);
 
       process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
       response = await request(app).get('/api/config');
@@ -413,6 +418,7 @@ describe('GET /api/config', () => {
 
     it('advertises Langfuse connection access from capabilities rather than the user role', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      process.env.TENANT_ISOLATION_STRICT = 'true';
       process.env.LANGFUSE_FANOUT_ENABLED = 'true';
       process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
       const app = createApp({ ...mockUser, role: 'DELEGATED_ADMIN' });
@@ -428,6 +434,49 @@ describe('GET /api/config', () => {
       response = await request(app).get('/api/config');
       expect(response.body.langfuseFanoutEnabled).toBe(true);
       expect(response.body.langfuseConnectionAccess).toBe(false);
+    });
+
+    it('advertises Langfuse connection access by default in single-tenant mode', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      mockHasConfigCapability.mockResolvedValue(true);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.langfuseFanoutEnabled).toBe(false);
+      expect(response.body.langfuseConnectionAccess).toBe(true);
+    });
+
+    it('hides single-tenant connection settings when environment credentials are configured', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      mockHasConfigCapability.mockResolvedValue(true);
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+      process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.langfuseConnectionAccess).toBe(false);
+      expect(mockHasCapability).not.toHaveBeenCalled();
+      expect(mockHasConfigCapability).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['LANGFUSE_TRACING_ENABLED', 'false'],
+      ['LANGFUSE_SAMPLE_RATE', '0'],
+    ])('hides Langfuse connection settings when %s=%s', async (key, value) => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      mockHasConfigCapability.mockResolvedValue(true);
+      process.env[key] = value;
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.langfuseConnectionAccess).toBe(false);
+      expect(mockHasCapability).not.toHaveBeenCalled();
     });
 
     it('should include post-login informational fields', async () => {
@@ -540,6 +589,7 @@ describe('GET /api/config', () => {
 
     it('should not call hasCapability when allowAccountDeletion is already true', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      process.env.LANGFUSE_TRACING_ENABLED = 'false';
       const app = createApp(mockUser);
 
       const response = await request(app).get('/api/config');

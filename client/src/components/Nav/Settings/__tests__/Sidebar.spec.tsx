@@ -18,7 +18,6 @@ const ctx: SettingsContextValue = {
   allowAccountDeletion: true,
   aboutEnabled: false,
   engineTTS: 'browser',
-  langfuseFanoutEnabled: false,
   langfuseConnectionAccess: false,
 };
 
@@ -49,12 +48,12 @@ describe('Sidebar', () => {
   });
 
   it('shows the Langfuse tab when Langfuse is available to the user', () => {
-    setup({ langfuseFanoutEnabled: true, langfuseConnectionAccess: true });
+    setup({ langfuseConnectionAccess: true });
     expect(screen.getByText('Langfuse')).toBeInTheDocument();
   });
 
   it('hides the Langfuse tab without Langfuse connection access', () => {
-    setup({ langfuseFanoutEnabled: true, langfuseConnectionAccess: false });
+    setup({ langfuseConnectionAccess: false });
     expect(screen.queryByText('Langfuse')).not.toBeInTheDocument();
   });
 

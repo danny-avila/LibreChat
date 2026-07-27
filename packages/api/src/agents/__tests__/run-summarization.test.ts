@@ -224,6 +224,13 @@ beforeEach(() => {
   delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
   delete process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS;
   delete process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED;
+  delete process.env.LANGFUSE_TRACING_ENABLED;
+  delete process.env.LANGFUSE_SAMPLE_RATE;
+  process.env.TENANT_ISOLATION_STRICT = 'true';
+});
+
+afterAll(() => {
+  delete process.env.TENANT_ISOLATION_STRICT;
 });
 
 // ---------------------------------------------------------------------------

@@ -1,8 +1,17 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
-import { isTrueEnv, normalizeBoolean, resolveTenantCredentials } from './utils';
+import {
+  hasLangfuseEnvCredentials,
+  isLangfuseFanoutEnabled,
+  isLangfuseTenantExportEnabled,
+  isLangfuseTraceSampled,
+  isLangfuseTracingEnabled,
+  usesLangfuseMultiTenantRouting,
+} from './policy';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
+import { normalizeBoolean, resolveTenantCredentials } from './utils';
 import { normalizeString } from '~/utils/text';
+import { traceIdForMessage } from './trace';
 
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
 type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
@@ -30,16 +39,7 @@ function appendPath(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, '')}${path}`;
 }
 
-export function isLangfuseTenantExportEnabled(): boolean {
-  return !isTrueEnv(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED);
-}
-
-export function isLangfuseFanoutEnabled(): boolean {
-  return (
-    isTrueEnv(process.env.LANGFUSE_FANOUT_ENABLED) &&
-    normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL) != null
-  );
-}
+export { isLangfuseFanoutEnabled, isLangfuseTenantExportEnabled } from './policy';
 
 function mergeTraceMetadata(
   base: LangfuseRunConfig['metadata'],
@@ -127,10 +127,12 @@ function resolveLangfuseExportPlan({
 
 export function buildLangfuseConfig({
   appConfig,
+  runId,
   tenantId,
   centralTraceExportEnabled = true,
 }: {
   appConfig?: AppConfig;
+  runId?: string;
   tenantId?: string;
   /**
    * Defaults to true. Set false to suppress central Langfuse export for this
@@ -154,6 +156,14 @@ export function buildLangfuseConfig({
     langfuse.tags = tags;
   }
 
+  if (
+    !isLangfuseTracingEnabled() ||
+    (runId != null && !isLangfuseTraceSampled(traceIdForMessage(runId)))
+  ) {
+    langfuse.enabled = false;
+    return langfuse;
+  }
+
   const tenantLangfuseEnabled = normalizeBoolean(config?.enabled) === true;
   if (!centralTraceExportEnabled) {
     disableCentralExport(langfuse);
@@ -165,6 +175,22 @@ export function buildLangfuseConfig({
   const fanoutCollectorUrl = normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
   const tenantDestination = resolveLangfuseTenantDestination(config?.destination);
   const tenantExportEmergencyEnabled = isLangfuseTenantExportEnabled();
+
+  if (!usesLangfuseMultiTenantRouting()) {
+    if (!centralTraceExportEnabled) {
+      langfuse.enabled = false;
+    } else if (hasLangfuseEnvCredentials()) {
+      applyCentralEnvConfig(langfuse);
+    } else if (tenantLangfuseEnabled && tenantCredentials != null && tenantDestination != null) {
+      langfuse.publicKey = tenantCredentials.publicKey;
+      langfuse.secretKey = tenantCredentials.secretKey;
+      langfuse.baseUrl = tenantDestination.baseUrl;
+    } else if (config != null) {
+      langfuse.enabled = false;
+    }
+    return langfuse;
+  }
+
   const exportPlan = resolveLangfuseExportPlan({
     centralTraceExportEnabled,
     fanoutEnabled,

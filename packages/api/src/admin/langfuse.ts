@@ -18,7 +18,7 @@ import {
   resolveLangfuseTenantDestination,
 } from '~/langfuse/tenantDestinations';
 import { decryptConfigSecret, encryptConfigSecretFields } from './secrets';
-import { isLangfuseFanoutEnabled } from '~/langfuse/config';
+import { isLangfuseConnectionAvailable } from '~/langfuse/policy';
 
 const DEFAULT_PRIORITY = 10;
 const ENCRYPTED_PREFIX = 'v3:';
@@ -71,12 +71,12 @@ function buildStatus(config: IConfig | null): TLangfuseConnectionStatus {
   };
 }
 
-function rejectWhenFanoutDisabled(res: Response): Response | undefined {
-  if (isLangfuseFanoutEnabled()) {
+function rejectWhenConnectionUnavailable(res: Response): Response | undefined {
+  if (isLangfuseConnectionAvailable()) {
     return undefined;
   }
 
-  return res.status(404).json({ error: 'Langfuse fanout is not enabled' });
+  return res.status(404).json({ error: 'Langfuse connection settings are not available' });
 }
 
 function getLangfuseTestFailureMessage(status: number): string {
@@ -170,7 +170,7 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
   }
 
   async function getConnection(req: ServerRequest, res: Response): Promise<Response> {
-    const disabledResponse = rejectWhenFanoutDisabled(res);
+    const disabledResponse = rejectWhenConnectionUnavailable(res);
     if (disabledResponse) {
       return disabledResponse;
     }
@@ -185,7 +185,7 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
   }
 
   async function updateConnection(req: ServerRequest, res: Response): Promise<Response> {
-    const disabledResponse = rejectWhenFanoutDisabled(res);
+    const disabledResponse = rejectWhenConnectionUnavailable(res);
     if (disabledResponse) {
       return disabledResponse;
     }
@@ -273,7 +273,7 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
   }
 
   async function testConnection(req: ServerRequest, res: Response): Promise<Response> {
-    const disabledResponse = rejectWhenFanoutDisabled(res);
+    const disabledResponse = rejectWhenConnectionUnavailable(res);
     if (disabledResponse) {
       return disabledResponse;
     }

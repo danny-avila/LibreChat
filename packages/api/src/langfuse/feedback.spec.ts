@@ -44,6 +44,7 @@ const langfuseEnvKeys = [
   'LANGFUSE_FANOUT_TENANT_US_BASE_URL',
   'LANGFUSE_FANOUT_TENANT_JP_BASE_URL',
   'LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED',
+  'TENANT_ISOLATION_STRICT',
 ];
 let fetchMock: jest.SpiedFunction<typeof fetch>;
 
@@ -59,6 +60,7 @@ function setLangfuseCredentials() {
 }
 
 function enableTenantFanout() {
+  process.env.TENANT_ISOLATION_STRICT = 'true';
   process.env.LANGFUSE_FANOUT_ENABLED = 'true';
   process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector:4318';
 }
@@ -176,8 +178,87 @@ describe('Langfuse feedback scores', () => {
     );
   });
 
+  it('posts scores only to the stored connection in single-tenant mode without env credentials', async () => {
+    delete process.env.LANGFUSE_PUBLIC_KEY;
+    delete process.env.LANGFUSE_SECRET_KEY;
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'us=https://us.cloud.langfuse.example';
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        publicKey: 'tenant-public-key',
+        secretKey: encryptedTenantSecret(),
+        destination: 'us',
+      }),
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledTimes(1);
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'https://us.cloud.langfuse.example/api/public/scores',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: getTenantAuthorization() }),
+      }),
+    );
+  });
+
+  it('keeps scores on environment credentials in single-tenant mode', async () => {
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        publicKey: 'tenant-public-key',
+        secretKey: encryptedTenantSecret(),
+        destination: 'us',
+      }),
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledTimes(1);
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'https://cloud.langfuse.com/api/public/scores',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: getCentralAuthorization() }),
+      }),
+    );
+  });
+
+  it('does not send scores for a disabled stored connection in single-tenant mode', async () => {
+    delete process.env.LANGFUSE_PUBLIC_KEY;
+    delete process.env.LANGFUSE_SECRET_KEY;
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        enabled: false,
+        publicKey: 'tenant-public-key',
+        secretKey: encryptedTenantSecret(),
+        destination: 'us',
+      }),
+    });
+
+    expect(getFetchMock()).not.toHaveBeenCalled();
+  });
+
+  it('does not send a score for a trace excluded by fractional sampling', async () => {
+    process.env.LANGFUSE_SAMPLE_RATE = '0.5';
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '658f74b0a232417fc3e6e4d9ef5f563a',
+      feedback: { rating: 'thumbsUp' },
+    });
+
+    expect(getFetchMock()).not.toHaveBeenCalled();
+  });
+
   it('posts feedback scores to central fanout and tenant Langfuse projects', async () => {
     enableTenantFanout();
+    delete process.env.TENANT_ISOLATION_STRICT;
     process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
     process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
     const { sendFeedbackScore } = await loadFeedback();
@@ -805,6 +886,7 @@ describe('Langfuse feedback scores', () => {
   it.each(['true', '1', 'yes', 'on'])(
     'enables tenant scores when global fanout is %s',
     async (value) => {
+      process.env.TENANT_ISOLATION_STRICT = 'true';
       process.env.LANGFUSE_FANOUT_ENABLED = value;
       process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector:4318';
       process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
@@ -834,6 +916,7 @@ describe('Langfuse feedback scores', () => {
   it.each(['false', '0', 'no', 'off'])(
     'keeps tenant scores disabled when global fanout is %s',
     async (value) => {
+      process.env.TENANT_ISOLATION_STRICT = 'true';
       process.env.LANGFUSE_FANOUT_ENABLED = value;
       process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector:4318';
       process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';

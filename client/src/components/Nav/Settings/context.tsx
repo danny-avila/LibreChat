@@ -27,7 +27,6 @@ export function useSettingsContext(): SettingsContextValue {
   });
 
   const balanceEnabled = startupConfig?.balance?.enabled === true;
-  const langfuseFanoutEnabled = startupConfig?.langfuseFanoutEnabled === true;
   const langfuseConnectionAccess = startupConfig?.langfuseConnectionAccess === true;
   const isLocalProvider = user?.provider === 'local';
   const twoFactorEnabled = user?.twoFactorEnabled === true;
@@ -53,7 +52,6 @@ export function useSettingsContext(): SettingsContextValue {
       allowAccountDeletion,
       aboutEnabled,
       engineTTS,
-      langfuseFanoutEnabled,
       langfuseConnectionAccess,
     }),
     [
@@ -69,7 +67,6 @@ export function useSettingsContext(): SettingsContextValue {
       allowAccountDeletion,
       aboutEnabled,
       engineTTS,
-      langfuseFanoutEnabled,
       langfuseConnectionAccess,
     ],
   );

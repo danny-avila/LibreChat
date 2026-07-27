@@ -16,6 +16,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  process.env.TENANT_ISOLATION_STRICT = 'true';
   process.env.LANGFUSE_FANOUT_ENABLED = 'true';
   process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
   global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 }) as unknown as typeof fetch;
@@ -24,6 +25,11 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.LANGFUSE_FANOUT_ENABLED;
   delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+  delete process.env.LANGFUSE_PUBLIC_KEY;
+  delete process.env.LANGFUSE_SECRET_KEY;
+  delete process.env.LANGFUSE_TRACING_ENABLED;
+  delete process.env.LANGFUSE_SAMPLE_RATE;
+  delete process.env.TENANT_ISOLATION_STRICT;
   global.fetch = realFetch;
 });
 
@@ -103,7 +109,7 @@ function rehydrate(fields: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe('createAdminLangfuseHandlers', () => {
-  describe('fanout feature gate', () => {
+  describe('connection availability gate', () => {
     it('rejects connection reads when deployment fanout is disabled', async () => {
       delete process.env.LANGFUSE_FANOUT_ENABLED;
       const { handlers, deps } = createHandlers();
@@ -112,7 +118,7 @@ describe('createAdminLangfuseHandlers', () => {
       await handlers.getConnection(mockReq(), res);
 
       expect(res.statusCode).toBe(404);
-      expect(res.body).toEqual({ error: 'Langfuse fanout is not enabled' });
+      expect(res.body).toEqual({ error: 'Langfuse connection settings are not available' });
       expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
     });
 
@@ -127,7 +133,7 @@ describe('createAdminLangfuseHandlers', () => {
       );
 
       expect(res.statusCode).toBe(404);
-      expect(res.body).toEqual({ error: 'Langfuse fanout is not enabled' });
+      expect(res.body).toEqual({ error: 'Langfuse connection settings are not available' });
       expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 
@@ -139,7 +145,7 @@ describe('createAdminLangfuseHandlers', () => {
       await handlers.getConnection(mockReq(), res);
 
       expect(res.statusCode).toBe(404);
-      expect(res.body).toEqual({ error: 'Langfuse fanout is not enabled' });
+      expect(res.body).toEqual({ error: 'Langfuse connection settings are not available' });
       expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
     });
 
@@ -155,9 +161,45 @@ describe('createAdminLangfuseHandlers', () => {
       );
 
       expect(res.statusCode).toBe(404);
-      expect(res.body).toEqual({ error: 'Langfuse fanout is not enabled' });
+      expect(res.body).toEqual({ error: 'Langfuse connection settings are not available' });
       expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
       expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('allows connection settings without fanout in single-tenant mode', async () => {
+      delete process.env.TENANT_ISOLATION_STRICT;
+      delete process.env.LANGFUSE_FANOUT_ENABLED;
+      delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+      const { handlers } = createHandlers();
+      const res = mockRes();
+
+      await handlers.getConnection(mockReq(), res);
+
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('rejects single-tenant settings when environment credentials are configured', async () => {
+      delete process.env.TENANT_ISOLATION_STRICT;
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+      process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.getConnection(mockReq(), res);
+
+      expect(res.statusCode).toBe(404);
+      expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
+    });
+
+    it('rejects settings when tracing is disabled', async () => {
+      process.env.LANGFUSE_TRACING_ENABLED = 'false';
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.getConnection(mockReq(), res);
+
+      expect(res.statusCode).toBe(404);
+      expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
     });
   });
 

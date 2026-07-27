@@ -111,7 +111,7 @@ export async function sendFeedbackScore({
     return;
   }
 
-  const destinations = getScoreDestinations(appConfig);
+  const destinations = getScoreDestinations(appConfig, traceId);
   if (destinations.length === 0) {
     return;
   }
