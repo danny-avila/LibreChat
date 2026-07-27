@@ -28,6 +28,7 @@
       <button class="tab-btn" data-tab="users">사용자</button>
       <button class="tab-btn" data-tab="deleted">삭제된 채팅</button>
       <button class="tab-btn" data-tab="shares">공유 링크</button>
+      <button class="tab-btn" data-tab="data">데이터 관리</button>
       <button class="tab-btn" data-tab="notices">공지</button>
       <button class="tab-btn" data-tab="surveys">피드백·설문</button>
       <button class="tab-btn" data-tab="settings">설정</button>
@@ -270,6 +271,48 @@
       </div>
     </div>
 
+    <!-- ════ 데이터 관리 탭 ════ -->
+    <div class="tab-panel" id="panel-data">
+      <div class="page-header">
+        <div>
+          <div class="page-title">데이터 관리 — 매터/문서 삭제</div>
+          <div class="page-sub">검색 결과에서 삭제 대상을 선택하면 영향 범위를 확인한 뒤 모든 저장소(Qdrant · OpenSearch · PostgreSQL)에서 일괄 삭제합니다. <b>삭제는 되돌릴 수 없습니다.</b></div>
+        </div>
+      </div>
+      <div class="form-panel" style="margin-bottom:14px;">
+        <div class="form-row" style="align-items:center;">
+          <label>대상 유형</label>
+          <select id="dd-search-type" class="toolbar-select" style="width:120px;">
+            <option value="matter">매터</option>
+            <option value="doc">문서</option>
+          </select>
+          <input type="text" id="dd-search-input" placeholder="matter_uid / 사건명 / 의뢰인 / doc_id / 파일명" style="flex:1;" />
+          <button class="btn-export" id="dd-search-btn">검색</button>
+        </div>
+      </div>
+      <div class="table-panel">
+        <div class="table-header"><span class="table-title">검색 결과</span><span class="table-sub" id="dd-results-sub"></span></div>
+        <div class="table-scroll" style="max-height:360px;">
+          <table>
+            <thead id="dd-results-thead"><tr><th>matter_uid</th><th>사건명</th><th>의뢰인</th><th>문서 수</th><th>기간</th><th>작업</th></tr></thead>
+            <tbody id="dd-results-tbody"><tr class="empty-row"><td colspan="6">검색어를 입력하세요</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="table-panel">
+        <div class="table-header">
+          <span class="table-title">삭제 이력 (감사 로그)</span>
+          <button class="btn-refresh" style="margin-left:auto;" id="dd-audit-refresh">↻</button>
+        </div>
+        <div class="table-scroll" style="max-height:320px;">
+          <table>
+            <thead><tr><th>실행 시각 (KST)</th><th>작업</th><th>대상</th><th>이름</th><th>삭제 건수</th><th>사유</th><th>요청자</th><th>상태</th></tr></thead>
+            <tbody id="dd-audit-tbody"><tr class="empty-row"><td colspan="8">로딩 중...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- ════ 공지 탭 ════ -->
     <div class="tab-panel" id="panel-notices">
       <div class="page-header">
@@ -383,6 +426,29 @@
   </main>
 </div>
 
+<!-- ── 데이터 삭제 확인 다이얼로그 ── -->
+<div class="auth-overlay" id="dd-overlay" style="display:none;">
+  <div class="auth-card" style="width:520px; max-width:92vw; text-align:left;">
+    <div class="auth-title" style="color:#dc2626;">⚠️ <span id="dd-dialog-title">삭제 확인</span></div>
+    <div id="dd-dialog-meta" style="margin:10px 0; font-size:13px; line-height:1.7;"></div>
+    <div style="font-weight:600; font-size:13px; margin-bottom:6px;">영향 범위</div>
+    <div class="table-scroll" style="max-height:200px; border:1px solid #e5e7eb; border-radius:8px;">
+      <table style="width:100%;">
+        <tbody id="dd-dialog-affected"></tbody>
+      </table>
+    </div>
+    <div class="form-row" style="margin-top:12px;"><label style="width:90px;">삭제 사유</label><input type="text" id="dd-reason" style="flex:1;" placeholder="예: 고객 요청 - 기밀 유지" /></div>
+    <div class="form-row"><label style="width:90px;">요청자</label><input type="text" id="dd-requested-by" style="flex:1;" placeholder="예: hong@bkl.co.kr" /></div>
+    <div class="form-row"><label style="width:90px;">ID 재입력</label><input type="text" id="dd-confirm-id" style="flex:1;" autocomplete="off" /></div>
+    <div class="form-hint" id="dd-confirm-hint" style="margin:4px 0 10px;">삭제하려면 위 칸에 대상 ID를 똑같이 입력하세요. 이 작업은 되돌릴 수 없습니다.</div>
+    <div class="auth-error" id="dd-dialog-error"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+      <button class="btn-refresh" id="dd-cancel-btn">취소</button>
+      <button class="btn-refresh btn-danger" id="dd-execute-btn" disabled>삭제 실행</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="/admin/js/core.js"></script>
@@ -390,6 +456,7 @@
 <script src="/admin/js/users.js"></script>
 <script src="/admin/js/deleted.js"></script>
 <script src="/admin/js/shares.js"></script>
+<script src="/admin/js/data-management.js"></script>
 <script src="/admin/js/notices.js"></script>
 <script src="/admin/js/surveys.js"></script>
 <script src="/admin/js/settings.js"></script>
