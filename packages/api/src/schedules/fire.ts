@@ -488,15 +488,31 @@ export async function fireSchedule(
         await advance();
         return { fired: false, skipped: 'overlap' as const };
       }
-      // A duplicate means ANOTHER worker holds this occurrence's row — NOT that the
-      // occurrence is finished. Advancing past it hands the occurrence away: if that
+      // A duplicate means another fire already holds this occurrence's row — but
+      // "still running it" and "already finished with it" need OPPOSITE handling.
+      //
+      // TERMINAL: the occurrence is done and merely never advanced past (its fire was
+      // accepted but the post-accept advance failed). nextRunAt still points here, so
+      // refusing to advance makes every future claim re-pick the same settled
+      // occurrence — a permanent stall. Advance past it.
+      //
+      // ACTIVE: another worker owns it. Advancing hands the occurrence away — if that
       // worker is a stale lease holder whose own revalidation then fails, it rolls its
-      // undispatched row back and nothing ever fires this occurrence. Leaving nextRunAt
-      // alone keeps it claimable — whichever worker actually dispatches is the one that
-      // advances, and the claim's lease is the retry backoff (same shape as `capacity`
-      // above). A crashed holder's row is cleared by the orphan sweep, after which the
-      // occurrence reserves cleanly. Manual run-now still releases its lease so repeated
-      // clicks aren't met with a stale "already in progress".
+      // undispatched row back and nothing ever fires this occurrence. Leave nextRunAt
+      // alone so it stays claimable; whichever worker actually dispatches is the one
+      // that advances, and the claim's lease is the retry backoff (the same shape as
+      // `capacity` above). A crashed holder's row is cleared by the orphan sweep, after
+      // which the occurrence reserves cleanly.
+      const settledAlready =
+        reservation.existingStatus != null &&
+        reservation.existingStatus !== 'started' &&
+        reservation.existingStatus !== 'requires_action';
+      if (settledAlready) {
+        await advance();
+        return { fired: false, skipped: 'duplicate' as const };
+      }
+      // Manual run-now still releases its lease so repeated clicks aren't met with a
+      // stale "already in progress".
       if (options?.manual) {
         await methods.releaseLease(schedule.id, claimToken);
       }

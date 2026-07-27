@@ -236,7 +236,10 @@ describe('reserveStartedRun (single-active overlap guard)', () => {
       { $set: { status: 'success' } },
     );
     const again = await methods.reserveStartedRun(runData(schedule, { scheduledFor: when }));
-    expect(again).toEqual({ conflict: 'duplicate' });
+    // The status travels with the conflict: this exact case (settled row, occurrence
+    // never advanced past) is the one the caller must ADVANCE past rather than treat as
+    // owned by a live worker.
+    expect(again).toEqual({ conflict: 'duplicate', existingStatus: 'success' });
   });
 });
 
@@ -1300,6 +1303,38 @@ describe('auto-disable carries the run config generation', () => {
       enabled: false,
       disabledReason: 'too_many_failures',
     });
+  });
+});
+
+describe('reserveStartedRun duplicate reporting', () => {
+  /**
+   * The caller has to tell "another worker is still running this" from "this occurrence
+   * already finished and was merely never advanced past" — they need opposite handling,
+   * and a bare `duplicate` cannot distinguish them.
+   */
+  it('reports the existing row status on a duplicate', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scheduledFor = new Date('2026-07-26T10:00:00.000Z');
+    const base = {
+      scheduleId: schedule.id,
+      scheduledFor,
+      user: schedule.user,
+      firedAt: new Date(),
+    };
+    await methods.reserveStartedRun({ ...base, conversationId: 'first' });
+
+    const active = await methods.reserveStartedRun({ ...base, conversationId: 'second' });
+    expect(active).toMatchObject({ conflict: 'duplicate', existingStatus: 'started' });
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'success',
+      autoDisableAfterFailures: 3,
+    });
+
+    const settled = await methods.reserveStartedRun({ ...base, conversationId: 'third' });
+    expect(settled).toMatchObject({ conflict: 'duplicate', existingStatus: 'success' });
   });
 });
 

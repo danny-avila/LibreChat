@@ -102,13 +102,28 @@ async function gracefulExit(code = 0) {
     AclEntry.deleteMany({ principalId: user._id }),
   ];
 
+  // REFUSE rather than warn when a scheduled run is in flight. This script talks to the
+  // database directly, so unlike the HTTP deletion paths it cannot abort a live loopback
+  // generation or wait for it to drain. That generation can already have passed its
+  // owner lookup, and it will persist its messages after the rows deleted here are gone
+  // — resurrecting data for an account the operator believes is erased.
+  const activeRuns = await ScheduleRun.countDocuments({
+    user: uid,
+    status: { $in: ['started', 'requires_action'] },
+  });
+  if (activeRuns > 0) {
+    console.red(
+      `✖ ${activeRuns} scheduled run(s) are still active for this user, and this script cannot abort them.`,
+    );
+    console.yellow(
+      'Stop the server (or delete the account through the app, which drains them) and retry.',
+    );
+    return gracefulExit(1);
+  }
+
   // Runs BEFORE schedules so a partial failure stays retryable, mirroring
   // deleteSchedulesByUser. A schedule carries the user's prompt text and has no TTL,
-  // so leaving it behind retains that content indefinitely. This script runs offline
-  // against the database, so it cannot quiesce a live loopback generation the way the
-  // HTTP deletion paths do — an in-flight fire disables itself once the User document
-  // is gone (fireSchedule's owner lookup), but run it with the server stopped if a
-  // scheduled generation may be in progress.
+  // so leaving it behind retains that content indefinitely.
   await ScheduleRun.deleteMany({ user: uid });
   await Schedule.deleteMany({ user: uid });
 

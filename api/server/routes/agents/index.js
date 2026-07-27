@@ -57,6 +57,17 @@ router.use('/v1/responses', responses);
 router.use('/v1', openai);
 
 router.use(requireJwtAuth);
+// Capture the scheduled-fire identity IMMEDIATELY after auth — ahead of checkBan, whose
+// cache/store lookups are asynchronous and can outlast the 60-second fire token. Reading
+// the claims after them would demote an already-authenticated fire to an ordinary chat,
+// subjecting it to the interactive limiters and orphaning its run. Everything downstream
+// reads these captured flags rather than re-verifying an expiring token.
+router.use((req, _res, next) => {
+  const claims = readScheduleFireClaims(req);
+  req._isScheduledFire = claims.scheduled;
+  req._isManualScheduledFire = claims.manual;
+  next();
+});
 router.use(checkBan);
 router.use(uaParser);
 
@@ -542,12 +553,6 @@ const chatRouter = express.Router();
 // downstream (limiter exemption, the controller) reads this captured flag instead
 // of re-verifying a token that may have expired in-flight, which would otherwise
 // throttle/limit a legitimate fire and record schedule errors toward auto-disable.
-chatRouter.use((req, _res, next) => {
-  const claims = readScheduleFireClaims(req);
-  req._isScheduledFire = claims.scheduled;
-  req._isManualScheduledFire = claims.manual;
-  next();
-});
 chatRouter.use(configMiddleware);
 
 /** Applies `limiter` unless `isExempt` says this fire should skip it. */

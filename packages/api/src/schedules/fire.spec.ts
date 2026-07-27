@@ -85,7 +85,9 @@ function makeMethods() {
       }) => {
         const k = key(data.scheduleId, data.scheduledFor);
         if (runs.has(k)) {
-          return { conflict: 'duplicate' as const };
+          // Mirrors the real method: a duplicate reports the EXISTING row's status so
+          // the caller can tell "still running" from "already finished".
+          return { conflict: 'duplicate' as const, existingStatus: runs.get(k)!.status };
         }
         // Mirrors the unique {capacitySlot} partial index (status:'started').
         if (
@@ -616,6 +618,24 @@ describe('fireSchedule', () => {
    * alone keeps it claimable; the worker that actually dispatches is the one that
    * advances, and the claim's lease provides the retry backoff.
    */
+  /**
+   * A settled-but-unadvanced occurrence (its fire was accepted, the post-accept advance
+   * failed) leaves nextRunAt pointing at it. Refusing to advance on `duplicate` then
+   * makes every future claim re-pick the same finished occurrence — a permanent stall.
+   */
+  it('advances past a duplicate whose run already settled', async () => {
+    const { methods, runs, calls } = makeMethods();
+    const when = new Date(dueAt().getTime());
+    runs.set(`sched-1:${when.toISOString()}`, { status: 'success', conversationId: 'done' });
+    mockFetch(async () => okResponse());
+
+    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, when);
+
+    expect(result.skipped).toBe('duplicate');
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(calls.advance).toBe(1);
+  });
+
   it('does not advance past an occurrence another worker is holding', async () => {
     const { methods, runs, calls } = makeMethods();
     const when = new Date(dueAt().getTime());

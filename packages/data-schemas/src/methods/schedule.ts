@@ -88,7 +88,13 @@ export interface ScheduleClaim {
 /** Outcome of reserving the single-active-run slot for a fired occurrence. */
 export type StartedRunReservation =
   | { run: IScheduleRun }
-  | { conflict: 'duplicate' | 'overlap' | 'slot-taken' };
+  | {
+      conflict: 'duplicate' | 'overlap' | 'slot-taken';
+      /** For a `duplicate`, the status of the row that already holds this occurrence.
+       *  A TERMINAL status means the occurrence is finished and merely never advanced
+       *  past; an active one means another worker is still running it. */
+      existingStatus?: ScheduleRunStatus;
+    };
 
 export type ScheduleMethods = {
   ensureScheduleIndexes: () => Promise<void>;
@@ -518,7 +524,14 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       return { run: doc.toObject() };
     } catch (error) {
       if (isOccurrenceDuplicate(error)) {
-        return { conflict: 'duplicate' };
+        // Report the EXISTING row's status. A duplicate means another fire owns this
+        // occurrence — but "owns" and "already finished" need opposite handling, and the
+        // caller cannot distinguish them without this.
+        const existing = await ScheduleRun()
+          .findOne({ scheduleId: data.scheduleId, scheduledFor: data.scheduledFor })
+          .select('status')
+          .lean<Pick<IScheduleRun, 'status'>>();
+        return { conflict: 'duplicate', existingStatus: existing?.status };
       }
       // Checked BEFORE overlap: the global cap index and the per-schedule active
       // index are different failures and drive different caller behavior (retry the
