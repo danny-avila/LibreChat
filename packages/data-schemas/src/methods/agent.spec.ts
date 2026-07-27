@@ -549,6 +549,27 @@ describe('Agent Methods', () => {
       expect(newAgent.mcpServerNames).toEqual(['authorizedServer']);
     });
 
+    test('should omit ambiguous MCP keys from mcpServerNames', async () => {
+      const { agentId, authorId } = createTestIds();
+      /** Either half of the key may contain the delimiter, so this key cannot be
+       *  resolved without the configured server list. `mcpServerNames` grants
+       *  agent-scoped access to a DB server by name, so it must not guess. */
+      const ambiguousTool = `search${Constants.mcp_delimiter}Google${Constants.mcp_delimiter}workspace`;
+      const plainTool = `search${Constants.mcp_delimiter}authorizedServer`;
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'Ambiguous MCP Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [ambiguousTool, plainTool],
+      });
+
+      expect(newAgent.mcpServerNames).toEqual(['authorizedServer']);
+      expect(newAgent.mcpServerNames).not.toContain('workspace');
+    });
+
     test('should derive mcpServerNames only from MCP tools on update', async () => {
       const { agentId, authorId } = createTestIds();
       const actionTool = `sync${Constants.mcp_delimiter}state${actionDelimiter}api---example---com`;

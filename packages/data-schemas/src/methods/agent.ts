@@ -59,8 +59,13 @@ function extractMCPServerNames(tools: string[] | undefined | null): string[] {
       continue;
     }
     const parts = tool.split(mcp_delimiter);
-    if (parts.length >= 2) {
-      serverNames.add(parts[parts.length - 1]);
+    /** Only a single-delimiter key identifies its server unambiguously. When either
+     * half also contains the delimiter the boundary needs the configured server list,
+     * which is not available here - and this name grants agent-scoped access to a DB
+     * server by that name (`ServerConfigsDB.getAccessibleServers`), so a wrong guess
+     * would expose an unrelated server to everyone who can view the agent. Fail closed. */
+    if (parts.length === 2) {
+      serverNames.add(parts[1]);
     }
   }
   return Array.from(serverNames);
