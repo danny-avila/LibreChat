@@ -358,8 +358,6 @@ export default function FavoritesList({
                 </div>
               </div>
             )}
-            {/* BKL: 채팅 검색 row — 새 채팅/문서 검색과 같은 층위·같은 스타일 */}
-            {search.enabled === true && <BklChatSearch />}
             {/* BKL: New Chat row — sidebar 상단의 아이콘 버튼 대신 여기에 같은 층위로 노출 */}
             <div
               role="button"
@@ -382,6 +380,8 @@ export default function FavoritesList({
                 <span className="truncate">{localize('com_ui_new_chat')}</span>
               </div>
             </div>
+            {/* BKL: 채팅 검색 row — 새 채팅 아래, 문서 검색과 같은 층위·같은 스타일 */}
+            {search.enabled === true && <BklChatSearch />}
             {/* Document Search button */}
             <div
               role="button"
