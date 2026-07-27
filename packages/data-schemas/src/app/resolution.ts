@@ -196,6 +196,15 @@ function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0,
       // explicitly — otherwise setting a limit on a globally-disabled feature
       // (`schedules: false`) would silently re-enable it.
       result[key] = { use: targetVal, ...(sourceVal as AnyObject) };
+    } else if (
+      typeof sourceVal === 'boolean' &&
+      typeof targetVal === 'boolean' &&
+      RUNTIME_CONFIG_INTERFACE_FIELDS.has(key)
+    ) {
+      // Both booleans: a base `false` is a GLOBAL stop that an override may narrow but
+      // never widen. The service reads the base value and keeps refusing writes, so
+      // letting the override win here only produces a panel whose actions all fail.
+      result[key] = targetVal === false ? false : sourceVal;
     } else {
       result[key] = sourceVal;
     }

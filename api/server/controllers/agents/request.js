@@ -25,7 +25,11 @@ const {
 } = require('~/server/services/MCPRequestContext');
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
-const { recordScheduleOutcome, isScheduleLive } = require('~/server/services/Schedules');
+const {
+  recordScheduleOutcome,
+  isScheduleLive,
+  clearScheduledJob,
+} = require('~/server/services/Schedules');
 const { saveMessage, getMessages, getConvo } = require('~/models');
 
 function createCloseHandler(abortController) {
@@ -427,7 +431,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // terminalize the run and tear the job down BEFORE any messages are persisted.
     // Scoped to scheduled fires, so interactive chat never pays for it.
     if (scheduleId) {
-      if (!(await isScheduleLive(scheduleId, scheduleConfigRevision))) {
+      if (
+        !(await isScheduleLive(scheduleId, scheduleConfigRevision, {
+          automatic: req._isManualScheduledFire !== true,
+        }))
+      ) {
         logger.info(
           `[AgentController] Scheduled fire aborted before start; schedule ${scheduleId} no longer active`,
         );
@@ -1099,6 +1107,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // as reconcile evidence, so request cleanup or process exit must not outrun it.
           if (!scheduleOutcomeRecorded) {
             await completion;
+          } else if (scheduleId) {
+            // completeJob returns early for a job that is no longer `running` — which is
+            // exactly the state a schedule delete leaves behind (aborted, retained
+            // without completedAt). With the run now terminal, reconcile never scans it
+            // again, so nothing else would ever reap that job. Identity- and
+            // generation-fenced, and a no-op when completeJob already deleted it.
+            await completion;
+            await clearScheduledJob(streamId, { scheduleId, scheduledFor }).catch((err) =>
+              logger.warn('[ResumableAgentController] Failed to clear reconciled job', err),
+            );
           }
           await finishResumableRequest(req, userId);
         } else {

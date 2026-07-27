@@ -391,7 +391,7 @@ describe('loopback self URL', () => {
 describe('admission revision fence', () => {
   const noRuns = () => jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]);
 
-  function serviceWithSchedule(schedule: { configRevision?: number } | null) {
+  function serviceWithSchedule(schedule: { configRevision?: number; enabled?: boolean } | null) {
     const service = makeService(noRuns());
     (
       service.engineDeps.methods as unknown as {
@@ -411,6 +411,28 @@ describe('admission revision fence', () => {
     // would write the OLD prompt/agent into the edited schedule's history.
     const service = serviceWithSchedule({ configRevision: 4 });
     expect(await service.isScheduleLive('sched-1', 3)).toBe(false);
+  });
+
+  /**
+   * A policy auto-disable flips `enabled` WITHOUT touching configRevision (an older
+   * paused occurrence can resume, fail and cross the threshold while a newer occurrence
+   * is already in the claim-to-controller window), so the revision fence cannot see it.
+   */
+  it('refuses an AUTOMATIC fire once the schedule was disabled', async () => {
+    const service = serviceWithSchedule({ configRevision: 3, enabled: false });
+    expect(await service.isScheduleLive('sched-1', 3, { automatic: true })).toBe(false);
+  });
+
+  it('still admits Run Now on a disabled schedule', async () => {
+    // An explicit user action, matching fireScheduleNow's own relaxation.
+    const service = serviceWithSchedule({ configRevision: 3, enabled: false });
+    expect(await service.isScheduleLive('sched-1', 3, { automatic: false })).toBe(true);
+    expect(await service.isScheduleLive('sched-1', 3)).toBe(true);
+  });
+
+  it('admits an automatic fire while the schedule is still enabled', async () => {
+    const service = serviceWithSchedule({ configRevision: 3, enabled: true });
+    expect(await service.isScheduleLive('sched-1', 3, { automatic: true })).toBe(true);
   });
 
   it('refuses a schedule that is gone regardless of revision', async () => {

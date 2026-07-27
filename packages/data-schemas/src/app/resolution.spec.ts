@@ -65,6 +65,28 @@ describe('mergeConfigOverrides', () => {
     expect(dIface.schedules).toEqual({ use: false, maxPerUser: 50, minIntervalMinutes: 5 });
   });
 
+  it('does not let a boolean override re-enable a globally-disabled feature', () => {
+    // Both values are booleans, so neither fold above applies and the plain fallback
+    // used to replace the base `false`. The service reads the BASE value and keeps
+    // refusing every write, so the client would render a panel whose create, edit and
+    // run actions all fail. A global stop may be narrowed, never widened.
+    const base = { interfaceConfig: { schedules: false } } as unknown as AppConfig;
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig({ interface: { schedules: true } }, 10),
+    ]) as unknown as Record<string, Record<string, unknown>>;
+    expect(merged.interfaceConfig.schedules).toBe(false);
+
+    // An enabled base still honours a boolean override in both directions.
+    const enabledBase = { interfaceConfig: { schedules: true } } as unknown as AppConfig;
+    expect(
+      (
+        mergeConfigOverrides(enabledBase, [
+          fakeConfig({ interface: { schedules: false } }, 10),
+        ]) as unknown as Record<string, Record<string, unknown>>
+      ).interfaceConfig.schedules,
+    ).toBe(false);
+  });
+
   it('folds an object schedules override onto a boolean base, inheriting the enable state', () => {
     // Enabled base, object override that only TUNES a limit (no `use`): the enable
     // state must be inherited from the boolean base, not silently dropped.

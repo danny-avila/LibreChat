@@ -937,6 +937,80 @@ describe('claim-token fencing (stale worker cannot mutate an edited/deleted sche
   });
 });
 
+describe('card projection fences (regressions in the ordered projection)', () => {
+  /**
+   * The terminal path passes the row's revision to projectLastRun; the pause path did
+   * not. An owner edit landing between fire and approval therefore got the OLD config's
+   * pause stamped on it, and because the later terminal write IS revision-fenced it
+   * could never replace that status — the card stuck on "Needs approval".
+   */
+  it('does not stamp a pause onto a schedule edited after the run started', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scheduledFor = new Date('2026-07-26T10:00:00.000Z');
+    const runRevision = (await getSchedule(schedule.id)).configRevision;
+    await methods.insertScheduleRun(
+      runData(schedule, { scheduledFor, configRevision: runRevision }),
+    );
+    await methods.updateScheduleById(schedule.id, schedule.user, { name: 'renamed' });
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-1',
+      autoDisableAfterFailures: 3,
+    });
+
+    // The row still pauses (the generation really is waiting) but the edited
+    // schedule's card is not stamped by the superseded config.
+    expect(await getRun(schedule.id, scheduledFor)).toMatchObject({ status: 'requires_action' });
+    expect((await getSchedule(schedule.id)).lastRun).toBeUndefined();
+  });
+
+  /**
+   * A skip wrote `lastRun` directly, dropping the `scheduledFor` ordering marker that
+   * projectLastRun keys off — so the NEXT projection saw an absent marker and let an
+   * older occurrence's result overwrite the newer skip.
+   */
+  it('keeps the occurrence marker when recording a skip', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const older = new Date('2026-07-26T10:00:00.000Z');
+    const newer = new Date('2026-07-26T11:00:00.000Z');
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor: older }));
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: older,
+      status: 'requires_action',
+      conversationId: 'convo-older',
+      autoDisableAfterFailures: 3,
+    });
+
+    // The newer occurrence is skipped for balance while the older one sits paused.
+    await methods.recordSkippedRun(
+      {
+        scheduleId: schedule.id,
+        scheduledFor: newer,
+        user: schedule.user,
+        status: 'skipped_balance',
+        firedAt: new Date(),
+      },
+      5,
+    );
+    expect((await getSchedule(schedule.id)).lastRun?.status).toBe('skipped_balance');
+
+    // The older occurrence then resumes and finishes. It must NOT roll the card back.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: older,
+      status: 'success',
+      conversationId: 'convo-older',
+      autoDisableAfterFailures: 3,
+    });
+
+    expect((await getSchedule(schedule.id)).lastRun?.status).toBe('skipped_balance');
+  });
+});
+
 describe('auto-disable carries the run config generation', () => {
   /**
    * The auto-disable policy re-reads the schedule and then writes, so the decision and

@@ -691,10 +691,15 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       if (paused == null) {
         return;
       }
+      // Revision-fenced like the terminal path: an owner edit landing between the fire
+      // and the approval must not have the OLD config's pause stamped on it. Without
+      // this the later terminal write (which IS fenced) could never replace the stale
+      // status, so the card stuck on "Needs approval".
       await projectLastRun(
         params.scheduleId,
         { conversationId: params.conversationId, status: params.status, firedAt },
         params.scheduledFor,
+        paused.configRevision != null ? { configRevision: paused.configRevision } : {},
       );
       return;
     }
@@ -780,15 +785,21 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // Surface the skip on the card (its chip reads schedule.lastRun). An overlap
     // skip is an intervening non-balance outcome, so it BREAKS the balance-skip
     // streak (the counter is for CONSECUTIVE balance skips).
-    await Schedule().updateOne(
-      { id: data.scheduleId, ...skipRevisionFilter },
-      {
-        $set: {
-          lastRun: { status: data.status, firedAt },
-          ...(data.status !== 'skipped_balance' ? { balanceSkipCount: 0 } : {}),
-        },
-      },
+    // Through the ORDERED projection: writing `lastRun` directly dropped the
+    // `scheduledFor` marker, after which the next projection read the marker as absent
+    // and let an older occurrence's outcome overwrite this newer skip.
+    await projectLastRun(
+      data.scheduleId,
+      { status: data.status, firedAt },
+      data.scheduledFor,
+      skipRevisionFilter,
     );
+    if (data.status !== 'skipped_balance') {
+      await Schedule().updateOne(
+        { id: data.scheduleId, ...skipRevisionFilter },
+        { $set: { balanceSkipCount: 0 } },
+      );
+    }
     if (data.status !== 'skipped_balance' || balanceSkipDisableThreshold == null) {
       return;
     }

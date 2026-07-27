@@ -136,7 +136,11 @@ export interface SchedulesService {
    * the reservation row exists but the job did not yet, so the deletion's abort
    * missed it) — aborting before any messages are persisted.
    */
-  isScheduleLive: (scheduleId: string, expectedConfigRevision?: number) => Promise<boolean>;
+  isScheduleLive: (
+    scheduleId: string,
+    expectedConfigRevision?: number,
+    options?: { automatic?: boolean },
+  ) => Promise<boolean>;
   /** Soft-deletes an owner's schedule: stop claims, abort active runs, drain, erase. */
   deleteScheduleForOwner: (scheduleId: string, userId: string) => Promise<boolean>;
   /**
@@ -578,12 +582,22 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
   async function isScheduleLive(
     scheduleId: string,
     expectedConfigRevision?: number,
+    options?: { automatic?: boolean },
   ): Promise<boolean> {
     if (!scheduleId) {
       return false;
     }
     const schedule = await methods.getScheduleById(scheduleId);
     if (schedule == null) {
+      return false;
+    }
+    // An AUTOMATIC fire must still be wanted. A policy auto-disable (too many failures,
+    // insufficient balance) flips `enabled` WITHOUT touching configRevision, so the
+    // revision fence below cannot see it — an occurrence already in the claim-to-
+    // controller window would otherwise start a billed generation for a schedule that
+    // has just been switched off. Run Now is an explicit user action and stays allowed
+    // on a disabled schedule, matching fireScheduleNow.
+    if (options?.automatic === true && schedule.enabled === false) {
       return false;
     }
     // REVISION FENCE at the admission boundary. Existence alone is not enough: an owner
