@@ -6,8 +6,8 @@ import {
   actionDelimiter,
   isActionTool,
 } from 'librechat-data-provider';
+import type { FilterQuery, Model, PipelineStage, Types } from 'mongoose';
 import type { AgentToolResources } from 'librechat-data-provider';
-import type { FilterQuery, Model, Types } from 'mongoose';
 import type { IAgent, IAclEntry } from '~/types';
 import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
@@ -27,6 +27,84 @@ const TOOL_RESOURCE_KEYS: ReadonlyArray<keyof AgentToolResources> = [
   EToolResources.context,
   EToolResources.ocr,
 ];
+
+/** Builds an atomic update that prunes deleted IDs without discarding surviving edge members. */
+function createEdgeCleanupPipeline(agentIds: string[]): PipelineStage[] {
+  const cleanEndpoint = (endpoint: string) => ({
+    $cond: [
+      { $isArray: endpoint },
+      {
+        $filter: {
+          input: endpoint,
+          as: 'agentId',
+          cond: { $not: [{ $in: ['$$agentId', agentIds] }] },
+        },
+      },
+      { $cond: [{ $in: [endpoint, agentIds] }, null, endpoint] },
+    ],
+  });
+  const hasEndpoint = (endpoint: string) => ({
+    $cond: [{ $isArray: endpoint }, { $gt: [{ $size: endpoint }, 0] }, { $ne: [endpoint, null] }],
+  });
+
+  return [
+    {
+      $set: {
+        edges: {
+          $filter: {
+            input: {
+              $map: {
+                input: { $ifNull: ['$edges', []] },
+                as: 'edge',
+                in: {
+                  $let: {
+                    vars: {
+                      cleanedFrom: cleanEndpoint('$$edge.from'),
+                      cleanedTo: cleanEndpoint('$$edge.to'),
+                    },
+                    in: {
+                      $cond: [
+                        {
+                          $and: [hasEndpoint('$$cleanedFrom'), hasEndpoint('$$cleanedTo')],
+                        },
+                        {
+                          $mergeObjects: [
+                            '$$edge',
+                            {
+                              from: '$$cleanedFrom',
+                              to: '$$cleanedTo',
+                            },
+                          ],
+                        },
+                        null,
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+            as: 'edge',
+            cond: { $ne: ['$$edge', null] },
+          },
+        },
+      },
+    },
+  ];
+}
+
+/** Removes deleted agent references from every active graph that contains them. */
+async function removeAgentIdsFromEdges(Agent: Model<IAgent>, agentIds: string[]): Promise<void> {
+  if (agentIds.length === 0) {
+    return;
+  }
+
+  await Agent.updateMany(
+    {
+      $or: [{ 'edges.from': { $in: agentIds } }, { 'edges.to': { $in: agentIds } }],
+    },
+    createEdgeCleanupPipeline(agentIds),
+  );
+}
 
 export interface AgentDeps {
   /** Removes all ACL permissions for a resource. Injected from PermissionService. */
@@ -745,10 +823,7 @@ export function createAgentMethods(
         }),
       ]);
       try {
-        await Agent.updateMany(
-          { 'edges.to': (agent as unknown as { id: string }).id },
-          { $pull: { edges: { to: (agent as unknown as { id: string }).id } } },
-        );
+        await removeAgentIdsFromEdges(Agent, [(agent as unknown as { id: string }).id]);
       } catch (error) {
         logger.error('[deleteAgent] Error removing agent from handoff edges', error);
       }
@@ -820,10 +895,7 @@ export function createAgentMethods(
       });
 
       try {
-        await Agent.updateMany(
-          { 'edges.to': { $in: agentIds } },
-          { $pull: { edges: { to: { $in: agentIds } } } },
-        );
+        await removeAgentIdsFromEdges(Agent, agentIds);
       } catch (error) {
         logger.error('[deleteUserAgents] Error removing agents from handoff edges', error);
       }
