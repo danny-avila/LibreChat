@@ -937,50 +937,39 @@ describe('claim-token fencing (stale worker cannot mutate an edited/deleted sche
   });
 });
 
-describe('auto-disable is fenced against an owner edit', () => {
+describe('auto-disable carries the run config generation', () => {
   /**
-   * The counter update is revision-fenced but the auto-disable that follows it was not,
-   * and it re-reads the CURRENT schedule. A reconciler replay of an old un-bookkept run
-   * therefore no-ops its counters (stale revision) and then disables a schedule the
-   * owner has since edited and re-enabled.
+   * The auto-disable policy re-reads the schedule and then writes, so the decision and
+   * the write are not atomic. Carrying the run's config generation on the write closes
+   * that window: an owner edit landing inside it rotates configRevision, and the stale
+   * decision no longer applies.
+   *
+   * NOTE the ordinary re-enable path is NOT this scenario — `updateSchedule` zeroes
+   * failureCount/balanceSkipCount when re-enabling, so a re-enabled schedule cannot be
+   * sitting at the threshold. The state below is reached only through the read→write
+   * window itself, which is why it is constructed directly.
    */
-  it('a stale run cannot disable a schedule the owner re-enabled', async () => {
+  it('does not disable when the run config generation is stale', async () => {
     const schedule = await methods.createSchedule(scheduleData());
-    const first = new Date('2026-07-26T10:00:00.000Z');
-    await methods.insertScheduleRun(runData(schedule, { scheduledFor: first }));
-    await methods.recordRunOutcome({
-      scheduleId: schedule.id,
-      scheduledFor: first,
-      status: 'error',
-      error: 'boom',
-      autoDisableAfterFailures: 1,
-    });
-    expect(await getSchedule(schedule.id)).toMatchObject({
-      enabled: false,
-      disabledReason: 'too_many_failures',
-    });
+    const runRevision = (await getSchedule(schedule.id)).configRevision;
+    // A plain rename — NOT a re-enable, so the counters are deliberately left alone.
+    await methods.updateScheduleById(schedule.id, schedule.user, { name: 'renamed' });
+    expect((await getSchedule(schedule.id)).configRevision).toBeGreaterThan(runRevision!);
+    // At threshold and still enabled: what a decision made just before that edit saw.
+    await mongoose.models.Schedule.updateOne({ id: schedule.id }, { $set: { failureCount: 5 } });
 
-    // The owner edits + re-enables, which rotates configRevision and claimToken.
-    await methods.updateScheduleById(schedule.id, schedule.user, { enabled: true, name: 'fixed' });
-    const revived = await getSchedule(schedule.id);
-    expect(revived.enabled).toBe(true);
-
-    // A replay of the OLD occurrence, still carrying the pre-edit revision.
     const stale = new Date('2026-07-26T11:00:00.000Z');
     await methods.insertScheduleRun(
-      runData(schedule, { scheduledFor: stale, configRevision: revived.configRevision! - 1 }),
+      runData(schedule, { scheduledFor: stale, configRevision: runRevision }),
     );
     await methods.recordRunOutcome({
       scheduleId: schedule.id,
       scheduledFor: stale,
       status: 'error',
-      error: 'stale replay',
+      error: 'stale decision',
       autoDisableAfterFailures: 1,
     });
 
-    // Still enabled: the owner's edit wins over the stale run's policy verdict.
-    // (`disabledReason` is left over from the FIRST, legitimate disable — re-enabling
-    // does not clear it, and a later success does.)
     expect((await getSchedule(schedule.id)).enabled).toBe(true);
   });
 
