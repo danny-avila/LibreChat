@@ -2805,6 +2805,26 @@ export function splitMCPToolKey(
   return [toolKey.slice(0, idx), toolKey.slice(idx + Constants.mcp_delimiter.length)];
 }
 
+/**
+ * Splits a tool-call name for display, where the key may be a synthetic MCP OAuth
+ * call (`oauth${mcp_delimiter}${serverName}`) rather than a real tool key.
+ *
+ * The OAuth form is unambiguous because its tool half is always exactly `oauth`,
+ * so everything after the first delimiter is the server even when the server name
+ * itself contains one. Real tool keys go through `splitMCPToolKey`, whose tool half
+ * is untrusted and may carry the delimiter.
+ */
+export function splitToolCallName(
+  toolCallName: string,
+  knownServerNames?: readonly string[],
+): [string, string | undefined] {
+  const oauthPrefix = `oauth${Constants.mcp_delimiter}`;
+  if (toolCallName.startsWith(oauthPrefix)) {
+    return ['oauth', toolCallName.slice(oauthPrefix.length)];
+  }
+  return splitMCPToolKey(toolCallName, knownServerNames);
+}
+
 /** Maximum explicit subagent hops allowed from any root agent at runtime. */
 export const MAX_SUBAGENT_DEPTH = 5;
 

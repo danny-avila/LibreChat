@@ -1,4 +1,4 @@
-import { splitMCPToolKey } from './config';
+import { Constants, splitMCPToolKey, splitToolCallName } from './config';
 
 describe('splitMCPToolKey', () => {
   it('splits a normal single-delimiter key like String.split would', () => {
@@ -40,6 +40,32 @@ describe('splitMCPToolKey', () => {
     expect(splitMCPToolKey('a_mcp_b_mcp_Google_mcp_Workspace', ['Google_mcp_Workspace'])).toEqual([
       'a_mcp_b',
       'Google_mcp_Workspace',
+    ]);
+  });
+});
+
+describe('splitToolCallName', () => {
+  const d = Constants.mcp_delimiter;
+
+  it('treats a synthetic OAuth call as oauth plus the full server name', () => {
+    expect(splitToolCallName(`oauth${d}foo${d}bar`)).toEqual(['oauth', `foo${d}bar`]);
+  });
+
+  it('keeps a normalized server name that itself contains the delimiter', () => {
+    expect(splitToolCallName(`oauth${d}oauth${d}server`)).toEqual(['oauth', `oauth${d}server`]);
+  });
+
+  it('resolves a real tool key whose raw name contains the delimiter', () => {
+    expect(splitToolCallName(`gitlab-get${d}server_version${d}gitlab`)).toEqual([
+      `gitlab-get${d}server_version`,
+      'gitlab',
+    ]);
+  });
+
+  it('resolves a real tool key against configured server names when supplied', () => {
+    expect(splitToolCallName(`search${d}Google${d}Workspace`, [`Google${d}Workspace`])).toEqual([
+      'search',
+      `Google${d}Workspace`,
     ]);
   });
 });
