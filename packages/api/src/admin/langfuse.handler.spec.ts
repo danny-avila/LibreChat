@@ -180,6 +180,8 @@ describe('createAdminLangfuseHandlers', () => {
 
     it('rejects single-tenant settings when environment credentials are configured', async () => {
       delete process.env.TENANT_ISOLATION_STRICT;
+      delete process.env.LANGFUSE_FANOUT_ENABLED;
+      delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
       process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
       process.env.LANGFUSE_SECRET_KEY = 'sk-env';
       const { handlers, deps } = createHandlers();
@@ -512,7 +514,9 @@ describe('createAdminLangfuseHandlers', () => {
       const [publicUrl, publicInit] = (global.fetch as unknown as jest.Mock).mock.calls[1];
       expect(publicUrl).toBe('https://cloud.langfuse.com/api/public/ingestion');
       expect(publicInit.method).toBe('POST');
-      expect(publicInit.headers.Authorization).toBe('Bearer pk');
+      expect(
+        Buffer.from(publicInit.headers.Authorization.replace('Basic ', ''), 'base64').toString(),
+      ).toBe('pk:sk');
       expect(publicInit.headers['Content-Type']).toBe('application/json');
       expect(JSON.parse(publicInit.body)).toEqual({ batch: [] });
       expect(publicInit.signal).toBe(init.signal);

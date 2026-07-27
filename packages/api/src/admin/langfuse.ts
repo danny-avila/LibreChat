@@ -118,7 +118,7 @@ async function verifyLangfuseCredentials(
     const publicResponse = await fetch(`${destination.baseUrl}/api/public/ingestion`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${publicKey}`,
+        Authorization: `Basic ${auth}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ batch: [] }),
