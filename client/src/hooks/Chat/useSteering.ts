@@ -691,6 +691,33 @@ export default function useSteering({
     [queueKey],
   );
 
+  /**
+   * Moves a queued message to another place in the queue. The drain always
+   * takes the head, so the order of this list is the order the messages will be
+   * sent in: reordering it is the only way to change which one goes next
+   * without sending or deleting anything.
+   *
+   * Addressed by id rather than by the index the caller is holding, which a
+   * drain can invalidate between the drag starting and the drop landing.
+   */
+  const reorderQueued = useRecoilCallback(
+    ({ set }) =>
+      (id: string, targetIndex: number) => {
+        set(store.queuedMessagesByConvoId(queueKey), (prev) => {
+          const from = prev.findIndex((item) => item.id === id);
+          const to = Math.min(Math.max(targetIndex, 0), prev.length - 1);
+          if (from === -1 || from === to) {
+            return prev;
+          }
+          const next = prev.slice();
+          const [moved] = next.splice(from, 1);
+          next.splice(to, 0, moved);
+          return next;
+        });
+      },
+    [queueKey],
+  );
+
   /** Once a parked source is discarded it must never be retried as a recovery
    * attempt. Downgrade the row in place so a guarded Edit that finds a newer
    * draft can leave the same words, context, identity, and queue position as
@@ -1510,6 +1537,7 @@ export default function useSteering({
       enqueue,
       removeQueued,
       discardQueued,
+      reorderQueued,
       sendQueuedNow,
       interruptAndSend,
       interruptSteer,
@@ -1536,6 +1564,7 @@ export default function useSteering({
       enqueue,
       removeQueued,
       discardQueued,
+      reorderQueued,
       sendQueuedNow,
       interruptAndSend,
       interruptSteer,

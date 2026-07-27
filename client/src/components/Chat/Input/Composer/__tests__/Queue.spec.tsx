@@ -1,5 +1,7 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
+import { DndProvider } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import type { QueuedMessage } from '~/store/families';
@@ -19,6 +21,7 @@ jest.mock('~/hooks', () => ({
 const CONVO_ID = 'convo-1';
 const mockSendQueuedNow = jest.fn();
 const mockRemoveQueued = jest.fn();
+const mockReorderQueued = jest.fn();
 
 const steering = {
   queueKey: CONVO_ID,
@@ -26,6 +29,7 @@ const steering = {
   canSteer: true,
   sendQueuedNow: mockSendQueuedNow,
   removeQueued: mockRemoveQueued,
+  reorderQueued: mockReorderQueued,
 } as unknown as SteeringControls;
 
 const pausedSteering = { ...steering, canSteer: false } as unknown as SteeringControls;
@@ -43,12 +47,15 @@ const queued = (over: Partial<QueuedMessage> = {}): QueuedMessage =>
 function renderQueue(items: QueuedMessage[], steeringOverride: SteeringControls = steering) {
   return render(
     <RecoilRoot initializeState={({ set }) => set(store.queuedMessagesByConvoId(CONVO_ID), items)}>
-      <Queue
-        steering={steeringOverride}
-        conversationId={CONVO_ID}
-        onEditToComposer={jest.fn()}
-        onRestoreToComposer={jest.fn()}
-      />
+      {/* Mirrors `App`, which mounts the provider around the whole tree. */}
+      <DndProvider backend={HTML5Backend}>
+        <Queue
+          steering={steeringOverride}
+          conversationId={CONVO_ID}
+          onEditToComposer={jest.fn()}
+          onRestoreToComposer={jest.fn()}
+        />
+      </DndProvider>
     </RecoilRoot>,
   );
 }
@@ -87,6 +94,37 @@ describe('Queue', () => {
 
     fireEvent.click(sendButton);
     expect(mockSendQueuedNow).not.toHaveBeenCalled();
+  });
+
+  it('moves a message down the queue with the arrow keys', () => {
+    renderQueue([queued({ id: 'q1' }), queued({ id: 'q2' })]);
+    const grips = screen.getAllByTestId('queued-message-grip');
+
+    fireEvent.keyDown(grips[0], { key: 'ArrowDown' });
+    expect(mockReorderQueued).toHaveBeenCalledWith('q1', 1);
+
+    fireEvent.keyDown(grips[1], { key: 'ArrowUp' });
+    expect(mockReorderQueued).toHaveBeenCalledWith('q2', 0);
+  });
+
+  it('refuses to move a message past either end of the queue', () => {
+    renderQueue([queued({ id: 'q1' }), queued({ id: 'q2' })]);
+    const grips = screen.getAllByTestId('queued-message-grip');
+
+    fireEvent.keyDown(grips[0], { key: 'ArrowUp' });
+    fireEvent.keyDown(grips[1], { key: 'ArrowDown' });
+    expect(mockReorderQueued).not.toHaveBeenCalled();
+  });
+
+  it('announces where a moved message landed', () => {
+    renderQueue([queued({ id: 'q1' }), queued({ id: 'q2' })]);
+    fireEvent.keyDown(screen.getAllByTestId('queued-message-grip')[0], { key: 'ArrowDown' });
+    expect(screen.getByRole('status')).toHaveTextContent('com_ui_queue_moved:2');
+  });
+
+  it('offers no handle when the only message has nowhere to go', () => {
+    renderQueue([queued()]);
+    expect(screen.queryByTestId('queued-message-grip')).not.toBeInTheDocument();
   });
 
   it('shows an attachment count when files ride along', () => {
