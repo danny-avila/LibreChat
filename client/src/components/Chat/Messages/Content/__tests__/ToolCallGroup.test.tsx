@@ -32,9 +32,13 @@ jest.mock('~/hooks', () => ({
   scheduleMessageContentLayoutReconcile: jest.fn(() => jest.fn()),
 }));
 
-jest.mock('~/hooks/MCP', () => ({
-  useMCPIconMap: () => new Map(),
-}));
+jest.mock('~/hooks/MCP', () => {
+  const mcpServerNames: string[] = [];
+  return {
+    useMCPIconMap: () => new Map(),
+    useMCPServerNames: () => mcpServerNames,
+  };
+});
 
 jest.mock('../ToolOutput', () => ({
   StackedToolIcons: ({ toolNames }: { toolNames: string[] }) => (

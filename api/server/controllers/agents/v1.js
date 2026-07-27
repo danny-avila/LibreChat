@@ -4,6 +4,8 @@ const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const {
   refreshS3Url,
+  splitMCPToolKey,
+  normalizeServerName,
   agentCreateSchema,
   agentUpdateSchema,
   refreshListAvatars,
@@ -227,9 +229,12 @@ const filterAuthorizedTools = async ({
   availableTools,
   existingTools,
   configServers,
+  resolvedServerNames,
 }) => {
   const filteredTools = [];
   let mcpServerConfigs;
+  /** normalized server name -> the raw key `mcpServerConfigs` is indexed by */
+  let configNamesByNormalized = new Map();
   let registryUnavailable = false;
   const existingToolSet = existingTools?.length ? new Set(existingTools) : null;
   const hasMCPTools = tools.some((tool) => tool?.includes(Constants.mcp_delimiter));
@@ -273,10 +278,18 @@ const filterAuthorizedTools = async ({
         mcpServerConfigs = {};
         registryUnavailable = true;
       }
+      configNamesByNormalized = new Map(
+        Object.keys(mcpServerConfigs).map((name) => [normalizeServerName(name), name]),
+      );
     }
 
-    const parts = tool.split(Constants.mcp_delimiter);
-    if (parts.length !== 2) {
+    /** Tool keys embed the normalized server name; the config is keyed by the raw name. */
+    const [, normalizedServerName] = splitMCPToolKey(
+      tool,
+      Array.from(configNamesByNormalized.keys()),
+    );
+    const serverName = configNamesByNormalized.get(normalizedServerName) ?? normalizedServerName;
+    if (!serverName) {
       logger.warn(
         `[filterAuthorizedTools] Rejected malformed MCP tool key "${tool}" for user ${userId}`,
       );
@@ -288,14 +301,14 @@ const filterAuthorizedTools = async ({
       continue;
     }
 
-    const [, serverName] = parts;
-    if (!serverName || !Object.hasOwn(mcpServerConfigs, serverName)) {
+    if (!Object.hasOwn(mcpServerConfigs, serverName)) {
       logger.warn(
         `[filterAuthorizedTools] Rejected MCP tool "${tool}" — server "${serverName}" not accessible to user ${userId}`,
       );
       continue;
     }
 
+    resolvedServerNames?.add(serverName);
     filteredTools.push(tool);
   }
 
@@ -458,6 +471,9 @@ const createAgentHandler = async (req, res) => {
       hasMCPTools ? resolveConfigServers(req) : Promise.resolve(undefined),
     ]);
     const mcpPermissionContext = createMCPPermissionContext(req);
+    /** Resolved during authorization, so persistence indexes the real server rather
+     *  than a suffix guess - see the note on `filterAuthorizedTools`. */
+    const resolvedServerNames = new Set();
     agentData.tools = await filterAuthorizedTools({
       tools,
       userId,
@@ -466,7 +482,11 @@ const createAgentHandler = async (req, res) => {
       mcpPermissionContext,
       availableTools,
       configServers,
+      resolvedServerNames,
     });
+    if (hasMCPTools) {
+      agentData.mcpServerNames = Array.from(resolvedServerNames);
+    }
 
     const agent = await db.createAgent(agentData);
 
@@ -752,6 +772,8 @@ const updateAgentHandler = async (req, res) => {
       if (!(await mcpPermissionContext.canUseServers(req.user))) {
         if (editingOwnAgent) {
           updateData.tools = effectiveTools.filter((t) => !isMCPTool(t));
+          /** Every MCP tool just went away, so nothing should stay indexed. */
+          updateData.mcpServerNames = [];
         } else if (hasToolUpdate) {
           const existingMCPToolSet = new Set(existingMCPTools);
           const nextTools = updateData.tools.filter(
@@ -764,10 +786,19 @@ const updateAgentHandler = async (req, res) => {
             }
           }
           updateData.tools = nextTools;
+          /** The agent's MCP tools are retained verbatim here, so carry its resolved
+           *  names across too. Left unset when the agent has none stored, so
+           *  `updateAgent` can still derive rather than being pinned to an empty
+           *  index that would strip agent-scoped access. */
+          if (existingAgent.mcpServerNames?.length) {
+            updateData.mcpServerNames = existingAgent.mcpServerNames;
+          }
         }
       } else if (hasToolUpdate) {
         const existingToolSet = new Set(existingTools);
         const newMCPTools = requestedMCPTools.filter((t) => !existingToolSet.has(t));
+        /** Names resolved during authorization of the newly added tools. */
+        const resolvedServerNames = new Set();
 
         if (newMCPTools.length > 0) {
           const [availableTools, configServers] = await Promise.all([
@@ -782,11 +813,37 @@ const updateAgentHandler = async (req, res) => {
             mcpPermissionContext,
             availableTools,
             configServers,
+            resolvedServerNames,
           });
           const rejectedSet = new Set(newMCPTools.filter((t) => !approvedNew.includes(t)));
           if (rejectedSet.size > 0) {
             updateData.tools = updateData.tools.filter((t) => !rejectedSet.has(t));
           }
+        }
+
+        /** Rebuild the index from the tools that survive this edit: carry a prior name
+         *  forward only while some retained tool still resolves to it, so detaching every
+         *  tool for a server revokes agent-scoped access to it. The agent's own persisted
+         *  names are the candidate set, which needs neither a registry query nor a guess. */
+        const priorNames = existingAgent.mcpServerNames ?? [];
+        if (priorNames.length > 0) {
+          const priorNameSet = new Set(priorNames);
+          for (const tool of updateData.tools ?? []) {
+            if (typeof tool !== 'string' || !tool.includes(Constants.mcp_delimiter)) {
+              continue;
+            }
+            const [, retainedName] = splitMCPToolKey(tool, priorNames);
+            if (retainedName && priorNameSet.has(retainedName)) {
+              resolvedServerNames.add(retainedName);
+            }
+          }
+        }
+        /** Supplying `[]` would pin the index empty and suppress `updateAgent`'s
+         *  derivation, so only assert it when the result is authoritative: either we
+         *  resolved names, or no MCP tool survives and the index genuinely is empty. */
+        const retainsMCPTools = (updateData.tools ?? []).some(isMCPTool);
+        if (resolvedServerNames.size > 0 || !retainsMCPTools) {
+          updateData.mcpServerNames = Array.from(resolvedServerNames);
         }
       }
     }
@@ -965,6 +1022,9 @@ const duplicateAgentHandler = async (req, res) => {
         resolveConfigServers(req),
       ]);
       const mcpPermissionContext = createMCPPermissionContext(req);
+      /** The duplicate carries the source agent's `mcpServerNames`; replace it with what
+       *  this user is actually authorized for, or the copy would grant the source's servers. */
+      const resolvedServerNames = new Set();
       newAgentData.tools = await filterAuthorizedTools({
         tools: newAgentData.tools,
         userId,
@@ -974,7 +1034,25 @@ const duplicateAgentHandler = async (req, res) => {
         availableTools,
         existingTools: newAgentData.tools,
         configServers,
+        resolvedServerNames,
       });
+      /** When the registry is unavailable, `filterAuthorizedTools` grandfathers the
+       *  source's tools without resolving them, so carry forward the source names those
+       *  retained tools still point at rather than blanking the index. */
+      const sourceNames = agent.mcpServerNames ?? [];
+      if (sourceNames.length > 0) {
+        const sourceNameSet = new Set(sourceNames);
+        for (const tool of newAgentData.tools ?? []) {
+          if (typeof tool !== 'string' || !tool.includes(Constants.mcp_delimiter)) {
+            continue;
+          }
+          const [, retainedName] = splitMCPToolKey(tool, sourceNames);
+          if (retainedName && sourceNameSet.has(retainedName)) {
+            resolvedServerNames.add(retainedName);
+          }
+        }
+      }
+      newAgentData.mcpServerNames = Array.from(resolvedServerNames);
     }
 
     if (newAgentData.tool_resources) {

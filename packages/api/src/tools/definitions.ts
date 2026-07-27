@@ -6,7 +6,7 @@
  */
 
 import { Providers } from '@librechat/agents';
-import { Constants, isActionTool } from 'librechat-data-provider';
+import { Constants, isActionTool, splitMCPToolKey } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { ToolDefinition } from './classification';
@@ -42,6 +42,8 @@ export interface LoadToolDefinitionsParams {
   codeExecutionEnabled?: boolean;
   /** Agent provider — Gemini/Vertex tool schemas get union-flattened for compatibility */
   provider?: Providers;
+  /** Configured server names, used to resolve the tool-key boundary exactly */
+  mcpServerNames?: readonly string[];
 }
 
 export interface ActionToolDefinition {
@@ -87,6 +89,7 @@ export async function loadToolDefinitions(
     programmaticToolsEnabled = false,
     codeExecutionEnabled = false,
     provider,
+    mcpServerNames,
   } = params;
   const { getOrFetchMCPServerTools, isBuiltInTool, getActionToolDefinitions } = deps;
 
@@ -155,8 +158,8 @@ export async function loadToolDefinitions(
       continue;
     }
 
-    const parts = toolName.split(Constants.mcp_delimiter);
-    const serverName = parts[parts.length - 1];
+    const [, parsedServerName] = splitMCPToolKey(toolName, mcpServerNames);
+    const serverName = parsedServerName ?? toolName;
 
     if (!mcpServerToolsCache.has(serverName)) {
       const serverTools = await getOrFetchMCPServerTools(userId, serverName);
@@ -207,6 +210,7 @@ export async function loadToolDefinitions(
     description: def.description,
     mcp: true as const,
     mcpJsonSchema: def.parameters,
+    mcpRawServerName: def.serverName,
   })) as unknown as GenericTool[];
 
   const classificationResult = await buildToolClassification({

@@ -69,7 +69,7 @@ const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/pro
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
-const { createMCPPermissionContext, resolveConfigServers } = require('~/server/services/MCP');
+const { createMCPPermissionContext, resolveMcpServerContext } = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
@@ -607,19 +607,26 @@ async function loadToolDefinitionsWrapper({
     return { toolDefinitions: [] };
   }
 
+  /** Only MCP tool keys need the server context; a purely non-MCP agent should not
+   *  pay an app-config lookup on startup. */
+  const hasFilteredMCPTools = filteredTools.some((t) => t.includes(Constants.mcp_delimiter));
+  const { configServers, serverNames: mcpServerNames } = hasFilteredMCPTools
+    ? await resolveMcpServerContext(req)
+    : { configServers: {}, serverNames: [] };
+
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
-  if (filteredTools?.some((t) => t.includes(Constants.mcp_delimiter))) {
+  if (hasFilteredMCPTools) {
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: filteredTools,
       userId: req.user.id,
+      serverNames: mcpServerNames,
       findPluginAuthsByKeys,
     });
   }
 
   const flowsCache = getLogStores(CacheKeys.FLOWS);
   const flowManager = getFlowStateManager(flowsCache);
-  const configServers = await resolveConfigServers(req);
   const pendingOAuthServers = new Set();
   const pendingOAuthStarts = new Map();
   const emittedOAuthStarts = new Map();
@@ -885,6 +892,7 @@ async function loadToolDefinitionsWrapper({
       programmaticToolsEnabled,
       codeExecutionEnabled,
       provider: agent.provider,
+      mcpServerNames,
     },
     {
       isBuiltInTool,
@@ -893,7 +901,7 @@ async function loadToolDefinitionsWrapper({
     },
   );
 
-  for (const serverName of getMCPServerNamesFromTools(filteredTools)) {
+  for (const serverName of getMCPServerNamesFromTools(filteredTools, mcpServerNames)) {
     if (pendingOAuthServers.has(serverName)) {
       continue;
     }
@@ -967,6 +975,7 @@ async function loadToolDefinitionsWrapper({
           programmaticToolsEnabled,
           codeExecutionEnabled,
           provider: agent.provider,
+          mcpServerNames,
         },
         {
           isBuiltInTool,
@@ -1181,12 +1190,18 @@ async function loadAgentTools({
     webSearchCallbacks = createOnSearchResults(res, streamId, jobCreatedAt);
   }
 
+  /** Resolved once and threaded into `loadTools` so the request app config is read once. */
+  const mcpServerContext = _agentTools?.some((t) => t.includes(Constants.mcp_delimiter))
+    ? await resolveMcpServerContext(req)
+    : undefined;
+
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
-  if (_agentTools?.some((t) => t.includes(Constants.mcp_delimiter))) {
+  if (mcpServerContext) {
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: _agentTools,
       userId: req.user.id,
+      serverNames: mcpServerContext.serverNames,
       findPluginAuthsByKeys,
     });
   }
@@ -1201,6 +1216,7 @@ async function loadAgentTools({
     options: {
       req,
       res,
+      mcpServerContext,
       jobCreatedAt,
       openAIApiKey,
       tool_resources,

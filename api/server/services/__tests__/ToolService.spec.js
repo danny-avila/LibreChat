@@ -45,6 +45,7 @@ const mockCreateActionTool = jest.fn();
 const mockGetServerConfig = jest.fn();
 const mockFlowManager = { getFlowState: jest.fn() };
 const mockResolveConfigServers = jest.fn();
+const mockResolveMcpServerNames = jest.fn();
 const mockUserCanUseMCPServers = jest.fn().mockResolvedValue(true);
 jest.mock('~/server/services/Tools/credentials', () => ({
   loadAuthValues: jest.fn().mockResolvedValue({}),
@@ -86,6 +87,11 @@ jest.mock('~/config', () => ({
 }));
 jest.mock('~/server/services/MCP', () => ({
   resolveConfigServers: (...args) => mockResolveConfigServers(...args),
+  resolveMcpServerNames: (...args) => mockResolveMcpServerNames(...args),
+  resolveMcpServerContext: async (...args) => {
+    const configServers = (await mockResolveConfigServers(...args)) ?? {};
+    return { configServers, serverNames: Object.keys(configServers) };
+  },
   createMCPPermissionContext: jest.fn((req) => ({
     canUseServers: (user) => mockUserCanUseMCPServers(user, req),
   })),
@@ -140,6 +146,7 @@ describe('ToolService - Action Capability Gating', () => {
     mockGetServerConfig.mockResolvedValue(undefined);
     mockFlowManager.getFlowState.mockResolvedValue(undefined);
     mockResolveConfigServers.mockResolvedValue({});
+    mockResolveMcpServerNames.mockResolvedValue([]);
   });
 
   describe('resolveAgentCapabilities', () => {
@@ -679,6 +686,9 @@ describe('ToolService - Action Capability Gating', () => {
       const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
       const capabilities = [AgentCapabilities.tools];
       const req = createMockReq(capabilities);
+      /** A server whose own name contains the delimiter is only resolvable
+       *  against the configured set, so the key boundary is unambiguous. */
+      mockResolveConfigServers.mockResolvedValue({ [serverName]: {} });
       const res = { writableEnded: false };
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
       mockFlowManager.getFlowState.mockResolvedValue({
