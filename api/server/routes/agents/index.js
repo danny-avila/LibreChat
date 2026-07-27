@@ -379,16 +379,25 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
       abortResultResponseMessageId: abortResult.jobData?.responseMessageId,
     });
 
-    // LOST THE FENCE: a replacement turn claimed this conversationId between the lookup
-    // above and the abort, so nothing of ours was stopped. Everything below acts on the
-    // conversation as a whole — pruning the checkpoint would strip the REPLACEMENT's
-    // resume state, and persisting `abortResult` content would write a partial for a
-    // generation that is still running. Report it as not-aborted instead.
+    // LOST THE FENCE to a REPLACEMENT: another turn claimed this conversationId between
+    // the lookup above and the abort. Everything below acts on the conversation as a
+    // whole — pruning the checkpoint would strip the replacement's resume state, and
+    // persisting `abortResult` content would write a partial for a generation that is
+    // still running. Refuse instead.
+    //
+    // Deliberately gated on a replacement actually being there. abortJob also reports
+    // `success: false, jobData: null` when the job simply VANISHED between the lookup
+    // and the abort — the benign race of pressing Stop as a generation completes. There
+    // is nothing to damage in that case, so it keeps its previous behaviour rather than
+    // turning a routine stop into an error.
     if (!abortResult.success && abortResult.jobData == null) {
-      logger.debug(
-        `[AgentStream] Abort refused: generation was replaced before it landed: ${jobStreamId}`,
-      );
-      return res.status(409).json({ error: 'This generation was superseded', aborted: null });
+      const liveJob = await GenerationJobManager.getJob(jobStreamId).catch(() => null);
+      if (liveJob != null && liveJob.createdAt !== job.createdAt) {
+        logger.debug(
+          `[AgentStream] Abort refused: generation was replaced before it landed: ${jobStreamId}`,
+        );
+        return res.status(409).json({ error: 'This generation was superseded', aborted: null });
+      }
     }
 
     // HITL: prune the durable checkpoint of a run aborted while paused, so a new turn

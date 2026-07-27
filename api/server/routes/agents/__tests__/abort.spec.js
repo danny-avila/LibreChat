@@ -515,6 +515,51 @@ describe('Agent Abort Endpoint', () => {
       });
     });
 
+    describe('Replacement vs vanished job', () => {
+      /**
+       * Both cases surface as `success: false, jobData: null`, but they need opposite
+       * handling: a REPLACEMENT must not have its checkpoint pruned, while a job that
+       * merely vanished (Stop pressed as the generation completes) is a benign race the
+       * user should not see an error for.
+       */
+      it('refuses when a DIFFERENT generation now holds the conversation', async () => {
+        mockGenerationJobManager.getJob
+          .mockResolvedValueOnce({ metadata: { userId: 'test-user-123' }, createdAt: 1000 })
+          .mockResolvedValue({ metadata: { userId: 'test-user-123' }, createdAt: 2000 });
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: false,
+          jobData: null,
+          content: [],
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: 'conv-1' });
+
+        expect(response.status).toBe(409);
+        // Nothing downstream ran: no partial was written for the live replacement.
+        expect(mockSaveMessage).not.toHaveBeenCalled();
+      });
+
+      it('still succeeds when the job simply vanished mid-abort', async () => {
+        mockGenerationJobManager.getJob
+          .mockResolvedValueOnce({ metadata: { userId: 'test-user-123' }, createdAt: 1000 })
+          .mockResolvedValue(null);
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: false,
+          jobData: null,
+          content: [],
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: 'conv-1' });
+
+        // Nothing to damage, so pressing Stop as a turn finishes stays a quiet success.
+        expect(response.status).toBe(200);
+      });
+    });
+
     describe('Scheduled runs', () => {
       const scheduledJob = {
         metadata: {
