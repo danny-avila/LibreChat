@@ -9,6 +9,14 @@ import {
   defaultRate,
 } from './tx';
 import { matchModelName, findMatchingPattern } from './test-helpers';
+import logger from '~/config/winston';
+
+jest.mock('~/config/winston', () => ({
+  error: jest.fn(),
+  warn: jest.fn(),
+  info: jest.fn(),
+  debug: jest.fn(),
+}));
 
 const { getValueKey, getMultiplier, getPremiumRate, getCacheMultiplier } = createTxMethods(
   {} as typeof import('mongoose'),
@@ -597,6 +605,64 @@ describe('getMultiplier', () => {
       expect(getMultiplier({ model: key, tokenType: 'prompt' })).toBe(expectedPrompt);
       expect(getMultiplier({ model: key, tokenType: 'completion' })).toBe(expectedCompletion);
     });
+  });
+});
+
+describe('getMultiplier fall-through pricing warning', () => {
+  const warn = logger.warn as jest.Mock;
+
+  beforeEach(() => {
+    warn.mockClear();
+  });
+
+  it('warns when a custom endpoint model falls through to substring-matching the built-in tables', () => {
+    getMultiplier({ model: 'prod-gpt-4-32k', endpoint: 'LiteLLM', tokenType: 'prompt' });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain('LiteLLM');
+    expect(warn.mock.calls[0][0]).toContain('prod-gpt-4-32k');
+    expect(warn.mock.calls[0][0]).toContain('substring-match');
+  });
+
+  it('warns when a custom endpoint model falls through to defaultRate', () => {
+    getMultiplier({ model: 'fast-tier-1', endpoint: 'LiteLLM', tokenType: 'prompt' });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain('default-rate');
+  });
+
+  it('does not warn for a custom endpoint model with an explicit tokenConfig entry', () => {
+    getMultiplier({
+      model: 'fast-tier-1',
+      endpoint: 'LiteLLM',
+      tokenType: 'prompt',
+      endpointTokenConfig: { 'fast-tier-1': { prompt: 1.5, completion: 4.5 } },
+    });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('does not warn for a built-in endpoint resolving via substring match', () => {
+    getMultiplier({
+      model: 'gpt-4-some-other-info',
+      endpoint: EModelEndpoint.openAI,
+      tokenType: 'prompt',
+    });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('does not warn when no endpoint is supplied', () => {
+    getMultiplier({ model: 'fast-tier-1', tokenType: 'prompt' });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('dedupes repeated warnings for the same (endpoint, model) pair', () => {
+    getMultiplier({ model: 'fast-tier-2', endpoint: 'LiteLLM', tokenType: 'prompt' });
+    getMultiplier({ model: 'fast-tier-2', endpoint: 'LiteLLM', tokenType: 'completion' });
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns separately for different models on the same endpoint', () => {
+    getMultiplier({ model: 'fast-tier-3', endpoint: 'LiteLLM', tokenType: 'prompt' });
+    getMultiplier({ model: 'fast-tier-4', endpoint: 'LiteLLM', tokenType: 'prompt' });
+    expect(warn).toHaveBeenCalledTimes(2);
   });
 });
 
