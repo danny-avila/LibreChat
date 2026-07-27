@@ -92,6 +92,8 @@ describe('Content Security Policy', () => {
     process.env.CSP_ENABLED = 'true';
     process.env.CSP_REPORT_ONLY = 'false';
     process.env.CSP_CONNECT_SRC_EXTRA = 'https://telemetry.example.com';
+    /* A cacheable override that CSP must refuse for the shell. */
+    process.env.INDEX_CACHE_CONTROL = 'public, max-age=3600';
 
     app = require('~/server');
     await healthCheckPoll(app);
@@ -102,6 +104,7 @@ describe('Content Security Policy', () => {
     delete process.env.CSP_ENABLED;
     delete process.env.CSP_REPORT_ONLY;
     delete process.env.CSP_CONNECT_SRC_EXTRA;
+    delete process.env.INDEX_CACHE_CONTROL;
     await mongoServer.stop();
     await mongoose.disconnect();
   });
@@ -151,6 +154,14 @@ describe('Content Security Policy', () => {
 
     expect(response.text).toContain('data-librechat-query-devtools="true"');
     expect(response.text).toContain(`<script nonce="${nonce}" data-librechat-query-devtools`);
+  });
+
+  it('keeps the shell non-storable despite a cacheable INDEX_CACHE_CONTROL', async () => {
+    const response = await request(app).get('/');
+
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.headers['cache-control']).not.toContain('max-age=3600');
+    expect(response.headers['expires']).toBe('0');
   });
 
   it('rotates the nonce on every response', async () => {

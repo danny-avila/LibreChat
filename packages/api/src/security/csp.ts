@@ -65,16 +65,17 @@ function isReportOnly(env: NodeJS.ProcessEnv): boolean {
  * cannot coexist with operator-supplied script hosts. When extras are configured we
  * drop it and let the (now honored) `'self'` plus those hosts govern script loading.
  */
-function scriptSources(scriptExtras: string[]): string[] {
+function scriptSources(scriptExtras: string[], allowWasm: boolean): string[] {
   /* 'wasm-unsafe-eval' permits WebAssembly compilation without permitting eval();
    * the HEIC upload path (client/src/utils/heicConverter.ts -> heic-to) needs it. */
+  const wasm = allowWasm ? ["'wasm-unsafe-eval'"] : [];
   if (scriptExtras.length === 0) {
-    return [`'nonce-${NONCE_SLOT}'`, "'strict-dynamic'", "'wasm-unsafe-eval'", "'self'"];
+    return [`'nonce-${NONCE_SLOT}'`, "'strict-dynamic'", ...wasm, "'self'"];
   }
   logger.info(
     "[CSP] CSP_SCRIPT_SRC_EXTRA is set; omitting 'strict-dynamic' so the configured script hosts take effect.",
   );
-  return [`'nonce-${NONCE_SLOT}'`, "'wasm-unsafe-eval'", "'self'"];
+  return [`'nonce-${NONCE_SLOT}'`, ...wasm, "'self'"];
 }
 
 /**
@@ -82,12 +83,17 @@ function scriptSources(scriptExtras: string[]): string[] {
  * `'unsafe-inline'`, which would block every `<style>` element injected at runtime by
  * the app shell and by third-party components that cannot know our nonce.
  */
-function defaultDirectives(scriptExtras: string[], frameAncestors: string[]): CspDirective[] {
+function defaultDirectives(
+  scriptExtras: string[],
+  frameAncestors: string[],
+  allowWasm: boolean,
+  allowDataWorkers: boolean,
+): CspDirective[] {
   return [
     ['default-src', ["'self'"]],
     ['base-uri', ["'self'"]],
     ['object-src', ["'none'"]],
-    ['script-src', scriptSources(scriptExtras)],
+    ['script-src', scriptSources(scriptExtras, allowWasm)],
     ['script-src-attr', ["'none'"]],
     ['style-src', ["'self'", "'unsafe-inline'"]],
     ['img-src', ["'self'", 'data:', 'blob:', 'https:']],
@@ -98,7 +104,7 @@ function defaultDirectives(scriptExtras: string[], frameAncestors: string[]): Cs
     /* `data:` is required by Monaco's default CDN loader, which bootstraps its
      * workers from a data: URL; without it the artifact editor silently drops to
      * running worker tasks on the UI thread. */
-    ['worker-src', ["'self'", 'blob:', 'data:']],
+    ['worker-src', allowDataWorkers ? ["'self'", 'blob:', 'data:'] : ["'self'", 'blob:']],
     ['manifest-src', ["'self'"]],
     ['form-action', ["'self'", 'https:']],
     /* Replaced wholesale, not appended: merging would turn a deliberate
@@ -159,6 +165,8 @@ export function buildCspDirectives(env: NodeJS.ProcessEnv = process.env): CspDir
   const directives = defaultDirectives(
     scriptExtras,
     frameAncestors.length > 0 ? frameAncestors : ["'self'"],
+    parseEnvSwitch('CSP_ALLOW_WASM', env.CSP_ALLOW_WASM, true),
+    parseEnvSwitch('CSP_ALLOW_DATA_WORKERS', env.CSP_ALLOW_DATA_WORKERS, true),
   );
 
   for (const [directive, envName] of Object.entries(SOURCE_EXTRA_ENV)) {
@@ -194,6 +202,13 @@ export function createCspPolicy(env: NodeJS.ProcessEnv = process.env): CspPolicy
     return null;
   }
 
+  /* SECURITY_HEADERS is the documented global kill switch; an operator reaching for
+   * it to recover a broken shell must not be left with an enforcing policy. */
+  if (!parseEnvSwitch('SECURITY_HEADERS', env.SECURITY_HEADERS, true)) {
+    logger.warn('[CSP] SECURITY_HEADERS is false; CSP is disabled despite CSP_ENABLED.');
+    return null;
+  }
+
   const serialized = serializeCspDirectives(buildCspDirectives(env));
   const [prefix, suffix] = serialized.split(NONCE_SLOT);
   if (suffix == null) {
@@ -213,6 +228,39 @@ export function createCspPolicy(env: NodeJS.ProcessEnv = process.env): CspPolicy
     prefix,
     suffix,
   };
+}
+
+export interface ShellCacheHeaders {
+  'Cache-Control': string;
+  Pragma: string;
+  Expires: string;
+}
+
+/**
+ * Cache headers for the SPA shell. A nonce policy is only as strong as the
+ * response being unique, so when CSP is on the shell is forced non-storable and a
+ * cacheable `INDEX_CACHE_CONTROL` override is refused: a cached shell would pin one
+ * nonce across page loads and users, which is exactly what an injected script needs.
+ */
+export function shellCacheHeaders(
+  cspEnabled: boolean,
+  env: NodeJS.ProcessEnv = process.env,
+): ShellCacheHeaders {
+  if (!cspEnabled) {
+    return {
+      'Cache-Control': env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
+      Pragma: env.INDEX_PRAGMA || 'no-cache',
+      Expires: env.INDEX_EXPIRES || '0',
+    };
+  }
+
+  if (env.INDEX_CACHE_CONTROL || env.INDEX_PRAGMA || env.INDEX_EXPIRES) {
+    logger.warn(
+      '[CSP] Ignoring INDEX_CACHE_CONTROL/INDEX_PRAGMA/INDEX_EXPIRES for the SPA shell: a cached shell would reuse one nonce across responses.',
+    );
+  }
+
+  return { 'Cache-Control': 'no-store', Pragma: 'no-cache', Expires: '0' };
 }
 
 /** Mints the per-response nonce and its header value. */

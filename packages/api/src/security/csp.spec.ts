@@ -2,6 +2,7 @@ import {
   issueCsp,
   applyCspNonce,
   createCspPolicy,
+  shellCacheHeaders,
   buildCspDirectives,
   serializeCspDirectives,
 } from './csp';
@@ -43,6 +44,12 @@ describe('createCspPolicy', () => {
     }
   });
 
+  it('yields to the global SECURITY_HEADERS kill switch', () => {
+    expect(createCspPolicy({ CSP_ENABLED: 'true', SECURITY_HEADERS: 'false' })).toBeNull();
+    expect(createCspPolicy({ CSP_ENABLED: 'true', SECURITY_HEADERS: 'off' })).toBeNull();
+    expect(createCspPolicy({ CSP_ENABLED: 'true', SECURITY_HEADERS: 'true' })).not.toBeNull();
+  });
+
   it('mints a fresh nonce per response', () => {
     const policy = createCspPolicy({ CSP_ENABLED: 'true' });
     if (!policy) {
@@ -75,6 +82,15 @@ describe('policy directives', () => {
 
     expect(header).toContain("'wasm-unsafe-eval'");
     expect(header).toContain("worker-src 'self' blob: data:");
+  });
+
+  it('lets a deployment that needs neither drop them', () => {
+    const header = headerFor({ CSP_ALLOW_WASM: 'false', CSP_ALLOW_DATA_WORKERS: 'false' });
+
+    expect(header).not.toContain("'wasm-unsafe-eval'");
+    expect(header).toContain("worker-src 'self' blob:");
+    expect(header).not.toContain("worker-src 'self' blob: data:");
+    expect(header).toContain("'strict-dynamic'");
   });
 
   it('keeps styles on unsafe-inline with no nonce', () => {
@@ -134,6 +150,32 @@ describe('policy directives', () => {
     expect(header).toContain('upgrade-insecure-requests');
     expect(header).toContain("require-trusted-types-for 'script'");
     expect(header).not.toContain('99-bogus');
+  });
+});
+
+describe('shellCacheHeaders', () => {
+  it('honors the documented overrides when CSP is off', () => {
+    expect(shellCacheHeaders(false, {})).toEqual({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
+    });
+    expect(
+      shellCacheHeaders(false, { INDEX_CACHE_CONTROL: 'public, max-age=3600' })['Cache-Control'],
+    ).toBe('public, max-age=3600');
+  });
+
+  it('refuses a cacheable shell when CSP is on, so a nonce cannot be replayed', () => {
+    expect(
+      shellCacheHeaders(true, {
+        INDEX_CACHE_CONTROL: 'public, max-age=3600',
+        INDEX_EXPIRES: '900',
+      }),
+    ).toEqual({
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
+      Expires: '0',
+    });
   });
 });
 

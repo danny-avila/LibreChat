@@ -17,6 +17,7 @@ const {
   createMetrics,
   applyCspNonce,
   createCspPolicy,
+  shellCacheHeaders,
   ErrorController,
   memoryDiagnostics,
   createSecurityHeaders,
@@ -184,13 +185,10 @@ const startServer = async () => {
   }
 
   const cspPolicy = createCspPolicy();
+  const shellCache = shellCacheHeaders(cspPolicy != null);
 
   const sendIndexHtml = (req, res) => {
-    res.set({
-      'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
-      Pragma: process.env.INDEX_PRAGMA || 'no-cache',
-      Expires: process.env.INDEX_EXPIRES || '0',
-    });
+    res.set(shellCache);
     res.vary(QUERY_DEVTOOLS_HEADER);
 
     const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
