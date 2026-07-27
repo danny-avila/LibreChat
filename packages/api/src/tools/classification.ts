@@ -101,6 +101,8 @@ interface MCPToolInstance {
   mcp?: boolean;
   /** Original JSON schema attached at MCP tool creation time */
   mcpJsonSchema?: JsonSchemaType;
+  /** Server this tool came from, carried from resolution instead of re-parsed */
+  mcpRawServerName?: string;
 }
 
 /**
@@ -121,7 +123,7 @@ export function extractMCPToolDefinition(tool: MCPToolInstance): ToolDefinition 
     def.parameters = tool.mcpJsonSchema;
   }
 
-  const serverName = getServerNameFromTool(tool.name);
+  const serverName = tool.mcpRawServerName ?? getServerNameFromTool(tool.name);
   if (serverName) {
     def.serverName = serverName;
   }

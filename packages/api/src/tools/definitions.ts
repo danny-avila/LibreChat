@@ -210,6 +210,7 @@ export async function loadToolDefinitions(
     description: def.description,
     mcp: true as const,
     mcpJsonSchema: def.parameters,
+    mcpRawServerName: def.serverName,
   })) as unknown as GenericTool[];
 
   const classificationResult = await buildToolClassification({
