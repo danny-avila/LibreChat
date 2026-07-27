@@ -40,6 +40,14 @@ export interface AdminUsersDeps {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
   }) => Promise<void>;
+  /**
+   * Stops the user's scheduled work and confirms the drain. Unlike the rest of the
+   * cascade this endpoint defers, scheduled runs are ACTIVE: a fire already generating
+   * keeps persisting messages (and billing) after the user document is gone, and the
+   * engine keeps claiming occurrences. Returns false when the drain could not be
+   * confirmed, in which case deletion must be refused rather than proceed.
+   */
+  quiesceUserSchedules: (userId: string) => Promise<boolean>;
 }
 
 export function createAdminUsersHandlers(deps: AdminUsersDeps): {
@@ -47,7 +55,14 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
   searchUsers: (req: ServerRequest, res: Response) => Promise<Response>;
   deleteUser: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
-  const { findUsers, countUsers, deleteUserById, deleteConfig, deleteAclEntries } = deps;
+  const {
+    findUsers,
+    countUsers,
+    deleteUserById,
+    deleteConfig,
+    deleteAclEntries,
+    quiesceUserSchedules,
+  } = deps;
 
   async function listUsersHandler(req: ServerRequest, res: Response) {
     try {
@@ -144,6 +159,22 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
         if (adminCount <= 1) {
           return res.status(400).json({ error: 'Cannot delete the last admin user' });
         }
+      }
+
+      // Stop scheduled work BEFORE removing the user. The rest of this endpoint's
+      // cascade is deliberately deferred (see deleteUserById), but scheduled runs are
+      // not dormant data: an in-flight fire keeps persisting messages and billing after
+      // the user document is gone. Refuse rather than delete on an unconfirmed drain,
+      // mirroring the self-service controller.
+      const quiesced = await quiesceUserSchedules(id).catch((error) => {
+        logger.error('[adminUsers] Failed to quiesce scheduled chats', error);
+        return false;
+      });
+      if (!quiesced) {
+        res.set('Retry-After', '30');
+        return res.status(503).json({
+          error: 'Scheduled work for this user is still settling. Please retry shortly.',
+        });
       }
 
       const result = await deleteUserById(id);

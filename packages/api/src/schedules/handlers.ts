@@ -358,8 +358,13 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     const cadenceChanged =
       parsed.data.cadence != null || parsed.data.timezone != null || parsed.data.enabled != null;
     const reEnabled = parsed.data.enabled === true && existing.enabled === false;
+    // RECOVERY: an enabled schedule with no nextRunAt is inert — claimDueSchedule sorts
+    // on nextRunAt and can never select it. Creation arms in a second write, so a crash
+    // or a failed arm leaves exactly this state; re-arm on ANY edit rather than only a
+    // cadence one, or a name/prompt edit would silently leave it dead.
+    const needsArming = existing.nextRunAt == null;
     const update: Partial<ISchedule> = { ...parsed.data } as Partial<ISchedule>;
-    if (enabled && cadenceChanged) {
+    if (enabled && (cadenceChanged || needsArming)) {
       const nextRunAt = computeNextRunAt({ cadence, timezone, scheduleId: existing.id });
       if (nextRunAt == null) {
         res.status(400).json({ error: 'Schedule has no computable next run' });

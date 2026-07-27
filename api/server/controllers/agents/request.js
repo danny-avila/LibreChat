@@ -1278,6 +1278,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               completeErr,
             );
           });
+          // Same early return as the success path: completeJob no-ops on a job that is
+          // already terminal (what a schedule delete leaves behind), and the now-terminal
+          // run is no longer reconciled, so nothing else would reap it.
+          if (scheduleId && errorScheduleOutcomeRecorded) {
+            await clearScheduledJob(streamId, { scheduleId, scheduledFor }).catch((err) =>
+              logger.warn('[ResumableAgentController] Failed to clear reconciled job', err),
+            );
+          }
         }
 
         try {

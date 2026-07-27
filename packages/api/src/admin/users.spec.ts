@@ -44,9 +44,10 @@ function createReqRes(
 
   const json = jest.fn();
   const status = jest.fn().mockReturnValue({ json });
-  const res = { status, json } as unknown as Response;
+  const set = jest.fn();
+  const res = { status, json, set } as unknown as Response;
 
-  return { req, res, status, json };
+  return { req, res, status, json, set };
 }
 
 function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
@@ -58,6 +59,7 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
       .mockResolvedValue({ deletedCount: 1, message: 'User was deleted successfully.' }),
     deleteConfig: jest.fn().mockResolvedValue(null),
     deleteAclEntries: jest.fn().mockResolvedValue(undefined),
+    quiesceUserSchedules: jest.fn().mockResolvedValue(true),
     ...overrides,
   };
 }
@@ -487,6 +489,50 @@ describe('createAdminUsersHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(404);
       expect(json).toHaveBeenCalledWith({ error: 'User not found' });
+    });
+
+    /**
+     * The rest of this endpoint's cascade is deliberately deferred, but scheduled runs
+     * are not dormant data: an in-flight fire keeps persisting messages and billing
+     * after the user document is gone.
+     */
+    it('quiesces the user schedules before removing the user', async () => {
+      const deps = createDeps();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(deps.quiesceUserSchedules).toHaveBeenCalledWith(validUserId);
+      const quiesceOrder = (deps.quiesceUserSchedules as jest.Mock).mock.invocationCallOrder[0];
+      const deleteOrder = (deps.deleteUserById as jest.Mock).mock.invocationCallOrder[0];
+      expect(quiesceOrder).toBeLessThan(deleteOrder);
+    });
+
+    it('refuses the delete when the schedule drain is not confirmed', async () => {
+      const deps = createDeps({ quiesceUserSchedules: jest.fn().mockResolvedValue(false) });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      // Deleting on an unconfirmed drain would let a live generation persist data for a
+      // user that no longer exists.
+      expect(status).toHaveBeenCalledWith(503);
+      expect(deps.deleteUserById).not.toHaveBeenCalled();
+    });
+
+    it('refuses the delete when quiescing throws', async () => {
+      const deps = createDeps({
+        quiesceUserSchedules: jest.fn().mockRejectedValue(new Error('mongo down')),
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(503);
+      expect(deps.deleteUserById).not.toHaveBeenCalled();
     });
 
     it('returns 500 on error', async () => {
