@@ -60,10 +60,10 @@ function AuthLayout({
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <Banner />
       <BlinkAnimation active={isFetching}>
-        {/* BKL: 텍스트 placeholder SVG 대신 실제 bkl 로고 (검은 바탕 소문자 bkl) */}
+        {/* BKL: jade 글자·투명 배경 로고 — 흰 로그인 배경에 자연스럽게 blend */}
         <div className="mt-8 flex h-12 w-full items-center justify-center">
           <img
-            src="assets/bkl-logo.png"
+            src="assets/bkl-logo-jade.png"
             className="h-full w-auto object-contain"
             alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
           />
@@ -77,9 +77,11 @@ function AuthLayout({
       <main className="flex flex-grow items-center justify-center">
         {/* BKL: max-w-md(28rem)에서 제목이 2줄로 꺾여 max-w-lg 로 확장 */}
         <div className="w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-lg sm:rounded-lg">
+          {/* BKL: 모바일 폭에서 '…환영합니/다' 줄꺾임 방지 — 작은 화면은 2xl,
+              단어 중간이 아닌 어절 단위로만 줄바꿈(break-keep) */}
           {!hasStartupConfigError && !isFetching && header && (
             <h1
-              className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
+              className="mb-4 break-keep text-center text-2xl font-semibold text-black dark:text-white sm:text-3xl"
               style={{ userSelect: 'none' }}
             >
               {header}
