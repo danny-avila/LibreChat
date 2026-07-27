@@ -102,6 +102,17 @@ async function gracefulExit(code = 0) {
     AclEntry.deleteMany({ principalId: user._id }),
   ];
 
+  // Raise the durable deletion barrier BEFORE counting. A bare count is a
+  // time-of-check/time-of-use read: a fire can be claimed and accepted between the zero
+  // result and the deletes below, and this script cannot abort or drain it. The barrier
+  // is what makes the count meaningful — a live server refuses new fires at the dispatch
+  // boundary (fireSchedule's isOwnerDeleting probe) from this point on, so anything the
+  // count then misses cannot have started after it.
+  await User.updateOne(
+    { _id: uid, deletionRequestedAt: { $exists: false } },
+    { $set: { deletionRequestedAt: new Date() } },
+  );
+
   // REFUSE rather than warn when a scheduled run is in flight. This script talks to the
   // database directly, so unlike the HTTP deletion paths it cannot abort a live loopback
   // generation or wait for it to drain. That generation can already have passed its

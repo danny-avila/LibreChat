@@ -3198,10 +3198,15 @@ class GenerationJobManagerClass {
     } catch (err) {
       logger.warn(`[GenerationJobManager] Failed to read approval before expiry ${streamId}`, err);
     }
+    // Forward the job we ALREADY read. Without it the expiry re-reads the store, which
+    // is not just a wasted round trip: the preserve decision keys on `scheduleId`, so a
+    // second read that returns null (or a replacement) would drop a scheduled run's
+    // retained evidence — the opposite of what the first read established.
     const expiredCreatedAt = await this._approvals.expireWithIdentity(
       streamId,
       actionId,
       observedJob?.createdAt,
+      observedJob,
     );
     if (expiredCreatedAt == null) {
       return false;

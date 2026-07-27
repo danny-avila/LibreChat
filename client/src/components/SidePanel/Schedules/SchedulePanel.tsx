@@ -9,7 +9,7 @@ import ScheduleCard from './ScheduleCard';
 
 export default function SchedulePanel() {
   const localize = useLocalize();
-  const { data, isLoading } = useSchedulesQuery();
+  const { data, isLoading, isError, refetch } = useSchedulesQuery();
   const [createOpen, setCreateOpen] = useState(false);
 
   const hasCreateAccess = useHasAccess({
@@ -21,6 +21,23 @@ export default function SchedulePanel() {
     return (
       <div className="flex h-full w-full items-center justify-center p-4">
         <Spinner />
+      </div>
+    );
+  }
+
+  // A failed query leaves `data` undefined, which the empty-state branch below would
+  // render as "no scheduled chats yet" — telling the user their schedules are gone when
+  // the request merely failed. `maxPerUser` is unknown too, so the create button would
+  // stay enabled and any create would 4xx against a limit we cannot see.
+  if (isError) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-4">
+        <p className="text-center text-sm text-text-secondary">
+          {localize('com_ui_schedules_error')}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          {localize('com_ui_retry')}
+        </Button>
       </div>
     );
   }
