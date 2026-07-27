@@ -9,6 +9,7 @@ import { generatePDF } from './generators/pdf.js';
 import path from 'path';
 
 const OUTPUT_PATH = process.env.DOCUMENTS_PATH || '/app/generated_files';
+const BASE_URL = process.env.DOCUMENTS_BASE_URL || '';
 
 const server = new Server(
   {
@@ -95,13 +96,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         size: result.size,
         type: 'markdown',
         source: 'document_generator',
+        url: BASE_URL ? `${BASE_URL}/generated_files/${result.filename}` : null,
       };
+
+      const downloadInfo = BASE_URL ? `\n Descàrrega: ${BASE_URL}/generated_files/${result.filename}` : '';
 
       return {
         content: [
           {
             type: 'text',
-            text: `FILE_METADATA:${JSON.stringify(meta)}\nMarkdown document generated successfully: ${result.filename}`,
+            text: `FILE_METADATA:${JSON.stringify(meta)}\nMarkdown document generated successfully: ${result.filename}${downloadInfo}`,
           },
         ],
       };
@@ -129,13 +133,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         size: result.size,
         type: 'pdf',
         source: 'document_generator',
+        url: BASE_URL ? `${BASE_URL}/generated_files/${result.filename}` : null,
       };
+
+      const downloadInfo = BASE_URL ? `\n Descàrrega: ${BASE_URL}/generated_files/${result.filename}` : '';
 
       return {
         content: [
           {
             type: 'text',
-            text: `FILE_METADATA:${JSON.stringify(meta)}\nPDF document generated successfully: ${result.filename}`,
+            text: `FILE_METADATA:${JSON.stringify(meta)}\nPDF document generated successfully: ${result.filename}${downloadInfo}`,
           },
         ],
       };
