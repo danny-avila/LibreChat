@@ -71,8 +71,8 @@ const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const {
   createMCPPermissionContext,
-  resolveConfigServers,
   resolveMcpServerNames,
+  resolveMcpServerContext,
 } = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
@@ -611,10 +611,7 @@ async function loadToolDefinitionsWrapper({
     return { toolDefinitions: [] };
   }
 
-  const [configServers, mcpServerNames] = await Promise.all([
-    resolveConfigServers(req),
-    resolveMcpServerNames(req),
-  ]);
+  const { configServers, serverNames: mcpServerNames } = await resolveMcpServerContext(req);
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;

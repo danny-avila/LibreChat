@@ -153,8 +153,41 @@ async function resolveMcpConfigNames(req) {
  * @returns {Promise<string[]>}
  */
 async function resolveMcpServerNames(req) {
-  const names = await resolveMcpConfigNames(req);
-  return names.map(normalizeServerName);
+  try {
+    const names = await resolveMcpConfigNames(req);
+    return names.map(normalizeServerName);
+  } catch (error) {
+    logger.warn(
+      '[resolveMcpServerNames] Failed to resolve server names, degrading to empty:',
+      error,
+    );
+    return [];
+  }
+}
+
+/**
+ * Config-source servers and all configured names from a single app-config read,
+ * so the tool-loading path does not pay two lookups for the same principal.
+ * Degrades to empty like `resolveConfigServers` rather than aborting tool loading.
+ * @param {import('express').Request} req
+ * @returns {Promise<{ configServers: Record<string, import('@librechat/api').ParsedServerConfig>, serverNames: string[] }>}
+ */
+async function resolveMcpServerContext(req) {
+  try {
+    const registry = getMCPServersRegistry();
+    const appConfig = await getAppConfigForRequest(req);
+    const mcpConfig = appConfig?.mcpConfig || {};
+    return {
+      configServers: await registry.ensureConfigServers(mcpConfig),
+      serverNames: Object.keys(mcpConfig).map(normalizeServerName),
+    };
+  } catch (error) {
+    logger.warn(
+      '[resolveMcpServerContext] Failed to resolve MCP servers, degrading to empty:',
+      error,
+    );
+    return { configServers: {}, serverNames: [] };
+  }
 }
 
 /**
@@ -675,11 +708,18 @@ async function createMCPTool({
   requestScopedConnections,
   config,
   configServers,
+  serverName: resolvedServerName,
   onAvailableTools,
   streamId = null,
   jobCreatedAt,
 }) {
-  const [toolName, serverName] = splitMCPToolKey(toolKey, Object.keys(configServers ?? {}));
+  /** `loadTools` already resolved the server for this key; parsing is the fallback. */
+  const [parsedToolName, parsedServerName] = splitMCPToolKey(
+    toolKey,
+    resolvedServerName ? [resolvedServerName] : Object.keys(configServers ?? {}),
+  );
+  const serverName = resolvedServerName ?? parsedServerName;
+  const toolName = parsedToolName;
 
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
@@ -1109,6 +1149,7 @@ module.exports = {
   getMCPSetupData,
   resolveConfigServers,
   resolveMcpServerNames,
+  resolveMcpServerContext,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
   createOAuthStart,

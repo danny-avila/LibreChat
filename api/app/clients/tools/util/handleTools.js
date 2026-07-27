@@ -47,7 +47,7 @@ const {
   createMCPTools,
   createMCPPermissionContext,
   resolveConfigServers,
-  resolveMcpServerNames,
+  resolveMcpServerContext,
 } = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -290,10 +290,7 @@ const loadTools = async ({
   /** All configured names, in the normalized form tool keys carry */
   let mcpServerNames = [];
   if (hasMCPTools && canUseMCP) {
-    [configServers, mcpServerNames] = await Promise.all([
-      resolveConfigServers(options.req),
-      resolveMcpServerNames(options.req),
-    ]);
+    ({ configServers, serverNames: mcpServerNames } = await resolveMcpServerContext(options.req));
   }
 
   for (const tool of tools) {
