@@ -635,6 +635,32 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     return res.status(409).json({ error: 'This action was already resolved or has expired' });
   }
 
+  // RE-CHECK after winning the CAS, not only before it. The pre-claim check above is
+  // ~100 lines and a concurrency round trip away from this point, and a schedule delete
+  // or account-deletion drain can begin in that window: the drain reads the job, sees
+  // `requires_action`, judges it settleable and terminalizes the run — then this resume
+  // promotes the job and generates for a schedule (or account) already torn down.
+  // Ordering it AFTER the claim is what closes the race rather than narrowing it: the
+  // CAS is what promotes the job to `running`, so a drain that starts after this point
+  // observes a running generation and waits for it, while one that started before it is
+  // caught here.
+  if (job.metadata?.scheduleId) {
+    const stillLive = await isScheduleLive(job.metadata.scheduleId, undefined, {
+      automatic: job.metadata.scheduleManual !== '1',
+    }).catch(() => false);
+    if (!stillLive) {
+      logger.info(
+        `[ResumeAgentController] Schedule ${job.metadata.scheduleId} went away mid-resume; ` +
+          'aborting the claimed turn before it generates',
+      );
+      await GenerationJobManager.abortJob(streamId, { expectedCreatedAt: job.createdAt }).catch(
+        (err) => logger.warn('[ResumeAgentController] Failed to abort a superseded resume', err),
+      );
+      await decrementPendingRequest(userId);
+      return res.status(409).json({ error: 'This scheduled run is no longer active' });
+    }
+  }
+
   // Seed the run-scoped MCP request-context store BEFORE the ACK: once `res.json`
   // finishes the response, a later `getMCPRequestContext(req, res)` (from tool loading)
   // sees `res` as ended and returns undefined, leaving the resumed run without its MCP

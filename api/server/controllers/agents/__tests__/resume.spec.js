@@ -56,6 +56,7 @@ const mockGenerationJobManager = {
   emitError: jest.fn(),
   completeJob: jest.fn(),
   expireApproval: jest.fn(),
+  abortJob: jest.fn(),
   approvals: { resolve: jest.fn() },
 };
 
@@ -100,10 +101,12 @@ jest.mock('~/server/cleanup', () => ({
 
 const mockRecordScheduleOutcome = jest.fn(async () => true);
 const mockIsScheduleLive = jest.fn(async () => true);
+const mockClearScheduledJob = jest.fn(async () => undefined);
 
 jest.mock('~/server/services/Schedules', () => ({
   recordScheduleOutcome: (...args) => mockRecordScheduleOutcome(...args),
   isScheduleLive: (...args) => mockIsScheduleLive(...args),
+  clearScheduledJob: (...args) => mockClearScheduledJob(...args),
 }));
 
 jest.mock('~/server/services/MCPRequestContext', () => ({
@@ -216,6 +219,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockGenerationJobManager.approvals.resolve.mockResolvedValue(true);
     mockRecordScheduleOutcome.mockResolvedValue(true);
     mockIsScheduleLive.mockResolvedValue(true);
+    mockGenerationJobManager.abortJob.mockResolvedValue({ success: true });
+    mockClearScheduledJob.mockReset();
+    mockClearScheduledJob.mockResolvedValue(undefined);
 
     // `decrementPendingRequest` runs in the controller's `finally` on every
     // post-ACK path, so resolving on it signals the async continuation is done.
@@ -370,6 +376,31 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await settled;
     });
 
+    /**
+     * The pre-claim check is ~100 lines and a concurrency round trip from the CAS. A
+     * delete landing in that window would otherwise have the resume promote the job and
+     * generate for a schedule already torn down — the drain having already judged the
+     * paused run settleable.
+     */
+    it('aborts the claimed turn when the schedule dies between the check and the CAS', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR } }),
+      );
+      // Live at the pre-claim gate, gone by the time the claim is won.
+      mockIsScheduleLive.mockResolvedValueOnce(true).mockResolvedValue(false);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalled();
+      // The CAS already promoted the job, so it must be torn back down rather than left
+      // running for a schedule that no longer exists.
+      expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        expect.objectContaining({ expectedCreatedAt: 1000 }),
+      );
+    });
+
     it('resumes normally while the schedule is still live', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(
         makeToolApprovalJob({ metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR } }),
@@ -380,6 +411,12 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(res.status).toBe(200);
       expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalled();
       await settled;
+      // The retained job must be cleared once the outcome lands: completeJob no-ops on
+      // an already-terminal job, and reconcile no longer scans a settled run.
+      expect(mockClearScheduledJob).toHaveBeenCalledWith(CONVO_ID, {
+        scheduleId: 'sched-1',
+        scheduledFor: SCHEDULED_FOR,
+      });
     });
 
     it('never consults the schedule gate for an ordinary interactive pause', async () => {

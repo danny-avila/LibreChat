@@ -22,6 +22,15 @@ const COUNTED_FOR_WINDOW = 64;
 /** Statuses that occupy a schedule's live capacity / block a concurrent occurrence. */
 const ACTIVE_RUN_STATUSES: ScheduleRunStatus[] = ['started', 'requires_action'];
 
+/** Card statuses that represent a SETTLED occurrence — everything except the pause. */
+const TERMINAL_CARD_STATUSES: ScheduleRunStatus[] = [
+  'success',
+  'error',
+  'interrupted',
+  'skipped_overlap',
+  'skipped_balance',
+];
+
 type DuplicateKeyError = { code?: number; keyPattern?: Record<string, unknown> };
 
 /** A duplicate-key error whose conflict is the {scheduleId, scheduledFor} occurrence index. */
@@ -140,6 +149,8 @@ export type ScheduleMethods = {
   getActiveRunsForUser: (userId: string | Types.ObjectId) => Promise<IScheduleRun[]>;
   disableUserSchedulesForDeletion: (userId: string | Types.ObjectId) => Promise<void>;
   getDeletingSchedules: (limit: number) => Promise<ISchedule[]>;
+  getUnarmedSchedules: (limit: number) => Promise<ISchedule[]>;
+  armSchedule: (id: string, nextRunAt: Date) => Promise<void>;
   eraseScheduleIfDrained: (id: string) => Promise<boolean>;
   deleteSchedulesByUser: (userId: string | Types.ObjectId) => Promise<void>;
   getUnbookkeptRuns: (olderThan: Date, limit: number) => Promise<IScheduleRun[]>;
@@ -566,6 +577,25 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     scheduledFor: Date,
     revisionFilter: Record<string, unknown> = {},
   ): Promise<void> {
+    // A PAUSE is the only non-terminal projection, and it is the one that can still
+    // arrive late for its own occurrence: the row transition is won first, and a resume
+    // can terminalize and project between that CAS and this write. Occurrence ordering
+    // alone permits it (same `scheduledFor`), so refuse to walk this occurrence's card
+    // backwards from a settled result to "Needs approval" — which nothing would correct
+    // until the next occurrence ran.
+    const notAlreadySettled =
+      lastRun.status === 'requires_action'
+        ? {
+            $nor: [
+              {
+                $and: [
+                  { 'lastRun.scheduledFor': scheduledFor },
+                  { 'lastRun.status': { $in: TERMINAL_CARD_STATUSES } },
+                ],
+              },
+            ],
+          }
+        : {};
     await Schedule().updateOne(
       {
         id: scheduleId,
@@ -573,6 +603,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
           { 'lastRun.scheduledFor': { $exists: false } },
           { 'lastRun.scheduledFor': { $lte: scheduledFor } },
         ],
+        ...notAlreadySettled,
         ...revisionFilter,
       },
       { $set: { lastRun: { ...lastRun, scheduledFor } } },
@@ -975,6 +1006,27 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     );
   }
 
+  /**
+   * Enabled schedules with no `nextRunAt`. Creation arms in a second write, so a crash
+   * or a failed arm leaves this state — and `claimDueSchedule` sorts on `nextRunAt`, so
+   * the row is permanently inert while still occupying the owner's slot.
+   */
+  async function getUnarmedSchedules(limit: number): Promise<ISchedule[]> {
+    return Schedule()
+      .find({ enabled: true, deleting: { $ne: true }, nextRunAt: { $exists: false } })
+      .limit(limit)
+      .lean<ISchedule[]>();
+  }
+
+  /** Arms an unarmed schedule. Conditional on still being unarmed, so it can never
+   *  disturb one that armed itself (or was edited) in the meantime. */
+  async function armSchedule(id: string, nextRunAt: Date): Promise<void> {
+    await Schedule().updateOne(
+      { id, enabled: true, deleting: { $ne: true }, nextRunAt: { $exists: false } },
+      { $set: { nextRunAt } },
+    );
+  }
+
   /** Soft-deleted schedules awaiting erasure (drained of active runs). */
   async function getDeletingSchedules(limit: number): Promise<ISchedule[]> {
     return Schedule().find({ deleting: true }).limit(limit).lean<ISchedule[]>();
@@ -1052,6 +1104,8 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     getActiveRunsForUser,
     disableUserSchedulesForDeletion,
     getDeletingSchedules,
+    getUnarmedSchedules,
+    armSchedule,
     eraseScheduleIfDrained,
     deleteSchedulesByUser,
     getUnbookkeptRuns,

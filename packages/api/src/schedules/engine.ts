@@ -189,6 +189,29 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           await deps.methods.eraseScheduleIfDrained(schedule.id).catch(() => undefined);
         }
       });
+
+      // Re-arm schedules that are enabled but carry no nextRunAt. Creation arms in a
+      // second write, so a crash or a failed arm leaves a row that LOOKS enabled to its
+      // owner and occupies a slot while claimDueSchedule (which sorts on nextRunAt) can
+      // never select it. Recovering here means the owner does not have to notice and
+      // edit it; armSchedule is conditional on still being unarmed, so it cannot
+      // disturb one that armed itself meanwhile.
+      await runAsSystem(async () => {
+        const unarmed = await deps.methods.getUnarmedSchedules(RECONCILE_BATCH);
+        for (const schedule of unarmed) {
+          const nextRunAt = computeNextRunAt({
+            cadence: schedule.cadence,
+            timezone: schedule.timezone,
+            scheduleId: schedule.id,
+          });
+          if (nextRunAt == null) {
+            continue;
+          }
+          await deps.methods.armSchedule(schedule.id, nextRunAt).catch((err) => {
+            logger.warn(`[schedules] failed to re-arm ${schedule.id}:`, err);
+          });
+        }
+      });
     } catch (error) {
       logger.error('[schedules] run reconciliation failed:', error);
     }

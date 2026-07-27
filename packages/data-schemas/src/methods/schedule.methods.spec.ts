@@ -937,6 +937,52 @@ describe('claim-token fencing (stale worker cannot mutate an edited/deleted sche
   });
 });
 
+describe('unarmed-schedule recovery', () => {
+  /**
+   * Creation arms in a second write, so a crash or a failed arm leaves a row that looks
+   * enabled to its owner and occupies a slot while claimDueSchedule — which sorts on
+   * nextRunAt — can never select it.
+   */
+  it('finds enabled schedules with no nextRunAt and arms them', async () => {
+    const schedule = await methods.createSchedule({ ...scheduleData(), nextRunAt: undefined });
+    expect((await getSchedule(schedule.id)).nextRunAt).toBeUndefined();
+
+    const unarmed = await methods.getUnarmedSchedules(10);
+    expect(unarmed.map((s) => s.id)).toContain(schedule.id);
+
+    const when = new Date('2030-01-01T00:00:00.000Z');
+    await methods.armSchedule(schedule.id, when);
+    expect((await getSchedule(schedule.id)).nextRunAt?.getTime()).toBe(when.getTime());
+    // Now armed, so it drops out of the sweep.
+    expect((await methods.getUnarmedSchedules(10)).map((s) => s.id)).not.toContain(schedule.id);
+  });
+
+  it('never disturbs a schedule that armed itself in the meantime', async () => {
+    const schedule = await methods.createSchedule({ ...scheduleData(), nextRunAt: undefined });
+    const real = new Date('2030-06-01T00:00:00.000Z');
+    await methods.armSchedule(schedule.id, real);
+
+    // A concurrent sweep pass computed its own value from a stale read.
+    await methods.armSchedule(schedule.id, new Date('2030-01-01T00:00:00.000Z'));
+
+    expect((await getSchedule(schedule.id)).nextRunAt?.getTime()).toBe(real.getTime());
+  });
+
+  it('excludes disabled and deleting schedules from the sweep', async () => {
+    const disabled = await methods.createSchedule({
+      ...scheduleData(),
+      nextRunAt: undefined,
+      enabled: false,
+    });
+    const deleting = await methods.createSchedule({ ...scheduleData(), nextRunAt: undefined });
+    await methods.markScheduleDeleting(deleting.id, deleting.user);
+
+    const ids = (await methods.getUnarmedSchedules(10)).map((s) => s.id);
+    expect(ids).not.toContain(disabled.id);
+    expect(ids).not.toContain(deleting.id);
+  });
+});
+
 describe('card projection fences (regressions in the ordered projection)', () => {
   /**
    * The terminal path passes the row's revision to projectLastRun; the pause path did

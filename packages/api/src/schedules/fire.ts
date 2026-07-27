@@ -473,7 +473,18 @@ export async function fireSchedule(
         await advance();
         return { fired: false, skipped: 'overlap' as const };
       }
-      await advance();
+      // A duplicate means ANOTHER worker holds this occurrence's row — NOT that the
+      // occurrence is finished. Advancing past it hands the occurrence away: if that
+      // worker is a stale lease holder whose own revalidation then fails, it rolls its
+      // undispatched row back and nothing ever fires this occurrence. Leaving nextRunAt
+      // alone keeps it claimable — whichever worker actually dispatches is the one that
+      // advances, and the claim's lease is the retry backoff (same shape as `capacity`
+      // above). A crashed holder's row is cleared by the orphan sweep, after which the
+      // occurrence reserves cleanly. Manual run-now still releases its lease so repeated
+      // clicks aren't met with a stale "already in progress".
+      if (options?.manual) {
+        await methods.releaseLease(schedule.id, claimToken);
+      }
       return { fired: false, skipped: 'duplicate' as const };
     }
 

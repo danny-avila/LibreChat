@@ -569,4 +569,43 @@ describe('fireSchedule', () => {
     expect(result.skipped).toBe('duplicate');
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  /**
+   * A `duplicate` means ANOTHER worker holds this occurrence's row — not that the
+   * occurrence is done. Advancing past it hands the occurrence away: if that other
+   * worker is a stale lease holder whose own revalidation then fails, it rolls its
+   * undispatched row back and NOTHING ever fires the occurrence. Leaving nextRunAt
+   * alone keeps it claimable; the worker that actually dispatches is the one that
+   * advances, and the claim's lease provides the retry backoff.
+   */
+  it('does not advance past an occurrence another worker is holding', async () => {
+    const { methods, runs, calls } = makeMethods();
+    const when = new Date(dueAt().getTime());
+    // A peer already reserved this occurrence's row.
+    runs.set(`sched-1:${when.toISOString()}`, {
+      status: 'started',
+      conversationId: 'peer-convo',
+    });
+    mockFetch(async () => okResponse());
+
+    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, when);
+
+    expect(result.skipped).toBe('duplicate');
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(calls.advance).toBe(0);
+  });
+
+  it('releases the lease on a duplicate for run-now so the user can retry', async () => {
+    const { methods, runs, calls } = makeMethods();
+    const when = new Date(dueAt().getTime());
+    runs.set(`sched-1:${when.toISOString()}`, { status: 'started' });
+    mockFetch(async () => okResponse());
+
+    await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, when, { manual: true });
+
+    // Automatic claims keep the lease as backoff; a manual click must not be told
+    // "already in progress" for the full lease TTL.
+    expect(calls.releaseLease).toBe(1);
+    expect(calls.advance).toBe(0);
+  });
 });
