@@ -483,7 +483,9 @@ const ChatForm = memo(function ChatForm({
   /** One button slot while a run is generating: with composer text the send
    *  button takes over (Enter steers/queues; hover reveals all actions);
    *  clearing the text restores Stop. */
-  const duringRunSlot = (() => {
+  /* Memoized for `memo(Bar)`: an inline element is a new identity every render,
+     and this component re-renders on every keystroke. */
+  const duringRunSlot = useMemo(() => {
     if (steering.duringRunActive && (textValue?.trim() ?? '') !== '') {
       return (
         <>
@@ -510,7 +512,54 @@ const ChatForm = memo(function ChatForm({
       return <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />;
     }
     return null;
-  })();
+  }, [
+    steering,
+    textValue,
+    methods,
+    submitButtonRef,
+    filesLoading,
+    showStopButton,
+    handleStopGenerating,
+    setShowStopButton,
+  ]);
+
+  /* Memoized for `memo(Bar)`: an inline element is a new identity every render,
+     and this component re-renders on every keystroke. */
+  const actionSlot = useMemo(
+    () =>
+      isSubmitting &&
+      (showStopButton || steering.duringRunActive) &&
+      !answerMode.composerAnswers
+        ? duringRunSlot
+        : endpoint && (
+            <SendButton
+              ref={submitButtonRef}
+              control={methods.control}
+              fileCount={submittableFileCount}
+              disabled={
+                filesLoading ||
+                disableInputs ||
+                isNotAppendable ||
+                answerMode.composerLocked ||
+                (isSubmitting && !answerMode.composerAnswers)
+              }
+            />
+          ),
+    [
+      endpoint,
+      duringRunSlot,
+      filesLoading,
+      disableInputs,
+      isNotAppendable,
+      isSubmitting,
+      showStopButton,
+      steering.duringRunActive,
+      answerMode.composerAnswers,
+      answerMode.composerLocked,
+      submittableFileCount,
+      methods.control,
+    ],
+  );
 
   /* The empty-conversation screen. Drives both how far the composer floats off
      the bottom and whether the ambient tips under it are worth their row. */
@@ -728,26 +777,7 @@ const ChatForm = memo(function ChatForm({
                     disableInputs || isNotAppendable || answerMode.composerLocked
                   }
                   dictation={dictation}
-                  actionSlot={
-                    isSubmitting &&
-                    (showStopButton || steering.duringRunActive) &&
-                    !answerMode.composerAnswers
-                      ? duringRunSlot
-                      : endpoint && (
-                          <SendButton
-                            ref={submitButtonRef}
-                            control={methods.control}
-                            fileCount={submittableFileCount}
-                            disabled={
-                              filesLoading ||
-                              disableInputs ||
-                              isNotAppendable ||
-                              answerMode.composerLocked ||
-                              (isSubmitting && !answerMode.composerAnswers)
-                            }
-                          />
-                        )
-                  }
+                  actionSlot={actionSlot}
                 />
                 <ToolDialogs />
               </BadgeRowProvider>

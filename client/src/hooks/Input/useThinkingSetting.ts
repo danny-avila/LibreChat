@@ -55,7 +55,11 @@ export default function useThinkingSetting(
 
     const byKey = new Map<string, SettingDefinition>();
     for (const param of modelAwareParams) {
-      const resolved = (overriddenParamsMap[param.key] as SettingDefinition) ?? param;
+      /* Merged, not replaced: an override that names only a default would
+         otherwise drop the built-in `options`, and a reasoning setting without
+         options is not rendered at all — the control would simply vanish. */
+      const override = overriddenParamsMap[param.key];
+      const resolved: SettingDefinition = override != null ? { ...param, ...override } : param;
       byKey.set(resolved.key, resolved);
     }
 
