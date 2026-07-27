@@ -197,7 +197,11 @@ test.describe('scheduled chat execution', () => {
     test.setTimeout(120000);
     await page.goto('/c/new', { timeout: 15000 });
     const token = await getAccessToken(page);
-    const agent = await ensureAgent(page, token);
+    await ensureAgent(page, token);
+    // The dialog's picker reads useListAgentsQuery, and ensureAgent creates the agent
+    // over raw fetch — which never invalidates that cache. Without this reload a
+    // just-created agent exists server-side but is absent from the dropdown.
+    await page.reload();
 
     await openSchedulesPanel(page);
     await page.getByRole('button', { name: 'New schedule' }).click();
@@ -207,12 +211,14 @@ test.describe('scheduled chat execution', () => {
     await dialog.locator('#schedule-name').fill(name);
     await dialog.locator('#schedule-prompt').fill('Daily standup summary');
 
-    // agent_id is required, so the submit stays disabled until one is picked. The list
-    // is virtualized, so the target row is only in the DOM once the search narrows to
-    // it — clicking the option directly races the renderer on a populated account.
+    // agent_id is required, so the submit stays disabled until one is picked. Any agent
+    // will do — this test is about the cadence round-tripping, not about which agent —
+    // so take whatever the (virtualized) list renders first rather than depending on a
+    // specific name being present and in view.
     await dialog.getByRole('combobox', { name: 'Agent' }).click();
-    await page.getByPlaceholder('Search agents by name').fill(agent.name!);
-    await page.getByRole('option', { name: agent.name!, exact: true }).first().click();
+    const firstAgent = page.getByRole('option').first();
+    await expect(firstAgent).toBeVisible({ timeout: 15000 });
+    await firstAgent.click();
     // Weekly rather than the default so the assertion proves the cadence round-tripped
     // rather than matching whatever the form happened to default to.
     await dialog.getByRole('group', { name: 'Frequency' }).getByText('Weekly').click();
