@@ -91,25 +91,37 @@ export interface ResolvedActivityConfig {
  * theirs: an `endpoints.all` block wins over the named endpoint, which wins
  * over a custom endpoint's own config.
  */
+/**
+ * Reads ONE endpoint setting, global-then-named, rather than picking a whole
+ * config object.
+ *
+ * Selecting wholesale means any `endpoints.all` block — even one carrying
+ * nothing but `headers` — shadows the named/custom endpoint entirely, so a
+ * single unrelated global setting silently hides every activity field AND the
+ * `titleModel` fallback. Global still wins per field, so a real
+ * `all.activityLabel` keeps overriding the endpoint.
+ */
+function pickEndpointField<K extends keyof TEndpoint>(
+  appConfig: AppConfig | undefined,
+  endpoint: string,
+  customEndpointConfig: Partial<TEndpoint> | undefined,
+  key: K,
+): TEndpoint[K] | undefined {
+  const endpoints = appConfig?.endpoints as
+    | (Record<string, TEndpoint | undefined> & { all?: TEndpoint })
+    | undefined;
+  const all = endpoints?.all as Partial<TEndpoint> | undefined;
+  const named = (endpoints?.[endpoint] ?? customEndpointConfig) as Partial<TEndpoint> | undefined;
+  return all?.[key] ?? named?.[key];
+}
+
 export function resolveActivityConfig(
   appConfig: AppConfig | undefined,
   endpoint: string,
   customEndpointConfig?: Partial<TEndpoint>,
 ): ResolvedActivityConfig {
-  const endpoints = appConfig?.endpoints as
-    | (Record<string, TEndpoint | undefined> & { all?: TEndpoint })
-    | undefined;
-  /**
-   * Resolved FIELD BY FIELD rather than by picking one config object whole.
-   * Selecting wholesale means any `endpoints.all` block — even one carrying
-   * nothing but `headers` — shadows the named/custom endpoint entirely and
-   * silently disables activity labels everywhere. Global still wins per
-   * field, so a real `all.activityLabel` keeps overriding the endpoint.
-   */
-  const all = endpoints?.all as Partial<TEndpoint> | undefined;
-  const named = (endpoints?.[endpoint] ?? customEndpointConfig) as Partial<TEndpoint> | undefined;
   const pick = <K extends keyof TEndpoint>(key: K): TEndpoint[K] | undefined =>
-    all?.[key] ?? named?.[key];
+    pickEndpointField(appConfig, endpoint, customEndpointConfig, key);
   return {
     enabled: pick('activityLabel') === true,
     model: pick('activityModel'),
@@ -159,15 +171,19 @@ export async function resolveActivityLabelModel({
     }
   }
 
-  const endpoints = appConfig?.endpoints as
-    | (Record<string, TEndpoint | undefined> & { all?: TEndpoint })
-    | undefined;
-  const endpointConfig: Partial<TEndpoint> | undefined =
-    endpoints?.all ?? endpoints?.[endpoint] ?? providerConfig.customEndpointConfig;
+  /** Same per-field read as the activity settings: a partial `endpoints.all`
+   *  must not hide the resolved endpoint's `titleModel` and quietly fall the
+   *  label back to the main agent's (usually much larger) model. */
+  const titleModel = pickEndpointField(
+    appConfig,
+    endpoint,
+    providerConfig.customEndpointConfig,
+    'titleModel',
+  );
   const model =
     activity.model ??
-    (endpointConfig?.titleModel != null && endpointConfig.titleModel !== Constants.CURRENT_MODEL
-      ? endpointConfig.titleModel
+    (titleModel != null && titleModel !== Constants.CURRENT_MODEL
+      ? titleModel
       : (agent.model ?? agent.model_parameters?.model));
   const options = await providerConfig.getOptions({
     req,

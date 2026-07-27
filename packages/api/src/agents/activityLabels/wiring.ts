@@ -188,7 +188,13 @@ export interface ActivityLabelHostDeps {
    */
   isClosed?: () => boolean;
   resolveLLM: () => Promise<ActivityLabelLLM>;
-  generateLabel?: (payload: GenerateLabelPayload) => Promise<string | null>;
+  /**
+   * Resolve `undefined` to DECLINE — this bridge cannot serve the request, so
+   * the hook falls back to the direct model call. `null` means it ran and
+   * produced no label. The distinction is the contract the hook keys on, so it
+   * belongs in the exported type.
+   */
+  generateLabel?: (payload: GenerateLabelPayload) => Promise<string | null | undefined>;
   getInvokeCallbacks?: () => ActivityLabelInvokeCallbacks;
 }
 

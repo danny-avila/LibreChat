@@ -812,14 +812,17 @@ export default function useResumableSSE(
          *  is claimed in the same server-side space and needs the identical
          *  shift, or it lands inside the prefix and overwrites kept content.
          *
-         *  NOT on a resume: the sync replaces `initialResponse.content` with
-         *  the server's `aggregatedContent`, which already contains the prefix
-         *  AND everything generated since. Its length is not the prefix
-         *  length, and the indices reconciled from that snapshot are already
-         *  absolute — offsetting again would push the label past its slot and
-         *  overwrite a later part. */
+         *  Deliberately the SAME expression `useStepHandler` uses, with no
+         *  resume special-case. A sync replaces `initialResponse.content` with
+         *  the server's `aggregatedContent`, which is completion-local — so
+         *  after a reconnect its length is not the kept-prefix length and this
+         *  offset is wrong. It is wrong for run steps in exactly the same way,
+         *  and tool cards and their label MUST share one index space: a label
+         *  that shifts differently from the tools it heads would land on
+         *  another part. Fixing the post-resume prefix length belongs in
+         *  `calculateContentIndex`, where it corrects both at once. */
         const initialContent =
-          !isResume && currentSubmission.editedContent != null
+          currentSubmission.editedContent != null
             ? ((currentSubmission.initialResponse as TMessage | undefined)?.content ?? [])
             : [];
         const offsetEvent =

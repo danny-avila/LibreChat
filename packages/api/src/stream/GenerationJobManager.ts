@@ -2297,7 +2297,20 @@ class GenerationJobManagerClass {
       // Compare the snapshot content view against a fresh read and re-emit any
       // label whose text/pending state moved; the client applier is idempotent
       // and refuses stale pending placeholders.
-      if (resumeState != null && jobActive && liveJob?.activityLabels === true) {
+      /** The flag is the fast path, but `markActivityLabels` is best-effort
+       *  and now gates correctness rather than merely saving a read — a lost
+       *  write would silently drop a label. Fall back to the snapshot when it
+       *  is absent: that misses only the case where the FIRST label is claimed
+       *  inside the gap, which the flag covers whenever it did persist. */
+      const snapshotHasActivityLabels =
+        resumeState?.aggregatedContent?.some(
+          (part) => (part as { type?: string } | null)?.type === 'activity_label',
+        ) === true;
+      if (
+        resumeState != null &&
+        jobActive &&
+        (liveJob?.activityLabels === true || snapshotHasActivityLabels)
+      ) {
         const labelContent = await this.jobStore.getContentParts(streamId, liveJob.createdAt);
         if (options?.signal?.aborted || this.detachSubscriptionDuringShutdown(subscription)) {
           return cancelResumeSubscription();
@@ -2408,7 +2421,6 @@ class GenerationJobManagerClass {
     ) {
       return;
     }
-
     const sequence = ++runtime.emissionSequence;
     let signalSnapshotReady!: () => void;
     const snapshotReady = new Promise<void>((resolve) => {

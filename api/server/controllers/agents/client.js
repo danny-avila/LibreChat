@@ -427,10 +427,17 @@ class AgentClient extends BaseClient {
        *  race the persist. */
       this.usageEmitSink?.push(data);
       if (streamId) {
-        const emit = GenerationJobManager.emitChunk(streamId, {
-          event: UsageEvents.ON_TOKEN_USAGE,
-          data,
-        }).catch((err) => {
+        const emit = GenerationJobManager.emitChunk(
+          streamId,
+          {
+            event: UsageEvents.ON_TOKEN_USAGE,
+            data,
+          },
+          /** Same epoch scoping as the label event: this usage is recorded
+           *  from a detached generation and must not bill against whichever
+           *  generation replaced it. */
+          { expectedCreatedAt: this.jobCreatedAt },
+        ).catch((err) => {
           logger.warn(`[AgentClient] Failed to emit activity-label usage: ${err?.message ?? err}`);
         });
         this.pendingSubagentEmits.push(emit);
@@ -609,11 +616,20 @@ class AgentClient extends BaseClient {
       this.activityLabelUsageSeq ??
       (this.contentParts ?? []).filter((part) => part?.type === ContentTypes.ACTIVITY_LABEL).length;
     this.activityLabelAbort = labelScope.abort;
+    /** An abort CLOSES the scope, not just cancels the call. The rejected
+     *  generation still runs its catch and calls `fill(null)`; with the scope
+     *  merely aborted that fill would emit — and by then the next generation
+     *  may already own the stream, so the event would land an index from the
+     *  abandoned response onto the new one. */
+    const closeOnAbort = () => {
+      labelScope.closed = true;
+      labelScope.abort.abort();
+    };
     if (abortSignal != null) {
       if (abortSignal.aborted) {
-        labelScope.abort.abort();
+        closeOnAbort();
       } else {
-        abortSignal.addEventListener('abort', () => labelScope.abort.abort(), { once: true });
+        abortSignal.addEventListener('abort', closeOnAbort, { once: true });
       }
     }
     /** Thin wrapper: slot claiming, lane stamping, emit ordering, and settle
@@ -640,7 +656,12 @@ class AgentClient extends BaseClient {
               conversationId: this.conversationId,
             },
           },
-          { durable: true },
+          /** Label generation is detached and can outlive its generation, so
+           *  the emit is scoped to the epoch that claimed the index. Without
+           *  it a straggler from a replaced generation lands its old index on
+           *  the new response — invisibly, since an empty label renders
+           *  nothing — overwriting whatever occupies that slot. */
+          { durable: true, expectedCreatedAt: this.jobCreatedAt },
         ),
       trackPendingFill: (fillDone) => {
         this.pendingActivityLabelFills = this.pendingActivityLabelFills ?? [];
