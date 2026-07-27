@@ -34,7 +34,7 @@ type ResponseRefreshResult = {
   notFound: boolean;
 };
 
-const TERMINAL_REFRESH_RETRY_DELAYS = [1000, 2000] as const;
+const TERMINAL_RETRY_DELAYS = [1000, 2000, 5000, 10000, 30000] as const;
 
 const waitForRetryDelay = (delay: number, signal: AbortSignal): Promise<boolean> =>
   new Promise((resolve) => {
@@ -58,6 +58,19 @@ const waitForRetryDelay = (delay: number, signal: AbortSignal): Promise<boolean>
 
     signal.addEventListener('abort', onAbort, { once: true });
   });
+
+function isRetryableTerminalError(error: unknown): boolean {
+  if (error == null || typeof error !== 'object') {
+    return true;
+  }
+
+  const candidate = error as {
+    status?: number;
+    response?: { status?: number };
+  };
+  const status = candidate.response?.status ?? candidate.status;
+  return status == null || status === 408 || status === 429 || status >= 500;
+}
 
 function hasSubmissionUserMessage(
   submission: TSubmission | null,
@@ -389,6 +402,7 @@ export default function useResumeOnLoad(
   });
   const activePathnameRef = useRef<string | null>(location.pathname);
   const terminalRefreshAbortRef = useRef<AbortController | null>(null);
+  const terminalStatusAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     activePathnameRef.current = location.pathname;
@@ -396,6 +410,8 @@ export default function useResumeOnLoad(
       activePathnameRef.current = null;
       terminalRefreshAbortRef.current?.abort();
       terminalRefreshAbortRef.current = null;
+      terminalStatusAbortRef.current?.abort();
+      terminalStatusAbortRef.current = null;
     };
   }, [location.pathname]);
 
@@ -442,7 +458,7 @@ export default function useResumeOnLoad(
       };
     };
 
-    for (let attempt = 0; attempt <= TERMINAL_REFRESH_RETRY_DELAYS.length; attempt++) {
+    for (let attempt = 0; ; attempt++) {
       try {
         await queryClient.invalidateQueries(
           { queryKey: [QueryKeys.messages, conversationId] },
@@ -456,12 +472,13 @@ export default function useResumeOnLoad(
         if (isNotFoundError(error)) {
           return finishFailedRefresh(true);
         }
+        if (!isRetryableTerminalError(error)) {
+          return finishFailedRefresh(false);
+        }
 
-        const retryDelay = TERMINAL_REFRESH_RETRY_DELAYS[attempt];
-        if (
-          retryDelay == null ||
-          !(await waitForRetryDelay(retryDelay, refreshController.signal))
-        ) {
+        const retryDelay =
+          TERMINAL_RETRY_DELAYS[Math.min(attempt, TERMINAL_RETRY_DELAYS.length - 1)];
+        if (!(await waitForRetryDelay(retryDelay, refreshController.signal))) {
           return finishFailedRefresh(false);
         }
 
@@ -478,8 +495,6 @@ export default function useResumeOnLoad(
         }
       }
     }
-
-    return finishFailedRefresh(false);
   }, [conversationId, getMessages, queryClient]);
 
   const recoverStatusSteers = useCallback(
@@ -566,7 +581,10 @@ export default function useResumeOnLoad(
   const recoverInactiveResponse = useCallback(
     async (
       status: StreamStatusResponse,
-      options?: { steersRecovered?: boolean; recoveredSteers?: boolean },
+      options?: {
+        steersRecovered?: boolean;
+        recoveredSteers?: boolean;
+      },
     ) => {
       if (!conversationId) {
         return;
@@ -596,23 +614,42 @@ export default function useResumeOnLoad(
     ],
   );
 
-  const recoverWithoutStatus = useCallback(async () => {
-    if (!conversationId) {
-      return;
-    }
+  const fetchTerminalStatus = useCallback(
+    async (terminalConversationId: string): Promise<StreamStatusResponse | undefined> => {
+      terminalStatusAbortRef.current?.abort();
+      const statusController = new AbortController();
+      terminalStatusAbortRef.current = statusController;
 
-    const shouldSignalRunEnd =
-      getUnfinishedAssistantTail(getMessages()) != null ||
-      getDisconnectedRunRecovery(queryClient, conversationId) != null;
-    const refreshed = await refreshUnfinishedResponse();
-    reconcileRefreshedResponse(refreshed, shouldSignalRunEnd);
-  }, [
-    conversationId,
-    getMessages,
-    queryClient,
-    reconcileRefreshedResponse,
-    refreshUnfinishedResponse,
-  ]);
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const status = await fetchStreamStatus(terminalConversationId);
+          if (terminalStatusAbortRef.current === statusController) {
+            terminalStatusAbortRef.current = null;
+          }
+          return status;
+        } catch (error) {
+          if (!isRetryableTerminalError(error)) {
+            return undefined;
+          }
+          const observed = observedActiveJobRef.current;
+          if (
+            observed.conversationId !== terminalConversationId ||
+            observed.active ||
+            statusController.signal.aborted
+          ) {
+            return undefined;
+          }
+
+          const retryDelay =
+            TERMINAL_RETRY_DELAYS[Math.min(attempt, TERMINAL_RETRY_DELAYS.length - 1)];
+          if (!(await waitForRetryDelay(retryDelay, statusController.signal))) {
+            return undefined;
+          }
+        }
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const previous = observedActiveJobRef.current;
@@ -623,11 +660,14 @@ export default function useResumeOnLoad(
 
     if (previous.conversationId !== conversationId) {
       refreshedResponseRef.current = null;
+      terminalStatusAbortRef.current?.abort();
       return;
     }
 
     if (!previous.active && isCurrentJobActive) {
       refreshedResponseRef.current = null;
+      terminalStatusAbortRef.current?.abort();
+      terminalRefreshAbortRef.current?.abort();
       return;
     }
 
@@ -644,41 +684,41 @@ export default function useResumeOnLoad(
       }
 
       const terminalConversationId = conversationId;
-      void fetchStreamStatus(terminalConversationId)
-        .then((status) => {
-          const observed = observedActiveJobRef.current;
-          if (status.active) {
-            if (observed.conversationId === terminalConversationId && !observed.active) {
-              queryClient.setQueryData<ActiveJobsResponse>([QueryKeys.activeJobs], (old) => ({
-                activeJobIds: [...new Set([...(old?.activeJobIds ?? []), terminalConversationId])],
-              }));
-            }
-            return;
-          }
-          const recoveredSteers = recoverStatusSteers(status);
-          if (observed.conversationId !== terminalConversationId || observed.active) {
-            return;
-          }
-          void recoverInactiveResponse(status, {
-            steersRecovered: true,
-            recoveredSteers,
-          });
-        })
-        .catch(() => {
-          const observed = observedActiveJobRef.current;
+      void fetchTerminalStatus(terminalConversationId).then((status) => {
+        if (!status) {
+          return;
+        }
+
+        const observed = observedActiveJobRef.current;
+        if (status.active) {
           if (observed.conversationId === terminalConversationId && !observed.active) {
-            void recoverWithoutStatus();
+            queryClient.setQueryData<ActiveJobsResponse>([QueryKeys.activeJobs], (old) => ({
+              activeJobIds: [...new Set([...(old?.activeJobIds ?? []), terminalConversationId])],
+            }));
           }
+          return;
+        }
+
+        // This response may already have atomically claimed parked steers.
+        // Recover them before checking whether a newer run became active.
+        const recoveredSteers = recoverStatusSteers(status);
+        if (observed.conversationId !== terminalConversationId || observed.active) {
+          return;
+        }
+        void recoverInactiveResponse(status, {
+          steersRecovered: true,
+          recoveredSteers,
         });
+      });
     }
   }, [
     conversationId,
+    fetchTerminalStatus,
     getMessages,
     isCurrentJobActive,
     queryClient,
     recoverInactiveResponse,
     recoverStatusSteers,
-    recoverWithoutStatus,
   ]);
 
   useEffect(() => {

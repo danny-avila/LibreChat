@@ -1003,7 +1003,7 @@ describe('useResumeOnLoad', () => {
       });
     });
 
-    it('keeps first-turn recovery state when the message refresh fails transiently', async () => {
+    it('continues terminal recovery after the quick message retry budget is exhausted', async () => {
       jest.useFakeTimers();
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       const removeQueriesSpy = jest.spyOn(queryClient, 'removeQueries');
@@ -1012,6 +1012,14 @@ describe('useResumeOnLoad', () => {
       const unfinishedMessages = [
         buildUserMessage(CONVERSATION_ID),
         buildAssistantMessage({ unfinished: true }),
+      ];
+      const finalMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({
+          messageId: 'response-message-final',
+          text: 'Recovered on the next terminal cycle',
+          unfinished: false,
+        }),
       ];
       queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
       setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
@@ -1022,7 +1030,12 @@ describe('useResumeOnLoad', () => {
         data: { activeJobIds: [CONVERSATION_ID] },
       });
       mockFetchStreamStatus.mockResolvedValue({ active: false });
-      const messageQueryFn = jest.fn().mockRejectedValue(new Error('Network unavailable'));
+      const messageQueryFn = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('Network unavailable'))
+        .mockRejectedValueOnce(new Error('Network unavailable'))
+        .mockRejectedValueOnce(new Error('Network unavailable'))
+        .mockResolvedValue(finalMessages);
 
       const { rerender } = renderUseResumeOnLoad({
         submission: buildSubmission(CONVERSATION_ID),
@@ -1056,11 +1069,26 @@ describe('useResumeOnLoad', () => {
         startedAsNewConvo: true,
         created: false,
       });
+
+      await advanceRetryTimer(5000);
+
+      expect(messageQueryFn).toHaveBeenCalledTimes(4);
+      expect(mockFetchStreamStatus).toHaveBeenCalledTimes(1);
+      expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
+        finalMessages,
+      );
+      expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+        conversationId: CONVERSATION_ID,
+        outcome: 'completed',
+      });
+      expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
     });
 
-    it('publishes run end when status fails but the fallback refresh completes', async () => {
+    it('keeps recovery pending until status can return parked steers', async () => {
+      jest.useFakeTimers();
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       const observedSteers: PendingSteer[][] = [];
+      const observedQueues: QueuedMessage[][] = [];
       const observedRunEnds: Array<RunEnd | null> = [];
       const pendingSteer: PendingSteer = {
         steerId: 'steer-without-status',
@@ -1084,7 +1112,12 @@ describe('useResumeOnLoad', () => {
       mockUseActiveJobs.mockReturnValue({
         data: { activeJobIds: [CONVERSATION_ID] },
       });
-      mockFetchStreamStatus.mockRejectedValue(new Error('Status unavailable'));
+      mockFetchStreamStatus
+        .mockRejectedValueOnce(new Error('Status unavailable'))
+        .mockResolvedValue({
+          active: false,
+          unrecoveredSteers: [pendingSteer],
+        });
 
       const { rerender } = renderUseResumeOnLoad({
         submission: buildSubmission(CONVERSATION_ID),
@@ -1092,6 +1125,7 @@ describe('useResumeOnLoad', () => {
           queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
         pendingSteers: [pendingSteer],
         onPendingSteers: (steers) => observedSteers.push(steers),
+        onQueuedMessages: (queued) => observedQueues.push(queued),
         onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
         queryClient,
         messageQueryFn: jest.fn().mockResolvedValue(finalMessages),
@@ -1102,16 +1136,54 @@ describe('useResumeOnLoad', () => {
       });
       rerender();
 
-      await waitFor(() => {
-        expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
-          conversationId: CONVERSATION_ID,
-          outcome: 'completed',
-        });
-      });
+      await flushMicrotasks();
+
+      expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
+        unfinishedMessages,
+      );
+      expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
+      expect(observedSteers[observedSteers.length - 1]).toEqual([pendingSteer]);
+      expect(observedQueues[observedQueues.length - 1]).toEqual([]);
+
+      await advanceRetryTimer(1000);
+
+      expect(mockFetchStreamStatus).toHaveBeenCalledTimes(2);
       expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
         finalMessages,
       );
-      expect(observedSteers[observedSteers.length - 1]).toEqual([pendingSteer]);
+      expect(observedQueues[observedQueues.length - 1]).toEqual([
+        expect.objectContaining({ id: pendingSteer.steerId, text: pendingSteer.text }),
+      ]);
+      expect(observedSteers[observedSteers.length - 1]).toEqual([]);
+      expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+        conversationId: CONVERSATION_ID,
+        outcome: 'completed',
+      });
+    });
+
+    it('does not keep polling terminal status after a permanent client error', async () => {
+      jest.useFakeTimers();
+      const forbidden = Object.assign(new Error('Forbidden'), {
+        response: { status: 403 },
+      });
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+      });
+      mockFetchStreamStatus.mockRejectedValue(forbidden);
+
+      const { rerender } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        messages: [buildUserMessage(CONVERSATION_ID), buildAssistantMessage({ unfinished: true })],
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [] },
+      });
+      rerender();
+      await flushMicrotasks();
+      await advanceRetryTimer(30000);
+
+      expect(mockFetchStreamStatus).toHaveBeenCalledTimes(1);
     });
   });
 

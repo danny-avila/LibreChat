@@ -483,6 +483,10 @@ describe('useResumableSSE', () => {
       startedAsNewConvo: true,
       created: true,
     });
+    expect(mockRemoveQueries).toHaveBeenCalledWith({
+      queryKey: ['resumable-terminal-event', 'stream-123'],
+      exact: true,
+    });
     unmount();
   });
 
@@ -1448,6 +1452,11 @@ describe('useResumableSSE', () => {
 
     await act(async () => {
       await Promise.resolve();
+    });
+
+    expect(mockRemoveQueries).toHaveBeenCalledWith({
+      queryKey: ['resumable-terminal-event', CONV_ID],
+      exact: true,
     });
 
     const sse = getLastSSE();

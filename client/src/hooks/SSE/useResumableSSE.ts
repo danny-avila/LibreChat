@@ -58,7 +58,8 @@ import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useUsageHandler from './useUsageHandler';
 import {
-  clearResumableRecovery,
+  clearDisconnectedRunRecovery,
+  clearTerminalEventSeen,
   getDisconnectedRunRecovery,
   markTerminalEventSeen,
   setDisconnectedRunRecovery,
@@ -1685,6 +1686,9 @@ export default function useResumableSSE(
         }
         // Resume: just subscribe to existing stream, don't start new generation
         logger.log('ResumableSSE', 'Resuming existing stream:', resumeStreamId);
+        // A terminal marker can outlive the observer that was meant to consume
+        // it. A confirmed active stream always belongs to a later/live run.
+        clearTerminalEventSeen(queryClient, resumeStreamId);
         setStreamId(resumeStreamId);
         // Optimistically add to active jobs (in case it's not already there)
         addActiveJob(resumeStreamId);
@@ -1698,8 +1702,11 @@ export default function useResumableSSE(
         }
         if (startResult) {
           const { streamId: newStreamId, resumed } = startResult;
+          // Terminal markers are conversation-scoped, so never carry one into
+          // a confirmed active run, including a deduplicated resumed start.
+          clearTerminalEventSeen(queryClient, newStreamId);
           if (!resumed) {
-            clearResumableRecovery(queryClient, newStreamId);
+            clearDisconnectedRunRecovery(queryClient, newStreamId);
           }
           setStreamId(newStreamId);
           // Optimistically add to active jobs
