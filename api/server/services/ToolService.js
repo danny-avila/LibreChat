@@ -607,19 +607,21 @@ async function loadToolDefinitionsWrapper({
     return { toolDefinitions: [] };
   }
 
+  const configServers = await resolveConfigServers(req);
+
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
   if (filteredTools?.some((t) => t.includes(Constants.mcp_delimiter))) {
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: filteredTools,
       userId: req.user.id,
+      serverNames: Object.keys(configServers ?? {}),
       findPluginAuthsByKeys,
     });
   }
 
   const flowsCache = getLogStores(CacheKeys.FLOWS);
   const flowManager = getFlowStateManager(flowsCache);
-  const configServers = await resolveConfigServers(req);
   const pendingOAuthServers = new Set();
   const pendingOAuthStarts = new Map();
   const emittedOAuthStarts = new Map();
@@ -893,7 +895,10 @@ async function loadToolDefinitionsWrapper({
     },
   );
 
-  for (const serverName of getMCPServerNamesFromTools(filteredTools)) {
+  for (const serverName of getMCPServerNamesFromTools(
+    filteredTools,
+    Object.keys(configServers ?? {}),
+  )) {
     if (pendingOAuthServers.has(serverName)) {
       continue;
     }
@@ -1187,6 +1192,7 @@ async function loadAgentTools({
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: _agentTools,
       userId: req.user.id,
+      serverNames: Object.keys(req.config?.mcpConfig ?? {}),
       findPluginAuthsByKeys,
     });
   }

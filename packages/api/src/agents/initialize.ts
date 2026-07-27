@@ -50,7 +50,7 @@ import {
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
-import { normalizeServerName, requiresEphemeralUserConnection } from '~/mcp/utils';
+import { normalizeServerName, requiresEphemeralUserConnection, splitMCPToolKey } from '~/mcp/utils';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
@@ -1187,6 +1187,7 @@ export async function initializeAgent(
         ephemeralServerNames.add(normalizeServerName(serverName));
       }
     }
+    const ephemeralServerNameList = Array.from(ephemeralServerNames);
     const backgroundResult = applyBackgroundToolCalls({
       toolDefinitions,
       toolRegistry,
@@ -1197,13 +1198,8 @@ export async function initializeAgent(
        *  Unknown servers stay eligible — the executor's per-instance tag is
        *  the fail-safe for those. */
       excludeTool: (toolName) => {
-        const delimiterIndex = toolName.indexOf(Constants.mcp_delimiter);
-        if (delimiterIndex < 0) {
-          return false;
-        }
-        return ephemeralServerNames.has(
-          toolName.slice(delimiterIndex + Constants.mcp_delimiter.length),
-        );
+        const [, serverName] = splitMCPToolKey(toolName, ephemeralServerNameList);
+        return serverName != null && ephemeralServerNames.has(serverName);
       },
     });
     toolDefinitions = backgroundResult.toolDefinitions;

@@ -2755,6 +2755,51 @@ export enum Constants {
   CHECK_BACKGROUND_TASK = 'check_background_task',
 }
 
+/**
+ * Splits a combined MCP tool key (`${rawToolName}${mcp_delimiter}${serverName}`)
+ * back into its two parts.
+ *
+ * Both halves can legitimately contain the delimiter, so position alone cannot
+ * identify the boundary. Raw tool names come from the upstream server and are
+ * untrusted (`get_mcp_server_version`, or a gateway-prefixed
+ * `gitlab-get_mcp_server_version`), and `normalizeServerName` preserves
+ * underscores, so a configured server may be named `Google_mcp_Workspace`.
+ *
+ * When `knownServerNames` is supplied the boundary is resolved against it,
+ * which is exact: the longest configured name the key actually ends with wins.
+ * Otherwise this falls back to the last delimiter, which is correct whenever
+ * only the tool half contains one and matches `.split()` when neither does.
+ */
+export function splitMCPToolKey(
+  toolKey: string,
+  knownServerNames?: readonly string[],
+): [string, string | undefined] {
+  if (knownServerNames?.length) {
+    let matched: string | undefined;
+    for (let i = 0; i < knownServerNames.length; i++) {
+      const serverName = knownServerNames[i];
+      if (!serverName || serverName.length <= (matched?.length ?? 0)) {
+        continue;
+      }
+      if (toolKey.endsWith(`${Constants.mcp_delimiter}${serverName}`)) {
+        matched = serverName;
+      }
+    }
+    if (matched != null) {
+      return [
+        toolKey.slice(0, toolKey.length - matched.length - Constants.mcp_delimiter.length),
+        matched,
+      ];
+    }
+  }
+
+  const idx = toolKey.lastIndexOf(Constants.mcp_delimiter);
+  if (idx === -1) {
+    return [toolKey, undefined];
+  }
+  return [toolKey.slice(0, idx), toolKey.slice(idx + Constants.mcp_delimiter.length)];
+}
+
 /** Maximum explicit subagent hops allowed from any root agent at runtime. */
 export const MAX_SUBAGENT_DEPTH = 5;
 

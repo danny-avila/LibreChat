@@ -3,18 +3,22 @@ import { Constants } from 'librechat-data-provider';
 import type { PluginAuthMethods } from '@librechat/data-schemas';
 import type { GenericTool } from '@librechat/agents';
 import { getPluginAuthMap } from '~/agents/auth';
+import { splitMCPToolKey } from './utils';
 
 export async function getUserMCPAuthMap({
   userId,
   tools,
   servers,
   toolInstances,
+  serverNames,
   findPluginAuthsByKeys,
 }: {
   userId: string;
   tools?: (string | undefined)[];
   servers?: (string | undefined)[];
   toolInstances?: (GenericTool | null)[];
+  /** Configured server names, used to resolve the tool-key boundary exactly */
+  serverNames?: readonly string[];
   findPluginAuthsByKeys: PluginAuthMethods['findPluginAuthsByKeys'];
 }): Promise<Record<string, Record<string, string>>> {
   let allMcpCustomUserVars: Record<string, Record<string, string>> = {};
@@ -34,9 +38,7 @@ export async function getUserMCPAuthMap({
         if (!toolName) {
           continue;
         }
-        const delimiterIndex = toolName.indexOf(Constants.mcp_delimiter);
-        if (delimiterIndex === -1) continue;
-        const mcpServer = toolName.slice(delimiterIndex + Constants.mcp_delimiter.length);
+        const [, mcpServer] = splitMCPToolKey(toolName, serverNames);
         if (!mcpServer) continue;
         uniqueMcpServers.add(`${Constants.mcp_prefix}${mcpServer}`);
       }

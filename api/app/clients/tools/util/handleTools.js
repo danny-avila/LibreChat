@@ -397,7 +397,7 @@ const loadTools = async ({
         continue;
       }
 
-      const [toolName, serverName] = splitMCPToolKey(tool);
+      const [toolName, serverName] = splitMCPToolKey(tool, Object.keys(configServers ?? {}));
       if (toolName === Constants.mcp_server) {
         /** Placeholder used for UI purposes */
         continue;

@@ -178,7 +178,7 @@ const getMCPTools = async (req, res) => {
               continue;
             }
 
-            const [toolName] = splitMCPToolKey(toolKey);
+            const [toolName] = splitMCPToolKey(toolKey, [serverName]);
             server.tools.push({
               name: toolName,
               pluginKey: toolKey,

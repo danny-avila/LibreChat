@@ -263,7 +263,7 @@ const filterAuthorizedTools = async ({
       }
     }
 
-    const [, serverName] = splitMCPToolKey(tool);
+    const [, serverName] = splitMCPToolKey(tool, Object.keys(mcpServerConfigs));
     if (!serverName) {
       logger.warn(
         `[filterAuthorizedTools] Rejected malformed MCP tool key "${tool}" for user ${userId}`,

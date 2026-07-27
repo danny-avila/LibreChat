@@ -666,7 +666,7 @@ async function createMCPTool({
   streamId = null,
   jobCreatedAt,
 }) {
-  const [toolName, serverName] = splitMCPToolKey(toolKey);
+  const [toolName, serverName] = splitMCPToolKey(toolKey, Object.keys(configServers ?? {}));
 
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));

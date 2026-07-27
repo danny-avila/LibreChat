@@ -679,6 +679,9 @@ describe('ToolService - Action Capability Gating', () => {
       const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
       const capabilities = [AgentCapabilities.tools];
       const req = createMockReq(capabilities);
+      /** A server whose own name contains the delimiter is only resolvable
+       *  against the configured set, so the key boundary is unambiguous. */
+      mockResolveConfigServers.mockResolvedValue({ [serverName]: {} });
       const res = { writableEnded: false };
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
       mockFlowManager.getFlowState.mockResolvedValue({
