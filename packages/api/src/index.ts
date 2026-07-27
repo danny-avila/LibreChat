@@ -38,6 +38,8 @@ export * from './crypto';
 export * from './flow/manager';
 /* Middleware */
 export * from './middleware';
+/* Security */
+export * from './security';
 /* Memory */
 export * from './memory';
 /* Model Specs */
