@@ -101,6 +101,22 @@ describe('preflightCodeOutputBatch', () => {
     expect(result.every((entry) => entry.downloadFallback === true)).toBe(true);
   });
 
+  it('preserves configured files above the inspection count as URL fallbacks', async () => {
+    const prepare = jest.fn(async (input: PrepareCodeOutputInput) => prepared(input));
+
+    const result = await preflightCodeOutputBatch({
+      artifact: artifact(12),
+      limits: { ...limits, fileLimit: 12 },
+      prepare,
+    });
+
+    expect(prepare).not.toHaveBeenCalled();
+    expect(result.map((entry) => entry.file.id)).toEqual(
+      Array.from({ length: 12 }, (_, index) => `file-${index}`),
+    );
+    expect(result.every((entry) => entry.downloadFallback === true)).toBe(true);
+  });
+
   it('stops default-off downloads at the aggregate budget and falls back without retrying', async () => {
     const prepare = jest.fn(async (input: PrepareCodeOutputInput) =>
       prepared(input, { buffer: Buffer.alloc(4) }),
@@ -157,6 +173,41 @@ describe('preflightCodeOutputBatch', () => {
       code: 'content_filter_uninspectable',
       body: { source: 'file', field: 'content' },
     });
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
+  it('rejects active inspection above the hard count even when the configured limit allows it', async () => {
+    const filters: FiltersConfig = {
+      files: {
+        pii: {
+          fields: ['content'],
+          starterPatterns: [],
+          customPatterns: [BLOCK_PATTERN],
+          uninspectable: 'allow',
+        },
+      },
+    };
+    const prepare = jest.fn(async (input: PrepareCodeOutputInput) => prepared(input));
+    const inputArtifact = artifact(12);
+    const overflowFile = inputArtifact.files?.[10];
+    if (overflowFile == null) {
+      throw new Error('Expected an overflow file');
+    }
+    const readOverflowContent = jest.fn(() => 'safe');
+    Object.defineProperty(overflowFile, 'content', { get: readOverflowContent });
+
+    await expect(
+      preflightCodeOutputBatch({
+        filters,
+        artifact: inputArtifact,
+        limits: { ...limits, fileLimit: 12 },
+        prepare,
+      }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: { source: 'file', field: 'content' },
+    });
+    expect(readOverflowContent).not.toHaveBeenCalled();
     expect(prepare).not.toHaveBeenCalled();
   });
 

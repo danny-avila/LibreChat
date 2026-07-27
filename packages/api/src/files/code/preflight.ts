@@ -93,11 +93,11 @@ function normalizedPreparedMimeType(prepared: PreparedCodeOutput): string {
   return prepared.file.type.split(';', 1)[0].trim().toLowerCase();
 }
 
-function boundedCountLimit(configured: number, hardLimit: number): number {
+function getConfiguredCountLimit(configured: number, fallback: number): number {
   if (!Number.isFinite(configured) || configured < 0) {
-    return hardLimit;
+    return fallback;
   }
-  return Math.min(configured, hardLimit);
+  return configured;
 }
 
 /**
@@ -129,21 +129,24 @@ export async function preflightCodeOutputBatch(
     selectedFields.length > 0 && (hasActivePiiPatterns(pii) || pii?.uninspectable === 'block');
 
   const resourceField = selectedFields[0] ?? 'content';
-  const maxCount = boundedCountLimit(
+  const configuredMaxCount = getConfiguredCountLimit(
     Math.floor(input.limits.fileLimit),
     CODE_OUTPUT_PREFLIGHT_MAX_COUNT,
   );
   const maxBytes = getBoundedCodeOutputByteLimit(input.limits.totalSizeLimit);
   const fileSizeLimit = getBoundedCodeOutputByteLimit(input.limits.fileSizeLimit, maxBytes);
   const entries: PreparedCodeOutputEntry[] = [];
-  let countExceeded = false;
+  let configuredCountExceeded = false;
   for (const file of input.artifact?.files ?? []) {
     if (file.inherited === true) {
       continue;
     }
-    if (entries.length >= maxCount) {
-      countExceeded = true;
+    if (entries.length >= configuredMaxCount) {
+      configuredCountExceeded = true;
       break;
+    }
+    if (inspectionActive && entries.length >= CODE_OUTPUT_PREFLIGHT_MAX_COUNT) {
+      throw new UninspectableFileError(resourceField);
     }
     throwIfContentBlocked(input.filters, extractFileContent(file));
     entries.push({
@@ -151,7 +154,8 @@ export async function preflightCodeOutputBatch(
       sessionId: file.storage_session_id ?? input.artifact?.session_id,
     });
   }
-  if (countExceeded) {
+  const inspectionCountExceeded = entries.length > CODE_OUTPUT_PREFLIGHT_MAX_COUNT;
+  if (configuredCountExceeded || inspectionCountExceeded) {
     if (inspectionActive) {
       throw new UninspectableFileError(resourceField);
     }

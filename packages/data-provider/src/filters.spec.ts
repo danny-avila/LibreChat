@@ -244,6 +244,18 @@ describe('filtersConfigSchema', () => {
       }).success,
     ).toBe(false);
     expect(
+      messageFilterPiiSchema.safeParse({
+        customPatterns: [{ id: 'legacy-lookahead', label: 'Lookahead', regex: '(?=LEGACY)LEGACY' }],
+      }).success,
+    ).toBe(true);
+    expect(
+      messageFilterPiiSchema.safeParse({
+        customPatterns: [
+          { id: 'legacy-backreference', label: 'Backreference', regex: '(LEGACY)-\\1' },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
       messageFilterPiiSchema.parse({
         customPatterns: [{ id: 'legacy', label: 'Legacy', regex: 'LEGACY-[0-9]+', ignored: true }],
       }),
