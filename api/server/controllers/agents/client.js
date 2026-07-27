@@ -358,16 +358,30 @@ class AgentClient extends BaseClient {
    * endpoint named by `activityEndpoint` (default: the agent's).
    */
   async resolveActivityLabelLLM() {
-    return resolveActivityLabelModel({
-      req: this.options.req,
-      agent: this.options.agent,
-      ids: {
-        messageId: this.responseMessageId,
-        conversationId: this.conversationId,
-        parentMessageId: this.parentMessageId,
-      },
-      db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
-    });
+    /** Memoized per response: resolution reads provider config and can hit the
+     *  database for user keys, and nothing it depends on changes between
+     *  batches of the same run — so re-resolving on every batch (twice, with
+     *  usage accounting) is repeated credential work for an identical result.
+     *  The promise is cached rather than the value so concurrent batches share
+     *  one in-flight resolution. */
+    this.activityLabelLLMPromise =
+      this.activityLabelLLMPromise ??
+      resolveActivityLabelModel({
+        req: this.options.req,
+        agent: this.options.agent,
+        ids: {
+          messageId: this.responseMessageId,
+          conversationId: this.conversationId,
+          parentMessageId: this.parentMessageId,
+        },
+        db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
+      }).catch((error) => {
+        /** Never cache a rejection: a transient credential read failure would
+         *  otherwise disable labels for the rest of the response. */
+        this.activityLabelLLMPromise = null;
+        throw error;
+      });
+    return this.activityLabelLLMPromise;
   }
 
   /**

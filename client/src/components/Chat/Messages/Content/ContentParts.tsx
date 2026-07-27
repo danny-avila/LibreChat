@@ -31,9 +31,15 @@ const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string =
   if (!firstPart) {
     return 'empty';
   }
-  const toolCallId = getToolCallId(firstPart.part);
-  if (toolCallId) {
-    return `tool:${toolCallId}`;
+  /** Keyed on the first TOOL CALL, not the first part. An activity label
+   *  absorbs the block's leading THINK part when its text lands, so keying on
+   *  `parts[0]` would flip the key mid-run — remounting the group and losing
+   *  whatever the user had expanded. The tool calls themselves do not move. */
+  for (const { part } of parts) {
+    const toolCallId = getToolCallId(part);
+    if (toolCallId) {
+      return `tool:${toolCallId}`;
+    }
   }
   return `fallback:${fallbackScope}:${firstPart.idx}`;
 };
