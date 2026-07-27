@@ -47,6 +47,7 @@ jest.mock('~/utils', () => {
   return {
     ...originalUtils,
     processModelData: jest.fn((...args) => originalUtils.processModelData(...args)),
+    processLiteLLMModelData: jest.fn((...args) => originalUtils.processLiteLLMModelData(...args)),
     logAxiosError: jest.fn(),
     resolveHeaders: jest.fn((options) => options?.headers || {}),
   };
@@ -419,6 +420,94 @@ describe('fetchModels with createTokenConfig true', () => {
       key.startsWith(`${SCOPED_TOKEN_CONFIG_KEY_PREFIX}models`),
     );
     expect(sourceSetCall).toBeDefined();
+  });
+});
+
+describe('fetchModels with LiteLLM endpoint', () => {
+  const modelsListResponse = {
+    data: [{ id: 'gpt-4o-mini' }, { id: 'no-pricing-model' }],
+  };
+  const modelInfoResponse = {
+    data: [
+      {
+        model_name: 'gpt-4o-mini',
+        model_info: {
+          input_cost_per_token: 0.00000015,
+          output_cost_per_token: 0.0000006,
+          cache_read_input_token_cost: 0.000000075,
+          cache_creation_input_token_cost: 0.0000001875,
+          max_input_tokens: 128000,
+        },
+      },
+      {
+        model_name: 'no-pricing-model',
+        model_info: {},
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    mockedAxios.get.mockReset();
+  });
+
+  it('fetches pricing from /model/info and populates prompt, completion, and cache rates', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url.includes('/model/info')) {
+        return Promise.resolve({ data: modelInfoResponse });
+      }
+      return Promise.resolve({ data: modelsListResponse });
+    });
+
+    const models = await fetchModels({
+      apiKey: 'testApiKey',
+      baseURL: 'https://litellm.test.com/v1',
+      name: 'LiteLLM',
+      createTokenConfig: true,
+    });
+
+    expect(models).toEqual(['gpt-4o-mini', 'no-pricing-model']);
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('/model/info'),
+      expect.any(Object),
+    );
+    expect(mockTokenConfigSet).toHaveBeenCalledWith(
+      'LiteLLM',
+      expect.objectContaining({
+        'gpt-4o-mini': {
+          prompt: 0.15,
+          completion: 0.6,
+          context: 128000,
+          read: 0.075,
+          write: 0.1875,
+        },
+      }),
+    );
+    const [, storedConfig] = mockTokenConfigSet.mock.calls[0];
+    expect(storedConfig['no-pricing-model']).toBeUndefined();
+  });
+
+  it('falls back to standard pricing and logs once when /model/info fails', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url.includes('/model/info')) {
+        return Promise.reject(new Error('403 Forbidden'));
+      }
+      return Promise.resolve({ data: modelsListResponse });
+    });
+
+    const models = await fetchModels({
+      apiKey: 'testApiKey',
+      baseURL: 'https://litellm.test.com/v1',
+      name: 'LiteLLM',
+      createTokenConfig: true,
+    });
+
+    expect(models).toEqual(['gpt-4o-mini', 'no-pricing-model']);
+    expect(mockTokenConfigSet).not.toHaveBeenCalled();
+    expect(logAxiosError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining('/model/info'),
+      }),
+    );
   });
 });
 

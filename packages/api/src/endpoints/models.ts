@@ -10,6 +10,7 @@ import {
 } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { AxiosRequestConfig } from 'axios';
+import type { EndpointTokenConfig } from '~/types';
 import {
   processModelData,
   extractBaseURL,
@@ -19,6 +20,7 @@ import {
   logAxiosError,
   inputSchema,
   applyAxiosProxyConfig,
+  processLiteLLMModelData,
 } from '~/utils';
 import { getModelCacheTokenConfigKey, isScopedTokenConfigKey } from '~/endpoints/keys';
 import { createSSRFSafeAgents, validateEndpointURL } from '~/auth';
@@ -127,6 +129,52 @@ async function backfillTokenConfigFromModelCache(
 
   await tokenConfigCache().set(tokenKey, cachedTokenConfig);
   return true;
+}
+
+/**
+ * Fetches per-model pricing from a LiteLLM proxy's `/model/info` route, called
+ * with the endpoint's own configured (virtual) key — this never requires the
+ * proxy's admin/master key. `/model/info` is a distinct endpoint from the
+ * `/models` list already fetched by `fetchModels`, so this is an additional
+ * request, made only for endpoints named `litellm` (see `KnownEndpoints`).
+ *
+ * Any failure — the route not existing on older LiteLLM versions, the virtual
+ * key lacking permission, a network error, or an unexpected response shape —
+ * is treated as "no LiteLLM pricing available" and logged once here, rather
+ * than thrown. Billing falls back to the standard tables, where the
+ * fall-through pricing warning in `getMultiplier` can flag individual models.
+ */
+async function fetchLiteLLMTokenConfig({
+  name,
+  baseURL,
+  options,
+  ssrfAgents,
+}: {
+  name: string;
+  baseURL: string;
+  options: AxiosRequestConfig & { headers: Record<string, string>; timeout: number };
+  ssrfAgents?: SSRFSafeAgents;
+}): Promise<EndpointTokenConfig | null> {
+  try {
+    const url = new URL(`${baseURL.replace(/\/+$/, '')}/model/info`);
+    const requestOptions: AxiosRequestConfig & {
+      headers: Record<string, string>;
+      timeout: number;
+    } = {
+      ...options,
+      headers: { ...options.headers },
+    };
+    applyAxiosProxyConfig(requestOptions, url);
+    applyUserProvidedBaseURLProtection(requestOptions, ssrfAgents);
+    const res = await axios.get(url.toString(), requestOptions);
+    return processLiteLLMModelData(res.data);
+  } catch (error) {
+    logAxiosError({
+      message: `Failed to fetch LiteLLM pricing from "${name}" API's /model/info — falling back to standard pricing`,
+      error: error as Error,
+    });
+    return null;
+  }
 }
 
 /**
@@ -287,13 +335,31 @@ export async function fetchModels({
 
     const input = res.data;
 
-    const validationResult = inputSchema.safeParse(input);
-    if (validationResult.success && createTokenConfig) {
-      const endpointTokenConfig = processModelData(input);
-      const cache = tokenConfigCache();
-      await cache.set(tokenKey ?? name, endpointTokenConfig);
-      if (modelsCache && cacheKey) {
-        await cache.set(getModelCacheTokenConfigKey(cacheKey), endpointTokenConfig);
+    if (createTokenConfig) {
+      /** LiteLLM's `/models` list has no pricing fields — `inputSchema` (OpenRouter's
+       *  shape) never validates against it, so pricing comes from a separate
+       *  `/model/info` call instead of `processModelData`. */
+      let endpointTokenConfig: EndpointTokenConfig | null = null;
+      if (name.toLowerCase() === KnownEndpoints.litellm) {
+        endpointTokenConfig = await fetchLiteLLMTokenConfig({
+          name,
+          baseURL: baseURL ?? '',
+          options,
+          ssrfAgents,
+        });
+      } else {
+        const validationResult = inputSchema.safeParse(input);
+        if (validationResult.success) {
+          endpointTokenConfig = processModelData(input);
+        }
+      }
+
+      if (endpointTokenConfig) {
+        const cache = tokenConfigCache();
+        await cache.set(tokenKey ?? name, endpointTokenConfig);
+        if (modelsCache && cacheKey) {
+          await cache.set(getModelCacheTokenConfigKey(cacheKey), endpointTokenConfig);
+        }
       }
     }
     models = input.data.map((item: { id: string }) => item.id);

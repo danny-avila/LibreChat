@@ -782,3 +782,70 @@ export function processModelData(input: z.infer<typeof inputSchema>): EndpointTo
 
   return tokenConfig;
 }
+
+/**
+ * Shape of a LiteLLM proxy's `/model/info` response. Distinct from OpenRouter's
+ * `/models` shape (`modelSchema` above) — LiteLLM keys models by the admin-chosen
+ * `model_name` alias and nests cost fields under `model_info`, all of them optional
+ * since LiteLLM omits cost data for models it has no pricing for.
+ */
+export const litellmModelSchema = z.object({
+  model_name: z.string(),
+  model_info: z
+    .object({
+      input_cost_per_token: z.number().optional(),
+      output_cost_per_token: z.number().optional(),
+      cache_read_input_token_cost: z.number().optional(),
+      cache_creation_input_token_cost: z.number().optional(),
+      max_input_tokens: z.number().optional(),
+      max_tokens: z.number().optional(),
+    })
+    .optional(),
+});
+
+export const litellmInputSchema = z.object({
+  data: z.array(litellmModelSchema),
+});
+
+/**
+ * Processes a LiteLLM `/model/info` response into the internal per-1M-token
+ * pricing convention (same arithmetic `processModelData` uses for OpenRouter's
+ * per-token USD rates). Models with no `input_cost_per_token` are skipped
+ * rather than priced at 0 — a zero rate would silently bill nothing instead of
+ * falling through to the standard tables, where `getMultiplier`'s fall-through
+ * warning can flag it.
+ */
+export function processLiteLLMModelData(
+  input: z.infer<typeof litellmInputSchema>,
+): EndpointTokenConfig {
+  const validationResult = litellmInputSchema.safeParse(input);
+  if (!validationResult.success) {
+    throw new Error('Invalid input data');
+  }
+  const { data } = validationResult.data;
+
+  const tokenConfig: EndpointTokenConfig = {};
+
+  for (const model of data) {
+    const info = model.model_info;
+    if (info?.input_cost_per_token == null) {
+      continue;
+    }
+
+    const config: TokenConfig = {
+      prompt: info.input_cost_per_token * 1_000_000,
+      completion: (info.output_cost_per_token ?? 0) * 1_000_000,
+      context: info.max_input_tokens ?? info.max_tokens ?? 0,
+    };
+    if (info.cache_read_input_token_cost != null) {
+      config.read = info.cache_read_input_token_cost * 1_000_000;
+    }
+    if (info.cache_creation_input_token_cost != null) {
+      config.write = info.cache_creation_input_token_cost * 1_000_000;
+    }
+
+    tokenConfig[model.model_name] = config;
+  }
+
+  return tokenConfig;
+}
