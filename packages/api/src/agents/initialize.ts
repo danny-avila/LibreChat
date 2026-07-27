@@ -1187,7 +1187,10 @@ export async function initializeAgent(
         ephemeralServerNames.add(normalizeServerName(serverName));
       }
     }
-    const ephemeralServerNameList = Array.from(ephemeralServerNames);
+    /** Resolve the boundary against every configured server, not just the
+     *  ephemeral subset: a non-ephemeral name ending in an ephemeral one would
+     *  otherwise be misread as ephemeral. */
+    const allServerNames = Object.keys(req.config?.mcpConfig ?? {}).map(normalizeServerName);
     const backgroundResult = applyBackgroundToolCalls({
       toolDefinitions,
       toolRegistry,
@@ -1198,7 +1201,7 @@ export async function initializeAgent(
        *  Unknown servers stay eligible — the executor's per-instance tag is
        *  the fail-safe for those. */
       excludeTool: (toolName) => {
-        const [, serverName] = splitMCPToolKey(toolName, ephemeralServerNameList);
+        const [, serverName] = splitMCPToolKey(toolName, allServerNames);
         return serverName != null && ephemeralServerNames.has(serverName);
       },
     });

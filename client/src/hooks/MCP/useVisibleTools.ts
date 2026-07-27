@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Constants } from 'librechat-data-provider';
+import { Constants, splitMCPToolKey } from 'librechat-data-provider';
 import type { TPlugin } from 'librechat-data-provider';
 import type { MCPServerInfo } from '~/common';
 
@@ -23,20 +23,14 @@ export function useVisibleTools(
   mcpServersMap: Map<string, MCPServerInfo>,
 ): VisibleToolsResult {
   return useMemo(() => {
+    const knownServerNames = Array.from(mcpServersMap.keys());
     const mcpServers = new Set<string>();
     const regularToolIds: string[] = [];
 
     for (const toolId of selectedToolIds ?? []) {
       // MCP tools/servers
       if (toolId.includes(Constants.mcp_delimiter)) {
-        // Split on the *last* occurrence, not `.split()[1]` - the raw tool
-        // name half (everything before the server-name suffix LibreChat
-        // appends) can itself legitimately contain the delimiter substring
-        // (e.g. a tool literally named `get_mcp_server_version`, or one
-        // already prefixed by an upstream gateway), which would otherwise
-        // shift the server name to the wrong index.
-        const delimiterIndex = toolId.lastIndexOf(Constants.mcp_delimiter);
-        const serverName = toolId.slice(delimiterIndex + Constants.mcp_delimiter.length);
+        const [, serverName] = splitMCPToolKey(toolId, knownServerNames);
         if (serverName) {
           mcpServers.add(serverName);
         }

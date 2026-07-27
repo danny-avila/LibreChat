@@ -145,6 +145,19 @@ async function resolveMcpConfigNames(req) {
 }
 
 /**
+ * All configured server names in the normalized form tool keys are built with.
+ * Unlike `resolveConfigServers`, this keeps unmodified YAML servers, which
+ * `ensureConfigServers` skips - those are exactly the ones that must still
+ * resolve the tool-key boundary.
+ * @param {import('express').Request} req
+ * @returns {Promise<string[]>}
+ */
+async function resolveMcpServerNames(req) {
+  const names = await resolveMcpConfigNames(req);
+  return names.map(normalizeServerName);
+}
+
+/**
  * Resolves config-source servers and merges all server configs (YAML + config + user DB)
  * for the given user context. Shared helper for controllers needing the full merged config.
  * @param {string} userId
@@ -1095,6 +1108,7 @@ module.exports = {
   userCanUseMCPServers,
   getMCPSetupData,
   resolveConfigServers,
+  resolveMcpServerNames,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
   createOAuthStart,

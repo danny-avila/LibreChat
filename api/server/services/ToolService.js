@@ -69,7 +69,11 @@ const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/pro
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
-const { createMCPPermissionContext, resolveConfigServers } = require('~/server/services/MCP');
+const {
+  createMCPPermissionContext,
+  resolveConfigServers,
+  resolveMcpServerNames,
+} = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
@@ -607,7 +611,10 @@ async function loadToolDefinitionsWrapper({
     return { toolDefinitions: [] };
   }
 
-  const configServers = await resolveConfigServers(req);
+  const [configServers, mcpServerNames] = await Promise.all([
+    resolveConfigServers(req),
+    resolveMcpServerNames(req),
+  ]);
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
@@ -615,7 +622,7 @@ async function loadToolDefinitionsWrapper({
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: filteredTools,
       userId: req.user.id,
-      serverNames: Object.keys(configServers ?? {}),
+      serverNames: mcpServerNames,
       findPluginAuthsByKeys,
     });
   }
@@ -887,7 +894,7 @@ async function loadToolDefinitionsWrapper({
       programmaticToolsEnabled,
       codeExecutionEnabled,
       provider: agent.provider,
-      mcpServerNames: Object.keys(configServers ?? {}),
+      mcpServerNames,
     },
     {
       isBuiltInTool,
@@ -896,10 +903,7 @@ async function loadToolDefinitionsWrapper({
     },
   );
 
-  for (const serverName of getMCPServerNamesFromTools(
-    filteredTools,
-    Object.keys(configServers ?? {}),
-  )) {
+  for (const serverName of getMCPServerNamesFromTools(filteredTools, mcpServerNames)) {
     if (pendingOAuthServers.has(serverName)) {
       continue;
     }
@@ -973,7 +977,7 @@ async function loadToolDefinitionsWrapper({
           programmaticToolsEnabled,
           codeExecutionEnabled,
           provider: agent.provider,
-          mcpServerNames: Object.keys(configServers ?? {}),
+          mcpServerNames,
         },
         {
           isBuiltInTool,
@@ -1194,7 +1198,7 @@ async function loadAgentTools({
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: _agentTools,
       userId: req.user.id,
-      serverNames: Object.keys(req.config?.mcpConfig ?? {}),
+      serverNames: await resolveMcpServerNames(req),
       findPluginAuthsByKeys,
     });
   }

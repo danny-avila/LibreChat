@@ -42,6 +42,7 @@ jest.mock('~/server/services/MCP', () => ({
     canUseServers: jest.fn().mockResolvedValue(true),
   })),
   resolveConfigServers: jest.fn().mockResolvedValue({}),
+  resolveMcpServerNames: jest.fn().mockResolvedValue([]),
 }));
 
 jest.mock('~/config', () => ({
