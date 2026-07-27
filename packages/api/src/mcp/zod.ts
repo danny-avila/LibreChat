@@ -391,10 +391,18 @@ export function normalizeJsonSchema<T extends Record<string, unknown>>(schema: T
     ) {
       const newProps: Record<string, unknown> = {};
       for (const [propKey, propValue] of Object.entries(value as Record<string, unknown>)) {
-        newProps[propKey] =
+        const normalized =
           propValue && typeof propValue === 'object'
             ? normalizeJsonSchema(propValue as Record<string, unknown>)
             : propValue;
+        /** These keys name instance properties, so `__proto__` is legal here.
+         *  Plain assignment would hit the prototype setter and drop the entry. */
+        Object.defineProperty(newProps, propKey, {
+          value: normalized,
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
       }
       result[key] = newProps;
     } else if (SCHEMA_KEYWORDS.has(key) && value && typeof value === 'object') {

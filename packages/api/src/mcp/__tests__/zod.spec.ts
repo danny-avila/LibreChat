@@ -3169,3 +3169,26 @@ describe('normalizeJsonSchema draft-07 and 2020-12 containers', () => {
     expect(JSON.stringify(result)).not.toContain('"$');
   });
 });
+
+describe('normalizeJsonSchema prototype-polluting map keys', () => {
+  /** An MCP server's schema arrives as JSON, and `JSON.parse` creates a real own
+   *  `__proto__` property — unlike an object literal, where it sets the prototype. */
+  const parse = (json: string) => JSON.parse(json) as Record<string, unknown>;
+
+  it('keeps a __proto__ entry in a schema map as an own property', () => {
+    const result = normalizeJsonSchema(
+      parse('{"type":"object","properties":{"__proto__":{"type":"string","$comment":"x"}}}'),
+    ) as { properties: Record<string, unknown> };
+
+    expect(Object.prototype.hasOwnProperty.call(result.properties, '__proto__')).toBe(true);
+    expect(JSON.parse(JSON.stringify(result)).properties.__proto__).toEqual({ type: 'string' });
+  });
+
+  it('keeps a __proto__ entry under dependentSchemas', () => {
+    const result = normalizeJsonSchema(
+      parse('{"type":"object","dependentSchemas":{"__proto__":{"type":"object"}}}'),
+    ) as { dependentSchemas: Record<string, unknown> };
+
+    expect(Object.prototype.hasOwnProperty.call(result.dependentSchemas, '__proto__')).toBe(true);
+  });
+});
