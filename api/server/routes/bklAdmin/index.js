@@ -58,6 +58,35 @@ router.use('/analytics', async (req, res) => {
   }
 });
 
+/**
+ * FastAPI 데이터 삭제 프록시: /admin-api/data/* → ai-api /admin/data/*
+ * (매터/문서 preview·삭제·검색·감사 로그 — ADMIN_DATA_DELETE_SPEC).
+ * OpenSearch _delete_by_query 가 느릴 수 있어 timeout 을 넉넉히 잡는다.
+ */
+router.use('/data', async (req, res) => {
+  const baseUrl = process.env.BKL_API_BASE_URL || 'http://bkl-api:8000';
+  const targetUrl = `${baseUrl}/admin/data${req.url}`;
+  const headers = { Accept: 'application/json' };
+  if (process.env.IRE_API_TOKEN) {
+    headers.Authorization = `Bearer ${process.env.IRE_API_TOKEN}`;
+  }
+  try {
+    const response = await axios({
+      method: req.method,
+      url: targetUrl,
+      data: ['GET', 'HEAD'].includes(req.method.toUpperCase()) ? undefined : req.body,
+      headers:
+        req.method === 'GET' ? headers : { ...headers, 'Content-Type': 'application/json' },
+      timeout: 300_000,
+      validateStatus: () => true,
+    });
+    res.status(response.status).json(response.data);
+  } catch (err) {
+    logger.error('[bklAdmin/data] upstream error', err?.message || err);
+    res.status(502).json({ error: 'data upstream error', detail: String(err?.message || err) });
+  }
+});
+
 router.use((err, _req, res, _next) => {
   logger.error('[bkl-admin-api] request failed', err);
   res.status(500).json({ error: String(err.message || err) });
