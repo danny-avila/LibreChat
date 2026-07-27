@@ -35,6 +35,9 @@ const connect = require('./connect');
   if (!email) {
     email = await askQuestion('Email:');
   }
+  /** `findToken` lowercases its email query, but the Token schema has no setter, so an
+   * un-normalized address here is written verbatim and can never be looked up again. */
+  email = email.trim().toLowerCase();
   // Validate the email
   if (!email.includes('@')) {
     console.red('Error: Invalid email address!');
