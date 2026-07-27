@@ -185,6 +185,20 @@ function renderUseResumeOnLoad({
   };
 }
 
+const flushMicrotasks = async () => {
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
+const advanceRetryTimer = async (delay: number) => {
+  await act(async () => {
+    jest.advanceTimersByTime(delay);
+    await Promise.resolve();
+  });
+  await flushMicrotasks();
+};
+
 describe('useResumeOnLoad', () => {
   beforeEach(() => {
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -203,6 +217,7 @@ describe('useResumeOnLoad', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -933,7 +948,63 @@ describe('useResumeOnLoad', () => {
       expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
     });
 
+    it('retries a transient terminal refresh and publishes the recovered outcome', async () => {
+      jest.useFakeTimers();
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const observedRunEnds: Array<RunEnd | null> = [];
+      const unfinishedMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({ unfinished: true }),
+      ];
+      const finalMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({
+          messageId: 'response-message-final',
+          text: 'Recovered after retry',
+          unfinished: false,
+        }),
+      ];
+      queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+      });
+      mockFetchStreamStatus.mockResolvedValue({ active: false });
+      const messageQueryFn = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('Network unavailable'))
+        .mockResolvedValue(finalMessages);
+
+      const { rerender } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        getMessages: () =>
+          queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
+        onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+        queryClient,
+        messageQueryFn,
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [] },
+      });
+      rerender();
+      await flushMicrotasks();
+
+      expect(messageQueryFn).toHaveBeenCalledTimes(1);
+      await advanceRetryTimer(1000);
+
+      expect(messageQueryFn).toHaveBeenCalledTimes(2);
+      expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
+        finalMessages,
+      );
+      expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+        conversationId: CONVERSATION_ID,
+        outcome: 'completed',
+      });
+    });
+
     it('keeps first-turn recovery state when the message refresh fails transiently', async () => {
+      jest.useFakeTimers();
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       const removeQueriesSpy = jest.spyOn(queryClient, 'removeQueries');
       jest.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -966,13 +1037,13 @@ describe('useResumeOnLoad', () => {
         data: { activeJobIds: [] },
       });
       rerender();
+      await flushMicrotasks();
 
-      await waitFor(() => {
-        expect(messageQueryFn).toHaveBeenCalledTimes(1);
-      });
-      await act(async () => {
-        await Promise.resolve();
-      });
+      expect(messageQueryFn).toHaveBeenCalledTimes(1);
+      await advanceRetryTimer(1000);
+      expect(messageQueryFn).toHaveBeenCalledTimes(2);
+      await advanceRetryTimer(2000);
+      expect(messageQueryFn).toHaveBeenCalledTimes(3);
 
       expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
       expect(removeQueriesSpy).not.toHaveBeenCalledWith({

@@ -34,6 +34,31 @@ type ResponseRefreshResult = {
   notFound: boolean;
 };
 
+const TERMINAL_REFRESH_RETRY_DELAYS = [1000, 2000] as const;
+
+const waitForRetryDelay = (delay: number, signal: AbortSignal): Promise<boolean> =>
+  new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve(false);
+      return;
+    }
+
+    function cleanup() {
+      signal.removeEventListener('abort', onAbort);
+    }
+    function onAbort() {
+      clearTimeout(timeout);
+      cleanup();
+      resolve(false);
+    }
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve(true);
+    }, delay);
+
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+
 function hasSubmissionUserMessage(
   submission: TSubmission | null,
   messages: TMessage[] | undefined,
@@ -363,11 +388,14 @@ export default function useResumeOnLoad(
     active: isCurrentJobActive,
   });
   const activePathnameRef = useRef<string | null>(location.pathname);
+  const terminalRefreshAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     activePathnameRef.current = location.pathname;
     return () => {
       activePathnameRef.current = null;
+      terminalRefreshAbortRef.current?.abort();
+      terminalRefreshAbortRef.current = null;
     };
   }, [location.pathname]);
 
@@ -391,27 +419,67 @@ export default function useResumeOnLoad(
       return { messages: getMessages(), succeeded: false, notFound: false };
     }
 
+    terminalRefreshAbortRef.current?.abort();
+    const refreshController = new AbortController();
+    terminalRefreshAbortRef.current = refreshController;
     refreshedResponseRef.current = responseKey;
     console.log(
       '[ResumeOnLoad] Completed job left an unfinished response; refreshing messages:',
       conversationId,
     );
-    try {
-      await queryClient.invalidateQueries(
-        { queryKey: [QueryKeys.messages, conversationId] },
-        { throwOnError: true },
-      );
-      return { messages: getMessages(), succeeded: true, notFound: false };
-    } catch (error) {
+
+    const finishFailedRefresh = (notFound: boolean): ResponseRefreshResult => {
       if (refreshedResponseRef.current === responseKey) {
         refreshedResponseRef.current = null;
+      }
+      if (terminalRefreshAbortRef.current === refreshController) {
+        terminalRefreshAbortRef.current = null;
       }
       return {
         messages: getMessages(),
         succeeded: false,
-        notFound: isNotFoundError(error),
+        notFound,
       };
+    };
+
+    for (let attempt = 0; attempt <= TERMINAL_REFRESH_RETRY_DELAYS.length; attempt++) {
+      try {
+        await queryClient.invalidateQueries(
+          { queryKey: [QueryKeys.messages, conversationId] },
+          { throwOnError: true },
+        );
+        if (terminalRefreshAbortRef.current === refreshController) {
+          terminalRefreshAbortRef.current = null;
+        }
+        return { messages: getMessages(), succeeded: true, notFound: false };
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          return finishFailedRefresh(true);
+        }
+
+        const retryDelay = TERMINAL_REFRESH_RETRY_DELAYS[attempt];
+        if (
+          retryDelay == null ||
+          !(await waitForRetryDelay(retryDelay, refreshController.signal))
+        ) {
+          return finishFailedRefresh(false);
+        }
+
+        const observed = observedActiveJobRef.current;
+        if (observed.conversationId !== conversationId || observed.active) {
+          return finishFailedRefresh(false);
+        }
+
+        if (getUnfinishedAssistantTail(getMessages()) == null) {
+          if (terminalRefreshAbortRef.current === refreshController) {
+            terminalRefreshAbortRef.current = null;
+          }
+          return { messages: getMessages(), succeeded: true, notFound: false };
+        }
+      }
     }
+
+    return finishFailedRefresh(false);
   }, [conversationId, getMessages, queryClient]);
 
   const recoverStatusSteers = useCallback(
