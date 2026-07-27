@@ -1,12 +1,5 @@
 import type { Server } from 'node:http';
 
-interface HttpServerEnvironment {
-  HTTP_KEEP_ALIVE_TIMEOUT_MS?: string;
-  HTTP_KEEP_ALIVE_TIMEOUT_BUFFER_MS?: string;
-  HTTP_HEADERS_TIMEOUT_MS?: string;
-  HTTP_REQUEST_TIMEOUT_MS?: string;
-}
-
 const parseTimeout = (value?: string): number | undefined => {
   if (value == null || value.trim() === '') {
     return undefined;
@@ -18,7 +11,7 @@ const parseTimeout = (value?: string): number | undefined => {
 
 export const configureServerTimeouts = (
   server: Server,
-  environment: HttpServerEnvironment = process.env,
+  environment: NodeJS.ProcessEnv = process.env,
 ): void => {
   const keepAliveTimeout = parseTimeout(environment.HTTP_KEEP_ALIVE_TIMEOUT_MS);
   const keepAliveTimeoutBuffer = parseTimeout(environment.HTTP_KEEP_ALIVE_TIMEOUT_BUFFER_MS);
