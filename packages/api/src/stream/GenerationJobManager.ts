@@ -2320,11 +2320,11 @@ class GenerationJobManagerClass {
        * queue skips the content re-read").
        *
        * The residual: if `markActivityLabels` lost its write AND the first
-       * label is claimed inside the gap, this is skipped. That flag write
-       * shares fate with the content writes the labels themselves live in, so
-       * the case implies a store already dropping data — not worth a read on
-       * every resume. When the steer pass above already fetched content, this
-       * check is free.
+       * label is claimed inside the gap, this is skipped. The flag is a
+       * SEPARATE write from the durable label append, so that is genuinely
+       * possible rather than implying a broken store — which is why the mark
+       * is retried at run setup instead of being fire-and-forget. When the
+       * steer pass above already fetched content, this check is free.
        */
       const snapshotHasActivityLabels =
         resumeState?.aggregatedContent?.some(

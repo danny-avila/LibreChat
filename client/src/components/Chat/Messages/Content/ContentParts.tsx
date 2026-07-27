@@ -35,13 +35,20 @@ const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string =
    *  absorbs the block's leading THINK part when its text lands, so keying on
    *  `parts[0]` would flip the key mid-run — remounting the group and losing
    *  whatever the user had expanded. The tool calls themselves do not move. */
-  for (const { part } of parts) {
+  let firstToolIdx: number | undefined;
+  for (const { part, idx } of parts) {
     const toolCallId = getToolCallId(part);
     if (toolCallId) {
       return `tool:${toolCallId}`;
     }
+    if (firstToolIdx === undefined && part?.type === ContentTypes.TOOL_CALL) {
+      firstToolIdx = idx;
+    }
   }
-  return `fallback:${fallbackScope}:${firstPart.idx}`;
+  /** Same reasoning for id-less tool calls: anchor to the first TOOL entry's
+   *  index rather than the block's first part, which shifts when reasoning is
+   *  absorbed. Only a block with no tool call at all falls back to `parts[0]`. */
+  return `fallback:${fallbackScope}:${firstToolIdx ?? firstPart.idx}`;
 };
 
 type PartWithContextProps = {

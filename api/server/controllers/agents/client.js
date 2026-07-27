@@ -604,9 +604,21 @@ class AgentClient extends BaseClient {
       return undefined;
     }
     this.activityLabelPrompt = activityConfig.prompt;
-    /** Mark the job so a resume can reconcile label gaps without probing
-     *  content; fire-and-forget, the flag is only an optimization hint. */
-    void GenerationJobManager.markActivityLabels(streamId);
+    /**
+     * Mark the job so a resume can reconcile label gaps without probing
+     * content. Retried rather than fire-and-forget: this flag GATES that
+     * reconciliation, and it is a separate write from the durable label
+     * append — so a single lost write silently drops a label that the label
+     * content itself recorded perfectly well. One retry costs nothing at run
+     * setup and removes the only realistic way the gate goes stale.
+     */
+    void GenerationJobManager.markActivityLabels(streamId).catch(() =>
+      GenerationJobManager.markActivityLabels(streamId).catch(() => {
+        logger.warn(
+          `[AgentClient] Could not flag activity labels for ${streamId}; a label resolving during a resume gap may not be reconciled.`,
+        );
+      }),
+    );
     /** SDK support probe (steering-style): the Run method and the formatter
      *  replay skip ship together, so method presence is the capability. */
     const sdkCapable = typeof Run?.prototype?.generateActivityLabel === 'function';
@@ -1619,7 +1631,19 @@ class AgentClient extends BaseClient {
     transactions,
     context = 'message',
     collectedUsage = this.collectedUsage,
+    /**
+     * Rates for usage that did NOT run on the agent's endpoint — currently
+     * activity labels pointed at a different `activityEndpoint`. Without it
+     * the caller's config was dropped here and the balance transaction was
+     * written at the primary agent's rates while the UI cost was computed at
+     * the label's, so the two disagreed. `undefined` keeps the agent default.
+     */
+    endpointTokenConfig,
   }) {
+    /** Per-agent resolution keys off the AGENT's config map, which cannot
+     *  describe a label running on a different endpoint — so an explicit
+     *  config wins outright rather than being second-guessed per usage row. */
+    const overrideTokenConfig = endpointTokenConfig !== undefined;
     const result = await recordCollectedUsage(
       {
         spendTokens: db.spendTokens,
@@ -1636,8 +1660,12 @@ class AgentClient extends BaseClient {
         messageId: this.responseMessageId,
         balance,
         transactions,
-        endpointTokenConfig: this.options.endpointTokenConfig,
-        resolveEndpointTokenConfig: (usage) => this.resolveAgentEndpointTokenConfig(usage),
+        endpointTokenConfig: overrideTokenConfig
+          ? endpointTokenConfig
+          : this.options.endpointTokenConfig,
+        ...(overrideTokenConfig
+          ? {}
+          : { resolveEndpointTokenConfig: (usage) => this.resolveAgentEndpointTokenConfig(usage) }),
       },
     );
 
