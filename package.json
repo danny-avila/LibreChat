@@ -153,6 +153,7 @@
     "typescript-eslint": "^8.60.1"
   },
   "overrides": {
+    "brace-expansion": "^5.0.8",
     "@xmldom/xmldom": "^0.8.13",
     "elliptic": "^6.6.1",
     "form-data": "^4.0.6",
