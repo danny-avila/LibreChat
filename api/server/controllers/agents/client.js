@@ -462,9 +462,13 @@ class AgentClient extends BaseClient {
       context: 'activity-label',
       model,
       endpointTokenConfig: labelTokenConfig,
+      /** The label ran elsewhere, so its config governs even when undefined. */
+      crossEndpoint: sameEndpoint === false,
       balance: getBalanceConfig(appConfig),
       transactions: getTransactionsConfig(appConfig),
       messageId: this.responseMessageId,
+      /** Billed, but NOT the response's stream usage — see the parameter. */
+      updateStreamUsage: false,
     }).catch((err) => {
       logger.error(
         '[api/server/controllers/agents/client.js #recordActivityLabelUsage] Error recording usage',
@@ -537,12 +541,25 @@ class AgentClient extends BaseClient {
       });
       return label ?? null;
     } finally {
-      await this.recordActivityLabelUsage(
-        collectedMetadata,
-        clientOptions.model,
-        endpointTokenConfig,
-        sameEndpoint,
-      );
+      /**
+       * Skip accounting for a straggler that outlived its scope. Settle has
+       * already timed out, the response is past its usage flush and metadata
+       * snapshot, and the fill itself is dropped — so recording here would
+       * charge the balance and push into `usageEmitSink` after anything can
+       * surface it, producing a cost the user is billed for but never shown.
+       * Late bookkeeping is suppressed with the same gate as the late fill.
+       */
+      const allScopesClosed =
+        (this.activityLabelScopes ?? []).length > 0 &&
+        (this.activityLabelScopes ?? []).every((scope) => scope.closed === true);
+      if (!allScopesClosed) {
+        await this.recordActivityLabelUsage(
+          collectedMetadata,
+          clientOptions.model,
+          endpointTokenConfig,
+          sameEndpoint,
+        );
+      }
     }
   }
 
@@ -1639,11 +1656,33 @@ class AgentClient extends BaseClient {
      * the label's, so the two disagreed. `undefined` keeps the agent default.
      */
     endpointTokenConfig,
+    /**
+     * True when this usage ran on a DIFFERENT endpoint than the agent, making
+     * `endpointTokenConfig` authoritative even when it is `undefined` (a
+     * built-in endpoint prices from the shared table). Presence of the value
+     * cannot express that, which is why the caller states it outright.
+     */
+    crossEndpoint = false,
+    /**
+     * Whether this recording owns `getStreamUsage()`. Only the PRIMARY
+     * generation does. Secondary usage (activity labels) must still be
+     * billed, but writing it here would hand `BaseClient` the label's token
+     * counts as the assistant response's authoritative total — and because
+     * the primary call returns early when it collected nothing, the wrong
+     * value would never be replaced, suppressing the text-based token
+     * fallback and leaving the real generation unbilled.
+     */
+    updateStreamUsage = true,
   }) {
     /** Per-agent resolution keys off the AGENT's config map, which cannot
      *  describe a label running on a different endpoint — so an explicit
-     *  config wins outright rather than being second-guessed per usage row. */
-    const overrideTokenConfig = endpointTokenConfig !== undefined;
+     *  config wins outright rather than being second-guessed per usage row.
+     *
+     *  Keyed on the caller's discriminator, NOT on `endpointTokenConfig !==
+     *  undefined`: a built-in label endpoint prices from the shared table, so
+     *  `undefined` is its meaningful value. Reading that as "no override" is
+     *  what silently restored the primary's custom rates. */
+    const overrideTokenConfig = crossEndpoint === true;
     const result = await recordCollectedUsage(
       {
         spendTokens: db.spendTokens,
@@ -1669,7 +1708,7 @@ class AgentClient extends BaseClient {
       },
     );
 
-    if (result) {
+    if (result && updateStreamUsage) {
       this.usage = result;
     }
   }

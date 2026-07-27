@@ -695,6 +695,17 @@ export default function useResumableSSE(
    */
   const subscribeToStream = useCallback(
     (currentStreamId: string, currentSubmission: TSubmission, isResume = false) => {
+      /**
+       * A NEW generation starts with its retained prefix intact, so the
+       * cleared-prefix state from a previous one must not carry over — the
+       * hook outlives any single submission, and a later edited resubmission
+       * in the same chat would otherwise be dispatched with no offset and
+       * overwrite the content it kept. Reconnects pass `isResume`, so the
+       * state survives exactly where it should: within one generation.
+       */
+      if (!isResume) {
+        editPrefixClearedRef.current = false;
+      }
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
       let finalReceived = false;

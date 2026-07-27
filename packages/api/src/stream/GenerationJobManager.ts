@@ -2421,15 +2421,11 @@ class GenerationJobManagerClass {
    * Best-effort: the flag is an optimization hint, never correctness.
    */
   async markActivityLabels(streamId: string): Promise<void> {
-    try {
-      await this.jobStore.updateJob(streamId, { activityLabels: true });
-    } catch (error) {
-      logger.debug(
-        `[GenerationJobManager] Could not flag activity labels for ${streamId}: ${
-          (error as Error)?.message ?? error
-        }`,
-      );
-    }
+    /** Deliberately REJECTS on failure. This flag gates resume gap
+     *  reconciliation, so the caller retries it; swallowing the error here
+     *  resolved successfully and made that retry unreachable, leaving the
+     *  flag absent after a transient write failure. */
+    await this.jobStore.updateJob(streamId, { activityLabels: true });
   }
 
   async emitChunk(
