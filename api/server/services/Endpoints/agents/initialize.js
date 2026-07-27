@@ -14,6 +14,7 @@ const {
   resolveAgentTokenConfig,
   resolveAgentScopedSkillIds,
   resolveModelSpecSkillIds,
+  getAgentStartupTelemetry,
   buildAgentContextAttachmentsByAgentId,
 } = require('@librechat/api');
 const {
@@ -58,8 +59,9 @@ const db = require('~/models');
  * @param {string | null} [streamId] - The stream ID for resumable mode
  * @param {boolean} [definitionsOnly=false] - When true, returns only serializable
  *   tool definitions without creating full tool instances (for event-driven mode)
+ * @param {number} [jobCreatedAt] - The generation epoch that owns emitted tool events
  */
-function createToolLoader(signal, streamId = null, definitionsOnly = false) {
+function createToolLoader(signal, streamId = null, definitionsOnly = false, jobCreatedAt) {
   /**
    * @param {object} params
    * @param {ServerRequest} params.req
@@ -95,6 +97,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
         agent,
         signal,
         streamId,
+        jobCreatedAt,
         tool_resources,
         definitionsOnly,
       });
@@ -111,12 +114,14 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
  * @param {Express.Response} params.res
  * @param {AbortSignal} params.signal
  * @param {Object} params.endpointOption
+ * @param {number} [params.jobCreatedAt]
  */
-const initializeClient = async ({ req, res, signal, endpointOption }) => {
+const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt }) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
   }
   const appConfig = req.config;
+  const startupTelemetry = getAgentStartupTelemetry(req);
 
   /** @type {string | null} */
   const streamId = req._resumableStreamId || null;
@@ -140,7 +145,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   /** @type {Map<string, import('@librechat/api').ToolInputValidationError>} */
   const toolInputValidationErrors = new Map();
   const { contentParts, aggregateContent, stepMap } = createContentAggregator();
-  const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId });
+  const toolEndCallback = createToolEndCallback({
+    req,
+    res,
+    artifactPromises,
+    streamId,
+    jobCreatedAt,
+  });
 
   /** Query accessible skill IDs once per run (shared across all agents).
    *  Skills activate under strict opt-in semantics — see
@@ -160,6 +171,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
   const skillDbMethods = getSkillDbMethods();
 
+  if (!endpointOption.agent) {
+    throw new Error('No agent promise provided');
+  }
+
   /** Run-level gate for inline memory tools: the `memory` capability must be
    *  enabled, memory must be configured, and the user must not have opted out.
    *  Requires the memory WRITE permissions (CREATE + UPDATE) — both inline tools
@@ -167,45 +182,66 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    *  read-only-memory roles that the runtime loader would then refuse to build.
    *  Agents (or the ephemeral memory badge) opt in per-agent via the `memory`
    *  marker on `tools`. */
-  const memoryAvailable =
+  const memoryAvailablePromise =
     enabledCapabilities.has(AgentCapabilities.memory) &&
     isMemoryEnabled(appConfig?.memory) &&
     req.user?.personalization?.memories !== false &&
-    (await checkAccess({
+    checkAccess({
       user: req.user,
       permissionType: PermissionTypes.MEMORIES,
       permissions: [Permissions.USE, Permissions.CREATE, Permissions.UPDATE],
       getRoleByName: db.getRoleByName,
-    }));
+    });
 
-  const accessibleSkillIds = skillsCapabilityEnabled
-    ? withDeploymentSkillIds(
-        await findAccessibleResources({
-          userId: req.user.id,
-          role: req.user.role,
-          resourceType: ResourceType.SKILL,
-          requiredPermissions: PermissionBits.VIEW,
-        }),
-      )
-    : [];
-  const editableSkillIds = skillsCapabilityEnabled
-    ? await findAccessibleResources({
+  const accessibleSkillIdsPromise = skillsCapabilityEnabled
+    ? findAccessibleResources({
+        userId: req.user.id,
+        role: req.user.role,
+        resourceType: ResourceType.SKILL,
+        requiredPermissions: PermissionBits.VIEW,
+      }).then(withDeploymentSkillIds)
+    : Promise.resolve([]);
+  const editableSkillIdsPromise = skillsCapabilityEnabled
+    ? findAccessibleResources({
         userId: req.user.id,
         role: req.user.role,
         resourceType: ResourceType.SKILL,
         requiredPermissions: PermissionBits.EDIT,
       })
-    : [];
-  const skillCreateAllowed = skillsCapabilityEnabled
-    ? await getSkillToolDeps().canCreateSkill({ req })
-    : false;
+    : Promise.resolve([]);
+  const skillCreateAllowedPromise = skillsCapabilityEnabled
+    ? getSkillToolDeps().canCreateSkill({ req })
+    : Promise.resolve(false);
+  const skillStatesPromise = accessibleSkillIdsPromise.then((accessibleSkillIds) =>
+    loadSkillStates({
+      userId: req.user.id,
+      appConfig,
+      getUserById: db.getUserById,
+      accessibleSkillIds,
+    }),
+  );
+  const primaryAgentPromise = endpointOption.agent;
+  const modelsConfigPromise = getModelsConfig(req);
+  const validatedPrimaryAgentPromise = Promise.all([primaryAgentPromise, modelsConfigPromise]).then(
+    async ([primaryAgent, modelsConfig]) => {
+      if (!primaryAgent) {
+        throw new Error('Agent not found');
+      }
 
-  const { skillStates, defaultActiveOnShare } = await loadSkillStates({
-    userId: req.user.id,
-    appConfig,
-    getUserById: db.getUserById,
-    accessibleSkillIds,
-  });
+      const validationResult = await validateAgentModel({
+        req,
+        res,
+        modelsConfig,
+        logViolation,
+        agent: primaryAgent,
+      });
+      if (!validationResult.isValid) {
+        throw new Error(validationResult.error?.message);
+      }
+
+      return { primaryAgent, modelsConfig };
+    },
+  );
 
   /**
    * Agent context store - populated after initialization, accessed by callback via closure.
@@ -241,6 +277,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         userMCPAuthMap: ctx.userMCPAuthMap,
         tool_resources: ctx.tool_resources,
         actionsEnabled: ctx.actionsEnabled,
+        jobCreatedAt,
       });
 
       logger.debug(`[ON_TOOL_EXECUTE] loaded ${result.loadedTools?.length ?? 0} tools`);
@@ -260,7 +297,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       req,
       updateToolCallResult: db.updateToolCallResult,
     }),
-    emitAttachment: createAttachmentEmitter({ res, streamId }),
+    emitAttachment: createAttachmentEmitter({ res, streamId, jobCreatedAt }),
     ...getSkillToolDeps(),
   };
 
@@ -309,40 +346,35 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     collectedUsage,
     collectedThoughtSignatures,
     streamId,
+    jobCreatedAt,
     subagentAggregatorsByToolCallId,
     usageCost,
     contextUsageSink,
     usageEmitSink,
   });
 
-  if (!endpointOption.agent) {
-    throw new Error('No agent promise provided');
-  }
-
-  const primaryAgent = await endpointOption.agent;
+  const [
+    memoryAvailable,
+    accessibleSkillIds,
+    editableSkillIds,
+    skillCreateAllowed,
+    { skillStates, defaultActiveOnShare },
+    { primaryAgent, modelsConfig },
+  ] = await Promise.all([
+    memoryAvailablePromise,
+    accessibleSkillIdsPromise,
+    editableSkillIdsPromise,
+    skillCreateAllowedPromise,
+    skillStatesPromise,
+    validatedPrimaryAgentPromise,
+  ]);
   delete endpointOption.agent;
-  if (!primaryAgent) {
-    throw new Error('Agent not found');
-  }
-
-  const modelsConfig = await getModelsConfig(req);
-  const validationResult = await validateAgentModel({
-    req,
-    res,
-    modelsConfig,
-    logViolation,
-    agent: primaryAgent,
-  });
-
-  if (!validationResult.isValid) {
-    throw new Error(validationResult.error?.message);
-  }
 
   const agentConfigs = new Map();
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
 
   /** Event-driven mode: only load tool definitions, not full instances */
-  const loadTools = createToolLoader(signal, streamId, true);
+  const loadTools = createToolLoader(signal, streamId, true, jobCreatedAt);
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   /** @type {string} */
@@ -380,7 +412,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       const resolvedSkillIds = await resolveModelSpecSkillIds({
         names: selectedModelSpec.skills,
         accessibleSkillIds,
-        getSkillByName: db.getSkillByName,
+        getSkillByName: skillDbMethods.getSkillByName,
       });
       primaryAgent.skills_enabled = true;
       primaryAgent.skills = resolvedSkillIds.map((id) => id.toString());
@@ -987,6 +1019,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     res,
     sender,
     contentParts,
+    stepMap,
     agentConfigs,
     eventHandlers,
     collectedUsage,
@@ -1016,11 +1049,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
      *  them to persist the breakdown + usage rollup on the response message. */
     contextUsageSink,
     usageEmitSink,
+    startupTelemetry,
     toolInputValidationErrors,
+    jobCreatedAt,
   });
 
   if (streamId) {
-    GenerationJobManager.setCollectedUsage(streamId, collectedUsage);
+    GenerationJobManager.setCollectedUsage(streamId, collectedUsage, jobCreatedAt);
   }
 
   return { client, userMCPAuthMap };

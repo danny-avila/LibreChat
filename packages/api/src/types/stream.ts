@@ -61,6 +61,16 @@ export type DoneHandler = (event: ServerSentEvent) => void;
 export type ErrorHandler = (error: string) => void;
 export type UnsubscribeFn = () => void;
 
+/** Active event-stream subscription. */
+export interface StreamSubscription {
+  unsubscribe: UnsubscribeFn;
+}
+
+/** Resume subscription whose live delivery starts after the caller writes its sync frame. */
+export interface ResumeSubscription extends StreamSubscription {
+  activate: () => void;
+}
+
 /** Options for subscribing to a job event stream */
 export interface SubscribeOptions {
   /**
@@ -68,11 +78,13 @@ export interface SubscribeOptions {
    * Use for resume connections after a sync event has been sent.
    */
   skipBufferReplay?: boolean;
+  /** Cancels attachment work when the HTTP client disconnects. */
+  signal?: AbortSignal;
 }
 
 /** Result of an atomic subscribe-with-resume operation */
 export interface SubscribeWithResumeResult {
-  subscription: { unsubscribe: UnsubscribeFn } | null;
+  subscription: ResumeSubscription | null;
   resumeState: ResumeState | null;
   /**
    * Events that arrived between the resume snapshot and the subscribe call.

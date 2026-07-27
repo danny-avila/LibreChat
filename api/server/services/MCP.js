@@ -245,8 +245,9 @@ function isEmptyObjectSchema(jsonSchema) {
  * @param {string} params.stepId - The ID of the step in the flow.
  * @param {ToolCallChunk} params.toolCall - The tool call object containing tool information.
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
+ * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted events.
  */
-function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
+function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null, jobCreatedAt }) {
   /**
    * @param {string} authURL - The URL to redirect the user for OAuth authentication.
    * @param {{ expiresAt?: number }} [options]
@@ -255,7 +256,9 @@ function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
   return async function (authURL, options) {
     const eventData = buildMCPAuthRunStepDeltaEvent({ authURL, stepId, toolCall, options });
     if (streamId) {
-      await GenerationJobManager.emitChunk(streamId, eventData);
+      await GenerationJobManager.emitChunk(streamId, eventData, {
+        expectedCreatedAt: jobCreatedAt,
+      });
     } else {
       sendEvent(res, eventData);
     }
@@ -270,13 +273,24 @@ function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
  * @param {ToolCallChunk} params.toolCall - The tool call object containing tool information.
  * @param {number} [params.index]
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
+ * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted events.
  * @returns {() => Promise<void>}
  */
-function createRunStepEmitter({ res, runId, stepId, toolCall, index, streamId = null }) {
+function createRunStepEmitter({
+  res,
+  runId,
+  stepId,
+  toolCall,
+  index,
+  streamId = null,
+  jobCreatedAt,
+}) {
   return async function () {
     const eventData = buildMCPAuthRunStepEvent({ runId, stepId, toolCall, index });
     if (streamId) {
-      await GenerationJobManager.emitChunk(streamId, eventData);
+      await GenerationJobManager.emitChunk(streamId, eventData, {
+        expectedCreatedAt: jobCreatedAt,
+      });
     } else {
       sendEvent(res, eventData);
     }
@@ -334,12 +348,15 @@ function createOAuthStart({ flowId, flowManager, callback }) {
  * @param {string} params.stepId - The ID of the step in the flow.
  * @param {ToolCallChunk} params.toolCall - The tool call object containing tool information.
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
+ * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted events.
  */
-function createOAuthEnd({ res, stepId, toolCall, streamId = null }) {
+function createOAuthEnd({ res, stepId, toolCall, streamId = null, jobCreatedAt }) {
   return async function () {
     const eventData = buildMCPAuthRunStepEndDeltaEvent({ stepId, toolCall });
     if (streamId) {
-      await GenerationJobManager.emitChunk(streamId, eventData);
+      await GenerationJobManager.emitChunk(streamId, eventData, {
+        expectedCreatedAt: jobCreatedAt,
+      });
     } else {
       sendEvent(res, eventData);
     }
@@ -387,6 +404,7 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
  * @param {string} params.model
  * @param {number} [params.index]
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
+ * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted events.
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections]
  * @param {import('@librechat/api').ParsedServerConfig} [params.serverConfig] - Used to bypass reconnect throttling for request-scoped servers.
@@ -404,6 +422,7 @@ async function reconnectServer({
   requestBody,
   requestScopedConnections,
   streamId = null,
+  jobCreatedAt,
 }) {
   logger.debug(
     `[MCP][reconnectServer] serverName: ${serverName}, user: ${user?.id}, hasUserMCPAuthMap: ${!!userMCPAuthMap}`,
@@ -457,12 +476,14 @@ async function reconnectServer({
       stepId,
       toolCall,
       streamId,
+      jobCreatedAt,
     });
     const runStepDeltaEmitter = createRunStepDeltaEmitter({
       res,
       stepId,
       toolCall,
       streamId,
+      jobCreatedAt,
     });
     const callback = createOAuthCallback({ runStepEmitter, runStepDeltaEmitter });
     const oauthStart = createOAuthStart({
@@ -509,6 +530,7 @@ async function reconnectServer({
  * @param {number} [params.index]
  * @param {AbortSignal} [params.signal]
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
+ * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted events.
  * @param {import('@librechat/api').ParsedServerConfig} [params.config]
  * @param {import('@librechat/api').RequestBody} [params.requestBody]
  * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections]
@@ -529,6 +551,7 @@ async function createMCPTools({
   requestBody,
   requestScopedConnections,
   streamId = null,
+  jobCreatedAt,
 }) {
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
@@ -568,6 +591,7 @@ async function createMCPTools({
     requestBody,
     requestScopedConnections,
     streamId,
+    jobCreatedAt,
   });
   if (result === null) {
     logger.debug(`[MCP][${serverName}] Reconnect throttled, skipping tool creation.`);
@@ -588,6 +612,7 @@ async function createMCPTools({
       userMCPAuthMap,
       configServers,
       streamId,
+      jobCreatedAt,
       availableTools: result.availableTools,
       toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
       requestBody,
@@ -620,6 +645,7 @@ async function createMCPTools({
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @param {import('@librechat/api').ParsedServerConfig} [params.config]
  * @param {(availableTools: LCAvailableTools) => void} [params.onAvailableTools]
+ * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted events.
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTool({
@@ -638,6 +664,7 @@ async function createMCPTool({
   configServers,
   onAvailableTools,
   streamId = null,
+  jobCreatedAt,
 }) {
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
 
@@ -695,6 +722,7 @@ async function createMCPTool({
       requestBody,
       requestScopedConnections,
       streamId,
+      jobCreatedAt,
     });
     if (result?.availableTools) {
       onAvailableTools?.(result.availableTools);
@@ -726,6 +754,7 @@ async function createMCPTool({
     serverConfig,
     toolDefinition,
     streamId,
+    jobCreatedAt,
   });
 }
 
@@ -741,6 +770,7 @@ function createToolInstance({
   toolDefinition,
   provider: capturedProvider,
   streamId = null,
+  jobCreatedAt,
 }) {
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
@@ -796,6 +826,7 @@ function createToolInstance({
         stepId,
         toolCall,
         streamId,
+        jobCreatedAt,
       });
       const oauthStart = createOAuthStart({
         flowId,
@@ -807,6 +838,7 @@ function createToolInstance({
         stepId,
         toolCall,
         streamId,
+        jobCreatedAt,
       });
 
       if (derivedSignal) {

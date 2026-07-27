@@ -503,6 +503,7 @@ const loadTools = async ({
           requestScopedConnections,
           res: options.res,
           streamId: options.req?._resumableStreamId || null,
+          jobCreatedAt: options.jobCreatedAt,
           model: agent?.model ?? model,
           serverName: config.serverName,
           provider: agent?.provider ?? endpoint,

@@ -59,6 +59,7 @@
     "e2e:a11y": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.a11y.ts --headed",
     "e2e:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.ts",
     "e2e:mock": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
+    "e2e:benchmark:agents": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.benchmark.ts agent-startup.latency.spec.ts",
     "e2e:mock:enforce": "npm run e2e:prepare && cross-env E2E_MODEL_SPECS_ENFORCE=true playwright test --config=e2e/playwright.config.mock.ts enforced-model-specs.spec.ts",
     "e2e:mock:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
     "e2e:debug": "npm run e2e:prepare && cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
@@ -152,6 +153,7 @@
     "typescript-eslint": "^8.60.1"
   },
   "overrides": {
+    "brace-expansion": "^5.0.8",
     "@xmldom/xmldom": "^0.8.13",
     "elliptic": "^6.6.1",
     "form-data": "^4.0.6",

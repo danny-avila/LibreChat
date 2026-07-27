@@ -46,7 +46,7 @@
     "@azure/storage-blob": "^12.30.0",
     "@google/genai": "^2.8.0",
     "@keyv/redis": "^4.3.3",
-    "@librechat/agents": "^3.2.68",
+    "@librechat/agents": "^3.3.2",
     "@librechat/api": "*",
     "@librechat/data-schemas": "*",
     "@microsoft/microsoft-graph-client": "^3.0.7",
@@ -137,7 +137,7 @@
     "@types/sanitize-html": "^2.13.0",
     "jest": "^30.2.0",
     "mongodb-memory-server": "^11.0.1",
-    "nodemon": "^3.0.3",
+    "nodemon": "^3.1.14",
     "supertest": "^7.1.0"
   }
 }

@@ -126,6 +126,23 @@ export interface SerializableJobData {
   steersClosed?: boolean;
 }
 
+export type JobMetadataPatch = Partial<
+  Pick<
+    SerializableJobData,
+    | 'responseMessageId'
+    | 'sender'
+    | 'conversationId'
+    | 'userMessage'
+    | 'endpoint'
+    | 'iconURL'
+    | 'model'
+    | 'agent_id'
+    | 'isTemporary'
+    | 'promptTokens'
+    | 'discoveredTools'
+  >
+>;
+
 /**
  * Whether a job's pending review has passed its `expiresAt`. Shared by the
  * stores so an expired approval is kept out of active-job listings (the client
@@ -189,6 +206,12 @@ export interface JobStatusTransition {
    * resolve a job that has since paused for a different action.
    */
   expectActionId?: string;
+  /**
+   * Additional guard: only fire if the job's creation epoch equals this value.
+   * Prevents a stale owner from transitioning a replacement job that reuses
+   * the same stream ID.
+   */
+  expectCreatedAt?: number;
 }
 
 /** Value stored under an idempotency claim: the stream a retried request should attach to. */
@@ -351,13 +374,21 @@ export interface IJobStore {
     userId: string,
     conversationId?: string,
     tenantId?: string,
+    initialMetadata?: JobMetadataPatch,
   ): Promise<SerializableJobData>;
 
   /** Get a job by streamId (streamId === conversationId) */
   getJob(streamId: string): Promise<SerializableJobData | null>;
 
-  /** Update job data */
-  updateJob(streamId: string, updates: Partial<SerializableJobData>): Promise<void>;
+  /**
+   * Update job data. When `expectedCreatedAt` is supplied, apply the write only
+   * if the stream still belongs to that generation.
+   */
+  updateJob(
+    streamId: string,
+    updates: Partial<SerializableJobData>,
+    expectedCreatedAt?: number,
+  ): Promise<void>;
 
   /**
    * Atomically transition a job's status, **only if** it is currently `from`.
@@ -407,8 +438,11 @@ export interface IJobStore {
    */
   releaseIdempotencyKey(key: string): Promise<void>;
 
-  /** Delete a job */
-  deleteJob(streamId: string): Promise<void>;
+  /**
+   * Delete a job, optionally only when the stream still belongs to the expected
+   * generation. Returns true only when a matching job was actually deleted.
+   */
+  deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean>;
 
   /** Check if job exists */
   hasJob(streamId: string): Promise<boolean>;
@@ -428,8 +462,10 @@ export interface IJobStore {
    * Redis: no-op — the running-job TTL is already refreshed on each appendChunk.
    *
    * @param streamId - The stream identifier
+   * @param expectedCreatedAt - Optional generation identity. When supplied, replacement activity
+   *   is not refreshed by a stale emitter.
    */
-  recordActivity?(streamId: string): void;
+  recordActivity?(streamId: string, expectedCreatedAt?: number): void;
 
   /** Get total job count */
   getJobCount(): Promise<number>;
@@ -465,7 +501,7 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    * @param graph - The StandardGraph instance
    */
-  setGraph(streamId: string, graph: StandardGraph): void;
+  setGraph(streamId: string, graph: StandardGraph, expectedCreatedAt?: number): void;
 
   /**
    * Set content parts reference for a job.
@@ -476,7 +512,11 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    * @param contentParts - The content parts array
    */
-  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void;
+  setContentParts(
+    streamId: string,
+    contentParts: Agents.MessageContentComplex[],
+    expectedCreatedAt?: number,
+  ): void;
 
   /**
    * Get aggregated content for a job.
@@ -487,7 +527,10 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    * @returns Content parts or null if not available
    */
-  getContentParts(streamId: string): Promise<{
+  getContentParts(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<{
     content: Agents.MessageContentComplex[];
   } | null>;
 
@@ -500,7 +543,7 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    * @returns Run steps or empty array
    */
-  getRunSteps(streamId: string): Promise<Agents.RunStep[]>;
+  getRunSteps(streamId: string, expectedCreatedAt?: number): Promise<Agents.RunStep[]>;
 
   /**
    * Append a streaming chunk for later reconstruction.
@@ -510,16 +553,20 @@ export interface IJobStore {
    *
    * @param streamId - The stream identifier
    * @param event - The SSE event to append
+   * @param expectedCreatedAt - Optional generation identity. When supplied, the append is
+   *   refused if the stream ID now belongs to a replacement generation.
    */
-  appendChunk(streamId: string, event: unknown): Promise<void>;
+  appendChunk(streamId: string, event: unknown, expectedCreatedAt?: number): Promise<void>;
 
   /**
    * Clear all content state for a job.
    * Called on job completion/cleanup.
    *
    * @param streamId - The stream identifier
+   * @param expectedCreatedAt - Optional generation identity. When supplied, replacement content
+   *   is not cleared by a stale terminal cleanup.
    */
-  clearContentState(streamId: string): void;
+  clearContentState(streamId: string, expectedCreatedAt?: number): void;
 
   /**
    * Save run steps to persistent storage.
@@ -528,8 +575,14 @@ export interface IJobStore {
    *
    * @param streamId - The stream identifier
    * @param runSteps - Run steps to save
+   * @param expectedCreatedAt - Optional generation identity. When supplied, the save is refused
+   *   if the stream ID now belongs to a replacement generation.
    */
-  saveRunSteps?(streamId: string, runSteps: Agents.RunStep[]): Promise<void>;
+  saveRunSteps?(
+    streamId: string,
+    runSteps: Agents.RunStep[],
+    expectedCreatedAt?: number,
+  ): Promise<void>;
 
   /**
    * Set collected usage reference for a job.
@@ -538,7 +591,11 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    * @param collectedUsage - Array of usage metadata from all models
    */
-  setCollectedUsage(streamId: string, collectedUsage: UsageMetadata[]): void;
+  setCollectedUsage(
+    streamId: string,
+    collectedUsage: UsageMetadata[],
+    expectedCreatedAt?: number,
+  ): void;
 
   /**
    * Get collected usage for a job.
@@ -546,7 +603,7 @@ export interface IJobStore {
    * @param streamId - The stream identifier
    * @returns Array of usage metadata or empty array
    */
-  getCollectedUsage(streamId: string): UsageMetadata[];
+  getCollectedUsage(streamId: string, expectedCreatedAt?: number): UsageMetadata[];
 
   // ===== Steering Queue Methods =====
   // FIFO queue of mid-run user messages, keyed by streamId. Writable from any
@@ -579,8 +636,12 @@ export interface IJobStore {
    */
   closeAndDrainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
 
-  /** Non-destructive FIFO read of the queued steers (status/resume surfaces). */
-  peekSteers(streamId: string): Promise<SteerQueueItem[]>;
+  /**
+   * Non-destructive FIFO read of the queued steers (status/resume surfaces).
+   * With `expectedCreatedAt`, returns an empty snapshot if the stream belongs
+   * to another generation.
+   */
+  peekSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]>;
 
   /** Remove ONE queued steer by id (user-cancelled before injection).
    *  False when it was no longer queued — already drained or run ended. */
@@ -593,8 +654,10 @@ export interface IJobStore {
    * path deletes the job immediately, and recovery must survive that.
    * Overwrites any prior payload; cleared by `createJob` (a replacement run
    * invalidates recovery — a live client had to start it).
+   * When `expectedCreatedAt` is supplied, the write is conditional on that
+   * generation still owning the stream ID.
    */
-  parkSteers(streamId: string, payload: string): Promise<void>;
+  parkSteers(streamId: string, payload: string, expectedCreatedAt?: number): Promise<void>;
 
   /**
    * Claim-on-read: atomically return AND remove the parked payload, so a
@@ -616,24 +679,47 @@ export interface IJobStore {
  * Implementations can use EventEmitter, Redis Pub/Sub, etc.
  */
 export interface IEventTransport {
-  /** Subscribe to events for a stream. `ready` resolves once the transport can receive messages. */
+  /**
+   * Subscribe to events for a stream. `ready` resolves once the transport can receive messages.
+   *
+   * Redis callers can defer sequenced delivery until `syncReorderBuffer()` establishes the
+   * replay frontier. This prevents pub/sub copies of locally buffered events from racing ahead
+   * of, and then being duplicated by, first-subscriber replay.
+   */
   subscribe(
     streamId: string,
     handlers: {
-      onChunk: (event: unknown) => void;
-      onDone?: (event: unknown) => void;
-      onError?: (error: string) => void;
+      /** `generationId` identifies the immutable generation that emitted the chunk. */
+      onChunk: (event: unknown, generationId?: number) => void;
+      /** `generationId` identifies the immutable generation that emitted the done event. */
+      onDone?: (event: unknown, generationId?: number) => void;
+      /** `generationId` identifies the immutable generation that emitted the error. */
+      onError?: (error: string, generationId?: number) => void;
+    },
+    options?: {
+      /** Hold sequenced events until syncReorderBuffer establishes the replay frontier. */
+      deferSequenceDelivery?: boolean;
     },
   ): { unsubscribe: () => void; ready?: Promise<void> };
 
-  /** Publish a chunk event - returns Promise in Redis mode for ordered delivery */
-  emitChunk(streamId: string, event: unknown): void | Promise<void>;
+  /**
+   * Publish a chunk event.
+   * Redis returns the assigned absolute sequence so locally replayed events can
+   * advance a subscriber to the exact ordering frontier.
+   */
+  emitChunk(streamId: string, event: unknown, generationId?: number): void | Promise<void | number>;
 
-  /** Publish a done event - returns Promise in Redis mode for ordered delivery */
-  emitDone(streamId: string, event: unknown): void | Promise<void>;
+  /**
+   * Publish a done event - returns Promise in Redis mode for ordered delivery.
+   * `generationId` is optional for compatibility with legacy, untagged publishers.
+   */
+  emitDone(streamId: string, event: unknown, generationId?: number): void | Promise<void>;
 
-  /** Publish an error event - returns Promise in Redis mode for ordered delivery */
-  emitError(streamId: string, error: string): void | Promise<void>;
+  /**
+   * Publish an error event - returns Promise in Redis mode for ordered delivery.
+   * `generationId` is optional for compatibility with legacy, untagged publishers.
+   */
+  emitError(streamId: string, error: string, generationId?: number): void | Promise<void>;
 
   /**
    * Publish an abort signal to all replicas (Redis mode).
@@ -641,14 +727,20 @@ export interface IEventTransport {
    * generating Replica A receives signal and stops.
    * Optional - only implemented in Redis transport.
    */
-  emitAbort?(streamId: string): void;
+  emitAbort?(streamId: string, generationId?: number): void;
 
   /**
    * Register callback for abort signals from any replica (Redis mode).
    * Called when abort is triggered from any replica.
+   * An async implementation resolves only after it can receive abort messages.
+   * The returned function removes only this registration, allowing a terminal
+   * generation to release its channel without affecting a same-stream replacement.
    * Optional - only implemented in Redis transport.
    */
-  onAbort?(streamId: string, callback: () => void): void;
+  onAbort?(
+    streamId: string,
+    callback: (generationId?: number) => void,
+  ): void | (() => void) | Promise<void | (() => void)>;
 
   /** Get subscriber count for a stream */
   getSubscriberCount(streamId: string): number;
@@ -661,12 +753,17 @@ export interface IEventTransport {
 
   /**
    * Advance subscriber reorder buffer to match publisher sequence (cross-replica safe).
-   * @param earlyReplayCount - Number of events replayed from earlyEventBuffer (same-replica).
-   *   Pending entries with seq < earlyReplayCount are duplicates and are pruned; entries at or
-   *   above are live chunks that arrived during the async GET window and are preserved.
-   *   When 0/undefined (cross-replica), all pending entries are treated as live.
+   * @param replayedNextSeq - Absolute Redis sequence immediately after the last event replayed
+   *   from the local early-event buffer. Pending entries below it are duplicates; entries at
+   *   or above it are live. Undefined means no local replay, so the Redis counter is trusted.
    */
-  syncReorderBuffer?(streamId: string, earlyReplayCount?: number): void | Promise<void>;
+  syncReorderBuffer?(streamId: string, replayedNextSeq?: number): void | Promise<void>;
+
+  /**
+   * Notify and detach subscribers attached to this process without broadcasting a terminal event.
+   * Must trigger all-subscribers-left cleanup so graceful shutdown can drain partial persistence.
+   */
+  closeLocalSubscribers?(streamId: string, error: string): void;
 
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;

@@ -857,6 +857,7 @@ function SubagentDialogPart({
         initialProgress={tc.progress ?? 0.1}
         isSubmitting={isSubmitting}
         isLast={isLast}
+        toolCallId={tc.id}
         name={tc.name ?? ''}
         onExpand={onToolExpand}
       />

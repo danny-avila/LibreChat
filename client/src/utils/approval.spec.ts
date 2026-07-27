@@ -71,6 +71,37 @@ describe('applyPendingAction — tool_approval', () => {
     });
   });
 
+  it('replaces displayed tool args with the matching action request arguments', () => {
+    const originalArgs = { query: 'original model args' };
+    const rewrittenArgs = { query: 'rewritten by policy hook' };
+    const message = msg({ content: [toolCallPart('tc1', { args: originalArgs })] });
+    const action = toolApprovalAction({
+      payload: {
+        type: 'tool_approval',
+        action_requests: [
+          {
+            name: 'search',
+            arguments: rewrittenArgs,
+            tool_call_id: 'tc1',
+            description: 'Review rewritten search',
+          },
+        ],
+        review_configs: [
+          {
+            action_name: 'search',
+            tool_call_id: 'tc1',
+            allowed_decisions: ['approve', 'reject', 'edit', 'respond'],
+          },
+        ],
+      },
+    });
+
+    const result = applyPendingAction(message, action);
+
+    expect(getToolCall(result.content?.[0] as TMessageContentParts)?.args).toEqual(rewrittenArgs);
+    expect(getToolCall(message.content?.[0] as TMessageContentParts)?.args).toEqual(originalArgs);
+  });
+
   it('leaves a completed tool call (with output) untouched and returns the same message reference', () => {
     const message = msg({ content: [toolCallPart('tc1', { output: 'already ran' })] });
     const result = applyPendingAction(message, toolApprovalAction());
