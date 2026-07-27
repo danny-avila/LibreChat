@@ -574,6 +574,35 @@ describe('Agent Abort Endpoint', () => {
         });
       });
 
+      /**
+       * Recording the outcome releases the capacity slot and drops the run out of the
+       * active set — the exact signal the account-deletion drain waits on. Settling
+       * before the partial response is persisted lets the drain observe zero active
+       * runs, destroy the user's data, and only then have this handler write a message
+       * back for a deleted account.
+       */
+      it('settles the run only after the partial response is persisted', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          content: [{ type: 'text', text: 'partial' }],
+          text: 'partial',
+          jobData: {
+            userMessage: { messageId: 'umsg-1' },
+            responseMessageId: 'resp-1',
+            conversationId: 'sched-conv',
+          },
+        });
+
+        await request(app).post('/api/agents/chat/abort').send({ conversationId: 'sched-conv' });
+
+        expect(mockSaveMessage).toHaveBeenCalled();
+        expect(mockRecordScheduleOutcome).toHaveBeenCalled();
+        expect(mockSaveMessage.mock.invocationCallOrder[0]).toBeLessThan(
+          mockRecordScheduleOutcome.mock.invocationCallOrder[0],
+        );
+      });
+
       it('keeps the preserved job when the outcome write exhausted its retries', async () => {
         mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
         mockGenerationJobManager.abortJob.mockResolvedValue({ success: true, content: [] });

@@ -425,6 +425,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               scheduleId,
               scheduledFor,
               ...(req._isManualScheduledFire === true ? { scheduleManual: '1' } : {}),
+              ...(typeof scheduleConfigRevision === 'number'
+                ? { scheduleConfigRevision: String(scheduleConfigRevision) }
+                : {}),
             }
           : {}),
         responseMessageId: preliminaryResponseMessageId,
@@ -1241,7 +1244,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         if (wasAborted) {
           logger.debug(`[ResumableAgentController] Generation aborted for ${streamId}`);
           startupTelemetry?.end('aborted');
-          // abortJob already handled emitDone and completeJob
+          // abortJob already handled emitDone and completeJob — but when the abort came
+          // from a SCHEDULE DELETE the job was retained (aborted, no completedAt), and
+          // the outcome just recorded above makes the run terminal, so reconcile will
+          // never rescan it. Nothing else would reap the retained job.
+          if (scheduleId && errorScheduleOutcomeRecorded) {
+            await clearScheduledJob(streamId, { scheduleId, scheduledFor }).catch((err) =>
+              logger.warn('[ResumableAgentController] Failed to clear reconciled job', err),
+            );
+          }
         } else {
           logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
           // Close the steer queue BEFORE the error event reaches clients: a

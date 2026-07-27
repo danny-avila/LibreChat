@@ -51,6 +51,10 @@ export interface SerializableJobData {
    *  same admission rules the fire boundary did — an AUTOMATIC occurrence must not
    *  resume onto a schedule that has since been auto-disabled. */
   scheduleManual?: string;
+  /** The owner-config generation this fire was claimed under, so a resume can apply
+   *  the same revision fence the fire boundary did. Serialized as a string like every
+   *  other Redis hash field. */
+  scheduleConfigRevision?: string;
 
   /**
    * Deferred-tool names discovered (via `tool_search`) before a HITL pause, captured
@@ -155,6 +159,7 @@ export type JobMetadataPatch = Partial<
     | 'scheduleId'
     | 'scheduledFor'
     | 'scheduleManual'
+    | 'scheduleConfigRevision'
   >
 >;
 

@@ -127,6 +127,9 @@ export type ScheduleMethods = {
     reason: ScheduleDisabledReason,
     expectedClaimToken?: string,
     expectedConfigRevision?: number,
+    /** Extra filter pinning the counter the disable DECISION was made on, so a
+     *  concurrent outcome that reset the streak invalidates this stale write. */
+    counterGuard?: Record<string, unknown>,
   ) => Promise<void>;
   insertScheduleRun: (data: Partial<IScheduleRun>) => Promise<IScheduleRun | null>;
   reserveStartedRun: (data: Partial<IScheduleRun>) => Promise<StartedRunReservation>;
@@ -469,8 +472,9 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     reason: ScheduleDisabledReason,
     expectedClaimToken?: string,
     expectedConfigRevision?: number,
+    counterGuard?: Record<string, unknown>,
   ): Promise<void> {
-    const filter: Record<string, unknown> = { id };
+    const filter: Record<string, unknown> = { id, ...counterGuard };
     if (expectedClaimToken !== undefined) {
       filter.claimToken = expectedClaimToken;
     }
@@ -675,11 +679,16 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     if (isFailure) {
       const schedule = await Schedule().findOne({ id: params.scheduleId }).lean<ISchedule>();
       if (schedule?.enabled && schedule.failureCount >= params.autoDisableAfterFailures) {
+        // Carry the COUNT this decision was made on, not just the revision. The read
+        // above and this write are separate statements, and a concurrent success resets
+        // the failure streak to zero — a revision-only fence would still let this stale
+        // decision disable a schedule whose streak had just been cleared.
         await disableSchedule(
           params.scheduleId,
           'too_many_failures',
           undefined,
           params.expectConfigRevision,
+          { failureCount: { $gte: params.autoDisableAfterFailures } },
         );
       }
     }
@@ -854,7 +863,11 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     const current =
       schedule ?? (await Schedule().findOne({ id: data.scheduleId }).lean<ISchedule>());
     if (current?.enabled && current.balanceSkipCount >= balanceSkipDisableThreshold) {
-      await disableSchedule(data.scheduleId, 'insufficient_balance', undefined, rowRevision);
+      // Same read-then-write window as the failure policy: any non-balance outcome
+      // resets this streak, so the write must carry the count it decided on.
+      await disableSchedule(data.scheduleId, 'insufficient_balance', undefined, rowRevision, {
+        balanceSkipCount: { $gte: balanceSkipDisableThreshold },
+      });
     }
   }
 

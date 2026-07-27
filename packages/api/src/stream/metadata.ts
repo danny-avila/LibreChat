@@ -45,6 +45,9 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   if (metadata.scheduleManual) {
     patch.scheduleManual = metadata.scheduleManual;
   }
+  if (metadata.scheduleConfigRevision) {
+    patch.scheduleConfigRevision = metadata.scheduleConfigRevision;
+  }
   if (metadata.scheduledFor) {
     patch.scheduledFor = metadata.scheduledFor;
   }

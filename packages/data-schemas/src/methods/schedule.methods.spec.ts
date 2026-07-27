@@ -1093,6 +1093,52 @@ describe('auto-disable carries the run config generation', () => {
     expect((await getSchedule(schedule.id)).enabled).toBe(true);
   });
 
+  /**
+   * The threshold read and the disable write are separate statements. A concurrent
+   * success resets the failure streak in between, so a revision-only fence would still
+   * let the stale decision disable a schedule whose streak had just been cleared.
+   */
+  it('does not disable once a concurrent success reset the failure streak', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const current = await getSchedule(schedule.id);
+    await mongoose.models.Schedule.updateOne({ id: schedule.id }, { $set: { failureCount: 5 } });
+
+    // The decision was made on failureCount >= 5; a success then zeroed it.
+    await mongoose.models.Schedule.updateOne({ id: schedule.id }, { $set: { failureCount: 0 } });
+    await methods.disableSchedule(
+      schedule.id,
+      'too_many_failures',
+      undefined,
+      current.configRevision,
+      {
+        failureCount: { $gte: 5 },
+      },
+    );
+
+    expect((await getSchedule(schedule.id)).enabled).toBe(true);
+  });
+
+  it('still disables when the streak is intact', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const current = await getSchedule(schedule.id);
+    await mongoose.models.Schedule.updateOne({ id: schedule.id }, { $set: { failureCount: 5 } });
+
+    await methods.disableSchedule(
+      schedule.id,
+      'too_many_failures',
+      undefined,
+      current.configRevision,
+      {
+        failureCount: { $gte: 5 },
+      },
+    );
+
+    expect(await getSchedule(schedule.id)).toMatchObject({
+      enabled: false,
+      disabledReason: 'too_many_failures',
+    });
+  });
+
   it('still auto-disables when the run matches the current config generation', async () => {
     const schedule = await methods.createSchedule(scheduleData());
     const scheduledFor = new Date('2026-07-26T10:00:00.000Z');

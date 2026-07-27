@@ -176,6 +176,9 @@ describe('quiesceUserSchedules drain wait', () => {
       .mockResolvedValueOnce([started])
       .mockResolvedValue([]);
     const service = makeService(getActive);
+    // deleteJob MUST be present: without it the store call throws, the delete never
+    // happens, and this test would pass while proving nothing about the ordering.
+    const deleteJob = jest.fn(async () => undefined);
     mockJobStore = {
       getJob: jest.fn(async () => ({
         status: 'complete',
@@ -183,6 +186,7 @@ describe('quiesceUserSchedules drain wait', () => {
         scheduleId: 's1',
         scheduledFor: new Date('2026-01-01T00:00:00.000Z').toISOString(),
       })),
+      deleteJob,
     } as unknown as typeof mockJobStore;
 
     const pending = service.quiesceUserSchedules('user-1');
@@ -192,6 +196,39 @@ describe('quiesceUserSchedules drain wait', () => {
     expect(recordRunOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ scheduleId: 's1', status: 'success' }),
     );
+    // The retained job is the ONLY evidence this run finished, so it may not be deleted
+    // until the outcome is durably recorded.
+    expect(deleteJob).toHaveBeenCalled();
+    expect(recordRunOutcome.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteJob.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('keeps the retained job when settling it fails', async () => {
+    jest.useFakeTimers();
+    const started = { ...run(), status: 'started' };
+    const service = makeService(
+      jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([started]),
+    );
+    const deleteJob = jest.fn(async () => undefined);
+    mockJobStore = {
+      getJob: jest.fn(async () => ({
+        status: 'complete',
+        createdAt: 1,
+        scheduleId: 's1',
+        scheduledFor: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+      })),
+      deleteJob,
+    } as unknown as typeof mockJobStore;
+    recordRunOutcome.mockRejectedValue(new Error('mongo down'));
+
+    const pending = service.quiesceUserSchedules('user-1');
+    await jest.advanceTimersByTimeAsync(11_000);
+    // The row never settles, so the drain cannot confirm and deletion defers.
+    await expect(pending).resolves.toBe(false);
+
+    // Evidence intact for the next pass.
+    expect(deleteJob).not.toHaveBeenCalled();
   });
 
   it('does not wait when the user has no active runs', async () => {

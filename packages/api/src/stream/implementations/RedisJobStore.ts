@@ -2240,6 +2240,7 @@ export class RedisJobStore implements IJobStore {
       scheduleId: data.scheduleId || undefined,
       scheduledFor: data.scheduledFor || undefined,
       scheduleManual: data.scheduleManual || undefined,
+      scheduleConfigRevision: data.scheduleConfigRevision || undefined,
     };
   }
 

@@ -515,9 +515,17 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   // `running` after the drain already judged it settleable, so quiesce reports the
   // account drained while a generation is still persisting messages for it. Also covers
   // an owner delete/edit landing while the prompt sat unanswered.
+  // The revision the fire was CLAIMED under, replayed so the resume applies the same
+  // fence the fire boundary did: an owner edit landing while the approval sat unanswered
+  // means the paused turn's prompt/agent came from a config that has since been
+  // replaced. Absent on either side leaves the fence off, so older jobs keep working.
+  const pausedConfigRevision =
+    job.metadata?.scheduleConfigRevision != null
+      ? Number(job.metadata.scheduleConfigRevision)
+      : undefined;
   if (
     job.metadata?.scheduleId &&
-    !(await isScheduleLive(job.metadata.scheduleId, undefined, {
+    !(await isScheduleLive(job.metadata.scheduleId, pausedConfigRevision, {
       // An AUTOMATIC occurrence must not resume onto a schedule that has since been
       // auto-disabled: the policy flips `enabled` without touching configRevision, so
       // no other gate here can see it, and approving hours later would run a fresh
@@ -645,7 +653,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   // observes a running generation and waits for it, while one that started before it is
   // caught here.
   if (job.metadata?.scheduleId) {
-    const stillLive = await isScheduleLive(job.metadata.scheduleId, undefined, {
+    const stillLive = await isScheduleLive(job.metadata.scheduleId, pausedConfigRevision, {
       automatic: job.metadata.scheduleManual !== '1',
     }).catch(() => false);
     if (!stillLive) {

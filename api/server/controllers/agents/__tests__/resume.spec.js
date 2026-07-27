@@ -359,6 +359,29 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
      * travel on the job. A Run Now stays admissible on a disabled schedule (the user
      * asked for it); an automatic occurrence does not.
      */
+    /**
+     * An owner edit while the approval sits unanswered means the paused turn's
+     * prompt/agent came from a config that has since been replaced. The fire boundary
+     * refuses that; the resume must apply the same fence, which requires the claimed
+     * revision to travel on the job.
+     */
+    it('replays the claimed config revision into the resume gate', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: {
+            scheduleId: 'sched-1',
+            scheduledFor: SCHEDULED_FOR,
+            scheduleConfigRevision: '7',
+          },
+        }),
+      );
+
+      await post(approveBody());
+
+      expect(mockIsScheduleLive).toHaveBeenCalledWith('sched-1', 7, { automatic: true });
+      await settled;
+    });
+
     it('carries the Run Now classification through to the resume gate', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(
         makeToolApprovalJob({

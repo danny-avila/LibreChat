@@ -742,26 +742,24 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       // conversation, so this occurrence's generation is already gone), or a confirmed
       // absence. Anything unknown falls through and the drain waits for it.
       const settleable = live.known && !(isThisGeneration && live.job?.status === 'running');
-      // Do NOT preserve for reconcile: account deletion hard-deletes these run
-      // rows, so no reconcile pass will ever finalize/clear a retained job — a
-      // preserved job would leak in the store. Let the abort settle it directly.
-      // A retained TERMINAL job is the preserve-for-reconcile case: this run's inline
-      // outcome write exhausted its retries, so the job is the only evidence it
-      // finished. The abort below deletes it (the rows are about to be hard-deleted, so
-      // no reconcile pass would ever clear it), which must not happen before its state
-      // is projected onto the row — otherwise a `started` row stays active with its
-      // evidence gone and the bounded drain can never confirm.
+      // Aborts here never preserve for reconcile: account deletion hard-deletes these
+      // run rows, so no reconcile pass would ever finalize or clear a retained job.
       const retainedOutcome = isThisGeneration
         ? TERMINAL_JOB_OUTCOMES[live.job!.status]
         : undefined;
-      const aborted = await abortActiveRun(run, false);
       if (settleable && (retainedOutcome != null || run.status === 'requires_action')) {
+        // SETTLE BEFORE ABORTING. The abort deletes the retained job, and for a run
+        // whose inline outcome write exhausted its retries that job is the ONLY evidence
+        // it finished — reading its status into a local is not the same as durably
+        // recording it. If this write fails, the abort below has not yet run, so the
+        // evidence survives for the next pass; the drain simply does not confirm and
+        // deletion defers, which is the safe direction.
         // Either the retained job's own outcome, or — for a genuinely PAUSED run whose
         // approval will never be consumed for a deleted account — `interrupted`. Without
         // this a single paused run blocked the account's deletion permanently.
         const settledStatus = retainedOutcome ?? 'interrupted';
         const settledError = QUIESCE_SETTLE_ERRORS[settledStatus];
-        await methods
+        const settled = await methods
           .recordRunOutcome({
             scheduleId: run.scheduleId,
             scheduledFor: run.scheduledFor,
@@ -770,9 +768,22 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
             ...(settledError ? { error: settledError } : {}),
             autoDisableAfterFailures: DEFAULT_SCHEDULE_LIMITS.autoDisableAfterFailures,
           })
-          .catch((err) => logger.warn('[schedules] failed to settle run on quiesce:', err));
+          .then(() => true)
+          .catch((err) => {
+            logger.warn('[schedules] failed to settle run on quiesce:', err);
+            return false;
+          });
+        // Only now is the job disposable. On a failed settle, leave it: the row is still
+        // active, so the drain reports unconfirmed and a later pass retries with its
+        // evidence intact.
+        if (settled) {
+          await abortActiveRun(run, false);
+        }
         continue;
       }
+      // Not settleable here (a live generation, or an unknown job): abort it and let the
+      // bounded drain below wait for its own terminal outcome to land.
+      const aborted = await abortActiveRun(run, false);
       if (!aborted && run.conversationId) {
         unconfirmed.push(run.conversationId);
       }

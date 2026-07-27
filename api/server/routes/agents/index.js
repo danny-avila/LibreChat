@@ -362,28 +362,6 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
       preserveForReconcile: Boolean(scheduleId),
     });
 
-    // Settle the schedule side only after WINNING the abort. Losing the CAS means a
-    // concurrent completion or resume owns the run, and terminalizing it here as
-    // `interrupted` would release its capacity slot and reduce the real outcome's
-    // write to a no-op against an already-terminal row.
-    if (scheduleId && abortResult.success) {
-      const recorded = await recordScheduleOutcome({
-        scheduleId,
-        scheduledFor: job.metadata.scheduledFor,
-        status: 'interrupted',
-        conversationId: jobStreamId,
-      });
-      // Reconcile only scans ACTIVE runs, so once the run is terminal nothing else
-      // would ever reap the retained job.
-      if (recorded) {
-        await clearScheduledJob(jobStreamId, {
-          scheduleId,
-          scheduledFor: job.metadata.scheduledFor,
-        }).catch((err) =>
-          logger.error(`[AgentStream] Failed to clear reconciled job: ${jobStreamId}`, err),
-        );
-      }
-    }
     logger.debug(`[AgentStream] Job aborted successfully: ${jobStreamId}`, {
       abortResultSuccess: abortResult.success,
       abortResultUserMessageId: abortResult.jobData?.userMessage?.messageId,
@@ -459,6 +437,35 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
         logger.debug(`[AgentStream] Saved partial response for: ${jobStreamId}`);
       } catch (saveError) {
         logger.error(`[AgentStream] Failed to save partial response: ${saveError.message}`);
+      }
+    }
+
+    // SETTLE LAST. Recording the outcome is what releases the capacity slot and drops
+    // the run out of the active set — which is exactly the signal the account-deletion
+    // drain waits on. Settling before the partial response is persisted let the drain
+    // observe zero active runs, proceed to destroy the user's data, and only then have
+    // this handler write a message back for the deleted account. Every write this route
+    // makes now happens before the run is declared settled.
+    //
+    // Only after WINNING the abort: losing the CAS means a concurrent completion or
+    // resume owns the run, and terminalizing it as `interrupted` would release its slot
+    // and reduce the real outcome's write to a no-op against an already-terminal row.
+    if (scheduleId && abortResult.success) {
+      const recorded = await recordScheduleOutcome({
+        scheduleId,
+        scheduledFor: job.metadata.scheduledFor,
+        status: 'interrupted',
+        conversationId: jobStreamId,
+      });
+      // Reconcile only scans ACTIVE runs, so once the run is terminal nothing else
+      // would ever reap the retained job.
+      if (recorded) {
+        await clearScheduledJob(jobStreamId, {
+          scheduleId,
+          scheduledFor: job.metadata.scheduledFor,
+        }).catch((err) =>
+          logger.error(`[AgentStream] Failed to clear reconciled job: ${jobStreamId}`, err),
+        );
       }
     }
 

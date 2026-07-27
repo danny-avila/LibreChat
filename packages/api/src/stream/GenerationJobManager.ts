@@ -851,6 +851,7 @@ class GenerationJobManagerClass {
         scheduleId: jobData.scheduleId,
         scheduledFor: jobData.scheduledFor,
         scheduleManual: jobData.scheduleManual,
+        scheduleConfigRevision: jobData.scheduleConfigRevision,
         sender: jobData.sender,
         endpoint: jobData.endpoint,
         iconURL: jobData.iconURL,
