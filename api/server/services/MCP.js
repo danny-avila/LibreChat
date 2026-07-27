@@ -8,6 +8,7 @@ const {
   isMCPDomainAllowed,
   splitMCPToolKey,
   normalizeServerName,
+  resolveMCPServerContext,
   normalizeJsonSchema,
   GenerationJobManager,
   resolveJsonSchemaRefs,
@@ -174,13 +175,11 @@ async function resolveMcpServerNames(req) {
  */
 async function resolveMcpServerContext(req) {
   try {
-    const registry = getMCPServersRegistry();
     const appConfig = await getAppConfigForRequest(req);
-    const mcpConfig = appConfig?.mcpConfig || {};
-    return {
-      configServers: await registry.ensureConfigServers(mcpConfig),
-      serverNames: Object.keys(mcpConfig).map(normalizeServerName),
-    };
+    return await resolveMCPServerContext({
+      mcpConfig: appConfig?.mcpConfig || {},
+      ensureConfigServers: (mcpConfig) => getMCPServersRegistry().ensureConfigServers(mcpConfig),
+    });
   } catch (error) {
     logger.warn(
       '[resolveMcpServerContext] Failed to resolve MCP servers, degrading to empty:',
