@@ -25,6 +25,7 @@ import {
 import type { TFile } from 'librechat-data-provider';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import useAttachExisting from '~/hooks/Files/useAttachExisting';
+import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 interface DataTableProps<TData, TValue> {
@@ -74,7 +75,8 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
     },
   });
 
-  const handleFileClick = useAttachExisting();
+  const { files, setFiles, conversation } = useChatContext();
+  const handleFileClick = useAttachExisting({ files, setFiles, conversation });
 
   const filenameFilter = table.getColumn('filename')?.getFilterValue() as string;
 

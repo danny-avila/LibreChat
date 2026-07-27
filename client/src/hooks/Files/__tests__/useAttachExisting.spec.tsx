@@ -25,11 +25,6 @@ jest.mock('@librechat/client', () => ({
 
 jest.mock('~/Providers', () => ({
   useFileMapContext: () => mockFileMap,
-  useChatContext: () => ({
-    files: mockStaged,
-    setFiles: jest.fn(),
-    conversation: mockConversation,
-  }),
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -66,7 +61,13 @@ const staged = (over: Partial<ExtendedFile> = {}): ExtendedFile =>
   ({ file_id: 'other', size: MB, progress: 1, ...over }) as ExtendedFile;
 
 const attach = (target: TFile = file()) => {
-  const { result } = renderHook(() => useAttachExisting());
+  const { result } = renderHook(() =>
+    useAttachExisting({
+      files: mockStaged,
+      setFiles: jest.fn(),
+      conversation: mockConversation as never,
+    }),
+  );
   result.current(target);
 };
 

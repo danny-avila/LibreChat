@@ -434,7 +434,9 @@ const ChatForm = memo(function ChatForm({
   /** One button slot while a run is generating: with composer text the send
    *  button takes over (Enter steers/queues; hover reveals all actions);
    *  clearing the text restores Stop. */
-  const duringRunSlot = (() => {
+  /* Memoized for `memo(Bar)`: an inline element is a new identity every render,
+     and this component re-renders on every keystroke. */
+  const duringRunSlot = useMemo(() => {
     if (steering.duringRunActive && (textValue?.trim() ?? '') !== '') {
       return (
         <DuringRunSendButton
@@ -451,7 +453,47 @@ const ChatForm = memo(function ChatForm({
       return <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />;
     }
     return null;
-  })();
+  }, [
+    steering,
+    textValue,
+    methods,
+    submitButtonRef,
+    filesLoading,
+    showStopButton,
+    handleStopGenerating,
+    setShowStopButton,
+  ]);
+
+  /* Memoized for `memo(Bar)`: an inline element is a new identity every render,
+     and this component re-renders on every keystroke. */
+  const actionSlot = useMemo(
+    () =>
+      isSubmitting && showStopButton && !answerMode.active
+        ? duringRunSlot
+        : endpoint && (
+            <SendButton
+              ref={submitButtonRef}
+              control={methods.control}
+              disabled={
+                filesLoading ||
+                disableInputs ||
+                isNotAppendable ||
+                (isSubmitting && !answerMode.active)
+              }
+            />
+          ),
+    [
+      endpoint,
+      duringRunSlot,
+      filesLoading,
+      disableInputs,
+      isNotAppendable,
+      isSubmitting,
+      showStopButton,
+      answerMode.active,
+      methods.control,
+    ],
+  );
 
   /* The empty-conversation screen. Drives both how far the composer floats off
      the bottom and whether the ambient tips under it are worth their row. */
@@ -665,22 +707,7 @@ const ChatForm = memo(function ChatForm({
                   showSpeech={SpeechToText}
                   speechDisabled={disableInputs || isNotAppendable}
                   dictation={dictation}
-                  actionSlot={
-                    isSubmitting && showStopButton && !answerMode.active
-                      ? duringRunSlot
-                      : endpoint && (
-                          <SendButton
-                            ref={submitButtonRef}
-                            control={methods.control}
-                            disabled={
-                              filesLoading ||
-                              disableInputs ||
-                              isNotAppendable ||
-                              (isSubmitting && !answerMode.active)
-                            }
-                          />
-                        )
-                  }
+                  actionSlot={actionSlot}
                 />
                 <ToolDialogs />
               </BadgeRowProvider>

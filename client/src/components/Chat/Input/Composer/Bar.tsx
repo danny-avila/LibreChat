@@ -32,7 +32,7 @@ const CHIP_GAP = 6;
  * the buttons keep a row of their own rather than being crowded by whichever
  * two or three chips happened to be left over.
  */
-function chipsFitInline<T extends { key: string }>(
+export function chipsFitInline<T extends { key: string }>(
   entries: T[],
   widths: Record<string, number>,
   capacity: number,
@@ -59,8 +59,16 @@ function chipsFitInline<T extends { key: string }>(
   return true;
 }
 
-function formatElapsed(seconds: number): string {
+export function formatElapsed(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+interface RoundButtonProps {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  primary?: boolean;
+  disabled?: boolean;
 }
 
 function RoundButton({
@@ -69,13 +77,7 @@ function RoundButton({
   children,
   primary = false,
   disabled = false,
-}: {
-  label: string;
-  onClick: () => void;
-  children: React.ReactNode;
-  primary?: boolean;
-  disabled?: boolean;
-}) {
+}: RoundButtonProps) {
   return (
     <TooltipAnchor
       description={label}
@@ -107,7 +109,11 @@ function RoundButton({
  * be changed without reopening the palette. Real menu items, unlike the
  * pointer-only pills inside the palette's `option` rows.
  */
-function ChipModes({ modes }: { modes: PaletteMode[] }) {
+interface ChipModesProps {
+  modes: PaletteMode[];
+}
+
+function ChipModes({ modes }: ChipModesProps) {
   const localize = useLocalize();
   const [open, setOpen] = useState(false);
   const active = modes.find((mode) => mode.active);

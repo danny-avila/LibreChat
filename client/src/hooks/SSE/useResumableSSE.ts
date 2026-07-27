@@ -615,6 +615,11 @@ const mergeResumeMessages = (
  *  conversation, not by run. */
 const RUN_ENDED_STATUSES: readonly PendingSteer['status'][] = ['pending', 'failed'];
 
+/** Sweep for an intentional abort, where the run may still be live
+ *  server-side: a server-ACK'd `pending` chip is injected regardless, so
+ *  sweeping it here would send the same words a second time as a queued turn. */
+export const ABORT_SWEEP_STATUSES: readonly PendingSteer['status'][] = ['failed'];
+
 /**
  * Local chips with no injection-boundary event left to resolve them.
  * `statuses` defaults to `RUN_ENDED_STATUSES` for terminals where the run is
@@ -3128,7 +3133,7 @@ export default function useResumableSSE(
         // words as a duplicate turn once `useQueueDrain` fires at run end.
         convertLocalSteersToQueued(
           currentSubmission.conversation?.conversationId ?? currentStreamId,
-          { statuses: ['failed'] },
+          { statuses: ABORT_SWEEP_STATUSES },
         );
       });
 
@@ -3901,7 +3906,15 @@ export default function useResumableSSE(
       }
     };
 
-    initStream();
+    /* Fire-and-forget, but not silent: this sets the submitting flags before
+       it does any work, so a throw would leave the composer generating with no
+       stream, no final event and no way back but a reload. */
+    initStream().catch((error: unknown) => {
+      logger.error('[useResumableSSE] Failed to start the stream', error);
+      setIsSubmitting(false);
+      setShowStopButton(false);
+      setSubmission(null);
+    });
 
     /** The Set object itself is never reassigned, so this alias reads the
      *  LIVE frame ids at cleanup time (satisfies react-hooks/exhaustive-deps
