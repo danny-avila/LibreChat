@@ -25,7 +25,6 @@ import {
 } from '~/hooks';
 import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
 import { Conversations } from '~/components/Conversations';
-import BklChatSearch from './BklChatSearch';
 import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -165,16 +164,8 @@ const Nav = memo(
       fetchNextPage();
     }, [isFetchingNextPage, computedHasNextPage, fetchNextPage]);
 
-    const subHeaders = useMemo(
-      () => (
-        <>
-          {/* BKL: ChatGPT 스타일 채팅 검색 다이얼로그 (제목 + 본문 검색) */}
-          {search.enabled === true && <BklChatSearch isSmallScreen={isSmallScreen} />}
-        </>
-      ),
-      [search.enabled, isSmallScreen],
-    );
-
+    // BKL: 채팅 검색은 FavoritesList 의 "새 채팅"/"문서 검색"과 같은 층위의
+    // row 로 노출된다 (Favorites/FavoritesList.tsx).
     const headerButtons = useMemo(
       () => (
         <>
@@ -221,7 +212,6 @@ const Nav = memo(
         >
           <div className="flex flex-1 flex-col overflow-hidden" ref={outerContainerRef}>
             <MemoNewChat
-              subHeaders={subHeaders}
               toggleNav={toggleNavVisible}
               headerButtons={headerButtons}
               isSmallScreen={isSmallScreen}

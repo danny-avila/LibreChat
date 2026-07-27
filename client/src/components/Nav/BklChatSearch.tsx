@@ -1,8 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import debounce from 'lodash/debounce';
 import { useNavigate } from 'react-router-dom';
-import { MessageSquare, Search, X } from 'lucide-react';
-import { OGDialog, OGDialogContent, OGDialogTitle, Spinner } from '@librechat/client';
+import { Loader2, MessageSquare, Search, X } from 'lucide-react';
+import {
+  Input,
+  OGDialog,
+  OGDialogContent,
+  OGDialogHeader,
+  OGDialogTitle,
+} from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import { useConversationsInfiniteQuery, useMessagesInfiniteQuery } from '~/data-provider';
 import { useAuthContext } from '~/hooks';
@@ -13,7 +19,7 @@ const HL_PRE = '\ue000';
 const HL_POST = '\ue001';
 const HL_REGEX = new RegExp(`${HL_PRE}([\\s\\S]*?)${HL_POST}`, 'g');
 
-const PLACEHOLDER = '채팅 검색';
+const LABEL = '채팅 검색';
 const EMPTY_MESSAGE = '검색 결과가 없습니다.';
 const HINT_MESSAGE = '채팅 제목과 대화 내용을 검색합니다.';
 
@@ -74,11 +80,11 @@ type SearchHit = {
 type SearchedMessage = TMessage & { title?: string };
 
 /**
- * BKL: ChatGPT 스타일 채팅 검색 다이얼로그.
- * 제목(Conversation 인덱스)과 본문(Message 인덱스)을 함께 검색하고,
- * 본문 매칭은 매칭 지점 주변 스니펫에 검색어를 볼드 처리해 보여준다.
+ * BKL: 채팅 검색 — 좌측 네비의 "새 채팅"/"문서 검색"과 같은 층위·같은 스타일의
+ * row 로 노출되고, 클릭 시 표준 모달에서 제목(Conversation 인덱스)과
+ * 본문(Message 인덱스)을 함께 검색한다. 본문 매칭은 스니펫에 검색어 볼드 처리.
  */
-export default function BklChatSearch({ isSmallScreen }: { isSmallScreen?: boolean }) {
+export default function BklChatSearch() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuthContext();
   const [open, setOpen] = useState(false);
@@ -163,6 +169,12 @@ export default function BklChatSearch({ isSmallScreen }: { isSmallScreen?: boole
     [setDebounced],
   );
 
+  const handleClear = useCallback(() => {
+    setQuery('');
+    setDebounced.cancel();
+    setDebouncedQuery('');
+  }, [setDebounced]);
+
   const goToConversation = useCallback(
     (conversationId: string) => {
       handleOpenChange(false);
@@ -171,106 +183,114 @@ export default function BklChatSearch({ isSmallScreen }: { isSmallScreen?: boole
     [handleOpenChange, navigate],
   );
 
-  /** Cmd/Ctrl+K 단축키 */
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault();
-        setOpen(true);
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  const openDialog = useCallback(() => setOpen(true), []);
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-label={PLACEHOLDER}
-        className="group my-1 flex h-10 w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-text-primary transition-colors duration-200 hover:bg-surface-active-alt"
+      {/* 트리거 — FavoritesList 의 "새 채팅"/"문서 검색" row 와 동일한 마크업/스타일 */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={LABEL}
+        className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+        onClick={openDialog}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openDialog();
+          }
+        }}
+        data-testid="nav-chat-search-button"
       >
-        <Search className="h-4 w-4 text-text-secondary group-hover:text-text-primary" />
-        <span className="flex-1 text-left">{PLACEHOLDER}</span>
-        {!isSmallScreen && (
-          <kbd className="rounded border border-border-light px-1.5 py-0.5 text-[10px] text-text-secondary">
-            ⌘K
-          </kbd>
-        )}
-      </button>
-      <OGDialog open={open} onOpenChange={handleOpenChange}>
-        <OGDialogContent
-          title={PLACEHOLDER}
-          showCloseButton={false}
-          className="flex max-h-[70vh] w-11/12 max-w-2xl flex-col gap-0 overflow-hidden bg-surface-primary p-0"
-        >
-          <OGDialogTitle className="sr-only">{PLACEHOLDER}</OGDialogTitle>
-          <div className="flex shrink-0 items-center gap-3 border-b border-border-light px-4 py-3">
-            <Search className="h-5 w-5 shrink-0 text-text-secondary" aria-hidden="true" />
-            <input
-              // eslint-disable-next-line jsx-a11y/no-autofocus
-              autoFocus
-              type="text"
-              value={query}
-              onChange={onChange}
-              placeholder={PLACEHOLDER}
-              aria-label={PLACEHOLDER}
-              autoComplete="off"
-              dir="auto"
-              className="flex-1 border-none bg-transparent text-base text-text-primary outline-none placeholder:text-text-secondary"
-            />
-            <button
-              type="button"
-              aria-label="닫기"
-              onClick={() => handleOpenChange(false)}
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-text-secondary hover:bg-surface-hover hover:text-text-primary"
-            >
-              <X className="h-5 w-5" aria-hidden="true" />
-            </button>
+        <div className="flex flex-1 items-center truncate pr-6">
+          <div className="mr-2 h-5 w-5">
+            <Search className="h-5 w-5 text-text-primary" />
           </div>
-          <div className="min-h-[200px] flex-1 overflow-y-auto py-2">
-            {!searchActive && (
-              <div className="flex h-full min-h-[180px] items-center justify-center px-4 text-sm text-text-secondary">
-                {HINT_MESSAGE}
-              </div>
-            )}
-            {searchActive && isSearching && results.length === 0 && (
-              <div className="flex h-full min-h-[180px] items-center justify-center">
-                <Spinner className="text-text-primary" />
-              </div>
-            )}
-            {searchActive && !isSearching && results.length === 0 && (
-              <div className="flex h-full min-h-[180px] items-center justify-center px-4 text-sm text-text-secondary">
-                {EMPTY_MESSAGE}
-              </div>
-            )}
-            {results.map((hit) => (
-              <button
-                key={hit.conversationId}
-                type="button"
-                onClick={() => goToConversation(hit.conversationId)}
-                className={cn(
-                  'flex w-full items-start gap-3 px-4 py-2.5 text-left transition-colors',
-                  'hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:outline-none',
+          <span className="truncate">{LABEL}</span>
+        </div>
+      </div>
+      <OGDialog open={open} onOpenChange={handleOpenChange}>
+        <OGDialogContent className="w-11/12 max-w-2xl bg-background text-text-primary shadow-2xl">
+          <OGDialogHeader>
+            <OGDialogTitle>{LABEL}</OGDialogTitle>
+          </OGDialogHeader>
+          <div className="flex flex-col gap-3">
+            {/* 검색 입력 — 문서 검색(SearchBar.tsx)과 동일한 인풋 스타일 */}
+            <div className="relative">
+              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary">
+                {isSearching ? (
+                  <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Search className="h-5 w-5" aria-hidden="true" />
                 )}
-              >
-                <MessageSquare
-                  className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary"
-                  aria-hidden="true"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-text-primary">
-                    <HighlightedTitle title={hit.title || '(제목 없음)'} query={debouncedQuery} />
-                  </span>
-                  {hit.snippet ? (
-                    <span className="mt-0.5 block truncate text-xs text-text-secondary">
-                      <SnippetText snippet={hit.snippet} />
+              </span>
+              <Input
+                // eslint-disable-next-line jsx-a11y/no-autofocus
+                autoFocus
+                type="text"
+                value={query}
+                onChange={onChange}
+                placeholder={LABEL}
+                aria-label={LABEL}
+                autoComplete="off"
+                spellCheck={false}
+                dir="auto"
+                className="h-12 rounded-xl border-border-medium bg-transparent pl-12 pr-12 text-base text-text-primary shadow-sm transition-[border-color,box-shadow] duration-200 placeholder:text-text-secondary focus:border-border-heavy focus:shadow-md focus:ring-0"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  aria-label="Clear"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+            <div className="max-h-[50vh] min-h-[180px] overflow-y-auto">
+              {!searchActive && (
+                <div className="flex h-full min-h-[180px] items-center justify-center px-4 text-sm text-text-secondary">
+                  {HINT_MESSAGE}
+                </div>
+              )}
+              {searchActive && isSearching && results.length === 0 && (
+                <div className="flex h-full min-h-[180px] items-center justify-center px-4 text-sm text-text-secondary">
+                  검색 중...
+                </div>
+              )}
+              {searchActive && !isSearching && results.length === 0 && (
+                <div className="flex h-full min-h-[180px] items-center justify-center px-4 text-sm text-text-secondary">
+                  {EMPTY_MESSAGE}
+                </div>
+              )}
+              {results.map((hit) => (
+                <button
+                  key={hit.conversationId}
+                  type="button"
+                  onClick={() => goToConversation(hit.conversationId)}
+                  className={cn(
+                    'flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors',
+                    'hover:bg-surface-active-alt focus-visible:bg-surface-active-alt focus-visible:outline-none',
+                  )}
+                >
+                  <MessageSquare
+                    className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary"
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-text-primary">
+                      <HighlightedTitle title={hit.title || '(제목 없음)'} query={debouncedQuery} />
                     </span>
-                  ) : null}
-                </span>
-              </button>
-            ))}
+                    {hit.snippet ? (
+                      <span className="mt-0.5 block truncate text-xs text-text-secondary">
+                        <SnippetText snippet={hit.snippet} />
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
         </OGDialogContent>
       </OGDialog>
