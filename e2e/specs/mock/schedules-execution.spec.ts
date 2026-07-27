@@ -207,9 +207,12 @@ test.describe('scheduled chat execution', () => {
     await dialog.locator('#schedule-name').fill(name);
     await dialog.locator('#schedule-prompt').fill('Daily standup summary');
 
-    // agent_id is required, so the submit stays disabled until one is picked.
+    // agent_id is required, so the submit stays disabled until one is picked. The list
+    // is virtualized, so the target row is only in the DOM once the search narrows to
+    // it — clicking the option directly races the renderer on a populated account.
     await dialog.getByRole('combobox', { name: 'Agent' }).click();
-    await page.getByRole('option', { name: agent.name! }).first().click();
+    await page.getByPlaceholder('Search agents by name').fill(agent.name!);
+    await page.getByRole('option', { name: agent.name!, exact: true }).first().click();
     // Weekly rather than the default so the assertion proves the cadence round-tripped
     // rather than matching whatever the form happened to default to.
     await dialog.getByRole('group', { name: 'Frequency' }).getByText('Weekly').click();
