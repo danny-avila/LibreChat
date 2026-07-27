@@ -2,8 +2,8 @@ import type { ComposerHintState } from '../useComposerHint';
 import { composeHint } from '../useComposerHint';
 
 /** Echoes the key so assertions read against the key, not English copy. */
-const localize = ((key: string, options?: Record<string, string>) =>
-  options ? `${key}:${options[0]}` : key) as Parameters<typeof composeHint>[1];
+const localize = ((key: string, options?: Record<string, string | number>) =>
+  options ? `${key}:${options[0] ?? options.count}` : key) as Parameters<typeof composeHint>[1];
 
 const baseState: ComposerHintState = {
   hasText: false,
@@ -98,6 +98,10 @@ describe('composeHint', () => {
     it('reports uploads ahead of the during-run modifiers', () => {
       expect(hint({ uploadingCount: 2, duringRunActive: true, hasText: true })).toBe(
         'com_ui_composer_hint_uploading:2',
+      );
+      /* One file is one file, not "1 file(s)". */
+      expect(hint({ uploadingCount: 1, duringRunActive: true, hasText: true })).toBe(
+        'com_ui_composer_hint_uploading_one:1',
       );
     });
 

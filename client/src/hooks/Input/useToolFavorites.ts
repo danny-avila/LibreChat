@@ -1,10 +1,6 @@
 import { useMemo, useCallback } from 'react';
-import type { TToolFavorite, TToolFavoriteType } from 'librechat-data-provider';
-import {
-  useGetToolFavoritesQuery,
-  useAddToolFavoriteMutation,
-  useRemoveToolFavoriteMutation,
-} from '~/data-provider';
+import type { TToolFavoriteType } from 'librechat-data-provider';
+import useMarketplaceFavorites from '~/hooks/useToolFavorites';
 
 export interface ToolFavorites {
   /** `${itemType}:${itemId}` keys, for O(1) membership tests while building
@@ -18,39 +14,32 @@ export const favoriteKey = (itemType: TToolFavoriteType, itemId: string) => `${i
 
 /**
  * Server-persisted favourites for anything the composer palette can list —
- * built-in tools, plugin tools, MCP servers and skills. Backed by the same
- * `{ user, itemType, itemId }` records the tools marketplace writes, so a
- * favourite starred here is already starred there.
+ * built-in tools, plugin tools, MCP servers and skills.
+ *
+ * A shape adapter over the marketplace's own hook rather than a second copy of
+ * it: the palette addresses items by type and id where the marketplace uses
+ * `{ kind, id }`, and that was the whole difference. Going through it also
+ * carries its error handling, so starring past the server's cap says so here
+ * too instead of failing silently with the star left where it was.
  */
 export default function useToolFavorites(): ToolFavorites {
-  const { data: favorites } = useGetToolFavoritesQuery();
-  const addFavorite = useAddToolFavoriteMutation();
-  const removeFavorite = useRemoveToolFavoriteMutation();
-
-  const keys = useMemo(() => {
-    const set = new Set<string>();
-    for (const favorite of favorites ?? []) {
-      set.add(favoriteKey(favorite.itemType, favorite.itemId));
-    }
-    return set;
-  }, [favorites]);
+  const { favoriteKeys, toggle } = useMarketplaceFavorites();
 
   const isFavorite = useCallback(
-    (itemType: TToolFavoriteType, itemId: string) => keys.has(favoriteKey(itemType, itemId)),
-    [keys],
+    (itemType: TToolFavoriteType, itemId: string) =>
+      favoriteKeys.has(favoriteKey(itemType, itemId)),
+    [favoriteKeys],
   );
 
   const toggleFavorite = useCallback(
     (itemType: TToolFavoriteType, itemId: string) => {
-      const favorite: TToolFavorite = { itemType, itemId };
-      if (keys.has(favoriteKey(itemType, itemId))) {
-        removeFavorite.mutate(favorite);
-        return;
-      }
-      addFavorite.mutate(favorite);
+      void toggle({ kind: itemType, id: itemId });
     },
-    [keys, addFavorite, removeFavorite],
+    [toggle],
   );
 
-  return { keys, isFavorite, toggleFavorite };
+  return useMemo(
+    () => ({ keys: favoriteKeys, isFavorite, toggleFavorite }),
+    [favoriteKeys, isFavorite, toggleFavorite],
+  );
 }

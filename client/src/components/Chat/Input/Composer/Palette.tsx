@@ -29,9 +29,10 @@ import useToolFavorites from '~/hooks/Input/useToolFavorites';
 import useElementSize from '~/hooks/Generic/useElementSize';
 import useRecentFiles from '~/hooks/Input/useRecentFiles';
 import useAttachItems from '~/hooks/Input/useAttachItems';
-import { getFileType } from '~/utils';
+import { isMacPlatform } from '~/utils/shortcuts';
+import { getFileType, cn } from '~/utils';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+
 import store from '~/store';
 
 const HEADER_HEIGHT = 26;
@@ -62,6 +63,9 @@ const ROW_SHIFT_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)';
 const KEY_SEP = '\u0000';
 const NO_ENTERING: ReadonlySet<string> = new Set();
 const NO_ROWS: PaletteRow[] = [];
+/** Spelled out for the platform, since this is read aloud: "Mod" is a
+ *  developer's shorthand and not a key on anybody's keyboard. */
+const FAVORITE_MODIFIER = isMacPlatform ? '\u2318' : 'Ctrl';
 
 /** A row's element id, derived from its identity so the combobox keeps naming
  *  the same row as the list rearranges under it. */
@@ -987,11 +991,17 @@ function Palette({
                 className="w-full border-0 bg-transparent text-sm text-text-primary shadow-none ring-0 placeholder:text-text-secondary focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
               />
               <span id="composer-palette-help" className="sr-only">
-                {localize('com_ui_composer_palette_help')}
+                {localize('com_ui_composer_palette_help', { 0: FAVORITE_MODIFIER })}
               </span>
             </div>
             {rows.length === 0 ? (
-              <div className="px-2 py-6 text-center text-sm text-text-secondary">
+              /* A search that matches nothing is a state change with nothing
+                 to focus, so it has to be said rather than only drawn. */
+              <div
+                role="status"
+                aria-live="polite"
+                className="px-2 py-6 text-center text-sm text-text-secondary"
+              >
                 {localize('com_ui_composer_no_results')}
               </div>
             ) : (

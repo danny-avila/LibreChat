@@ -177,6 +177,40 @@ describe('useSteerRecovery', () => {
       expect(queue).toEqual([expect.objectContaining({ id: 'srv-late', text: 'landed too late' })]);
     });
 
+    /* The picks the message was written with have to survive the retry, or the
+       words are re-sent without the quotes and skills they referred to. */
+    it('carries the quotes and skills the steer was written with', async () => {
+      mockMutateAsync.mockResolvedValue({
+        steerId: 'srv-ctx',
+        status: 'queued',
+        position: 1,
+        conversationId: CONVO_ID,
+      });
+      const { result } = setup(({ set }) => {
+        set(store.pendingSteersByConvoId(CONVO_ID), [
+          {
+            steerId: 'local-ctx',
+            text: 'about that quote',
+            status: 'failed',
+            createdAt: 4,
+            quotes: ['carried quote'],
+            manualSkills: ['carried-skill'],
+          },
+        ]);
+      });
+      act(() => {
+        result.current.recovery.retry('local-ctx');
+      });
+      await flush();
+      expect(result.current.chips).toEqual([
+        expect.objectContaining({
+          steerId: 'srv-ctx',
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        }),
+      ]);
+    });
+
     it('no-ops when the steer id is no longer pending', () => {
       const { result } = setup();
       act(() => {

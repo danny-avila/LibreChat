@@ -389,12 +389,6 @@ const isContextType = (type: string, fileConfig: FileConfig | null): boolean =>
   ]);
 
 /**
- * Upload destinations a file set can be routed to, given the active endpoint and agent
- * capabilities. `undefined` is direct provider attachment; the rest are tool resources.
- * Each option requires every file to be valid for it, so the caller can decide between
- * auto-routing (one option), prompting (multiple), or rejecting (none).
- */
-/**
  * Which tool destinations an upload may be routed to, before the files
  * themselves are considered.
  *
@@ -406,10 +400,15 @@ const isContextType = (type: string, fileConfig: FileConfig | null): boolean =>
  * Shared by the `+` menu and the drag-and-drop router so a file has the same
  * destinations however it arrives.
  */
+export interface UploadToolAllowances {
+  fileSearchAllowedByAgent: boolean;
+  codeAllowedByAgent: boolean;
+}
+
 export const getUploadToolAllowances = (
   agentId: string | null | undefined,
   tools: string[] | undefined,
-): { fileSearchAllowedByAgent: boolean; codeAllowedByAgent: boolean } => {
+): UploadToolAllowances => {
   const isSavedAgent = agentId != null && agentId !== '' && !isEphemeralAgentId(agentId);
   return {
     fileSearchAllowedByAgent: !isSavedAgent || (tools?.includes(Tools.file_search) ?? false),
@@ -417,6 +416,12 @@ export const getUploadToolAllowances = (
   };
 };
 
+/**
+ * Upload destinations a file set can be routed to, given the active endpoint and agent
+ * capabilities. `undefined` is direct provider attachment; the rest are tool resources.
+ * Each option requires every file to be valid for it, so the caller can decide between
+ * auto-routing (one option), prompting (multiple), or rejecting (none).
+ */
 export const getViableUploadOptions = (
   fileList: File[],
   ctx: UploadOptionContext,
