@@ -36,14 +36,17 @@
         return;
       }
       if (type === 'matter') {
-        thead.innerHTML = '<tr><th>matter_uid</th><th>사건명</th><th>의뢰인</th><th>문서 수</th><th>기간</th><th>작업</th></tr>';
+        thead.innerHTML = '<tr><th>matter_uid</th><th>사건명</th><th>의뢰인</th><th>문서 수</th><th>기간 (BIMS)</th><th>작업</th></tr>';
         tbody.innerHTML = j.results.map((r) => `<tr>
           <td style="white-space:nowrap">${A.escHtml(r.matter_uid)}</td>
           <td class="text-clip" title="${A.escHtml(r.bims_case_name || '')}">${A.escHtml(r.bims_case_name || '—')}</td>
           <td class="text-clip">${A.escHtml(r.client || '—')}</td>
           <td>${A.fmtNum(r.doc_count)}</td>
           <td style="white-space:nowrap">${A.escHtml(r.date_range || '—')}</td>
-          <td><button class="btn-refresh btn-danger" data-kind="matter" data-id="${A.escHtml(r.matter_uid)}">삭제</button></td>
+          <td style="white-space:nowrap">
+            <button class="btn-refresh" data-files="${A.escHtml(r.matter_uid)}" data-name="${A.escHtml(r.bims_case_name || '')}">파일 보기</button>
+            <button class="btn-refresh btn-danger" data-kind="matter" data-id="${A.escHtml(r.matter_uid)}">삭제</button>
+          </td>
         </tr>`).join('');
       } else {
         thead.innerHTML = '<tr><th>doc_id</th><th>파일명</th><th>매터</th><th>유형</th><th>날짜</th><th>작업</th></tr>';
@@ -59,9 +62,52 @@
       tbody.querySelectorAll('button[data-kind]').forEach((btn) => {
         btn.addEventListener('click', () => openConfirm(btn.dataset.kind, btn.dataset.id));
       });
+      tbody.querySelectorAll('button[data-files]').forEach((btn) => {
+        btn.addEventListener('click', () => loadFiles(btn.dataset.files, btn.dataset.name));
+      });
     } catch (e) {
       tbody.innerHTML = '<tr class="empty-row"><td colspan="6"><span class="err-text">' + A.escHtml(e.message) + '</span></td></tr>';
     }
+  }
+
+  /* ── 매터 파일 목록 (파일 단위 삭제) ─────────────────────────── */
+  let filesMatter = null; // 현재 열려 있는 매터 uid
+
+  async function loadFiles(matterUid, caseName) {
+    const panel = document.getElementById('dd-files-panel');
+    const tbody = document.getElementById('dd-files-tbody');
+    const sub = document.getElementById('dd-files-sub');
+    filesMatter = matterUid;
+    panel.style.display = '';
+    sub.textContent = matterUid + (caseName ? ' — ' + caseName : '');
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="5">로딩 중...</td></tr>';
+    try {
+      const j = await A.getJSON('/data/matters/' + encodeURIComponent(matterUid) + '/files');
+      sub.textContent =
+        matterUid + (j.bims_case_name ? ' — ' + j.bims_case_name : '') + ' · ' + A.fmtNum(j.total) + '개 파일';
+      if (!j.files.length) {
+        tbody.innerHTML = '<tr class="empty-row"><td colspan="5">인덱싱된 파일이 없습니다</td></tr>';
+        return;
+      }
+      tbody.innerHTML = j.files.map((f) => `<tr>
+        <td style="white-space:nowrap">${A.escHtml(f.doc_id)}</td>
+        <td class="text-clip" title="${A.escHtml(f.file_name || '')}">${A.escHtml(f.file_name || '—')}</td>
+        <td style="white-space:nowrap">${A.escHtml(f.doc_type || '—')}</td>
+        <td>${A.fmtNum(f.chunk_count)}</td>
+        <td><button class="btn-refresh btn-danger" data-kind="doc" data-id="${A.escHtml(f.doc_id)}">삭제</button></td>
+      </tr>`).join('');
+      tbody.querySelectorAll('button[data-kind]').forEach((btn) => {
+        btn.addEventListener('click', () => openConfirm(btn.dataset.kind, btn.dataset.id));
+      });
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (e) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5"><span class="err-text">' + A.escHtml(e.message) + '</span></td></tr>';
+    }
+  }
+
+  function closeFiles() {
+    filesMatter = null;
+    document.getElementById('dd-files-panel').style.display = 'none';
   }
 
   /* ── 확인 다이얼로그 ──────────────────────────────────────── */
@@ -161,6 +207,13 @@
       }
       runSearch().catch(() => {});
       loadAudit().catch(() => {});
+      if (filesMatter) {
+        if (kind === 'matter' && id === filesMatter) {
+          closeFiles(); // 매터 자체가 삭제됨
+        } else {
+          loadFiles(filesMatter, '').catch(() => {}); // 파일 목록 갱신
+        }
+      }
     } catch (e) {
       errEl.textContent = '삭제 실패: ' + e.message;
     } finally {
@@ -206,6 +259,7 @@
     if (e.key === 'Enter') runSearch();
   });
   document.getElementById('dd-audit-refresh').addEventListener('click', loadAudit);
+  document.getElementById('dd-files-close').addEventListener('click', closeFiles);
   document.getElementById('dd-cancel-btn').addEventListener('click', closeConfirm);
   document.getElementById('dd-execute-btn').addEventListener('click', executeDelete);
   document.getElementById('dd-confirm-id').addEventListener('input', (e) => {
