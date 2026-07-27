@@ -24,6 +24,7 @@ import type { ExtendedFile, FileSetter } from '~/common';
 import type { TranslationKeys } from '~/hooks';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { SharePointPickerDialog } from '~/components/SharePoint';
+import useReducedMotion from '~/hooks/Generic/useReducedMotion';
 import useToolFavorites from '~/hooks/Input/useToolFavorites';
 import useElementSize from '~/hooks/Generic/useElementSize';
 import useRecentFiles from '~/hooks/Input/useRecentFiles';
@@ -60,6 +61,11 @@ const ROW_SHIFT_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)';
 /** Separator for the row-set signature; cannot occur in a row key. */
 const KEY_SEP = '\u0000';
 const NO_ENTERING: ReadonlySet<string> = new Set();
+const NO_ROWS: PaletteRow[] = [];
+
+/** A row's element id, derived from its identity so the combobox keeps naming
+ *  the same row as the list rearranges under it. */
+const rowElementId = (key: string) => `palette-row-${key.replace(/[^\w:-]/g, '_')}`;
 
 const SECTION_LABEL: Record<PaletteSection, TranslationKeys> = {
   tool: 'com_ui_composer_tools',
@@ -198,13 +204,21 @@ function Palette({
   /* What the disclosure says it is: the moment it is clicked shut it reads as
      closed, while the rows it is closing over are still fading out. */
   const expanded = showAllAttach && !collapsing;
-  const [activeIndex, setActiveIndex] = useState(0);
+  /* The row itself, not where it currently sits. A row that moves — starred
+     into favourites, pushed down by a disclosure — keeps the highlight, and the
+     id the combobox points at keeps naming something that exists. */
+  const [activeKey, setActiveKey] = useState('');
+  /* Only a keyboard move scrolls the list. Driving this from the highlight
+     alone let hovering a half-visible row scroll it into view, which moved the
+     rows under a resting pointer. */
+  const [scrollToActive, setScrollToActive] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<List>(null);
   const listBodyRef = useRef<HTMLDivElement>(null);
   const disclosureRef = useRef<HTMLButtonElement>(null);
   const setLift = useSetRecoilState(store.composerLiftFamily(index));
   const { ref: popoverRef, height: popupHeight } = useElementSize<HTMLDivElement>();
+  const reducedMotion = useReducedMotion();
 
   /* Rather than let the popup push the document taller — which puts a scrollbar
      on a page that had none — the landing screen raises itself by whatever the
@@ -281,6 +295,13 @@ function Palette({
   /** One pass over each source: filter by query, split favourites out, then
    *  flatten to the row model the virtualized list renders from. */
   const rows = useMemo<PaletteRow[]>(() => {
+    /* The disclosure button lives here too, so this component stays mounted for
+       the whole conversation. Deriving the list while the popup is down meant
+       walking the entire catalog on every keystroke in the message box, for
+       rows nobody was looking at. */
+    if (!mounted) {
+      return NO_ROWS;
+    }
     const favoriteMatches: PaletteEntry[] = [];
     const buckets: Record<PaletteSection, PaletteEntry[]> = { tool: [], skill: [], mcp: [] };
 
@@ -380,6 +401,7 @@ function Palette({
 
     return next;
   }, [
+    mounted,
     entries,
     favorites.keys,
     query,
@@ -463,19 +485,20 @@ function Palette({
      the same entry animated. Playing the move after the re-insertion, rather
      than asking the browser to notice it, is what makes the two symmetric. */
   const previousTops = useRef(layout.tops);
+  const measuredSignature = useRef(signature);
   useLayoutEffect(() => {
-    listRef.current?.recomputeRowHeights(0);
+    /* Dropping the cache re-walks every offset from the top of the list, so it
+       is worth doing only when the rows themselves changed. */
+    if (measuredSignature.current !== signature) {
+      measuredSignature.current = signature;
+      listRef.current?.recomputeRowHeights(0);
+    }
     const before = previousTops.current;
     previousTops.current = layout.tops;
     const body = listBodyRef.current;
     /* Where there is no Web Animations API to play the move with, the rows just
        arrive where they belong — the same as asking for no motion. */
-    if (
-      instant ||
-      body == null ||
-      typeof body.animate !== 'function' ||
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    ) {
+    if (instant || body == null || typeof body.animate !== 'function' || reducedMotion) {
       return;
     }
     for (const element of body.querySelectorAll<HTMLElement>('[data-row-key]')) {
@@ -490,7 +513,7 @@ function Palette({
         easing: ROW_SHIFT_EASING,
       });
     }
-  }, [layout, instant]);
+  }, [layout, signature, instant, reducedMotion]);
 
   /** Second beat of the close: the faded rows give up their space. */
   useEffect(() => {
@@ -500,26 +523,30 @@ function Palette({
     const timer = window.setTimeout(() => {
       setCollapsing(false);
       setShowAllAttach(false);
-      setKeepKey(MORE_ROW_KEY);
     }, ROW_FADE_MS);
     return () => window.clearTimeout(timer);
   }, [collapsing]);
 
   const firstSelectable = useMemo(() => rows.findIndex(isSelectable), [rows]);
 
-  /** Keep the highlight on a real row as the query narrows the list. */
-  const [lastRowsKey, setLastRowsKey] = useState('');
-  const [keepKey, setKeepKey] = useState('');
-  const rowsKey = `${rows.length}:${rows[0]?.key ?? ''}`;
-  if (rowsKey !== lastRowsKey) {
-    setLastRowsKey(rowsKey);
-    const kept = keepKey === '' ? -1 : rows.findIndex((row) => row.key === keepKey);
-    const fallback = firstSelectable === -1 ? 0 : firstSelectable;
-    setActiveIndex(kept === -1 ? fallback : kept);
-    if (keepKey !== '') {
-      setKeepKey('');
+  /** Where the active row sits now, falling back to the first row that can be
+   *  chosen once the query has filtered the old one away. */
+  const activeIndex = useMemo(() => {
+    const found = activeKey === '' ? -1 : rows.findIndex((row) => row.key === activeKey);
+    if (found !== -1) {
+      return found;
     }
-  }
+    return firstSelectable === -1 ? 0 : firstSelectable;
+  }, [activeKey, rows, firstSelectable]);
+
+  const activeRow = rows[activeIndex];
+
+  /* Stable across renders: the list compares this by identity and throws away
+     its whole style cache whenever it changes. */
+  const measureRow = useCallback(
+    ({ index: row }: { index: number }) => rowHeight(rows[row]),
+    [rows],
+  );
 
   /* Cleared on unmount rather than on close: the popup stays up through its
      leave animation, so clearing on close emptied the field and repopulated the
@@ -537,18 +564,17 @@ function Palette({
       if (rows.length === 0) {
         return;
       }
-      setActiveIndex((prev) => {
-        let next = prev;
-        for (let i = 0; i < rows.length; i++) {
-          next = (next + direction + rows.length) % rows.length;
-          if (isSelectable(rows[next])) {
-            return next;
-          }
+      let next = activeIndex;
+      for (let i = 0; i < rows.length; i++) {
+        next = (next + direction + rows.length) % rows.length;
+        if (isSelectable(rows[next])) {
+          setActiveKey(rows[next].key);
+          setScrollToActive(true);
+          return;
         }
-        return prev;
-      });
+      }
     },
-    [rows],
+    [rows, activeIndex],
   );
 
   const activate = useCallback(
@@ -566,7 +592,6 @@ function Palette({
          The disclosure slides down past the rows it just revealed, so the
          highlight is asked to follow it rather than snap back to the top. */
       if (row.type === 'more') {
-        setKeepKey(row.key);
         if (showAllAttach) {
           setCollapsing(true);
           return;
@@ -669,11 +694,14 @@ function Palette({
             key={row.key}
             data-row-key={row.key}
             style={style}
-            id={`palette-row-${index}`}
+            id={rowElementId(row.key)}
             role="option"
             aria-selected={isActive}
             onClick={() => activate(index)}
-            onMouseEnter={() => setActiveIndex(index)}
+            onMouseEnter={() => {
+              setActiveKey(row.key);
+              setScrollToActive(false);
+            }}
             className={cn(
               'flex cursor-pointer items-center gap-2.5 rounded-lg px-2 text-sm text-text-secondary',
               isActive && 'bg-surface-hover',
@@ -696,11 +724,14 @@ function Palette({
             key={row.key}
             data-row-key={row.key}
             style={style}
-            id={`palette-row-${index}`}
+            id={rowElementId(row.key)}
             role="option"
             aria-selected={isActive}
             onClick={() => activate(index)}
-            onMouseEnter={() => setActiveIndex(index)}
+            onMouseEnter={() => {
+              setActiveKey(row.key);
+              setScrollToActive(false);
+            }}
             className={cn(
               'flex cursor-pointer items-center gap-2.5 rounded-lg px-2 text-sm text-text-secondary',
               isActive && 'bg-surface-hover',
@@ -750,7 +781,7 @@ function Palette({
           key={row.key}
           data-row-key={row.key}
           style={style}
-          id={`palette-row-${index}`}
+          id={rowElementId(row.key)}
           role="option"
           aria-selected={isActive}
           aria-checked={isEntry ? checked : undefined}
@@ -758,7 +789,10 @@ function Palette({
             favorited ? `${label}, ${localize('com_ui_tools_view_favorites')}` : undefined
           }
           onClick={() => activate(index)}
-          onMouseEnter={() => setActiveIndex(index)}
+          onMouseEnter={() => {
+            setActiveKey(row.key);
+            setScrollToActive(false);
+          }}
           className={cn(
             'group/row relative flex cursor-pointer items-center gap-2.5 rounded-lg px-2 text-sm',
             /* On-state reads as a left accent plus full-strength text, rather
@@ -936,10 +970,14 @@ function Palette({
               <input
                 ref={inputRef}
                 role="combobox"
-                aria-expanded
+                aria-expanded={rows.length > 0}
                 autoComplete="off"
                 aria-controls="composer-palette-list"
-                aria-activedescendant={rows.length > 0 ? `palette-row-${activeIndex}` : undefined}
+                aria-activedescendant={
+                  activeRow != null && isSelectable(activeRow)
+                    ? rowElementId(activeRow.key)
+                    : undefined
+                }
                 aria-describedby="composer-palette-help"
                 placeholder={localize('com_ui_composer_palette_search')}
                 value={search}
@@ -971,9 +1009,18 @@ function Palette({
                       width={width}
                       overscanRowCount={8}
                       rowCount={rows.length}
-                      scrollToIndex={activeIndex}
+                      /* The list defaults to a `grid` of `row`s, labelled
+                         "grid" in English and holding its own tab stop. Left
+                         alone it sits between this listbox and its options, so
+                         none of them are owned by it, and it announces a
+                         second, empty widget where the rows should be. */
+                      role="presentation"
+                      containerRole="presentation"
+                      aria-label=""
+                      tabIndex={-1}
+                      scrollToIndex={scrollToActive ? activeIndex : undefined}
                       rowRenderer={rowRenderer}
-                      rowHeight={({ index }) => rowHeight(rows[index])}
+                      rowHeight={measureRow}
                       height={Math.min(layout.height, LIST_MAX_HEIGHT)}
                       className={cn(
                         'focus:outline-none',

@@ -44,7 +44,14 @@ const queued = (over: Partial<QueuedMessage> = {}): QueuedMessage =>
     ...over,
   }) as QueuedMessage;
 
-function renderQueue(items: QueuedMessage[], steeringOverride: SteeringControls = steering) {
+function renderQueue(
+  items: QueuedMessage[],
+  steeringOverride: SteeringControls = steering,
+  handlers: {
+    onEditToComposer?: jest.Mock;
+    onRestoreToComposer?: jest.Mock;
+  } = {},
+) {
   return render(
     <RecoilRoot initializeState={({ set }) => set(store.queuedMessagesByConvoId(CONVO_ID), items)}>
       {/* Mirrors `App`, which mounts the provider around the whole tree. */}
@@ -52,8 +59,8 @@ function renderQueue(items: QueuedMessage[], steeringOverride: SteeringControls 
         <Queue
           steering={steeringOverride}
           conversationId={CONVO_ID}
-          onEditToComposer={jest.fn()}
-          onRestoreToComposer={jest.fn()}
+          onEditToComposer={handlers.onEditToComposer ?? jest.fn()}
+          onRestoreToComposer={handlers.onRestoreToComposer ?? jest.fn()}
         />
       </DndProvider>
     </RecoilRoot>,
@@ -80,10 +87,12 @@ describe('Queue', () => {
     expect(firstRow.queryByLabelText('com_ui_more_options')).not.toBeInTheDocument();
   });
 
-  it('sends a row now', () => {
-    renderQueue([queued()]);
-    fireEvent.click(screen.getByText('com_ui_send_now'));
-    expect(mockSendQueuedNow).toHaveBeenCalledTimes(1);
+  it('sends the row that was clicked, not the first one', () => {
+    renderQueue([queued({ id: 'q1' }), queued({ id: 'q2', text: 'the second one' })]);
+    fireEvent.click(screen.getAllByText('com_ui_send_now')[1]);
+    expect(mockSendQueuedNow).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'q2', text: 'the second one' }),
+    );
   });
 
   it('disables send now while the run is paused on approval', () => {
@@ -122,9 +131,62 @@ describe('Queue', () => {
     expect(screen.getByRole('status')).toHaveTextContent('com_ui_queue_moved:2');
   });
 
-  it('offers no handle when the only message has nowhere to go', () => {
+  /* Swapping the handle out from under a keyboard user is how focus gets
+     dropped to the top of the page when a drain shrinks the queue. */
+  it('keeps the handle when the only message has nowhere to go, and refuses to move it', () => {
     renderQueue([queued()]);
-    expect(screen.queryByTestId('queued-message-grip')).not.toBeInTheDocument();
+    const grip = screen.getByTestId('queued-message-grip');
+    expect(grip).toHaveAttribute('aria-disabled', 'true');
+
+    fireEvent.keyDown(grip, { key: 'ArrowDown' });
+    fireEvent.keyDown(grip, { key: 'ArrowUp' });
+    expect(mockReorderQueued).not.toHaveBeenCalled();
+  });
+
+  it('keeps the live region and the hint out of the list itself', () => {
+    renderQueue([queued({ id: 'q1' }), queued({ id: 'q2' })]);
+    const list = screen.getByTestId('composer-queue');
+    expect(within(list).queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    /* Every child of the list is one of its items. */
+    for (const child of Array.from(list.children)) {
+      expect(child).toHaveAttribute('role', 'listitem');
+    }
+  });
+
+  it('returns a trashed message to the composer before dropping it', () => {
+    const onRestore = jest.fn().mockReturnValue(true);
+    renderQueue([queued({ id: 'q1', files: [{ file_id: 'f1' }] as never })], steering, {
+      onRestoreToComposer: onRestore,
+    });
+    fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
+    expect(onRestore).toHaveBeenCalledWith(
+      'follow up on this',
+      [{ file_id: 'f1' }],
+      { quotes: [], manualSkills: [] },
+      CONVO_ID,
+    );
+    expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
+  });
+
+  it('drops the message even when the composer refuses to take it back', () => {
+    const onRestore = jest.fn().mockReturnValue(false);
+    renderQueue([queued({ id: 'q1' })], steering, { onRestoreToComposer: onRestore });
+    fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
+    expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
+  });
+
+  it('hands the whole message to the composer to edit', () => {
+    const onEdit = jest.fn();
+    renderQueue([queued({ id: 'q1', quotes: ['a quote'], manualSkills: ['writer'] })], steering, {
+      onEditToComposer: onEdit,
+    });
+    fireEvent.click(screen.getByLabelText('com_ui_edit_message'));
+    expect(onEdit).toHaveBeenCalledWith('follow up on this', [], {
+      quotes: ['a quote'],
+      manualSkills: ['writer'],
+    });
+    expect(mockRemoveQueued).toHaveBeenCalledWith('q1');
   });
 
   it('shows an attachment count when files ride along', () => {
