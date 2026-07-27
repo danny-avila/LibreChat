@@ -5,6 +5,7 @@ import { HoverCard, HoverCardTrigger, HoverCardContent, HoverCardPortal } from '
 import type { SettingDefinition, TConversation } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
 import type { TSetOption } from '~/common';
+import useReducedMotion from '~/hooks/Generic/useReducedMotion';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -23,6 +24,14 @@ const THUMB = 28;
 const THUMB_ACTIVE = 32;
 /** The fill clears before the thumb that covers it starts to fade. */
 const FILL_FADE_MS = 90;
+/** Which way each arrow key moves along the track. */
+const ARROW_STEP: Record<string, number | undefined> = {
+  ArrowLeft: -1,
+  ArrowUp: -1,
+  ArrowRight: 1,
+  ArrowDown: 1,
+};
+
 const THUMB_FADE_MS = 140;
 type Localize = (key: TranslationKeys) => string;
 
@@ -70,6 +79,9 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
   /** Ref drives the gesture (pointermove fires before a state flush would land);
    *  the state only feeds styling. */
   const draggingRef = useRef(false);
+  const reducedMotion = useReducedMotion();
+  /** One per stop, so an arrow key can move focus along with the selection. */
+  const stopRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [dragging, setDragging] = useState(false);
 
   const { levels, autoValue } = useMemo(() => {
@@ -196,11 +208,28 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
   const fillWidth = (index: number) =>
     `calc(${THUMB / 2 + TRACK_H / 2}px + ${ratioOf(index)} * (100% - ${THUMB}px))`;
 
-  const description = setting.description != null ? String(setting.description) : undefined;
-  const descriptionText =
-    description != null ? localize(description as TranslationKeys) : undefined;
+  /* `descriptionCode` is what says whether this is a translation key or the
+     literal text an admin wrote. Translating it either way sent literal text
+     through i18next, which reads anything before a colon as a namespace and
+     silently drops it. */
+  let descriptionText: string | undefined;
+  if (setting.description != null && setting.description !== '') {
+    descriptionText =
+      setting.descriptionCode === true
+        ? localize(setting.description as TranslationKeys)
+        : setting.description;
+  }
   const thumbSize = dragging ? THUMB_ACTIVE : THUMB;
-  const moveMs = dragging ? 75 : 150;
+  /* The track's motion is written inline, where a stylesheet's reduced-motion
+     rule cannot reach it, so the durations collapse here instead. */
+  let moveMs = dragging ? 75 : 150;
+  let fadeMs = FILL_FADE_MS;
+  let thumbFadeMs = THUMB_FADE_MS;
+  if (reducedMotion) {
+    moveMs = 0;
+    fadeMs = 0;
+    thumbFadeMs = 0;
+  }
 
   return (
     <div className="w-[268px] p-3">
@@ -275,7 +304,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
             opacity: isAuto ? 0 : 1,
             /* Fades out faster than the thumb above it, so it is already gone
                before the thumb starts uncovering the rail. */
-            transition: `width ${moveMs}ms ease-out, opacity ${FILL_FADE_MS}ms ease-out`,
+            transition: `width ${moveMs}ms ease-out, opacity ${fadeMs}ms ease-out`,
           }}
           className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-green-500"
         />
@@ -318,7 +347,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
               `left ${moveMs}ms ease-out`,
               `height ${moveMs}ms ease-out`,
               `width ${moveMs}ms ease-out`,
-              `opacity ${THUMB_FADE_MS}ms ease-out ${isAuto ? `${FILL_FADE_MS}ms` : '0ms'}`,
+              `opacity ${thumbFadeMs}ms ease-out ${isAuto ? `${fadeMs}ms` : '0ms'}`,
             ].join(', '),
           }}
           className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-md"
@@ -331,6 +360,24 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
             role="radio"
             aria-checked={!isAuto && index === activeIndex}
             aria-label={label(value)}
+            /* One stop for the whole group, as a radiogroup is meant to have:
+               Tab reaches the current level and leaves, and the arrow keys move
+               between them. Under Auto no level is checked, so the one that
+               would be restored takes the tab stop. */
+            tabIndex={index === (isAuto ? restoreIndex : activeIndex) ? 0 : -1}
+            onKeyDown={(event) => {
+              const step = ARROW_STEP[event.key];
+              if (step === undefined) {
+                return;
+              }
+              event.preventDefault();
+              const next = Math.min(Math.max(index + step, 0), levels.length - 1);
+              select(levels[next]);
+              stopRefs.current[next]?.focus();
+            }}
+            ref={(node) => {
+              stopRefs.current[index] = node;
+            }}
             onClick={() => select(value)}
             style={{ left: `${(index / levels.length) * 100}%`, width: `${100 / levels.length}%` }}
             className="absolute inset-y-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
@@ -385,9 +432,16 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
             {descriptionText != null && descriptionText !== '' && (
               <HoverCard openDelay={200}>
                 <HoverCardTrigger asChild>
-                  <span className="cursor-help text-text-secondary" aria-hidden="true">
-                    <CircleHelp className="h-3.5 w-3.5" />
-                  </span>
+                  {/* A button rather than a bare span: this is the only place
+                      the provider's own explanation of the parameter appears,
+                      and hovering was the only way to reach it. */}
+                  <button
+                    type="button"
+                    aria-label={localize('com_ui_more_info')}
+                    className="rounded-full text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  >
+                    <CircleHelp className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
                 </HoverCardTrigger>
                 <HoverCardPortal>
                   <HoverCardContent side="top" className="w-72 text-sm">

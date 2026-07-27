@@ -158,7 +158,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                   className={cn(
                     'flex flex-col',
                     isLandingPage
-                      ? 'flex-1 items-center justify-end transition-transform duration-200 ease-out sm:justify-center'
+                      ? 'flex-1 items-center justify-end transition-transform duration-200 ease-out motion-reduce:transition-none sm:justify-center'
                       : 'h-full overflow-y-auto',
                   )}
                 >

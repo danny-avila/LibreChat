@@ -142,7 +142,11 @@ const useSpeechToTextExternal = (
   };
 
   const monitorSilence = (stream: MediaStream, stopRecording: () => void) => {
+    /* Held so it can be closed again: without this the ref below is never
+       assigned, its guard is always true, and every take leaves another audio
+       context open until the browser refuses to grant one. */
     const audioContext = new AudioContext();
+    audioContextRef.current = audioContext;
     const audioStreamSource = audioContext.createMediaStreamSource(stream);
     const analyser = audioContext.createAnalyser();
     analyser.minDecibels = minDecibels;
@@ -211,6 +215,15 @@ const useSpeechToTextExternal = (
     }
   };
 
+  /** Releases the silence monitor's audio graph; safe to call more than once. */
+  const closeAudioContext = () => {
+    const context = audioContextRef.current;
+    audioContextRef.current = null;
+    if (context != null && context.state !== 'closed') {
+      void context.close().catch(() => undefined);
+    }
+  };
+
   const stopRecording = () => {
     if (!mediaRecorderRef.current) {
       return;
@@ -226,6 +239,7 @@ const useSpeechToTextExternal = (
         window.cancelAnimationFrame(animationFrameIdRef.current);
         animationFrameIdRef.current = null;
       }
+      closeAudioContext();
 
       setIsListening(false);
     } else {
@@ -275,6 +289,7 @@ const useSpeechToTextExternal = (
       window.cancelAnimationFrame(animationFrameIdRef.current);
       animationFrameIdRef.current = null;
     }
+    closeAudioContext();
 
     setIsListening(false);
   };
@@ -308,6 +323,19 @@ const useSpeechToTextExternal = (
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isListening]);
+
+  /* Navigating away mid-take ends neither path above, and the audio graph
+     would outlive the page that opened it. */
+  useEffect(
+    () => () => {
+      const context = audioContextRef.current;
+      audioContextRef.current = null;
+      if (context != null && context.state !== 'closed') {
+        void context.close().catch(() => undefined);
+      }
+    },
+    [],
+  );
 
   return {
     isListening,

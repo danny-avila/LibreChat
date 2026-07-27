@@ -126,7 +126,12 @@ export default function useAttachItems({
    * Allow defining agent capabilities on a per-endpoint basis
    * Use definition for agents endpoint for ephemeral agents
    * */
-  const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
+  /* Destructured rather than held whole: the hook returns a fresh object every
+     render, and depending on it rebuilt every destination, every icon and every
+     closure below on each keystroke. */
+  const { contextEnabled, fileSearchEnabled, codeEnabled } = useAgentCapabilities(
+    agentsConfig?.capabilities ?? defaultAgentCapabilities,
+  );
   const { tools, provider } = useAgentToolPermissions(agentId, ephemeralAgent);
   /* The same allowances the drag-and-drop router resolves, so a file reaches
      the same destinations whether it is dropped on the composer or picked
@@ -224,7 +229,7 @@ export default function useAttachItems({
         });
       }
 
-      if (capabilities.contextEnabled) {
+      if (contextEnabled) {
         items.push({
           id: `${prefix}:context`,
           label: localize('com_ui_upload_ocr_text'),
@@ -236,7 +241,7 @@ export default function useAttachItems({
         });
       }
 
-      if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
+      if (fileSearchEnabled && fileSearchAllowedByAgent) {
         items.push({
           id: `${prefix}:file_search`,
           label: localize('com_ui_upload_file_search'),
@@ -249,7 +254,7 @@ export default function useAttachItems({
         });
       }
 
-      if (capabilities.codeEnabled && codeAllowedByAgent) {
+      if (codeEnabled && codeAllowedByAgent) {
         items.push({
           id: `${prefix}:execute_code`,
           label: localize('com_ui_upload_code_environment'),
@@ -287,7 +292,9 @@ export default function useAttachItems({
     endpoint,
     provider,
     endpointType,
-    capabilities,
+    codeEnabled,
+    contextEnabled,
+    fileSearchEnabled,
     useResponsesApi,
     handleUploadClick,
     setEphemeralAgent,

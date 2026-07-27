@@ -212,7 +212,7 @@ function Bar({
 }: BarProps) {
   const localize = useLocalize();
   const context = useBadgeRowContext();
-  const allEntries = usePaletteEntries({ conversationId, agentId });
+  const allEntries = usePaletteEntries({ conversationId, agentId, enabled: showTools });
 
   /* Servers with required variables open this before they can be selected; it
      lives here rather than in the palette so dismissing the popover mid-config
@@ -244,6 +244,17 @@ function Bar({
     [packedEntries, widths, rowWidth, plusWidth, controlsWidth],
   );
   const dictating = dictation.active || dictation.transcribing;
+
+  /* Spoken rather than shown: the recording state is otherwise carried only by
+     two buttons quietly changing their names, which a reader will not re-read
+     for a control that already has focus. The elapsed seconds stay out of it,
+     since a region that changes every second is read every second. */
+  let dictationStatus = '';
+  if (dictation.transcribing) {
+    dictationStatus = localize('com_ui_transcribing');
+  } else if (dictating) {
+    dictationStatus = localize('com_ui_listening');
+  }
 
   /* The arrangement is frozen for the length of a recording. The controls
      shrink to just the elapsed time while one runs, which would otherwise let
@@ -288,8 +299,10 @@ function Bar({
           dictating: height has nothing to animate between unless something
           supplies the two ends, and this supplies them without measuring. */}
       <div
+        aria-hidden={above.length === 0 || dictating}
+        {...(above.length === 0 || dictating ? { inert: '' } : {})}
         className={cn(
-          'grid transition-[grid-template-rows,opacity] duration-200 ease-out',
+          'grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none',
           above.length > 0 && !dictating
             ? 'grid-rows-[1fr] opacity-100'
             : 'grid-rows-[0fr] opacity-0',
@@ -342,9 +355,13 @@ function Bar({
           role="list"
           aria-label={localize('com_ui_composer_tools')}
           aria-hidden={dictating}
+          /* Hidden from a reader and unreachable by a pointer, but every chip
+             still holds a remove button that Tab would land on. `inert` is what
+             takes those out of the tab order along with everything else. */
+          {...(dictating ? { inert: '' } : {})}
           className={cn(
             'flex min-w-0 flex-wrap items-center gap-1.5',
-            'transition-[transform,opacity] duration-200 ease-out',
+            'transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none',
             dictating ? 'pointer-events-none translate-y-3 opacity-0' : 'translate-y-0 opacity-100',
           )}
         >
@@ -367,9 +384,10 @@ function Bar({
           <div className="grid">
             <div
               aria-hidden={dictating}
+              {...(dictating ? { inert: '' } : {})}
               className={cn(
                 'col-start-1 row-start-1 flex items-center justify-end gap-1.5',
-                'transition-[transform,opacity] duration-200 ease-out',
+                'transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none',
                 dictating
                   ? 'pointer-events-none translate-y-3 opacity-0'
                   : 'translate-y-0 opacity-100',
@@ -383,19 +401,23 @@ function Bar({
                 it comes forward into the row and recedes back out of it. */}
             <div
               aria-hidden={!dictating}
+              {...(dictating ? {} : { inert: '' })}
               className={cn(
                 'col-start-1 row-start-1 flex origin-center items-center justify-end px-1',
-                'transition-[opacity,transform] duration-200 ease-out',
+                'transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none',
                 dictating ? 'scale-100 opacity-100' : 'pointer-events-none scale-90 opacity-0',
               )}
             >
-              <span className="text-xs tabular-nums text-text-secondary">
+              <span className="text-xs tabular-nums text-text-secondary" aria-hidden="true">
                 {dictation.transcribing
                   ? localize('com_ui_transcribing')
                   : formatElapsed(dictation.elapsed)}
               </span>
             </div>
           </div>
+          <span role="status" aria-live="polite" className="sr-only">
+            {dictationStatus}
+          </span>
           {showSpeech && (
             <RoundButton
               label={dictating ? localize('com_ui_stop') : localize('com_ui_use_micrphone')}

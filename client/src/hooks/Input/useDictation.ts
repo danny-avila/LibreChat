@@ -1,7 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { useToastContext } from '@librechat/client';
 import type { TAskFunction } from '~/common';
-import useAudioLevels from '~/hooks/Input/useAudioLevels';
 import useGetAudioSettings from './useGetAudioSettings';
 import { useChatFormContext } from '~/Providers';
 import useSpeechToText from './useSpeechToText';
@@ -20,7 +19,6 @@ type StopMode = 'compose' | 'send' | 'cancel';
 export interface Dictation {
   active: boolean;
   transcribing: boolean;
-  levels: number[];
   elapsed: number;
   start: () => void;
   /** Drop the take and restore whatever draft was there before. */
@@ -125,7 +123,6 @@ export default function useDictation({
   );
 
   const active = isListening === true;
-  const levels = useAudioLevels(active);
 
   /* Bridges the gap between the recorder being told to stop and the upload
      starting: `isListening` clears synchronously, while the recorder's own
@@ -188,7 +185,6 @@ export default function useDictation({
   return {
     active,
     transcribing: isLoading === true || settling,
-    levels,
     elapsed,
     start,
     cancel,
