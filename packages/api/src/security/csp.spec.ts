@@ -29,6 +29,20 @@ describe('createCspPolicy', () => {
     );
   });
 
+  it('only enforces on a recognized false value, never on a typo', () => {
+    for (const value of ['1', 'yes', 'on', 'treu', 'report-only', 'maybe']) {
+      expect(createCspPolicy({ CSP_ENABLED: 'true', CSP_REPORT_ONLY: value })?.headerName).toBe(
+        'Content-Security-Policy-Report-Only',
+      );
+    }
+
+    for (const value of ['false', 'off', '0', 'no']) {
+      expect(createCspPolicy({ CSP_ENABLED: 'true', CSP_REPORT_ONLY: value })?.headerName).toBe(
+        'Content-Security-Policy',
+      );
+    }
+  });
+
   it('mints a fresh nonce per response', () => {
     const policy = createCspPolicy({ CSP_ENABLED: 'true' });
     if (!policy) {
@@ -56,6 +70,13 @@ describe('policy directives', () => {
     expect(header).toContain("frame-ancestors 'self'");
   });
 
+  it('permits the runtime dependencies the app actually ships', () => {
+    const header = headerFor({});
+
+    expect(header).toContain("'wasm-unsafe-eval'");
+    expect(header).toContain("worker-src 'self' blob: data:");
+  });
+
   it('keeps styles on unsafe-inline with no nonce', () => {
     const header = headerFor({});
     const styleSrc = header.split('; ').find((directive) => directive.startsWith('style-src'));
@@ -69,7 +90,9 @@ describe('policy directives', () => {
 
     expect(header).not.toContain("'strict-dynamic'");
     expect(header).toContain('https://scripts.example.com');
-    expect(header).toMatch(/script-src 'nonce-[^']+' 'self' https:\/\/scripts\.example\.com/);
+    expect(header).toMatch(
+      /script-src 'nonce-[^']+' 'wasm-unsafe-eval' 'self' https:\/\/scripts\.example\.com/,
+    );
   });
 
   it('adds deployment-specific sources without dropping the safe defaults', () => {
@@ -115,12 +138,11 @@ describe('policy directives', () => {
 });
 
 describe('applyCspNonce', () => {
-  it('stamps script tags, preserves existing nonces, and leaves styles alone', () => {
+  it('stamps script tags and leaves styles alone', () => {
     const html = [
       '<style>body { margin: 0; }</style>',
       '<script>window.theme = "dark";</script>',
       '<script defer src="/assets/app.js"></script>',
-      '<script nonce="existing">window.ok = true;</script>',
     ].join('');
 
     expect(applyCspNonce(html, 'abc123')).toBe(
@@ -128,7 +150,31 @@ describe('applyCspNonce', () => {
         '<style>body { margin: 0; }</style>',
         '<script nonce="abc123">window.theme = "dark";</script>',
         '<script nonce="abc123" defer src="/assets/app.js"></script>',
-        '<script nonce="existing">window.ok = true;</script>',
+      ].join(''),
+    );
+  });
+
+  it('replaces a stale nonce rather than preserving it', () => {
+    const html = '<script nonce="from-the-build">window.ok = true;</script>';
+
+    expect(applyCspNonce(html, 'abc123')).toBe('<script nonce="abc123">window.ok = true;</script>');
+    expect(applyCspNonce(html, 'abc123')).not.toContain('from-the-build');
+  });
+
+  it('stamps module preloads, which strict-dynamic does not cover', () => {
+    const html = [
+      '<link rel="modulepreload" crossorigin href="/assets/chunk.js">',
+      '<link rel="preload" as="script" href="/assets/other.js">',
+      '<link rel="stylesheet" crossorigin href="/assets/app.css">',
+      '<link rel="icon" type="image/png" href="/favicon.png">',
+    ].join('');
+
+    expect(applyCspNonce(html, 'abc123')).toBe(
+      [
+        '<link nonce="abc123" rel="modulepreload" crossorigin href="/assets/chunk.js">',
+        '<link nonce="abc123" rel="preload" as="script" href="/assets/other.js">',
+        '<link rel="stylesheet" crossorigin href="/assets/app.css">',
+        '<link rel="icon" type="image/png" href="/favicon.png">',
       ].join(''),
     );
   });

@@ -4,11 +4,17 @@ const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
-/** Mirrors the SPA shell: an inline style, an inline script, and a bundled script. */
+/**
+ * Mirrors what a production `client/dist/index.html` actually contains: inline
+ * style, inline script, a module entry, and the module preloads Vite emits.
+ */
 const INDEX_HTML =
   '<!DOCTYPE html><html lang="en-US"><head><title>LibreChat</title>' +
   '<style>body{margin:0}</style>' +
   '<script>window.theme="dark";</script>' +
+  '<link rel="modulepreload" crossorigin href="./assets/chunk.js">' +
+  '<link rel="stylesheet" crossorigin href="./assets/app.css">' +
+  '<script type="module" crossorigin src="./assets/index.js"></script>' +
   '<script defer src="/assets/app.js"></script>' +
   '</head><body><div id="root"></div></body></html>';
 
@@ -112,12 +118,28 @@ describe('Content Security Policy', () => {
     expect(response.text).toContain(`<script nonce="${nonce}" defer src="/assets/app.js">`);
   });
 
-  it('leaves style tags unstamped so unsafe-inline keeps working', async () => {
+  it('leaves style tags and stylesheet links unstamped', async () => {
     const response = await request(app).get('/');
 
     expect(response.text).toContain('<style>body{margin:0}</style>');
+    expect(response.text).toContain('<link rel="stylesheet" crossorigin href="./assets/app.css">');
     expect(response.headers['content-security-policy']).toContain(
       "style-src 'self' 'unsafe-inline'",
+    );
+  });
+
+  it("stamps module preloads, which 'strict-dynamic' does not cover", async () => {
+    const response = await request(app).get('/');
+    const nonce = response.headers['content-security-policy']?.match(
+      /script-src 'nonce-([^']+)'/,
+    )?.[1];
+
+    expect(nonce).toBeTruthy();
+    expect(response.text).toContain(
+      `<link nonce="${nonce}" rel="modulepreload" crossorigin href="./assets/chunk.js">`,
+    );
+    expect(response.text).toContain(
+      `<script nonce="${nonce}" type="module" crossorigin src="./assets/index.js">`,
     );
   });
 

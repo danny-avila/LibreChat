@@ -1,14 +1,17 @@
 import { randomBytes } from 'crypto';
 import { logger } from '@librechat/data-schemas';
-
+import { parseEnvSwitch } from './env';
 import { isEnabled } from '../utils';
 
 /** Split point for the per-request nonce. Randomized so no env value can collide. */
 const NONCE_SLOT = `__csp_nonce_${randomBytes(8).toString('hex')}__`;
 
 const DIRECTIVE_NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
-const SCRIPT_TAG_PATTERN = /<script\b([^>]*)>/gi;
-const NONCE_ATTRIBUTE_PATTERN = /\snonce\s*=/i;
+/** `<link>` is in here because module preloads are fetched under `script-src`. */
+const NONCEABLE_TAG_PATTERN = /<(script|link)\b([^>]*)>/gi;
+const NONCE_ATTRIBUTE_PATTERN = /\snonce\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
+const REL_PATTERN = /\srel\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
+const AS_SCRIPT_PATTERN = /\sas\s*=\s*(?:"script"|'script'|script\b)/i;
 
 type CspDirective = [string, string[]];
 
@@ -48,12 +51,13 @@ function splitSourceList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Only an explicitly recognized false value enforces. A typo or an unrecognized
+ * truthy spelling stays report-only, so a config slip cannot turn a rollout into
+ * a blocked SPA.
+ */
 function isReportOnly(env: NodeJS.ProcessEnv): boolean {
-  const value = env.CSP_REPORT_ONLY;
-  if (value == null || value.trim() === '') {
-    return true;
-  }
-  return isEnabled(value);
+  return parseEnvSwitch('CSP_REPORT_ONLY', env.CSP_REPORT_ONLY, true);
 }
 
 /**
@@ -62,13 +66,15 @@ function isReportOnly(env: NodeJS.ProcessEnv): boolean {
  * drop it and let the (now honored) `'self'` plus those hosts govern script loading.
  */
 function scriptSources(scriptExtras: string[]): string[] {
+  /* 'wasm-unsafe-eval' permits WebAssembly compilation without permitting eval();
+   * the HEIC upload path (client/src/utils/heicConverter.ts -> heic-to) needs it. */
   if (scriptExtras.length === 0) {
-    return [`'nonce-${NONCE_SLOT}'`, "'strict-dynamic'", "'self'"];
+    return [`'nonce-${NONCE_SLOT}'`, "'strict-dynamic'", "'wasm-unsafe-eval'", "'self'"];
   }
   logger.info(
     "[CSP] CSP_SCRIPT_SRC_EXTRA is set; omitting 'strict-dynamic' so the configured script hosts take effect.",
   );
-  return [`'nonce-${NONCE_SLOT}'`, "'self'"];
+  return [`'nonce-${NONCE_SLOT}'`, "'wasm-unsafe-eval'", "'self'"];
 }
 
 /**
@@ -89,7 +95,10 @@ function defaultDirectives(scriptExtras: string[], frameAncestors: string[]): Cs
     ['connect-src', ["'self'", 'https:', 'wss:']],
     ['media-src', ["'self'", 'data:', 'blob:']],
     ['frame-src', ["'self'", 'https:', 'blob:', 'data:', 'about:']],
-    ['worker-src', ["'self'", 'blob:']],
+    /* `data:` is required by Monaco's default CDN loader, which bootstraps its
+     * workers from a data: URL; without it the artifact editor silently drops to
+     * running worker tasks on the UI thread. */
+    ['worker-src', ["'self'", 'blob:', 'data:']],
     ['manifest-src', ["'self'"]],
     ['form-action', ["'self'", 'https:']],
     /* Replaced wholesale, not appended: merging would turn a deliberate
@@ -216,19 +225,36 @@ export function issueCsp(policy: CspPolicy): CspResponse {
   };
 }
 
+/** `<link>` elements that the browser fetches under `script-src`. */
+function isScriptPreload(attributes: string): boolean {
+  const match = REL_PATTERN.exec(attributes);
+  const rel = (match?.[1] ?? match?.[2] ?? match?.[3] ?? '').toLowerCase();
+  if (rel === 'modulepreload') {
+    return true;
+  }
+  return rel === 'preload' && AS_SCRIPT_PATTERN.test(attributes);
+}
+
 /**
- * Stamps the nonce onto every `<script>` element in the SPA shell. Styles are left
- * alone; see `defaultDirectives` for why they stay on `'unsafe-inline'`.
+ * Stamps the response nonce onto the shell's `<script>` elements and onto the
+ * module preloads a production build emits, which are parser-inserted and so are
+ * not covered by `'strict-dynamic'`. Any nonce already in the markup is replaced,
+ * never kept: only the current response's nonce is authorized by the header.
+ *
+ * Styles are deliberately untouched; see `defaultDirectives`.
  */
 export function applyCspNonce(html: string, nonce: string): string {
   if (!nonce) {
     return html;
   }
 
-  return html.replace(SCRIPT_TAG_PATTERN, (match, attributes: string) => {
-    if (NONCE_ATTRIBUTE_PATTERN.test(attributes)) {
+  return html.replace(NONCEABLE_TAG_PATTERN, (match, tag: string, attributes: string) => {
+    const isScript = tag.toLowerCase() === 'script';
+    if (!isScript && !isScriptPreload(attributes)) {
       return match;
     }
-    return `<script nonce="${nonce}"${attributes}>`;
+
+    const stripped = attributes.replace(NONCE_ATTRIBUTE_PATTERN, '');
+    return `<${tag} nonce="${nonce}"${stripped}>`;
   });
 }
