@@ -48,6 +48,13 @@ export interface AdminUsersDeps {
    * confirmed, in which case deletion must be refused rather than proceed.
    */
   quiesceUserSchedules: (userId: string) => Promise<boolean>;
+  /** Raises the durable, one-way account-deletion barrier. Must run BEFORE the quiesce:
+   *  the quiesce is a one-shot scan, and only the barrier refuses admission to work
+   *  created after it. */
+  markUserDeleting: (userId: string) => Promise<Date | null>;
+  /** Hard-deletes the user's Schedule/ScheduleRun rows. Not left to the reconciler's
+   *  `deleting` sweep, which the clustered entrypoint never runs. */
+  deleteSchedulesByUser: (userId: string) => Promise<void>;
 }
 
 export function createAdminUsersHandlers(deps: AdminUsersDeps): {
@@ -62,6 +69,8 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
     deleteConfig,
     deleteAclEntries,
     quiesceUserSchedules,
+    markUserDeleting,
+    deleteSchedulesByUser,
   } = deps;
 
   async function listUsersHandler(req: ServerRequest, res: Response) {
@@ -161,6 +170,23 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
         }
       }
 
+      // Raise the durable barrier FIRST, exactly as the self-service controller does.
+      // The quiesce below is a one-shot disable + active-run scan, so a schedule create
+      // or Run Now that overlaps it can pass its own admission check, land after the
+      // scan, and arm or dispatch while the user document is being removed. Only the
+      // barrier refuses that admission for the rest of the cascade.
+      const barrierRaised = await markUserDeleting(id).then(
+        () => true,
+        (error) => {
+          logger.error('[adminUsers] Failed to raise the deletion barrier', error);
+          return false;
+        },
+      );
+      if (!barrierRaised) {
+        res.set('Retry-After', '30');
+        return res.status(503).json({ error: 'Could not start deletion. Please retry shortly.' });
+      }
+
       // Stop scheduled work BEFORE removing the user. The rest of this endpoint's
       // cascade is deliberately deferred (see deleteUserById), but scheduled runs are
       // not dormant data: an in-flight fire keeps persisting messages and billing after
@@ -176,6 +202,14 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
           error: 'Scheduled work for this user is still settling. Please retry shortly.',
         });
       }
+
+      // Hard-delete the schedule rows rather than relying on the reconciler's
+      // `deleting` sweep: the clustered `experimental.js` entrypoint never arms the
+      // engine, so in that topology nothing would ever erase them and the deleted
+      // user's prompt text would persist indefinitely.
+      await deleteSchedulesByUser(id).catch((error) => {
+        logger.error('[adminUsers] Failed to delete schedules for the removed user', error);
+      });
 
       const result = await deleteUserById(id);
 

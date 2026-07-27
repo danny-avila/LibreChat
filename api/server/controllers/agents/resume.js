@@ -689,6 +689,17 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       await GenerationJobManager.abortJob(streamId, { expectedCreatedAt: job.createdAt }).catch(
         (err) => logger.warn('[ResumeAgentController] Failed to abort a superseded resume', err),
       );
+      // Settle the run too. The CAS already promoted it out of `requires_action`, and
+      // the abort deletes the job, so without this the row stays active with no
+      // generation and no evidence — holding a capacity slot and blocking deletion
+      // until the orphan sweep.
+      await recordScheduleOutcome({
+        scheduleId: job.metadata.scheduleId,
+        scheduledFor: job.metadata.scheduledFor,
+        status: 'interrupted',
+        conversationId,
+        error: 'Schedule was no longer active when the approval was answered',
+      });
       await decrementPendingRequest(userId);
       return res.status(409).json({ error: 'This scheduled run is no longer active' });
     }

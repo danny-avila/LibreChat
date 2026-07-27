@@ -60,6 +60,8 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
     deleteConfig: jest.fn().mockResolvedValue(null),
     deleteAclEntries: jest.fn().mockResolvedValue(undefined),
     quiesceUserSchedules: jest.fn().mockResolvedValue(true),
+    markUserDeleting: jest.fn().mockResolvedValue(new Date()),
+    deleteSchedulesByUser: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -496,6 +498,49 @@ describe('createAdminUsersHandlers', () => {
      * are not dormant data: an in-flight fire keeps persisting messages and billing
      * after the user document is gone.
      */
+    it('raises the deletion barrier BEFORE quiescing', async () => {
+      const deps = createDeps();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      // The quiesce is a one-shot scan; only the durable barrier refuses admission to
+      // work created after it, so a create/Run Now racing the delete must hit the
+      // barrier rather than slip past the scan.
+      const barrier = (deps.markUserDeleting as jest.Mock).mock.invocationCallOrder[0];
+      const quiesce = (deps.quiesceUserSchedules as jest.Mock).mock.invocationCallOrder[0];
+      expect(barrier).toBeLessThan(quiesce);
+    });
+
+    it('refuses the delete when the barrier cannot be raised', async () => {
+      const deps = createDeps({
+        markUserDeleting: jest.fn().mockRejectedValue(new Error('mongo down')),
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(503);
+      expect(deps.quiesceUserSchedules).not.toHaveBeenCalled();
+      expect(deps.deleteUserById).not.toHaveBeenCalled();
+    });
+
+    it('hard-deletes the schedule rows rather than trusting the reconciler sweep', async () => {
+      const deps = createDeps();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      // The clustered entrypoint never arms the engine, so nothing would sweep them.
+      expect(deps.deleteSchedulesByUser).toHaveBeenCalledWith(validUserId);
+      const rows = (deps.deleteSchedulesByUser as jest.Mock).mock.invocationCallOrder[0];
+      const userDel = (deps.deleteUserById as jest.Mock).mock.invocationCallOrder[0];
+      expect(rows).toBeLessThan(userDel);
+    });
+
     it('quiesces the user schedules before removing the user', async () => {
       const deps = createDeps();
       const handlers = createAdminUsersHandlers(deps);
