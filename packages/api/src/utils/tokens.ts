@@ -783,13 +783,27 @@ export function processModelData(input: z.infer<typeof inputSchema>): EndpointTo
   return tokenConfig;
 }
 
+interface LiteLLMModelInfo {
+  input_cost_per_token?: number;
+  output_cost_per_token?: number;
+  cache_read_input_token_cost?: number;
+  cache_creation_input_token_cost?: number;
+  max_input_tokens?: number;
+  max_tokens?: number;
+}
+
+interface LiteLLMModel {
+  model_name: string;
+  model_info?: LiteLLMModelInfo;
+}
+
 /**
  * Shape of a LiteLLM proxy's `/model/info` response. Distinct from OpenRouter's
  * `/models` shape (`modelSchema` above) — LiteLLM keys models by the admin-chosen
  * `model_name` alias and nests cost fields under `model_info`, all of them optional
  * since LiteLLM omits cost data for models it has no pricing for.
  */
-export const litellmModelSchema = z.object({
+const litellmModelSchema = z.object({
   model_name: z.string(),
   model_info: z
     .object({
@@ -801,11 +815,11 @@ export const litellmModelSchema = z.object({
       max_tokens: z.number().optional(),
     })
     .optional(),
-});
+}) as z.ZodType<LiteLLMModel>;
 
-export const litellmInputSchema = z.object({
+const litellmInputSchema = z.object({
   data: z.array(litellmModelSchema),
-});
+}) as z.ZodType<{ data: LiteLLMModel[] }>;
 
 /**
  * Processes a LiteLLM `/model/info` response into the internal per-1M-token
