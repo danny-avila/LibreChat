@@ -399,6 +399,9 @@ describe('Tool Handlers', () => {
         expect.objectContaining({
           toolKey,
           config: serverConfig,
+          /** The resolved server rides along, so `createMCPTool` uses it for auth,
+           *  reconnection and invocation instead of re-parsing the ambiguous key. */
+          serverName,
         }),
       );
     });
