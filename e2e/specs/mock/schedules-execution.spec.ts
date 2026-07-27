@@ -130,29 +130,34 @@ test.describe('scheduled chat execution', () => {
    * and then advance past the occurrence. TICK_MS is 30s, so budget for one tick.
    */
   test('a due schedule fires automatically, once, and advances', async ({ page }) => {
-    // Worst case: up to 60s to the minute boundary, one 30s engine tick, then the
-    // generation itself.
-    test.setTimeout(240000);
+    test.setTimeout(600000);
     await page.goto('/c/new', { timeout: 15000 });
     const token = await getAccessToken(page);
     const agent = await ensureAgent(page, token);
     const label = `auto-${Date.now()}`;
-    // Hourly on the upcoming minute: the soonest occurrence this cadence can express.
+    // Hourly ignores `hour` (cron `m * * * *`) but the payload schema still requires it.
     const schedule = await createSchedule(
       page,
       token,
       scheduleBody(agent.id, {
         prompt: replyPrompt(label),
-        cadence: { frequency: 'hourly', minute: (new Date().getUTCMinutes() + 1) % 60 },
+        cadence: { frequency: 'hourly', hour: 0, minute: (new Date().getUTCMinutes() + 1) % 60 },
         timezone: 'UTC',
       }),
     );
     const before = await readSchedule(page, token, schedule.id);
     expect(before?.nextRunAt).toBeTruthy();
 
+    // Budget from the server's OWN nextRunAt rather than a guessed constant: it already
+    // includes this schedule's deterministic jitter (up to SCHEDULE_JITTER_WINDOW_MS,
+    // 120s), which no fixed timeout can safely assume away. Add the engine tick
+    // (30s + 2s jitter) plus room for the generation.
+    const dueIn = Math.max(new Date(before!.nextRunAt!).getTime() - Date.now(), 0);
+    const budget = dueIn + 120000;
+
     await expect
       .poll(async () => (await readSchedule(page, token, schedule.id))?.lastRun?.status, {
-        timeout: 180000,
+        timeout: budget,
         intervals: [2000],
       })
       .toBe('success');
@@ -186,7 +191,7 @@ test.describe('scheduled chat execution', () => {
     expect(after.schedules).toHaveLength(before.schedules.length);
   });
 
-  test('creates a schedule through the UI with a non-default cadence persisted', async ({
+  test('creates and edits a schedule through the UI with the cadence persisted', async ({
     page,
   }) => {
     test.setTimeout(120000);
@@ -219,10 +224,23 @@ test.describe('scheduled chat execution', () => {
     // It survives a reload, i.e. the cadence persisted through the real backend.
     await page.reload();
     await openSchedulesPanel(page);
-    await expect(page.getByTestId('schedule-card').filter({ hasText: name })).toContainText(
-      /Runs weekly/i,
-      { timeout: 15000 },
-    );
+    const persisted = page.getByTestId('schedule-card').filter({ hasText: name });
+    await expect(persisted).toContainText(/Runs weekly/i, { timeout: 15000 });
+
+    // EDIT through the same dialog: rename and move the cadence back to daily.
+    await persisted.getByRole('button', { name: 'Schedule options' }).click();
+    await page.getByRole('menuitem', { name: 'Edit' }).click();
+    const editDialog = page.getByRole('dialog');
+    const renamed = `${name} edited`;
+    await editDialog.locator('#schedule-name').fill(renamed);
+    await editDialog.getByRole('group', { name: 'Frequency' }).getByText('Daily').click();
+    await editDialog.getByRole('button', { name: 'Save' }).click();
+
+    await page.reload();
+    await openSchedulesPanel(page);
+    const edited = page.getByTestId('schedule-card').filter({ hasText: renamed });
+    await expect(edited).toBeVisible({ timeout: 15000 });
+    await expect(edited).toContainText(/Runs daily/i);
   });
 
   /**
@@ -230,34 +248,62 @@ test.describe('scheduled chat execution', () => {
    * the run settles, rather than the row lingering `started` and holding a global
    * capacity slot until the orphan sweep.
    */
-  test('deleting a schedule while its run is active settles the run', async ({ page }) => {
-    test.setTimeout(120000);
+  test('deleting a schedule while its run is active aborts the generation', async ({ page }) => {
+    test.setTimeout(180000);
     await page.goto('/c/new', { timeout: 15000 });
     const token = await getAccessToken(page);
     const agent = await ensureAgent(page, token);
     const schedule = await createSchedule(
       page,
       token,
-      scheduleBody(agent.id, { prompt: replyPrompt(`del-${Date.now()}`) }),
+      // A slow reply keeps the generation in flight long enough to delete underneath it.
+      scheduleBody(agent.id, { prompt: `E2E_SLOW_REPLY:del-${Date.now()}` }),
     );
 
-    await requestJson<RunNowResult>(page, {
+    const started = await requestJson<RunNowResult>(page, {
       path: `/api/schedules/${schedule.id}/run`,
       token,
       method: 'POST',
     });
+    const conversationId = started.conversationId!;
+    expect(conversationId).toBeTruthy();
+
+    // PROVE the run is actually generating before deleting. The schedule row is hidden
+    // from the owner the instant it is soft-deleted, so its disappearance is no evidence
+    // that the abort was delivered, the run settled, or the row was erased.
+    await expect
+      .poll(
+        async () =>
+          (
+            await requestJson<{ active?: boolean }>(page, {
+              path: `/api/agents/chat/status/${conversationId}`,
+              token,
+            })
+          ).active,
+        { timeout: 60000, intervals: [500] },
+      )
+      .toBe(true);
+
     await requestJson<unknown>(page, {
       path: `/api/schedules/${schedule.id}`,
       token,
       method: 'DELETE',
     });
 
-    // The schedule disappears for the owner immediately and stays gone once drained.
+    // The delete has to reach the loopback generation, not just hide the row.
     await expect
-      .poll(async () => (await readSchedule(page, token, schedule.id)) ?? null, {
-        timeout: 60000,
-        intervals: [1000],
-      })
-      .toBeNull();
+      .poll(
+        async () =>
+          (
+            await requestJson<{ active?: boolean }>(page, {
+              path: `/api/agents/chat/status/${conversationId}`,
+              token,
+            })
+          ).active,
+        { timeout: 60000, intervals: [1000] },
+      )
+      .toBe(false);
+
+    expect(await readSchedule(page, token, schedule.id)).toBeUndefined();
   });
 });
