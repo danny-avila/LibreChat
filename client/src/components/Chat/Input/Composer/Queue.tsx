@@ -2,7 +2,7 @@ import { memo, useRef, useState, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useDrag, useDrop } from 'react-dnd';
 import { useMediaQuery } from '@librechat/client';
-import { X, Clock, Pencil, GripVertical } from 'lucide-react';
+import { X, Pencil, GripVertical } from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { QueuedMessage } from '~/store/families';
@@ -105,7 +105,7 @@ function QueueRow({
   const move = useCallback(
     (offset: number) => {
       const target = index + offset;
-      if (target < 0 || target >= total) {
+      if (!reorderable || target < 0 || target >= total) {
         return;
       }
       reorderQueued(message.id, target);
@@ -114,7 +114,7 @@ function QueueRow({
          had; the position it reports is what changed. */
       gripRef.current?.focus();
     },
-    [index, total, reorderQueued, message.id, onAnnounce, localize],
+    [index, total, reorderable, reorderQueued, message.id, onAnnounce, localize],
   );
 
   drop(rowRef);
@@ -136,38 +136,40 @@ function QueueRow({
         isDragging && 'opacity-40',
       )}
     >
-      {reorderable ? (
-        <button
-          ref={gripRef}
-          type="button"
-          data-testid="queued-message-grip"
-          aria-label={localize('com_ui_queue_reorder', {
-            0: String(index + 1),
-            1: String(total),
-          })}
-          /* A handle announces what it is but not how to work it, and the keys
-             are the only way through it without a pointer. */
-          aria-describedby={REORDER_HINT_ID}
-          onKeyDown={(event) => {
-            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
-              return;
-            }
-            /* Both keys scroll the rail's container otherwise, which would
-               chase the row the press just moved. */
-            event.preventDefault();
-            move(event.key === 'ArrowUp' ? -1 : 1);
-          }}
-          className={cn(
-            ICON_BTN,
-            'cursor-grab p-0.5 active:cursor-grabbing',
-            canDrag && 'touch-none',
-          )}
-        >
-          <GripVertical className="h-4 w-4" aria-hidden="true" />
-        </button>
-      ) : (
-        <Clock className="h-3.5 w-3.5 shrink-0 text-text-secondary" aria-hidden="true" />
-      )}
+      <button
+        ref={gripRef}
+        type="button"
+        data-testid="queued-message-grip"
+        /* Kept even when there is nowhere to move to, rather than swapped for
+           an icon: a queue that drains to one message would otherwise unmount
+           the handle a keyboard user was holding, dropping focus to the top of
+           the page. */
+        aria-disabled={!reorderable}
+        aria-label={localize('com_ui_queue_reorder', {
+          0: String(index + 1),
+          1: String(total),
+        })}
+        /* A handle announces what it is but not how to work it, and the keys
+           are the only way through it without a pointer. */
+        aria-describedby={reorderable ? REORDER_HINT_ID : undefined}
+        onKeyDown={(event) => {
+          if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+            return;
+          }
+          /* Both keys scroll the rail's container otherwise, which would
+             chase the row the press just moved. */
+          event.preventDefault();
+          move(event.key === 'ArrowUp' ? -1 : 1);
+        }}
+        className={cn(
+          ICON_BTN,
+          'p-0.5',
+          reorderable ? 'cursor-grab active:cursor-grabbing' : 'cursor-default opacity-40',
+          canDrag && reorderable && 'touch-none',
+        )}
+      >
+        <GripVertical className="h-4 w-4" aria-hidden="true" />
+      </button>
       <span className="min-w-0 flex-1 truncate text-text-primary" title={message.text}>
         {message.text}
       </span>
@@ -259,27 +261,32 @@ function Queue({ steering, conversationId, onEditToComposer, onRestoreToComposer
   }
 
   return (
-    <div
-      role="list"
-      aria-label={localize('com_ui_queued_messages')}
-      data-testid="composer-queue"
-      /* Inset and only rounded on top: the rail reads as paper tucked behind
-         the composer rather than a second composer stacked on it. */
-      className="mx-3 flex flex-col overflow-hidden rounded-t-2xl border border-b-0 border-border-light bg-surface-secondary"
-    >
-      {queued.map((message: QueuedMessage, index: number) => (
-        <QueueRow
-          key={message.id}
-          message={message}
-          index={index}
-          total={queued.length}
-          steering={steering}
-          conversationId={conversationId}
-          onEditToComposer={onEditToComposer}
-          onRestoreToComposer={onRestoreToComposer}
-          onAnnounce={setAnnouncement}
-        />
-      ))}
+    /* Inset and only rounded on top: the rail reads as paper tucked behind
+       the composer rather than a second composer stacked on it.
+
+       The rows are the list; the hint and the live region are not items, and a
+       list that owns them reports the wrong count. */
+    <div className="mx-3 overflow-hidden rounded-t-2xl border border-b-0 border-border-light bg-surface-secondary">
+      <div
+        role="list"
+        aria-label={localize('com_ui_queued_messages')}
+        data-testid="composer-queue"
+        className="flex flex-col"
+      >
+        {queued.map((message: QueuedMessage, index: number) => (
+          <QueueRow
+            key={message.id}
+            message={message}
+            index={index}
+            total={queued.length}
+            steering={steering}
+            conversationId={conversationId}
+            onEditToComposer={onEditToComposer}
+            onRestoreToComposer={onRestoreToComposer}
+            onAnnounce={setAnnouncement}
+          />
+        ))}
+      </div>
       {queued.length > 1 && (
         <span id={REORDER_HINT_ID} className="sr-only">
           {localize('com_ui_queue_reorder_hint')}

@@ -111,9 +111,13 @@ function useAllSkills(enabled: boolean): TSkillSummary[] {
 export default function usePaletteEntries({
   conversationId,
   agentId,
+  enabled = true,
 }: {
   conversationId: string;
   agentId?: string | null;
+  /** Endpoints without a tool row discard these, so there is nothing to fetch
+   *  or build for them. */
+  enabled?: boolean;
 }): PaletteEntry[] {
   const localize = useLocalize();
   const context = useBadgeRowContext();
@@ -156,7 +160,7 @@ export default function usePaletteEntries({
   });
   const canUseMemory = useHasMemoryAccess();
 
-  const skillsListable = canUseSkills && skillsEnabled;
+  const skillsListable = enabled && canUseSkills && skillsEnabled;
   const allSkills = useAllSkills(skillsListable);
 
   /* Mirrors backend `resolveAgentScopedSkillIds`: ephemeral agents see the full
@@ -194,7 +198,7 @@ export default function usePaletteEntries({
 
   return useMemo(() => {
     const entries: PaletteEntry[] = [];
-    if (!context) {
+    if (!context || !enabled) {
       return entries;
     }
 
@@ -381,6 +385,7 @@ export default function usePaletteEntries({
     return entries;
   }, [
     context,
+    enabled,
     localize,
     canUseMcp,
     canRunCode,

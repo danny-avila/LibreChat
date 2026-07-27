@@ -123,19 +123,19 @@ function renderPalette(over: { canAttach?: boolean; entries?: PaletteEntry[] } =
   return view;
 }
 
-/** Row labels in list order, headers included, as the user reads them. */
+/** Row labels in list order, headers included, as the user reads them. The
+ *  list's own containers are presentational too, so rows are found by the
+ *  identity attribute rather than by role alone. */
 const rows = () =>
-  Array.from(
-    document.querySelectorAll(
-      '#composer-palette-list [role="option"], #composer-palette-list [role="presentation"]',
-    ),
-  ).map((row) => row.textContent?.trim() ?? '');
+  Array.from(document.querySelectorAll('#composer-palette-list [data-row-key]')).map(
+    (row) => row.textContent?.trim() ?? '',
+  );
 
 /** Just the section headers, which is what carries the order. */
 const headers = () =>
-  Array.from(document.querySelectorAll('#composer-palette-list [role="presentation"]')).map(
-    (row) => row.textContent?.trim() ?? '',
-  );
+  Array.from(
+    document.querySelectorAll<HTMLElement>('#composer-palette-list [data-row-key^="h:"]'),
+  ).map((row) => row.textContent?.trim() ?? '');
 
 /** Row identities in list order, which is what the model actually decides. */
 const keys = () =>
@@ -262,7 +262,46 @@ describe('Palette', () => {
     it('starts on the first row that can be chosen, never on a header', () => {
       renderPalette();
       const input = screen.getByTestId('composer-palette-search');
-      expect(input.getAttribute('aria-activedescendant')).toBe('palette-row-1');
+      expect(input.getAttribute('aria-activedescendant')).toBe('palette-row-local:provider');
+    });
+
+    /* An id that names nothing is the failure mode here: screen readers lose
+       the active option entirely and announce nothing in its place. */
+    it('always points at a row that is in the document', () => {
+      renderPalette();
+      const input = screen.getByTestId('composer-palette-search');
+      const pointsAtSomething = () => {
+        const id = input.getAttribute('aria-activedescendant');
+        return id != null && document.getElementById(id) != null;
+      };
+      expect(pointsAtSomething()).toBe(true);
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      expect(pointsAtSomething()).toBe(true);
+      search('code');
+      expect(pointsAtSomething()).toBe(true);
+    });
+
+    it('keeps the highlight on a row that moved rather than on its old position', () => {
+      mockFavoriteKeys = [];
+      renderPalette({ canAttach: false });
+      const input = screen.getByTestId('composer-palette-search');
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      const moved = input.getAttribute('aria-activedescendant');
+      expect(moved).toBe('palette-row-execute_code');
+
+      /* Starring it lifts the row into favourites without changing the row
+         count, which is exactly the case a positional highlight got wrong. */
+      mockFavoriteKeys = ['execute_code'];
+      fireEvent.keyDown(input, { key: 'd', metaKey: true });
+      expect(input.getAttribute('aria-activedescendant')).toBe(moved);
+    });
+
+    it('leaves the list alone when the pointer moves over it', () => {
+      renderPalette();
+      const list = document.querySelector('.ReactVirtualized__Grid');
+      expect(list?.getAttribute('tabindex')).toBe('-1');
+      expect(list?.getAttribute('role')).toBe('presentation');
+      expect(list?.getAttribute('aria-label')).toBe('');
     });
 
     it('steps over headers on the way down', () => {

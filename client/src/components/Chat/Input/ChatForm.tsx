@@ -618,7 +618,7 @@ const ChatForm = memo(function ChatForm({
                          it reads as the input listening rather than as a widget
                          bolted on. Once words arrive the transcript takes over. */
                       <Waveform
-                        levels={dictation.levels}
+                        active={dictation.active}
                         className={cn(
                           'pointer-events-none absolute inset-y-0 h-full',
                           isMoreThanThreeRows ? 'left-5 right-2' : 'inset-x-5',
