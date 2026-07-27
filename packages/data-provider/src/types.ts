@@ -175,6 +175,18 @@ export type TSubmission = {
   clientTimestamp?: string;
   ephemeralAgent?: TEphemeralAgent | null;
   editedContent?: TEditedContent | null;
+  /**
+   * Length of the retained content prefix for an edited resubmission, captured
+   * when the submission is built.
+   *
+   * The server indexes only NEW content, so the client offsets incoming
+   * indices by the prefix it kept. `initialResponse.content` cannot be used
+   * for that after a reconnect: the resume sync overwrites it with the
+   * server's completion-local snapshot, whose length is unrelated to the
+   * prefix. Recording the length up front keeps the offset stable across
+   * resumes for run steps and activity labels alike.
+   */
+  editPrefixLength?: number;
   /** Added conversation for multi-convo feature */
   addedConvo?: TConversation;
   /** Skills the user invoked via the `$` popover for this submission. */

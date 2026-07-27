@@ -812,23 +812,22 @@ export default function useResumableSSE(
          *  is claimed in the same server-side space and needs the identical
          *  shift, or it lands inside the prefix and overwrites kept content.
          *
-         *  Deliberately the SAME expression `useStepHandler` uses, with no
-         *  resume special-case. A sync replaces `initialResponse.content` with
-         *  the server's `aggregatedContent`, which is completion-local — so
-         *  after a reconnect its length is not the kept-prefix length and this
-         *  offset is wrong. It is wrong for run steps in exactly the same way,
-         *  and tool cards and their label MUST share one index space: a label
-         *  that shifts differently from the tools it heads would land on
-         *  another part. Fixing the post-resume prefix length belongs in
-         *  `calculateContentIndex`, where it corrects both at once. */
-        const initialContent =
+         *  Uses `editPrefixLength`, captured when the submission was built,
+         *  for the same reason `useStepHandler` does: a resume sync replaces
+         *  `initialResponse.content` with the server's completion-local
+         *  snapshot, so its length no longer describes the retained prefix.
+         *  Tool cards and the label heading them must land in one index
+         *  space — a label shifting differently from its tools would overwrite
+         *  another part, and a gap fill would miss its own reservation and
+         *  leave the placeholder pending forever. */
+        const prefixLength =
           currentSubmission.editedContent != null
-            ? ((currentSubmission.initialResponse as TMessage | undefined)?.content ?? [])
-            : [];
+            ? (currentSubmission.editPrefixLength ??
+              (currentSubmission.initialResponse as TMessage | undefined)?.content?.length ??
+              0)
+            : 0;
         const offsetEvent =
-          initialContent.length > 0
-            ? { ...event, index: event.index + initialContent.length }
-            : event;
+          prefixLength > 0 ? { ...event, index: event.index + prefixLength } : event;
         const updated = applyActivityLabelPart(messages[index], offsetEvent);
         if (updated !== messages[index]) {
           const nextMessages = [...messages];

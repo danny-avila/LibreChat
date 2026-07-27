@@ -2259,6 +2259,20 @@ class GenerationJobManagerClass {
       // the queue shows gap activity, and synthesis sources from the FRESH
       // content view so an applied steer with no snapshot id still surfaces.
       const jobActive = liveJob?.status === 'running' || liveJob?.status === 'requires_action';
+      /** Shared by the steer and activity-label gap passes below: whichever
+       *  needs the fresh content view first pays for it, the other reuses it.
+       *  Both reconcile the same snapshot→subscribe window, so re-reading per
+       *  feature would bill two round trips for one question. */
+      let freshContent: t.ServerSentEvent[] | undefined;
+      let freshContentRead = false;
+      const readFreshContent = async (): Promise<unknown[] | undefined> => {
+        if (!freshContentRead) {
+          freshContentRead = true;
+          const contentResult = await this.jobStore.getContentParts(streamId, liveJob?.createdAt);
+          freshContent = contentResult?.content as t.ServerSentEvent[] | undefined;
+        }
+        return freshContent as unknown[] | undefined;
+      };
       if (resumeState != null && jobActive) {
         const snapshotSteers = resumeState.pendingSteers ?? [];
         const liveQueue = await this.jobStore.peekSteers(streamId, liveJob.createdAt);
@@ -2274,14 +2288,14 @@ class GenerationJobManagerClass {
           resumeState.pendingSteers = livePending.length > 0 ? livePending : undefined;
         }
         if (queueChanged || liveQueue.length > 0) {
-          const contentResult = await this.jobStore.getContentParts(streamId, liveJob.createdAt);
+          const content = await readFreshContent();
           if (options?.signal?.aborted || this.detachSubscriptionDuringShutdown(subscription)) {
             return cancelResumeSubscription();
           }
           const gapEvents = synthesizeAppliedSteerEvents(
             (resumeState.aggregatedContent ?? []) as SteerContentView,
             liveQueue,
-            (contentResult?.content ?? []) as SteerContentView,
+            (content ?? []) as SteerContentView,
             { conversationId: streamId, responseMessageId: resumeState.responseMessageId },
           );
           if (gapEvents.length > 0) {
@@ -2290,18 +2304,28 @@ class GenerationJobManagerClass {
         }
       }
 
-      // Same snapshot→subscribe race for activity labels: the label publish
-      // is fire-and-forget, so a slot claimed (or filled) in the window is in
-      // neither the snapshot nor the chunk replay the client already applied.
-      // Gated on the job flag so the default path adds no content re-read.
-      // Compare the snapshot content view against a fresh read and re-emit any
-      // label whose text/pending state moved; the client applier is idempotent
-      // and refuses stale pending placeholders.
-      /** The flag is the fast path, but `markActivityLabels` is best-effort
-       *  and now gates correctness rather than merely saving a read — a lost
-       *  write would silently drop a label. Fall back to the snapshot when it
-       *  is absent: that misses only the case where the FIRST label is claimed
-       *  inside the gap, which the flag covers whenever it did persist. */
+      /**
+       * Same snapshot→subscribe race for activity labels: the label publish is
+       * fire-and-forget, so a slot claimed (or filled) in the window is in
+       * neither the snapshot nor the chunk replay the client already applied.
+       * Compare the snapshot content view against a fresh read and re-emit any
+       * label whose text/pending state moved; the client applier is idempotent
+       * and refuses stale pending placeholders.
+       *
+       * Gated on the run's own flag, falling back to the snapshot when the
+       * flag is absent. Reconciling unconditionally would be simpler and would
+       * also close the residual window below, but it bills a content read to
+       * every resume of every run — including deployments with the feature
+       * off — which the steer pass deliberately avoids ("an unchanged empty
+       * queue skips the content re-read").
+       *
+       * The residual: if `markActivityLabels` lost its write AND the first
+       * label is claimed inside the gap, this is skipped. That flag write
+       * shares fate with the content writes the labels themselves live in, so
+       * the case implies a store already dropping data — not worth a read on
+       * every resume. When the steer pass above already fetched content, this
+       * check is free.
+       */
       const snapshotHasActivityLabels =
         resumeState?.aggregatedContent?.some(
           (part) => (part as { type?: string } | null)?.type === 'activity_label',
@@ -2311,16 +2335,16 @@ class GenerationJobManagerClass {
         jobActive &&
         (liveJob?.activityLabels === true || snapshotHasActivityLabels)
       ) {
-        const labelContent = await this.jobStore.getContentParts(streamId, liveJob.createdAt);
+        const labelContent = await readFreshContent();
         if (options?.signal?.aborted || this.detachSubscriptionDuringShutdown(subscription)) {
           return cancelResumeSubscription();
         }
-        if (labelContent?.content != null) {
+        if (labelContent != null) {
           const labelGapEvents = synthesizeActivityLabelGapEvents(
             (resumeState.aggregatedContent ?? []) as Parameters<
               typeof synthesizeActivityLabelGapEvents
             >[0],
-            labelContent.content as Parameters<typeof synthesizeActivityLabelGapEvents>[1],
+            labelContent as Parameters<typeof synthesizeActivityLabelGapEvents>[1],
             { conversationId: streamId, responseMessageId: resumeState.responseMessageId },
           );
           if (labelGapEvents.length > 0) {
