@@ -144,15 +144,16 @@ router.get('/config', async (req, res) => {
 /**
  * POST /files/usage
  *
- * Owner-scoped TTL touch for uploads held in a client-side queue (mid-run
+ * Owner-scoped TTL hold for uploads sitting in a client-side queue (mid-run
  * queued messages), so the upload-window TTL cannot reap them before drain.
- * Thin wrapper: validation, cap, and best-effort semantics live in
- * `@librechat/api` (`handleFilesUsageRequest`).
+ * Extends the deadline rather than clearing it; the real release happens at
+ * send. Thin wrapper: validation, cap, hold window, and best-effort semantics
+ * live in `@librechat/api` (`handleFilesUsageRequest`).
  */
 router.post('/usage', async (req, res) => {
   try {
     const { status, body } = await handleFilesUsageRequest(req.user ?? {}, req.body ?? {}, {
-      updateFilesUsage: db.updateFilesUsage,
+      extendFilesTTL: db.extendFilesTTL,
     });
     return res.status(status).json(body);
   } catch (error) {

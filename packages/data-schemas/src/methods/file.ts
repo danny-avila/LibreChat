@@ -82,6 +82,11 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     fileIds?: string[],
     options?: { user?: string; tenantId?: string | null },
   ) => Promise<IMongoFile[]>;
+  extendFilesTTL: (
+    fileIds: string[],
+    expiresAt: Date,
+    owner: { user: string; tenantId?: string | null },
+  ) => Promise<number>;
   sweepOrphanedPreviews: (maxAgeMs?: number) => Promise<number>;
 } {
   /**
@@ -547,6 +552,46 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
+   * Pushes the upload-window TTL of owned, still-temporary files forward.
+   *
+   * A renewable hold, not a release: unlike `updateFileUsage` this never
+   * unsets `expiresAt`, so a file that is held but never actually sent is
+   * still reaped once the hold lapses. Two filter guards make the write
+   * safe to expose to a client:
+   * - `$exists: true`: a file whose TTL was already cleared (a real send)
+   *   is permanent; re-adding `expiresAt` would schedule it for deletion.
+   * - `$lt: expiresAt`: the hold only ever moves the deadline later.
+   *
+   * The owner scope is required, not optional: this write is driven by a
+   * client-supplied id list, so an unscoped call would hold every user's
+   * matching file. A missing owner is a no-op rather than a wide update.
+   *
+   * @param fileIds - File IDs to hold
+   * @param expiresAt - New expiry; only applied where it is later than the current one
+   * @param owner - Owner scope; mismatches leave the TTL unchanged
+   * @returns Number of files whose hold was extended
+   */
+  async function extendFilesTTL(
+    fileIds: string[],
+    expiresAt: Date,
+    owner: { user: string; tenantId?: string | null },
+  ): Promise<number> {
+    if (fileIds.length === 0 || !owner?.user) {
+      return 0;
+    }
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const filter = withOwnerScope(
+      {
+        file_id: { $in: [...new Set(fileIds)] },
+        expiresAt: { $exists: true, $lt: expiresAt },
+      },
+      { userId: owner.user, tenantId: owner.tenantId },
+    );
+    const result = await File.updateMany(filter, { $set: { expiresAt } });
+    return result.modifiedCount ?? 0;
+  }
+
+  /**
    * Mark stale `status: 'pending'` file records as `'failed'` with
    * `previewError: 'orphaned'`. Recovers from the one case the
    * in-process deferred-preview render can't handle on its own: a
@@ -594,6 +639,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     deleteFileByFilter,
     batchUpdateFiles,
     updateFilesUsage,
+    extendFilesTTL,
     sweepOrphanedPreviews,
   };
 }

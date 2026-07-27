@@ -1123,6 +1123,93 @@ describe('File Methods', () => {
     });
   });
 
+  describe('extendFilesTTL', () => {
+    const seedTempFile = async (userId: mongoose.Types.ObjectId, expiresAt: Date) => {
+      const fileId = uuidv4();
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        filename: `${fileId}.txt`,
+        filepath: `/uploads/${fileId}.txt`,
+        type: 'text/plain',
+        bytes: 100,
+      });
+      await mongoose.models.File.updateOne({ file_id: fileId }, { $set: { expiresAt } });
+      return fileId;
+    };
+
+    it('pushes the TTL forward without unsetting it', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const soon = new Date(Date.now() + 60_000);
+      const fileId = await seedTempFile(userId, soon);
+      const target = new Date(Date.now() + 3_600_000);
+
+      const count = await fileMethods.extendFilesTTL([fileId], target, { user: String(userId) });
+
+      expect(count).toBe(1);
+      const file = await fileMethods.findFileById(fileId);
+      expect(file?.expiresAt).toBeDefined();
+      expect(file?.expiresAt?.getTime()).toBe(target.getTime());
+    });
+
+    it('does not resurrect a TTL on an already-released file', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = await seedTempFile(userId, new Date(Date.now() + 60_000));
+      await fileMethods.updateFileUsage({ file_id: fileId, user: String(userId) });
+
+      const count = await fileMethods.extendFilesTTL([fileId], new Date(Date.now() + 3_600_000), {
+        user: String(userId),
+      });
+
+      expect(count).toBe(0);
+      const file = await fileMethods.findFileById(fileId);
+      expect(file?.expiresAt).toBeUndefined();
+    });
+
+    it('never moves an expiry earlier', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const farOut = new Date(Date.now() + 7 * 24 * 3_600_000);
+      const fileId = await seedTempFile(userId, farOut);
+
+      const count = await fileMethods.extendFilesTTL([fileId], new Date(Date.now() + 60_000), {
+        user: String(userId),
+      });
+
+      expect(count).toBe(0);
+      const file = await fileMethods.findFileById(fileId);
+      expect(file?.expiresAt?.getTime()).toBe(farOut.getTime());
+    });
+
+    it("leaves another user's file untouched", async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const attackerId = new mongoose.Types.ObjectId();
+      const soon = new Date(Date.now() + 60_000);
+      const fileId = await seedTempFile(ownerId, soon);
+
+      const count = await fileMethods.extendFilesTTL([fileId], new Date(Date.now() + 3_600_000), {
+        user: String(attackerId),
+      });
+
+      expect(count).toBe(0);
+      const file = await fileMethods.findFileById(fileId);
+      expect(file?.expiresAt?.getTime()).toBe(soon.getTime());
+    });
+
+    it('is a no-op without an owner scope rather than a cross-user update', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const soon = new Date(Date.now() + 60_000);
+      const fileId = await seedTempFile(userId, soon);
+
+      const count = await fileMethods.extendFilesTTL([fileId], new Date(Date.now() + 3_600_000), {
+        user: '',
+      } as { user: string });
+
+      expect(count).toBe(0);
+      const file = await fileMethods.findFileById(fileId);
+      expect(file?.expiresAt?.getTime()).toBe(soon.getTime());
+    });
+  });
+
   describe('deleteFile', () => {
     it('should delete a file by file_id', async () => {
       const fileId = uuidv4();

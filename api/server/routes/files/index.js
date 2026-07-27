@@ -1,5 +1,6 @@
 const express = require('express');
 const {
+  createFileUsageLimiter,
   createFileLimiters,
   configMiddleware,
   requireJwtAuth,
@@ -30,19 +31,24 @@ const initialize = async () => {
   router.use('/speech', speech);
 
   const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
+  const fileUsageLimiter = createFileUsageLimiter();
 
   /** Apply rate limiters to all POST routes (excluding /speech which is handled
-   *  above, and /usage — a metadata touch that must not consume upload quota) */
+   *  above). `/usage` is a metadata touch, so it gets its own limiter rather
+   *  than consuming upload quota, but it is never left unmetered. */
   router.use((req, res, next) => {
-    if (req.method === 'POST' && !req.path.startsWith('/speech') && req.path !== '/usage') {
-      return fileUploadIpLimiter(req, res, (err) => {
-        if (err) {
-          return next(err);
-        }
-        return fileUploadUserLimiter(req, res, next);
-      });
+    if (req.method !== 'POST' || req.path.startsWith('/speech')) {
+      return next();
     }
-    next();
+    if (req.path === '/usage') {
+      return fileUsageLimiter(req, res, next);
+    }
+    return fileUploadIpLimiter(req, res, (err) => {
+      if (err) {
+        return next(err);
+      }
+      return fileUploadUserLimiter(req, res, next);
+    });
   });
 
   router.post('/', upload.single('file'), restoreTenantContextFromReq);
