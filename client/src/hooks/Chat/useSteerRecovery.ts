@@ -13,7 +13,7 @@ import store from '~/store';
  * `SteeringControls` object through the message tree.
  */
 export default function useSteerRecovery(conversationId: string) {
-  const { mutate: steerMessage } = useSteerMessageMutation();
+  const { mutateAsync: steerMessage } = useSteerMessageMutation();
   const convertSteersToQueued = useSteerConvert();
 
   /** `PendingSteers` only renders while `isLast && isSubmitting` is true, so
@@ -76,34 +76,36 @@ export default function useSteerRecovery(conversationId: string) {
           return;
         }
         markStatus(steerId, 'sending');
-        steerMessage(
-          { conversationId, text: steer.text, files: steer.files },
-          {
-            onSuccess: (response) => {
-              acknowledgeRetry(
-                steerId,
-                { ...steer, steerId: response.steerId, status: 'pending' },
-                !mountedRef.current,
-              );
-            },
-            onError: (error) => {
-              const code = getSteerErrorCode(error);
-              // The run ended, is paused, or can't accept a steer right now —
-              // none of that means the words are lost, just that a queued
-              // follow-up is the only way left to send them.
-              if (
-                code === 'NO_ACTIVE_RUN' ||
-                code === 'RUN_PAUSED' ||
-                code === 'STEER_UNSUPPORTED' ||
-                code === 'STEER_QUEUE_FULL'
-              ) {
-                queueSteer(steer);
-                return;
-              }
-              markStatus(steerId, 'failed');
-            },
-          },
-        );
+        /* Resolved through the promise rather than through `mutate`'s
+           per-call callbacks, which react-query drops once the observer has no
+           listeners. This hook lives in the block that unmounts the moment the
+           run ends, which is exactly when a retry's ack tends to land: those
+           callbacks never ran, and the chip was left saying `sending` for the
+           rest of the conversation with the words neither sent nor queued. */
+        steerMessage({ conversationId, text: steer.text, files: steer.files })
+          .then((response) => {
+            acknowledgeRetry(
+              steerId,
+              { ...steer, steerId: response.steerId, status: 'pending' },
+              !mountedRef.current,
+            );
+          })
+          .catch((error: unknown) => {
+            const code = getSteerErrorCode(error);
+            // The run ended, is paused, or can't accept a steer right now —
+            // none of that means the words are lost, just that a queued
+            // follow-up is the only way left to send them.
+            if (
+              code === 'NO_ACTIVE_RUN' ||
+              code === 'RUN_PAUSED' ||
+              code === 'STEER_UNSUPPORTED' ||
+              code === 'STEER_QUEUE_FULL'
+            ) {
+              queueSteer(steer);
+              return;
+            }
+            markStatus(steerId, 'failed');
+          });
       },
     [conversationId, steerMessage, markStatus, acknowledgeRetry, queueSteer],
   );

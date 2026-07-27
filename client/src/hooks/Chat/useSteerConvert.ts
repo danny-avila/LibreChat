@@ -160,15 +160,27 @@ export default function useSteerConvert() {
           if (fresh.length === 0) {
             return existing;
           }
-          /** Ordinary steer leftovers merge chronologically. A steer that
-           *  originated in this queue restores its exact object/identity and
-           *  captured position instead of being re-minted under the server id. */
-          const ordinary = fresh.filter(({ queuedOrigin }) => queuedOrigin == null);
-          let merged: QueuedMessage[] = [...existing, ...ordinary.map(({ item }) => item)].sort(
-            (a, b) =>
-              Number(b.priority ?? false) - Number(a.priority ?? false) ||
-              a.createdAt - b.createdAt,
-          );
+          // Each new item is placed chronologically — a steer accepted BEFORE
+          // the user queued a later follow-up must drain first — EXCEPT explicit
+          // front-inserts ("Interrupt & send"), whose urgency outranks age.
+          //
+          // Placed rather than sorted: the queue can be reordered by hand from
+          // the rail, and sorting the whole list would quietly restore the order
+          // the messages were written in, changing which one sends next.
+          let merged: QueuedMessage[] = [...existing];
+          const ordinary = fresh
+            .filter(({ queuedOrigin }) => queuedOrigin == null)
+            .map(({ item }) => item)
+            .sort((a, b) => a.createdAt - b.createdAt);
+          for (const item of ordinary) {
+            const at = merged.findIndex(
+              (queued) => queued.priority !== true && queued.createdAt > item.createdAt,
+            );
+            merged.splice(at === -1 ? merged.length : at, 0, item);
+          }
+          /** A steer that originated in this queue restores its exact
+           *  object/identity and captured position instead of being re-minted
+           *  under the server id at a merely chronological spot. */
           for (const { queuedOrigin } of fresh) {
             if (queuedOrigin != null) {
               merged = insertQueuedOrigin(merged, queuedOrigin);
