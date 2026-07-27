@@ -54,6 +54,61 @@ const run = (): ActiveRun => ({
   conversationId: 'c1',
 });
 
+describe('balance initialization', () => {
+  const balanceConfig = {
+    interfaceConfig: {},
+    balance: { enabled: true, startBalance: 20000 },
+  } as unknown as Awaited<ReturnType<SchedulesServiceDeps['getAppConfig']>>;
+
+  function serviceWithBalance(existing: Record<string, unknown> | null) {
+    const upsertBalance = jest.fn(async () => ({ tokenCredits: 20000 }));
+    const service = createSchedulesService({
+      methods: {} as unknown as SchedulesServiceDeps['methods'],
+      getAppConfig: (async () => balanceConfig) as SchedulesServiceDeps['getAppConfig'],
+      findUserById: jest.fn(async () => null),
+      findBalance: jest.fn(async () => existing),
+      upsertBalance,
+      resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
+      isUserDeleting: jest.fn(async () => false),
+    } as unknown as SchedulesServiceDeps);
+    return { service, upsertBalance };
+  }
+
+  const updateFrom = (spy: jest.Mock) =>
+    (
+      spy.mock.calls[0] as unknown as [
+        string,
+        { set: Record<string, unknown>; setOnInsert: Record<string, unknown> },
+      ]
+    )[1];
+
+  /**
+   * The balance READ and this write are separate statements. A concurrent charge that
+   * creates the record in between would be overwritten by a blind `$set`, handing back
+   * credits the user had already spent.
+   */
+  it('initializes the starting credit via setOnInsert, never $set', async () => {
+    const { service, upsertBalance } = serviceWithBalance(null);
+
+    await service.engineDeps.isOutOfBalance({ id: 'user-1' } as never);
+
+    expect(upsertBalance).toHaveBeenCalledTimes(1);
+    const update = updateFrom(upsertBalance);
+    expect(update.setOnInsert).toMatchObject({ tokenCredits: 20000 });
+    expect(update.set).not.toHaveProperty('tokenCredits');
+  });
+
+  it('still $sets a null credit on an EXISTING record, which has no charge to clobber', async () => {
+    const { service, upsertBalance } = serviceWithBalance({ autoRefillEnabled: false });
+
+    await service.engineDeps.isOutOfBalance({ id: 'user-1' } as never);
+
+    const update = updateFrom(upsertBalance);
+    expect(update.set).toMatchObject({ tokenCredits: 20000 });
+    expect(update.setOnInsert).toEqual({});
+  });
+});
+
 describe('deleteScheduleForOwner', () => {
   /**
    * markScheduleDeleting runs FIRST and is one-shot: it matches only a not-yet-deleting

@@ -112,7 +112,15 @@ export interface SchedulesServiceDeps {
     userId: string | Types.ObjectId,
   ) => Promise<{ _id: Types.ObjectId; tenantId?: string; role?: string } | null>;
   findBalance: (userId: string) => Promise<IBalance | null>;
-  upsertBalance: (userId: string, fields: BalanceUpdateFields) => Promise<IBalance | null>;
+  /**
+   * Upserts a balance record. `setOnInsert` carries fields that must ONLY apply to a
+   * document this call creates — chiefly the starting credit — so a record created by a
+   * concurrent charge is never overwritten with a fresh balance.
+   */
+  upsertBalance: (
+    userId: string,
+    update: { set: Partial<BalanceUpdateFields>; setOnInsert: Partial<BalanceUpdateFields> },
+  ) => Promise<IBalance | null>;
   resolveAgentFireAccess: (
     agentId: string,
     user: ScheduleUserContext,
@@ -308,7 +316,26 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       if (balanceConfig.startBalance != null) {
         const updateFields = buildBalanceUpdateFields(balanceConfig, record, user.id);
         if (Object.keys(updateFields).length > 0) {
-          record = await deps.upsertBalance(user.id, updateFields);
+          // The read above and this write are separate statements, and the credit
+          // fields are INITIALIZATION values: a concurrent charge that created the
+          // record in between would be overwritten by a blind `$set`, restoring credits
+          // the user had already spent. Route those through `$setOnInsert` so they only
+          // apply to a document this call actually creates. The refill-config fields are
+          // a genuine sync and stay on `$set`.
+          //
+          // Only when the record was ABSENT: an existing record with a null
+          // tokenCredits has no charge to clobber, so initializing it via `$set` is
+          // both safe and necessary (`$setOnInsert` would never fire for it).
+          const { user: initUser, tokenCredits, ...syncFields } = updateFields;
+          const setOnInsert =
+            record == null
+              ? {
+                  ...(initUser != null ? { user: initUser } : {}),
+                  ...(tokenCredits != null ? { tokenCredits } : {}),
+                }
+              : {};
+          const set = record == null ? syncFields : updateFields;
+          record = await deps.upsertBalance(user.id, { set, setOnInsert });
         }
       }
       const credits = record?.tokenCredits ?? 0;

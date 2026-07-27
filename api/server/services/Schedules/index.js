@@ -10,10 +10,15 @@ const service = createSchedulesService({
   findUserById: (userId) =>
     mongoose.models.User.findById(userId).select('_id tenantId role').lean(),
   findBalance: (userId) => mongoose.models.Balance.findOne({ user: userId }).lean(),
-  upsertBalance: (userId, fields) =>
+  upsertBalance: (userId, { set, setOnInsert }) =>
     mongoose.models.Balance.findOneAndUpdate(
       { user: userId },
-      { $set: fields },
+      {
+        ...(set && Object.keys(set).length > 0 ? { $set: set } : {}),
+        ...(setOnInsert && Object.keys(setOnInsert).length > 0
+          ? { $setOnInsert: setOnInsert }
+          : {}),
+      },
       { upsert: true, new: true },
     ).lean(),
   resolveAgentFireAccess,
