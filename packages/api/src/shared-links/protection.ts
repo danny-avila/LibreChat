@@ -868,7 +868,7 @@ function extractNestedSerializedPayloadFragments(
         if (typeof value === 'string') {
           if (SERIALIZED_LOCATOR_KEYS.includes(key as (typeof SERIALIZED_LOCATOR_KEYS)[number])) {
             continue;
-          } else if (activeClassifications.length > 0 && FILE_FIELD_BY_STANDARD_KEY.has(key)) {
+          } else if (activeClassifications.length > 0) {
             for (const classification of activeClassifications) {
               inspectSerializedString(
                 state,

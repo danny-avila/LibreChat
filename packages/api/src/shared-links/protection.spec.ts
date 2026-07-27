@@ -398,6 +398,124 @@ describe('shared file metadata protection', () => {
 
   it.each([
     [
+      'file status',
+      fileContentFilters,
+      {
+        isCreatedByUser: true,
+        files: [{ status: 'PRIVATE-SENTINEL' }],
+      },
+      'file',
+      'content',
+    ],
+    [
+      'attachment preview error',
+      attachmentFilters,
+      {
+        isCreatedByUser: true,
+        attachments: [{ previewError: 'PRIVATE-SENTINEL' }],
+      },
+      'message',
+      'attachment_reference',
+    ],
+    [
+      'tool call identifier',
+      toolOutputFilters,
+      {
+        isCreatedByUser: false,
+        attachments: [{ toolCallId: 'PRIVATE-SENTINEL' }],
+      },
+      'tool_argument',
+      'output',
+    ],
+  ])(
+    'checks a standard serialized %s under its semantic provenance',
+    (_label, filters, message, source, field) => {
+      const error = capturePolicyError(() =>
+        assertSharedFileMetadataAllowed({
+          filters,
+          messages: [message],
+          shareId: 'share-123',
+        }),
+      );
+
+      expect(error).toBeInstanceOf(ContentFilterError);
+      expect(error.body).toMatchObject({
+        error: 'content_filter_block',
+        source,
+        field,
+      });
+      expect(JSON.stringify(error.body)).not.toContain('PRIVATE-SENTINEL');
+    },
+  );
+
+  it('keeps a user-submitted toolCallId under message provenance', () => {
+    const error = capturePolicyError(() =>
+      assertSharedFileMetadataAllowed({
+        filters: attachmentFilters,
+        messages: [
+          {
+            isCreatedByUser: true,
+            attachments: [{ toolCallId: 'PRIVATE-SENTINEL' }],
+          },
+        ],
+        shareId: 'share-123',
+      }),
+    );
+
+    expect(error).toBeInstanceOf(ContentFilterError);
+    expect(error.body).toMatchObject({
+      error: 'content_filter_block',
+      source: 'message',
+      field: 'attachment_reference',
+    });
+  });
+
+  it('preserves field granularity for standard serialized strings', () => {
+    expect(() =>
+      assertSharedFileMetadataAllowed({
+        filters: {
+          files: {
+            pii: {
+              fields: ['name'],
+              starterPatterns: [],
+              customPatterns: [BLOCK_PATTERN],
+            },
+          },
+        },
+        messages: [
+          {
+            isCreatedByUser: true,
+            files: [{ status: 'PRIVATE-SENTINEL' }],
+          },
+        ],
+        shareId: 'share-123',
+      }),
+    ).not.toThrow();
+  });
+
+  it('keeps standard serialized string protection default-off', () => {
+    expect(() =>
+      assertSharedFileMetadataAllowed({
+        filters: {},
+        messages: [
+          {
+            isCreatedByUser: true,
+            files: [{ status: 'PRIVATE-SENTINEL' }],
+            attachments: [
+              {
+                previewError: 'PRIVATE-SENTINEL',
+                toolCallId: 'PRIVATE-SENTINEL',
+              },
+            ],
+          },
+        ],
+        shareId: 'share-123',
+      }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    [
       'web-search result',
       {
         type: 'web_search',
