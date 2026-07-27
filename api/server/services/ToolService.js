@@ -69,11 +69,7 @@ const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/pro
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
-const {
-  createMCPPermissionContext,
-  resolveMcpServerNames,
-  resolveMcpServerContext,
-} = require('~/server/services/MCP');
+const { createMCPPermissionContext, resolveMcpServerContext } = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
@@ -1189,13 +1185,18 @@ async function loadAgentTools({
     webSearchCallbacks = createOnSearchResults(res, streamId, jobCreatedAt);
   }
 
+  /** Resolved once and threaded into `loadTools` so the request app config is read once. */
+  const mcpServerContext = _agentTools?.some((t) => t.includes(Constants.mcp_delimiter))
+    ? await resolveMcpServerContext(req)
+    : undefined;
+
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
-  if (_agentTools?.some((t) => t.includes(Constants.mcp_delimiter))) {
+  if (mcpServerContext) {
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: _agentTools,
       userId: req.user.id,
-      serverNames: await resolveMcpServerNames(req),
+      serverNames: mcpServerContext.serverNames,
       findPluginAuthsByKeys,
     });
   }
@@ -1210,6 +1211,7 @@ async function loadAgentTools({
     options: {
       req,
       res,
+      mcpServerContext,
       jobCreatedAt,
       openAIApiKey,
       tool_resources,

@@ -289,7 +289,10 @@ const loadTools = async ({
   /** All configured names, in the normalized form tool keys carry */
   let mcpServerNames = [];
   if (hasMCPTools && canUseMCP) {
-    ({ configServers, serverNames: mcpServerNames } = await resolveMcpServerContext(options.req));
+    /** Reuse the caller's context when it already resolved one, so the chat
+     *  startup path reads the request app config once. */
+    ({ configServers, serverNames: mcpServerNames } =
+      options.mcpServerContext ?? (await resolveMcpServerContext(options.req)));
   }
 
   for (const tool of tools) {

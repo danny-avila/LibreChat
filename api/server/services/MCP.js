@@ -660,6 +660,7 @@ async function createMCPTools({
       streamId,
       jobCreatedAt,
       availableTools: result.availableTools,
+      serverName,
       toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
       requestBody,
       requestScopedConnections,
