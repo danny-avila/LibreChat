@@ -186,13 +186,13 @@ test.describe('scheduled chat execution', () => {
     expect(after.schedules).toHaveLength(before.schedules.length);
   });
 
-  test('creates and edits a schedule through the UI with the cadence persisted', async ({
+  test('creates a schedule through the UI with a non-default cadence persisted', async ({
     page,
   }) => {
     test.setTimeout(120000);
     await page.goto('/c/new', { timeout: 15000 });
     const token = await getAccessToken(page);
-    await ensureAgent(page, token);
+    const agent = await ensureAgent(page, token);
 
     await openSchedulesPanel(page);
     await page.getByRole('button', { name: 'New schedule' }).click();
@@ -201,15 +201,63 @@ test.describe('scheduled chat execution', () => {
     const name = uniqueName('UI Schedule');
     await dialog.locator('#schedule-name').fill(name);
     await dialog.locator('#schedule-prompt').fill('Daily standup summary');
-    await dialog.getByRole('button', { name: 'Create' }).click();
+
+    // agent_id is required, so the submit stays disabled until one is picked.
+    await dialog.getByRole('combobox', { name: 'Agent' }).click();
+    await page.getByRole('option', { name: agent.name! }).first().click();
+    // Weekly rather than the default so the assertion proves the cadence round-tripped
+    // rather than matching whatever the form happened to default to.
+    await dialog.getByRole('group', { name: 'Frequency' }).getByText('Weekly').click();
+
+    const submit = dialog.getByRole('button', { name: 'Create' });
+    await expect(submit).toBeEnabled();
+    await submit.click();
 
     const card = page.getByTestId('schedule-card').filter({ hasText: name });
     await expect(card).toBeVisible({ timeout: 15000 });
 
-    // The cadence survives a reload, i.e. it round-tripped through the backend.
+    // It survives a reload, i.e. the cadence persisted through the real backend.
     await page.reload();
     await openSchedulesPanel(page);
-    const reloaded = page.getByTestId('schedule-card').filter({ hasText: name });
-    await expect(reloaded).toContainText(/Runs daily/i, { timeout: 15000 });
+    await expect(page.getByTestId('schedule-card').filter({ hasText: name })).toContainText(
+      /Runs weekly/i,
+      { timeout: 15000 },
+    );
+  });
+
+  /**
+   * Deleting a schedule mid-run must quiesce it: the in-flight generation is aborted and
+   * the run settles, rather than the row lingering `started` and holding a global
+   * capacity slot until the orphan sweep.
+   */
+  test('deleting a schedule while its run is active settles the run', async ({ page }) => {
+    test.setTimeout(120000);
+    await page.goto('/c/new', { timeout: 15000 });
+    const token = await getAccessToken(page);
+    const agent = await ensureAgent(page, token);
+    const schedule = await createSchedule(
+      page,
+      token,
+      scheduleBody(agent.id, { prompt: replyPrompt(`del-${Date.now()}`) }),
+    );
+
+    await requestJson<RunNowResult>(page, {
+      path: `/api/schedules/${schedule.id}/run`,
+      token,
+      method: 'POST',
+    });
+    await requestJson<unknown>(page, {
+      path: `/api/schedules/${schedule.id}`,
+      token,
+      method: 'DELETE',
+    });
+
+    // The schedule disappears for the owner immediately and stays gone once drained.
+    await expect
+      .poll(async () => (await readSchedule(page, token, schedule.id)) ?? null, {
+        timeout: 60000,
+        intervals: [1000],
+      })
+      .toBeNull();
   });
 });
