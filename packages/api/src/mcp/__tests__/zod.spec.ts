@@ -3080,3 +3080,60 @@ describe('resolveJsonSchemaRefs local pointer refs', () => {
     expect(resolved.properties?.alias).toEqual({ type: 'string' });
   });
 });
+
+describe('normalizeJsonSchema $-key recursion', () => {
+  /** Mongo rejects `$`-prefixed field names at any depth, so a `$` keyword nested
+   *  under a schema-valued container has to be stripped too or the stored
+   *  `parameters` blob still fails to persist. */
+  const nested = (container: Record<string, unknown>) =>
+    normalizeJsonSchema({
+      type: 'object',
+      properties: { q: { type: 'string', ...container } },
+    } as Record<string, unknown>) as {
+      properties: { q: Record<string, unknown> };
+    };
+
+  it.each([
+    ['not', { not: { $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'null' } }],
+    ['if', { if: { $comment: 'x', type: 'string' } }],
+    ['then', { then: { $comment: 'x', type: 'string' } }],
+    ['else', { else: { $comment: 'x', type: 'string' } }],
+    ['contains', { contains: { $id: 'x', type: 'string' } }],
+    ['propertyNames', { propertyNames: { $comment: 'x', type: 'string' } }],
+  ])('strips a $ keyword nested under %s', (name, container) => {
+    const result = nested(container);
+    expect(JSON.stringify(result)).not.toContain('"$');
+    expect(result.properties.q[name]).toBeDefined();
+  });
+
+  it('strips $ keywords under patternProperties and dependentSchemas', () => {
+    const result = normalizeJsonSchema({
+      type: 'object',
+      patternProperties: { '^a': { $schema: 'x', type: 'string' } },
+      dependentSchemas: { a: { $comment: 'x', type: 'object' } },
+    } as Record<string, unknown>);
+
+    expect(JSON.stringify(result)).not.toContain('"$');
+  });
+
+  it('strips $ keywords under prefixItems', () => {
+    const result = normalizeJsonSchema({
+      type: 'array',
+      prefixItems: [{ $schema: 'x', type: 'string' }],
+    } as Record<string, unknown>);
+
+    expect(JSON.stringify(result)).not.toContain('"$');
+  });
+
+  it('preserves a $-prefixed property name, which is data rather than a keyword', () => {
+    /** `$filter` is a real argument the tool accepts; dropping it would silently
+     *  remove the parameter from the schema the model sees. Modern MongoDB accepts
+     *  `$`-prefixed field names, so this is left intact deliberately. */
+    const result = normalizeJsonSchema({
+      type: 'object',
+      properties: { $filter: { type: 'string', $comment: 'odata' } },
+    } as Record<string, unknown>) as { properties: Record<string, unknown> };
+
+    expect(result.properties.$filter).toEqual({ type: 'string' });
+  });
+});

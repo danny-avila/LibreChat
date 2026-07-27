@@ -313,6 +313,27 @@ export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
  * @param schema - The JSON schema to normalize
  * @returns The normalized schema
  */
+/** Keywords whose value is a single subschema. */
+const SCHEMA_KEYWORDS = new Set([
+  'items',
+  'additionalItems',
+  'unevaluatedItems',
+  'additionalProperties',
+  'unevaluatedProperties',
+  'propertyNames',
+  'contains',
+  'not',
+  'if',
+  'then',
+  'else',
+]);
+
+/** Keywords whose value maps names to subschemas. */
+const SCHEMA_MAP_KEYWORDS = new Set(['properties', 'patternProperties', 'dependentSchemas']);
+
+/** Keywords whose value is an array of subschemas. */
+const SCHEMA_LIST_KEYWORDS = new Set(['oneOf', 'anyOf', 'allOf', 'prefixItems']);
+
 export function normalizeJsonSchema<T extends Record<string, unknown>>(schema: T): T {
   if (!schema || typeof schema !== 'object') {
     return schema;
@@ -354,7 +375,12 @@ export function normalizeJsonSchema<T extends Record<string, unknown>>(schema: T
       continue;
     }
 
-    if (key === 'properties' && value && typeof value === 'object' && !Array.isArray(value)) {
+    if (
+      SCHEMA_MAP_KEYWORDS.has(key) &&
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value)
+    ) {
       const newProps: Record<string, unknown> = {};
       for (const [propKey, propValue] of Object.entries(value as Record<string, unknown>)) {
         newProps[propKey] =
@@ -363,13 +389,9 @@ export function normalizeJsonSchema<T extends Record<string, unknown>>(schema: T
             : propValue;
       }
       result[key] = newProps;
-    } else if (
-      (key === 'items' || key === 'additionalProperties') &&
-      value &&
-      typeof value === 'object'
-    ) {
+    } else if (SCHEMA_KEYWORDS.has(key) && value && typeof value === 'object') {
       result[key] = normalizeJsonSchema(value as Record<string, unknown>);
-    } else if ((key === 'oneOf' || key === 'anyOf' || key === 'allOf') && Array.isArray(value)) {
+    } else if (SCHEMA_LIST_KEYWORDS.has(key) && Array.isArray(value)) {
       result[key] = value.map((item) =>
         item && typeof item === 'object' ? normalizeJsonSchema(item) : item,
       );
