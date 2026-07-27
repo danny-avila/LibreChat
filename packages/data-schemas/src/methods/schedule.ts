@@ -117,6 +117,7 @@ export type ScheduleMethods = {
     id: string,
     reason: ScheduleDisabledReason,
     expectedClaimToken?: string,
+    expectedConfigRevision?: number,
   ) => Promise<void>;
   insertScheduleRun: (data: Partial<IScheduleRun>) => Promise<IScheduleRun | null>;
   reserveStartedRun: (data: Partial<IScheduleRun>) => Promise<StartedRunReservation>;
@@ -446,16 +447,24 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
    * Disables a schedule. Preflight disables from the leased worker pass their
    * `expectedClaimToken` so a stale worker cannot flip a schedule the owner just
    * re-enabled/edited (rotating the token) back to disabled or clear a newer
-   * claimer's lease. Policy disables (auto-disable, account quiesce) pass none.
+   * claimer's lease. POLICY disables (auto-disable) instead pass the config
+   * generation of the RUN that tripped the threshold: the counter update they follow
+   * is revision-fenced, so leaving the disable itself unfenced let a stale run (or a
+   * reconciler replay of one) disable a schedule the owner had since edited and
+   * re-enabled. Absent on either side disables the fence.
    */
   async function disableSchedule(
     id: string,
     reason: ScheduleDisabledReason,
     expectedClaimToken?: string,
+    expectedConfigRevision?: number,
   ): Promise<void> {
     const filter: Record<string, unknown> = { id };
     if (expectedClaimToken !== undefined) {
       filter.claimToken = expectedClaimToken;
+    }
+    if (expectedConfigRevision !== undefined) {
+      filter.configRevision = expectedConfigRevision;
     }
     await Schedule().updateOne(filter, {
       $set: { enabled: false, disabledReason: reason },
@@ -635,7 +644,12 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     if (isFailure) {
       const schedule = await Schedule().findOne({ id: params.scheduleId }).lean<ISchedule>();
       if (schedule?.enabled && schedule.failureCount >= params.autoDisableAfterFailures) {
-        await disableSchedule(params.scheduleId, 'too_many_failures');
+        await disableSchedule(
+          params.scheduleId,
+          'too_many_failures',
+          undefined,
+          params.expectConfigRevision,
+        );
       }
     }
   }
@@ -798,7 +812,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     const current =
       schedule ?? (await Schedule().findOne({ id: data.scheduleId }).lean<ISchedule>());
     if (current?.enabled && current.balanceSkipCount >= balanceSkipDisableThreshold) {
-      await disableSchedule(data.scheduleId, 'insufficient_balance');
+      await disableSchedule(data.scheduleId, 'insufficient_balance', undefined, rowRevision);
     }
   }
 

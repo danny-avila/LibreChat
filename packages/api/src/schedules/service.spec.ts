@@ -54,6 +54,64 @@ const run = (): ActiveRun => ({
   conversationId: 'c1',
 });
 
+describe('deleteScheduleForOwner', () => {
+  /**
+   * markScheduleDeleting runs FIRST and is one-shot: it matches only a not-yet-deleting
+   * row, so a retry answers 404. Anything between it and the aborts that can throw
+   * therefore strands the schedule — hidden and fenced, but with its paused job still
+   * resumable and its checkpoint unpruned, until the 25-hour abandonment sweep.
+   */
+  it('still aborts a paused run when the checkpointer config cannot be resolved', async () => {
+    const pausedRun = {
+      scheduleId: 's1',
+      scheduledFor: new Date('2026-01-01T00:00:00.000Z'),
+      conversationId: 'c1',
+      status: 'requires_action',
+    };
+    const service = makeService(
+      jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]),
+      // The checkpointer lookup resolves the owner's config; a transient failure here
+      // must not cost the abort.
+      jest.fn(async () => {
+        throw new Error('config plane down');
+      }) as unknown as SchedulesServiceDeps['getAppConfig'],
+    );
+    const methods = service.engineDeps.methods as unknown as {
+      markScheduleDeleting: jest.Mock;
+      getActiveRunsForSchedule: jest.Mock;
+      eraseScheduleIfDrained: jest.Mock;
+    };
+    methods.markScheduleDeleting = jest.fn(async () => ({ id: 's1', user: 'user-1' }));
+    methods.getActiveRunsForSchedule = jest.fn(async () => [pausedRun]);
+    methods.eraseScheduleIfDrained = jest.fn(async () => true);
+    // The owner must RESOLVE, or the checkpointer lookup short-circuits before it ever
+    // reads the config and the throw under test never happens.
+    (service.engineDeps as unknown as { getUserContext: jest.Mock }).getUserContext = jest.fn(
+      async () => ({ id: 'user-1', tenantId: 't1', role: 'USER' }),
+    );
+
+    const abortJob = jest.fn(async () => ({ success: true }));
+    mockJobStore = {
+      getJob: jest.fn(async () => ({
+        status: 'requires_action',
+        createdAt: 1,
+        scheduleId: 's1',
+        scheduledFor: '2026-01-01T00:00:00.000Z',
+      })),
+    } as unknown as typeof mockJobStore;
+    const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
+    manager.abortJob = abortJob;
+
+    await expect(service.deleteScheduleForOwner('s1', 'user-1')).resolves.toBe(true);
+    expect(abortJob).toHaveBeenCalled();
+  });
+
+  afterEach(() => {
+    mockJobStore = null;
+    jest.restoreAllMocks();
+  });
+});
+
 describe('quiesceUserSchedules drain wait', () => {
   afterEach(() => {
     mockJobStore = null;
@@ -100,6 +158,40 @@ describe('quiesceUserSchedules drain wait', () => {
     // It polled repeatedly (bounded by the deadline) and surfaced the un-drained runs.
     expect(getActive.mock.calls.length).toBeGreaterThan(1);
     expect(warn).toHaveBeenCalled();
+  });
+
+  /**
+   * A `started` row whose job is already terminal is the preserve-for-reconcile case:
+   * the inline outcome write exhausted its retries, so the retained job is the ONLY
+   * evidence the run finished. Account deletion deletes that job (nothing will ever
+   * reconcile it once the rows are hard-deleted), so it has to project the job's
+   * terminal state onto the row first — otherwise the row stays active, the bounded
+   * drain can never confirm, and deletion defers until the 30-minute orphan cutoff.
+   */
+  it('settles a started run from its retained terminal job before dropping the evidence', async () => {
+    jest.useFakeTimers();
+    const started = { ...run(), status: 'started' };
+    const getActive = jest
+      .fn<Promise<ActiveRun[]>, [string]>()
+      .mockResolvedValueOnce([started])
+      .mockResolvedValue([]);
+    const service = makeService(getActive);
+    mockJobStore = {
+      getJob: jest.fn(async () => ({
+        status: 'complete',
+        createdAt: 1,
+        scheduleId: 's1',
+        scheduledFor: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+      })),
+    } as unknown as typeof mockJobStore;
+
+    const pending = service.quiesceUserSchedules('user-1');
+    await jest.advanceTimersByTimeAsync(500);
+    await expect(pending).resolves.toBe(true);
+
+    expect(recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ scheduleId: 's1', status: 'success' }),
+    );
   });
 
   it('does not wait when the user has no active runs', async () => {

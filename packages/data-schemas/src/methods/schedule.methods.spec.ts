@@ -937,6 +937,76 @@ describe('claim-token fencing (stale worker cannot mutate an edited/deleted sche
   });
 });
 
+describe('auto-disable is fenced against an owner edit', () => {
+  /**
+   * The counter update is revision-fenced but the auto-disable that follows it was not,
+   * and it re-reads the CURRENT schedule. A reconciler replay of an old un-bookkept run
+   * therefore no-ops its counters (stale revision) and then disables a schedule the
+   * owner has since edited and re-enabled.
+   */
+  it('a stale run cannot disable a schedule the owner re-enabled', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const first = new Date('2026-07-26T10:00:00.000Z');
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor: first }));
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: first,
+      status: 'error',
+      error: 'boom',
+      autoDisableAfterFailures: 1,
+    });
+    expect(await getSchedule(schedule.id)).toMatchObject({
+      enabled: false,
+      disabledReason: 'too_many_failures',
+    });
+
+    // The owner edits + re-enables, which rotates configRevision and claimToken.
+    await methods.updateScheduleById(schedule.id, schedule.user, { enabled: true, name: 'fixed' });
+    const revived = await getSchedule(schedule.id);
+    expect(revived.enabled).toBe(true);
+
+    // A replay of the OLD occurrence, still carrying the pre-edit revision.
+    const stale = new Date('2026-07-26T11:00:00.000Z');
+    await methods.insertScheduleRun(
+      runData(schedule, { scheduledFor: stale, configRevision: revived.configRevision! - 1 }),
+    );
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: stale,
+      status: 'error',
+      error: 'stale replay',
+      autoDisableAfterFailures: 1,
+    });
+
+    // Still enabled: the owner's edit wins over the stale run's policy verdict.
+    // (`disabledReason` is left over from the FIRST, legitimate disable — re-enabling
+    // does not clear it, and a later success does.)
+    expect((await getSchedule(schedule.id)).enabled).toBe(true);
+  });
+
+  it('still auto-disables when the run matches the current config generation', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scheduledFor = new Date('2026-07-26T10:00:00.000Z');
+    const current = await getSchedule(schedule.id);
+    await methods.insertScheduleRun(
+      runData(schedule, { scheduledFor, configRevision: current.configRevision }),
+    );
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'error',
+      error: 'boom',
+      autoDisableAfterFailures: 1,
+    });
+
+    expect(await getSchedule(schedule.id)).toMatchObject({
+      enabled: false,
+      disabledReason: 'too_many_failures',
+    });
+  });
+});
+
 describe('deleteScheduleRun conversation fence', () => {
   it('deletes only the reservation the caller inserted', async () => {
     const schedule = await methods.createSchedule(scheduleData());

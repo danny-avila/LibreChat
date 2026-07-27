@@ -2862,8 +2862,10 @@ describe('RedisJobStore Integration Tests', () => {
         from: 'running',
         to: 'requires_action',
         expectCreatedAt: job.createdAt,
-        actionId: `action-${streamId}`,
-        pendingAction: buildPendingAction(streamId),
+        patch: {
+          pendingActionId: `action-${streamId}`,
+          pendingAction: buildPendingAction(streamId),
+        },
       });
       expect(await store.getJob(streamId)).toMatchObject({
         ...identity,

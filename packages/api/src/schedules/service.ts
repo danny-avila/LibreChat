@@ -31,6 +31,20 @@ import { isEnabled } from '../utils/common';
 /** Recordable terminal/paused run outcome, as accepted by `recordRunOutcome`. */
 type ScheduleRunOutcomeStatus = Parameters<ScheduleMethods['recordRunOutcome']>[0]['status'];
 
+/** How a TERMINAL job status projects onto its run row. Mirrors the reconciler's
+ *  mapping, so a run settled from a retained job reads the same either way. */
+const TERMINAL_JOB_OUTCOMES: Record<string, ScheduleRunOutcomeStatus | undefined> = {
+  complete: 'success',
+  error: 'error',
+  aborted: 'interrupted',
+};
+
+/** Reason text recorded when account-deletion quiesce settles a run itself. */
+const QUIESCE_SETTLE_ERRORS: Partial<Record<ScheduleRunOutcomeStatus, string>> = {
+  interrupted: 'Account deleted while awaiting approval',
+  error: 'Run ended in error',
+};
+
 /**
  * Whether this process may arm the scheduler at all.
  *
@@ -651,7 +665,15 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     const hasPausedRun = active.some(
       (run) => run.status === 'requires_action' && run.conversationId != null,
     );
-    const checkpointer = hasPausedRun ? await resolveOwnerCheckpointer(schedule.user) : undefined;
+    // BEST-EFFORT: markScheduleDeleting above is one-shot (a retry 404s on the already-
+    // deleting row), so anything that throws before the aborts strands the schedule with
+    // its paused job still resumable. The prune it feeds is itself best-effort.
+    const checkpointer = hasPausedRun
+      ? await resolveOwnerCheckpointer(schedule.user).catch((err) => {
+          logger.warn(`[schedules] checkpointer lookup failed for delete ${scheduleId}:`, err);
+          return undefined;
+        })
+      : undefined;
     for (const run of active) {
       // Preserve the aborted job for the reconciler: the run row survives (erase
       // waits for it to drain), so reconcile finalizes it and clears the job.
@@ -709,22 +731,32 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       // Do NOT preserve for reconcile: account deletion hard-deletes these run
       // rows, so no reconcile pass will ever finalize/clear a retained job — a
       // preserved job would leak in the store. Let the abort settle it directly.
+      // A retained TERMINAL job is the preserve-for-reconcile case: this run's inline
+      // outcome write exhausted its retries, so the job is the only evidence it
+      // finished. The abort below deletes it (the rows are about to be hard-deleted, so
+      // no reconcile pass would ever clear it), which must not happen before its state
+      // is projected onto the row — otherwise a `started` row stays active with its
+      // evidence gone and the bounded drain can never confirm.
+      const retainedOutcome = isThisGeneration
+        ? TERMINAL_JOB_OUTCOMES[live.job!.status]
+        : undefined;
       const aborted = await abortActiveRun(run, false);
-      if (run.status === 'requires_action' && settleable) {
-        // A genuinely PAUSED run has no live generation to drain: its approval will never
-        // be consumed for an account being deleted. Terminalize it here, or it stays in
-        // the active set forever and the drain below can never confirm — which made a
-        // single paused run block the account's deletion permanently.
+      if (settleable && (retainedOutcome != null || run.status === 'requires_action')) {
+        // Either the retained job's own outcome, or — for a genuinely PAUSED run whose
+        // approval will never be consumed for a deleted account — `interrupted`. Without
+        // this a single paused run blocked the account's deletion permanently.
+        const settledStatus = retainedOutcome ?? 'interrupted';
+        const settledError = QUIESCE_SETTLE_ERRORS[settledStatus];
         await methods
           .recordRunOutcome({
             scheduleId: run.scheduleId,
             scheduledFor: run.scheduledFor,
-            status: 'interrupted',
+            status: settledStatus,
             conversationId: run.conversationId,
-            error: 'Account deleted while awaiting approval',
+            ...(settledError ? { error: settledError } : {}),
             autoDisableAfterFailures: DEFAULT_SCHEDULE_LIMITS.autoDisableAfterFailures,
           })
-          .catch((err) => logger.warn('[schedules] failed to settle paused run on quiesce:', err));
+          .catch((err) => logger.warn('[schedules] failed to settle run on quiesce:', err));
         continue;
       }
       if (!aborted && run.conversationId) {
