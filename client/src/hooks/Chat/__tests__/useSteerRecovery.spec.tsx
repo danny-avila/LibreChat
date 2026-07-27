@@ -1,16 +1,18 @@
 import React from 'react';
-import { act, renderHook } from '@testing-library/react';
+import { act, render, renderHook } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, type MutableSnapshot } from 'recoil';
 import useSteerRecovery from '../useSteerRecovery';
 import store from '~/store';
 
-const mockMutate = jest.fn();
-const mockFetchStreamStatus = jest.fn();
+const mockMutateAsync = jest.fn();
 
 jest.mock('~/data-provider', () => ({
-  useSteerMessageMutation: () => ({ mutate: mockMutate }),
-  fetchStreamStatus: (...args: unknown[]) => mockFetchStreamStatus(...args),
+  useSteerMessageMutation: () => ({ mutateAsync: mockMutateAsync }),
 }));
+
+/** The POST settles through the returned promise, so every case has to let the
+ *  microtask queue run before asserting. */
+const flush = () => act(async () => undefined);
 
 const CONVO_ID = 'convo-steer-recovery';
 
@@ -36,7 +38,7 @@ describe('useSteerRecovery', () => {
 
   describe('retry', () => {
     it('marks the chip sending immediately', () => {
-      mockMutate.mockImplementation(() => undefined);
+      mockMutateAsync.mockReturnValue(new Promise(() => undefined));
       const { result } = setup(({ set }) => {
         set(store.pendingSteersByConvoId(CONVO_ID), [
           { steerId: 'local-1', text: 'redo this', status: 'failed', createdAt: 5 },
@@ -50,9 +52,12 @@ describe('useSteerRecovery', () => {
       ]);
     });
 
-    it('swaps the local id for the server id on success, keeping it pending', () => {
-      mockMutate.mockImplementation((_params, { onSuccess }) => {
-        onSuccess({ steerId: 'srv-9', status: 'queued', position: 1, conversationId: CONVO_ID });
+    it('swaps the local id for the server id on success, keeping it pending', async () => {
+      mockMutateAsync.mockResolvedValue({
+        steerId: 'srv-9',
+        status: 'queued',
+        position: 1,
+        conversationId: CONVO_ID,
       });
       const { result } = setup(({ set }) => {
         set(store.pendingSteersByConvoId(CONVO_ID), [
@@ -62,6 +67,7 @@ describe('useSteerRecovery', () => {
       act(() => {
         result.current.recovery.retry('local-1');
       });
+      await flush();
       // The old local id must be gone entirely — leaving it behind is what let
       // the applied SteerPart and a stale pending copy render together.
       expect(result.current.chips).toEqual([
@@ -69,10 +75,8 @@ describe('useSteerRecovery', () => {
       ]);
     });
 
-    it('routes to the queue on NO_ACTIVE_RUN instead of marking it failed again', () => {
-      mockMutate.mockImplementation((_params, { onError }) => {
-        onError({ response: { data: { code: 'NO_ACTIVE_RUN' } } });
-      });
+    it('routes to the queue on NO_ACTIVE_RUN instead of marking it failed again', async () => {
+      mockMutateAsync.mockRejectedValue({ response: { data: { code: 'NO_ACTIVE_RUN' } } });
       const { result } = setup(({ set }) => {
         set(store.pendingSteersByConvoId(CONVO_ID), [
           { steerId: 'local-2', text: 'too late', status: 'failed', createdAt: 7 },
@@ -81,17 +85,16 @@ describe('useSteerRecovery', () => {
       act(() => {
         result.current.recovery.retry('local-2');
       });
+      await flush();
       expect(result.current.chips).toEqual([]);
       expect(result.current.queue).toEqual([
         expect.objectContaining({ id: 'local-2', text: 'too late' }),
       ]);
     });
 
-    it('also routes to the queue on RUN_PAUSED / STEER_UNSUPPORTED / STEER_QUEUE_FULL', () => {
+    it('also routes to the queue on RUN_PAUSED / STEER_UNSUPPORTED / STEER_QUEUE_FULL', async () => {
       for (const code of ['RUN_PAUSED', 'STEER_UNSUPPORTED', 'STEER_QUEUE_FULL']) {
-        mockMutate.mockImplementation((_params, { onError }) => {
-          onError({ response: { data: { code } } });
-        });
+        mockMutateAsync.mockRejectedValue({ response: { data: { code } } });
         const { result } = setup(({ set }) => {
           set(store.pendingSteersByConvoId(CONVO_ID), [
             { steerId: `local-${code}`, text: code, status: 'failed', createdAt: 1 },
@@ -100,14 +103,13 @@ describe('useSteerRecovery', () => {
         act(() => {
           result.current.recovery.retry(`local-${code}`);
         });
+        await flush();
         expect(result.current.queue).toEqual([expect.objectContaining({ id: `local-${code}` })]);
       }
     });
 
-    it('marks it failed again on an unrecognized error', () => {
-      mockMutate.mockImplementation((_params, { onError }) => {
-        onError(new Error('network'));
-      });
+    it('marks it failed again on an unrecognized error', async () => {
+      mockMutateAsync.mockRejectedValue(new Error('network'));
       const { result } = setup(({ set }) => {
         set(store.pendingSteersByConvoId(CONVO_ID), [
           { steerId: 'local-3', text: 'network flake', status: 'failed', createdAt: 1 },
@@ -116,10 +118,63 @@ describe('useSteerRecovery', () => {
       act(() => {
         result.current.recovery.retry('local-3');
       });
+      await flush();
       expect(result.current.chips).toEqual([
         expect.objectContaining({ steerId: 'local-3', status: 'failed' }),
       ]);
       expect(result.current.queue).toEqual([]);
+    });
+
+    /* The block this hook lives in unmounts the moment the run ends, which is
+       exactly when a retry's ack tends to land. It has to survive that: the
+       words go to the queue rather than leaving the chip saying `sending`. */
+    /* The block this hook lives in unmounts the moment the run ends, which is
+       exactly when a retry's ack tends to land. It has to survive that: the
+       words go to the queue rather than leaving the chip saying `sending`. */
+    it('queues a retry whose ack lands after the run ended', async () => {
+      let settle: (value: unknown) => void = () => undefined;
+      mockMutateAsync.mockReturnValue(new Promise((resolve) => (settle = resolve)));
+
+      let recovery: ReturnType<typeof useSteerRecovery> | undefined;
+      let chips: unknown[] = [];
+      let queue: unknown[] = [];
+      const Recovery = () => {
+        recovery = useSteerRecovery(CONVO_ID);
+        return null;
+      };
+      /* Outlives the run, the way the store does: the hook's own tree goes
+         away while the conversation's state stays behind to be read. */
+      const Observer = () => {
+        chips = useRecoilValue(store.pendingSteersByConvoId(CONVO_ID));
+        queue = useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID));
+        return null;
+      };
+      const Tree = ({ live }: { live: boolean }) => (
+        <RecoilRoot
+          initializeState={({ set }) => {
+            set(store.pendingSteersByConvoId(CONVO_ID), [
+              { steerId: 'local-late', text: 'landed too late', status: 'failed', createdAt: 3 },
+            ]);
+          }}
+        >
+          <Observer />
+          {live && <Recovery />}
+        </RecoilRoot>
+      );
+
+      const { rerender } = render(<Tree live={true} />);
+      act(() => {
+        recovery?.retry('local-late');
+      });
+      expect(chips).toEqual([expect.objectContaining({ status: 'sending' })]);
+
+      rerender(<Tree live={false} />);
+      await act(async () => {
+        settle({ steerId: 'srv-late', status: 'queued', position: 1, conversationId: CONVO_ID });
+      });
+
+      expect(chips).toEqual([]);
+      expect(queue).toEqual([expect.objectContaining({ id: 'srv-late', text: 'landed too late' })]);
     });
 
     it('no-ops when the steer id is no longer pending', () => {
@@ -127,7 +182,7 @@ describe('useSteerRecovery', () => {
       act(() => {
         result.current.recovery.retry('missing');
       });
-      expect(mockMutate).not.toHaveBeenCalled();
+      expect(mockMutateAsync).not.toHaveBeenCalled();
     });
   });
 
