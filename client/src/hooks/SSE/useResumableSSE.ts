@@ -550,6 +550,13 @@ export default function useResumableSSE(
    *  two retries can't cancel each other. */
   const steerRetryRef = useRef<number | null>(null);
   const activityLabelRetryRef = useRef<number | null>(null);
+  /**
+   * Set once a SYNC has replaced the response with the server's
+   * completion-local snapshot, which discards the prefix an edited
+   * resubmission retained. From that point incoming indices are absolute and
+   * `editPrefixLength` must no longer be applied — by run steps or labels.
+   */
+  const editPrefixClearedRef = useRef(false);
 
   /** Removes the pending chip once its steer is injected (the inline content
    *  part becomes the durable record), and records the id so a 202 ACK that
@@ -625,7 +632,7 @@ export default function useResumableSSE(
   const setRunEnd = useSetRecoilState(store.runEndByIndex(runIndex));
 
   const {
-    stepHandler,
+    stepHandler: rawStepHandler,
     finalHandler,
     errorHandler,
     clearStepMaps,
@@ -647,6 +654,24 @@ export default function useResumableSSE(
     newConversation,
     setShowStopButton,
   });
+
+  /**
+   * Run steps read the edit prefix from the submission, so once a SYNC has
+   * replaced the response with the completion-local snapshot they must stop
+   * offsetting — the prefix those indices were relative to is gone. Applied
+   * here rather than at each dispatch so every path (live, replay, pending)
+   * agrees, and so run steps and activity labels share one index space.
+   */
+  const stepHandler = useCallback<typeof rawStepHandler>(
+    (event, submission) =>
+      rawStepHandler(
+        event,
+        editPrefixClearedRef.current && submission != null
+          ? ({ ...submission, editPrefixLength: 0 } as typeof submission)
+          : submission,
+      ),
+    [rawStepHandler],
+  );
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
@@ -821,7 +846,7 @@ export default function useResumableSSE(
          *  another part, and a gap fill would miss its own reservation and
          *  leave the placeholder pending forever. */
         const prefixLength =
-          currentSubmission.editedContent != null
+          currentSubmission.editedContent != null && !editPrefixClearedRef.current
             ? (currentSubmission.editPrefixLength ??
               (currentSubmission.initialResponse as TMessage | undefined)?.content?.length ??
               0)
@@ -1113,6 +1138,19 @@ export default function useResumableSSE(
                   matchedByResponseId &&
                   Array.isArray(oldContent) &&
                   oldContent.length > 0;
+                /**
+                 * Replacing the response with `aggregatedContent` drops the
+                 * prefix an edited resubmission had retained: the snapshot is
+                 * completion-local, indexed from zero. Every later event must
+                 * therefore stop offsetting, or it writes past the end of the
+                 * shorter array — for an activity label that means the fill
+                 * misses its own reservation and the placeholder never
+                 * resolves. Preserving `oldContent` keeps the prefix, and with
+                 * it the offset. Run steps and labels both read this.
+                 */
+                if (!preserveLoadedContent) {
+                  editPrefixClearedRef.current = true;
+                }
                 const responseMessage = {
                   ...messages[responseIdx],
                   content: preserveLoadedContent ? oldContent : data.resumeState.aggregatedContent,
