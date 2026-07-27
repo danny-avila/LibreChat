@@ -1,5 +1,5 @@
-import React, { useRef, useCallback, useMemo, useEffect } from 'react';
-import { LayoutGrid, FileSearch, MessageSquarePlus } from 'lucide-react';
+import React, { useRef, useCallback, useMemo, useEffect, useState } from 'react';
+import { LayoutGrid, FileSearch, FileText, MessageSquarePlus } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
 import { Skeleton } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
@@ -14,6 +14,7 @@ import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { clearMessagesCache } from '~/utils';
 import BklChatSearch from '~/components/Nav/BklChatSearch';
+import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import FavoriteItem from './FavoriteItem';
 import store from '~/store';
 
@@ -159,6 +160,13 @@ export default function FavoritesList({
       toggleNav();
     }
   }, [navigate, isSmallScreen, toggleNav]);
+
+  // BKL: 사이드바 "내 파일" row — 업로드한 파일 라이브러리(목록·개별 삭제).
+  // 마이메뉴(프로필 드롭다운)에도 있지만 발견성이 낮아 사이드바에 같은 층위로 노출.
+  const [isFilesOpen, setIsFilesOpen] = useState(false);
+  const handleMyFiles = useCallback(() => {
+    setIsFilesOpen(true);
+  }, []);
 
   // BKL: 좌측 패널 상단의 "새 채팅" row. 원래 NewChat.tsx 의 아이콘 버튼이었던 것을
   // 문서 검색 row 와 같은 층위로 옮겼다.
@@ -396,6 +404,29 @@ export default function FavoritesList({
                 <span className="truncate">{localize('com_nav_document_search')}</span>
               </div>
             </div>
+            {/* BKL: 내 파일(라이브러리) row — 새 채팅/문서 검색과 같은 층위·같은 스타일 */}
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label={localize('com_nav_my_files')}
+              className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+              onClick={handleMyFiles}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleMyFiles();
+                }
+              }}
+              data-testid="nav-my-files-button"
+            >
+              <div className="flex flex-1 items-center truncate pr-6">
+                <div className="mr-2 h-5 w-5">
+                  <FileText className="h-5 w-5 text-text-primary" />
+                </div>
+                <span className="truncate">{localize('com_nav_my_files')}</span>
+              </div>
+            </div>
+            {isFilesOpen && <MyFilesModal open={isFilesOpen} onOpenChange={setIsFilesOpen} />}
             {safeFavorites.map((fav, index) => {
               if (fav.agentId) {
                 const agent = combinedAgentsMap?.[fav.agentId];
