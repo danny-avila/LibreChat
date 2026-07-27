@@ -163,6 +163,7 @@ describe('defaultOCRMimeTypes', () => {
     defaultOCRMimeTypes.some((regex) => regex.test(mimeType));
 
   it.each([
+    'application/msword',
     'application/vnd.oasis.opendocument.text',
     'application/vnd.oasis.opendocument.spreadsheet',
     'application/vnd.oasis.opendocument.presentation',
