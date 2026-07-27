@@ -733,6 +733,8 @@ const updateAgentHandler = async (req, res) => {
       if (!(await mcpPermissionContext.canUseServers(req.user))) {
         if (editingOwnAgent) {
           updateData.tools = effectiveTools.filter((t) => !isMCPTool(t));
+          /** Every MCP tool just went away, so nothing should stay indexed. */
+          updateData.mcpServerNames = [];
         } else if (hasToolUpdate) {
           const existingMCPToolSet = new Set(existingMCPTools);
           const nextTools = updateData.tools.filter(
@@ -745,6 +747,10 @@ const updateAgentHandler = async (req, res) => {
             }
           }
           updateData.tools = nextTools;
+          /** The agent's MCP tools are retained verbatim here, so carry its resolved
+           *  names across too - re-deriving them from the keys would undo the
+           *  provenance this path never had a chance to compute. */
+          updateData.mcpServerNames = existingAgent.mcpServerNames ?? [];
         }
       } else if (hasToolUpdate) {
         const existingToolSet = new Set(existingTools);

@@ -765,6 +765,29 @@ describe('MCP Tool Authorization', () => {
       expect(agentInDb.mcpServerNames).toEqual(['anotherServer']);
     });
 
+    test('should preserve resolved mcpServerNames when a non-owner retains MCP tools', async () => {
+      /** The shared-agent path keeps the existing MCP tools verbatim; re-deriving the
+       *  index from their keys would turn a delimiter-bearing configured server into
+       *  its trailing segment, which `ServerConfigsDB` then treats as a DB server. */
+      await Agent.updateOne(
+        { id: existingAgentId },
+        {
+          tools: ['web_search', `existingTool${d}Google${d}Workspace`],
+          mcpServerNames: [`Google${d}Workspace`],
+        },
+      );
+      mockUserCanUseMCPServers.mockResolvedValue(false);
+      mockReq.user.id = new mongoose.Types.ObjectId().toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = { tools: ['web_search', `existingTool${d}Google${d}Workspace`] };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.mcpServerNames).toEqual([`Google${d}Workspace`]);
+      expect(agentInDb.mcpServerNames).not.toContain('Workspace');
+    });
+
     test('should not query MCP registry when no new MCP tools added', async () => {
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;
