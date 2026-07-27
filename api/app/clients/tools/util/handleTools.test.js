@@ -319,6 +319,7 @@ describe('Tool Handlers', () => {
       const serverName = 'body-scoped';
       const toolKey = `search${Constants.mcp_delimiter}${serverName}`;
       const requestBody = { conversationId: 'conv-123', messageId: 'msg-123' };
+      const jobCreatedAt = 1234;
       const serverConfig = {
         type: 'streamable-http',
         url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
@@ -336,6 +337,7 @@ describe('Tool Handlers', () => {
             user: { id: fakeUser._id.toString(), role: 'USER' },
             body: requestBody,
           },
+          jobCreatedAt,
         },
       });
 
@@ -348,6 +350,7 @@ describe('Tool Handlers', () => {
       expect(mockCreateMCPTool).toHaveBeenCalledWith(
         expect.objectContaining({
           requestBody,
+          jobCreatedAt,
           toolKey,
           config: serverConfig,
         }),

@@ -646,6 +646,33 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       );
     });
 
+    it('passes persisted run steps into the rebuilt run for tool-result correlation', async () => {
+      const runSteps = [
+        {
+          id: 'step-approval',
+          index: 1,
+          type: 'tool_calls',
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [{ id: 'tc1', name: 'approval_probe', args: '{}' }],
+          },
+          usage: null,
+        },
+      ];
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockGenerationJobManager.getResumeState.mockResolvedValue({
+        aggregatedContent: [],
+        runSteps,
+      });
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      const client = await mockInitializeClient.mock.results[0].value.then((r) => r.client);
+      expect(client.resumeCompletion).toHaveBeenCalledWith(expect.objectContaining({ runSteps }));
+    });
+
     it('restores the paused user message files before reconstruction (execute-code files)', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       // The resume body carries no files; the controller must source them from the

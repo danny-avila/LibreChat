@@ -34,6 +34,10 @@ const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
 const BACKGROUND_DISPATCH_MARKER = 'E2E_BACKGROUND_DISPATCH:';
 const BACKGROUND_COLLECT_MARKER = 'E2E_BACKGROUND_COLLECT:';
+const TOOL_APPROVAL_MARKER = 'E2E_TOOL_APPROVAL:';
+const TOOL_APPROVAL_BATCH_MARKER = 'E2E_TOOL_APPROVAL_BATCH:';
+const TOOL_APPROVAL_RESTRICTED_MARKER = 'E2E_TOOL_APPROVAL_RESTRICTED:';
+const TOOL_APPROVAL_REWRITE_MARKER = 'E2E_TOOL_APPROVAL_REWRITE:';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
 const SKILL_ASSERTION_FINAL_TEXT = 'E2E skill assertion passed';
@@ -56,6 +60,8 @@ const CREATE_SKILL_TOOL_CALL_ID = 'call_e2e_create_skill';
 const EDIT_SKILL_TOOL_CALL_ID = 'call_e2e_edit_skill';
 const BACKGROUND_TOOL_NAME = 'slow_echo_mcp_e2e-memory';
 const CHECK_BACKGROUND_TASK_TOOL_NAME = 'check_background_task';
+const APPROVAL_TOOL_NAME = 'approval_probe_mcp_e2e-memory';
+const APPROVAL_TOOL_CALL_PREFIX = 'call_e2e_approval_';
 const BACKGROUND_DISPATCH_TOOL_CALL_ID = 'call_e2e_background_dispatch';
 const BACKGROUND_COLLECT_TOOL_CALL_ID = 'call_e2e_background_collect';
 const MODEL_SPEC_ACCESSIBLE_SKILL = 'e2e-model-spec-allowed';
@@ -832,6 +838,92 @@ function findLastToolMessageText(messages, requiredToken) {
   return '';
 }
 
+function approvalToolResponses(label, toolNames, review) {
+  if (!toolNames.has(APPROVAL_TOOL_NAME)) {
+    return {
+      responses: [`E2E approval unavailable: ${APPROVAL_TOOL_NAME} was not advertised.`],
+    };
+  }
+  return {
+    responses: ['', ''],
+    toolCalls: [
+      {
+        id: `${APPROVAL_TOOL_CALL_PREFIX}${label}`,
+        name: APPROVAL_TOOL_NAME,
+        args: {
+          value: `original-${label}`,
+          ...(review ? { review } : {}),
+        },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
+function batchApprovalToolResponses(label, toolNames) {
+  if (!toolNames.has(APPROVAL_TOOL_NAME)) {
+    return {
+      responses: [`E2E approval unavailable: ${APPROVAL_TOOL_NAME} was not advertised.`],
+    };
+  }
+  return {
+    responses: ['', ''],
+    toolCalls: [
+      {
+        id: `${APPROVAL_TOOL_CALL_PREFIX}${label}_first`,
+        name: APPROVAL_TOOL_NAME,
+        args: { value: `first-${label}` },
+        type: 'tool_call',
+      },
+      {
+        id: `${APPROVAL_TOOL_CALL_PREFIX}${label}_second`,
+        name: APPROVAL_TOOL_NAME,
+        args: { value: `second-${label}` },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
+/**
+ * Resume rebuilds the fake model without the original prompt in `context.messages`.
+ * Detect the checkpoint-restored approval tool messages on every model instance
+ * so the continuation can report the real approve/reject/edit/respond outcome.
+ */
+function approvalOutcomeResponses(messages) {
+  let latestHumanIndex = -1;
+  for (let index = 0; index < (messages ?? []).length; index++) {
+    const type = messageType(messages[index]);
+    if (type === 'human' || type === 'user') {
+      latestHumanIndex = index;
+    }
+  }
+
+  const outcomeMessages = (messages ?? [])
+    .slice(latestHumanIndex + 1)
+    .filter(
+      (message) =>
+        messageType(message) === 'tool' &&
+        typeof message?.tool_call_id === 'string' &&
+        message.tool_call_id.startsWith(APPROVAL_TOOL_CALL_PREFIX),
+    );
+
+  const isBatch = outcomeMessages.some(
+    (message) =>
+      message.tool_call_id.endsWith('_first') || message.tool_call_id.endsWith('_second'),
+  );
+  if (isBatch && outcomeMessages.length < 2) {
+    return null;
+  }
+
+  const outcomes = outcomeMessages.map((message) => getContentText(message.content));
+
+  if (outcomes.length === 0) {
+    return null;
+  }
+  return { responses: [`E2E approval outcomes: ${outcomes.join(' | ')}`] };
+}
+
 /**
  * Turn 1 of the background e2e: emit the MCP tool call with the injected
  * `run_in_background: true` arg, then (second model invocation, after the
@@ -925,6 +1017,26 @@ function backgroundCollectResponses(messages, toolNames) {
 }
 
 function resolveResponses({ graph, messages, text, toolNames }) {
+  const batchApprovalLabel = getMarkerValue(text, TOOL_APPROVAL_BATCH_MARKER);
+  if (batchApprovalLabel) {
+    return batchApprovalToolResponses(batchApprovalLabel, toolNames);
+  }
+
+  const restrictedApprovalLabel = getMarkerValue(text, TOOL_APPROVAL_RESTRICTED_MARKER);
+  if (restrictedApprovalLabel) {
+    return approvalToolResponses(restrictedApprovalLabel, toolNames, 'restricted');
+  }
+
+  const rewrittenApprovalLabel = getMarkerValue(text, TOOL_APPROVAL_REWRITE_MARKER);
+  if (rewrittenApprovalLabel) {
+    return approvalToolResponses(rewrittenApprovalLabel, toolNames, 'rewrite');
+  }
+
+  const approvalLabel = getMarkerValue(text, TOOL_APPROVAL_MARKER);
+  if (approvalLabel) {
+    return approvalToolResponses(approvalLabel, toolNames);
+  }
+
   const reply = replyResponses(text);
   if (reply) {
     return reply;
@@ -1055,5 +1167,15 @@ module.exports = function fakeModelHook(run, context) {
     text,
     toolNames,
   });
-  overrideModel({ graph, responses, sleep, toolCalls, thrownError, resolveOnStream });
+  overrideModel({
+    graph,
+    responses,
+    sleep,
+    toolCalls,
+    thrownError,
+    resolveOnStream: (streamMessages, streamOptions, runManager) =>
+      approvalOutcomeResponses(streamMessages) ??
+      resolveOnStream?.(streamMessages, streamOptions, runManager) ??
+      null,
+  });
 };

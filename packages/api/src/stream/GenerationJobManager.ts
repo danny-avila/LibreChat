@@ -40,6 +40,7 @@ import {
 import { isPendingActionStale, isPendingActionExpired } from './interfaces/IJobStore';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
+import { normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
 import { emitChunkWithReceipt } from './internal/chunkPublication';
 import { filterPersistableAbortContent } from './abortContent';
 import { toClientPendingAction } from '~/agents/hitl/policy';
@@ -130,6 +131,34 @@ function isOAuthReplayEvent(event: t.ServerSentEvent): boolean {
   }
 
   return false;
+}
+
+function normalizeRunStepReplayIndices(
+  replayEvents: t.ResumeState['replayEvents'],
+  runSteps: readonly Agents.RunStep[],
+): t.ResumeState['replayEvents'] {
+  if (!replayEvents) {
+    return replayEvents;
+  }
+  const runStepsById = new Map(runSteps.map((runStep) => [runStep.id, runStep]));
+  return replayEvents.map((event) => {
+    if (event.event !== 'on_run_step' || event.data == null || typeof event.data !== 'object') {
+      return event;
+    }
+    const stepId = 'id' in event.data ? event.data.id : undefined;
+    const normalizedRunStep = typeof stepId === 'string' ? runStepsById.get(stepId) : undefined;
+    const eventIndex = 'index' in event.data ? event.data.index : undefined;
+    if (!normalizedRunStep || normalizedRunStep.index === eventIndex) {
+      return event;
+    }
+    return {
+      ...event,
+      data: {
+        ...event.data,
+        index: normalizedRunStep.index,
+      },
+    };
+  });
 }
 
 /**
@@ -2323,10 +2352,14 @@ class GenerationJobManagerClass {
   async emitChunk(
     streamId: string,
     event: t.ServerSentEvent,
-    options?: { durable?: boolean },
+    options?: { durable?: boolean; expectedCreatedAt?: number },
   ): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
-    if (!runtime || !this.isCurrentRuntime(streamId, runtime)) {
+    if (
+      !runtime ||
+      (options?.expectedCreatedAt != null && runtime.createdAt !== options.expectedCreatedAt) ||
+      !this.isCurrentRuntime(streamId, runtime)
+    ) {
       return;
     }
 
@@ -2414,14 +2447,24 @@ class GenerationJobManagerClass {
     }
     markSnapshotReady();
 
+    // Retain run-step identity independently of the live graph. Paused in-memory
+    // runs release that graph before a later request rebuilds the run, but the
+    // resume path still needs the original step ids to correlate tool results.
+    const eventObj = event as Record<string, unknown>;
+    const eventType = eventObj.event as string | undefined;
+    const eventData = eventObj.data;
+    if (
+      (eventType === 'on_run_step' || eventType === 'on_run_step_completed') &&
+      eventData != null &&
+      typeof eventData === 'object'
+    ) {
+      this.saveRunStepFromEvent(streamId, eventData as Record<string, unknown>, runtime.createdAt);
+    }
+
     // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
       // The SSE event structure is { event: string, data: unknown, ... }
       // The aggregator expects { event: string, data: unknown } where data is the payload
-      const eventObj = event as Record<string, unknown>;
-      const eventType = eventObj.event as string | undefined;
-      const eventData = eventObj.data;
-
       if (eventType && eventData !== undefined) {
         // Store in format expected by aggregateContent: { event, data }
         const appendPromise = this.jobStore
@@ -2429,15 +2472,6 @@ class GenerationJobManagerClass {
           .catch((err) => {
             logger.error(`[GenerationJobManager] Failed to append chunk:`, err);
           });
-
-        // For run step events, also save to run steps key for quick retrieval
-        if (eventType === 'on_run_step' || eventType === 'on_run_step_completed') {
-          this.saveRunStepFromEvent(
-            streamId,
-            eventData as Record<string, unknown>,
-            runtime.createdAt,
-          );
-        }
 
         if (options?.durable === true) {
           await appendPromise;
@@ -2567,9 +2601,9 @@ class GenerationJobManagerClass {
   }
 
   /**
-   * Accumulate run steps for a stream (Redis mode only).
-   * Uses a simple in-memory buffer that gets flushed to Redis.
-   * Not used in in-memory mode - run steps come from live graph via WeakRef.
+   * Accumulate run steps for a stream.
+   * Redis stores flush this buffer for cross-replica recovery; in-memory stores
+   * retain it as a fallback after a paused run's live graph has been released.
    */
   private runStepBuffers: Map<string, { createdAt: number; steps: Agents.RunStep[] }> | null = null;
 
@@ -2578,7 +2612,7 @@ class GenerationJobManagerClass {
     runStep: Agents.RunStep,
     expectedCreatedAt: number,
   ): void {
-    // Lazy initialization - only create map when first used (Redis mode)
+    // Lazy initialization keeps the per-stream allocation off non-agent paths.
     if (!this.runStepBuffers) {
       this.runStepBuffers = new Map();
     }
@@ -2970,6 +3004,16 @@ class GenerationJobManagerClass {
       this.jobStore.peekSteers(streamId, jobData.createdAt),
     ]);
     const aggregatedContent = result?.content ?? [];
+    const bufferState = this.runStepBuffers?.get(streamId);
+    const bufferedRunSteps = bufferState?.createdAt === jobData.createdAt ? bufferState.steps : [];
+    const runStepsById = new Map(runSteps.map((runStep) => [runStep.id, runStep]));
+    for (const runStep of bufferedRunSteps) {
+      runStepsById.set(runStep.id, runStep);
+    }
+    const effectiveRunSteps = normalizeResumeRunStepIndices(
+      [...runStepsById.values()],
+      aggregatedContent,
+    );
     let titleEvent: t.ResumeState['titleEvent'];
     if (jobData.titleEvent) {
       try {
@@ -2982,6 +3026,7 @@ class GenerationJobManagerClass {
     if (jobData.replayEvents) {
       try {
         replayEvents = JSON.parse(jobData.replayEvents) as t.ResumeState['replayEvents'];
+        replayEvents = normalizeRunStepReplayIndices(replayEvents, effectiveRunSteps);
       } catch {
         // Ignore malformed persisted replay events.
       }
@@ -3013,13 +3058,13 @@ class GenerationJobManagerClass {
 
     logger.debug(`[GenerationJobManager] getResumeState:`, {
       streamId,
-      runStepsLength: runSteps.length,
+      runStepsLength: effectiveRunSteps.length,
       aggregatedContentLength: aggregatedContent.length,
       collectedUsageLength: collectedUsage?.length ?? 0,
     });
 
     return {
-      runSteps,
+      runSteps: effectiveRunSteps,
       aggregatedContent,
       userMessage: jobData.userMessage,
       responseMessageId: jobData.responseMessageId,
@@ -3334,7 +3379,7 @@ class GenerationJobManagerClass {
       this.eventTransport.cleanup(streamId);
     }
 
-    // Also check runStepBuffers for any orphaned entries (Redis mode only)
+    // Also check runStepBuffers for any orphaned entries.
     if (this.runStepBuffers) {
       for (const streamId of this.runStepBuffers.keys()) {
         if (!(await this.jobStore.hasJob(streamId))) {

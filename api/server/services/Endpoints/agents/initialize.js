@@ -59,8 +59,9 @@ const db = require('~/models');
  * @param {string | null} [streamId] - The stream ID for resumable mode
  * @param {boolean} [definitionsOnly=false] - When true, returns only serializable
  *   tool definitions without creating full tool instances (for event-driven mode)
+ * @param {number} [jobCreatedAt] - The generation epoch that owns emitted tool events
  */
-function createToolLoader(signal, streamId = null, definitionsOnly = false) {
+function createToolLoader(signal, streamId = null, definitionsOnly = false, jobCreatedAt) {
   /**
    * @param {object} params
    * @param {ServerRequest} params.req
@@ -96,6 +97,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
         agent,
         signal,
         streamId,
+        jobCreatedAt,
         tool_resources,
         definitionsOnly,
       });
@@ -143,7 +145,13 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
   /** @type {Map<string, import('@librechat/api').ToolInputValidationError>} */
   const toolInputValidationErrors = new Map();
   const { contentParts, aggregateContent, stepMap } = createContentAggregator();
-  const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId });
+  const toolEndCallback = createToolEndCallback({
+    req,
+    res,
+    artifactPromises,
+    streamId,
+    jobCreatedAt,
+  });
 
   /** Query accessible skill IDs once per run (shared across all agents).
    *  Skills activate under strict opt-in semantics — see
@@ -269,6 +277,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
         userMCPAuthMap: ctx.userMCPAuthMap,
         tool_resources: ctx.tool_resources,
         actionsEnabled: ctx.actionsEnabled,
+        jobCreatedAt,
       });
 
       logger.debug(`[ON_TOOL_EXECUTE] loaded ${result.loadedTools?.length ?? 0} tools`);
@@ -288,7 +297,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
       req,
       updateToolCallResult: db.updateToolCallResult,
     }),
-    emitAttachment: createAttachmentEmitter({ res, streamId }),
+    emitAttachment: createAttachmentEmitter({ res, streamId, jobCreatedAt }),
     ...getSkillToolDeps(),
   };
 
@@ -337,6 +346,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
     collectedUsage,
     collectedThoughtSignatures,
     streamId,
+    jobCreatedAt,
     subagentAggregatorsByToolCallId,
     usageCost,
     contextUsageSink,
@@ -364,7 +374,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
 
   /** Event-driven mode: only load tool definitions, not full instances */
-  const loadTools = createToolLoader(signal, streamId, true);
+  const loadTools = createToolLoader(signal, streamId, true, jobCreatedAt);
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   /** @type {string} */
@@ -1009,6 +1019,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
     res,
     sender,
     contentParts,
+    stepMap,
     agentConfigs,
     eventHandlers,
     collectedUsage,

@@ -592,13 +592,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           if (titleAbortController.signal.aborted) {
             return;
           }
-          await GenerationJobManager.emitChunk(streamId, {
-            event: 'title',
-            data: {
-              conversationId: titleConversationId,
-              title,
+          await GenerationJobManager.emitChunk(
+            streamId,
+            {
+              event: 'title',
+              data: {
+                conversationId: titleConversationId,
+                title,
+              },
             },
-          });
+            { expectedCreatedAt: jobCreatedAt },
+          );
         })().catch((err) => {
           logger.error('[ResumableAgentController] Error emitting title event', err);
         });
@@ -643,27 +647,31 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             logger.error('[ResumableAgentController] Failed to persist start metadata', err);
           });
 
-          GenerationJobManager.emitChunk(streamId, {
-            created: true,
-            // Skill selections aren't on `userMessage` yet at onStart (BaseClient adds
-            // them later), so attach them from the request — this is the message
-            // `trackUserMessage` persists as the authoritative job.metadata.userMessage,
-            // and it's what the live client renders the user bubble from.
-            message: {
-              ...userMessage,
-              // Carry files so trackUserMessage (the authoritative writer) persists them on
-              // job.metadata.userMessage for a HITL resume (see the updateMetadata above).
-              ...(Array.isArray(req.body?.files) &&
-                req.body.files.length > 0 && { files: req.body.files }),
-              ...(Array.isArray(req.body?.manualSkills) &&
-                req.body.manualSkills.length > 0 && { manualSkills: req.body.manualSkills }),
-              ...(Array.isArray(req.body?.alwaysAppliedSkills) &&
-                req.body.alwaysAppliedSkills.length > 0 && {
-                  alwaysAppliedSkills: req.body.alwaysAppliedSkills,
-                }),
-            },
+          GenerationJobManager.emitChunk(
             streamId,
-          }).catch((err) => {
+            {
+              created: true,
+              // Skill selections aren't on `userMessage` yet at onStart (BaseClient adds
+              // them later), so attach them from the request — this is the message
+              // `trackUserMessage` persists as the authoritative job.metadata.userMessage,
+              // and it's what the live client renders the user bubble from.
+              message: {
+                ...userMessage,
+                // Carry files so trackUserMessage (the authoritative writer) persists them on
+                // job.metadata.userMessage for a HITL resume (see the updateMetadata above).
+                ...(Array.isArray(req.body?.files) &&
+                  req.body.files.length > 0 && { files: req.body.files }),
+                ...(Array.isArray(req.body?.manualSkills) &&
+                  req.body.manualSkills.length > 0 && { manualSkills: req.body.manualSkills }),
+                ...(Array.isArray(req.body?.alwaysAppliedSkills) &&
+                  req.body.alwaysAppliedSkills.length > 0 && {
+                    alwaysAppliedSkills: req.body.alwaysAppliedSkills,
+                  }),
+              },
+              streamId,
+            },
+            { expectedCreatedAt: jobCreatedAt },
+          ).catch((err) => {
             logger.error('[ResumableAgentController] Failed to queue created event', err);
           });
         };

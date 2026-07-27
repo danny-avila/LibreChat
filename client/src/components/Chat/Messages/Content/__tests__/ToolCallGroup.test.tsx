@@ -83,6 +83,36 @@ const makePart = (
     },
   }) as unknown as TMessageContentParts;
 
+const makeApprovalPart = (id: string, output = ''): TMessageContentParts =>
+  ({
+    type: ContentTypes.TOOL_CALL,
+    [ContentTypes.TOOL_CALL]: {
+      id,
+      name: 'approval_probe',
+      args: {},
+      output,
+      approval: {
+        actionId: 'action-1',
+        allowed_decisions: ['approve', 'reject'],
+      },
+    },
+  }) as unknown as TMessageContentParts;
+
+const makeSubagentPart = (
+  id: string,
+  subagentContent: TMessageContentParts[],
+): TMessageContentParts =>
+  ({
+    type: ContentTypes.TOOL_CALL,
+    [ContentTypes.TOOL_CALL]: {
+      id,
+      name: Constants.SUBAGENT,
+      args: {},
+      output: '',
+      subagent_content: subagentContent,
+    },
+  }) as unknown as TMessageContentParts;
+
 const imageAttachment: TAttachment = {
   filename: 'foo.png',
   filepath: '/files/foo.png',
@@ -209,6 +239,169 @@ describe('ToolCallGroup image hoisting', () => {
     fireEvent.transitionEnd(collapsible);
 
     expect(screen.queryByTestId('inner-0')).not.toBeInTheDocument();
+  });
+
+  it('keeps unresolved approval bodies mounted while the group is collapsed', () => {
+    const approvalParts = [
+      { part: makeApprovalPart('t1'), idx: 0 },
+      { part: makeApprovalPart('t2'), idx: 1 },
+    ];
+    renderGroup({
+      ...baseProps,
+      parts: approvalParts,
+      renderPart: (_p: TMessageContentParts, idx: number) => (
+        <div data-testid={`approval-${idx}`} key={idx}>
+          {'approval'}
+        </div>
+      ),
+    });
+
+    const button = screen.getByRole('button', { name: 'Used 2 tools' });
+    const collapsible = button.nextElementSibling as HTMLElement;
+    expect(screen.getByTestId('approval-0')).toBeInTheDocument();
+
+    fireEvent.click(button);
+    fireEvent.transitionEnd(collapsible);
+
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId('approval-0')).toBeInTheDocument();
+    expect(screen.getByTestId('approval-1')).toBeInTheDocument();
+  });
+
+  it('keeps deeply nested unresolved approval bodies mounted while the group is collapsed', () => {
+    const nestedApprovalParts = [
+      {
+        part: makeSubagentPart('parent', [
+          makeSubagentPart('child', [makeApprovalPart('grandchild')]),
+        ]),
+        idx: 0,
+      },
+      { part: makePart('sibling'), idx: 1 },
+    ];
+    renderGroup({
+      ...baseProps,
+      parts: nestedApprovalParts,
+      renderPart: (_p: TMessageContentParts, idx: number) => (
+        <div data-testid={`nested-${idx}`} key={idx}>
+          {'nested'}
+        </div>
+      ),
+    });
+
+    const button = screen.getByRole('button', { name: 'Used 2 tools' });
+    const collapsible = button.nextElementSibling as HTMLElement;
+    fireEvent.click(button);
+    fireEvent.transitionEnd(collapsible);
+
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId('nested-0')).toBeInTheDocument();
+    expect(screen.getByTestId('nested-1')).toBeInTheDocument();
+  });
+
+  it('does not retain a collapsed group for an already resolved nested approval', () => {
+    const nestedApprovalParts = [
+      {
+        part: makeSubagentPart('parent', [
+          makeSubagentPart('child', [makeApprovalPart('grandchild', 'done')]),
+        ]),
+        idx: 0,
+      },
+      { part: makePart('sibling'), idx: 1 },
+    ];
+    renderGroup({
+      ...baseProps,
+      parts: nestedApprovalParts,
+      renderPart: (_p: TMessageContentParts, idx: number) => (
+        <div data-testid={`resolved-nested-${idx}`} key={idx}>
+          {'nested'}
+        </div>
+      ),
+    });
+
+    const button = screen.getByRole('button', { name: 'Used 2 tools' });
+    const collapsible = button.nextElementSibling as HTMLElement;
+    fireEvent.click(button);
+    fireEvent.transitionEnd(collapsible);
+
+    expect(screen.queryByTestId('resolved-nested-0')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('resolved-nested-1')).not.toBeInTheDocument();
+  });
+
+  it('unmounts retained approval bodies after every approval in a collapsed group resolves', async () => {
+    const renderPart = (_p: TMessageContentParts, idx: number) => (
+      <div data-testid={`retained-${idx}`} key={idx}>
+        {'approval'}
+      </div>
+    );
+    const propsFor = (
+      firstOutput = '',
+      secondOutput = '',
+    ): React.ComponentProps<typeof ToolCallGroup> => ({
+      ...baseProps,
+      parts: [
+        { part: makeApprovalPart('t1', firstOutput), idx: 0 },
+        { part: makeApprovalPart('t2', secondOutput), idx: 1 },
+      ],
+      renderPart,
+    });
+    const { rerender } = renderGroup(propsFor());
+
+    const button = screen.getByRole('button', { name: 'Used 2 tools' });
+    const collapsible = button.nextElementSibling as HTMLElement;
+    fireEvent.click(button);
+    fireEvent.transitionEnd(collapsible);
+    expect(screen.getByTestId('retained-0')).toBeInTheDocument();
+
+    rerender(
+      <RecoilRoot>
+        <ToolCallGroup {...propsFor('first done')} />
+      </RecoilRoot>,
+    );
+    expect(screen.getByTestId('retained-0')).toBeInTheDocument();
+    expect(screen.getByTestId('retained-1')).toBeInTheDocument();
+
+    rerender(
+      <RecoilRoot>
+        <ToolCallGroup {...propsFor('first done', 'second done')} />
+      </RecoilRoot>,
+    );
+    await waitFor(() => {
+      expect(screen.queryByTestId('retained-0')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('retained-1')).not.toBeInTheDocument();
+    });
+  });
+
+  it('waits for an active collapse transition before unmounting resolved approval bodies', () => {
+    const renderPart = (_p: TMessageContentParts, idx: number) => (
+      <div data-testid={`transitioning-${idx}`} key={idx}>
+        {'approval'}
+      </div>
+    );
+    const propsFor = (output = ''): React.ComponentProps<typeof ToolCallGroup> => ({
+      ...baseProps,
+      parts: [
+        { part: makeApprovalPart('t1', output), idx: 0 },
+        { part: makeApprovalPart('t2', output), idx: 1 },
+      ],
+      renderPart,
+    });
+    const { rerender } = renderGroup(propsFor());
+
+    const button = screen.getByRole('button', { name: 'Used 2 tools' });
+    const collapsible = button.nextElementSibling as HTMLElement;
+    fireEvent.click(button);
+
+    rerender(
+      <RecoilRoot>
+        <ToolCallGroup {...propsFor('done')} />
+      </RecoilRoot>,
+    );
+    expect(screen.getByTestId('transitioning-0')).toBeInTheDocument();
+    expect(screen.getByTestId('transitioning-1')).toBeInTheDocument();
+
+    fireEvent.transitionEnd(collapsible);
+    expect(screen.queryByTestId('transitioning-0')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('transitioning-1')).not.toBeInTheDocument();
   });
 
   it('reconciles layout after the group collapses from an expanded state', async () => {

@@ -174,7 +174,11 @@ export default function ToolApproval({
   }
 
   return (
-    <div className="my-2 flex w-full flex-col gap-2 rounded-lg border border-border-light bg-surface-secondary p-3">
+    <div
+      className="my-2 flex w-full flex-col gap-2 rounded-lg border border-border-light bg-surface-secondary p-3"
+      data-testid="tool-approval"
+      data-tool-call-id={toolCallId}
+    >
       {description != null && description.length > 0 && (
         <p className="text-sm text-text-secondary">{description}</p>
       )}

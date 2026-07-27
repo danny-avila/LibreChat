@@ -24,6 +24,27 @@ interface ToolMeta {
   hasOutput: boolean;
 }
 
+type ToolCallWithNestedContent = Agents.ToolCall & {
+  subagent_content?: TMessageContentParts[];
+};
+
+function hasPendingApprovalInPart(part: TMessageContentParts): boolean {
+  if (part.type !== ContentTypes.TOOL_CALL) {
+    return false;
+  }
+  const toolCall = part[ContentTypes.TOOL_CALL] as ToolCallWithNestedContent | undefined;
+  if (!toolCall) {
+    return false;
+  }
+  if (toolCall.approval != null && (toolCall.output?.length ?? 0) === 0) {
+    return true;
+  }
+  return (
+    Array.isArray(toolCall.subagent_content) &&
+    toolCall.subagent_content.some(hasPendingApprovalInPart)
+  );
+}
+
 function getToolMeta(part: TMessageContentParts): ToolMeta | null {
   if (part.type !== ContentTypes.TOOL_CALL) {
     return null;
@@ -107,9 +128,14 @@ export default function ToolCallGroup({
   const mcpIconMap = useMCPIconMap();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
+  const retainedForPendingApprovalRef = useRef(false);
   const count = parts.length;
 
   const toolMetadata = useMemo(() => parts.map((p) => getToolMeta(p.part)), [parts]);
+  const hasPendingApproval = useMemo(
+    () => parts.some(({ part }) => hasPendingApprovalInPart(part)),
+    [parts],
+  );
   const allCompleted = useMemo(
     () => toolMetadata.every((m) => m?.hasOutput === true),
     [toolMetadata],
@@ -226,11 +252,33 @@ export default function ToolCallGroup({
       if (isExpanded) {
         return;
       }
+      if (hasPendingApproval) {
+        // Approval controls own unsent local form state. Keep unresolved cards
+        // mounted (the collapsed panel is inert/hidden) so collapsing a batch
+        // cannot erase decisions the reviewer already made.
+        retainedForPendingApprovalRef.current = true;
+        return;
+      }
+      retainedForPendingApprovalRef.current = false;
       setShouldRenderBody(false);
       notifyLayoutChange();
     },
-    [isExpanded, notifyLayoutChange],
+    [hasPendingApproval, isExpanded, notifyLayoutChange],
   );
+
+  useEffect(() => {
+    if (isExpanded) {
+      retainedForPendingApprovalRef.current = false;
+      return;
+    }
+    if (!hasPendingApproval && retainedForPendingApprovalRef.current) {
+      // A completed collapse transition retained this body only to preserve
+      // approval form state. Release it once the last approval resolves.
+      retainedForPendingApprovalRef.current = false;
+      setShouldRenderBody(false);
+      notifyLayoutChange();
+    }
+  }, [hasPendingApproval, isExpanded, notifyLayoutChange]);
 
   /** Category-aware header verb: subagents and questions read as their own
    *  category (with tense), everything else is the generic "Used N tools". */
@@ -310,7 +358,12 @@ export default function ToolCallGroup({
           aria-hidden="true"
         />
       </button>
-      <div style={expandStyle} onTransitionEnd={handleTransitionEnd} aria-hidden={!isExpanded}>
+      <div
+        style={expandStyle}
+        onTransitionEnd={handleTransitionEnd}
+        aria-hidden={!isExpanded}
+        data-testid="tool-call-group-panel"
+      >
         {shouldRenderBody && (
           <div className="overflow-hidden" ref={expandRef}>
             <div className="py-0.5 pl-4">
