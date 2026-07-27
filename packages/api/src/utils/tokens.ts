@@ -784,12 +784,12 @@ export function processModelData(input: z.infer<typeof inputSchema>): EndpointTo
 }
 
 interface LiteLLMModelInfo {
-  input_cost_per_token?: number;
-  output_cost_per_token?: number;
-  cache_read_input_token_cost?: number;
-  cache_creation_input_token_cost?: number;
-  max_input_tokens?: number;
-  max_tokens?: number;
+  input_cost_per_token?: number | null;
+  output_cost_per_token?: number | null;
+  cache_read_input_token_cost?: number | null;
+  cache_creation_input_token_cost?: number | null;
+  max_input_tokens?: number | null;
+  max_tokens?: number | null;
 }
 
 interface LiteLLMModel {
@@ -800,19 +800,22 @@ interface LiteLLMModel {
 /**
  * Shape of a LiteLLM proxy's `/model/info` response. Distinct from OpenRouter's
  * `/models` shape (`modelSchema` above) — LiteLLM keys models by the admin-chosen
- * `model_name` alias and nests cost fields under `model_info`, all of them optional
- * since LiteLLM omits cost data for models it has no pricing for.
+ * `model_name` alias and nests cost fields under `model_info`. Every cost/limit
+ * field is `.nullish()`, not just `.optional()`: LiteLLM's own `ModelInfo` type
+ * declares these `Optional[float]` and serializes a model with no pricing as an
+ * explicit `null`, not an omitted key — confirmed against a real proxy response,
+ * where `.optional()` alone rejected the payload entirely.
  */
 const litellmModelSchema = z.object({
   model_name: z.string(),
   model_info: z
     .object({
-      input_cost_per_token: z.number().optional(),
-      output_cost_per_token: z.number().optional(),
-      cache_read_input_token_cost: z.number().optional(),
-      cache_creation_input_token_cost: z.number().optional(),
-      max_input_tokens: z.number().optional(),
-      max_tokens: z.number().optional(),
+      input_cost_per_token: z.number().nullish(),
+      output_cost_per_token: z.number().nullish(),
+      cache_read_input_token_cost: z.number().nullish(),
+      cache_creation_input_token_cost: z.number().nullish(),
+      max_input_tokens: z.number().nullish(),
+      max_tokens: z.number().nullish(),
     })
     .optional(),
 }) as z.ZodType<LiteLLMModel>;

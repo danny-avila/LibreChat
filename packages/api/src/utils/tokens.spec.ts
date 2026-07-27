@@ -88,6 +88,40 @@ describe('processLiteLLMModelData', () => {
     expect(config).toEqual({});
   });
 
+  it('accepts explicit null cost fields, matching a real proxy response', () => {
+    // Real LiteLLM /model/info responses send explicit `null` for unpriced fields
+    // (its ModelInfo type declares them Optional[float]), not an omitted key.
+    const config = processLiteLLMModelData({
+      data: [
+        {
+          model_name: 'unpriced-model',
+          model_info: {
+            input_cost_per_token: null,
+            output_cost_per_token: null,
+            cache_read_input_token_cost: null,
+            cache_creation_input_token_cost: null,
+            max_input_tokens: null,
+            max_tokens: null,
+          },
+        },
+        {
+          model_name: 'priced-model',
+          model_info: {
+            input_cost_per_token: 0.000001,
+            output_cost_per_token: 0.000002,
+            cache_read_input_token_cost: null,
+            cache_creation_input_token_cost: null,
+            max_input_tokens: 32000,
+            max_tokens: null,
+          },
+        },
+      ],
+    });
+
+    expect(config).not.toHaveProperty('unpriced-model');
+    expect(config['priced-model']).toEqual({ prompt: 1, completion: 2, context: 32000 });
+  });
+
   it('defaults completion to 0 when only input cost is reported', () => {
     const config = processLiteLLMModelData({
       data: [
