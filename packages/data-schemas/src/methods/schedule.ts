@@ -978,9 +978,17 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // serializes against a re-claim while it unwinds. Only clear nextRunAt
     // (belt-and-suspenders atop enabled:false to stop new claims); the lease
     // releases itself when the fire finishes, or via TTL.
+    //
+    // IDEMPOTENT: deliberately NOT gated on `deleting: { $ne: true }`. The mark is the
+    // first of several steps (read active runs, abort their jobs, prune checkpoints,
+    // erase when drained), and if any of those threw — or the process exited — a
+    // one-shot mark made every retry answer 404, stranding the schedule with its job
+    // and checkpoint alive. Re-marking an already-deleting schedule is harmless (the
+    // fields are already at these values; the token rotates again, which only re-fences
+    // stale workers), and it lets the caller re-drive the rest of the teardown.
     return Schedule()
       .findOneAndUpdate(
-        { id, user: userId, deleting: { $ne: true } },
+        { id, user: userId },
         {
           $set: { enabled: false, deleting: true, claimToken: randomUUID() },
           $unset: { nextRunAt: 1 },

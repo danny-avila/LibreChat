@@ -279,12 +279,31 @@ export function createUserMethods(
     return updated;
   }
 
-  async function invalidateAuthUserDocCache(userId: string): Promise<void> {
+  /**
+   * Drops the cached auth user document.
+   *
+   * `required` makes the operation FAIL CLOSED. For an ordinary profile update a stale
+   * cache entry is a cosmetic lag, so a cache fault must not fail the update. The
+   * deletion BARRIER is different in kind: its whole purpose is that no request can be
+   * admitted with a pre-barrier view of the user, and in burst-cache deployments a
+   * surviving entry keeps populating `req.user` until its TTL expires — while the
+   * destructive cascade runs. Swallowing the fault there reports a barrier that was
+   * never actually raised.
+   */
+  async function invalidateAuthUserDocCache(
+    userId: string,
+    options?: { required?: boolean },
+  ): Promise<void> {
     if (!isAuthUserDocCacheEnabled()) {
       return;
     }
     const cache = deps.getCache?.(CacheKeys.AUTH_USER_DOC);
     if (!cache?.get || !cache?.delete) {
+      if (options?.required) {
+        throw new Error(
+          'Auth user-doc cache is enabled but unavailable; cannot confirm deletion barrier',
+        );
+      }
       return;
     }
     try {
@@ -296,8 +315,11 @@ export function createUserMethods(
         );
       }
       await cache.delete(indexKey);
-    } catch {
-      // Cache invalidation must not make a user update fail.
+    } catch (err) {
+      if (options?.required) {
+        throw err;
+      }
+      // Cache invalidation must not make an ordinary user update fail.
     }
   }
 
@@ -318,7 +340,11 @@ export function createUserMethods(
       { $set: { deletionRequestedAt: new Date() } },
       { new: true },
     ).lean<IUser>();
-    await invalidateAuthUserDocCache(userId);
+    // FAIL CLOSED: the barrier is only real once no cached pre-barrier user document
+    // can still populate req.user. A throw here propagates to the caller, which reports
+    // the barrier as not raised and refuses to start the destructive cascade; the retry
+    // is safe because the update above is idempotent.
+    await invalidateAuthUserDocCache(userId, { required: true });
     if (updated?.deletionRequestedAt != null) {
       return updated.deletionRequestedAt;
     }

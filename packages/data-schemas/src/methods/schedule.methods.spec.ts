@@ -937,6 +937,90 @@ describe('claim-token fencing (stale worker cannot mutate an edited/deleted sche
   });
 });
 
+describe('deletion barrier fails closed on cache invalidation', () => {
+  const CACHE_MODE = process.env.AUTH_USER_CACHE_MODE;
+
+  afterEach(() => {
+    if (CACHE_MODE === undefined) {
+      delete process.env.AUTH_USER_CACHE_MODE;
+    } else {
+      process.env.AUTH_USER_CACHE_MODE = CACHE_MODE;
+    }
+  });
+
+  /**
+   * The barrier is only real once no cached PRE-barrier user document can still
+   * populate req.user. Swallowing the invalidation fault reports a barrier that was
+   * never raised, and the caller then starts the destructive cascade while stale
+   * requests are still admitted.
+   */
+  it('throws when the cached user document cannot be invalidated', async () => {
+    process.env.AUTH_USER_CACHE_MODE = 'on';
+    const failing = createUserMethods(mongoose, {
+      getCache: () =>
+        ({
+          get: async () => {
+            throw new Error('redis down');
+          },
+          delete: async () => undefined,
+        }) as never,
+    });
+    const user = await mongoose.models.User.create({
+      email: `barrier-fail-${Date.now()}@test.dev`,
+      name: 'B',
+    });
+
+    await expect(failing.markUserDeleting(user._id.toString())).rejects.toThrow(/redis down/);
+  });
+
+  it('throws when the cache is enabled but unavailable', async () => {
+    process.env.AUTH_USER_CACHE_MODE = 'on';
+    const noCache = createUserMethods(mongoose, { getCache: () => undefined });
+    const user = await mongoose.models.User.create({
+      email: `barrier-nocache-${Date.now()}@test.dev`,
+      name: 'B',
+    });
+
+    await expect(noCache.markUserDeleting(user._id.toString())).rejects.toThrow(/cannot confirm/i);
+  });
+
+  it('succeeds normally when the cache is disabled', async () => {
+    delete process.env.AUTH_USER_CACHE_MODE;
+    const user = await mongoose.models.User.create({
+      email: `barrier-ok-${Date.now()}@test.dev`,
+      name: 'B',
+    });
+    await expect(userMethods.markUserDeleting(user._id.toString())).resolves.toBeInstanceOf(Date);
+  });
+});
+
+describe('schedule deletion is retryable', () => {
+  /**
+   * The mark is the FIRST of several teardown steps (read active runs, abort their
+   * jobs, prune checkpoints, erase when drained). A one-shot mark made every retry
+   * answer 404 after any of those threw, stranding the schedule with its job and
+   * checkpoint alive until the background expiry windows.
+   */
+  it('re-marks an already-deleting schedule so the caller can re-drive teardown', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const first = await methods.markScheduleDeleting(schedule.id, schedule.user);
+    expect(first).not.toBeNull();
+
+    const retry = await methods.markScheduleDeleting(schedule.id, schedule.user);
+    expect(retry).not.toBeNull();
+    expect(retry!.deleting).toBe(true);
+    expect(retry!.enabled).toBe(false);
+    // The token rotates again, which only re-fences stale workers.
+    expect(retry!.claimToken).not.toBe(first!.claimToken);
+  });
+
+  it('still refuses a schedule owned by someone else', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const other = new mongoose.Types.ObjectId();
+    expect(await methods.markScheduleDeleting(schedule.id, other)).toBeNull();
+  });
+});
+
 describe('unarmed-schedule recovery', () => {
   /**
    * Creation arms in a second write, so a crash or a failed arm leaves a row that looks

@@ -1010,6 +1010,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
           acceptsTitleEvents = false;
           resolveConvoReady();
+          // The RUN is identified by (scheduleId, scheduledFor), not by who owns the
+          // conversationId now — so a replacement turn must not stop us settling it.
+          // Both messages were persisted above, so this occurrence genuinely produced
+          // its output; skipping the outcome left the row `started`, holding a global
+          // capacity slot and blocking account deletion until the orphan sweep.
+          if (scheduleId) {
+            await recordScheduleOutcome({
+              scheduleId,
+              scheduledFor,
+              status: 'success',
+              conversationId: streamId,
+            });
+          }
           // Still decrement pending request since we incremented at start
           await finishResumableRequest(req, userId);
           startupTelemetry?.end('replaced');

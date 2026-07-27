@@ -236,6 +236,20 @@ async function finalizeResumedTurn({
     logger.warn(
       `[ResumeAgentController] Skipping resumed finalization — job ${streamId} was replaced`,
     );
+    // The RUN's identity is (scheduleId, scheduledFor), independent of who owns the
+    // conversationId now, so it still has to be settled — otherwise the row stays
+    // active, holds its capacity slot and blocks account deletion until the orphan
+    // sweep. Nothing was persisted before this guard, so `interrupted` is the honest
+    // status rather than claiming output this turn never wrote.
+    if (job.metadata?.scheduleId) {
+      await recordScheduleOutcome({
+        scheduleId: job.metadata.scheduleId,
+        scheduledFor: job.metadata.scheduledFor,
+        status: 'interrupted',
+        conversationId,
+        error: 'Conversation was taken over by a newer turn',
+      });
+    }
     return;
   }
   // Prefer the resumed run's live content: it's complete (seeded with the pre-pause
@@ -355,6 +369,17 @@ async function finalizeResumedTurn({
     logger.warn(
       `[ResumeAgentController] Skipping resumed terminal writes — job ${streamId} was replaced mid-finalize`,
     );
+    // Settle the run even though the terminal job writes are skipped: the response was
+    // already persisted above, so this occurrence produced its output, and leaving the
+    // row `started` would hold a capacity slot and block deletion until the sweep.
+    if (meta.scheduleId) {
+      await recordScheduleOutcome({
+        scheduleId: meta.scheduleId,
+        scheduledFor: meta.scheduledFor,
+        status: 'success',
+        conversationId,
+      });
+    }
     return;
   }
 

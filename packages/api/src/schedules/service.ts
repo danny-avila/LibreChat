@@ -747,7 +747,14 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       const retainedOutcome = isThisGeneration
         ? TERMINAL_JOB_OUTCOMES[live.job!.status]
         : undefined;
-      if (settleable && (retainedOutcome != null || run.status === 'requires_action')) {
+      // `settleable` ALREADY means positive evidence that nothing is generating: an
+      // identity-matched job that is not running, an identity MISMATCH (a replacement
+      // turn owns the conversation), or a confirmed absence. Any extra condition on top
+      // of it strands exactly the cases it was computed to cover — a `started` row whose
+      // process died before creating its job reads as a confirmed absence, and the old
+      // clause left it active through the whole drain, so account deletion answered 503
+      // on every attempt until the 30-minute orphan sweep.
+      if (settleable) {
         // SETTLE BEFORE ABORTING. The abort deletes the retained job, and for a run
         // whose inline outcome write exhausted its retries that job is the ONLY evidence
         // it finished — reading its status into a local is not the same as durably

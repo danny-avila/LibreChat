@@ -365,6 +365,27 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
      * refuses that; the resume must apply the same fence, which requires the claimed
      * revision to travel on the job.
      */
+    /**
+     * A replacement turn owns the conversationId, but the RUN's identity is
+     * (scheduleId, scheduledFor) — so it still has to be settled. Skipping it left the
+     * row `started`, holding a global capacity slot and blocking account deletion until
+     * the 30-minute orphan sweep.
+     */
+    it('settles the run even when a newer turn replaced the job', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { scheduleId: 'sched-1', scheduledFor: SCHEDULED_FOR } }),
+      );
+      // The finalize-time re-read sees a DIFFERENT generation.
+      mockJobStore.getJob.mockResolvedValue({ createdAt: 9999 });
+
+      await post(approveBody());
+      await settled;
+
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({ scheduleId: 'sched-1', status: 'interrupted' }),
+      );
+    });
+
     it('replays the claimed config revision into the resume gate', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(
         makeToolApprovalJob({
