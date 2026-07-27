@@ -50,6 +50,13 @@ const VIEWPORT_PADDING = 12;
 /** Length of the landing screen's lift transition; see `ChatView`'s
  *  `duration-200` on the same element. */
 const LIFT_MS = 200;
+/** How long rows take to reach their new offsets after the attach disclosure
+ *  opens or closes; matches `.palette-shift` in `style.css`. */
+const ROW_SHIFT_MS = 260;
+/** How long the folded destinations take to fade before they give up their
+ *  space; matches `.animate-palette-row-out` in `style.css`. */
+const ROW_FADE_MS = 110;
+const MORE_ROW_KEY = 'attach:more';
 
 const SECTION_LABEL: Record<PaletteSection, TranslationKeys> = {
   tool: 'com_ui_composer_tools',
@@ -181,6 +188,17 @@ function Palette({
      to a tool once will do it again, and re-expanding every time is the cost of
      hiding it. */
   const [showAllAttach, setShowAllAttach] = useState(false);
+  /* Bumped on each toggle rather than set to a flag, so tapping the disclosure
+     twice in quick succession restarts the window instead of ending it early
+     under the first toggle's timer. */
+  const [shiftNonce, setShiftNonce] = useState(0);
+  /* Closing runs in two beats, so the rows below never slide up through a hole
+     where the folded destinations used to be: they fade where they stand, and
+     only once they are gone does the list close over them. */
+  const [collapsing, setCollapsing] = useState(false);
+  /* What the disclosure says it is: the moment it is clicked shut it reads as
+     closed, while the rows it is closing over are still fading out. */
+  const expanded = showAllAttach && !collapsing;
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<List>(null);
@@ -315,12 +333,12 @@ function Palette({
         if (folded) {
           next.push({
             type: 'more',
-            key: 'attach:more',
+            key: MORE_ROW_KEY,
             /* The label carries the state rather than `aria-expanded`, which an
                `option` may not have: the word is what a screen reader reads and
                what a sighted user sees, so neither has to infer it from the
                chevron alone. */
-            label: showAllAttach
+            label: expanded
               ? localize('com_ui_composer_attach_less')
               : localize('com_ui_composer_attach_more'),
           });
@@ -367,6 +385,7 @@ function Palette({
     query,
     attach.entries,
     showAllAttach,
+    expanded,
     recent.files,
     canAttach,
     localize,
@@ -388,6 +407,33 @@ function Palette({
   useLayoutEffect(() => {
     listRef.current?.recomputeRowHeights(0);
   }, [rows]);
+
+  /* The rows move only while the disclosure is opening or closing. Leaving the
+     transition on would also animate the list reflowing under each keystroke of
+     a search, where rows are replaced rather than moved and sliding them reads
+     as the list lagging behind the typing. */
+  const shifting = shiftNonce > 0;
+  useEffect(() => {
+    if (shiftNonce === 0) {
+      return;
+    }
+    const timer = window.setTimeout(() => setShiftNonce(0), ROW_SHIFT_MS);
+    return () => window.clearTimeout(timer);
+  }, [shiftNonce]);
+
+  /** Second beat of the close: the faded rows give up their space. */
+  useEffect(() => {
+    if (!collapsing) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setCollapsing(false);
+      setShowAllAttach(false);
+      setKeepKey(MORE_ROW_KEY);
+      setShiftNonce((nonce) => nonce + 1);
+    }, ROW_FADE_MS);
+    return () => window.clearTimeout(timer);
+  }, [collapsing]);
 
   const firstSelectable = useMemo(() => rows.findIndex(isSelectable), [rows]);
 
@@ -450,8 +496,13 @@ function Palette({
          The disclosure slides down past the rows it just revealed, so the
          highlight is asked to follow it rather than snap back to the top. */
       if (row.type === 'more') {
-        setShowAllAttach((shown) => !shown);
         setKeepKey(row.key);
+        if (showAllAttach) {
+          setCollapsing(true);
+          return;
+        }
+        setShowAllAttach(true);
+        setShiftNonce((nonce) => nonce + 1);
         return;
       }
       /* Terminal like an upload destination: the file lands in the tray, which
@@ -466,7 +517,7 @@ function Palette({
          a file picker, dismisses it. */
       row.entry.onSelect();
     },
-    [rows, popover, recent],
+    [rows, popover, recent, showAllAttach],
   );
 
   const toggleFavoriteAt = useCallback(
@@ -513,13 +564,17 @@ function Palette({
     [step, activate, activeIndex, toggleFavoriteAt, search, popover],
   );
 
+  /* Keyed by the row's own identity rather than by the index the list hands
+     out. Under index keys a row that changes place is a box that stays put
+     while its contents are swapped, so nothing about the change is animatable;
+     keyed this way the box follows its row and its offset can be moved to. */
   const rowRenderer = useCallback(
-    ({ index, key, style }: { index: number; key: string; style: React.CSSProperties }) => {
+    ({ index, style }: { index: number; style: React.CSSProperties }) => {
       const row = rows[index];
       if (row.type === 'header') {
         return (
           <div
-            key={key}
+            key={row.key}
             style={style}
             role="presentation"
             className="flex items-end px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-text-secondary"
@@ -534,7 +589,7 @@ function Palette({
       if (row.type === 'more') {
         return (
           <div
-            key={key}
+            key={row.key}
             style={style}
             id={`palette-row-${index}`}
             role="option"
@@ -548,10 +603,7 @@ function Palette({
           >
             <ChevronDown
               aria-hidden="true"
-              className={cn(
-                'animate-composer-icon size-4 shrink-0',
-                showAllAttach && '-rotate-180',
-              )}
+              className={cn('animate-composer-icon size-4 shrink-0', expanded && '-rotate-180')}
             />
             <span className="truncate">{row.label}</span>
           </div>
@@ -562,7 +614,7 @@ function Palette({
         const { file } = row;
         return (
           <div
-            key={key}
+            key={row.key}
             style={style}
             id={`palette-row-${index}`}
             role="option"
@@ -601,6 +653,12 @@ function Palette({
       }
 
       const isEntry = row.type === 'entry';
+      /* The folded destinations have no place to travel from, so they arrive
+         where they land: the rows around them make the room, and these fade
+         into it, and back out of it on the way closed. */
+      const folded = row.type === 'attach' && row.entry.primary !== true;
+      const revealed = folded && shifting && !collapsing;
+      const departing = folded && collapsing;
       const { label, icon } = row.entry;
       const description = isEntry ? row.entry.description : undefined;
       const checked = isEntry ? row.entry.active : false;
@@ -610,7 +668,7 @@ function Palette({
 
       return (
         <div
-          key={key}
+          key={row.key}
           style={style}
           id={`palette-row-${index}`}
           role="option"
@@ -627,6 +685,8 @@ function Palette({
                than a tick competing with the keyboard highlight for meaning. */
             checked ? 'text-text-primary' : 'text-text-secondary',
             isActive && 'bg-surface-hover',
+            revealed && 'animate-palette-row',
+            departing && 'animate-palette-row-out pointer-events-none',
           )}
         >
           {checked && (
@@ -700,7 +760,7 @@ function Palette({
         </div>
       );
     },
-    [rows, activeIndex, activate, favorites, localize, showAllAttach],
+    [rows, activeIndex, activate, favorites, localize, expanded, shifting, collapsing],
   );
 
   return (
@@ -821,7 +881,7 @@ function Palette({
                 id="composer-palette-list"
                 role="listbox"
                 aria-label={localize('com_ui_composer_palette')}
-                className="p-1.5"
+                className={cn('p-1.5', shifting && 'palette-shift')}
               >
                 <AutoSizer disableHeight>
                   {({ width }) => (
