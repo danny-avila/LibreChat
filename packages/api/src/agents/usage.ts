@@ -148,6 +148,7 @@ export function computeUsageCostUSD(
   usage: UsageMetadata,
   pricing: PricingFns,
   endpointTokenConfig?: EndpointTokenConfig,
+  endpoint?: string,
 ): number {
   const { inputOnly, cacheCreation, cacheRead, completion } = splitUsage(usage);
   /** user/context/conversationId only populate the transaction doc, which is
@@ -157,6 +158,7 @@ export function computeUsageCostUSD(
     context: 'message',
     conversationId: '',
     model: usage.model,
+    endpoint,
     endpointTokenConfig,
   };
   const entries =
@@ -496,6 +498,8 @@ export interface RecordUsageParams {
   messageId?: string;
   balance?: Partial<TCustomConfig['balance']> | null;
   transactions?: Partial<TTransactionsConfig>;
+  /** Endpoint the model was called through; used only to resolve the rate — never persisted. */
+  endpoint?: string;
   endpointTokenConfig?: EndpointTokenConfig;
   /**
    * Per-usage endpoint token config resolver for multi-endpoint graphs. Called
@@ -528,6 +532,7 @@ export async function recordCollectedUsage(
     user,
     model,
     balance,
+    endpoint,
     messageId,
     transactions,
     conversationId,
@@ -590,6 +595,7 @@ export async function recordCollectedUsage(
       const txMetadata: TxMetadata = {
         user,
         balance,
+        endpoint,
         messageId,
         transactions,
         conversationId,
