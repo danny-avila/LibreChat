@@ -183,6 +183,7 @@ function Palette({
   const [showAllAttach, setShowAllAttach] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<List>(null);
   const disclosureRef = useRef<HTMLButtonElement>(null);
   const setLift = useSetRecoilState(store.composerLiftFamily(index));
   const { ref: popoverRef, height: popupHeight } = useElementSize<HTMLDivElement>();
@@ -342,8 +343,8 @@ function Palette({
       }
     };
 
-    pushSection('skill');
     pushSection('tool');
+    pushSection('skill');
     pushSection('mcp');
 
     if (canAttach) {
@@ -377,6 +378,15 @@ function Palette({
       height += rowHeight(row);
     }
     return height;
+  }, [rows]);
+
+  /* The list measures each row once and keeps the offsets, so a row that
+     changes height in place — a two-line entry starred into a section that
+     starts one row higher — is drawn at a stale offset and lands on top of its
+     neighbour. Only the widget holds that cache, so only the widget can drop
+     it. */
+  useLayoutEffect(() => {
+    listRef.current?.recomputeRowHeights(0);
   }, [rows]);
 
   const firstSelectable = useMemo(() => rows.findIndex(isSelectable), [rows]);
@@ -816,6 +826,7 @@ function Palette({
                 <AutoSizer disableHeight>
                   {({ width }) => (
                     <List
+                      ref={listRef}
                       width={width}
                       overscanRowCount={8}
                       rowCount={rows.length}
