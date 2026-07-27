@@ -682,6 +682,142 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('createJob clears persisted and live content state when a stream id is reused', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `stale-run-steps-${Date.now()}`;
+      await store.createJob(streamId, 'user-1', streamId);
+      const oldRunStep = {
+        id: 'step-old-job',
+        runId: 'response-old',
+        index: 0,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-old-job', name: 'approval_probe', args: '{}' }],
+        },
+      } as Agents.RunStep;
+      await store.saveRunSteps(streamId, [oldRunStep]);
+      await store.appendChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'old-message-step',
+          runId: 'old-run',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+      });
+      await store.appendChunk(streamId, {
+        event: 'on_message_delta',
+        data: {
+          id: 'old-message-step',
+          delta: { content: { type: 'text', text: 'old durable content' } },
+        },
+      });
+      await store.updateJob(streamId, {
+        completedAt: Date.now(),
+        error: 'old error',
+        userMessage: {
+          messageId: 'old-user-message',
+          text: 'old user message',
+        },
+        responseMessageId: 'old-response-message',
+        discoveredTools: ['old_tool'],
+        createdEventEmitted: true,
+        sender: 'Old sender',
+        finalEvent: '{"event":"old-final"}',
+        titleEvent: '{"event":"old-title"}',
+        replayEvents: '[{"event":"old-replay"}]',
+        contextUsage: '{"usedTokens":10}',
+        tokenUsage: '[{"input_tokens":1,"output_tokens":2}]',
+        endpoint: 'old-endpoint',
+        iconURL: 'https://example.com/old.png',
+        model: 'old-model',
+        promptTokens: 10,
+        agent_id: 'old-agent',
+        isTemporary: true,
+      });
+      store.setGraph(streamId, {
+        getContentParts: () => [{ type: 'text', text: 'old graph content' }],
+        getRunSteps: () => [oldRunStep],
+      } as unknown as StandardGraph);
+      store.setContentParts(streamId, [{ type: 'text', text: 'old host content' }]);
+      store.setCollectedUsage(streamId, [{ input_tokens: 1, output_tokens: 2 }]);
+      expect(await store.getRunSteps(streamId)).toHaveLength(1);
+
+      await store.createJob(streamId, 'user-1', streamId);
+
+      expect(await store.getRunSteps(streamId)).toEqual([]);
+      expect(await store.getContentParts(streamId)).toBeNull();
+      expect(store.getCollectedUsage(streamId)).toEqual([]);
+      expect(await store.getJob(streamId)).toEqual(
+        expect.objectContaining({
+          streamId,
+          userId: 'user-1',
+          conversationId: streamId,
+          status: 'running',
+          syncSent: false,
+        }),
+      );
+      expect(await store.getJob(streamId)).not.toEqual(
+        expect.objectContaining({
+          responseMessageId: 'old-response-message',
+        }),
+      );
+      await store.destroy();
+    });
+
+    test('createJob preserves the prior live content state when replacement persistence fails', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `failed-replacement-${Date.now()}`;
+      const oldRunStep = {
+        id: 'step-old-job',
+        runId: 'response-old',
+        index: 0,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-old-job', name: 'approval_probe', args: '{}' }],
+        },
+      } as Agents.RunStep;
+      await store.createJob(streamId, 'user-1', streamId);
+      store.setGraph(streamId, {
+        getContentParts: () => [{ type: 'text', text: 'old graph content' }],
+        getRunSteps: () => [oldRunStep],
+      } as unknown as StandardGraph);
+      store.setContentParts(streamId, [{ type: 'text', text: 'old host content' }]);
+      store.setCollectedUsage(streamId, [{ input_tokens: 1, output_tokens: 2 }]);
+
+      const evalSpy = jest
+        .spyOn(ioredisClient, 'eval')
+        .mockRejectedValueOnce(new Error('replacement write failed'));
+      try {
+        await expect(store.createJob(streamId, 'user-1', streamId)).rejects.toThrow(
+          'replacement write failed',
+        );
+      } finally {
+        evalSpy.mockRestore();
+      }
+
+      expect(await store.getRunSteps(streamId)).toEqual([oldRunStep]);
+      expect(await store.getContentParts(streamId)).toEqual({
+        content: [{ type: 'text', text: 'old host content' }],
+      });
+      expect(store.getCollectedUsage(streamId)).toEqual([{ input_tokens: 1, output_tokens: 2 }]);
+      await store.destroy();
+    });
+
     test('should not drop paused jobs from user tracking when cleanup sees a stale running index', async () => {
       if (!ioredisClient) {
         return;

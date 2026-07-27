@@ -933,6 +933,7 @@
  *   signal?: AbortSignal,
  *   memory?: ConversationSummaryBufferMemory,
  *   tool_resources?: AgentToolResources,
+ *   jobCreatedAt?: number,
  *   web_search?: ReturnType<typeof import('~/server/services/Tools/search').createOnSearchResults>,
  * }} LoadToolOptions
  * @memberof typedefs

@@ -346,10 +346,14 @@ async function finalizeResumedTurn({
         client,
         onTitleGenerated: ({ conversationId: titleConvoId, title }) => {
           conversation.title = title;
-          return GenerationJobManager.emitChunk(streamId, {
-            event: 'title',
-            data: { conversationId: titleConvoId, title },
-          });
+          return GenerationJobManager.emitChunk(
+            streamId,
+            {
+              event: 'title',
+              data: { conversationId: titleConvoId, title },
+            },
+            { expectedCreatedAt: job.createdAt },
+          );
         },
       });
     } catch (err) {
@@ -843,6 +847,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     await client.resumeCompletion({
       resumeValue: mapped.resumeValue,
       seedContent,
+      runSteps: resumeState?.runSteps ?? [],
       abortController: job.abortController,
       // Carry the user's MCP auth so approved MCP tools run with their credentials.
       userMCPAuthMap: result.userMCPAuthMap,

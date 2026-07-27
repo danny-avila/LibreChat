@@ -42,11 +42,13 @@ jest.mock('@librechat/api', () => ({
  *  `ON_TOOL_EXECUTE` pipeline with a real subagent id and observe whether
  *  the tool context (agent, tool_resources, skill ACLs) was preserved. */
 let capturedToolExecuteOptions;
+let capturedDefaultHandlerOptions;
 jest.mock('~/server/controllers/agents/callbacks', () => ({
   createToolEndCallback: jest.fn(() => jest.fn()),
   createAttachmentEmitter: jest.fn(() => jest.fn()),
   createBackgroundCodeResultHandler: jest.fn(() => jest.fn()),
   getDefaultHandlers: jest.fn((opts) => {
+    capturedDefaultHandlerOptions = opts;
     capturedToolExecuteOptions = opts?.toolExecuteOptions;
     return {};
   }),
@@ -109,6 +111,7 @@ describe('initializeClient — processAgent ACL gate', () => {
     await mongoose.connection.dropDatabase();
     jest.clearAllMocks();
     agentClientArgs = undefined;
+    capturedDefaultHandlerOptions = undefined;
 
     testUser = await User.create({
       email: 'test@example.com',
@@ -149,6 +152,51 @@ describe('initializeClient — processAgent ACL gate', () => {
     tool_resources: {},
     resendFiles: true,
     maxContextTokens: 4096,
+  });
+
+  it('threads the owning job epoch into resumable event handlers', async () => {
+    const {
+      createAttachmentEmitter,
+      createToolEndCallback,
+    } = require('~/server/controllers/agents/callbacks');
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req._resumableStreamId = 'conv_1';
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+      jobCreatedAt: 1234,
+    });
+
+    expect(capturedDefaultHandlerOptions).toEqual(
+      expect.objectContaining({
+        streamId: 'conv_1',
+        jobCreatedAt: 1234,
+      }),
+    );
+    expect(createToolEndCallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        streamId: 'conv_1',
+        jobCreatedAt: 1234,
+      }),
+    );
+    expect(createAttachmentEmitter).toHaveBeenCalledWith({
+      res: {},
+      streamId: 'conv_1',
+      jobCreatedAt: 1234,
+    });
+
+    mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [], configurable: {} });
+    await capturedToolExecuteOptions.loadTools([], PRIMARY_ID);
+    expect(mockLoadToolsForExecution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        streamId: 'conv_1',
+        jobCreatedAt: 1234,
+      }),
+    );
   });
 
   it('should skip handoff agent and filter its edge when user lacks VIEW access', async () => {

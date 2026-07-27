@@ -8,6 +8,7 @@ const {
   agentUpdateSchema,
   refreshListAvatars,
   collectEdgeAgentIds,
+  replaceEdgeSourceId,
   mergeDeploymentSkillIds,
   mergeAgentOcrConversion,
   sanitizeModelParameters,
@@ -143,18 +144,30 @@ const classifyAgentReferences = async (agentIds, userId, userRole) => {
 };
 
 /**
- * Validates VIEW access for every agent referenced in `edges`.
- * Missing ids are NOT errors here — at create time a self-referential
- * `from` often names the agent being built, which has no DB record
- * yet. Only unauthorized (existing but unviewable) ids are returned.
+ * Validates that every agent referenced in `edges` exists and is viewable.
+ * The create path may allow its newly generated self id because that agent
+ * has not been inserted yet; all other missing references are invalid.
+ * @param {GraphEdge[]} edges
+ * @param {string} userId
+ * @param {string} userRole
+ * @param {Set<string>} [allowedMissingIds]
+ * @returns {Promise<{ missing: string[], unauthorized: string[] }>}
  */
-const validateEdgeAgentAccess = async (edges, userId, userRole) => {
-  const { unauthorized } = await classifyAgentReferences(
+const validateEdgeAgentReferences = async (
+  edges,
+  userId,
+  userRole,
+  allowedMissingIds = new Set(),
+) => {
+  const { missing, unauthorized } = await classifyAgentReferences(
     collectEdgeAgentIds(edges),
     userId,
     userRole,
   );
-  return unauthorized;
+  return {
+    missing: missing.filter((id) => !allowedMissingIds.has(id)),
+    unauthorized,
+  };
 };
 
 /**
@@ -366,6 +379,8 @@ const createAgentHandler = async (req, res) => {
     }
 
     const { id: userId, role: userRole } = req.user;
+    agentData.id = `agent_${nanoid()}`;
+    agentData.edges = replaceEdgeSourceId(agentData.edges, '', agentData.id);
 
     if (agentData.tool_resources) {
       await pruneToolResourceFileIdsForAgent({
@@ -376,7 +391,18 @@ const createAgentHandler = async (req, res) => {
     }
 
     if (agentData.edges?.length) {
-      const unauthorized = await validateEdgeAgentAccess(agentData.edges, userId, userRole);
+      const { missing, unauthorized } = await validateEdgeAgentReferences(
+        agentData.edges,
+        userId,
+        userRole,
+        new Set([agentData.id]),
+      );
+      if (missing.length > 0) {
+        return res.status(400).json({
+          error: 'One or more agents referenced in edges do not exist',
+          agent_ids: missing,
+        });
+      }
       if (unauthorized.length > 0) {
         return res.status(403).json({
           error: 'You do not have access to one or more agents referenced in edges',
@@ -423,7 +449,6 @@ const createAgentHandler = async (req, res) => {
       }
     }
 
-    agentData.id = `agent_${nanoid()}`;
     agentData.author = userId;
     agentData.tools = [];
 
@@ -629,9 +654,23 @@ const updateAgentHandler = async (req, res) => {
       updateData.avatar = avatarField;
     }
 
+    if (updateData.edges !== undefined) {
+      updateData.edges = replaceEdgeSourceId(updateData.edges, '', id);
+    }
+
     if (updateData.edges?.length) {
       const { id: userId, role: userRole } = req.user;
-      const unauthorized = await validateEdgeAgentAccess(updateData.edges, userId, userRole);
+      const { missing, unauthorized } = await validateEdgeAgentReferences(
+        updateData.edges,
+        userId,
+        userRole,
+      );
+      if (missing.length > 0) {
+        return res.status(400).json({
+          error: 'One or more agents referenced in edges do not exist',
+          agent_ids: missing,
+        });
+      }
       if (unauthorized.length > 0) {
         return res.status(403).json({
           error: 'You do not have access to one or more agents referenced in edges',
@@ -802,7 +841,7 @@ const updateAgentHandler = async (req, res) => {
  */
 const duplicateAgentHandler = async (req, res) => {
   const { id } = req.params;
-  const { id: userId } = req.user;
+  const { id: userId, role: userRole } = req.user;
   const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
 
   try {
@@ -852,6 +891,29 @@ const duplicateAgentHandler = async (req, res) => {
       id: newAgentId,
       author: userId,
     });
+    newAgentData.edges = replaceEdgeSourceId(newAgentData.edges, id, newAgentId);
+    newAgentData.edges = replaceEdgeSourceId(newAgentData.edges, '', newAgentId);
+
+    if (newAgentData.edges?.length) {
+      const { missing, unauthorized } = await validateEdgeAgentReferences(
+        newAgentData.edges,
+        userId,
+        userRole,
+        new Set([newAgentId]),
+      );
+      if (missing.length > 0) {
+        return res.status(400).json({
+          error: 'One or more agents referenced in edges do not exist',
+          agent_ids: missing,
+        });
+      }
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in edges',
+          agent_ids: unauthorized,
+        });
+      }
+    }
 
     const newActionsList = [];
     const originalActions = (await db.getActions({ agent_id: id }, true)) ?? [];
@@ -1274,10 +1336,42 @@ const revertAgentVersionHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
+    const revertVersion = existingAgent.versions?.[version_index];
+    const storedRevertEdges = Array.isArray(revertVersion?.edges) ? revertVersion.edges : [];
+    const revertEdges = replaceEdgeSourceId(storedRevertEdges, '', id);
+    const hasLegacyEdgeSource = storedRevertEdges.some((edge) =>
+      Array.isArray(edge.from) ? edge.from.includes('') : edge.from === '',
+    );
+    if (revertEdges.length > 0) {
+      const { missing, unauthorized } = await validateEdgeAgentReferences(
+        revertEdges,
+        req.user.id,
+        req.user.role,
+      );
+      if (missing.length > 0) {
+        return res.status(400).json({
+          error: 'One or more agents referenced in edges do not exist',
+          agent_ids: missing,
+        });
+      }
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          error: 'You do not have access to one or more agents referenced in edges',
+          agent_ids: unauthorized,
+        });
+      }
+    }
+
     // Permissions are enforced via route middleware (ACL EDIT)
 
     let updatedAgent = await db.revertAgentVersion({ id }, version_index);
     const revertUpdates = {};
+    if (
+      revertVersion &&
+      (hasLegacyEdgeSource || (!Array.isArray(revertVersion.edges) && updatedAgent.edges?.length))
+    ) {
+      revertUpdates.edges = revertEdges;
+    }
 
     if (updatedAgent.tools?.length) {
       const [availableTools, configServers] = await Promise.all([

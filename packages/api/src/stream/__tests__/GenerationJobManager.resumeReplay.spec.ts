@@ -1,3 +1,5 @@
+import type { StandardGraph } from '@librechat/agents';
+import type { Agents } from 'librechat-data-provider';
 import type { ServerSentEvent } from '~/types';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
@@ -6,9 +8,13 @@ import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 jest.spyOn(console, 'log').mockImplementation();
 
 function createInMemoryManager(): GenerationJobManagerClass {
+  return createManagerWithStore(new InMemoryJobStore({ ttlAfterComplete: 60000 }));
+}
+
+function createManagerWithStore(store: InMemoryJobStore): GenerationJobManagerClass {
   const manager = new GenerationJobManagerClass();
   manager.configure({
-    jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+    jobStore: store,
     eventTransport: new InMemoryEventTransport(),
     isRedis: false,
   });
@@ -27,6 +33,18 @@ class SnapshotReplayJobStore extends InMemoryJobStore {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
     await super.updateJob(streamId, updates);
+  }
+}
+
+class PartialRunStepJobStore extends InMemoryJobStore {
+  private persistedRunSteps: Agents.RunStep[] = [];
+
+  setPersistedRunSteps(runSteps: Agents.RunStep[]): void {
+    this.persistedRunSteps = runSteps;
+  }
+
+  async getRunSteps(): Promise<Agents.RunStep[]> {
+    return this.persistedRunSteps;
   }
 }
 
@@ -107,6 +125,226 @@ describe('GenerationJobManager resume replay events', () => {
     const resumeState = await manager.getResumeState(streamId);
 
     expect(resumeState?.replayEvents).toEqual([runStepEvent, authEvent]);
+  });
+
+  test('retains emitted run steps when the live graph is unavailable during resume', async () => {
+    manager = createInMemoryManager();
+    const streamId = `run-step-resume-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+
+    const runStep = {
+      id: 'step-approval',
+      runId: 'response-1',
+      index: 1,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call-approval', name: 'approval_probe', args: '{}' }],
+      },
+    };
+
+    await manager.emitChunk(streamId, {
+      event: 'on_run_step',
+      data: runStep,
+    });
+
+    const resumeState = await manager.getResumeState(streamId);
+
+    expect(resumeState?.runSteps).toEqual([runStep]);
+  });
+
+  test('realigns a stale run-step index to the aggregated tool card by tool-call id', async () => {
+    manager = createInMemoryManager();
+    const streamId = `run-step-index-resume-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+    manager.setContentParts(streamId, [
+      { type: 'text', text: 'Prepended content' },
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'call-shifted',
+          name: 'approval_probe',
+          args: '{"value":"shifted"}',
+        },
+      },
+    ]);
+
+    const staleRunStep = {
+      id: 'step-shifted',
+      runId: 'response-1',
+      index: 0,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call-shifted', name: 'approval_probe', args: '{}' }],
+      },
+    };
+    await manager.emitChunk(streamId, {
+      event: 'on_run_step',
+      data: staleRunStep,
+    });
+
+    const resumeState = await manager.getResumeState(streamId);
+
+    expect(staleRunStep.index).toBe(0);
+    expect(resumeState?.runSteps).toEqual([{ ...staleRunStep, index: 1 }]);
+  });
+
+  test('realigns the persisted OAuth start replay with its normalized run-step index', async () => {
+    manager = createInMemoryManager();
+    const streamId = `oauth-index-resume-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+    manager.setContentParts(streamId, [
+      { type: 'text', text: 'Prepended content' },
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'call-oauth-shifted',
+          name: 'oauth_mcp_Google-Workspace',
+          args: '',
+        },
+      },
+    ]);
+    const staleReplayEvent = {
+      event: 'on_run_step',
+      data: {
+        id: 'step-oauth-shifted',
+        runId: 'USE_PRELIM_RESPONSE_MESSAGE_ID',
+        index: 0,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [
+            {
+              id: 'call-oauth-shifted',
+              name: 'oauth_mcp_Google-Workspace',
+              args: '',
+            },
+          ],
+        },
+      },
+    } satisfies ServerSentEvent;
+
+    await manager.emitChunk(streamId, staleReplayEvent);
+    const resumeState = await manager.getResumeState(streamId);
+
+    expect(staleReplayEvent.data.index).toBe(0);
+    expect(resumeState?.runSteps[0]?.index).toBe(1);
+    expect(resumeState?.replayEvents).toEqual([
+      {
+        ...staleReplayEvent,
+        data: { ...staleReplayEvent.data, index: 1 },
+      },
+    ]);
+  });
+
+  test('merges persisted and buffered run steps, preferring the buffered version by id', async () => {
+    const store = new PartialRunStepJobStore({ ttlAfterComplete: 60000 });
+    manager = createManagerWithStore(store);
+    const streamId = `run-step-merge-resume-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+
+    const persistedStep = {
+      id: 'step-persisted',
+      runId: 'response-1',
+      index: 0,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call-persisted', name: 'approval_probe', args: '{}' }],
+      },
+    } as Agents.RunStep;
+    const updatedPersistedStep = { ...persistedStep, index: 3 };
+    const bufferedOnlyStep = {
+      ...persistedStep,
+      id: 'step-buffered',
+      index: 4,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call-buffered', name: 'approval_probe', args: '{}' }],
+      },
+    } as Agents.RunStep;
+    store.setPersistedRunSteps([persistedStep]);
+
+    await manager.emitChunk(streamId, {
+      event: 'on_run_step',
+      data: updatedPersistedStep,
+    });
+    await manager.emitChunk(streamId, {
+      event: 'on_run_step',
+      data: bufferedOnlyStep,
+    });
+
+    const resumeState = await manager.getResumeState(streamId);
+
+    expect(resumeState?.runSteps).toEqual([updatedPersistedStep, bufferedOnlyStep]);
+  });
+
+  test('does not carry live content or run steps into a replacement job with the same stream id', async () => {
+    const store = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+    manager = createManagerWithStore(store);
+    const streamId = `run-step-replacement-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+    const oldRunStep = {
+      id: 'step-old-job',
+      runId: 'response-old',
+      index: 0,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call-old-job', name: 'approval_probe', args: '{}' }],
+      },
+    } as Agents.RunStep;
+    await manager.emitChunk(streamId, {
+      event: 'on_run_step',
+      data: oldRunStep,
+    });
+    store.setGraph(streamId, {
+      contentData: [oldRunStep],
+    } as unknown as StandardGraph);
+    store.setContentParts(streamId, [{ type: 'text', text: 'old content' }]);
+    store.setCollectedUsage(streamId, [{ input_tokens: 1, output_tokens: 2 }]);
+
+    await manager.createJob(streamId, 'user-1', streamId);
+
+    const resumeState = await manager.getResumeState(streamId);
+    expect(resumeState?.runSteps).toEqual([]);
+    expect(resumeState?.aggregatedContent).toEqual([]);
+    expect(store.getCollectedUsage(streamId)).toEqual([]);
+  });
+
+  test('rejects a delayed predecessor run step after the stream id is replaced', async () => {
+    manager = createInMemoryManager();
+    const streamId = `run-step-delayed-predecessor-${Date.now()}`;
+    const predecessor = await manager.createJob(streamId, 'user-1', streamId);
+    const replacement = await manager.createJob(streamId, 'user-1', streamId);
+    const predecessorRunStep = {
+      id: 'step-predecessor',
+      runId: 'response-predecessor',
+      index: 0,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call-predecessor', name: 'approval_probe', args: '{}' }],
+      },
+    };
+    const replacementRunStep = {
+      id: 'step-replacement',
+      runId: 'response-replacement',
+      index: 0,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call-replacement', name: 'approval_probe', args: '{}' }],
+      },
+    };
+
+    await manager.emitChunk(
+      streamId,
+      { event: 'on_run_step', data: predecessorRunStep },
+      { expectedCreatedAt: predecessor.createdAt },
+    );
+    await manager.emitChunk(
+      streamId,
+      { event: 'on_run_step', data: replacementRunStep },
+      { expectedCreatedAt: replacement.createdAt },
+    );
+
+    const resumeState = await manager.getResumeState(streamId);
+    expect(resumeState?.runSteps).toEqual([replacementRunStep]);
   });
 
   test('replaces OAuth replay event for the same step id', async () => {

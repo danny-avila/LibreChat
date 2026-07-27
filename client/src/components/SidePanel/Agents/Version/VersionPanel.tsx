@@ -57,6 +57,7 @@ export default function VersionPanel() {
       artifacts: agentWithVersions.artifacts,
       capabilities: agentWithVersions.capabilities,
       tools: agentWithVersions.tools,
+      edges: agentWithVersions.edges,
     };
   }, [agentWithVersions]);
 

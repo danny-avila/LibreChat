@@ -281,6 +281,9 @@ export function useResumeSubmit() {
   const approvalMutation = useSubmitToolApprovalMutation();
   const askMutation = useSubmitAskAnswerMutation();
   const { getDecisions, isReady, setStatus } = useApprovalContext();
+  /** React state cannot lock a second click in the same browser task. Keep a
+   *  synchronous action-id guard alongside the rendered submission status. */
+  const submittingToolActionIdsRef = useRef(new Set<string>());
   /** Ask status lives in Recoil so it works from the composer (outside the
    *  provider); tool-approval status stays on the context. */
   const { setAskStatus } = useAskSubmitStatus();
@@ -311,12 +314,23 @@ export function useResumeSubmit() {
       if (!fields || decisions.length === 0 || !isReady(actionId)) {
         return;
       }
+      if (submittingToolActionIdsRef.current.has(actionId)) {
+        return;
+      }
+      submittingToolActionIdsRef.current.add(actionId);
       setStatus(actionId, 'submitting');
       approvalMutation.mutate(
         { ...fields, actionId, decisions },
         {
           onSuccess: () => setStatus(actionId, 'submitted'),
-          onError: (error) => setStatus(actionId, isExpiredError(error) ? 'expired' : 'error'),
+          onError: (error) => {
+            const expired = isExpiredError(error);
+            if (!expired) {
+              // Network/validation failures are retryable; a 409 is terminal.
+              submittingToolActionIdsRef.current.delete(actionId);
+            }
+            setStatus(actionId, expired ? 'expired' : 'error');
+          },
         },
       );
     },
