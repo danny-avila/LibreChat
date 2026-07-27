@@ -24,7 +24,11 @@ const {
   getMCPRequestContext,
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
-const { recordScheduleOutcome, isScheduleLive } = require('~/server/services/Schedules');
+const {
+  recordScheduleOutcome,
+  isScheduleLive,
+  clearScheduledJob,
+} = require('~/server/services/Schedules');
 const { saveMessage, getConvo, getMessages } = require('~/models');
 
 /**
@@ -428,6 +432,15 @@ async function finalizeResumedTurn({
     await GenerationJobManager.completeJob(streamId, undefined, job.createdAt, {
       preserveForReconcile: Boolean(meta.scheduleId) && !scheduleOutcomeRecorded,
     });
+    // completeJob early-returns on a job that is no longer `running` — the state a
+    // schedule delete leaves behind (aborted, retained without completedAt). With the
+    // run now terminal, reconcile never rescans it, so nothing else would reap the job.
+    if (meta.scheduleId && scheduleOutcomeRecorded) {
+      await clearScheduledJob(streamId, {
+        scheduleId: meta.scheduleId,
+        scheduledFor: meta.scheduledFor,
+      });
+    }
   } catch (completeErr) {
     logger.error('[ResumeAgentController] Failed to complete resumed turn', completeErr);
   }
@@ -502,7 +515,16 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   // `running` after the drain already judged it settleable, so quiesce reports the
   // account drained while a generation is still persisting messages for it. Also covers
   // an owner delete/edit landing while the prompt sat unanswered.
-  if (job.metadata?.scheduleId && !(await isScheduleLive(job.metadata.scheduleId))) {
+  if (
+    job.metadata?.scheduleId &&
+    !(await isScheduleLive(job.metadata.scheduleId, undefined, {
+      // An AUTOMATIC occurrence must not resume onto a schedule that has since been
+      // auto-disabled: the policy flips `enabled` without touching configRevision, so
+      // no other gate here can see it, and approving hours later would run a fresh
+      // billed turn for a schedule the system already switched off.
+      automatic: job.metadata.scheduleManual !== '1',
+    }))
+  ) {
     logger.info(
       `[ResumeAgentController] Refusing resume for a schedule no longer live: ${job.metadata.scheduleId}`,
     );
@@ -859,6 +881,13 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
             preserveForReconcile: Boolean(job.metadata?.scheduleId) && !scheduleOutcomeRecorded,
           },
         );
+        // Same early-return leak as the success path above.
+        if (job.metadata?.scheduleId && scheduleOutcomeRecorded) {
+          await clearScheduledJob(streamId, {
+            scheduleId: job.metadata.scheduleId,
+            scheduledFor: job.metadata.scheduledFor,
+          });
+        }
       } catch (completeErr) {
         logger.error('[ResumeAgentController] Failed to finalize failed resume', completeErr);
         // Last resort: force a terminal state so the job isn't orphaned in `running`.

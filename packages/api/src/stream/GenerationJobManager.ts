@@ -850,6 +850,7 @@ class GenerationJobManagerClass {
         // reused the conversationId, so it has to survive the facade.
         scheduleId: jobData.scheduleId,
         scheduledFor: jobData.scheduledFor,
+        scheduleManual: jobData.scheduleManual,
         sender: jobData.sender,
         endpoint: jobData.endpoint,
         iconURL: jobData.iconURL,

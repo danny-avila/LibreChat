@@ -758,6 +758,31 @@ describe('RedisJobStore', () => {
     });
   });
 
+  /**
+   * deserializeJob is a hand-enumerated allowlist, so every schedule field added to
+   * SerializableJobData has to be added here too or it is silently dropped on read —
+   * which is exactly how scheduleId/scheduledFor regressed.
+   */
+  test('round-trips the Run Now classification', async () => {
+    const redis = {
+      isCluster: false,
+      hgetall: jest.fn().mockResolvedValue({
+        streamId: 'conv-manual',
+        userId: 'user-1',
+        status: 'requires_action',
+        createdAt: '1000',
+        scheduleId: 'sched-1',
+        scheduledFor: '2026-07-26T12:00:00.000Z',
+        scheduleManual: '1',
+      }),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    // Dropping this makes an explicit Run Now read as automatic, so answering its
+    // approval on a disabled schedule would be refused when it should be allowed.
+    await expect(store.getJob('conv-manual')).resolves.toMatchObject({ scheduleManual: '1' });
+  });
+
   test('writes schedule identity into the created job hash', async () => {
     const evalCreate = jest.fn().mockResolvedValue(1);
     const redis = {

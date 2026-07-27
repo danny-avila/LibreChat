@@ -342,10 +342,32 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       const res = await post(approveBody());
 
       expect(res.status).toBe(409);
-      expect(mockIsScheduleLive).toHaveBeenCalledWith('sched-1');
+      expect(mockIsScheduleLive).toHaveBeenCalledWith('sched-1', undefined, { automatic: true });
       expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
       // The prompt is retired so the stream gets a terminal event instead of hanging.
       expect(mockGenerationJobManager.expireApproval).toHaveBeenCalledWith(CONVO_ID, ACTION_ID);
+    });
+
+    /**
+     * An approval can be answered long after the fire, so the classification has to
+     * travel on the job. A Run Now stays admissible on a disabled schedule (the user
+     * asked for it); an automatic occurrence does not.
+     */
+    it('carries the Run Now classification through to the resume gate', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: {
+            scheduleId: 'sched-1',
+            scheduledFor: SCHEDULED_FOR,
+            scheduleManual: '1',
+          },
+        }),
+      );
+
+      await post(approveBody());
+
+      expect(mockIsScheduleLive).toHaveBeenCalledWith('sched-1', undefined, { automatic: false });
+      await settled;
     });
 
     it('resumes normally while the schedule is still live', async () => {

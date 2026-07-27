@@ -416,7 +416,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // quiesce can identity-match and abort THIS job from the moment it exists, and
         // so a HITL resume can record the outcome (the resume request carries no
         // scheduleId). Only set for verified fires.
-        ...(scheduleId ? { scheduleId, scheduledFor } : {}),
+        // scheduleManual records the fire's classification: a paused approval can be
+        // answered up to the abandonment window later, and the resume must apply the
+        // same admission rules this boundary does — which needs to know whether the
+        // occurrence was automatic or an explicit Run Now.
+        ...(scheduleId
+          ? {
+              scheduleId,
+              scheduledFor,
+              ...(req._isManualScheduledFire === true ? { scheduleManual: '1' } : {}),
+            }
+          : {}),
         responseMessageId: preliminaryResponseMessageId,
         userMessage: preliminaryUserMessage,
       },
@@ -1160,6 +1170,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 logger.warn('[ResumableAgentController] Failed to finalize aborted job', err);
               },
             );
+            // completeJob no-ops on the already-terminal job a schedule delete leaves
+            // behind, and the run is terminal now, so reconcile will not rescan it.
+            if (scheduleId) {
+              await clearScheduledJob(streamId, { scheduleId, scheduledFor }).catch((err) =>
+                logger.warn('[ResumableAgentController] Failed to clear reconciled job', err),
+              );
+            }
           }
           await finishResumableRequest(req, userId);
         }

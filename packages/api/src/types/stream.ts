@@ -27,6 +27,10 @@ export interface GenerationJobMetadata {
   /** Schedule bookkeeping for a scheduled fire, so a HITL resume can record its outcome. */
   scheduleId?: string;
   scheduledFor?: string;
+  /** '1' when this fire was an explicit Run Now. A paused approval can be answered long
+   *  after the fire, so the resume needs the original classification to apply the same
+   *  admission rules the fire boundary did. */
+  scheduleManual?: string;
   /**
    * Deferred-tool names discovered (via `tool_search`) before a HITL pause. A resume
    * replays these into `createRun` because the rebuilt graph uses `messages: []`, so

@@ -27,6 +27,8 @@ const {
   Transaction,
   Conversation,
   ConversationTag,
+  Schedule,
+  ScheduleRun,
 } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
@@ -99,6 +101,16 @@ async function gracefulExit(code = 0) {
     Token.deleteMany({ userId: uid }),
     AclEntry.deleteMany({ principalId: user._id }),
   ];
+
+  // Runs BEFORE schedules so a partial failure stays retryable, mirroring
+  // deleteSchedulesByUser. A schedule carries the user's prompt text and has no TTL,
+  // so leaving it behind retains that content indefinitely. This script runs offline
+  // against the database, so it cannot quiesce a live loopback generation the way the
+  // HTTP deletion paths do — an in-flight fire disables itself once the User document
+  // is gone (fireSchedule's owner lookup), but run it with the server stopped if a
+  // scheduled generation may be in progress.
+  await ScheduleRun.deleteMany({ user: uid });
+  await Schedule.deleteMany({ user: uid });
 
   if (deleteTx) {
     tasks.push(Transaction.deleteMany({ user: uid }));

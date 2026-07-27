@@ -2239,6 +2239,7 @@ export class RedisJobStore implements IJobStore {
       // Dropping it here makes a live run read as gone and the orphan sweep interrupts it.
       scheduleId: data.scheduleId || undefined,
       scheduledFor: data.scheduledFor || undefined,
+      scheduleManual: data.scheduleManual || undefined,
     };
   }
 
