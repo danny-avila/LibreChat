@@ -1,0 +1,286 @@
+import React from 'react';
+import { RecoilRoot } from 'recoil';
+import { renderHook } from '@testing-library/react';
+import { Tools, EModelEndpoint } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
+import useAttachItems from '../useAttachItems';
+
+/**
+ * Ports the destination-visibility cases from the deleted `AttachFileMenu`
+ * spec, which is where this logic used to live. They cover the rule that
+ * decides which upload destinations exist at all — the one that silently lost
+ * both tool destinations when the palette stopped passing the ephemeral agent.
+ */
+
+jest.mock('~/hooks', () => ({
+  useAgentToolPermissions: jest.fn(),
+  useAgentCapabilities: jest.fn(),
+  useGetAgentsConfig: jest.fn(),
+}));
+
+jest.mock('~/hooks/useLocalize', () => ({
+  __esModule: true,
+  default: () => (key: string) => key,
+}));
+
+jest.mock('~/hooks/Files', () => ({
+  useFileHandlingNoChatContext: () => ({ handleFileChange: jest.fn() }),
+}));
+
+jest.mock('~/hooks/Files/useSharePointFileHandling', () => ({
+  __esModule: true,
+  default: jest.fn(),
+  useSharePointFileHandlingNoChatContext: () => ({
+    handleSharePointFiles: jest.fn(),
+    isProcessing: false,
+    downloadProgress: undefined,
+  }),
+}));
+
+jest.mock('~/data-provider', () => ({
+  useGetStartupConfig: jest.fn(),
+}));
+
+const mockUseAgentToolPermissions = jest.requireMock('~/hooks').useAgentToolPermissions;
+const mockUseAgentCapabilities = jest.requireMock('~/hooks').useAgentCapabilities;
+const mockUseGetAgentsConfig = jest.requireMock('~/hooks').useGetAgentsConfig;
+const mockUseGetStartupConfig = jest.requireMock('~/data-provider').useGetStartupConfig;
+
+const SAVED_AGENT = 'agent_abc123';
+
+interface Options {
+  agentId?: string | null;
+  endpoint?: string | null;
+  endpointType?: EModelEndpoint | string;
+  useResponsesApi?: boolean;
+  provider?: string;
+  tools?: string[];
+  contextEnabled?: boolean;
+  fileSearchEnabled?: boolean;
+  codeEnabled?: boolean;
+  sharePointEnabled?: boolean;
+}
+
+/** Row ids, which are what the palette keys and folds on. */
+function renderEntries(options: Options = {}): string[] {
+  const {
+    agentId = null,
+    endpoint = null,
+    endpointType,
+    useResponsesApi,
+    provider,
+    tools,
+    contextEnabled = false,
+    fileSearchEnabled = false,
+    codeEnabled = false,
+    sharePointEnabled = false,
+  } = options;
+
+  mockUseAgentToolPermissions.mockReturnValue({ tools, provider });
+  mockUseAgentCapabilities.mockReturnValue({ contextEnabled, fileSearchEnabled, codeEnabled });
+  mockUseGetAgentsConfig.mockReturnValue({ agentsConfig: { capabilities: [] } });
+  mockUseGetStartupConfig.mockReturnValue({
+    data: { sharePointFilePickerEnabled: sharePointEnabled },
+  });
+
+  const { result } = renderHook(
+    () =>
+      useAttachItems({
+        agentId,
+        endpoint,
+        endpointType,
+        useResponsesApi,
+        conversationId: 'convo-1',
+        conversation: { conversationId: 'convo-1' } as TConversation,
+        files: new Map(),
+        setFiles: jest.fn(),
+        setFilesLoading: jest.fn(),
+      }),
+    {
+      wrapper: ({ children }: { children: React.ReactNode }) => <RecoilRoot>{children}</RecoilRoot>,
+    },
+  );
+
+  return result.current.entries.map((entry) => entry.id);
+}
+
+const allCapabilities = { contextEnabled: true, fileSearchEnabled: true, codeEnabled: true };
+
+describe('useAttachItems', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  describe('provider upload versus image-only upload', () => {
+    it('offers a provider upload for a custom endpoint type', () => {
+      expect(renderEntries({ endpointType: 'custom' })).toContain('local:provider');
+    });
+
+    it.each([EModelEndpoint.openAI, EModelEndpoint.anthropic, EModelEndpoint.google])(
+      'offers a provider upload for %s',
+      (endpointType) => {
+        expect(renderEntries({ endpointType })).toContain('local:provider');
+      },
+    );
+
+    it('falls back to an image upload for the agents endpoint with no resolved provider', () => {
+      const ids = renderEntries({ endpointType: EModelEndpoint.agents });
+      expect(ids).toContain('local:image');
+      expect(ids).not.toContain('local:provider');
+    });
+
+    it('resolves the provider through a saved agent, not the agents endpoint', () => {
+      expect(
+        renderEntries({
+          agentId: SAVED_AGENT,
+          endpointType: EModelEndpoint.agents,
+          provider: EModelEndpoint.anthropic,
+        }),
+      ).toContain('local:provider');
+    });
+
+    it('offers a provider upload for azureOpenAI only with the responses API', () => {
+      expect(
+        renderEntries({ provider: EModelEndpoint.azureOpenAI, useResponsesApi: true }),
+      ).toContain('local:provider');
+      expect(
+        renderEntries({ endpointType: EModelEndpoint.azureOpenAI, useResponsesApi: true }),
+      ).toContain('local:provider');
+      expect(
+        renderEntries({ endpointType: EModelEndpoint.azureOpenAI, useResponsesApi: false }),
+      ).toContain('local:image');
+    });
+
+    it('reads a provider whatever its casing, which OpenRouter arrives in', () => {
+      expect(renderEntries({ provider: 'OpenRouter' })).toContain('local:provider');
+    });
+  });
+
+  describe('destinations behind an agent capability', () => {
+    it('offers text extraction when the context capability is on', () => {
+      expect(renderEntries({ contextEnabled: true })).toContain('local:context');
+      expect(renderEntries({ contextEnabled: false })).not.toContain('local:context');
+    });
+
+    it('offers a tool destination only when its capability is on', () => {
+      const ids = renderEntries({ fileSearchEnabled: true });
+      expect(ids).toContain('local:file_search');
+      expect(ids).not.toContain('local:execute_code');
+    });
+
+    it('offers every destination when every capability is on', () => {
+      expect(renderEntries(allCapabilities)).toEqual([
+        'local:image',
+        'local:context',
+        'local:file_search',
+        'local:execute_code',
+      ]);
+    });
+  });
+
+  describe('which agent is allowed the tool destinations', () => {
+    /* The regression: an ordinary chat runs on an ephemeral agent, which has no
+       tool list. Reading one anyway hid both destinations, leaving drag and
+       drop as the only way to reach the code environment. */
+    it('offers both tool destinations in an ordinary chat', () => {
+      const ids = renderEntries({ ...allCapabilities, agentId: null, tools: undefined });
+      expect(ids).toContain('local:file_search');
+      expect(ids).toContain('local:execute_code');
+    });
+
+    it('offers both to an ephemeral agent, which carries no tool list', () => {
+      const ids = renderEntries({
+        ...allCapabilities,
+        agentId: 'openAI__gpt-5___GPT-5',
+        tools: undefined,
+      });
+      expect(ids).toContain('local:file_search');
+      expect(ids).toContain('local:execute_code');
+    });
+
+    it('offers a saved agent only the destinations it was built with', () => {
+      const ids = renderEntries({
+        ...allCapabilities,
+        agentId: SAVED_AGENT,
+        tools: [Tools.file_search],
+      });
+      expect(ids).toContain('local:file_search');
+      expect(ids).not.toContain('local:execute_code');
+    });
+
+    it('offers a saved agent with no tools neither destination', () => {
+      const ids = renderEntries({ ...allCapabilities, agentId: SAVED_AGENT, tools: [] });
+      expect(ids).not.toContain('local:file_search');
+      expect(ids).not.toContain('local:execute_code');
+      expect(ids).toContain('local:context');
+    });
+  });
+
+  describe('SharePoint', () => {
+    it('mirrors every local destination when it is enabled', () => {
+      expect(renderEntries({ ...allCapabilities, sharePointEnabled: true })).toEqual([
+        'local:image',
+        'local:context',
+        'local:file_search',
+        'local:execute_code',
+        'sharepoint:image',
+        'sharepoint:context',
+        'sharepoint:file_search',
+        'sharepoint:execute_code',
+      ]);
+    });
+
+    it('adds nothing when it is disabled', () => {
+      expect(renderEntries({ ...allCapabilities, sharePointEnabled: false })).toHaveLength(4);
+    });
+  });
+
+  describe('what the palette folds away', () => {
+    /* The disclosure keeps one row out and hides the rest, so exactly one row
+       may claim to be the ordinary destination. */
+    it('marks the provider row as the only primary destination', () => {
+      mockUseAgentToolPermissions.mockReturnValue({ tools: undefined, provider: undefined });
+      mockUseAgentCapabilities.mockReturnValue(allCapabilities);
+      mockUseGetAgentsConfig.mockReturnValue({ agentsConfig: { capabilities: [] } });
+      mockUseGetStartupConfig.mockReturnValue({
+        data: { sharePointFilePickerEnabled: true },
+      });
+
+      const { result } = renderHook(
+        () =>
+          useAttachItems({
+            agentId: null,
+            endpoint: EModelEndpoint.anthropic,
+            endpointType: EModelEndpoint.anthropic,
+            conversationId: 'convo-1',
+            conversation: { conversationId: 'convo-1' } as TConversation,
+            files: new Map(),
+            setFiles: jest.fn(),
+            setFilesLoading: jest.fn(),
+          }),
+        {
+          wrapper: ({ children }: { children: React.ReactNode }) => (
+            <RecoilRoot>{children}</RecoilRoot>
+          ),
+        },
+      );
+
+      const primary = result.current.entries.filter((entry) => entry.primary === true);
+      expect(primary.map((entry) => entry.id)).toEqual(['local:provider']);
+      /* Including the SharePoint copy of the provider row: it is a second way
+         to reach a destination that is already out. */
+      expect(
+        result.current.entries.find((entry) => entry.id === 'sharepoint:provider')?.primary,
+      ).toBe(false);
+    });
+  });
+
+  describe('edge cases', () => {
+    it.each([
+      ['undefined endpoint and provider', { endpoint: undefined, provider: undefined }],
+      ['null endpoint', { endpoint: null }],
+      ['missing agent id', { agentId: undefined }],
+      ['empty agent id', { agentId: '' }],
+    ])('still resolves a destination with %s', (_label, options) => {
+      expect(renderEntries(options as Options).length).toBeGreaterThan(0);
+    });
+  });
+});
