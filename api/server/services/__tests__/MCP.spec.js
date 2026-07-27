@@ -32,6 +32,13 @@ jest.mock('@librechat/api', () => ({
   GenerationJobManager: jest.fn(),
   resolveJsonSchemaRefs: jest.fn((schema) => schema),
   buildOAuthToolCallName: jest.fn((name) => name),
+  /** Mirrors the real resolver so these tests still exercise the wrapper's own
+   *  plumbing - loading the request config and degrading on failure - rather than
+   *  the resolution logic, which is unit-tested in packages/api. */
+  resolveMCPServerContext: jest.fn(async ({ mcpConfig, ensureConfigServers }) => ({
+    configServers: await ensureConfigServers(mcpConfig),
+    serverNames: Object.keys(mcpConfig),
+  })),
 }));
 
 jest.mock('~/cache', () => ({ getLogStores: jest.fn() }));
