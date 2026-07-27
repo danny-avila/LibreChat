@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Constants,
   QueryKeys,
@@ -269,6 +270,8 @@ export default function useResumeOnLoad(
   messagesLoaded = true,
 ) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const location = useLocation();
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
   const setRunEnd = useSetRecoilState(store.runEndByIndex(runIndex));
   const currentSubmission = useRecoilValue(store.submissionByIndex(runIndex));
@@ -359,6 +362,14 @@ export default function useResumeOnLoad(
     conversationId,
     active: isCurrentJobActive,
   });
+  const activePathnameRef = useRef<string | null>(location.pathname);
+
+  useEffect(() => {
+    activePathnameRef.current = location.pathname;
+    return () => {
+      activePathnameRef.current = null;
+    };
+  }, [location.pathname]);
 
   const refreshUnfinishedResponse = useCallback(async (): Promise<ResponseRefreshResult> => {
     if (!conversationId) {
@@ -451,12 +462,16 @@ export default function useResumeOnLoad(
         queryClient.removeQueries({
           queryKey: [QueryKeys.messages, conversationId],
         });
+        queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
         setRunEnd({
           conversationId: String(Constants.NEW_CONVO),
           outcome: 'error',
           endedAt: Date.now(),
         });
         clearDisconnectedRunRecovery(queryClient, conversationId);
+        if (activePathnameRef.current === `/c/${conversationId}`) {
+          navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
+        }
         return;
       }
 
@@ -477,7 +492,7 @@ export default function useResumeOnLoad(
       });
       clearDisconnectedRunRecovery(queryClient, conversationId);
     },
-    [conversationId, queryClient, setRunEnd],
+    [conversationId, navigate, queryClient, setRunEnd],
   );
 
   const recoverInactiveResponse = useCallback(

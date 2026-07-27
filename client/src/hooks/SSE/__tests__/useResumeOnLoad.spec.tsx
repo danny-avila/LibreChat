@@ -2,6 +2,7 @@ import { RecoilRoot, useRecoilValue } from 'recoil';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Constants, ContentTypes, QueryKeys } from 'librechat-data-provider';
 import { renderHook, act, waitFor } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import type { TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
@@ -82,6 +83,7 @@ function renderUseResumeOnLoad({
   onPendingSteers,
   onQueuedMessages,
   onRunEnd,
+  onPathname,
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
   messageQueryFn,
 }: {
@@ -97,6 +99,7 @@ function renderUseResumeOnLoad({
   onPendingSteers?: (steers: PendingSteer[]) => void;
   onQueuedMessages?: (queued: QueuedMessage[]) => void;
   onRunEnd?: (runEnd: RunEnd | null) => void;
+  onPathname?: (pathname: string) => void;
   queryClient?: QueryClient;
   messageQueryFn?: () => Promise<TMessage[]>;
 }) {
@@ -136,6 +139,11 @@ function renderUseResumeOnLoad({
     }
     return null;
   };
+  const LocationProbe = () => {
+    const location = useLocation();
+    onPathname?.(location.pathname);
+    return null;
+  };
   const MessageQueryProbe = () => {
     useQuery<TMessage[]>(
       [QueryKeys.messages, conversationId],
@@ -149,17 +157,23 @@ function renderUseResumeOnLoad({
   };
 
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <RecoilRoot initializeState={initializeState}>
-        <MessageQueryProbe />
-        <SubmissionProbe />
-        <SiblingIndexProbe />
-        <PendingSteersProbe />
-        <QueuedMessagesProbe />
-        <RunEndProbe />
-        {children}
-      </RecoilRoot>
-    </QueryClientProvider>
+    <MemoryRouter
+      initialEntries={[`/c/${conversationId}`]}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
+      <QueryClientProvider client={queryClient}>
+        <RecoilRoot initializeState={initializeState}>
+          <MessageQueryProbe />
+          <SubmissionProbe />
+          <SiblingIndexProbe />
+          <PendingSteersProbe />
+          <QueuedMessagesProbe />
+          <RunEndProbe />
+          <LocationProbe />
+          {children}
+        </RecoilRoot>
+      </QueryClientProvider>
+    </MemoryRouter>
   );
 
   return {
@@ -868,6 +882,7 @@ describe('useResumeOnLoad', () => {
       const removeQueriesSpy = jest.spyOn(queryClient, 'removeQueries');
       jest.spyOn(console, 'error').mockImplementation(() => undefined);
       const observedRunEnds: Array<RunEnd | null> = [];
+      const observedPathnames: string[] = [];
       const unfinishedMessages = [
         buildUserMessage(CONVERSATION_ID),
         buildAssistantMessage({ unfinished: true }),
@@ -891,6 +906,7 @@ describe('useResumeOnLoad', () => {
         getMessages: () =>
           queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
         onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+        onPathname: (pathname) => observedPathnames.push(pathname),
         queryClient,
         messageQueryFn: jest.fn().mockRejectedValue(notFoundError),
       });
@@ -912,6 +928,8 @@ describe('useResumeOnLoad', () => {
       expect(removeQueriesSpy).toHaveBeenCalledWith({
         queryKey: [QueryKeys.messages, CONVERSATION_ID],
       });
+      expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toEqual([]);
+      expect(observedPathnames[observedPathnames.length - 1]).toBe(`/c/${Constants.NEW_CONVO}`);
       expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
     });
 
