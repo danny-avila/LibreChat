@@ -30,7 +30,6 @@ const {
   Permissions,
   PermissionTypes,
   isAssistantsEndpoint,
-  docGenTools,
 } = require('librechat-data-provider');
 const {
   getOAuthReconnectionManager,
@@ -849,30 +848,6 @@ function createToolInstance({
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
         return result[0];
-      }
-
-      // Auto-register generated files from doc gen tools
-      if (docGenTools.has(toolName) && Array.isArray(result) && result[0]?.content) {
-        try {
-          const text = result[0].content[0]?.text || '';
-          const metaMatch = text.match(/FILE_METADATA:(\{.+?\})/);
-          if (metaMatch) {
-            const meta = JSON.parse(metaMatch[1]);
-            const GeneratedFile = mongoose.model('GeneratedFile');
-            await GeneratedFile.create({
-              user: userId,
-              filename: meta.filename,
-              filepath: meta.filepath,
-              mimeType: meta.mimeType,
-              size: meta.size,
-              type: meta.type,
-              source: meta.source,
-            });
-            logger.debug(`[MCP] Registered generated file: ${meta.filename}`);
-          }
-        } catch (regError) {
-          logger.warn(`[MCP] Failed to register generated file: ${regError.message}`);
-        }
       }
 
       return result;

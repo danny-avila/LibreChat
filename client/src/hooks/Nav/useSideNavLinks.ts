@@ -8,7 +8,6 @@ import {
   ScrollText,
   ArrowRightToLine,
   SlidersHorizontal,
-  FolderOutput,
 } from 'lucide-react';
 import {
   Permissions,
@@ -33,7 +32,6 @@ import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import { MemoryPanel } from '~/components/SidePanel/Memories';
 import FilesPanel from '~/components/SidePanel/Files/Panel';
-import { GeneratedFilesView } from '~/components/GeneratedFiles';
 import { PromptsAccordion } from '~/components/Prompts';
 import { SkillsAccordion } from '~/components/Skills';
 
@@ -178,14 +176,6 @@ export default function useSideNavLinks({
       icon: AttachmentIcon,
       id: 'files',
       Component: FilesPanel,
-    });
-
-    links.push({
-      title: 'com_sidepanel_generated_files',
-      label: '',
-      icon: FolderOutput,
-      id: 'generated-files',
-      Component: GeneratedFilesView,
     });
 
     if (

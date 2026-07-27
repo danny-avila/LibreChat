@@ -2257,11 +2257,6 @@ export const imageGenTools = new Set([
   'gemini_image_gen',
 ]);
 
-export const docGenTools = new Set([
-  'generate_markdown',
-  'generate_pdf',
-]);
-
 /**
  * Enum for collections using infinite queries
  */

@@ -23,7 +23,6 @@ export * from './types';
 export * from './types/agents';
 export * from './types/assistants';
 export * from './types/files';
-export * from './types/generatedFiles';
 export * from './types/mcpServers';
 export * from './types/mutations';
 export * from './types/queries';
