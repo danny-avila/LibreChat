@@ -5,6 +5,7 @@ import { TooltipAnchor } from '@librechat/client';
 import type { SettingDefinition, TConversation } from 'librechat-data-provider';
 import Effort, { AUTO_VALUES, resolveEffortLabel } from './Effort';
 import useThinkingSetting from '~/hooks/Input/useThinkingSetting';
+import useReducedMotion from '~/hooks/Generic/useReducedMotion';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import { cn } from '~/utils';
@@ -22,6 +23,7 @@ function ThinkingControl({
   conversation: TConversation | null;
 }) {
   const localize = useLocalize();
+  const reducedMotion = useReducedMotion();
   /* Ariakit owns the open state rather than a controlled `open`/`setOpen` pair:
      with the controlled form, hide-on-interact-outside fired on mousedown and
      the disclosure's own click re-opened it, so a second click never closed the
@@ -103,7 +105,9 @@ function ThinkingControl({
           className="relative block overflow-hidden ease-out"
           style={{
             width: slotWidth,
-            transition: `width ${RESIZE_MS}ms ${EASE}`,
+            /* Written inline, so a stylesheet's reduced-motion rule cannot
+               reach it: the label takes its new width at once instead. */
+            transition: `width ${reducedMotion ? 0 : RESIZE_MS}ms ${EASE}`,
           }}
         >
           <span
