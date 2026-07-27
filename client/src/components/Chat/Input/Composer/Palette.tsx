@@ -50,13 +50,16 @@ const VIEWPORT_PADDING = 12;
 /** Length of the landing screen's lift transition; see `ChatView`'s
  *  `duration-200` on the same element. */
 const LIFT_MS = 200;
-/** How long rows take to reach their new offsets after the attach disclosure
- *  opens or closes; matches `.palette-shift` in `style.css`. */
-const ROW_SHIFT_MS = 260;
 /** How long the folded destinations take to fade before they give up their
  *  space; matches `.animate-palette-row-out` in `style.css`. */
 const ROW_FADE_MS = 110;
 const MORE_ROW_KEY = 'attach:more';
+/** How long a row takes to reach a new offset, and on what curve. */
+const ROW_SHIFT_MS = 260;
+const ROW_SHIFT_EASING = 'cubic-bezier(0.32, 0.72, 0, 1)';
+/** Separator for the row-set signature; cannot occur in a row key. */
+const KEY_SEP = '\u0000';
+const NO_ENTERING: ReadonlySet<string> = new Set();
 
 const SECTION_LABEL: Record<PaletteSection, TranslationKeys> = {
   tool: 'com_ui_composer_tools',
@@ -188,10 +191,6 @@ function Palette({
      to a tool once will do it again, and re-expanding every time is the cost of
      hiding it. */
   const [showAllAttach, setShowAllAttach] = useState(false);
-  /* Bumped on each toggle rather than set to a flag, so tapping the disclosure
-     twice in quick succession restarts the window instead of ending it early
-     under the first toggle's timer. */
-  const [shiftNonce, setShiftNonce] = useState(0);
   /* Closing runs in two beats, so the rows below never slide up through a hole
      where the folded destinations used to be: they fade where they stand, and
      only once they are gone does the list close over them. */
@@ -202,6 +201,7 @@ function Palette({
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<List>(null);
+  const listBodyRef = useRef<HTMLDivElement>(null);
   const disclosureRef = useRef<HTMLButtonElement>(null);
   const setLift = useSetRecoilState(store.composerLiftFamily(index));
   const { ref: popoverRef, height: popupHeight } = useElementSize<HTMLDivElement>();
@@ -391,35 +391,99 @@ function Palette({
     localize,
   ]);
 
-  const totalHeight = useMemo(() => {
+  /** Where every row sits and how tall the list is, in one pass. */
+  const layout = useMemo(() => {
+    const tops = new Map<string, number>();
     let height = 0;
     for (const row of rows) {
+      tops.set(row.key, height);
       height += rowHeight(row);
     }
-    return height;
+    return { tops, height };
   }, [rows]);
 
-  /* The list measures each row once and keeps the offsets, so a row that
+  /** The row set itself, ignoring anything that changes inside a row. */
+  const signature = useMemo(() => rows.map((row) => row.key).join(KEY_SEP), [rows]);
+
+  /* Rows that gain or lose a neighbour travel to their new offsets, and the
+     rows that caused it fade in where they land. Any change to the row set
+     earns this — a starred entry moving up into favourites, an upload landing
+     in the files section, the attach disclosure folding — except one: a change
+     that came with the query. Under a search the list is being replaced rather
+     than rearranged, and sliding one set of contents into the place of another
+     reads as the list lagging behind the typing.
+
+     Written as a suppression rather than as an opt-in so that the ordinary
+     case needs no signal to reach the move: anything that rearranges the list,
+     from anywhere, is carried by it. */
+  const [settled, setSettled] = useState({ signature, query });
+  const [entering, setEntering] = useState<ReadonlySet<string>>(NO_ENTERING);
+  const [instant, setInstant] = useState(false);
+  if (settled.signature !== signature) {
+    const rearranged = settled.query === query;
+    setSettled({ signature, query });
+    setInstant(!rearranged);
+    if (!rearranged) {
+      setEntering(NO_ENTERING);
+    } else {
+      const before = new Set(settled.signature.split(KEY_SEP));
+      const arrived = new Set<string>();
+      for (const row of rows) {
+        if (!before.has(row.key)) {
+          arrived.add(row.key);
+        }
+      }
+      setEntering(arrived);
+    }
+  }
+
+  /* Held for the one frame the suppressed change is drawn in, so the next
+     rearrangement moves rather than jumps. */
+  useEffect(() => {
+    if (!instant) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => setInstant(false));
+    return () => cancelAnimationFrame(frame);
+  }, [instant]);
+
+  /* Two things happen here, both after the list has already been redrawn.
+
+     The list measures each row once and keeps the offsets, so a row that
      changes height in place — a two-line entry starred into a section that
      starts one row higher — is drawn at a stale offset and lands on top of its
      neighbour. Only the widget holds that cache, so only the widget can drop
-     it. */
+     it.
+
+     Then every row that changed place is sent back to where it was and let go,
+     which is the only way to move these rows that survives what starring one
+     does to the DOM. A row jumping from its section up into favourites makes
+     React re-insert every row it passed, and a re-inserted node loses the
+     transition it was about to run: starring an entry jumped while unstarring
+     the same entry animated. Playing the move after the re-insertion, rather
+     than asking the browser to notice it, is what makes the two symmetric. */
+  const previousTops = useRef(layout.tops);
   useLayoutEffect(() => {
     listRef.current?.recomputeRowHeights(0);
-  }, [rows]);
-
-  /* The rows move only while the disclosure is opening or closing. Leaving the
-     transition on would also animate the list reflowing under each keystroke of
-     a search, where rows are replaced rather than moved and sliding them reads
-     as the list lagging behind the typing. */
-  const shifting = shiftNonce > 0;
-  useEffect(() => {
-    if (shiftNonce === 0) {
+    const before = previousTops.current;
+    previousTops.current = layout.tops;
+    const body = listBodyRef.current;
+    if (instant || body == null || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       return;
     }
-    const timer = window.setTimeout(() => setShiftNonce(0), ROW_SHIFT_MS);
-    return () => window.clearTimeout(timer);
-  }, [shiftNonce]);
+    for (const element of body.querySelectorAll<HTMLElement>('[data-row-key]')) {
+      const key = element.dataset.rowKey;
+      const from = key == null ? undefined : before.get(key);
+      const to = key == null ? undefined : layout.tops.get(key);
+      if (from == null || to == null || from === to) {
+        continue;
+      }
+      element.animate([{ transform: `translateY(${from - to}px)` }, { transform: 'none' }], {
+        duration: ROW_SHIFT_MS,
+        easing: ROW_SHIFT_EASING,
+      });
+    }
+  }, [layout, instant]);
 
   /** Second beat of the close: the faded rows give up their space. */
   useEffect(() => {
@@ -430,7 +494,6 @@ function Palette({
       setCollapsing(false);
       setShowAllAttach(false);
       setKeepKey(MORE_ROW_KEY);
-      setShiftNonce((nonce) => nonce + 1);
     }, ROW_FADE_MS);
     return () => window.clearTimeout(timer);
   }, [collapsing]);
@@ -502,7 +565,6 @@ function Palette({
           return;
         }
         setShowAllAttach(true);
-        setShiftNonce((nonce) => nonce + 1);
         return;
       }
       /* Terminal like an upload destination: the file lands in the tray, which
@@ -571,13 +633,21 @@ function Palette({
   const rowRenderer = useCallback(
     ({ index, style }: { index: number; style: React.CSSProperties }) => {
       const row = rows[index];
+      /* A row that had no neighbour to arrive from — a section header the
+         starred entry brought with it, the destinations behind the fold —
+         appears where it lands rather than travelling there. */
+      const arrived = entering.has(row.key);
       if (row.type === 'header') {
         return (
           <div
             key={row.key}
+            data-row-key={row.key}
             style={style}
             role="presentation"
-            className="flex items-end px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+            className={cn(
+              'flex items-end px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-text-secondary',
+              arrived && 'animate-palette-row',
+            )}
           >
             {row.label}
           </div>
@@ -590,6 +660,7 @@ function Palette({
         return (
           <div
             key={row.key}
+            data-row-key={row.key}
             style={style}
             id={`palette-row-${index}`}
             role="option"
@@ -599,6 +670,7 @@ function Palette({
             className={cn(
               'flex cursor-pointer items-center gap-2.5 rounded-lg px-2 text-sm text-text-secondary',
               isActive && 'bg-surface-hover',
+              arrived && 'animate-palette-row',
             )}
           >
             <ChevronDown
@@ -615,6 +687,7 @@ function Palette({
         return (
           <div
             key={row.key}
+            data-row-key={row.key}
             style={style}
             id={`palette-row-${index}`}
             role="option"
@@ -624,6 +697,7 @@ function Palette({
             className={cn(
               'flex cursor-pointer items-center gap-2.5 rounded-lg px-2 text-sm text-text-secondary',
               isActive && 'bg-surface-hover',
+              arrived && 'animate-palette-row',
             )}
           >
             {/* Painted as a background rather than an `img`: these thumbnails
@@ -653,12 +727,10 @@ function Palette({
       }
 
       const isEntry = row.type === 'entry';
-      /* The folded destinations have no place to travel from, so they arrive
-         where they land: the rows around them make the room, and these fade
-         into it, and back out of it on the way closed. */
-      const folded = row.type === 'attach' && row.entry.primary !== true;
-      const revealed = folded && shifting && !collapsing;
-      const departing = folded && collapsing;
+      /* The folded destinations are the one departure the list can wait for:
+         the disclosure is closing them itself, rather than reacting to a change
+         that has already happened. */
+      const departing = row.type === 'attach' && row.entry.primary !== true && collapsing;
       const { label, icon } = row.entry;
       const description = isEntry ? row.entry.description : undefined;
       const checked = isEntry ? row.entry.active : false;
@@ -669,6 +741,7 @@ function Palette({
       return (
         <div
           key={row.key}
+          data-row-key={row.key}
           style={style}
           id={`palette-row-${index}`}
           role="option"
@@ -685,7 +758,7 @@ function Palette({
                than a tick competing with the keyboard highlight for meaning. */
             checked ? 'text-text-primary' : 'text-text-secondary',
             isActive && 'bg-surface-hover',
-            revealed && 'animate-palette-row',
+            arrived && !departing && 'animate-palette-row',
             departing && 'animate-palette-row-out pointer-events-none',
           )}
         >
@@ -760,7 +833,7 @@ function Palette({
         </div>
       );
     },
-    [rows, activeIndex, activate, favorites, localize, expanded, shifting, collapsing],
+    [rows, activeIndex, activate, favorites, localize, expanded, entering, collapsing],
   );
 
   return (
@@ -878,10 +951,11 @@ function Palette({
               </div>
             ) : (
               <div
+                ref={listBodyRef}
                 id="composer-palette-list"
                 role="listbox"
                 aria-label={localize('com_ui_composer_palette')}
-                className={cn('p-1.5', shifting && 'palette-shift')}
+                className={cn('palette-rows p-1.5', instant && 'palette-instant')}
               >
                 <AutoSizer disableHeight>
                   {({ width }) => (
@@ -893,10 +967,10 @@ function Palette({
                       scrollToIndex={activeIndex}
                       rowRenderer={rowRenderer}
                       rowHeight={({ index }) => rowHeight(rows[index])}
-                      height={Math.min(totalHeight, LIST_MAX_HEIGHT)}
+                      height={Math.min(layout.height, LIST_MAX_HEIGHT)}
                       className={cn(
                         'focus:outline-none',
-                        totalHeight > LIST_MAX_HEIGHT && 'palette-scroll',
+                        layout.height > LIST_MAX_HEIGHT && 'palette-scroll',
                       )}
                     />
                   )}
