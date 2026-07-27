@@ -60,95 +60,109 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
       );
       await runAsSystem(async () => {
         for (const run of runs) {
-          // Identity-fence the job lookup: a replacement user turn reuses this
-          // conversationId but sheds the scheduleId/scheduledFor metadata. Only
-          // trust the job's status when it still carries THIS occurrence's identity;
-          // otherwise treat the job as gone (null) so a replacement generation's
-          // status can never finalize — or its hash be deleted for — this run.
-          const jobState = run.conversationId ? await deps.getJobStatus(run.conversationId) : null;
-          const jobStatus = jobIdentityMatches(jobState, run) ? jobState!.status : null;
-          const ageMs = Date.now() - (run.firedAt?.getTime() ?? 0);
-          // Resolve the run owner's limits so crash-reconciled auto-disable uses
-          // the same per-principal threshold as an inline completion. Must run in
-          // the OWNER's tenant context: getLimits resolves config via the ALS
-          // tenant, and this loop is under runAsSystem (system tenant).
-          const owner = await deps.getUserContext(run.user);
-          const runLimits = owner
-            ? await deps.runInTenantContext(owner, () => deps.getLimits(owner))
-            : limits;
-          // All transitions go through recordRunOutcome so the schedule's lastRun
-          // (and the card's status chip) tracks the run, including the pause.
-          const finalize = (
-            status: 'success' | 'interrupted' | 'error' | 'requires_action',
-            error?: string,
-          ) =>
-            deps.methods.recordRunOutcome({
-              scheduleId: run.scheduleId,
-              scheduledFor: run.scheduledFor,
-              status,
-              conversationId: run.conversationId,
-              error,
-              autoDisableAfterFailures: runLimits.autoDisableAfterFailures,
-            });
-          if (jobStatus === 'running') {
-            continue;
-          }
-          // Surface a pause on the card (lastRun → requires_action). Also re-invoked for
-          // a row ALREADY `requires_action`: recordRunOutcome flips the row before
-          // projecting the card, so a crash between the two leaves the pause invisible
-          // until this replays it. Both writes are idempotent.
-          if (
-            (run.status === 'started' || run.status === 'requires_action') &&
-            jobStatus === 'requires_action'
-          ) {
-            await finalize('requires_action');
-            continue;
-          }
-          // A retained terminal job whose inline outcome hook failed transiently —
-          // finalize the run from the retained status, then delete the job. The
-          // delete is the cleanup path for `preserveForReconcile` jobs (kept
-          // without `completedAt`, so the store's finished-job sweep never reaps
-          // them); `conversationId` is guaranteed here since jobStatus was fetched.
-          if (jobStatus === 'complete') {
-            // Finalize either a paused OR a still-started run as success so it
-            // stops consuming capacity / blocking overlap.
-            await finalize('success');
-            await deps.clearReconciledJob(run.conversationId as string, {
-              scheduleId: run.scheduleId,
-              scheduledFor: run.scheduledFor,
-            });
-            continue;
-          }
-          if (jobStatus === 'error') {
-            await finalize('error', 'Run ended in error');
-            await deps.clearReconciledJob(run.conversationId as string, {
-              scheduleId: run.scheduleId,
-              scheduledFor: run.scheduledFor,
-            });
-            continue;
-          }
-          if (jobStatus === 'aborted') {
-            await finalize('interrupted');
-            await deps.clearReconciledJob(run.conversationId as string, {
-              scheduleId: run.scheduleId,
-              scheduledFor: run.scheduledFor,
-            });
-            continue;
-          }
-          // A `started` run whose job is gone (jobStatus null) is an orphan. Every run
-          // records its conversationId up front, so getJobStatus above already
-          // liveness-checked it: a live long-running fire reads as `running` and is left
-          // alone. v1 is single-process, so a null job genuinely means gone.
-          if (run.status === 'started' && jobStatus == null && ageMs > ORPHAN_RUN_AGE_MS) {
-            await finalize('interrupted');
-            continue;
-          }
-          if (
-            run.status === 'requires_action' &&
-            jobStatus == null &&
-            ageMs > ABANDONED_PAUSE_AGE_MS
-          ) {
-            await finalize('interrupted');
+          // PER-ROW isolation. A single throwing row used to abort the whole pass, and
+          // since this query returns the OLDEST rows first, that row came back every
+          // tick and starved every run behind it indefinitely. Reconciliation is the
+          // backstop for exactly the states nothing else settles, so it has to make
+          // progress on the rest.
+          try {
+            // Identity-fence the job lookup: a replacement user turn reuses this
+            // conversationId but sheds the scheduleId/scheduledFor metadata. Only
+            // trust the job's status when it still carries THIS occurrence's identity;
+            // otherwise treat the job as gone (null) so a replacement generation's
+            // status can never finalize — or its hash be deleted for — this run.
+            const jobState = run.conversationId
+              ? await deps.getJobStatus(run.conversationId)
+              : null;
+            const jobStatus = jobIdentityMatches(jobState, run) ? jobState!.status : null;
+            const ageMs = Date.now() - (run.firedAt?.getTime() ?? 0);
+            // Resolve the run owner's limits so crash-reconciled auto-disable uses
+            // the same per-principal threshold as an inline completion. Must run in
+            // the OWNER's tenant context: getLimits resolves config via the ALS
+            // tenant, and this loop is under runAsSystem (system tenant).
+            const owner = await deps.getUserContext(run.user);
+            const runLimits = owner
+              ? await deps.runInTenantContext(owner, () => deps.getLimits(owner))
+              : limits;
+            // All transitions go through recordRunOutcome so the schedule's lastRun
+            // (and the card's status chip) tracks the run, including the pause.
+            const finalize = (
+              status: 'success' | 'interrupted' | 'error' | 'requires_action',
+              error?: string,
+            ) =>
+              deps.methods.recordRunOutcome({
+                scheduleId: run.scheduleId,
+                scheduledFor: run.scheduledFor,
+                status,
+                conversationId: run.conversationId,
+                error,
+                autoDisableAfterFailures: runLimits.autoDisableAfterFailures,
+              });
+            if (jobStatus === 'running') {
+              continue;
+            }
+            // Surface a pause on the card (lastRun → requires_action). Also re-invoked for
+            // a row ALREADY `requires_action`: recordRunOutcome flips the row before
+            // projecting the card, so a crash between the two leaves the pause invisible
+            // until this replays it. Both writes are idempotent.
+            if (
+              (run.status === 'started' || run.status === 'requires_action') &&
+              jobStatus === 'requires_action'
+            ) {
+              await finalize('requires_action');
+              continue;
+            }
+            // A retained terminal job whose inline outcome hook failed transiently —
+            // finalize the run from the retained status, then delete the job. The
+            // delete is the cleanup path for `preserveForReconcile` jobs (kept
+            // without `completedAt`, so the store's finished-job sweep never reaps
+            // them); `conversationId` is guaranteed here since jobStatus was fetched.
+            if (jobStatus === 'complete') {
+              // Finalize either a paused OR a still-started run as success so it
+              // stops consuming capacity / blocking overlap.
+              await finalize('success');
+              await deps.clearReconciledJob(run.conversationId as string, {
+                scheduleId: run.scheduleId,
+                scheduledFor: run.scheduledFor,
+              });
+              continue;
+            }
+            if (jobStatus === 'error') {
+              await finalize('error', 'Run ended in error');
+              await deps.clearReconciledJob(run.conversationId as string, {
+                scheduleId: run.scheduleId,
+                scheduledFor: run.scheduledFor,
+              });
+              continue;
+            }
+            if (jobStatus === 'aborted') {
+              await finalize('interrupted');
+              await deps.clearReconciledJob(run.conversationId as string, {
+                scheduleId: run.scheduleId,
+                scheduledFor: run.scheduledFor,
+              });
+              continue;
+            }
+            // A `started` run whose job is gone (jobStatus null) is an orphan. Every run
+            // records its conversationId up front, so getJobStatus above already
+            // liveness-checked it: a live long-running fire reads as `running` and is left
+            // alone. v1 is single-process, so a null job genuinely means gone.
+            if (run.status === 'started' && jobStatus == null && ageMs > ORPHAN_RUN_AGE_MS) {
+              await finalize('interrupted');
+              continue;
+            }
+            if (
+              run.status === 'requires_action' &&
+              jobStatus == null &&
+              ageMs > ABANDONED_PAUSE_AGE_MS
+            ) {
+              await finalize('interrupted');
+            }
+          } catch (rowError) {
+            logger.error(
+              `[schedules] reconciliation failed for run ${run.scheduleId}@${run.scheduledFor?.toISOString?.() ?? run.scheduledFor}:`,
+              rowError,
+            );
           }
         }
       });
@@ -163,18 +177,25 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
       );
       await runAsSystem(async () => {
         for (const run of unbookkept) {
-          const owner = await deps.getUserContext(run.user);
-          const runLimits = owner
-            ? await deps.runInTenantContext(owner, () => deps.getLimits(owner))
-            : limits;
-          await deps.methods.finalizeBookkeeping({
-            scheduleId: run.scheduleId,
-            scheduledFor: run.scheduledFor,
-            status: run.status as 'success' | 'error' | 'interrupted',
-            conversationId: run.conversationId,
-            error: run.error,
-            autoDisableAfterFailures: runLimits.autoDisableAfterFailures,
-          });
+          try {
+            const owner = await deps.getUserContext(run.user);
+            const runLimits = owner
+              ? await deps.runInTenantContext(owner, () => deps.getLimits(owner))
+              : limits;
+            await deps.methods.finalizeBookkeeping({
+              scheduleId: run.scheduleId,
+              scheduledFor: run.scheduledFor,
+              status: run.status as 'success' | 'error' | 'interrupted',
+              conversationId: run.conversationId,
+              error: run.error,
+              autoDisableAfterFailures: runLimits.autoDisableAfterFailures,
+            });
+          } catch (rowError) {
+            logger.error(
+              `[schedules] bookkeeping replay failed for run ${run.scheduleId}:`,
+              rowError,
+            );
+          }
         }
       });
 

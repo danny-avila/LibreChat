@@ -57,6 +57,11 @@ function makeMethods(schedule: FireableSchedule) {
     getRunsForReconciliation: jest.fn(async () => []),
     getUnbookkeptRuns: jest.fn(async () => []),
     getDeletingSchedules: jest.fn(async () => []),
+    recordRunOutcome: jest.fn(async () => undefined),
+    getUnarmedSchedules: jest.fn(async () => []),
+    armSchedule: jest.fn(async () => undefined),
+    eraseScheduleIfDrained: jest.fn(async () => true),
+    finalizeBookkeeping: jest.fn(async () => undefined),
   };
 }
 
@@ -195,5 +200,39 @@ describe('runTick error handling', () => {
     // Advancing on a failed disable would leave `enabled: true` with no nextRunAt
     // and no disabledReason: permanently unclaimable and invisible to its owner.
     expect(methods.advanceSchedule).not.toHaveBeenCalled();
+  });
+});
+
+describe('reconciliation is isolated per row', () => {
+  /**
+   * getRunsForReconciliation returns the OLDEST rows first, so a row that always throws
+   * came back every tick and starved every run behind it — in the one component whose
+   * entire job is settling states nothing else will.
+   */
+  it('keeps reconciling after a row throws', async () => {
+    const methods = makeMethods(makeClaimedSchedule());
+    const rows = [
+      { scheduleId: 'poison', scheduledFor: new Date(0), user: 'u1', status: 'started' },
+      { scheduleId: 'healthy', scheduledFor: new Date(0), user: 'u1', status: 'started' },
+    ];
+    (methods.getRunsForReconciliation as jest.Mock).mockResolvedValue(rows);
+    (methods.recordRunOutcome as jest.Mock).mockImplementation(async (params) => {
+      if (params.scheduleId === 'poison') {
+        throw new Error('permanently broken row');
+      }
+    });
+
+    await tickOnce(
+      makeDeps(methods, {
+        // Both rows are orphans well past the cutoff, so both reach recordRunOutcome.
+        getJobStatus: async () => null,
+      }),
+    );
+
+    const settled = (methods.recordRunOutcome as jest.Mock).mock.calls.map(
+      ([params]) => params.scheduleId,
+    );
+    expect(settled).toContain('poison');
+    expect(settled).toContain('healthy');
   });
 });
