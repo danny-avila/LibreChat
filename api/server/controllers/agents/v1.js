@@ -948,6 +948,22 @@ const duplicateAgentHandler = async (req, res) => {
         configServers,
         resolvedServerNames,
       });
+      /** When the registry is unavailable, `filterAuthorizedTools` grandfathers the
+       *  source's tools without resolving them, so carry forward the source names those
+       *  retained tools still point at rather than blanking the index. */
+      const sourceNames = agent.mcpServerNames ?? [];
+      if (sourceNames.length > 0) {
+        const sourceNameSet = new Set(sourceNames);
+        for (const tool of newAgentData.tools ?? []) {
+          if (typeof tool !== 'string' || !tool.includes(Constants.mcp_delimiter)) {
+            continue;
+          }
+          const [, retainedName] = splitMCPToolKey(tool, sourceNames);
+          if (retainedName && sourceNameSet.has(retainedName)) {
+            resolvedServerNames.add(retainedName);
+          }
+        }
+      }
       newAgentData.mcpServerNames = Array.from(resolvedServerNames);
     }
 

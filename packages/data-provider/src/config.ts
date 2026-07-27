@@ -2809,15 +2809,22 @@ export function splitMCPToolKey(
  * Splits a tool-call name for display, where the key may be a synthetic MCP OAuth
  * call (`oauth${mcp_delimiter}${serverName}`) rather than a real tool key.
  *
- * The OAuth form is unambiguous because its tool half is always exactly `oauth`,
- * so everything after the first delimiter is the server even when the server name
- * itself contains one. Real tool keys go through `splitMCPToolKey`, whose tool half
- * is untrusted and may carry the delimiter.
+ * A configured server name is authoritative when one matches, because a real tool key
+ * always ends in its server. Only when none matches does the `oauth` prefix decide,
+ * which keeps a genuine upstream tool named `oauth${mcp_delimiter}...` from being read
+ * as a synthetic call while still resolving OAuth prompts for unconfigured servers.
  */
 export function splitToolCallName(
   toolCallName: string,
   knownServerNames?: readonly string[],
 ): [string, string | undefined] {
+  if (knownServerNames?.length) {
+    const [toolName, serverName] = splitMCPToolKey(toolCallName, knownServerNames);
+    if (serverName != null && knownServerNames.includes(serverName)) {
+      return [toolName, serverName];
+    }
+  }
+
   const oauthPrefix = `oauth${Constants.mcp_delimiter}`;
   if (toolCallName.startsWith(oauthPrefix)) {
     return ['oauth', toolCallName.slice(oauthPrefix.length)];

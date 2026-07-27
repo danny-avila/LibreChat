@@ -69,3 +69,25 @@ describe('splitToolCallName', () => {
     ]);
   });
 });
+
+describe('splitToolCallName with configured server names', () => {
+  const d = Constants.mcp_delimiter;
+
+  it('reads a real tool whose own name starts with the oauth prefix', () => {
+    expect(splitToolCallName(`oauth${d}reset${d}github`, ['github'])).toEqual([
+      `oauth${d}reset`,
+      'github',
+    ]);
+  });
+
+  it('still resolves a synthetic OAuth call for a configured server', () => {
+    expect(splitToolCallName(`oauth${d}github`, ['github'])).toEqual(['oauth', 'github']);
+  });
+
+  it('resolves a synthetic OAuth call for a delimiter-bearing configured server', () => {
+    expect(splitToolCallName(`oauth${d}foo${d}bar`, [`foo${d}bar`])).toEqual([
+      'oauth',
+      `foo${d}bar`,
+    ]);
+  });
+});
