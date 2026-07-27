@@ -468,7 +468,14 @@ function Palette({
     const before = previousTops.current;
     previousTops.current = layout.tops;
     const body = listBodyRef.current;
-    if (instant || body == null || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    /* Where there is no Web Animations API to play the move with, the rows just
+       arrive where they belong — the same as asking for no motion. */
+    if (
+      instant ||
+      body == null ||
+      typeof body.animate !== 'function' ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
       return;
     }
     for (const element of body.querySelectorAll<HTMLElement>('[data-row-key]')) {
