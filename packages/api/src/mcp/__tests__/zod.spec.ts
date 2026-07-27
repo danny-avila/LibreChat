@@ -3137,3 +3137,35 @@ describe('normalizeJsonSchema $-key recursion', () => {
     expect(result.properties.$filter).toEqual({ type: 'string' });
   });
 });
+
+describe('normalizeJsonSchema draft-07 and 2020-12 containers', () => {
+  it('strips a $ keyword under draft-07 dependencies', () => {
+    const result = normalizeJsonSchema({
+      type: 'object',
+      dependencies: { foo: { $comment: 'x', type: 'object' } },
+    } as Record<string, unknown>);
+
+    expect(JSON.stringify(result)).not.toContain('"$');
+  });
+
+  it('leaves a draft-07 dependencies property-name array intact', () => {
+    /** `dependencies` is polymorphic: an array of required property names is data,
+     *  not a subschema, and must round-trip unchanged. */
+    const result = normalizeJsonSchema({
+      type: 'object',
+      dependencies: { foo: ['bar', 'baz'] },
+    } as Record<string, unknown>) as { dependencies: Record<string, unknown> };
+
+    expect(result.dependencies.foo).toEqual(['bar', 'baz']);
+  });
+
+  it('strips a $ keyword under contentSchema', () => {
+    const result = normalizeJsonSchema({
+      type: 'string',
+      contentMediaType: 'application/json',
+      contentSchema: { $schema: 'x', type: 'object' },
+    } as Record<string, unknown>);
+
+    expect(JSON.stringify(result)).not.toContain('"$');
+  });
+});

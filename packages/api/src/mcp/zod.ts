@@ -322,6 +322,7 @@ const SCHEMA_KEYWORDS = new Set([
   'unevaluatedProperties',
   'propertyNames',
   'contains',
+  'contentSchema',
   'not',
   'if',
   'then',
@@ -329,7 +330,14 @@ const SCHEMA_KEYWORDS = new Set([
 ]);
 
 /** Keywords whose value maps names to subschemas. */
-const SCHEMA_MAP_KEYWORDS = new Set(['properties', 'patternProperties', 'dependentSchemas']);
+const SCHEMA_MAP_KEYWORDS = new Set([
+  'properties',
+  'patternProperties',
+  'dependentSchemas',
+  /** draft-07, where a value is either a subschema or an array of property
+   *  names; an array round-trips unchanged through the recursion. */
+  'dependencies',
+]);
 
 /** Keywords whose value is an array of subschemas. */
 const SCHEMA_LIST_KEYWORDS = new Set(['oneOf', 'anyOf', 'allOf', 'prefixItems']);
