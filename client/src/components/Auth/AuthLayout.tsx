@@ -39,7 +39,7 @@ function AuthLayout({
         <div className="mx-auto sm:max-w-sm">
           <ErrorMessage>
             {localize('com_auth_error_invalid_reset_token')}{' '}
-            <a className="font-semibold text-green-600 hover:underline" href="/forgot-password">
+            <a className="font-semibold text-gray-800 hover:underline dark:text-gray-200" href="/forgot-password">
               {localize('com_auth_click_here')}
             </a>{' '}
             {localize('com_auth_to_try_again')}
@@ -60,10 +60,11 @@ function AuthLayout({
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <Banner />
       <BlinkAnimation active={isFetching}>
-        <div className="mt-6 h-10 w-full bg-cover">
+        {/* BKL: 텍스트 placeholder SVG 대신 실제 bkl 로고 (검은 바탕 소문자 bkl) */}
+        <div className="mt-8 flex h-12 w-full items-center justify-center">
           <img
-            src="assets/bkl-logo-rounded.svg"
-            className="h-full w-full object-contain"
+            src="assets/bkl-logo.png"
+            className="h-full w-auto object-contain"
             alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
           />
         </div>
@@ -74,7 +75,8 @@ function AuthLayout({
       </div>
 
       <main className="flex flex-grow items-center justify-center">
-        <div className="w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
+        {/* BKL: max-w-md(28rem)에서 제목이 2줄로 꺾여 max-w-lg 로 확장 */}
+        <div className="w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-lg sm:rounded-lg">
           {!hasStartupConfigError && !isFetching && header && (
             <h1
               className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
