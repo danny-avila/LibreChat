@@ -42,10 +42,16 @@ export default function useComposerItems(conversationId: string): ComposerItem[]
   return useMemo(() => {
     const items: ComposerItem[] = [];
 
+    /* Keyed by content, with the index only breaking ties between two
+       identical excerpts: an index in every id rewrote the ids of everything
+       after a removal, remounting those chips and dropping focus. */
+    const seen = new Map<string, number>();
     for (let i = 0; i < quotes.length; i++) {
       const text = quotes[i];
+      const repeat = seen.get(text) ?? 0;
+      seen.set(text, repeat + 1);
       items.push({
-        id: `quote:${i}:${text.slice(0, 24)}`,
+        id: repeat === 0 ? `quote:${text}` : `quote:${text}#${repeat}`,
         kind: 'quote',
         label: text,
         title: text,

@@ -116,7 +116,12 @@ export default function useAttachItems({
 }: UseAttachItemsParams): UseAttachItems {
   const localize = useLocalize();
   const inputRef = useRef<HTMLInputElement>(null);
+  /* The local picker reads this at event time, where a ref is the only thing
+     fast enough: the change event can arrive before React has committed. The
+     SharePoint dialog reads it during render, which a ref cannot serve, so the
+     same choice is mirrored into state for it. */
   const toolResourceRef = useRef<EToolResources | undefined>();
+  const [sharePointResource, setSharePointResource] = useState<EToolResources | undefined>();
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
   const [, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(conversationId));
 
@@ -128,7 +133,7 @@ export default function useAttachItems({
   });
   const { handleSharePointFiles, isProcessing, downloadProgress } =
     useSharePointFileHandlingNoChatContext(
-      { toolResource: toolResourceRef.current },
+      { toolResource: sharePointResource },
       { files, setFiles, setFilesLoading, conversation },
     );
 
@@ -191,6 +196,7 @@ export default function useAttachItems({
   const entries = useMemo<AttachEntry[]>(() => {
     const setToolResource = (value: EToolResources | undefined) => {
       toolResourceRef.current = value;
+      setSharePointResource(value);
     };
 
     const build = (onAction: (fileType?: FileUploadType) => void, prefix: string) => {

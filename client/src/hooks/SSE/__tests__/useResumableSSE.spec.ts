@@ -259,7 +259,10 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
-import useResumableSSE, { selectLocalSteersForQueue } from '~/hooks/SSE/useResumableSSE';
+import useResumableSSE, {
+  selectLocalSteersForQueue,
+  ABORT_SWEEP_STATUSES,
+} from '~/hooks/SSE/useResumableSSE';
 
 const CONV_ID = 'conv-abc-123';
 
@@ -3939,5 +3942,28 @@ describe('selectLocalSteersForQueue', () => {
     const [withResult, withoutResult] = selectLocalSteersForQueue([withFiles, withoutFiles]);
     expect(withResult.files).toEqual(withFiles.files);
     expect(withoutResult.files).toBeUndefined();
+  });
+
+  describe('the abort sweep', () => {
+    /* The abort path is the one terminal where the run may still be live on the
+       server, so a chip it has already ACK'd must be left for it to inject. */
+    it('sweeps only what never reached the server', () => {
+      expect([...ABORT_SWEEP_STATUSES]).toEqual(['failed']);
+    });
+
+    it("leaves an ACK'd chip alone where the default sweep would take it", () => {
+      const chips = [
+        chip({ steerId: 'acked', status: 'pending' }),
+        chip({ steerId: 'never-sent', status: 'failed' }),
+      ];
+      expect(selectLocalSteersForQueue(chips, ABORT_SWEEP_STATUSES).map((s) => s.steerId)).toEqual([
+        'never-sent',
+      ]);
+      /* Where the run has genuinely ended, both are swept. */
+      expect(selectLocalSteersForQueue(chips).map((s) => s.steerId)).toEqual([
+        'acked',
+        'never-sent',
+      ]);
+    });
   });
 });

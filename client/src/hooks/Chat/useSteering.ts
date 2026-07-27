@@ -1377,9 +1377,13 @@ export default function useSteering({
       if (isSubmitting && (!duringRunActive || !canSteer || item.recoverySteerId != null)) {
         return;
       }
-      /** UI callers always find the item; a stale/direct caller has no original
-       *  neighbours, so restoration falls back to the queue's priority split. */
-      const origin = takeQueued(item.id) ?? { item, beforeIds: [], afterIds: [] };
+      /* No fallback to the captured item: the only way it is missing is that
+         something else already took it — the run-end drain, moments before this
+         click landed — and re-sending it would send the same words twice. */
+      const origin = takeQueued(item.id);
+      if (origin == null) {
+        return;
+      }
       const taken = origin.item;
       if (duringRunActive && canSteer) {
         const consumed = submitSteer(

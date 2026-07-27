@@ -276,6 +276,16 @@ function Queue({ steering, conversationId, onEditToComposer, onRestoreToComposer
   const [announcement, setAnnouncement] = useState('');
   const order = useMemo(() => queued.map((message) => message.id), [queued]);
 
+  /* Cleared when the rail empties or the conversation changes: the region is
+     removed with the rail and re-inserted with its old text still in it, which
+     readers announce on insertion — so an unrelated new message replayed the
+     last move. */
+  const [spokenFor, setSpokenFor] = useState(steering.queueKey);
+  if (spokenFor !== steering.queueKey || (queued.length === 0 && announcement !== '')) {
+    setSpokenFor(steering.queueKey);
+    setAnnouncement('');
+  }
+
   if (queued.length === 0) {
     return null;
   }

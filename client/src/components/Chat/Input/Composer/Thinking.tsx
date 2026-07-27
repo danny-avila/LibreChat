@@ -15,13 +15,12 @@ import { cn } from '~/utils';
 const RESIZE_MS = 190;
 const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)';
 
-function ThinkingControl({
-  setting,
-  conversation,
-}: {
+interface ThinkingControlProps {
   setting: SettingDefinition;
   conversation: TConversation | null;
-}) {
+}
+
+function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
   const localize = useLocalize();
   const reducedMotion = useReducedMotion();
   /* Ariakit owns the open state rather than a controlled `open`/`setOpen` pair:

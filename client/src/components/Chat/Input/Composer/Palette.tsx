@@ -257,6 +257,11 @@ function Palette({
     [],
   );
 
+  /* The popup stays "mounted" through its leave transition, so a composer
+     unmounted inside that window never reaches the reset below and leaves the
+     landing screen holding a lift with no popup under it. */
+  useEffect(() => () => setLift(0), [setLift]);
+
   const baselineRef = useRef<number | null>(null);
   useLayoutEffect(() => {
     if (!mounted) {
@@ -280,7 +285,7 @@ function Palette({
   }, [mounted, popupHeight, setLift, anchorRef, follow]);
 
   const favorites = useToolFavorites();
-  const recent = useRecentFiles(mounted && canAttach);
+  const recent = useRecentFiles(mounted && canAttach, { files, setFiles, conversation });
   const attach = useAttachItems({
     agentId,
     endpoint,
@@ -828,16 +833,16 @@ function Palette({
               <span className="truncate text-xs text-text-secondary opacity-80">{description}</span>
             )}
           </span>
-          {/* Modes ride on the parent row rather than a row of their own. Pointer
-              only, like the star — an `option` must not own focusable children;
-              the chip in the bar carries the keyboard-reachable equivalent. */}
+          {/* Modes ride on the parent row rather than a row of their own.
+              Pointer targets rather than buttons, like the star: an `option`
+              must not own focusable children, and a hidden button is still
+              click-focusable, which strands a reader inside a hidden subtree.
+              The chip in the bar carries the keyboard-reachable equivalent. */}
           {modes != null &&
             modes.map((mode) => (
-              <button
+              <span
                 key={mode.id}
-                type="button"
-                tabIndex={-1}
-                aria-hidden="true"
+                role="presentation"
                 onClick={(e) => {
                   e.stopPropagation();
                   mode.onSelect();
@@ -850,13 +855,11 @@ function Palette({
                 )}
               >
                 {mode.label}
-              </button>
+              </span>
             ))}
           {isEntry && (
-            <button
-              type="button"
-              tabIndex={-1}
-              aria-hidden="true"
+            <span
+              role="presentation"
               onClick={(e) => {
                 e.stopPropagation();
                 favorites.toggleFavorite(row.entry.itemType, row.entry.itemId);
@@ -873,7 +876,7 @@ function Palette({
                 fill={favorited ? 'currentColor' : 'none'}
                 aria-hidden="true"
               />
-            </button>
+            </span>
           )}
         </div>
       );
@@ -976,7 +979,7 @@ function Palette({
                 role="combobox"
                 aria-expanded={rows.length > 0}
                 autoComplete="off"
-                aria-controls="composer-palette-list"
+                aria-controls={rows.length > 0 ? 'composer-palette-list' : undefined}
                 aria-activedescendant={
                   activeRow != null && isSelectable(activeRow)
                     ? rowElementId(activeRow.key)
