@@ -6,19 +6,21 @@ import {
   Permissions,
   ArtifactModes,
   PermissionTypes,
+  isEphemeralAgentId,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
 import type { TSkillSummary, TToolFavoriteType } from 'librechat-data-provider';
-import { useHasAccess, useHasMemoryAccess, useAgentCapabilities } from '~/hooks';
+import {
+  useHasAccess,
+  useHasMemoryAccess,
+  useAgentCapabilities,
+  useSkillActiveState,
+} from '~/hooks';
 import { filterSkillsForPopover } from '~/components/Chat/Input/SkillsCommand';
+import { useAgentsMapContext, useBadgeRowContext } from '~/Providers';
 import { useSkillsInfiniteQuery } from '~/data-provider';
-import { useAgentsMapContext } from '~/Providers';
-import { ephemeralAgentByConvoId } from '~/store';
-import { useBadgeRowContext } from '~/Providers';
-import { useSkillActiveState } from '~/hooks';
+import store, { ephemeralAgentByConvoId } from '~/store';
 import useLocalize from '~/hooks/useLocalize';
-import { isEphemeralAgent } from '~/common';
-import store from '~/store';
 
 export type PaletteSection = 'tool' | 'skill' | 'mcp';
 
@@ -167,7 +169,7 @@ export default function usePaletteEntries({
      catalog; persisted agents gate on `skills_enabled` and fail closed while
      `agentsMap` is hydrating or when the agent is missing from it. */
   const agentSkillIds = useMemo<string[] | null | undefined>(() => {
-    if (!agentId || isEphemeralAgent(agentId)) {
+    if (!agentId || isEphemeralAgentId(agentId)) {
       return undefined;
     }
     if (!agentsMap) {

@@ -1,4 +1,4 @@
-import { memo, useRef, useState, useCallback } from 'react';
+import { memo, useRef, useMemo, useState, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useDrag, useDrop } from 'react-dnd';
 import { useMediaQuery } from '@librechat/client';
@@ -20,6 +20,8 @@ const REORDER_HINT_ID = 'composer-queue-reorder-hint';
 interface DragItem {
   id: string;
   index: number;
+  /** The order the drag started from, so abandoning it puts things back. */
+  order: string[];
 }
 
 /** Restores a message's text into the composer, or refuses (false) when the
@@ -47,6 +49,9 @@ interface QueueRowProps {
   message: QueuedMessage;
   index: number;
   total: number;
+  /** Every queued id in order, captured when a drag starts so abandoning it
+   *  can put the queue back the way it was. */
+  order: string[];
   steering: SteeringControls;
   conversationId: string;
   onEditToComposer: QueueProps['onEditToComposer'];
@@ -58,6 +63,7 @@ function QueueRow({
   message,
   index,
   total,
+  order,
   steering,
   conversationId,
   onEditToComposer,
@@ -67,7 +73,7 @@ function QueueRow({
   const localize = useLocalize();
   const rowRef = useRef<HTMLDivElement>(null);
   const gripRef = useRef<HTMLButtonElement>(null);
-  const { reorderQueued } = steering;
+  const { reorderQueued, restoreQueuedOrder } = steering;
   /* The queue is sent in order, so one message cannot be ahead of or behind
      itself: the handle only means something once there is somewhere to go. */
   const reorderable = total > 1;
@@ -98,8 +104,16 @@ function QueueRow({
   const [{ isDragging }, drag] = useDrag({
     type: DRAG_TYPE,
     canDrag: reorderable && canDrag,
-    item: (): DragItem => ({ id: message.id, index }),
+    item: (): DragItem => ({ id: message.id, index, order }),
     collect: (monitor) => ({ isDragging: monitor.isDragging() }),
+    /* The rows are moved as the pointer crosses them, so a drag the user
+       abandons — Escape, or a release outside the rail — has already changed
+       the queue. Dropping nowhere puts the order back. */
+    end: (item, monitor) => {
+      if (!monitor.didDrop()) {
+        restoreQueuedOrder(item.order);
+      }
+    },
   });
 
   const move = useCallback(
@@ -216,13 +230,18 @@ function QueueRow({
         type="button"
         aria-label={localize('com_ui_remove_queued')}
         onClick={() => {
-          onRestoreToComposer(
+          /* Only dropped once the words are somewhere else. The composer
+             refuses when it is occupied or the user has moved to another
+             chat, and removing the message anyway destroyed it. */
+          const restored = onRestoreToComposer(
             message.text,
             message.files,
             { quotes: message.quotes, manualSkills: message.manualSkills },
             conversationId,
           );
-          steering.removeQueued(message.id);
+          if (restored) {
+            steering.removeQueued(message.id);
+          }
         }}
         className={ICON_BTN}
       >
@@ -255,6 +274,7 @@ function Queue({ steering, conversationId, onEditToComposer, onRestoreToComposer
   /* Spoken only for the keys. A drag reorders on every crossing, and a reader
      narrating each one would be behind the pointer and in the way of it. */
   const [announcement, setAnnouncement] = useState('');
+  const order = useMemo(() => queued.map((message) => message.id), [queued]);
 
   if (queued.length === 0) {
     return null;
@@ -279,6 +299,7 @@ function Queue({ steering, conversationId, onEditToComposer, onRestoreToComposer
             message={message}
             index={index}
             total={queued.length}
+            order={order}
             steering={steering}
             conversationId={conversationId}
             onEditToComposer={onEditToComposer}
