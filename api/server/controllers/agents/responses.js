@@ -3,6 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
 const {
+  Constants,
   EModelEndpoint,
   ResourceType,
   PermissionBits,
@@ -117,6 +118,35 @@ function convertToInternalMessages(input) {
 }
 
 /**
+ * Resolve a client-supplied id to a conversation the user owns.
+ *
+ * Per the Open Responses spec, clients hand back the `id` they were given,
+ * which is a response ID (`resp_…`, stored as the assistant message's
+ * `messageId`). Conversation IDs are also accepted, since this API previously
+ * only resolved those.
+ *
+ * @param {string} userId - The user ID
+ * @param {string} id - A response ID or a conversation ID
+ * @returns {Promise<{ conversationId?: string, conversation?: object }>} The resolved conversation
+ */
+async function resolveConversation(userId, id) {
+  const conversation = await db.getConvo(userId, id);
+  if (conversation) {
+    return { conversationId: id, conversation };
+  }
+
+  const message = await db.getMessage({ user: userId, messageId: id });
+  if (!message?.conversationId) {
+    return {};
+  }
+
+  return {
+    conversationId: message.conversationId,
+    conversation: await db.getConvo(userId, message.conversationId),
+  };
+}
+
+/**
  * Load messages from a previous response/conversation
  * @param {string} conversationId - The conversation/response ID
  * @param {string} userId - The user ID
@@ -156,22 +186,43 @@ async function loadPreviousMessages(conversationId, userId) {
 }
 
 /**
+ * Build the context object `saveMessage`/`saveConvo` expect as their first argument
+ * @param {import('express').Request} req
+ * @returns {{ userId: string, isTemporary: boolean, interfaceConfig: object }}
+ */
+function buildSaveContext(req) {
+  return {
+    userId: req?.user?.id,
+    isTemporary: req?.body?.isTemporary,
+    interfaceConfig: req?.config?.interfaceConfig,
+  };
+}
+
+/**
  * Save input messages to database
  * @param {import('express').Request} req
  * @param {string} conversationId
  * @param {Array} inputMessages - Internal format messages
  * @param {string} agentId
- * @returns {Promise<void>}
+ * @returns {Promise<string>} The messageId the assistant response should be parented to
  */
 async function saveInputMessages(req, conversationId, inputMessages, agentId) {
+  const userId = req?.user?.id;
+  /** Chain onto the conversation's newest stored message (multi-turn), else the root */
+  const priorMessages = await db.getMessages({ conversationId, user: userId });
+  let parentMessageId = priorMessages?.length
+    ? priorMessages[priorMessages.length - 1].messageId
+    : Constants.NO_PARENT;
+
   for (const msg of inputMessages) {
     if (msg.role === 'user') {
+      const messageId = msg.messageId || nanoid();
       await db.saveMessage(
-        req,
+        buildSaveContext(req),
         {
-          messageId: msg.messageId || nanoid(),
+          messageId,
           conversationId,
-          parentMessageId: null,
+          parentMessageId,
           isCreatedByUser: true,
           text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
           sender: 'User',
@@ -180,8 +231,11 @@ async function saveInputMessages(req, conversationId, inputMessages, agentId) {
         },
         { context: 'Responses API - save user input' },
       );
+      parentMessageId = messageId;
     }
   }
+
+  return parentMessageId;
 }
 
 /**
@@ -191,9 +245,17 @@ async function saveInputMessages(req, conversationId, inputMessages, agentId) {
  * @param {string} responseId
  * @param {import('@librechat/api').Response} response
  * @param {string} agentId
+ * @param {string} [parentMessageId] - The user message this response answers
  * @returns {Promise<void>}
  */
-async function saveResponseOutput(req, conversationId, responseId, response, agentId) {
+async function saveResponseOutput(
+  req,
+  conversationId,
+  responseId,
+  response,
+  agentId,
+  parentMessageId,
+) {
   // Extract text content from output items
   let responseText = '';
   for (const item of response.output) {
@@ -208,11 +270,11 @@ async function saveResponseOutput(req, conversationId, responseId, response, age
 
   // Save the assistant message
   await db.saveMessage(
-    req,
+    buildSaveContext(req),
     {
       messageId: responseId,
       conversationId,
-      parentMessageId: null,
+      parentMessageId: parentMessageId ?? Constants.NO_PARENT,
       isCreatedByUser: false,
       text: responseText,
       sender: 'Agent',
@@ -235,15 +297,11 @@ async function saveResponseOutput(req, conversationId, responseId, response, age
  */
 async function saveConversation(req, conversationId, agentId, agent) {
   await db.saveConvo(
-    {
-      userId: req?.user?.id,
-      isTemporary: req?.body?.isTemporary,
-      interfaceConfig: req?.config?.interfaceConfig,
-    },
+    buildSaveContext(req),
     {
       conversationId,
       endpoint: EModelEndpoint.agents,
-      agentId,
+      agent_id: agentId,
       title: agent?.name || 'Open Responses Conversation',
       model: agent?.model,
     },
@@ -336,6 +394,7 @@ const createResponse = async (req, res) => {
   });
 
   try {
+    let resolvedConversationId;
     if (request.previous_response_id != null) {
       if (typeof request.previous_response_id !== 'string') {
         return sendResponsesErrorResponse(
@@ -345,12 +404,16 @@ const createResponse = async (req, res) => {
           'invalid_request',
         );
       }
-      if (!(await db.getConvo(req.user?.id, request.previous_response_id))) {
+      ({ conversationId: resolvedConversationId } = await resolveConversation(
+        req.user?.id,
+        request.previous_response_id,
+      ));
+      if (!resolvedConversationId) {
         return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
       }
     }
 
-    const conversationId = request.previous_response_id ?? uuidv4();
+    const conversationId = resolvedConversationId ?? uuidv4();
     const parentMessageId = null;
 
     // Build allowed providers set
@@ -606,7 +669,7 @@ const createResponse = async (req, res) => {
     let previousMessages = [];
     if (request.previous_response_id) {
       const userId = req.user?.id ?? 'api-user';
-      previousMessages = await loadPreviousMessages(request.previous_response_id, userId);
+      previousMessages = await loadPreviousMessages(conversationId, userId);
     }
 
     // Convert input to internal messages
@@ -861,11 +924,23 @@ const createResponse = async (req, res) => {
           await saveConversation(req, conversationId, agentId, agent);
 
           // Save input messages
-          await saveInputMessages(req, conversationId, inputMessages, agentId);
+          const lastUserMessageId = await saveInputMessages(
+            req,
+            conversationId,
+            inputMessages,
+            agentId,
+          );
 
           // Build response for saving (use tracker with buildResponse for streaming)
           const finalResponse = buildResponse(context, tracker, 'completed');
-          await saveResponseOutput(req, conversationId, responseId, finalResponse, agentId);
+          await saveResponseOutput(
+            req,
+            conversationId,
+            responseId,
+            finalResponse,
+            agentId,
+            lastUserMessageId,
+          );
 
           logger.debug(
             `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
@@ -1039,9 +1114,21 @@ const createResponse = async (req, res) => {
         try {
           await saveConversation(req, conversationId, agentId, agent);
 
-          await saveInputMessages(req, conversationId, inputMessages, agentId);
+          const lastUserMessageId = await saveInputMessages(
+            req,
+            conversationId,
+            inputMessages,
+            agentId,
+          );
 
-          await saveResponseOutput(req, conversationId, responseId, response, agentId);
+          await saveResponseOutput(
+            req,
+            conversationId,
+            responseId,
+            response,
+            agentId,
+            lastUserMessageId,
+          );
 
           logger.debug(
             `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
@@ -1157,8 +1244,7 @@ const getResponse = async (req, res) => {
     }
 
     // The responseId could be either the response ID or the conversation ID
-    // Try to find a conversation with this ID
-    const conversation = await db.getConvo(userId, responseId);
+    const { conversationId, conversation } = await resolveConversation(userId, responseId);
 
     if (!conversation) {
       return sendResponsesErrorResponse(
@@ -1171,7 +1257,7 @@ const getResponse = async (req, res) => {
     }
 
     // Load messages for this conversation
-    const messages = await db.getMessages({ conversationId: responseId, user: userId });
+    const messages = await db.getMessages({ conversationId, user: userId });
 
     if (!messages || messages.length === 0) {
       return sendResponsesErrorResponse(
@@ -1197,7 +1283,7 @@ const getResponse = async (req, res) => {
       completed_at: Math.floor(new Date(conversation.updatedAt || Date.now()).getTime() / 1000),
       status: 'completed',
       incomplete_details: null,
-      model: conversation.agentId || conversation.model || 'unknown',
+      model: conversation.agent_id || conversation.model || 'unknown',
       previous_response_id: null,
       instructions: null,
       output,

@@ -260,6 +260,7 @@ jest.mock('~/models', () => ({
   getFiles: jest.fn(),
   getUserKey: jest.fn(),
   getMessages: jest.fn().mockResolvedValue([]),
+  getMessage: jest.fn().mockResolvedValue(null),
   saveMessage: jest.fn().mockResolvedValue({}),
   updateFilesUsage: jest.fn(),
   getUserKeyValues: jest.fn(),
