@@ -271,7 +271,7 @@ describe('useResumableSSE', () => {
     mockClearStepMaps.mockClear();
     mockSetIsSubmitting.mockClear();
     mockSetQueryData.mockClear();
-    mockGetQueryData.mockClear();
+    mockGetQueryData.mockReset();
     mockInvalidateQueries.mockClear();
     mockRemoveQueries.mockClear();
     mockFindAll.mockClear();
@@ -332,6 +332,10 @@ describe('useResumableSSE', () => {
     const { unmount } = await render404Scenario(CONV_ID);
 
     expect(mockErrorHandler).not.toHaveBeenCalled();
+    expect(mockSetQueryData).not.toHaveBeenCalledWith(
+      ['resumable-terminal-event', 'stream-123'],
+      true,
+    );
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: ['messages', CONV_ID],
     });
@@ -432,6 +436,10 @@ describe('useResumableSSE', () => {
 
   it('reconciles conversations via refetch instead of removing them on a resume 404', async () => {
     mockFindAll.mockReturnValue([{ queryKey: [QueryKeys.allConversations] }]);
+    mockGetQueryData.mockReturnValue({
+      startedAsNewConvo: true,
+      created: true,
+    });
     // A deduped start returns status: 'resumed', so the client subscribes with resume=true.
     (request.post as jest.Mock).mockResolvedValue({ streamId: 'stream-123', status: 'resumed' });
     const submission = buildSubmission({
@@ -470,6 +478,10 @@ describe('useResumableSSE', () => {
     // asserting the invalidate proves the immediate removal did not run.
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: [QueryKeys.allConversations],
+    });
+    expect(mockSetQueryData).toHaveBeenCalledWith(['resumable-disconnected-run', 'stream-123'], {
+      startedAsNewConvo: true,
+      created: true,
     });
     unmount();
   });
@@ -575,6 +587,10 @@ describe('useResumableSSE', () => {
       ]),
     );
     expect(mockFindAll).toHaveBeenCalledWith([QueryKeys.allConversations], { exact: false });
+    expect(mockSetQueryData).toHaveBeenCalledWith(['resumable-disconnected-run', 'stream-123'], {
+      startedAsNewConvo: true,
+      created: false,
+    });
 
     unmount();
   });
@@ -666,6 +682,10 @@ describe('useResumableSSE', () => {
         userMessage: expect.objectContaining({ conversationId: 'stream-123' }),
       }),
     );
+    expect(mockSetQueryData).toHaveBeenCalledWith(['resumable-disconnected-run', 'stream-123'], {
+      startedAsNewConvo: true,
+      created: true,
+    });
     unmount();
   });
 
@@ -1849,6 +1869,15 @@ describe('useResumableSSE', () => {
     });
 
     expect(mockErrorHandler).toHaveBeenCalledTimes(1);
+    const errorHandlerOrder = mockErrorHandler.mock.invocationCallOrder[0];
+    const terminalMarkerCall = mockSetQueryData.mock.calls.findIndex(
+      ([queryKey, value]) =>
+        Array.isArray(queryKey) && queryKey[0] === 'resumable-terminal-event' && value === true,
+    );
+    expect(terminalMarkerCall).toBeGreaterThanOrEqual(0);
+    expect(errorHandlerOrder).toBeLessThan(
+      mockSetQueryData.mock.invocationCallOrder[terminalMarkerCall],
+    );
     unmount();
   });
 

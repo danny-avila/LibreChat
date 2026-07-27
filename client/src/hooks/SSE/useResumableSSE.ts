@@ -59,6 +59,7 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import useUsageHandler from './useUsageHandler';
 import {
   clearResumableRecovery,
+  getDisconnectedRunRecovery,
   markTerminalEventSeen,
   setDisconnectedRunRecovery,
 } from './resumableRecovery';
@@ -883,6 +884,12 @@ export default function useResumableSSE(
               conversationId: data.message?.conversationId,
             });
             createdStreamIdsRef.current.add(currentStreamId);
+            if (optimisticStreamIdsRef.current.has(currentStreamId)) {
+              setDisconnectedRunRecovery(queryClient, currentStreamId, {
+                startedAsNewConvo: true,
+                created: true,
+              });
+            }
             const runId = v4();
             setActiveRunId(runId);
             userMessage = {
@@ -1223,7 +1230,6 @@ export default function useResumableSSE(
           const convoId = currentSubmission.conversation?.conversationId;
           logger.log('ResumableSSE', 'Stream 404, invalidating messages for:', convoId);
           sse.close();
-          markTerminalEventSeen(queryClient, currentStreamId);
           removeActiveJob(currentStreamId);
           /** Terminal: drop any in-flight live estimate so the gauge doesn't
            *  keep counting stale streamed output after the stream ends */
@@ -1319,7 +1325,6 @@ export default function useResumableSSE(
            * tail, so queued tokens must land first — and a stale trailing
            * frame must never overwrite the error write. */
           flushPendingDeltas();
-          markTerminalEventSeen(queryClient, currentStreamId);
           removeActiveJob(currentStreamId);
           resetLive({ ...currentSubmission, userMessage });
           if (
@@ -1363,6 +1368,9 @@ export default function useResumableSSE(
               submission: currentSubmission as EventSubmission,
             });
           }
+          // Suppress polling recovery only after the terminal error has been
+          // written. If errorHandler throws, recovery must remain eligible.
+          markTerminalEventSeen(queryClient, currentStreamId);
 
           setIsSubmitting(false);
           setShowStopButton(false);
@@ -1705,6 +1713,13 @@ export default function useResumableSSE(
           }
           if (isInitialNewConversation(submission)) {
             optimisticStreamIdsRef.current.add(newStreamId);
+            const existingRecovery = resumed
+              ? getDisconnectedRunRecovery(queryClient, newStreamId)
+              : undefined;
+            setDisconnectedRunRecovery(queryClient, newStreamId, {
+              startedAsNewConvo: true,
+              created: existingRecovery?.created === true,
+            });
             replaceNewConversationUrl(newStreamId);
           }
           const streamSubmission = addOptimisticConversation(newStreamId, submission);
