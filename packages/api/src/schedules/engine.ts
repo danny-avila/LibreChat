@@ -407,9 +407,19 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
     runTick,
   };
 
-  registerShutdownTask('schedule engine', () => {
-    engine.stop();
-  });
+  // PRE-DRAIN: the default post-drain phase leaves this timer armed while the HTTP
+  // listener is closing and the generation manager has already begun refusing new jobs.
+  // A tick in that window claims a due occurrence, fails its loopback POST against a
+  // server that is shutting down, and books the failure against the schedule — walking a
+  // healthy schedule toward auto-disable for nothing more than a restart. Stopping first
+  // means the last claim always has a live server to fire at.
+  registerShutdownTask(
+    'schedule engine',
+    () => {
+      engine.stop();
+    },
+    { phase: 'pre-drain' },
+  );
 
   logger.info('[schedules] engine started');
   return engine;

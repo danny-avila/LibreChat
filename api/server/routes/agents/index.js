@@ -368,6 +368,18 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
       abortResultResponseMessageId: abortResult.jobData?.responseMessageId,
     });
 
+    // LOST THE FENCE: a replacement turn claimed this conversationId between the lookup
+    // above and the abort, so nothing of ours was stopped. Everything below acts on the
+    // conversation as a whole — pruning the checkpoint would strip the REPLACEMENT's
+    // resume state, and persisting `abortResult` content would write a partial for a
+    // generation that is still running. Report it as not-aborted instead.
+    if (!abortResult.success && abortResult.jobData == null) {
+      logger.debug(
+        `[AgentStream] Abort refused: generation was replaced before it landed: ${jobStreamId}`,
+      );
+      return res.status(409).json({ error: 'This generation was superseded', aborted: null });
+    }
+
     // HITL: prune the durable checkpoint of a run aborted while paused, so a new turn
     // in this conversation can't rehydrate the stale interrupt before the Mongo TTL
     // reclaims it (thread_id is the stable conversationId). Idempotent / no-op when

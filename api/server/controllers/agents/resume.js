@@ -686,20 +686,35 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         `[ResumeAgentController] Schedule ${job.metadata.scheduleId} went away mid-resume; ` +
           'aborting the claimed turn before it generates',
       );
-      await GenerationJobManager.abortJob(streamId, { expectedCreatedAt: job.createdAt }).catch(
-        (err) => logger.warn('[ResumeAgentController] Failed to abort a superseded resume', err),
+      // PRESERVE until the outcome is durable: the default abort deletes the job, and
+      // if the Mongo write below exhausts its retries that job is the only evidence the
+      // run stopped. Retained, reconcile settles it; deleted, the row is stranded.
+      await GenerationJobManager.abortJob(streamId, {
+        expectedCreatedAt: job.createdAt,
+        preserveForReconcile: true,
+      }).catch((err) =>
+        logger.warn('[ResumeAgentController] Failed to abort a superseded resume', err),
       );
-      // Settle the run too. The CAS already promoted it out of `requires_action`, and
-      // the abort deletes the job, so without this the row stays active with no
-      // generation and no evidence — holding a capacity slot and blocking deletion
-      // until the orphan sweep.
-      await recordScheduleOutcome({
+      // Settle the run too. The CAS already promoted it out of `requires_action`, so
+      // without this the row stays active with no generation — holding a capacity slot
+      // and blocking deletion until the orphan sweep.
+      const settled = await recordScheduleOutcome({
         scheduleId: job.metadata.scheduleId,
         scheduledFor: job.metadata.scheduledFor,
         status: 'interrupted',
         conversationId,
         error: 'Schedule was no longer active when the approval was answered',
       });
+      // Only once the outcome is durable is the retained job disposable; reconcile no
+      // longer scans a settled run, so nothing else would reap it.
+      if (settled) {
+        await clearScheduledJob(streamId, {
+          scheduleId: job.metadata.scheduleId,
+          scheduledFor: job.metadata.scheduledFor,
+        }).catch((err) =>
+          logger.warn('[ResumeAgentController] Failed to clear a superseded resume job', err),
+        );
+      }
       await decrementPendingRequest(userId);
       return res.status(409).json({ error: 'This scheduled run is no longer active' });
     }

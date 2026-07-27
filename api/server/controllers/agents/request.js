@@ -161,10 +161,10 @@ async function finishResumableRequest(req, userId) {
   try {
     await cleanupMCPRequestContextForReq(req);
   } finally {
-    // Scheduled fires never incremented the concurrent-request counter (they are
-    // governed by the scheduler's own caps), so they must not decrement it. Use
-    // the decision captured at request start, not a re-check of the expiring token.
-    if (!req._isScheduledFire) {
+    // Mirrors the increment: only an AUTOMATIC fire skipped the counter, so only it
+    // must skip the decrement. Uses the decision captured at request start, not a
+    // re-check of the expiring token.
+    if (!req._isScheduledFire || req._isManualScheduledFire === true) {
       await decrementPendingRequest(userId);
     }
   }
@@ -366,11 +366,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
   }
 
-  // Scheduled fires bypass the interactive concurrent-request limiter (like the
-  // message-rate limiters): a user with active chats or several schedules due at
-  // once would otherwise get 429s recorded as schedule errors, walking valid
-  // schedules toward auto-disable. Scheduler caps govern their concurrency.
-  if (!isScheduledFire) {
+  // AUTOMATIC scheduled fires bypass the interactive concurrent-request limiter (like
+  // the message-rate limiters): a user with active chats or several schedules due at
+  // once would otherwise get 429s recorded as schedule errors, walking valid schedules
+  // toward auto-disable. Scheduler caps govern their concurrency.
+  //
+  // Run Now does NOT get that exemption. It is user-paced and can be fired across
+  // several schedules while the same user already has interactive generations running,
+  // so exempting it lets one user run unbounded concurrent generations — and unlike an
+  // automatic occurrence, a 429 here is surfaced to the clicking user rather than
+  // booked against the schedule (see the throttled branch in fireSchedule).
+  const exemptFromConcurrency = isScheduledFire && req._isManualScheduledFire !== true;
+  if (!exemptFromConcurrency) {
     const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
     if (!allowed) {
       if (ownsIdempotencyClaim) {

@@ -196,15 +196,6 @@ function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0,
       // explicitly — otherwise setting a limit on a globally-disabled feature
       // (`schedules: false`) would silently re-enable it.
       result[key] = { use: targetVal, ...(sourceVal as AnyObject) };
-    } else if (
-      typeof sourceVal === 'boolean' &&
-      typeof targetVal === 'boolean' &&
-      RUNTIME_CONFIG_INTERFACE_FIELDS.has(key)
-    ) {
-      // Both booleans: a base `false` is a GLOBAL stop that an override may narrow but
-      // never widen. The service reads the base value and keeps refusing writes, so
-      // letting the override win here only produces a panel whose actions all fail.
-      result[key] = targetVal === false ? false : sourceVal;
     } else {
       result[key] = sourceVal;
     }
@@ -286,5 +277,57 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
     }
   }
 
-  return merged;
+  return preserveRuntimeStops(baseConfig, merged);
+}
+
+/** Whether a runtime-config interface field reads as OFF in either of its two shapes. */
+function isRuntimeDisabled(value: unknown): boolean {
+  if (value === false) {
+    return true;
+  }
+  return (
+    value != null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    (value as AnyObject).use === false
+  );
+}
+
+/**
+ * Re-applies a BASE-level runtime stop after all overrides are merged.
+ *
+ * A deployment that turns a runtime feature off is not making a preference an override
+ * can outrank: the service reads the base value and keeps refusing writes, so an
+ * override that only flips the client's view produces a panel whose every action fails.
+ *
+ * Applied here rather than inside the merge deliberately. The merge folds overrides in
+ * priority order into an ACCUMULATED value, so a guard there compares against whatever
+ * the previous override left — which let a LOW-priority `false` block a HIGH-priority
+ * `true` and broke highest-priority-wins. Overrides still order normally among
+ * themselves; only the base stop is non-negotiable.
+ */
+function preserveRuntimeStops<T extends AppConfig>(baseConfig: AppConfig, merged: T): T {
+  const baseInterface = (baseConfig as unknown as AnyObject).interfaceConfig as
+    | AnyObject
+    | undefined;
+  const mergedInterface = (merged as unknown as AnyObject).interfaceConfig as AnyObject | undefined;
+  if (baseInterface == null || mergedInterface == null) {
+    return merged;
+  }
+  let patched: AnyObject | undefined;
+  for (const key of RUNTIME_CONFIG_INTERFACE_FIELDS) {
+    if (!isRuntimeDisabled(baseInterface[key]) || isRuntimeDisabled(mergedInterface[key])) {
+      continue;
+    }
+    const current = mergedInterface[key];
+    patched ??= { ...mergedInterface };
+    patched[key] =
+      current != null && typeof current === 'object' && !Array.isArray(current)
+        ? { ...(current as AnyObject), use: false }
+        : false;
+  }
+  if (patched == null) {
+    return merged;
+  }
+  return { ...(merged as unknown as AnyObject), interfaceConfig: patched } as unknown as T;
 }

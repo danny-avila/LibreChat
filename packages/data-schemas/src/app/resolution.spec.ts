@@ -87,6 +87,48 @@ describe('mergeConfigOverrides', () => {
     ).toBe(false);
   });
 
+  /**
+   * Overrides are folded in priority order into an ACCUMULATED value, so a stop applied
+   * INSIDE the merge compares against whatever the previous override left — which let a
+   * low-priority `false` outrank a high-priority `true`. The base stop is the only
+   * non-negotiable one; overrides still order normally among themselves.
+   */
+  it('lets a higher-priority override win over a lower-priority one', () => {
+    const base = { interfaceConfig: { schedules: true } } as unknown as AppConfig;
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig({ interface: { schedules: false } }, 10),
+      fakeConfig({ interface: { schedules: true } }, 20),
+    ]) as unknown as Record<string, Record<string, unknown>>;
+    expect(merged.interfaceConfig.schedules).toBe(true);
+
+    // And the reverse ordering still disables.
+    const disabled = mergeConfigOverrides(base, [
+      fakeConfig({ interface: { schedules: true } }, 10),
+      fakeConfig({ interface: { schedules: false } }, 20),
+    ]) as unknown as Record<string, Record<string, unknown>>;
+    expect(disabled.interfaceConfig.schedules).toBe(false);
+  });
+
+  it('keeps the base stop non-negotiable even for the highest-priority override', () => {
+    const base = { interfaceConfig: { schedules: false } } as unknown as AppConfig;
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig({ interface: { schedules: true } }, 10),
+      fakeConfig({ interface: { schedules: true } }, 99),
+    ]) as unknown as Record<string, Record<string, unknown>>;
+    expect(merged.interfaceConfig.schedules).toBe(false);
+  });
+
+  it('applies the base stop through the object form too', () => {
+    const base = {
+      interfaceConfig: { schedules: { use: false, maxPerUser: 5 } },
+    } as unknown as AppConfig;
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig({ interface: { schedules: { maxPerUser: 50 } } }, 10),
+    ]) as unknown as Record<string, Record<string, Record<string, unknown>>>;
+    // The limit tuning lands, but the stop survives it.
+    expect(merged.interfaceConfig.schedules).toMatchObject({ use: false, maxPerUser: 50 });
+  });
+
   it('folds an object schedules override onto a boolean base, inheriting the enable state', () => {
     // Enabled base, object override that only TUNES a limit (no `use`): the enable
     // state must be inherited from the boolean base, not silently dropped.
