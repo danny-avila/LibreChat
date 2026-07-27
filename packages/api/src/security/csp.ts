@@ -76,7 +76,7 @@ function scriptSources(scriptExtras: string[]): string[] {
  * `'unsafe-inline'`, which would block every `<style>` element injected at runtime by
  * the app shell and by third-party components that cannot know our nonce.
  */
-function defaultDirectives(scriptExtras: string[]): CspDirective[] {
+function defaultDirectives(scriptExtras: string[], frameAncestors: string[]): CspDirective[] {
   return [
     ['default-src', ["'self'"]],
     ['base-uri', ["'self'"]],
@@ -92,7 +92,9 @@ function defaultDirectives(scriptExtras: string[]): CspDirective[] {
     ['worker-src', ["'self'", 'blob:']],
     ['manifest-src', ["'self'"]],
     ['form-action', ["'self'", 'https:']],
-    ['frame-ancestors', ["'self'"]],
+    /* Replaced wholesale, not appended: merging would turn a deliberate
+     * `'none'` into `'self' 'none'`, which browsers resolve back to `'self'`. */
+    ['frame-ancestors', frameAncestors],
   ];
 }
 
@@ -144,18 +146,17 @@ function mergeDirectives(directives: CspDirective[]): CspDirective[] {
 
 export function buildCspDirectives(env: NodeJS.ProcessEnv = process.env): CspDirective[] {
   const scriptExtras = splitSourceList(env.CSP_SCRIPT_SRC_EXTRA);
-  const directives = defaultDirectives(scriptExtras);
+  const frameAncestors = splitSourceList(env.CSP_FRAME_ANCESTORS);
+  const directives = defaultDirectives(
+    scriptExtras,
+    frameAncestors.length > 0 ? frameAncestors : ["'self'"],
+  );
 
   for (const [directive, envName] of Object.entries(SOURCE_EXTRA_ENV)) {
     const extraSources = splitSourceList(env[envName]);
     if (extraSources.length > 0) {
       directives.push([directive, extraSources]);
     }
-  }
-
-  const frameAncestors = splitSourceList(env.CSP_FRAME_ANCESTORS);
-  if (frameAncestors.length > 0) {
-    directives.push(['frame-ancestors', frameAncestors]);
   }
 
   const reportUri = env.CSP_REPORT_URI?.trim();
@@ -184,7 +185,15 @@ export function createCspPolicy(env: NodeJS.ProcessEnv = process.env): CspPolicy
     return null;
   }
 
-  const [prefix, suffix] = serializeCspDirectives(buildCspDirectives(env)).split(NONCE_SLOT);
+  const serialized = serializeCspDirectives(buildCspDirectives(env));
+  const [prefix, suffix] = serialized.split(NONCE_SLOT);
+  if (suffix == null) {
+    logger.error(
+      '[CSP] Policy has no nonce slot; refusing to send a policy the shell cannot match.',
+    );
+    return null;
+  }
+
   const reportOnly = isReportOnly(env);
   logger.info(
     `[CSP] Content Security Policy enabled in ${reportOnly ? 'report-only' : 'enforcing'} mode.`,

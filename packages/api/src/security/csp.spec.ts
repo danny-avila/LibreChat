@@ -93,6 +93,13 @@ describe('policy directives', () => {
     expect(header).toContain("frame-ancestors 'self' https://portal.example.com");
   });
 
+  it("replaces rather than merges frame-ancestors, so 'none' is not diluted by 'self'", () => {
+    const header = headerFor({ CSP_FRAME_ANCESTORS: "'none'" });
+
+    expect(header).toContain("frame-ancestors 'none'");
+    expect(header).not.toContain("frame-ancestors 'self'");
+  });
+
   it('appends additional directives and skips malformed ones', () => {
     const header = serializeCspDirectives(
       buildCspDirectives({
