@@ -2463,24 +2463,20 @@ html[data-input-modality='keyboard']
 }
 
 /**
- * The attach disclosure opening or closing. Rows in a virtualized list are
- * drawn at absolute offsets, so folding three destinations in or out moves
- * every row beneath them; without this they are simply redrawn in their new
- * places and the whole list below the fold appears to jump.
- *
- * Applied only for the length of that move. Left on, it would also animate the
- * list reflowing under a search, where rows are being replaced rather than
- * moved and sliding them between two different sets of contents reads as the
- * list lagging behind the typing. The list is also the palette's scroll
- * container: it is the rows that move, never the scroll offset.
+ * The palette growing or shrinking as its list rearranges. The rows themselves
+ * are moved from `Palette.tsx`, which plays each one back to where it was after
+ * the list has been redrawn; a re-inserted node drops any transition it was
+ * about to run, and starring an entry re-inserts every row it passed. The
+ * panel's own height has no such problem: the list box is never re-inserted.
  */
-.palette-shift .ReactVirtualized__Grid__innerScrollContainer > * {
-  transition: top 260ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-/* A short list grows the popup as it expands; the popup is sized by the list,
-   so animating the list's height is what carries the panel with it. */
-.palette-shift .ReactVirtualized__Grid {
+.palette-rows .ReactVirtualized__Grid {
   transition: height 260ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* Held for the frame a search redraws in: the list is being replaced rather
+   than rearranged there, and growing into its new size reads as the panel
+   lagging behind the typing. */
+.palette-instant .ReactVirtualized__Grid {
+  transition-duration: 0s;
 }
 @keyframes palette-row {
   from {
@@ -2513,8 +2509,7 @@ html[data-input-modality='keyboard']
   .animate-composer-popover[data-enter],
   .animate-composer-popover[data-leave],
   .animate-composer-icon,
-  .palette-shift .ReactVirtualized__Grid__innerScrollContainer > *,
-  .palette-shift .ReactVirtualized__Grid {
+  .palette-rows .ReactVirtualized__Grid {
     transition-duration: 1ms;
   }
   .animate-palette-row,
