@@ -557,6 +557,9 @@ export default function useResumableSSE(
    * `editPrefixLength` must no longer be applied — by run steps or labels.
    */
   const editPrefixClearedRef = useRef(false);
+  /** Stream the cleared-prefix state above belongs to, so it is dropped when
+   *  the generation changes rather than when a subscribe happens to be live. */
+  const prefixStateStreamIdRef = useRef<string | null>(null);
 
   /** Removes the pending chip once its steer is injected (the inline content
    *  part becomes the durable record), and records the id so a 202 ACK that
@@ -699,11 +702,18 @@ export default function useResumableSSE(
        * A NEW generation starts with its retained prefix intact, so the
        * cleared-prefix state from a previous one must not carry over — the
        * hook outlives any single submission, and a later edited resubmission
-       * in the same chat would otherwise be dispatched with no offset and
-       * overwrite the content it kept. Reconnects pass `isResume`, so the
-       * state survives exactly where it should: within one generation.
+       * would otherwise dispatch with no offset and overwrite the content it
+       * kept.
+       *
+       * Keyed on the STREAM, not on `isResume`: a submission whose POST
+       * succeeded server-side but lost its response is retried, comes back
+       * `resumed: true`, and subscribes in resume mode despite being a new
+       * generation — so an `isResume` check skips the reset exactly when it
+       * is needed. The stream id changes with the generation and does not
+       * change across reconnects of one, which is the boundary that matters.
        */
-      if (!isResume) {
+      if (prefixStateStreamIdRef.current !== currentStreamId) {
+        prefixStateStreamIdRef.current = currentStreamId;
         editPrefixClearedRef.current = false;
       }
       let { userMessage } = currentSubmission;

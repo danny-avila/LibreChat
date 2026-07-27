@@ -180,8 +180,17 @@ export async function resolveActivityLabelModel({
     providerConfig.customEndpointConfig,
     'titleModel',
   );
+  /** `current_model` means "the agent's model" for BOTH overrides. The
+   *  activity options are documented as title-shaped, so an `activityModel`
+   *  set to the sentinel must resolve the same way `titleModel` does — passing
+   *  the literal through would send `model: "current_model"` to the provider
+   *  and fail every label. */
+  const activityModel =
+    activity.model != null && activity.model !== Constants.CURRENT_MODEL
+      ? activity.model
+      : undefined;
   const model =
-    activity.model ??
+    activityModel ??
     (titleModel != null && titleModel !== Constants.CURRENT_MODEL
       ? titleModel
       : (agent.model ?? agent.model_parameters?.model));
