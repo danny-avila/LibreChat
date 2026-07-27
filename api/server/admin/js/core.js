@@ -3,7 +3,7 @@
 /**
  * BKL 어드민 공통 코어.
  * - BKL_ADMIN_TOKEN Bearer 인증 (localStorage, 401 시 재입력)
- * - 기간 필터 (통계 탭 헤더의 드롭다운) / 탭 전환
+ * - 기간 필터 컴포넌트 (createRangeFilter — 탭마다 독립 인스턴스) / 탭 전환
  * - fetch / chart / 포맷 유틸
  * 각 탭 모듈은 window.BklAdmin.registerTab(name, { load }) 으로 등록한다.
  */
@@ -14,9 +14,6 @@
 
   const state = {
     currentTab: 'analytics',
-    currentFrom: null,
-    currentTo: null,
-    currentPreset: '30d',
     charts: {},
   };
 
@@ -115,20 +112,98 @@
     const sign = pct >= 0 ? '▲' : '▼';
     return ` <span class="${cls}">${sign}${Math.abs(pct).toFixed(0)}%</span>`;
   }
-  function buildRangeParams(extra) {
-    let q;
-    if (state.currentFrom) {
-      q = '?from=' + state.currentFrom + (state.currentTo ? '&to=' + state.currentTo : '');
-    } else {
-      q = '?days=' + ({ today: 1, '7d': 7, '30d': 30, '365d': 365 }[state.currentPreset] || 30);
-    }
-    return extra ? q + '&' + extra : q;
-  }
-  function buildRangeLabel() {
-    const todayStr = toYMD(new Date());
-    if (state.currentFrom) return state.currentFrom + '_' + (state.currentTo || todayStr);
-    const days = { today: 1, '7d': 7, '30d': 30, '365d': 365 }[state.currentPreset] || 30;
-    return toYMD(new Date(Date.now() - days * 24 * 3600 * 1000)) + '_' + todayStr;
+  /* ── 기간 필터 컴포넌트 ───────────────────────────────────── */
+  const PRESET_DAYS = { today: 1, '7d': 7, '30d': 30, '365d': 365 };
+  const PRESET_LABELS = { today: '오늘', '7d': '최근 7일', '30d': '최근 30일', '365d': '최근 1년' };
+
+  /**
+   * 탭마다 독립적인 기간 필터 드롭다운을 mount 요소에 렌더링한다.
+   * 기간 상태는 인스턴스 안에만 있으므로 탭 간에 공유되지 않는다.
+   * @param {string} mountId  드롭다운을 그릴 요소 id
+   * @param {() => void} onChange  기간 변경 시 호출 (보통 A.reloadAll)
+   * @returns {{ params: (extra?: string) => string, label: () => string }}
+   */
+  function createRangeFilter(mountId, onChange) {
+    const rf = { preset: '30d', from: null, to: null };
+    const mount = document.getElementById(mountId);
+    mount.classList.add('range-wrap');
+    mount.innerHTML =
+      '<button class="btn-range" type="button">' +
+      '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">' +
+      '<rect x="2" y="3" width="12" height="11" rx="2"/><path d="M5 1v3M11 1v3M2 7h12"/></svg>' +
+      '<span class="range-label">최근 30일</span>' +
+      '<svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6l4 4 4-4"/></svg>' +
+      '</button>' +
+      '<div class="range-dropdown">' +
+      Object.keys(PRESET_DAYS)
+        .map((k) => `<button class="range-option${k === '30d' ? ' active' : ''}" type="button" data-preset="${k}">${PRESET_LABELS[k]}</button>`)
+        .join('') +
+      '<div class="range-divider"></div>' +
+      '<div class="custom-dropdown-title">기간 직접 지정</div>' +
+      '<div class="date-row"><label>시작</label><input type="date" class="rf-from" /></div>' +
+      '<div class="date-row"><label>종료</label><input type="date" class="rf-to" /></div>' +
+      '<div class="dropdown-actions"><button class="btn-dd-apply" type="button">적용</button></div>' +
+      '</div>';
+
+    const toggle = mount.querySelector('.btn-range');
+    const panel = mount.querySelector('.range-dropdown');
+    const label = mount.querySelector('.range-label');
+    const fromInput = mount.querySelector('.rf-from');
+    const toInput = mount.querySelector('.rf-to');
+
+    const closeDD = () => { panel.classList.remove('open'); toggle.classList.remove('active'); };
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = !panel.classList.contains('open');
+      panel.classList.toggle('open', open);
+      toggle.classList.toggle('active', open);
+    });
+    document.addEventListener('click', (e) => { if (!mount.contains(e.target)) closeDD(); });
+
+    panel.querySelectorAll('.range-option').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        panel.querySelectorAll('.range-option').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        rf.preset = btn.dataset.preset;
+        rf.from = null;
+        rf.to = null;
+        fromInput.value = '';
+        toInput.value = '';
+        label.textContent = PRESET_LABELS[rf.preset];
+        closeDD();
+        if (onChange) onChange();
+      });
+    });
+
+    panel.querySelector('.btn-dd-apply').addEventListener('click', () => {
+      const from = fromInput.value;
+      if (!from) return;
+      rf.from = from;
+      rf.to = toInput.value || null;
+      rf.preset = null;
+      panel.querySelectorAll('.range-option').forEach((b) => b.classList.remove('active'));
+      label.textContent = from + ' ~ ' + (rf.to || toYMD(new Date()));
+      closeDD();
+      if (onChange) onChange();
+    });
+
+    return {
+      params(extra) {
+        let q;
+        if (rf.from) {
+          q = '?from=' + rf.from + (rf.to ? '&to=' + rf.to : '');
+        } else {
+          q = '?days=' + (PRESET_DAYS[rf.preset] || 30);
+        }
+        return extra ? q + '&' + extra : q;
+      },
+      label() {
+        const todayStr = toYMD(new Date());
+        if (rf.from) return rf.from + '_' + (rf.to || todayStr);
+        const days = PRESET_DAYS[rf.preset] || 30;
+        return toYMD(new Date(Date.now() - days * 24 * 3600 * 1000)) + '_' + todayStr;
+      },
+    };
   }
 
   /* ── 차트 ─────────────────────────────────────────────────── */
@@ -178,52 +253,6 @@
     }
   }
 
-  /* ── 기간 필터 (통계 탭 헤더의 드롭다운) ───────────────────── */
-  function setupRangeFilter() {
-    const wrap = document.getElementById('range-wrap');
-    const panel = document.getElementById('range-dropdown');
-    const toggle = document.getElementById('btn-range-toggle');
-    const label = document.getElementById('range-label');
-    const PRESET_LABELS = { today: '오늘', '7d': '최근 7일', '30d': '최근 30일', '365d': '최근 1년' };
-
-    const closeDD = () => { panel.classList.remove('open'); toggle.classList.remove('active'); };
-    toggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const open = !panel.classList.contains('open');
-      panel.classList.toggle('open', open);
-      toggle.classList.toggle('active', open);
-    });
-    document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) closeDD(); });
-
-    panel.querySelectorAll('.range-option').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        panel.querySelectorAll('.range-option').forEach((b) => b.classList.remove('active'));
-        btn.classList.add('active');
-        state.currentPreset = btn.dataset.preset;
-        state.currentFrom = null;
-        state.currentTo = null;
-        document.getElementById('date-from').value = '';
-        document.getElementById('date-to').value = '';
-        label.textContent = PRESET_LABELS[btn.dataset.preset] || btn.textContent;
-        closeDD();
-        reloadAll();
-      });
-    });
-
-    document.getElementById('btn-dd-apply').addEventListener('click', () => {
-      const from = document.getElementById('date-from').value;
-      const to = document.getElementById('date-to').value;
-      if (!from) return;
-      state.currentFrom = from;
-      state.currentTo = to || null;
-      state.currentPreset = null;
-      panel.querySelectorAll('.range-option').forEach((b) => b.classList.remove('active'));
-      label.textContent = from + ' ~ ' + (to || toYMD(new Date()));
-      closeDD();
-      reloadAll();
-    });
-  }
-
   /* ── 부트 ─────────────────────────────────────────────────── */
   async function boot() {
     Chart.defaults.color = '#6b7280';
@@ -243,8 +272,6 @@
     document.getElementById('auth-token-input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') submitToken();
     });
-    setupRangeFilter();
-
     const token = getToken();
     if (!token) {
       showAuthGate('');
@@ -274,8 +301,7 @@
     fmtNum,
     fmtDelta,
     escHtml,
-    buildRangeParams,
-    buildRangeLabel,
+    createRangeFilter,
     makeChart,
     reloadAll,
     registerTab: (name, mod) => { tabs[name] = mod; },

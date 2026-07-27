@@ -3,13 +3,14 @@
 /** 피드백·설문 탭 (항목 5): 피드백 집계/코멘트 + 설문 CRUD/결과 */
 (function () {
   const A = window.BklAdmin;
+  const range = A.createRangeFilter('range-surveys', () => A.reloadAll());
   let editingSurveyId = null;
   let surveysCache = [];
 
   /* ── 피드백 ───────────────────────────────────────────────── */
   async function loadFeedback() {
     try {
-      const j = await A.getJSON('/feedback/summary' + A.buildRangeParams());
+      const j = await A.getJSON('/feedback/summary' + range.params());
       const labels = j.data.map((d) => d.model);
       const up = j.data.map((d) => (d.ratings.find((r) => r.rating === 'thumbsUp')?.count) || 0);
       const down = j.data.map((d) => (d.ratings.find((r) => r.rating === 'thumbsDown')?.count) || 0);
@@ -22,7 +23,7 @@
     }
     const tbody = document.getElementById('feedback-tbody');
     try {
-      const j = await A.getJSON('/feedback/list' + A.buildRangeParams('limit=200'));
+      const j = await A.getJSON('/feedback/list' + range.params('limit=200'));
       if (!j.data.length) {
         tbody.innerHTML = '<tr class="empty-row"><td colspan="4">피드백 없음</td></tr>';
         return;
