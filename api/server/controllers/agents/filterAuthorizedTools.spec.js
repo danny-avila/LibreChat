@@ -748,6 +748,23 @@ describe('MCP Tool Authorization', () => {
       expect(updatedAgent.tools).toContain(`newTool${d}anotherServer`);
     });
 
+    test('should drop mcpServerNames for a server detached in the same edit that adds another', async () => {
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      /** Swapping servers in one edit: authorizedServer loses its only tool while
+       *  anotherServer gains one. Carrying the prior names forward wholesale would
+       *  leave authorizedServer indexed, so its viewers would keep agent-scoped
+       *  access to a server the agent no longer references. */
+      mockReq.body = { tools: ['web_search', `newTool${d}anotherServer`] };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.tools).not.toContain(`existingTool${d}authorizedServer`);
+      expect(agentInDb.tools).toContain(`newTool${d}anotherServer`);
+      expect(agentInDb.mcpServerNames).toEqual(['anotherServer']);
+    });
+
     test('should not query MCP registry when no new MCP tools added', async () => {
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;

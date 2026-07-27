@@ -738,13 +738,14 @@ const updateAgentHandler = async (req, res) => {
       } else if (hasToolUpdate) {
         const existingToolSet = new Set(existingTools);
         const newMCPTools = requestedMCPTools.filter((t) => !existingToolSet.has(t));
+        /** Names resolved during authorization of the newly added tools. */
+        const resolvedServerNames = new Set();
 
         if (newMCPTools.length > 0) {
           const [availableTools, configServers] = await Promise.all([
             getCachedTools().then((t) => t ?? {}),
             resolveConfigServers(req),
           ]);
-          const resolvedServerNames = new Set();
           const approvedNew = await filterAuthorizedTools({
             tools: newMCPTools,
             userId: req.user.id,
@@ -759,14 +760,26 @@ const updateAgentHandler = async (req, res) => {
           if (rejectedSet.size > 0) {
             updateData.tools = updateData.tools.filter((t) => !rejectedSet.has(t));
           }
-          /** Union with what the agent already had: the new tools were resolved during
-           *  authorization, and re-deriving the rest from their keys would reintroduce
-           *  the suffix guess this avoids. */
-          for (const existingName of existingAgent.mcpServerNames ?? []) {
-            resolvedServerNames.add(existingName);
-          }
-          updateData.mcpServerNames = Array.from(resolvedServerNames);
         }
+
+        /** Rebuild the index from the tools that survive this edit: carry a prior name
+         *  forward only while some retained tool still resolves to it, so detaching every
+         *  tool for a server revokes agent-scoped access to it. The agent's own persisted
+         *  names are the candidate set, which needs neither a registry query nor a guess. */
+        const priorNames = existingAgent.mcpServerNames ?? [];
+        if (priorNames.length > 0) {
+          const priorNameSet = new Set(priorNames);
+          for (const tool of updateData.tools ?? []) {
+            if (typeof tool !== 'string' || !tool.includes(Constants.mcp_delimiter)) {
+              continue;
+            }
+            const [, retainedName] = splitMCPToolKey(tool, priorNames);
+            if (retainedName && priorNameSet.has(retainedName)) {
+              resolvedServerNames.add(retainedName);
+            }
+          }
+        }
+        updateData.mcpServerNames = Array.from(resolvedServerNames);
       }
     }
 
