@@ -3,13 +3,12 @@
 /**
  * BKL 어드민 공통 코어.
  * - BKL_ADMIN_TOKEN Bearer 인증 (localStorage, 401 시 재입력)
- * - 기간 선택 / 탭 전환 / 자동 새로고침 (항목 1: 통계 탭 한정 + ON/OFF 토글)
+ * - 기간 필터 (통계 탭 헤더의 드롭다운) / 탭 전환
  * - fetch / chart / 포맷 유틸
  * 각 탭 모듈은 window.BklAdmin.registerTab(name, { load }) 으로 등록한다.
  */
 (function () {
   const TOKEN_KEY = 'bkl_admin_token';
-  const AUTOREFRESH_KEY = 'bkl_admin_autorefresh';
   const API = '/admin-api';
   const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6', '#ec4899'];
 
@@ -19,7 +18,6 @@
     currentTo: null,
     currentPreset: '30d',
     charts: {},
-    autoRefresh: localStorage.getItem(AUTOREFRESH_KEY) !== '0',
   };
 
   const tabs = {}; // name -> { load }
@@ -159,7 +157,6 @@
     document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
     document.getElementById('panel-' + tab).classList.add('active');
-    document.getElementById('user-search-wrap').style.display = tab === 'users' ? 'block' : 'none';
     const mod = tabs[tab];
     if (mod && mod.load) mod.load().catch(console.error);
   }
@@ -181,44 +178,38 @@
     }
   }
 
-  /* ── 자동 새로고침 (항목 1): 통계 탭에서만, 토글 가능 ──────── */
-  function setupAutoRefresh() {
-    const checkbox = document.getElementById('autorefresh-checkbox');
-    checkbox.checked = state.autoRefresh;
-    checkbox.addEventListener('change', () => {
-      state.autoRefresh = checkbox.checked;
-      localStorage.setItem(AUTOREFRESH_KEY, checkbox.checked ? '1' : '0');
-    });
-    setInterval(() => {
-      if (
-        state.autoRefresh &&
-        state.currentTab === 'analytics' &&
-        document.visibilityState === 'visible' &&
-        document.getElementById('auth-overlay').style.display === 'none'
-      ) {
-        reloadAll();
-      }
-    }, 30000);
-  }
+  /* ── 기간 필터 (통계 탭 헤더의 드롭다운) ───────────────────── */
+  function setupRangeFilter() {
+    const wrap = document.getElementById('range-wrap');
+    const panel = document.getElementById('range-dropdown');
+    const toggle = document.getElementById('btn-range-toggle');
+    const label = document.getElementById('range-label');
+    const PRESET_LABELS = { today: '오늘', '7d': '최근 7일', '30d': '최근 30일', '365d': '최근 1년' };
 
-  /* ── 기간 선택 바 ─────────────────────────────────────────── */
-  function setupRangeBar() {
-    const ddWrap = document.getElementById('custom-range-wrap');
-    const ddPanel = document.getElementById('custom-dropdown');
-    const ddToggle = document.getElementById('btn-custom-toggle');
-    const ddLabel = document.getElementById('custom-label');
-
-    const openDD = () => { ddPanel.classList.add('open'); ddToggle.classList.add('active'); };
-    const closeDD = () => {
-      ddPanel.classList.remove('open');
-      if (!state.currentFrom) ddToggle.classList.remove('active');
-    };
-    ddToggle.addEventListener('click', (e) => {
+    const closeDD = () => { panel.classList.remove('open'); toggle.classList.remove('active'); };
+    toggle.addEventListener('click', (e) => {
       e.stopPropagation();
-      ddPanel.classList.contains('open') ? closeDD() : openDD();
+      const open = !panel.classList.contains('open');
+      panel.classList.toggle('open', open);
+      toggle.classList.toggle('active', open);
     });
-    document.getElementById('btn-dd-cancel').addEventListener('click', closeDD);
-    document.addEventListener('click', (e) => { if (!ddWrap.contains(e.target)) closeDD(); });
+    document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) closeDD(); });
+
+    panel.querySelectorAll('.range-option').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        panel.querySelectorAll('.range-option').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.currentPreset = btn.dataset.preset;
+        state.currentFrom = null;
+        state.currentTo = null;
+        document.getElementById('date-from').value = '';
+        document.getElementById('date-to').value = '';
+        label.textContent = PRESET_LABELS[btn.dataset.preset] || btn.textContent;
+        closeDD();
+        reloadAll();
+      });
+    });
+
     document.getElementById('btn-dd-apply').addEventListener('click', () => {
       const from = document.getElementById('date-from').value;
       const to = document.getElementById('date-to').value;
@@ -226,26 +217,10 @@
       state.currentFrom = from;
       state.currentTo = to || null;
       state.currentPreset = null;
-      document.querySelectorAll('.preset-btn').forEach((b) => b.classList.remove('active'));
-      ddToggle.classList.add('active');
-      ddLabel.textContent = from + ' ~ ' + (to || toYMD(new Date()));
+      panel.querySelectorAll('.range-option').forEach((b) => b.classList.remove('active'));
+      label.textContent = from + ' ~ ' + (to || toYMD(new Date()));
       closeDD();
       reloadAll();
-    });
-
-    document.querySelectorAll('.preset-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.preset-btn').forEach((b) => b.classList.remove('active'));
-        btn.classList.add('active');
-        state.currentPreset = btn.dataset.preset;
-        state.currentFrom = null;
-        state.currentTo = null;
-        document.getElementById('date-from').value = '';
-        document.getElementById('date-to').value = '';
-        ddLabel.textContent = '직접 지정';
-        ddToggle.classList.remove('active');
-        reloadAll();
-      });
     });
   }
 
@@ -268,8 +243,7 @@
     document.getElementById('auth-token-input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') submitToken();
     });
-    setupRangeBar();
-    setupAutoRefresh();
+    setupRangeFilter();
 
     const token = getToken();
     if (!token) {

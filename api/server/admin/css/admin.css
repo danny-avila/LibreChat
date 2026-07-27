@@ -53,10 +53,6 @@ html, body {
 .tab-btn:hover { color: #111827; }
 .tab-btn.active { color: #111827; border-bottom-color: #111827; }
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-.autorefresh-toggle {
-  display: flex; align-items: center; gap: 5px; font-size: 12px; color: #6b7280;
-  cursor: pointer; white-space: nowrap; user-select: none;
-}
 .updated-text { font-size: 12px; color: #9ca3af; white-space: nowrap; }
 .btn-refresh {
   padding: 5px 12px; background: #fff; color: #374151;
@@ -67,46 +63,48 @@ html, body {
 .btn-danger { color: #b91c1c; border-color: #fecaca; }
 .btn-danger:hover { background: #fef2f2; }
 
-/* ── 기간 선택 바 ──────────────────────────────────────────── */
-.range-bar {
-  background: #fff; border-bottom: 1px solid #e5e7eb;
-  padding: 10px 28px; display: flex; align-items: center; gap: 6px;
-}
-.preset-btn {
-  padding: 5px 14px; border-radius: 6px; border: 1px solid #e5e7eb;
-  background: #fff; color: #374151; font-size: 13px; cursor: pointer;
-  transition: background .12s, border-color .12s, color .12s; white-space: nowrap;
-}
-.preset-btn:hover { background: #f9fafb; border-color: #d1d5db; }
-.preset-btn.active { background: #111827; color: #fff; border-color: #111827; }
-
-.custom-range-wrap { position: relative; }
-.btn-custom-range {
-  padding: 5px 14px; border-radius: 6px; border: 1px solid #e5e7eb;
+/* ── 기간 필터 (통계 탭 헤더의 드롭다운) ───────────────────── */
+.page-header-actions { display: flex; align-items: center; gap: 8px; }
+.range-wrap { position: relative; }
+.btn-range {
+  padding: 6px 12px; border-radius: 6px; border: 1px solid #e5e7eb;
   background: #fff; color: #374151; font-size: 13px; cursor: pointer;
   display: flex; align-items: center; gap: 6px;
   transition: background .12s, border-color .12s; white-space: nowrap;
 }
-.btn-custom-range:hover { background: #f9fafb; border-color: #d1d5db; }
-.btn-custom-range.active { background: #111827; color: #fff; border-color: #111827; }
-.btn-custom-range svg { width: 13px; height: 13px; flex-shrink: 0; }
+.btn-range:hover { background: #f9fafb; border-color: #d1d5db; }
+.btn-range.active { border-color: #9ca3af; }
+.btn-range svg { width: 13px; height: 13px; flex-shrink: 0; }
+.btn-range .chev { width: 11px; height: 11px; color: #9ca3af; }
 
-.custom-dropdown {
-  position: absolute; top: calc(100% + 6px); left: 0;
+.range-dropdown {
+  position: absolute; top: calc(100% + 6px); right: 0;
   background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,.10);
-  padding: 18px 20px 16px; z-index: 300; min-width: 280px;
+  padding: 10px 10px 14px; z-index: 300; min-width: 250px;
   visibility: hidden; opacity: 0;
   transform: translateY(-4px);
   transition: opacity .15s ease, transform .15s ease, visibility 0s linear .15s;
   pointer-events: none;
 }
-.custom-dropdown.open {
+.range-dropdown.open {
   visibility: visible; opacity: 1;
   transform: translateY(0);
   transition: opacity .15s ease, transform .15s ease, visibility 0s linear 0s;
   pointer-events: auto;
 }
+.range-option {
+  display: block; width: 100%; text-align: left;
+  padding: 7px 10px; border: none; border-radius: 6px; background: transparent;
+  color: #374151; font-size: 13px; cursor: pointer;
+  transition: background .12s;
+}
+.range-option:hover { background: #f3f4f6; }
+.range-option.active { background: #111827; color: #fff; }
+.range-divider { height: 1px; background: #e5e7eb; margin: 10px 4px 12px; }
+.range-dropdown .custom-dropdown-title { padding: 0 4px; }
+.range-dropdown .date-row { padding: 0 4px; }
+.range-dropdown .dropdown-actions { padding: 0 4px; }
 .custom-dropdown-title {
   font-size: 12px; font-weight: 600; color: #6b7280;
   text-transform: uppercase; letter-spacing: .05em; margin-bottom: 12px;
@@ -119,11 +117,6 @@ html, body {
 }
 .date-row input[type="date"]:focus { border-color: #9ca3af; }
 .dropdown-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
-.btn-dd-cancel {
-  padding: 5px 12px; border: 1px solid #e5e7eb; border-radius: 6px;
-  background: #fff; color: #374151; font-size: 13px; cursor: pointer;
-}
-.btn-dd-cancel:hover { background: #f3f4f6; }
 .btn-dd-apply {
   padding: 5px 14px; background: #111827; color: #fff; border: none;
   border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
