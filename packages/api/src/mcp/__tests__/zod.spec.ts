@@ -3192,3 +3192,47 @@ describe('normalizeJsonSchema prototype-polluting map keys', () => {
     expect(Object.prototype.hasOwnProperty.call(result.dependentSchemas, '__proto__')).toBe(true);
   });
 });
+
+describe('resolveJsonSchemaRefs expansion safety', () => {
+  /** A remote MCP server controls this schema. Each `Dn` holding two refs to
+   *  `Dn-1` is a compact acyclic graph that expands 2^n, so registration must
+   *  stay bounded rather than exhaust memory. */
+  const fanOutSchema = (depth: number) => {
+    const $defs: Record<string, unknown> = { D0: { type: 'string' } };
+    for (let i = 1; i <= depth; i++) {
+      $defs[`D${i}`] = {
+        type: 'object',
+        properties: { a: { $ref: `#/$defs/D${i - 1}` }, b: { $ref: `#/$defs/D${i - 1}` } },
+      };
+    }
+    return { $defs, $ref: `#/$defs/D${depth}` } as Record<string, unknown>;
+  };
+
+  it('stays bounded on an exponentially-expanding reference graph', () => {
+    const start = Date.now();
+    const result = resolveJsonSchemaRefs(fanOutSchema(30));
+    const nodes = JSON.stringify(result).length;
+
+    expect(Date.now() - start).toBeLessThan(10_000);
+    expect(nodes).toBeLessThan(50_000_000);
+  });
+
+  it('still resolves an ordinary reference graph fully', () => {
+    const result = resolveJsonSchemaRefs({
+      $defs: { Name: { type: 'string' } },
+      type: 'object',
+      properties: { first: { $ref: '#/$defs/Name' } },
+    } as Record<string, unknown>) as { properties: { first: Record<string, unknown> } };
+
+    expect(result.properties.first).toEqual({ type: 'string' });
+  });
+
+  it('keeps a __proto__ argument through reference resolution', () => {
+    const parsed = JSON.parse(
+      '{"type":"object","properties":{"__proto__":{"type":"string"}}}',
+    ) as Record<string, unknown>;
+    const result = resolveJsonSchemaRefs(parsed) as { properties: Record<string, unknown> };
+
+    expect(Object.prototype.hasOwnProperty.call(result.properties, '__proto__')).toBe(true);
+  });
+});

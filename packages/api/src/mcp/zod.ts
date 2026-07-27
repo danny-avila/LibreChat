@@ -211,11 +211,36 @@ function resolveLocalPointer(
  * @param root - The root schema local pointers resolve against (defaults to `schema`)
  * @returns The resolved schema
  */
+/**
+ * Caps how many nodes a single resolution may emit. A remote MCP server controls
+ * this schema, and sibling references to the same definition each re-expand, so a
+ * compact acyclic graph can blow up exponentially (`Dn` holding two refs to
+ * `Dn-1` is 2^n). Past the cap the reference is left unexpanded rather than
+ * exhausting memory during registration.
+ */
+export const MAX_RESOLVED_SCHEMA_NODES = 50_000;
+
+interface ResolveBudget {
+  remaining: number;
+}
+
+/** Assigns without invoking the inherited `__proto__` setter, which would drop a
+ *  legitimately-named argument instead of creating an own property. */
+function setOwn(target: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
 export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
   schema: T,
   definitions?: Record<string, unknown>,
   visited: Set<string> = new Set<string>(),
   root?: Record<string, unknown>,
+  budget: ResolveBudget = { remaining: MAX_RESOLVED_SCHEMA_NODES },
 ): T {
   // Handle null, undefined, or non-object values first
   if (!schema || typeof schema !== 'object') {
@@ -232,9 +257,11 @@ export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
   // Handle arrays
   if (Array.isArray(schema)) {
     return schema.map((item) =>
-      resolveJsonSchemaRefs(item, definitions, visited, rootSchema),
+      resolveJsonSchemaRefs(item, definitions, visited, rootSchema, budget),
     ) as unknown as T;
   }
+
+  budget.remaining -= 1;
 
   // Handle objects
   const result: Record<string, unknown> = {};
@@ -263,33 +290,39 @@ export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
         resolved = resolveLocalPointer(rootSchema, value);
       }
 
-      if (resolved) {
+      if (resolved && budget.remaining > 0) {
         visited.add(value);
         const resolvedSchema = resolveJsonSchemaRefs(
           resolved as Record<string, unknown>,
           definitions,
           visited,
           rootSchema,
+          budget,
         );
         visited.delete(value);
 
         // Merge the resolved schema into the result
         Object.assign(result, resolvedSchema);
       } else {
-        // If we can't resolve the reference, keep it as is
-        result[key] = value;
+        /** Unresolvable, or the expansion budget is spent: leave the reference. */
+        setOwn(result, key, value);
       }
     } else if (value && typeof value === 'object') {
       // Recursively resolve nested objects/arrays
-      result[key] = resolveJsonSchemaRefs(
-        value as Record<string, unknown>,
-        definitions,
-        visited,
-        rootSchema,
+      setOwn(
+        result,
+        key,
+        resolveJsonSchemaRefs(
+          value as Record<string, unknown>,
+          definitions,
+          visited,
+          rootSchema,
+          budget,
+        ),
       );
     } else {
       // Copy primitive values as is
-      result[key] = value;
+      setOwn(result, key, value);
     }
   }
 
