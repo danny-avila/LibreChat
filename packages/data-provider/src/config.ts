@@ -2765,10 +2765,15 @@ export enum Constants {
  * `gitlab-get_mcp_server_version`), and `normalizeServerName` preserves
  * underscores, so a configured server may be named `Google_mcp_Workspace`.
  *
- * When `knownServerNames` is supplied the boundary is resolved against it,
- * which is exact: the longest configured name the key actually ends with wins.
- * Otherwise this falls back to the last delimiter, which is correct whenever
- * only the tool half contains one and matches `.split()` when neither does.
+ * When `knownServerNames` is supplied the boundary is resolved against it: the
+ * longest configured name the key actually ends with wins. Otherwise this falls
+ * back to the last delimiter, which is correct whenever only the tool half
+ * contains one and matches `.split()` when neither does.
+ *
+ * One case stays undecidable from the key alone: if both `bar` and `foo_mcp_bar`
+ * are configured, `tool_mcp_foo_mcp_bar` is a valid key for either. Longest match
+ * is the deterministic tiebreak; resolving it properly needs the tool/server
+ * mapping carried alongside the key rather than re-derived from the string.
  */
 export function splitMCPToolKey(
   toolKey: string,

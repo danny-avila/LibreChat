@@ -1,4 +1,4 @@
-import { Constants, splitMCPToolKey } from 'librechat-data-provider';
+import { Constants } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
 
 /**
@@ -47,8 +47,10 @@ export interface ParsedToolName {
  *   - `some_custom_tool`       → `{ mcpServer: '', toolName: 'some_custom_tool' }`
  */
 export function parseToolName(rawName: string): ParsedToolName {
-  const [toolName, mcpServer] = splitMCPToolKey(rawName);
-  if (mcpServer != null) {
+  const idx = rawName.indexOf(Constants.mcp_delimiter);
+  if (idx >= 0) {
+    const mcpServer = rawName.slice(idx + Constants.mcp_delimiter.length);
+    const toolName = rawName.slice(0, idx);
     return { raw: rawName, mcpServer, toolName };
   }
   const friendlyKey = TOOL_FRIENDLY_NAME_KEYS[rawName];

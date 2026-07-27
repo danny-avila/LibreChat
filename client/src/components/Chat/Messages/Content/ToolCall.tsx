@@ -7,7 +7,6 @@ import {
   dataService,
   actionDelimiter,
   actionDomainSeparator,
-  splitMCPToolKey,
 } from 'librechat-data-provider';
 import type { TAttachment } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
@@ -72,7 +71,9 @@ export default function ToolCall({
       return { function_name: '', domain: null, isMCPToolCall: false, mcpServerName: '' };
     }
     if (name.includes(Constants.mcp_delimiter)) {
-      const [func, server = ''] = splitMCPToolKey(name);
+      const parts = name.split(Constants.mcp_delimiter);
+      const func = parts[0];
+      const server = parts.slice(1).join(Constants.mcp_delimiter);
       const displayName = func === 'oauth' ? server : func;
       return {
         function_name: displayName || '',

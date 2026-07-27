@@ -1,4 +1,4 @@
-import { Constants, isActionTool, splitMCPToolKey } from 'librechat-data-provider';
+import { Constants, isActionTool } from 'librechat-data-provider';
 import {
   Terminal,
   Globe,
@@ -92,8 +92,12 @@ export function getToolIconType(name: string): ToolIconType {
 
 /** Extracts the MCP server name from a tool name with format `tool<delimiter>server`. */
 export function getMCPServerName(toolName: string): string {
-  const [, serverName] = splitMCPToolKey(toolName);
-  return serverName ?? '';
+  const idx = toolName.indexOf(Constants.mcp_delimiter);
+  if (idx < 0) {
+    return '';
+  }
+  const afterDelimiter = toolName.slice(idx + Constants.mcp_delimiter.length);
+  return afterDelimiter || '';
 }
 
 interface ToolIconProps {

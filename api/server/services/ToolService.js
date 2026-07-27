@@ -887,6 +887,7 @@ async function loadToolDefinitionsWrapper({
       programmaticToolsEnabled,
       codeExecutionEnabled,
       provider: agent.provider,
+      mcpServerNames: Object.keys(configServers ?? {}),
     },
     {
       isBuiltInTool,
@@ -972,6 +973,7 @@ async function loadToolDefinitionsWrapper({
           programmaticToolsEnabled,
           codeExecutionEnabled,
           provider: agent.provider,
+          mcpServerNames: Object.keys(configServers ?? {}),
         },
         {
           isBuiltInTool,
