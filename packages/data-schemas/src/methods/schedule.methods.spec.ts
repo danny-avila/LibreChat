@@ -1102,6 +1102,63 @@ describe('card projection fences (regressions in the ordered projection)', () =>
    * projectLastRun keys off — so the NEXT projection saw an absent marker and let an
    * older occurrence's result overwrite the newer skip.
    */
+  /**
+   * The pause wins its row transition and THEN projects, so a resume that terminalizes
+   * in between leaves exactly this state: row still active, card already settled for the
+   * SAME occurrence. Occurrence ordering alone permits the pause (equal `scheduledFor`),
+   * which would pin the card to "Needs approval" for a run that had already finished —
+   * and nothing corrects it until the next occurrence runs.
+   *
+   * The interleaving needs two concurrent writers, but the state it produces does not:
+   * constructing it directly tests the guard on exactly the input it exists for.
+   */
+  it('refuses to walk an occurrence card back from a settled status to a pause', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scheduledFor = new Date('2026-07-26T10:00:00.000Z');
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+    // The resumed generation already settled this occurrence's card.
+    await mongoose.models.Schedule.updateOne(
+      { id: schedule.id },
+      {
+        $set: {
+          lastRun: {
+            status: 'success',
+            firedAt: new Date(),
+            scheduledFor,
+            conversationId: 'convo-1',
+          },
+        },
+      },
+    );
+
+    // The in-flight pause now lands for that same occurrence.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-1',
+      autoDisableAfterFailures: 3,
+    });
+
+    expect((await getSchedule(schedule.id)).lastRun?.status).toBe('success');
+  });
+
+  it('still projects a pause when the occurrence card is not yet settled', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scheduledFor = new Date('2026-07-26T10:00:00.000Z');
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor }));
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-1',
+      autoDisableAfterFailures: 3,
+    });
+
+    expect((await getSchedule(schedule.id)).lastRun?.status).toBe('requires_action');
+  });
+
   it('keeps the occurrence marker when recording a skip', async () => {
     const schedule = await methods.createSchedule(scheduleData());
     const older = new Date('2026-07-26T10:00:00.000Z');
