@@ -179,7 +179,9 @@ export interface ActivityLabelHostDeps {
   bumpIndexOffset: () => void;
   /** Emits the on_activity_label SSE/chunk event for a slot state. */
   emitLabelEvent: (index: number, part: LooseContentPart) => Promise<unknown>;
-  /** Registers a fill-completion promise for bounded settle at finalization. */
+  /** Registers a promise the bounded settle must await at finalization:
+   *  per-slot fill completion AND the hook's whole detached task (fill plus
+   *  the usage accounting deferred until after the commit). */
   trackPendingFill: (fillDone: Promise<void>) => void;
   /**
    * True once the response has finalized (settle timed out). A late fill
@@ -221,6 +223,10 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
       initialGeneratedCount: deps
         .getContentParts()
         .filter((part) => part?.type === ContentTypes.ACTIVITY_LABEL).length,
+      /** The settle must cover the whole detached task: deferred usage runs
+       *  AFTER the fill resolves, so tracking fills alone would let
+       *  finalization flush the usage sink mid-billing. */
+      trackTask: deps.trackPendingFill,
       signal: deps.abortSignal,
       getInvokeCallbacks: deps.getInvokeCallbacks,
       ...(deps.generateLabel && { generateLabel: deps.generateLabel }),

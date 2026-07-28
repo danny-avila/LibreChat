@@ -306,6 +306,35 @@ describe('createActivityLabelHook', () => {
     expect(order).toEqual(['fill', 'collect']);
   });
 
+  /**
+   * The settle must cover billing, not just the fill: deferred usage runs
+   * after `fill` resolves, so a settle keyed on fills alone would let
+   * finalization flush the usage sink while billing was still in flight.
+   */
+  it('reports a detached task that resolves only after usage collection', async () => {
+    let releaseCollect: () => void = () => undefined;
+    const collect = jest.fn(() => new Promise<void>((resolve) => (releaseCollect = resolve)));
+    const tracked: Array<Promise<void>> = [];
+    const hook = createActivityLabelHook({
+      claimSlot: () => ({ index: 0, fill: () => true }),
+      resolveLLM,
+      getInvokeCallbacks: () => ({ callbacks: [], collect }),
+      trackTask: (task) => void tracked.push(task),
+    });
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    expect(tracked).toHaveLength(1);
+    let settled = false;
+    void tracked[0].then(() => (settled = true));
+    await flushDetached();
+    /** Collection is still pending, so the task must be too. */
+    expect(collect).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(false);
+    releaseCollect();
+    await flushDetached();
+    expect(settled).toBe(true);
+  });
+
   it('suppresses usage collection when the host drops the fill', async () => {
     const collect = jest.fn();
     const getInvokeCallbacks = jest.fn(() => ({ callbacks: [], collect }));

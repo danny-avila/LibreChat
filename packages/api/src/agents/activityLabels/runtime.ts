@@ -154,6 +154,15 @@ export interface ActivityLabelHookOptions {
    * restarting at zero after every approval.
    */
   initialGeneratedCount?: number;
+  /**
+   * Receives the whole detached task (generate → fill → deferred usage) so
+   * the host's bounded settle covers the accounting too. Deferring usage
+   * until after the commit moved it PAST the fill's resolution, so a settle
+   * keyed on fills alone could let finalization flush the usage sink and
+   * snapshot metadata while the label's billing was still in flight. The
+   * task never rejects.
+   */
+  trackTask?: (task: Promise<void>) => void;
 }
 
 const DEFAULT_MAX_PER_RUN = 20;
@@ -391,7 +400,7 @@ export function createActivityLabelHook(
       executingAgentId: input.executingAgentId,
     });
 
-    void (async () => {
+    const task = (async () => {
       /**
        * Usage accounting registered by whichever generation path ran, invoked
        * only after `slot.fill` settles. Billing BEFORE the commit let the
@@ -480,6 +489,7 @@ export function createActivityLabelHook(
         await collectDeferredUsage(committed);
       }
     })();
+    opts.trackTask?.(task);
 
     return {};
   };
