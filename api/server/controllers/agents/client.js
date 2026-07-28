@@ -390,10 +390,22 @@ class AgentClient extends BaseClient {
    * live cost gauge reflect it. Tagged, so it is not a PRIMARY usage event
    * and cannot disturb the context-snapshot pairing in buildResponseMetadata.
    */
-  async recordActivityLabelUsage(collectedMetadata, model, endpointTokenConfig, sameEndpoint) {
+  async recordActivityLabelUsage(
+    collectedMetadata,
+    model,
+    endpointTokenConfig,
+    sameEndpoint,
+    /** Re-checked immediately before anything is charged or emitted, so a
+     *  scope that closed while this was in flight still suppresses the write.
+     *  Defaults open for callers that own no scope. */
+    scopeOpen = () => true,
+  ) {
     const appConfig = this.options.req?.config;
     const collectedUsage = mapCollectedMetadataToUsage(collectedMetadata);
     if (collectedUsage.length === 0) {
+      return;
+    }
+    if (!scopeOpen()) {
       return;
     }
     const streamId = this.options.req?._resumableStreamId || null;
@@ -422,7 +434,20 @@ class AgentClient extends BaseClient {
         output_tokens: usage.output_tokens,
         model,
         usage_type: 'activity-label',
-        runId: this.responseMessageId,
+        /**
+         * Scoped to the GENERATION, not just the response. Editing one
+         * assistant response reuses its `responseMessageId` while each fresh
+         * server generation restarts `activityLabelUsageSeq`, so a second
+         * edit re-emitted `<responseId>:-1` and the client — which dedupes on
+         * exactly `runId:seq` — discarded the newer usage even though its
+         * balance transaction was still written. `jobCreatedAt` is the run's
+         * own epoch: stable across reconnects and HITL resumes of one
+         * generation, distinct between generations.
+         */
+        runId:
+          this.jobCreatedAt != null
+            ? `${this.responseMessageId}:${this.jobCreatedAt}`
+            : this.responseMessageId,
         seq: -this.activityLabelUsageSeq,
         /** Cost coverage is all-or-nothing in `aggregateEmittedUsage`: an
          *  event without `cost` suppresses the whole response's cost when
@@ -549,15 +574,24 @@ class AgentClient extends BaseClient {
        * surface it, producing a cost the user is billed for but never shown.
        * Late bookkeeping is suppressed with the same gate as the late fill.
        */
-      const allScopesClosed =
-        (this.activityLabelScopes ?? []).length > 0 &&
-        (this.activityLabelScopes ?? []).every((scope) => scope.closed === true);
-      if (!allScopesClosed) {
+      /**
+       * Re-read at COMMIT time, not once up front. The settle deadline (or a
+       * run abort) can close the scope while this accounting is already in
+       * flight — a single check before the await passes, the charge lands
+       * after finalization, and the matching `slot.fill` then sees the closed
+       * scope and drops the label: billed but never surfaced, which is exactly
+       * what this guard exists to prevent. Cheap enough to re-check.
+       */
+      const scopeOpen = () =>
+        (this.activityLabelScopes ?? []).length === 0 ||
+        (this.activityLabelScopes ?? []).some((scope) => scope.closed !== true);
+      if (scopeOpen()) {
         await this.recordActivityLabelUsage(
           collectedMetadata,
           clientOptions.model,
           endpointTokenConfig,
           sameEndpoint,
+          scopeOpen,
         );
       }
     }

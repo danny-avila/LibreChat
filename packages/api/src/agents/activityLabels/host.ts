@@ -186,13 +186,12 @@ export async function resolveActivityLabelModel({
     }
   }
 
-  /** The originating endpoint's value (captured above), falling back to the
-   *  destination's own when it has none. Read per field so a partial
-   *  `endpoints.all` cannot hide it and quietly drop the label onto the
-   *  agent's (usually much larger) model. */
-  const titleModel =
-    originatingTitleModel ??
-    pickEndpointField(appConfig, endpoint, providerConfig.customEndpointConfig, 'titleModel');
+  /** ONLY the originating endpoint's value. The documented precedence is
+   *  `activityModel` → this endpoint's `titleModel` → the run model, so
+   *  falling back to the DESTINATION's `titleModel` would make changing just
+   *  the credential target silently change the model and its cost. The
+   *  destination supplies credentials, never the model choice. */
+  const titleModel = originatingTitleModel;
   /** `current_model` means "the agent's model" for BOTH overrides. The
    *  activity options are documented as title-shaped, so an `activityModel`
    *  set to the sentinel must resolve the same way `titleModel` does — passing

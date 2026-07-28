@@ -1207,6 +1207,13 @@ export default function useResumableSSE(
                 syncStepMessage(responseMessage);
                 logger.log('ResumableSSE', 'SYNC complete, handlers synced');
               } else {
+                /** Same reasoning as the matched branch above: this row is
+                 *  built straight from the server's completion-local
+                 *  `aggregatedContent`, so it holds no retained prefix and
+                 *  later steps and labels must stop offsetting. Setting it
+                 *  only in the matched branch left this path adding an offset
+                 *  to indices that were already absolute. */
+                editPrefixClearedRef.current = true;
                 const responseId = serverResponseId ?? `${userMsgId}_`;
                 const newMessage = {
                   messageId: responseId,
