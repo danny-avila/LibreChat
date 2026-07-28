@@ -70,6 +70,7 @@ function createHandlers(overrides = {}) {
     deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
     toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
     hasConfigCapability: jest.fn().mockResolvedValue(true),
+    hasAnyConfigReadAccess: jest.fn().mockResolvedValue(true),
     hasCapability: jest.fn().mockResolvedValue(true),
 
     getAppConfig: jest.fn().mockResolvedValue({ interface: { modelSelect: true } }),
@@ -118,6 +119,7 @@ describe('createAdminConfigHandlers', () => {
     it('returns 403 before DB lookup when user lacks READ_CONFIGS', async () => {
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasAnyConfigReadAccess: jest.fn().mockResolvedValue(false),
       });
       const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
       const res = mockRes();
@@ -175,6 +177,195 @@ describe('createAdminConfigHandlers', () => {
       await handlers.getConfig(req, res);
 
       expect(res.statusCode).toBe(400);
+    });
+  });
+
+  describe('read handlers: section-scoped-only caller (no broad read:configs)', () => {
+    function sectionOnlyDeps(section: string, overrides: Record<string, unknown> = {}) {
+      return {
+        hasConfigCapability: jest.fn(
+          async (_user: unknown, s: string | null, verb = 'manage') =>
+            verb === 'read' && s === section,
+        ),
+        hasAnyConfigReadAccess: jest.fn().mockResolvedValue(true),
+        ...overrides,
+      };
+    }
+
+    it('getConfig: returns 200 with only the held section, other sections stripped', async () => {
+      const config = {
+        _id: 'c1',
+        principalType: 'role',
+        principalId: 'admin',
+        overrides: { memory: { charLimit: 500 }, endpoints: { allowedAddresses: ['10.0.0.1'] } },
+        tombstones: ['memory.tokenLimit', 'endpoints.allowedAddresses'],
+      };
+      const { handlers } = createHandlers(
+        sectionOnlyDeps('memory', { findConfigByPrincipal: jest.fn().mockResolvedValue(config) }),
+      );
+      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+      const res = mockRes();
+
+      await handlers.getConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const body = res.body!.config as { overrides: Record<string, unknown>; tombstones: string[] };
+      expect(body.overrides.memory).toEqual({ charLimit: 500 });
+      expect(body.overrides.endpoints).toBeUndefined();
+      expect(body.tombstones).toEqual(['memory.tokenLimit']);
+    });
+
+    it('listConfigs: strips non-held sections from every listed config', async () => {
+      const configs = [
+        { _id: 'c1', principalType: 'role', principalId: 'admin', overrides: { memory: {} } },
+        {
+          _id: 'c2',
+          principalType: 'user',
+          principalId: 'u1',
+          overrides: { endpoints: {}, memory: { charLimit: 10 } },
+        },
+      ];
+      const { handlers } = createHandlers(
+        sectionOnlyDeps('memory', { listAllConfigs: jest.fn().mockResolvedValue(configs) }),
+      );
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.listConfigs(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const body = res.body!.configs as Array<{ overrides: Record<string, unknown> }>;
+      expect(body[0].overrides).toEqual({ memory: {} });
+      expect(body[1].overrides).toEqual({ memory: { charLimit: 10 } });
+    });
+
+    it('getBaseConfig: strips top-level sections and the nested config field to only the held section', async () => {
+      const appConfig = {
+        memory: { charLimit: 500 },
+        endpoints: { allowedAddresses: ['10.0.0.1'] },
+        fileStrategy: 's3',
+        config: { memory: { charLimit: 500 }, endpoints: { allowedAddresses: ['10.0.0.1'] } },
+        paths: { uploads: '/tmp' },
+        availableTools: { foo: {} },
+      };
+      const { handlers } = createHandlers(
+        sectionOnlyDeps('memory', { getAppConfig: jest.fn().mockResolvedValue(appConfig) }),
+      );
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const body = res.body!.config as Record<string, unknown>;
+      expect(body.memory).toEqual({ charLimit: 500 });
+      expect(body.endpoints).toBeUndefined();
+      expect(body.fileStrategy).toBeUndefined();
+      expect((body.config as Record<string, unknown>).memory).toEqual({ charLimit: 500 });
+      expect((body.config as Record<string, unknown>).endpoints).toBeUndefined();
+      expect(body.paths).toEqual({ uploads: '/tmp' });
+      expect(body.availableTools).toBeUndefined();
+    });
+
+    it('getBaseConfig: strips availableTools when the caller holds neither of its source sections', async () => {
+      const appConfig = {
+        memory: { charLimit: 500 },
+        filteredTools: ['dalle'],
+        includedTools: ['google'],
+        availableTools: { google: {} },
+        paths: { uploads: '/tmp' },
+      };
+      const { handlers } = createHandlers(
+        sectionOnlyDeps('memory', { getAppConfig: jest.fn().mockResolvedValue(appConfig) }),
+      );
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const body = res.body!.config as Record<string, unknown>;
+      expect(body.availableTools).toBeUndefined();
+      expect(body.filteredTools).toBeUndefined();
+      expect(body.includedTools).toBeUndefined();
+    });
+
+    it.each(['filteredTools', 'includedTools'])(
+      'getBaseConfig: returns availableTools to a caller holding read:configs:%s',
+      async (section) => {
+        const appConfig = {
+          filteredTools: ['dalle'],
+          includedTools: ['google'],
+          availableTools: { google: {} },
+          paths: { uploads: '/tmp' },
+        };
+        const { handlers } = createHandlers(
+          sectionOnlyDeps(section, { getAppConfig: jest.fn().mockResolvedValue(appConfig) }),
+        );
+        const req = mockReq();
+        const res = mockRes();
+
+        await handlers.getBaseConfig(req, res);
+
+        expect(res.statusCode).toBe(200);
+        const body = res.body!.config as Record<string, unknown>;
+        expect(body.availableTools).toEqual({ google: {} });
+      },
+    );
+
+    it('getBaseConfig: returns fileStrategy only to a caller holding read:configs:fileStrategy', async () => {
+      const appConfig = {
+        fileStrategy: 's3',
+        memory: { charLimit: 500 },
+        paths: { uploads: '/tmp' },
+        availableTools: {},
+      };
+      const { handlers } = createHandlers(
+        sectionOnlyDeps('fileStrategy', { getAppConfig: jest.fn().mockResolvedValue(appConfig) }),
+      );
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const body = res.body!.config as Record<string, unknown>;
+      expect(body.fileStrategy).toBe('s3');
+      expect(body.memory).toBeUndefined();
+    });
+
+    it('getBaseConfig: normalizes renamed top-level fields to their canonical section before checking read access', async () => {
+      // getAppConfig renames interface -> interfaceConfig, turnstile -> turnstileConfig,
+      // and mcpServers -> mcpConfig in the resolved payload. A caller holding
+      // read:configs:interface and read:configs:turnstile (but not mcpServers) must
+      // still see interfaceConfig/turnstileConfig, since checking the raw field name
+      // against a nonexistent "interfaceConfig"/"turnstileConfig" section would wrongly
+      // strip them.
+      const appConfig = {
+        interfaceConfig: { modelSelect: true },
+        turnstileConfig: { siteKey: 'abc' },
+        mcpConfig: { docs: {} },
+        paths: { uploads: '/tmp' },
+        availableTools: {},
+      };
+      const { handlers } = createHandlers({
+        hasConfigCapability: jest.fn(
+          async (_user: unknown, s: string | null, verb = 'manage') =>
+            verb === 'read' && (s === 'interface' || s === 'turnstile'),
+        ),
+        hasAnyConfigReadAccess: jest.fn().mockResolvedValue(true),
+        getAppConfig: jest.fn().mockResolvedValue(appConfig),
+      });
+      const req = mockReq();
+      const res = mockRes();
+
+      await handlers.getBaseConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const body = res.body!.config as Record<string, unknown>;
+      expect(body.interfaceConfig).toEqual({ modelSelect: true });
+      expect(body.turnstileConfig).toEqual({ siteKey: 'abc' });
+      expect(body.mcpConfig).toBeUndefined();
     });
   });
 
@@ -2031,6 +2222,7 @@ describe('createAdminConfigHandlers', () => {
       it(`${name} returns 403 when user lacks capability`, async () => {
         const { handlers } = createHandlers({
           hasConfigCapability: jest.fn().mockResolvedValue(false),
+          hasAnyConfigReadAccess: jest.fn().mockResolvedValue(false),
         });
         const req = mockReq(reqOverrides);
         const res = mockRes();
@@ -2075,6 +2267,7 @@ describe('createAdminConfigHandlers', () => {
     it('returns 403 when user lacks READ_CONFIGS', async () => {
       const { handlers } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasAnyConfigReadAccess: jest.fn().mockResolvedValue(false),
       });
       const req = mockReq();
       const res = mockRes();
