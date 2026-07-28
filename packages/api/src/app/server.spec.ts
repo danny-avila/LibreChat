@@ -3,6 +3,9 @@ import { logger } from '@librechat/data-schemas';
 import { configureServerTimeouts } from './server';
 
 describe('configureServerTimeouts', () => {
+  const NODE = {};
+  const BUN = { bun: '1.3.13' };
+
   let warn: jest.SpyInstance;
 
   beforeEach(() => {
@@ -11,7 +14,6 @@ describe('configureServerTimeouts', () => {
 
   afterEach(() => {
     warn.mockRestore();
-    delete process.versions.bun;
   });
 
   it('preserves Node.js defaults when variables are unset', () => {
@@ -66,26 +68,29 @@ describe('configureServerTimeouts', () => {
   });
 
   it('warns that Bun does not enforce the configured timeouts', () => {
-    process.versions.bun = '1.3.13';
-
-    configureServerTimeouts(createServer(), { HTTP_KEEP_ALIVE_TIMEOUT_MS: '70000' });
+    configureServerTimeouts(createServer(), { HTTP_KEEP_ALIVE_TIMEOUT_MS: '70000' }, BUN);
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('Bun does not enforce them'));
   });
 
   it('stays quiet under Bun when no timeout is configured', () => {
-    process.versions.bun = '1.3.13';
+    configureServerTimeouts(createServer(), {}, BUN);
 
-    configureServerTimeouts(createServer(), {});
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('does not warn about the runtime under Node.js', () => {
+    configureServerTimeouts(createServer(), { HTTP_KEEP_ALIVE_TIMEOUT_MS: '70000' }, NODE);
 
     expect(warn).not.toHaveBeenCalled();
   });
 
   it('warns when header or request timeouts fall below the connection sweep interval', () => {
-    configureServerTimeouts(createServer(), {
-      HTTP_HEADERS_TIMEOUT_MS: '5000',
-      HTTP_REQUEST_TIMEOUT_MS: '10000',
-    });
+    configureServerTimeouts(
+      createServer(),
+      { HTTP_HEADERS_TIMEOUT_MS: '5000', HTTP_REQUEST_TIMEOUT_MS: '10000' },
+      NODE,
+    );
 
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('HTTP_HEADERS_TIMEOUT_MS, HTTP_REQUEST_TIMEOUT_MS'),
@@ -93,11 +98,15 @@ describe('configureServerTimeouts', () => {
   });
 
   it('does not warn about sweep resolution for zero or above-interval timeouts', () => {
-    configureServerTimeouts(createServer(), {
-      HTTP_KEEP_ALIVE_TIMEOUT_MS: '1000',
-      HTTP_HEADERS_TIMEOUT_MS: '80000',
-      HTTP_REQUEST_TIMEOUT_MS: '0',
-    });
+    configureServerTimeouts(
+      createServer(),
+      {
+        HTTP_KEEP_ALIVE_TIMEOUT_MS: '1000',
+        HTTP_HEADERS_TIMEOUT_MS: '80000',
+        HTTP_REQUEST_TIMEOUT_MS: '0',
+      },
+      NODE,
+    );
 
     expect(warn).not.toHaveBeenCalled();
   });

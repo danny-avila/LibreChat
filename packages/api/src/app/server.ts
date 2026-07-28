@@ -20,6 +20,7 @@ const parseTimeout = (value?: string): number | undefined => {
 export const configureServerTimeouts = (
   server: Server,
   environment: NodeJS.ProcessEnv = process.env,
+  versions: { bun?: string } = process.versions,
 ): void => {
   const keepAliveTimeout = parseTimeout(environment.HTTP_KEEP_ALIVE_TIMEOUT_MS);
   const keepAliveTimeoutBuffer = parseTimeout(environment.HTTP_KEEP_ALIVE_TIMEOUT_BUFFER_MS);
@@ -45,7 +46,7 @@ export const configureServerTimeouts = (
   }
 
   /** Bun accepts and reflects these assignments back without enforcing them. */
-  if (process.versions.bun != null) {
+  if (versions.bun != null) {
     logger.warn(
       'HTTP server timeouts are configured but Bun does not enforce them; run under Node.js for these settings to take effect.',
     );
