@@ -1,3 +1,4 @@
+import { Constants } from 'librechat-data-provider';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import {
   INTENT_ARG,
@@ -190,6 +191,30 @@ describe('applyIntentLabels', () => {
     expect(toolDefinitions[0]).toBe(sdkNative);
   });
 
+  it('strips an SDK-native intent property on explicit opt-out (def and registry)', () => {
+    const sdkNative = {
+      name: 'web_search',
+      parameters: {
+        type: 'object',
+        properties: { intent: { type: 'string' }, query: { type: 'string' } },
+        required: ['query'],
+      },
+    } as unknown as LCTool;
+    const toolRegistry: LCToolRegistry = new Map([['web_search', sdkNative]]);
+    const { toolDefinitions, intentToolNames } = applyIntentLabels({
+      toolDefinitions: [sdkNative],
+      toolRegistry,
+      toolOptions: { web_search: { describe_intent: false } },
+    });
+    expect(intentToolNames).toEqual([]);
+    const strippedProps = (toolDefinitions[0].parameters as { properties: object }).properties;
+    expect(Object.keys(strippedProps)).toEqual(['query']);
+    const registryProps = (toolRegistry.get('web_search')?.parameters as { properties: object })
+      .properties;
+    expect(INTENT_ARG in registryProps).toBe(false);
+    expect(INTENT_ARG in (sdkNative.parameters as { properties: object }).properties).toBe(true);
+  });
+
   it('skips a non-object (string-input) schema without rewriting it', () => {
     const stringInput = {
       name: 'legacy_tool',
@@ -300,6 +325,14 @@ describe('synthesizeIntentToolOptions', () => {
       ['web_search', CHECK_BACKGROUND_TASK_NAME, 'lc_transfer_to_researcher'],
       { ephemeralAgent: { describe_intent: true } },
     );
+    expect(options).toEqual({ web_search: { describe_intent: true } });
+  });
+
+  it('skips lazily-expanded mcp_all placeholders (exact-name matching would never apply)', () => {
+    const placeholder = `${Constants.mcp_all}${Constants.mcp_delimiter}overlay_server`;
+    const options = synthesizeIntentToolOptions([placeholder, 'web_search'], {
+      ephemeralAgent: { describe_intent: true },
+    });
     expect(options).toEqual({ web_search: { describe_intent: true } });
   });
 

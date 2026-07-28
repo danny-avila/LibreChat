@@ -259,7 +259,10 @@ function isIntentOptedIn(name: string, toolOptions?: AgentToolOptions): boolean 
  * mirroring the injection into the registry entry so a deferred tool
  * discovered later (tool_search reads the registry) arrives with the same
  * schema. Definitions that already declare `intent` (SDK-native tools) are
- * left alone and NOT counted as host-injected — their schema is their own.
+ * left alone and NOT counted as host-injected — their schema is their own —
+ * unless the tool is explicitly opted OUT (`describe_intent: false`), in
+ * which case the property is removed so the opt-out actually disables the
+ * arg's token cost (the SDK tool bodies tolerate its absence).
  *
  * Both saved agents and ephemeral/model-spec agents reach this with
  * `tool_options` populated, so the logic is written once.
@@ -274,8 +277,23 @@ export function applyIntentLabels(params: {
   const { toolRegistry, toolOptions, excludeTool } = params;
   const defs = params.toolDefinitions ?? [];
 
+  let changed = false;
   const intentToolNames: string[] = [];
+  const mirrorRegistryEntry = (def: LCTool): void => {
+    const registryEntry = toolRegistry?.get(def.name);
+    if (registryEntry) {
+      toolRegistry?.set(def.name, { ...registryEntry, parameters: def.parameters });
+    }
+  };
   const nextDefs = defs.map((def) => {
+    if (toolOptions?.[def.name]?.describe_intent === false) {
+      const stripped = removeIntentParam(def);
+      if (stripped !== def) {
+        changed = true;
+        mirrorRegistryEntry(stripped);
+      }
+      return stripped;
+    }
     if (!isIntentOptedIn(def.name, toolOptions)) {
       return def;
     }
@@ -294,24 +312,31 @@ export function applyIntentLabels(params: {
     if (injected === def) {
       return def;
     }
+    changed = true;
     intentToolNames.push(def.name);
-    const registryEntry = toolRegistry?.get(def.name);
-    if (registryEntry) {
-      toolRegistry?.set(def.name, { ...registryEntry, parameters: injected.parameters });
-    }
+    mirrorRegistryEntry(injected);
     return injected;
   });
 
-  if (intentToolNames.length === 0) {
+  if (!changed) {
     return { toolDefinitions: defs, intentToolNames };
   }
   return { toolDefinitions: nextDefs, intentToolNames };
 }
 
+const MCP_ALL_PLACEHOLDER_PREFIX = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
+
 /**
  * Builds `tool_options` marking each eligible tool as intent-describing for
  * ephemeral and model-spec agents, which carry no per-tool options of their
  * own. Returns undefined when disabled or nothing is eligible.
+ *
+ * Note: MCP servers that expand lazily (via the `mcp_all` placeholder for
+ * overlay/user-connection servers) are not known by name at this point —
+ * `applyIntentLabels` matches expanded tool names exactly, so an option
+ * recorded under the placeholder would silently never apply. Those entries
+ * are skipped rather than synthesized dead; standard cached MCP servers push
+ * real names and are covered. Mirrors `synthesizeBackgroundToolOptions`.
  */
 export function synthesizeIntentToolOptions(
   tools: string[],
@@ -327,6 +352,9 @@ export function synthesizeIntentToolOptions(
   }
   const toolOptions: AgentToolOptions = {};
   for (const name of tools) {
+    if (name.startsWith(MCP_ALL_PLACEHOLDER_PREFIX)) {
+      continue;
+    }
     if (isIntentEligibleToolName(name)) {
       toolOptions[name] = { describe_intent: true };
     }
