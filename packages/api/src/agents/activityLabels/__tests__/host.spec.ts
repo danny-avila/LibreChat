@@ -197,6 +197,31 @@ describe('resolveActivityLabelModel model precedence', () => {
     expect((resolved.clientOptions as Record<string, unknown>).maxTokens).toBe(256);
   });
 
+  /** GPT-5+ rejects `max_tokens`: the label cap must ride in modelKwargs
+   *  exactly as the OpenAI builder routes primary caps. */
+  it('routes the label cap into modelKwargs for GPT-5-family models', async () => {
+    mockGetOptions.mockResolvedValueOnce({
+      llmConfig: { model: 'gpt-5.2' },
+    } as never);
+    const resolved = await resolve({ activityLabel: true, activityModel: 'gpt-5.2' });
+    const clientOptions = resolved.clientOptions as Record<string, unknown>;
+    expect(clientOptions.maxTokens).toBeUndefined();
+    expect(clientOptions.modelKwargs).toEqual({ max_completion_tokens: 256 });
+  });
+
+  /** o-series models reject `max_tokens` and get NO cap — title parity;
+   *  the 200-char persistence bound still applies. */
+  it('sets no cap at all for o-series reasoning models', async () => {
+    mockGetOptions.mockResolvedValueOnce({
+      llmConfig: { model: 'o3-mini' },
+    } as never);
+    const resolved = await resolve({ activityLabel: true, activityModel: 'o3-mini' });
+    const clientOptions = resolved.clientOptions as Record<string, unknown>;
+    expect(clientOptions.maxTokens).toBeUndefined();
+    expect(clientOptions.modelKwargs).toBeUndefined();
+    expect(clientOptions.maxOutputTokens).toBeUndefined();
+  });
+
   /** The Anthropic carrier holds client CONSTRUCTION options — for
    *  user-provided base URLs that includes the SSRF-safe fetch dispatcher —
    *  so it must survive the strip even with no custom headers, and by the

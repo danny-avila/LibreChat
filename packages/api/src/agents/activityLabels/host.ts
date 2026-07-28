@@ -334,17 +334,35 @@ export async function resolveActivityLabelModel({
   const anthropicCarrier = rawOptions.clientOptions;
   const clientOptions = Object.fromEntries(
     Object.entries(rawOptions).filter(([key]) => !omitTitleOptions.has(key)),
-  ) as MaybeAzureConfig & { clientOptions?: { defaultHeaders?: unknown } };
+  ) as MaybeAzureConfig & {
+    clientOptions?: { defaultHeaders?: unknown };
+    modelKwargs?: Record<string, unknown>;
+  };
   if (anthropicCarrier != null && clientOptions.clientOptions == null) {
     clientOptions.clientOptions = anthropicCarrier;
   }
   /** Replace the stripped primary caps with a SMALL one — see
-   *  {@link LABEL_MAX_OUTPUT_TOKENS}. Installed after the filter so the
-   *  omit set cannot remove it; keyed per provider family (Google-style
-   *  wrappers read `maxOutputTokens`, the rest `maxTokens`). */
+   *  {@link LABEL_MAX_OUTPUT_TOKENS} — routed with the SAME model/API
+   *  conversion as the OpenAI builder (endpoints/openai/llm.ts): GPT-5+
+   *  rejects `max_tokens`, so its cap goes to `modelKwargs`
+   *  (responses-API aware); o-series reasoning models get NO cap at all,
+   *  matching the title path, since they reject `max_tokens` and have no
+   *  stable kwargs cap across API surfaces (the 200-char persistence bound
+   *  still applies); Google-family wrappers read `maxOutputTokens`. */
+  const isGpt5Plus = model != null && /\bgpt-[5-9](?:\.\d+)?\b/i.test(model);
+  const isOSeries = model != null && /\bo[1-9](?:[-.]|\b)/i.test(model);
   if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
     (clientOptions as { maxOutputTokens?: number }).maxOutputTokens = LABEL_MAX_OUTPUT_TOKENS;
-  } else {
+  } else if (isGpt5Plus) {
+    const paramName =
+      (rawOptions as { useResponsesApi?: boolean }).useResponsesApi === true
+        ? 'max_output_tokens'
+        : 'max_completion_tokens';
+    clientOptions.modelKwargs = {
+      ...(clientOptions.modelKwargs ?? {}),
+      [paramName]: LABEL_MAX_OUTPUT_TOKENS,
+    };
+  } else if (!isOSeries) {
     (clientOptions as { maxTokens?: number }).maxTokens = LABEL_MAX_OUTPUT_TOKENS;
   }
   if (options.configOptions) {
