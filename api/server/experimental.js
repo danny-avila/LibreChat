@@ -253,16 +253,19 @@ if (cluster.isMaster) {
   let expiredFileSweepOptions = null;
   let expiredFileSweepStarted = false;
   let schedulesReady = false;
-  const SCHEDULE_WRITE_READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+  const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
 
   /**
    * Refuse schedule WRITES in this clustered entrypoint. v1 supports single-process
    * scheduling only, and this process never arms the engine, so accepting a create or
    * run-now here would persist a schedule nothing will ever fire. Reads stay open so an
-   * operator can still inspect existing schedules.
+   * operator can still inspect existing schedules. DELETE stays open too: erasing a
+   * stored prompt needs no engine (the handler quiesces through the job store and
+   * refuses unsafe cases itself), and a deployment switched to clustered mode must not
+   * strand users with schedules they can see but never remove.
    */
   const rejectScheduleWritesUntilReady = (req, res, next) => {
-    if (schedulesReady || SCHEDULE_WRITE_READ_ONLY_METHODS.has(req.method)) {
+    if (schedulesReady || SCHEDULE_ENGINE_OPTIONAL_METHODS.has(req.method)) {
       return next();
     }
     return res.status(501).json({

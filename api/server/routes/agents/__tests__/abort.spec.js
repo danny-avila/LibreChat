@@ -24,6 +24,7 @@ const mockGenerationJobManager = {
 };
 
 const mockSaveMessage = jest.fn();
+const mockDeleteAgentCheckpoint = jest.fn(async () => undefined);
 const mockRecordScheduleOutcome = jest.fn(async () => true);
 const mockClearScheduledJob = jest.fn(async () => undefined);
 
@@ -41,6 +42,7 @@ jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   isEnabled: jest.fn().mockReturnValue(false),
   GenerationJobManager: mockGenerationJobManager,
+  deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
 }));
 
 jest.mock('~/models', () => ({
@@ -557,6 +559,32 @@ describe('Agent Abort Endpoint', () => {
 
         // Nothing to damage, so pressing Stop as a turn finishes stays a quiet success.
         expect(response.status).toBe(200);
+      });
+
+      it('fails closed when the replacement check cannot read the store', async () => {
+        // null from getJob means CONFIRMED absent; a THROW means unknown — a
+        // replacement may be live, and the conversation-wide checkpoint prune below
+        // would strip its resume state. With the store unreadable, the handler must
+        // stop before any side effect rather than treat the error as absence.
+        mockGenerationJobManager.getJob
+          .mockResolvedValueOnce({
+            metadata: { userId: 'test-user-123', pendingAction: { payload: {} } },
+            createdAt: 1000,
+          })
+          .mockRejectedValue(new Error('redis gone'));
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: false,
+          jobData: null,
+          content: [],
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: 'conv-1' });
+
+        expect(response.status).toBe(503);
+        expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+        expect(mockSaveMessage).not.toHaveBeenCalled();
       });
     });
 

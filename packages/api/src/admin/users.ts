@@ -206,10 +206,24 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
       // Hard-delete the schedule rows rather than relying on the reconciler's
       // `deleting` sweep: the clustered `experimental.js` entrypoint never arms the
       // engine, so in that topology nothing would ever erase them and the deleted
-      // user's prompt text would persist indefinitely.
-      await deleteSchedulesByUser(id).catch((error) => {
-        logger.error('[adminUsers] Failed to delete schedules for the removed user', error);
-      });
+      // user's prompt text would persist indefinitely. REFUSE on failure, before the
+      // user document goes: once it is deleted this endpoint 404s on retry, making the
+      // leftover rows unretryable — the exact retention this hard delete exists to
+      // prevent. The barrier is up and quiesce confirmed, so refusing here is safe and
+      // the admin simply retries. Mirrors the self-service controller's ordering.
+      const schedulesDeleted = await deleteSchedulesByUser(id).then(
+        () => true,
+        (error) => {
+          logger.error('[adminUsers] Failed to delete schedules for the removed user', error);
+          return false;
+        },
+      );
+      if (!schedulesDeleted) {
+        res.set('Retry-After', '30');
+        return res.status(503).json({
+          error: 'Could not remove scheduled chats for this user. Please retry shortly.',
+        });
+      }
 
       const result = await deleteUserById(id);
 

@@ -280,8 +280,10 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
   return preserveRuntimeStops(baseConfig, merged);
 }
 
-/** Whether a runtime-config interface field reads as OFF in either of its two shapes. */
-function isRuntimeDisabled(value: unknown): boolean {
+/** Whether a runtime-config interface field reads as OFF in either of its two shapes:
+ *  boolean `false`, or the object form with `use: false`. Exported so runtime gates
+ *  (e.g. the schedule engine's global stop) apply the same semantics as the merge. */
+export function isRuntimeDisabled(value: unknown): boolean {
   if (value === false) {
     return true;
   }

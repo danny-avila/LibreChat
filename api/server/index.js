@@ -70,7 +70,7 @@ let schedulesReady = false;
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
 const SCHEDULES_NOT_READY_CODE = 'SCHEDULES_NOT_READY';
 const CHAT_START_RETRY_AFTER_SECONDS = '1';
-const READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
 
 const rejectChatStartsUntilReady = (req, res, next) => {
   if (serverReady || req.method !== 'POST' || req.path === '/abort') {
@@ -89,10 +89,13 @@ const rejectChatStartsUntilReady = (req, res, next) => {
  * indexes) is up. With MONGO_AUTO_INDEX disabled those indexes are created only by
  * initializeScheduleEngine, which runs after the server starts listening — so a
  * create/run-now that lands in that window would persist without duplicate
- * protection. Reads stay open; writers get a 503 + Retry-After.
+ * protection. Reads stay open; writers get a 503 + Retry-After. DELETE stays open
+ * too: erasure needs none of those indexes, and an engine that REFUSES to arm keeps
+ * this gate closed forever — users must still be able to remove schedules (and their
+ * stored prompts) they can see.
  */
 const rejectScheduleWritesUntilReady = (req, res, next) => {
-  if (schedulesReady || READ_ONLY_METHODS.has(req.method)) {
+  if (schedulesReady || SCHEDULE_ENGINE_OPTIONAL_METHODS.has(req.method)) {
     return next();
   }
 

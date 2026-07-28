@@ -11,6 +11,7 @@ const mockGenerationJobManager = {
   createJob: jest.fn(),
   emitError: jest.fn(),
   completeJob: jest.fn(),
+  abortJob: jest.fn(),
   getResumeState: jest.fn(),
   updateMetadata: jest.fn(),
   claimGeneration: jest.fn(),
@@ -878,6 +879,40 @@ describe('ResumableAgentController resume metadata', () => {
     expect(res.status).toHaveBeenCalledWith(503);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVER_NOT_READY' }));
     expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
+  });
+
+  it('releases the pending slot and idempotency claim when the pre-start fence aborts', async () => {
+    // Manual Run Now is NOT limiter-exempt, so the controller incremented the pending
+    // counter and claimed the clientRequestId. The fence abort skips the whole
+    // generation, so nothing downstream releases either — this exit must, or the
+    // user's next interactive messages 429 until the counter's TTL expires.
+    const schedules = require('~/server/services/Schedules');
+    schedules.isScheduleLive.mockResolvedValueOnce(false);
+    mockGenerationJobManager.claimGeneration.mockResolvedValue({ claimed: true });
+    mockGenerationJobManager.abortJob.mockResolvedValue({ success: true });
+    const req = {
+      user: { id: 'user-123' },
+      _isScheduledFire: true,
+      _isManualScheduledFire: true,
+      body: {
+        text: 'Scheduled prompt',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        scheduleId: 'sched-1',
+        scheduledFor: '2026-07-28T12:00:00.000Z',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'aborted' }));
+    expect(mockCheckAndIncrementPendingRequest).toHaveBeenCalledWith('user-123');
+    expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
+    expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith('user-123', 'req-abc');
   });
 
   it('does not finalize an unscoped generation when job creation rejects before returning', async () => {

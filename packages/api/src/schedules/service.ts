@@ -1,4 +1,4 @@
-import { logger, runAsSystem, tenantStorage } from '@librechat/data-schemas';
+import { logger, runAsSystem, tenantStorage, isRuntimeDisabled } from '@librechat/data-schemas';
 import { getRefillEligibilityDate, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { ScheduleMethods, AppConfig, IBalance } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
@@ -463,8 +463,14 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       // BASE config only: DB principal overrides can narrow availability but must never
       // widen past an operator's global stop, so `schedules: false` in librechat.yaml is
       // genuinely non-overridable rather than emergent from the override filters.
+      // isRuntimeDisabled reads BOTH stop shapes (`false` and `{ use: false }`) — the
+      // same predicate the override merge preserves base stops with. A shape-blind
+      // check here made the object form disable getLimits but not this gate, so the
+      // engine kept claiming and fireSchedule ADVANCED each occurrence: a short
+      // maintenance stop silently dropped every occurrence it covered instead of
+      // leaving them due.
       const base = await deps.getAppConfig({ baseOnly: true });
-      return base?.interfaceConfig?.schedules === false;
+      return isRuntimeDisabled(base?.interfaceConfig?.schedules);
     },
     // Occupancy is read in SYSTEM scope so the cap is global across tenants (the
     // owner's tenant context would only see its own runs); the claim itself stays in

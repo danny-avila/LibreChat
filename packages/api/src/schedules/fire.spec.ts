@@ -287,6 +287,11 @@ describe('fireSchedule', () => {
     expect(calls.recordOutcome).toHaveLength(0);
     // The occurrence is done, so the schedule still advances past it.
     expect(calls.advance).toBe(1);
+    // The lease is handed back explicitly: an owner EDIT rotates the claim token (so the
+    // token-fenced advance no-ops) but never touches the lease fields — without this
+    // release, Run Now and the next claim of the recomputed occurrence stay blocked for
+    // the full 5-minute lease TTL.
+    expect(methods.releaseLeaseByHolder).toHaveBeenCalledWith('sched-1', 'inst-1');
   });
 
   it('treats a message-limiter 429 as a skip, not a schedule failure', async () => {
@@ -482,6 +487,35 @@ describe('fireSchedule', () => {
     expect(global.fetch).not.toHaveBeenCalled();
     // The lease is handed back by holder so the fresh claimer is not left waiting.
     expect(methods.releaseLeaseByHolder).toHaveBeenCalledWith('sched-1', 'inst-1');
+  });
+
+  /**
+   * A failed revalidation must NEVER advance. In every true supersession (takeover,
+   * owner edit) the claim token rotated, so an advance would no-op anyway — the only
+   * case where it can land is a PURE lease expiry with no takeover, where the token
+   * never rotated. advanceSchedule checks no lease, so that advance moved nextRunAt
+   * past an occurrence nothing had fired: a slow preflight silently DROPPED it
+   * instead of leaving it due for the next claim to retry.
+   */
+  it('leaves the occurrence due when only the lease expired (no takeover)', async () => {
+    const { methods } = makeMethods();
+    // Same claim token, merely past leaseUntil: revalidateClaim fails on the lease
+    // predicate alone while the token-fenced advance filter would still MATCH.
+    (methods.revalidateClaim as jest.Mock).mockResolvedValue(false);
+    mockFetch(async () => okResponse());
+    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
+    expect(result.skipped).toBe('superseded');
+    expect(methods.advanceSchedule).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('never advances from any superseded branch, including post-reserve', async () => {
+    const { methods } = makeMethods();
+    (methods.revalidateClaim as jest.Mock).mockResolvedValueOnce(true).mockResolvedValue(false);
+    mockFetch(async () => okResponse());
+    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
+    expect(result.skipped).toBe('superseded');
+    expect(methods.advanceSchedule).not.toHaveBeenCalled();
   });
 
   /**

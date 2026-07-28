@@ -268,6 +268,25 @@ export async function fireSchedule(
     }
   };
 
+  /**
+   * Steps aside after a failed revalidation WITHOUT advancing. `advance()` here is a
+   * designed no-op in every true supersession (takeover, owner edit — both rotate the
+   * claim token, so its token-fenced filter misses), which means the only case where it
+   * actually LANDS is the one it must not: a PURE lease expiry with no takeover, where
+   * the token never rotated. advanceSchedule checks no lease, so the advance moved
+   * nextRunAt past an occurrence nothing had fired — a preflight outlasting the lease
+   * silently dropped it instead of leaving it due for the next claim to retry.
+   * Manual run-now still releases its serialization lease (release-only, no advance)
+   * so a repeat click isn't met with a stale "already in progress".
+   */
+  const stepAsideSuperseded = async () => {
+    await releaseSupersededLease();
+    if (options?.manual) {
+      await methods.releaseLease(schedule.id, claimToken);
+    }
+    return { fired: false, skipped: 'superseded' as const };
+  };
+
   if (nextRunAt == null) {
     await methods.disableSchedule(schedule.id, 'invalid_schedule', claimToken);
     await advance();
@@ -354,9 +373,7 @@ export async function fireSchedule(
         claimToken != null &&
         !(await methods.revalidateClaim(schedule.id, claimToken, !options?.manual))
       ) {
-        await releaseSupersededLease();
-        await advance();
-        return { fired: false, skipped: 'superseded' as const };
+        return stepAsideSuperseded();
       }
       // Skip rows carry no `bookkept:false` marker, so the reconciler has no path to
       // repair a half-applied skip. If the schedule-side bookkeeping throws, do NOT
@@ -411,9 +428,7 @@ export async function fireSchedule(
       claimToken != null &&
       !(await methods.revalidateClaim(schedule.id, claimToken, !options?.manual))
     ) {
-      await releaseSupersededLease();
-      await advance();
-      return { fired: false, skipped: 'superseded' as const };
+      return stepAsideSuperseded();
     }
 
     // Pre-generate the conversation id and reserve the run row up front. The
@@ -532,9 +547,7 @@ export async function fireSchedule(
       !(await methods.revalidateClaim(schedule.id, claimToken, !options?.manual))
     ) {
       await rollbackReservation(conversationId);
-      await releaseSupersededLease();
-      await advance();
-      return { fired: false, skipped: 'superseded' as const };
+      return stepAsideSuperseded();
     }
 
     try {
@@ -565,10 +578,14 @@ export async function fireSchedule(
       }
       if (error instanceof ScheduleFireError && error.preStartAbort) {
         // The controller refused this fire at its own liveness/revision fence and has
-        // already recorded the occurrence's outcome. Advancing is all that's left:
-        // recording `error` here would count a delete/edit as a schedule FAULT and walk
-        // it toward auto-disable.
+        // already recorded the occurrence's outcome. Recording `error` here would count
+        // a delete/edit as a schedule FAULT and walk it toward auto-disable.
+        // Release OUR lease explicitly: the fence tripping on an owner EDIT rotated the
+        // claim token, so the token-fenced advance() below no-ops — but the edit never
+        // touched the lease fields, and leaving them held blocks Run Now and the next
+        // claim of the recomputed occurrence for the full 5-minute TTL.
         logger.info(`[schedules] fire aborted pre-start for ${schedule.id} (superseded)`);
+        await releaseSupersededLease();
         await advance();
         return { fired: false, skipped: 'superseded' as const };
       }

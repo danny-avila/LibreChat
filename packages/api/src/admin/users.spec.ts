@@ -580,6 +580,22 @@ describe('createAdminUsersHandlers', () => {
       expect(deps.deleteUserById).not.toHaveBeenCalled();
     });
 
+    it('refuses the delete when removing the schedule rows fails', async () => {
+      const deps = createDeps({
+        deleteSchedulesByUser: jest.fn().mockRejectedValue(new Error('mongo down')),
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      // Deleting the user doc first would make this endpoint 404 on retry, so the
+      // leftover schedule rows (the deleted user's prompt text, no TTL) would become
+      // unretryable — permanent retention in the clustered topology with no sweep.
+      expect(status).toHaveBeenCalledWith(503);
+      expect(deps.deleteUserById).not.toHaveBeenCalled();
+    });
+
     it('returns 500 on error', async () => {
       const deps = createDeps({
         deleteUserById: jest.fn().mockRejectedValue(new Error('db crash')),

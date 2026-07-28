@@ -431,6 +431,26 @@ describe('global kill switch', () => {
     const service = makeService(noRuns(), getAppConfig);
     expect(await service.engineDeps.isGloballyDisabled()).toBe(false);
   });
+
+  it('trips on the object form `{ use: false }` exactly like the boolean stop', async () => {
+    // Both stop shapes must FREEZE occurrences (engine stops claiming, nothing
+    // advances). A shape-blind gate left the engine claiming while getLimits refused
+    // fires, so the disabled path ADVANCED each occurrence — a short maintenance stop
+    // silently dropped everything it covered instead of leaving it due.
+    const getAppConfig = jest.fn(async () => ({
+      interfaceConfig: { schedules: { use: false, maxPerUser: 5 } },
+    })) as unknown as SchedulesServiceDeps['getAppConfig'];
+    const service = makeService(noRuns(), getAppConfig);
+    expect(await service.engineDeps.isGloballyDisabled()).toBe(true);
+  });
+
+  it('does not trip on the object form while `use` stays enabled', async () => {
+    const getAppConfig = jest.fn(async () => ({
+      interfaceConfig: { schedules: { use: true, maxPerUser: 5 } },
+    })) as unknown as SchedulesServiceDeps['getAppConfig'];
+    const service = makeService(noRuns(), getAppConfig);
+    expect(await service.engineDeps.isGloballyDisabled()).toBe(false);
+  });
 });
 
 describe('deployment-wide limits', () => {

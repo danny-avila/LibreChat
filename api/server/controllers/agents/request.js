@@ -477,6 +477,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           preserveForReconcile: !outcomeRecorded,
           expectedCreatedAt: jobCreatedAt,
         }).catch(() => undefined);
+        // Mirror the init-error cleanup: this return skips the whole generation, so the
+        // pending-request slot (manual Run Now is NOT limiter-exempt) and the
+        // idempotency claim it acquired must be released here — nothing downstream
+        // will. Leaving them held 429'd the user's next interactive messages until the
+        // counter's TTL expired.
+        if (ownsIdempotencyClaim) {
+          await GenerationJobManager.releaseGeneration(userId, clientRequestId).catch(() => {});
+        }
+        await finishResumableRequest(req, userId);
         startupTelemetry?.end('aborted');
         return res.json({ streamId, conversationId, status: 'aborted' });
       }

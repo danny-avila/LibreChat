@@ -160,6 +160,19 @@ describe('Startup readiness wiring', () => {
     );
   });
 
+  it('keeps schedule DELETE open when the engine never arms (both entrypoints)', () => {
+    // An engine that refuses to arm keeps the gate closed forever; erasure needs no
+    // engine, and users must not be stranded with schedules they can see but never
+    // remove. The set name is asserted so a revert to READ_ONLY_METHODS fails here.
+    const experimental = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
+    for (const entrypoint of [source, experimental]) {
+      expect(entrypoint).toMatch(
+        /SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set\(\['GET', 'HEAD', 'OPTIONS', 'DELETE'\]\)/,
+      );
+      expect(entrypoint).toContain('SCHEDULE_ENGINE_OPTIONAL_METHODS.has(req.method)');
+    }
+  });
+
   it('flips schedulesReady only from the engine-init result (indexes must exist first)', () => {
     const engineInitIndex = source.indexOf(
       'const scheduleEngine = await initializeScheduleEngine(',

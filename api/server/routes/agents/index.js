@@ -391,7 +391,20 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
     // is nothing to damage in that case, so it keeps its previous behaviour rather than
     // turning a routine stop into an error.
     if (!abortResult.success && abortResult.jobData == null) {
-      const liveJob = await GenerationJobManager.getJob(jobStreamId).catch(() => null);
+      // FAIL CLOSED on an unreadable store: null means "confirmed absent" (benign),
+      // but a thrown read means UNKNOWN — a replacement may be live, and everything
+      // below acts on the conversation as a whole (the checkpoint prune would strip
+      // its resume state). Nothing of ours was stopped (the abort already failed), so
+      // refusing here has no side effects and the client simply retries.
+      let liveJob;
+      try {
+        liveJob = await GenerationJobManager.getJob(jobStreamId);
+      } catch (err) {
+        logger.error(`[AgentStream] Could not verify abort state: ${jobStreamId}`, err);
+        return res
+          .status(503)
+          .json({ error: 'Could not verify the generation state. Please retry.', aborted: null });
+      }
       if (liveJob != null && liveJob.createdAt !== job.createdAt) {
         logger.debug(
           `[AgentStream] Abort refused: generation was replaced before it landed: ${jobStreamId}`,
