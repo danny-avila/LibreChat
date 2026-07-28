@@ -784,3 +784,87 @@ export function processModelData(input: z.infer<typeof inputSchema>): EndpointTo
 
   return tokenConfig;
 }
+
+interface LiteLLMModelInfo {
+  input_cost_per_token?: number | null;
+  output_cost_per_token?: number | null;
+  cache_read_input_token_cost?: number | null;
+  cache_creation_input_token_cost?: number | null;
+  max_input_tokens?: number | null;
+  max_tokens?: number | null;
+}
+
+interface LiteLLMModel {
+  model_name: string;
+  model_info?: LiteLLMModelInfo;
+}
+
+/**
+ * Shape of a LiteLLM proxy's `/model/info` response. Distinct from OpenRouter's
+ * `/models` shape (`modelSchema` above) — LiteLLM keys models by the admin-chosen
+ * `model_name` alias and nests cost fields under `model_info`. Every cost/limit
+ * field is `.nullish()`, not just `.optional()`: LiteLLM's own `ModelInfo` type
+ * declares these `Optional[float]` and serializes a model with no pricing as an
+ * explicit `null`, not an omitted key — confirmed against a real proxy response,
+ * where `.optional()` alone rejected the payload entirely.
+ */
+const litellmModelSchema = z.object({
+  model_name: z.string(),
+  model_info: z
+    .object({
+      input_cost_per_token: z.number().nullish(),
+      output_cost_per_token: z.number().nullish(),
+      cache_read_input_token_cost: z.number().nullish(),
+      cache_creation_input_token_cost: z.number().nullish(),
+      max_input_tokens: z.number().nullish(),
+      max_tokens: z.number().nullish(),
+    })
+    .optional(),
+}) as z.ZodType<LiteLLMModel>;
+
+const litellmInputSchema = z.object({
+  data: z.array(litellmModelSchema),
+}) as z.ZodType<{ data: LiteLLMModel[] }>;
+
+/**
+ * Processes a LiteLLM `/model/info` response into the internal per-1M-token
+ * pricing convention (same arithmetic `processModelData` uses for OpenRouter's
+ * per-token USD rates). Models with no `input_cost_per_token` are skipped
+ * rather than priced at 0 — a zero rate would silently bill nothing instead of
+ * falling through to the standard tables, where `getMultiplier`'s fall-through
+ * warning can flag it.
+ */
+export function processLiteLLMModelData(
+  input: z.infer<typeof litellmInputSchema>,
+): EndpointTokenConfig {
+  const validationResult = litellmInputSchema.safeParse(input);
+  if (!validationResult.success) {
+    throw new Error('Invalid input data');
+  }
+  const { data } = validationResult.data;
+
+  const tokenConfig: EndpointTokenConfig = {};
+
+  for (const model of data) {
+    const info = model.model_info;
+    if (info?.input_cost_per_token == null) {
+      continue;
+    }
+
+    const config: TokenConfig = {
+      prompt: info.input_cost_per_token * 1_000_000,
+      completion: (info.output_cost_per_token ?? 0) * 1_000_000,
+      context: info.max_input_tokens ?? info.max_tokens ?? 0,
+    };
+    if (info.cache_read_input_token_cost != null) {
+      config.read = info.cache_read_input_token_cost * 1_000_000;
+    }
+    if (info.cache_creation_input_token_cost != null) {
+      config.write = info.cache_creation_input_token_cost * 1_000_000;
+    }
+
+    tokenConfig[model.model_name] = config;
+  }
+
+  return tokenConfig;
+}

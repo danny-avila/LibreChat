@@ -7,6 +7,8 @@ export interface SpendTxData {
   conversationId?: string;
   model?: string;
   context?: string;
+  /** Endpoint the model was called through; used only to resolve the rate — never persisted. */
+  endpoint?: string;
   endpointTokenConfig?: Record<string, Record<string, number>> | null;
   balance?: { enabled?: boolean };
   transactions?: { enabled?: boolean };

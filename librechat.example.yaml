@@ -639,6 +639,35 @@ endpoints:
       modelDisplayLabel: 'Helicone'
       iconURL: https://marketing-assets-helicone.s3.us-west-2.amazonaws.com/helicone.png
 
+    # LiteLLM Example
+    # Naming this endpoint "LiteLLM" (case-insensitive) automatically fetches
+    # per-model pricing from the proxy's `/model/info` route, using the apiKey
+    # below — a virtual key is enough, no admin/master key required. If the
+    # proxy doesn't expose that route (older versions) or the key lacks
+    # permission, pricing falls back to the built-in vendor tables.
+    - name: 'LiteLLM'
+      apiKey: '${LITELLM_KEY}'
+      baseURL: 'http://localhost:4000/v1'
+      models:
+        default: ['gpt-4o-mini']
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-4o-mini'
+      modelDisplayLabel: 'LiteLLM'
+      # Optional: pin exact per-model rates instead of relying on the automatic
+      # fetch above. Keys must exactly match the model id the proxy returns —
+      # an alias that doesn't match falls back to guessed pricing (logged as a
+      # warning) rather than failing outright. Adding this block disables the
+      # automatic fetch entirely, for every model on this endpoint, not just
+      # the ones listed here.
+      # tokenConfig:
+      #   gpt-4o-mini:
+      #     prompt: 0.15        # USD per 1M input tokens
+      #     completion: 0.6     # USD per 1M output tokens
+      #     context: 128000
+      #     cacheRead: 0.075    # optional; omitted models bill cache reads at the prompt rate
+      #     cacheWrite: 0.1875
+
     # Portkey AI Example
     - name: 'Portkey'
       apiKey: 'dummy'

@@ -1969,6 +1969,7 @@ export enum KnownEndpoints {
   groq = 'groq',
   helicone = 'helicone',
   huggingface = 'huggingface',
+  litellm = 'litellm',
   mistral = 'mistral',
   mlx = 'mlx',
   ollama = 'ollama',
@@ -1984,6 +1985,7 @@ export enum KnownEndpoints {
 export enum FetchTokenConfig {
   openrouter = KnownEndpoints.openrouter,
   helicone = KnownEndpoints.helicone,
+  litellm = KnownEndpoints.litellm,
 }
 
 export const defaultEndpoints: EModelEndpoint[] = [

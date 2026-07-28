@@ -8,6 +8,7 @@ const cancelRate = 1.15;
 type MultiplierParams = {
   model?: string;
   valueKey?: string;
+  endpoint?: string;
   tokenType?: 'prompt' | 'completion';
   inputTokenCount?: number;
   endpointTokenConfig?: Record<string, Record<string, number>>;
@@ -16,6 +17,7 @@ type MultiplierParams = {
 type CacheMultiplierParams = {
   cacheType?: 'write' | 'read';
   model?: string;
+  endpoint?: string;
   endpointTokenConfig?: Record<string, Record<string, number>>;
   inputTokenCount?: number;
 };
@@ -25,6 +27,7 @@ interface InternalTxDoc {
   valueKey?: string;
   tokenType?: 'prompt' | 'completion' | 'credits';
   model?: string;
+  endpoint?: string;
   endpointTokenConfig?: Record<string, Record<string, number>> | null;
   inputTokenCount?: number;
   rawAmount?: number;
@@ -43,6 +46,8 @@ export interface TxData {
   conversationId?: string;
   model?: string;
   context?: string;
+  /** Endpoint the model was called through; used only to resolve the rate — never persisted. */
+  endpoint?: string;
   tokenType?: 'prompt' | 'completion' | 'credits';
   rawAmount?: number;
   valueKey?: string;
@@ -103,12 +108,13 @@ export function createTransactionMethods(
 } {
   /** Calculate and set the tokenValue for a transaction */
   function calculateTokenValue(txn: InternalTxDoc) {
-    const { valueKey, tokenType, model, endpointTokenConfig, inputTokenCount } = txn;
+    const { valueKey, tokenType, model, endpoint, endpointTokenConfig, inputTokenCount } = txn;
     const multiplier = Math.abs(
       txMethods.getMultiplier({
         valueKey,
         tokenType: tokenType as 'prompt' | 'completion' | undefined,
         model,
+        endpoint,
         endpointTokenConfig: endpointTokenConfig ?? undefined,
         inputTokenCount,
       }),
@@ -128,13 +134,14 @@ export function createTransactionMethods(
       return;
     }
 
-    const { model, endpointTokenConfig, inputTokenCount } = txn;
+    const { model, endpoint, endpointTokenConfig, inputTokenCount } = txn;
     const etConfig = endpointTokenConfig ?? undefined;
 
     if (txn.tokenType === 'prompt') {
       const inputMultiplier = txMethods.getMultiplier({
         tokenType: 'prompt',
         model,
+        endpoint,
         endpointTokenConfig: etConfig,
         inputTokenCount,
       });
@@ -142,6 +149,7 @@ export function createTransactionMethods(
         txMethods.getCacheMultiplier({
           cacheType: 'write',
           model,
+          endpoint,
           endpointTokenConfig: etConfig,
           inputTokenCount,
         }) ?? inputMultiplier;
@@ -149,6 +157,7 @@ export function createTransactionMethods(
         txMethods.getCacheMultiplier({
           cacheType: 'read',
           model,
+          endpoint,
           endpointTokenConfig: etConfig,
           inputTokenCount,
         }) ?? inputMultiplier;
@@ -185,6 +194,7 @@ export function createTransactionMethods(
       const multiplier = txMethods.getMultiplier({
         tokenType: txn.tokenType,
         model,
+        endpoint,
         endpointTokenConfig: etConfig,
         inputTokenCount,
       });
@@ -316,6 +326,7 @@ export function createTransactionMethods(
     const transaction = new Transaction(txData);
     transaction.endpointTokenConfig = txData.endpointTokenConfig;
     transaction.inputTokenCount = txData.inputTokenCount;
+    transaction.endpoint = txData.endpoint;
     calculateTokenValue(transaction);
     await transaction.save();
 
@@ -351,6 +362,7 @@ export function createTransactionMethods(
     const transaction = new Transaction(txData);
     transaction.endpointTokenConfig = txData.endpointTokenConfig;
     transaction.inputTokenCount = txData.inputTokenCount;
+    transaction.endpoint = txData.endpoint;
     calculateTokenValue(transaction);
 
     await transaction.save();
@@ -387,6 +399,7 @@ export function createTransactionMethods(
     const transaction = new Transaction(txData);
     transaction.endpointTokenConfig = txData.endpointTokenConfig;
     transaction.inputTokenCount = txData.inputTokenCount;
+    transaction.endpoint = txData.endpoint;
 
     calculateStructuredTokenValue(transaction);
 

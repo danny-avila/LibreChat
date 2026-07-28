@@ -16,6 +16,9 @@
  *    the last-defined key wins.
  */
 
+import { EModelEndpoint } from 'librechat-data-provider';
+import logger from '~/config/winston';
+
 export interface TxDeps {
   /** From @librechat/api — matches a model name to a canonical key. */
   matchModelName: (model: string, endpoint?: string) => string | undefined;
@@ -478,6 +481,57 @@ export function createTxMethods(
 } {
   const { matchModelName, findMatchingPattern } = txDeps;
 
+  /** Last-warned timestamp per `endpoint:model`, so a busy misconfigured alias
+   *  logs once instead of on every charge. TTL mirrors `tokenConfigCache`'s
+   *  30-minute refresh window (duplicated here rather than importing from
+   *  `packages/api`, which already depends on this package). */
+  const FALL_THROUGH_WARNING_TTL_MS = 30 * 60 * 1000;
+  const fallThroughWarnings = new Map<string, number>();
+
+  /**
+   * A custom endpoint's `endpoint` value is the admin-chosen name (e.g.
+   * `"LiteLLM"`), which is never a member of `EModelEndpoint` — unlike
+   * built-in endpoints, where `endpoint` is itself an `EModelEndpoint` value.
+   */
+  function isCustomEndpoint(endpoint?: string): boolean {
+    return !!endpoint && !EModelEndpoint[endpoint as keyof typeof EModelEndpoint];
+  }
+
+  /**
+   * Logs once per `(endpoint, model)` when a custom endpoint's model has no
+   * explicit `tokenConfig` entry and was billed by guessing — substring-matching
+   * the built-in vendor tables, or `defaultRate` — instead of an admin-supplied
+   * rate. Built-in endpoints resolving the same way is expected behavior and is
+   * never warned on.
+   */
+  function warnFallThroughPricing({
+    endpoint,
+    model,
+    rate,
+    resolvedVia,
+  }: {
+    endpoint?: string;
+    model?: string;
+    rate: number;
+    resolvedVia: 'substring-match' | 'default-rate';
+  }): void {
+    if (!model || !isCustomEndpoint(endpoint)) {
+      return;
+    }
+    const key = `${endpoint}:${model}`;
+    const now = Date.now();
+    const lastWarned = fallThroughWarnings.get(key);
+    if (lastWarned != null && now - lastWarned < FALL_THROUGH_WARNING_TTL_MS) {
+      return;
+    }
+    fallThroughWarnings.set(key, now);
+    logger.warn(
+      `[getMultiplier] Custom endpoint "${endpoint}" has no tokenConfig entry for model "${model}" ` +
+        `— billed via ${resolvedVia} at rate ${rate} instead of a configured price. Add this model ` +
+        "to the endpoint's tokenConfig to bill it accurately.",
+    );
+  }
+
   /**
    * Retrieves the key associated with a given model name.
    */
@@ -568,7 +622,15 @@ export function createTxMethods(
       if (premiumRate != null) {
         return premiumRate;
       }
-      return tokenValues[valueKey]?.[tokenType] ?? defaultRate;
+      const matchedRate = tokenValues[valueKey]?.[tokenType];
+      const rate = matchedRate ?? defaultRate;
+      warnFallThroughPricing({
+        endpoint,
+        model,
+        rate,
+        resolvedVia: matchedRate != null ? 'substring-match' : 'default-rate',
+      });
+      return rate;
     }
 
     if (!tokenType || !model) {
@@ -577,6 +639,7 @@ export function createTxMethods(
 
     valueKey = getValueKey(model, endpoint);
     if (!valueKey) {
+      warnFallThroughPricing({ endpoint, model, rate: defaultRate, resolvedVia: 'default-rate' });
       return defaultRate;
     }
 
@@ -585,7 +648,15 @@ export function createTxMethods(
       return premiumRate;
     }
 
-    return tokenValues[valueKey]?.[tokenType] ?? defaultRate;
+    const matchedRate = tokenValues[valueKey]?.[tokenType];
+    const rate = matchedRate ?? defaultRate;
+    warnFallThroughPricing({
+      endpoint,
+      model,
+      rate,
+      resolvedVia: matchedRate != null ? 'substring-match' : 'default-rate',
+    });
+    return rate;
   }
 
   /**
