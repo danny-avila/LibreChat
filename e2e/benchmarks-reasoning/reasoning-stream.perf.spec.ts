@@ -17,6 +17,17 @@ type PerfSnapshot = {
   longTasks: number[];
 };
 
+type PerfGlobal = PerfSnapshot & {
+  drain(): void;
+  reset(): void;
+};
+
+declare global {
+  interface Window {
+    __PERF__: PerfGlobal;
+  }
+}
+
 /**
  * The react-scan bundle is injected from disk so the repo does not need it as
  * a dependency; point REACT_SCAN_PATH at `react-scan/dist/auto.global.js`.
@@ -33,18 +44,29 @@ const TALLY_SETUP = `(() => {
   const perf = {
     renders: Object.create(null),
     longTasks: [],
+    observer: null,
+    drain() {
+      if (!this.observer) {
+        return;
+      }
+      for (const entry of this.observer.takeRecords()) {
+        this.longTasks.push(entry.duration);
+      }
+    },
     reset() {
+      this.drain();
       this.renders = Object.create(null);
       this.longTasks = [];
     },
   };
   window.__PERF__ = perf;
   try {
-    new PerformanceObserver((list) => {
+    perf.observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
         perf.longTasks.push(entry.duration);
       }
-    }).observe({ type: 'longtask', buffered: true });
+    });
+    perf.observer.observe({ type: 'longtask', buffered: true });
   } catch (_error) {
     /* longtask unsupported: totals stay empty */
   }
@@ -102,14 +124,14 @@ const TALLY_SETUP = `(() => {
 
 async function snapshotPerf(page: Page): Promise<PerfSnapshot> {
   return page.evaluate(() => {
-    const perf = (window as unknown as { __PERF__: PerfSnapshot }).__PERF__;
-    return { renders: perf.renders, longTasks: perf.longTasks.slice() };
+    window.__PERF__.drain();
+    return { renders: window.__PERF__.renders, longTasks: window.__PERF__.longTasks.slice() };
   });
 }
 
 async function resetPerf(page: Page): Promise<void> {
   await page.evaluate(() => {
-    (window as unknown as { __PERF__: { reset(): void } }).__PERF__.reset();
+    window.__PERF__.reset();
   });
 }
 
@@ -155,6 +177,7 @@ test.describe('reasoning stream perf (react-scan)', () => {
     const textSection = buildTextSection();
     const thinkChunks = countModelChunks(thinkSection);
     const textChunks = countModelChunks(textSection);
+    const sectionCount = (textSection.match(/## Section /g) ?? []).length;
 
     await page.addInitScript({ content: fs.readFileSync(resolveReactScanPath(), 'utf8') });
     await page.addInitScript({ content: TALLY_SETUP });
@@ -163,9 +186,11 @@ test.describe('reasoning stream perf (react-scan)', () => {
     await page.goto(NEW_CHAT_PATH, { timeout: 180_000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
 
-    const streamStart = Date.now();
     await sendMessage(page, 'Stream the long reasoning benchmark reply.');
+    /** Clock and tally start together so wall time covers exactly the
+     *  measured interval — request-setup time is excluded from both. */
     await resetPerf(page);
+    const streamStart = Date.now();
 
     await expect(messagesView(page).getByText(END_MARKER)).toBeVisible({
       timeout: 4 * 60 * 1000,
@@ -195,6 +220,22 @@ test.describe('reasoning stream perf (react-scan)', () => {
     const renderedThink = (await thinkGroup.locator('p').first().textContent()) ?? '';
     const normalize = (value: string) => value.replace(/\s+/g, ' ').trim();
     expect(normalize(renderedThink)).toBe(normalize(thinkSection));
+
+    /**
+     * The markdown body must also arrive whole — END_MARKER only proves the
+     * suffix rendered. Every generated section heading must be present, along
+     * with the exact table count and the generated code block, so the
+     * measured render work covers the full payload.
+     */
+    expect(sectionCount).toBeGreaterThan(0);
+    for (let section = 1; section <= sectionCount; section += 1) {
+      await expect(
+        messagesView(page).getByRole('heading', { name: `Section ${section}`, exact: true }),
+      ).toBeVisible();
+    }
+    await expect(messagesView(page).getByRole('listitem')).toHaveCount(sectionCount * 2);
+    await expect(messagesView(page).getByRole('table')).toHaveCount(Math.floor(sectionCount / 4));
+    await expect(messagesView(page).getByText('export function estimate').first()).toBeVisible();
 
     await resetPerf(page);
     const input = page.getByRole('textbox', { name: 'Message input' });
@@ -242,9 +283,10 @@ test.describe('reasoning stream perf (react-scan)', () => {
      * rAF coalescing must keep per-token work bounded: cache flushes happen at
      * most once per animation frame, so render counts scale with elapsed
      * frames, never with chunk count. The bound is derived from wall time
-     * (60fps + 50% headroom), which keeps it meaningful regardless of how many
-     * chunks streamed before `resetPerf` — without coalescing, renders track
-     * chunks (~5k in ~13s) and blow far past it (measured baseline: 122).
+     * (60fps + 50% headroom) — without coalescing, renders track chunks
+     * (~5k in ~13s) and blow far past it (measured baseline: 122). The floor
+     * guards against the instrumentation (or the component name) silently
+     * disappearing, which would zero the count and void the upper bound.
      */
     const framesUpperBound = Math.ceil((streamMs / 1000) * 90);
     const thinkingContentRenders = streaming.renders['ThinkingContent']?.count ?? 0;
@@ -254,18 +296,23 @@ test.describe('reasoning stream perf (react-scan)', () => {
     /**
      * Markdown must not re-render every block on every token — total
      * MarkdownBlock renders stay in the order of frames + blocks (measured
-     * baseline: 153), far below blocks × tokens (~100k).
+     * baseline: 153), far below blocks × tokens (~100k). Same floor rationale
+     * as above: zero means the guard lost its subject, not that it passed.
      */
     const markdownBlockRenders = streaming.renders['MarkdownBlock']?.count ?? 0;
+    expect(markdownBlockRenders).toBeGreaterThan(10);
     expect(markdownBlockRenders).toBeLessThan(framesUpperBound);
 
     /**
      * The main thread must stay responsive while the huge block streams:
-     * no single stall past 250ms, and no more than 10% of the stream's wall
-     * time spent in long tasks (measured baseline: one 96ms task in 13.4s).
+     * no single stall past 250ms, no more than 10% of the stream's wall time
+     * in long tasks (measured baseline: one 51-96ms task), and — because
+     * sustained sub-50ms work never surfaces as a long task — cumulative
+     * render time capped as well (measured baseline: ~4-7% of wall time).
      */
     expect(worstLongTask).toBeLessThan(250);
     expect(longTaskTotal).toBeLessThan(streamMs * 0.1);
+    expect(streamTotals.time).toBeLessThan(streamMs * 0.25);
 
     /**
      * Typing after the long transcript must not re-render the transcript:
