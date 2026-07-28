@@ -418,7 +418,7 @@ const ChatForm = memo(function ChatForm({
 
   const isMoreThanThreeRows = visualRowCount > 3;
 
-  const composerItems = useComposerItems(conversationId);
+  const composerItems = useComposerItems(conversationId, quotesEnabled);
   const attachTarget = useAttachTarget(conversation, disableInputs);
   const dictation = useDictation({ ask: submitMessage, methods, isSubmitting });
   const uploadingCount = useMemo(() => {

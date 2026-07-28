@@ -504,6 +504,7 @@ export function useShortcutActions(): ShortcutAction[] {
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
   const [sidebarExpanded, setSidebarExpanded] = useRecoilState(store.sidebarExpanded);
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
+  const setShowFilesDialog = useSetRecoilState(store.showFilesDialog);
   const setIsTemporary = useSetRecoilState(store.isTemporary);
   const setDeleteTarget = useSetRecoilState(store.keyboardDeleteTarget);
   const hasAccessToTemporaryChat = useHasAccess({
@@ -815,7 +816,12 @@ export function useShortcutActions(): ShortcutAction[] {
   const handleOpenPrompts = useCallback(() => handleOpenPanel('prompts'), [handleOpenPanel]);
   const handleOpenMemories = useCallback(() => handleOpenPanel('memories'), [handleOpenPanel]);
   const handleOpenParameters = useCallback(() => handleOpenPanel('parameters'), [handleOpenPanel]);
-  const handleOpenFiles = useCallback(() => handleOpenPanel('files'), [handleOpenPanel]);
+  /* The file manager moved out of the side panel and into a dialog, so there is
+     no `nav-panel-files` button left for `handleOpenPanel` to find. */
+  const handleOpenFiles = useCallback(() => {
+    setShowFilesDialog(true);
+    return true;
+  }, [setShowFilesDialog]);
   const handleOpenBookmarks = useCallback(() => handleOpenPanel('bookmarks'), [handleOpenPanel]);
   const handleOpenMCP = useCallback(() => handleOpenPanel('mcp-builder'), [handleOpenPanel]);
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, render, renderHook } from '@testing-library/react';
-import { RecoilRoot, useRecoilValue, type MutableSnapshot } from 'recoil';
+import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
 import useSteerRecovery from '../useSteerRecovery';
 import store from '~/store';
 
@@ -16,9 +16,25 @@ const flush = () => act(async () => undefined);
 
 const CONVO_ID = 'convo-steer-recovery';
 
+/** The hook resolves "is the run over" from the conversation's own submitting
+ *  state, not from its own unmount, so every case has to place the
+ *  conversation in the store the way `ChatView` does. */
+const seedRun = (snapshot: MutableSnapshot, submitting: boolean) => {
+  snapshot.set(store.conversationKeysAtom, [0]);
+  snapshot.set(store.conversationByIndex(0), { conversationId: CONVO_ID } as never);
+  snapshot.set(store.isSubmittingFamily(0), submitting);
+};
+
 function setup(initialize?: (snapshot: MutableSnapshot) => void) {
   const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <RecoilRoot initializeState={initialize}>{children}</RecoilRoot>
+    <RecoilRoot
+      initializeState={(snapshot) => {
+        seedRun(snapshot, true);
+        initialize?.(snapshot);
+      }}
+    >
+      {children}
+    </RecoilRoot>
   );
   return renderHook(
     () => ({
@@ -125,17 +141,15 @@ describe('useSteerRecovery', () => {
       expect(result.current.queue).toEqual([]);
     });
 
-    /* The block this hook lives in unmounts the moment the run ends, which is
-       exactly when a retry's ack tends to land. It has to survive that: the
-       words go to the queue rather than leaving the chip saying `sending`. */
-    /* The block this hook lives in unmounts the moment the run ends, which is
-       exactly when a retry's ack tends to land. It has to survive that: the
-       words go to the queue rather than leaving the chip saying `sending`. */
-    it('queues a retry whose ack lands after the run ended', async () => {
+    /* A retry's ack tends to land right as the run ends, which is also when
+       the block this hook lives in unmounts. Whether the words go to the queue
+       turns on the run, not on the unmount. */
+    const lateAck = async (endRun: boolean) => {
       let settle: (value: unknown) => void = () => undefined;
       mockMutateAsync.mockReturnValue(new Promise((resolve) => (settle = resolve)));
 
       let recovery: ReturnType<typeof useSteerRecovery> | undefined;
+      let setSubmitting: ((value: boolean) => void) | undefined;
       let chips: unknown[] = [];
       let queue: unknown[] = [];
       const Recovery = () => {
@@ -147,12 +161,14 @@ describe('useSteerRecovery', () => {
       const Observer = () => {
         chips = useRecoilValue(store.pendingSteersByConvoId(CONVO_ID));
         queue = useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID));
+        setSubmitting = useSetRecoilState(store.isSubmittingFamily(0));
         return null;
       };
       const Tree = ({ live }: { live: boolean }) => (
         <RecoilRoot
-          initializeState={({ set }) => {
-            set(store.pendingSteersByConvoId(CONVO_ID), [
+          initializeState={(snapshot) => {
+            seedRun(snapshot, true);
+            snapshot.set(store.pendingSteersByConvoId(CONVO_ID), [
               { steerId: 'local-late', text: 'landed too late', status: 'failed', createdAt: 3 },
             ]);
           }}
@@ -168,13 +184,30 @@ describe('useSteerRecovery', () => {
       });
       expect(chips).toEqual([expect.objectContaining({ status: 'sending' })]);
 
+      if (endRun) {
+        act(() => setSubmitting?.(false));
+      }
       rerender(<Tree live={false} />);
       await act(async () => {
         settle({ steerId: 'srv-late', status: 'queued', position: 1, conversationId: CONVO_ID });
       });
 
+      return { chips, queue };
+    };
+
+    it('queues a retry whose ack lands after the run ended', async () => {
+      const { chips, queue } = await lateAck(true);
       expect(chips).toEqual([]);
       expect(queue).toEqual([expect.objectContaining({ id: 'srv-late', text: 'landed too late' })]);
+    });
+
+    /* Navigating away unmounts the same block while the resumable run carries
+       on, and the server will still inject the accepted steer. Queueing it as
+       a follow-up here is what sent the same words twice. */
+    it('leaves the ack pending when the block unmounts on a still-live run', async () => {
+      const { chips, queue } = await lateAck(false);
+      expect(chips).toEqual([expect.objectContaining({ steerId: 'srv-late', status: 'pending' })]);
+      expect(queue).toEqual([]);
     });
 
     /* The picks the message was written with have to survive the retry, or the

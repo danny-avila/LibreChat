@@ -1,4 +1,5 @@
 import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
+import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import type { TAskFunction } from '~/common';
 import useGetAudioSettings from './useGetAudioSettings';
@@ -6,6 +7,7 @@ import { useChatFormContext } from '~/Providers';
 import useSpeechToText from './useSpeechToText';
 import { globalAudioId } from '~/common';
 import useLocalize from '../useLocalize';
+import store from '~/store';
 
 const isExternalSTT = (speechToTextEndpoint: string) => speechToTextEndpoint === 'external';
 
@@ -51,6 +53,10 @@ export default function useDictation({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { speechToTextEndpoint } = useGetAudioSettings();
+  const autoSendText = useRecoilValue(store.autoSendText);
+  /** The Auto Send Text setting, which submits a plain recording once its
+   *  transcript settles. A stop that was never asked to send still honours it. */
+  const autoSendEnabled = autoSendText > -1;
 
   const existingTextRef = useRef<string>('');
   const isSubmittingRef = useRef(isSubmitting);
@@ -58,15 +64,49 @@ export default function useDictation({
   /** Read when the transcription lands, which is after the stop that set it.
    *  The speech hooks have no notion of cancelling or of deferring a send. */
   const modeRef = useRef<StopMode>('compose');
+  /** One submission per take. Both the settle fallback below and a late
+   *  auto-send callback can reach the same transcript, and whichever gets
+   *  there first is the one that spends it. */
+  const spentRef = useRef(false);
+
+  const submit = useCallback(
+    (text: string) => {
+      if (spentRef.current) {
+        return;
+      }
+      if (isSubmittingRef.current) {
+        showToast({ message: localize('com_ui_speech_while_submitting'), status: 'error' });
+        return;
+      }
+      if (!text) {
+        return;
+      }
+      spentRef.current = true;
+      const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement | null;
+      if (globalAudio) {
+        globalAudio.muted = false;
+      }
+      const submitted = ask({ text });
+      if (submitted === false) {
+        spentRef.current = false;
+        return;
+      }
+      reset({ text: '' });
+      existingTextRef.current = '';
+    },
+    [ask, reset, showToast, localize],
+  );
 
   const onTranscriptionComplete = useCallback(
     (text: string) => {
       const mode = modeRef.current;
-      modeRef.current = 'compose';
 
       if (mode === 'cancel') {
+        /* The draft stays on the ref until a take is actually spent: an
+           external transcription already in flight cannot be recalled, and
+           clearing it at cancel time left this reset wiping the very draft the
+           cancel had just put back. */
         reset({ text: existingTextRef.current });
-        existingTextRef.current = '';
         return;
       }
 
@@ -76,7 +116,7 @@ export default function useDictation({
           ? `${existingTextRef.current} ${text}`
           : text;
 
-      if (mode === 'compose') {
+      if (mode === 'compose' && !autoSendEnabled) {
         if (finalText) {
           setValue('text', finalText, { shouldValidate: true });
         }
@@ -84,25 +124,9 @@ export default function useDictation({
         return;
       }
 
-      if (isSubmittingRef.current) {
-        showToast({ message: localize('com_ui_speech_while_submitting'), status: 'error' });
-        return;
-      }
-      if (!finalText) {
-        return;
-      }
-      const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement | null;
-      if (globalAudio) {
-        globalAudio.muted = false;
-      }
-      const submitted = ask({ text: finalText });
-      if (submitted === false) {
-        return;
-      }
-      reset({ text: '' });
-      existingTextRef.current = '';
+      submit(finalText);
     },
-    [ask, reset, setValue, showToast, localize, speechToTextEndpoint],
+    [reset, setValue, submit, autoSendEnabled, speechToTextEndpoint],
   );
 
   const setText = useCallback(
@@ -155,8 +179,24 @@ export default function useDictation({
     return () => clearInterval(timer);
   }, [active]);
 
+  /* The engines only report a completed transcription when Auto Send Text is
+     configured, so an explicit stop-and-send cannot wait for that callback:
+     with the default setting it never arrives. Instead the send is armed here
+     and spent once the take has fully settled, reading whatever the transcript
+     put in the composer. */
+  const [pendingSend, setPendingSend] = useState(false);
+  useEffect(() => {
+    if (!pendingSend || active || isLoading === true || settling) {
+      return;
+    }
+    setPendingSend(false);
+    submit(getValues('text') || '');
+  }, [pendingSend, active, isLoading, settling, submit, getValues]);
+
   const start = useCallback(() => {
     modeRef.current = 'compose';
+    spentRef.current = false;
+    setPendingSend(false);
     existingTextRef.current = getValues('text') || '';
     startRecording();
   }, [getValues, startRecording]);
@@ -165,6 +205,9 @@ export default function useDictation({
     (mode: StopMode) => {
       modeRef.current = mode;
       setSettling(true);
+      if (mode === 'send') {
+        setPendingSend(true);
+      }
       stopRecording();
     },
     [stopRecording],
@@ -176,10 +219,11 @@ export default function useDictation({
      that was already in flight lands anyway. */
   const cancel = useCallback(() => {
     modeRef.current = 'cancel';
+    spentRef.current = true;
     setSettling(false);
+    setPendingSend(false);
     abortRecording();
     reset({ text: existingTextRef.current });
-    existingTextRef.current = '';
   }, [abortRecording, reset]);
 
   const stopToComposer = useCallback(() => stopWith('compose'), [stopWith]);

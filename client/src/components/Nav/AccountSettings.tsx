@@ -1,6 +1,6 @@
 import { useState, memo, useRef } from 'react';
-import { useSetRecoilState } from 'recoil';
 import * as Menu from '@ariakit/react/menu';
+import { useRecoilState, useSetRecoilState } from 'recoil';
 import { GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import {
   Archive,
@@ -100,7 +100,7 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
   const [showSettings, setShowSettings] = useState(false);
-  const [showFiles, setShowFiles] = useState(false);
+  const [showFiles, setShowFiles] = useRecoilState(store.showFilesDialog);
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const [showArchived, setShowArchived] = useState(false);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
