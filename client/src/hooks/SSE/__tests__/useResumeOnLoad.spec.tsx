@@ -1174,6 +1174,64 @@ describe('useResumeOnLoad', () => {
       expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
     });
 
+    it('prunes a missing first turn when CREATED preceded a terminal generation error', async () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const removeQueriesSpy = jest.spyOn(queryClient, 'removeQueries');
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const observedRunEnds: Array<RunEnd | null> = [];
+      const observedPathnames: string[] = [];
+      const unfinishedMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({ unfinished: true }),
+      ];
+      queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
+      setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+        startedAsNewConvo: true,
+        created: true,
+        userMessageId: USER_MESSAGE_ID,
+        responseMessageId: RESPONSE_MESSAGE_ID,
+      });
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+      });
+      mockFetchStreamStatus.mockResolvedValue({ active: false, status: 'error' });
+      const notFoundError = Object.assign(new Error('Conversation not found'), {
+        isAxiosError: true,
+        response: { status: 404 },
+      });
+
+      const { rerender } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        getMessages: () =>
+          queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
+        onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+        onPathname: (pathname) => observedPathnames.push(pathname),
+        queryClient,
+        messageQueryFn: jest.fn().mockRejectedValue(notFoundError),
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [] },
+      });
+      rerender();
+
+      await waitFor(() => {
+        expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+          conversationId: String(Constants.NEW_CONVO),
+          outcome: 'error',
+        });
+      });
+      expect(removeQueriesSpy).toHaveBeenCalledWith({
+        queryKey: [QueryKeys.conversation, CONVERSATION_ID],
+      });
+      expect(removeQueriesSpy).toHaveBeenCalledWith({
+        queryKey: [QueryKeys.messages, CONVERSATION_ID],
+      });
+      expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toEqual([]);
+      expect(observedPathnames[observedPathnames.length - 1]).toBe(`/c/${Constants.NEW_CONVO}`);
+      expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
+    });
+
     it('keeps a first turn when the server persisted only the user message', async () => {
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       const removeQueriesSpy = jest.spyOn(queryClient, 'removeQueries');

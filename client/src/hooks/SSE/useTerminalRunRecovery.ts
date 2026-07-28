@@ -359,9 +359,7 @@ export default function useTerminalRunRecovery({
 
       const disconnectedRun = getDisconnectedRunRecovery(queryClient, conversationId);
       const isUnpersistedFirstTurn =
-        disconnectedRun?.startedAsNewConvo === true &&
-        disconnectedRun.created === false &&
-        refreshed.notFound;
+        disconnectedRun?.startedAsNewConvo === true && refreshed.notFound;
 
       if (isUnpersistedFirstTurn) {
         removeConvoFromAllQueries(queryClient, conversationId);
