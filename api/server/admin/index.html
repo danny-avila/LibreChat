@@ -29,6 +29,7 @@
       <button class="tab-btn" data-tab="deleted">삭제된 채팅</button>
       <button class="tab-btn" data-tab="shares">공유 링크</button>
       <button class="tab-btn" data-tab="data">데이터 관리</button>
+      <button class="tab-btn" data-tab="sync">일배치 동기화</button>
       <button class="tab-btn" data-tab="notices">공지</button>
       <button class="tab-btn" data-tab="surveys">피드백·설문</button>
       <button class="tab-btn" data-tab="settings">설정</button>
@@ -303,6 +304,73 @@
       </div>
     </div>
 
+    <!-- ════ 일배치 동기화 탭 ════ -->
+    <div class="tab-panel" id="panel-sync">
+      <div class="page-header">
+        <div>
+          <div class="page-title">일배치 동기화</div>
+          <div class="page-sub">BIMS/iManage 변경사항(신규 종결사건 · 메타데이터 · 파일)을 검색 인덱스(Qdrant · OpenSearch · PostgreSQL)에 반영합니다</div>
+        </div>
+      </div>
+
+      <div class="form-panel">
+        <div class="form-row"><label>기준일</label><input type="date" id="sync-date" style="max-width:180px;" /></div>
+        <div class="form-row"><label>처리 유형</label>
+          <span style="display:flex; gap:16px; align-items:center;">
+            <label style="display:flex; gap:5px; align-items:center; font-weight:400;"><input type="checkbox" id="sync-type-new" checked /> 신규 종결사건</label>
+            <label style="display:flex; gap:5px; align-items:center; font-weight:400;"><input type="checkbox" id="sync-type-meta" checked /> 메타데이터 변경</label>
+            <label style="display:flex; gap:5px; align-items:center; font-weight:400;"><input type="checkbox" id="sync-type-files" checked /> 파일 변경</label>
+          </span>
+        </div>
+        <div class="form-actions">
+          <button class="btn-refresh" id="btn-sync-preview">변경사항 미리보기</button>
+          <button class="btn-export" id="btn-sync-run">동기화 실행</button>
+        </div>
+        <div id="sync-msg" style="font-size:13px; color:#6b7280; margin-top:8px;"></div>
+      </div>
+
+      <div class="table-panel" id="sync-preview-panel" style="display:none;">
+        <div class="table-header">
+          <span class="table-title">변경사항 미리보기</span>
+          <span class="table-sub" id="sync-preview-sub"></span>
+          <button class="btn-refresh" style="margin-left:auto;" id="sync-preview-close">닫기</button>
+        </div>
+        <div class="table-scroll" style="max-height:360px;">
+          <table>
+            <thead><tr><th>유형</th><th>매터</th><th>내용</th></tr></thead>
+            <tbody id="sync-preview-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="table-panel" id="sync-progress-panel" style="display:none;">
+        <div class="table-header">
+          <span class="table-title">동기화 진행</span>
+          <span class="table-sub" id="sync-progress-sub"></span>
+        </div>
+        <div style="padding:14px 16px;">
+          <table style="width:100%;">
+            <thead><tr><th style="text-align:left;">Phase</th><th>진행</th><th>실패</th><th>현재</th></tr></thead>
+            <tbody id="sync-progress-tbody"></tbody>
+          </table>
+          <div id="sync-progress-errors" style="margin-top:10px; font-size:12px; color:#b91c1c;"></div>
+        </div>
+      </div>
+
+      <div class="table-panel">
+        <div class="table-header">
+          <span class="table-title">최근 실행 이력</span>
+          <button class="btn-refresh" style="margin-left:auto;" id="sync-history-refresh">↻</button>
+        </div>
+        <div class="table-scroll" style="max-height:420px;">
+          <table>
+            <thead><tr><th>일시 (KST)</th><th>기준일</th><th>상태</th><th>신규</th><th>메타</th><th>파일</th><th>성공</th><th>오류</th><th>소요</th></tr></thead>
+            <tbody id="sync-history-tbody"><tr class="empty-row"><td colspan="9">로딩 중...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- ════ 공지 탭 ════ -->
     <div class="tab-panel" id="panel-notices">
       <div class="page-header">
@@ -451,6 +519,7 @@
 <script src="/admin/js/deleted.js"></script>
 <script src="/admin/js/shares.js"></script>
 <script src="/admin/js/data-management.js"></script>
+<script src="/admin/js/sync.js"></script>
 <script src="/admin/js/notices.js"></script>
 <script src="/admin/js/surveys.js"></script>
 <script src="/admin/js/settings.js"></script>
