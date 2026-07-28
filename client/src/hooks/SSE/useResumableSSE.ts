@@ -1882,6 +1882,10 @@ export default function useResumableSSE(
 
     initStream();
 
+    /** The Set object itself is never reassigned, so this alias reads the
+     *  LIVE frame ids at cleanup time (satisfies react-hooks/exhaustive-deps
+     *  without changing behavior). */
+    const activityLabelRetryFrames = activityLabelRetryFramesRef.current;
     return () => {
       logger.log('ResumableSSE', 'Cleanup - closing SSE, resetting UI state');
       startController.abort();
@@ -1896,10 +1900,10 @@ export default function useResumableSSE(
         cancelAnimationFrame(pendingActionRetryRef.current);
         pendingActionRetryRef.current = null;
       }
-      for (const frameId of activityLabelRetryFramesRef.current) {
+      for (const frameId of activityLabelRetryFrames) {
         cancelAnimationFrame(frameId);
       }
-      activityLabelRetryFramesRef.current.clear();
+      activityLabelRetryFrames.clear();
       if (steerRetryRef.current != null) {
         cancelAnimationFrame(steerRetryRef.current);
         steerRetryRef.current = null;
