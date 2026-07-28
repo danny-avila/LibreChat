@@ -1189,6 +1189,10 @@ describe('useResumableSSE', () => {
     expect(request.post).toHaveBeenCalledTimes(1);
     expect(mockSSEInstances).toHaveLength(0);
     expect(mockErrorHandler).not.toHaveBeenCalled();
+    expect(mockSetQueryData).not.toHaveBeenCalledWith(
+      ['resumable-terminal-recovery-request', CONV_ID],
+      expect.any(Number),
+    );
     jest.useRealTimers();
   });
 
@@ -1223,6 +1227,10 @@ describe('useResumableSSE', () => {
     expect(mockSetShowStopButton).toHaveBeenCalledWith(true);
     expect(mockSetShowStopButton).toHaveBeenCalledWith(false);
     expect(mockSetQueryData).toHaveBeenCalledWith(['resumable-run-starting', CONV_ID], false);
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['resumable-terminal-recovery-request', CONV_ID],
+      1,
+    );
     unmount();
   });
 

@@ -13,6 +13,7 @@ const terminalEventQueryKey = (conversationId: string) =>
 const disconnectedRunQueryRoot = ['resumable-disconnected-run'] as const;
 const runEpochQueryRoot = ['resumable-run-epoch'] as const;
 const runStartingQueryRoot = ['resumable-run-starting'] as const;
+const terminalRecoveryRequestQueryRoot = ['resumable-terminal-recovery-request'] as const;
 
 const disconnectedRunQueryKey = (conversationId: string) =>
   [...disconnectedRunQueryRoot, conversationId] as const;
@@ -22,6 +23,9 @@ const runEpochQueryKey = (conversationId: string) =>
 
 export const resumableRunStartingQueryKey = (conversationId: string) =>
   [...runStartingQueryRoot, conversationId] as const;
+
+export const terminalRecoveryRequestQueryKey = (conversationId: string) =>
+  [...terminalRecoveryRequestQueryRoot, conversationId] as const;
 
 export function markTerminalEventSeen(queryClient: QueryClient, conversationId: string) {
   queryClient.setQueryData(terminalEventQueryKey(conversationId), true);
@@ -69,6 +73,13 @@ export function setResumableRunStarting(
 
 export function getResumableRunStarting(queryClient: QueryClient, conversationId: string): boolean {
   return queryClient.getQueryData<boolean>(resumableRunStartingQueryKey(conversationId)) === true;
+}
+
+export function requestTerminalRunRecovery(queryClient: QueryClient, conversationId: string) {
+  queryClient.setQueryDefaults(terminalRecoveryRequestQueryRoot, { cacheTime: Infinity });
+  const queryKey = terminalRecoveryRequestQueryKey(conversationId);
+  const nextRequest = (queryClient.getQueryData<number>(queryKey) ?? 0) + 1;
+  queryClient.setQueryData(queryKey, nextRequest);
 }
 
 export function setDisconnectedRunRecovery(

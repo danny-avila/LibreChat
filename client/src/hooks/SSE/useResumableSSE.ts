@@ -63,6 +63,7 @@ import {
   clearTerminalEventSeen,
   getDisconnectedRunRecovery,
   markTerminalEventSeen,
+  requestTerminalRunRecovery,
   setDisconnectedRunRecovery,
   setResumableRunStarting,
 } from './resumableRecovery';
@@ -1733,6 +1734,7 @@ export default function useResumableSSE(
           beginResumableRun(queryClient, existingConversationId);
           setResumableRunStarting(queryClient, existingConversationId, true);
         }
+        let shouldRecoverInterruptedRun = false;
         try {
           const startResult = await startGeneration(submission, signal);
           if (signal.aborted) {
@@ -1781,9 +1783,18 @@ export default function useResumableSSE(
             subscribeToStream(newStreamId, streamSubmission, resumed);
           } else {
             logger.error('ResumableSSE', 'Failed to get streamId from startGeneration');
+            shouldRecoverInterruptedRun = pendingStartConversationId != null;
           }
         } finally {
+          const interruptedConversationId = shouldRecoverInterruptedRun
+            ? pendingStartConversationId
+            : null;
           finishPendingStart();
+          if (interruptedConversationId) {
+            // The attempted run advanced the epoch and invalidated any older
+            // in-flight recovery. A failed start must explicitly re-arm it.
+            requestTerminalRunRecovery(queryClient, interruptedConversationId);
+          }
         }
       }
     };

@@ -1,14 +1,18 @@
 import { RecoilRoot, useRecoilValue } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
 import type { RunEnd } from '~/store/families';
 import useTerminalRunRecovery from '../useTerminalRunRecovery';
-import { getDisconnectedRunRecovery, setDisconnectedRunRecovery } from '../resumableRecovery';
+import {
+  getDisconnectedRunRecovery,
+  requestTerminalRunRecovery,
+  setDisconnectedRunRecovery,
+} from '../resumableRecovery';
 import store from '~/store';
 
 const mockUseActiveJobs = jest.fn();
@@ -180,6 +184,45 @@ describe('useTerminalRunRecovery', () => {
     expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
   });
 
+  it('retries terminal recovery when a failed follow-up start requests it', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const finalMessages = [
+      buildUserMessage(),
+      buildAssistantMessage({
+        messageId: 'terminal-response',
+        text: 'Recovered after the follow-up failed to start',
+        createdAt: '2026-07-28T08:00:00.000Z',
+        updatedAt: '2026-07-28T08:00:00.000Z',
+      }),
+    ];
+    active = false;
+    queryClient.setQueryData(
+      [QueryKeys.messages, CONVERSATION_ID],
+      [buildUserMessage(), buildAssistantMessage()],
+    );
+    setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+      startedAsNewConvo: false,
+      created: true,
+      userMessageId: USER_MESSAGE_ID,
+      responseMessageId: RESPONSE_MESSAGE_ID,
+    });
+    mockFetchStreamStatus.mockResolvedValue({ active: false, status: 'complete' });
+    mockGetMessagesByConvoId.mockResolvedValue(finalMessages);
+
+    renderTerminalRecovery({ queryClient });
+    expect(mockFetchStreamStatus).not.toHaveBeenCalled();
+
+    act(() => {
+      requestTerminalRunRecovery(queryClient, CONVERSATION_ID);
+    });
+
+    await waitFor(() => {
+      expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
+    });
+    expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID);
+    expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(finalMessages);
+  });
+
   it('restores a recovered first conversation to the sidebar without stealing another route', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const recoveredConversation = {
@@ -237,5 +280,57 @@ describe('useTerminalRunRecovery', () => {
       conversationId: CONVERSATION_ID,
       title: 'Recovered conversation',
     });
+  });
+
+  it('preserves canonical sidebar metadata when first-turn recovery finishes', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const optimisticConversation = {
+      ...buildConversation(),
+      title: 'New Chat',
+      updatedAt: '2026-07-28T08:00:00.000Z',
+    };
+    const canonicalConversation = {
+      ...buildConversation(),
+      title: 'Canonical server title',
+      updatedAt: '2026-07-28T08:01:00.000Z',
+    };
+    const finalMessages = [
+      buildUserMessage(),
+      buildAssistantMessage({
+        messageId: 'terminal-response',
+        text: 'Recovered response',
+        createdAt: '2026-07-28T08:00:00.000Z',
+        updatedAt: '2026-07-28T08:00:00.000Z',
+      }),
+    ];
+    queryClient.setQueryData(
+      [QueryKeys.messages, CONVERSATION_ID],
+      [buildUserMessage(), buildAssistantMessage()],
+    );
+    queryClient.setQueryData([QueryKeys.conversation, CONVERSATION_ID], optimisticConversation);
+    queryClient.setQueryData([QueryKeys.allConversations], {
+      pages: [{ conversations: [canonicalConversation], nextCursor: null }],
+      pageParams: [],
+    });
+    setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+      startedAsNewConvo: true,
+      created: false,
+      userMessageId: USER_MESSAGE_ID,
+      responseMessageId: RESPONSE_MESSAGE_ID,
+    });
+    mockFetchStreamStatus.mockResolvedValue({ active: false, status: 'complete' });
+    mockGetMessagesByConvoId.mockResolvedValue(finalMessages);
+
+    const { rerender } = renderTerminalRecovery({ queryClient });
+    active = false;
+    rerender();
+
+    await waitFor(() => {
+      expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
+    });
+    const sidebar = queryClient.getQueryData<{
+      pages: Array<{ conversations: TConversation[] }>;
+    }>([QueryKeys.allConversations]);
+    expect(sidebar?.pages[0].conversations[0]).toEqual(canonicalConversation);
   });
 });

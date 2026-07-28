@@ -7,10 +7,10 @@ import type { TMessage, TConversation, Agents } from 'librechat-data-provider';
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
 import type { RunRecoveryTarget } from './terminal';
 import {
+  addConversationToAllConversationsQueries,
   dedupeSteersById,
   isNotFoundError,
   removeConvoFromAllQueries,
-  upsertConvoInAllQueries,
 } from '~/utils';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import {
@@ -25,6 +25,7 @@ import {
   getResumableRunEpoch,
   getResumableRunStarting,
   resumableRunStartingQueryKey,
+  terminalRecoveryRequestQueryKey,
 } from './resumableRecovery';
 import {
   TERMINAL_RETRY_DELAYS,
@@ -82,6 +83,13 @@ export default function useTerminalRunRecovery({
     initialData: false,
     cacheTime: Infinity,
   });
+  const { data: terminalRecoveryRequest = 0 } = useQuery({
+    queryKey: terminalRecoveryRequestQueryKey(conversationId ?? ''),
+    queryFn: () => 0,
+    enabled: false,
+    initialData: 0,
+    cacheTime: Infinity,
+  });
   const isCurrentJobActive =
     !!conversationId && (activeJobsData?.activeJobIds ?? []).includes(conversationId);
   const observedActiveJobRef = useRef<{ conversationId?: string; active: boolean }>({
@@ -93,6 +101,13 @@ export default function useTerminalRunRecovery({
   const terminalRefreshAbortRef = useRef<AbortController | null>(null);
   const terminalStatusAbortRef = useRef<AbortController | null>(null);
   const deferredTerminalRecoveryRef = useRef<string | null>(null);
+  const observedTerminalRecoveryRequestRef = useRef<{
+    conversationId?: string;
+    request: number;
+  }>({
+    conversationId,
+    request: terminalRecoveryRequest,
+  });
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -343,7 +358,7 @@ export default function useTerminalRunRecovery({
           conversationId,
         ]);
         if (recoveredConversation) {
-          upsertConvoInAllQueries(queryClient, recoveredConversation);
+          addConversationToAllConversationsQueries(queryClient, recoveredConversation);
         }
         if (!ownsRecoveryRoute) {
           return;
@@ -461,6 +476,14 @@ export default function useTerminalRunRecovery({
       conversationId,
       active: isCurrentJobActive,
     };
+    const previousRecoveryRequest = observedTerminalRecoveryRequestRef.current;
+    const recoveryRequested =
+      previousRecoveryRequest.conversationId === conversationId &&
+      previousRecoveryRequest.request !== terminalRecoveryRequest;
+    observedTerminalRecoveryRequestRef.current = {
+      conversationId,
+      request: terminalRecoveryRequest,
+    };
 
     if (previous.conversationId !== conversationId) {
       deferredTerminalRecoveryRef.current = null;
@@ -486,7 +509,7 @@ export default function useTerminalRunRecovery({
     const becameInactive = previous.active;
     const isDeferredRecovery =
       deferredTerminalRecoveryRef.current === conversationId && !runStarting;
-    if (!becameInactive && !isDeferredRecovery) {
+    if (!becameInactive && !isDeferredRecovery && !recoveryRequested) {
       return;
     }
 
@@ -555,6 +578,7 @@ export default function useTerminalRunRecovery({
     queryClient,
     recoverInactiveResponse,
     recoverStatusSteers,
+    terminalRecoveryRequest,
   ]);
 
   return { recoverInactiveResponse };
