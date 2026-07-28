@@ -251,10 +251,11 @@ export default function useSteering({
     [],
   );
 
-  /** Fire-and-forget TTL touch for uploads entering the client queue: a
+  /** Fire-and-forget TTL hold for uploads entering the client queue: a
    *  queued message can outlive the upload window (long run, approval pause)
-   *  and send-time marking only happens at drain. Failure is tolerated —
-   *  the send-time marking remains the backstop. */
+   *  and send-time marking only happens at drain. The server extends the
+   *  deadline rather than clearing it, so a queue this tab never drains still
+   *  gets reaped. Failure is tolerated; send-time marking is the backstop. */
   const markQueuedFilesUsage = useCallback(
     (files?: TMessage['files']) => {
       if (files == null || files.length === 0) {
@@ -285,8 +286,8 @@ export default function useSteering({
           files?: TMessage['files'];
           quotes?: string[];
           manualSkills?: string[];
-          /** Set when the files were ALREADY queued/steered — their usage was
-           *  marked when they first entered the queue (or at the steer 202). */
+          /** Set when the files were ALREADY queued/steered: their TTL was
+           *  held when they first entered the queue (or at the steer 202). */
           skipUsageMark?: boolean;
         },
       ) => {
@@ -694,7 +695,7 @@ export default function useSteering({
         }
         return;
       }
-      // Files were already marked used when the item first entered the queue.
+      // Files were already TTL-held when the item first entered the queue.
       enqueue(taken.text, {
         front: true,
         files: taken.files,

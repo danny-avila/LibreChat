@@ -1,10 +1,17 @@
 import React from 'react';
 import { Constants } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
 import type { RunEnd, QueuedMessage } from '~/store/families';
 import useQueueDrain from '../useQueueDrain';
 import store from '~/store';
+
+const mockMarkFilesUsage = jest.fn();
+jest.mock('~/data-provider', () => ({
+  ...jest.requireActual('~/data-provider'),
+  useMarkFilesUsageMutation: () => ({ mutate: mockMarkFilesUsage }),
+}));
 
 const INDEX = 0;
 const CONVO_ID = 'convo-drain';
@@ -35,11 +42,18 @@ function setup(
     return null;
   }
 
+  /* The drain renews the TTL hold on what stays queued, which goes through
+   * react-query, so the harness needs a client. */
+  const queryClient = new QueryClient({
+    defaultOptions: { mutations: { retry: false } },
+  });
   const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <RecoilRoot initializeState={initialize}>
-      <Harness />
-      {children}
-    </RecoilRoot>
+    <QueryClientProvider client={queryClient}>
+      <RecoilRoot initializeState={initialize}>
+        <Harness />
+        {children}
+      </RecoilRoot>
+    </QueryClientProvider>
   );
   renderHook(() => null, { wrapper });
   return { ask, setters };
@@ -57,6 +71,10 @@ const runEnd = (overrides: Partial<RunEnd> = {}): RunEnd => ({
 });
 
 describe('useQueueDrain', () => {
+  beforeEach(() => {
+    mockMarkFilesUsage.mockClear();
+  });
+
   it('drains exactly one queued message on clean completion', async () => {
     const { ask, setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [
@@ -115,6 +133,172 @@ describe('useQueueDrain', () => {
       { text: 'with media' },
       { overrideFiles: files, overrideQuotes: [], overrideManualSkills: [] },
     );
+  });
+
+  /** Items behind the drained one wait another full run, which may itself
+   *  pause for approval, so a hold taken once at enqueue would lapse before a
+   *  deep queue finishes draining. */
+  it('renews the TTL hold on attachments that stay queued', async () => {
+    const { setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { ...queuedMessage('q1', 'first'), files: [{ file_id: 'sent', type: 'image/png' }] },
+        {
+          ...queuedMessage('q2', 'second'),
+          files: [{ file_id: 'still-queued', type: 'image/png' }],
+        },
+        { ...queuedMessage('q3', 'third'), files: [{ file_id: 'also-queued', type: 'image/png' }] },
+      ]);
+    });
+
+    mockMarkFilesUsage.mockClear();
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+
+    await waitFor(() => expect(mockMarkFilesUsage).toHaveBeenCalledTimes(1));
+    /* Only what remains: the drained item's file is released at send. */
+    expect(mockMarkFilesUsage).toHaveBeenCalledWith({
+      file_ids: ['still-queued', 'also-queued'],
+    });
+  });
+
+  it('does not renew when nothing with attachments stays queued', async () => {
+    const { setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { ...queuedMessage('q1', 'only one'), files: [{ file_id: 'sent', type: 'image/png' }] },
+      ]);
+    });
+
+    mockMarkFilesUsage.mockClear();
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+
+    await waitFor(() => expect(mockMarkFilesUsage).not.toHaveBeenCalled());
+  });
+
+  /** The server caps ids per request, so a queue holding more than one batch
+   *  must renew in several; truncating would leave later messages on their
+   *  enqueue-time hold. */
+  it('renews every queued attachment across multiple capped batches', async () => {
+    const manyFiles = (prefix: string, n: number) =>
+      Array.from({ length: n }, (_, i) => ({ file_id: `${prefix}-${i}`, type: 'image/png' }));
+    const { setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { ...queuedMessage('q1', 'first'), files: manyFiles('sent', 2) },
+        { ...queuedMessage('q2', 'second'), files: manyFiles('a', 10) },
+        { ...queuedMessage('q3', 'third'), files: manyFiles('b', 4) },
+      ]);
+    });
+
+    mockMarkFilesUsage.mockClear();
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+
+    await waitFor(() => expect(mockMarkFilesUsage).toHaveBeenCalledTimes(2));
+    const sent = mockMarkFilesUsage.mock.calls.flatMap((call) => call[0].file_ids);
+    expect(sent).toHaveLength(14);
+    expect(sent).toContain('b-3');
+    expect(sent).not.toContain('sent-0');
+    for (const call of mockMarkFilesUsage.mock.calls) {
+      expect(call[0].file_ids.length).toBeLessThanOrEqual(10);
+    }
+  });
+
+  /** A refused send puts the item back with its run-end signal already
+   *  consumed, so nothing else would touch it before the next drain. */
+  it('renews a restored item when the send is refused', async () => {
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { ...queuedMessage('q1', 'refused'), files: [{ file_id: 'restored', type: 'image/png' }] },
+      ]);
+    });
+    ask.mockReturnValue(false);
+
+    mockMarkFilesUsage.mockClear();
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+
+    await waitFor(() => expect(mockMarkFilesUsage).toHaveBeenCalledTimes(1));
+    expect(mockMarkFilesUsage).toHaveBeenCalledWith({ file_ids: ['restored'] });
+  });
+
+  /** A single run can pause for approval more than once, so renewal cannot
+   *  depend on catching drain transitions alone. */
+  it('renews on a heartbeat while items stay queued', async () => {
+    jest.useFakeTimers();
+    try {
+      setup(({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [
+          { ...queuedMessage('q1', 'waiting'), files: [{ file_id: 'held', type: 'image/png' }] },
+        ]);
+      });
+
+      /* Immediate, then on each interval. */
+      expect(mockMarkFilesUsage).toHaveBeenCalledTimes(1);
+      expect(mockMarkFilesUsage).toHaveBeenCalledWith({ file_ids: ['held'] });
+
+      act(() => {
+        jest.advanceTimersByTime(30 * 60 * 1000);
+      });
+      expect(mockMarkFilesUsage).toHaveBeenCalledTimes(2);
+
+      act(() => {
+        jest.advanceTimersByTime(30 * 60 * 1000);
+      });
+      expect(mockMarkFilesUsage).toHaveBeenCalledTimes(3);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('emits no heartbeat when the queue holds no attachments', async () => {
+    jest.useFakeTimers();
+    try {
+      setup(({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q1', 'no files')]);
+      });
+
+      act(() => {
+        jest.advanceTimersByTime(2 * 60 * 60 * 1000);
+      });
+      expect(mockMarkFilesUsage).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  /** Items queued during the first turn stay keyed under NEW_CONVO until that
+   *  run ends, so renewing only the active id would skip them for its whole
+   *  duration. */
+  it('renews the pre-migration NEW_CONVO queue alongside the active one', async () => {
+    setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [
+        { ...queuedMessage('n1', 'queued pre-migration'), files: [{ file_id: 'pending-migrate' }] },
+      ]);
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { ...queuedMessage('q1', 'queued after'), files: [{ file_id: 'already-migrated' }] },
+      ]);
+    });
+
+    await waitFor(() => expect(mockMarkFilesUsage).toHaveBeenCalled());
+    const sent = mockMarkFilesUsage.mock.calls.flatMap((call) => call[0].file_ids);
+    expect(sent).toContain('pending-migrate');
+    expect(sent).toContain('already-migrated');
+  });
+
+  it('does not double-count the queue before migration', async () => {
+    setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [
+        { ...queuedMessage('n1', 'new convo'), files: [{ file_id: 'only-once' }] },
+      ]);
+    }, Constants.NEW_CONVO as string);
+
+    await waitFor(() => expect(mockMarkFilesUsage).toHaveBeenCalled());
+    const sent = mockMarkFilesUsage.mock.calls.flatMap((call) => call[0].file_ids);
+    expect(sent).toEqual(['only-once']);
   });
 
   it('passes carried quotes + manual skills through as overrides', async () => {
@@ -235,11 +419,16 @@ describe('useQueueDrain', () => {
         return null;
       }
 
+      const queryClient = new QueryClient({
+        defaultOptions: { mutations: { retry: false } },
+      });
       const wrapper = ({ children }: { children: React.ReactNode }) => (
-        <RecoilRoot initializeState={initialize}>
-          <Harness />
-          {children}
-        </RecoilRoot>
+        <QueryClientProvider client={queryClient}>
+          <RecoilRoot initializeState={initialize}>
+            <Harness />
+            {children}
+          </RecoilRoot>
+        </QueryClientProvider>
       );
       renderHook(() => null, { wrapper });
       return { ask, setters, state };
