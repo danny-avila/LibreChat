@@ -120,13 +120,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const urls = await pollVideo(pollingUrl, POLL_TIMEOUT);
 
       // Step 3: Return results
-      const urlList = urls.map((url, i) => `  ${i + 1}. ${url}`).join('\n');
+      const urlList = urls.map((url, i) => `[📥 Video ${i + 1}](${url})`).join('\n');
 
       return {
         content: [
           {
             type: 'text',
-            text: `Video generated successfully via OpenRouter!\nModel: ${MODEL}\nPrompt: "${prompt}"\nJob ID: ${jobId}\n\nDownload URLs:\n${urlList}`,
+            text: `Video generated successfully via OpenRouter!\nModel: ${MODEL}\nJob ID: ${jobId}\nPrompt: "${prompt}"\n\n${urlList}`,
           },
         ],
       };
