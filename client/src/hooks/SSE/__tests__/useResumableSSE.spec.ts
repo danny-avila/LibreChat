@@ -1227,6 +1227,42 @@ describe('useResumableSSE', () => {
     expect(mockSetShowStopButton).toHaveBeenCalledWith(true);
     expect(mockSetShowStopButton).toHaveBeenCalledWith(false);
     expect(mockSetQueryData).toHaveBeenCalledWith(['resumable-run-starting', CONV_ID], false);
+    expect(mockSetQueryData).not.toHaveBeenCalledWith(
+      ['resumable-terminal-recovery-request', CONV_ID],
+      expect.any(Number),
+    );
+    unmount();
+  });
+
+  it('re-arms terminal recovery when a disconnected run retry fails to start', async () => {
+    mockGetQueryData.mockImplementation((queryKey: unknown) => {
+      if (
+        Array.isArray(queryKey) &&
+        queryKey[0] === 'resumable-disconnected-run' &&
+        queryKey[1] === CONV_ID
+      ) {
+        return {
+          startedAsNewConvo: false,
+          created: true,
+          userMessageId: 'msg-1',
+          responseMessageId: 'resp-1',
+        };
+      }
+      return undefined;
+    });
+    (request.post as jest.Mock).mockRejectedValueOnce({
+      response: {
+        status: 500,
+        data: { message: 'failed to restart' },
+      },
+    });
+
+    const { unmount } = renderHook(() => useResumableSSE(buildSubmission(), buildChatHelpers()));
+
+    await waitFor(() => {
+      expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    });
+
     expect(mockSetQueryData).toHaveBeenCalledWith(
       ['resumable-terminal-recovery-request', CONV_ID],
       1,

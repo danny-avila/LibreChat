@@ -47,6 +47,16 @@ import {
   findPendingActionMessageIndex,
 } from '~/utils';
 import {
+  beginResumableRun,
+  clearDisconnectedRunRecovery,
+  clearTerminalEventSeen,
+  getDisconnectedRunRecovery,
+  markTerminalEventSeen,
+  requestTerminalRunRecovery,
+  setDisconnectedRunRecovery,
+  setResumableRunStarting,
+} from './resumableRecovery';
+import {
   useGetUserBalance,
   fetchStreamStatus,
   useGetStartupConfig,
@@ -57,16 +67,6 @@ import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandler
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useUsageHandler from './useUsageHandler';
-import {
-  beginResumableRun,
-  clearDisconnectedRunRecovery,
-  clearTerminalEventSeen,
-  getDisconnectedRunRecovery,
-  markTerminalEventSeen,
-  requestTerminalRunRecovery,
-  setDisconnectedRunRecovery,
-  setResumableRunStarting,
-} from './resumableRecovery';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -1729,7 +1729,10 @@ export default function useResumableSSE(
         // New generation: start and then subscribe
         logger.log('ResumableSSE', 'Starting NEW generation');
         const existingConversationId = submission.conversation?.conversationId;
+        let wasRecoveringDisconnectedRun = false;
         if (hasConcreteConversationId(existingConversationId)) {
+          wasRecoveringDisconnectedRun =
+            getDisconnectedRunRecovery(queryClient, existingConversationId) != null;
           pendingStartConversationId = existingConversationId;
           beginResumableRun(queryClient, existingConversationId);
           setResumableRunStarting(queryClient, existingConversationId, true);
@@ -1783,7 +1786,8 @@ export default function useResumableSSE(
             subscribeToStream(newStreamId, streamSubmission, resumed);
           } else {
             logger.error('ResumableSSE', 'Failed to get streamId from startGeneration');
-            shouldRecoverInterruptedRun = pendingStartConversationId != null;
+            shouldRecoverInterruptedRun =
+              pendingStartConversationId != null && wasRecoveringDisconnectedRun;
           }
         } finally {
           const interruptedConversationId = shouldRecoverInterruptedRun

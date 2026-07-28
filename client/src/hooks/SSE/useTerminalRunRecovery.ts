@@ -1,32 +1,11 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocation, useNavigate } from 'react-router-dom';
 import { useSetRecoilState } from 'recoil';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Constants, QueryKeys } from 'librechat-data-provider';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TMessage, TConversation, Agents } from 'librechat-data-provider';
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
 import type { RunRecoveryTarget } from './terminal';
-import {
-  addConversationToAllConversationsQueries,
-  dedupeSteersById,
-  isNotFoundError,
-  removeConvoFromAllQueries,
-} from '~/utils';
-import useSteerConvert from '~/hooks/Chat/useSteerConvert';
-import {
-  fetchMessagesWithCacheProtection,
-  fetchStreamStatus,
-  useActiveJobs,
-} from '~/data-provider';
-import {
-  clearDisconnectedRunRecovery,
-  consumeTerminalEventSeen,
-  getDisconnectedRunRecovery,
-  getResumableRunEpoch,
-  getResumableRunStarting,
-  resumableRunStartingQueryKey,
-  terminalRecoveryRequestQueryKey,
-} from './resumableRecovery';
 import {
   TERMINAL_RETRY_DELAYS,
   getPersistedRunState,
@@ -41,6 +20,27 @@ import {
   waitForRetryDelay,
   withCurrentSearch,
 } from './terminal';
+import {
+  clearDisconnectedRunRecovery,
+  consumeTerminalEventSeen,
+  getDisconnectedRunRecovery,
+  getResumableRunEpoch,
+  getResumableRunStarting,
+  resumableRunStartingQueryKey,
+  terminalRecoveryRequestQueryKey,
+} from './resumableRecovery';
+import {
+  addConversationToAllConversationsQueries,
+  dedupeSteersById,
+  isNotFoundError,
+  removeConvoFromAllQueries,
+} from '~/utils';
+import {
+  fetchMessagesWithCacheProtection,
+  fetchStreamStatus,
+  useActiveJobs,
+} from '~/data-provider';
+import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import store from '~/store';
 
 type ResponseRefreshResult = {
