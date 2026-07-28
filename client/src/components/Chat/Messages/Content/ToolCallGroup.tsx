@@ -10,11 +10,11 @@ import type {
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
+import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
 import { cn, getToolDisplayLabel } from '~/utils';
 import { StackedToolIcons } from './ToolOutput';
-import { useMCPIconMap } from '~/hooks/MCP';
 import { AttachmentGroup } from './Parts';
 import store from '~/store';
 
@@ -126,6 +126,7 @@ export default function ToolCallGroup({
 }: ToolCallGroupProps) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
+  const mcpServerNames = useMCPServerNames();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
   const retainedForPendingApprovalRef = useRef(false);
@@ -179,7 +180,7 @@ export default function ToolCallGroup({
     const labels: string[] = [];
     for (const rawName of toolNames) {
       if (!rawName) continue;
-      const label = getToolDisplayLabel(rawName, localize);
+      const label = getToolDisplayLabel(rawName, localize, mcpServerNames);
       if (!seen.has(label)) {
         seen.add(label);
         labels.push(label);
@@ -189,7 +190,7 @@ export default function ToolCallGroup({
       return labels.join(', ');
     }
     return `${labels.slice(0, 3).join(', ')}, +${labels.length - 3}`;
-  }, [toolNames, localize]);
+  }, [toolNames, localize, mcpServerNames]);
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const autoCollapse = !autoExpand && count >= 2 && allCompleted;

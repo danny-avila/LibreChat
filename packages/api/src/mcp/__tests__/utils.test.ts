@@ -2,6 +2,7 @@ import type { ParsedServerConfig } from '~/mcp/types';
 import {
   buildOAuthToolCallName,
   normalizeServerName,
+  splitMCPToolKey,
   redactAllServerSecrets,
   redactServerSecrets,
   requiresUserScopedConnection,
@@ -42,6 +43,35 @@ describe('normalizeServerName', () => {
     const result = normalizeServerName('!server-name!');
     expect(result).toBe('server-name');
     expect(result).toMatch(/^[a-zA-Z0-9_.-]+$/);
+  });
+});
+
+describe('splitMCPToolKey', () => {
+  it('should return the tool name unchanged with an undefined server name when there is no delimiter', () => {
+    expect(splitMCPToolKey('plainToolName')).toEqual(['plainToolName', undefined]);
+  });
+
+  it('should split a normal single-occurrence key the same way String.split would', () => {
+    expect(splitMCPToolKey('search_mcp_myserver')).toEqual(['search', 'myserver']);
+  });
+
+  it('should resolve a raw tool name that itself contains the delimiter substring by using the last occurrence', () => {
+    // Regression test: a tool whose own (possibly gateway-prefixed) name
+    // already contains "_mcp_" - e.g. LiteLLM's MCP gateway prefixes
+    // aggregated tool names with "{server}-", so GitLab's own
+    // "get_mcp_server_version" tool becomes "gitlab-get_mcp_server_version"
+    // before LibreChat appends its own "_mcp_gitlab" suffix. A naive
+    // `.split(delimiter)` produces 3 segments here and silently drops the
+    // 3rd, yielding a bogus server name ("server_version" instead of
+    // "gitlab"). See https://github.com/danny-avila/LibreChat/issues/14440
+    expect(splitMCPToolKey('gitlab-get_mcp_server_version_mcp_gitlab')).toEqual([
+      'gitlab-get_mcp_server_version',
+      'gitlab',
+    ]);
+  });
+
+  it('should handle a raw tool name with multiple delimiter occurrences by always taking the last segment as the server name', () => {
+    expect(splitMCPToolKey('a_mcp_b_mcp_c_mcp_server')).toEqual(['a_mcp_b_mcp_c', 'server']);
   });
 });
 

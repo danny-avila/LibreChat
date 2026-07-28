@@ -1,9 +1,40 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Constants } from 'librechat-data-provider';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { QueuedMessage } from '~/store/families';
 import type { TAskFunction } from '~/common';
+import { useMarkFilesUsageMutation } from '~/data-provider';
 import store from '~/store';
+
+/** Mirrors the server's per-request cap on a usage touch. */
+const QUEUE_USAGE_MAX_FILES = 10;
+
+/** Well under the server's smallest hold (24h), so no gap between renewals
+ *  can outlive one, however long a run pauses. */
+const QUEUE_USAGE_RENEW_INTERVAL_MS = 30 * 60 * 1000;
+
+const collectQueuedFileIds = (items: QueuedMessage[]): string[] => {
+  const fileIds: string[] = [];
+  for (const item of items) {
+    for (const file of item.files ?? []) {
+      if (typeof file.file_id === 'string' && file.file_id.length > 0) {
+        fileIds.push(file.file_id);
+      }
+    }
+  }
+  return fileIds;
+};
+
+/** The server caps ids per request, so a queue holding more than one batch
+ *  has to renew in several. Truncating instead would leave everything after
+ *  the first batch on its enqueue-time hold. */
+const batchFileIds = (fileIds: string[]): string[][] => {
+  const batches: string[][] = [];
+  for (let i = 0; i < fileIds.length; i += QUEUE_USAGE_MAX_FILES) {
+    batches.push(fileIds.slice(i, i + QUEUE_USAGE_MAX_FILES));
+  }
+  return batches;
+};
 
 /**
  * Auto-sends queued follow-up messages when a run finishes.
@@ -30,6 +61,50 @@ export default function useQueueDrain(
     store.pendingRunEndByConvoId(activeConversationId ?? Constants.NEW_CONVO),
   );
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
+  const { mutate: markFilesUsage } = useMarkFilesUsageMutation();
+  const ownQueue = useRecoilValue(
+    store.queuedMessagesByConvoId(activeConversationId ?? Constants.NEW_CONVO),
+  );
+  /** `drainNext` merges this in, and it outlives the URL update: items queued
+   *  during the first turn stay keyed here until that run ends. Renewing only
+   *  the active id would skip them for the whole of that run. */
+  const newConvoQueue = useRecoilValue(store.queuedMessagesByConvoId(Constants.NEW_CONVO));
+
+  /* Deduped because the two subscriptions are the same atom before migration.
+   * Keyed by id list so the effect re-runs when the held set changes, not
+   * whenever Recoil hands back a new array for the same contents. */
+  const renewKey = [
+    ...new Set([...collectQueuedFileIds(ownQueue), ...collectQueuedFileIds(newConvoQueue)]),
+  ].join(',');
+  const queuedFileIds = useMemo(() => (renewKey ? renewKey.split(',') : []), [renewKey]);
+
+  /**
+   * Heartbeat renewal while anything is queued.
+   *
+   * Renewing only at drain transitions ties an attachment's survival to
+   * catching every state change, and a single run can stretch well past one
+   * hold: it may interrupt for approval more than once, and each pause can
+   * run to the configured window. Rather than hook every transition, renew on
+   * a cadence far shorter than the hold itself, so no single gap can outlive
+   * it. Bounded regardless: the server clamps each renewal against the file's
+   * upload time. A queue nobody has open stops emitting these and lapses
+   * normally.
+   */
+  useEffect(() => {
+    if (queuedFileIds.length === 0) {
+      return;
+    }
+    const renew = () => {
+      for (const file_ids of batchFileIds(queuedFileIds)) {
+        markFilesUsage({ file_ids });
+      }
+    };
+    /* Immediately, not one interval later: returning to a conversation whose
+     * hold is nearly up would otherwise wait out a full period first. */
+    renew();
+    const timer = setInterval(renew, QUEUE_USAGE_RENEW_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [queuedFileIds, markFilesUsage]);
 
   // Fully synchronous reads (getLoadable): a useRecoilCallback snapshot is
   // only guaranteed valid for the callback's synchronous execution, so no
@@ -153,9 +228,25 @@ export default function useQueueDrain(
     if (accepted === false) {
       // `ask` refused without sending (e.g. the conversation history is not
       // in the query cache yet, right after navigating back). Restore the
-      // item so the user's text is never silently dropped — the chip stays
+      // item so the user's text is never silently dropped, the chip stays
       // available for manual send.
       restoreQueued(conversationId, next);
+      /** Popping and restoring leaves the held set identical, so the renewal
+       *  effect sees no change and will not re-run. Draining normally does
+       *  change the set, and renews itself. Fire-and-forget: send-time
+       *  marking is the backstop. */
+      for (const file_ids of batchFileIds(collectQueuedFileIds([next]))) {
+        markFilesUsage({ file_ids });
+      }
     }
-  }, [runEnd, parkedRunEnd, isSubmitting, activeConversationId, drainNext, restoreQueued, ask]);
+  }, [
+    runEnd,
+    parkedRunEnd,
+    isSubmitting,
+    activeConversationId,
+    drainNext,
+    restoreQueued,
+    markFilesUsage,
+    ask,
+  ]);
 }

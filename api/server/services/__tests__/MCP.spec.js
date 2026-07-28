@@ -32,6 +32,13 @@ jest.mock('@librechat/api', () => ({
   GenerationJobManager: jest.fn(),
   resolveJsonSchemaRefs: jest.fn((schema) => schema),
   buildOAuthToolCallName: jest.fn((name) => name),
+  /** Mirrors the real resolver so these tests still exercise the wrapper's own
+   *  plumbing - loading the request config and degrading on failure - rather than
+   *  the resolution logic, which is unit-tested in packages/api. */
+  resolveMCPServerContext: jest.fn(async ({ mcpConfig, ensureConfigServers }) => ({
+    configServers: await ensureConfigServers(mcpConfig),
+    serverNames: Object.keys(mcpConfig),
+  })),
 }));
 
 jest.mock('~/cache', () => ({ getLogStores: jest.fn() }));
@@ -54,7 +61,12 @@ jest.mock('~/server/services/Tools/mcp', () => ({
 }));
 
 const { getAppConfig } = require('~/server/services/Config');
-const { resolveConfigServers, resolveMcpConfigNames, resolveAllMcpConfigs } = require('../MCP');
+const {
+  resolveConfigServers,
+  resolveMcpConfigNames,
+  resolveAllMcpConfigs,
+  resolveMcpServerContext,
+} = require('../MCP');
 
 describe('resolveConfigServers', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -96,6 +108,42 @@ describe('resolveConfigServers', () => {
     await resolveConfigServers({ user: { id: 'u1' } });
 
     expect(mockRegistry.ensureConfigServers).toHaveBeenCalledWith({});
+  });
+});
+
+describe('resolveMcpServerContext', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('derives config servers and all configured names from a single app-config read', async () => {
+    /** `ensureConfigServers` intentionally omits unmodified YAML servers, so the name
+     *  list must come from `mcpConfig` itself or boundary resolution goes inert. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { unchangedYaml: {}, lazyInit: {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({ lazyInit: { name: 'lazyInit' } });
+
+    const result = await resolveMcpServerContext({ user: { id: 'u1' } });
+
+    expect(result.configServers).toEqual({ lazyInit: { name: 'lazyInit' } });
+    expect(result.serverNames.sort()).toEqual(['lazyInit', 'unchangedYaml']);
+    expect(getAppConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it('degrades to empty rather than rejecting when the config lookup fails', async () => {
+    /** A rejection here would abort tool loading entirely, defeating the
+     *  catch-and-degrade the sibling resolver already provides. */
+    getAppConfig.mockRejectedValue(new Error('db timeout'));
+
+    const result = await resolveMcpServerContext({ user: { id: 'u1' } });
+
+    expect(result).toEqual({ configServers: {}, serverNames: [] });
+  });
+
+  it('degrades to empty when ensureConfigServers throws', async () => {
+    getAppConfig.mockResolvedValue({ mcpConfig: { srv: {} } });
+    mockRegistry.ensureConfigServers.mockRejectedValue(new Error('inspect failed'));
+
+    const result = await resolveMcpServerContext({ user: { id: 'u1' } });
+
+    expect(result).toEqual({ configServers: {}, serverNames: [] });
   });
 });
 

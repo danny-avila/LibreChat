@@ -33,9 +33,13 @@ jest.mock('~/hooks', () => ({
   }),
 }));
 
-jest.mock('~/hooks/MCP', () => ({
-  useMCPIconMap: () => new Map(),
-}));
+jest.mock('~/hooks/MCP', () => {
+  const mcpServerNames: string[] = [];
+  return {
+    useMCPIconMap: () => new Map(),
+    useMCPServerNames: () => mcpServerNames,
+  };
+});
 
 jest.mock('~/components/Chat/Messages/Content/MessageContent', () => ({
   __esModule: true,
