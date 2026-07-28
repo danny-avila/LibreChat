@@ -16,6 +16,11 @@ export type PersistedRunState = {
   userMessageFound: boolean;
 };
 
+type PersistedRunMessages = PersistedRunState & {
+  responseMessage?: TMessage;
+  userMessage?: TMessage;
+};
+
 export const newConversationPath = `/c/${Constants.NEW_CONVO}`;
 
 export function recoveryOwnsCurrentRoute(
@@ -178,30 +183,14 @@ function getMessageOutcome(message: TMessage): RunEnd['outcome'] | undefined {
   return 'completed';
 }
 
-export function getPersistedRunState(
-  messages: TMessage[] | undefined,
-  target: RunRecoveryTarget | undefined,
-): PersistedRunState {
-  if (!messages?.length || !target) {
-    return { responseFound: false, userMessageFound: false };
-  }
-
+function findRunResponseIndex(messages: TMessage[], target: RunRecoveryTarget): number {
   const responseMessageId = target.responseMessageId;
   const unpaddedResponseMessageId = responseMessageId?.replace(/_+$/, '');
   const canUseParentFallback = !responseMessageId || responseMessageId.endsWith('_');
-  let fallbackResponse: TMessage | undefined;
-  let userMessageFound = false;
+  let fallbackIndex = -1;
 
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i];
-    if (
-      target.userMessageId &&
-      message.isCreatedByUser === true &&
-      message.messageId === target.userMessageId
-    ) {
-      userMessageFound = true;
-      continue;
-    }
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
     if (message.isCreatedByUser === true) {
       continue;
     }
@@ -210,27 +199,92 @@ export function getPersistedRunState(
       (message.messageId === responseMessageId ||
         (!!unpaddedResponseMessageId && message.messageId === unpaddedResponseMessageId))
     ) {
-      return {
-        outcome: getMessageOutcome(message),
-        responseFound: true,
-        userMessageFound,
-      };
+      return index;
     }
     if (
-      !fallbackResponse &&
+      fallbackIndex === -1 &&
       canUseParentFallback &&
       target.userMessageId &&
       message.parentMessageId === target.userMessageId
     ) {
-      fallbackResponse = message;
+      fallbackIndex = index;
     }
   }
 
+  return fallbackIndex;
+}
+
+function getPersistedRunMessages(
+  messages: TMessage[] | undefined,
+  target: RunRecoveryTarget | undefined,
+): PersistedRunMessages {
+  if (!messages?.length || !target) {
+    return { responseFound: false, userMessageFound: false };
+  }
+
+  const userMessage = target.userMessageId
+    ? messages.find(
+        (message) => message.isCreatedByUser === true && message.messageId === target.userMessageId,
+      )
+    : undefined;
+  const responseIndex = findRunResponseIndex(messages, target);
+  const responseMessage = responseIndex >= 0 ? messages[responseIndex] : undefined;
+
   return {
-    outcome: fallbackResponse ? getMessageOutcome(fallbackResponse) : undefined,
-    responseFound: fallbackResponse != null,
-    userMessageFound,
+    outcome: responseMessage ? getMessageOutcome(responseMessage) : undefined,
+    responseFound: responseMessage != null,
+    responseMessage,
+    userMessage,
+    userMessageFound: userMessage != null,
   };
+}
+
+export function getPersistedRunState(
+  messages: TMessage[] | undefined,
+  target: RunRecoveryTarget | undefined,
+): PersistedRunState {
+  const { outcome, responseFound, userMessageFound } = getPersistedRunMessages(messages, target);
+  return { outcome, responseFound, userMessageFound };
+}
+
+export function mergePersistedRunIntoMessages(
+  currentMessages: TMessage[] | undefined,
+  persistedMessages: TMessage[],
+  target: RunRecoveryTarget,
+): TMessage[] {
+  const persistedRun = getPersistedRunMessages(persistedMessages, target);
+  if (!persistedRun.responseMessage || !persistedRun.outcome) {
+    return currentMessages ?? [];
+  }
+
+  const mergedMessages = [...(currentMessages ?? [])];
+  let userMessageIndex = target.userMessageId
+    ? mergedMessages.findIndex(
+        (message) => message.isCreatedByUser === true && message.messageId === target.userMessageId,
+      )
+    : -1;
+  if (persistedRun.userMessage) {
+    if (userMessageIndex >= 0) {
+      mergedMessages[userMessageIndex] = persistedRun.userMessage;
+    } else {
+      mergedMessages.push(persistedRun.userMessage);
+      userMessageIndex = mergedMessages.length - 1;
+    }
+  }
+
+  const responseMessageIndex = findRunResponseIndex(mergedMessages, target);
+
+  if (responseMessageIndex >= 0) {
+    mergedMessages[responseMessageIndex] = persistedRun.responseMessage;
+  } else {
+    mergedMessages.splice(
+      userMessageIndex >= 0 ? userMessageIndex + 1 : mergedMessages.length,
+      0,
+      persistedRun.responseMessage,
+    );
+  }
+
+  return mergedMessages;
 }
 
 export function getStatusRunOutcome(status: StreamStatusResponse): RunEnd['outcome'] | undefined {

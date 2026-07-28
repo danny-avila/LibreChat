@@ -665,7 +665,10 @@ describe('useResumeOnLoad', () => {
         });
       });
       expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID);
-      expect(mockGetMessagesByConvoId).toHaveBeenCalledWith(CONVERSATION_ID);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledWith(
+        CONVERSATION_ID,
+        expect.any(AbortSignal),
+      );
       expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
         finalMessages,
       );
@@ -763,7 +766,10 @@ describe('useResumeOnLoad', () => {
       });
       rerender();
       await waitFor(() => {
-        expect(mockGetMessagesByConvoId).toHaveBeenCalledWith(CONVERSATION_ID);
+        expect(mockGetMessagesByConvoId).toHaveBeenCalledWith(
+          CONVERSATION_ID,
+          expect.any(AbortSignal),
+        );
       });
 
       queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], concurrentMessages);
@@ -1266,9 +1272,11 @@ describe('useResumeOnLoad', () => {
         await Promise.resolve();
       });
 
-      expect(observedQueues[observedQueues.length - 1]).toEqual([
-        expect.objectContaining({ id: claimedSteer.steerId, text: claimedSteer.text }),
-      ]);
+      await waitFor(() => {
+        expect(observedQueues[observedQueues.length - 1]).toEqual([
+          expect.objectContaining({ id: claimedSteer.steerId, text: claimedSteer.text }),
+        ]);
+      });
       expect(observedSteers[observedSteers.length - 1]).toEqual([newRunSteer]);
       expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
     });
@@ -1559,7 +1567,10 @@ describe('useResumeOnLoad', () => {
       expect(observedConversations[observedConversations.length - 1]).toMatchObject({
         conversationId: String(Constants.NEW_CONVO),
       });
-      expect(mockGetMessagesByConvoId).toHaveBeenCalledWith(CONVERSATION_ID);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledWith(
+        CONVERSATION_ID,
+        expect.any(AbortSignal),
+      );
       expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
     });
 
@@ -1672,9 +1683,9 @@ describe('useResumeOnLoad', () => {
         queryKey: [QueryKeys.conversation, CONVERSATION_ID],
       });
       expect(observedPathnames[observedPathnames.length - 1]).toBe(`/c/${CONVERSATION_ID}`);
-      expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual([
-        persistedUserMessage,
-      ]);
+      expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
+        unfinishedMessages,
+      );
       expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
     });
 

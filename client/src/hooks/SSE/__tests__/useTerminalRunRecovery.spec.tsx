@@ -76,6 +76,14 @@ function buildAssistantMessage(overrides: Partial<TMessage> = {}): TMessage {
   } as TMessage;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 function renderTerminalRecovery({
   queryClient,
   initialPath = `/c/${CONVERSATION_ID}`,
@@ -303,7 +311,7 @@ describe('useTerminalRunRecovery', () => {
     expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
   });
 
-  it('keeps the failed follow-up visible while the older response is still provisional', async () => {
+  it('keeps local turns unchanged while persisted history is still provisional', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const failedUserMessage = {
       ...buildUserMessage(),
@@ -344,14 +352,241 @@ describe('useTerminalRunRecovery', () => {
     });
 
     await waitFor(() => {
-      expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual([
-        buildUserMessage(),
-        persistedPartial,
-        failedUserMessage,
-        failedResponse,
-      ]);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalled();
     });
+    expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual([
+      buildUserMessage(),
+      buildAssistantMessage(),
+      failedUserMessage,
+      failedResponse,
+    ]);
     unmount();
+  });
+
+  it('keeps the local error turn when terminal status is authoritative but history refresh fails', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const observedRunEnds: Array<RunEnd | null> = [];
+    const localMessages = [
+      buildUserMessage(),
+      buildAssistantMessage({
+        text: 'The request failed',
+        createdAt: undefined,
+        updatedAt: undefined,
+        error: true,
+      }),
+    ];
+    queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], localMessages);
+    setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+      startedAsNewConvo: false,
+      created: true,
+      userMessageId: USER_MESSAGE_ID,
+      responseMessageId: RESPONSE_MESSAGE_ID,
+    });
+    mockFetchStreamStatus.mockResolvedValue({ active: false, status: 'error' });
+    mockGetMessagesByConvoId.mockRejectedValue({ status: 400 });
+
+    const { rerender } = renderTerminalRecovery({
+      queryClient,
+      onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+    });
+    active = false;
+    rerender();
+
+    await waitFor(() => {
+      expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+        conversationId: CONVERSATION_ID,
+        outcome: 'error',
+      });
+    });
+    expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(localMessages);
+    expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
+  });
+
+  it('uses a missing persisted response to infer failure without erasing the local error', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const observedRunEnds: Array<RunEnd | null> = [];
+    const localMessages = [
+      buildUserMessage(),
+      buildAssistantMessage({
+        text: 'The stream failed before persistence',
+        createdAt: undefined,
+        updatedAt: undefined,
+        error: true,
+      }),
+    ];
+    queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], localMessages);
+    setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+      startedAsNewConvo: false,
+      created: true,
+      userMessageId: USER_MESSAGE_ID,
+      responseMessageId: RESPONSE_MESSAGE_ID,
+    });
+    mockFetchStreamStatus.mockResolvedValue({ active: false });
+    mockGetMessagesByConvoId.mockResolvedValue([buildUserMessage()]);
+
+    const { rerender } = renderTerminalRecovery({
+      queryClient,
+      onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+    });
+    active = false;
+    rerender();
+
+    await waitFor(() => {
+      expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+        conversationId: CONVERSATION_ID,
+        outcome: 'error',
+      });
+    });
+    expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(localMessages);
+  });
+
+  it('reconciles ready pending runs without letting an earlier unfinished run block them', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const firstUser = buildUserMessage();
+    const firstResponse = buildAssistantMessage();
+    const secondUser = {
+      ...buildUserMessage(),
+      messageId: 'pending-user-2',
+      parentMessageId: firstResponse.messageId,
+      text: 'Second pending run',
+    };
+    const secondResponse = buildAssistantMessage({
+      messageId: 'pending-response-2_',
+      parentMessageId: secondUser.messageId,
+    });
+    const finalSecondResponse = buildAssistantMessage({
+      messageId: 'pending-response-2',
+      parentMessageId: secondUser.messageId,
+      text: 'Second pending result',
+      createdAt: '2026-07-28T08:02:00.000Z',
+      updatedAt: '2026-07-28T08:02:00.000Z',
+    });
+    active = false;
+    queryClient.setQueryData(
+      [QueryKeys.messages, CONVERSATION_ID],
+      [firstUser, firstResponse, secondUser, secondResponse],
+    );
+    const firstTask = queuePendingRunReconciliation(
+      queryClient,
+      CONVERSATION_ID,
+      {
+        startedAsNewConvo: false,
+        created: true,
+        userMessageId: firstUser.messageId,
+        responseMessageId: firstResponse.messageId,
+      },
+      1,
+    );
+    queuePendingRunReconciliation(
+      queryClient,
+      CONVERSATION_ID,
+      {
+        startedAsNewConvo: false,
+        created: true,
+        userMessageId: secondUser.messageId,
+        responseMessageId: secondResponse.messageId,
+      },
+      2,
+    );
+    mockGetMessagesByConvoId.mockResolvedValue([
+      firstUser,
+      firstResponse,
+      secondUser,
+      finalSecondResponse,
+    ]);
+
+    renderTerminalRecovery({ queryClient });
+
+    await waitFor(() => {
+      expect(getPendingRunReconciliations(queryClient, CONVERSATION_ID)).toEqual([firstTask]);
+    });
+    expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual([
+      firstUser,
+      firstResponse,
+      secondUser,
+      finalSecondResponse,
+    ]);
+  });
+
+  it('waits for current-run recovery before reconciling historical pending runs', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const firstRequest = deferred<TMessage[]>();
+    const historicalUser = {
+      ...buildUserMessage(),
+      messageId: 'historical-user',
+    };
+    const historicalResponse = buildAssistantMessage({
+      messageId: 'historical-response_',
+      parentMessageId: historicalUser.messageId,
+    });
+    const finalHistoricalResponse = buildAssistantMessage({
+      messageId: 'historical-response',
+      parentMessageId: historicalUser.messageId,
+      text: 'Historical result',
+      createdAt: '2026-07-28T08:00:00.000Z',
+      updatedAt: '2026-07-28T08:00:00.000Z',
+    });
+    const currentUser = {
+      ...buildUserMessage(),
+      parentMessageId: historicalResponse.messageId,
+    };
+    const currentResponse = buildAssistantMessage();
+    const finalCurrentResponse = buildAssistantMessage({
+      messageId: 'terminal-response',
+      text: 'Current result',
+      createdAt: '2026-07-28T08:01:00.000Z',
+      updatedAt: '2026-07-28T08:01:00.000Z',
+    });
+    const finalMessages = [
+      historicalUser,
+      finalHistoricalResponse,
+      currentUser,
+      finalCurrentResponse,
+    ];
+    queryClient.setQueryData(
+      [QueryKeys.messages, CONVERSATION_ID],
+      [historicalUser, historicalResponse, currentUser, currentResponse],
+    );
+    queuePendingRunReconciliation(
+      queryClient,
+      CONVERSATION_ID,
+      {
+        startedAsNewConvo: false,
+        created: true,
+        userMessageId: historicalUser.messageId,
+        responseMessageId: historicalResponse.messageId,
+      },
+      1,
+    );
+    setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+      startedAsNewConvo: false,
+      created: true,
+      userMessageId: currentUser.messageId,
+      responseMessageId: currentResponse.messageId,
+    });
+    mockFetchStreamStatus.mockResolvedValue({ active: false, status: 'complete' });
+    mockGetMessagesByConvoId
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockResolvedValue(finalMessages);
+
+    const { rerender } = renderTerminalRecovery({ queryClient });
+    active = false;
+    rerender();
+
+    await waitFor(() => {
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(1);
+    });
+    expect(getPendingRunReconciliations(queryClient, CONVERSATION_ID)).toHaveLength(1);
+
+    act(() => {
+      firstRequest.resolve(finalMessages);
+    });
+
+    await waitFor(() => {
+      expect(getPendingRunReconciliations(queryClient, CONVERSATION_ID)).toEqual([]);
+    });
+    expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(2);
   });
 
   it('restores a recovered first conversation to the sidebar without stealing another route', async () => {

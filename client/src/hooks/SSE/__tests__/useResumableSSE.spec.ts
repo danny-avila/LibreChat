@@ -1273,10 +1273,7 @@ describe('useResumableSSE', () => {
       ['resumable-pending-run-reconciliation', CONV_ID],
       expect.any(Function),
     );
-    expect(mockRemoveQueries).toHaveBeenCalledWith({
-      queryKey: ['resumable-disconnected-run', CONV_ID],
-      exact: true,
-    });
+    expect(mockSetQueryData).toHaveBeenCalledWith(['resumable-disconnected-run', CONV_ID], null);
     unmount();
   });
 

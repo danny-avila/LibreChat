@@ -23,6 +23,7 @@ type FetchMessagesParams = {
   queryClient: QueryClient;
   isStreaming?: () => boolean;
   protectActiveStream?: boolean;
+  signal?: AbortSignal;
 };
 
 function isUnhydratedMessage(message: t.TMessage) {
@@ -134,6 +135,7 @@ export async function fetchMessagesWithCacheProtection({
   queryClient,
   isStreaming = () => false,
   protectActiveStream = true,
+  signal,
 }: FetchMessagesParams): Promise<t.TMessage[]> {
   const queryKey = [QueryKeys.messages, id];
   const messagesAtRequestStart = queryClient.getQueryData<t.TMessage[]>(queryKey);
@@ -144,7 +146,7 @@ export async function fetchMessagesWithCacheProtection({
 
   let result: t.TMessage[];
   try {
-    result = await dataService.getMessagesByConvoId(id);
+    result = await dataService.getMessagesByConvoId(id, signal);
   } catch (error) {
     const currentMessages = queryClient.getQueryData<t.TMessage[]>(queryKey);
     if (
@@ -220,12 +222,13 @@ export const useGetMessagesByConvoId = <TData = t.TMessage[]>(
 
   return useQuery<t.TMessage[], unknown, TData>(
     [QueryKeys.messages, id],
-    () =>
+    ({ signal }) =>
       fetchMessagesWithCacheProtection({
         id,
         pathname: location.pathname,
         queryClient,
         isStreaming: () => isStreamingRef.current,
+        signal,
       }),
     {
       refetchOnWindowFocus: false,

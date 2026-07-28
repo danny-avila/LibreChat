@@ -1,6 +1,7 @@
 export const TERMINAL_RETRY_DELAYS = [1000, 2000, 5000, 10000, 20000, 30000] as const;
 export const TERMINAL_RETRY_MAX_ATTEMPTS = 9;
 export const TERMINAL_RETRY_MAX_ELAPSED_MS = 180000;
+export const TERMINAL_RETRY_ATTEMPT_TIMEOUT_MS = 30000;
 
 export type TerminalRetryStatus = 'succeeded' | 'aborted' | 'failed' | 'exhausted';
 
@@ -11,7 +12,7 @@ export type TerminalRetryResult<T> =
   | { status: 'exhausted'; value?: T; error?: unknown; attempts: number };
 
 type TerminalRetryOptions<T> = {
-  operation: () => Promise<T>;
+  operation: (signal: AbortSignal) => Promise<T>;
   isSuccess?: (value: T) => boolean;
   shouldRetryError?: (error: unknown) => boolean;
   canContinue?: () => boolean;
@@ -19,6 +20,7 @@ type TerminalRetryOptions<T> = {
   delays?: readonly number[];
   maxAttempts?: number;
   maxElapsedMs?: number;
+  attemptTimeoutMs?: number;
   random?: () => number;
   now?: () => number;
   wait?: (delay: number, signal: AbortSignal) => Promise<boolean>;
@@ -74,6 +76,7 @@ export async function runTerminalRetry<T>({
   delays = TERMINAL_RETRY_DELAYS,
   maxAttempts = TERMINAL_RETRY_MAX_ATTEMPTS,
   maxElapsedMs = TERMINAL_RETRY_MAX_ELAPSED_MS,
+  attemptTimeoutMs = TERMINAL_RETRY_ATTEMPT_TIMEOUT_MS,
   random = Math.random,
   now = Date.now,
   wait = waitForRetryDelay,
@@ -87,19 +90,46 @@ export async function runTerminalRetry<T>({
     if (signal.aborted || !canContinue()) {
       return { status: 'aborted', value: latestValue, attempts };
     }
+    const elapsedMs = now() - startedAt;
+    const remainingMs = maxElapsedMs - elapsedMs;
+    if (remainingMs <= 0) {
+      break;
+    }
     attempts = attempt;
 
+    const attemptController = new AbortController();
+    let rejectInterruptedAttempt!: (reason: Error) => void;
+    const interruptedAttempt = new Promise<never>((_, reject) => {
+      rejectInterruptedAttempt = reject;
+    });
+    const abortAttempt = () => {
+      attemptController.abort();
+      rejectInterruptedAttempt(new Error('Terminal recovery attempt interrupted'));
+    };
+    signal.addEventListener('abort', abortAttempt, { once: true });
+    const deadline = setTimeout(abortAttempt, Math.min(remainingMs, attemptTimeoutMs));
+
     try {
-      latestValue = await operation();
+      latestValue = await Promise.race([operation(attemptController.signal), interruptedAttempt]);
       latestError = undefined;
       if (isSuccess(latestValue)) {
         return { status: 'succeeded', value: latestValue, attempts: attempt };
       }
     } catch (error) {
+      if (signal.aborted) {
+        return { status: 'aborted', value: latestValue, attempts };
+      }
+      if (attemptController.signal.aborted && now() - startedAt >= maxElapsedMs) {
+        latestError = error;
+        break;
+      }
       latestError = error;
       if (!shouldRetryError(error)) {
         return { status: 'failed', error, value: latestValue, attempts: attempt };
       }
+    } finally {
+      clearTimeout(deadline);
+      signal.removeEventListener('abort', abortAttempt);
     }
 
     if (attempt === maxAttempts) {

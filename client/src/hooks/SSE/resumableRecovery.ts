@@ -21,7 +21,7 @@ const runStartingQueryRoot = ['resumable-run-starting'] as const;
 const terminalRecoveryRequestQueryRoot = ['resumable-terminal-recovery-request'] as const;
 const pendingRunReconciliationQueryRoot = ['resumable-pending-run-reconciliation'] as const;
 
-const disconnectedRunQueryKey = (conversationId: string) =>
+export const disconnectedRunRecoveryQueryKey = (conversationId: string) =>
   [...disconnectedRunQueryRoot, conversationId] as const;
 
 const runEpochQueryKey = (conversationId: string) =>
@@ -99,21 +99,23 @@ export function setDisconnectedRunRecovery(
   // This is session state, not fetched server data. It must survive the
   // default five-minute React Query GC while a disconnected job keeps running.
   queryClient.setQueryDefaults(disconnectedRunQueryRoot, { cacheTime: Infinity });
-  queryClient.setQueryData(disconnectedRunQueryKey(conversationId), recovery);
+  queryClient.setQueryData(disconnectedRunRecoveryQueryKey(conversationId), recovery);
 }
 
 export function getDisconnectedRunRecovery(
   queryClient: QueryClient,
   conversationId: string,
 ): DisconnectedRunRecovery | undefined {
-  return queryClient.getQueryData<DisconnectedRunRecovery>(disconnectedRunQueryKey(conversationId));
+  return (
+    queryClient.getQueryData<DisconnectedRunRecovery | null>(
+      disconnectedRunRecoveryQueryKey(conversationId),
+    ) ?? undefined
+  );
 }
 
 export function clearDisconnectedRunRecovery(queryClient: QueryClient, conversationId: string) {
-  queryClient.removeQueries({
-    queryKey: disconnectedRunQueryKey(conversationId),
-    exact: true,
-  });
+  queryClient.setQueryDefaults(disconnectedRunQueryRoot, { cacheTime: Infinity });
+  queryClient.setQueryData(disconnectedRunRecoveryQueryKey(conversationId), null);
 }
 
 function getPendingRunTaskId(recovery: DisconnectedRunRecovery, runEpoch: number): string {
@@ -170,9 +172,18 @@ export function removePendingRunReconciliation(
   conversationId: string,
   taskId: string,
 ) {
+  removePendingRunReconciliations(queryClient, conversationId, [taskId]);
+}
+
+export function removePendingRunReconciliations(
+  queryClient: QueryClient,
+  conversationId: string,
+  taskIds: readonly string[],
+) {
+  const removedTaskIds = new Set(taskIds);
   const queryKey = pendingRunReconciliationsQueryKey(conversationId);
   queryClient.setQueryData<PendingRunReconciliation[]>(queryKey, (current = []) =>
-    current.filter((task) => task.taskId !== taskId),
+    current.filter((task) => !removedTaskIds.has(task.taskId)),
   );
 }
 

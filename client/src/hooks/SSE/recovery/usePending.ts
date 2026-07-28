@@ -7,15 +7,16 @@ import {
   getPendingRunReconciliations,
   getResumableRunStarting,
   pendingRunReconciliationsQueryKey,
-  removePendingRunReconciliation,
+  removePendingRunReconciliations,
   requestTerminalRunRecovery,
 } from '../resumableRecovery';
-import { refreshPersistedResponse } from './messages';
+import { refreshPendingPersistedResponses } from './messages';
 
 type UsePendingRunReconciliationParams = {
   conversationId: string | undefined;
   enabled: boolean;
   isCurrentJobActive: boolean;
+  hasCurrentRecovery: boolean;
   isRunStarting: boolean;
   pathname: string;
   terminalRecoveryRequest: number;
@@ -26,6 +27,7 @@ export function usePendingRunReconciliation({
   conversationId,
   enabled,
   isCurrentJobActive,
+  hasCurrentRecovery,
   isRunStarting,
   pathname,
   terminalRecoveryRequest,
@@ -33,7 +35,15 @@ export function usePendingRunReconciliation({
 }: UsePendingRunReconciliationParams) {
   const queryClient = useQueryClient();
   const abortRef = useRef<AbortController | null>(null);
-  const activeTaskRef = useRef<string | null>(null);
+  const attemptedBatchRef = useRef<{
+    conversationId: string | undefined;
+    request: number;
+    taskIds: Set<string>;
+  }>({
+    conversationId,
+    request: terminalRecoveryRequest,
+    taskIds: new Set(),
+  });
   const { data: pendingRunReconciliations = [] } = useQuery<PendingRunReconciliation[]>({
     queryKey: pendingRunReconciliationsQueryKey(conversationId ?? ''),
     queryFn: () => [],
@@ -44,49 +54,74 @@ export function usePendingRunReconciliation({
 
   useEffect(() => {
     if (
+      attemptedBatchRef.current.conversationId !== conversationId ||
+      attemptedBatchRef.current.request !== terminalRecoveryRequest
+    ) {
+      attemptedBatchRef.current = {
+        conversationId,
+        request: terminalRecoveryRequest,
+        taskIds: new Set(),
+      };
+    }
+    const hasUnattemptedTask = pendingRunReconciliations.some(
+      (task) => !attemptedBatchRef.current.taskIds.has(task.taskId),
+    );
+    if (
       !enabled ||
       !conversationId ||
       isCurrentJobActive ||
+      hasCurrentRecovery ||
       isRunStarting ||
       pendingRunReconciliations.length === 0 ||
-      activeTaskRef.current != null
+      !hasUnattemptedTask ||
+      abortRef.current != null
     ) {
       return;
     }
 
-    const task = pendingRunReconciliations[0];
+    const tasks = pendingRunReconciliations;
+    const attemptedBatch = attemptedBatchRef.current;
+    for (const task of tasks) {
+      attemptedBatch.taskIds.add(task.taskId);
+    }
     const controller = new AbortController();
-    abortRef.current?.abort();
     abortRef.current = controller;
-    activeTaskRef.current = task.taskId;
 
-    void refreshPersistedResponse({
+    void refreshPendingPersistedResponses({
       conversationId,
       getMessages: () => getMessages(conversationId),
       pathname: () => pathname,
       queryClient,
-      recoveryTarget: {
-        userMessageId: task.userMessageId,
-        responseMessageId: task.responseMessageId,
-      },
+      tasks,
       signal: controller.signal,
       canContinue: () =>
-        !isCurrentJobActive && !getResumableRunStarting(queryClient, conversationId),
+        !isCurrentJobActive &&
+        !hasCurrentRecovery &&
+        !getDisconnectedRunRecovery(queryClient, conversationId) &&
+        !getResumableRunStarting(queryClient, conversationId),
     })
       .then((refreshed) => {
-        if (
-          !controller.signal.aborted &&
-          (refreshed.succeeded || refreshed.notFound || refreshed.retryStatus === 'failed')
-        ) {
-          removePendingRunReconciliation(queryClient, conversationId, task.taskId);
+        if (controller.signal.aborted || refreshed.retryStatus === 'aborted') {
+          for (const task of tasks) {
+            attemptedBatch.taskIds.delete(task.taskId);
+          }
+          return;
+        }
+        if (refreshed.notFound || refreshed.retryStatus === 'failed') {
+          removePendingRunReconciliations(
+            queryClient,
+            conversationId,
+            tasks.map((task) => task.taskId),
+          );
+          return;
+        }
+        if (refreshed.reconciledTaskIds.length > 0) {
+          removePendingRunReconciliations(queryClient, conversationId, refreshed.reconciledTaskIds);
         }
       })
       .finally(() => {
         if (abortRef.current === controller) {
           abortRef.current = null;
-        }
-        if (activeTaskRef.current === task.taskId) {
-          activeTaskRef.current = null;
         }
       });
 
@@ -95,14 +130,12 @@ export function usePendingRunReconciliation({
       if (abortRef.current === controller) {
         abortRef.current = null;
       }
-      if (activeTaskRef.current === task.taskId) {
-        activeTaskRef.current = null;
-      }
     };
   }, [
     conversationId,
     enabled,
     getMessages,
+    hasCurrentRecovery,
     isCurrentJobActive,
     isRunStarting,
     pathname,

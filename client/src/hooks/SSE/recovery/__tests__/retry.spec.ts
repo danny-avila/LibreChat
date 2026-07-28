@@ -61,6 +61,42 @@ describe('terminal retry policy', () => {
     expect(wait).not.toHaveBeenCalled();
   });
 
+  it('aborts an in-flight attempt when the overall deadline expires', async () => {
+    jest.useFakeTimers();
+    const operation = jest.fn((_signal: AbortSignal) => new Promise<never>(() => undefined));
+
+    const resultPromise = runTerminalRetry({
+      operation,
+      signal: new AbortController().signal,
+      maxElapsedMs: 1000,
+    });
+    await jest.advanceTimersByTimeAsync(1000);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: 'exhausted',
+      attempts: 1,
+    });
+    expect(operation.mock.calls[0][0].aborted).toBe(true);
+    jest.useRealTimers();
+  });
+
+  it('propagates external cancellation to an in-flight attempt', async () => {
+    const controller = new AbortController();
+    const operation = jest.fn((_signal: AbortSignal) => new Promise<never>(() => undefined));
+
+    const resultPromise = runTerminalRetry({
+      operation,
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: 'aborted',
+      attempts: 1,
+    });
+    expect(operation.mock.calls[0][0].aborted).toBe(true);
+  });
+
   it('clamps jitter to the configured twenty-percent range', () => {
     expect(getJitteredRetryDelay(1000, () => -1)).toBe(800);
     expect(getJitteredRetryDelay(1000, () => 2)).toBe(1200);

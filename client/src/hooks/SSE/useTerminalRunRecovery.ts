@@ -5,6 +5,7 @@ import { Constants, QueryKeys } from 'librechat-data-provider';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TMessage, TConversation, Agents } from 'librechat-data-provider';
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
+import type { DisconnectedRunRecovery } from './resumableRecovery';
 import type { RunRecoveryTarget } from './terminal';
 import type { PersistedResponseRefresh } from './recovery/messages';
 import {
@@ -20,6 +21,7 @@ import {
 import {
   clearDisconnectedRunRecovery,
   consumeTerminalEventSeen,
+  disconnectedRunRecoveryQueryKey,
   getDisconnectedRunRecovery,
   getResumableRunEpoch,
   getResumableRunStarting,
@@ -78,6 +80,12 @@ export default function useTerminalRunRecovery({
     queryFn: () => 0,
     enabled: false,
     initialData: 0,
+    cacheTime: Infinity,
+  });
+  const { data: disconnectedRunRecovery } = useQuery<DisconnectedRunRecovery | null>({
+    queryKey: disconnectedRunRecoveryQueryKey(conversationId ?? ''),
+    queryFn: () => null,
+    enabled: false,
     cacheTime: Infinity,
   });
   const isCurrentJobActive =
@@ -236,6 +244,7 @@ export default function useTerminalRunRecovery({
 
       const observed = observedActiveJobRef.current;
       if (
+        !mountedRef.current ||
         observed.conversationId !== conversationId ||
         observed.active ||
         getResumableRunEpoch(queryClient, conversationId) !== expectedRunEpoch
@@ -285,13 +294,15 @@ export default function useTerminalRunRecovery({
         return;
       }
 
-      if (!refreshed.succeeded) {
+      const statusOutcome = status && getStatusRunOutcome(status);
+      const canFinalizeWithoutMessages = statusOutcome === 'error' || statusOutcome === 'aborted';
+      if (!refreshed.succeeded && !canFinalizeWithoutMessages) {
         return;
       }
 
       const persistedRun = getPersistedRunState(refreshed.messages, recoveryTarget);
       const outcome =
-        (status && getStatusRunOutcome(status)) ??
+        statusOutcome ??
         persistedRun.outcome ??
         (recoveryTarget && persistedRun.userMessageFound && !persistedRun.responseFound
           ? 'error'
@@ -383,21 +394,31 @@ export default function useTerminalRunRecovery({
   );
 
   const fetchTerminalStatus = useCallback(
-    async (terminalConversationId: string): Promise<StreamStatusResponse | undefined> => {
+    async (
+      terminalConversationId: string,
+    ): Promise<{ status: StreamStatusResponse; recoveredSteers: boolean } | undefined> => {
       terminalStatusAbortRef.current?.abort();
       const statusController = new AbortController();
       terminalStatusAbortRef.current = statusController;
 
-      const finish = (status?: StreamStatusResponse) => {
+      const finish = (result?: { status: StreamStatusResponse; recoveredSteers: boolean }) => {
         if (terminalStatusAbortRef.current === statusController) {
           terminalStatusAbortRef.current = null;
         }
-        return status;
+        return result;
       };
 
       const result = await runTerminalRetry({
         signal: statusController.signal,
-        operation: () => fetchStreamStatus(terminalConversationId),
+        operation: async () => {
+          // This endpoint atomically returns and deletes parked steers. The
+          // request must finish even when its caller no longer needs status.
+          const status = await fetchStreamStatus(terminalConversationId);
+          return {
+            status,
+            recoveredSteers: recoverStatusSteers(status),
+          };
+        },
         canContinue: () => {
           const observed = observedActiveJobRef.current;
           return (
@@ -408,18 +429,18 @@ export default function useTerminalRunRecovery({
         },
       });
 
-      // The status route claims parked steers on read. Once a request has
-      // succeeded, its payload must be processed even if a newer run started
-      // while it was in flight; the caller gates all other work.
+      // Each request converts claimed steers inside the operation, including
+      // late responses from an interrupted retry attempt.
       return finish(result.status === 'succeeded' ? result.value : undefined);
     },
-    [],
+    [recoverStatusSteers],
   );
 
   usePendingRunReconciliation({
     conversationId,
     enabled,
     isCurrentJobActive,
+    hasCurrentRecovery: disconnectedRunRecovery != null,
     isRunStarting,
     pathname: location.pathname,
     terminalRecoveryRequest,
@@ -489,10 +510,11 @@ export default function useTerminalRunRecovery({
 
     const terminalConversationId = conversationId;
     const terminalRunEpoch = getResumableRunEpoch(queryClient, terminalConversationId);
-    void fetchTerminalStatus(terminalConversationId).then((status) => {
-      if (!status) {
+    void fetchTerminalStatus(terminalConversationId).then((result) => {
+      if (!result) {
         return;
       }
+      const { status, recoveredSteers } = result;
 
       const observed = observedActiveJobRef.current;
       const sameRun =
@@ -511,9 +533,6 @@ export default function useTerminalRunRecovery({
         return;
       }
 
-      // The status response may have atomically claimed parked steers. Recover
-      // them even if a newer run became active before the request resolved.
-      const recoveredSteers = recoverStatusSteers(status);
       if (!mountedRef.current) {
         return;
       }
@@ -534,7 +553,6 @@ export default function useTerminalRunRecovery({
     isRunStarting,
     queryClient,
     recoverInactiveResponse,
-    recoverStatusSteers,
     terminalRecoveryRequest,
   ]);
 

@@ -6,6 +6,7 @@ import {
   getRunRecoveryTarget,
   getStatusRunOutcome,
   getUnreconciledAssistantTail,
+  mergePersistedRunIntoMessages,
   preserveMessagesAfterRecoveryTarget,
   recoveryOwnsCurrentRoute,
   submissionBelongsToConversation,
@@ -185,6 +186,43 @@ describe('terminal recovery policy', () => {
         },
       ),
     ).toEqual([buildUserMessage(), recoveredResponse, laterUserMessage]);
+  });
+
+  it('merges only the targeted persisted run and preserves unrelated local turns', () => {
+    const firstUser = buildUserMessage();
+    const firstResponse = buildAssistantMessage({
+      messageId: 'response-1_',
+      createdAt: undefined,
+      updatedAt: undefined,
+    });
+    const secondUser = {
+      ...buildUserMessage(),
+      messageId: 'user-2',
+      parentMessageId: firstResponse.messageId,
+      text: 'Second run',
+    };
+    const secondResponse = buildAssistantMessage({
+      messageId: 'response-2_',
+      parentMessageId: secondUser.messageId,
+      createdAt: undefined,
+      updatedAt: undefined,
+    });
+    const persistedSecondResponse = buildAssistantMessage({
+      messageId: 'response-2',
+      parentMessageId: secondUser.messageId,
+      text: 'Second result',
+    });
+
+    expect(
+      mergePersistedRunIntoMessages(
+        [firstUser, firstResponse, secondUser, secondResponse],
+        [firstUser, firstResponse, secondUser, persistedSecondResponse],
+        {
+          userMessageId: secondUser.messageId,
+          responseMessageId: secondResponse.messageId,
+        },
+      ),
+    ).toEqual([firstUser, firstResponse, secondUser, persistedSecondResponse]);
   });
 
   it('matches a persisted response when the provisional id loses its suffix', () => {
