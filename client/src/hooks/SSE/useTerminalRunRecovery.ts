@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSetRecoilState } from 'recoil';
-import { Constants, QueryKeys } from 'librechat-data-provider';
+import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
 import type { TMessage, Agents } from 'librechat-data-provider';
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
 import type { RunEnd } from '~/store/families';
@@ -41,7 +41,7 @@ type RestoreSteerChips = (
 
 type UseTerminalRunRecoveryParams = {
   conversationId: string | undefined;
-  getMessages: () => TMessage[] | undefined;
+  getMessages: (conversationId?: string | null) => TMessage[] | undefined;
   restoreSteerChips: RestoreSteerChips;
   runIndex: number;
   enabled: boolean;
@@ -240,9 +240,9 @@ export default function useTerminalRunRecovery({
       return { messages: undefined, succeeded: false, notFound: false };
     }
 
-    const unreconciledResponse = getUnreconciledAssistantTail(getMessages());
+    const unreconciledResponse = getUnreconciledAssistantTail(getMessages(conversationId));
     if (!unreconciledResponse) {
-      return { messages: getMessages(), succeeded: true, notFound: false };
+      return { messages: getMessages(conversationId), succeeded: true, notFound: false };
     }
 
     const responseKey = [
@@ -252,7 +252,7 @@ export default function useTerminalRunRecovery({
       unreconciledResponse.content?.length ?? 0,
     ].join(':');
     if (refreshedResponseRef.current === responseKey) {
-      return { messages: getMessages(), succeeded: false, notFound: false };
+      return { messages: getMessages(conversationId), succeeded: false, notFound: false };
     }
 
     terminalRefreshAbortRef.current?.abort();
@@ -272,7 +272,7 @@ export default function useTerminalRunRecovery({
         terminalRefreshAbortRef.current = null;
       }
       return {
-        messages: getMessages(),
+        messages: getMessages(conversationId),
         succeeded: false,
         notFound,
       };
@@ -282,19 +282,30 @@ export default function useTerminalRunRecovery({
       if (terminalRefreshAbortRef.current === refreshController) {
         terminalRefreshAbortRef.current = null;
       }
-      return { messages: getMessages(), succeeded: true, notFound: false };
+      return { messages: getMessages(conversationId), succeeded: true, notFound: false };
     };
 
     for (let attempt = 0; ; attempt++) {
       try {
-        await queryClient.invalidateQueries(
-          { queryKey: [QueryKeys.messages, conversationId] },
-          { throwOnError: true },
-        );
+        const messagesQueryKey = [QueryKeys.messages, conversationId];
+        const messagesQuery = queryClient.getQueryCache().find(messagesQueryKey);
+        if (messagesQuery?.isActive() === true) {
+          await queryClient.invalidateQueries(
+            { queryKey: messagesQueryKey },
+            { throwOnError: true },
+          );
+        } else {
+          // React Router can still observe `/c/new` while this resolved cache is
+          // inactive, so invalidation alone would not issue a request.
+          const persistedMessages = await dataService.getMessagesByConvoId(conversationId);
+          if (!refreshController.signal.aborted) {
+            queryClient.setQueryData<TMessage[]>(messagesQueryKey, persistedMessages);
+          }
+        }
         if (refreshController.signal.aborted) {
           return finishFailedRefresh(false);
         }
-        if (getUnreconciledAssistantTail(getMessages()) == null) {
+        if (getUnreconciledAssistantTail(getMessages(conversationId)) == null) {
           return finishSuccessfulRefresh();
         }
       } catch (error) {
@@ -316,7 +327,7 @@ export default function useTerminalRunRecovery({
         return finishFailedRefresh(false);
       }
 
-      if (getUnreconciledAssistantTail(getMessages()) == null) {
+      if (getUnreconciledAssistantTail(getMessages(conversationId)) == null) {
         return finishSuccessfulRefresh();
       }
     }
@@ -406,6 +417,12 @@ export default function useTerminalRunRecovery({
         endedAt: Date.now(),
       });
       clearDisconnectedRunRecovery(queryClient, conversationId);
+      if (
+        disconnectedRun?.startedAsNewConvo === true &&
+        activePathnameRef.current === `/c/${Constants.NEW_CONVO}`
+      ) {
+        navigate(`/c/${conversationId}`, { replace: true });
+      }
     },
     [conversationId, navigate, queryClient, setRunEnd],
   );
@@ -418,7 +435,7 @@ export default function useTerminalRunRecovery({
 
       const recoveredSteers = recoveredSteersOverride ?? recoverStatusSteers(status);
       const disconnectedRun = getDisconnectedRunRecovery(queryClient, conversationId);
-      const recoveryTarget = getRunRecoveryTarget(disconnectedRun, getMessages());
+      const recoveryTarget = getRunRecoveryTarget(disconnectedRun, getMessages(conversationId));
       const shouldSignalRunEnd =
         recoveryTarget != null ||
         disconnectedRun?.terminalOutcome != null ||
@@ -519,7 +536,7 @@ export default function useTerminalRunRecovery({
     }
 
     const hasRecoveryState =
-      getUnreconciledAssistantTail(getMessages()) != null ||
+      getUnreconciledAssistantTail(getMessages(conversationId)) != null ||
       getDisconnectedRunRecovery(queryClient, conversationId) != null;
     if (!hasRecoveryState) {
       return;

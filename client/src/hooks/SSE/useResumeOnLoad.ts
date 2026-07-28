@@ -193,12 +193,14 @@ function buildSubmissionFromResumeState(
  * 3. useResumableSSE picks up the submission and subscribes to the stream
  *
  * @param messagesLoaded - Whether the messages query has finished loading (prevents race condition)
+ * @param resolvedConversationId - Live stream ID for a first turn whose route still resolves to `new`
  */
 export default function useResumeOnLoad(
   conversationId: string | undefined,
-  getMessages: () => TMessage[] | undefined,
+  getMessages: (conversationId?: string | null) => TMessage[] | undefined,
   runIndex = 0,
   messagesLoaded = true,
+  resolvedConversationId?: string | null,
 ) {
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
   const currentSubmission = useRecoilValue(store.submissionByIndex(runIndex));
@@ -207,6 +209,17 @@ export default function useResumeOnLoad(
   const endpointType = currentConversation?.endpointType;
   const actualEndpoint = endpointType ?? endpoint;
   const resumableEnabled = !isAssistantsEndpoint(actualEndpoint);
+  const currentConversationId = currentConversation?.conversationId;
+  const hasResolvedCurrentConversation =
+    !!currentConversationId &&
+    currentConversationId !== Constants.NEW_CONVO &&
+    currentConversationId !== Constants.PENDING_CONVO;
+  // Native history replacement does not update useParams until final navigation.
+  const recoveryConversationId =
+    conversationId === Constants.NEW_CONVO
+      ? (resolvedConversationId ??
+        (hasResolvedCurrentConversation ? currentConversationId : conversationId))
+      : conversationId;
   // Track conversations we've already processed (either resumed or skipped)
   const processedConvoRef = useRef<string | null>(null);
   const restoreResumeBranch = useRecoilCallback(
@@ -253,7 +266,7 @@ export default function useResumeOnLoad(
   );
 
   const { recoverInactiveResponse } = useTerminalRunRecovery({
-    conversationId,
+    conversationId: recoveryConversationId,
     getMessages,
     restoreSteerChips,
     runIndex,

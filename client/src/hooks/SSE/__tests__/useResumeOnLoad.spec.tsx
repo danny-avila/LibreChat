@@ -1,6 +1,6 @@
 import { RecoilRoot, useRecoilValue } from 'recoil';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { Constants, ContentTypes, QueryKeys } from 'librechat-data-provider';
+import { Constants, ContentTypes, QueryKeys, dataService } from 'librechat-data-provider';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import type { TMessage, TConversation, TSubmission } from 'librechat-data-provider';
@@ -19,12 +19,27 @@ const mockUseStreamStatus = jest.fn();
 const mockUseActiveJobs = jest.fn();
 const mockFetchStreamStatus = jest.fn();
 
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    dataService: {
+      ...actual.dataService,
+      getMessagesByConvoId: jest.fn(),
+    },
+  };
+});
+
 jest.mock('~/data-provider', () => ({
   useStreamStatus: (conversationId: string | undefined, enabled: boolean) =>
     mockUseStreamStatus(conversationId, enabled),
   useActiveJobs: (enabled: boolean) => mockUseActiveJobs(enabled),
   fetchStreamStatus: (conversationId: string) => mockFetchStreamStatus(conversationId),
 }));
+
+const mockGetMessagesByConvoId = dataService.getMessagesByConvoId as jest.MockedFunction<
+  typeof dataService.getMessagesByConvoId
+>;
 
 const CONVERSATION_ID = 'conv-current';
 const STALE_CONVERSATION_ID = 'conv-stale';
@@ -75,6 +90,7 @@ function renderUseResumeOnLoad({
   getMessages: getMessagesOverride,
   submission = null,
   conversationId = CONVERSATION_ID,
+  resolvedConversationId,
   messagesLoaded = true,
   onSubmission,
   siblingIndexParentId,
@@ -88,9 +104,10 @@ function renderUseResumeOnLoad({
   messageQueryFn,
 }: {
   messages?: TMessage[];
-  getMessages?: () => TMessage[] | undefined;
+  getMessages?: (conversationId?: string | null) => TMessage[] | undefined;
   submission?: TSubmission | null;
   conversationId?: string;
+  resolvedConversationId?: string | null;
   messagesLoaded?: boolean;
   onSubmission?: (submission: TSubmission | null) => void;
   siblingIndexParentId?: string;
@@ -179,9 +196,10 @@ function renderUseResumeOnLoad({
   return {
     getMessages,
     queryClient,
-    ...renderHook(() => useResumeOnLoad(conversationId, getMessages, 0, messagesLoaded), {
-      wrapper,
-    }),
+    ...renderHook(
+      () => useResumeOnLoad(conversationId, getMessages, 0, messagesLoaded, resolvedConversationId),
+      { wrapper },
+    ),
   };
 }
 
@@ -214,6 +232,8 @@ describe('useResumeOnLoad', () => {
     });
     mockFetchStreamStatus.mockReset();
     mockFetchStreamStatus.mockResolvedValue({ active: false });
+    mockGetMessagesByConvoId.mockReset();
+    mockGetMessagesByConvoId.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -554,6 +574,80 @@ describe('useResumeOnLoad', () => {
       jest.advanceTimersByTime(10 * 60 * 1000);
 
       expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toEqual(recovery);
+    });
+
+    it('recovers a first turn by its resolved id while React Router still points to new', async () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const observedRunEnds: Array<RunEnd | null> = [];
+      const observedPathnames: string[] = [];
+      const unfinishedMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({
+          conversationId: CONVERSATION_ID,
+          createdAt: undefined,
+          updatedAt: undefined,
+          unfinished: true,
+        }),
+      ];
+      const finalMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({
+          conversationId: CONVERSATION_ID,
+          messageId: 'response-message-final',
+          text: 'Recovered first-turn response',
+          unfinished: false,
+        }),
+      ];
+      queryClient.setQueryData([QueryKeys.messages, Constants.NEW_CONVO], unfinishedMessages);
+      queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
+      setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+        startedAsNewConvo: true,
+        created: true,
+        userMessageId: USER_MESSAGE_ID,
+        responseMessageId: RESPONSE_MESSAGE_ID,
+      });
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+      });
+      mockFetchStreamStatus.mockResolvedValue({
+        active: false,
+        status: 'complete',
+      });
+      mockGetMessagesByConvoId.mockResolvedValue(finalMessages);
+
+      const { rerender } = renderUseResumeOnLoad({
+        conversationId: String(Constants.NEW_CONVO),
+        resolvedConversationId: CONVERSATION_ID,
+        submission: buildSubmission(undefined),
+        getMessages: (targetConversationId) =>
+          queryClient.getQueryData<TMessage[]>([
+            QueryKeys.messages,
+            targetConversationId ?? Constants.NEW_CONVO,
+          ]),
+        onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+        onPathname: (pathname) => observedPathnames.push(pathname),
+        queryClient,
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [] },
+      });
+      rerender();
+
+      await waitFor(() => {
+        expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+          conversationId: CONVERSATION_ID,
+          outcome: 'completed',
+          startedAsNewConvo: true,
+        });
+      });
+      expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledWith(CONVERSATION_ID);
+      expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
+        finalMessages,
+      );
+      expect(observedPathnames[observedPathnames.length - 1]).toBe(`/c/${CONVERSATION_ID}`);
+      expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
     });
 
     it('loads the persisted final response when an inactive job left an unfinished cache tail', async () => {
