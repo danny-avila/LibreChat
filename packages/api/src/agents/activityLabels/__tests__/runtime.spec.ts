@@ -139,6 +139,42 @@ describe('buildPrompt', () => {
     expect(line).toContain('x'.repeat(100));
   });
 
+  /** `activityCharLimit` is documented as the per-entry limit for tool input
+   *  AND output — a hard-coded input cap would make the setting unable to
+   *  reach a distinguishing path or query past the first 200 characters. */
+  it('applies the configured charLimit to tool inputs, not a hard-coded cap', () => {
+    const longQuery = 'q'.repeat(400);
+    const prompt = buildPrompt(
+      [
+        {
+          toolName: 'search',
+          toolInput: { query: longQuery },
+          toolUseId: 'a',
+          status: 'success',
+          toolOutput: 'ok',
+        },
+      ],
+      450,
+    );
+    /** 400-char argument survives intact under a 450 limit (the old 200-char
+     *  cap would have cut it), while a tighter limit still truncates. */
+    expect(prompt).toContain(longQuery);
+    const tight = buildPrompt(
+      [
+        {
+          toolName: 'search',
+          toolInput: { query: longQuery },
+          toolUseId: 'a',
+          status: 'success',
+          toolOutput: 'ok',
+        },
+      ],
+      50,
+    );
+    expect(tight).not.toContain('q'.repeat(60));
+    expect(tight).toContain('…');
+  });
+
   it('serializes small structured values exactly like JSON.stringify', () => {
     const toolInput = { q: 'docs', filters: { lang: 'en', page: 2 }, ids: [1, 2] };
     const prompt = buildPrompt(

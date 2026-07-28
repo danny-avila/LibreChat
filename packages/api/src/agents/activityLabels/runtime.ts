@@ -167,7 +167,11 @@ export interface ActivityLabelHookOptions {
 
 const DEFAULT_MAX_PER_RUN = 20;
 const DEFAULT_CHAR_LIMIT = 600;
-const INPUT_CHAR_LIMIT = 200;
+/** Intent-line truncation only. Tool inputs and outputs both truncate at the
+ *  configured `activityCharLimit` — the schema documents it as the per-entry
+ *  limit for BOTH, so a hard-coded input cap would make the setting unable to
+ *  reach a distinguishing path or query past the first 200 characters. */
+const INTENT_CHAR_LIMIT = 200;
 const SUMMARY_TIMEOUT_MS = 12_000;
 /** Hard bound on the PERSISTED label. The instruction asks for 4–9 words, but
  *  a model that ignores it — or is steered by injection through untrusted
@@ -331,7 +335,7 @@ export function buildPrompt(
   const sections: string[] = [instruction ?? ACTIVITY_INSTRUCTION];
   if (context?.lastAssistantText) {
     sections.push(
-      `Intent (assistant's last message): ${truncate(context.lastAssistantText, INPUT_CHAR_LIMIT)}`,
+      `Intent (assistant's last message): ${truncate(context.lastAssistantText, INTENT_CHAR_LIMIT)}`,
     );
   }
   if (context?.thinkingExcerpts?.length) {
@@ -344,7 +348,7 @@ export function buildPrompt(
     );
   }
   const lines = entries.map((entry) => {
-    const input = truncate(stringifyUnknown(entry.toolInput, INPUT_CHAR_LIMIT), INPUT_CHAR_LIMIT);
+    const input = truncate(stringifyUnknown(entry.toolInput, charLimit), charLimit);
     const outcome =
       entry.status === 'error'
         ? `ERROR: ${truncate(entry.error ?? 'unknown error', charLimit)}`
