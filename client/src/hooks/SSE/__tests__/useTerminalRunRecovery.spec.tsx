@@ -194,6 +194,51 @@ describe('useTerminalRunRecovery', () => {
     expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
   });
 
+  it('re-arms marker-free recovery after a terminal status request fails', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const finalMessages = [
+      buildUserMessage(),
+      buildAssistantMessage({
+        messageId: 'terminal-response',
+        text: 'Recovered after reconnect',
+        createdAt: '2026-07-28T08:00:00.000Z',
+        updatedAt: '2026-07-28T08:00:00.000Z',
+      }),
+    ];
+    queryClient.setQueryData(
+      [QueryKeys.messages, CONVERSATION_ID],
+      [buildUserMessage(), buildAssistantMessage()],
+    );
+    mockFetchStreamStatus
+      .mockRejectedValueOnce({ status: 400 })
+      .mockResolvedValue({ active: false, status: 'complete' });
+    mockGetMessagesByConvoId.mockResolvedValue(finalMessages);
+
+    const { rerender } = renderTerminalRecovery({ queryClient });
+    active = false;
+    rerender();
+
+    await waitFor(() => {
+      expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toMatchObject({
+        startedAsNewConvo: false,
+        created: true,
+        userMessageId: USER_MESSAGE_ID,
+        responseMessageId: RESPONSE_MESSAGE_ID,
+      });
+    });
+    expect(mockFetchStreamStatus).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+
+    await waitFor(() => {
+      expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
+    });
+    expect(mockFetchStreamStatus).toHaveBeenCalledTimes(2);
+    expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(finalMessages);
+  });
+
   it('retries terminal recovery when a failed follow-up start requests it', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const finalMessages = [
@@ -402,6 +447,49 @@ describe('useTerminalRunRecovery', () => {
     expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
   });
 
+  it('publishes an authoritative terminal error before a hanging history refresh settles', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const observedRunEnds: Array<RunEnd | null> = [];
+    const historyRequest = deferred<TMessage[]>();
+    queryClient.setQueryData(
+      [QueryKeys.messages, CONVERSATION_ID],
+      [
+        buildUserMessage(),
+        buildAssistantMessage({
+          text: 'The request failed',
+          createdAt: undefined,
+          updatedAt: undefined,
+          error: true,
+        }),
+      ],
+    );
+    setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+      startedAsNewConvo: false,
+      created: true,
+      userMessageId: USER_MESSAGE_ID,
+      responseMessageId: RESPONSE_MESSAGE_ID,
+    });
+    mockFetchStreamStatus.mockResolvedValue({ active: false, status: 'error' });
+    mockGetMessagesByConvoId.mockReturnValue(historyRequest.promise);
+
+    const { rerender, unmount } = renderTerminalRecovery({
+      queryClient,
+      onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+    });
+    active = false;
+    rerender();
+
+    await waitFor(() => {
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(1);
+      expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+        conversationId: CONVERSATION_ID,
+        outcome: 'error',
+      });
+    });
+    expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeDefined();
+    unmount();
+  });
+
   it('uses a missing persisted response to infer failure without erasing the local error', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const observedRunEnds: Array<RunEnd | null> = [];
@@ -509,7 +597,7 @@ describe('useTerminalRunRecovery', () => {
     ]);
   });
 
-  it('waits for current-run recovery before reconciling historical pending runs', async () => {
+  it('waits for marker-free current recovery before reconciling historical pending runs', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const firstRequest = deferred<TMessage[]>();
     const historicalUser = {
@@ -559,12 +647,6 @@ describe('useTerminalRunRecovery', () => {
       },
       1,
     );
-    setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
-      startedAsNewConvo: false,
-      created: true,
-      userMessageId: currentUser.messageId,
-      responseMessageId: currentResponse.messageId,
-    });
     mockFetchStreamStatus.mockResolvedValue({ active: false, status: 'complete' });
     mockGetMessagesByConvoId
       .mockReturnValueOnce(firstRequest.promise)
