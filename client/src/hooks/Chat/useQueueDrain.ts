@@ -9,6 +9,10 @@ import store from '~/store';
 /** Mirrors the server's per-request cap on a usage touch. */
 const QUEUE_USAGE_MAX_FILES = 10;
 
+/** Well under the server's smallest hold (24h), so no gap between renewals
+ *  can outlive one, however long a run pauses. */
+const QUEUE_USAGE_RENEW_INTERVAL_MS = 30 * 60 * 1000;
+
 const collectQueuedFileIds = (items: QueuedMessage[]): string[] => {
   const fileIds: string[] = [];
   for (const item of items) {
@@ -16,12 +20,20 @@ const collectQueuedFileIds = (items: QueuedMessage[]): string[] => {
       if (typeof file.file_id === 'string' && file.file_id.length > 0) {
         fileIds.push(file.file_id);
       }
-      if (fileIds.length === QUEUE_USAGE_MAX_FILES) {
-        return fileIds;
-      }
     }
   }
   return fileIds;
+};
+
+/** The server caps ids per request, so a queue holding more than one batch
+ *  has to renew in several. Truncating instead would leave everything after
+ *  the first batch on its enqueue-time hold. */
+const batchFileIds = (fileIds: string[]): string[][] => {
+  const batches: string[][] = [];
+  for (let i = 0; i < fileIds.length; i += QUEUE_USAGE_MAX_FILES) {
+    batches.push(fileIds.slice(i, i + QUEUE_USAGE_MAX_FILES));
+  }
+  return batches;
 };
 
 /**
@@ -50,6 +62,35 @@ export default function useQueueDrain(
   );
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const { mutate: markFilesUsage } = useMarkFilesUsageMutation();
+  const ownQueue = useRecoilValue(
+    store.queuedMessagesByConvoId(activeConversationId ?? Constants.NEW_CONVO),
+  );
+
+  /**
+   * Heartbeat renewal while anything is queued.
+   *
+   * Renewing only at drain transitions ties an attachment's survival to
+   * catching every state change, and a single run can stretch well past one
+   * hold: it may interrupt for approval more than once, and each pause can
+   * run to the configured window. Rather than hook every transition, renew on
+   * a cadence far shorter than the hold itself, so no single gap can outlive
+   * it. Bounded regardless: the server clamps each renewal against the file's
+   * upload time. A queue nobody has open stops emitting these and lapses
+   * normally.
+   */
+  useEffect(() => {
+    const fileIds = collectQueuedFileIds(ownQueue);
+    if (fileIds.length === 0) {
+      return;
+    }
+    const renew = () => {
+      for (const file_ids of batchFileIds(fileIds)) {
+        markFilesUsage({ file_ids });
+      }
+    };
+    const timer = setInterval(renew, QUEUE_USAGE_RENEW_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [ownQueue, markFilesUsage]);
 
   // Fully synchronous reads (getLoadable): a useRecoilCallback snapshot is
   // only guaranteed valid for the callback's synchronous execution, so no
@@ -165,15 +206,6 @@ export default function useQueueDrain(
       return;
     }
     const { next, conversationId, remainderFileIds } = drained;
-    /** Renew the TTL hold on what stays queued. Items behind this one wait
-     *  another full run (which may itself pause for approval), so a hold
-     *  taken once at enqueue would lapse before a deep queue drains. The
-     *  server caps each renewal against the upload time, so this cannot
-     *  extend a file indefinitely. Fire-and-forget: send-time marking is
-     *  the backstop. */
-    if (remainderFileIds.length > 0) {
-      markFilesUsage({ file_ids: remainderFileIds });
-    }
     // The queued item is the FULL submission context: explicit (possibly
     // empty) overrides stop `ask` from vacuuming up files, quotes, or skill
     // picks the user has staged in the composer for their NEXT message.
@@ -191,6 +223,21 @@ export default function useQueueDrain(
       // item so the user's text is never silently dropped — the chip stays
       // available for manual send.
       restoreQueued(conversationId, next);
+    }
+    /** Renew the TTL hold on everything still queued. Items behind this one
+     *  wait another full run (which may itself pause for approval), so a hold
+     *  taken once at enqueue would lapse before a deep queue drains. Runs
+     *  after `ask` so a refused send, whose item goes back on the queue with
+     *  its run-end signal already consumed, is renewed too rather than left
+     *  on its original hold. The server clamps every renewal against the
+     *  upload time, so this cannot extend a file indefinitely.
+     *  Fire-and-forget: send-time marking is the backstop. */
+    const toRenew =
+      accepted === false
+        ? [...collectQueuedFileIds([next]), ...remainderFileIds]
+        : remainderFileIds;
+    for (const file_ids of batchFileIds(toRenew)) {
+      markFilesUsage({ file_ids });
     }
   }, [
     runEnd,

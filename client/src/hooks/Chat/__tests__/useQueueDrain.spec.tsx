@@ -175,6 +175,94 @@ describe('useQueueDrain', () => {
     await waitFor(() => expect(mockMarkFilesUsage).not.toHaveBeenCalled());
   });
 
+  /** The server caps ids per request, so a queue holding more than one batch
+   *  must renew in several; truncating would leave later messages on their
+   *  enqueue-time hold. */
+  it('renews every queued attachment across multiple capped batches', async () => {
+    const manyFiles = (prefix: string, n: number) =>
+      Array.from({ length: n }, (_, i) => ({ file_id: `${prefix}-${i}`, type: 'image/png' }));
+    const { setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { ...queuedMessage('q1', 'first'), files: manyFiles('sent', 2) },
+        { ...queuedMessage('q2', 'second'), files: manyFiles('a', 10) },
+        { ...queuedMessage('q3', 'third'), files: manyFiles('b', 4) },
+      ]);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+
+    await waitFor(() => expect(mockMarkFilesUsage).toHaveBeenCalledTimes(2));
+    const sent = mockMarkFilesUsage.mock.calls.flatMap((call) => call[0].file_ids);
+    expect(sent).toHaveLength(14);
+    expect(sent).toContain('b-3');
+    expect(sent).not.toContain('sent-0');
+    for (const call of mockMarkFilesUsage.mock.calls) {
+      expect(call[0].file_ids.length).toBeLessThanOrEqual(10);
+    }
+  });
+
+  /** A refused send puts the item back with its run-end signal already
+   *  consumed, so nothing else would touch it before the next drain. */
+  it('renews a restored item when the send is refused', async () => {
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { ...queuedMessage('q1', 'refused'), files: [{ file_id: 'restored', type: 'image/png' }] },
+      ]);
+    });
+    ask.mockReturnValue(false);
+
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+
+    await waitFor(() => expect(mockMarkFilesUsage).toHaveBeenCalledTimes(1));
+    expect(mockMarkFilesUsage).toHaveBeenCalledWith({ file_ids: ['restored'] });
+  });
+
+  /** A single run can pause for approval more than once, so renewal cannot
+   *  depend on catching drain transitions alone. */
+  it('renews on a heartbeat while items stay queued', async () => {
+    jest.useFakeTimers();
+    try {
+      setup(({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [
+          { ...queuedMessage('q1', 'waiting'), files: [{ file_id: 'held', type: 'image/png' }] },
+        ]);
+      });
+
+      expect(mockMarkFilesUsage).not.toHaveBeenCalled();
+      act(() => {
+        jest.advanceTimersByTime(30 * 60 * 1000);
+      });
+      expect(mockMarkFilesUsage).toHaveBeenCalledWith({ file_ids: ['held'] });
+
+      act(() => {
+        jest.advanceTimersByTime(30 * 60 * 1000);
+      });
+      expect(mockMarkFilesUsage).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('emits no heartbeat when the queue holds no attachments', async () => {
+    jest.useFakeTimers();
+    try {
+      setup(({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q1', 'no files')]);
+      });
+
+      act(() => {
+        jest.advanceTimersByTime(2 * 60 * 60 * 1000);
+      });
+      expect(mockMarkFilesUsage).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('passes carried quotes + manual skills through as overrides', async () => {
     const { ask, setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [
