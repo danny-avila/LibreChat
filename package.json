@@ -188,6 +188,7 @@
       "dompurify": "3.4.12"
     },
     "svgo": "^2.8.2",
+    "test-exclude": "^8.0.0",
     "js-yaml": "^4.2.0",
     "ws": "^8.21.0",
     "@opentelemetry/core": "^2.9.0",

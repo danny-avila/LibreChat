@@ -119,7 +119,6 @@
     "rimraf": "^6.1.3",
     "rollup": "^4.34.9",
     "rollup-plugin-peer-deps-external": "^2.2.4",
-    "rollup-plugin-postcss": "^4.0.2",
     "rollup-plugin-typescript2": "^0.37.0",
     "tailwindcss-radix": "^2.8.0",
     "tsdown": "^0.22.2",
