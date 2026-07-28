@@ -204,12 +204,14 @@ test.describe('reasoning stream perf (react-scan)', () => {
     await page.goto(NEW_CHAT_PATH, { timeout: 180_000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
 
-    await sendMessage(page, 'Stream the long reasoning benchmark reply.');
-    /** The tally reset stamps the start time on the page's own clock; the
-     *  matching end time is read inside the snapshot evaluation, so wall time
-     *  covers exactly the tallied interval — request setup excluded, work
-     *  between marker paint and snapshot included. */
+    /** Reset BEFORE the send: with a 1ms chunk delay the earliest deltas can
+     *  render between the response headers resolving and any later
+     *  evaluation, and a post-send reset would erase them. The composer's own
+     *  submit renders are a negligible constant. The reset stamps the start
+     *  time on the page's own clock; the matching end time is read inside the
+     *  snapshot evaluation, so wall time covers exactly the tallied interval. */
     await resetPerf(page);
+    await sendMessage(page, 'Stream the long reasoning benchmark reply.');
 
     await expect(messagesView(page).getByText(END_MARKER)).toBeVisible({
       timeout: 4 * 60 * 1000,
@@ -277,10 +279,13 @@ test.describe('reasoning stream perf (react-scan)', () => {
         messagesView(page).getByRole('cell', { name: cellValue, exact: true }),
       ).toHaveCount(tableCount);
     }
-    await expect(messagesView(page).getByText('export function estimate').first()).toBeVisible();
-    await expect(
-      messagesView(page).getByText('return Math.round(total * rate);').first(),
-    ).toBeVisible();
+    const codeBlockCount = Math.floor(sectionCount / 3);
+    expect(codeBlockCount).toBeGreaterThan(0);
+    for (const codeLine of ['export function estimate', 'return Math.round(total * rate);']) {
+      await expect(messagesView(page).locator('code', { hasText: codeLine })).toHaveCount(
+        codeBlockCount,
+      );
+    }
 
     await resetPerf(page);
     const input = page.getByRole('textbox', { name: 'Message input' });
