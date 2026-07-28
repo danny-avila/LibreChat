@@ -169,6 +169,28 @@ const DEFAULT_MAX_PER_RUN = 20;
 const DEFAULT_CHAR_LIMIT = 600;
 const INPUT_CHAR_LIMIT = 200;
 const SUMMARY_TIMEOUT_MS = 12_000;
+/** Hard bound on the PERSISTED label. The instruction asks for 4–9 words, but
+ *  a model that ignores it — or is steered by injection through untrusted
+ *  tool output — could otherwise turn one header into thousands of tokens
+ *  duplicated through SSE, the durable chunk log, persistence, and the UI. */
+const LABEL_OUTPUT_CHAR_LIMIT = 200;
+
+/**
+ * Normalizes raw model output into a header: the first non-empty line,
+ * whitespace collapsed, hard-capped at {@link LABEL_OUTPUT_CHAR_LIMIT}. A
+ * header renders as one line, so everything past the first line break is
+ * noise at best and injected payload at worst.
+ */
+export function normalizeLabelOutput(text: string | null | undefined): string {
+  if (text == null) {
+    return '';
+  }
+  const firstLine = text.split(/\r?\n/).find((line) => line.trim().length > 0) ?? '';
+  const collapsed = firstLine.replace(/\s+/g, ' ').trim();
+  return collapsed.length > LABEL_OUTPUT_CHAR_LIMIT
+    ? `${collapsed.slice(0, LABEL_OUTPUT_CHAR_LIMIT - 1)}…`
+    : collapsed;
+}
 
 function truncate(value: string, limit: number): string {
   return value.length > limit ? `${value.slice(0, limit)}…` : value;
@@ -375,7 +397,16 @@ export function createActivityLabelHook(
   let llmPromise: Promise<ActivityLabelLLM> | null = null;
 
   const getLLM = (): Promise<ActivityLabelLLM> => {
-    llmPromise = llmPromise ?? opts.resolveLLM();
+    llmPromise =
+      llmPromise ??
+      opts.resolveLLM().catch((error) => {
+        /** Never cache a rejection: memoizing it would fail every later
+         *  batch in the run instantly — and silently defeat the host
+         *  resolver's own rejected-cache eviction, which exists precisely so
+         *  a transient credential read failure stays transient. */
+        llmPromise = null;
+        throw error;
+      });
     return llmPromise;
   };
 
@@ -468,10 +499,11 @@ export function createActivityLabelHook(
         } else {
           text = await generateDirect();
         }
-        /** Trim centrally: a whitespace-only label from either path must
-         *  fill null so the UI keeps the deterministic counts fallback. */
-        const trimmed = text?.trim() ?? '';
-        const committed = (await slot.fill(trimmed.length > 0 ? trimmed : null)) === true;
+        /** Normalize centrally — BOTH paths: single line, bounded length,
+         *  whitespace-only becomes null so the UI keeps the deterministic
+         *  counts fallback. */
+        const normalized = normalizeLabelOutput(text);
+        const committed = (await slot.fill(normalized.length > 0 ? normalized : null)) === true;
         await collectDeferredUsage(committed);
       } catch (error) {
         logger.warn(

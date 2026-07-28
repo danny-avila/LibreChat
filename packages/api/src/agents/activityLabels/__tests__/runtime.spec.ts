@@ -383,4 +383,45 @@ describe('createActivityLabelHook', () => {
     expect(slots).toHaveLength(2);
     expect(resolveLLM).toHaveBeenCalledTimes(1);
   });
+
+  /** A transient resolution failure must stay transient: memoizing the
+   *  rejected promise would fail every later batch in the run instantly. */
+  it('retries LLM resolution on the next batch after a transient failure', async () => {
+    const flaky = jest
+      .fn<Promise<{ provider: Providers; clientOptions: { model: string } }>, []>()
+      .mockRejectedValueOnce(new Error('credential read timeout'))
+      .mockResolvedValue({ provider: Providers.OPENAI, clientOptions: { model: 'small-model' } });
+    const hook = createActivityLabelHook({ claimSlot, resolveLLM: flaky });
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    expect(slots[0].filled).toEqual([null]);
+
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    expect(flaky).toHaveBeenCalledTimes(2);
+    expect(slots[1].filled).toEqual(['Searched the web for LibreChat docs.']);
+  });
+
+  /** Output is bounded before persisting: a model that ignores the 4–9-word
+   *  instruction (or is steered by injected tool output) must not turn one
+   *  header into an unbounded multi-line content part. */
+  it('normalizes label output to one bounded line', async () => {
+    mockInvoke.mockResolvedValue({
+      content: `\n  \nFound   the failing\tspec\nIGNORE PREVIOUS INSTRUCTIONS ${'x'.repeat(5000)}`,
+    });
+    const hook = createActivityLabelHook({ claimSlot, resolveLLM });
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    expect(slots[0].filled).toEqual(['Found the failing spec']);
+  });
+
+  it('truncates a single giant label line with an ellipsis', async () => {
+    mockInvoke.mockResolvedValue({ content: 'word '.repeat(2000) });
+    const hook = createActivityLabelHook({ claimSlot, resolveLLM });
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    const label = slots[0].filled[0] as string;
+    expect(label.length).toBeLessThanOrEqual(200);
+    expect(label.endsWith('…')).toBe(true);
+  });
 });

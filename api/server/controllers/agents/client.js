@@ -399,6 +399,10 @@ class AgentClient extends BaseClient {
      *  scope that closed while this was in flight still suppresses the write.
      *  Defaults open for callers that own no scope. */
     scopeOpen = () => true,
+    /** The LABEL endpoint's provider — cost math needs it to know whether
+     *  cache tokens are folded into `input_tokens` (additive providers like
+     *  Bedrock keep them separate). */
+    provider = undefined,
   ) {
     const appConfig = this.options.req?.config;
     const collectedUsage = mapCollectedMetadataToUsage(collectedMetadata);
@@ -432,6 +436,12 @@ class AgentClient extends BaseClient {
       const data = {
         input_tokens: usage.input_tokens,
         output_tokens: usage.output_tokens,
+        /** Cache tokens ride along (subagent-event shape) so display and
+         *  aggregation price cached label calls at cache rates. */
+        ...(usage.input_token_details != null && {
+          input_token_details: usage.input_token_details,
+        }),
+        ...(provider != null && { provider }),
         model,
         usage_type: 'activity-label',
         /**
@@ -454,7 +464,7 @@ class AgentClient extends BaseClient {
          *  `interface.contextCost` is on. */
         cost: includeCost
           ? computeUsageCostUSD(
-              { ...usage, model },
+              { ...usage, model, provider },
               { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
               labelTokenConfig,
             )
@@ -560,6 +570,7 @@ class AgentClient extends BaseClient {
         endpointTokenConfig,
         sameEndpoint,
         scopeStillOpen,
+        provider,
       );
     };
     /**
@@ -775,7 +786,7 @@ class AgentClient extends BaseClient {
         return {
           callbacks: [{ handleLLMEnd }],
           collect: async () => {
-            const { clientOptions, endpointTokenConfig, sameEndpoint } =
+            const { provider, clientOptions, endpointTokenConfig, sameEndpoint } =
               await this.resolveActivityLabelLLM();
             await this.recordActivityLabelUsage(
               collected,
@@ -786,6 +797,7 @@ class AgentClient extends BaseClient {
                *  fallback label whose fill was dropped as out-of-scope
                *  still billed and emitted after finalization. */
               () => labelScope.closed !== true,
+              provider,
             );
           },
         };

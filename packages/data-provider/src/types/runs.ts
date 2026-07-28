@@ -205,8 +205,9 @@ export type TTokenUsageEvent = {
   provider?: string;
   /** Non-primary buckets fold into session cost/totals but not the live
    *  context gauge: hidden sequential-agent calls (`sequential`), summary
-   *  passes (`summarization`), and isolated subagent runs (`subagent`) */
-  usage_type?: 'summarization' | 'subagent' | 'sequential';
+   *  passes (`summarization`), isolated subagent runs (`subagent`), and
+   *  fast-model activity headers (`activity-label`) */
+  usage_type?: 'summarization' | 'subagent' | 'sequential' | 'activity-label';
   runId?: string;
   /** Per-run emission sequence; keeps identical payloads from distinct model calls unique */
   seq?: number;

@@ -10,6 +10,12 @@ import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { createSafeUser } from '~/utils/env';
 
+/** Cache-token details in the LangChain-standard normalized shape. */
+interface CacheTokenDetails {
+  cache_read?: number;
+  cache_creation?: number;
+}
+
 /** Aggregated LLM metadata entries (shape varies by provider SDK). */
 export interface CollectedMetadataEntry {
   usage?: {
@@ -19,19 +25,35 @@ export interface CollectedMetadataEntry {
     completion_tokens?: number;
     output_tokens?: number;
     outputTokens?: number;
+    /** Anthropic raw usage. */
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+    /** OpenAI raw usage. */
+    prompt_tokens_details?: { cached_tokens?: number };
   };
   tokenUsage?: { promptTokens?: number; completionTokens?: number };
-  usage_metadata?: { input_tokens?: number; output_tokens?: number };
+  usage_metadata?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    input_token_details?: CacheTokenDetails;
+  };
 }
 
 export interface ActivityLabelUsage {
   input_tokens?: number;
   output_tokens?: number;
+  /** Normalized cache tokens — `computeUsageCostUSD` and the transaction
+   *  path read this shape first, so carrying it prices cached label calls
+   *  at cache rates instead of the ordinary input rate (or not at all). */
+  input_token_details?: CacheTokenDetails;
 }
 
 /**
  * Normalizes provider-specific aggregated metadata into the usage shape
- * `recordCollectedUsage` expects. Mirrors the title path's inline mapping.
+ * `recordCollectedUsage` expects, cache-token details included — dropping
+ * them made Anthropic cache tokens vanish from billing and charged OpenAI
+ * cache reads at the full input rate. Mirrors the title path's inline
+ * mapping otherwise.
  */
 export function mapCollectedMetadataToUsage(
   collected: CollectedMetadataEntry[],
@@ -39,18 +61,31 @@ export function mapCollectedMetadataToUsage(
   return collected.map((item) => {
     let input_tokens: number | undefined;
     let output_tokens: number | undefined;
+    let cache_read: number | undefined;
+    let cache_creation: number | undefined;
     if (item.usage) {
       input_tokens = item.usage.prompt_tokens ?? item.usage.input_tokens ?? item.usage.inputTokens;
       output_tokens =
         item.usage.completion_tokens ?? item.usage.output_tokens ?? item.usage.outputTokens;
+      cache_read =
+        item.usage.cache_read_input_tokens ?? item.usage.prompt_tokens_details?.cached_tokens;
+      cache_creation = item.usage.cache_creation_input_tokens;
     } else if (item.tokenUsage) {
       input_tokens = item.tokenUsage.promptTokens;
       output_tokens = item.tokenUsage.completionTokens;
     } else if (item.usage_metadata) {
       input_tokens = item.usage_metadata.input_tokens;
       output_tokens = item.usage_metadata.output_tokens;
+      cache_read = item.usage_metadata.input_token_details?.cache_read;
+      cache_creation = item.usage_metadata.input_token_details?.cache_creation;
     }
-    return { input_tokens, output_tokens };
+    return {
+      input_tokens,
+      output_tokens,
+      ...(cache_read != null || cache_creation != null
+        ? { input_token_details: { cache_read, cache_creation } }
+        : {}),
+    };
   });
 }
 
@@ -192,24 +227,29 @@ export async function resolveActivityLabelModel({
    *  the credential target silently change the model and its cost. The
    *  destination supplies credentials, never the model choice. */
   const titleModel = originatingTitleModel;
-  /** `current_model` means "the agent's model" for BOTH overrides. The
-   *  activity options are documented as title-shaped, so an `activityModel`
-   *  set to the sentinel must resolve the same way `titleModel` does — passing
-   *  the literal through would send `model: "current_model"` to the provider
-   *  and fail every label. */
-  const activityModel =
-    activity.model != null && activity.model !== Constants.CURRENT_MODEL
-      ? activity.model
-      : undefined;
   /** `model_parameters.model` FIRST: `initializeAgent` merges the request's
    *  `endpointOption` override into it and the run itself gives it precedence,
    *  so the saved `agent.model` can be a stale or entirely different model.
    *  Reading it first is what makes "current model" mean the model the
    *  conversation is actually running on. */
   const runModel = agent.model_parameters?.model ?? agent.model;
-  const model =
-    activityModel ??
-    (titleModel != null && titleModel !== Constants.CURRENT_MODEL ? titleModel : runModel);
+  /** `current_model` means "the agent's model" for BOTH overrides — passing
+   *  the literal through would send `model: "current_model"` to the provider
+   *  and fail every label. An EXPLICIT `activityModel: current_model` resolves
+   *  straight to the run model: the admin asked for it by name, so letting a
+   *  configured `titleModel` win instead would route labels to an unintended
+   *  model with different behavior and cost. The title fallback applies only
+   *  when `activityModel` is absent. */
+  let model: string | undefined;
+  if (activity.model === Constants.CURRENT_MODEL) {
+    model = runModel;
+  } else if (activity.model != null) {
+    model = activity.model;
+  } else if (titleModel != null && titleModel !== Constants.CURRENT_MODEL) {
+    model = titleModel;
+  } else {
+    model = runModel;
+  }
   const options = await providerConfig.getOptions({
     req,
     endpoint,
