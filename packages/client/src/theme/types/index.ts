@@ -9,6 +9,7 @@ export interface IThemeRGB {
   'rgb-text-secondary-alt'?: string;
   'rgb-text-tertiary'?: string;
   'rgb-text-warning'?: string;
+  'rgb-text-destructive'?: string;
 
   // Link and accent colors
   'rgb-link'?: string;
@@ -56,6 +57,24 @@ export interface IThemeRGB {
   'rgb-border-medium-alt'?: string;
   'rgb-border-heavy'?: string;
   'rgb-border-xheavy'?: string;
+  'rgb-border-destructive'?: string;
+
+  // Status colors
+  'rgb-status-success'?: string;
+  'rgb-status-success-subtle'?: string;
+  'rgb-status-success-border'?: string;
+  'rgb-status-info'?: string;
+  'rgb-status-info-subtle'?: string;
+  'rgb-status-info-border'?: string;
+  'rgb-status-warning'?: string;
+  'rgb-status-warning-subtle'?: string;
+  'rgb-status-warning-border'?: string;
+  'rgb-status-error'?: string;
+  'rgb-status-error-subtle'?: string;
+  'rgb-status-error-border'?: string;
+  'rgb-status-neutral'?: string;
+  'rgb-status-neutral-subtle'?: string;
+  'rgb-status-neutral-border'?: string;
 
   // Brand colors
   'rgb-brand-purple'?: string;
@@ -73,6 +92,7 @@ export interface IThemeVariables {
   '--text-secondary-alt': string;
   '--text-tertiary': string;
   '--text-warning': string;
+  '--text-destructive': string;
   '--link': string;
   '--link-hover': string;
   '--link-visited': string;
@@ -114,6 +134,22 @@ export interface IThemeVariables {
   '--border-heavy-alpha': string;
   '--border-xheavy': string;
   '--border-xheavy-alpha': string;
+  '--border-destructive': string;
+  '--status-success': string;
+  '--status-success-subtle': string;
+  '--status-success-border': string;
+  '--status-info': string;
+  '--status-info-subtle': string;
+  '--status-info-border': string;
+  '--status-warning': string;
+  '--status-warning-subtle': string;
+  '--status-warning-border': string;
+  '--status-error': string;
+  '--status-error-subtle': string;
+  '--status-error-border': string;
+  '--status-neutral': string;
+  '--status-neutral-subtle': string;
+  '--status-neutral-border': string;
   '--brand-purple': string;
   '--presentation': string;
 }
@@ -127,6 +163,7 @@ export interface IThemeColors {
   'text-secondary-alt'?: string;
   'text-tertiary'?: string;
   'text-warning'?: string;
+  'text-destructive'?: string;
   link?: string;
   'link-hover'?: string;
   'link-visited'?: string;
@@ -164,6 +201,22 @@ export interface IThemeColors {
   'border-medium-alt'?: string;
   'border-heavy'?: string;
   'border-xheavy'?: string;
+  'border-destructive'?: string;
+  'status-success'?: string;
+  'status-success-subtle'?: string;
+  'status-success-border'?: string;
+  'status-info'?: string;
+  'status-info-subtle'?: string;
+  'status-info-border'?: string;
+  'status-warning'?: string;
+  'status-warning-subtle'?: string;
+  'status-warning-border'?: string;
+  'status-error'?: string;
+  'status-error-subtle'?: string;
+  'status-error-border'?: string;
+  'status-neutral'?: string;
+  'status-neutral-subtle'?: string;
+  'status-neutral-border'?: string;
   'brand-purple'?: string;
   presentation?: string;
 

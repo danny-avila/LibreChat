@@ -1,3 +1,4 @@
+import { defaultTheme } from '../themes/default';
 import applyTheme from './applyTheme';
 
 const semanticProperties = [
@@ -6,6 +7,13 @@ const semanticProperties = [
   '--link-visited',
   '--accent-primary',
   '--accent-primary-hover',
+  '--text-destructive',
+  '--border-destructive',
+  '--status-success',
+  '--status-success-subtle',
+  '--status-success-border',
+  '--status-error',
+  '--status-neutral-border',
 ];
 
 afterEach(() => {
@@ -29,5 +37,32 @@ describe('applyTheme', () => {
     expect(document.documentElement.style.getPropertyValue('--accent-primary-hover')).toBe(
       '13 14 15',
     );
+  });
+
+  it('applies status and destructive colors from runtime themes', () => {
+    applyTheme({
+      'rgb-text-destructive': '20 21 22',
+      'rgb-border-destructive': '23 24 25',
+      'rgb-status-success': '26 27 28',
+      'rgb-status-success-subtle': '29 30 31',
+      'rgb-status-success-border': '32 33 34',
+      'rgb-status-error': '35 36 37',
+      'rgb-status-neutral-border': '38 39 40',
+    });
+
+    const style = document.documentElement.style;
+    expect(style.getPropertyValue('--text-destructive')).toBe('20 21 22');
+    expect(style.getPropertyValue('--border-destructive')).toBe('23 24 25');
+    expect(style.getPropertyValue('--status-success')).toBe('26 27 28');
+    expect(style.getPropertyValue('--status-success-subtle')).toBe('29 30 31');
+    expect(style.getPropertyValue('--status-success-border')).toBe('32 33 34');
+    expect(style.getPropertyValue('--status-error')).toBe('35 36 37');
+    expect(style.getPropertyValue('--status-neutral-border')).toBe('38 39 40');
+  });
+
+  it('ships status tokens in the bundled themes', () => {
+    applyTheme(defaultTheme);
+
+    expect(document.documentElement.style.getPropertyValue('--status-error')).toBe('220 38 38');
   });
 });
