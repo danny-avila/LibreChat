@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSetRecoilState } from 'recoil';
 import { Constants, QueryKeys } from 'librechat-data-provider';
@@ -18,6 +18,8 @@ import {
   consumeTerminalEventSeen,
   getDisconnectedRunRecovery,
   getResumableRunEpoch,
+  getResumableRunStarting,
+  resumableRunStartingQueryKey,
 } from './resumableRecovery';
 import {
   TERMINAL_RETRY_DELAYS,
@@ -68,6 +70,13 @@ export default function useTerminalRunRecovery({
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
   const convertSteersToQueued = useSteerConvert();
   const { data: activeJobsData } = useActiveJobs(enabled);
+  const { data: isRunStarting = false } = useQuery({
+    queryKey: resumableRunStartingQueryKey(conversationId ?? ''),
+    queryFn: () => false,
+    enabled: false,
+    initialData: false,
+    cacheTime: Infinity,
+  });
   const isCurrentJobActive =
     !!conversationId && (activeJobsData?.activeJobIds ?? []).includes(conversationId);
   const observedActiveJobRef = useRef<{ conversationId?: string; active: boolean }>({
@@ -78,6 +87,17 @@ export default function useTerminalRunRecovery({
   const refreshedResponseRef = useRef<string | null>(null);
   const terminalRefreshAbortRef = useRef<AbortController | null>(null);
   const terminalStatusAbortRef = useRef<AbortController | null>(null);
+  const deferredTerminalRecoveryRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      terminalRefreshAbortRef.current?.abort();
+      terminalStatusAbortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     activePathnameRef.current = location.pathname;
@@ -436,6 +456,7 @@ export default function useTerminalRunRecovery({
     };
 
     if (previous.conversationId !== conversationId) {
+      deferredTerminalRecoveryRef.current = null;
       refreshedResponseRef.current = null;
       terminalStatusAbortRef.current?.abort();
       terminalRefreshAbortRef.current?.abort();
@@ -443,15 +464,30 @@ export default function useTerminalRunRecovery({
     }
 
     if (!previous.active && isCurrentJobActive) {
+      deferredTerminalRecoveryRef.current = null;
       refreshedResponseRef.current = null;
       terminalStatusAbortRef.current?.abort();
       terminalRefreshAbortRef.current?.abort();
       return;
     }
 
-    if (!previous.active || isCurrentJobActive) {
+    if (isCurrentJobActive) {
       return;
     }
+
+    const runStarting = !!conversationId && getResumableRunStarting(queryClient, conversationId);
+    const becameInactive = previous.active;
+    const isDeferredRecovery =
+      deferredTerminalRecoveryRef.current === conversationId && !runStarting;
+    if (!becameInactive && !isDeferredRecovery) {
+      return;
+    }
+
+    if (runStarting) {
+      deferredTerminalRecoveryRef.current = conversationId ?? null;
+      return;
+    }
+    deferredTerminalRecoveryRef.current = null;
 
     if (!conversationId || consumeTerminalEventSeen(queryClient, conversationId)) {
       return;
@@ -475,7 +511,12 @@ export default function useTerminalRunRecovery({
       const sameRun =
         getResumableRunEpoch(queryClient, terminalConversationId) === terminalRunEpoch;
       if (status.active) {
-        if (sameRun && observed.conversationId === terminalConversationId && !observed.active) {
+        if (
+          mountedRef.current &&
+          sameRun &&
+          observed.conversationId === terminalConversationId &&
+          !observed.active
+        ) {
           queryClient.setQueryData<ActiveJobsResponse>([QueryKeys.activeJobs], (old) => ({
             activeJobIds: [...new Set([...(old?.activeJobIds ?? []), terminalConversationId])],
           }));
@@ -486,6 +527,13 @@ export default function useTerminalRunRecovery({
       // The status response may have atomically claimed parked steers. Recover
       // them even if a newer run became active before the request resolved.
       const recoveredSteers = recoverStatusSteers(status);
+      if (!mountedRef.current) {
+        return;
+      }
+      if (getResumableRunStarting(queryClient, terminalConversationId)) {
+        deferredTerminalRecoveryRef.current = terminalConversationId;
+        return;
+      }
       if (!sameRun || observed.conversationId !== terminalConversationId || observed.active) {
         return;
       }
@@ -496,6 +544,7 @@ export default function useTerminalRunRecovery({
     fetchTerminalStatus,
     getMessages,
     isCurrentJobActive,
+    isRunStarting,
     queryClient,
     recoverInactiveResponse,
     recoverStatusSteers,

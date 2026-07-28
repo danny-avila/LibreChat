@@ -64,6 +64,7 @@ import {
   getDisconnectedRunRecovery,
   markTerminalEventSeen,
   setDisconnectedRunRecovery,
+  setResumableRunStarting,
 } from './resumableRecovery';
 import store from '~/store';
 
@@ -226,7 +227,7 @@ const waitForRetryDelay = (delay: number, signal?: AbortSignal): Promise<boolean
     signal?.addEventListener('abort', onAbort, { once: true });
   });
 
-const hasConcreteConversationId = (conversationId?: string | null) =>
+const hasConcreteConversationId = (conversationId?: string | null): conversationId is string =>
   !!conversationId &&
   conversationId !== Constants.NEW_CONVO &&
   conversationId !== Constants.PENDING_CONVO;
@@ -1241,6 +1242,9 @@ export default function useResumableSSE(
         // Invalidate cache once so react-query refetches instead of showing an error.
         if (responseCode === 404) {
           const convoId = currentSubmission.conversation?.conversationId;
+          const retainResolvedStreamId =
+            optimisticStreamIdsRef.current.has(currentStreamId) &&
+            !createdStreamIdsRef.current.has(currentStreamId);
           logger.log('ResumableSSE', 'Stream 404, invalidating messages for:', convoId);
           sse.close();
           const existingRecovery = getDisconnectedRunRecovery(queryClient, currentStreamId);
@@ -1308,7 +1312,7 @@ export default function useResumableSSE(
             endedAt: Date.now(),
           });
           setStreamId(null);
-          setResolvedStreamId(null);
+          setResolvedStreamId(retainResolvedStreamId ? currentStreamId : null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
           createdStreamIdsRef.current.delete(currentStreamId);
           reconnectAttemptRef.current = 0;
@@ -1695,6 +1699,14 @@ export default function useResumableSSE(
     submissionRef.current = submission;
     const startController = new AbortController();
     const { signal } = startController;
+    let pendingStartConversationId: string | null = null;
+    const finishPendingStart = () => {
+      if (!pendingStartConversationId) {
+        return;
+      }
+      setResumableRunStarting(queryClient, pendingStartConversationId, false);
+      pendingStartConversationId = null;
+    };
 
     const initStream = async () => {
       if (signal.aborted) {
@@ -1722,49 +1734,63 @@ export default function useResumableSSE(
       } else {
         // New generation: start and then subscribe
         logger.log('ResumableSSE', 'Starting NEW generation');
-        const startResult = await startGeneration(submission, signal);
-        if (signal.aborted) {
-          return;
+        const existingConversationId = submission.conversation?.conversationId;
+        if (hasConcreteConversationId(existingConversationId)) {
+          pendingStartConversationId = existingConversationId;
+          beginResumableRun(queryClient, existingConversationId);
+          setResumableRunStarting(queryClient, existingConversationId, true);
         }
-        if (startResult) {
-          const { streamId: newStreamId, resumed } = startResult;
-          beginResumableRun(queryClient, newStreamId);
-          // Terminal markers are conversation-scoped, so never carry one into
-          // a confirmed active run, including a deduplicated resumed start.
-          clearTerminalEventSeen(queryClient, newStreamId);
-          if (!resumed) {
-            clearDisconnectedRunRecovery(queryClient, newStreamId);
+        try {
+          const startResult = await startGeneration(submission, signal);
+          if (signal.aborted) {
+            return;
           }
-          setStreamId(newStreamId);
-          setResolvedStreamId(newStreamId);
-          // Optimistically add to active jobs
-          addActiveJob(newStreamId);
-          // Queue title generation if this is a new conversation (first message).
-          // Skip temporary conversations — the server never generates titles for
-          // them, so polling would 404 indefinitely.
-          const isNewConvo = isInitialNewConversation(submission);
-          if (isNewConvo && !submission.isTemporary) {
-            queueTitleGeneration(newStreamId);
+          if (startResult) {
+            const { streamId: newStreamId, resumed } = startResult;
+            if (newStreamId !== pendingStartConversationId) {
+              beginResumableRun(queryClient, newStreamId);
+            }
+            // Terminal markers are conversation-scoped, so never carry one into
+            // a confirmed active run, including a deduplicated resumed start.
+            clearTerminalEventSeen(queryClient, newStreamId);
+            if (!resumed) {
+              clearDisconnectedRunRecovery(queryClient, newStreamId);
+            }
+            setStreamId(newStreamId);
+            setResolvedStreamId(newStreamId);
+            // Optimistically add to active jobs before releasing the pending-start
+            // guard, so terminal recovery cannot mistake this run for the old one.
+            addActiveJob(newStreamId);
+            finishPendingStart();
+            // Queue title generation if this is a new conversation (first message).
+            // Skip temporary conversations — the server never generates titles for
+            // them, so polling would 404 indefinitely.
+            const isNewConvo = isInitialNewConversation(submission);
+            if (isNewConvo && !submission.isTemporary) {
+              queueTitleGeneration(newStreamId);
+            }
+            if (isInitialNewConversation(submission)) {
+              optimisticStreamIdsRef.current.add(newStreamId);
+              const existingRecovery = resumed
+                ? getDisconnectedRunRecovery(queryClient, newStreamId)
+                : undefined;
+              setDisconnectedRunRecovery(queryClient, newStreamId, {
+                startedAsNewConvo: true,
+                created: existingRecovery?.created === true,
+                ...getRunRecoveryIdentity(submission),
+              });
+              replaceNewConversationUrl(newStreamId);
+            }
+            const streamSubmission = addOptimisticConversation(newStreamId, submission);
+            submissionRef.current = streamSubmission;
+            // A deduped retry (status: 'resumed') attaches to an already-running stream, so
+            // subscribe with resume=true to replay its state instead of only live events.
+            subscribeToStream(newStreamId, streamSubmission, resumed);
+          } else {
+            logger.error('ResumableSSE', 'Failed to get streamId from startGeneration');
           }
-          if (isInitialNewConversation(submission)) {
-            optimisticStreamIdsRef.current.add(newStreamId);
-            const existingRecovery = resumed
-              ? getDisconnectedRunRecovery(queryClient, newStreamId)
-              : undefined;
-            setDisconnectedRunRecovery(queryClient, newStreamId, {
-              startedAsNewConvo: true,
-              created: existingRecovery?.created === true,
-              ...getRunRecoveryIdentity(submission),
-            });
-            replaceNewConversationUrl(newStreamId);
-          }
-          const streamSubmission = addOptimisticConversation(newStreamId, submission);
-          submissionRef.current = streamSubmission;
-          // A deduped retry (status: 'resumed') attaches to an already-running stream, so
-          // subscribe with resume=true to replay its state instead of only live events.
-          subscribeToStream(newStreamId, streamSubmission, resumed);
-        } else {
-          logger.error('ResumableSSE', 'Failed to get streamId from startGeneration');
+        } finally {
+          finishPendingStart();
         }
       }
     };
@@ -1774,6 +1800,7 @@ export default function useResumableSSE(
     return () => {
       logger.log('ResumableSSE', 'Cleanup - closing SSE, resetting UI state');
       startController.abort();
+      finishPendingStart();
       // Cleanup on unmount/navigation - close connection but DO NOT abort backend
       // Reset UI state so it doesn't leak to other conversations
       // If user returns to this conversation, useResumeOnLoad will restore the state

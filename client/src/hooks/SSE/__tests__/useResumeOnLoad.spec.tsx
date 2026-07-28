@@ -13,6 +13,7 @@ import {
   getDisconnectedRunRecovery,
   markTerminalEventSeen,
   setDisconnectedRunRecovery,
+  setResumableRunStarting,
 } from '../resumableRecovery';
 import store from '~/store';
 
@@ -1393,6 +1394,104 @@ describe('useResumeOnLoad', () => {
       });
 
       expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
+      expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
+        unfinishedMessages,
+      );
+    });
+
+    it('defers an active-to-inactive transition while a newer run is starting', async () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const unfinishedMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({ unfinished: true }),
+      ];
+      queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
+      setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+        startedAsNewConvo: false,
+        created: true,
+        userMessageId: USER_MESSAGE_ID,
+        responseMessageId: RESPONSE_MESSAGE_ID,
+      });
+      beginResumableRun(queryClient, CONVERSATION_ID);
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+      });
+
+      const { rerender } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        getMessages: () =>
+          queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
+        queryClient,
+      });
+
+      act(() => {
+        beginResumableRun(queryClient, CONVERSATION_ID);
+        setResumableRunStarting(queryClient, CONVERSATION_ID, true);
+      });
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [] },
+      });
+      rerender();
+
+      expect(mockFetchStreamStatus).not.toHaveBeenCalled();
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+      });
+      act(() => {
+        setResumableRunStarting(queryClient, CONVERSATION_ID, false);
+      });
+      rerender();
+
+      expect(mockFetchStreamStatus).not.toHaveBeenCalled();
+    });
+
+    it('does not continue terminal recovery when status resolves after unmount', async () => {
+      let resolveStatus!: (status: { active: boolean; status: 'complete' }) => void;
+      mockFetchStreamStatus.mockReturnValue(
+        new Promise((resolve) => {
+          resolveStatus = resolve;
+        }),
+      );
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const unfinishedMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({ unfinished: true }),
+      ];
+      queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
+      setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+        startedAsNewConvo: false,
+        created: true,
+        userMessageId: USER_MESSAGE_ID,
+        responseMessageId: RESPONSE_MESSAGE_ID,
+      });
+      beginResumableRun(queryClient, CONVERSATION_ID);
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+      });
+
+      const { rerender, unmount } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        getMessages: () =>
+          queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
+        queryClient,
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [] },
+      });
+      rerender();
+      await waitFor(() => {
+        expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID);
+      });
+
+      unmount();
+      await act(async () => {
+        resolveStatus({ active: false, status: 'complete' });
+        await Promise.resolve();
+      });
+
+      expect(mockGetMessagesByConvoId).not.toHaveBeenCalled();
       expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
         unfinishedMessages,
       );

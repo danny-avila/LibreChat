@@ -437,6 +437,41 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('retains the resolved first-turn id when the stream 404s before CREATED', async () => {
+    const submission = buildSubmission({
+      conversation: {},
+      userMessage: {
+        messageId: 'msg-1',
+        conversationId: null,
+        text: 'Hello',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: Constants.NO_PARENT,
+      },
+      initialResponse: {
+        messageId: 'msg-1_',
+        conversationId: null,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { result, unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      getLastSSE()._emit('error', { responseCode: 404 });
+    });
+
+    expect(result.current.streamId).toBeNull();
+    expect(result.current.resolvedStreamId).toBe('stream-123');
+    unmount();
+  });
+
   it('reconciles conversations via refetch instead of removing them on a resume 404', async () => {
     mockFindAll.mockReturnValue([{ queryKey: [QueryKeys.allConversations] }]);
     mockGetQueryData.mockReturnValue({
@@ -607,6 +642,58 @@ describe('useResumableSSE', () => {
       responseMessageId: 'msg-1_',
     });
 
+    unmount();
+  });
+
+  it('reserves an existing conversation run before the start request resolves', async () => {
+    let resolveStart!: (value: { streamId: string }) => void;
+    (request.post as jest.Mock).mockReturnValue(
+      new Promise((resolve) => {
+        resolveStart = resolve;
+      }),
+    );
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await waitFor(() => {
+      expect(request.post).toHaveBeenCalledTimes(1);
+    });
+
+    const epochWriteIndex = mockSetQueryData.mock.calls.findIndex(
+      ([queryKey]) =>
+        Array.isArray(queryKey) && queryKey[0] === 'resumable-run-epoch' && queryKey[1] === CONV_ID,
+    );
+    const startingWriteIndex = mockSetQueryData.mock.calls.findIndex(
+      ([queryKey, value]) =>
+        Array.isArray(queryKey) &&
+        queryKey[0] === 'resumable-run-starting' &&
+        queryKey[1] === CONV_ID &&
+        value === true,
+    );
+    expect(epochWriteIndex).toBeGreaterThanOrEqual(0);
+    expect(startingWriteIndex).toBeGreaterThan(epochWriteIndex);
+    expect(mockSSEInstances).toHaveLength(0);
+
+    await act(async () => {
+      resolveStart({ streamId: CONV_ID });
+      await Promise.resolve();
+    });
+
+    const activeJobWriteIndex = mockSetQueryData.mock.calls.findIndex(
+      ([queryKey]) => Array.isArray(queryKey) && queryKey[0] === QueryKeys.activeJobs,
+    );
+    const finishedWriteIndex = mockSetQueryData.mock.calls.findIndex(
+      ([queryKey, value]) =>
+        Array.isArray(queryKey) &&
+        queryKey[0] === 'resumable-run-starting' &&
+        queryKey[1] === CONV_ID &&
+        value === false,
+    );
+    expect(activeJobWriteIndex).toBeGreaterThan(startingWriteIndex);
+    expect(finishedWriteIndex).toBeGreaterThan(activeJobWriteIndex);
+    expect(mockSSEInstances).toHaveLength(1);
     unmount();
   });
 
@@ -1153,6 +1240,7 @@ describe('useResumableSSE', () => {
     expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
     expect(mockSetShowStopButton).toHaveBeenCalledWith(true);
     expect(mockSetShowStopButton).toHaveBeenCalledWith(false);
+    expect(mockSetQueryData).toHaveBeenCalledWith(['resumable-run-starting', CONV_ID], false);
     unmount();
   });
 
