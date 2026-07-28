@@ -233,6 +233,9 @@ export type AgentPanelContextType = {
   endpointsConfig?: t.TEndpointsConfig | null;
   /** Pre-computed MCP server information indexed by server key */
   mcpServersMap: Map<string, MCPServerInfo>;
+  /** True while the MCP tools list is being fetched and no data has arrived yet,
+   * so consumers can show a skeleton instead of an empty "no tools" state. */
+  mcpToolsLoading: boolean;
   availableMCPServers: MCPServerDefinition[];
   availableMCPServersMap: t.MCPServersListResponse | undefined;
 };
@@ -365,6 +368,13 @@ export type TOptions = {
    * pills are still visible on the user bubble.
    */
   overrideManualSkills?: string[];
+  /**
+   * Carry forward a user message's quoted excerpts when resubmitting /
+   * regenerating that same message — the compose-time atom is drained on the
+   * original submit, so without this the second turn would lose the quoted
+   * context even though the references still show on the user bubble.
+   */
+  overrideQuotes?: string[];
   /** Added conversation for multi-convo feature - sent to server as part of submission payload */
   addedConvo?: t.TConversation;
 };

@@ -111,6 +111,259 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       client_secret: 'test-client-secret',
     };
 
+    it('should discover client_secret_post for a pre-registered confidential client', async () => {
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce({
+        resource: mockServerUrl,
+        authorization_servers: ['https://auth.example.com'],
+      });
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: baseConfig.authorization_url,
+        token_endpoint: baseConfig.token_url,
+        token_endpoint_auth_methods_supported: ['client_secret_post'],
+        response_types_supported: ['code'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        code_challenge_methods_supported: ['S256'],
+      } as AuthorizationServerMetadata);
+
+      const result = await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        baseConfig,
+      );
+
+      expect(mockDiscoverOAuthProtectedResourceMetadata).toHaveBeenCalled();
+      expect(mockDiscoverAuthorizationServerMetadata).toHaveBeenCalledWith(
+        new URL('https://auth.example.com'),
+        expect.objectContaining({ fetchFn: expect.any(Function) }),
+      );
+      expect(mockStartAuthorization).toHaveBeenCalledWith(
+        mockServerUrl,
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            token_endpoint_auth_methods_supported: ['client_secret_post'],
+            code_challenge_methods_supported: ['S256'],
+          }),
+          clientInformation: expect.objectContaining({
+            token_endpoint_auth_method: 'client_secret_post',
+          }),
+        }),
+      );
+      expect(result.authorizationUrl).toContain('resource=https%3A%2F%2Fexample.com%2Fmcp');
+      expect(result.flowMetadata.resourceMetadata).toEqual(
+        expect.objectContaining({ resource: mockServerUrl }),
+      );
+    });
+
+    it('should discover capabilities from the configured authorization server origin', async () => {
+      mockDiscoverOAuthProtectedResourceMetadata.mockRejectedValueOnce(
+        new Error('No resource metadata'),
+      );
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: baseConfig.authorization_url,
+        token_endpoint: baseConfig.token_url,
+        token_endpoint_auth_methods_supported: ['client_secret_post'],
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
+      await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        baseConfig,
+      );
+
+      expect(mockDiscoverAuthorizationServerMetadata).toHaveBeenCalledWith(
+        new URL('https://auth.example.com'),
+        expect.objectContaining({ fetchFn: expect.any(Function) }),
+      );
+      expect(mockStartAuthorization).toHaveBeenCalledWith(
+        mockServerUrl,
+        expect.objectContaining({
+          clientInformation: expect.objectContaining({
+            token_endpoint_auth_method: 'client_secret_post',
+          }),
+        }),
+      );
+    });
+
+    it('should preserve resource discovery while preferring an explicit exchange method', async () => {
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce({
+        resource: mockServerUrl,
+        authorization_servers: ['https://auth.example.com'],
+      });
+
+      const result = await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        {
+          ...baseConfig,
+          token_exchange_method: TokenExchangeMethodEnum.BasicAuthHeader,
+        },
+      );
+
+      expect(mockStartAuthorization).toHaveBeenCalledWith(
+        mockServerUrl,
+        expect.objectContaining({
+          clientInformation: expect.objectContaining({
+            token_endpoint_auth_method: 'client_secret_basic',
+          }),
+        }),
+      );
+      expect(mockDiscoverOAuthProtectedResourceMetadata).toHaveBeenCalled();
+      expect(mockDiscoverAuthorizationServerMetadata).not.toHaveBeenCalled();
+      expect(result.authorizationUrl).toContain('resource=https%3A%2F%2Fexample.com%2Fmcp');
+      expect(result.flowMetadata.resourceMetadata).toEqual(
+        expect.objectContaining({ resource: mockServerUrl }),
+      );
+    });
+
+    it('should fall back when pre-configured metadata discovery times out', async () => {
+      mockDiscoverOAuthProtectedResourceMetadata.mockImplementationOnce(
+        () => new Promise(() => undefined),
+      );
+
+      await expect(
+        MCPOAuthHandler.initiateOAuthFlow(
+          mockServerName,
+          mockServerUrl,
+          mockUserId,
+          {},
+          baseConfig,
+        ),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          authorizationUrl: expect.stringContaining('state='),
+        }),
+      );
+      expect(mockStartAuthorization).toHaveBeenCalledWith(
+        mockServerUrl,
+        expect.objectContaining({
+          clientInformation: expect.objectContaining({
+            token_endpoint_auth_method: 'client_secret_basic',
+          }),
+        }),
+      );
+    });
+
+    it('should not apply metadata from a different token endpoint', async () => {
+      mockDiscoverOAuthProtectedResourceMetadata.mockResolvedValueOnce({
+        resource: mockServerUrl,
+        authorization_servers: ['https://auth.example.com'],
+      });
+      mockDiscoverAuthorizationServerMetadata.mockResolvedValueOnce({
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: baseConfig.authorization_url,
+        token_endpoint: 'https://untrusted.example.com/oauth/token',
+        token_endpoint_auth_methods_supported: ['client_secret_post'],
+        response_types_supported: ['code'],
+      } as AuthorizationServerMetadata);
+
+      const result = await MCPOAuthHandler.initiateOAuthFlow(
+        mockServerName,
+        mockServerUrl,
+        mockUserId,
+        {},
+        baseConfig,
+      );
+
+      expect(mockStartAuthorization).toHaveBeenCalledWith(
+        mockServerUrl,
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            token_endpoint: baseConfig.token_url,
+            token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+          }),
+          clientInformation: expect.objectContaining({
+            token_endpoint_auth_method: 'client_secret_basic',
+          }),
+        }),
+      );
+      expect(result.authorizationUrl).toContain('resource=https%3A%2F%2Fexample.com%2Fmcp');
+      expect(result.flowMetadata.resourceMetadata).toEqual(
+        expect.objectContaining({ resource: mockServerUrl }),
+      );
+    });
+
+    it('should not send custom headers during pre-configured metadata discovery', async () => {
+      const discoveryRequests: Array<{ url: string; method: string; headers: Headers }> = [];
+      const originalFetch = global.fetch;
+      global.fetch = (async (url, init) => {
+        discoveryRequests.push({
+          url: url.toString(),
+          method: init?.method ?? 'GET',
+          headers: new Headers(init?.headers),
+        });
+        return new Response('{}');
+      }) as typeof fetch;
+
+      mockProbeResourceMetadataHint.mockImplementationOnce(async (url, fetchFn) => {
+        await fetchFn?.(url, { method: 'HEAD' });
+        await fetchFn?.(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        return { bearerChallenge: false, headAuthChallenge: false };
+      });
+      mockDiscoverOAuthProtectedResourceMetadata.mockImplementationOnce(async (_, __, fetchFn) => {
+        await fetchFn?.('https://example.com/.well-known/oauth-protected-resource');
+        return {
+          resource: mockServerUrl,
+          authorization_servers: ['https://auth.example.com'],
+        };
+      });
+      mockDiscoverAuthorizationServerMetadata.mockImplementationOnce(async (_, options) => {
+        await options?.fetchFn?.('https://auth.example.com/.well-known/oauth-authorization-server');
+        return {
+          issuer: 'https://auth.example.com',
+          authorization_endpoint: baseConfig.authorization_url,
+          token_endpoint: baseConfig.token_url,
+          token_endpoint_auth_methods_supported: ['client_secret_post'],
+          response_types_supported: ['code'],
+        } as AuthorizationServerMetadata;
+      });
+
+      try {
+        await MCPOAuthHandler.initiateOAuthFlow(
+          mockServerName,
+          mockServerUrl,
+          mockUserId,
+          {
+            Authorization: 'Bearer admin-runtime-token',
+            'X-API-Key': 'gateway-api-key-secret',
+          },
+          baseConfig,
+          ['example.com', 'auth.example.com'],
+        );
+      } finally {
+        global.fetch = originalFetch;
+      }
+
+      expect(discoveryRequests.map(({ url, method }) => ({ url, method }))).toEqual([
+        { url: mockServerUrl, method: 'HEAD' },
+        { url: mockServerUrl, method: 'POST' },
+        {
+          url: 'https://example.com/.well-known/oauth-protected-resource',
+          method: 'GET',
+        },
+        {
+          url: 'https://auth.example.com/.well-known/oauth-authorization-server',
+          method: 'GET',
+        },
+      ]);
+      for (const { headers } of discoveryRequests) {
+        expect(headers.get('Authorization')).toBeNull();
+        expect(headers.get('X-API-Key')).toBeNull();
+      }
+    });
+
     it('should use default values when OAuth metadata fields are not configured', async () => {
       await MCPOAuthHandler.initiateOAuthFlow(
         mockServerName,
@@ -1242,7 +1495,7 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       expect(headers.get('foo')).toBe('bar');
     });
 
-    it('passes headers to discovery operations', async () => {
+    it('passes headers to auto-discovery operations', async () => {
       mockDiscoverOAuthProtectedResourceMetadata.mockImplementation(async (_, __, fetchFn) => {
         await fetchFn?.('http://example.com/.well-known/oauth-protected-resource', {});
         return {

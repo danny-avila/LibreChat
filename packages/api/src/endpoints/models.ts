@@ -21,7 +21,10 @@ import {
   applyAxiosProxyConfig,
 } from '~/utils';
 import { getModelCacheTokenConfigKey, isScopedTokenConfigKey } from '~/endpoints/keys';
+import { createSSRFSafeAgents, validateEndpointURL } from '~/auth';
 import { standardCache, tokenConfigCache } from '~/cache';
+
+type SSRFSafeAgents = ReturnType<typeof createSSRFSafeAgents>;
 
 export interface FetchModelsParams {
   /** User ID for API requests */
@@ -30,6 +33,10 @@ export interface FetchModelsParams {
   apiKey: string;
   /** Base URL for the API */
   baseURL?: string;
+  /** Whether the base URL came from a user-stored credential */
+  baseURLIsUserProvided?: boolean;
+  /** Admin-approved internal host:port exemptions for user-provided base URLs */
+  allowedAddresses?: string[] | null;
   /** Endpoint name (defaults to 'openAI') */
   name?: string;
   /** Whether directEndpoint was configured */
@@ -50,6 +57,23 @@ export interface FetchModelsParams {
   skipCache?: boolean;
 }
 
+function applyUserProvidedBaseURLProtection(
+  options: AxiosRequestConfig,
+  ssrfAgents?: SSRFSafeAgents,
+): AxiosRequestConfig {
+  if (!ssrfAgents) {
+    return options;
+  }
+
+  options.maxRedirects = 0;
+
+  options.proxy = false;
+  options.httpAgent = ssrfAgents.httpAgent;
+  options.httpsAgent = ssrfAgents.httpsAgent;
+
+  return options;
+}
+
 /**
  * Fetches Ollama models from the specified base API path.
  * @param baseURL - The Ollama server URL
@@ -58,7 +82,11 @@ export interface FetchModelsParams {
  */
 async function fetchOllamaModels(
   baseURL: string,
-  options: { headers?: Record<string, string> | null; user?: Partial<IUser> } = {},
+  options: {
+    headers?: Record<string, string> | null;
+    ssrfAgents?: SSRFSafeAgents;
+    user?: Partial<IUser>;
+  } = {},
 ): Promise<string[]> {
   if (!baseURL) {
     return [];
@@ -71,12 +99,18 @@ async function fetchOllamaModels(
     user: options.user,
   });
 
+  const requestOptions: AxiosRequestConfig & {
+    headers: Record<string, string>;
+    timeout: number;
+  } = {
+    headers: resolvedHeaders,
+    timeout: 5000,
+  };
+  applyUserProvidedBaseURLProtection(requestOptions, options.ssrfAgents);
+
   const response = await axios.get<{ models: Array<{ name: string }> }>(
     `${ollamaEndpoint}/api/tags`,
-    {
-      headers: resolvedHeaders,
-      timeout: 5000,
-    },
+    requestOptions,
   );
 
   return response.data.models.map((tag) => tag.name);
@@ -120,6 +154,8 @@ export async function fetchModels({
   user,
   apiKey,
   baseURL: _baseURL,
+  baseURLIsUserProvided = false,
+  allowedAddresses,
   name = EModelEndpoint.openAI,
   direct = false,
   azure = false,
@@ -139,6 +175,11 @@ export async function fetchModels({
 
   if (!apiKey) {
     return models;
+  }
+
+  const ssrfAgents = baseURLIsUserProvided ? createSSRFSafeAgents(allowedAddresses) : undefined;
+  if (baseURLIsUserProvided && baseURL) {
+    await validateEndpointURL(baseURL, name, allowedAddresses);
   }
 
   // The MODEL_QUERIES cache is keyed by baseURL+apiKey only. That's safe
@@ -172,7 +213,11 @@ export async function fetchModels({
   if (name && name.toLowerCase().startsWith(KnownEndpoints.ollama)) {
     let ollamaModels: string[] | null = null;
     try {
-      ollamaModels = await fetchOllamaModels(baseURL ?? '', { headers, user: userObject });
+      ollamaModels = await fetchOllamaModels(baseURL ?? '', {
+        headers,
+        ssrfAgents,
+        user: userObject,
+      });
     } catch (ollamaError) {
       logAxiosError({
         message:
@@ -237,6 +282,7 @@ export async function fetchModels({
       url.searchParams.append('user', user);
     }
     applyAxiosProxyConfig(options, url);
+    applyUserProvidedBaseURLProtection(options, ssrfAgents);
     const res = await axios.get(url.toString(), options);
 
     const input = res.data;

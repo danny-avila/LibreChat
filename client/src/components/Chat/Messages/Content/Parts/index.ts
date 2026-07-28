@@ -14,3 +14,4 @@ export { default as ReadFileCall } from './ReadFileCall';
 export { default as FileAuthoringCall } from './FileAuthoringCall';
 export { default as BashCall } from './BashCall';
 export { default as SubagentCall } from './SubagentCall';
+export { default as SteerPart } from './SteerPart';

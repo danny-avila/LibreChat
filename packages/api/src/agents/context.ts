@@ -30,7 +30,8 @@ export function extractMCPServers(agent: AgentWithTools): string[] {
   if (agent?.tools?.length) {
     for (const tool of agent.tools) {
       if (tool instanceof DynamicStructuredTool && tool.name.includes(Constants.mcp_delimiter)) {
-        const serverName = tool.name.split(Constants.mcp_delimiter).pop();
+        const carried = (tool as { mcpRawServerName?: string }).mcpRawServerName;
+        const serverName = carried ?? tool.name.split(Constants.mcp_delimiter).pop();
         if (serverName) {
           mcpServers.add(serverName);
         }
@@ -42,7 +43,7 @@ export function extractMCPServers(agent: AgentWithTools): string[] {
   if (agent?.toolDefinitions?.length) {
     for (const toolDef of agent.toolDefinitions) {
       if (toolDef.name?.includes(Constants.mcp_delimiter)) {
-        const serverName = toolDef.name.split(Constants.mcp_delimiter).pop();
+        const serverName = toolDef.serverName ?? toolDef.name.split(Constants.mcp_delimiter).pop();
         if (serverName) {
           mcpServers.add(serverName);
         }

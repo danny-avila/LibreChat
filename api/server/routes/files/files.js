@@ -3,7 +3,11 @@ const express = require('express');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   logAxiosError,
+  getApprovalTtlMs,
   refreshS3FileUrls,
+  handleFilesUsageRequest,
+  shouldUseUploadSse,
+  startUploadSseStream,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
 } = require('@librechat/api');
@@ -14,6 +18,7 @@ const {
   FileSources,
   ResourceType,
   EModelEndpoint,
+  EToolResources,
   PermissionBits,
   checkOpenAIStorage,
   isAssistantsEndpoint,
@@ -29,13 +34,22 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { checkPermission } = require('~/server/services/PermissionService');
-const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
 const { cleanFileName, getContentDisposition } = require('~/server/utils/files');
 const { getLogStores } = require('~/cache');
 const { Readable } = require('stream');
 const db = require('~/models');
 
 const router = express.Router();
+const AGENT_TOOL_RESOURCE_KEYS = new Set([
+  EToolResources.execute_code,
+  EToolResources.file_search,
+  EToolResources.image_edit,
+  EToolResources.context,
+  EToolResources.ocr,
+]);
+
+const isAgentToolResourceKey = (toolResource) =>
+  typeof toolResource === 'string' && AGENT_TOOL_RESOURCE_KEYS.has(toolResource);
 
 router.get('/', async (req, res) => {
   try {
@@ -94,20 +108,20 @@ router.get('/agent/:agent_id', async (req, res) => {
       }
     }
 
-    const agentFileIds = [];
+    const agentFileIds = new Set();
     if (agent.tool_resources) {
       for (const [, resource] of Object.entries(agent.tool_resources)) {
         if (resource?.file_ids && Array.isArray(resource.file_ids)) {
-          agentFileIds.push(...resource.file_ids);
+          resource.file_ids.forEach((fileId) => agentFileIds.add(fileId));
         }
       }
     }
 
-    if (agentFileIds.length === 0) {
+    if (agentFileIds.size === 0) {
       return res.status(200).json([]);
     }
 
-    const files = await db.getFiles({ file_id: { $in: agentFileIds }, user: agent.author }, null, {
+    const files = await db.getFiles({ file_id: { $in: [...agentFileIds] } }, null, {
       text: 0,
     });
 
@@ -125,6 +139,30 @@ router.get('/config', async (req, res) => {
   } catch (error) {
     logger.error('[/files] Error getting fileConfig', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
+  }
+});
+
+/**
+ * POST /files/usage
+ *
+ * Owner-scoped TTL hold for uploads sitting in a client-side queue (mid-run
+ * queued messages), so the upload-window TTL cannot reap them before drain.
+ * Extends the deadline rather than clearing it; the real release happens at
+ * send. The approval window is passed through so a queue waiting on a paused
+ * run outlives that pause. Thin wrapper: validation, cap, hold window, and
+ * best-effort semantics live in `@librechat/api` (`handleFilesUsageRequest`).
+ */
+router.post('/usage', async (req, res) => {
+  try {
+    const checkpointerCfg = req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
+    const { status, body } = await handleFilesUsageRequest(req.user ?? {}, req.body ?? {}, {
+      extendFilesTTL: db.extendFilesTTL,
+      approvalTtlMs: getApprovalTtlMs(checkpointerCfg),
+    });
+    return res.status(status).json(body);
+  } catch (error) {
+    logger.error('[/files/usage] Failed to mark files used', error);
+    return res.status(500).json({ code: 'FILES_USAGE_FAILED' });
   }
 });
 
@@ -156,6 +194,52 @@ router.delete('/', async (req, res) => {
     const fileIds = files.map((file) => file.file_id);
     const dbFiles = await db.getFiles({ file_id: { $in: fileIds } });
 
+    if (req.body.agent_id && req.body.tool_resource) {
+      if (!isAgentToolResourceKey(req.body.tool_resource)) {
+        return res.status(400).json({ message: 'Invalid agent tool resource' });
+      }
+
+      const agent = await db.getAgent({
+        id: req.body.agent_id,
+      });
+
+      if (!agent) {
+        return res.status(404).json({ message: 'Agent not found' });
+      }
+
+      const hasAgentEditAccess =
+        agent.author?.toString() === req.user.id.toString() ||
+        (await checkPermission({
+          userId: req.user.id,
+          role: req.user.role,
+          resourceType: ResourceType.AGENT,
+          resourceId: agent._id,
+          requiredPermission: PermissionBits.EDIT,
+        }));
+      if (!hasAgentEditAccess) {
+        return res.status(403).json({
+          message: 'You can only delete files you have access to',
+          unauthorizedFiles: files.map((file) => file.file_id),
+        });
+      }
+
+      const toolResourceFiles = agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
+      const agentFiles = files
+        .filter((f) => toolResourceFiles.includes(f.file_id))
+        .map((file) => ({ tool_resource: req.body.tool_resource, file_id: file.file_id }));
+      if (agentFiles.length === 0) {
+        res.status(200).json({ message: 'File associations removed successfully from agent' });
+        return;
+      }
+
+      await db.removeAgentResourceFiles({
+        agent_id: req.body.agent_id,
+        files: agentFiles,
+      });
+      res.status(200).json({ message: 'File associations removed successfully from agent' });
+      return;
+    }
+
     const ownedFiles = [];
     const nonOwnedFiles = [];
 
@@ -179,71 +263,14 @@ router.delete('/', async (req, res) => {
       return;
     }
 
-    let authorizedFiles = [...ownedFiles];
-    let unauthorizedFiles = [];
-
-    if (req.body.agent_id && nonOwnedFiles.length > 0) {
-      const nonOwnedFileIds = nonOwnedFiles.map((f) => f.file_id);
-      const accessMap = await hasAccessToFilesViaAgent({
-        userId: req.user.id,
-        role: req.user.role,
-        fileIds: nonOwnedFileIds,
-        agentId: req.body.agent_id,
-        isDelete: true,
-        files: nonOwnedFiles,
-      });
-
-      for (const file of nonOwnedFiles) {
-        if (accessMap.get(file.file_id)) {
-          authorizedFiles.push(file);
-        } else {
-          unauthorizedFiles.push(file);
-        }
-      }
-    } else {
-      unauthorizedFiles = nonOwnedFiles;
-    }
+    const authorizedFiles = [...ownedFiles];
+    const unauthorizedFiles = nonOwnedFiles;
 
     if (unauthorizedFiles.length > 0) {
       return res.status(403).json({
-        message: 'You can only delete files you have access to',
+        message: 'You can only delete files you own',
         unauthorizedFiles: unauthorizedFiles.map((f) => f.file_id),
       });
-    }
-
-    /* Handle agent unlinking even if no valid files to delete */
-    if (req.body.agent_id && req.body.tool_resource && dbFiles.length === 0) {
-      const agent = await db.getAgent({
-        id: req.body.agent_id,
-      });
-
-      const toolResourceFiles = agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
-      const agentFiles = files
-        .filter((f) => toolResourceFiles.includes(f.file_id))
-        .map((file) => ({ tool_resource: req.body.tool_resource, file_id: file.file_id }));
-      const hasAgentEditAccess =
-        agent.author?.toString() === req.user.id.toString() ||
-        (await checkPermission({
-          userId: req.user.id,
-          role: req.user.role,
-          resourceType: ResourceType.AGENT,
-          resourceId: agent._id,
-          requiredPermission: PermissionBits.EDIT,
-        }));
-      const unauthorizedFiles = hasAgentEditAccess ? [] : agentFiles;
-      if (unauthorizedFiles.length > 0) {
-        return res.status(403).json({
-          message: 'You can only delete files you have access to',
-          unauthorizedFiles: unauthorizedFiles.map((file) => file.file_id),
-        });
-      }
-
-      await db.removeAgentResourceFiles({
-        agent_id: req.body.agent_id,
-        files: agentFiles,
-      });
-      res.status(200).json({ message: 'File associations removed successfully from agent' });
-      return;
     }
 
     /* Handle assistant unlinking even if no valid files to delete */
@@ -613,6 +640,15 @@ router.post('/', async (req, res) => {
   const metadata = req.body;
   let cleanup = true;
 
+  /** Opened only once auth/validation has passed, right before the potentially
+   * long-running upload processing begins — see `startUploadSseStream`. */
+  let sseStream = null;
+  const openSseStreamIfRequested = () => {
+    if (shouldUseUploadSse(req)) {
+      sseStream = startUploadSseStream(res);
+    }
+  };
+
   try {
     filterFile({ req });
 
@@ -620,7 +656,8 @@ router.post('/', async (req, res) => {
     metadata.file_id = req.file_id;
 
     if (isAssistantsEndpoint(metadata.endpoint)) {
-      return await processFileUpload({ req, res, metadata });
+      openSseStreamIfRequested();
+      return await processFileUpload({ req, res, metadata, sseStream });
     }
 
     let skipUploadAuth = false;
@@ -643,7 +680,8 @@ router.post('/', async (req, res) => {
       }
     }
 
-    return await processAgentFileUpload({ req, res, metadata });
+    openSseStreamIfRequested();
+    return await processAgentFileUpload({ req, res, metadata, sseStream });
   } catch (error) {
     const message = resolveUploadErrorMessage(error);
     logger.error('[/files] Error processing file:', error);
@@ -654,7 +692,23 @@ router.post('/', async (req, res) => {
     } catch (error) {
       logger.error('[/files] Error deleting file:', error);
     }
-    res.status(500).json({ message });
+
+    let errorStatusCode = 500;
+    if (error.userErrorStatusCode) {
+      errorStatusCode = error.userErrorStatusCode;
+    }
+
+    if (sseStream) {
+      sseStream.sendError({
+        message,
+        code: errorStatusCode,
+        temp_file_id: metadata.temp_file_id,
+        tool_resource: metadata.tool_resource,
+        display_to_user: true,
+      });
+    } else {
+      res.status(errorStatusCode).json({ message });
+    }
   } finally {
     if (cleanup) {
       try {
@@ -664,6 +718,9 @@ router.post('/', async (req, res) => {
       }
     } else {
       logger.debug('[/files] File processing completed without cleanup');
+    }
+    if (sseStream) {
+      sseStream.close();
     }
   }
 });

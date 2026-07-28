@@ -31,3 +31,19 @@ describe('getModelMaxOutputTokens partial-override fallback', () => {
     expect(fallback).toBeGreaterThan(0);
   });
 });
+
+describe('gpt-5.6 tiers', () => {
+  it('resolves 1.05M context and 128K output for every tier and the sol alias', () => {
+    for (const model of ['gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
+      expect(getModelMaxTokens(model, EModelEndpoint.openAI)).toBe(1050000);
+      expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(128000);
+    }
+  });
+
+  it('matches the longest tier key over the shorter gpt-5 pattern', () => {
+    expect(getModelMaxTokens('openai/gpt-5.6-terra-2026-07-09', EModelEndpoint.openAI)).toBe(
+      1050000,
+    );
+    expect(getModelMaxTokens('gpt-5', EModelEndpoint.openAI)).toBe(400000);
+  });
+});

@@ -184,4 +184,28 @@ describe('loadDefaultInterface', () => {
     expect(interfaceConfig?.retentionMode).toBe(RetentionMode.ALL);
     expect(interfaceConfig?.retainAgentFiles).toBe(true);
   });
+
+  it('passes through configured default pinned tools', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        defaultPinnedTools: ['artifacts', 'execute_code', 'mcp'],
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.defaultPinnedTools).toEqual(['artifacts', 'execute_code', 'mcp']);
+  });
+
+  it('omits default pinned tools when not explicitly configured', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig).not.toHaveProperty('defaultPinnedTools');
+  });
 });

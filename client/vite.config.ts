@@ -177,6 +177,13 @@ export default defineConfig(({ command }) => ({
       threshold: 10240,
     }),
   ],
+  optimizeDeps: {
+    include: [
+      'vite-plugin-node-polyfills/shims/buffer',
+      'vite-plugin-node-polyfills/shims/process',
+      'vite-plugin-node-polyfills/shims/global',
+    ],
+  },
   publicDir: command === 'serve' ? './public' : false,
   build: {
     sourcemap: buildSourceMap,

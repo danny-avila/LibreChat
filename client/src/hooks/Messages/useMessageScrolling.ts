@@ -1,14 +1,12 @@
+import { useRef, useCallback, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Constants } from 'librechat-data-provider';
-import { useState, useRef, useCallback, useEffect } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import { useMessagesConversation, useMessagesSubmission } from '~/Providers';
-import useScrollToRef from '~/hooks/useScrollToRef';
 import { reconcileMessageContentLayout } from './messageLayout';
+import useScrollToRef from '~/hooks/useScrollToRef';
 import store from '~/store';
 
-const threshold = 0.85;
-const debounceRate = 150;
 const resizeFollowThreshold = 120;
 
 export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
@@ -19,11 +17,8 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const isNearBottomRef = useRef(true);
   const suppressNextResizeFollowRef = useRef(false);
-  const [showScrollButton, setShowScrollButton] = useState(false);
   const { conversation, conversationId } = useMessagesConversation();
   const { setAbortScroll, isSubmitting, abortScroll } = useMessagesSubmission();
-
-  const timeoutIdRef = useRef<NodeJS.Timeout>();
 
   const getIsNearBottom = useCallback(() => {
     const scrollEl = scrollableRef.current;
@@ -34,53 +29,20 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     return distance <= resizeFollowThreshold;
   }, []);
 
-  const debouncedSetShowScrollButton = useCallback((value: boolean) => {
-    clearTimeout(timeoutIdRef.current);
-    timeoutIdRef.current = setTimeout(() => {
-      setShowScrollButton(value);
-    }, debounceRate);
+  /** The scroll-to-bottom button owns the IntersectionObserver (so its
+   * visibility state never re-renders the message tree host) and reports
+   * intersection back through this callback. */
+  const handleNearBottomChange = useCallback((isNearBottom: boolean) => {
+    isNearBottomRef.current = isNearBottom;
   }, []);
-
-  useEffect(() => {
-    if (!messagesEndRef.current || !scrollableRef.current) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        isNearBottomRef.current = entry.isIntersecting;
-        debouncedSetShowScrollButton(!entry.isIntersecting);
-      },
-      { root: scrollableRef.current, threshold },
-    );
-
-    observer.observe(messagesEndRef.current);
-
-    return () => {
-      observer.disconnect();
-      clearTimeout(timeoutIdRef.current);
-    };
-  }, [messagesEndRef, scrollableRef, debouncedSetShowScrollButton]);
 
   const debouncedHandleScroll = useCallback(() => {
     isNearBottomRef.current = getIsNearBottom();
-    if (messagesEndRef.current && scrollableRef.current) {
-      const observer = new IntersectionObserver(
-        ([entry]) => {
-          isNearBottomRef.current = entry.isIntersecting;
-          debouncedSetShowScrollButton(!entry.isIntersecting);
-        },
-        { root: scrollableRef.current, threshold },
-      );
-      observer.observe(messagesEndRef.current);
-      return () => observer.disconnect();
-    }
-  }, [debouncedSetShowScrollButton, getIsNearBottom]);
+  }, [getIsNearBottom]);
 
   const scrollCallback = () => {
     reconcileMessageContentLayout(scrollableRef.current);
     isNearBottomRef.current = true;
-    debouncedSetShowScrollButton(false);
   };
 
   const { scrollToRef: scrollToBottom, handleSmoothToRef } = useScrollToRef({
@@ -192,8 +154,8 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     scrollableRef,
     messagesEndRef,
     scrollToBottom,
-    showScrollButton,
     handleSmoothToRef,
     debouncedHandleScroll,
+    handleNearBottomChange,
   };
 }

@@ -3,7 +3,7 @@ import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
 import { RecoilRoot } from 'recoil';
-import { LangSelector } from './General';
+import { LangSelector } from './Selectors';
 import store from '~/store';
 
 describe('LangSelector', () => {

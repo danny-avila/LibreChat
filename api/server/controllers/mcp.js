@@ -10,6 +10,7 @@ const {
   checkAccess,
   isUserSourced,
   MCPErrorCodes,
+  splitMCPToolKey,
   redactServerSecrets,
   redactAllServerSecrets,
   isMCPDomainNotAllowedError,
@@ -177,7 +178,7 @@ const getMCPTools = async (req, res) => {
               continue;
             }
 
-            const toolName = toolKey.split(Constants.mcp_delimiter)[0];
+            const [toolName] = splitMCPToolKey(toolKey, [serverName]);
             server.tools.push({
               name: toolName,
               pluginKey: toolKey,
@@ -201,9 +202,27 @@ const getMCPTools = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-/** Mirrors canAccessResource's capability bypass plus per-resource ACL EDIT check. */
-async function computeCanEditByServer(req, serverConfigs) {
+/**
+ * Mirrors canAccessResource's capability bypass plus per-resource ACL EDIT check.
+ * `skipCapabilityWithoutDbIds` lets the list path skip the MANAGE_MCP_SERVERS probe
+ * when no DB-backed server is present; no list consumer reads the edit-gated fields
+ * the bypass would disclose. The detail route must not set it.
+ */
+async function computeCanEditByServer(req, serverConfigs, { skipCapabilityWithoutDbIds } = {}) {
   const canEditByServer = new Map();
+  const dbIdsToCheck = [];
+  const dbIdToServerName = new Map();
+  for (const [name, config] of Object.entries(serverConfigs)) {
+    if (config.dbId) {
+      dbIdsToCheck.push(config.dbId);
+      dbIdToServerName.set(String(config.dbId), name);
+      continue;
+    }
+    canEditByServer.set(name, isUserSourced(config));
+  }
+  if (skipCapabilityWithoutDbIds === true && dbIdsToCheck.length === 0) {
+    return canEditByServer;
+  }
   let bypass = false;
   try {
     bypass = await hasCapability(req.user, SystemCapabilities.MANAGE_MCP_SERVERS);
@@ -215,16 +234,6 @@ async function computeCanEditByServer(req, serverConfigs) {
       canEditByServer.set(name, true);
     }
     return canEditByServer;
-  }
-  const dbIdsToCheck = [];
-  const dbIdToServerName = new Map();
-  for (const [name, config] of Object.entries(serverConfigs)) {
-    if (config.dbId) {
-      dbIdsToCheck.push(config.dbId);
-      dbIdToServerName.set(String(config.dbId), name);
-      continue;
-    }
-    canEditByServer.set(name, isUserSourced(config));
   }
   if (dbIdsToCheck.length > 0) {
     try {
@@ -262,7 +271,9 @@ const getMCPServersList = async (req, res) => {
     }
 
     const serverConfigs = await resolveAllMcpConfigs(userId, req.user);
-    const canEditByServer = await computeCanEditByServer(req, serverConfigs);
+    const canEditByServer = await computeCanEditByServer(req, serverConfigs, {
+      skipCapabilityWithoutDbIds: true,
+    });
     return res.json(redactAllServerSecrets(serverConfigs, { canEditByServer }));
   } catch (error) {
     logger.error('[getMCPServersList]', error);

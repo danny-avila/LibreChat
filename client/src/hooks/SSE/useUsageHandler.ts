@@ -9,10 +9,12 @@ import type {
 } from 'librechat-data-provider';
 import type { ContextSnapshot } from '~/store/usage';
 import {
+  overheadKey,
   markUsageFolded,
   liveTokensFamily,
   totalUsageFamily,
   removeUsageAtoms,
+  setModelOverhead,
   clearUsageFolded,
   calibrationFamily,
   pendingUsageFamily,
@@ -150,6 +152,18 @@ export default function useUsageHandler(): UsageHandlers {
       if (data.calibrationRatio != null && data.calibrationRatio > 0) {
         jotai.set(calibrationFamily(convoKey), data.calibrationRatio);
       }
+      /** Cache the fixed instruction+tool overhead (already inclusive of tool
+       *  schemas) per agent/model so a snapshot-less branch of the same config can
+       *  reserve it in its prune budget and gauge. */
+      const overhead = data.effectiveInstructionTokens ?? data.breakdown?.instructionTokens ?? 0;
+      setModelOverhead(
+        overheadKey(
+          submission.conversation?.endpoint,
+          submission.conversation?.model,
+          data.agentId,
+        ),
+        overhead,
+      );
       streamCharsRef.current = 0;
       confirmedRef.current = 0;
       setLive(convoKey, 0);

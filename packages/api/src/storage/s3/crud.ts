@@ -1,5 +1,8 @@
 import fs from 'fs';
 import { Readable } from 'stream';
+import { logger } from '@librechat/data-schemas';
+import { FileSources } from 'librechat-data-provider';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   UploadPartCommand,
   PutObjectCommand,
@@ -10,16 +13,12 @@ import {
   HeadObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
-import { logger } from '@librechat/data-schemas';
-import { FileSources } from 'librechat-data-provider';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type {
   CompletedPart,
   GetObjectCommandInput,
   PutObjectCommandInput,
 } from '@aws-sdk/client-s3';
 import type { TFile } from 'librechat-data-provider';
-import type { ServerRequest } from '~/types';
 import type {
   UploadFileParams,
   SaveBufferParams,
@@ -32,6 +31,20 @@ import type {
   UrlBuilder,
   S3FileRef,
 } from '~/storage/types';
+import type { ServerRequest } from '~/types';
+import {
+  assertRemoteFileURL,
+  getRemoteFileFetchMaxBytes,
+  getRemoteFileFetchTimeoutMs,
+  assertRemoteFileContentLength,
+  createRemoteFileByteLimitTransform,
+} from '~/storage/url';
+import {
+  AVATAR_BASE_PATH,
+  DEFAULT_BASE_PATH as defaultBasePath,
+  INLINE_AVATAR_PATH_PREFIX,
+  INLINE_IMAGE_PATH_PREFIX,
+} from '~/storage/constants';
 import {
   assertS3FileName,
   assertPathSegment,
@@ -39,12 +52,6 @@ import {
 } from '~/storage/validation';
 import { initializeS3 } from '~/cdn/s3';
 import { deleteRagFile } from '~/files';
-import {
-  AVATAR_BASE_PATH,
-  DEFAULT_BASE_PATH as defaultBasePath,
-  INLINE_AVATAR_PATH_PREFIX,
-  INLINE_IMAGE_PATH_PREFIX,
-} from '~/storage/constants';
 import { s3Config } from './s3Config';
 
 const {
@@ -551,15 +558,20 @@ export async function saveURLToS3WithMetadata({
   urlBuilder,
 }: SaveURLParams & { urlBuilder?: UrlBuilder }): Promise<SaveURLResult> {
   try {
-    const response = await fetch(URL);
+    const maxBytes = getRemoteFileFetchMaxBytes();
+    const response = await fetch(assertRemoteFileURL(URL), {
+      signal: AbortSignal.timeout(getRemoteFileFetchTimeoutMs()),
+    });
     if (!response.ok) {
       throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
     }
+    assertRemoteFileContentLength(response.headers, maxBytes);
+
     const contentType = response.headers.get('content-type') ?? '';
     if (response.body) {
       const source = Readable.fromWeb(
         response.body as unknown as Parameters<typeof Readable.fromWeb>[0],
-      );
+      ).pipe(createRemoteFileByteLimitTransform(maxBytes));
       const result = await saveReadableToS3({
         userId,
         body: source,
@@ -582,6 +594,10 @@ export async function saveURLToS3WithMetadata({
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > maxBytes) {
+      throw new Error(`Remote file response too large: ${buffer.length} bytes`);
+    }
+
     const filepath = await saveBufferToS3({
       userId,
       buffer,

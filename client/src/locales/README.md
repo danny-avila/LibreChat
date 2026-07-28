@@ -13,7 +13,7 @@ To add a new language to LibreChat, follow these steps:
 
 ### 2. Update the Language Selector Component
 
-Edit `client/src/components/Nav/SettingsTabs/General/General.tsx` and add your new language option to the `languageOptions` array:
+Edit `client/src/components/Nav/SettingsTabs/General/Selectors.tsx` and add your new language option to the `languageOptions` array:
 
 ```typescript
 { value: 'language-code', label: localize('com_nav_lang_language_name') },

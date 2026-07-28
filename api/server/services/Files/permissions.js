@@ -33,7 +33,7 @@ function getFilesById(files) {
 
 /**
  * Checks if a user has access to multiple files through a shared agent (batch operation).
- * Access is scoped to files attached to the agent and owned by the agent author.
+ * Access is scoped to files attached to the agent with valid file metadata.
  * @param {Object} params - Parameters object
  * @param {string} params.userId - The user ID to check access for
  * @param {string} [params.role] - Optional user role to avoid DB query
@@ -64,7 +64,7 @@ const hasAccessToFilesViaAgent = async ({ userId, role, fileIds, agentId, isDele
             await getFiles({ file_id: { $in: fileIds } }, null, { file_id: 1, user: 1 }),
           );
     const canInheritFromAgent = (fileId) =>
-      attachedFileIds.has(fileId) && filesById.get(fileId)?.user?.toString() === agentAuthorId;
+      attachedFileIds.has(fileId) && filesById.get(fileId)?.user != null;
 
     if (agentAuthorId === userId.toString()) {
       fileIds.forEach((fileId) => {

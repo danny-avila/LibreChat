@@ -3,7 +3,13 @@ import { useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, tMessageSchema, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation, TSubmission, Agents } from 'librechat-data-provider';
 import type { StreamStatusResponse } from '~/data-provider';
-import { getBranchSiblingIndexesForTarget } from '~/utils';
+import {
+  dedupeSteersById,
+  applyPendingAction,
+  carriedSteerContext,
+  getBranchSiblingIndexesForTarget,
+} from '~/utils';
+import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useStreamStatus } from '~/data-provider';
 import store from '~/store';
 
@@ -130,7 +136,7 @@ function buildSubmissionFromResumeState(
 
   // ALWAYS use aggregatedContent from resumeState - it has the latest content from the running job.
   // DB content may be stale (saved at disconnect, but generation continued).
-  const initialResponse: TMessage = {
+  let initialResponse: TMessage = {
     messageId: existingResponseMessage?.messageId ?? responseMessageId,
     parentMessageId: existingResponseMessage?.parentMessageId ?? userMessage.messageId,
     conversationId,
@@ -144,14 +150,33 @@ function buildSubmissionFromResumeState(
     iconURL: preferDefinedString(existingResponseMessage?.iconURL, resumeState.iconURL),
   } as TMessage;
 
+  // Re-paused turn: seed the approval / ask-user controls straight onto the
+  // placeholder so they render on load without waiting for the SSE sync replay.
+  if (resumeState.pendingAction) {
+    initialResponse = applyPendingAction(initialResponse, resumeState.pendingAction);
+  }
+
   const conversation: TConversation = {
     conversationId,
     title: 'Resumed Chat',
     endpoint: null,
   } as TConversation;
 
+  // On reload, `messages` is the full DB array, which already holds the paused user
+  // row and the partial (unfinished) assistant row under the same ids that
+  // `userMessage` / `initialResponse` (and the resume final event's request/response
+  // messages) re-supply. Strip them so createdHandler/finalHandler — which build
+  // `[...messages, requestMessage, responseMessage]` — don't append a duplicate pair.
+  const pausedResponseIdUnpadded = initialResponse.messageId.replace(/_+$/, '');
+  const dedupedMessages = messages.filter(
+    (m) =>
+      m.messageId !== userMessage.messageId &&
+      m.messageId !== initialResponse.messageId &&
+      m.messageId !== pausedResponseIdUnpadded,
+  );
+
   return {
-    messages,
+    messages: dedupedMessages,
     userMessage,
     initialResponse,
     conversation,
@@ -202,6 +227,36 @@ export default function useResumeOnLoad(
         for (const { parentMessageId, siblingIdx } of branchIndexes) {
           set(store.messagesSiblingIdxFamily(parentMessageId), siblingIdx);
         }
+      },
+    [],
+  );
+
+  /** Restore pending-steer chips for steers the server still has queued
+   *  (injected ones already live inside the resumed aggregatedContent). */
+  const convertSteersToQueued = useSteerConvert();
+
+  const restoreSteerChips = useRecoilCallback(
+    ({ set }) =>
+      (activeConversationId: string, pendingSteers: Agents.ResumeState['pendingSteers']) => {
+        // Always reconcile against the server's still-queued list (mirrors the
+        // sync-path re-seed in useResumableSSE): a steer applied while this
+        // client was away is absent here (its inline part rides
+        // aggregatedContent instead), so an EMPTY list must clear stale local
+        // pending chips, not leave them stranded beside the applied part.
+        set(store.pendingSteersByConvoId(activeConversationId), (prev) => {
+          const chipById = new Map(prev.map((chip) => [chip.steerId, chip]));
+          return [
+            ...(pendingSteers ?? []).map((steer) => ({
+              steerId: steer.steerId,
+              text: steer.text,
+              status: 'pending' as const,
+              createdAt: steer.createdAt ?? Date.now(),
+              ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+              ...carriedSteerContext(chipById.get(steer.steerId)),
+            })),
+            ...prev.filter((steer) => steer.status === 'failed'),
+          ];
+        });
       },
     [],
   );
@@ -307,6 +362,23 @@ export default function useResumeOnLoad(
 
     if (!streamStatus.active || !streamStatus.streamId) {
       console.log('[ResumeOnLoad] No active job to resume for:', conversationId);
+      // A terminal drain may have parked acknowledged steers no subscriber
+      // received (tab closed / reload racing the final event) — the status
+      // claim returns them exactly once; restore as queued follow-up chips.
+      // An expired pendingAction can report inactive BEFORE the sweeper parks
+      // the steer queue: those steers still ride resumeState.pendingSteers,
+      // so convert both lists (id-deduped) before the empty seed clears chips.
+      const leftoverSteers = dedupeSteersById(
+        streamStatus.unrecoveredSteers,
+        streamStatus.resumeState?.pendingSteers,
+      );
+      if (conversationId && leftoverSteers.length > 0) {
+        convertSteersToQueued(conversationId, leftoverSteers);
+      }
+      // The run is terminal, so any remaining local pending chip is stale:
+      // its steer either applied (inline part in the saved message) or rode
+      // `unrecoveredSteers` above — same empty-list reconcile as the resume path.
+      restoreSteerChips(conversationId, undefined);
       processedConvoRef.current = conversationId;
       return;
     }
@@ -324,6 +396,7 @@ export default function useResumeOnLoad(
     // Build submission from resume state if available
     if (streamStatus.resumeState) {
       restoreResumeBranch(streamStatus.resumeState, messages, conversationId);
+      restoreSteerChips(conversationId, streamStatus.resumeState.pendingSteers);
       const submission = buildSubmissionFromResumeState(
         streamStatus.resumeState,
         streamStatus.streamId,
@@ -367,6 +440,8 @@ export default function useResumeOnLoad(
     getMessages,
     setSubmission,
     restoreResumeBranch,
+    restoreSteerChips,
+    convertSteersToQueued,
   ]);
 
   // Reset processedConvoRef when conversation changes to allow re-checking

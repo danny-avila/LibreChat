@@ -51,16 +51,17 @@ const Image = ({
   const absoluteImageUrl = useMemo(() => {
     if (!imagePath) return imagePath;
 
-    if (
-      imagePath.startsWith('http') ||
-      imagePath.startsWith('data:') ||
-      !imagePath.startsWith('/images/')
-    ) {
+    if (imagePath.startsWith('http') || imagePath.startsWith('data:')) {
       return imagePath;
     }
 
-    const baseURL = apiBaseUrl();
-    return `${baseURL}${imagePath}`;
+    // Root-relative server paths (`/images/...` static, `/api/share/...` share
+    // routes) are resolved against the API base so they load under a subpath.
+    if (imagePath.startsWith('/images/') || imagePath.startsWith('/api/')) {
+      return `${apiBaseUrl()}${imagePath}`;
+    }
+
+    return imagePath;
   }, [imagePath]);
 
   const downloadImage = async () => {

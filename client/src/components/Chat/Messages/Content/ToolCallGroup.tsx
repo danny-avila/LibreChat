@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { ChevronDown, Users } from 'lucide-react';
+import { ChevronDown, MessageCircleQuestion, Users } from 'lucide-react';
 import { Tools, Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type {
   TAttachment,
@@ -10,17 +10,39 @@ import type {
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
+import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
+import { isBashProgrammaticToolCall } from './routing';
+import { ASK_USER_QUESTION } from '~/utils/approval';
 import { cn, getToolDisplayLabel } from '~/utils';
 import { StackedToolIcons } from './ToolOutput';
-import { useMCPIconMap } from '~/hooks/MCP';
 import { AttachmentGroup } from './Parts';
 import store from '~/store';
-import { isBashProgrammaticToolCall } from './routing';
 
 interface ToolMeta {
   name: string;
   iconName: string;
   hasOutput: boolean;
+}
+
+type ToolCallWithNestedContent = Agents.ToolCall & {
+  subagent_content?: TMessageContentParts[];
+};
+
+function hasPendingApprovalInPart(part: TMessageContentParts): boolean {
+  if (part.type !== ContentTypes.TOOL_CALL) {
+    return false;
+  }
+  const toolCall = part[ContentTypes.TOOL_CALL] as ToolCallWithNestedContent | undefined;
+  if (!toolCall) {
+    return false;
+  }
+  if (toolCall.approval != null && (toolCall.output?.length ?? 0) === 0) {
+    return true;
+  }
+  return (
+    Array.isArray(toolCall.subagent_content) &&
+    toolCall.subagent_content.some(hasPendingApprovalInPart)
+  );
 }
 
 function getToolMeta(part: TMessageContentParts): ToolMeta | null {
@@ -104,11 +126,17 @@ export default function ToolCallGroup({
 }: ToolCallGroupProps) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
+  const mcpServerNames = useMCPServerNames();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
+  const retainedForPendingApprovalRef = useRef(false);
   const count = parts.length;
 
   const toolMetadata = useMemo(() => parts.map((p) => getToolMeta(p.part)), [parts]);
+  const hasPendingApproval = useMemo(
+    () => parts.some(({ part }) => hasPendingApprovalInPart(part)),
+    [parts],
+  );
   const allCompleted = useMemo(
     () => toolMetadata.every((m) => m?.hasOutput === true),
     [toolMetadata],
@@ -133,12 +161,26 @@ export default function ToolCallGroup({
    *  summary needs to match that tense. */
   const subagentsDone = allSubagents && (allCompleted || !isSubmitting);
 
+  /** `ask_user_question` calls form their own category, mirroring subagents:
+   *  a homogeneous group reads "Asking/Asked N questions" (never "Used N
+   *  tools — ask_user_question") with a question glyph. A group only exists
+   *  at count >= 2, so the plural is always grammatical. */
+  const askQuestionCount = useMemo(
+    () => toolNames.filter((n) => n === ASK_USER_QUESTION).length,
+    [toolNames],
+  );
+  const allAskQuestions = askQuestionCount > 0 && askQuestionCount === count;
+  /** Past tense once the turn is settled — matches the Asking/Asked record
+   *  card. While a multi-question turn streams, the still-open question's
+   *  tool_call part has no output yet, so keep the present tense. */
+  const askQuestionsDone = allAskQuestions && (allCompleted || !isSubmitting);
+
   const toolNameSummary = useMemo(() => {
     const seen = new Set<string>();
     const labels: string[] = [];
     for (const rawName of toolNames) {
       if (!rawName) continue;
-      const label = getToolDisplayLabel(rawName, localize);
+      const label = getToolDisplayLabel(rawName, localize, mcpServerNames);
       if (!seen.has(label)) {
         seen.add(label);
         labels.push(label);
@@ -148,7 +190,7 @@ export default function ToolCallGroup({
       return labels.join(', ');
     }
     return `${labels.slice(0, 3).join(', ')}, +${labels.length - 3}`;
-  }, [toolNames, localize]);
+  }, [toolNames, localize, mcpServerNames]);
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const autoCollapse = !autoExpand && count >= 2 && allCompleted;
@@ -211,19 +253,52 @@ export default function ToolCallGroup({
       if (isExpanded) {
         return;
       }
+      if (hasPendingApproval) {
+        // Approval controls own unsent local form state. Keep unresolved cards
+        // mounted (the collapsed panel is inert/hidden) so collapsing a batch
+        // cannot erase decisions the reviewer already made.
+        retainedForPendingApprovalRef.current = true;
+        return;
+      }
+      retainedForPendingApprovalRef.current = false;
       setShouldRenderBody(false);
       notifyLayoutChange();
     },
-    [isExpanded, notifyLayoutChange],
+    [hasPendingApproval, isExpanded, notifyLayoutChange],
   );
 
-  const getSubagentLabel = () =>
-    subagentsDone
-      ? localize('com_ui_ran_n_agents', { 0: String(count) })
-      : localize('com_ui_running_n_agents', { 0: String(count) });
-  const groupLabel = allSubagents
-    ? getSubagentLabel()
-    : localize('com_ui_used_n_tools', { 0: String(count) });
+  useEffect(() => {
+    if (isExpanded) {
+      retainedForPendingApprovalRef.current = false;
+      return;
+    }
+    if (!hasPendingApproval && retainedForPendingApprovalRef.current) {
+      // A completed collapse transition retained this body only to preserve
+      // approval form state. Release it once the last approval resolves.
+      retainedForPendingApprovalRef.current = false;
+      setShouldRenderBody(false);
+      notifyLayoutChange();
+    }
+  }, [hasPendingApproval, isExpanded, notifyLayoutChange]);
+
+  /** Category-aware header verb: subagents and questions read as their own
+   *  category (with tense), everything else is the generic "Used N tools". */
+  const resolveGroupLabel = (): string => {
+    if (allSubagents) {
+      return subagentsDone
+        ? localize('com_ui_ran_n_agents', { 0: String(count) })
+        : localize('com_ui_running_n_agents', { 0: String(count) });
+    }
+    if (allAskQuestions) {
+      return askQuestionsDone
+        ? localize('com_ui_asked_n_questions', { 0: String(count) })
+        : localize('com_ui_asking_n_questions', { 0: String(count) });
+    }
+    return localize('com_ui_used_n_tools', { 0: String(count) });
+  };
+  const groupLabel = resolveGroupLabel();
+  /** Single category glyph for homogeneous groups (else StackedToolIcons). */
+  const CategoryIcon = allSubagents ? Users : MessageCircleQuestion;
 
   const hasActiveToolCall = useMemo(
     () => isSubmitting && toolMetadata.some((m) => m && !m.hasOutput),
@@ -246,11 +321,12 @@ export default function ToolCallGroup({
         aria-expanded={isExpanded}
         aria-label={groupLabel}
       >
-        {allSubagents ? (
-          /** Subagent groups don't have per-tool icons — StackedToolIcons
-           *  falls back to a generic wrench that reads as "tools" rather
-           *  than "agents". A single Users glyph matches the individual
-           *  subagent card header and keeps the visual language consistent. */
+        {allSubagents || allAskQuestions ? (
+          /** Homogeneous category groups get a single category glyph instead
+           *  of StackedToolIcons' generic wrenches: a Users glyph for
+           *  subagents, a question glyph for ask_user_question — matching
+           *  their individual card headers and reading as the category
+           *  rather than "tools". */
           <div
             className={cn(
               'flex h-5 w-5 shrink-0 items-center justify-center text-text-secondary',
@@ -258,7 +334,7 @@ export default function ToolCallGroup({
             )}
             aria-hidden="true"
           >
-            <Users size={14} />
+            <CategoryIcon size={14} />
           </div>
         ) : (
           <StackedToolIcons
@@ -269,10 +345,10 @@ export default function ToolCallGroup({
           />
         )}
         <span className="tool-status-text font-medium">{groupLabel}</span>
-        {/** Hide the tool-name summary for pure-subagent groups — every
-         *   entry deduplicates to the same "subagent" token, which adds
-         *   noise without info. Mixed groups keep the summary. */}
-        {toolNameSummary && !allSubagents && (
+        {/** Hide the tool-name summary for pure-category groups (subagents /
+         *   questions) — every entry deduplicates to the same token, which
+         *   adds noise without info. Mixed groups keep the summary. */}
+        {toolNameSummary && !allSubagents && !allAskQuestions && (
           <span className="text-xs font-normal text-text-secondary">— {toolNameSummary}</span>
         )}
         <ChevronDown
@@ -283,7 +359,12 @@ export default function ToolCallGroup({
           aria-hidden="true"
         />
       </button>
-      <div style={expandStyle} onTransitionEnd={handleTransitionEnd} aria-hidden={!isExpanded}>
+      <div
+        style={expandStyle}
+        onTransitionEnd={handleTransitionEnd}
+        aria-hidden={!isExpanded}
+        data-testid="tool-call-group-panel"
+      >
         {shouldRenderBody && (
           <div className="overflow-hidden" ref={expandRef}>
             <div className="py-0.5 pl-4">

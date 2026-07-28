@@ -15,6 +15,7 @@ import type { Types } from 'mongoose';
 import type { ImportLimits } from './limits';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from './limits';
+import { isSafeSkillFilePath } from './path';
 import { parseSkillMarkdown } from './parse';
 
 const SKILL_MD = 'SKILL.md';
@@ -79,20 +80,6 @@ function sendFrontmatterParseError(res: Response, parseError: string) {
       },
     ],
   });
-}
-
-/** Validates a relative path is safe (no traversal, no absolute paths). */
-function isSafePath(p: string): boolean {
-  if (!p || p.startsWith('/') || p.startsWith('\\')) {
-    return false;
-  }
-  const segments = p.split('/');
-  for (const seg of segments) {
-    if (seg === '..' || seg === '.' || seg === '') {
-      return false;
-    }
-  }
-  return /^[a-zA-Z0-9._\-/]+$/.test(p);
 }
 
 /** Type guard for validation errors thrown by data-schemas. */
@@ -441,7 +428,7 @@ async function handleZip(
       continue;
     }
 
-    if (!relativePath || !isSafePath(relativePath)) {
+    if (!relativePath || !isSafeSkillFilePath(relativePath)) {
       fileResults.push({ path: normalized, status: 'error', error: 'Invalid path' });
       continue;
     }

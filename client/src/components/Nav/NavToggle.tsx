@@ -1,4 +1,5 @@
 import { TooltipAnchor } from '@librechat/client';
+import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -45,6 +46,9 @@ export default function NavToggle({
   }
 
   const ariaDescription = localize(actionKey, { 0: sidebarLabel });
+  const shortcutId = side === 'left' ? 'toggleSidebar' : undefined;
+  const tooltipDescription = useShortcutHint(shortcutId, ariaDescription);
+  const ariaKey = useShortcutAriaKey(shortcutId);
 
   return (
     <div
@@ -65,7 +69,8 @@ export default function NavToggle({
         id={`toggle-${side}-nav`}
         onClick={onToggle}
         role="button"
-        description={ariaDescription}
+        description={tooltipDescription}
+        aria-keyshortcuts={ariaKey}
         className="flex items-center justify-center"
         tabIndex={0}
       >

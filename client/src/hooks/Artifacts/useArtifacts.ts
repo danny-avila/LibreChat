@@ -1,10 +1,139 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { Constants } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useResetRecoilState } from 'recoil';
-import { useArtifactsContext } from '~/Providers';
 import { isCodeOnlyArtifact } from '~/utils/artifacts';
+import { useArtifactsContext } from '~/Providers';
 import { logger } from '~/utils';
 import store from '~/store';
+
+type ArtifactFence = {
+  marker: string;
+  length: number;
+  contentStart: number;
+};
+
+const getLineEnd = (text: string, start: number): number => {
+  const index = text.indexOf('\n', start);
+  return index === -1 ? text.length : index;
+};
+
+const getNextLineStart = (text: string, lineEnd: number): number =>
+  lineEnd >= text.length ? text.length : lineEnd + 1;
+
+const getFirstContentLineStart = (text: string, start: number): number => {
+  let currentIndex = start;
+
+  while (currentIndex < text.length) {
+    const lineEnd = getLineEnd(text, currentIndex);
+    const line = text.slice(currentIndex, lineEnd);
+    if (line.trim().length > 0) {
+      return currentIndex;
+    }
+    currentIndex = getNextLineStart(text, lineEnd);
+  }
+
+  return text.length;
+};
+
+const getArtifactFence = (text: string, lineStart: number): ArtifactFence | null => {
+  const lineEnd = getLineEnd(text, lineStart);
+  const line = text.slice(lineStart, lineEnd);
+  const match = line.trimStart().match(/^(`{3,}|~{3,})/);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    marker: match[1][0],
+    length: match[1].length,
+    contentStart: getNextLineStart(text, lineEnd),
+  };
+};
+
+const isClosingArtifactFence = (line: string, openingFence: ArtifactFence): boolean => {
+  const closePattern = new RegExp(`^\\${openingFence.marker}{${openingFence.length},}\\s*$`);
+  return closePattern.test(line.trim());
+};
+
+const isArtifactCloseLine = (line: string): boolean => {
+  const trimmed = line.trimStart();
+  return trimmed.startsWith(':::') && !trimmed.startsWith(':::artifact');
+};
+
+const hasArtifactCloseAfter = (text: string, start: number): boolean => {
+  const closeStart = getFirstContentLineStart(text, start);
+  if (closeStart >= text.length) {
+    return false;
+  }
+
+  const closeLineEnd = getLineEnd(text, closeStart);
+  return isArtifactCloseLine(text.slice(closeStart, closeLineEnd));
+};
+
+const hasUnfencedArtifactClose = (text: string, start: number): boolean => {
+  let currentIndex = start;
+  let codeFence: ArtifactFence | null = null;
+
+  while (currentIndex < text.length) {
+    const lineEnd = getLineEnd(text, currentIndex);
+    const line = text.slice(currentIndex, lineEnd);
+    const fence = getArtifactFence(text, currentIndex);
+
+    if (isArtifactCloseLine(line) && !codeFence) {
+      return true;
+    }
+
+    if (fence && !codeFence) {
+      codeFence = fence;
+    } else if (codeFence && isClosingArtifactFence(line, codeFence)) {
+      codeFence = null;
+    }
+
+    currentIndex = getNextLineStart(text, lineEnd);
+  }
+
+  return false;
+};
+
+const hasEnclosedArtifact = (messageText: string): boolean => {
+  const text = messageText.trim();
+  const artifactPattern = /:::artifact(?:\{[^}]*\})?/g;
+  let artifactMatch = artifactPattern.exec(text);
+
+  while (artifactMatch) {
+    const openingLineEnd = getLineEnd(text, artifactMatch.index);
+    const contentStart = getFirstContentLineStart(text, getNextLineStart(text, openingLineEnd));
+    const openingFence = getArtifactFence(text, contentStart);
+
+    if (!openingFence) {
+      if (hasUnfencedArtifactClose(text, contentStart)) {
+        return true;
+      }
+      artifactMatch = artifactPattern.exec(text);
+      continue;
+    }
+
+    let currentIndex = openingFence.contentStart;
+    while (currentIndex < text.length) {
+      const lineEnd = getLineEnd(text, currentIndex);
+      const line = text.slice(currentIndex, lineEnd);
+
+      if (isClosingArtifactFence(line, openingFence)) {
+        if (hasArtifactCloseAfter(text, getNextLineStart(text, lineEnd))) {
+          return true;
+        }
+        break;
+      }
+
+      currentIndex = getNextLineStart(text, lineEnd);
+    }
+
+    artifactMatch = artifactPattern.exec(text);
+  }
+
+  return false;
+};
 
 export default function useArtifacts() {
   const [activeTab, setActiveTab] = useState('preview');
@@ -136,12 +265,7 @@ export default function useArtifacts() {
       return;
     }
 
-    const hasEnclosedArtifact =
-      /:::artifact(?:\{[^}]*\})?(?:\s|\n)*(?:```[\s\S]*?```(?:\s|\n)*)?:::/m.test(
-        latestMessageText.trim(),
-      );
-
-    if (hasEnclosedArtifact) {
+    if (hasEnclosedArtifact(latestMessageText)) {
       logger.log('artifacts', 'Enclosed artifact detected during generation, switching to preview');
       setActiveTab('preview');
       hasEnclosedArtifactRef.current = true;

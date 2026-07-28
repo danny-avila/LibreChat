@@ -2,7 +2,13 @@ import { Types } from 'mongoose';
 import { TokenExchangeMethodEnum } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
-import { resolveHeaders, resolveNestedObject, processMCPEnv, encodeHeaderValue } from './env';
+import {
+  resolveNestedObject,
+  encodeHeaderValue,
+  resolveHeaders,
+  createSafeUser,
+  processMCPEnv,
+} from './env';
 
 function isStdioOptions(options: MCPOptions): options is Extract<MCPOptions, { type?: 'stdio' }> {
   return !options.type || options.type === 'stdio';
@@ -2122,5 +2128,64 @@ describe('processMCPEnv', () => {
         throw new Error('Expected streamable-http options');
       }
     });
+  });
+});
+
+describe('createSafeUser', () => {
+  it('returns an empty object for null/undefined users', () => {
+    expect(createSafeUser(null)).toEqual({});
+    expect(createSafeUser(undefined)).toEqual({});
+  });
+
+  it('falls back to _id (ObjectId) when the virtual id is absent', () => {
+    const objectId = new Types.ObjectId();
+    const user = { _id: objectId, email: 'lean@example.com' } as unknown as IUser;
+
+    const safeUser = createSafeUser(user);
+
+    expect(safeUser.id).toBe(objectId.toString());
+    expect(safeUser.email).toBe('lean@example.com');
+  });
+
+  it('falls back to a string _id when the virtual id is absent', () => {
+    const user = { _id: 'string-id-123', email: 'lean@example.com' } as unknown as IUser;
+
+    const safeUser = createSafeUser(user);
+
+    expect(safeUser.id).toBe('string-id-123');
+  });
+
+  it('leaves a truthy id untouched and does not use _id', () => {
+    const objectId = new Types.ObjectId();
+    const user = { _id: objectId, id: 'real-id', email: 'user@example.com' } as unknown as IUser;
+
+    const safeUser = createSafeUser(user);
+
+    expect(safeUser.id).toBe('real-id');
+    expect(safeUser.id).not.toBe(objectId.toString());
+  });
+
+  it('replaces a falsy (empty-string) id with _id', () => {
+    const objectId = new Types.ObjectId();
+    const user = { _id: objectId, id: '', email: 'user@example.com' } as unknown as IUser;
+
+    const safeUser = createSafeUser(user);
+
+    expect(safeUser.id).toBe(objectId.toString());
+  });
+
+  it('leaves id undefined when _id is absent', () => {
+    const user = { email: 'no-id@example.com' } as unknown as IUser;
+
+    const safeUser = createSafeUser(user);
+
+    expect(safeUser.id).toBeUndefined();
+  });
+
+  it('leaves id undefined when _id is nullish and does not throw', () => {
+    const user = { _id: null, email: 'null-id@example.com' } as unknown as IUser;
+
+    expect(() => createSafeUser(user)).not.toThrow();
+    expect(createSafeUser(user).id).toBeUndefined();
   });
 });

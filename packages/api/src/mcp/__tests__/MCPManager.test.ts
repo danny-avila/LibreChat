@@ -42,13 +42,23 @@ jest.mock('~/auth/domain', () => ({
   isMCPDomainAllowed: jest.fn().mockResolvedValue(true),
 }));
 
+const mockShouldEnableSSRFProtection = jest.fn().mockReturnValue(false);
+const mockGetAllowedDomains = jest.fn().mockReturnValue(null);
+const mockGetAllowedAddresses = jest.fn().mockReturnValue(null);
 const mockRegistryInstance = {
   getServerConfig: jest.fn(),
   getAllServerConfigs: jest.fn(),
   getOAuthServers: jest.fn(),
-  shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
-  getAllowedDomains: jest.fn().mockReturnValue(null),
-  getAllowedAddresses: jest.fn().mockReturnValue(null),
+  shouldEnableSSRFProtection: mockShouldEnableSSRFProtection,
+  getAllowedDomains: mockGetAllowedDomains,
+  getAllowedAddresses: mockGetAllowedAddresses,
+  // Mirrors the real per-request resolver by reading the base-allowlist mocks above, so
+  // existing tests that override getAllowedDomains/shouldEnableSSRFProtection still apply.
+  resolveAllowlists: jest.fn(async () => ({
+    allowedDomains: mockGetAllowedDomains(),
+    allowedAddresses: mockGetAllowedAddresses(),
+    useSSRFProtection: mockShouldEnableSSRFProtection(),
+  })),
 };
 
 jest.mock('~/mcp/registry/MCPServersRegistry', () => ({
@@ -432,6 +442,86 @@ describe('MCPManager', () => {
         `[getServerToolFunctions] Error getting tool functions for server ${specificServerName}`,
         expect.any(Error),
       );
+    });
+  });
+
+  describe('callTool - Activity Tracking', () => {
+    const mockUser = { id: 'activity-user' } as IUser;
+    const mockFlowManager = {} as Parameters<MCPManager['callTool']>[0]['flowManager'];
+    const serverConfig: t.SSEOptions = {
+      type: 'sse',
+      url: 'https://api.example.com',
+    };
+
+    function createConnection(): MCPConnection {
+      return {
+        isConnected: jest.fn().mockResolvedValue(true),
+        setRequestHeaders: jest.fn(),
+        timeout: 30000,
+        client: {
+          request: jest.fn().mockResolvedValue({
+            content: [{ type: 'text', text: 'Tool result' }],
+            isError: false,
+          }),
+        },
+      } as unknown as MCPConnection;
+    }
+
+    function getManagerInternals(manager: MCPManager): {
+      userConnections: Map<string, Map<string, MCPConnection>>;
+      updateUserLastActivity: (trackedUserId: string) => void;
+    } {
+      return manager as unknown as {
+        userConnections: Map<string, Map<string, MCPConnection>>;
+        updateUserLastActivity: (trackedUserId: string) => void;
+      };
+    }
+
+    beforeEach(() => {
+      (graphUtils.preProcessGraphTokens as jest.Mock).mockImplementation(
+        async (options) => options,
+      );
+    });
+
+    it('updates activity when a cached connection is replaced during an in-flight call', async () => {
+      const manager = new MCPManager();
+      const activeConnection = createConnection();
+      const replacementConnection = createConnection();
+      const internals = getManagerInternals(manager);
+      internals.userConnections.set(mockUser.id, new Map([[serverName, replacementConnection]]));
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(activeConnection);
+      const updateActivity = jest.spyOn(internals, 'updateUserLastActivity');
+
+      await manager.callTool({
+        user: mockUser,
+        serverName,
+        serverConfig,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager,
+      });
+
+      expect(updateActivity).toHaveBeenCalledWith(mockUser.id);
+    });
+
+    it('does not create activity entries for app-shared connections', async () => {
+      const manager = new MCPManager();
+      const appConnection = createConnection();
+      const internals = getManagerInternals(manager);
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(appConnection);
+      const updateActivity = jest.spyOn(internals, 'updateUserLastActivity');
+
+      await manager.callTool({
+        user: mockUser,
+        serverName,
+        serverConfig,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager,
+      });
+
+      expect(updateActivity).not.toHaveBeenCalled();
+      expect(manager.getConnectionStats().activityEntries).toBe(0);
     });
   });
 

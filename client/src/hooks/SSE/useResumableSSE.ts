@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
-import { useSetRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import {
   request,
   Constants,
@@ -10,8 +10,10 @@ import {
   ErrorTypes,
   StepEvents,
   apiBaseUrl,
+  SteerEvents,
   UsageEvents,
   createPayload,
+  ApprovalEvents,
   ViolationTypes,
   removeNullishValues,
 } from 'librechat-data-provider';
@@ -21,25 +23,38 @@ import type {
   TPayload,
   TSubmission,
   TConversation,
+  TPendingSteer,
   EventSubmission,
+  TSteerAppliedEvent,
 } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { ActiveJobsResponse } from '~/data-provider';
 import type { TResData } from '~/common';
 import {
+  logger,
   clearAllDrafts,
+  applySteerPart,
+  applyPendingAction,
+  carriedSteerContext,
+  resolveRunEndTarget,
+  findSteerMessageIndex,
+  appendAppliedSteerIds,
   removeConvoFromAllQueries,
   upsertConvoInAllQueries,
+  countTaggedApprovalParts,
   countTrailingOutputChars,
   markStreamStartFailedMetadata,
+  findPendingActionMessageIndex,
 } from '~/utils';
 import {
   useGetUserBalance,
+  fetchStreamStatus,
   useGetStartupConfig,
   queueTitleGeneration,
   streamStatusQueryKey,
 } from '~/data-provider';
 import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
+import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useUsageHandler from './useUsageHandler';
 import store from '~/store';
@@ -48,14 +63,6 @@ type ChatHelpers = Pick<
   EventHandlerParams,
   'setMessages' | 'getMessages' | 'setConversation' | 'setIsSubmitting' | 'newConversation'
 >;
-
-const getStreamStartFailureData = (errorData?: Record<string, unknown>): TResData =>
-  ({
-    text: errorData
-      ? JSON.stringify(errorData)
-      : 'Error connecting to server, try refreshing the page.',
-    metadata: markStreamStartFailedMetadata(),
-  }) as unknown as TResData;
 
 const MAX_RETRIES = 5;
 const START_GENERATION_NETWORK_RETRIES = 3;
@@ -66,15 +73,95 @@ type StartGenerationError = {
   code?: string;
   response?: {
     status?: number;
-    data?: {
-      code?: string;
-    };
+    data?: unknown;
     headers?: Record<string, string | number | string[] | undefined>;
   };
 };
 
 const toStartGenerationError = (error: unknown): StartGenerationError | undefined =>
   error != null && typeof error === 'object' ? (error as StartGenerationError) : undefined;
+
+const getStartGenerationStreamId = (data: unknown): string | null => {
+  if (data == null || typeof data !== 'object' || !('streamId' in data)) {
+    return null;
+  }
+
+  const streamId = (data as { streamId?: unknown }).streamId;
+  return typeof streamId === 'string' && streamId.length > 0 ? streamId : null;
+};
+
+/** The server returns `status: 'resumed'` when a duplicate start request was deduped to an
+ *  already-running stream — the client must subscribe with resume=true to replay its state
+ *  (prior content and any pending-action) rather than only receiving live events. */
+const isResumedStartResponse = (data: unknown): boolean =>
+  data != null && typeof data === 'object' && (data as { status?: unknown }).status === 'resumed';
+
+const parseSSEErrorData = (body: string): unknown | null => {
+  const blocks = body.split(/\r?\n\r?\n/);
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/);
+    const event = lines
+      .find((line) => line.startsWith('event:'))
+      ?.slice('event:'.length)
+      .trim();
+    if (event !== 'error') {
+      continue;
+    }
+
+    const data = lines
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice('data:'.length).trimStart())
+      .join('\n')
+      .trim();
+
+    if (!data) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(data);
+    } catch {
+      return data;
+    }
+  }
+
+  return null;
+};
+
+const getSSEErrorText = (payload: unknown): string | null => {
+  if (typeof payload === 'string') {
+    return payload;
+  }
+
+  if (payload == null || typeof payload !== 'object') {
+    return null;
+  }
+
+  const record = payload as Record<string, unknown>;
+  const text = record.text ?? record.message ?? record.error;
+  return typeof text === 'string' && text.length > 0 ? text : null;
+};
+
+const getStreamStartFailureText = (errorData?: unknown): string => {
+  if (typeof errorData === 'string') {
+    const sseErrorData = parseSSEErrorData(errorData);
+    if (sseErrorData != null) {
+      return getSSEErrorText(sseErrorData) ?? JSON.stringify(sseErrorData);
+    }
+
+    return errorData || 'Error connecting to server, try refreshing the page.';
+  }
+
+  return errorData
+    ? JSON.stringify(errorData)
+    : 'Error connecting to server, try refreshing the page.';
+};
+
+const getStreamStartFailureData = (errorData?: unknown): TResData =>
+  ({
+    text: getStreamStartFailureText(errorData),
+    metadata: markStreamStartFailedMetadata(),
+  }) as unknown as TResData;
 
 const isRetryableNetworkError = (error: unknown) => {
   if (!(error instanceof Error)) {
@@ -87,9 +174,12 @@ const isRetryableNetworkError = (error: unknown) => {
 
 const isServerNotReadyError = (error: unknown) => {
   const candidate = toStartGenerationError(error);
-  return (
-    candidate?.response?.status === 503 && candidate.response?.data?.code === SERVER_NOT_READY_CODE
-  );
+  const data = candidate?.response?.data;
+  const code =
+    data != null && typeof data === 'object' && 'code' in data
+      ? (data as { code?: unknown }).code
+      : undefined;
+  return candidate?.response?.status === 503 && code === SERVER_NOT_READY_CODE;
 };
 
 const getRetryAfterDelay = (error: unknown, fallbackDelay: number) => {
@@ -448,6 +538,86 @@ export default function useResumableSSE(
   const submissionRef = useRef<TSubmission | null>(null);
   const optimisticStreamIdsRef = useRef(new Set<string>());
   const createdStreamIdsRef = useRef(new Set<string>());
+  /** Pending action whose tool-call content part hasn't rendered yet — retried
+   *  on the next frame so a fast pause-before-render race still attaches. */
+  const pendingActionRetryRef = useRef<number | null>(null);
+  /** Steer event whose target response message hasn't rendered yet — same
+   *  bounded next-frame retry as pending actions, on its own handle so the
+   *  two retries can't cancel each other. */
+  const steerRetryRef = useRef<number | null>(null);
+
+  /** Removes the pending chip once its steer is injected (the inline content
+   *  part becomes the durable record), and records the id so a 202 ACK that
+   *  arrives AFTER the applied event drops its chip instead of re-minting it. */
+  const resolveSteerChip = useRecoilCallback(
+    ({ set }) =>
+      (conversationId: string, steerId: string) => {
+        set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
+          appendAppliedSteerIds(prev, [steerId]),
+        );
+        set(store.pendingSteersByConvoId(conversationId), (prev) =>
+          prev.some((steer) => steer.steerId === steerId)
+            ? prev.filter((steer) => steer.steerId !== steerId)
+            : prev,
+        );
+      },
+    [],
+  );
+
+  /** Replaces the chip list with the server's still-queued steers (reconnect).
+   *  Local `failed` entries are kept so their text stays recoverable, and a
+   *  reseeded chip keeps its client-only quotes/skill picks. */
+  const seedSteerChips = useRecoilCallback(
+    ({ set }) =>
+      (conversationId: string, steers: TPendingSteer[]) => {
+        set(store.pendingSteersByConvoId(conversationId), (prev) => {
+          const chipById = new Map(prev.map((chip) => [chip.steerId, chip]));
+          return [
+            ...steers.map((steer) => ({
+              steerId: steer.steerId,
+              text: steer.text,
+              status: 'pending' as const,
+              createdAt: steer.createdAt ?? Date.now(),
+              ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+              ...carriedSteerContext(chipById.get(steer.steerId)),
+            })),
+            ...prev.filter((steer) => steer.status === 'failed'),
+          ];
+        });
+      },
+    [],
+  );
+
+  /** Converts steers that never reached an injection boundary into queued
+   *  follow-up messages (reported on the run's final/abort event; the abort
+   *  HTTP response consumes the same data as a fallback in useChatHelpers). */
+  const convertSteersToQueued = useSteerConvert();
+
+  /** Error events carry no `pendingSteers` payload (the server drops its copy
+   *  on failure), but every acknowledged chip's text is local — convert them
+   *  to queued follow-ups so the user's words survive a failed run. `sending`
+   *  chips settle through their own POST callbacks (404 falls back to
+   *  queue/send) and `failed` chips keep their manual controls. */
+  const convertLocalSteersToQueued = useRecoilCallback(
+    ({ snapshot }) =>
+      (conversationId: string, options?: { claimParked?: boolean }) => {
+        const chips = snapshot.getLoadable(store.pendingSteersByConvoId(conversationId)).getValue();
+        const settled = chips
+          .filter((steer) => steer.status === 'pending')
+          .map((steer) => ({
+            steerId: steer.steerId,
+            text: steer.text,
+            createdAt: steer.createdAt,
+            ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+          }));
+        if (settled.length > 0) {
+          convertSteersToQueued(conversationId, settled, options);
+        }
+      },
+    [convertSteersToQueued],
+  );
+
+  const setRunEnd = useSetRecoilState(store.runEndByIndex(runIndex));
 
   const {
     stepHandler,
@@ -461,6 +631,7 @@ export default function useResumableSSE(
     syncStepMessage,
     attachmentHandler,
     resetContentHandler,
+    flushPendingDeltas,
   } = useEventHandlers({
     setMessages,
     getMessages,
@@ -496,6 +667,7 @@ export default function useResumableSSE(
     (currentStreamId: string, currentSubmission: TSubmission, isResume = false) => {
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
+      let finalReceived = false;
       const preCreatedStepEvents: Array<Parameters<typeof stepHandler>[0]> = [];
       const replayPreCreatedStepEvents = () => {
         if (preCreatedStepEvents.length === 0) {
@@ -508,9 +680,103 @@ export default function useResumableSSE(
         }
       };
 
+      /**
+       * Maps a pending action onto the in-flight response message so the
+       * approval / ask-user UI renders. Syncs the result back into the step
+       * handler's map so subsequent deltas build on the approval-tagged content
+       * rather than clobbering it.
+       *
+       * If the mapping is a no-op (the paused tool-call content part hasn't
+       * rendered yet — a pause-before-render race), retry on subsequent frames
+       * so the approval still attaches. `ask_user_question` always applies (it
+       * appends a synthetic part), so only `tool_approval` ever retries.
+       */
+      // Keep retrying across frames (not just once): Recoil/React message updates from
+      // the preceding created/step events are async and can take several frames under
+      // load, so a single retry would drop a valid pause and leave the run with no
+      // approval controls. Bounded so a genuinely-absent target can't spin forever.
+      const PENDING_ACTION_MAX_RETRY_FRAMES = 120;
+      const applyPendingActionToMessages = (pendingAction: Agents.PendingAction, attempt = 0) => {
+        const retryNextFrame = () => {
+          if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
+            pendingActionRetryRef.current = requestAnimationFrame(() =>
+              applyPendingActionToMessages(pendingAction, attempt + 1),
+            );
+          }
+        };
+        /** The pause card must attach to the same message state the stream
+         * produced — apply any queued delta before reading the cache, or the
+         * later flush would clobber the card (and `syncStepMessage` below
+         * would sync a pre-delta copy). */
+        flushPendingDeltas();
+        const messages = getMessages() ?? [];
+        const index = findPendingActionMessageIndex(messages, pendingAction);
+        if (index < 0) {
+          retryNextFrame();
+          return;
+        }
+        const updated = applyPendingAction(messages[index], pendingAction);
+        const changed = updated !== messages[index];
+        if (changed) {
+          const nextMessages = [...messages];
+          nextMessages[index] = updated;
+          setMessages(nextMessages);
+          syncStepMessage(updated);
+        }
+        // A `tool_approval` pause can carry several `action_requests` whose tool-call
+        // parts render on different frames; tagging only the first to arrive would leave
+        // late siblings with no approval card, and the resume route then 400s the partial
+        // batch ("every paused tool call must be decided"). Keep retrying (bounded) until
+        // EVERY paused call is tagged. `ask_user_question` applies its single synthetic
+        // part in one shot, so it only needs the original "did anything change" retry.
+        if (pendingAction.payload.type === 'tool_approval') {
+          const expected = pendingAction.payload.action_requests.length;
+          if (countTaggedApprovalParts(updated, pendingAction.actionId) < expected) {
+            retryNextFrame();
+          }
+        } else if (!changed) {
+          retryNextFrame();
+        }
+      };
+
+      /**
+       * Places an injected steer part on the in-flight response message and
+       * resolves its pending chip. Same bounded next-frame retry as pending
+       * actions for the inject-before-render race (the assistant placeholder
+       * can land a few frames after the created event under load).
+       */
+      const applySteerToMessages = (event: TSteerAppliedEvent, attempt = 0) => {
+        const retryNextFrame = () => {
+          if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
+            steerRetryRef.current = requestAnimationFrame(() =>
+              applySteerToMessages(event, attempt + 1),
+            );
+          }
+        };
+        /** Same boundary as pending actions: land queued deltas before the
+         * steer part is placed and synced. */
+        flushPendingDeltas();
+        const messages = getMessages() ?? [];
+        const index = findSteerMessageIndex(messages, event);
+        if (index < 0) {
+          retryNextFrame();
+          return;
+        }
+        const updated = applySteerPart(messages[index], event);
+        if (updated !== messages[index]) {
+          const nextMessages = [...messages];
+          nextMessages[index] = updated;
+          setMessages(nextMessages);
+          syncStepMessage(updated);
+        }
+        const chipConvoId =
+          event.conversationId ?? currentSubmission.conversation?.conversationId ?? currentStreamId;
+        resolveSteerChip(chipConvoId, event.steerId);
+      };
+
       const baseUrl = `${apiBaseUrl()}/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
       const url = isResume ? `${baseUrl}?resume=true` : baseUrl;
-      console.log('[ResumableSSE] Subscribing to stream:', url, { isResume });
+      logger.log('ResumableSSE', 'Subscribing to stream:', url, { isResume });
 
       const sse = new SSE(url, {
         headers: { Authorization: `Bearer ${token}` },
@@ -519,7 +785,7 @@ export default function useResumableSSE(
       sseRef.current = sse;
 
       sse.addEventListener('open', () => {
-        console.log('[ResumableSSE] Stream connected');
+        logger.log('ResumableSSE', 'Stream connected');
         setAbortScroll(false);
         // Restore UI state on successful connection (including reconnection)
         setIsSubmitting(true);
@@ -532,7 +798,13 @@ export default function useResumableSSE(
           const data = JSON.parse(e.data);
 
           if (data.final != null) {
-            console.log('[ResumableSSE] Received FINAL event', {
+            finalReceived = true;
+            if (reconnectTimeoutRef.current) {
+              clearTimeout(reconnectTimeoutRef.current);
+              reconnectTimeoutRef.current = null;
+            }
+            reconnectAttemptRef.current = 0;
+            logger.log('ResumableSSE', 'Received FINAL event', {
               aborted: data.aborted,
               conversationId: data.conversation?.conversationId,
               hasResponseMessage: !!data.responseMessage,
@@ -541,14 +813,50 @@ export default function useResumableSSE(
             if (optimisticStreamIdsRef.current.has(currentStreamId)) {
               clearAllDrafts(Constants.NEW_CONVO);
             }
+            const finalConvoId =
+              data.conversation?.conversationId ??
+              currentSubmission.conversation?.conversationId ??
+              currentStreamId;
+            // Steers the run never injected ride the final event; convert them
+            // to queued follow-ups before the run-end signal fires the drain
+            // (also resets the applied-id set for the finished run).
+            // `claimParked` clears the parked server copy of the same steers so
+            // a later reload can't resurrect chips dismissed after this batch.
+            convertSteersToQueued(
+              finalConvoId,
+              Array.isArray(data.pendingSteers) ? (data.pendingSteers as TPendingSteer[]) : [],
+              { claimParked: true },
+            );
             try {
               finalHandler(data, currentSubmission as EventSubmission);
               finalizeUsage(data, { ...currentSubmission, userMessage });
             } catch (error) {
-              console.error('[ResumableSSE] Error in finalHandler:', error);
+              logger.error('ResumableSSE', 'Error in finalHandler:', error);
               setIsSubmitting(false);
               setShowStopButton(false);
             }
+            // One-shot run-end signal for the queue drain. Written AFTER
+            // finalHandler so `isSubmitting` has flipped false by the time the
+            // drain effect observes it (both land in the same Recoil batch).
+            // An early-aborted FIRST turn keys under NEW_CONVO: finalHandler
+            // restored /c/new, so the optimistic id would strand the queue.
+            const runEndTarget = resolveRunEndTarget({
+              conversationId: finalConvoId,
+              earlyAbort: data.earlyAbort === true,
+              startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
+            });
+            setRunEnd({
+              conversationId: runEndTarget.conversationId,
+              // A Stop that lands before completion can arrive as a final with
+              // `unfinished: true` and no `aborted` flag (request.js's
+              // wasAbortedBeforeComplete branch) — it must not auto-drain.
+              outcome:
+                data.aborted === true || data.responseMessage?.unfinished === true
+                  ? 'aborted'
+                  : 'completed',
+              startedAsNewConvo: runEndTarget.startedAsNewConvo,
+              endedAt: Date.now(),
+            });
             // Clear handler maps on stream completion to prevent memory leaks
             clearStepMaps();
             // Optimistically remove from active jobs
@@ -562,7 +870,7 @@ export default function useResumableSSE(
           }
 
           if (data.created != null) {
-            console.log('[ResumableSSE] Received CREATED event', {
+            logger.log('ResumableSSE', 'Received CREATED event', {
               messageId: data.message?.messageId,
               conversationId: data.message?.conversationId,
             });
@@ -613,6 +921,17 @@ export default function useResumableSSE(
             return;
           }
 
+          if (data.event === ApprovalEvents.ON_PENDING_ACTION) {
+            applyPendingActionToMessages(data.data as Agents.PendingAction);
+            setIsSubmitting(true);
+            return;
+          }
+
+          if (data.event === SteerEvents.ON_STEER_APPLIED) {
+            applySteerToMessages(data.data as TSteerAppliedEvent);
+            return;
+          }
+
           if (data.event != null) {
             if (
               data.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -634,7 +953,7 @@ export default function useResumableSSE(
           }
 
           if (data.sync != null) {
-            console.log('[ResumableSSE] SYNC received', {
+            logger.log('ResumableSSE', 'SYNC received', {
               runSteps: data.resumeState?.runSteps?.length ?? 0,
               pendingEvents: data.pendingEvents?.length ?? 0,
             });
@@ -687,10 +1006,15 @@ export default function useResumableSSE(
               const messages = getMessages() ?? [];
               const userMsgId = userMessage.messageId;
               const serverResponseId = data.resumeState.responseMessageId;
+              const hasResumedContent = data.resumeState.aggregatedContent.length > 0;
 
               let responseIdx = -1;
+              /** Only an id match proves the row belongs to THIS generation; the parent-based
+               *  fallback below can land on a prior sibling (e.g. the answer being regenerated). */
+              let matchedByResponseId = false;
               if (serverResponseId) {
                 responseIdx = messages.findIndex((m) => m.messageId === serverResponseId);
+                matchedByResponseId = responseIdx >= 0;
               }
               if (responseIdx < 0) {
                 responseIdx = messages.findIndex(
@@ -700,7 +1024,7 @@ export default function useResumableSSE(
                 );
               }
 
-              console.log('[ResumableSSE] SYNC update', {
+              logger.log('ResumableSSE', 'SYNC update', {
                 userMsgId,
                 serverResponseId,
                 responseIdx,
@@ -711,9 +1035,19 @@ export default function useResumableSSE(
 
               if (responseIdx >= 0) {
                 const oldContent = messages[responseIdx]?.content;
+                /** An EMPTY resume snapshot is not authoritative over content we already loaded
+                 *  for the SAME response: assigning it would erase that content and leave a bare
+                 *  cursor. Restricted to an id match — preserving a fallback-matched row would
+                 *  make a regenerated run append to the answer it is replacing — and to a row
+                 *  that actually HAS parts, so the array is never swapped for `undefined`. */
+                const preserveLoadedContent =
+                  !hasResumedContent &&
+                  matchedByResponseId &&
+                  Array.isArray(oldContent) &&
+                  oldContent.length > 0;
                 const responseMessage = {
                   ...messages[responseIdx],
-                  content: data.resumeState.aggregatedContent,
+                  content: preserveLoadedContent ? oldContent : data.resumeState.aggregatedContent,
                   iconURL: preferDefinedString(
                     messages[responseIdx]?.iconURL,
                     data.resumeState.iconURL,
@@ -721,15 +1055,17 @@ export default function useResumableSSE(
                   model: preferDefinedString(messages[responseIdx]?.model, data.resumeState.model),
                 } as TMessage;
                 const updated = mergeResumeMessages(messages, userMessage, responseMessage);
-                console.log('[ResumableSSE] SYNC updating message', {
+                logger.log('ResumableSSE', 'SYNC updating message', {
                   messageId: responseMessage.messageId,
                   oldContentLength: Array.isArray(oldContent) ? oldContent.length : 0,
                   newContentLength: data.resumeState.aggregatedContent?.length,
+                  preservedExistingContent: preserveLoadedContent,
+                  matchedByResponseId,
                 });
                 setMessages(updated);
                 resetContentHandler();
                 syncStepMessage(responseMessage);
-                console.log('[ResumableSSE] SYNC complete, handlers synced');
+                logger.log('ResumableSSE', 'SYNC complete, handlers synced');
               } else {
                 const responseId = serverResponseId ?? `${userMsgId}_`;
                 const newMessage = {
@@ -748,19 +1084,49 @@ export default function useResumableSSE(
               }
             }
 
+            /**
+             * Re-pause on reconnect: the run is parked on a human-review
+             * interrupt. Re-apply the pending action so the approval / ask-user
+             * controls render after a reload or dropped connection.
+             */
+            if (data.resumeState?.pendingAction) {
+              applyPendingActionToMessages(data.resumeState.pendingAction as Agents.PendingAction);
+            }
+
+            /**
+             * Re-seed steer chips from the server's still-queued steers.
+             * Injected steers are already inside `aggregatedContent`, so this
+             * covers exactly the remainder a reloading client can't know about.
+             */
+            // Always reconcile against the server's still-queued list: a steer
+            // applied while this client was disconnected is absent here (its
+            // inline part rides aggregatedContent instead), so an EMPTY list
+            // must clear stale local pending chips, not leave them stranded.
+            seedSteerChips(
+              currentSubmission.conversation?.conversationId ?? currentStreamId,
+              (data.resumeState?.pendingSteers ?? []) as TPendingSteer[],
+            );
+
             if (data.resumeState?.titleEvent) {
               titleHandler(data.resumeState.titleEvent);
             }
 
             if (data.resumeState?.replayEvents?.length > 0) {
-              console.log(
-                `[ResumableSSE] Replaying ${data.resumeState.replayEvents.length} resume events`,
+              logger.log(
+                'ResumableSSE',
+                `Replaying ${data.resumeState.replayEvents.length} resume events`,
               );
               for (const replayEvent of data.resumeState.replayEvents) {
                 if (replayEvent.event === UsageEvents.ON_CONTEXT_USAGE) {
                   contextHandler(replayEvent.data, resumeSubmission);
                 } else if (replayEvent.event === UsageEvents.ON_TOKEN_USAGE) {
                   usageHandler(replayEvent.data, resumeSubmission);
+                } else if (replayEvent.event === ApprovalEvents.ON_PENDING_ACTION) {
+                  // A pause that landed after the resume snapshot must still render its
+                  // controls (mirror the live handler), not fall through to stepHandler.
+                  applyPendingActionToMessages(replayEvent.data as Agents.PendingAction);
+                } else if (replayEvent.event === SteerEvents.ON_STEER_APPLIED) {
+                  applySteerToMessages(replayEvent.data as TSteerAppliedEvent);
                 } else if (replayEvent.event != null) {
                   if (
                     replayEvent.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -774,7 +1140,7 @@ export default function useResumableSSE(
             }
 
             if (data.pendingEvents?.length > 0) {
-              console.log(`[ResumableSSE] Replaying ${data.pendingEvents.length} pending events`);
+              logger.log('ResumableSSE', `Replaying ${data.pendingEvents.length} pending events`);
               for (const pendingEvent of data.pendingEvents) {
                 if (pendingEvent.event === 'title') {
                   titleHandler(pendingEvent);
@@ -782,6 +1148,14 @@ export default function useResumableSSE(
                   contextHandler(pendingEvent.data, resumeSubmission);
                 } else if (pendingEvent.event === UsageEvents.ON_TOKEN_USAGE) {
                   usageHandler(pendingEvent.data, resumeSubmission);
+                } else if (pendingEvent.event === ApprovalEvents.ON_PENDING_ACTION) {
+                  // In-memory mode can surface a pause that landed between getResumeState()
+                  // and the subscription here; route it to the same handler as a live event
+                  // so the approval / ask-user controls render (else the stream sits paused
+                  // with no UI until a full status reload).
+                  applyPendingActionToMessages(pendingEvent.data as Agents.PendingAction);
+                } else if (pendingEvent.event === SteerEvents.ON_STEER_APPLIED) {
+                  applySteerToMessages(pendingEvent.data as TSteerAppliedEvent);
                 } else if (pendingEvent.event != null) {
                   if (
                     pendingEvent.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -827,7 +1201,7 @@ export default function useResumableSSE(
             messageHandler(text, { ...currentSubmission, userMessage, initialResponse });
           }
         } catch (error) {
-          console.error('[ResumableSSE] Error processing message:', error);
+          logger.error('ResumableSSE', 'Error processing message:', error);
         }
       });
 
@@ -839,16 +1213,24 @@ export default function useResumableSSE(
        * Order matters: check responseCode first since HTTP errors may also include data
        */
       sse.addEventListener('error', async (e: MessageEvent) => {
-        (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
-
         /* @ts-ignore - sse.js types don't expose responseCode */
         const responseCode = e.responseCode;
+
+        if (finalReceived) {
+          logger.log('ResumableSSE', 'Ignoring error after FINAL event', {
+            responseCode,
+            hasData: !!e.data,
+          });
+          return;
+        }
+
+        (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
 
         // 404 → job completed & was cleaned up; messages are persisted in DB.
         // Invalidate cache once so react-query refetches instead of showing an error.
         if (responseCode === 404) {
           const convoId = currentSubmission.conversation?.conversationId;
-          console.log('[ResumableSSE] Stream 404, invalidating messages for:', convoId);
+          logger.log('ResumableSSE', 'Stream 404, invalidating messages for:', convoId);
           sse.close();
           removeActiveJob(currentStreamId);
           /** Terminal: drop any in-flight live estimate so the gauge doesn't
@@ -867,10 +1249,44 @@ export default function useResumableSSE(
             !createdStreamIdsRef.current.has(currentStreamId) &&
             optimisticStreamIdsRef.current.has(currentStreamId)
           ) {
-            removeConvoFromAllQueries(queryClient, currentStreamId);
+            if (isResume) {
+              // A resumed subscribe attaches to an already-adopted stream (e.g. a deduped
+              // start request). A 404 means the job is gone — but the conversation may be
+              // persisted (the original completed and was cleaned up) or may never have
+              // existed (the winner died before persisting). Don't guess: reconcile against
+              // the server so a real conversation stays and a phantom is dropped.
+              queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+            } else {
+              // Fresh optimistic stream that never started: prune immediately.
+              removeConvoFromAllQueries(queryClient, currentStreamId);
+            }
           }
           setIsSubmitting(false);
           setShowStopButton(false);
+          const recoveryConvoId = convoId ?? currentStreamId;
+          // Terminal for this run: the job is gone, so no event will ever
+          // resolve an acknowledged chip — convert them to queued chips.
+          convertLocalSteersToQueued(recoveryConvoId);
+          // A terminal drain may have parked steers no subscriber received —
+          // the status route claims them exactly once (same recovery as
+          // useResumeOnLoad). Best-effort: chips are already converted above.
+          fetchStreamStatus(recoveryConvoId)
+            .then((status) => {
+              const unrecovered = status.unrecoveredSteers ?? [];
+              if (unrecovered.length > 0) {
+                convertSteersToQueued(recoveryConvoId, unrecovered);
+              }
+            })
+            .catch(() => undefined);
+          // The true outcome is unknown here (job record already cleaned up):
+          // a non-'completed' outcome releases parked interrupt flags without
+          // auto-sending queued messages the user may not want fired.
+          setRunEnd({
+            conversationId: recoveryConvoId,
+            outcome: 'aborted',
+            startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
+            endedAt: Date.now(),
+          });
           setStreamId(null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
           createdStreamIdsRef.current.delete(currentStreamId);
@@ -893,7 +1309,7 @@ export default function useResumableSSE(
             sse.stream();
             return;
           } catch (error) {
-            console.log('[ResumableSSE] Token refresh failed:', error);
+            logger.log('ResumableSSE', 'Token refresh failed:', error);
           }
         }
 
@@ -905,8 +1321,12 @@ export default function useResumableSSE(
          * not a server-sent error payload. Use `== null` to only match undefined/null (no HTTP status).
          */
         if (responseCode == null && e.data) {
-          console.log('[ResumableSSE] Server-sent error event received:', e.data);
+          logger.log('ResumableSSE', 'Server-sent error event received:', e.data);
           sse.close();
+          /** FLUSH (not cancel): the error card below is built from the cache
+           * tail, so queued tokens must land first — and a stale trailing
+           * frame must never overwrite the error write. */
+          flushPendingDeltas();
           removeActiveJob(currentStreamId);
           resetLive({ ...currentSubmission, userMessage });
           if (
@@ -936,7 +1356,7 @@ export default function useResumableSSE(
               // Not JSON or parsing failed - treat as generic error
             }
 
-            console.log('[ResumableSSE] Error type check:', { isKnownError, errorString });
+            logger.log('ResumableSSE', 'Error type check:', { isKnownError, errorString });
 
             // Display the error to user via errorHandler
             errorHandler({
@@ -944,7 +1364,7 @@ export default function useResumableSSE(
               submission: currentSubmission as EventSubmission,
             });
           } catch (parseError) {
-            console.error('[ResumableSSE] Failed to parse server error:', parseError);
+            logger.error('ResumableSSE', 'Failed to parse server error:', parseError);
             errorHandler({
               data: { text: e.data } as unknown as Parameters<typeof errorHandler>[0]['data'],
               submission: currentSubmission as EventSubmission,
@@ -953,6 +1373,17 @@ export default function useResumableSSE(
 
           setIsSubmitting(false);
           setShowStopButton(false);
+          // The error terminal's backstop parks acked leftovers server-side;
+          // claim it now so a reload can't resurrect the chips converted here.
+          convertLocalSteersToQueued(
+            currentSubmission.conversation?.conversationId ?? currentStreamId,
+            { claimParked: true },
+          );
+          setRunEnd({
+            conversationId: currentSubmission.conversation?.conversationId ?? currentStreamId,
+            outcome: 'error',
+            endedAt: Date.now(),
+          });
           setStreamId(null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
           createdStreamIdsRef.current.delete(currentStreamId);
@@ -961,7 +1392,7 @@ export default function useResumableSSE(
         }
 
         // Network failure or unknown HTTP error - attempt reconnection with backoff
-        console.log('[ResumableSSE] Stream error (network failure) - will attempt reconnect', {
+        logger.log('ResumableSSE', 'Stream error (network failure) - will attempt reconnect', {
           responseCode,
           hasData: !!e.data,
         });
@@ -971,8 +1402,9 @@ export default function useResumableSSE(
           reconnectAttemptRef.current++;
           const delay = Math.min(1000 * Math.pow(2, reconnectAttemptRef.current - 1), 30000);
 
-          console.log(
-            `[ResumableSSE] Reconnecting in ${delay}ms (attempt ${reconnectAttemptRef.current}/${MAX_RETRIES})`,
+          logger.log(
+            'ResumableSSE',
+            `Reconnecting in ${delay}ms (attempt ${reconnectAttemptRef.current}/${MAX_RETRIES})`,
           );
 
           sse.close();
@@ -989,8 +1421,9 @@ export default function useResumableSSE(
           setIsSubmitting(true);
           setShowStopButton(true);
         } else {
-          console.error('[ResumableSSE] Max reconnect attempts reached');
+          logger.error('ResumableSSE', 'Max reconnect attempts reached');
           sse.close();
+          flushPendingDeltas();
           errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
           /** Terminal: clear the in-flight live estimate like the other
            *  stop-reconnecting paths so the gauge doesn't show stale tokens */
@@ -1005,6 +1438,15 @@ export default function useResumableSSE(
           }
           setIsSubmitting(false);
           setShowStopButton(false);
+          convertLocalSteersToQueued(
+            currentSubmission.conversation?.conversationId ?? currentStreamId,
+            { claimParked: true },
+          );
+          setRunEnd({
+            conversationId: currentSubmission.conversation?.conversationId ?? currentStreamId,
+            outcome: 'error',
+            endedAt: Date.now(),
+          });
           setStreamId(null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
           createdStreamIdsRef.current.delete(currentStreamId);
@@ -1020,11 +1462,11 @@ export default function useResumableSSE(
         // If we're in a reconnection cycle, don't reset state
         // (error handler will set up the reconnect timeout)
         if (reconnectAttemptRef.current > 0) {
-          console.log('[ResumableSSE] Stream closed for reconnect - preserving state');
+          logger.log('ResumableSSE', 'Stream closed for reconnect - preserving state');
           return;
         }
 
-        console.log('[ResumableSSE] Stream aborted (intentional close) - no reconnect');
+        logger.log('ResumableSSE', 'Stream aborted (intentional close) - no reconnect');
         // Clear any pending reconnect attempts
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
@@ -1055,14 +1497,14 @@ export default function useResumableSSE(
 
         /** Simulate network drop - triggers error event → reconnection */
         debugWindow.__killNetwork = () => {
-          console.log('[Debug] Simulating network drop...');
+          logger.log('Debug', 'Simulating network drop...');
           // @ts-ignore - sse.js types are incorrect, dispatchEvent actually takes Event
           sse.dispatchEvent(new Event('error'));
         };
 
         /** Simulate clean close (navigation away) - triggers abort event → no reconnection */
         debugWindow.__closeClean = () => {
-          console.log('[Debug] Simulating clean close (navigation away)...');
+          logger.log('Debug', 'Simulating clean close (navigation away)...');
           sse.close();
         };
       }
@@ -1083,6 +1525,7 @@ export default function useResumableSSE(
       clearStepMaps,
       messageHandler,
       errorHandler,
+      flushPendingDeltas,
       setIsSubmitting,
       getMessages,
       setMessages,
@@ -1098,6 +1541,11 @@ export default function useResumableSSE(
       backfillUsage,
       resetLive,
       seedLive,
+      setRunEnd,
+      resolveSteerChip,
+      seedSteerChips,
+      convertSteersToQueued,
+      convertLocalSteersToQueued,
     ],
   );
 
@@ -1108,7 +1556,10 @@ export default function useResumableSSE(
    * Readiness retries honor Retry-After until cleanup or the readiness window expires.
    */
   const startGeneration = useCallback(
-    async (currentSubmission: TSubmission, signal?: AbortSignal): Promise<string | null> => {
+    async (
+      currentSubmission: TSubmission,
+      signal?: AbortSignal,
+    ): Promise<{ streamId: string; resumed: boolean } | null> => {
       const payloadData = createPayload(currentSubmission);
       let { payload } = payloadData;
       payload = removeNullishValues(payload) as TPayload;
@@ -1127,12 +1578,19 @@ export default function useResumableSSE(
         requestAttempts += 1;
         try {
           // Use request.post which handles auth token refresh via axios interceptors
-          const data = (await request.post(url, payload)) as { streamId: string };
+          const data = await request.post(url, payload);
           if (signal?.aborted) {
             return null;
           }
-          console.log('[ResumableSSE] Generation started:', { streamId: data.streamId });
-          return data.streamId;
+          const streamId = getStartGenerationStreamId(data);
+          if (streamId) {
+            const resumed = isResumedStartResponse(data);
+            logger.log('ResumableSSE', 'Generation started:', { streamId, resumed });
+            return { streamId, resumed };
+          }
+
+          lastError = { response: { data } };
+          break;
         } catch (error) {
           if (signal?.aborted) {
             return null;
@@ -1158,8 +1616,9 @@ export default function useResumableSSE(
             const limit = isServerNotReady
               ? `${Math.ceil(START_GENERATION_READINESS_TIMEOUT_MS / 1000)}s readiness window`
               : `${START_GENERATION_NETWORK_RETRIES}`;
-            console.log(
-              `[ResumableSSE] ${reason} starting generation, retrying in ${retryDelay}ms (attempt ${attempt}/${limit})`,
+            logger.log(
+              'ResumableSSE',
+              `${reason} starting generation, retrying in ${retryDelay}ms (attempt ${attempt}/${limit})`,
             );
             const shouldContinue = await waitForRetryDelay(retryDelay, signal);
             if (!shouldContinue) {
@@ -1177,10 +1636,9 @@ export default function useResumableSSE(
         return null;
       }
 
-      console.error('[ResumableSSE] Error starting generation:', lastError);
+      logger.error('ResumableSSE', 'Error starting generation:', lastError);
 
-      const axiosError = lastError as { response?: { data?: Record<string, unknown> } };
-      const errorData = axiosError?.response?.data;
+      const errorData = toStartGenerationError(lastError)?.response?.data;
       errorHandler({
         data: getStreamStartFailureData(errorData),
         submission: currentSubmission as EventSubmission,
@@ -1195,7 +1653,7 @@ export default function useResumableSSE(
 
   useEffect(() => {
     if (!submission || Object.keys(submission).length === 0) {
-      console.log('[ResumableSSE] No submission, cleaning up');
+      logger.log('ResumableSSE', 'No submission, cleaning up');
       // Clear reconnect timeout if submission is cleared
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
@@ -1213,7 +1671,7 @@ export default function useResumableSSE(
     }
 
     const resumeStreamId = (submission as TSubmission & { resumeStreamId?: string }).resumeStreamId;
-    console.log('[ResumableSSE] Effect triggered', {
+    logger.log('ResumableSSE', 'Effect triggered', {
       conversationId: submission.conversation?.conversationId,
       hasResumeStreamId: !!resumeStreamId,
       resumeStreamId,
@@ -1237,19 +1695,20 @@ export default function useResumableSSE(
           return;
         }
         // Resume: just subscribe to existing stream, don't start new generation
-        console.log('[ResumableSSE] Resuming existing stream:', resumeStreamId);
+        logger.log('ResumableSSE', 'Resuming existing stream:', resumeStreamId);
         setStreamId(resumeStreamId);
         // Optimistically add to active jobs (in case it's not already there)
         addActiveJob(resumeStreamId);
         subscribeToStream(resumeStreamId, submission, true); // isResume=true
       } else {
         // New generation: start and then subscribe
-        console.log('[ResumableSSE] Starting NEW generation');
-        const newStreamId = await startGeneration(submission, signal);
+        logger.log('ResumableSSE', 'Starting NEW generation');
+        const startResult = await startGeneration(submission, signal);
         if (signal.aborted) {
           return;
         }
-        if (newStreamId) {
+        if (startResult) {
+          const { streamId: newStreamId, resumed } = startResult;
           setStreamId(newStreamId);
           // Optimistically add to active jobs
           addActiveJob(newStreamId);
@@ -1266,9 +1725,11 @@ export default function useResumableSSE(
           }
           const streamSubmission = addOptimisticConversation(newStreamId, submission);
           submissionRef.current = streamSubmission;
-          subscribeToStream(newStreamId, streamSubmission);
+          // A deduped retry (status: 'resumed') attaches to an already-running stream, so
+          // subscribe with resume=true to replay its state instead of only live events.
+          subscribeToStream(newStreamId, streamSubmission, resumed);
         } else {
-          console.error('[ResumableSSE] Failed to get streamId from startGeneration');
+          logger.error('ResumableSSE', 'Failed to get streamId from startGeneration');
         }
       }
     };
@@ -1276,7 +1737,7 @@ export default function useResumableSSE(
     initStream();
 
     return () => {
-      console.log('[ResumableSSE] Cleanup - closing SSE, resetting UI state');
+      logger.log('ResumableSSE', 'Cleanup - closing SSE, resetting UI state');
       startController.abort();
       // Cleanup on unmount/navigation - close connection but DO NOT abort backend
       // Reset UI state so it doesn't leak to other conversations
@@ -1284,6 +1745,14 @@ export default function useResumableSSE(
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
+      }
+      if (pendingActionRetryRef.current != null) {
+        cancelAnimationFrame(pendingActionRetryRef.current);
+        pendingActionRetryRef.current = null;
+      }
+      if (steerRetryRef.current != null) {
+        cancelAnimationFrame(steerRetryRef.current);
+        steerRetryRef.current = null;
       }
       // Reset reconnect counter before closing (so abort handler doesn't think we're reconnecting)
       reconnectAttemptRef.current = 0;

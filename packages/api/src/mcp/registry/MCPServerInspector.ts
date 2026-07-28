@@ -10,6 +10,7 @@ import {
   isUserSourced,
 } from '~/mcp/utils';
 import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
+import { normalizeJsonSchema, resolveJsonSchemaRefs } from '~/mcp/zod';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
@@ -76,6 +77,9 @@ export class MCPServerInspector {
       this.config.startup !== false &&
       !this.config.requiresOAuth &&
       !hasCustomUserVars(this.config) &&
+      // user-provided API key is supplied per-user at connect time; an unauthenticated
+      // probe here would 401 against a bearer server and fail inspection
+      this.config.apiKey?.source !== 'user' &&
       !hasRuntimeContextPlaceholders(this.config) &&
       !this.config.obo
     ) {
@@ -126,8 +130,11 @@ export class MCPServerInspector {
       return;
     }
 
-    // Admin-provided API key means no OAuth flow is needed
-    if (this.config.apiKey?.source === 'admin') {
+    // API key auth (admin- or user-provided) is API-key, not OAuth. A credential-less
+    // probe of a bearer server returns the same 401 challenge as an OAuth server, so
+    // detection would misclassify it; trust the configured auth method. An explicit
+    // `oauth` block still wins if both are somehow set.
+    if (this.config.apiKey != null && this.config.oauth == null) {
       this.config.requiresOAuth = false;
       return;
     }
@@ -150,8 +157,8 @@ export class MCPServerInspector {
   private async fetchServerCapabilities(): Promise<void> {
     const capabilities = this.connection!.client.getServerCapabilities();
     this.config.capabilities = JSON.stringify(capabilities);
-    const tools = await this.connection!.client.listTools();
-    this.config.tools = tools.tools.map((tool) => tool.name).join(', ');
+    const tools = await this.connection!.fetchTools();
+    this.config.tools = tools.map((tool) => tool.name).join(', ');
   }
 
   private async fetchToolFunctions(): Promise<void> {
@@ -171,7 +178,7 @@ export class MCPServerInspector {
     serverName: string,
     connection: MCPConnection,
   ): Promise<t.LCAvailableTools> {
-    const { tools }: t.MCPToolListResponse = await connection.client.listTools();
+    const tools = await connection.fetchTools();
 
     const toolFunctions: t.LCAvailableTools = {};
     tools.forEach((tool) => {
@@ -181,7 +188,13 @@ export class MCPServerInspector {
         ['function']: {
           name,
           description: tool.description,
-          parameters: tool.inputSchema as JsonSchemaType,
+          // Normalize before persisting: resolves `$ref`s and strips
+          // `$`-prefixed keywords (e.g. a spec-compliant `$schema`), which
+          // MongoDB rejects as field names and would otherwise crash storage
+          // of this `parameters` blob during server registration.
+          parameters: normalizeJsonSchema(
+            resolveJsonSchemaRefs(tool.inputSchema as Record<string, unknown>),
+          ) as JsonSchemaType,
         },
       };
     });

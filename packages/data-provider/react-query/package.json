@@ -6,5 +6,8 @@
   "types": "../dist/types/react-query/index.d.ts",
   "dependencies": {
     "axios": "^1.16.0"
+  },
+  "overrides": {
+    "form-data": "^4.0.6"
   }
 }

@@ -85,7 +85,7 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     });
     const batchUploadCodeEnvFiles = jest.fn().mockResolvedValue({
       storage_session_id: 'session-42',
-      files: [{ fileId: 'file-1', filename: 'brand-guidelines/references/style.md' }],
+      files: [{ fileId: 'file-1', filename: 'skills/brand-guidelines/references/style.md' }],
     });
 
     const deps = makeDeps({
@@ -112,7 +112,10 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     expect(uploadArgs.version).toBe(SKILL_VERSION);
     expect(uploadArgs.files).toHaveLength(fileRecords.length + 1);
     expect(uploadArgs.files.map((f: { filename: string }) => f.filename)).toEqual(
-      expect.arrayContaining(['brand-guidelines/SKILL.md', 'brand-guidelines/references/style.md']),
+      expect.arrayContaining([
+        'skills/brand-guidelines/SKILL.md',
+        'skills/brand-guidelines/references/style.md',
+      ]),
     );
   });
 
@@ -146,7 +149,7 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     });
     const batchUploadCodeEnvFiles = jest.fn().mockResolvedValue({
       storage_session_id: 'session-42',
-      files: [{ fileId: 'file-1', filename: 'brand-guidelines/references/style.md' }],
+      files: [{ fileId: 'file-1', filename: 'skills/brand-guidelines/references/style.md' }],
     });
 
     const deps = makeDeps({
@@ -168,7 +171,7 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
          * where codeapi computed sessionKey from the storage nanoid
          * instead of the skill _id. */
         resource_id: SKILL_ID.toString(),
-        name: 'brand-guidelines/references/style.md',
+        name: 'skills/brand-guidelines/references/style.md',
         storage_session_id: 'session-42',
         kind: 'skill',
         version: SKILL_VERSION,
@@ -199,7 +202,7 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     });
     const batchUploadCodeEnvFiles = jest.fn().mockResolvedValue({
       storage_session_id: 'session-42',
-      files: [{ fileId: 'file-1', filename: 'brand-guidelines/references/style.md' }],
+      files: [{ fileId: 'file-1', filename: 'skills/brand-guidelines/references/style.md' }],
     });
 
     /* Defer resolution so we can assert the prime hasn't returned yet
@@ -303,7 +306,7 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
         /* From the cache-hit path: pulls `resource_id` directly off
          * the persisted `codeEnvRef.id` (the skill `_id`). */
         resource_id: SKILL_ID.toString(),
-        name: 'brand-guidelines/references/style.md',
+        name: 'skills/brand-guidelines/references/style.md',
         storage_session_id: 'session-cached',
         kind: 'skill',
         version: SKILL_VERSION,
@@ -341,8 +344,8 @@ describe('primeSkillFiles — resource identity propagation', () => {
       batchUploadCodeEnvFiles: jest.fn().mockResolvedValue({
         storage_session_id: 'session-fresh',
         files: [
-          { fileId: 'file-fresh', filename: 'brand-guidelines/references/style.md' },
-          { fileId: 'file-skillmd', filename: 'brand-guidelines/SKILL.md' },
+          { fileId: 'file-fresh', filename: 'skills/brand-guidelines/references/style.md' },
+          { fileId: 'file-skillmd', filename: 'skills/brand-guidelines/SKILL.md' },
         ],
       }),
       ...overrides,
@@ -369,7 +372,7 @@ describe('primeSkillFiles — resource identity propagation', () => {
         id: 'file-fresh',
         resource_id: SKILL_ID.toString(),
         storage_session_id: 'session-fresh',
-        name: 'brand-guidelines/references/style.md',
+        name: 'skills/brand-guidelines/references/style.md',
         kind: 'skill',
         version: SKILL_VERSION,
       },
@@ -409,7 +412,7 @@ describe('primeSkillFiles — resource identity propagation', () => {
         id: 'file-cached',
         resource_id: SKILL_ID.toString(),
         storage_session_id: 'session-cached',
-        name: 'brand-guidelines/references/style.md',
+        name: 'skills/brand-guidelines/references/style.md',
         kind: 'skill',
         version: SKILL_VERSION,
       },

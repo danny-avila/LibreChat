@@ -29,16 +29,38 @@ const {
   computeSummaryUsedTokens,
   priorRunOutputTokens,
   createSubagentUsageSink,
-  isDeepSeekReasoningProvider,
+  anyAgentReplaysReasoningContent,
   GenerationJobManager,
   getTransactionsConfig,
   resolveRecursionLimit,
+  buildPendingAction,
+  toClientPendingAction,
+  computeAgentRequestFingerprint,
+  extractDiscoveredToolsFromHistory,
+  captureResumeModelParameters,
+  pickResumeContext,
+  getApprovalTtlMs,
+  isHITLEnabled,
+  deleteAgentCheckpoint,
+  agentRequestsAskUserQuestion,
+  attachAskUserQuestionArgs,
+  hydrateResumeRunSteps,
+  createContentIndexOffsetHandlers,
+  createSteerIndexOffsetHandlers,
+  createSteerDrainHook,
+  isSteeringSupported,
+  buildSteerMedia,
+  stampSteerPartMedia,
+  getRequestMemories,
+  getMemoryAgentId,
   createMemoryProcessor,
+  agentHasInlineMemoryTools,
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
   filterMalformedContentParts,
   countFormattedMessageTokens,
   prependFileContext,
+  prependQuotes,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   collectFreshSkillPrimeNames,
@@ -48,6 +70,13 @@ const {
   buildAgentScopedContext,
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
+  hasUrlContextTool,
+  hasYouTubeVideoParts,
+  appendYouTubeVideoParts,
+  resolveGoogleVideoError,
+  resolveYouTubeInjectionConfig,
+  decrementPendingRequest,
+  maybePrewarmCodeSandbox,
 } = require('@librechat/api');
 const {
   Callback,
@@ -59,10 +88,12 @@ const {
 } = require('@librechat/agents');
 const {
   Constants,
+  SteerEvents,
   UsageEvents,
   Permissions,
   VisionModes,
   ContentTypes,
+  ApprovalEvents,
   EModelEndpoint,
   PermissionTypes,
   AgentCapabilities,
@@ -93,6 +124,8 @@ class AgentClient extends BaseClient {
 
     /** @deprecated @type {true} - Is a Chat Completion Request */
     this.isChatCompletion = true;
+    /** @type {number | undefined} */
+    this.jobCreatedAt = options.jobCreatedAt;
 
     /** @type {AgentRun} */
     this.run;
@@ -108,6 +141,7 @@ class AgentClient extends BaseClient {
     const {
       agentConfigs,
       contentParts,
+      stepMap,
       collectedUsage,
       collectedThoughtSignatures,
       artifactPromises,
@@ -115,6 +149,7 @@ class AgentClient extends BaseClient {
       subagentAggregatorsByToolCallId,
       contextUsageSink,
       usageEmitSink,
+      toolInputValidationErrors,
       ...clientOptions
     } = options;
 
@@ -129,8 +164,17 @@ class AgentClient extends BaseClient {
      *  persisted on `metadata.usage`.
      *  @type {Array<import('librechat-data-provider').TTokenUsageEvent> | undefined} */
     this.usageEmitSink = usageEmitSink;
+    /** Schema-validation exceptions keyed by tool-call ID. The completion
+     *  handler consumes these to distinguish execution failures from tool
+     *  output that merely contains similar text.
+     *  @type {Map<string, import('@librechat/api').ToolInputValidationError> | undefined} */
+    this.toolInputValidationErrors = toolInputValidationErrors;
     /** @type {MessageContentComplex[]} */
     this.contentParts = contentParts;
+    /** Original run-step identity used by the content aggregator to attach
+     *  completion events to their rendered content indices.
+     *  @type {Map<string, import('@librechat/agents').RunStep | undefined> | undefined} */
+    this.stepMap = stepMap;
     /** @type {Array<UsageMetadata>} */
     this.collectedUsage = collectedUsage;
     /** Vertex Gemini 3 thought signatures captured during the run, keyed by
@@ -168,6 +212,11 @@ class AgentClient extends BaseClient {
     this.indexTokenCountMap = {};
     /** @type {Array<Record<string, unknown>> | null} */
     this.memoryPayload = null;
+    /** Mutable content-index shift shared with the steer offset handlers.
+     *  Incremented each time a steer part is spliced into `contentParts`, so
+     *  SDK-emitted indices that arrive after an injection land past it.
+     *  @type {import('@librechat/api').SteerOffsetState} */
+    this.steerOffsetState = { offset: 0 };
     /** @type {(messages: BaseMessage[]) => Promise<void>} */
     this.processMemory;
   }
@@ -216,6 +265,78 @@ class AgentClient extends BaseClient {
       }
     }
     buffer.clear();
+  }
+
+  /**
+   * Apply one drained steer to host state: append the steer content part at
+   * the live content index, bump the shared index offset so subsequent SDK
+   * step indices land past it, and emit `on_steer_applied` so the live client
+   * replaces its pending chip with the inline part (the emitted chunk also
+   * reaches the Redis chunk log for reconnect reconstruction).
+   *
+   * Runs BEFORE the drain hook's media encode so an abort during the encode
+   * cannot lose the steer. File refs persist from the queue item (sanitized at
+   * enqueue); replay/token accounting re-fetch owner-scoped and re-encode per
+   * turn (stampSteerPartMedia), so unauthorized ids drop out there.
+   *
+   * @param {string} streamId
+   * @param {import('@librechat/api').SteerQueueItem} item
+   */
+  async applySteerPart(streamId, item) {
+    const index = this.contentParts.length;
+    const part = {
+      type: ContentTypes.STEER,
+      [ContentTypes.STEER]: item.text,
+      steerId: item.steerId,
+      createdAt: item.createdAt,
+      ...(item.files?.length && { files: item.files }),
+    };
+    this.contentParts.push(part);
+    this.steerOffsetState.offset += 1;
+    // durable: the chunk-log XADD is this event's recovery record — it must
+    // commit before the publish or a cross-replica reconnect that missed the
+    // pub/sub delivery reconstructs content without the steer part.
+    await GenerationJobManager.emitChunk(
+      streamId,
+      {
+        event: SteerEvents.ON_STEER_APPLIED,
+        data: {
+          steerId: item.steerId,
+          index,
+          part,
+          responseMessageId: this.responseMessageId,
+          conversationId: this.conversationId,
+        },
+      },
+      { durable: true, expectedCreatedAt: this.jobCreatedAt },
+    );
+  }
+
+  /**
+   * The `steering` fragment for `createRun`: the run-scoped PostToolBatch
+   * drain hook, or `undefined` when there is no resumable job surface or the
+   * installed SDK cannot inject hook messages (draining would drop them).
+   *
+   * @param {string | undefined} streamId
+   */
+  buildSteerWiring(streamId) {
+    if (!streamId || !isSteeringSupported()) {
+      return undefined;
+    }
+    return {
+      hook: createSteerDrainHook({
+        streamId,
+        jobCreatedAt: this.jobCreatedAt,
+        applySteer: (item) => this.applySteerPart(streamId, item),
+        buildMedia: (item) =>
+          buildSteerMedia({
+            client: this,
+            user: this.options.req?.user,
+            item,
+            getFiles: db.getFiles,
+          }),
+      }),
+    };
   }
 
   setOptions(_options) {}
@@ -316,7 +437,37 @@ class AgentClient extends BaseClient {
           }))
         : []),
     ];
+
+    /**
+     * Memory authorization/loading and MCP config resolution do not depend on
+     * attachment hydration or prompt formatting. Start them before that work,
+     * but keep the existing context-application barrier below.
+     *
+     * Attach a rejection observer immediately because these operations may
+     * settle while request attachments are still being prepared. Awaiting the
+     * original promise later still propagates either error.
+     */
+    const earlySharedContextPromise = Promise.all([
+      this.useMemory(),
+      resolveConfigServers(this.options.req),
+    ]);
+    void earlySharedContextPromise.catch(() => {});
+
     const sharedRunAttachmentIds = new Set();
+    /** @type {ReturnType<typeof buildAgentScopedContext>} */
+    let agentScopedContextPromise;
+    const startAgentScopedContext = () => {
+      const contextPromise = buildAgentScopedContext({
+        agentIds: allAgents.map(({ agentId }) => agentId),
+        attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
+        sharedRunAttachmentIds,
+        req: this.options.req,
+        tokenCountFn: (text) => countTokens(text),
+      });
+      void contextPromise.catch(() => {});
+      return contextPromise;
+    };
+
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
       const latestMessage = orderedMessages[orderedMessages.length - 1];
@@ -324,6 +475,9 @@ class AgentClient extends BaseClient {
       for (const fileId of collectFileIds(attachments)) {
         sharedRunAttachmentIds.add(fileId);
       }
+
+      /** Agent-scoped extraction only depends on the shared attachment IDs. */
+      agentScopedContextPromise = startAgentScopedContext();
 
       if (this.message_file_map) {
         this.message_file_map[latestMessage.messageId] = attachments;
@@ -333,10 +487,14 @@ class AgentClient extends BaseClient {
         };
       }
 
-      await this.addFileContextToMessage(latestMessage, attachments);
-      const files = await this.processAttachments(latestMessage, attachments);
+      const [, files] = await Promise.all([
+        this.addFileContextToMessage(latestMessage, attachments),
+        this.processAttachments(latestMessage, attachments),
+      ]);
 
       this.options.attachments = files;
+    } else {
+      agentScopedContextPromise = startAgentScopedContext();
     }
 
     /** Note: Bedrock uses legacy RAG API handling */
@@ -377,12 +535,32 @@ class AgentClient extends BaseClient {
         prependFileContext(formattedMessage, message.fileContext);
       }
 
+      /**
+       * Durably re-merge quoted excerpts into every user turn that carries them
+       * (current and historical) so the model receives the referenced context on
+       * every prompt and the token count matches what was persisted. Applied to
+       * the memory copy too so the canonical per-message count includes them.
+       */
+      if (Array.isArray(message.quotes) && message.quotes.length > 0) {
+        prependQuotes(formattedMessage, message.quotes);
+        prependQuotes(memoryFormattedMessage, message.quotes);
+      }
+
       memoryPayload.push(memoryFormattedMessage);
 
       const dbTokenCount = Number(orderedMessages[i].tokenCount);
       const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;
+      /**
+       * Force a recount when the message carries quotes: a plain text-only
+       * "Save" edit recomputes `tokenCount` from `text` alone while leaving
+       * `message.quotes` persisted, so the stored count would undercount the
+       * quote block this turn prepends. Recounting from the quote-merged memory
+       * copy keeps context accounting accurate (and self-heals stale counts).
+       */
       const needsCanonicalTokenCount =
-        !hasDbTokenCount || (this.isVisionModel && (message.image_urls || message.files));
+        !hasDbTokenCount ||
+        (this.isVisionModel && (message.image_urls || message.files)) ||
+        (Array.isArray(message.quotes) && message.quotes.length > 0);
 
       let canonicalTokenCount = hasDbTokenCount ? dbTokenCount : 0;
       if (needsCanonicalTokenCount) {
@@ -438,7 +616,79 @@ class AgentClient extends BaseClient {
       return formattedMessage;
     });
 
+    /**
+     * Native YouTube -> video understanding: when Google `url_context` is enabled
+     * (resolved to the native `urlContext` provider tool), inject any YouTube URLs
+     * from the latest user turn as Gemini `fileData` video parts. The URL Context
+     * tool cannot read YouTube, so this routes those links through the video path
+     * while other URLs still flow through `urlContext`. Done after token counting
+     * (video tokens are reported by the provider) and only on the LLM payload, so
+     * the memory copy and persisted message are untouched.
+     */
+    const latestOrdered = orderedMessages[orderedMessages.length - 1];
+    const provider = this.options.agent?.provider;
+    if (
+      latestOrdered?.isCreatedByUser === true &&
+      (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) &&
+      hasUrlContextTool(this.options.agent?.tools)
+    ) {
+      const latestFormatted = formattedMessages[formattedMessages.length - 1];
+      /** Use the resolved run model (model_parameters override) rather than the saved base model. */
+      const resolvedModel =
+        this.options.agent?.model_parameters?.model ?? this.options.agent?.model;
+      const { max, mimeType } = resolveYouTubeInjectionConfig({
+        provider,
+        model: resolvedModel,
+      });
+      latestFormatted.content = appendYouTubeVideoParts({
+        enabled: true,
+        text: latestOrdered.text,
+        content: latestFormatted.content,
+        max,
+        mimeType,
+      });
+      /** Google rejects an unusable video with a generic `INVALID_ARGUMENT` that names no cause,
+       *  so `#sendCompletion` can only attribute one by knowing this turn carried a video. */
+      this.injectedYouTubeVideo = hasYouTubeVideoParts(latestFormatted.content);
+    }
+
     payload = formattedMessages;
+    if (this.options.resendFiles) {
+      /** Persisted steer parts of past turns replay with their attachments:
+       *  one batched owner-scoped fetch, re-encoded per turn and stamped as a
+       *  transient `media` array (same resend semantics as message files).
+       *  The stamp lands after the loop above finalized its counts, so the
+       *  re-encoded media (minus the text part the steer part already counted)
+       *  is folded into the budget here — large steered attachments must
+       *  shrink the window like any other resent media. */
+      const stamped = await stampSteerPartMedia({
+        client: this,
+        user: this.options.req?.user,
+        payload,
+        // addPreviousAttachments already fetched steer-part refs in its single
+        // per-turn historical-files query — no second round trip.
+        docsById: this.authorizedHistoricalFiles,
+        getFiles: db.getFiles,
+      });
+      for (const { index, media, steerText } of stamped) {
+        /** Count the FULL stamped content and subtract only the steer body
+         *  (already counted inside the assistant message): extracted file
+         *  context prepended into the text part must hit the budget too, or
+         *  large steered documents bypass pruning. */
+        const fullTokens = countFormattedMessageTokens({ role: 'user', content: media }, encoding);
+        const bodyTokens = steerText
+          ? countFormattedMessageTokens(
+              { role: 'user', content: [{ type: ContentTypes.TEXT, text: steerText }] },
+              encoding,
+            )
+          : 0;
+        const mediaTokens = Math.max(0, (fullTokens ?? 0) - (bodyTokens ?? 0));
+        if (Number.isFinite(mediaTokens) && mediaTokens > 0) {
+          indexTokenCountMap[index] = (indexTokenCountMap[index] ?? 0) + mediaTokens;
+          promptTokenTotal += mediaTokens;
+        }
+      }
+    }
     this.memoryPayload = hasFileContext ? memoryPayload : null;
     messages = orderedMessages;
     promptTokens = promptTokenTotal;
@@ -450,31 +700,52 @@ class AgentClient extends BaseClient {
      * Memory context is handled separately and applied per-agent based on config.
      */
     const sharedRunContextParts = [];
+    const [augmentedPrompt, [memories, configServers], agentScopedContext] = await Promise.all([
+      this.contextHandlers?.createContext(),
+      earlySharedContextPromise,
+      agentScopedContextPromise,
+    ]);
 
     /** Augmented prompt from RAG/context handlers */
-    if (this.contextHandlers) {
-      this.augmentedPrompt = await this.contextHandlers.createContext();
-      if (this.augmentedPrompt) {
-        sharedRunContextParts.push(this.augmentedPrompt);
-      }
+    this.augmentedPrompt = augmentedPrompt;
+    if (this.augmentedPrompt) {
+      sharedRunContextParts.push(this.augmentedPrompt);
     }
 
-    /** Memory context (user preferences/memories) */
-    const withoutKeys = await this.useMemory();
-    const memoryContext = withoutKeys
-      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
-      : undefined;
+    /** Memory context (user preferences/memories). Keyed context (with memory
+     *  keys + token metadata) is reserved for agents that can call
+     *  `delete_memory`; everyone else gets the unkeyed values only. */
+    /** Partition the loaded memories belong to (the primary agent's). */
+    const loadedMemoryAgentId = getMemoryAgentId(this.options.agent);
+    const buildMemoryContext = (text) =>
+      text ? `${memoryInstructions}\n\n# Existing memory about the user:\n${text}` : undefined;
+    /** Resolves formatted memories for an agent's own partition. A defined
+     *  `memories` means the run-level gates (permission, opt-out, config)
+     *  passed; agents on other partitions fetch through the request-scoped
+     *  cache so repeated partitions share one query. */
+    const getAgentPartitionMemories = async (agent) => {
+      if (!memories) {
+        return undefined;
+      }
+      const agentPartition = getMemoryAgentId(agent);
+      if (agentPartition === loadedMemoryAgentId) {
+        return memories;
+      }
+      try {
+        return await getRequestMemories({
+          req: this.options.req,
+          userId: this.options.req.user.id + '',
+          agentId: agentPartition,
+          getFormattedMemories: db.getFormattedMemories,
+        });
+      } catch (error) {
+        logger.error('[AgentClient] Error loading partition memories', error);
+        return undefined;
+      }
+    };
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
-
-    const agentScopedContext = await buildAgentScopedContext({
-      agentIds: allAgents.map(({ agentId }) => agentId),
-      attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
-      sharedRunAttachmentIds,
-      req: this.options.req,
-      tokenCountFn: (text) => countTokens(text),
-    });
 
     /** Preserve prompt token counts for graph formatting and pruning. */
     this.indexTokenCountMap = indexTokenCountMap;
@@ -509,13 +780,18 @@ class AgentClient extends BaseClient {
     const ephemeralAgent = this.options.req.body.ephemeralAgent;
     const mcpManager = getMCPManager();
 
-    const configServers = await resolveConfigServers(this.options.req);
-
     await Promise.all(
-      allAgents.map(({ agent, agentId }) => {
+      allAgents.map(async ({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
-        if (memoryContext && (agentId === this.options.agent.id || memoryAgentEnabled)) {
-          agentRunContextParts.push(memoryContext);
+        const agentHasMemory = agentHasInlineMemoryTools(agent);
+        if (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory) {
+          const partitionMemories = await getAgentPartitionMemories(agent);
+          const agentMemoryContext = buildMemoryContext(
+            agentHasMemory ? partitionMemories?.withKeys : partitionMemories?.withoutKeys,
+          );
+          if (agentMemoryContext) {
+            agentRunContextParts.push(agentMemoryContext);
+          }
         }
         const scopedContext = agentScopedContext.get(agentId);
         if (scopedContext) {
@@ -566,7 +842,7 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   * @returns {Promise<string | undefined>}
+   * @returns {Promise<{ withKeys?: string; withoutKeys?: string } | undefined>}
    */
   async useMemory() {
     const user = this.options.req.user;
@@ -593,12 +869,19 @@ class AgentClient extends BaseClient {
     }
 
     const userId = this.options.req.user.id + '';
+    /** Memory partition of the primary agent; undefined = shared personal pool */
+    const memoryAgentId = getMemoryAgentId(this.options.agent);
     this.processMemory = undefined;
 
     if (!isMemoryAgentEnabled(memoryConfig)) {
       try {
-        const { withoutKeys } = await db.getFormattedMemories({ userId });
-        return withoutKeys;
+        const { withKeys, withoutKeys } = await getRequestMemories({
+          req: this.options.req,
+          userId,
+          agentId: memoryAgentId,
+          getFormattedMemories: db.getFormattedMemories,
+        });
+        return { withKeys, withoutKeys };
       } catch (error) {
         logger.error(
           '[api/server/controllers/agents/client.js #useMemory] Error loading memories',
@@ -659,6 +942,7 @@ class AgentClient extends BaseClient {
             : memoryConfig.agent?.provider,
         },
         codeEnvAvailable: memoryCapabilities.has(AgentCapabilities.execute_code),
+        statefulSessionsAvailable: memoryCapabilities.has(AgentCapabilities.stateful_code_sessions),
       },
       {
         getFiles: db.getFiles,
@@ -701,9 +985,11 @@ class AgentClient extends BaseClient {
     const streamId = this.options.req?._resumableStreamId || null;
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
+      agentId: memoryAgentId,
       config,
       messageId,
       streamId,
+      jobCreatedAt: this.jobCreatedAt,
       conversationId,
       memoryMethods: {
         setMemory: db.setMemory,
@@ -715,7 +1001,21 @@ class AgentClient extends BaseClient {
     });
 
     this.processMemory = processMemory;
-    return withoutKeys;
+    let withKeys = withoutKeys;
+    try {
+      ({ withKeys } = await getRequestMemories({
+        req: this.options.req,
+        userId,
+        agentId: memoryAgentId,
+        getFormattedMemories: db.getFormattedMemories,
+      }));
+    } catch (error) {
+      logger.error(
+        '[api/server/controllers/agents/client.js #useMemory] Error loading keyed memories',
+        error,
+      );
+    }
+    return { withKeys, withoutKeys };
   }
 
   /**
@@ -1040,10 +1340,14 @@ class AgentClient extends BaseClient {
       const emit = (async () => {
         try {
           if (streamId) {
-            await GenerationJobManager.emitChunk(streamId, {
-              event: UsageEvents.ON_TOKEN_USAGE,
-              data,
-            });
+            await GenerationJobManager.emitChunk(
+              streamId,
+              {
+                event: UsageEvents.ON_TOKEN_USAGE,
+                data,
+              },
+              { expectedCreatedAt: this.jobCreatedAt },
+            );
           } else {
             sendEvent(res, { event: UsageEvents.ON_TOKEN_USAGE, data });
           }
@@ -1081,6 +1385,185 @@ class AgentClient extends BaseClient {
    * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
    * @param {AbortController} [params.abortController]
    */
+  /**
+   * @deprecated Agent Chain — strip hidden intermediate sequential-agent content
+   * before persistence, keeping only the last part + tool_call parts. Mirrors the
+   * chat path so a HITL resume doesn't persist/emit intermediate outputs the
+   * agent's `hide_sequential_outputs` setting is meant to hide.
+   */
+  applyHideSequentialOutputsFilter() {
+    if (!this.options.agent?.hide_sequential_outputs || !Array.isArray(this.contentParts)) {
+      return;
+    }
+    this.contentParts = this.contentParts.filter(
+      (part, index) =>
+        index >= this.contentParts.length - 1 ||
+        part.type === ContentTypes.TOOL_CALL ||
+        // Steer parts are user speech, not intermediate agent output — dropping
+        // one would erase the user's words from the persisted turn.
+        part.type === ContentTypes.STEER ||
+        part.tool_call_ids,
+    );
+  }
+
+  /**
+   * Surface any human-in-the-loop interrupt the SDK captured during the most
+   * recent `processStream` / `resume`. When the run paused for tool approval (or
+   * an ask-user question), mark the job `requires_action`, persist the pending
+   * review record, and emit it to live clients — then set `this.pendingApproval`
+   * so the controller leaves the turn unfinalized for the resume route to continue.
+   *
+   * No-op when the run completed without an interrupt, or when the job was aborted
+   * between the interrupt firing and this mark (a late interrupt must not pause a
+   * dead job — the atomic `pause` transition returns false and we drop it).
+   *
+   * @param {AgentRun} run
+   * @param {string} [streamId]
+   */
+  async handleRunInterrupt(run, streamId) {
+    if (!streamId || typeof run?.getInterrupt !== 'function') {
+      return;
+    }
+    const interrupt = run.getInterrupt();
+    if (!interrupt?.payload) {
+      return;
+    }
+
+    const appConfig = this.options.req?.config;
+    const checkpointerCfg = appConfig?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
+    // Persist the generation params (temperature, max tokens, custom endpoint params, …)
+    // so an ephemeral-agent resume continues with the SAME settings the run paused on.
+    // The resume payload omits them and they aren't part of the fingerprint, so without
+    // this the rebuilt ephemeral run falls back to defaults. The paused request body is
+    // the primary source (UI-form, round-trips the compact-convo schema by construction);
+    // the resolved llmConfig fills gaps and is sanitized — it carries provider secrets
+    // (apiKey, credentials) and gateway config — resume re-resolves those server-side.
+    // (Saved agents source params from the DB record, so this is belt-and-suspenders.)
+    const resumeContext = pickResumeContext(this.options.req?.body);
+    const resumeModelParameters = captureResumeModelParameters(
+      this.options.req?.body,
+      this.options.agent?.model_parameters,
+    );
+    if (resumeModelParameters) {
+      resumeContext.model_parameters = resumeModelParameters;
+    }
+    // Persist the question onto the paused ask tool_call's args NOW: an
+    // abandoned/expired/stopped pause never reaches the answer-resume stamp,
+    // and the streamed args were dropped (name-less chunks) — without this the
+    // unfinished turn saves an empty ask part the record card can't render.
+    if (interrupt.payload?.type === 'ask_user_question' && Array.isArray(this.contentParts)) {
+      const stamped = attachAskUserQuestionArgs(this.contentParts, interrupt.payload.question);
+      if (stamped !== this.contentParts) {
+        this.contentParts.length = 0;
+        this.contentParts.push(...stamped);
+      }
+    }
+    const pendingAction = buildPendingAction(interrupt.payload, {
+      streamId,
+      conversationId: this.conversationId,
+      // runId mirrors the LangGraph checkpoint namespace when the SDK provides it
+      // (its documented meaning), falling back to the response message id.
+      runId: interrupt.checkpointNs ?? this.responseMessageId,
+      responseMessageId: this.responseMessageId,
+      interruptId: interrupt.interruptId,
+      // thread_id was bound to conversationId at run config (config.configurable);
+      // fall back to it when the SDK doesn't echo threadId on the interrupt.
+      threadId: interrupt.threadId ?? this.conversationId,
+      ttlMs: getApprovalTtlMs(checkpointerCfg),
+      // Pin the graph-determining request fields so resume can't rebuild this paused
+      // run on a different agent/tool set (esp. ephemeral agents, whose agent_id is
+      // undefined so the id guard can't tell two configs apart).
+      requestFingerprint: computeAgentRequestFingerprint(this.options.req?.body ?? {}),
+      // Persist those same fields verbatim so the resume route can REPLAY them — a
+      // reload/cross-replica resume can't reconstruct the ephemeral config client-side,
+      // so the server restores it and rebuilds the same graph (and the fingerprint matches).
+      resumeContext,
+    });
+
+    // Job-replacement guard: streamId == conversationId is reused per conversation, so a
+    // newer request can replace this run's job. If this (older) run hits an interrupt
+    // after a replacement, pausing would flip the NEWER job to requires_action with this
+    // stale run's pending action, blocking fresh work behind the wrong approval. Only
+    // pause when the live job is still the one THIS run created (mirrors request.js).
+    if (this.jobCreatedAt != null) {
+      const liveJob = await GenerationJobManager.getJobStore().getJob(streamId);
+      if (!liveJob || liveJob.createdAt !== this.jobCreatedAt) {
+        logger.debug(`[AgentClient] Interrupt fired but job ${streamId} was replaced; not pausing`);
+        return;
+      }
+    }
+
+    const paused = await GenerationJobManager.approvals.pause(streamId, pendingAction);
+    if (!paused) {
+      logger.debug(
+        `[AgentClient] Interrupt fired but job ${streamId} was not running; not pausing`,
+      );
+      return;
+    }
+
+    // Capture deferred tools discovered (via tool_search) earlier in THIS turn so resume
+    // can replay them into createRun. The resumed graph is rebuilt with `messages: []`
+    // (state comes from the checkpoint), so the in-turn tool_search results that mark a
+    // deferred tool discovered aren't present there — without this the paused deferred
+    // tool would be missing from the rebuilt schema-only toolMap and resume would fail
+    // with "unknown tool". Inert for non-deferred turns (the set comes back empty).
+    try {
+      const runMessages =
+        typeof run.getRunMessages === 'function' ? run.getRunMessages() : undefined;
+      if (Array.isArray(runMessages) && runMessages.length > 0) {
+        const discovered = extractDiscoveredToolsFromHistory(runMessages);
+        if (discovered.size > 0) {
+          await GenerationJobManager.updateMetadata(
+            streamId,
+            {
+              discoveredTools: Array.from(discovered),
+            },
+            this.jobCreatedAt,
+          );
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        `[AgentClient] Failed to capture discovered tools for resume on ${streamId}`,
+        err?.message ?? err,
+      );
+    }
+
+    this.pendingApproval = pendingAction;
+    // Release the concurrency slot this request held the MOMENT the turn is durably
+    // paused — before the approval card is emitted — so the user's `/resume` can
+    // re-acquire one immediately. Otherwise a fast Approve races the HTTP-driver
+    // teardown (request.js pause branch / resume.js finally) that would otherwise
+    // release it, and `/resume` 429s under LIMIT_CONCURRENT_MESSAGES. Idempotent via
+    // the flag; if it fails here, the teardown still releases (it checks the flag).
+    if (!this.pendingRequestReleased) {
+      try {
+        await decrementPendingRequest(this.options.req?.user?.id);
+        this.pendingRequestReleased = true;
+      } catch (err) {
+        logger.error(`[AgentClient] Failed to release request slot on pause ${streamId}`, err);
+      }
+    }
+    await GenerationJobManager.emitChunk(
+      streamId,
+      {
+        event: ApprovalEvents.ON_PENDING_ACTION,
+        data: toClientPendingAction(pendingAction),
+      },
+      { expectedCreatedAt: this.jobCreatedAt },
+    );
+    // Steers queued before this pause stay IN the store for the whole approval
+    // window: `resumeState.pendingSteers` re-seeds the client's chips on
+    // reload, and the resumed run drains them at its first tool boundary.
+    // Draining here would leave the only copy in ephemeral client state — a
+    // reload during the pause would silently lose the user's message. New
+    // steers are rejected while paused (enqueue is status-guarded), and the
+    // requires_action TTL extension keeps the queue key alive.
+    logger.debug(
+      `[AgentClient] Paused ${streamId} for ${interrupt.payload.type} (action ${pendingAction.actionId})`,
+    );
+  }
+
   async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
@@ -1095,6 +1578,16 @@ class AgentClient extends BaseClient {
       if (!abortController) {
         abortController = new AbortController();
       }
+
+      /** Fire-and-forget: boot the per-conversation stateful sandbox in
+       *  parallel with generation so the first execute_code/bash call lands
+       *  on a warm VM. No-op unless a reachable agent resolved
+       *  `statefulCodeSessions`. */
+      maybePrewarmCodeSandbox({
+        req: this.options.req,
+        conversationId: this.conversationId,
+        agents: [this.options.agent, ...(this.agentConfigs?.values() ?? [])],
+      });
 
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
@@ -1139,14 +1632,17 @@ class AgentClient extends BaseClient {
         agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
       });
 
-      /** Spoof `Providers.DEEPSEEK` so the SDK preserves `reasoning_content` on tool turns (#13366). */
-      const hasDeepSeekAgent = (agent) =>
-        agent != null &&
-        isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
-      const needsDeepSeekFormat =
-        hasDeepSeekAgent(this.options.agent) ||
-        (this.agentConfigs != null &&
-          Array.from(this.agentConfigs.values()).some(hasDeepSeekAgent));
+      /**
+       * Reconstruct `reasoning_content` on prior tool-call turns: DeepSeek
+       * thinking-mode (#13366) or custom endpoints opting in via
+       * `customParams.includeReasoningHistory` (e.g. Xiaomi MiMo, Kimi).
+       * Walks subagents too — the opted-in endpoint may appear only as a
+       * nested subagent, not the primary or a top-level handoff agent.
+       */
+      const needsReasoningContentFormat = anyAgentReplaysReasoningContent([
+        this.options.agent,
+        ...(this.agentConfigs ? Array.from(this.agentConfigs.values()) : []),
+      ]);
       /**
        * Skills primed fresh this turn — manual ($ popover) and always-apply
        * (frontmatter). `injectSkillPrimes` (below) splices their SKILL.md
@@ -1163,9 +1659,9 @@ class AgentClient extends BaseClient {
         alwaysApplySkillPrimes,
       });
       const formatOptions =
-        needsDeepSeekFormat || freshSkillPrimeNames.size > 0
+        needsReasoningContentFormat || freshSkillPrimeNames.size > 0
           ? {
-              ...(needsDeepSeekFormat ? { provider: Providers.DEEPSEEK } : {}),
+              ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
               ...(freshSkillPrimeNames.size > 0
                 ? { skipSkillBodyNames: freshSkillPrimeNames }
                 : {}),
@@ -1315,18 +1811,55 @@ class AgentClient extends BaseClient {
           );
         }
 
-        run = await createRun({
+        const streamId = this.options.req?._resumableStreamId;
+        // HITL: clear any checkpoint orphaned by a prior paused turn in this
+        // conversation (one that expired or was aborted while paused) so this fresh
+        // turn starts clean instead of rehydrating a stale interrupt — thread_id is
+        // the stable conversationId. No-op when HITL is off or nothing is orphaned.
+        // Deliberately UNCONDITIONAL per HITL turn: any cheaper gate (job metadata,
+        // a Redis flag) can go stale across replicas/restarts and skip the prune
+        // exactly when an orphan exists, while these are two indexed, usually-empty
+        // deleteMany ops — correctness over a micro-optimization.
+        // The gate mirrors createRun's checkpointer condition: the approval policy
+        // OR an ask_user_question-capable agent (which attaches a checkpointer
+        // WITHOUT the approval policy) — an ask pause abandoned via job replacement
+        // or Stop would otherwise rehydrate here and silently duplicate context.
+        //
+        // Start the prune alongside graph construction. The all-settled barrier
+        // below still guarantees it completes before the graph is exposed or run.
+        const shouldPruneCheckpoint =
+          streamId &&
+          (isHITLEnabled(agentsEConfig?.toolApproval) || agents.some(agentRequestsAskUserQuestion));
+        const checkpointPrunePromise = shouldPruneCheckpoint
+          ? deleteAgentCheckpoint(this.conversationId, agentsEConfig?.checkpointer)
+          : Promise.resolve();
+
+        const createRunPromise = createRun({
           agents,
           messages,
+          // This controller implements the full HITL pause/resume lifecycle (handleRunInterrupt
+          // persists the pending action; the /resume route rebuilds + continues the run), so it
+          // opts into the tool-approval wiring. Non-resumable callers (OpenAI-compat, Responses)
+          // leave this off so an approval-gated tool can't pause where there's no resume path.
+          hitlCapable: true,
+          toolInputValidationErrors: this.toolInputValidationErrors,
+          // Mid-run steering: drain queued user messages at each tool-batch
+          // boundary and inject them into graph state. The offset wrapper
+          // shifts SDK content indices past any spliced steer parts.
+          steering: this.buildSteerWiring(streamId),
           indexTokenCountMap,
           initialSummary,
           initialSessions,
           calibrationRatio,
           runId: this.responseMessageId,
           signal: abortController.signal,
-          customHandlers: this.options.eventHandlers,
+          customHandlers: createSteerIndexOffsetHandlers(
+            this.options.eventHandlers,
+            this.steerOffsetState,
+          ),
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
+          tenantId: this.options.req?.user?.tenantId,
           summarizationConfig: appConfig?.summarization,
           appConfig,
           tokenCounter,
@@ -1341,11 +1874,25 @@ class AgentClient extends BaseClient {
             this.collectedUsage,
             this.buildSubagentUsageEmitter(appConfig),
           ),
+        }).then((createdRun) => {
+          if (!createdRun) {
+            throw new Error('Failed to create run');
+          }
+          this.options.startupTelemetry?.mark('run_created');
+          return createdRun;
         });
 
-        if (!run) {
-          throw new Error('Failed to create run');
+        const [createRunResult, checkpointPruneResult] = await Promise.allSettled([
+          createRunPromise,
+          checkpointPrunePromise,
+        ]);
+        if (createRunResult.status === 'rejected') {
+          throw createRunResult.reason;
         }
+        if (checkpointPruneResult.status === 'rejected') {
+          throw checkpointPruneResult.reason;
+        }
+        run = createRunResult.value;
 
         this.run = run;
         if (this._resolveRun) {
@@ -1353,9 +1900,8 @@ class AgentClient extends BaseClient {
           this._resolveRun = null;
         }
 
-        const streamId = this.options.req?._resumableStreamId;
         if (streamId && run.Graph) {
-          GenerationJobManager.setGraph(streamId, run.Graph);
+          GenerationJobManager.setGraph(streamId, run.Graph, this.jobCreatedAt);
         }
 
         if (userMCPAuthMap != null) {
@@ -1364,16 +1910,23 @@ class AgentClient extends BaseClient {
 
         /** @deprecated Agent Chain */
         config.configurable.last_agent_id = agents[agents.length - 1].id;
+
+        this.options.startupTelemetry?.mark('stream_processing_started');
         await run.processStream({ messages }, config, {
           callbacks: {
             [Callback.TOOL_ERROR]: logToolError,
           },
         });
 
+        // HITL: if the run paused for tool approval, mark the job
+        // `requires_action` + emit the prompt and leave the turn unfinalized
+        // (the resume route continues it). No-op when the run completed.
+        await this.handleRunInterrupt(run, streamId);
+
         config.signal = null;
       };
 
-      const hideSequentialOutputs = config.configurable.hide_sequential_outputs;
+      this.options.startupTelemetry?.mark('run_input_prepared');
       await runAgents(initialMessages);
 
       /**
@@ -1413,33 +1966,28 @@ class AgentClient extends BaseClient {
         this.contentParts.unshift(...manualParts);
       }
 
-      /** @deprecated Agent Chain */
-      if (hideSequentialOutputs) {
-        this.contentParts = this.contentParts.filter((part, index) => {
-          // Include parts that are either:
-          // 1. At or after the finalContentStart index
-          // 2. Of type tool_call
-          // 3. Have tool_call_ids property
-          return (
-            index >= this.contentParts.length - 1 ||
-            part.type === ContentTypes.TOOL_CALL ||
-            part.tool_call_ids
-          );
-        });
-      }
+      this.applyHideSequentialOutputsFilter();
     } catch (err) {
-      logger.error(
-        '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted',
-        err,
-      );
-      if (!abortController.signal.aborted) {
+      if (abortController.signal.aborted) {
+        logger.debug(
+          '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted by user',
+          { conversationId: this.conversationId, name: err?.name, code: err?.code },
+        );
+      } else {
         logger.error(
           '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
           err,
         );
+        const videoError = resolveGoogleVideoError({
+          error: err,
+          provider: this.options.agent?.provider,
+          hasYouTubeVideo: this.injectedYouTubeVideo,
+        });
         this.contentParts.push({
           type: ContentTypes.ERROR,
-          [ContentTypes.ERROR]: `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
+          [ContentTypes.ERROR]:
+            videoError ??
+            `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
         });
       }
     } finally {
@@ -1495,9 +2043,287 @@ class AgentClient extends BaseClient {
         this._resolveRun(this.run ?? null);
         this._resolveRun = null;
       }
+
+      // HITL: a non-paused turn deliberately prunes nothing here. The lazy checkpointer
+      // (LazyMongoSaver) never persists a clean-exit checkpoint, so there is
+      // nothing this turn left to delete. A checkpoint orphaned by a PRIOR abandoned pause
+      // is cleared by the pre-run prune (before processStream) on the next turn, with the
+      // Mongo TTL as the backstop. Dropping this post-completion prune also removes its
+      // job-replacement race: an older run's late finally can no longer delete a newer
+      // paused run's checkpoint, because there is no longer a clean-path prune to race.
+
       run = null;
       config = null;
       memoryPromise = null;
+    }
+  }
+
+  /**
+   * Resume a run that paused for human-in-the-loop review.
+   *
+   * The original run lives in a detached background task that exits when the run
+   * pauses, so resume REBUILDS the run on a fresh graph bound to the same
+   * `thread_id` (= conversationId) and the durable checkpointer. LangGraph rehydrates
+   * the paused graph state from the checkpoint; `run.resume(value)` re-enters the
+   * interrupted node with the user's decision. State comes from the checkpoint, so
+   * no message history is rebuilt here — `createRun` only needs the agent(s) to
+   * reconstruct the graph structure.
+   *
+   * `seedContent` is the content streamed before the pause (the assistant message +
+   * its tool call). In Redis mode the job store's append log already spans the pause,
+   * so the finalized message is complete regardless; seeding keeps the in-memory store
+   * complete too. The run drives events through the same `streamId`, so the client's
+   * open SSE receives the continuation live.
+   *
+   * Unlike `chatCompletion`, this does NOT prune the checkpoint in its `finally` — the
+   * resume controller owns checkpoint lifecycle (it must also clean up on failures that
+   * happen before this method runs, and keep the checkpoint on a re-pause).
+   *
+   * @param {object} params
+   * @param {Agents.ToolApprovalDecisionMap | { answer: string }} params.resumeValue
+   * @param {Array} [params.seedContent] - content aggregated before the pause
+   * @param {Array<import('@librechat/agents').RunStep>} [params.runSteps] - run steps emitted before the pause
+   * @param {AbortController} [params.abortController]
+   * @param {Pick<import('@langchain/langgraph').Command, 'update' | 'goto'>} [params.commandOptions]
+   */
+  async resumeCompletion({
+    resumeValue,
+    seedContent = [],
+    runSteps = [],
+    abortController = null,
+    commandOptions,
+    userMCPAuthMap,
+    discoveredToolNames,
+  }) {
+    /** @type {Partial<GraphRunnableConfig>} */
+    let config;
+    /** @type {ReturnType<createRun>} */
+    let run;
+    const appConfig = this.options.req.config;
+    const balanceConfig = getBalanceConfig(appConfig);
+    const transactionsConfig = getTransactionsConfig(appConfig);
+    try {
+      if (!abortController) {
+        abortController = new AbortController();
+      }
+
+      /** @type {AppConfig['endpoints']['agents']} */
+      const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
+
+      config = {
+        runName: 'AgentRun',
+        configurable: {
+          thread_id: this.conversationId,
+          last_agent_index: this.agentConfigs?.size ?? 0,
+          user_id: this.user ?? this.options.req.user?.id,
+          hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
+          requestBody: {
+            messageId: this.responseMessageId,
+            conversationId: this.conversationId,
+            parentMessageId: this.parentMessageId,
+          },
+          user: createSafeUser(this.options.req.user),
+        },
+        recursionLimit: resolveRecursionLimit(agentsEConfig, this.options.agent),
+        signal: abortController.signal,
+        streamMode: 'values',
+        version: 'v2',
+      };
+
+      // Seed pre-pause content so the in-memory job store reports the complete turn
+      // (Redis aggregates across the pause via its append log; this covers in-memory).
+      if (Array.isArray(seedContent) && seedContent.length > 0) {
+        this.contentParts.push(...seedContent);
+      }
+
+      const tokenCounter = createTokenCounter(this.getEncoding());
+      const agents = [this.options.agent];
+      if (this.agentConfigs && this.agentConfigs.size > 0) {
+        agents.push(...this.agentConfigs.values());
+      }
+
+      // Re-prime skill files invoked in the pre-pause segment (mirrors the normal path's
+      // `primeInvokedSkills(payload)`), so an approved code/file-backed tool keeps the
+      // injected skill-file session refs instead of running without them. The pre-pause
+      // content carries the `skill` tool_calls, so it stands in for the message payload.
+      let skillSessions;
+      if (
+        typeof this.options.primeInvokedSkills === 'function' &&
+        Array.isArray(seedContent) &&
+        seedContent.length > 0
+      ) {
+        try {
+          const primed = await this.options.primeInvokedSkills([
+            { role: 'assistant', content: seedContent },
+          ]);
+          skillSessions = primed?.initialSessions;
+        } catch (err) {
+          logger.warn(
+            '[api/server/controllers/agents/client.js #resumeCompletion] Failed to re-prime skill sessions',
+            err?.message ?? err,
+          );
+        }
+      }
+
+      // Seed code-env / skill tool sessions so an approved code/file/skill-backed tool
+      // runs with the same uploaded-file context the pre-pause run had — the rebuilt
+      // graph otherwise has no `Graph.sessions` entries (especially cross-replica).
+      const initialSessions = buildInitialToolSessions({ skillSessions, agents });
+
+      const streamId = this.options.req?._resumableStreamId;
+      run = await createRun({
+        agents,
+        // State (messages, tool calls) is rehydrated from the checkpoint by
+        // run.resume; createRun only needs the agents to rebuild the graph.
+        messages: [],
+        // The resumed run can pause AGAIN (another tool, a follow-up question), and this
+        // controller owns that lifecycle, so it must keep the HITL wiring on the rebuilt run.
+        hitlCapable: true,
+        toolInputValidationErrors: this.toolInputValidationErrors,
+        // Steering stays live across a pause/resume cycle: steers queued while
+        // the resumed segment runs drain at its tool-batch boundaries.
+        steering: this.buildSteerWiring(streamId),
+        // Replay deferred tools discovered before the pause. With `messages: []` the
+        // discovery scan finds nothing, so a deferred tool the paused call targets
+        // would be absent from the rebuilt toolMap; these names (captured at pause)
+        // force it back in. Undefined/empty for non-deferred turns — a harmless no-op.
+        discoveredToolNames,
+        initialSessions,
+        runId: this.responseMessageId,
+        signal: abortController.signal,
+        // The rebuilt graph numbers content indices from 0, but the aggregator was
+        // just seeded with the pre-pause parts at those same indices — shift every
+        // resumed step index past the seed, or the new output merges into (or, on a
+        // type mismatch, is silently dropped against) the pre-pause content. The
+        // steer wrapper composes on top: resumed indices shift by seed + any
+        // steer parts spliced in while the resumed segment streams.
+        customHandlers: createSteerIndexOffsetHandlers(
+          createContentIndexOffsetHandlers(
+            this.options.eventHandlers,
+            Array.isArray(seedContent) ? seedContent : [],
+          ),
+          this.steerOffsetState,
+        ),
+        requestBody: config.configurable.requestBody,
+        user: createSafeUser(this.options.req?.user),
+        tenantId: this.options.req?.user?.tenantId,
+        summarizationConfig: appConfig?.summarization,
+        appConfig,
+        tokenCounter,
+        subagentUsageSink: createSubagentUsageSink(
+          this.collectedUsage,
+          this.buildSubagentUsageEmitter(appConfig),
+        ),
+      });
+
+      if (!run) {
+        throw new Error('Failed to create run for resume');
+      }
+
+      hydrateResumeRunSteps(runSteps, this.stepMap, run.Graph, seedContent);
+
+      this.run = run;
+      if (this._resolveRun) {
+        this._resolveRun(run);
+        this._resolveRun = null;
+      }
+
+      // Do NOT cache the rebuilt graph on resume: it was created with `messages: []`, so
+      // RedisJobStore.getContentParts() (which prefers a cached graph over reconstructing
+      // from the chunk log) would return only the resumed segment and drop the pre-pause
+      // assistant/tool-call content on a same-replica reload/status poll. Skipping it makes
+      // introspection fall back to the durable chunk reconstruction, which is complete.
+      // `setContentParts` still points the in-memory store at the seeded client content.
+      if (streamId && this.contentParts) {
+        GenerationJobManager.setContentParts(streamId, this.contentParts, this.jobCreatedAt);
+      }
+
+      // Carry the user's MCP auth into the rebuilt run so an approved MCP tool executes
+      // with the same OAuth/user credentials it had before the pause.
+      if (userMCPAuthMap != null) {
+        config.configurable.userMCPAuthMap = userMCPAuthMap;
+      }
+
+      /** @deprecated Agent Chain */
+      config.configurable.last_agent_id = agents[agents.length - 1].id;
+
+      await run.resume(
+        resumeValue,
+        config,
+        { callbacks: { [Callback.TOOL_ERROR]: logToolError } },
+        commandOptions,
+      );
+
+      config.signal = null;
+
+      // The model may pause AGAIN (another tool needs approval, or a follow-up
+      // question). Re-arm the same interrupt gate so the cycle can repeat.
+      await this.handleRunInterrupt(run, streamId);
+
+      // Mirror chatCompletion: strip hidden intermediate sequential-agent content
+      // before resume finalize/re-pause persistence reads `this.contentParts`, so a
+      // resumed sequential chain doesn't persist/emit outputs hide_sequential_outputs
+      // is meant to hide.
+      this.applyHideSequentialOutputsFilter();
+    } catch (err) {
+      if (abortController.signal.aborted) {
+        logger.debug(
+          '[api/server/controllers/agents/client.js #resumeCompletion] Aborted by user',
+          {
+            conversationId: this.conversationId,
+            name: err?.name,
+            code: err?.code,
+          },
+        );
+      } else {
+        logger.error(
+          '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
+          err,
+        );
+        this.contentParts.push({
+          type: ContentTypes.ERROR,
+          [ContentTypes.ERROR]: `An error occurred while resuming the request${err?.message ? `: ${err.message}` : ''}`,
+        });
+      }
+    } finally {
+      const ratio = this.run?.getCalibrationRatio() ?? 0;
+      if (ratio > 0 && ratio !== 1) {
+        this.contextMeta = {
+          calibrationRatio: Math.round(ratio * 1000) / 1000,
+          encoding: this.getEncoding(),
+        };
+      } else {
+        this.contextMeta = undefined;
+      }
+
+      this.finalizeSubagentContent();
+
+      if (this.pendingSubagentEmits.length > 0) {
+        await Promise.allSettled(this.pendingSubagentEmits);
+        this.pendingSubagentEmits = [];
+      }
+
+      try {
+        const wasAborted = abortController?.signal?.aborted;
+        if (!wasAborted) {
+          await this.recordCollectedUsage({
+            context: 'message',
+            balance: balanceConfig,
+            transactions: transactionsConfig,
+          });
+        }
+      } catch (err) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #resumeCompletion] Error in cleanup phase',
+          err,
+        );
+      }
+      if (this._resolveRun) {
+        this._resolveRun(this.run ?? null);
+        this._resolveRun = null;
+      }
+      run = null;
+      config = null;
     }
   }
 

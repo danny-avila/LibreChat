@@ -1,8 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useRecoilState, useSetRecoilState } from 'recoil';
 import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
+import { TTSEndpoints } from '~/common';
 import { logger } from '~/utils';
 import store from '~/store';
+
+const VALID_TTS_ENGINES: string[] = [TTSEndpoints.browser, TTSEndpoints.external];
 
 /**
  * Initializes speech-related Recoil values from the server-side custom
@@ -10,6 +13,7 @@ import store from '~/store';
  */
 export default function useSpeechSettingsInit(isAuthenticated: boolean) {
   const { data } = useGetCustomConfigSpeechQuery({ enabled: isAuthenticated });
+  const [engineTTS, setEngineTTS] = useRecoilState<string>(store.engineTTS);
 
   const setters = useRef({
     conversationMode: useSetRecoilState(store.conversationMode),
@@ -22,7 +26,7 @@ export default function useSpeechSettingsInit(isAuthenticated: boolean) {
     autoTranscribeAudio: useSetRecoilState(store.autoTranscribeAudio),
     decibelValue: useSetRecoilState(store.decibelValue),
     autoSendText: useSetRecoilState(store.autoSendText),
-    engineTTS: useSetRecoilState(store.engineTTS),
+    engineTTS: setEngineTTS,
     voice: useSetRecoilState(store.voice),
     cloudBrowserVoices: useSetRecoilState(store.cloudBrowserVoices),
     languageTTS: useSetRecoilState(store.languageTTS),
@@ -47,4 +51,10 @@ export default function useSpeechSettingsInit(isAuthenticated: boolean) {
       }
     });
   }, [isAuthenticated, data, setters]);
+
+  useEffect(() => {
+    if (VALID_TTS_ENGINES.includes(engineTTS)) return;
+    logger.log(`Resetting invalid TTS engine "${engineTTS}" to ${TTSEndpoints.browser}`);
+    setEngineTTS(TTSEndpoints.browser);
+  }, [engineTTS, setEngineTTS]);
 }

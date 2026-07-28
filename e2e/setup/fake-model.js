@@ -18,19 +18,38 @@ const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
 
 const CREATE_SKILL_MARKER = 'E2E_CREATE_SKILL:';
 const EDIT_SKILL_MARKER = 'E2E_EDIT_SKILL:';
-const ASSERT_MODEL_SPEC_SKILLS_MARKER = 'E2E_ASSERT_MODEL_SPEC_SKILLS';
+const ASSERT_SKILLS_MARKER = 'E2E_ASSERT_SKILLS:';
+const ASSERT_MANUAL_SKILL_MARKER = 'E2E_ASSERT_MANUAL_SKILL:';
+const INVOKE_SKILL_MARKER = 'E2E_INVOKE_SKILL:';
 const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
+const ASSERT_AGENT_CONTEXT_MARKER = 'E2E_ASSERT_AGENT_CONTEXT:';
+const ASSERT_QUOTE_MARKER = 'E2E_ASSERT_QUOTE:';
 const REPLY_MARKER = 'E2E_REPLY:';
 const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
 const SLOW_COUNTED_REPLY_MARKER = 'E2E_SLOW_COUNTED_REPLY:';
+const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+const BACKGROUND_DISPATCH_MARKER = 'E2E_BACKGROUND_DISPATCH:';
+const BACKGROUND_COLLECT_MARKER = 'E2E_BACKGROUND_COLLECT:';
+const TOOL_APPROVAL_MARKER = 'E2E_TOOL_APPROVAL:';
+const TOOL_APPROVAL_BATCH_MARKER = 'E2E_TOOL_APPROVAL_BATCH:';
+const TOOL_APPROVAL_RESTRICTED_MARKER = 'E2E_TOOL_APPROVAL_RESTRICTED:';
+const TOOL_APPROVAL_REWRITE_MARKER = 'E2E_TOOL_APPROVAL_REWRITE:';
+const HANDOFF_MARKER = 'E2E_HANDOFF:';
+const HANDOFF_TOOL_PREFIX = 'lc_transfer_to_';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
-const MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT = 'E2E model spec skill assertion passed';
+const SKILL_ASSERTION_FINAL_TEXT = 'E2E skill assertion passed';
+const MANUAL_SKILL_ASSERTION_FINAL_TEXT = 'E2E manual skill assertion passed';
+const SKILL_TOOL_ASSERTION_FINAL_TEXT = 'E2E skill tool assertion passed';
 const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
+const AGENT_CONTEXT_ASSERTION_FINAL_TEXT = 'E2E agent context assertion passed';
+const QUOTE_ASSERTION_FINAL_TEXT = 'E2E quote assertion passed';
+const STEER_TOOL_FINAL_TEXT = 'E2E steer tool reply done';
+const STEER_TOOL_NAME_PREFIX = 'remember_fact';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
 const SLOW_REPLY_CHUNKS = 160;
 const RESUME_ICON_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_RESUME_ICON_CHUNK_DELAY_MS) || 60;
@@ -41,10 +60,16 @@ const BASH_TOOL_NAME = 'bash_tool';
 const SKILL_TOOL_NAME = 'skill';
 const CREATE_SKILL_TOOL_CALL_ID = 'call_e2e_create_skill';
 const EDIT_SKILL_TOOL_CALL_ID = 'call_e2e_edit_skill';
+const BACKGROUND_TOOL_NAME = 'slow_echo_mcp_e2e-memory';
+const CHECK_BACKGROUND_TASK_TOOL_NAME = 'check_background_task';
+const APPROVAL_TOOL_NAME = 'approval_probe_mcp_e2e-memory';
+const APPROVAL_TOOL_CALL_PREFIX = 'call_e2e_approval_';
+const BACKGROUND_DISPATCH_TOOL_CALL_ID = 'call_e2e_background_dispatch';
+const BACKGROUND_COLLECT_TOOL_CALL_ID = 'call_e2e_background_collect';
 const MODEL_SPEC_ACCESSIBLE_SKILL = 'e2e-model-spec-allowed';
-const MODEL_SPEC_MISSING_SKILL = 'e2e-model-spec-missing';
-const MODEL_SPEC_INACCESSIBLE_SKILL = 'e2e-model-spec-inaccessible';
+const DEPLOYMENT_SKILL_NAME = 'e2e-deployment-skill';
 const ALWAYS_APPLY_BODY_MARKER = 'E2E_ALWAYS_APPLY_BODY_MARKER';
+const DEPLOYMENT_SKILL_BODY_MARKER = 'E2E deployment skill loaded through Playwright';
 const SKILL_DESCRIPTION =
   'Use this skill to verify LibreChat skill file authoring in mock end-to-end tests.';
 const EDITED_SKILL_DESCRIPTION =
@@ -152,13 +177,56 @@ function collectToolNames(agents) {
   return names;
 }
 
-function collectAdditionalInstructions(agents) {
-  return (agents ?? [])
-    .map((agent) =>
-      typeof agent?.additional_instructions === 'string' ? agent.additional_instructions : '',
-    )
-    .filter(Boolean)
-    .join('\n');
+async function getStreamAgentView({ graph, messages, options, runManager }) {
+  let agentId = runManager?.metadata?.agentId ?? options?.metadata?.agentId;
+  let agentContext;
+  if (typeof agentId === 'string') {
+    agentContext = graph?.agentContexts?.get(agentId);
+  } else if (graph?.agentContexts?.size === 1) {
+    [agentId, agentContext] = graph.agentContexts.entries().next().value;
+  }
+  /**
+   * Graph.attemptInvoke intentionally sends test override models the pruned
+   * messages directly, bypassing the production model's systemRunnable pipe.
+   * Apply that agent's runnable here so assertions inspect the same complete
+   * prompt (system catalog plus messages) that a real provider receives.
+   */
+  const systemRunnable = agentContext?.systemRunnable;
+  const promptMessages =
+    systemRunnable && typeof systemRunnable.invoke === 'function'
+      ? await systemRunnable.invoke(messages)
+      : messages;
+  return {
+    agentId,
+    messages: promptMessages,
+    toolNames: collectToolNames(agentContext ? [agentContext] : []),
+  };
+}
+
+function collectPromptText(value, parts = []) {
+  if (value == null) {
+    return parts;
+  }
+
+  if (typeof value === 'string') {
+    parts.push(value);
+    return parts;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectPromptText(item, parts);
+    }
+    return parts;
+  }
+
+  if (typeof value === 'object') {
+    for (const child of Object.values(value)) {
+      collectPromptText(child, parts);
+    }
+  }
+
+  return parts;
 }
 
 function collectSkillPrimeMessages(messages) {
@@ -229,6 +297,59 @@ function providerFileAssertionResponses({ messages, text }) {
         Array.from(providerFileNames).join(', ') || 'no provider files'
       }`,
     ],
+  };
+}
+
+function agentContextAssertionResponses({ messages, text }) {
+  const expected = getMarkerValue(text, ASSERT_AGENT_CONTEXT_MARKER);
+  if (!expected) {
+    return null;
+  }
+
+  const promptText = collectPromptText(messages).join('\n');
+  if (promptText.includes(expected)) {
+    return {
+      responses: [`${AGENT_CONTEXT_ASSERTION_FINAL_TEXT}: ${expected}`],
+    };
+  }
+
+  return {
+    responses: [
+      `E2E agent context assertion failed: expected ${expected}; saw ${
+        promptText ? 'prompt context without marker' : 'no prompt context'
+      }`,
+    ],
+  };
+}
+
+/**
+ * Verifies the quote feature end to end: scans every user message in the prompt
+ * the model actually received for a Markdown blockquote line containing the
+ * expected token. Passing proves the excerpt was merged into the model-facing
+ * turn — covering both the current turn and durable re-merge of a prior quoted
+ * turn from history (the merge runs in `AgentClient.buildMessages`).
+ */
+function quoteAssertionResponses({ messages, text }) {
+  const expected = getMarkerValue(text, ASSERT_QUOTE_MARKER);
+  if (!expected) {
+    return null;
+  }
+
+  const found = (messages ?? []).some((message) => {
+    const type = messageType(message);
+    if (type !== 'human' && type !== 'user') {
+      return false;
+    }
+    return getContentText(message.content)
+      .split('\n')
+      .some((line) => line.startsWith('> ') && line.includes(expected));
+  });
+
+  if (found) {
+    return { responses: [`${QUOTE_ASSERTION_FINAL_TEXT}: ${expected}`] };
+  }
+  return {
+    responses: [`E2E quote assertion failed: no blockquote containing "${expected}" in the prompt`],
   };
 }
 
@@ -321,9 +442,88 @@ function replyResponses(text) {
  * streaming pattern) so token-usage SSE events flow end to end in mock runs.
  */
 class UsageEmittingFakeChatModel extends FakeChatModel {
+  constructor({ resolveInvocation, resolveOnStream, sleep, ...options }) {
+    super({ ...options, sleep });
+    this.resolveInvocation = resolveInvocation;
+    this.resolveOnStream = resolveOnStream;
+    this.streamSleep = sleep ?? CHUNK_DELAY_MS;
+  }
+
+  async *streamScriptedResponseChunks({ response, toolCalls, runManager }) {
+    if (this.emitCustomEvent) {
+      await runManager?.handleCustomEvent('some_test_event', {
+        someval: true,
+      });
+    }
+
+    const chunks = response ? response.split(/(?<=\s+)|(?=\s+)/) : [];
+    for await (const chunk of chunks) {
+      await new Promise((resolve) => setTimeout(resolve, this.streamSleep));
+      const responseChunk = this._createResponseChunk(chunk);
+      yield responseChunk;
+      void runManager?.handleLLMNewToken(chunk);
+    }
+
+    if (toolCalls?.length) {
+      await new Promise((resolve) => setTimeout(resolve, this.streamSleep));
+      const toolCallChunks = toolCalls.map((toolCall, index) => ({
+        name: toolCall.name,
+        args: JSON.stringify(toolCall.args),
+        id: toolCall.id,
+        index,
+        type: 'tool_call_chunk',
+      }));
+      yield this._createResponseChunk('', toolCallChunks);
+      void runManager?.handleLLMNewToken('');
+    }
+  }
+
+  async *streamDynamicResponseChunks({ responses, options, runManager }) {
+    if (this.emitCustomEvent) {
+      await runManager?.handleCustomEvent('some_test_event', {
+        someval: true,
+      });
+    }
+
+    const response = responses[0] ?? '';
+    const chunks = response.split(/(?<=\s+)|(?=\s+)/);
+    for await (const chunk of chunks) {
+      await new Promise((resolve) => setTimeout(resolve, this.streamSleep));
+
+      if (options.thrownErrorString != null && options.thrownErrorString) {
+        throw new Error(options.thrownErrorString);
+      }
+
+      const responseChunk = this._createResponseChunk(chunk);
+      yield responseChunk;
+      void runManager?.handleLLMNewToken(chunk);
+    }
+  }
+
   async *_streamResponseChunks(messages, options, runManager) {
     let outputChars = 0;
-    for await (const chunk of super._streamResponseChunks(messages, options, runManager)) {
+    const scriptedResponse = await this.resolveInvocation?.(messages, options, runManager);
+    const dynamicResponse = scriptedResponse
+      ? null
+      : await this.resolveOnStream?.(messages, options, runManager);
+    let chunkStream;
+    if (scriptedResponse) {
+      chunkStream = this.streamScriptedResponseChunks({
+        response: scriptedResponse.response ?? '',
+        toolCalls: scriptedResponse.toolCalls,
+        runManager,
+      });
+    } else if (dynamicResponse) {
+      chunkStream = this.streamDynamicResponseChunks({
+        responses: dynamicResponse.responses,
+        options,
+        runManager,
+      });
+    } else {
+      chunkStream = super._streamResponseChunks(messages, options, runManager);
+    }
+
+    for await (const chunk of chunkStream) {
       outputChars += typeof chunk.text === 'string' ? chunk.text.length : 0;
       yield chunk;
     }
@@ -343,13 +543,23 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
   }
 }
 
-function overrideModel({ graph, responses, sleep, toolCalls, thrownError }) {
+function overrideModel({
+  graph,
+  responses,
+  sleep,
+  toolCalls,
+  thrownError,
+  resolveInvocation,
+  resolveOnStream,
+}) {
   if (!thrownError) {
     graph.overrideModel = new UsageEmittingFakeChatModel({
       responses,
       sleep: sleep ?? CHUNK_DELAY_MS,
       emitCustomEvent: true,
       toolCalls,
+      resolveInvocation,
+      resolveOnStream,
     });
     return;
   }
@@ -372,45 +582,208 @@ function overrideModel({ graph, responses, sleep, toolCalls, thrownError }) {
   });
 }
 
-function modelSpecSkillAssertionResponses({ agents, messages, toolNames }) {
-  const failures = [];
-  const additionalInstructions = collectAdditionalInstructions(agents);
-  const skillPrimeMessages = collectSkillPrimeMessages(messages);
-  const alwaysApplyPrime = skillPrimeMessages.find(
-    (message) => message.name === MODEL_SPEC_ACCESSIBLE_SKILL && message.trigger === 'always-apply',
-  );
+function parseSkillAssertion(text, agentId) {
+  const markerValue = getMarkerValue(text, ASSERT_SKILLS_MARKER);
+  const sections = markerValue
+    .split(';')
+    .map((section) => section.trim())
+    .filter(Boolean);
+  const isAgentScoped = sections.some((section) => section.includes('='));
+  let entriesValue = markerValue;
+  if (isAgentScoped) {
+    // Parallel agents receive a per-run `____N` suffix while the request and
+    // persisted Agent Builder state retain the stable agent id.
+    const persistedAgentId =
+      typeof agentId === 'string' ? agentId.replace(/____\d+$/, '') : agentId;
+    const prefixes = [`${agentId}=`, `${persistedAgentId}=`];
+    const scopedSection = sections.find((section) =>
+      prefixes.some((prefix) => section.startsWith(prefix)),
+    );
+    if (!scopedSection) {
+      return {
+        required: [],
+        requiredBodies: [],
+        forbidden: [],
+        error: `no skill assertion was configured for agent ${agentId ?? 'unknown'}`,
+      };
+    }
+    const prefix = prefixes.find((candidate) => scopedSection.startsWith(candidate));
+    entriesValue = scopedSection.slice(prefix.length);
+  }
 
-  if (!toolNames.has(SKILL_TOOL_NAME)) {
+  const entries = entriesValue
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return entries.reduce(
+    (assertion, entry) => {
+      if (entry.startsWith('!')) {
+        const name = entry.slice(1);
+        if (name) {
+          assertion.forbidden.push(name);
+        }
+        return assertion;
+      }
+      if (entry.startsWith('*')) {
+        const name = entry.slice(1);
+        if (name) {
+          assertion.required.push(name);
+          assertion.requiredBodies.push(name);
+        }
+        return assertion;
+      }
+      assertion.required.push(entry);
+      return assertion;
+    },
+    { required: [], requiredBodies: [], forbidden: [], error: undefined },
+  );
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function promptHasSkillCatalogEntry(promptText, skillName) {
+  if (!promptText.includes('## Available Skills')) {
+    return false;
+  }
+  return new RegExp(`(?:^|\\n)- ${escapeRegExp(skillName)}(?::|\\s*(?:\\n|$))`, 'm').test(
+    promptText,
+  );
+}
+
+function expectedSkillBodyMarker(skillName) {
+  if (skillName === MODEL_SPEC_ACCESSIBLE_SKILL) {
+    return ALWAYS_APPLY_BODY_MARKER;
+  }
+  if (skillName === DEPLOYMENT_SKILL_NAME) {
+    return DEPLOYMENT_SKILL_BODY_MARKER;
+  }
+  return `# ${skillName}`;
+}
+
+function skillAssertionResponses({ messages, assertion, toolNames }) {
+  const failures = [];
+  if (assertion.error) {
+    failures.push(assertion.error);
+  }
+  const promptText = collectPromptText(messages).join('\n');
+  const skillPrimeMessages = collectSkillPrimeMessages(messages);
+
+  if (assertion.required.length > 0 && !toolNames.has(SKILL_TOOL_NAME)) {
     failures.push(`${SKILL_TOOL_NAME} tool was not advertised`);
   }
-  if (!additionalInstructions.includes(MODEL_SPEC_ACCESSIBLE_SKILL)) {
-    failures.push(`${MODEL_SPEC_ACCESSIBLE_SKILL} was not present in the model-visible catalog`);
+  if (assertion.required.length === 0 && toolNames.has(SKILL_TOOL_NAME)) {
+    failures.push(`${SKILL_TOOL_NAME} tool was unexpectedly advertised`);
   }
-  if (additionalInstructions.includes(MODEL_SPEC_MISSING_SKILL)) {
-    failures.push(`${MODEL_SPEC_MISSING_SKILL} leaked into the model-visible catalog`);
+  for (const name of assertion.required) {
+    if (!promptHasSkillCatalogEntry(promptText, name)) {
+      failures.push(`${name} was not present in the model-visible catalog`);
+    }
   }
-  if (additionalInstructions.includes(MODEL_SPEC_INACCESSIBLE_SKILL)) {
-    failures.push(`${MODEL_SPEC_INACCESSIBLE_SKILL} leaked into the model-visible catalog`);
+  for (const name of assertion.requiredBodies) {
+    const expectedMarker = expectedSkillBodyMarker(name);
+    const taggedBody = skillPrimeMessages.find((message) => message.name === name);
+    if (!taggedBody?.content.includes(expectedMarker)) {
+      failures.push(`${name} body was missing its expected marker "${expectedMarker}"`);
+    }
   }
-  if (!alwaysApplyPrime) {
-    failures.push(`${MODEL_SPEC_ACCESSIBLE_SKILL} was not always-apply primed`);
-  } else if (!alwaysApplyPrime.content.includes(ALWAYS_APPLY_BODY_MARKER)) {
-    failures.push(`${MODEL_SPEC_ACCESSIBLE_SKILL} always-apply body was missing its marker`);
+  for (const name of assertion.forbidden) {
+    if (promptHasSkillCatalogEntry(promptText, name)) {
+      failures.push(`${name} leaked into the model-visible catalog`);
+    }
+    if (skillPrimeMessages.some((message) => message.name === name)) {
+      failures.push(`${name} was unexpectedly primed`);
+    }
+    if (name === MODEL_SPEC_ACCESSIBLE_SKILL && promptText.includes(ALWAYS_APPLY_BODY_MARKER)) {
+      failures.push(`${name} always-apply body marker leaked into the model prompt`);
+    }
+    if (name === DEPLOYMENT_SKILL_NAME && promptText.includes(DEPLOYMENT_SKILL_BODY_MARKER)) {
+      failures.push(`${name} always-apply body marker leaked into the model prompt`);
+    }
   }
-  if (skillPrimeMessages.some((message) => message.name === MODEL_SPEC_MISSING_SKILL)) {
-    failures.push(`${MODEL_SPEC_MISSING_SKILL} was unexpectedly primed`);
-  }
-  if (skillPrimeMessages.some((message) => message.name === MODEL_SPEC_INACCESSIBLE_SKILL)) {
-    failures.push(`${MODEL_SPEC_INACCESSIBLE_SKILL} was unexpectedly primed`);
-  }
-
   if (failures.length > 0) {
     return {
-      responses: [`E2E model spec skill assertion failed: ${failures.join('; ')}`],
+      responses: [`E2E skill assertion failed: ${failures.join('; ')}`],
     };
   }
   return {
-    responses: [`${MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT}: ${MODEL_SPEC_ACCESSIBLE_SKILL}`],
+    responses: [
+      `${SKILL_ASSERTION_FINAL_TEXT}: ${
+        assertion.required.length > 0 ? assertion.required.join(', ') : 'none'
+      }`,
+    ],
+  };
+}
+
+function manualSkillAssertionResponses({ messages, skillName }) {
+  const taggedPrime = collectSkillPrimeMessages(messages).find(
+    (message) => message.name === skillName && message.trigger === 'manual',
+  );
+  if (!taggedPrime) {
+    return {
+      responses: [`E2E manual skill assertion failed: ${skillName} was not manually primed`],
+    };
+  }
+  if (!taggedPrime.content.includes(`# ${skillName}`)) {
+    return {
+      responses: [`E2E manual skill assertion failed: ${skillName} body was missing`],
+    };
+  }
+  return {
+    responses: [`${MANUAL_SKILL_ASSERTION_FINAL_TEXT}: ${skillName}`],
+  };
+}
+
+/**
+ * Exercises the real event-driven `skill` handler. The first model call emits
+ * the tool request; the second verifies both the visible tool result and the
+ * body-bearing meta HumanMessage that ToolNode reinjected for the model.
+ */
+function skillToolInvocationResponses({ skillName, toolNames }) {
+  if (!toolNames.has(SKILL_TOOL_NAME)) {
+    return {
+      responses: [`E2E skill tool assertion failed: ${SKILL_TOOL_NAME} was not advertised`],
+    };
+  }
+
+  return {
+    responses: ['', ''],
+    toolCalls: [
+      {
+        id: `call_e2e_skill_${skillName}`,
+        name: SKILL_TOOL_NAME,
+        args: { skillName },
+        type: 'tool_call',
+      },
+    ],
+    resolveOnStream: (streamMessages) => {
+      const toolResult = findLastToolMessageText(
+        streamMessages,
+        `Skill "${skillName}" loaded. Follow the instructions below.`,
+      );
+      if (!toolResult) {
+        return null;
+      }
+
+      const expectedMarker = expectedSkillBodyMarker(skillName);
+      const modelInvokedPrime = collectSkillPrimeMessages(streamMessages).find(
+        (message) =>
+          message.name === skillName &&
+          message.trigger == null &&
+          message.content.includes(expectedMarker),
+      );
+      if (!modelInvokedPrime) {
+        return {
+          responses: [
+            `E2E skill tool assertion failed: ${skillName} body was not reinjected with marker "${expectedMarker}"`,
+          ],
+        };
+      }
+      return {
+        responses: [`${SKILL_TOOL_ASSERTION_FINAL_TEXT}: ${skillName}`],
+      };
+    },
   };
 }
 
@@ -427,7 +800,7 @@ Created by the Playwright mock e2e suite to verify host file authoring without c
 
 function buildCreateSkillArgs(skillName) {
   return {
-    file_path: `skills/${skillName}/SKILL.md`,
+    path: `skills/${skillName}/SKILL.md`,
     content: buildSkillBody(skillName),
     overwrite: false,
   };
@@ -435,7 +808,7 @@ function buildCreateSkillArgs(skillName) {
 
 function buildEditSkillArgs(skillName) {
   return {
-    file_path: `skills/${skillName}/SKILL.md`,
+    path: `skills/${skillName}/SKILL.md`,
     old_text: `description: ${SKILL_DESCRIPTION}`,
     new_text: `description: ${EDITED_SKILL_DESCRIPTION}`,
   };
@@ -472,10 +845,603 @@ function fileAuthoringResponses(operation, toolNames) {
   };
 }
 
-function resolveResponses({ agents, messages, text, toolNames }) {
+/**
+ * Slow two-turn run with a real MCP tool boundary for the steering e2e: turn 1
+ * streams a slow preamble then calls the advertised `remember_fact` MCP tool
+ * (steers drain at the PostToolBatch boundary), turn 2 streams the final text.
+ */
+function steerToolReplyResponses(label, toolNames) {
+  const toolName = Array.from(toolNames).find((name) => name.startsWith(STEER_TOOL_NAME_PREFIX));
+  if (!toolName) {
+    return {
+      responses: [
+        `E2E steer tool reply unavailable: no ${STEER_TOOL_NAME_PREFIX} tool advertised.`,
+      ],
+    };
+  }
+  const chunks = Array.from(
+    { length: SLOW_REPLY_CHUNKS },
+    (_, index) => `chunk-${String(index).padStart(3, '0')}`,
+  ).join(' ');
+  return {
+    responses: [`E2E steer tool preamble ${label} ${chunks}`, `${STEER_TOOL_FINAL_TEXT} ${label}`],
+    sleep: SLOW_CHUNK_DELAY_MS,
+    toolCalls: [
+      {
+        id: `call_e2e_steer_${label}`,
+        name: toolName,
+        args: { fact: `steer boundary ${label}` },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
+function findLastToolMessageText(messages, requiredToken) {
+  for (let index = (messages ?? []).length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (!message || messageType(message) !== 'tool') {
+      continue;
+    }
+    const content = getContentText(message.content);
+    if (content.includes(requiredToken)) {
+      return content;
+    }
+  }
+  return '';
+}
+
+function approvalToolResponses(label, toolNames, review) {
+  if (!toolNames.has(APPROVAL_TOOL_NAME)) {
+    return {
+      responses: [`E2E approval unavailable: ${APPROVAL_TOOL_NAME} was not advertised.`],
+    };
+  }
+  return {
+    responses: ['', ''],
+    toolCalls: [
+      {
+        id: `${APPROVAL_TOOL_CALL_PREFIX}${label}`,
+        name: APPROVAL_TOOL_NAME,
+        args: {
+          value: `original-${label}`,
+          ...(review ? { review } : {}),
+        },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
+function batchApprovalToolResponses(label, toolNames) {
+  if (!toolNames.has(APPROVAL_TOOL_NAME)) {
+    return {
+      responses: [`E2E approval unavailable: ${APPROVAL_TOOL_NAME} was not advertised.`],
+    };
+  }
+  return {
+    responses: ['', ''],
+    toolCalls: [
+      {
+        id: `${APPROVAL_TOOL_CALL_PREFIX}${label}_first`,
+        name: APPROVAL_TOOL_NAME,
+        args: { value: `first-${label}` },
+        type: 'tool_call',
+      },
+      {
+        id: `${APPROVAL_TOOL_CALL_PREFIX}${label}_second`,
+        name: APPROVAL_TOOL_NAME,
+        args: { value: `second-${label}` },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
+/**
+ * Resume rebuilds the fake model without the original prompt in `context.messages`.
+ * Detect the checkpoint-restored approval tool messages on every model instance
+ * so the continuation can report the real approve/reject/edit/respond outcome.
+ */
+function approvalOutcomeResponses(messages) {
+  let latestHumanIndex = -1;
+  for (let index = 0; index < (messages ?? []).length; index++) {
+    const type = messageType(messages[index]);
+    if (type === 'human' || type === 'user') {
+      latestHumanIndex = index;
+    }
+  }
+
+  const outcomeMessages = (messages ?? [])
+    .slice(latestHumanIndex + 1)
+    .filter(
+      (message) =>
+        messageType(message) === 'tool' &&
+        typeof message?.tool_call_id === 'string' &&
+        message.tool_call_id.startsWith(APPROVAL_TOOL_CALL_PREFIX),
+    );
+
+  const isBatch = outcomeMessages.some(
+    (message) =>
+      message.tool_call_id.endsWith('_first') || message.tool_call_id.endsWith('_second'),
+  );
+  if (isBatch && outcomeMessages.length < 2) {
+    return null;
+  }
+
+  const outcomes = outcomeMessages.map((message) => getContentText(message.content));
+
+  if (outcomes.length === 0) {
+    return null;
+  }
+  return { responses: [`E2E approval outcomes: ${outcomes.join(' | ')}`] };
+}
+
+/**
+ * Turn 1 of the background e2e: emit the MCP tool call with the injected
+ * `run_in_background: true` arg, then (second model invocation, after the
+ * executor returned the synthetic handle) acknowledge the handle. Streaming
+ * `status=running` from the handle proves the dispatch returned before the
+ * tool finished — the non-blocking contract — without timing assertions.
+ */
+function backgroundDispatchResponses(name, toolNames) {
+  if (!toolNames.has(BACKGROUND_TOOL_NAME)) {
+    return {
+      responses: [`E2E background unavailable: ${BACKGROUND_TOOL_NAME} was not advertised.`],
+    };
+  }
+  if (!toolNames.has(CHECK_BACKGROUND_TASK_TOOL_NAME)) {
+    return {
+      responses: [
+        `E2E background unavailable: ${CHECK_BACKGROUND_TASK_TOOL_NAME} was not advertised.`,
+      ],
+    };
+  }
+  return {
+    responses: ['', ''],
+    toolCalls: [
+      {
+        id: BACKGROUND_DISPATCH_TOOL_CALL_ID,
+        name: BACKGROUND_TOOL_NAME,
+        args: { text: `bg-${name}`, delay_ms: 1500, run_in_background: true },
+        type: 'tool_call',
+      },
+    ],
+    resolveOnStream: (streamMessages) => {
+      const handleText = findLastToolMessageText(streamMessages, 'background_task_id');
+      if (!handleText) {
+        return null;
+      }
+      const taskId = handleText.match(/"background_task_id":"([^"]+)"/)?.[1] ?? 'missing';
+      const status = handleText.match(/"status":"(\w+)"/)?.[1] ?? 'missing';
+      return { responses: [`E2E background dispatched id=${taskId} status=${status}`] };
+    },
+  };
+}
+
+/**
+ * Turn 2 of the background e2e: recover the task id from the replayed turn-1
+ * handle in history, poll `check_background_task` with it, and stream the
+ * collected status + echoed text — proving the detached result survived turn
+ * end and was retrieved cross-turn.
+ */
+function backgroundCollectResponses(messages, toolNames) {
+  if (!toolNames.has(CHECK_BACKGROUND_TASK_TOOL_NAME)) {
+    return {
+      responses: [
+        `E2E background unavailable: ${CHECK_BACKGROUND_TASK_TOOL_NAME} was not advertised.`,
+      ],
+    };
+  }
+  const historyText = collectPromptText((messages ?? []).map((message) => message?.content)).join(
+    '\n',
+  );
+  const taskIds = [...historyText.matchAll(/"background_task_id":"([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+  const taskId = taskIds[taskIds.length - 1];
+  if (!taskId) {
+    return {
+      responses: ['E2E background collect failed: no background_task_id found in history.'],
+    };
+  }
+  return {
+    responses: ['', ''],
+    toolCalls: [
+      {
+        id: BACKGROUND_COLLECT_TOOL_CALL_ID,
+        name: CHECK_BACKGROUND_TASK_TOOL_NAME,
+        args: { background_task_id: taskId },
+        type: 'tool_call',
+      },
+    ],
+    resolveOnStream: (streamMessages) => {
+      /** Only the poll result (`serializeTask`) carries a `progress` key — the
+       *  replayed dispatch handle in history does not. */
+      const pollText = findLastToolMessageText(streamMessages, '"progress"');
+      if (!pollText) {
+        return null;
+      }
+      const status = pollText.match(/"status":"(\w+)"/)?.[1] ?? 'missing';
+      const echo = pollText.match(/E2E slow echo: (bg-[\w-]+)/)?.[1] ?? 'missing';
+      return { responses: [`E2E background collected status=${status} echo=${echo}`] };
+    },
+  };
+}
+
+function parseHandoffScript(text) {
+  const encodedScript = getMarkerValue(text, HANDOFF_MARKER);
+  if (!encodedScript) {
+    return null;
+  }
+
+  let value;
+  try {
+    value = JSON.parse(Buffer.from(encodedScript, 'base64url').toString('utf8'));
+  } catch (error) {
+    return {
+      error: `could not decode marker (${error instanceof Error ? error.message : 'unknown error'})`,
+    };
+  }
+
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { error: 'script must be an object' };
+  }
+  if (typeof value.label !== 'string' || value.label.trim() === '') {
+    return { error: 'script.label must be a non-empty string' };
+  }
+  if (!Array.isArray(value.routes) || value.routes.length === 0) {
+    return { error: 'script.routes must be a non-empty array' };
+  }
+
+  const routes = [];
+  for (const [index, route] of value.routes.entries()) {
+    if (!route || typeof route !== 'object' || Array.isArray(route)) {
+      return { error: `script.routes[${index}] must be an object` };
+    }
+    if (typeof route.from !== 'string' || route.from === '') {
+      return { error: `script.routes[${index}].from must be a non-empty string` };
+    }
+    if (typeof route.to !== 'string' || route.to === '') {
+      return { error: `script.routes[${index}].to must be a non-empty string` };
+    }
+    if (route.args != null && (typeof route.args !== 'object' || Array.isArray(route.args))) {
+      return { error: `script.routes[${index}].args must be an object` };
+    }
+    if (route.description != null && typeof route.description !== 'string') {
+      return { error: `script.routes[${index}].description must be a string` };
+    }
+    if (route.prompt != null && typeof route.prompt !== 'string') {
+      return { error: `script.routes[${index}].prompt must be a string` };
+    }
+    if (route.promptKey != null && typeof route.promptKey !== 'string') {
+      return { error: `script.routes[${index}].promptKey must be a string` };
+    }
+    if (route.receipt != null && typeof route.receipt !== 'string') {
+      return { error: `script.routes[${index}].receipt must be a string` };
+    }
+    if (route.targetInstructions != null && typeof route.targetInstructions !== 'string') {
+      return { error: `script.routes[${index}].targetInstructions must be a string` };
+    }
+    if (
+      route.targetTools != null &&
+      (!Array.isArray(route.targetTools) ||
+        route.targetTools.some((toolName) => typeof toolName !== 'string' || toolName === ''))
+    ) {
+      return {
+        error: `script.routes[${index}].targetTools must be an array of non-empty strings`,
+      };
+    }
+
+    const args = route.args ?? {};
+    let inferredReceipt = null;
+    if (typeof args.instructions === 'string') {
+      inferredReceipt = args.instructions;
+    } else if (typeof args.context === 'string') {
+      inferredReceipt = args.context;
+    }
+    routes.push({
+      from: route.from,
+      to: route.to,
+      description: route.description,
+      prompt: route.prompt,
+      promptKey: route.promptKey,
+      args,
+      receipt: route.receipt ?? inferredReceipt,
+      targetInstructions: route.targetInstructions,
+      targetTools: route.targetTools ?? [],
+    });
+  }
+
+  return {
+    script: {
+      label: value.label.trim(),
+      routes,
+    },
+  };
+}
+
+function getGraphTools(agentContext) {
+  const result = new Map();
+  const tools =
+    typeof agentContext?.getToolsForBinding === 'function'
+      ? agentContext.getToolsForBinding()
+      : agentContext?.graphTools;
+  for (const tool of tools ?? []) {
+    if (typeof tool?.name === 'string') {
+      result.set(tool.name, tool);
+    }
+  }
+  return result;
+}
+
+function validateHandoffTool(route, tool, toolName) {
+  const failures = [];
+  const expectedDescription = route.description ?? `Transfer control to agent '${route.to}'`;
+  if (tool.description !== expectedDescription) {
+    failures.push(
+      `${toolName} description mismatch (expected "${expectedDescription}", received "${tool.description ?? ''}")`,
+    );
+  }
+
+  const schema = tool.schema;
+  const properties =
+    schema &&
+    typeof schema === 'object' &&
+    !Array.isArray(schema) &&
+    schema.properties &&
+    typeof schema.properties === 'object' &&
+    !Array.isArray(schema.properties)
+      ? schema.properties
+      : null;
+  if (!properties) {
+    failures.push(`${toolName} did not expose an object properties schema`);
+    return failures;
+  }
+
+  const propertyNames = Object.keys(properties);
+  if (route.prompt == null) {
+    if (propertyNames.length > 0) {
+      failures.push(
+        `${toolName} unexpectedly advertised input properties: ${propertyNames.join(', ')}`,
+      );
+    }
+    return failures;
+  }
+
+  const expectedPromptKey = route.promptKey ?? 'instructions';
+  const promptProperty = properties[expectedPromptKey];
+  if (!promptProperty || typeof promptProperty !== 'object' || Array.isArray(promptProperty)) {
+    failures.push(`${toolName} did not advertise the "${expectedPromptKey}" input property`);
+    return failures;
+  }
+  if (propertyNames.length !== 1) {
+    failures.push(
+      `${toolName} advertised unexpected input properties: ${propertyNames.join(', ')}`,
+    );
+  }
+  if (promptProperty.type !== 'string') {
+    failures.push(`${toolName}.${expectedPromptKey} was not a string input`);
+  }
+  if (promptProperty.description !== route.prompt) {
+    failures.push(
+      `${toolName}.${expectedPromptKey} description mismatch (expected "${route.prompt}", received "${promptProperty.description ?? ''}")`,
+    );
+  }
+  if (Array.isArray(schema.required) && schema.required.length > 0) {
+    failures.push(`${toolName} unexpectedly required optional handoff input`);
+  }
+  return failures;
+}
+
+function validateHandoffScript(graph, script) {
+  const failures = [];
+  for (const route of script.routes) {
+    const agentContext = graph.agentContexts?.get(route.from);
+    if (!agentContext) {
+      failures.push(`source agent ${route.from} was not loaded`);
+      continue;
+    }
+    const toolName = `${HANDOFF_TOOL_PREFIX}${route.to}`;
+    const tool = getGraphTools(agentContext).get(toolName);
+    if (!tool) {
+      failures.push(`${toolName} was not advertised by source agent ${route.from}`);
+      continue;
+    }
+    failures.push(...validateHandoffTool(route, tool, toolName));
+  }
+  return failures;
+}
+
+function getAgentIdFromInvocationOptions(options, runManager) {
+  const metadataCandidates = [
+    options?.metadata,
+    options?.configurable,
+    runManager?.metadata,
+    runManager?.inheritableMetadata,
+  ];
+  for (const metadata of metadataCandidates) {
+    const node = metadata?.langgraph_node;
+    if (typeof node === 'string' && node.startsWith('agent=')) {
+      return node.slice('agent='.length);
+    }
+  }
+  return null;
+}
+
+async function validateHandoffReception(graph, script, route, messages) {
+  const sourceContext = graph.agentContexts?.get(route.from);
+  const targetContext = graph.agentContexts?.get(route.to);
+  const sourceName = sourceContext?.name ?? route.from;
+  const targetName = targetContext?.name ?? route.to;
+  const promptMessages = targetContext?.systemRunnable
+    ? await targetContext.systemRunnable.invoke(messages ?? [])
+    : (messages ?? []);
+  const promptText = promptMessages
+    .map((message) => getContentText(message?.content))
+    .filter(Boolean)
+    .join('\n');
+  const failures = [];
+
+  const identityPreamble = `You are "${targetName}", transferred from "${sourceName}".`;
+  if (!promptText.includes(identityPreamble)) {
+    failures.push(`missing identity preamble: ${identityPreamble}`);
+  }
+
+  const siblingNames = Array.from(
+    new Set(
+      script.routes
+        .filter((candidate) => candidate !== route && candidate.from === route.from)
+        .map((candidate) => graph.agentContexts?.get(candidate.to)?.name ?? candidate.to),
+    ),
+  );
+  const parallelPreamble = 'Running in parallel with:';
+  if (siblingNames.length === 0 && promptText.includes(parallelPreamble)) {
+    failures.push('unexpected parallel sibling preamble');
+  }
+  if (
+    siblingNames.length > 0 &&
+    !promptText.includes(`${parallelPreamble} ${siblingNames.join(', ')}.`)
+  ) {
+    failures.push(`missing parallel sibling preamble for ${siblingNames.join(', ')}`);
+  }
+
+  if (route.targetInstructions && !promptText.includes(route.targetInstructions)) {
+    failures.push(`missing target instructions: ${route.targetInstructions}`);
+  }
+
+  const sourceTools = getGraphTools(sourceContext);
+  const targetTools = getGraphTools(targetContext);
+  for (const toolName of route.targetTools) {
+    if (!targetTools.has(toolName)) {
+      failures.push(`target agent ${route.to} did not receive its configured tool ${toolName}`);
+    }
+    if (route.from !== route.to && sourceTools.has(toolName)) {
+      failures.push(`target-only tool ${toolName} leaked to source agent ${route.from}`);
+    }
+  }
+
+  return failures;
+}
+
+function buildHandoffResponses(graph, parsed) {
+  if (parsed.error) {
+    return {
+      responses: [`E2E handoff script invalid: ${parsed.error}`],
+    };
+  }
+
+  const { script } = parsed;
+  const failures = validateHandoffScript(graph, script);
+  if (failures.length > 0) {
+    return {
+      responses: [`E2E handoff unavailable: ${failures.join('; ')}`],
+    };
+  }
+
+  let invocationCount = 0;
+  return {
+    responses: [''],
+    resolveInvocation: async (messages, options, runManager) => {
+      const latestUserText = getLatestUserText(messages).trim();
+      const agentId = getAgentIdFromInvocationOptions(options, runManager);
+      let incomingRoute = script.routes.find(
+        (route) => route.receipt != null && latestUserText === route.receipt.trim(),
+      );
+
+      if (!agentId) {
+        return {
+          response: `E2E handoff routing failed ${script.label}: missing SDK langgraph_node metadata`,
+        };
+      }
+      invocationCount += 1;
+
+      const incomingRoutes = script.routes.filter((route) => route.to === agentId);
+      if (!incomingRoute && incomingRoutes.length === 1) {
+        incomingRoute = incomingRoutes[0];
+      }
+      if (incomingRoute?.receipt != null && latestUserText !== incomingRoute.receipt.trim()) {
+        return {
+          response:
+            `E2E handoff receipt failed ${script.label}: agent=${agentId}; ` +
+            `expected=${incomingRoute.receipt}; received=${latestUserText || '(empty)'}`,
+        };
+      }
+      if (incomingRoute) {
+        const receptionFailures = await validateHandoffReception(
+          graph,
+          script,
+          incomingRoute,
+          messages,
+        );
+        if (receptionFailures.length > 0) {
+          return {
+            response:
+              `E2E handoff reception failed ${script.label}: agent=${agentId}; ` +
+              receptionFailures.join('; '),
+          };
+        }
+      }
+
+      const outgoingRoutes = script.routes.filter((route) => route.from === agentId);
+      if (outgoingRoutes.length === 0) {
+        const received =
+          incomingRoute?.receipt == null ? '(no injected handoff content)' : latestUserText;
+        return {
+          response: `E2E handoff complete ${script.label}: agent=${agentId}; received=${received}`,
+        };
+      }
+
+      return {
+        response: `E2E handoff continuing ${script.label}: agent=${agentId}`,
+        toolCalls: outgoingRoutes.map((route, index) => ({
+          id: `call_e2e_handoff_${invocationCount}_${index}_${route.to}`,
+          name: `${HANDOFF_TOOL_PREFIX}${route.to}`,
+          args: route.args,
+          type: 'tool_call',
+        })),
+      };
+    },
+  };
+}
+
+function resolveResponses({ graph, messages, text, toolNames }) {
+  const batchApprovalLabel = getMarkerValue(text, TOOL_APPROVAL_BATCH_MARKER);
+  if (batchApprovalLabel) {
+    return batchApprovalToolResponses(batchApprovalLabel, toolNames);
+  }
+
+  const restrictedApprovalLabel = getMarkerValue(text, TOOL_APPROVAL_RESTRICTED_MARKER);
+  if (restrictedApprovalLabel) {
+    return approvalToolResponses(restrictedApprovalLabel, toolNames, 'restricted');
+  }
+
+  const rewrittenApprovalLabel = getMarkerValue(text, TOOL_APPROVAL_REWRITE_MARKER);
+  if (rewrittenApprovalLabel) {
+    return approvalToolResponses(rewrittenApprovalLabel, toolNames, 'rewrite');
+  }
+
+  const approvalLabel = getMarkerValue(text, TOOL_APPROVAL_MARKER);
+  if (approvalLabel) {
+    return approvalToolResponses(approvalLabel, toolNames);
+  }
+
   const reply = replyResponses(text);
   if (reply) {
     return reply;
+  }
+
+  const steerToolLabel = getMarkerValue(text, STEER_TOOL_REPLY_MARKER);
+  if (steerToolLabel) {
+    return steerToolReplyResponses(steerToolLabel, toolNames);
+  }
+
+  if (text.includes(ASSERT_AGENT_CONTEXT_MARKER)) {
+    return {
+      responses: [MOCK_REPLY],
+      resolveOnStream: (streamMessages) =>
+        agentContextAssertionResponses({ messages: streamMessages, text }),
+    };
   }
 
   const providerFileAssertion = providerFileAssertionResponses({ messages, text });
@@ -483,8 +1449,55 @@ function resolveResponses({ agents, messages, text, toolNames }) {
     return providerFileAssertion;
   }
 
-  if (text.includes(ASSERT_MODEL_SPEC_SKILLS_MARKER)) {
-    return modelSpecSkillAssertionResponses({ agents, messages, toolNames });
+  const quoteAssertion = quoteAssertionResponses({ messages, text });
+  if (quoteAssertion) {
+    return quoteAssertion;
+  }
+
+  if (text.includes(ASSERT_SKILLS_MARKER)) {
+    return {
+      responses: [MOCK_REPLY],
+      resolveOnStream: async (streamMessages, streamOptions, runManager) => {
+        const agentView = await getStreamAgentView({
+          graph,
+          messages: streamMessages,
+          options: streamOptions,
+          runManager,
+        });
+        return skillAssertionResponses({
+          messages: agentView.messages,
+          assertion: parseSkillAssertion(text, agentView.agentId),
+          toolNames: agentView.toolNames,
+        });
+      },
+    };
+  }
+
+  if (text.includes(ASSERT_MANUAL_SKILL_MARKER)) {
+    const skillName = getMarkerValue(text, ASSERT_MANUAL_SKILL_MARKER);
+    return {
+      responses: [MOCK_REPLY],
+      resolveOnStream: async (streamMessages, streamOptions, runManager) => {
+        const agentView = await getStreamAgentView({
+          graph,
+          messages: streamMessages,
+          options: streamOptions,
+          runManager,
+        });
+        return manualSkillAssertionResponses({
+          messages: agentView.messages,
+          skillName,
+        });
+      },
+    };
+  }
+
+  const invokedSkillName = getMarkerValue(text, INVOKE_SKILL_MARKER);
+  if (invokedSkillName) {
+    return skillToolInvocationResponses({
+      skillName: invokedSkillName,
+      toolNames,
+    });
   }
 
   const createSkillName = getRequestedSkillName(text, CREATE_SKILL_MARKER);
@@ -499,6 +1512,15 @@ function resolveResponses({ agents, messages, text, toolNames }) {
       },
       toolNames,
     );
+  }
+
+  const backgroundDispatchName = getMarkerValue(text, BACKGROUND_DISPATCH_MARKER);
+  if (backgroundDispatchName) {
+    return backgroundDispatchResponses(backgroundDispatchName, toolNames);
+  }
+
+  if (text.includes(BACKGROUND_COLLECT_MARKER)) {
+    return backgroundCollectResponses(messages, toolNames);
   }
 
   const editSkillName = getRequestedSkillName(text, EDIT_SKILL_MARKER);
@@ -528,11 +1550,26 @@ module.exports = function fakeModelHook(run, context) {
 
   const text = getLatestUserText(context?.messages);
   const toolNames = collectToolNames(context?.agents);
-  const { responses, sleep, toolCalls, thrownError } = resolveResponses({
-    agents: context?.agents,
-    messages: context?.messages,
-    text,
-    toolNames,
+  const handoffScript = parseHandoffScript(text);
+  const { responses, sleep, toolCalls, thrownError, resolveInvocation, resolveOnStream } =
+    handoffScript
+      ? buildHandoffResponses(graph, handoffScript)
+      : resolveResponses({
+          graph,
+          messages: context?.messages,
+          text,
+          toolNames,
+        });
+  overrideModel({
+    graph,
+    responses,
+    sleep,
+    toolCalls,
+    thrownError,
+    resolveInvocation,
+    resolveOnStream: (streamMessages, streamOptions, runManager) =>
+      approvalOutcomeResponses(streamMessages) ??
+      resolveOnStream?.(streamMessages, streamOptions, runManager) ??
+      null,
   });
-  overrideModel({ graph, responses, sleep, toolCalls, thrownError });
 };

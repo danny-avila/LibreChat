@@ -1,5 +1,5 @@
-import type { EventEmitter } from 'events';
 import type { Agents } from 'librechat-data-provider';
+import type { EventEmitter } from 'events';
 import type { ServerSentEvent } from '~/types';
 
 export interface GenerationJobMetadata {
@@ -20,9 +20,21 @@ export interface GenerationJobMetadata {
   model?: string;
   /** Prompt token count for abort token spending */
   promptTokens?: number;
+  /** Agent that initiated the run; a HITL resume verifies it rebuilds the same agent. */
+  agent_id?: string;
+  /** Whether the originating turn was a temporary chat; a HITL resume keeps it so. */
+  isTemporary?: boolean;
+  /**
+   * Deferred-tool names discovered (via `tool_search`) before a HITL pause. A resume
+   * replays these into `createRun` because the rebuilt graph uses `messages: []`, so
+   * without them the paused deferred tool would be missing from the schema-only toolMap.
+   */
+  discoveredTools?: string[];
+  /** Set when the job is paused for human review (status === 'requires_action') */
+  pendingAction?: Agents.PendingAction;
 }
 
-export type GenerationJobStatus = 'running' | 'complete' | 'error' | 'aborted';
+export type GenerationJobStatus = 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
 
 export interface GenerationJob {
   streamId: string;
@@ -49,6 +61,16 @@ export type DoneHandler = (event: ServerSentEvent) => void;
 export type ErrorHandler = (error: string) => void;
 export type UnsubscribeFn = () => void;
 
+/** Active event-stream subscription. */
+export interface StreamSubscription {
+  unsubscribe: UnsubscribeFn;
+}
+
+/** Resume subscription whose live delivery starts after the caller writes its sync frame. */
+export interface ResumeSubscription extends StreamSubscription {
+  activate: () => void;
+}
+
 /** Options for subscribing to a job event stream */
 export interface SubscribeOptions {
   /**
@@ -56,11 +78,13 @@ export interface SubscribeOptions {
    * Use for resume connections after a sync event has been sent.
    */
   skipBufferReplay?: boolean;
+  /** Cancels attachment work when the HTTP client disconnects. */
+  signal?: AbortSignal;
 }
 
 /** Result of an atomic subscribe-with-resume operation */
 export interface SubscribeWithResumeResult {
-  subscription: { unsubscribe: UnsubscribeFn } | null;
+  subscription: ResumeSubscription | null;
   resumeState: ResumeState | null;
   /**
    * Events that arrived between the resume snapshot and the subscribe call.

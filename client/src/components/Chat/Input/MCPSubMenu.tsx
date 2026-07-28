@@ -8,12 +8,12 @@ import { useBadgeRowContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-interface MCPSubMenuProps {
+interface MCPSubMenuProps extends React.HTMLAttributes<HTMLButtonElement> {
   placeholder?: string;
 }
 
-const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
-  ({ placeholder, ...props }, ref) => {
+const MCPSubMenu = React.forwardRef<HTMLButtonElement, MCPSubMenuProps>(
+  ({ placeholder, className, ...props }, ref) => {
     const localize = useLocalize();
     const context = useBadgeRowContext();
     const { storageContextKey, mcpServerManager } = context ?? {};
@@ -48,20 +48,19 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
     const configDialogProps = getConfigDialogProps();
 
     return (
-      <div ref={ref}>
+      <>
         <Ariakit.MenuProvider store={menuStore}>
-          <Ariakit.MenuItem
+          <Ariakit.MenuButton
+            ref={ref}
             {...props}
-            hideOnClick={false}
-            render={
-              <Ariakit.MenuButton
-                onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-                  e.stopPropagation();
-                  menuStore.toggle();
-                }}
-                className="flex w-full cursor-pointer items-center justify-between rounded-lg p-2 hover:bg-surface-hover"
-              />
-            }
+            onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+              e.stopPropagation();
+              menuStore.toggle();
+            }}
+            className={cn(
+              'flex w-full cursor-pointer items-center justify-between rounded-lg p-2 hover:bg-surface-hover',
+              className,
+            )}
           >
             <div className="flex items-center gap-2">
               <MCPIcon className="h-5 w-5 flex-shrink-0 text-text-primary" aria-hidden="true" />
@@ -85,7 +84,7 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
                 <PinIcon unpin={isPinned} />
               </div>
             </button>
-          </Ariakit.MenuItem>
+          </Ariakit.MenuButton>
 
           <Ariakit.Menu
             portal={true}
@@ -114,7 +113,7 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
         {configDialogProps && (
           <MCPConfigDialog {...configDialogProps} storageContextKey={storageContextKey} />
         )}
-      </div>
+      </>
     );
   },
 );

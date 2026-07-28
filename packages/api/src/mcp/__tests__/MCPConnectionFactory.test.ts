@@ -56,6 +56,10 @@ class InspectableMCPConnectionFactory extends MCPConnectionFactory {
     return await this.createConnection();
   }
 
+  public async attemptToConnectForTest(connection: MCPConnection): Promise<void> {
+    await this.attemptToConnect(connection);
+  }
+
   public getRequestScopedOAuthState(): {
     signal?: AbortSignal;
     oauthStart?: (authURL: string) => Promise<void>;
@@ -114,6 +118,7 @@ describe('MCPConnectionFactory', () => {
       off: jest.fn().mockReturnValue(mockConnectionInstance),
       removeListener: jest.fn().mockReturnValue(mockConnectionInstance),
       emit: jest.fn(),
+      dispose: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<MCPConnection>;
 
     mockMCPConnection.mockImplementation(() => mockConnectionInstance);
@@ -143,6 +148,40 @@ describe('MCPConnectionFactory', () => {
     mockTenantStorage.getStore.mockReturnValue(undefined);
     mockTenantStorage.run.mockImplementation((_context, fn: () => Promise<unknown>) => fn());
     (getTenantId as jest.Mock).mockReturnValue(undefined);
+  });
+
+  it('cancels pending retry backoff when the connection deadline expires', async () => {
+    jest.useFakeTimers();
+    try {
+      const config = {
+        command: 'node',
+        args: ['server.js'],
+        initTimeout: 100,
+      } as t.MCPOptions;
+      mockProcessMCPEnv.mockReturnValue(config);
+      const factory = new InspectableMCPConnectionFactory({
+        serverName: 'timed-out-server',
+        serverConfig: config,
+      });
+      mockConnectionInstance.connect.mockRejectedValue(new Error('connection failed'));
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      const attempt = factory.attemptToConnectForTest(mockConnectionInstance);
+      const rejection = attempt.then(
+        () => null,
+        (error: Error) => error,
+      );
+
+      await jest.advanceTimersByTimeAsync(101);
+      await expect(rejection).resolves.toMatchObject({
+        message: 'Connection timeout after 100ms',
+      });
+      await jest.advanceTimersByTimeAsync(5000);
+
+      expect(mockConnectionInstance.connect).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   describe('static create method', () => {

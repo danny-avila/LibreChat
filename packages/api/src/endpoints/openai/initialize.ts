@@ -64,13 +64,11 @@ export async function initializeOpenAI({
     ? userValues?.baseURL
     : baseURLOptions[endpoint as keyof typeof baseURLOptions];
 
-  if (userProvidesURL && baseURL) {
-    await validateEndpointURL(baseURL, endpoint, appConfig?.endpoints?.allowedAddresses);
-  }
-
   const clientOptions: OpenAIConfigOptions = {
     proxy: PROXY ?? undefined,
     reverseProxyUrl: baseURL || undefined,
+    baseURLIsUserProvided: userProvidesURL,
+    allowedAddresses: appConfig?.endpoints?.allowedAddresses,
     streaming: true,
   };
 
@@ -105,6 +103,9 @@ export async function initializeOpenAI({
     isServerless = serverless === true;
 
     clientOptions.reverseProxyUrl = configBaseURL ?? clientOptions.reverseProxyUrl;
+    if (configBaseURL) {
+      clientOptions.baseURLIsUserProvided = false;
+    }
     clientOptions.headers = resolveHeaders({
       headers: { ...headers, ...(clientOptions.headers ?? {}) },
       user: req.user,
@@ -153,6 +154,14 @@ export async function initializeOpenAI({
     if (openAIHeaders) {
       clientOptions.headers = openAIHeaders;
     }
+  }
+
+  if (clientOptions.baseURLIsUserProvided && clientOptions.reverseProxyUrl) {
+    await validateEndpointURL(
+      clientOptions.reverseProxyUrl,
+      endpoint,
+      appConfig?.endpoints?.allowedAddresses,
+    );
   }
 
   if (userProvidesKey && !apiKey) {

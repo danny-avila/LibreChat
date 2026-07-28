@@ -1,3 +1,5 @@
+import type { TPendingSteer } from 'librechat-data-provider';
+
 /** SSE streaming event (on_run_step, on_message_delta, etc.) */
 export type StreamEvent = {
   event: string;
@@ -14,6 +16,9 @@ export type CreatedEvent = {
     text?: string;
     sender: string;
     isCreatedByUser: boolean;
+    /** Quoted excerpts referenced on this turn, carried through resumable job
+     *  metadata so reconstructed user messages keep their `MessageQuotes`. */
+    quotes?: string[];
   };
   streamId: string;
 };
@@ -42,6 +47,9 @@ export type FinalEvent = {
   aborted?: boolean;
   earlyAbort?: boolean;
   runMessages?: FinalMessageFields[];
+  /** Steers that never reached an injection boundary; the client converts
+   *  them to queued follow-up messages instead of dropping them. */
+  pendingSteers?: TPendingSteer[];
   /** Top-level event error (abort-during-completion edge case) */
   error?: { message: string };
 };
