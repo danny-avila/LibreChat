@@ -540,6 +540,22 @@ describe('useResumeOnLoad', () => {
       } as TMessage;
     }
 
+    it('keeps disconnected recovery metadata for the QueryClient session', () => {
+      jest.useFakeTimers();
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const recovery = {
+        startedAsNewConvo: true,
+        created: false,
+        userMessageId: USER_MESSAGE_ID,
+        responseMessageId: RESPONSE_MESSAGE_ID,
+      };
+
+      setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, recovery);
+      jest.advanceTimersByTime(10 * 60 * 1000);
+
+      expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toEqual(recovery);
+    });
+
     it('loads the persisted final response when an inactive job left an unfinished cache tail', async () => {
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       const unfinishedMessages = [
@@ -1258,6 +1274,62 @@ describe('useResumeOnLoad', () => {
       await flushMicrotasks();
 
       expect(messageQueryFn).toHaveBeenCalledTimes(1);
+      await advanceRetryTimer(1000);
+
+      expect(messageQueryFn).toHaveBeenCalledTimes(2);
+      expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
+        finalMessages,
+      );
+      expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+        conversationId: CONVERSATION_ID,
+        outcome: 'completed',
+      });
+    });
+
+    it('retries when a successful refresh still returns the provisional response', async () => {
+      jest.useFakeTimers();
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const observedRunEnds: Array<RunEnd | null> = [];
+      const provisionalMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({ unfinished: true }),
+      ];
+      const finalMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({
+          messageId: 'response-message-final',
+          text: 'Recovered after persistence settled',
+          unfinished: false,
+        }),
+      ];
+      queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], provisionalMessages);
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+      });
+      mockFetchStreamStatus.mockResolvedValue({ active: false });
+      const messageQueryFn = jest
+        .fn()
+        .mockResolvedValueOnce(provisionalMessages)
+        .mockResolvedValue(finalMessages);
+
+      const { rerender } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        getMessages: () =>
+          queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
+        onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+        queryClient,
+        messageQueryFn,
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [] },
+      });
+      rerender();
+      await flushMicrotasks();
+
+      expect(messageQueryFn).toHaveBeenCalledTimes(1);
+      expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
+
       await advanceRetryTimer(1000);
 
       expect(messageQueryFn).toHaveBeenCalledTimes(2);

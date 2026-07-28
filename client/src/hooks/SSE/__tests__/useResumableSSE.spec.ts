@@ -40,12 +40,14 @@ jest.mock('sse.js', () => ({
 }));
 
 const mockSetQueryData = jest.fn();
+const mockSetQueryDefaults = jest.fn();
 const mockGetQueryData = jest.fn();
 const mockInvalidateQueries = jest.fn();
 const mockRemoveQueries = jest.fn();
 const mockFindAll = jest.fn((): Array<{ queryKey: unknown[] }> => []);
 const mockQueryClient = {
   setQueryData: mockSetQueryData,
+  setQueryDefaults: mockSetQueryDefaults,
   getQueryData: mockGetQueryData,
   invalidateQueries: mockInvalidateQueries,
   removeQueries: mockRemoveQueries,
@@ -271,6 +273,7 @@ describe('useResumableSSE', () => {
     mockClearStepMaps.mockClear();
     mockSetIsSubmitting.mockClear();
     mockSetQueryData.mockClear();
+    mockSetQueryDefaults.mockClear();
     mockGetQueryData.mockReset();
     mockInvalidateQueries.mockClear();
     mockRemoveQueries.mockClear();
