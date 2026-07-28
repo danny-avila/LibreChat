@@ -482,7 +482,13 @@ describe('useResumableSSE', () => {
     expect(mockSetQueryData).toHaveBeenCalledWith(['resumable-disconnected-run', 'stream-123'], {
       startedAsNewConvo: true,
       created: true,
+      userMessageId: 'msg-1',
+      responseMessageId: 'msg-1_',
     });
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['resumable-disconnected-run', 'stream-123'],
+      expect.objectContaining({ terminalOutcome: 'aborted' }),
+    );
     expect(mockRemoveQueries).toHaveBeenCalledWith({
       queryKey: ['resumable-terminal-event', 'stream-123'],
       exact: true,
@@ -594,6 +600,8 @@ describe('useResumableSSE', () => {
     expect(mockSetQueryData).toHaveBeenCalledWith(['resumable-disconnected-run', 'stream-123'], {
       startedAsNewConvo: true,
       created: false,
+      userMessageId: 'msg-1',
+      responseMessageId: 'msg-1_',
     });
 
     unmount();
@@ -689,6 +697,8 @@ describe('useResumableSSE', () => {
     expect(mockSetQueryData).toHaveBeenCalledWith(['resumable-disconnected-run', 'stream-123'], {
       startedAsNewConvo: true,
       created: true,
+      userMessageId: 'msg-1',
+      responseMessageId: 'msg-1_',
     });
     unmount();
   });
@@ -1741,6 +1751,7 @@ describe('useResumableSSE', () => {
 
   it('keeps polling without publishing a run end after exhausting SSE reconnect attempts', async () => {
     jest.useFakeTimers();
+    window.history.pushState({}, '', '/c/new');
     const submission = buildSubmission({ conversation: {} });
     const chatHelpers = buildChatHelpers();
 
@@ -1774,11 +1785,15 @@ describe('useResumableSSE', () => {
     expect(mockSetQueryData).toHaveBeenCalledWith(['resumable-disconnected-run', 'stream-123'], {
       startedAsNewConvo: true,
       created: false,
+      userMessageId: 'msg-1',
+      responseMessageId: 'resp-1',
     });
+    expect(window.location.pathname).toBe('/c/stream-123');
     expect(mockErrorHandler).toHaveBeenCalledTimes(1);
     expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
     expect(mockSetRunEnd).not.toHaveBeenCalled();
     unmount();
+    window.history.pushState({}, '', '/');
   });
 
   it('treats responseCode === 0 with raw SSE buffer data as transport failure (reconnect path)', async () => {

@@ -3,6 +3,9 @@ import type { QueryClient } from '@tanstack/react-query';
 export type DisconnectedRunRecovery = {
   startedAsNewConvo: boolean;
   created: boolean;
+  userMessageId?: string;
+  responseMessageId?: string;
+  terminalOutcome?: 'completed' | 'error' | 'aborted';
 };
 
 const terminalEventQueryKey = (conversationId: string) =>

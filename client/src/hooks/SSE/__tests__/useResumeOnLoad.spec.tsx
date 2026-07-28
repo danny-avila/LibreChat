@@ -606,6 +606,84 @@ describe('useResumeOnLoad', () => {
       expect(invalidateSpy).not.toHaveBeenCalled();
     });
 
+    it('does not refetch a persisted stopped response on a later visit', async () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+      const observedRunEnds: Array<RunEnd | null> = [];
+      const persistedMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({
+          messageId: 'stopped-response',
+          unfinished: true,
+          text: 'Stopped response',
+        }),
+      ];
+      queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], persistedMessages);
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: { active: false },
+      });
+
+      renderUseResumeOnLoad({
+        getMessages: () =>
+          queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
+        onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+        queryClient,
+      });
+
+      await flushMicrotasks();
+
+      expect(invalidateSpy).not.toHaveBeenCalled();
+      expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
+    });
+
+    it('keeps recovered steers queued when no run-specific terminal outcome is available', async () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+      const observedQueues: QueuedMessage[][] = [];
+      const observedRunEnds: Array<RunEnd | null> = [];
+      const parkedSteer: PendingSteer = {
+        steerId: 'parked-on-return',
+        text: 'Do not send automatically',
+        status: 'pending',
+        createdAt: 4,
+      };
+      const persistedMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({
+          messageId: 'previous-completed-response',
+          text: 'Previously completed',
+          unfinished: false,
+        }),
+      ];
+      queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], persistedMessages);
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: { active: false, unrecoveredSteers: [parkedSteer] },
+      });
+
+      renderUseResumeOnLoad({
+        getMessages: () =>
+          queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
+        onQueuedMessages: (queued) => observedQueues.push(queued),
+        onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+        queryClient,
+      });
+
+      await waitFor(() => {
+        expect(observedQueues[observedQueues.length - 1]).toEqual([
+          expect.objectContaining({ id: parkedSteer.steerId, text: parkedSteer.text }),
+        ]);
+      });
+      expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+        conversationId: CONVERSATION_ID,
+        outcome: 'aborted',
+      });
+      expect(invalidateSpy).not.toHaveBeenCalled();
+    });
+
     it('does not probe a timestamp-less tail when this client received the final event', async () => {
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
@@ -720,6 +798,138 @@ describe('useResumeOnLoad', () => {
       });
       expect(mockFetchStreamStatus).toHaveBeenCalledTimes(2);
       expect(messageQueryFn).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+      ['error' as const, { error: true, unfinished: false }],
+      ['aborted' as const, { error: false, unfinished: true }],
+    ])(
+      'publishes the %s outcome from this run instead of the conversation tail',
+      async (expectedOutcome, responseState) => {
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+        const observedRunEnds: Array<RunEnd | null> = [];
+        const runResponseId = 'recovered-run-response';
+        const unfinishedMessages = [
+          buildUserMessage(CONVERSATION_ID),
+          buildAssistantMessage({
+            messageId: runResponseId,
+            createdAt: undefined,
+            updatedAt: undefined,
+          }),
+        ];
+        const refreshedMessages = [
+          buildUserMessage(CONVERSATION_ID),
+          buildAssistantMessage({
+            messageId: runResponseId,
+            text: 'Recovered run response',
+            ...responseState,
+          }),
+          buildUserMessage(CONVERSATION_ID, 'later-user-message'),
+          buildAssistantMessage({
+            messageId: 'later-completed-response',
+            parentMessageId: 'later-user-message',
+            text: 'Later conversation tail',
+            error: false,
+            unfinished: false,
+          }),
+        ];
+        queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
+        setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+          startedAsNewConvo: false,
+          created: true,
+          userMessageId: USER_MESSAGE_ID,
+          responseMessageId: runResponseId,
+        });
+        mockUseActiveJobs.mockReturnValue({
+          data: { activeJobIds: [CONVERSATION_ID] },
+        });
+        mockFetchStreamStatus.mockResolvedValue({ active: false });
+
+        const { rerender } = renderUseResumeOnLoad({
+          submission: buildSubmission(CONVERSATION_ID),
+          getMessages: () =>
+            queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
+          onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+          queryClient,
+          messageQueryFn: jest.fn().mockResolvedValue(refreshedMessages),
+        });
+
+        mockUseActiveJobs.mockReturnValue({
+          data: { activeJobIds: [] },
+        });
+        rerender();
+
+        await waitFor(() => {
+          expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+            conversationId: CONVERSATION_ID,
+            outcome: expectedOutcome,
+          });
+        });
+        expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
+      },
+    );
+
+    it('does not overwrite a 404 run end with the persisted completed response', async () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const observedRunEnds: Array<RunEnd | null> = [];
+      const runResponseId = '404-run-response';
+      const unfinishedMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({
+          messageId: runResponseId,
+          createdAt: undefined,
+          updatedAt: undefined,
+        }),
+      ];
+      const refreshedMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({
+          messageId: runResponseId,
+          text: 'Persisted before stream cleanup',
+          error: false,
+          unfinished: false,
+        }),
+      ];
+      queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
+      setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+        startedAsNewConvo: false,
+        created: true,
+        userMessageId: USER_MESSAGE_ID,
+        responseMessageId: runResponseId,
+        terminalOutcome: 'aborted',
+      });
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+      });
+      mockFetchStreamStatus.mockResolvedValue({ active: false });
+
+      const { rerender } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        getMessages: () =>
+          queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
+        onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+        queryClient,
+        messageQueryFn: jest.fn().mockResolvedValue(refreshedMessages),
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [] },
+      });
+      rerender();
+
+      await waitFor(() => {
+        expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+          conversationId: CONVERSATION_ID,
+          outcome: 'aborted',
+        });
+      });
+      expect(observedRunEnds).not.toContainEqual(
+        expect.objectContaining({
+          conversationId: CONVERSATION_ID,
+          outcome: 'completed',
+        }),
+      );
+      expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
     });
 
     it('recovers terminal steers only after the server confirms the job is inactive', async () => {
@@ -945,6 +1155,63 @@ describe('useResumeOnLoad', () => {
       });
       expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toEqual([]);
       expect(observedPathnames[observedPathnames.length - 1]).toBe(`/c/${Constants.NEW_CONVO}`);
+      expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
+    });
+
+    it('keeps a first turn when the server persisted only the user message', async () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const removeQueriesSpy = jest.spyOn(queryClient, 'removeQueries');
+      const observedRunEnds: Array<RunEnd | null> = [];
+      const observedPathnames: string[] = [];
+      const unfinishedMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({
+          createdAt: undefined,
+          updatedAt: undefined,
+          unfinished: true,
+        }),
+      ];
+      const persistedUserMessage = buildUserMessage(CONVERSATION_ID);
+      queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
+      setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+        startedAsNewConvo: true,
+        created: false,
+        userMessageId: USER_MESSAGE_ID,
+        responseMessageId: RESPONSE_MESSAGE_ID,
+      });
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+      });
+      mockFetchStreamStatus.mockResolvedValue({ active: false });
+
+      const { rerender } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        getMessages: () =>
+          queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
+        onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+        onPathname: (pathname) => observedPathnames.push(pathname),
+        queryClient,
+        messageQueryFn: jest.fn().mockResolvedValue([persistedUserMessage]),
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [] },
+      });
+      rerender();
+
+      await waitFor(() => {
+        expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+          conversationId: CONVERSATION_ID,
+          outcome: 'error',
+        });
+      });
+      expect(removeQueriesSpy).not.toHaveBeenCalledWith({
+        queryKey: [QueryKeys.conversation, CONVERSATION_ID],
+      });
+      expect(observedPathnames[observedPathnames.length - 1]).toBe(`/c/${CONVERSATION_ID}`);
+      expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual([
+        persistedUserMessage,
+      ]);
       expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
     });
 

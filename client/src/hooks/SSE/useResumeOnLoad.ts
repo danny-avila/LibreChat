@@ -11,6 +11,7 @@ import {
 import type { TMessage, TConversation, TSubmission, Agents } from 'librechat-data-provider';
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
 import type { RunEnd } from '~/store/families';
+import type { DisconnectedRunRecovery } from './resumableRecovery';
 import {
   dedupeSteersById,
   applyPendingAction,
@@ -32,6 +33,17 @@ type ResponseRefreshResult = {
   messages: TMessage[] | undefined;
   succeeded: boolean;
   notFound: boolean;
+};
+
+type RunRecoveryTarget = {
+  userMessageId?: string;
+  responseMessageId?: string;
+};
+
+type PersistedRunState = {
+  outcome?: RunEnd['outcome'];
+  responseFound: boolean;
+  userMessageFound: boolean;
 };
 
 const TERMINAL_RETRY_DELAYS = [1000, 2000, 5000, 10000, 30000] as const;
@@ -90,34 +102,106 @@ function hasSubmissionUserMessage(
   );
 }
 
-function getUnfinishedAssistantTail(messages: TMessage[] | undefined): TMessage | undefined {
+function getUnreconciledAssistantTail(messages: TMessage[] | undefined): TMessage | undefined {
   const lastMessage = messages?.[messages.length - 1];
   if (!lastMessage || lastMessage.isCreatedByUser === true) {
     return undefined;
   }
 
   const messageId = lastMessage.messageId ?? '';
-  const isUnfinished =
-    lastMessage.unfinished === true ||
-    lastMessage.createdAt == null ||
-    lastMessage.updatedAt == null ||
-    messageId.endsWith('_');
+  const isUnreconciled =
+    lastMessage.createdAt == null || lastMessage.updatedAt == null || messageId.endsWith('_');
 
-  return isUnfinished ? lastMessage : undefined;
+  return isUnreconciled ? lastMessage : undefined;
 }
 
-function getPersistedRunOutcome(messages: TMessage[] | undefined): RunEnd['outcome'] | undefined {
-  const lastMessage = messages?.[messages.length - 1];
-  if (!lastMessage || lastMessage.isCreatedByUser === true) {
+function getRunRecoveryTarget(
+  disconnectedRun: DisconnectedRunRecovery | undefined,
+  messages: TMessage[] | undefined,
+): RunRecoveryTarget | undefined {
+  const unreconciledResponse = getUnreconciledAssistantTail(messages);
+  const userMessageId =
+    disconnectedRun?.userMessageId ?? unreconciledResponse?.parentMessageId ?? undefined;
+  const responseMessageId =
+    disconnectedRun?.responseMessageId ?? unreconciledResponse?.messageId ?? undefined;
+
+  if (!userMessageId && !responseMessageId) {
     return undefined;
   }
-  if (lastMessage.error === true) {
+
+  return { userMessageId, responseMessageId };
+}
+
+function getMessageOutcome(message: TMessage): RunEnd['outcome'] | undefined {
+  if (message.error === true) {
     return 'error';
   }
-  if (lastMessage.unfinished === true) {
+  if (message.unfinished === true) {
     return 'aborted';
   }
-  return getUnfinishedAssistantTail(messages) == null ? 'completed' : undefined;
+  if (
+    message.createdAt == null ||
+    message.updatedAt == null ||
+    (message.messageId ?? '').endsWith('_')
+  ) {
+    return undefined;
+  }
+  return 'completed';
+}
+
+function getPersistedRunState(
+  messages: TMessage[] | undefined,
+  target: RunRecoveryTarget | undefined,
+): PersistedRunState {
+  if (!messages?.length || !target) {
+    return { responseFound: false, userMessageFound: false };
+  }
+
+  const responseMessageId = target.responseMessageId;
+  const unpaddedResponseMessageId = responseMessageId?.replace(/_+$/, '');
+  const canUseParentFallback = !responseMessageId || responseMessageId.endsWith('_');
+  let fallbackResponse: TMessage | undefined;
+  let userMessageFound = false;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (
+      target.userMessageId &&
+      message.isCreatedByUser === true &&
+      message.messageId === target.userMessageId
+    ) {
+      userMessageFound = true;
+      continue;
+    }
+    if (message.isCreatedByUser === true) {
+      continue;
+    }
+    if (
+      responseMessageId &&
+      (message.messageId === responseMessageId ||
+        (!!unpaddedResponseMessageId && message.messageId === unpaddedResponseMessageId))
+    ) {
+      return {
+        outcome: getMessageOutcome(message),
+        responseFound: true,
+        userMessageFound,
+      };
+    }
+    if (
+      !fallbackResponse &&
+      canUseParentFallback &&
+      target.userMessageId &&
+      message.parentMessageId === target.userMessageId
+    ) {
+      fallbackResponse = message;
+    }
+  }
+
+  return {
+    outcome: fallbackResponse ? getMessageOutcome(fallbackResponse) : undefined,
+    responseFound: fallbackResponse != null,
+    userMessageFound,
+  };
 }
 
 function getStatusRunOutcome(status: StreamStatusResponse): RunEnd['outcome'] | undefined {
@@ -415,21 +499,21 @@ export default function useResumeOnLoad(
     };
   }, [location.pathname]);
 
-  const refreshUnfinishedResponse = useCallback(async (): Promise<ResponseRefreshResult> => {
+  const refreshUnreconciledResponse = useCallback(async (): Promise<ResponseRefreshResult> => {
     if (!conversationId) {
       return { messages: undefined, succeeded: false, notFound: false };
     }
 
-    const unfinishedResponse = getUnfinishedAssistantTail(getMessages());
-    if (!unfinishedResponse) {
+    const unreconciledResponse = getUnreconciledAssistantTail(getMessages());
+    if (!unreconciledResponse) {
       return { messages: getMessages(), succeeded: true, notFound: false };
     }
 
     const responseKey = [
       conversationId,
-      unfinishedResponse.messageId,
-      unfinishedResponse.updatedAt ?? '',
-      unfinishedResponse.content?.length ?? 0,
+      unreconciledResponse.messageId,
+      unreconciledResponse.updatedAt ?? '',
+      unreconciledResponse.content?.length ?? 0,
     ].join(':');
     if (refreshedResponseRef.current === responseKey) {
       return { messages: getMessages(), succeeded: false, notFound: false };
@@ -440,7 +524,7 @@ export default function useResumeOnLoad(
     terminalRefreshAbortRef.current = refreshController;
     refreshedResponseRef.current = responseKey;
     console.log(
-      '[ResumeOnLoad] Completed job left an unfinished response; refreshing messages:',
+      '[ResumeOnLoad] Completed job left an unreconciled response; refreshing messages:',
       conversationId,
     );
 
@@ -487,7 +571,7 @@ export default function useResumeOnLoad(
           return finishFailedRefresh(false);
         }
 
-        if (getUnfinishedAssistantTail(getMessages()) == null) {
+        if (getUnreconciledAssistantTail(getMessages()) == null) {
           if (terminalRefreshAbortRef.current === refreshController) {
             terminalRefreshAbortRef.current = null;
           }
@@ -520,6 +604,8 @@ export default function useResumeOnLoad(
       refreshed: ResponseRefreshResult,
       shouldSignalRunEnd: boolean,
       status?: StreamStatusResponse,
+      recoveryTarget?: RunRecoveryTarget,
+      recoveredSteers = false,
     ) => {
       if (!conversationId || !shouldSignalRunEnd) {
         return;
@@ -531,11 +617,10 @@ export default function useResumeOnLoad(
       }
 
       const disconnectedRun = getDisconnectedRunRecovery(queryClient, conversationId);
-      const persistedOutcome = getPersistedRunOutcome(refreshed.messages);
       const isUnpersistedFirstTurn =
         disconnectedRun?.startedAsNewConvo === true &&
         disconnectedRun.created === false &&
-        (refreshed.notFound || (refreshed.succeeded && persistedOutcome == null));
+        refreshed.notFound;
 
       if (isUnpersistedFirstTurn) {
         removeConvoFromAllQueries(queryClient, conversationId);
@@ -562,7 +647,15 @@ export default function useResumeOnLoad(
         return;
       }
 
-      const outcome = (status && getStatusRunOutcome(status)) ?? persistedOutcome;
+      const persistedRun = getPersistedRunState(refreshed.messages, recoveryTarget);
+      const outcome =
+        disconnectedRun?.terminalOutcome ??
+        (status && getStatusRunOutcome(status)) ??
+        persistedRun.outcome ??
+        (recoveryTarget && persistedRun.userMessageFound && !persistedRun.responseFound
+          ? 'error'
+          : undefined) ??
+        (!recoveryTarget && recoveredSteers ? 'aborted' : undefined);
       if (!outcome) {
         return;
       }
@@ -595,13 +688,22 @@ export default function useResumeOnLoad(
           ? options.recoveredSteers === true
           : recoverStatusSteers(status);
       const disconnectedRun = getDisconnectedRunRecovery(queryClient, conversationId);
-      const hadUnfinishedResponse = getUnfinishedAssistantTail(getMessages()) != null;
+      const recoveryTarget = getRunRecoveryTarget(disconnectedRun, getMessages());
       const shouldSignalRunEnd =
-        hadUnfinishedResponse || disconnectedRun != null || recoveredSteers;
+        recoveryTarget != null ||
+        disconnectedRun?.terminalOutcome != null ||
+        getStatusRunOutcome(status) != null ||
+        recoveredSteers;
 
       restoreSteerChips(conversationId, undefined);
-      const refreshed = await refreshUnfinishedResponse();
-      reconcileRefreshedResponse(refreshed, shouldSignalRunEnd, status);
+      const refreshed = await refreshUnreconciledResponse();
+      reconcileRefreshedResponse(
+        refreshed,
+        shouldSignalRunEnd,
+        status,
+        recoveryTarget,
+        recoveredSteers,
+      );
     },
     [
       conversationId,
@@ -609,7 +711,7 @@ export default function useResumeOnLoad(
       queryClient,
       reconcileRefreshedResponse,
       recoverStatusSteers,
-      refreshUnfinishedResponse,
+      refreshUnreconciledResponse,
       restoreSteerChips,
     ],
   );
@@ -677,7 +779,7 @@ export default function useResumeOnLoad(
       }
 
       const hasRecoveryState =
-        getUnfinishedAssistantTail(getMessages()) != null ||
+        getUnreconciledAssistantTail(getMessages()) != null ||
         getDisconnectedRunRecovery(queryClient, conversationId) != null;
       if (!hasRecoveryState) {
         return;

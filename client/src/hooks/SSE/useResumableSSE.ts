@@ -302,6 +302,13 @@ const replaceNewConversationUrl = (conversationId: string) => {
   );
 };
 
+const getRunRecoveryIdentity = (submission: TSubmission) => ({
+  ...(submission.userMessage?.messageId && { userMessageId: submission.userMessage.messageId }),
+  ...(submission.initialResponse?.messageId && {
+    responseMessageId: submission.initialResponse.messageId,
+  }),
+});
+
 const shouldHydrateMessage = (message: TMessage) =>
   !hasConcreteConversationId(message.conversationId);
 
@@ -885,12 +892,6 @@ export default function useResumableSSE(
               conversationId: data.message?.conversationId,
             });
             createdStreamIdsRef.current.add(currentStreamId);
-            if (optimisticStreamIdsRef.current.has(currentStreamId)) {
-              setDisconnectedRunRecovery(queryClient, currentStreamId, {
-                startedAsNewConvo: true,
-                created: true,
-              });
-            }
             const runId = v4();
             setActiveRunId(runId);
             userMessage = {
@@ -908,6 +909,13 @@ export default function useResumableSSE(
               userMessage,
               initialResponse: createdInitialResponse,
             };
+            if (optimisticStreamIdsRef.current.has(currentStreamId)) {
+              setDisconnectedRunRecovery(queryClient, currentStreamId, {
+                startedAsNewConvo: true,
+                created: true,
+                ...getRunRecoveryIdentity(currentSubmission),
+              });
+            }
             submissionRef.current = currentSubmission;
             createdHandler(data, currentSubmission as EventSubmission);
             replayPreCreatedStepEvents();
@@ -1231,6 +1239,15 @@ export default function useResumableSSE(
           const convoId = currentSubmission.conversation?.conversationId;
           logger.log('ResumableSSE', 'Stream 404, invalidating messages for:', convoId);
           sse.close();
+          const existingRecovery = getDisconnectedRunRecovery(queryClient, currentStreamId);
+          setDisconnectedRunRecovery(queryClient, currentStreamId, {
+            startedAsNewConvo:
+              existingRecovery?.startedAsNewConvo ??
+              optimisticStreamIdsRef.current.has(currentStreamId),
+            created: existingRecovery?.created ?? createdStreamIdsRef.current.has(currentStreamId),
+            ...getRunRecoveryIdentity(currentSubmission),
+            terminalOutcome: 'aborted',
+          });
           removeActiveJob(currentStreamId);
           /** Terminal: drop any in-flight live estimate so the gauge doesn't
            *  keep counting stale streamed output after the stream ends */
@@ -1434,6 +1451,7 @@ export default function useResumableSSE(
           setDisconnectedRunRecovery(queryClient, currentStreamId, {
             startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
             created: createdStreamIdsRef.current.has(currentStreamId),
+            ...getRunRecoveryIdentity(currentSubmission),
           });
           setIsSubmitting(false);
           setShowStopButton(false);
@@ -1726,6 +1744,7 @@ export default function useResumableSSE(
             setDisconnectedRunRecovery(queryClient, newStreamId, {
               startedAsNewConvo: true,
               created: existingRecovery?.created === true,
+              ...getRunRecoveryIdentity(submission),
             });
             replaceNewConversationUrl(newStreamId);
           }
