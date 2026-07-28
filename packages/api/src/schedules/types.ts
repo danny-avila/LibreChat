@@ -25,6 +25,33 @@ export interface ScheduleUserContext {
   role?: string;
 }
 
+/**
+ * Outcome of an owner-initiated schedule delete.
+ * - `deleted`: drained and erased.
+ * - `draining`: every active run's abort was DELIVERED; erasure follows once the
+ *   generation records its terminal outcome (erase-on-settle), in any topology.
+ * - `unconfirmed`: at least one run could not be confirmed stopped (job store
+ *   unreachable, or the abort was not delivered). The schedule stays hidden and
+ *   fenced, but its generation may still be producing — callers must not report
+ *   the run as stopped.
+ */
+export type ScheduleDeleteResult = 'not_found' | 'deleted' | 'draining' | 'unconfirmed';
+
+/**
+ * Renewable upload hold for schedule attachments (extendFilesTTL-shaped), replacing
+ * the earlier permanent TTL removal, which leaked the upload forever when the schedule
+ * was deleted before its first run, its file_ids were replaced, or creation failed.
+ * Touched at create/edit and at every fire preflight; the FIRST fire that actually
+ * sends the file clears its TTL permanently through the ordinary consumption path, so
+ * the hold only has to bridge upload -> first consumption. `renewMs` covers the longest
+ * cadence gap (weekly) twice over; `maxLifetimeMs` bounds a schedule that never manages
+ * to consume (auto-disable stops its renewals long before this ceiling).
+ */
+export const SCHEDULE_FILE_HOLD: { renewMs: number; maxLifetimeMs: number } = {
+  renewMs: 14 * 24 * 60 * 60 * 1000,
+  maxLifetimeMs: 90 * 24 * 60 * 60 * 1000,
+};
+
 export interface ScheduleFileRef {
   file_id: string;
   filepath?: string;

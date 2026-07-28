@@ -260,9 +260,12 @@ if (cluster.isMaster) {
    * scheduling only, and this process never arms the engine, so accepting a create or
    * run-now here would persist a schedule nothing will ever fire. Reads stay open so an
    * operator can still inspect existing schedules. DELETE stays open too: erasing a
-   * stored prompt needs no engine (the handler quiesces through the job store and
-   * refuses unsafe cases itself), and a deployment switched to clustered mode must not
-   * strand users with schedules they can see but never remove.
+   * stored prompt needs no engine and no reconciler — the delete path settles runs
+   * whose job is provably absent synchronously, refuses honestly (503) when a run
+   * cannot be confirmed stopped, and a delivered abort erases on the generation's own
+   * outcome write (erase-on-settle) — so a deployment switched to clustered mode is
+   * never stranded with schedules users can see but never remove, and never left
+   * holding a hidden schedule's prompt indefinitely.
    */
   const rejectScheduleWritesUntilReady = (req, res, next) => {
     if (schedulesReady || SCHEDULE_ENGINE_OPTIONAL_METHODS.has(req.method)) {

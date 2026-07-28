@@ -4,7 +4,13 @@ import { createSchedulePayloadSchema, updateSchedulePayloadSchema } from 'librec
 import type { TCreateSchedule, TUpdateSchedule } from 'librechat-data-provider';
 import type { ScheduleMethods, ISchedule } from '@librechat/data-schemas';
 import type { Response } from 'express';
-import type { ScheduleLimits, ScheduleUserContext, FireResult, FireableSchedule } from './types';
+import type {
+  ScheduleDeleteResult,
+  ScheduleUserContext,
+  FireableSchedule,
+  ScheduleLimits,
+  FireResult,
+} from './types';
 import type { ServerRequest } from '~/types';
 import { isValidTimezone, cadenceIntervalMinutes, computeNextRunAt } from './cadence';
 
@@ -15,15 +21,17 @@ export interface SchedulesHandlersDeps {
   canViewAgent: (agentId: string, req: ServerRequest) => Promise<boolean>;
   /** Filters to file ids owned by the user. */
   filterOwnedFileIds: (fileIds: string[], userId: string) => Promise<string[]>;
-  /** Clears the upload TTL on attached files so they survive until the first run. */
+  /** Extends a bounded renewable upload hold on attached files so they survive to the
+   *  first fire, which consumes them permanently; a schedule that dies first lets the
+   *  hold lapse instead of retaining the upload forever. Throws when any file is gone. */
   markFilesUsed: (fileIds: string[], userId: string) => Promise<void>;
   /** Serialized manual fire (acquires the schedule lease); null if already leased. */
   fireNow: (schedule: FireableSchedule, limits: ScheduleLimits) => Promise<FireResult | null>;
   /**
    * Soft-deletes a schedule with quiescing: stops new claims, aborts in-flight
-   * runs, and erases once drained. Returns false when not found / already deleting.
+   * runs, and erases once drained. See ScheduleDeleteResult for the honest states.
    */
-  deleteSchedule: (id: string, userId: string) => Promise<boolean>;
+  deleteSchedule: (id: string, userId: string) => Promise<ScheduleDeleteResult>;
   /** Whether this user's account deletion has begun. Fail-closed (unknown == true). */
   isUserDeleting: (userId: string) => Promise<boolean>;
 }
@@ -71,7 +79,7 @@ async function rejectIfUserDeleting(
   return true;
 }
 
-/** Bounded attempts to clear the upload TTL on a schedule's attachments. */
+/** Bounded attempts to extend the upload hold on a schedule's attachments. */
 const FILE_RETAIN_ATTEMPTS = 3;
 
 /** Public projection of a schedule — an allowlist of the `TSchedule` fields, so internal
@@ -171,10 +179,11 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
   }
 
   /**
-   * Clears the upload TTL on attached files (so they survive to the first fire),
-   * with bounded retry. Returns false when it exhausts retries — the caller then
-   * compensates (roll back the create / revert the edit) so a persisted schedule
-   * never references files the upload sweep is about to reap.
+   * Extends the bounded upload hold on attached files (so they survive to the first
+   * fire, which consumes them permanently), with bounded retry. Returns false when it
+   * exhausts retries — the caller then compensates (roll back the create / revert the
+   * edit) so a persisted schedule never references files the upload sweep is about to
+   * reap.
    */
   async function retainFiles(fileIds: string[], userId: string): Promise<boolean> {
     for (let attempt = 1; attempt <= FILE_RETAIN_ATTEMPTS; attempt++) {
@@ -297,16 +306,29 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(410).json({ error: 'This account is being deleted' });
       return;
     }
-    // ARM last. A transient write fault THROWS, leaving the schedule visible but
-    // unclaimed; the owner's next edit (or the reconciler's unarmed sweep) recomputes
-    // nextRunAt. A null result is different in kind: updateScheduleById filters out
-    // deleting rows, so null means the row stopped being ours between the barrier
-    // re-check and here — the deletion cascade marked or erased it. Falling back to the
-    // pre-delete snapshot would answer 201 for a schedule that is already hidden and
-    // pending erasure.
+    // ARM last. A null result means the row stopped being ours between the barrier
+    // re-check and here — the deletion cascade marked or erased it (updateScheduleById
+    // filters out deleting rows). Falling back to the pre-delete snapshot would answer
+    // 201 for a schedule that is already hidden and pending erasure.
+    //
+    // A THROWN (or ambiguously acknowledged) arming write must ROLL THE ROW BACK, not
+    // leave it: the client retries the failed create with a fresh UUID, the retry
+    // commits a second row, and the reconciler's unarmed sweep later arms the first as
+    // well — one intended schedule becomes several recurring, billable ones. With the
+    // row compensated away, a retry recreates exactly one. Only when BOTH compensation
+    // writes also fail does the unarmed row remain (it cannot fire until swept), and
+    // the 500 is the same either way.
     let armed = created;
     if (nextRunAt) {
-      const updated = await deps.methods.updateScheduleById(id, user.id, { nextRunAt });
+      let updated: ISchedule | null;
+      try {
+        updated = await deps.methods.updateScheduleById(id, user.id, { nextRunAt });
+      } catch (armError) {
+        logger.error(`[schedules] arming failed for ${id}; rolling back the create`, armError);
+        await compensateLateCreate(deps, id, user.id);
+        res.status(500).json({ error: 'Failed to create schedule. Please retry.' });
+        return;
+      }
       if (updated == null) {
         res.status(410).json({ error: 'Schedule no longer exists' });
         return;
@@ -412,12 +434,26 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     // Quiesce-then-erase: disable + mark deleting (stops new claims, hides it),
     // abort in-flight loopback jobs, and erase once drained — so a live run's
     // evidence is never destroyed out from under it.
-    const deleted = await deps.deleteSchedule(id, requestUser(req).id);
-    if (!deleted) {
+    const result = await deps.deleteSchedule(id, requestUser(req).id);
+    if (result === 'not_found') {
       res.status(404).json({ error: 'Schedule not found' });
       return;
     }
-    res.json({ id });
+    // HONEST failure: at least one active run could not be confirmed stopped, so its
+    // generation may still be producing and billing. The schedule is already hidden
+    // and fenced (no new claims), and the delete is idempotent — a retry re-runs the
+    // drain. Reporting success here would claim the run was stopped.
+    if (result === 'unconfirmed') {
+      res.set('Retry-After', '30');
+      res.status(503).json({
+        error: 'Could not confirm the active run was stopped. Please retry shortly.',
+      });
+      return;
+    }
+    // 202 for `draining`: the aborts were delivered but a generation has not yet
+    // recorded its terminal outcome. The schedule is hidden and erasure follows the
+    // settlement (erase-on-settle), in any topology.
+    res.status(result === 'draining' ? 202 : 200).json({ id });
   }
 
   async function runScheduleNow(req: ServerRequest, res: Response): Promise<void> {

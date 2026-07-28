@@ -6,6 +6,7 @@ import type { AddressInfo } from 'net';
 import type { Types } from 'mongoose';
 import type {
   ScheduleEngineDeps,
+  ScheduleDeleteResult,
   ScheduleLimits,
   ScheduleUserContext,
   FireableSchedule,
@@ -17,11 +18,11 @@ import type { BalanceUpdateFields } from '../types/balance';
 import type { GetAppConfigOptions } from '../app/service';
 import { generateShortLivedToken, SCHEDULE_FIRE_SCOPE, SCHEDULE_MANUAL_CLAIM } from '../crypto/jwt';
 import { GenerationJobManager } from '../stream/GenerationJobManager';
+import { DEFAULT_SCHEDULE_LIMITS, SCHEDULE_FILE_HOLD } from './types';
 import { buildBalanceUpdateFields } from '../middleware/balance';
 import { deleteAgentCheckpoint } from '../agents/checkpointer';
 import { fireSchedule, SCHEDULE_FIRE_TOKEN_TTL } from './fire';
 import { getAppConfigOptionsFromUser } from '../app/service';
-import { DEFAULT_SCHEDULE_LIMITS } from './types';
 import { getBalanceConfig } from '../app/config';
 import { selfOriginFromAddress } from './origin';
 import { startScheduleEngine } from './engine';
@@ -106,6 +107,12 @@ export interface SchedulesServiceDeps {
       width?: number;
       source: string;
     }> | null>;
+    /** Owner-scoped bounded TTL hold (`db.extendFilesTTL`-shaped). */
+    extendFilesTTL: (
+      fileIds: string[],
+      hold: { renewMs: number; maxLifetimeMs: number },
+      owner: { user: string; tenantId?: string | null },
+    ) => Promise<number>;
   };
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig | undefined>;
   findUserById: (
@@ -150,7 +157,7 @@ export interface SchedulesService {
     options?: { automatic?: boolean },
   ) => Promise<boolean>;
   /** Soft-deletes an owner's schedule: stop claims, abort active runs, drain, erase. */
-  deleteScheduleForOwner: (scheduleId: string, userId: string) => Promise<boolean>;
+  deleteScheduleForOwner: (scheduleId: string, userId: string) => Promise<ScheduleDeleteResult>;
   /**
    * Quiesces all of a user's schedules ahead of account deletion (stop + abort + drain).
    * Returns whether the drain was CONFIRMED: false means at least one run could not be
@@ -358,6 +365,13 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     // so the two never diverge.
     agentAccess: (agentId, user) => deps.resolveAgentFireAccess(agentId, user),
     resolveFiles: async (fileIds, user) => {
+      // Renew the bounded upload hold at every fire preflight, BEST-EFFORT: the hold
+      // only has to bridge upload -> first consumption (a real send clears the TTL
+      // permanently), and a failed renewal must not fail the fire — at worst the hold
+      // lapses later and resolveFiles drops the reaped file (droppedFileIds records it).
+      await methods
+        .extendFilesTTL(fileIds, SCHEDULE_FILE_HOLD, { user: user.id, tenantId: user.tenantId })
+        .catch((err) => logger.warn('[schedules] attachment hold renewal failed:', err));
       const files = await methods.getFiles(
         { file_id: { $in: fileIds }, user: user.id },
         null,
@@ -601,6 +615,17 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
           error,
           autoDisableAfterFailures: limits.autoDisableAfterFailures,
         });
+        // ERASE-ON-SETTLE: whichever process records a run's terminal outcome also
+        // attempts the deferred erase of a deleting schedule. This is what makes a
+        // delete's `draining` state converge in EVERY topology — the clustered
+        // entrypoint runs no reconciler, so without this the hidden schedule (and its
+        // prompt, which has no TTL) survived its last run indefinitely there. A cheap
+        // guarded no-op for live schedules (the erase filters on `deleting: true`).
+        if (status !== 'requires_action') {
+          await methods.eraseScheduleIfDrained(scheduleId).catch((err) => {
+            logger.warn(`[schedules] erase-on-settle failed for ${scheduleId}:`, err);
+          });
+        }
         return true;
       } catch (err) {
         logger.error(
@@ -696,15 +721,21 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
   /**
    * Soft-deletes a schedule for its owner: disables + marks it `deleting` (so the
    * engine can no longer claim it and it disappears from the owner's list), rotates
-   * the claim token to fence any in-flight worker, aborts the loopback jobs of its
-   * active runs (evidence preserved for the reconciler), and erases immediately
-   * when already drained. Any still-active runs are erased by the reconciler once
-   * they settle. Returns false when the schedule doesn't exist / already deleting.
+   * the claim token to fence any in-flight worker, then DRAINS with the same evidence
+   * discipline as account-deletion quiesce — a run whose job is provably absent or
+   * settled is recorded and erased here, synchronously; a live generation is aborted
+   * and settles through its own outcome write (which erases on settle, so no
+   * reconciler is required in any topology). The result is honest: `unconfirmed`
+   * means at least one run could not be shown stopped, and the caller must not
+   * claim it was.
    */
-  async function deleteScheduleForOwner(scheduleId: string, userId: string): Promise<boolean> {
+  async function deleteScheduleForOwner(
+    scheduleId: string,
+    userId: string,
+  ): Promise<ScheduleDeleteResult> {
     const schedule = await methods.markScheduleDeleting(scheduleId, userId);
     if (schedule == null) {
-      return false;
+      return 'not_found';
     }
     const active = await methods.getActiveRunsForSchedule(scheduleId);
     // Resolve the checkpointer config once (only when a paused run needs pruning) in
@@ -712,19 +743,73 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     const hasPausedRun = active.some(
       (run) => run.status === 'requires_action' && run.conversationId != null,
     );
-    // BEST-EFFORT: markScheduleDeleting above is one-shot (a retry 404s on the already-
-    // deleting row), so anything that throws before the aborts strands the schedule with
-    // its paused job still resumable. The prune it feeds is itself best-effort.
+    // BEST-EFFORT: the prune this feeds is itself best-effort, and a lookup failure
+    // must not cost the aborts below.
     const checkpointer = hasPausedRun
       ? await resolveOwnerCheckpointer(schedule.user).catch((err) => {
           logger.warn(`[schedules] checkpointer lookup failed for delete ${scheduleId}:`, err);
           return undefined;
         })
       : undefined;
+    let unconfirmed = 0;
     for (const run of active) {
-      // Preserve the aborted job for the reconciler: the run row survives (erase
-      // waits for it to drain), so reconcile finalizes it and clears the job.
-      await abortActiveRun(run, true);
+      // UNKNOWN is not ABSENT — the same distinction the quiesce path draws. A lookup
+      // that succeeded and returned null is positive evidence no generation holds this
+      // conversation; a lookup that THREW is evidence of nothing.
+      const live = run.conversationId
+        ? await engineDeps.getJobStatus(run.conversationId).then(
+            (job) => ({ known: true, job }),
+            () => ({ known: false, job: null }),
+          )
+        : { known: true, job: null };
+      const isThisGeneration =
+        live.job != null &&
+        jobMatchesIdentity(live.job, {
+          scheduleId: run.scheduleId,
+          scheduledFor: run.scheduledFor,
+        });
+      const settleable = live.known && !(isThisGeneration && live.job?.status === 'running');
+      if (settleable) {
+        // Positive evidence nothing is generating: settle the row HERE so the erase
+        // below can proceed without any reconciler — the clustered entrypoint has
+        // none, and deferring these rows to it retained the deleted schedule (and its
+        // prompt) indefinitely in that topology. Settle BEFORE aborting: a retained
+        // job is the only evidence of a finished run whose outcome write failed.
+        const retainedOutcome = isThisGeneration
+          ? TERMINAL_JOB_OUTCOMES[live.job!.status]
+          : undefined;
+        const settledStatus = retainedOutcome ?? 'interrupted';
+        const settled = await methods
+          .recordRunOutcome({
+            scheduleId: run.scheduleId,
+            scheduledFor: run.scheduledFor,
+            status: settledStatus,
+            conversationId: run.conversationId,
+            ...(settledStatus === 'interrupted' ? { error: 'Schedule deleted' } : {}),
+            autoDisableAfterFailures: DEFAULT_SCHEDULE_LIMITS.autoDisableAfterFailures,
+          })
+          .then(
+            () => true,
+            (err) => {
+              logger.warn(`[schedules] failed to settle run on delete ${scheduleId}:`, err);
+              return false;
+            },
+          );
+        if (settled) {
+          await abortActiveRun(run, false);
+        } else {
+          unconfirmed += 1;
+        }
+      } else {
+        // A live generation (or an unknown one): abort it, preserving the job so its
+        // outcome survives, and require the DELIVERY to be confirmed. An abort that
+        // was not delivered leaves a generation that keeps producing and billing —
+        // reporting this delete as a success would claim otherwise.
+        const aborted = await abortActiveRun(run, true);
+        if (!aborted) {
+          unconfirmed += 1;
+        }
+      }
       // HITL: prune the durable checkpoint of a run aborted while paused so a new turn
       // in this conversation can't rehydrate the stale interrupt before the Mongo TTL
       // reclaims it (thread_id === conversationId). Idempotent / no-op otherwise.
@@ -732,8 +817,14 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
         await deleteAgentCheckpoint(run.conversationId, checkpointer).catch(() => undefined);
       }
     }
-    await methods.eraseScheduleIfDrained(scheduleId).catch(() => undefined);
-    return true;
+    if (unconfirmed > 0) {
+      return 'unconfirmed';
+    }
+    const erased = await methods.eraseScheduleIfDrained(scheduleId).catch((err) => {
+      logger.warn(`[schedules] erase failed for ${scheduleId}:`, err);
+      return false;
+    });
+    return erased ? 'deleted' : 'draining';
   }
 
   /**

@@ -97,7 +97,9 @@ describe('toWireSchedule', () => {
 
 /** Minimal Express double capturing the status/body the handler settled on. */
 function makeRes() {
-  const captured: { status?: number; body?: unknown } = {};
+  const captured: { status?: number; body?: unknown; headers: Record<string, string> } = {
+    headers: {},
+  };
   const res = {
     status(code: number) {
       captured.status = code;
@@ -105,6 +107,10 @@ function makeRes() {
     },
     json(payload: unknown) {
       captured.body = payload;
+      return this;
+    },
+    set(name: string, value: string) {
+      captured.headers[name] = value;
       return this;
     },
   };
@@ -234,5 +240,62 @@ describe('createSchedule late-create compensation', () => {
 
     expect(captured.status).toBe(410);
     expect(captured.status).not.toBe(201);
+  });
+
+  /**
+   * A thrown (or ambiguously acknowledged) arming write must roll the committed row
+   * back: the client retries the failed create with a fresh UUID, the retry commits a
+   * second row, and the reconciler's unarmed sweep later arms the FIRST as well — one
+   * intended schedule becomes several recurring, billable ones.
+   */
+  it('rolls back the committed row when the arming write throws', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    (deps.methods.updateScheduleById as jest.Mock).mockRejectedValue(new Error('mongo down'));
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    expect(captured.status).toBe(500);
+    expect(deps.methods.deleteScheduleById).toHaveBeenCalledWith(expect.any(String), 'user-1');
+  });
+});
+
+describe('deleteSchedule result mapping', () => {
+  function makeDeleteReq(): ServerRequest {
+    return {
+      params: { id: 'sched-1' },
+      user: { id: 'user-1', tenantId: 't1', role: 'USER' },
+    } as unknown as ServerRequest;
+  }
+
+  const withResult = (result: string) =>
+    makeCreateDeps({
+      deleteSchedule: jest.fn(async () => result),
+    } as Partial<SchedulesHandlersDeps>);
+
+  it('404s when the schedule is not found', async () => {
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(withResult('not_found')).deleteSchedule(makeDeleteReq(), res);
+    expect(captured.status).toBe(404);
+  });
+
+  it('answers 200 when drained and erased', async () => {
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(withResult('deleted')).deleteSchedule(makeDeleteReq(), res);
+    expect(captured.status ?? 200).toBe(200);
+    expect(captured.body).toEqual({ id: 'sched-1' });
+  });
+
+  it('answers 202 while a delivered abort is still settling', async () => {
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(withResult('draining')).deleteSchedule(makeDeleteReq(), res);
+    expect(captured.status).toBe(202);
+    expect(captured.body).toEqual({ id: 'sched-1' });
+  });
+
+  it('refuses honestly when the active run could not be confirmed stopped', async () => {
+    // Reporting success would claim a possibly still-billing generation was stopped.
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(withResult('unconfirmed')).deleteSchedule(makeDeleteReq(), res);
+    expect(captured.status).toBe(503);
   });
 });

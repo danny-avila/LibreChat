@@ -157,13 +157,199 @@ describe('deleteScheduleForOwner', () => {
     const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
     manager.abortJob = abortJob;
 
-    await expect(service.deleteScheduleForOwner('s1', 'user-1')).resolves.toBe(true);
+    // A paused (not running) job is positive evidence: settled synchronously, erased.
+    await expect(service.deleteScheduleForOwner('s1', 'user-1')).resolves.toBe('deleted');
     expect(abortJob).toHaveBeenCalled();
+  });
+
+  /** Shared double set for the drain-discipline tests below. */
+  function makeDeleteHarness(run: Partial<ActiveRun> & { scheduleId: string }) {
+    const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
+    const methods = service.engineDeps.methods as unknown as {
+      markScheduleDeleting: jest.Mock;
+      getActiveRunsForSchedule: jest.Mock;
+      eraseScheduleIfDrained: jest.Mock;
+      recordRunOutcome: jest.Mock;
+    };
+    methods.markScheduleDeleting = jest.fn(async () => ({ id: run.scheduleId, user: 'user-1' }));
+    methods.getActiveRunsForSchedule = jest.fn(async () => [run]);
+    methods.eraseScheduleIfDrained = jest.fn(async () => true);
+    methods.recordRunOutcome = jest.fn(async () => undefined);
+    return { service, methods };
+  }
+
+  it('does not report success when the abort of a live run is not delivered', async () => {
+    const { service, methods } = makeDeleteHarness({
+      scheduleId: 's1',
+      scheduledFor: new Date('2026-01-01T00:00:00.000Z'),
+      conversationId: 'c1',
+      status: 'started',
+    });
+    // A RUNNING identity-matched job: not settleable, must be aborted...
+    mockJobStore = {
+      getJob: jest.fn(async () => ({
+        status: 'running',
+        createdAt: 1,
+        scheduleId: 's1',
+        scheduledFor: '2026-01-01T00:00:00.000Z',
+      })),
+    } as unknown as typeof mockJobStore;
+    // ...and the abort delivery FAILS (job store write rejected).
+    const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
+    manager.abortJob = jest.fn(async () => {
+      throw new Error('store unreachable');
+    });
+
+    // The generation may still be producing and billing; claiming success would say
+    // it was stopped. The schedule stays hidden and fenced; the delete is idempotent.
+    await expect(service.deleteScheduleForOwner('s1', 'user-1')).resolves.toBe('unconfirmed');
+    expect(methods.eraseScheduleIfDrained).not.toHaveBeenCalled();
+  });
+
+  it('treats an unreadable job store as unknown, not absent', async () => {
+    const { service, methods } = makeDeleteHarness({
+      scheduleId: 's1',
+      scheduledFor: new Date('2026-01-01T00:00:00.000Z'),
+      conversationId: 'c1',
+      status: 'started',
+    });
+    mockJobStore = {
+      getJob: jest.fn(async () => {
+        throw new Error('redis gone');
+      }),
+    } as unknown as typeof mockJobStore;
+    const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
+    manager.abortJob = jest.fn(async () => {
+      throw new Error('redis gone');
+    });
+
+    // With the store unreadable NOTHING is proven: the row must not be settled as
+    // an orphan (its generation may be live) and the delete must not read as done.
+    await expect(service.deleteScheduleForOwner('s1', 'user-1')).resolves.toBe('unconfirmed');
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
+  it('settles a provably job-less run synchronously and erases without a reconciler', async () => {
+    const { service, methods } = makeDeleteHarness({
+      scheduleId: 's1',
+      scheduledFor: new Date('2026-01-01T00:00:00.000Z'),
+      conversationId: 'c1',
+      status: 'started',
+    });
+    // Confirmed absence: the lookup SUCCEEDS and returns null (a crashed fire, or a
+    // stale row from a previous topology). The clustered entrypoint has no reconciler,
+    // so deferring this row to one retained the deleted schedule indefinitely there.
+    mockJobStore = { getJob: jest.fn(async () => null) } as unknown as typeof mockJobStore;
+
+    await expect(service.deleteScheduleForOwner('s1', 'user-1')).resolves.toBe('deleted');
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ scheduleId: 's1', status: 'interrupted' }),
+    );
+    expect(methods.eraseScheduleIfDrained).toHaveBeenCalledWith('s1');
+  });
+
+  it('reports draining when a live run was aborted but has not yet settled', async () => {
+    const { service, methods } = makeDeleteHarness({
+      scheduleId: 's1',
+      scheduledFor: new Date('2026-01-01T00:00:00.000Z'),
+      conversationId: 'c1',
+      status: 'started',
+    });
+    mockJobStore = {
+      getJob: jest.fn(async () => ({
+        status: 'running',
+        createdAt: 1,
+        scheduleId: 's1',
+        scheduledFor: '2026-01-01T00:00:00.000Z',
+      })),
+    } as unknown as typeof mockJobStore;
+    const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
+    manager.abortJob = jest.fn(async () => ({ success: true }));
+    // The run row is still active, so the erase declines; settlement (and the
+    // erase-on-settle it triggers) belongs to the aborted generation's outcome write.
+    methods.eraseScheduleIfDrained = jest.fn(async () => false);
+
+    await expect(service.deleteScheduleForOwner('s1', 'user-1')).resolves.toBe('draining');
   });
 
   afterEach(() => {
     mockJobStore = null;
     jest.restoreAllMocks();
+  });
+});
+
+describe('erase-on-settle', () => {
+  /**
+   * Whichever process records a run's terminal outcome also attempts the deferred
+   * erase of a deleting schedule. This is what makes a delete's `draining` state
+   * converge in EVERY topology — the clustered entrypoint runs no reconciler, so
+   * without it the hidden schedule (and its prompt, which has no TTL) survived its
+   * last run indefinitely there.
+   */
+  it('attempts the deferred erase after recording a terminal outcome', async () => {
+    const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
+    const methods = service.engineDeps.methods as unknown as {
+      getScheduleById: jest.Mock;
+      recordRunOutcome: jest.Mock;
+      eraseScheduleIfDrained: jest.Mock;
+    };
+    methods.getScheduleById = jest.fn(async () => null);
+    methods.recordRunOutcome = jest.fn(async () => undefined);
+    methods.eraseScheduleIfDrained = jest.fn(async () => true);
+
+    await expect(
+      service.recordScheduleOutcome({
+        scheduleId: 's1',
+        scheduledFor: '2026-01-01T00:00:00.000Z',
+        status: 'success',
+      }),
+    ).resolves.toBe(true);
+    expect(methods.eraseScheduleIfDrained).toHaveBeenCalledWith('s1');
+  });
+
+  it('does not erase on a pause, which is not a settlement', async () => {
+    const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
+    const methods = service.engineDeps.methods as unknown as {
+      getScheduleById: jest.Mock;
+      recordRunOutcome: jest.Mock;
+      eraseScheduleIfDrained: jest.Mock;
+    };
+    methods.getScheduleById = jest.fn(async () => null);
+    methods.recordRunOutcome = jest.fn(async () => undefined);
+    methods.eraseScheduleIfDrained = jest.fn(async () => true);
+
+    await service.recordScheduleOutcome({
+      scheduleId: 's1',
+      scheduledFor: '2026-01-01T00:00:00.000Z',
+      status: 'requires_action',
+    });
+    expect(methods.eraseScheduleIfDrained).not.toHaveBeenCalled();
+  });
+});
+
+describe('attachment hold renewal', () => {
+  it('renews the bounded upload hold at fire preflight, best-effort', async () => {
+    const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
+    const methods = service.engineDeps.methods as unknown as {
+      extendFilesTTL: jest.Mock;
+      getFiles: jest.Mock;
+    };
+    // The hold bridges upload -> first consumption; a renewal failure must not fail
+    // the fire (the file resolves now; at worst the hold lapses later).
+    methods.extendFilesTTL = jest.fn(async () => {
+      throw new Error('mongo down');
+    });
+    methods.getFiles = jest.fn(async () => [
+      { file_id: 'f1', filepath: '/f1', filename: 'a.png', type: 'image/png', source: 'local' },
+    ]);
+
+    const files = await service.engineDeps.resolveFiles(['f1'], { id: 'user-1', tenantId: 't1' });
+    expect(methods.extendFilesTTL).toHaveBeenCalledWith(
+      ['f1'],
+      expect.objectContaining({ renewMs: expect.any(Number), maxLifetimeMs: expect.any(Number) }),
+      { user: 'user-1', tenantId: 't1' },
+    );
+    expect(files).toHaveLength(1);
   });
 });
 
