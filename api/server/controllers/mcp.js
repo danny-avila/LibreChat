@@ -10,6 +10,7 @@ const {
   checkAccess,
   isUserSourced,
   MCPErrorCodes,
+  splitMCPToolKey,
   redactServerSecrets,
   redactAllServerSecrets,
   isMCPDomainNotAllowedError,
@@ -177,7 +178,7 @@ const getMCPTools = async (req, res) => {
               continue;
             }
 
-            const toolName = toolKey.split(Constants.mcp_delimiter)[0];
+            const [toolName] = splitMCPToolKey(toolKey, [serverName]);
             server.tools.push({
               name: toolName,
               pluginKey: toolKey,

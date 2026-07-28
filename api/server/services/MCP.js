@@ -6,7 +6,9 @@ const {
   PENDING_STALE_MS,
   MCPOAuthHandler,
   isMCPDomainAllowed,
+  splitMCPToolKey,
   normalizeServerName,
+  resolveMCPServerContext,
   normalizeJsonSchema,
   GenerationJobManager,
   resolveJsonSchemaRefs,
@@ -141,6 +143,50 @@ async function resolveConfigServers(req) {
 async function resolveMcpConfigNames(req) {
   const appConfig = await getAppConfigForRequest(req);
   return Object.keys(appConfig?.mcpConfig || {});
+}
+
+/**
+ * All configured server names in the normalized form tool keys are built with.
+ * Unlike `resolveConfigServers`, this keeps unmodified YAML servers, which
+ * `ensureConfigServers` skips - those are exactly the ones that must still
+ * resolve the tool-key boundary.
+ * @param {import('express').Request} req
+ * @returns {Promise<string[]>}
+ */
+async function resolveMcpServerNames(req) {
+  try {
+    const names = await resolveMcpConfigNames(req);
+    return names.map(normalizeServerName);
+  } catch (error) {
+    logger.warn(
+      '[resolveMcpServerNames] Failed to resolve server names, degrading to empty:',
+      error,
+    );
+    return [];
+  }
+}
+
+/**
+ * Config-source servers and all configured names from a single app-config read,
+ * so the tool-loading path does not pay two lookups for the same principal.
+ * Degrades to empty like `resolveConfigServers` rather than aborting tool loading.
+ * @param {import('express').Request} req
+ * @returns {Promise<{ configServers: Record<string, import('@librechat/api').ParsedServerConfig>, serverNames: string[] }>}
+ */
+async function resolveMcpServerContext(req) {
+  try {
+    const appConfig = await getAppConfigForRequest(req);
+    return await resolveMCPServerContext({
+      mcpConfig: appConfig?.mcpConfig || {},
+      ensureConfigServers: (mcpConfig) => getMCPServersRegistry().ensureConfigServers(mcpConfig),
+    });
+  } catch (error) {
+    logger.warn(
+      '[resolveMcpServerContext] Failed to resolve MCP servers, degrading to empty:',
+      error,
+    );
+    return { configServers: {}, serverNames: [] };
+  }
 }
 
 /**
@@ -613,6 +659,7 @@ async function createMCPTools({
       streamId,
       jobCreatedAt,
       availableTools: result.availableTools,
+      serverName,
       toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
       requestBody,
       requestScopedConnections,
@@ -661,11 +708,22 @@ async function createMCPTool({
   requestScopedConnections,
   config,
   configServers,
+  serverName: resolvedServerName,
   onAvailableTools,
   streamId = null,
   jobCreatedAt,
 }) {
-  const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
+  /** `loadTools` already resolved the server for this key; parsing is the fallback. */
+  const [parsedToolName, parsedServerName] = splitMCPToolKey(
+    toolKey,
+    /** Tool keys embed the normalized server name, so the candidate list must be
+     *  normalized too or a name needing normalization never matches. */
+    resolvedServerName
+      ? [normalizeServerName(resolvedServerName)]
+      : Object.keys(configServers ?? {}).map(normalizeServerName),
+  );
+  const serverName = resolvedServerName ?? parsedServerName;
+  const toolName = parsedToolName;
 
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
@@ -1094,6 +1152,8 @@ module.exports = {
   userCanUseMCPServers,
   getMCPSetupData,
   resolveConfigServers,
+  resolveMcpServerNames,
+  resolveMcpServerContext,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
   createOAuthStart,
