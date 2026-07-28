@@ -9,6 +9,28 @@ import type { Server } from 'node:http';
  */
 const TIMEOUT_SWEEP_RESOLUTION_MS = 30_000;
 
+/**
+ * `createServer` throws ERR_OUT_OF_RANGE unless `headersTimeout <= requestTimeout`, treating
+ * zero on either side as disabled. Assigning the properties afterwards skips that check, and
+ * the resulting mismatch leaves a stalled request body open past the request timeout.
+ */
+const clampHeadersToRequestTimeout = (server: Server, configuredHeadersTimeout?: number): void => {
+  if (server.requestTimeout === 0 || server.headersTimeout === 0) {
+    return;
+  }
+  if (server.headersTimeout <= server.requestTimeout) {
+    return;
+  }
+
+  const clamped = server.requestTimeout;
+  if (configuredHeadersTimeout != null) {
+    logger.warn(
+      `HTTP_HEADERS_TIMEOUT_MS (${configuredHeadersTimeout}ms) exceeds HTTP_REQUEST_TIMEOUT_MS (${clamped}ms), a pairing Node rejects; clamped to the request timeout.`,
+    );
+  }
+  server.headersTimeout = clamped;
+};
+
 const parseTimeout = (value?: string): number | undefined => {
   if (value == null || value.trim() === '') {
     return undefined;
@@ -40,6 +62,8 @@ export const configureServerTimeouts = (
   if (requestTimeout != null) {
     server.requestTimeout = requestTimeout;
   }
+
+  clampHeadersToRequestTimeout(server, headersTimeout);
 
   const configured = [keepAliveTimeout, keepAliveTimeoutBuffer, headersTimeout, requestTimeout];
   if (configured.every((value) => value == null)) {

@@ -67,6 +67,68 @@ describe('configureServerTimeouts', () => {
     expect(server.requestTimeout).toBe(0);
   });
 
+  it('clamps the headers timeout when only a lower request timeout is configured', () => {
+    const server = createServer();
+
+    configureServerTimeouts(server, { HTTP_REQUEST_TIMEOUT_MS: '45000' }, NODE);
+
+    expect(server.requestTimeout).toBe(45_000);
+    expect(server.headersTimeout).toBe(45_000);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('leaves the headers timeout alone when it already fits the request timeout', () => {
+    const server = createServer();
+
+    configureServerTimeouts(server, { HTTP_REQUEST_TIMEOUT_MS: '300000' }, NODE);
+
+    expect(server.headersTimeout).toBe(60_000);
+  });
+
+  it('warns and clamps when both timeouts are configured in conflict', () => {
+    const server = createServer();
+
+    configureServerTimeouts(
+      server,
+      { HTTP_HEADERS_TIMEOUT_MS: '80000', HTTP_REQUEST_TIMEOUT_MS: '45000' },
+      NODE,
+    );
+
+    expect(server.headersTimeout).toBe(45_000);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('a pairing Node rejects'));
+  });
+
+  it('treats zero as disabled on either side rather than clamping', () => {
+    const disabledRequest = createServer();
+    configureServerTimeouts(
+      disabledRequest,
+      { HTTP_HEADERS_TIMEOUT_MS: '5000', HTTP_REQUEST_TIMEOUT_MS: '0' },
+      NODE,
+    );
+    expect(disabledRequest.headersTimeout).toBe(5_000);
+
+    const disabledHeaders = createServer();
+    configureServerTimeouts(
+      disabledHeaders,
+      { HTTP_HEADERS_TIMEOUT_MS: '0', HTTP_REQUEST_TIMEOUT_MS: '10000' },
+      NODE,
+    );
+    expect(disabledHeaders.headersTimeout).toBe(0);
+  });
+
+  it('produces a pairing Node itself accepts', () => {
+    const server = createServer();
+
+    configureServerTimeouts(server, { HTTP_REQUEST_TIMEOUT_MS: '45000' }, NODE);
+
+    expect(() =>
+      createServer({
+        headersTimeout: server.headersTimeout,
+        requestTimeout: server.requestTimeout,
+      }).close(),
+    ).not.toThrow();
+  });
+
   it('warns that Bun does not enforce the configured timeouts', () => {
     configureServerTimeouts(createServer(), { HTTP_KEEP_ALIVE_TIMEOUT_MS: '70000' }, BUN);
 
