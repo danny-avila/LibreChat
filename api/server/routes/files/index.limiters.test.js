@@ -97,6 +97,20 @@ describe('file route limiter wiring', () => {
     expect(hits.uploadUser).toBe(0);
   });
 
+  /* Non-strict routing sends `/usage/` to the same handler, so an exact path
+   * comparison would bill a trailing-slash client's heartbeats to the upload
+   * quota and hand them file-upload violations. */
+  it('routes a trailing-slash /usage/ through the usage limiter too', async () => {
+    const response = await request(app)
+      .post('/api/files/usage/')
+      .send({ file_ids: ['f1'] });
+
+    expect(response.status).toBe(200);
+    expect(hits.usage).toBe(1);
+    expect(hits.uploadIp).toBe(0);
+    expect(hits.uploadUser).toBe(0);
+  });
+
   it('still applies the upload limiters to real uploads', async () => {
     await request(app).post('/api/files').send({});
 

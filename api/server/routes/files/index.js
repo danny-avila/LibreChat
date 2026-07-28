@@ -33,6 +33,11 @@ const initialize = async () => {
   const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
   const fileUsageLimiter = createFileUsageLimiter();
 
+  /** Non-strict routing means `/usage/` reaches the same handler, so match the
+   *  route the way Express does. An exact comparison would push a
+   *  trailing-slash request onto the upload quota instead. */
+  const isUsagePath = (path) => path.replace(/\/+$/, '') === '/usage';
+
   /** Apply rate limiters to all POST routes (excluding /speech which is handled
    *  above). `/usage` is a metadata touch, so it gets its own limiter rather
    *  than consuming upload quota, but it is never left unmetered. */
@@ -40,7 +45,7 @@ const initialize = async () => {
     if (req.method !== 'POST' || req.path.startsWith('/speech')) {
       return next();
     }
-    if (req.path === '/usage') {
+    if (isUsagePath(req.path)) {
       return fileUsageLimiter(req, res, next);
     }
     return fileUploadIpLimiter(req, res, (err) => {

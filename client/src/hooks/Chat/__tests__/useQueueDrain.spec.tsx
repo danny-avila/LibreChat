@@ -150,6 +150,7 @@ describe('useQueueDrain', () => {
       ]);
     });
 
+    mockMarkFilesUsage.mockClear();
     act(() => {
       setters.setRunEnd!(runEnd());
     });
@@ -168,6 +169,7 @@ describe('useQueueDrain', () => {
       ]);
     });
 
+    mockMarkFilesUsage.mockClear();
     act(() => {
       setters.setRunEnd!(runEnd());
     });
@@ -189,6 +191,7 @@ describe('useQueueDrain', () => {
       ]);
     });
 
+    mockMarkFilesUsage.mockClear();
     act(() => {
       setters.setRunEnd!(runEnd());
     });
@@ -213,6 +216,7 @@ describe('useQueueDrain', () => {
     });
     ask.mockReturnValue(false);
 
+    mockMarkFilesUsage.mockClear();
     act(() => {
       setters.setRunEnd!(runEnd());
     });
@@ -232,16 +236,19 @@ describe('useQueueDrain', () => {
         ]);
       });
 
-      expect(mockMarkFilesUsage).not.toHaveBeenCalled();
-      act(() => {
-        jest.advanceTimersByTime(30 * 60 * 1000);
-      });
+      /* Immediate, then on each interval. */
+      expect(mockMarkFilesUsage).toHaveBeenCalledTimes(1);
       expect(mockMarkFilesUsage).toHaveBeenCalledWith({ file_ids: ['held'] });
 
       act(() => {
         jest.advanceTimersByTime(30 * 60 * 1000);
       });
       expect(mockMarkFilesUsage).toHaveBeenCalledTimes(2);
+
+      act(() => {
+        jest.advanceTimersByTime(30 * 60 * 1000);
+      });
+      expect(mockMarkFilesUsage).toHaveBeenCalledTimes(3);
     } finally {
       jest.useRealTimers();
     }
@@ -261,6 +268,37 @@ describe('useQueueDrain', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  /** Items queued during the first turn stay keyed under NEW_CONVO until that
+   *  run ends, so renewing only the active id would skip them for its whole
+   *  duration. */
+  it('renews the pre-migration NEW_CONVO queue alongside the active one', async () => {
+    setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [
+        { ...queuedMessage('n1', 'queued pre-migration'), files: [{ file_id: 'pending-migrate' }] },
+      ]);
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { ...queuedMessage('q1', 'queued after'), files: [{ file_id: 'already-migrated' }] },
+      ]);
+    });
+
+    await waitFor(() => expect(mockMarkFilesUsage).toHaveBeenCalled());
+    const sent = mockMarkFilesUsage.mock.calls.flatMap((call) => call[0].file_ids);
+    expect(sent).toContain('pending-migrate');
+    expect(sent).toContain('already-migrated');
+  });
+
+  it('does not double-count the queue before migration', async () => {
+    setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [
+        { ...queuedMessage('n1', 'new convo'), files: [{ file_id: 'only-once' }] },
+      ]);
+    }, Constants.NEW_CONVO as string);
+
+    await waitFor(() => expect(mockMarkFilesUsage).toHaveBeenCalled());
+    const sent = mockMarkFilesUsage.mock.calls.flatMap((call) => call[0].file_ids);
+    expect(sent).toEqual(['only-once']);
   });
 
   it('passes carried quotes + manual skills through as overrides', async () => {
