@@ -660,23 +660,10 @@ export default function useResumableSSE(
     setShowStopButton,
   });
 
-  /**
-   * Run steps read the edit prefix from the submission, so once a SYNC has
-   * replaced the response with the completion-local snapshot they must stop
-   * offsetting — the prefix those indices were relative to is gone. Applied
-   * here rather than at each dispatch so every path (live, replay, pending)
-   * agrees, and so run steps and activity labels share one index space.
-   */
-  const stepHandler = useCallback<typeof rawStepHandler>(
-    (event, submission) =>
-      rawStepHandler(
-        event,
-        editPrefixClearedRef.current && submission != null
-          ? ({ ...submission, editPrefixLength: 0 } as typeof submission)
-          : submission,
-      ),
-    [rawStepHandler],
-  );
+  /** Run steps dispatch straight through: their index math is upstream's and
+   *  is deliberately left untouched by this feature. Only the activity-label
+   *  handler applies the resume-aware prefix offset. */
+  const stepHandler = rawStepHandler;
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
