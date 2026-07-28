@@ -87,10 +87,14 @@ function AskUserQuestionPopoverPanel({
         onKeyDown={handlePopoverKeyDown}
       >
         <div className="flex items-start justify-between gap-2 p-2">
-          <div>
-            <p className="text-sm font-medium text-text-primary">{liveAsk.question.question}</p>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-text-primary [overflow-wrap:anywhere]">
+              {liveAsk.question.question}
+            </p>
             {liveAsk.question.description != null && liveAsk.question.description.length > 0 && (
-              <p className="mt-0.5 text-xs text-text-secondary">{liveAsk.question.description}</p>
+              <p className="mt-0.5 text-xs text-text-secondary [overflow-wrap:anywhere]">
+                {liveAsk.question.description}
+              </p>
             )}
           </div>
           <div className="flex items-center">
@@ -138,7 +142,7 @@ function AskUserQuestionPopoverPanel({
               >
                 {isChecked ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : index + 1}
               </span>
-              <span className="flex-1">{option.label}</span>
+              <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{option.label}</span>
             </button>
           );
         })}
