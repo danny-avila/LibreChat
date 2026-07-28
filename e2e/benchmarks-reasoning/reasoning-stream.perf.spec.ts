@@ -1,0 +1,266 @@
+import fs from 'node:fs';
+import { expect, test } from '@playwright/test';
+import type { Page, TestInfo } from '@playwright/test';
+import {
+  MOCK_ENDPOINTS,
+  NEW_CHAT_PATH,
+  messagesView,
+  selectMockEndpoint,
+  sendMessage,
+} from '../specs/mock/helpers';
+import { buildTextSection, buildThinkSection, countModelChunks, END_MARKER } from './payload';
+
+type RenderTally = Record<string, { count: number; time: number }>;
+
+type PerfSnapshot = {
+  renders: RenderTally;
+  longTasks: number[];
+};
+
+/**
+ * The react-scan bundle is injected from disk so the repo does not need it as
+ * a dependency; point REACT_SCAN_PATH at `react-scan/dist/auto.global.js`.
+ */
+function resolveReactScanPath(): string {
+  const fromEnv = process.env.REACT_SCAN_PATH;
+  if (fromEnv && fs.existsSync(fromEnv)) {
+    return fromEnv;
+  }
+  return require.resolve('react-scan/dist/auto.global.js');
+}
+
+const TALLY_SETUP = `(() => {
+  const perf = {
+    renders: Object.create(null),
+    longTasks: [],
+    reset() {
+      this.renders = Object.create(null);
+      this.longTasks = [];
+    },
+  };
+  window.__PERF__ = perf;
+  try {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        perf.longTasks.push(entry.duration);
+      }
+    }).observe({ type: 'longtask', buffered: true });
+  } catch (_error) {
+    /* longtask unsupported: totals stay empty */
+  }
+  const nameOf = (fiber) => {
+    let type = fiber && fiber.type;
+    for (let depth = 0; depth < 4 && type; depth += 1) {
+      if (typeof type === 'function') {
+        return type.displayName || type.name || null;
+      }
+      if (typeof type === 'object') {
+        if (type.displayName) {
+          return type.displayName;
+        }
+        type = type.type || type.render;
+        continue;
+      }
+      return String(type);
+    }
+    return null;
+  };
+  const configure = () => {
+    if (typeof window.reactScan !== 'function') {
+      return false;
+    }
+    window.reactScan({
+      enabled: true,
+      log: false,
+      showToolbar: false,
+      animationSpeed: 'off',
+      trackUnnecessaryRenders: false,
+      dangerouslyForceRunInProduction: true,
+      onRender: (fiber, renders) => {
+        for (const render of renders) {
+          const name = render.componentName || nameOf(fiber) || 'anonymous';
+          let slot = perf.renders[name];
+          if (!slot) {
+            slot = { count: 0, time: 0 };
+            perf.renders[name] = slot;
+          }
+          slot.count += render.count || 1;
+          slot.time += render.time || 0;
+        }
+      },
+    });
+    return true;
+  };
+  if (!configure()) {
+    const timer = setInterval(() => {
+      if (configure()) {
+        clearInterval(timer);
+      }
+    }, 50);
+  }
+})();`;
+
+async function snapshotPerf(page: Page): Promise<PerfSnapshot> {
+  return page.evaluate(() => {
+    const perf = (window as unknown as { __PERF__: PerfSnapshot }).__PERF__;
+    return { renders: perf.renders, longTasks: perf.longTasks.slice() };
+  });
+}
+
+async function resetPerf(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    (window as unknown as { __PERF__: { reset(): void } }).__PERF__.reset();
+  });
+}
+
+function totals(snapshot: PerfSnapshot): { renders: number; time: number } {
+  let renders = 0;
+  let time = 0;
+  for (const slot of Object.values(snapshot.renders)) {
+    renders += slot.count;
+    time += slot.time;
+  }
+  return { renders, time };
+}
+
+function topComponents(snapshot: PerfSnapshot, limit: number): string[] {
+  return Object.entries(snapshot.renders)
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, limit)
+    .map(
+      ([name, slot]) =>
+        `${name.padEnd(28)} renders=${String(slot.count).padStart(6)} time=${slot.time.toFixed(1)}ms`,
+    );
+}
+
+async function attachSnapshot(
+  testInfo: TestInfo,
+  name: string,
+  snapshot: PerfSnapshot,
+  extra: Record<string, number>,
+): Promise<void> {
+  await testInfo.attach(name, {
+    body: JSON.stringify({ ...extra, ...snapshot }, null, 2),
+    contentType: 'application/json',
+  });
+}
+
+test.describe('reasoning stream perf (react-scan)', () => {
+  test('one long unsplit reasoning + markdown reply stays render-bounded', async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(6 * 60 * 1000);
+
+    const thinkSection = buildThinkSection();
+    const textSection = buildTextSection();
+    const thinkChunks = countModelChunks(thinkSection);
+    const textChunks = countModelChunks(textSection);
+
+    await page.addInitScript({ content: fs.readFileSync(resolveReactScanPath(), 'utf8') });
+    await page.addInitScript({ content: TALLY_SETUP });
+
+    /** First load through the vite dev server transforms the module graph. */
+    await page.goto(NEW_CHAT_PATH, { timeout: 180_000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+    const streamStart = Date.now();
+    await sendMessage(page, 'Stream the long reasoning benchmark reply.');
+    await resetPerf(page);
+
+    await expect(messagesView(page).getByText(END_MARKER)).toBeVisible({
+      timeout: 4 * 60 * 1000,
+    });
+    const streamMs = Date.now() - streamStart;
+    const streaming = await snapshotPerf(page);
+
+    /**
+     * The whole reasoning section must land in ONE think part — a single
+     * Thoughts toggle. More than one means something re-split the reasoning.
+     */
+    const thoughtToggles = messagesView(page).getByRole('button', {
+      name: /^(Thoughts|Thinking)$/,
+    });
+    await expect(thoughtToggles).toHaveCount(1);
+
+    await resetPerf(page);
+    const input = page.getByRole('textbox', { name: 'Message input' });
+    await input.click();
+    await input.pressSequentially('typing latency probe after long transcript', { delay: 25 });
+    const typing = await snapshotPerf(page);
+
+    const streamTotals = totals(streaming);
+    const typingTotals = totals(typing);
+    const longTaskTotal = streaming.longTasks.reduce((sum, duration) => sum + duration, 0);
+    const worstLongTask = streaming.longTasks.reduce((max, duration) => Math.max(max, duration), 0);
+
+    console.log(`\n=== Streaming phase (${streamMs}ms wall) ===`);
+    console.log(`model chunks: think=${thinkChunks} text=${textChunks}`);
+    console.log(
+      `total renders=${streamTotals.renders} render-time=${streamTotals.time.toFixed(0)}ms ` +
+        `longtask-total=${longTaskTotal.toFixed(0)}ms worst-longtask=${worstLongTask.toFixed(0)}ms`,
+    );
+    for (const line of topComponents(streaming, 15)) {
+      console.log(`  ${line}`);
+    }
+    console.log('key components:');
+    for (const component of ['ThinkingContent', 'MarkdownBlock', 'MarkdownBlocks', 'TextPart']) {
+      const slot = streaming.renders[component];
+      console.log(
+        `  ${component.padEnd(20)} renders=${slot?.count ?? 0} time=${(slot?.time ?? 0).toFixed(1)}ms`,
+      );
+    }
+    console.log('=== Typing phase (40 keys) ===');
+    console.log(
+      `total renders=${typingTotals.renders} render-time=${typingTotals.time.toFixed(0)}ms`,
+    );
+    for (const line of topComponents(typing, 10)) {
+      console.log(`  ${line}`);
+    }
+
+    await attachSnapshot(testInfo, 'streaming-renders.json', streaming, {
+      streamMs,
+      thinkChunks,
+      textChunks,
+    });
+    await attachSnapshot(testInfo, 'typing-renders.json', typing, {});
+
+    /**
+     * rAF coalescing must keep per-token work bounded: the think box may
+     * re-render at most once per animation frame, so its render count has to
+     * stay well below one render per streamed chunk.
+     */
+    const thinkingContentRenders = streaming.renders['ThinkingContent']?.count ?? 0;
+    expect(thinkingContentRenders).toBeGreaterThan(10);
+    expect(thinkingContentRenders).toBeLessThan(thinkChunks);
+
+    /**
+     * Markdown must not re-render every block on every token — total
+     * MarkdownBlock renders stay in the order of frames + blocks, far below
+     * blocks × tokens.
+     */
+    const markdownBlockRenders = streaming.renders['MarkdownBlock']?.count ?? 0;
+    expect(markdownBlockRenders).toBeLessThan(textChunks * 3);
+
+    /** The main thread must not seize up while the huge block streams. */
+    expect(worstLongTask).toBeLessThan(1000);
+    expect(longTaskTotal).toBeLessThan(streamMs * 0.5);
+
+    /**
+     * Typing after the long transcript must not re-render the transcript:
+     * message-content components stay quiet while the composer updates.
+     */
+    const transcriptComponents = [
+      'MarkdownBlock',
+      'MarkdownBlocks',
+      'Markdown',
+      'ThinkingContent',
+      'TextPart',
+      'Part',
+      'MessageContent',
+    ];
+    for (const component of transcriptComponents) {
+      const renders = typing.renders[component]?.count ?? 0;
+      expect(renders, `${component} re-rendered while typing`).toBeLessThanOrEqual(2);
+    }
+  });
+});
