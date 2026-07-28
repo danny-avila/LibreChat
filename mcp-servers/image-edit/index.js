@@ -11,7 +11,6 @@ const DASHSCOPE_API_KEY = process.env.DASHSCOPE_API_KEY;
 const DASHSCOPE_BASE_URL = process.env.DASHSCOPE_BASE_URL || 'https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation';
 const MODEL = process.env.IMAGE_EDIT_MODEL || 'qwen-image-edit-max';
 const IMAGES_PATH = process.env.IMAGES_PATH || '/app/generated_files/';
-const BASE_URL = process.env.IMAGES_BASE_URL || '';
 
 if (!DASHSCOPE_API_KEY) {
   console.error('Error: DASHSCOPE_API_KEY environment variable is required');
@@ -178,11 +177,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         console.error(`Warning: Could not save image to disk: ${err.message}`);
       }
 
-      const downloadUrl = BASE_URL ? `${BASE_URL}/generated_files/${filename}` : null;
-      const downloadInfo = downloadUrl ? `\n Descàrrega: ${downloadUrl}` : '';
-
       const responseText = savedPath
-        ? `Image edited successfully. Saved to: ${filename}.${downloadInfo} Prompt: "${prompt}"`
+        ? `Image edited successfully. Saved to: ${filename}. Prompt: "${prompt}"`
         : `Image edited successfully. Prompt: "${prompt}"`;
 
       return {
