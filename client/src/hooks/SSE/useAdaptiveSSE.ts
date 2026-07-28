@@ -30,12 +30,12 @@ export default function useAdaptiveSSE(
 
   useSSE(resumableEnabled ? null : submission, chatHelpers, isAddedRequest, runIndex);
 
-  const { streamId } = useResumableSSE(
+  const { streamId, resolvedStreamId } = useResumableSSE(
     resumableEnabled ? submission : null,
     chatHelpers,
     isAddedRequest,
     runIndex,
   );
 
-  return { streamId, resumableEnabled };
+  return { streamId, resolvedStreamId, resumableEnabled };
 }

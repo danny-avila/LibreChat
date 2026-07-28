@@ -76,7 +76,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   const chatHelpers = useChatHelpers(index, conversationId);
   const addedChatHelpers = useAddedResponse();
 
-  const { streamId } = useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
+  const { resolvedStreamId } = useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
 
   // Auto-resume if navigating back to conversation with active job.
   // Wait for messages to load AND the warm-cache background revalidation to
@@ -87,7 +87,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
     chatHelpers.getMessages,
     index,
     !isLoading && !isFetching,
-    streamId,
+    resolvedStreamId,
   );
 
   // Auto-send queued follow-up messages once a run finishes cleanly.

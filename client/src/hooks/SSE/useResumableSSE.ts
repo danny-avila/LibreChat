@@ -542,6 +542,8 @@ export default function useResumableSSE(
   );
   const [_completed, setCompleted] = useState(new Set());
   const [streamId, setStreamId] = useState<string | null>(null);
+  // Survives local transport exhaustion so terminal polling keeps the real job identity.
+  const [resolvedStreamId, setResolvedStreamId] = useState<string | null>(null);
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
@@ -881,6 +883,7 @@ export default function useResumableSSE(
             (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
             sse.close();
             setStreamId(null);
+            setResolvedStreamId(null);
             optimisticStreamIdsRef.current.delete(currentStreamId);
             createdStreamIdsRef.current.delete(currentStreamId);
             return;
@@ -1304,6 +1307,7 @@ export default function useResumableSSE(
             endedAt: Date.now(),
           });
           setStreamId(null);
+          setResolvedStreamId(null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
           createdStreamIdsRef.current.delete(currentStreamId);
           reconnectAttemptRef.current = 0;
@@ -1404,6 +1408,7 @@ export default function useResumableSSE(
             endedAt: Date.now(),
           });
           setStreamId(null);
+          setResolvedStreamId(null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
           createdStreamIdsRef.current.delete(currentStreamId);
           reconnectAttemptRef.current = 0;
@@ -1708,6 +1713,7 @@ export default function useResumableSSE(
         // it. A confirmed active stream always belongs to a later/live run.
         clearTerminalEventSeen(queryClient, resumeStreamId);
         setStreamId(resumeStreamId);
+        setResolvedStreamId(resumeStreamId);
         // Optimistically add to active jobs (in case it's not already there)
         addActiveJob(resumeStreamId);
         subscribeToStream(resumeStreamId, submission, true); // isResume=true
@@ -1727,6 +1733,7 @@ export default function useResumableSSE(
             clearDisconnectedRunRecovery(queryClient, newStreamId);
           }
           setStreamId(newStreamId);
+          setResolvedStreamId(newStreamId);
           // Optimistically add to active jobs
           addActiveJob(newStreamId);
           // Queue title generation if this is a new conversation (first message).
@@ -1794,5 +1801,5 @@ export default function useResumableSSE(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);
 
-  return { streamId };
+  return { streamId, resolvedStreamId };
 }

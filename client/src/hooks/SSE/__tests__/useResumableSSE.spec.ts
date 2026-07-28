@@ -1758,7 +1758,7 @@ describe('useResumableSSE', () => {
     const submission = buildSubmission({ conversation: {} });
     const chatHelpers = buildChatHelpers();
 
-    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    const { result, unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
 
     await flushMicrotasks();
 
@@ -1792,6 +1792,8 @@ describe('useResumableSSE', () => {
       responseMessageId: 'resp-1',
     });
     expect(window.location.pathname).toBe('/c/stream-123');
+    expect(result.current.streamId).toBeNull();
+    expect(result.current.resolvedStreamId).toBe('stream-123');
     expect(mockErrorHandler).toHaveBeenCalledTimes(1);
     expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(false);
     expect(mockSetRunEnd).not.toHaveBeenCalled();
@@ -1827,7 +1829,7 @@ describe('useResumableSSE', () => {
     const submission = buildSubmission();
     const chatHelpers = buildChatHelpers();
 
-    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    const { result, unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
 
     await act(async () => {
       await Promise.resolve();
@@ -1860,6 +1862,8 @@ describe('useResumableSSE', () => {
     });
 
     expect(sse.close).toHaveBeenCalled();
+    expect(result.current.streamId).toBeNull();
+    expect(result.current.resolvedStreamId).toBeNull();
     mockSetIsSubmitting.mockClear();
     mockSetShowStopButton.mockClear();
 
