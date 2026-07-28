@@ -1,6 +1,7 @@
 export {
   GenerationJobManager,
   GenerationJobManagerClass,
+  type CreateGenerationJobOptions,
   type GenerationJobManagerOptions,
 } from './GenerationJobManager';
 
@@ -11,6 +12,7 @@ export type {
   UsageMetadata,
   AbortResult,
   JobStatus,
+  JobMetadataPatch,
   IJobStore,
 } from './interfaces/IJobStore';
 // Canonical "is this approval live?" predicate — one definition shared by the

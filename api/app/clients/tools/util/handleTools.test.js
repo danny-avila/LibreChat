@@ -42,6 +42,7 @@ jest.mock('~/server/services/MCP', () => ({
     canUseServers: jest.fn().mockResolvedValue(true),
   })),
   resolveConfigServers: jest.fn().mockResolvedValue({}),
+  resolveMcpServerContext: jest.fn(async () => ({ configServers: {}, serverNames: [] })),
 }));
 
 jest.mock('~/config', () => ({
@@ -319,6 +320,7 @@ describe('Tool Handlers', () => {
       const serverName = 'body-scoped';
       const toolKey = `search${Constants.mcp_delimiter}${serverName}`;
       const requestBody = { conversationId: 'conv-123', messageId: 'msg-123' };
+      const jobCreatedAt = 1234;
       const serverConfig = {
         type: 'streamable-http',
         url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
@@ -336,6 +338,7 @@ describe('Tool Handlers', () => {
             user: { id: fakeUser._id.toString(), role: 'USER' },
             body: requestBody,
           },
+          jobCreatedAt,
         },
       });
 
@@ -348,8 +351,57 @@ describe('Tool Handlers', () => {
       expect(mockCreateMCPTool).toHaveBeenCalledWith(
         expect.objectContaining({
           requestBody,
+          jobCreatedAt,
           toolKey,
           config: serverConfig,
+        }),
+      );
+    });
+
+    it('resolves an MCP tool whose raw name itself contains the delimiter substring', async () => {
+      // Regression test for https://github.com/danny-avila/LibreChat/issues/14440:
+      // gateways that prefix aggregated tool names by server (e.g. LiteLLM's
+      // MCP proxy) can produce a raw tool name that already contains "_mcp_"
+      // (e.g. GitLab's own "get_mcp_server_version" tool becomes
+      // "gitlab-get_mcp_server_version" once gateway-prefixed). Once
+      // LibreChat appends its own server suffix, the combined key has the
+      // delimiter twice - a naive split used to silently derive the wrong
+      // server name ("server_version" instead of "gitlab") and drop the tool.
+      const serverName = 'gitlab';
+      const rawToolName = 'gitlab-get_mcp_server_version';
+      const toolKey = `${rawToolName}${Constants.mcp_delimiter}${serverName}`;
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://litellm.example.com/gitlab/mcp',
+        source: 'yaml',
+      };
+
+      mockGetServerConfig.mockResolvedValue(serverConfig);
+      mockCreateMCPTool.mockResolvedValue({ name: 'loaded-mcp-tool' });
+
+      const result = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [toolKey],
+        options: {
+          req: {
+            user: { id: fakeUser._id.toString(), role: 'USER' },
+          },
+        },
+      });
+
+      expect(result.loadedTools).toEqual([{ name: 'loaded-mcp-tool' }]);
+      expect(mockGetServerConfig).toHaveBeenCalledWith(
+        serverName,
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(mockCreateMCPTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolKey,
+          config: serverConfig,
+          /** The resolved server rides along, so `createMCPTool` uses it for auth,
+           *  reconnection and invocation instead of re-parsing the ambiguous key. */
+          serverName,
         }),
       );
     });

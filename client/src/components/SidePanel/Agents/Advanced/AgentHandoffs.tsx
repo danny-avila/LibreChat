@@ -36,25 +36,50 @@ const AgentHandoffs: React.FC<AgentHandoffsProps> = ({ field, currentAgentId }) 
   const edges = useMemo(() => field.value ?? [], [field.value]);
 
   const { options, getAgent } = useSelectableAgents({ currentAgentId });
+  const selectedAgentIds = useMemo(
+    () => new Set(edges.map((edge) => getTargetAgentId(edge.to))),
+    [edges],
+  );
+  const addAgentOptions = useMemo(
+    () =>
+      options.filter(
+        (option) => typeof option.value === 'string' && !selectedAgentIds.has(option.value),
+      ),
+    [options, selectedAgentIds],
+  );
 
   useEffect(() => {
-    if (newAgentId && edges.length < MAX_HANDOFFS) {
+    if (!newAgentId) {
+      return;
+    }
+
+    if (edges.length < MAX_HANDOFFS && !selectedAgentIds.has(newAgentId)) {
       const newEdge: GraphEdge = { from: currentAgentId, to: newAgentId, edgeType: 'handoff' };
       field.onChange([...edges, newEdge]);
-      setNewAgentId('');
     }
-  }, [newAgentId, edges, field, currentAgentId]);
+    setNewAgentId('');
+  }, [newAgentId, edges, field, currentAgentId, selectedAgentIds]);
 
   const removeHandoffAt = (index: number) => {
     field.onChange(edges.filter((_, i) => i !== index));
-    setExpandedIndices((prev) => {
-      const next = new Set(prev);
-      next.delete(index);
-      return next;
-    });
+    setExpandedIndices(
+      (prev) =>
+        new Set(
+          Array.from(prev)
+            .filter((expandedIndex) => expandedIndex !== index)
+            .map((expandedIndex) => (expandedIndex > index ? expandedIndex - 1 : expandedIndex)),
+        ),
+    );
   };
 
   const updateHandoffAt = (index: number, agentId: string) => {
+    const isAlreadySelected = edges.some(
+      (edge, edgeIndex) => edgeIndex !== index && getTargetAgentId(edge.to) === agentId,
+    );
+    if (isAlreadySelected) {
+      return;
+    }
+
     const updated = [...edges];
     updated[index] = { ...updated[index], to: agentId };
     field.onChange(updated);
@@ -101,6 +126,11 @@ const AgentHandoffs: React.FC<AgentHandoffsProps> = ({ field, currentAgentId }) 
           const targetAgentId = getTargetAgentId(edge.to);
           const isExpanded = expandedIndices.has(idx);
           const targetName = getAgent(targetAgentId)?.name ?? localize('com_ui_agent');
+          const rowOptions = options.filter(
+            (option) =>
+              typeof option.value === 'string' &&
+              (option.value === targetAgentId || !selectedAgentIds.has(option.value)),
+          );
 
           return (
             <React.Fragment key={idx}>
@@ -111,7 +141,7 @@ const AgentHandoffs: React.FC<AgentHandoffsProps> = ({ field, currentAgentId }) 
                   removeLabel={localize('com_ui_agent_handoff_remove', { 0: targetName })}
                 >
                   <AgentSelectInline
-                    options={options}
+                    options={rowOptions}
                     selectedValue={targetAgentId}
                     onChange={(id) => updateHandoffAt(idx, id)}
                     displayValue={getAgent(targetAgentId)?.name ?? ''}
@@ -207,7 +237,7 @@ const AgentHandoffs: React.FC<AgentHandoffsProps> = ({ field, currentAgentId }) 
           <>
             {edges.length > 0 && <Connector />}
             <AddAgentSelect
-              options={options}
+              options={addAgentOptions}
               onSelect={setNewAgentId}
               placeholder={localize('com_ui_agent_handoff_add')}
               ariaLabel={localize('com_ui_agent_var', { 0: localize('com_ui_add') })}

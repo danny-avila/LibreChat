@@ -67,6 +67,40 @@ describe('getUserMCPAuthMap', () => {
     });
   });
 
+  describe('tool-key boundary', () => {
+    it('resolves the plugin key from the last delimiter for a gateway-prefixed tool name', async () => {
+      /** The raw upstream name carries the delimiter, so first-occurrence extraction
+       *  asked for `mcp_server_version_mcp_gitlab` and silently resolved no
+       *  customUserVars, leaving API-key/header placeholders unfilled. */
+      mockGetPluginAuthMap.mockResolvedValue({});
+
+      await getUserMCPAuthMap({
+        userId: 'user123',
+        tools: ['gitlab-get_mcp_server_version_mcp_gitlab'],
+        findPluginAuthsByKeys: mockFindPluginAuthsByKeys,
+      });
+
+      expect(mockGetPluginAuthMap).toHaveBeenCalledWith(
+        expect.objectContaining({ pluginKeys: ['mcp_gitlab'] }),
+      );
+    });
+
+    it('resolves a configured server whose own name contains the delimiter', async () => {
+      mockGetPluginAuthMap.mockResolvedValue({});
+
+      await getUserMCPAuthMap({
+        userId: 'user123',
+        tools: ['search_mcp_Google_mcp_Workspace'],
+        serverNames: ['Google_mcp_Workspace'],
+        findPluginAuthsByKeys: mockFindPluginAuthsByKeys,
+      });
+
+      expect(mockGetPluginAuthMap).toHaveBeenCalledWith(
+        expect.objectContaining({ pluginKeys: ['mcp_Google_mcp_Workspace'] }),
+      );
+    });
+  });
+
   describe('Edge Cases', () => {
     it('should return empty object when no tools have mcpRawServerName', async () => {
       const toolInstances = [

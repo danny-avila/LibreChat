@@ -47,6 +47,7 @@ import {
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
 import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
+import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
@@ -1361,7 +1362,7 @@ export async function createRun({
   const graphConfig: RunConfig['graphConfig'] = {
     signal,
     agents: agentInputs,
-    edges: agents[0].edges,
+    edges: agents[0].edges ?? [],
   };
 
   if (agentInputs.length > 1 || ((graphConfig as MultiAgentGraphConfig).edges?.length ?? 0) > 0) {
@@ -1558,6 +1559,7 @@ export async function createRun({
   };
   const run = await Run.create(runConfig);
 
+  applyCustomHandoffPromptKeyCompatibility(run, runConfig.graphConfig);
   applyTestRunHook(run, { messages, agents });
   return run;
 }

@@ -7,6 +7,7 @@ import type {
   UsageMetadata,
   IJobStore,
   JobStatus,
+  JobMetadataPatch,
   JobStatusTransition,
   IdempotencyClaimValue,
   IdempotencyClaimResult,
@@ -120,22 +121,27 @@ export class InMemoryJobStore implements IJobStore {
     userId: string,
     conversationId?: string,
     tenantId?: string,
+    initialMetadata: JobMetadataPatch = {},
   ): Promise<SerializableJobData> {
-    if (this.jobs.size >= this.maxJobs) {
+    const previousCreatedAt = this.jobs.get(streamId)?.createdAt;
+    if (previousCreatedAt == null && this.jobs.size >= this.maxJobs) {
       await this.evictOldest();
     }
 
+    const now = Date.now();
     const job: SerializableJobData = {
+      ...initialMetadata,
       streamId,
       userId,
       ...(tenantId && { tenantId }),
       status: 'running',
-      createdAt: Date.now(),
-      conversationId,
+      createdAt: previousCreatedAt == null ? now : Math.max(now, previousCreatedAt + 1),
+      ...(conversationId !== undefined && { conversationId }),
       syncSent: false,
     };
 
     this.jobs.set(streamId, job);
+    this.contentState.delete(streamId);
     // Clear any prior activity timestamp so a replacement reusing this streamId
     // (the controller handles job replacement) falls back to the fresh createdAt
     // and isn't reaped on the previous generation's stale last-activity time.
@@ -165,9 +171,13 @@ export class InMemoryJobStore implements IJobStore {
     return this.jobs.get(streamId) ?? null;
   }
 
-  async updateJob(streamId: string, updates: Partial<SerializableJobData>): Promise<void> {
+  async updateJob(
+    streamId: string,
+    updates: Partial<SerializableJobData>,
+    expectedCreatedAt?: number,
+  ): Promise<void> {
     const job = this.jobs.get(streamId);
-    if (!job) {
+    if (!job || (expectedCreatedAt != null && job.createdAt !== expectedCreatedAt)) {
       return;
     }
     // Plain field writer. Membership-aware status transitions
@@ -188,6 +198,12 @@ export class InMemoryJobStore implements IJobStore {
     }
     if (args.expectActionId != null && job.pendingActionId !== args.expectActionId) {
       return false;
+    }
+    if (args.expectCreatedAt != null && job.createdAt !== args.expectCreatedAt) {
+      return false;
+    }
+    if (['complete', 'error', 'aborted'].includes(args.to)) {
+      this.parkQueuedSteers(streamId, job, Date.now());
     }
     job.status = args.to;
     if (args.patch) {
@@ -217,13 +233,25 @@ export class InMemoryJobStore implements IJobStore {
     this.idempotencyClaims.delete(key);
   }
 
-  async deleteJob(streamId: string): Promise<void> {
+  async deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    if (!job || (expectedCreatedAt != null && job.createdAt !== expectedCreatedAt)) {
+      return false;
+    }
+
     this.jobs.delete(streamId);
     this.contentState.delete(streamId);
     this.lastActivity.delete(streamId);
     this.steerQueues.delete(streamId);
     this.closedSteerQueues.delete(streamId);
+    const userKey = job.tenantId ? `${job.tenantId}:${job.userId}` : job.userId;
+    const userJobs = this.userJobMap.get(userKey);
+    userJobs?.delete(streamId);
+    if (userJobs?.size === 0) {
+      this.userJobMap.delete(userKey);
+    }
     logger.debug(`[InMemoryJobStore] Deleted job: ${streamId}`);
+    return true;
   }
 
   /**
@@ -231,8 +259,9 @@ export class InMemoryJobStore implements IJobStore {
    * stale-job failsafe in cleanup() reaps on inactivity rather than total age,
    * mirroring RedisJobStore refreshing the running TTL on each appendChunk.
    */
-  recordActivity(streamId: string): void {
-    if (this.jobs.has(streamId)) {
+  recordActivity(streamId: string, expectedCreatedAt?: number): void {
+    const job = this.jobs.get(streamId);
+    if (job && (expectedCreatedAt == null || job.createdAt === expectedCreatedAt)) {
       this.lastActivity.set(streamId, Date.now());
     }
   }
@@ -253,7 +282,7 @@ export class InMemoryJobStore implements IJobStore {
 
   async cleanup(): Promise<number> {
     const now = Date.now();
-    const toDelete: string[] = [];
+    const toDelete: Array<{ streamId: string; createdAt: number }> = [];
     let staleRunning = 0;
 
     // Expired parked steers are otherwise only purged by a claim.
@@ -276,7 +305,7 @@ export class InMemoryJobStore implements IJobStore {
       if (isFinished && job.completedAt) {
         // TTL of 0 means immediate cleanup, otherwise wait for TTL to expire
         if (this.ttlAfterComplete === 0 || now - job.completedAt > this.ttlAfterComplete) {
-          toDelete.push(streamId);
+          toDelete.push({ streamId, createdAt: job.createdAt });
         }
       } else if (job.status === 'requires_action' && isPendingActionStale(job)) {
         // Stale approval (expired, or missing/malformed pendingAction):
@@ -292,7 +321,7 @@ export class InMemoryJobStore implements IJobStore {
         delete job.pendingAction;
         delete job.pendingActionId;
         if (this.ttlAfterComplete === 0) {
-          toDelete.push(streamId);
+          toDelete.push({ streamId, createdAt: job.createdAt });
         }
       } else if (this.staleJobTimeout > 0 && job.status === 'running') {
         // Failsafe: reap jobs stuck in "running" with no generation activity for
@@ -311,25 +340,14 @@ export class InMemoryJobStore implements IJobStore {
           // A crashed/hung run never reached a finalization drain — park the
           // 202-accepted queue before the delete drops it.
           this.parkQueuedSteers(streamId, job, now);
-          toDelete.push(streamId);
+          toDelete.push({ streamId, createdAt: job.createdAt });
           staleRunning++;
         }
       }
     }
 
-    for (const id of toDelete) {
-      const job = this.jobs.get(id);
-      if (job) {
-        const userKey = job.tenantId ? `${job.tenantId}:${job.userId}` : job.userId;
-        const userJobs = this.userJobMap.get(userKey);
-        if (userJobs) {
-          userJobs.delete(id);
-          if (userJobs.size === 0) {
-            this.userJobMap.delete(userKey);
-          }
-        }
-      }
-      await this.deleteJob(id);
+    for (const { streamId, createdAt } of toDelete) {
+      await this.deleteJob(streamId, createdAt);
     }
 
     if (staleRunning > 0) {
@@ -359,17 +377,10 @@ export class InMemoryJobStore implements IJobStore {
     if (oldestId) {
       logger.warn(`[InMemoryJobStore] Evicting oldest job: ${oldestId}`);
       const job = this.jobs.get(oldestId);
-      if (job) {
-        const userKey = job.tenantId ? `${job.tenantId}:${job.userId}` : job.userId;
-        const userJobs = this.userJobMap.get(userKey);
-        if (userJobs) {
-          userJobs.delete(oldestId);
-          if (userJobs.size === 0) {
-            this.userJobMap.delete(userKey);
-          }
-        }
+      if (!job) {
+        return;
       }
-      await this.deleteJob(oldestId);
+      await this.deleteJob(oldestId, job.createdAt);
     }
   }
 
@@ -449,7 +460,10 @@ export class InMemoryJobStore implements IJobStore {
    * Set the graph reference for a job.
    * Uses WeakRef to allow garbage collection when graph is no longer needed.
    */
-  setGraph(streamId: string, graph: StandardGraph): void {
+  setGraph(streamId: string, graph: StandardGraph, expectedCreatedAt?: number): void {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return;
+    }
     const existing = this.contentState.get(streamId);
     if (existing) {
       existing.graphRef = new WeakRef(graph);
@@ -465,7 +479,14 @@ export class InMemoryJobStore implements IJobStore {
   /**
    * Set content parts reference for a job.
    */
-  setContentParts(streamId: string, contentParts: Agents.MessageContentComplex[]): void {
+  setContentParts(
+    streamId: string,
+    contentParts: Agents.MessageContentComplex[],
+    expectedCreatedAt?: number,
+  ): void {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return;
+    }
     const existing = this.contentState.get(streamId);
     if (existing) {
       existing.contentParts = contentParts;
@@ -477,7 +498,14 @@ export class InMemoryJobStore implements IJobStore {
   /**
    * Set collected usage reference for a job.
    */
-  setCollectedUsage(streamId: string, collectedUsage: UsageMetadata[]): void {
+  setCollectedUsage(
+    streamId: string,
+    collectedUsage: UsageMetadata[],
+    expectedCreatedAt?: number,
+  ): void {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return;
+    }
     const existing = this.contentState.get(streamId);
     if (existing) {
       existing.collectedUsage = collectedUsage;
@@ -489,7 +517,10 @@ export class InMemoryJobStore implements IJobStore {
   /**
    * Get collected usage for a job.
    */
-  getCollectedUsage(streamId: string): UsageMetadata[] {
+  getCollectedUsage(streamId: string, expectedCreatedAt?: number): UsageMetadata[] {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return [];
+    }
     const state = this.contentState.get(streamId);
     return state?.collectedUsage ?? [];
   }
@@ -498,9 +529,15 @@ export class InMemoryJobStore implements IJobStore {
    * Get content parts for a job.
    * Returns live content from stored reference.
    */
-  async getContentParts(streamId: string): Promise<{
+  async getContentParts(
+    streamId: string,
+    expectedCreatedAt?: number,
+  ): Promise<{
     content: Agents.MessageContentComplex[];
   } | null> {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return null;
+    }
     const state = this.contentState.get(streamId);
     if (!state?.contentParts) {
       return null;
@@ -514,7 +551,10 @@ export class InMemoryJobStore implements IJobStore {
    * Get run steps for a job from graph.contentData.
    * Uses WeakRef - may return empty if graph has been GC'd.
    */
-  async getRunSteps(streamId: string): Promise<Agents.RunStep[]> {
+  async getRunSteps(streamId: string, expectedCreatedAt?: number): Promise<Agents.RunStep[]> {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return [];
+    }
     const state = this.contentState.get(streamId);
     if (!state?.graphRef) {
       return [];
@@ -528,14 +568,22 @@ export class InMemoryJobStore implements IJobStore {
   /**
    * No-op for in-memory - content available via graph reference.
    */
-  async appendChunk(): Promise<void> {
+  async appendChunk(
+    _streamId: string,
+    _event: unknown,
+    _expectedCreatedAt?: number,
+  ): Promise<void> {
     // No-op: content available via graph reference
   }
 
   /**
    * Clear content state for a job.
    */
-  clearContentState(streamId: string): void {
+  clearContentState(streamId: string, expectedCreatedAt?: number): void {
+    const job = this.jobs.get(streamId);
+    if (job && expectedCreatedAt != null && job.createdAt !== expectedCreatedAt) {
+      return;
+    }
     this.contentState.delete(streamId);
   }
 
@@ -584,7 +632,10 @@ export class InMemoryJobStore implements IJobStore {
     return this.drainSteers(streamId);
   }
 
-  async peekSteers(streamId: string): Promise<SteerQueueItem[]> {
+  async peekSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return [];
+    }
     const queue = this.steerQueues.get(streamId);
     return queue ? [...queue] : [];
   }
@@ -603,7 +654,10 @@ export class InMemoryJobStore implements IJobStore {
     return true;
   }
 
-  async parkSteers(streamId: string, payload: string): Promise<void> {
+  async parkSteers(streamId: string, payload: string, expectedCreatedAt?: number): Promise<void> {
+    if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
+      return;
+    }
     this.parkedSteers.set(streamId, {
       payload,
       expiresAt: Date.now() + PARKED_STEERS_TTL_MS,

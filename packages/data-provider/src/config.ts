@@ -2045,6 +2045,7 @@ const sharedOpenAIModels = [
 
 const sharedAnthropicModels = [
   'claude-fable-5',
+  'claude-opus-5',
   'claude-opus-4-8',
   'claude-opus-4-7',
   'claude-sonnet-5',
@@ -2069,19 +2070,25 @@ const sharedAnthropicModels = [
   'claude-3-5-sonnet-latest',
 ];
 
+/**
+ * Claude 4+ models are not invocable on-demand by their bare foundation-model
+ * ID on the Converse path — Bedrock rejects those with "Invocation of model ID
+ * ... with on-demand throughput isn't supported. Retry your request with the ID
+ * or ARN of an inference profile that contains this model." Default to the
+ * `global.` cross-region profile (no regional pricing premium, widest
+ * availability); Opus 4.1 has no global profile, so it uses `us.`.
+ */
 export const bedrockModels = [
-  'anthropic.claude-fable-5',
-  'anthropic.claude-opus-4-8',
-  'anthropic.claude-opus-4-7',
-  'anthropic.claude-sonnet-5',
-  'anthropic.claude-sonnet-4-6',
-  'anthropic.claude-opus-4-6-v1',
-  'anthropic.claude-sonnet-4-5-20250929-v1:0',
-  'anthropic.claude-haiku-4-5-20251001-v1:0',
-  'anthropic.claude-opus-4-1-20250805-v1:0',
-  'anthropic.claude-3-5-sonnet-20241022-v2:0',
-  'anthropic.claude-3-5-sonnet-20240620-v1:0',
-  'anthropic.claude-3-5-haiku-20241022-v1:0',
+  'global.anthropic.claude-fable-5',
+  'global.anthropic.claude-opus-5',
+  'global.anthropic.claude-opus-4-8',
+  'global.anthropic.claude-opus-4-7',
+  'global.anthropic.claude-sonnet-5',
+  'global.anthropic.claude-sonnet-4-6',
+  'global.anthropic.claude-opus-4-6-v1',
+  'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+  'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+  'us.anthropic.claude-opus-4-1-20250805-v1:0',
   // 'cohere.command-text-v14', // no conversation history
   // 'cohere.command-light-text-v14', // no conversation history
   'cohere.command-r-v1:0',
@@ -2746,6 +2753,107 @@ export enum Constants {
   SUBAGENT = 'subagent',
   /** Poll tool for retrieving the status/result of a backgrounded tool call. */
   CHECK_BACKGROUND_TASK = 'check_background_task',
+}
+
+/**
+ * Normalizes a server name into the character set tool keys are built from.
+ * Tool keys embed this output, so any candidate list matched against a key must
+ * be normalized the same way.
+ */
+export function normalizeServerName(serverName: string): string {
+  if (/^[a-zA-Z0-9_.-]+$/.test(serverName)) {
+    return serverName;
+  }
+
+  const normalized = serverName.replace(/[^a-zA-Z0-9_.-]/g, '_').replace(/^_+|_+$/g, '');
+  if (normalized) {
+    return normalized;
+  }
+
+  /** All characters were stripped; hash the original so the name stays unique. */
+  let hash = 0;
+  for (let i = 0; i < serverName.length; i++) {
+    hash = (hash << 5) - hash + serverName.charCodeAt(i);
+    hash |= 0;
+  }
+  return `server_${Math.abs(hash)}`;
+}
+
+/**
+ * Splits a combined MCP tool key (`${rawToolName}${mcp_delimiter}${serverName}`)
+ * back into its two parts.
+ *
+ * Both halves can legitimately contain the delimiter, so position alone cannot
+ * identify the boundary. Raw tool names come from the upstream server and are
+ * untrusted (`get_mcp_server_version`, or a gateway-prefixed
+ * `gitlab-get_mcp_server_version`), and `normalizeServerName` preserves
+ * underscores, so a configured server may be named `Google_mcp_Workspace`.
+ *
+ * When `knownServerNames` is supplied the boundary is resolved against it: the
+ * longest configured name the key actually ends with wins. Otherwise this falls
+ * back to the last delimiter, which is correct whenever only the tool half
+ * contains one and matches `.split()` when neither does.
+ *
+ * One case stays undecidable from the key alone: if both `bar` and `foo_mcp_bar`
+ * are configured, `tool_mcp_foo_mcp_bar` is a valid key for either. Longest match
+ * is the deterministic tiebreak; resolving it properly needs the tool/server
+ * mapping carried alongside the key rather than re-derived from the string.
+ */
+export function splitMCPToolKey(
+  toolKey: string,
+  knownServerNames?: readonly string[],
+): [string, string | undefined] {
+  if (knownServerNames?.length) {
+    let matched: string | undefined;
+    for (let i = 0; i < knownServerNames.length; i++) {
+      const serverName = knownServerNames[i];
+      if (!serverName || serverName.length <= (matched?.length ?? 0)) {
+        continue;
+      }
+      if (toolKey.endsWith(`${Constants.mcp_delimiter}${serverName}`)) {
+        matched = serverName;
+      }
+    }
+    if (matched != null) {
+      return [
+        toolKey.slice(0, toolKey.length - matched.length - Constants.mcp_delimiter.length),
+        matched,
+      ];
+    }
+  }
+
+  const idx = toolKey.lastIndexOf(Constants.mcp_delimiter);
+  if (idx === -1) {
+    return [toolKey, undefined];
+  }
+  return [toolKey.slice(0, idx), toolKey.slice(idx + Constants.mcp_delimiter.length)];
+}
+
+/**
+ * Splits a tool-call name for display, where the key may be a synthetic MCP OAuth
+ * call (`oauth${mcp_delimiter}${serverName}`) rather than a real tool key.
+ *
+ * A configured server name is authoritative when one matches, because a real tool key
+ * always ends in its server. Only when none matches does the `oauth` prefix decide,
+ * which keeps a genuine upstream tool named `oauth${mcp_delimiter}...` from being read
+ * as a synthetic call while still resolving OAuth prompts for unconfigured servers.
+ */
+export function splitToolCallName(
+  toolCallName: string,
+  knownServerNames?: readonly string[],
+): [string, string | undefined] {
+  if (knownServerNames?.length) {
+    const [toolName, serverName] = splitMCPToolKey(toolCallName, knownServerNames);
+    if (serverName != null && knownServerNames.includes(serverName)) {
+      return [toolName, serverName];
+    }
+  }
+
+  const oauthPrefix = `oauth${Constants.mcp_delimiter}`;
+  if (toolCallName.startsWith(oauthPrefix)) {
+    return ['oauth', toolCallName.slice(oauthPrefix.length)];
+  }
+  return splitMCPToolKey(toolCallName, knownServerNames);
 }
 
 /** Maximum explicit subagent hops allowed from any root agent at runtime. */

@@ -6,6 +6,7 @@ const {
   createSafeUser,
   mcpToolPattern,
   loadWebSearchAuth,
+  splitMCPToolKey,
   buildInlineMemoryTool,
   getCodeApiAuthHeaders,
   buildImageToolContext,
@@ -45,7 +46,7 @@ const {
   createMCPTool,
   createMCPTools,
   createMCPPermissionContext,
-  resolveConfigServers,
+  resolveMcpServerContext,
 } = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -285,8 +286,13 @@ const loadTools = async ({
 
   /** Resolve config-source servers for the current user/tenant context */
   let configServers;
+  /** All configured names, in the normalized form tool keys carry */
+  let mcpServerNames = [];
   if (hasMCPTools && canUseMCP) {
-    configServers = await resolveConfigServers(options.req);
+    /** Reuse the caller's context when it already resolved one, so the chat
+     *  startup path reads the request app config once. */
+    ({ configServers, serverNames: mcpServerNames } =
+      options.mcpServerContext ?? (await resolveMcpServerContext(options.req)));
   }
 
   for (const tool of tools) {
@@ -396,7 +402,7 @@ const loadTools = async ({
         continue;
       }
 
-      const [toolName, serverName] = tool.split(Constants.mcp_delimiter);
+      const [toolName, serverName] = splitMCPToolKey(tool, mcpServerNames);
       if (toolName === Constants.mcp_server) {
         /** Placeholder used for UI purposes */
         continue;
@@ -503,6 +509,7 @@ const loadTools = async ({
           requestScopedConnections,
           res: options.res,
           streamId: options.req?._resumableStreamId || null,
+          jobCreatedAt: options.jobCreatedAt,
           model: agent?.model ?? model,
           serverName: config.serverName,
           provider: agent?.provider ?? endpoint,

@@ -4,6 +4,8 @@ import { logger } from '@librechat/data-schemas';
 import { Registry, collectDefaultMetrics, Counter, Gauge, Histogram } from 'prom-client';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { Mongoose } from 'mongoose';
+import type { AgentStartupMilestone, AgentStartupResult } from '~/agents/phases';
+import { agentStartupMilestones, agentStartupResults } from '~/agents/phases';
 
 const PATH_NORMALIZATIONS: [RegExp, string][] = [
   [/^\/api\/agents\/chat\/stream\/[^/]+(?=\/|$)/, '/api/agents/chat/stream/#id'],
@@ -192,6 +194,19 @@ let generationJobMetrics: GenerationJobMetrics = {
   recordResumePendingEvents: () => undefined,
 };
 
+type AgentStartupMetrics = {
+  recordMilestone: (milestone: AgentStartupMilestone, durationSeconds: number) => void;
+  recordResult: (result: AgentStartupResult) => void;
+};
+
+const agentStartupMilestoneSet = new Set<string>(agentStartupMilestones);
+const agentStartupResultSet = new Set<string>(agentStartupResults);
+
+let agentStartupMetrics: AgentStartupMetrics = {
+  recordMilestone: () => undefined,
+  recordResult: () => undefined,
+};
+
 type RumProxyMetrics = {
   recordRequest: (endpoint: RumProxyEndpoint, result: RumProxyResult) => void;
 };
@@ -227,6 +242,10 @@ const resetMetricRecorders = (): void => {
     recordSubscription: () => undefined,
     recordResumePendingEvents: () => undefined,
   };
+  agentStartupMetrics = {
+    recordMilestone: () => undefined,
+    recordResult: () => undefined,
+  };
   rumProxyMetrics = {
     recordRequest: () => undefined,
   };
@@ -256,6 +275,27 @@ export function recordGenerationStreamResumePendingEvents(
   count: number,
 ): void {
   generationJobMetrics.recordResumePendingEvents(store, count);
+}
+
+export function recordAgentStartupMilestone(
+  milestone: AgentStartupMilestone,
+  durationSeconds: number,
+): void {
+  if (
+    !agentStartupMilestoneSet.has(milestone) ||
+    !Number.isFinite(durationSeconds) ||
+    durationSeconds < 0
+  ) {
+    return;
+  }
+  agentStartupMetrics.recordMilestone(milestone, durationSeconds);
+}
+
+export function recordAgentStartupResult(result: AgentStartupResult): void {
+  if (!agentStartupResultSet.has(result)) {
+    return;
+  }
+  agentStartupMetrics.recordResult(result);
 }
 
 export function recordRumProxyRequest(endpoint: RumProxyEndpoint, result: RumProxyResult): void {
@@ -548,6 +588,21 @@ export function createMetrics(): PrometheusMetrics {
     registers: [registry],
   });
 
+  const agentStartupMilestoneDuration = new Histogram({
+    name: 'agent_startup_milestone_duration_seconds',
+    help: 'Cumulative agent chat startup latency from request ingress to each milestone',
+    labelNames: ['milestone'] as const,
+    buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300],
+    registers: [registry],
+  });
+
+  const agentStartups = new Counter({
+    name: 'agent_startups_total',
+    help: 'Agent chat startup attempts by terminal result',
+    labelNames: ['result'] as const,
+    registers: [registry],
+  });
+
   const rumProxyRequests = new Counter({
     name: 'rum_proxy_requests_total',
     help: 'RUM proxy requests by endpoint and result',
@@ -577,6 +632,12 @@ export function createMetrics(): PrometheusMetrics {
       generationStreamSubscriptions.inc({ store, type, result }),
     recordResumePendingEvents: (store, count) =>
       generationStreamResumePendingEvents.inc({ store }, count),
+  };
+
+  agentStartupMetrics = {
+    recordMilestone: (milestone, durationSeconds) =>
+      agentStartupMilestoneDuration.observe({ milestone }, durationSeconds),
+    recordResult: (result) => agentStartups.inc({ result }),
   };
 
   rumProxyMetrics = {

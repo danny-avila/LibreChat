@@ -1,3 +1,10 @@
+import {
+  ContentTypes,
+  GraphEvents,
+  StepTypes,
+  createContentAggregator,
+  type RunStep,
+} from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
 import {
   mapToolApprovalResolutions,
@@ -6,6 +13,7 @@ import {
   findDisallowedDecisions,
   findIncompleteDecisions,
   createContentIndexOffsetHandlers,
+  hydrateResumeRunSteps,
   attachAskUserQuestionAnswer,
   attachAskUserQuestionArgs,
 } from './resume';
@@ -261,6 +269,136 @@ describe('createContentIndexOffsetHandlers', () => {
     const weird = { id: 'step_x' };
     wrapped.on_run_step.handle('on_run_step', weird as never);
     expect(calls[0].data).toBe(weird);
+  });
+});
+
+describe('hydrateResumeRunSteps', () => {
+  it('restores step and tool-call identity so a resumed completion updates its seeded card', () => {
+    const { contentParts, aggregateContent, stepMap } = createContentAggregator();
+    contentParts.push(
+      { type: ContentTypes.TEXT, text: 'Before approval' },
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'call-approval',
+          name: 'approval_probe',
+          args: '{"value":"before"}',
+        },
+      },
+    );
+    const runStep: RunStep = {
+      id: 'step-approval',
+      runId: 'response-1',
+      type: StepTypes.TOOL_CALLS,
+      index: 1,
+      stepDetails: {
+        type: StepTypes.TOOL_CALLS,
+        tool_calls: [
+          {
+            id: 'call-approval',
+            name: 'approval_probe',
+            args: { value: 'before' },
+          },
+        ],
+      },
+      usage: null,
+    };
+    const toolCallStepIds = new Map<string, string>();
+
+    hydrateResumeRunSteps([runStep], stepMap, { toolCallStepIds }, contentParts);
+    aggregateContent({
+      event: GraphEvents.ON_RUN_STEP_COMPLETED,
+      data: {
+        result: {
+          id: 'step-approval',
+          index: 1,
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            id: 'call-approval',
+            name: 'approval_probe',
+            args: { value: 'before' },
+            output: 'approved output',
+          },
+        },
+      },
+    });
+
+    expect(stepMap.get('step-approval')).toBe(runStep);
+    expect(toolCallStepIds.get('call-approval')).toBe('step-approval');
+    expect(contentParts[1]).toMatchObject({
+      type: ContentTypes.TOOL_CALL,
+      tool_call: {
+        id: 'call-approval',
+        output: 'approved output',
+        progress: 1,
+      },
+    });
+  });
+
+  it('realigns a stale persisted index to the seeded tool card by tool-call id', () => {
+    const { contentParts, aggregateContent, stepMap } = createContentAggregator();
+    contentParts.push(
+      { type: ContentTypes.TEXT, text: 'Prepended after the step was recorded' },
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'call-shifted',
+          name: 'approval_probe',
+          args: '{"value":"shifted"}',
+        },
+      },
+    );
+    const staleRunStep: RunStep = {
+      id: 'step-shifted',
+      runId: 'response-1',
+      type: StepTypes.TOOL_CALLS,
+      index: 0,
+      stepDetails: {
+        type: StepTypes.TOOL_CALLS,
+        tool_calls: [
+          {
+            id: 'call-shifted',
+            name: 'approval_probe',
+            args: { value: 'shifted' },
+          },
+        ],
+      },
+      usage: null,
+    };
+    const toolCallStepIds = new Map<string, string>();
+
+    hydrateResumeRunSteps([staleRunStep], stepMap, { toolCallStepIds }, contentParts);
+    aggregateContent({
+      event: GraphEvents.ON_RUN_STEP_COMPLETED,
+      data: {
+        result: {
+          id: 'step-shifted',
+          index: 0,
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            id: 'call-shifted',
+            name: 'approval_probe',
+            args: { value: 'shifted' },
+            output: 'shifted output',
+          },
+        },
+      },
+    });
+
+    expect(staleRunStep.index).toBe(0);
+    expect(stepMap.get('step-shifted')?.index).toBe(1);
+    expect(contentParts[0]).toEqual({
+      type: ContentTypes.TEXT,
+      text: 'Prepended after the step was recorded',
+    });
+    expect(contentParts[1]).toMatchObject({
+      type: ContentTypes.TOOL_CALL,
+      tool_call: {
+        id: 'call-shifted',
+        output: 'shifted output',
+        progress: 1,
+      },
+    });
   });
 });
 

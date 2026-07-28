@@ -11,6 +11,25 @@ export const allAgentViewAndEditQueryKeys: t.AgentListParams[] = [
   { requiredPermission: PermissionBits.EDIT },
 ];
 
+const edgeEndpointIncludesAgent = (endpoint: string | string[], agentId: string): boolean =>
+  Array.isArray(endpoint) ? endpoint.includes(agentId) : endpoint === agentId;
+
+const hasEdgeWithAgent = (data: unknown, agentId: string): boolean => {
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+
+  const { edges } = data as Partial<t.Agent>;
+  return (
+    Array.isArray(edges) &&
+    edges.some(
+      (edge) =>
+        edgeEndpointIncludesAgent(edge.from, agentId) ||
+        edgeEndpointIncludesAgent(edge.to, agentId),
+    )
+  );
+};
+
 /**
  * Create a new agent
  */
@@ -132,6 +151,15 @@ export const useDeleteAgentMutation = (
 
         queryClient.removeQueries([QueryKeys.agent, variables.agent_id]);
         queryClient.removeQueries([QueryKeys.agent, variables.agent_id, 'expanded']);
+        /** Deletion removes the agent from every edge endpoint server-side. Expanded queries
+         * opt out of refetch-on-mount, so refresh every cached graph known to reference it. */
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.agent],
+          predicate: (query) =>
+            query.queryKey[2] === 'expanded' &&
+            hasEdgeWithAgent(query.state.data, variables.agent_id),
+          refetchType: 'all',
+        });
         invalidateAgentMarketplaceQueries(queryClient);
 
         return options?.onSuccess?.(_data, variables, data);

@@ -938,7 +938,7 @@ describe('File Routes - Delete with Agent Access', () => {
   });
 
   describe('POST /files/usage', () => {
-    it('marks owned files used and clears the upload TTL', async () => {
+    const createQueuedFile = async (expiresAt) => {
       const ownFileId = uuidv4();
       await createFile({
         user: otherUserId,
@@ -948,31 +948,110 @@ describe('File Routes - Delete with Agent Access', () => {
         bytes: 10,
         type: 'image/png',
       });
-      await File.updateOne({ file_id: ownFileId }, { $set: { expiresAt: new Date() } });
+      await File.updateOne({ file_id: ownFileId }, { $set: { expiresAt } });
+      return ownFileId;
+    };
+
+    it('extends the upload TTL of owned files without clearing it', async () => {
+      const soon = new Date(Date.now() + 60 * 1000);
+      const ownFileId = await createQueuedFile(soon);
 
       const response = await request(app)
         .post('/files/usage')
         .send({ file_ids: [ownFileId] });
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual({ marked: 1 });
-      const marked = await File.findOne({ file_id: ownFileId }).lean();
-      expect(marked.usage).toBe(1);
-      expect(marked.expiresAt).toBeUndefined();
+      expect(response.body).toEqual({ held: 1 });
+      const held = await File.findOne({ file_id: ownFileId }).lean();
+      /* The hold must remain a hold: still reapable, just later. */
+      expect(held.expiresAt).toBeDefined();
+      expect(held.expiresAt.getTime()).toBeGreaterThan(soon.getTime());
+      /* The 24h baseline plus the default 24h approval window, so a queue
+       * waiting on a paused run outlives that pause. Renewed from now, but
+       * never past the ceiling measured from upload time. */
+      const HOUR = 60 * 60 * 1000;
+      expect(held.expiresAt.getTime()).toBeGreaterThan(Date.now() + 47 * HOUR);
+      expect(held.expiresAt.getTime()).toBeLessThanOrEqual(
+        held.createdAt.getTime() + 24 * HOUR + 8 * 24 * HOUR,
+      );
+      /* A queue touch is not a send, so it must not inflate usage. */
+      expect(held.usage).toBe(0);
+    });
+
+    it('cannot be replayed to preserve a file indefinitely', async () => {
+      const ownFileId = await createQueuedFile(new Date(Date.now() + 60 * 1000));
+
+      const first = await request(app)
+        .post('/files/usage')
+        .send({ file_ids: [ownFileId] });
+      expect(first.body).toEqual({ held: 1 });
+
+      for (let i = 0; i < 5; i++) {
+        const repeat = await request(app)
+          .post('/files/usage')
+          .send({ file_ids: [ownFileId] });
+        expect(repeat.status).toBe(200);
+      }
+
+      /* Every renewal is clamped to the ceiling measured from upload time, so
+       * replay converges there instead of advancing a window per call. */
+      const HOUR = 60 * 60 * 1000;
+      const held = await File.findOne({ file_id: ownFileId }).lean();
+      expect(held.expiresAt).toBeDefined();
+      expect(held.expiresAt.getTime()).toBeLessThanOrEqual(
+        held.createdAt.getTime() + 24 * HOUR + 8 * 24 * HOUR,
+      );
+    });
+
+    it('never re-adds a TTL to a file that was already sent', async () => {
+      const sentFileId = uuidv4();
+      await createFile({
+        user: otherUserId,
+        file_id: sentFileId,
+        filename: 'sent.png',
+        filepath: '/uploads/sent.png',
+        bytes: 10,
+        type: 'image/png',
+      });
+      await File.updateOne({ file_id: sentFileId }, { $unset: { expiresAt: '' } });
+
+      const response = await request(app)
+        .post('/files/usage')
+        .send({ file_ids: [sentFileId] });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ held: 0 });
+      const permanent = await File.findOne({ file_id: sentFileId }).lean();
+      expect(permanent.expiresAt).toBeUndefined();
+    });
+
+    it('never shortens an existing hold', async () => {
+      const farOut = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+      const ownFileId = await createQueuedFile(farOut);
+
+      const response = await request(app)
+        .post('/files/usage')
+        .send({ file_ids: [ownFileId] });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ held: 0 });
+      const untouched = await File.findOne({ file_id: ownFileId }).lean();
+      expect(untouched.expiresAt.getTime()).toBe(farOut.getTime());
     });
 
     it("is owner-scoped: another user's file stays untouched (best-effort 200)", async () => {
-      await File.updateOne({ file_id: fileId }, { $set: { expiresAt: new Date() } });
+      const soon = new Date(Date.now() + 60 * 1000);
+      await File.updateOne({ file_id: fileId }, { $set: { expiresAt: soon } });
 
       const response = await request(app)
         .post('/files/usage')
         .send({ file_ids: [fileId] });
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual({ marked: 0 });
+      expect(response.body).toEqual({ held: 0 });
       const untouched = await File.findOne({ file_id: fileId }).lean();
       expect(untouched.usage).toBe(0);
-      expect(untouched.expiresAt).toBeDefined();
+      expect(untouched.expiresAt.getTime()).toBe(soon.getTime());
     });
 
     it('rejects a list over the cap', async () => {
