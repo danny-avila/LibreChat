@@ -49,9 +49,13 @@ jest.mock('~/components/Chat/Messages/Content/Image', () => ({
 /** Seeds the user atom rather than mocking `useAuthContext`, and renders the real
  *  MessageIcon tree — mocking either one hid a crash on the share route, where
  *  neither an auth context nor a user exists. */
+const SEEDED_USER = { name: 'Danny', username: 'danny' };
+
 function renderPart(
   files?: TMessage['files'],
-  user: { name: string; username: string } | undefined = { name: 'Danny', username: 'danny' },
+  /** `null` seeds nothing — passing `undefined` would fall back to the default and
+   *  silently test the signed-in state instead of the anonymous share route. */
+  user: { name: string; username: string } | null = SEEDED_USER,
 ) {
   return render(
     <QueryClientProvider client={new QueryClient()}>
@@ -80,9 +84,20 @@ describe('SteerPart author label', () => {
      *  renders used to call it. */
     mockShareContext = { isSharedConvo: true, shareId: 'share-1' };
 
-    expect(() => renderPart(undefined, undefined)).not.toThrow();
+    expect(() => renderPart(undefined, null)).not.toThrow();
     expect(screen.getByText('steered words')).toBeInTheDocument();
     expect(screen.getByText('com_user_message')).toBeInTheDocument();
+  });
+
+  it('never renders the viewer identity on a shared steer avatar', () => {
+    /** The user atom is app-wide and survives navigation, so a signed-in viewer
+     *  opening a share link still has an identity in state. The shared steer must
+     *  show the generic avatar regardless. */
+    mockShareContext = { isSharedConvo: true, shareId: 'share-1' };
+    renderPart(undefined, SEEDED_USER);
+
+    expect(screen.queryByTitle('Danny')).toBeNull();
+    expect(screen.queryByText('Danny')).toBeNull();
   });
 
   it('labels with the generic user message in the share view, never the viewer identity', () => {
