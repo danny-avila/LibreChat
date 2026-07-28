@@ -225,6 +225,7 @@ function buildSubmissionFromResumeState(
  *
  * @param messagesLoaded - Whether the messages query has finished loading (prevents race condition)
  * @param resolvedConversationId - Retained stream ID for a first turn whose native URL owns that run
+ * @param messagesNotFound - Whether the loaded route has definitively failed its messages query with 404
  */
 export default function useResumeOnLoad(
   conversationId: string | undefined,
@@ -232,6 +233,7 @@ export default function useResumeOnLoad(
   runIndex = 0,
   messagesLoaded = true,
   resolvedConversationId?: string | null,
+  messagesNotFound = false,
 ) {
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
   const currentSubmission = useRecoilValue(store.submissionByIndex(runIndex));
@@ -297,6 +299,7 @@ export default function useResumeOnLoad(
     restoreSteerChips,
     runIndex,
     enabled: resumableEnabled,
+    messagesNotFound,
   });
 
   // Check for active stream when conversation changes

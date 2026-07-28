@@ -10,8 +10,8 @@ import {
   mergePersistedRunIntoMessages,
   preserveMessagesAfterRecoveryTarget,
 } from '../terminal';
-import { runTerminalRetry } from './retry';
 import { fetchMessagesWithCacheProtection } from '~/data-provider/Messages/queries';
+import { runTerminalRetry } from './retry';
 import { isNotFoundError } from '~/utils';
 
 export type PersistedResponseRefresh = {
@@ -28,6 +28,7 @@ type RefreshPersistedResponseParams = {
   queryClient: QueryClient;
   recoveryTarget?: RunRecoveryTarget;
   acceptMissingResponse?: boolean;
+  forceRefresh?: boolean;
   signal: AbortSignal;
   canContinue?: () => boolean;
 };
@@ -71,10 +72,11 @@ export async function refreshPersistedResponse({
   queryClient,
   recoveryTarget,
   acceptMissingResponse = false,
+  forceRefresh = false,
   signal,
   canContinue,
 }: RefreshPersistedResponseParams): Promise<PersistedResponseRefresh> {
-  if (!recoveryTarget && getUnreconciledAssistantTail(getMessages()) == null) {
+  if (!forceRefresh && !recoveryTarget && getUnreconciledAssistantTail(getMessages()) == null) {
     return {
       messages: getMessages(),
       succeeded: true,
@@ -142,7 +144,10 @@ export async function refreshPendingPersistedResponses({
   tasks,
   signal,
   canContinue,
-}: Omit<RefreshPersistedResponseParams, 'recoveryTarget' | 'acceptMissingResponse'> & {
+}: Omit<
+  RefreshPersistedResponseParams,
+  'recoveryTarget' | 'acceptMissingResponse' | 'forceRefresh'
+> & {
   tasks: PendingRunReconciliation[];
 }): Promise<PendingPersistedResponseRefresh> {
   const result = await runTerminalRetry<PendingRefreshAttempt>({

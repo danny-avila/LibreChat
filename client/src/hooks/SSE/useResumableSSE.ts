@@ -1715,8 +1715,12 @@ export default function useResumableSSE(
         if (hasConcreteConversationId(existingConversationId)) {
           const disconnectedRun = getDisconnectedRunRecovery(queryClient, existingConversationId);
           if (disconnectedRun) {
-            wasRecoveringDisconnectedRun = true;
-            moveDisconnectedRunToPendingReconciliation(queryClient, existingConversationId);
+            if (disconnectedRun.routeMessagesNotFound === true) {
+              clearDisconnectedRunRecovery(queryClient, existingConversationId);
+            } else {
+              wasRecoveringDisconnectedRun = true;
+              moveDisconnectedRunToPendingReconciliation(queryClient, existingConversationId);
+            }
           } else {
             const regenerationHistory =
               submission.isRegenerate && submission.regenerateMessages?.length

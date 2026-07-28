@@ -19,12 +19,12 @@ import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import ProjectLandingChip from './ProjectLandingChip';
 import MessagesView from './Messages/MessagesView';
+import { cn, isNotFoundError } from '~/utils';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
 import Footer from './Footer';
-import { cn } from '~/utils';
 import store from '~/store';
 
 function LoadingSpinner() {
@@ -52,6 +52,8 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
 
   const {
     data: messagesTree = null,
+    error: messagesError,
+    isError: messagesQueryFailed,
     isLoading,
     isFetching,
   } = useGetMessagesByConvoId(
@@ -88,6 +90,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
     index,
     !isLoading && !isFetching,
     resolvedStreamId,
+    messagesQueryFailed && isNotFoundError(messagesError),
   );
 
   // Auto-send queued follow-up messages once a run finishes cleanly.

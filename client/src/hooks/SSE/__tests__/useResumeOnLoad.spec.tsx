@@ -1,6 +1,6 @@
-import { RecoilRoot, useRecoilValue } from 'recoil';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { renderHook, act, waitFor } from '@testing-library/react';
+import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Constants, ContentTypes, QueryKeys, dataService } from 'librechat-data-provider';
 import type { TMessage, TConversation, TSubmission } from 'librechat-data-provider';
@@ -93,6 +93,14 @@ function buildSubmission(conversationId: string | null | undefined): TSubmission
   } as unknown as TSubmission;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 function renderUseResumeOnLoad({
   messages = [],
   getMessages: getMessagesOverride,
@@ -100,6 +108,7 @@ function renderUseResumeOnLoad({
   conversationId = CONVERSATION_ID,
   resolvedConversationId,
   messagesLoaded = true,
+  messagesNotFound = false,
   onSubmission,
   siblingIndexParentId,
   onSiblingIndex,
@@ -107,6 +116,8 @@ function renderUseResumeOnLoad({
   onPendingSteers,
   onQueuedMessages,
   onRunEnd,
+  onParkedRunEnd,
+  onClearRunEnd,
   onConversation,
   onPathname,
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
@@ -119,6 +130,7 @@ function renderUseResumeOnLoad({
   conversationId?: string;
   resolvedConversationId?: string | null;
   messagesLoaded?: boolean;
+  messagesNotFound?: boolean;
   onSubmission?: (submission: TSubmission | null) => void;
   siblingIndexParentId?: string;
   onSiblingIndex?: (siblingIndex: number) => void;
@@ -126,6 +138,8 @@ function renderUseResumeOnLoad({
   onPendingSteers?: (steers: PendingSteer[]) => void;
   onQueuedMessages?: (queued: QueuedMessage[]) => void;
   onRunEnd?: (runEnd: RunEnd | null) => void;
+  onParkedRunEnd?: (runEnd: RunEnd | null) => void;
+  onClearRunEnd?: (clearRunEnd: () => void) => void;
   onConversation?: (conversation: TConversation | null) => void;
   onPathname?: (pathname: string) => void;
   queryClient?: QueryClient;
@@ -158,7 +172,14 @@ function renderUseResumeOnLoad({
   };
   const RunEndProbe = () => {
     const runEnd = useRecoilValue(store.runEndByIndex(0));
+    const setRunEnd = useSetRecoilState(store.runEndByIndex(0));
     onRunEnd?.(runEnd);
+    onClearRunEnd?.(() => setRunEnd(null));
+    return null;
+  };
+  const ParkedRunEndProbe = () => {
+    const runEnd = useRecoilValue(store.pendingRunEndByConvoId(conversationId));
+    onParkedRunEnd?.(runEnd);
     return null;
   };
   const ConversationProbe = () => {
@@ -203,6 +224,7 @@ function renderUseResumeOnLoad({
           <PendingSteersProbe />
           <QueuedMessagesProbe />
           <RunEndProbe />
+          <ParkedRunEndProbe />
           <ConversationProbe />
           <LocationProbe />
           {children}
@@ -215,7 +237,15 @@ function renderUseResumeOnLoad({
     getMessages,
     queryClient,
     ...renderHook(
-      () => useResumeOnLoad(conversationId, getMessages, 0, messagesLoaded, resolvedConversationId),
+      () =>
+        useResumeOnLoad(
+          conversationId,
+          getMessages,
+          0,
+          messagesLoaded,
+          resolvedConversationId,
+          messagesNotFound,
+        ),
       { wrapper },
     ),
   };
@@ -1281,6 +1311,108 @@ describe('useResumeOnLoad', () => {
       expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
     });
 
+    it('re-arms queue draining when a timed-out status claim returns steers after completion', async () => {
+      jest.useFakeTimers();
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const firstStatus = deferred<{
+        active: boolean;
+        unrecoveredSteers: PendingSteer[];
+      }>();
+      const claimedSteer: PendingSteer = {
+        steerId: 'late-claimed-steer',
+        text: 'Send me after the recovered run',
+        status: 'pending',
+        createdAt: 10,
+      };
+      const finalMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({
+          messageId: 'user-message-1',
+          text: 'Completed response',
+          unfinished: false,
+          createdAt: '2026-07-28T08:00:00.000Z',
+          updatedAt: '2026-07-28T08:00:00.000Z',
+        }),
+      ];
+      const observedQueues: QueuedMessage[][] = [];
+      const observedRunEnds: Array<RunEnd | null> = [];
+      const observedParkedRunEnds: Array<RunEnd | null> = [];
+      let clearRunEnd: (() => void) | undefined;
+      queryClient.setQueryData(
+        [QueryKeys.messages, CONVERSATION_ID],
+        [buildUserMessage(CONVERSATION_ID), buildAssistantMessage({ unfinished: true })],
+      );
+      setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+        startedAsNewConvo: false,
+        created: true,
+        userMessageId: USER_MESSAGE_ID,
+        responseMessageId: RESPONSE_MESSAGE_ID,
+      });
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+      });
+      mockFetchStreamStatus
+        .mockReturnValueOnce(firstStatus.promise)
+        .mockResolvedValue({ active: false, status: 'complete' });
+      mockGetMessagesByConvoId.mockResolvedValue(finalMessages);
+
+      const { rerender } = renderUseResumeOnLoad({
+        submission: buildSubmission(CONVERSATION_ID),
+        getMessages: () =>
+          queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
+        onQueuedMessages: (queued) => observedQueues.push(queued),
+        onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+        onParkedRunEnd: (runEnd) => observedParkedRunEnds.push(runEnd),
+        onClearRunEnd: (clear) => {
+          clearRunEnd = clear;
+        },
+        queryClient,
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [] },
+      });
+      rerender();
+      await flushMicrotasks();
+      expect(mockFetchStreamStatus).toHaveBeenCalledTimes(1);
+
+      await advanceRetryTimer(30000);
+      await advanceRetryTimer(1000);
+      await waitFor(() => {
+        expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+          conversationId: CONVERSATION_ID,
+          outcome: 'completed',
+        });
+      });
+
+      act(() => {
+        clearRunEnd?.();
+      });
+      await waitFor(() => {
+        expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
+      });
+
+      await act(async () => {
+        firstStatus.resolve({
+          active: false,
+          unrecoveredSteers: [claimedSteer],
+        });
+        await Promise.resolve();
+      });
+      await flushMicrotasks();
+
+      expect(observedQueues[observedQueues.length - 1]).toEqual([
+        expect.objectContaining({
+          id: claimedSteer.steerId,
+          text: claimedSteer.text,
+        }),
+      ]);
+      expect(observedParkedRunEnds[observedParkedRunEnds.length - 1]).toMatchObject({
+        conversationId: CONVERSATION_ID,
+        outcome: 'completed',
+      });
+    });
+
     it('reconciles an older response after a newer run without stale run-end state', async () => {
       let resolveStatus!: (status: { active: boolean; status: 'error' }) => void;
       mockFetchStreamStatus.mockReturnValue(
@@ -1509,6 +1641,144 @@ describe('useResumeOnLoad', () => {
       expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toEqual([]);
       expect(observedPathnames[observedPathnames.length - 1]).toBe(`/c/${Constants.NEW_CONVO}`);
       expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
+    });
+
+    it('prunes a missing inactive route after reload without an in-memory recovery marker', async () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const observedConversations: Array<TConversation | null> = [];
+      const observedRunEnds: Array<RunEnd | null> = [];
+      const observedPathnames: string[] = [];
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: { active: false },
+      });
+      mockGetMessagesByConvoId.mockRejectedValue(
+        Object.assign(new Error('Conversation not found'), {
+          isAxiosError: true,
+          response: { status: 404 },
+        }),
+      );
+
+      renderUseResumeOnLoad({
+        messagesNotFound: true,
+        getMessages: () => undefined,
+        onConversation: (conversation) => observedConversations.push(conversation),
+        onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+        onPathname: (pathname) => observedPathnames.push(pathname),
+        queryClient,
+      });
+
+      await waitFor(() => {
+        expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
+          conversationId: String(Constants.NEW_CONVO),
+          outcome: 'error',
+        });
+      });
+      expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
+      expect(observedConversations[observedConversations.length - 1]).toMatchObject({
+        conversationId: String(Constants.NEW_CONVO),
+      });
+      expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toEqual([]);
+      expect(observedPathnames[observedPathnames.length - 1]).toBe(`/c/${Constants.NEW_CONVO}`);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledWith(
+        CONVERSATION_ID,
+        expect.any(AbortSignal),
+      );
+    });
+
+    it('keeps a reloaded route when persistence becomes visible after the first 404', async () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const observedPathnames: string[] = [];
+      const finalMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({
+          messageId: 'persisted-response',
+          text: 'Persisted during the reload race',
+          unfinished: false,
+          createdAt: '2026-07-28T08:00:00.000Z',
+          updatedAt: '2026-07-28T08:00:00.000Z',
+        }),
+      ];
+      queryClient.setQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID], []);
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: { active: false },
+      });
+      mockGetMessagesByConvoId.mockResolvedValue(finalMessages);
+
+      renderUseResumeOnLoad({
+        messagesNotFound: true,
+        getMessages: (targetConversationId) =>
+          queryClient.getQueryData<TMessage[]>([
+            QueryKeys.messages,
+            targetConversationId ?? CONVERSATION_ID,
+          ]),
+        onPathname: (pathname) => observedPathnames.push(pathname),
+        queryClient,
+      });
+
+      await waitFor(() => {
+        expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
+          finalMessages,
+        );
+      });
+      expect(observedPathnames[observedPathnames.length - 1]).toBe(`/c/${CONVERSATION_ID}`);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledWith(
+        CONVERSATION_ID,
+        expect.any(AbortSignal),
+      );
+    });
+
+    it('retries missing-route verification on the next recovery wake-up', async () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const finalMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({
+          messageId: 'persisted-after-retry',
+          text: 'Recovered after a transient verification failure',
+          unfinished: false,
+          createdAt: '2026-07-28T08:00:00.000Z',
+          updatedAt: '2026-07-28T08:00:00.000Z',
+        }),
+      ];
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: { active: false },
+      });
+      mockGetMessagesByConvoId.mockRejectedValueOnce({ status: 400 });
+
+      renderUseResumeOnLoad({
+        messagesNotFound: true,
+        getMessages: (targetConversationId) =>
+          queryClient.getQueryData<TMessage[]>([
+            QueryKeys.messages,
+            targetConversationId ?? CONVERSATION_ID,
+          ]),
+        queryClient,
+      });
+
+      await waitFor(() => {
+        expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toMatchObject({
+          routeMessagesNotFound: true,
+        });
+      });
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(1);
+
+      mockGetMessagesByConvoId.mockResolvedValue(finalMessages);
+      act(() => {
+        window.dispatchEvent(new Event('online'));
+      });
+
+      await waitFor(() => {
+        expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
+          finalMessages,
+        );
+      });
+      expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(2);
     });
 
     it('resets conversation state when a resolved first turn 404s behind the new route', async () => {

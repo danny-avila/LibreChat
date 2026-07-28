@@ -5,6 +5,7 @@ export type DisconnectedRunRecovery = {
   created: boolean;
   userMessageId?: string;
   responseMessageId?: string;
+  routeMessagesNotFound?: boolean;
 };
 
 export type PendingRunReconciliation = DisconnectedRunRecovery & {

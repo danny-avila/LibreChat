@@ -1277,6 +1277,36 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('discards missing-route verification instead of queuing it as an interrupted run', async () => {
+    mockGetQueryData.mockImplementation((queryKey: unknown) => {
+      if (
+        Array.isArray(queryKey) &&
+        queryKey[0] === 'resumable-disconnected-run' &&
+        queryKey[1] === CONV_ID
+      ) {
+        return {
+          startedAsNewConvo: false,
+          created: false,
+          routeMessagesNotFound: true,
+        };
+      }
+      return undefined;
+    });
+
+    const { unmount } = renderHook(() => useResumableSSE(buildSubmission(), buildChatHelpers()));
+
+    await waitFor(() => {
+      expect(request.post).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockSetQueryData).toHaveBeenCalledWith(['resumable-disconnected-run', CONV_ID], null);
+    expect(mockSetQueryData).not.toHaveBeenCalledWith(
+      ['resumable-pending-run-reconciliation', CONV_ID],
+      expect.any(Function),
+    );
+    unmount();
+  });
+
   it('queues a marker-free interrupted response from regeneration history', async () => {
     const userMessage = {
       messageId: 'regenerate-user',

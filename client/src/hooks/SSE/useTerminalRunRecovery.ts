@@ -1,23 +1,14 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useSetRecoilState } from 'recoil';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useRecoilCallback, useSetRecoilState } from 'recoil';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TMessage, TConversation, Agents } from 'librechat-data-provider';
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
+import type { PersistedResponseRefresh } from './recovery/messages';
 import type { DisconnectedRunRecovery } from './resumableRecovery';
 import type { RunRecoveryTarget } from './terminal';
-import type { PersistedResponseRefresh } from './recovery/messages';
-import {
-  getPersistedRunState,
-  getRunRecoveryTarget,
-  getStatusRunOutcome,
-  getUnreconciledAssistantTail,
-  newConversationPath,
-  recoveryOwnsCurrentRoute,
-  submissionBelongsToConversation,
-  withCurrentSearch,
-} from './terminal';
+import type { RunEnd } from '~/store/families';
 import {
   clearDisconnectedRunRecovery,
   consumeTerminalEventSeen,
@@ -31,16 +22,25 @@ import {
   terminalRecoveryRequestQueryKey,
 } from './resumableRecovery';
 import {
+  getPersistedRunState,
+  getRunRecoveryTarget,
+  getStatusRunOutcome,
+  getUnreconciledAssistantTail,
+  newConversationPath,
+  recoveryOwnsCurrentRoute,
+  submissionBelongsToConversation,
+  withCurrentSearch,
+} from './terminal';
+import {
   addConversationToAllConversationsQueries,
   dedupeSteersById,
   removeConvoFromAllQueries,
 } from '~/utils';
+import { usePendingRunReconciliation, useRecoveryWakeup } from './recovery/usePending';
 import { fetchStreamStatus, useActiveJobs } from '~/data-provider';
 import { refreshPersistedResponse } from './recovery/messages';
-import { runTerminalRetry } from './recovery/retry';
-import { usePendingRunReconciliation, useRecoveryWakeup } from './recovery/usePending';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
-import type { RunEnd } from '~/store/families';
+import { runTerminalRetry } from './recovery/retry';
 import store from '~/store';
 
 type RestoreSteerChips = (
@@ -54,6 +54,7 @@ type UseTerminalRunRecoveryParams = {
   restoreSteerChips: RestoreSteerChips;
   runIndex: number;
   enabled: boolean;
+  messagesNotFound?: boolean;
 };
 
 export default function useTerminalRunRecovery({
@@ -62,6 +63,7 @@ export default function useTerminalRunRecovery({
   restoreSteerChips,
   runIndex,
   enabled,
+  messagesNotFound = false,
 }: UseTerminalRunRecoveryParams) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -224,10 +226,45 @@ export default function useTerminalRunRecovery({
     [conversationId, queryClient, setRunEnd],
   );
 
+  const rearmCompletedDrainForLateSteers = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (terminalConversationId: string, expectedRunEpoch: number) => {
+        const publishedRunEnd = publishedRunEndRef.current;
+        if (
+          !mountedRef.current ||
+          getResumableRunEpoch(queryClient, terminalConversationId) !== expectedRunEpoch ||
+          publishedRunEnd.conversationId !== terminalConversationId ||
+          publishedRunEnd.runEpoch !== expectedRunEpoch ||
+          !publishedRunEnd.keys.has(`${terminalConversationId}:completed`)
+        ) {
+          return;
+        }
+
+        const currentRunEnd = snapshot.getLoadable(store.runEndByIndex(runIndex)).getValue();
+        if (currentRunEnd?.conversationId === terminalConversationId) {
+          return;
+        }
+        const parkedRunEnd = snapshot
+          .getLoadable(store.pendingRunEndByConvoId(terminalConversationId))
+          .getValue();
+        if (parkedRunEnd != null) {
+          return;
+        }
+
+        set(store.pendingRunEndByConvoId(terminalConversationId), {
+          conversationId: terminalConversationId,
+          outcome: 'completed',
+          endedAt: Date.now(),
+        });
+      },
+    [queryClient, runIndex],
+  );
+
   const refreshUnreconciledResponse = useCallback(
     async (
       expectedRunEpoch: number,
       recoveryTarget?: RunRecoveryTarget,
+      forceRefresh = false,
     ): Promise<PersistedResponseRefresh> => {
       if (
         !conversationId ||
@@ -242,7 +279,7 @@ export default function useTerminalRunRecovery({
       }
 
       const unreconciledResponse = getUnreconciledAssistantTail(getMessages(conversationId));
-      if (!unreconciledResponse && !recoveryTarget) {
+      if (!forceRefresh && !unreconciledResponse && !recoveryTarget) {
         return {
           messages: getMessages(conversationId),
           succeeded: true,
@@ -291,6 +328,7 @@ export default function useTerminalRunRecovery({
         queryClient,
         recoveryTarget,
         acceptMissingResponse: true,
+        forceRefresh,
         signal: refreshController.signal,
         canContinue: () => {
           const observed = observedActiveJobRef.current;
@@ -333,6 +371,7 @@ export default function useTerminalRunRecovery({
       recoveryTarget?: RunRecoveryTarget,
       recoveredSteers = false,
       expectedRunEpoch = 0,
+      routeMessagesNotFound = false,
     ) => {
       if (!conversationId || !shouldSignalRunEnd) {
         return;
@@ -349,11 +388,14 @@ export default function useTerminalRunRecovery({
       }
 
       const disconnectedRun = getDisconnectedRunRecovery(queryClient, conversationId);
-      const isUnpersistedFirstTurn =
-        disconnectedRun?.startedAsNewConvo === true && refreshed.notFound;
+      const isMissingRecoveryConversation =
+        refreshed.notFound &&
+        (disconnectedRun?.startedAsNewConvo === true ||
+          disconnectedRun?.routeMessagesNotFound === true ||
+          routeMessagesNotFound);
       const ownsRecoveryRoute = recoveryOwnsCurrentRoute(activePathnameRef.current, conversationId);
 
-      if (isUnpersistedFirstTurn) {
+      if (isMissingRecoveryConversation) {
         removeConvoFromAllQueries(queryClient, conversationId);
         queryClient.removeQueries({
           queryKey: [QueryKeys.conversation, conversationId],
@@ -408,6 +450,9 @@ export default function useTerminalRunRecovery({
           : undefined) ??
         (!recoveryTarget && recoveredSteers ? 'aborted' : undefined);
       if (!outcome) {
+        if (disconnectedRun?.routeMessagesNotFound === true && refreshed.succeeded) {
+          clearDisconnectedRunRecovery(queryClient, conversationId);
+        }
         return;
       }
 
@@ -468,13 +513,26 @@ export default function useTerminalRunRecovery({
       }
 
       const recoveredSteers = recoveredSteersOverride ?? recoverStatusSteers(status);
-      const disconnectedRun = ensureCurrentRecovery();
+      let disconnectedRun = ensureCurrentRecovery();
+      if (!disconnectedRun && messagesNotFound) {
+        disconnectedRun = {
+          startedAsNewConvo: false,
+          created: false,
+          routeMessagesNotFound: true,
+        };
+        setDisconnectedRunRecovery(queryClient, conversationId, disconnectedRun);
+      }
       const recoveryTarget = getRunRecoveryTarget(disconnectedRun, getMessages(conversationId));
       const statusOutcome = getStatusRunOutcome(status);
-      const shouldSignalRunEnd = recoveryTarget != null || statusOutcome != null || recoveredSteers;
+      const shouldSignalRunEnd =
+        recoveryTarget != null || statusOutcome != null || recoveredSteers || messagesNotFound;
 
       restoreSteerChips(conversationId, undefined);
-      const refreshPromise = refreshUnreconciledResponse(recoveryRunEpoch, recoveryTarget);
+      const refreshPromise = refreshUnreconciledResponse(
+        recoveryRunEpoch,
+        recoveryTarget,
+        messagesNotFound,
+      );
       if (statusOutcome === 'error' || statusOutcome === 'aborted') {
         publishRunEnd(
           {
@@ -494,12 +552,14 @@ export default function useTerminalRunRecovery({
         recoveryTarget,
         recoveredSteers,
         recoveryRunEpoch,
+        messagesNotFound,
       );
     },
     [
       conversationId,
       ensureCurrentRecovery,
       getMessages,
+      messagesNotFound,
       publishRunEnd,
       queryClient,
       reconcileRefreshedResponse,
@@ -512,6 +572,7 @@ export default function useTerminalRunRecovery({
   const fetchTerminalStatus = useCallback(
     async (
       terminalConversationId: string,
+      expectedRunEpoch: number,
     ): Promise<{ status: StreamStatusResponse; recoveredSteers: boolean } | undefined> => {
       terminalStatusAbortRef.current?.abort();
       const statusController = new AbortController();
@@ -526,13 +587,17 @@ export default function useTerminalRunRecovery({
 
       const result = await runTerminalRetry({
         signal: statusController.signal,
-        operation: async () => {
+        operation: async (attemptSignal) => {
           // This endpoint atomically returns and deletes parked steers. The
           // request must finish even when its caller no longer needs status.
           const status = await fetchStreamStatus(terminalConversationId);
+          const recoveredSteers = recoverStatusSteers(status);
+          if (recoveredSteers && attemptSignal.aborted) {
+            rearmCompletedDrainForLateSteers(terminalConversationId, expectedRunEpoch);
+          }
           return {
             status,
-            recoveredSteers: recoverStatusSteers(status),
+            recoveredSteers,
           };
         },
         canContinue: () => {
@@ -549,7 +614,7 @@ export default function useTerminalRunRecovery({
       // late responses from an interrupted retry attempt.
       return finish(result.status === 'succeeded' ? result.value : undefined);
     },
-    [recoverStatusSteers],
+    [rearmCompletedDrainForLateSteers, recoverStatusSteers],
   );
 
   usePendingRunReconciliation({
@@ -627,7 +692,7 @@ export default function useTerminalRunRecovery({
 
     const terminalConversationId = conversationId;
     const terminalRunEpoch = getResumableRunEpoch(queryClient, terminalConversationId);
-    void fetchTerminalStatus(terminalConversationId).then((result) => {
+    void fetchTerminalStatus(terminalConversationId, terminalRunEpoch).then((result) => {
       if (!result) {
         return;
       }
