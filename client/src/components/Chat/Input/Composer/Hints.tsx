@@ -22,8 +22,9 @@ export const COMPOSER_HINT_ID = 'composer-hint';
  * here would re-announce on every keystroke as the hint flips between idle and
  * typing, so the description channel carries it instead.
  */
-function Hints(state: ComposerHintState) {
-  const hint = useComposerHint(state);
+function Hints(state: Omit<ComposerHintState, 'enterToSend'>) {
+  const enterToSend = useRecoilValue(store.enterToSend);
+  const hint = useComposerHint({ ...state, enterToSend });
   const showTips = useRecoilValue(store.showComposerTips);
   const visible = showTips || hint.kind === 'state';
 

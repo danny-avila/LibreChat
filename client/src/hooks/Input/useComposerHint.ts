@@ -13,6 +13,9 @@ export interface ComposerHintState {
   /** The composer is the answer box for a paused `ask_user_question`. */
   answerModeActive: boolean;
   uploadingCount: number;
+  /** Plain Enter submits. When off, Enter inserts a newline and the modifier
+   *  chord is what submits, which inverts every shortcut named below. */
+  enterToSend: boolean;
 }
 
 /**
@@ -62,16 +65,20 @@ export function composeHint(
   if (state.duringRunActive && state.hasText) {
     const mod = isMac ? '⌘⏎' : 'Ctrl+⏎';
     const alt = isMac ? '⌥⏎' : 'Alt+⏎';
-    const parts =
-      state.duringRunAction === 'steer'
-        ? [
-            localize('com_ui_composer_hint_steer'),
-            `${mod} ${localize('com_ui_composer_hint_queue')}`,
-          ]
-        : [
-            localize('com_ui_composer_hint_queue_default'),
-            `${mod} ${localize('com_ui_composer_hint_send_now')}`,
-          ];
+    const isSteer = state.duringRunAction === 'steer';
+    /* With plain Enter bound to a newline, the chord IS the default action and
+       there is no second chord left to reach the alternate one, so the hint
+       names only what the composer will actually do. */
+    const defaultParts = isSteer
+      ? [localize('com_ui_composer_hint_steer'), `${mod} ${localize('com_ui_composer_hint_queue')}`]
+      : [
+          localize('com_ui_composer_hint_queue_default'),
+          `${mod} ${localize('com_ui_composer_hint_send_now')}`,
+        ];
+    const chordVerb = isSteer
+      ? 'com_ui_composer_hint_steer_verb'
+      : 'com_ui_composer_hint_queue_verb';
+    const parts = state.enterToSend ? defaultParts : [`${mod} ${localize(chordVerb)}`];
     return {
       text: [...parts, `${alt} ${localize('com_ui_composer_hint_interrupt')}`].join(SEPARATOR),
       kind: 'state',
@@ -83,6 +90,16 @@ export function composeHint(
   }
 
   if (state.hasText) {
+    if (!state.enterToSend) {
+      const mod = isMac ? '⌘⏎' : 'Ctrl+⏎';
+      return {
+        text: [
+          `${mod} ${localize('com_ui_composer_hint_send')}`,
+          `⏎ ${localize('com_ui_composer_hint_newline')}`,
+        ].join(SEPARATOR),
+        kind: 'tip',
+      };
+    }
     return { text: localize('com_ui_composer_hint_typing'), kind: 'tip' };
   }
 
