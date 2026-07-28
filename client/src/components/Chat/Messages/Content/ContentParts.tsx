@@ -491,7 +491,14 @@ const ContentParts = memo(function ContentParts({
               key={`tool-group-${groupId}`}
               parts={group.parts}
               isSubmitting={effectiveIsSubmitting}
-              isLast={group.parts.some((p) => p.idx === lastContentIdx)}
+              /** The label part is CONSUMED into the header, not listed in
+               *  `parts` — a filled label at the content tail must still
+               *  mark its group as last or nothing holds the streaming
+               *  cursor until the next delta. */
+              isLast={
+                group.parts.some((p) => p.idx === lastContentIdx) ||
+                group.labelPart?.idx === lastContentIdx
+              }
               renderPart={renderGroupedPart}
               lastContentIdx={lastContentIdx}
               groupAttachments={group.groupAttachments}

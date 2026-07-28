@@ -718,10 +718,14 @@ class AgentClient extends BaseClient {
      * content itself recorded perfectly well. One retry costs nothing at run
      * setup and removes the only realistic way the gate goes stale.
      */
-    /** Retained (not fire-and-forget): label emission is ORDERED after this
-     *  persist, below. The chain settles on failure (warned retry), so a
-     *  lost write can never wedge label emission. */
-    const activityLabelsMarked = GenerationJobManager.markActivityLabels(streamId).catch(() =>
+    /** Retained (not fire-and-forget): the RUN START awaits this persist
+     *  (chatCompletion/resumeCompletion, before processStream/resume), so
+     *  the flag is durable before any batch can claim a label — closing the
+     *  immediate-reconnect race WITHOUT delaying the claim-time reservation
+     *  emit, whose ordering against shifted SDK indices is load-bearing.
+     *  The chain settles on failure (warned retry), so a lost write can
+     *  never wedge run startup. */
+    this.activityLabelsMarkedPromise = GenerationJobManager.markActivityLabels(streamId).catch(() =>
       GenerationJobManager.markActivityLabels(streamId).catch(() => {
         logger.warn(
           `[AgentClient] Could not flag activity labels for ${streamId}; a label resolving during a resume gap may not be reconciled.`,
@@ -785,15 +789,15 @@ class AgentClient extends BaseClient {
       bumpIndexOffset: () => {
         this.steerOffsetState.offset += 1;
       },
-      emitLabelEvent: async (index, part) => {
-        /** ORDERED after the flag persist: resume-gap reconciliation is
-         *  gated on the flag, so a label event must never exist before the
-         *  flag does — an immediate cross-replica reconnect could otherwise
-         *  read the job between the two writes, see neither flag nor
-         *  snapshot label, and skip reconciling a label claimed in the
-         *  snapshot→subscribe window. */
-        await activityLabelsMarked;
-        return GenerationJobManager.emitChunk(
+      /** Emits IMMEDIATELY — never sequenced behind the flag persist. The
+       *  claim has already bumped the shared index offset, so delaying the
+       *  reservation while shifted SDK chunks persist would let a
+       *  cross-instance reconnect reconstruct a hole, compact it, and have
+       *  the late label event overwrite the part that moved into its index.
+       *  Flag ordering is guaranteed upstream instead: run start awaits the
+       *  persist, so the flag is durable before any batch can claim. */
+      emitLabelEvent: (index, part) =>
+        GenerationJobManager.emitChunk(
           streamId,
           {
             event: ActivityLabelEvents.ON_ACTIVITY_LABEL,
@@ -810,8 +814,7 @@ class AgentClient extends BaseClient {
            *  the new response — invisibly, since an empty label renders
            *  nothing — overwriting whatever occupies that slot. */
           { durable: true, expectedCreatedAt: this.jobCreatedAt },
-        );
-      },
+        ),
       trackPendingFill: (fillDone) => {
         this.pendingActivityLabelFills = this.pendingActivityLabelFills ?? [];
         this.pendingActivityLabelFills.push(fillDone);
@@ -2466,6 +2469,13 @@ class AgentClient extends BaseClient {
         config.configurable.last_agent_id = agents[agents.length - 1].id;
 
         this.options.startupTelemetry?.mark('stream_processing_started');
+        /** Flag durable BEFORE the run can claim a label: gap reconciliation
+         *  is gated on it, and ordering it here (one settled-on-failure
+         *  await) keeps the claim-time reservation emit immediate — see
+         *  `emitLabelEvent` in buildActivityLabelWiring. */
+        if (this.activityLabelsMarkedPromise != null) {
+          await this.activityLabelsMarkedPromise;
+        }
         await run.processStream({ messages }, config, {
           callbacks: {
             [Callback.TOOL_ERROR]: logToolError,
@@ -2817,6 +2827,10 @@ class AgentClient extends BaseClient {
       /** @deprecated Agent Chain */
       config.configurable.last_agent_id = agents[agents.length - 1].id;
 
+      /** Same flag-before-run ordering as chatCompletion's processStream. */
+      if (this.activityLabelsMarkedPromise != null) {
+        await this.activityLabelsMarkedPromise;
+      }
       await run.resume(
         resumeValue,
         config,
