@@ -37,7 +37,12 @@ import {
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
 } from './tools';
-import { hasIntentArg, stripIntentArg, stripIntentFromToolDefinitions, INTENT_ARG } from './intent';
+import {
+  hasIntentArg,
+  stripIntentArg,
+  stripIntentLabelsFromToolDefinitions,
+  INTENT_ARG,
+} from './intent';
 import { logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { parseFrontmatter } from '../skills/import';
@@ -4213,15 +4218,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                          * interceptor, so strip the injected `run_in_background`
                          * param from target schemas (the registry entries were
                          * mutated to include it) — mirrors the self-spawn path.
-                         * The host-injected `intent` label param is stripped for
-                         * the same reason: no card renders for an inner call, so
-                         * the sandbox bridge must not advertise it. */
-                        const toolDefs = stripIntentFromToolDefinitions(
+                         * Intent LABELS are stripped for the same reason —
+                         * host-injected AND SDK-native alike (marker-guarded):
+                         * no card renders for an inner call, so the sandbox
+                         * bridge must not advertise them. */
+                        const toolDefs = stripIntentLabelsFromToolDefinitions(
                           stripBackgroundFromToolDefinitions(
                             filteredToolDefs,
                             mergedConfigurable?.backgroundToolNames as string[] | undefined,
                           ),
-                          mergedConfigurable?.intentToolNames as string[] | undefined,
                         );
                         toolCallConfig.toolDefs = toolDefs;
                         toolCallConfig.toolMap = ptcToolMap ?? toolMap;

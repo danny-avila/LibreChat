@@ -1187,25 +1187,7 @@ export async function initializeAgent(
     toolDefinitions = fileAuthoringResult.toolDefinitions;
   }
 
-  /**
-   * Inject the `intent` label param into opted-in tools (native host tools
-   * default on; SDK-native intent schemas are skipped as their own). Runs
-   * after all built-in tool registration so the full, final `toolDefinitions`
-   * set is considered, and BEFORE the background injection so `intent` stays
-   * the FIRST schema property when a tool carries both.
-   */
   let intentToolNames: string[] | undefined;
-  if (params.toolIntentsAvailable === true) {
-    const intentResult = applyIntentLabels({
-      toolDefinitions,
-      toolRegistry,
-      toolOptions: agent.tool_options,
-    });
-    toolDefinitions = intentResult.toolDefinitions;
-    if (intentResult.intentToolNames.length > 0) {
-      intentToolNames = intentResult.intentToolNames;
-    }
-  }
 
   /**
    * Inject the `run_in_background` param into eligible opted-in tools and
@@ -1345,13 +1327,28 @@ export async function initializeAgent(
   }
 
   /**
-   * Final intent-label sanitize, after EVERY registration step (the skill
-   * catalog above appends its SDK definition post-injection): with the
-   * capability off, strips SDK-native intent labels so disabling
-   * `tool_intents` is a real kill switch; with it on, enforces explicit
-   * per-tool opt-outs on late-registered definitions. Marker-guarded — a
-   * tool's own `intent` business parameter is never touched.
+   * Intent labels run LAST, after every registration step — the skill
+   * catalog above both appends its own definition and REPLACES upgraded ones
+   * (e.g. the skill-aware `read_file`), so an earlier injection would be
+   * clobbered. Injection PREPENDS while background's param APPENDS, so
+   * `intent` is the first schema property regardless of this ordering.
+   * The sanitize pass then enforces the flip side: with the capability off
+   * it strips SDK-native intent labels (a real admin kill switch); with it
+   * on it enforces explicit per-tool opt-outs on late-registered
+   * definitions. Both are marker-guarded — a tool's own `intent` business
+   * parameter is never touched.
    */
+  if (params.toolIntentsAvailable === true) {
+    const intentResult = applyIntentLabels({
+      toolDefinitions,
+      toolRegistry,
+      toolOptions: agent.tool_options,
+    });
+    toolDefinitions = intentResult.toolDefinitions;
+    if (intentResult.intentToolNames.length > 0) {
+      intentToolNames = intentResult.intentToolNames;
+    }
+  }
   const intentSanitized = sanitizeIntentLabels({
     toolDefinitions,
     toolRegistry,

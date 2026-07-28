@@ -166,6 +166,12 @@ interface InitializeAgentParams {
    * Whether the admin-level `tool_intents` capability is enabled. Gates
    * `applyIntentLabels` in `initializeAgent` (the injected `intent` label
    * param); absent / `undefined` disables intent labels on this route.
+   *
+   * Boundary: injection and the capability-off sanitize operate on the
+   * `toolDefinitions`/`toolRegistry` surfaces. A custom `LoadToolsFn` that
+   * returns only structured tool INSTANCES bypasses both — such loaders
+   * must provide definition/registry surfaces to participate in intent
+   * labels (matching how the in-repo tool loader behaves).
    */
   toolIntentsAvailable?: boolean;
 }

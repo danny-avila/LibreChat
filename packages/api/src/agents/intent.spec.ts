@@ -9,6 +9,7 @@ import {
   stripIntentArg,
   injectIntentParam,
   stripIntentFromToolDefinitions,
+  stripIntentLabelsFromToolDefinitions,
   stripIntentFromToolRegistry,
   applyIntentLabels,
   sanitizeIntentLabels,
@@ -306,6 +307,58 @@ describe('applyIntentLabels', () => {
     expect(keys[0]).toBe(INTENT_ARG);
     expect(keys).toContain('run_in_background');
     expect(backgroundResult.backgroundToolNames).toEqual(['search_mcp_docs']);
+  });
+
+  it('keeps intent FIRST when injected AFTER background (initialize.ts ordering)', () => {
+    const def = mcpDef('search_mcp_docs');
+    const toolRegistry: LCToolRegistry = new Map([['search_mcp_docs', def]]);
+    const toolOptions = {
+      search_mcp_docs: { describe_intent: true, run_in_background: true },
+    };
+    const backgroundResult = applyBackgroundToolCalls({
+      toolDefinitions: [def],
+      toolRegistry,
+      toolOptions,
+    });
+    const intentResult = applyIntentLabels({
+      toolDefinitions: backgroundResult.toolDefinitions,
+      toolRegistry,
+      toolOptions,
+    });
+    const finalDef = intentResult.toolDefinitions.find((d) => d.name === 'search_mcp_docs');
+    const keys = Object.keys((finalDef?.parameters as { properties: object }).properties);
+    expect(keys[0]).toBe(INTENT_ARG);
+    expect(keys).toContain('run_in_background');
+  });
+});
+
+describe('stripIntentLabelsFromToolDefinitions', () => {
+  it('strips host-injected AND SDK-native labels, sparing business intent params', () => {
+    const hostInjected = injectIntentParam(mcpDef('search_mcp_docs'));
+    const sdkNative = sdkNativeDef('read_file');
+    const businessIntent = {
+      name: 'create_record',
+      parameters: {
+        type: 'object',
+        properties: {
+          intent: { type: 'string', description: 'CRM intent category' },
+        },
+        required: ['intent'],
+      },
+    } as unknown as LCTool;
+    const stripped = stripIntentLabelsFromToolDefinitions([
+      hostInjected,
+      sdkNative,
+      businessIntent,
+    ]);
+    expect(INTENT_ARG in (stripped[0].parameters as { properties: object }).properties).toBe(false);
+    expect(INTENT_ARG in (stripped[1].parameters as { properties: object }).properties).toBe(false);
+    expect(stripped[2]).toBe(businessIntent);
+  });
+
+  it('returns the same array when nothing carries a label', () => {
+    const defs = [mcpDef('a'), mcpDef('b')];
+    expect(stripIntentLabelsFromToolDefinitions(defs)).toBe(defs);
   });
 });
 

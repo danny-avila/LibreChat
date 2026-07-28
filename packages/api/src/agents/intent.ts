@@ -241,6 +241,28 @@ export function stripIntentFromToolDefinitions(
 }
 
 /**
+ * Marker-guarded removal of intent LABELS from every definition —
+ * host-injected AND SDK-native alike. Used for the schemas the PTC sandbox
+ * bridge advertises: no card renders for an inner call, so any label there
+ * is pure token cost for the generating model. Business `intent` params
+ * survive (marker guard).
+ */
+export function stripIntentLabelsFromToolDefinitions(
+  toolDefinitions: LCTool[] | undefined,
+): LCTool[] {
+  const defs = toolDefinitions ?? [];
+  let changed = false;
+  const next = defs.map((def) => {
+    const stripped = removeIntentParam(def);
+    if (stripped !== def) {
+      changed = true;
+    }
+    return stripped;
+  });
+  return changed ? next : defs;
+}
+
+/**
  * Registry counterpart of {@link stripIntentFromToolDefinitions}. Returns a
  * NEW registry (never mutates the shared parent one) with the injected param
  * removed, so a self-spawn child that uses tool_search/deferred loading
