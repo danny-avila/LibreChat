@@ -3,6 +3,7 @@ const express = require('express');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   logAxiosError,
+  getApprovalTtlMs,
   refreshS3FileUrls,
   handleFilesUsageRequest,
   shouldUseUploadSse,
@@ -147,13 +148,16 @@ router.get('/config', async (req, res) => {
  * Owner-scoped TTL hold for uploads sitting in a client-side queue (mid-run
  * queued messages), so the upload-window TTL cannot reap them before drain.
  * Extends the deadline rather than clearing it; the real release happens at
- * send. Thin wrapper: validation, cap, hold window, and best-effort semantics
- * live in `@librechat/api` (`handleFilesUsageRequest`).
+ * send. The approval window is passed through so a queue waiting on a paused
+ * run outlives that pause. Thin wrapper: validation, cap, hold window, and
+ * best-effort semantics live in `@librechat/api` (`handleFilesUsageRequest`).
  */
 router.post('/usage', async (req, res) => {
   try {
+    const checkpointerCfg = req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
     const { status, body } = await handleFilesUsageRequest(req.user ?? {}, req.body ?? {}, {
       extendFilesTTL: db.extendFilesTTL,
+      approvalTtlMs: getApprovalTtlMs(checkpointerCfg),
     });
     return res.status(status).json(body);
   } catch (error) {

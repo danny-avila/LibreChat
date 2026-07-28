@@ -1,4 +1,9 @@
-import { handleFilesUsageRequest, FILES_USAGE_MAX_IDS, FILES_USAGE_HOLD_MS } from './usage';
+import {
+  handleFilesUsageRequest,
+  resolveFilesUsageHoldMs,
+  FILES_USAGE_BASE_HOLD_MS,
+  FILES_USAGE_MAX_IDS,
+} from './usage';
 
 describe('handleFilesUsageRequest', () => {
   const user = { id: 'user-1', tenantId: 'tenant-1' };
@@ -37,11 +42,11 @@ describe('handleFilesUsageRequest', () => {
     expect(deps.extendFilesTTL).not.toHaveBeenCalled();
   });
 
-  it('requests an owner-scoped hold of the fixed lifetime', async () => {
+  it('requests an owner-scoped hold of the resolved lifetime', async () => {
     const deps = createDeps(1);
     const result = await handleFilesUsageRequest(user, { file_ids: ['f1', 'f2'] }, deps);
     expect(deps.extendFilesTTL).toHaveBeenCalledTimes(1);
-    expect(deps.extendFilesTTL).toHaveBeenCalledWith(['f1', 'f2'], FILES_USAGE_HOLD_MS, {
+    expect(deps.extendFilesTTL).toHaveBeenCalledWith(['f1', 'f2'], FILES_USAGE_BASE_HOLD_MS, {
       user: 'user-1',
       tenantId: 'tenant-1',
     });
@@ -58,9 +63,38 @@ describe('handleFilesUsageRequest', () => {
 
     const [, firstHold] = deps.extendFilesTTL.mock.calls[0];
     const [, secondHold] = deps.extendFilesTTL.mock.calls[1];
-    expect(firstHold).toBe(FILES_USAGE_HOLD_MS);
+    expect(firstHold).toBe(FILES_USAGE_BASE_HOLD_MS);
     expect(secondHold).toBe(firstHold);
     expect(typeof firstHold).toBe('number');
+  });
+
+  /** A paused run's approval window has no configured upper bound, so a fixed
+   *  lifetime shorter than it would reap an attachment whose approval is
+   *  still live and leave the drain sending a missing file. */
+  it('stretches the hold to outlast a long configured approval window', async () => {
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const deps = { ...createDeps(1), approvalTtlMs: sevenDaysMs };
+    await handleFilesUsageRequest(user, { file_ids: ['f1'] }, deps);
+
+    const [, holdMs] = deps.extendFilesTTL.mock.calls[0];
+    expect(holdMs).toBe(FILES_USAGE_BASE_HOLD_MS + sevenDaysMs);
+    expect(holdMs).toBeGreaterThan(sevenDaysMs);
+  });
+
+  describe('resolveFilesUsageHoldMs', () => {
+    it('covers the approval window on top of the baseline', () => {
+      expect(resolveFilesUsageHoldMs(1000)).toBe(FILES_USAGE_BASE_HOLD_MS + 1000);
+    });
+
+    it.each([
+      ['undefined', undefined],
+      ['zero', 0],
+      ['negative', -1],
+      ['NaN', Number.NaN],
+      ['Infinity', Number.POSITIVE_INFINITY],
+    ])('falls back to the baseline for %s', (_label, value) => {
+      expect(resolveFilesUsageHoldMs(value)).toBe(FILES_USAGE_BASE_HOLD_MS);
+    });
   });
 
   it('returns 200 with zero held when no id resolves to an owned file', async () => {

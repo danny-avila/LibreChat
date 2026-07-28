@@ -966,8 +966,11 @@ describe('File Routes - Delete with Agent Access', () => {
       /* The hold must remain a hold: still reapable, just later. */
       expect(held.expiresAt).toBeDefined();
       expect(held.expiresAt.getTime()).toBeGreaterThan(soon.getTime());
-      /* Anchored to upload time, so the deadline is a fixed point per file. */
-      expect(held.expiresAt.getTime()).toBe(held.createdAt.getTime() + 24 * 60 * 60 * 1000);
+      /* Anchored to upload time, so the deadline is a fixed point per file:
+       * the 24h baseline plus the default 24h approval window, so a queue
+       * waiting on a paused run outlives that pause. */
+      const HOUR = 60 * 60 * 1000;
+      expect(held.expiresAt.getTime()).toBe(held.createdAt.getTime() + 24 * HOUR + 24 * HOUR);
       /* A queue touch is not a send, so it must not inflate usage. */
       expect(held.usage).toBe(0);
     });
