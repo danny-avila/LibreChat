@@ -296,28 +296,33 @@ export function createUserMethods(
 
   /**
    * Atomically records terms acceptance for a user.
-   * Sets termsAccepted and, only when no timestamp is already stored, stamps
-   * termsAcceptedAt with the server time so the first acceptance within a terms
-   * cycle is preserved across concurrent or repeated requests.
+   * A null-guarded claim stamps termsAcceptedAt only when no timestamp is
+   * already stored (explicit null from the schema default or a missing legacy
+   * field), so the first acceptance within a terms cycle is preserved across
+   * concurrent or repeated requests; repeat acceptances only reassert
+   * termsAccepted. Plain updates are used instead of an aggregation pipeline
+   * with $$NOW, which Amazon DocumentDB rejects.
    */
   async function acceptTerms(userId: string): Promise<IUser | null> {
     const User = mongoose.models.User;
-    const updated = await User.findByIdAndUpdate(
-      userId,
-      [
-        {
-          $set: {
-            termsAccepted: true,
-            termsAcceptedAt: { $ifNull: ['$termsAcceptedAt', '$$NOW'] },
-          },
-        },
-      ],
+    const firstAcceptance = await User.findOneAndUpdate(
+      { _id: userId, termsAcceptedAt: null },
+      { $set: { termsAccepted: true, termsAcceptedAt: new Date() } },
       { new: true, runValidators: true },
     ).lean<IUser>();
-    if (updated) {
+    if (firstAcceptance) {
+      await invalidateAuthUserDocCache(userId);
+      return firstAcceptance;
+    }
+    const reaccepted = await User.findByIdAndUpdate(
+      userId,
+      { $set: { termsAccepted: true } },
+      { new: true, runValidators: true },
+    ).lean<IUser>();
+    if (reaccepted) {
       await invalidateAuthUserDocCache(userId);
     }
-    return updated;
+    return reaccepted;
   }
 
   /**

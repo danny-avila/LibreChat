@@ -17,6 +17,13 @@ interface IConversationTag {
  * single decrement, so callers must dedupe tags per conversation before flattening
  * to avoid double-decrementing a conversation's duplicate tag entries. Counts are
  * clamped at zero to tolerate any pre-existing drift.
+ *
+ * Each tag emits two mutually exclusive ops in one ordered bulkWrite instead of a
+ * `$max`/`$subtract` aggregation-pipeline update (which Amazon DocumentDB rejects):
+ * a clamp-to-zero op for counts below the decrement amount (or null/missing),
+ * then a guarded `$inc` for counts at or above it. The clamp must run first —
+ * after a decrement lands, the remaining count could match the clamp filter and
+ * would be wrongly zeroed if the clamp ran second.
  */
 export async function decrementTagCounts(
   mongoose: typeof import('mongoose'),
@@ -41,18 +48,20 @@ export async function decrementTagCounts(
 
   try {
     const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
-    const bulkOps = [...decrementByTag.entries()].map(([tag, amount]) => ({
-      updateOne: {
-        filter: { user, tag },
-        update: [
-          {
-            $set: {
-              count: { $max: [0, { $subtract: [{ $ifNull: ['$count', 0] }, amount] }] },
-            },
-          },
-        ],
+    const bulkOps = [...decrementByTag.entries()].flatMap(([tag, amount]) => [
+      {
+        updateOne: {
+          filter: { user, tag, $or: [{ count: { $lt: amount } }, { count: null }] },
+          update: { $set: { count: 0 } },
+        },
       },
-    }));
+      {
+        updateOne: {
+          filter: { user, tag, count: { $gte: amount } },
+          update: { $inc: { count: -amount } },
+        },
+      },
+    ]);
 
     await tenantSafeBulkWrite(ConversationTag, bulkOps);
   } catch (error) {

@@ -498,6 +498,43 @@ describe('User Methods - Database Tests', () => {
       expect(result).toBeNull();
     });
 
+    test('stamps termsAcceptedAt for a legacy document missing the field entirely', async () => {
+      const legacyId = new mongoose.Types.ObjectId();
+      await User.collection.insertOne({
+        _id: legacyId,
+        name: 'Pre-Terms User',
+        email: 'pre-terms@example.com',
+        provider: 'local',
+      });
+
+      const updated = await methods.acceptTerms(legacyId.toString());
+
+      expect(updated?.termsAccepted).toBe(true);
+      expect(updated?.termsAcceptedAt).toBeInstanceOf(Date);
+    });
+
+    test('converges on a single termsAcceptedAt under concurrent acceptance', async () => {
+      const user = await User.create({
+        name: 'Concurrent User',
+        email: 'concurrent-terms@example.com',
+        provider: 'local',
+      });
+      const userId = user._id?.toString() ?? '';
+
+      const results = await Promise.all(
+        Array.from({ length: 5 }, () => methods.acceptTerms(userId)),
+      );
+
+      expect(results.every((result) => result?.termsAccepted === true)).toBe(true);
+      const stampedTimes = new Set(
+        results.map((result) => (result?.termsAcceptedAt as Date).getTime()),
+      );
+      expect(stampedTimes.size).toBe(1);
+
+      const repeat = await methods.acceptTerms(userId);
+      expect((repeat?.termsAcceptedAt as Date).getTime()).toBe([...stampedTimes][0]);
+    });
+
     test('should invalidate cached auth user documents on acceptance', async () => {
       enableAuthUserDocCache();
       const user = await User.create({
