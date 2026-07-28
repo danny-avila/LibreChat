@@ -18,12 +18,15 @@ interface IConversationTag {
  * to avoid double-decrementing a conversation's duplicate tag entries. Counts are
  * clamped at zero to tolerate any pre-existing drift.
  *
- * Each tag emits two mutually exclusive ops in one ordered bulkWrite instead of a
- * `$max`/`$subtract` aggregation-pipeline update (which Amazon DocumentDB rejects):
- * a clamp-to-zero op for counts below the decrement amount (or null/missing),
- * then a guarded `$inc` for counts at or above it. The clamp must run first —
- * after a decrement lands, the remaining count could match the clamp filter and
- * would be wrongly zeroed if the clamp ran second.
+ * Each tag emits three ops in one ordered bulkWrite instead of a
+ * `$max`/`$subtract` aggregation-pipeline update (which Amazon DocumentDB
+ * rejects): normalize a null/missing count to zero, apply the `$inc`, then
+ * clamp a negative result back to zero. The clamp keys on `count < 0` rather
+ * than `count < amount` so it composes with concurrent decrements of the same
+ * tag: increments commute and every interleaved call ends with its own clamp,
+ * so the count still converges on `max(0, ...)` exactly as the serialized
+ * pipeline did. The only trade-off is a transiently negative count between an
+ * op pair, which readers already tolerate.
  */
 export async function decrementTagCounts(
   mongoose: typeof import('mongoose'),
@@ -51,14 +54,20 @@ export async function decrementTagCounts(
     const bulkOps = [...decrementByTag.entries()].flatMap(([tag, amount]) => [
       {
         updateOne: {
-          filter: { user, tag, $or: [{ count: { $lt: amount } }, { count: null }] },
+          filter: { user, tag, count: null },
           update: { $set: { count: 0 } },
         },
       },
       {
         updateOne: {
-          filter: { user, tag, count: { $gte: amount } },
+          filter: { user, tag },
           update: { $inc: { count: -amount } },
+        },
+      },
+      {
+        updateOne: {
+          filter: { user, tag, count: { $lt: 0 } },
+          update: { $set: { count: 0 } },
         },
       },
     ]);

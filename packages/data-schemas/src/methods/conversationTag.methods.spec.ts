@@ -192,6 +192,17 @@ describe('decrementTagCounts', () => {
     expect(await readCount('legacy')).toBe(0);
   });
 
+  it('converges to zero under concurrent decrements exceeding the count', async () => {
+    await ConversationTag.create({ tag: 'race', user: userId, position: 1, count: 3 });
+
+    await Promise.all([
+      decrementTagCounts(mongoose, userId, ['race', 'race']),
+      decrementTagCounts(mongoose, userId, ['race', 'race']),
+    ]);
+
+    expect(await readCount('race')).toBe(0);
+  });
+
   it("leaves other users' tags untouched", async () => {
     const otherUserId = new mongoose.Types.ObjectId().toString();
     await ConversationTag.create({ tag: 'work', user: userId, position: 1, count: 4 });

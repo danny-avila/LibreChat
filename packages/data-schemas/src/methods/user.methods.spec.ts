@@ -498,6 +498,28 @@ describe('User Methods - Database Tests', () => {
       expect(result).toBeNull();
     });
 
+    test('stamps a fresh termsAcceptedAt when accepting after a terms reset', async () => {
+      const user = await User.create({
+        name: 'Reset User',
+        email: 'reset-terms@example.com',
+        provider: 'local',
+      });
+      const userId = user._id?.toString() ?? '';
+      const first = await methods.acceptTerms(userId);
+
+      await User.updateOne(
+        { _id: userId },
+        { $set: { termsAccepted: false, termsAcceptedAt: null } },
+      );
+      const reaccepted = await methods.acceptTerms(userId);
+
+      expect(reaccepted?.termsAccepted).toBe(true);
+      expect(reaccepted?.termsAcceptedAt).toBeInstanceOf(Date);
+      expect((reaccepted?.termsAcceptedAt as Date).getTime()).toBeGreaterThanOrEqual(
+        (first?.termsAcceptedAt as Date).getTime(),
+      );
+    });
+
     test('stamps termsAcceptedAt for a legacy document missing the field entirely', async () => {
       const legacyId = new mongoose.Types.ObjectId();
       await User.collection.insertOne({
