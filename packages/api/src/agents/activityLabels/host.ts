@@ -8,6 +8,7 @@ import type { EndpointDbMethods, OpenAIConfiguration, ServerRequest } from '~/ty
 import type { ActivityLabelLLM } from './runtime';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveConfigHeaders } from '~/utils/headers';
+import { omitTitleOptions } from '~/agents/client';
 import { createSafeUser } from '~/utils/env';
 
 /** Cache-token details in the LangChain-standard normalized shape. */
@@ -289,7 +290,36 @@ export async function resolveActivityLabelModel({
   ) {
     provider = Providers.AZURE;
   }
-  const clientOptions = { ...(llmConfig ?? {}) } as MaybeAzureConfig;
+  /** Sanitized copy, exactly like the title path: the label often runs a
+   *  DIFFERENT (cheaper) model than the primary generation, so
+   *  primary-generation options must not ride along. `omitTitleOptions`
+   *  drops thinking/streaming/output-cap keys that can make the label
+   *  request fail outright on the substitute model — or spend extended
+   *  thinking on a 4–9 word header and blow the settlement window. The
+   *  `modelKwargs` output caps go for the same reason (copied, not mutated:
+   *  `llmConfig` is shared with the memoized provider resolution). */
+  const rawOptions = { ...(llmConfig ?? {}) } as MaybeAzureConfig & {
+    modelKwargs?: Record<string, unknown>;
+    clientOptions?: { defaultHeaders?: unknown };
+  };
+  if (rawOptions.modelKwargs != null) {
+    const modelKwargs = { ...rawOptions.modelKwargs };
+    delete modelKwargs.max_completion_tokens;
+    delete modelKwargs.max_output_tokens;
+    rawOptions.modelKwargs = modelKwargs;
+  }
+  /** The filter drops the Anthropic `clientOptions` carrier (thinking,
+   *  streaming), which would also drop its `defaultHeaders` — restore the
+   *  SAME object reference so gateway/proxy metadata still reaches label
+   *  requests and `resolveConfigHeaders` mutates the object the client is
+   *  actually built from. */
+  const anthropicCarrier = rawOptions.clientOptions;
+  const clientOptions = Object.fromEntries(
+    Object.entries(rawOptions).filter(([key]) => !omitTitleOptions.has(key)),
+  ) as MaybeAzureConfig & { clientOptions?: { defaultHeaders?: unknown } };
+  if (anthropicCarrier?.defaultHeaders != null && clientOptions.clientOptions == null) {
+    clientOptions.clientOptions = anthropicCarrier;
+  }
   if (options.configOptions) {
     clientOptions.configuration = options.configOptions;
   }

@@ -175,6 +175,38 @@ describe('buildPrompt', () => {
     expect(tight).toContain('…');
   });
 
+  /** Per-entry truncation alone leaves the batch dimension unbounded: a
+   *  parallel batch of hundreds of calls must not build a prompt past the
+   *  fast model's window. */
+  it('bounds the total entries section for giant parallel batches', () => {
+    const entries = Array.from({ length: 200 }, (_, i) => ({
+      toolName: `tool_${i}`,
+      toolInput: { i },
+      toolUseId: `t${i}`,
+      status: 'success' as const,
+      toolOutput: 'y'.repeat(500),
+    }));
+    const prompt = buildPrompt(entries, 600);
+    expect(prompt.length).toBeLessThan(15_000);
+    expect(prompt).toMatch(/\(\+\d+ more tool calls not shown\)/);
+    /** Prefix semantics: the first entry is always present in full. */
+    expect(prompt).toContain('- tool_0(');
+    expect(prompt).not.toContain('- tool_199(');
+  });
+
+  it('shows every entry when the batch fits the budget', () => {
+    const entries = Array.from({ length: 3 }, (_, i) => ({
+      toolName: `tool_${i}`,
+      toolInput: { i },
+      toolUseId: `t${i}`,
+      status: 'success' as const,
+      toolOutput: 'ok',
+    }));
+    const prompt = buildPrompt(entries, 600);
+    expect(prompt).toContain('- tool_2(');
+    expect(prompt).not.toContain('more tool calls not shown');
+  });
+
   it('serializes small structured values exactly like JSON.stringify', () => {
     const toolInput = { q: 'docs', filters: { lang: 'en', page: 2 }, ids: [1, 2] };
     const prompt = buildPrompt(

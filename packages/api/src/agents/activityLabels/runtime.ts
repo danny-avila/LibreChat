@@ -174,6 +174,13 @@ const DEFAULT_CHAR_LIMIT = 600;
  *  reach a distinguishing path or query past the first 200 characters. */
 const INTENT_CHAR_LIMIT = 200;
 const SUMMARY_TIMEOUT_MS = 12_000;
+/** Total budget for the entries section. Per-entry truncation alone leaves
+ *  the batch dimension unbounded — a parallel batch of hundreds of calls
+ *  would build a prompt past the fast model's window and bill input tokens
+ *  far beyond what a one-line header justifies. Scales with the configured
+ *  per-entry limit so a raised `activityCharLimit` still fits several
+ *  entries; entries past the budget are skipped WITHOUT serializing them. */
+const ENTRIES_CHAR_BUDGET = 8_000;
 /** Hard bound on the PERSISTED label. The instruction asks for 4–9 words, but
  *  a model that ignores it — or is steered by injection through untrusted
  *  tool output — could otherwise turn one header into thousands of tokens
@@ -348,14 +355,32 @@ export function buildPrompt(
           .join('\n'),
     );
   }
-  const lines = entries.map((entry) => {
+  const budget = Math.max(ENTRIES_CHAR_BUDGET, charLimit * 4);
+  const lines: string[] = [];
+  let used = 0;
+  let omitted = 0;
+  for (const entry of entries) {
+    /** Prefix cut, never a mid-list sample: once the budget is spent the
+     *  remaining entries are skipped unserialized (a giant batch must not
+     *  even pay the stringify cost for lines that will be dropped). The
+     *  first entry always fits, and the line that crosses the budget is
+     *  kept, so at least one complete call is always shown. */
+    if (lines.length > 0 && used >= budget) {
+      omitted += 1;
+      continue;
+    }
     const input = truncate(stringifyUnknown(entry.toolInput, charLimit), charLimit);
     const outcome =
       entry.status === 'error'
         ? `ERROR: ${truncate(entry.error ?? 'unknown error', charLimit)}`
         : truncate(stringifyUnknown(entry.toolOutput, charLimit), charLimit);
-    return `- ${entry.toolName}(${input}) → ${outcome}`;
-  });
+    const line = `- ${entry.toolName}(${input}) → ${outcome}`;
+    lines.push(line);
+    used += line.length;
+  }
+  if (omitted > 0) {
+    lines.push(`- (+${omitted} more tool calls not shown)`);
+  }
   /** Flagged as reference material: without this the model tends to read the
    *  list as the thing to summarize and hands back a transcription of it. */
   sections.push(`What it called, and what came back (do not restate these):\n${lines.join('\n')}`);

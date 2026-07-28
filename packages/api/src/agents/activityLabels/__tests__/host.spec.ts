@@ -159,6 +159,31 @@ describe('resolveActivityLabelModel model precedence', () => {
       expect.objectContaining({ model_parameters: { model: 'label-model' } }),
     );
   });
+
+  /** The label often runs a cheaper model than the primary generation, so
+   *  primary-only options (thinking, output caps) must be stripped exactly
+   *  like the title path — while proxy headers survive. */
+  it('strips primary-generation options but keeps the Anthropic header carrier', async () => {
+    mockGetOptions.mockResolvedValueOnce({
+      llmConfig: {
+        model: 'resolved',
+        thinking: { type: 'enabled', budget_tokens: 4096 },
+        maxOutputTokens: 8192,
+        streaming: true,
+        modelKwargs: { max_output_tokens: 8192, service_tier: 'flex' },
+        clientOptions: { defaultHeaders: { 'x-proxy-key': 'abc' } },
+      },
+    } as never);
+    const resolved = await resolve({ activityLabel: true, activityModel: 'label-model' });
+    const clientOptions = resolved.clientOptions as Record<string, unknown>;
+    expect(clientOptions.thinking).toBeUndefined();
+    expect(clientOptions.maxOutputTokens).toBeUndefined();
+    expect(clientOptions.streaming).toBeUndefined();
+    expect(clientOptions.modelKwargs).toEqual({ service_tier: 'flex' });
+    expect(clientOptions.clientOptions).toEqual({
+      defaultHeaders: { 'x-proxy-key': 'abc' },
+    });
+  });
 });
 
 describe('mapCollectedMetadataToUsage cache tokens', () => {
