@@ -6,7 +6,12 @@ import { Constants, QueryKeys } from 'librechat-data-provider';
 import type { TMessage, TConversation, Agents } from 'librechat-data-provider';
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
 import type { RunRecoveryTarget } from './terminal';
-import { dedupeSteersById, isNotFoundError, removeConvoFromAllQueries } from '~/utils';
+import {
+  dedupeSteersById,
+  isNotFoundError,
+  removeConvoFromAllQueries,
+  upsertConvoInAllQueries,
+} from '~/utils';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import {
   fetchMessagesWithCacheProtection,
@@ -315,7 +320,6 @@ export default function useTerminalRunRecovery({
 
       const persistedRun = getPersistedRunState(refreshed.messages, recoveryTarget);
       const outcome =
-        disconnectedRun?.terminalOutcome ??
         (status && getStatusRunOutcome(status)) ??
         persistedRun.outcome ??
         (recoveryTarget && persistedRun.userMessageFound && !persistedRun.responseFound
@@ -333,11 +337,17 @@ export default function useTerminalRunRecovery({
         endedAt: Date.now(),
       });
       clearDisconnectedRunRecovery(queryClient, conversationId);
-      if (disconnectedRun?.startedAsNewConvo === true && ownsRecoveryRoute) {
+      if (disconnectedRun?.startedAsNewConvo === true) {
         const recoveredConversation = queryClient.getQueryData<TConversation>([
           QueryKeys.conversation,
           conversationId,
         ]);
+        if (recoveredConversation) {
+          upsertConvoInAllQueries(queryClient, recoveredConversation);
+        }
+        if (!ownsRecoveryRoute) {
+          return;
+        }
         setConversation((current) => {
           if (
             current?.conversationId !== Constants.NEW_CONVO &&
@@ -377,10 +387,7 @@ export default function useTerminalRunRecovery({
       const disconnectedRun = getDisconnectedRunRecovery(queryClient, conversationId);
       const recoveryTarget = getRunRecoveryTarget(disconnectedRun, getMessages(conversationId));
       const shouldSignalRunEnd =
-        recoveryTarget != null ||
-        disconnectedRun?.terminalOutcome != null ||
-        getStatusRunOutcome(status) != null ||
-        recoveredSteers;
+        recoveryTarget != null || getStatusRunOutcome(status) != null || recoveredSteers;
 
       restoreSteerChips(conversationId, undefined);
       const refreshed = await refreshUnreconciledResponse(recoveryRunEpoch);

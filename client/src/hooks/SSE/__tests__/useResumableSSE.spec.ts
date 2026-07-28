@@ -375,7 +375,7 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it('invalidates the stream conversation id on 404 for a new conversation', async () => {
+  it('reconciles the sidebar on 404 for a new conversation', async () => {
     mockFindAll.mockReturnValue([{ queryKey: [QueryKeys.allConversations] }]);
     const submission = buildSubmission({
       conversation: {},
@@ -414,26 +414,14 @@ describe('useResumableSSE', () => {
     expect(mockRemoveQueries).toHaveBeenCalledWith({
       queryKey: ['streamStatus', 'stream-123'],
     });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.allConversations],
+    });
 
     const allConversationWrites = mockSetQueryData.mock.calls.filter(
       ([queryKey]) => Array.isArray(queryKey) && queryKey[0] === QueryKeys.allConversations,
     );
-    expect(allConversationWrites).toHaveLength(2);
-
-    const removeUpdater = allConversationWrites[1][1] as (data: {
-      pages: { conversations: { conversationId: string }[]; nextCursor: null }[];
-      pageParams: never[];
-    }) => { pages: { conversations: { conversationId: string }[] }[] };
-    const result = removeUpdater({
-      pages: [
-        {
-          conversations: [{ conversationId: 'stream-123' }, { conversationId: 'other' }],
-          nextCursor: null,
-        },
-      ],
-      pageParams: [],
-    });
-    expect(result.pages[0].conversations).toEqual([{ conversationId: 'other' }]);
+    expect(allConversationWrites).toHaveLength(1);
     unmount();
   });
 
@@ -511,9 +499,7 @@ describe('useResumableSSE', () => {
       sse._emit('error', { responseCode: 404 });
     });
 
-    // Reconcile against the server (refetch) rather than dropping a possibly-persisted
-    // conversation. The handler is a mutually-exclusive isResume ? invalidate : remove, so
-    // asserting the invalidate proves the immediate removal did not run.
+    // Reconcile against the server rather than dropping a possibly-persisted conversation.
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: [QueryKeys.allConversations],
     });
@@ -523,10 +509,6 @@ describe('useResumableSSE', () => {
       userMessageId: 'msg-1',
       responseMessageId: 'msg-1_',
     });
-    expect(mockSetQueryData).toHaveBeenCalledWith(
-      ['resumable-disconnected-run', 'stream-123'],
-      expect.objectContaining({ terminalOutcome: 'aborted' }),
-    );
     expect(mockRemoveQueries).toHaveBeenCalledWith({
       queryKey: ['resumable-terminal-event', 'stream-123'],
       exact: true,

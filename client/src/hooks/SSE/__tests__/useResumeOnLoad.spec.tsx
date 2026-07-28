@@ -563,7 +563,7 @@ describe('useResumeOnLoad', () => {
     expect(observedSiblingIndexes[observedSiblingIndexes.length - 1]).toBe(1);
   });
 
-  describe('completed run refresh', () => {
+  describe('terminal run recovery integration', () => {
     function buildAssistantMessage(overrides: Partial<TMessage> = {}): TMessage {
       return {
         messageId: RESPONSE_MESSAGE_ID,
@@ -1102,69 +1102,6 @@ describe('useResumeOnLoad', () => {
         expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
       },
     );
-
-    it('does not overwrite a 404 run end with the persisted completed response', async () => {
-      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-      const observedRunEnds: Array<RunEnd | null> = [];
-      const runResponseId = '404-run-response';
-      const unfinishedMessages = [
-        buildUserMessage(CONVERSATION_ID),
-        buildAssistantMessage({
-          messageId: runResponseId,
-          createdAt: undefined,
-          updatedAt: undefined,
-        }),
-      ];
-      const refreshedMessages = [
-        buildUserMessage(CONVERSATION_ID),
-        buildAssistantMessage({
-          messageId: runResponseId,
-          text: 'Persisted before stream cleanup',
-          error: false,
-          unfinished: false,
-        }),
-      ];
-      queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
-      setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
-        startedAsNewConvo: false,
-        created: true,
-        userMessageId: USER_MESSAGE_ID,
-        responseMessageId: runResponseId,
-        terminalOutcome: 'aborted',
-      });
-      mockUseActiveJobs.mockReturnValue({
-        data: { activeJobIds: [CONVERSATION_ID] },
-      });
-      mockFetchStreamStatus.mockResolvedValue({ active: false });
-
-      const { rerender } = renderUseResumeOnLoad({
-        submission: buildSubmission(CONVERSATION_ID),
-        getMessages: () =>
-          queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
-        onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
-        queryClient,
-        messageQueryFn: jest.fn().mockResolvedValue(refreshedMessages),
-      });
-
-      mockUseActiveJobs.mockReturnValue({
-        data: { activeJobIds: [] },
-      });
-      rerender();
-
-      await waitFor(() => {
-        expect(observedRunEnds[observedRunEnds.length - 1]).toMatchObject({
-          conversationId: CONVERSATION_ID,
-          outcome: 'aborted',
-        });
-      });
-      expect(observedRunEnds).not.toContainEqual(
-        expect.objectContaining({
-          conversationId: CONVERSATION_ID,
-          outcome: 'completed',
-        }),
-      );
-      expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
-    });
 
     it('recovers terminal steers only after the server confirms the job is inactive', async () => {
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

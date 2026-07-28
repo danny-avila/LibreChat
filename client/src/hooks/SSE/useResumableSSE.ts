@@ -1254,7 +1254,6 @@ export default function useResumableSSE(
               optimisticStreamIdsRef.current.has(currentStreamId),
             created: existingRecovery?.created ?? createdStreamIdsRef.current.has(currentStreamId),
             ...getRunRecoveryIdentity(currentSubmission),
-            terminalOutcome: 'aborted',
           });
           removeActiveJob(currentStreamId);
           /** Terminal: drop any in-flight live estimate so the gauge doesn't
@@ -1273,17 +1272,11 @@ export default function useResumableSSE(
             !createdStreamIdsRef.current.has(currentStreamId) &&
             optimisticStreamIdsRef.current.has(currentStreamId)
           ) {
-            if (isResume) {
-              // A resumed subscribe attaches to an already-adopted stream (e.g. a deduped
-              // start request). A 404 means the job is gone — but the conversation may be
-              // persisted (the original completed and was cleaned up) or may never have
-              // existed (the winner died before persisting). Don't guess: reconcile against
-              // the server so a real conversation stays and a phantom is dropped.
-              queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
-            } else {
-              // Fresh optimistic stream that never started: prune immediately.
-              removeConvoFromAllQueries(queryClient, currentStreamId);
-            }
+            // A 404 after the start POST does not prove the conversation is a phantom:
+            // a fast run can persist and be cleaned up before either a fresh or resumed
+            // subscriber receives CREATED. Reconcile the sidebar now and let terminal
+            // message recovery prune only after its authoritative messages request 404s.
+            queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
           }
           setIsSubmitting(false);
           setShowStopButton(false);

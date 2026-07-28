@@ -5,7 +5,6 @@ export type DisconnectedRunRecovery = {
   created: boolean;
   userMessageId?: string;
   responseMessageId?: string;
-  terminalOutcome?: 'completed' | 'error' | 'aborted';
 };
 
 const terminalEventQueryKey = (conversationId: string) =>
