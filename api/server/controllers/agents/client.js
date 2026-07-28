@@ -645,8 +645,19 @@ class AgentClient extends BaseClient {
    *  timeout the label scope is closed and its abort controller fired, so a
    *  straggler cannot mutate the saved response or emit into a dead job. */
   async settleActivityLabels(timeoutMs = 3000) {
+    /** Detached even when nothing settled: the wiring attaches its abort
+     *  listener at BUILD time, and a segment can end without a single claim
+     *  (text-only, or handoff batches, which skip labels) — the early
+     *  return below would otherwise leave that listener accumulating across
+     *  HITL approval cycles on the shared job signal. Idempotent. */
+    const detachScopeListeners = () => {
+      for (const scope of this.activityLabelScopes ?? []) {
+        scope.detach?.();
+      }
+    };
     const pending = this.pendingActivityLabelFills;
     if (!pending || pending.length === 0) {
+      detachScopeListeners();
       return;
     }
     this.pendingActivityLabelFills = [];
@@ -658,12 +669,7 @@ class AgentClient extends BaseClient {
         scope.abort.abort();
       }
     });
-    /** Settled either way — the abort listener has no remaining work, and
-     *  leaving it attached across HITL approval cycles accumulates dead
-     *  closures on the shared job signal. Idempotent on double settle. */
-    for (const scope of this.activityLabelScopes ?? []) {
-      scope.detach?.();
-    }
+    detachScopeListeners();
   }
 
   /**
