@@ -12,6 +12,7 @@ const { Constants } = require('librechat-data-provider');
 const { createModels, createMethods } = require('@librechat/data-schemas');
 
 const mockGetAgent = jest.fn();
+const mockGetMessages = jest.fn();
 const mockFormatAgentMessages = jest.fn().mockReturnValue({ messages: [], indexTokenCountMap: {} });
 const mockGenerateResponseId = jest.fn();
 const mockValidateResponseRequest = jest.fn();
@@ -154,8 +155,14 @@ jest.mock('~/cache', () => ({
 jest.mock('~/models', () => {
   const realMongoose = require('mongoose');
   const { createMethods: create } = require('@librechat/data-schemas');
+  const methods = create(realMongoose);
   return {
-    ...create(realMongoose),
+    ...methods,
+    /** Spied so the controller's own history reads can be counted */
+    getMessages: (...args) => {
+      mockGetMessages(...args);
+      return methods.getMessages(...args);
+    },
     getAgent: (...args) => mockGetAgent(...args),
   };
 });
@@ -298,6 +305,50 @@ describe('Responses API - store: true persistence', () => {
     expect(firstAssistant.parentMessageId).toBe(firstUser.messageId);
     expect(secondUser.parentMessageId).toBe(firstAssistant.messageId);
     expect(secondAssistant.parentMessageId).toBe(secondUser.messageId);
+  });
+
+  it('records the turn in the conversation message list', async () => {
+    await runTurn({ input: 'first', responseId: 'resp_1' });
+
+    let conversation = await getStoredConversation();
+    expect(conversation.messages).toHaveLength(2);
+
+    await runTurn({ input: 'second', responseId: 'resp_2', previousResponseId: 'resp_1' });
+
+    conversation = await getStoredConversation();
+    expect(conversation.messages).toHaveLength(4);
+  });
+
+  it('parents a branch to the referenced response rather than the conversation tip', async () => {
+    await runTurn({ input: 'first', responseId: 'resp_1' });
+    const { conversationId } = await getStoredConversation();
+    await runTurn({ input: 'second', responseId: 'resp_2', previousResponseId: 'resp_1' });
+
+    await runTurn({ input: 'branch', responseId: 'resp_3', previousResponseId: 'resp_1' });
+
+    const messages = await getStoredMessages(conversationId);
+    const branchUser = messages.find((message) => message.text === 'branch');
+    expect(branchUser.parentMessageId).toBe('resp_1');
+    expect(messages.find((message) => message.messageId === 'resp_3').parentMessageId).toBe(
+      branchUser.messageId,
+    );
+  });
+
+  describe('history reads', () => {
+    it('reads no history to parent the first turn', async () => {
+      await runTurn({ input: 'hello', responseId: 'resp_1' });
+
+      expect(mockGetMessages).not.toHaveBeenCalled();
+    });
+
+    it('reads the history once for a continuation', async () => {
+      await runTurn({ input: 'first', responseId: 'resp_1' });
+      mockGetMessages.mockClear();
+
+      await runTurn({ input: 'second', responseId: 'resp_2', previousResponseId: 'resp_1' });
+
+      expect(mockGetMessages).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('previous_response_id resolution', () => {

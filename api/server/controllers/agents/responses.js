@@ -127,7 +127,8 @@ function convertToInternalMessages(input) {
  *
  * @param {string} userId - The user ID
  * @param {string} id - A response ID or a conversation ID
- * @returns {Promise<{ conversationId?: string, conversation?: object }>} The resolved conversation
+ * @returns {Promise<{ conversationId?: string, conversation?: object, messageId?: string }>} The
+ * resolved conversation, plus the response's `messageId` when the ID named a response
  */
 async function resolveConversation(userId, id) {
   const conversation = await db.getConvo(userId, id);
@@ -143,6 +144,7 @@ async function resolveConversation(userId, id) {
   return {
     conversationId: message.conversationId,
     conversation: await db.getConvo(userId, message.conversationId),
+    messageId: message.messageId,
   };
 }
 
@@ -204,15 +206,11 @@ function buildSaveContext(req) {
  * @param {string} conversationId
  * @param {Array} inputMessages - Internal format messages
  * @param {string} agentId
+ * @param {string} [turnParentMessageId] - The message this turn's first input chains onto
  * @returns {Promise<string>} The messageId the assistant response should be parented to
  */
-async function saveInputMessages(req, conversationId, inputMessages, agentId) {
-  const userId = req?.user?.id;
-  /** Chain onto the conversation's newest stored message (multi-turn), else the root */
-  const priorMessages = await db.getMessages({ conversationId, user: userId });
-  let parentMessageId = priorMessages?.length
-    ? priorMessages[priorMessages.length - 1].messageId
-    : Constants.NO_PARENT;
+async function saveInputMessages(req, conversationId, inputMessages, agentId, turnParentMessageId) {
+  let parentMessageId = turnParentMessageId ?? Constants.NO_PARENT;
 
   for (const msg of inputMessages) {
     if (msg.role === 'user') {
@@ -395,6 +393,7 @@ const createResponse = async (req, res) => {
 
   try {
     let resolvedConversationId;
+    let previousResponseMessageId;
     if (request.previous_response_id != null) {
       if (typeof request.previous_response_id !== 'string') {
         return sendResponsesErrorResponse(
@@ -404,10 +403,8 @@ const createResponse = async (req, res) => {
           'invalid_request',
         );
       }
-      ({ conversationId: resolvedConversationId } = await resolveConversation(
-        req.user?.id,
-        request.previous_response_id,
-      ));
+      ({ conversationId: resolvedConversationId, messageId: previousResponseMessageId } =
+        await resolveConversation(req.user?.id, request.previous_response_id));
       if (!resolvedConversationId) {
         return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
       }
@@ -672,6 +669,16 @@ const createResponse = async (req, res) => {
       previousMessages = await loadPreviousMessages(conversationId, userId);
     }
 
+    /**
+     * Parent for this turn's first stored message: the referenced response when the client named
+     * one, so a branch stays on the referenced path rather than the conversation's newest tip.
+     * Falls back to the history already loaded above, then to the conversation root.
+     */
+    const turnParentMessageId =
+      previousResponseMessageId ??
+      previousMessages[previousMessages.length - 1]?.messageId ??
+      Constants.NO_PARENT;
+
     // Convert input to internal messages
     const inputMessages = convertToInternalMessages(
       typeof request.input === 'string' ? request.input : request.input,
@@ -920,15 +927,13 @@ const createResponse = async (req, res) => {
       // Save to database if store: true
       if (request.store === true) {
         try {
-          // Save conversation
-          await saveConversation(req, conversationId, agentId, agent);
-
           // Save input messages
           const lastUserMessageId = await saveInputMessages(
             req,
             conversationId,
             inputMessages,
             agentId,
+            turnParentMessageId,
           );
 
           // Build response for saving (use tracker with buildResponse for streaming)
@@ -941,6 +946,9 @@ const createResponse = async (req, res) => {
             agentId,
             lastUserMessageId,
           );
+
+          /** Last, so `saveConvo`'s message snapshot includes this turn */
+          await saveConversation(req, conversationId, agentId, agent);
 
           logger.debug(
             `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
@@ -1112,13 +1120,12 @@ const createResponse = async (req, res) => {
 
       if (request.store === true) {
         try {
-          await saveConversation(req, conversationId, agentId, agent);
-
           const lastUserMessageId = await saveInputMessages(
             req,
             conversationId,
             inputMessages,
             agentId,
+            turnParentMessageId,
           );
 
           await saveResponseOutput(
@@ -1129,6 +1136,9 @@ const createResponse = async (req, res) => {
             agentId,
             lastUserMessageId,
           );
+
+          /** Last, so `saveConvo`'s message snapshot includes this turn */
+          await saveConversation(req, conversationId, agentId, agent);
 
           logger.debug(
             `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
