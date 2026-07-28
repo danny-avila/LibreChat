@@ -6,6 +6,7 @@ import {
   getStatusRunOutcome,
   getUnreconciledAssistantTail,
   isRetryableTerminalError,
+  preserveMessagesAfterRecoveryTarget,
   recoveryOwnsCurrentRoute,
   submissionBelongsToConversation,
   withCurrentSearch,
@@ -81,6 +82,72 @@ describe('terminal recovery policy', () => {
       userMessageId: 'stored-user',
       responseMessageId: 'stored-response',
     });
+  });
+
+  it('preserves local turns appended after the recovered response', () => {
+    const recoveredResponse = buildAssistantMessage();
+    const failedUserMessage = {
+      ...buildUserMessage(),
+      messageId: 'failed-user',
+      parentMessageId: recoveredResponse.messageId,
+      text: 'Follow-up that failed to start',
+    };
+    const failedResponse = buildAssistantMessage({
+      messageId: 'failed-response_',
+      parentMessageId: failedUserMessage.messageId,
+      text: 'Failed to start',
+      createdAt: undefined,
+      updatedAt: undefined,
+      error: true,
+    });
+
+    expect(
+      preserveMessagesAfterRecoveryTarget(
+        [buildUserMessage(), recoveredResponse],
+        [
+          buildUserMessage(),
+          buildAssistantMessage({
+            messageId: 'response-1_',
+            createdAt: undefined,
+            updatedAt: undefined,
+          }),
+          failedUserMessage,
+          failedResponse,
+        ],
+        {
+          userMessageId: USER_MESSAGE_ID,
+          responseMessageId: 'response-1_',
+        },
+      ),
+    ).toEqual([buildUserMessage(), recoveredResponse, failedUserMessage, failedResponse]);
+  });
+
+  it('does not duplicate later messages already returned by the server', () => {
+    const recoveredResponse = buildAssistantMessage();
+    const laterUserMessage = {
+      ...buildUserMessage(),
+      messageId: 'later-user',
+      parentMessageId: recoveredResponse.messageId,
+    };
+
+    expect(
+      preserveMessagesAfterRecoveryTarget(
+        [buildUserMessage(), recoveredResponse, laterUserMessage],
+        [
+          buildUserMessage(),
+          buildAssistantMessage({
+            messageId: 'response-1_',
+            createdAt: undefined,
+            updatedAt: undefined,
+          }),
+          laterUserMessage,
+        ],
+        {
+          userMessageId: USER_MESSAGE_ID,
+          responseMessageId: 'response-1_',
+        },
+      ),
+    ).toEqual([buildUserMessage(), recoveredResponse, laterUserMessage]);
   });
 
   it('matches a persisted response when the provisional id loses its suffix', () => {

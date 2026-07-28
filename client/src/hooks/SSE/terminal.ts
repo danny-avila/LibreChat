@@ -117,6 +117,54 @@ export function getRunRecoveryTarget(
   return { userMessageId, responseMessageId };
 }
 
+export function preserveMessagesAfterRecoveryTarget(
+  refreshedMessages: TMessage[],
+  messagesBeforeRefresh: TMessage[] | undefined,
+  target: RunRecoveryTarget | undefined,
+): TMessage[] {
+  if (!messagesBeforeRefresh?.length || !target) {
+    return refreshedMessages;
+  }
+
+  const responseMessageId = target.responseMessageId;
+  const unpaddedResponseMessageId = responseMessageId?.replace(/_+$/, '');
+  let responseIndex = -1;
+
+  if (responseMessageId) {
+    responseIndex = messagesBeforeRefresh.findIndex(
+      (message) =>
+        message.isCreatedByUser !== true &&
+        (message.messageId === responseMessageId ||
+          (!!unpaddedResponseMessageId && message.messageId === unpaddedResponseMessageId)),
+    );
+  }
+
+  if (responseIndex === -1 && target.userMessageId) {
+    for (let index = messagesBeforeRefresh.length - 1; index >= 0; index--) {
+      const message = messagesBeforeRefresh[index];
+      if (message.isCreatedByUser !== true && message.parentMessageId === target.userMessageId) {
+        responseIndex = index;
+        break;
+      }
+    }
+  }
+
+  if (responseIndex === -1 || responseIndex === messagesBeforeRefresh.length - 1) {
+    return refreshedMessages;
+  }
+
+  const refreshedMessageIds = new Set(
+    refreshedMessages
+      .map((message) => message.messageId)
+      .filter((messageId): messageId is string => !!messageId),
+  );
+  const localSuffix = messagesBeforeRefresh
+    .slice(responseIndex + 1)
+    .filter((message) => !message.messageId || !refreshedMessageIds.has(message.messageId));
+
+  return localSuffix.length > 0 ? [...refreshedMessages, ...localSuffix] : refreshedMessages;
+}
+
 function getMessageOutcome(message: TMessage): RunEnd['outcome'] | undefined {
   if (message.error === true) {
     return 'error';

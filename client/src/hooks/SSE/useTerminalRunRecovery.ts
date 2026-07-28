@@ -35,6 +35,7 @@ import {
   getUnreconciledAssistantTail,
   isRetryableTerminalError,
   newConversationPath,
+  preserveMessagesAfterRecoveryTarget,
   recoveryOwnsCurrentRoute,
   submissionBelongsToConversation,
   waitForRetryDelay,
@@ -131,7 +132,10 @@ export default function useTerminalRunRecovery({
   }, [location.pathname]);
 
   const refreshUnreconciledResponse = useCallback(
-    async (expectedRunEpoch: number): Promise<ResponseRefreshResult> => {
+    async (
+      expectedRunEpoch: number,
+      recoveryTarget?: RunRecoveryTarget,
+    ): Promise<ResponseRefreshResult> => {
       if (
         !conversationId ||
         getResumableRunEpoch(queryClient, conversationId) !== expectedRunEpoch
@@ -139,6 +143,7 @@ export default function useTerminalRunRecovery({
         return { messages: undefined, succeeded: false, notFound: false };
       }
 
+      const messagesBeforeRefresh = getMessages(conversationId);
       const unreconciledResponse = getUnreconciledAssistantTail(getMessages(conversationId));
       if (!unreconciledResponse) {
         return { messages: getMessages(conversationId), succeeded: true, notFound: false };
@@ -177,11 +182,26 @@ export default function useTerminalRunRecovery({
         };
       };
 
-      const finishSuccessfulRefresh = (): ResponseRefreshResult => {
+      const preserveLocalMessages = (refreshedMessages: TMessage[]) => {
+        const reconciledMessages = preserveMessagesAfterRecoveryTarget(
+          refreshedMessages,
+          messagesBeforeRefresh,
+          recoveryTarget,
+        );
+        if (reconciledMessages !== refreshedMessages) {
+          queryClient.setQueryData<TMessage[]>(
+            [QueryKeys.messages, conversationId],
+            reconciledMessages,
+          );
+        }
+        return reconciledMessages;
+      };
+
+      const finishSuccessfulRefresh = (messages: TMessage[]): ResponseRefreshResult => {
         if (terminalRefreshAbortRef.current === refreshController) {
           terminalRefreshAbortRef.current = null;
         }
-        return { messages: getMessages(conversationId), succeeded: true, notFound: false };
+        return { messages, succeeded: true, notFound: false };
       };
 
       for (let attempt = 0; ; attempt++) {
@@ -212,8 +232,11 @@ export default function useTerminalRunRecovery({
           ) {
             return finishFailedRefresh(false);
           }
-          if (getUnreconciledAssistantTail(getMessages(conversationId)) == null) {
-            return finishSuccessfulRefresh();
+          const refreshedMessages = getMessages(conversationId) ?? [];
+          const refreshSucceeded = getUnreconciledAssistantTail(refreshedMessages) == null;
+          const reconciledMessages = preserveLocalMessages(refreshedMessages);
+          if (refreshSucceeded) {
+            return finishSuccessfulRefresh(reconciledMessages);
           }
         } catch (error) {
           if (isNotFoundError(error)) {
@@ -240,7 +263,7 @@ export default function useTerminalRunRecovery({
         }
 
         if (getUnreconciledAssistantTail(getMessages(conversationId)) == null) {
-          return finishSuccessfulRefresh();
+          return finishSuccessfulRefresh(preserveLocalMessages(getMessages(conversationId) ?? []));
         }
       }
     },
@@ -405,7 +428,7 @@ export default function useTerminalRunRecovery({
         recoveryTarget != null || getStatusRunOutcome(status) != null || recoveredSteers;
 
       restoreSteerChips(conversationId, undefined);
-      const refreshed = await refreshUnreconciledResponse(recoveryRunEpoch);
+      const refreshed = await refreshUnreconciledResponse(recoveryRunEpoch, recoveryTarget);
       reconcileRefreshedResponse(
         refreshed,
         shouldSignalRunEnd,

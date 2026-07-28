@@ -195,10 +195,24 @@ describe('useTerminalRunRecovery', () => {
         updatedAt: '2026-07-28T08:00:00.000Z',
       }),
     ];
+    const failedUserMessage = {
+      ...buildUserMessage(),
+      messageId: 'failed-start-user',
+      parentMessageId: 'terminal-response',
+      text: 'Follow-up that failed to start',
+    };
+    const failedResponse = buildAssistantMessage({
+      messageId: 'failed-start-response_',
+      parentMessageId: failedUserMessage.messageId,
+      text: 'Failed to start generation',
+      createdAt: undefined,
+      updatedAt: undefined,
+      error: true,
+    });
     active = false;
     queryClient.setQueryData(
       [QueryKeys.messages, CONVERSATION_ID],
-      [buildUserMessage(), buildAssistantMessage()],
+      [buildUserMessage(), buildAssistantMessage(), failedUserMessage, failedResponse],
     );
     setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
       startedAsNewConvo: false,
@@ -220,7 +234,62 @@ describe('useTerminalRunRecovery', () => {
       expect(getDisconnectedRunRecovery(queryClient, CONVERSATION_ID)).toBeUndefined();
     });
     expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID);
-    expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(finalMessages);
+    expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual([
+      ...finalMessages,
+      failedUserMessage,
+      failedResponse,
+    ]);
+  });
+
+  it('keeps the failed follow-up visible while the older response is still provisional', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const failedUserMessage = {
+      ...buildUserMessage(),
+      messageId: 'failed-start-user',
+      parentMessageId: RESPONSE_MESSAGE_ID,
+      text: 'Follow-up that failed to start',
+    };
+    const failedResponse = buildAssistantMessage({
+      messageId: 'failed-start-response_',
+      parentMessageId: failedUserMessage.messageId,
+      text: 'Failed to start generation',
+      createdAt: undefined,
+      updatedAt: undefined,
+      error: true,
+    });
+    const persistedPartial = buildAssistantMessage({
+      text: 'Persisted partial response',
+      createdAt: undefined,
+      updatedAt: undefined,
+    });
+    active = false;
+    queryClient.setQueryData(
+      [QueryKeys.messages, CONVERSATION_ID],
+      [buildUserMessage(), buildAssistantMessage(), failedUserMessage, failedResponse],
+    );
+    setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
+      startedAsNewConvo: false,
+      created: true,
+      userMessageId: USER_MESSAGE_ID,
+      responseMessageId: RESPONSE_MESSAGE_ID,
+    });
+    mockFetchStreamStatus.mockResolvedValue({ active: false, status: 'complete' });
+    mockGetMessagesByConvoId.mockResolvedValue([buildUserMessage(), persistedPartial]);
+
+    const { unmount } = renderTerminalRecovery({ queryClient });
+    act(() => {
+      requestTerminalRunRecovery(queryClient, CONVERSATION_ID);
+    });
+
+    await waitFor(() => {
+      expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual([
+        buildUserMessage(),
+        persistedPartial,
+        failedUserMessage,
+        failedResponse,
+      ]);
+    });
+    unmount();
   });
 
   it('restores a recovered first conversation to the sidebar without stealing another route', async () => {
