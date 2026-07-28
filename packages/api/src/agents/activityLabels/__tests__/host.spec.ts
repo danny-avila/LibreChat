@@ -184,6 +184,27 @@ describe('resolveActivityLabelModel model precedence', () => {
       defaultHeaders: { 'x-proxy-key': 'abc' },
     });
   });
+
+  it('strips the primary maxTokens like the title path', async () => {
+    mockGetOptions.mockResolvedValueOnce({
+      llmConfig: { model: 'resolved', maxTokens: 64_000 },
+    } as never);
+    const resolved = await resolve({ activityLabel: true, activityModel: 'label-model' });
+    expect((resolved.clientOptions as Record<string, unknown>).maxTokens).toBeUndefined();
+  });
+
+  /** The Anthropic carrier holds client CONSTRUCTION options — for
+   *  user-provided base URLs that includes the SSRF-safe fetch dispatcher —
+   *  so it must survive the strip even with no custom headers, and by the
+   *  SAME reference. */
+  it('preserves the SSRF-safe carrier even without defaultHeaders', async () => {
+    const carrier = { fetchOptions: { dispatcher: { kind: 'guarded' }, redirect: 'error' } };
+    mockGetOptions.mockResolvedValueOnce({
+      llmConfig: { model: 'resolved', thinking: { type: 'enabled' }, clientOptions: carrier },
+    } as never);
+    const resolved = await resolve({ activityLabel: true, activityModel: 'label-model' });
+    expect((resolved.clientOptions as Record<string, unknown>).clientOptions).toBe(carrier);
+  });
 });
 
 describe('mapCollectedMetadataToUsage cache tokens', () => {

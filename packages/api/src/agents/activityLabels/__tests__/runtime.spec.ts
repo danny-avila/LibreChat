@@ -307,7 +307,9 @@ describe('createActivityLabelHook', () => {
     expect(mockInvoke).not.toHaveBeenCalled();
   });
 
-  it('still claims for a mixed batch containing a transfer call', async () => {
+  /** Mixed batches skip too: the client flushes the block at the transfer
+   *  card, so the label would orphan even when real tools ran alongside. */
+  it('claims nothing for a mixed batch containing a transfer call', async () => {
     const hook = createActivityLabelHook({ claimSlot, resolveLLM });
     await hook(
       batchInput({
@@ -331,7 +333,8 @@ describe('createActivityLabelHook', () => {
       new AbortController().signal,
     );
     await flushDetached();
-    expect(slots).toHaveLength(1);
+    expect(slots).toHaveLength(0);
+    expect(mockInvoke).not.toHaveBeenCalled();
   });
 
   it('skips subagent scopes entirely', async () => {

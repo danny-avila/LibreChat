@@ -299,25 +299,35 @@ export async function resolveActivityLabelModel({
    *  `modelKwargs` output caps go for the same reason (copied, not mutated:
    *  `llmConfig` is shared with the memoized provider resolution). */
   const rawOptions = { ...(llmConfig ?? {}) } as MaybeAzureConfig & {
+    maxTokens?: number;
     modelKwargs?: Record<string, unknown>;
     clientOptions?: { defaultHeaders?: unknown };
   };
+  /** Top-level `maxTokens` too, exactly like the title path — it is not in
+   *  `omitTitleOptions`, and a primary cap sized for the agent's model can
+   *  be unsupported or absurd on the substitute label model. */
+  delete rawOptions.maxTokens;
   if (rawOptions.modelKwargs != null) {
     const modelKwargs = { ...rawOptions.modelKwargs };
     delete modelKwargs.max_completion_tokens;
     delete modelKwargs.max_output_tokens;
     rawOptions.modelKwargs = modelKwargs;
   }
-  /** The filter drops the Anthropic `clientOptions` carrier (thinking,
-   *  streaming), which would also drop its `defaultHeaders` — restore the
-   *  SAME object reference so gateway/proxy metadata still reaches label
-   *  requests and `resolveConfigHeaders` mutates the object the client is
-   *  actually built from. */
+  /** The filter drops the Anthropic `clientOptions` carrier, so restore it
+   *  WHENEVER it exists — by the SAME reference. It holds client
+   *  CONSTRUCTION options, not generation parameters: proxy
+   *  `defaultHeaders`, and for user-provided base URLs the SSRF-safe
+   *  `fetchOptions` (guarded Undici dispatcher, `redirect: 'error'`).
+   *  Restoring only when headers were present silently stripped those
+   *  guards from label calls to user-controlled URLs, re-opening DNS
+   *  rebinding/redirect paths the endpoint validation exists to block; the
+   *  same-reference restore also lets `resolveConfigHeaders` mutate the
+   *  object the client is actually built from. */
   const anthropicCarrier = rawOptions.clientOptions;
   const clientOptions = Object.fromEntries(
     Object.entries(rawOptions).filter(([key]) => !omitTitleOptions.has(key)),
   ) as MaybeAzureConfig & { clientOptions?: { defaultHeaders?: unknown } };
-  if (anthropicCarrier?.defaultHeaders != null && clientOptions.clientOptions == null) {
+  if (anthropicCarrier != null && clientOptions.clientOptions == null) {
     clientOptions.clientOptions = anthropicCarrier;
   }
   if (options.configOptions) {

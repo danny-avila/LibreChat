@@ -116,6 +116,31 @@ describe('groupSequentialToolCalls with activity labels', () => {
     expect((grouped[0] as { part: PartWithIndex }).part.idx).toBe(0);
   });
 
+  /** Mixed legacy content: an orphan label covering a transfer AND real
+   *  calls is equally headless once the block flushed at the transfer. */
+  it('drops an orphan label whose batch mixed a transfer with real calls', () => {
+    const realTool = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: { id: 't1', name: 'web_search', args: '{}', output: 'ok' },
+    } as unknown as TMessageContentParts;
+    const transfer = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: { id: 'x1', name: 'lc_transfer_to_billing', args: '{}' },
+    } as unknown as TMessageContentParts;
+    const mixedLabel = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Looked up the refund policy',
+      tool_call_ids: ['t1', 'x1'],
+      pending: false,
+    } as unknown as TMessageContentParts;
+
+    const grouped = groupSequentialToolCalls(withIndex([realTool, transfer, mixedLabel]));
+
+    /** Tool card + handoff card render; the headless label is dropped. */
+    expect(grouped).toHaveLength(2);
+    expect(grouped.every((entry) => entry.type === 'single')).toBe(true);
+  });
+
   it('keeps rendering an orphan label whose batch had real tool calls', () => {
     const orphanLabel = {
       type: ContentTypes.ACTIVITY_LABEL,

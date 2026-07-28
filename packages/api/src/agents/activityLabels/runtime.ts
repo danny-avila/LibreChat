@@ -258,12 +258,21 @@ function stringifyBounded(value: unknown, limit: number): string {
         return false;
       }
       let first = true;
-      for (const key of Object.keys(val)) {
+      /** for-in, not Object.keys: enumeration stops at the budget instead of
+       *  materializing a key array for a million-property object first. The
+       *  own-property guard replaces what Object.keys implied. */
+      for (const key in val) {
+        if (!Object.prototype.hasOwnProperty.call(val, key)) {
+          continue;
+        }
         const entry = (val as Record<string, unknown>)[key];
         if (entry === undefined || typeof entry === 'function') {
           continue;
         }
-        if ((!first && !push(',')) || !push(`${JSON.stringify(key)}:`) || !walk(entry)) {
+        /** Keys are untrusted too: slice BEFORE quoting, exactly like string
+         *  values — quoting is what materializes the copy. */
+        const boundedKey = key.length > limit + 1 ? key.slice(0, limit + 1) : key;
+        if ((!first && !push(',')) || !push(`${JSON.stringify(boundedKey)}:`) || !walk(entry)) {
           return false;
         }
         first = false;
@@ -455,14 +464,15 @@ export function createActivityLabelHook(
     ) {
       return {};
     }
-    /** A batch that is ONLY handoff calls gets no label. The transfer card
-     *  already names the destination, the client renders transfer parts
-     *  standalone (never groupable), so a claimed label could only orphan
-     *  into a stray line after the card — and the model call would be spent
-     *  describing what the card already says. Skipped BEFORE the quota so
-     *  handoffs never consume `maxPerRun`. */
+    /** A batch containing ANY handoff call gets no label — mixed batches
+     *  included. Transfer parts are never groupable on the client, so the
+     *  flush at the transfer card leaves the label with nothing to head and
+     *  it could only orphan into a stray line after the cards; the handoff
+     *  card already names the destination and the tool cards still show the
+     *  work. Skipped BEFORE the quota so handoffs never consume
+     *  `maxPerRun`. */
     if (
-      input.entries.every((entry) => entry.toolName?.startsWith(Constants.LC_TRANSFER_TO_) === true)
+      input.entries.some((entry) => entry.toolName?.startsWith(Constants.LC_TRANSFER_TO_) === true)
     ) {
       return {};
     }
