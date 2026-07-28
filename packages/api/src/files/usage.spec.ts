@@ -1,6 +1,7 @@
 import {
   handleFilesUsageRequest,
-  resolveFilesUsageHoldMs,
+  resolveFilesUsageHold,
+  FILES_USAGE_QUEUED_RUN_ALLOWANCE,
   FILES_USAGE_BASE_HOLD_MS,
   FILES_USAGE_MAX_IDS,
 } from './usage';
@@ -42,48 +43,58 @@ describe('handleFilesUsageRequest', () => {
     expect(deps.extendFilesTTL).not.toHaveBeenCalled();
   });
 
-  it('requests an owner-scoped hold of the resolved lifetime', async () => {
+  it('requests an owner-scoped hold of the resolved window', async () => {
     const deps = createDeps(1);
     const result = await handleFilesUsageRequest(user, { file_ids: ['f1', 'f2'] }, deps);
     expect(deps.extendFilesTTL).toHaveBeenCalledTimes(1);
-    expect(deps.extendFilesTTL).toHaveBeenCalledWith(['f1', 'f2'], FILES_USAGE_BASE_HOLD_MS, {
-      user: 'user-1',
-      tenantId: 'tenant-1',
-    });
+    expect(deps.extendFilesTTL).toHaveBeenCalledWith(
+      ['f1', 'f2'],
+      { renewMs: FILES_USAGE_BASE_HOLD_MS, maxLifetimeMs: FILES_USAGE_BASE_HOLD_MS },
+      { user: 'user-1', tenantId: 'tenant-1' },
+    );
     expect(result).toEqual({ status: 200, body: { held: 1 } });
   });
 
-  /** The hold must be a lifetime the data layer anchors to the upload, not a
-   *  deadline derived here: a request-clock deadline would let a caller walk
-   *  the file's lifetime forward one window per call. */
-  it('passes a constant lifetime, never a request-derived deadline', async () => {
+  /** The ceiling must be a constant the data layer clamps against the upload
+   *  time, not a deadline derived here: a request-clock deadline with no
+   *  ceiling would let a caller walk the file's lifetime forward per call. */
+  it('passes a constant ceiling, never a request-derived deadline', async () => {
     const deps = createDeps(1);
     await handleFilesUsageRequest(user, { file_ids: ['f1'] }, deps);
     await handleFilesUsageRequest(user, { file_ids: ['f1'] }, deps);
 
     const [, firstHold] = deps.extendFilesTTL.mock.calls[0];
     const [, secondHold] = deps.extendFilesTTL.mock.calls[1];
-    expect(firstHold).toBe(FILES_USAGE_BASE_HOLD_MS);
-    expect(secondHold).toBe(firstHold);
-    expect(typeof firstHold).toBe('number');
+    expect(secondHold).toEqual(firstHold);
+    expect(typeof firstHold.maxLifetimeMs).toBe('number');
   });
 
   /** A paused run's approval window has no configured upper bound, so a fixed
-   *  lifetime shorter than it would reap an attachment whose approval is
-   *  still live and leave the drain sending a missing file. */
+   *  window shorter than it would reap an attachment whose approval is still
+   *  live and leave the drain sending a missing file. */
   it('stretches the hold to outlast a long configured approval window', async () => {
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
     const deps = { ...createDeps(1), approvalTtlMs: sevenDaysMs };
     await handleFilesUsageRequest(user, { file_ids: ['f1'] }, deps);
 
-    const [, holdMs] = deps.extendFilesTTL.mock.calls[0];
-    expect(holdMs).toBe(FILES_USAGE_BASE_HOLD_MS + sevenDaysMs);
-    expect(holdMs).toBeGreaterThan(sevenDaysMs);
+    const [, hold] = deps.extendFilesTTL.mock.calls[0];
+    expect(hold.renewMs).toBe(FILES_USAGE_BASE_HOLD_MS + sevenDaysMs);
+    expect(hold.renewMs).toBeGreaterThan(sevenDaysMs);
   });
 
-  describe('resolveFilesUsageHoldMs', () => {
-    it('covers the approval window on top of the baseline', () => {
-      expect(resolveFilesUsageHoldMs(1000)).toBe(FILES_USAGE_BASE_HOLD_MS + 1000);
+  describe('resolveFilesUsageHold', () => {
+    it('covers one approval window per renewal', () => {
+      expect(resolveFilesUsageHold(1000).renewMs).toBe(FILES_USAGE_BASE_HOLD_MS + 1000);
+    });
+
+    /** The drain sends one queued item per run completion, so a deep queue
+     *  waits behind several approval windows; the ceiling has to span them. */
+    it('scales the ceiling to the queued run chain', () => {
+      const hold = resolveFilesUsageHold(1000);
+      expect(hold.maxLifetimeMs).toBe(
+        FILES_USAGE_BASE_HOLD_MS + 1000 * FILES_USAGE_QUEUED_RUN_ALLOWANCE,
+      );
+      expect(hold.maxLifetimeMs).toBeGreaterThan(hold.renewMs);
     });
 
     it.each([
@@ -93,7 +104,10 @@ describe('handleFilesUsageRequest', () => {
       ['NaN', Number.NaN],
       ['Infinity', Number.POSITIVE_INFINITY],
     ])('falls back to the baseline for %s', (_label, value) => {
-      expect(resolveFilesUsageHoldMs(value)).toBe(FILES_USAGE_BASE_HOLD_MS);
+      expect(resolveFilesUsageHold(value)).toEqual({
+        renewMs: FILES_USAGE_BASE_HOLD_MS,
+        maxLifetimeMs: FILES_USAGE_BASE_HOLD_MS,
+      });
     });
   });
 

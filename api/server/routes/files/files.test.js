@@ -966,11 +966,14 @@ describe('File Routes - Delete with Agent Access', () => {
       /* The hold must remain a hold: still reapable, just later. */
       expect(held.expiresAt).toBeDefined();
       expect(held.expiresAt.getTime()).toBeGreaterThan(soon.getTime());
-      /* Anchored to upload time, so the deadline is a fixed point per file:
-       * the 24h baseline plus the default 24h approval window, so a queue
-       * waiting on a paused run outlives that pause. */
+      /* The 24h baseline plus the default 24h approval window, so a queue
+       * waiting on a paused run outlives that pause. Renewed from now, but
+       * never past the ceiling measured from upload time. */
       const HOUR = 60 * 60 * 1000;
-      expect(held.expiresAt.getTime()).toBe(held.createdAt.getTime() + 24 * HOUR + 24 * HOUR);
+      expect(held.expiresAt.getTime()).toBeGreaterThan(Date.now() + 47 * HOUR);
+      expect(held.expiresAt.getTime()).toBeLessThanOrEqual(
+        held.createdAt.getTime() + 24 * HOUR + 8 * 24 * HOUR,
+      );
       /* A queue touch is not a send, so it must not inflate usage. */
       expect(held.usage).toBe(0);
     });
@@ -982,21 +985,22 @@ describe('File Routes - Delete with Agent Access', () => {
         .post('/files/usage')
         .send({ file_ids: [ownFileId] });
       expect(first.body).toEqual({ held: 1 });
-      const afterFirst = (await File.findOne({ file_id: ownFileId }).lean()).expiresAt;
 
-      /* Replay must be inert, not merely bounded: a deadline derived from the
-       * request clock would advance a window per call and never converge. */
       for (let i = 0; i < 5; i++) {
         const repeat = await request(app)
           .post('/files/usage')
           .send({ file_ids: [ownFileId] });
         expect(repeat.status).toBe(200);
-        expect(repeat.body).toEqual({ held: 0 });
       }
 
+      /* Every renewal is clamped to the ceiling measured from upload time, so
+       * replay converges there instead of advancing a window per call. */
+      const HOUR = 60 * 60 * 1000;
       const held = await File.findOne({ file_id: ownFileId }).lean();
       expect(held.expiresAt).toBeDefined();
-      expect(held.expiresAt.getTime()).toBe(afterFirst.getTime());
+      expect(held.expiresAt.getTime()).toBeLessThanOrEqual(
+        held.createdAt.getTime() + 24 * HOUR + 8 * 24 * HOUR,
+      );
     });
 
     it('never re-adds a TTL to a file that was already sent', async () => {

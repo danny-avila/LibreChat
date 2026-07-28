@@ -3,7 +3,26 @@ import { Constants } from 'librechat-data-provider';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { QueuedMessage } from '~/store/families';
 import type { TAskFunction } from '~/common';
+import { useMarkFilesUsageMutation } from '~/data-provider';
 import store from '~/store';
+
+/** Mirrors the server's per-request cap on a usage touch. */
+const QUEUE_USAGE_MAX_FILES = 10;
+
+const collectQueuedFileIds = (items: QueuedMessage[]): string[] => {
+  const fileIds: string[] = [];
+  for (const item of items) {
+    for (const file of item.files ?? []) {
+      if (typeof file.file_id === 'string' && file.file_id.length > 0) {
+        fileIds.push(file.file_id);
+      }
+      if (fileIds.length === QUEUE_USAGE_MAX_FILES) {
+        return fileIds;
+      }
+    }
+  }
+  return fileIds;
+};
 
 /**
  * Auto-sends queued follow-up messages when a run finishes.
@@ -30,13 +49,18 @@ export default function useQueueDrain(
     store.pendingRunEndByConvoId(activeConversationId ?? Constants.NEW_CONVO),
   );
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
+  const { mutate: markFilesUsage } = useMarkFilesUsageMutation();
 
   // Fully synchronous reads (getLoadable): a useRecoilCallback snapshot is
   // only guaranteed valid for the callback's synchronous execution, so no
   // awaits may interleave with the reads.
   const drainNext = useRecoilCallback(
     ({ snapshot, set }) =>
-      (): { next: QueuedMessage; conversationId: string } | null => {
+      (): {
+        next: QueuedMessage;
+        conversationId: string;
+        remainderFileIds: string[];
+      } | null => {
         let end = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
         let fromParked = false;
         if (
@@ -115,7 +139,9 @@ export default function useQueueDrain(
         if (remainder.length !== ownQueue.length || shouldMigrate || next != null) {
           set(store.queuedMessagesByConvoId(conversationId), remainder);
         }
-        return next ? { next, conversationId } : null;
+        return next
+          ? { next, conversationId, remainderFileIds: collectQueuedFileIds(remainder) }
+          : null;
       },
     [index, activeConversationId],
   );
@@ -138,7 +164,16 @@ export default function useQueueDrain(
     if (drained == null) {
       return;
     }
-    const { next, conversationId } = drained;
+    const { next, conversationId, remainderFileIds } = drained;
+    /** Renew the TTL hold on what stays queued. Items behind this one wait
+     *  another full run (which may itself pause for approval), so a hold
+     *  taken once at enqueue would lapse before a deep queue drains. The
+     *  server caps each renewal against the upload time, so this cannot
+     *  extend a file indefinitely. Fire-and-forget: send-time marking is
+     *  the backstop. */
+    if (remainderFileIds.length > 0) {
+      markFilesUsage({ file_ids: remainderFileIds });
+    }
     // The queued item is the FULL submission context: explicit (possibly
     // empty) overrides stop `ask` from vacuuming up files, quotes, or skill
     // picks the user has staged in the composer for their NEXT message.
@@ -157,5 +192,14 @@ export default function useQueueDrain(
       // available for manual send.
       restoreQueued(conversationId, next);
     }
-  }, [runEnd, parkedRunEnd, isSubmitting, activeConversationId, drainNext, restoreQueued, ask]);
+  }, [
+    runEnd,
+    parkedRunEnd,
+    isSubmitting,
+    activeConversationId,
+    drainNext,
+    restoreQueued,
+    markFilesUsage,
+    ask,
+  ]);
 }

@@ -1,10 +1,17 @@
 import React from 'react';
 import { Constants } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
 import type { RunEnd, QueuedMessage } from '~/store/families';
 import useQueueDrain from '../useQueueDrain';
 import store from '~/store';
+
+const mockMarkFilesUsage = jest.fn();
+jest.mock('~/data-provider', () => ({
+  ...jest.requireActual('~/data-provider'),
+  useMarkFilesUsageMutation: () => ({ mutate: mockMarkFilesUsage }),
+}));
 
 const INDEX = 0;
 const CONVO_ID = 'convo-drain';
@@ -35,11 +42,18 @@ function setup(
     return null;
   }
 
+  /* The drain renews the TTL hold on what stays queued, which goes through
+   * react-query, so the harness needs a client. */
+  const queryClient = new QueryClient({
+    defaultOptions: { mutations: { retry: false } },
+  });
   const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <RecoilRoot initializeState={initialize}>
-      <Harness />
-      {children}
-    </RecoilRoot>
+    <QueryClientProvider client={queryClient}>
+      <RecoilRoot initializeState={initialize}>
+        <Harness />
+        {children}
+      </RecoilRoot>
+    </QueryClientProvider>
   );
   renderHook(() => null, { wrapper });
   return { ask, setters };
@@ -57,6 +71,10 @@ const runEnd = (overrides: Partial<RunEnd> = {}): RunEnd => ({
 });
 
 describe('useQueueDrain', () => {
+  beforeEach(() => {
+    mockMarkFilesUsage.mockClear();
+  });
+
   it('drains exactly one queued message on clean completion', async () => {
     const { ask, setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [
@@ -115,6 +133,46 @@ describe('useQueueDrain', () => {
       { text: 'with media' },
       { overrideFiles: files, overrideQuotes: [], overrideManualSkills: [] },
     );
+  });
+
+  /** Items behind the drained one wait another full run, which may itself
+   *  pause for approval, so a hold taken once at enqueue would lapse before a
+   *  deep queue finishes draining. */
+  it('renews the TTL hold on attachments that stay queued', async () => {
+    const { setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { ...queuedMessage('q1', 'first'), files: [{ file_id: 'sent', type: 'image/png' }] },
+        {
+          ...queuedMessage('q2', 'second'),
+          files: [{ file_id: 'still-queued', type: 'image/png' }],
+        },
+        { ...queuedMessage('q3', 'third'), files: [{ file_id: 'also-queued', type: 'image/png' }] },
+      ]);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+
+    await waitFor(() => expect(mockMarkFilesUsage).toHaveBeenCalledTimes(1));
+    /* Only what remains: the drained item's file is released at send. */
+    expect(mockMarkFilesUsage).toHaveBeenCalledWith({
+      file_ids: ['still-queued', 'also-queued'],
+    });
+  });
+
+  it('does not renew when nothing with attachments stays queued', async () => {
+    const { setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { ...queuedMessage('q1', 'only one'), files: [{ file_id: 'sent', type: 'image/png' }] },
+      ]);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd());
+    });
+
+    await waitFor(() => expect(mockMarkFilesUsage).not.toHaveBeenCalled());
   });
 
   it('passes carried quotes + manual skills through as overrides', async () => {
@@ -235,11 +293,16 @@ describe('useQueueDrain', () => {
         return null;
       }
 
+      const queryClient = new QueryClient({
+        defaultOptions: { mutations: { retry: false } },
+      });
       const wrapper = ({ children }: { children: React.ReactNode }) => (
-        <RecoilRoot initializeState={initialize}>
-          <Harness />
-          {children}
-        </RecoilRoot>
+        <QueryClientProvider client={queryClient}>
+          <RecoilRoot initializeState={initialize}>
+            <Harness />
+            {children}
+          </RecoilRoot>
+        </QueryClientProvider>
       );
       renderHook(() => null, { wrapper });
       return { ask, setters, state };

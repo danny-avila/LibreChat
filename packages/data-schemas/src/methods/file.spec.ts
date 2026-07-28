@@ -1124,9 +1124,14 @@ describe('File Methods', () => {
   });
 
   describe('extendFilesTTL', () => {
-    const HOLD_MS = 24 * 3_600_000;
+    const HOUR = 3_600_000;
+    const HOLD = { renewMs: 24 * HOUR, maxLifetimeMs: 48 * HOUR };
 
-    const seedTempFile = async (userId: mongoose.Types.ObjectId, expiresAt: Date) => {
+    const seedTempFile = async (
+      userId: mongoose.Types.ObjectId,
+      expiresAt: Date,
+      createdAt?: Date,
+    ) => {
       const fileId = uuidv4();
       await fileMethods.createFile({
         file_id: fileId,
@@ -1136,52 +1141,77 @@ describe('File Methods', () => {
         type: 'text/plain',
         bytes: 100,
       });
-      await mongoose.models.File.updateOne({ file_id: fileId }, { $set: { expiresAt } });
+      await mongoose.models.File.updateOne(
+        { file_id: fileId },
+        { $set: { expiresAt, ...(createdAt ? { createdAt } : {}) } },
+        { timestamps: false },
+      );
       return fileId;
     };
 
-    const readCreatedAt = async (fileId: string) => {
-      const doc = await mongoose.models.File.findOne({ file_id: fileId })
-        .lean<{ createdAt: Date }>()
-        .exec();
-      return doc!.createdAt;
-    };
+    const readFile = async (fileId: string) =>
+      (await mongoose.models.File.findOne({ file_id: fileId })
+        .lean<{ createdAt: Date; expiresAt?: Date }>()
+        .exec())!;
 
-    it('widens the TTL to createdAt + holdMs without unsetting it', async () => {
+    it('widens the TTL toward the renewal window without unsetting it', async () => {
       const userId = new mongoose.Types.ObjectId();
       const fileId = await seedTempFile(userId, new Date(Date.now() + 60_000));
-      const createdAt = await readCreatedAt(fileId);
 
-      const count = await fileMethods.extendFilesTTL([fileId], HOLD_MS, { user: String(userId) });
+      const count = await fileMethods.extendFilesTTL([fileId], HOLD, { user: String(userId) });
 
       expect(count).toBe(1);
-      const file = await fileMethods.findFileById(fileId);
-      expect(file?.expiresAt).toBeDefined();
-      expect(file?.expiresAt?.getTime()).toBe(createdAt.getTime() + HOLD_MS);
+      const file = await readFile(fileId);
+      expect(file.expiresAt).toBeDefined();
+      expect(file.expiresAt!.getTime()).toBeGreaterThan(Date.now() + 23 * HOUR);
+      expect(file.expiresAt!.getTime()).toBeLessThanOrEqual(
+        file.createdAt.getTime() + HOLD.maxLifetimeMs,
+      );
     });
 
-    /** The bound that makes the endpoint safe to expose: the deadline is a
-     *  function of the immutable createdAt, so replaying the call can never
-     *  walk a file's lifetime forward one window at a time. */
-    it('is idempotent under replay, never advancing the deadline', async () => {
+    /** The bound that makes the endpoint safe to expose: every renewal is
+     *  clamped to createdAt + maxLifetimeMs, so replaying the call converges
+     *  on a ceiling instead of advancing a window at a time. */
+    it('clamps every renewal to the ceiling, however often it is replayed', async () => {
       const userId = new mongoose.Types.ObjectId();
       const fileId = await seedTempFile(userId, new Date(Date.now() + 60_000));
-      const createdAt = await readCreatedAt(fileId);
+      const ceilingHold = { renewMs: 24 * HOUR, maxLifetimeMs: 10 * 60_000 };
+      const { createdAt } = await readFile(fileId);
 
-      const first = await fileMethods.extendFilesTTL([fileId], HOLD_MS, { user: String(userId) });
-      const afterFirst = (await fileMethods.findFileById(fileId))?.expiresAt;
+      const first = await fileMethods.extendFilesTTL([fileId], ceilingHold, {
+        user: String(userId),
+      });
+      expect(first).toBe(1);
 
       for (let i = 0; i < 5; i++) {
-        const repeat = await fileMethods.extendFilesTTL([fileId], HOLD_MS, {
-          user: String(userId),
-        });
-        expect(repeat).toBe(0);
+        expect(
+          await fileMethods.extendFilesTTL([fileId], ceilingHold, { user: String(userId) }),
+        ).toBe(0);
       }
 
-      expect(first).toBe(1);
-      const file = await fileMethods.findFileById(fileId);
-      expect(file?.expiresAt?.getTime()).toBe(afterFirst?.getTime());
-      expect(file?.expiresAt?.getTime()).toBe(createdAt.getTime() + HOLD_MS);
+      const file = await readFile(fileId);
+      expect(file.expiresAt!.getTime()).toBe(createdAt.getTime() + ceilingHold.maxLifetimeMs);
+      /* The renewal window alone would have granted a full day. */
+      expect(file.expiresAt!.getTime()).toBeLessThan(Date.now() + HOUR);
+    });
+
+    /** Renewal is measured from now, so a queue still draining across
+     *  successive runs keeps its attachments past the first hold. */
+    it('renews from now while the ceiling still allows it', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const twoHoursAgo = new Date(Date.now() - 2 * HOUR);
+      const fileId = await seedTempFile(userId, new Date(Date.now() + 60_000), twoHoursAgo);
+
+      const count = await fileMethods.extendFilesTTL(
+        [fileId],
+        { renewMs: HOUR, maxLifetimeMs: 24 * HOUR },
+        { user: String(userId) },
+      );
+
+      expect(count).toBe(1);
+      const file = await readFile(fileId);
+      /* Anchoring to createdAt alone would have expired this an hour ago. */
+      expect(file.expiresAt!.getTime()).toBeGreaterThan(Date.now() + 50 * 60_000);
     });
 
     it('does not resurrect a TTL on an already-released file', async () => {
@@ -1189,23 +1219,23 @@ describe('File Methods', () => {
       const fileId = await seedTempFile(userId, new Date(Date.now() + 60_000));
       await fileMethods.updateFileUsage({ file_id: fileId, user: String(userId) });
 
-      const count = await fileMethods.extendFilesTTL([fileId], HOLD_MS, { user: String(userId) });
+      const count = await fileMethods.extendFilesTTL([fileId], HOLD, { user: String(userId) });
 
       expect(count).toBe(0);
-      const file = await fileMethods.findFileById(fileId);
-      expect(file?.expiresAt).toBeUndefined();
+      const file = await readFile(fileId);
+      expect(file.expiresAt).toBeUndefined();
     });
 
     it('never moves an expiry earlier', async () => {
       const userId = new mongoose.Types.ObjectId();
-      const farOut = new Date(Date.now() + 7 * 24 * 3_600_000);
+      const farOut = new Date(Date.now() + 7 * 24 * HOUR);
       const fileId = await seedTempFile(userId, farOut);
 
-      const count = await fileMethods.extendFilesTTL([fileId], HOLD_MS, { user: String(userId) });
+      const count = await fileMethods.extendFilesTTL([fileId], HOLD, { user: String(userId) });
 
       expect(count).toBe(0);
-      const file = await fileMethods.findFileById(fileId);
-      expect(file?.expiresAt?.getTime()).toBe(farOut.getTime());
+      const file = await readFile(fileId);
+      expect(file.expiresAt!.getTime()).toBe(farOut.getTime());
     });
 
     it("leaves another user's file untouched", async () => {
@@ -1214,13 +1244,13 @@ describe('File Methods', () => {
       const soon = new Date(Date.now() + 60_000);
       const fileId = await seedTempFile(ownerId, soon);
 
-      const count = await fileMethods.extendFilesTTL([fileId], HOLD_MS, {
+      const count = await fileMethods.extendFilesTTL([fileId], HOLD, {
         user: String(attackerId),
       });
 
       expect(count).toBe(0);
-      const file = await fileMethods.findFileById(fileId);
-      expect(file?.expiresAt?.getTime()).toBe(soon.getTime());
+      const file = await readFile(fileId);
+      expect(file.expiresAt!.getTime()).toBe(soon.getTime());
     });
 
     it('is a no-op without an owner scope rather than a cross-user update', async () => {
@@ -1228,24 +1258,29 @@ describe('File Methods', () => {
       const soon = new Date(Date.now() + 60_000);
       const fileId = await seedTempFile(userId, soon);
 
-      const count = await fileMethods.extendFilesTTL([fileId], HOLD_MS, { user: '' } as {
+      const count = await fileMethods.extendFilesTTL([fileId], HOLD, { user: '' } as {
         user: string;
       });
 
       expect(count).toBe(0);
-      const file = await fileMethods.findFileById(fileId);
-      expect(file?.expiresAt?.getTime()).toBe(soon.getTime());
+      const file = await readFile(fileId);
+      expect(file.expiresAt!.getTime()).toBe(soon.getTime());
     });
 
     it('is a no-op for a non-positive hold', async () => {
       const userId = new mongoose.Types.ObjectId();
       const soon = new Date(Date.now() + 60_000);
       const fileId = await seedTempFile(userId, soon);
+      const owner = { user: String(userId) };
 
-      expect(await fileMethods.extendFilesTTL([fileId], 0, { user: String(userId) })).toBe(0);
-      expect(await fileMethods.extendFilesTTL([fileId], -1, { user: String(userId) })).toBe(0);
-      const file = await fileMethods.findFileById(fileId);
-      expect(file?.expiresAt?.getTime()).toBe(soon.getTime());
+      expect(
+        await fileMethods.extendFilesTTL([fileId], { renewMs: 0, maxLifetimeMs: 0 }, owner),
+      ).toBe(0);
+      expect(
+        await fileMethods.extendFilesTTL([fileId], { renewMs: -1, maxLifetimeMs: -1 }, owner),
+      ).toBe(0);
+      const file = await readFile(fileId);
+      expect(file.expiresAt!.getTime()).toBe(soon.getTime());
     });
   });
 

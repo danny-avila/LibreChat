@@ -84,7 +84,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   ) => Promise<IMongoFile[]>;
   extendFilesTTL: (
     fileIds: string[],
-    holdMs: number,
+    hold: { renewMs: number; maxLifetimeMs: number },
     owner: { user: string; tenantId?: string | null },
   ) => Promise<number>;
   sweepOrphanedPreviews: (maxAgeMs?: number) => Promise<number>;
@@ -553,39 +553,45 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
 
   /**
    * Widens the upload-window TTL of owned, still-temporary files to
-   * `createdAt + holdMs`.
+   * `min(now + renewMs, createdAt + maxLifetimeMs)`.
    *
    * A renewable hold, not a release: unlike `updateFileUsage` this never
    * unsets `expiresAt`, so a file that is held but never actually sent is
-   * still reaped once the hold lapses. Three properties hold by
+   * still reaped once the hold lapses. Four properties hold by
    * construction, which is what makes the write safe to drive from a
    * client-supplied id list:
-   * - the new deadline is anchored to the immutable `createdAt`, never to
-   *   the request clock, so replaying the call is idempotent and cannot
-   *   walk a file's lifetime forward indefinitely;
+   * - `$min` against `createdAt + maxLifetimeMs` caps every renewal against
+   *   an immutable anchor, so repeated calls converge on a fixed ceiling
+   *   instead of walking a file's lifetime forward a window at a time;
+   * - renewing from `now` up to that ceiling lets a queue that is still
+   *   draining keep its attachments alive across successive runs, while an
+   *   abandoned queue lapses a single `renewMs` after its last touch rather
+   *   than surviving to the ceiling;
    * - `$max` against the current value means a hold only ever widens;
    * - `expiresAt: { $exists: true }` means a file whose TTL was already
    *   cleared by a real send stays permanent. Re-adding `expiresAt` there
    *   would schedule a live file for deletion.
    *
    * `createdAt` is required rather than defaulted: without the anchor there
-   * is no bound to enforce, so such a file is skipped instead of held.
+   * is no ceiling to enforce, so such a file is skipped instead of held.
    *
    * The owner scope is required, not optional: an unscoped call would hold
    * every user's matching file. A missing owner is a no-op, not a wide
    * update.
    *
    * @param fileIds - File IDs to hold
-   * @param holdMs - Lifetime granted from upload time
+   * @param hold - `renewMs` granted from now, capped at `maxLifetimeMs` from upload
    * @param owner - Owner scope; mismatches leave the TTL unchanged
    * @returns Number of files whose hold was widened
    */
   async function extendFilesTTL(
     fileIds: string[],
-    holdMs: number,
+    hold: { renewMs: number; maxLifetimeMs: number },
     owner: { user: string; tenantId?: string | null },
   ): Promise<number> {
-    if (fileIds.length === 0 || !owner?.user || !(holdMs > 0)) {
+    const renewMs = hold?.renewMs;
+    const maxLifetimeMs = hold?.maxLifetimeMs;
+    if (fileIds.length === 0 || !owner?.user || !(renewMs > 0) || !(maxLifetimeMs > 0)) {
       return 0;
     }
     const File = mongoose.models.File as Model<IMongoFile>;
@@ -597,9 +603,18 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       },
       { userId: owner.user, tenantId: owner.tenantId },
     );
+    const renewUntil = new Date(Date.now() + renewMs);
     const result = await File.updateMany(
       filter,
-      [{ $set: { expiresAt: { $max: ['$expiresAt', { $add: ['$createdAt', holdMs] }] } } }],
+      [
+        {
+          $set: {
+            expiresAt: {
+              $max: ['$expiresAt', { $min: [renewUntil, { $add: ['$createdAt', maxLifetimeMs] }] }],
+            },
+          },
+        },
+      ],
       /** `timestamps: false`: a hold is TTL bookkeeping, not a content write.
        *  Bumping `updatedAt` would also make every re-touch count as a
        *  modification, hiding whether the deadline actually moved. */
