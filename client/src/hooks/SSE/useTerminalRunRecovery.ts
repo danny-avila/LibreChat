@@ -2,36 +2,42 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSetRecoilState } from 'recoil';
-import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
-import type { TMessage, Agents } from 'librechat-data-provider';
+import { Constants, QueryKeys } from 'librechat-data-provider';
+import type { TMessage, TConversation, Agents } from 'librechat-data-provider';
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
-import type { RunEnd } from '~/store/families';
-import type { DisconnectedRunRecovery } from './resumableRecovery';
+import type { RunRecoveryTarget } from './terminal';
 import { dedupeSteersById, isNotFoundError, removeConvoFromAllQueries } from '~/utils';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
-import { fetchStreamStatus, useActiveJobs } from '~/data-provider';
+import {
+  fetchMessagesWithCacheProtection,
+  fetchStreamStatus,
+  useActiveJobs,
+} from '~/data-provider';
 import {
   clearDisconnectedRunRecovery,
   consumeTerminalEventSeen,
   getDisconnectedRunRecovery,
+  getResumableRunEpoch,
 } from './resumableRecovery';
+import {
+  TERMINAL_RETRY_DELAYS,
+  getPersistedRunState,
+  getRunRecoveryTarget,
+  getStatusRunOutcome,
+  getUnreconciledAssistantTail,
+  isRetryableTerminalError,
+  newConversationPath,
+  recoveryOwnsCurrentRoute,
+  submissionBelongsToConversation,
+  waitForRetryDelay,
+  withCurrentSearch,
+} from './terminal';
 import store from '~/store';
 
 type ResponseRefreshResult = {
   messages: TMessage[] | undefined;
   succeeded: boolean;
   notFound: boolean;
-};
-
-type RunRecoveryTarget = {
-  userMessageId?: string;
-  responseMessageId?: string;
-};
-
-type PersistedRunState = {
-  outcome?: RunEnd['outcome'];
-  responseFound: boolean;
-  userMessageFound: boolean;
 };
 
 type RestoreSteerChips = (
@@ -47,159 +53,6 @@ type UseTerminalRunRecoveryParams = {
   enabled: boolean;
 };
 
-const TERMINAL_RETRY_DELAYS = [1000, 2000, 5000, 10000, 30000] as const;
-
-const waitForRetryDelay = (delay: number, signal: AbortSignal): Promise<boolean> =>
-  new Promise((resolve) => {
-    if (signal.aborted) {
-      resolve(false);
-      return;
-    }
-
-    function cleanup() {
-      signal.removeEventListener('abort', onAbort);
-    }
-    function onAbort() {
-      clearTimeout(timeout);
-      cleanup();
-      resolve(false);
-    }
-    const timeout = setTimeout(() => {
-      cleanup();
-      resolve(true);
-    }, delay);
-
-    signal.addEventListener('abort', onAbort, { once: true });
-  });
-
-function isRetryableTerminalError(error: unknown): boolean {
-  if (error == null || typeof error !== 'object') {
-    return true;
-  }
-
-  const candidate = error as {
-    status?: number;
-    response?: { status?: number };
-  };
-  const status = candidate.response?.status ?? candidate.status;
-  return status == null || status === 408 || status === 429 || status >= 500;
-}
-
-function getUnreconciledAssistantTail(messages: TMessage[] | undefined): TMessage | undefined {
-  const lastMessage = messages?.[messages.length - 1];
-  if (!lastMessage || lastMessage.isCreatedByUser === true) {
-    return undefined;
-  }
-
-  const messageId = lastMessage.messageId ?? '';
-  const isUnreconciled =
-    lastMessage.createdAt == null || lastMessage.updatedAt == null || messageId.endsWith('_');
-
-  return isUnreconciled ? lastMessage : undefined;
-}
-
-function getRunRecoveryTarget(
-  disconnectedRun: DisconnectedRunRecovery | undefined,
-  messages: TMessage[] | undefined,
-): RunRecoveryTarget | undefined {
-  const unreconciledResponse = getUnreconciledAssistantTail(messages);
-  const userMessageId =
-    disconnectedRun?.userMessageId ?? unreconciledResponse?.parentMessageId ?? undefined;
-  const responseMessageId =
-    disconnectedRun?.responseMessageId ?? unreconciledResponse?.messageId ?? undefined;
-
-  if (!userMessageId && !responseMessageId) {
-    return undefined;
-  }
-
-  return { userMessageId, responseMessageId };
-}
-
-function getMessageOutcome(message: TMessage): RunEnd['outcome'] | undefined {
-  if (message.error === true) {
-    return 'error';
-  }
-  if (message.unfinished === true) {
-    return 'aborted';
-  }
-  if (
-    message.createdAt == null ||
-    message.updatedAt == null ||
-    (message.messageId ?? '').endsWith('_')
-  ) {
-    return undefined;
-  }
-  return 'completed';
-}
-
-function getPersistedRunState(
-  messages: TMessage[] | undefined,
-  target: RunRecoveryTarget | undefined,
-): PersistedRunState {
-  if (!messages?.length || !target) {
-    return { responseFound: false, userMessageFound: false };
-  }
-
-  const responseMessageId = target.responseMessageId;
-  const unpaddedResponseMessageId = responseMessageId?.replace(/_+$/, '');
-  const canUseParentFallback = !responseMessageId || responseMessageId.endsWith('_');
-  let fallbackResponse: TMessage | undefined;
-  let userMessageFound = false;
-
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i];
-    if (
-      target.userMessageId &&
-      message.isCreatedByUser === true &&
-      message.messageId === target.userMessageId
-    ) {
-      userMessageFound = true;
-      continue;
-    }
-    if (message.isCreatedByUser === true) {
-      continue;
-    }
-    if (
-      responseMessageId &&
-      (message.messageId === responseMessageId ||
-        (!!unpaddedResponseMessageId && message.messageId === unpaddedResponseMessageId))
-    ) {
-      return {
-        outcome: getMessageOutcome(message),
-        responseFound: true,
-        userMessageFound,
-      };
-    }
-    if (
-      !fallbackResponse &&
-      canUseParentFallback &&
-      target.userMessageId &&
-      message.parentMessageId === target.userMessageId
-    ) {
-      fallbackResponse = message;
-    }
-  }
-
-  return {
-    outcome: fallbackResponse ? getMessageOutcome(fallbackResponse) : undefined,
-    responseFound: fallbackResponse != null,
-    userMessageFound,
-  };
-}
-
-function getStatusRunOutcome(status: StreamStatusResponse): RunEnd['outcome'] | undefined {
-  if (status.status === 'complete') {
-    return 'completed';
-  }
-  if (status.status === 'error') {
-    return 'error';
-  }
-  if (status.status === 'aborted') {
-    return 'aborted';
-  }
-  return undefined;
-}
-
 export default function useTerminalRunRecovery({
   conversationId,
   getMessages,
@@ -211,6 +64,8 @@ export default function useTerminalRunRecovery({
   const navigate = useNavigate();
   const location = useLocation();
   const setRunEnd = useSetRecoilState(store.runEndByIndex(runIndex));
+  const setConversation = useSetRecoilState(store.conversationByIndex(runIndex));
+  const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
   const convertSteersToQueued = useSteerConvert();
   const { data: activeJobsData } = useActiveJobs(enabled);
   const isCurrentJobActive =
@@ -235,103 +90,122 @@ export default function useTerminalRunRecovery({
     };
   }, [location.pathname]);
 
-  const refreshUnreconciledResponse = useCallback(async (): Promise<ResponseRefreshResult> => {
-    if (!conversationId) {
-      return { messages: undefined, succeeded: false, notFound: false };
-    }
+  const refreshUnreconciledResponse = useCallback(
+    async (expectedRunEpoch: number): Promise<ResponseRefreshResult> => {
+      if (
+        !conversationId ||
+        getResumableRunEpoch(queryClient, conversationId) !== expectedRunEpoch
+      ) {
+        return { messages: undefined, succeeded: false, notFound: false };
+      }
 
-    const unreconciledResponse = getUnreconciledAssistantTail(getMessages(conversationId));
-    if (!unreconciledResponse) {
-      return { messages: getMessages(conversationId), succeeded: true, notFound: false };
-    }
+      const unreconciledResponse = getUnreconciledAssistantTail(getMessages(conversationId));
+      if (!unreconciledResponse) {
+        return { messages: getMessages(conversationId), succeeded: true, notFound: false };
+      }
 
-    const responseKey = [
-      conversationId,
-      unreconciledResponse.messageId,
-      unreconciledResponse.updatedAt ?? '',
-      unreconciledResponse.content?.length ?? 0,
-    ].join(':');
-    if (refreshedResponseRef.current === responseKey) {
-      return { messages: getMessages(conversationId), succeeded: false, notFound: false };
-    }
-
-    terminalRefreshAbortRef.current?.abort();
-    const refreshController = new AbortController();
-    terminalRefreshAbortRef.current = refreshController;
-    refreshedResponseRef.current = responseKey;
-    console.log(
-      '[TerminalRunRecovery] Completed job left an unreconciled response; refreshing messages:',
-      conversationId,
-    );
-
-    const finishFailedRefresh = (notFound: boolean): ResponseRefreshResult => {
+      const responseKey = [
+        conversationId,
+        unreconciledResponse.messageId,
+        unreconciledResponse.updatedAt ?? '',
+        unreconciledResponse.content?.length ?? 0,
+      ].join(':');
       if (refreshedResponseRef.current === responseKey) {
-        refreshedResponseRef.current = null;
+        return { messages: getMessages(conversationId), succeeded: false, notFound: false };
       }
-      if (terminalRefreshAbortRef.current === refreshController) {
-        terminalRefreshAbortRef.current = null;
-      }
-      return {
-        messages: getMessages(conversationId),
-        succeeded: false,
-        notFound,
+
+      terminalRefreshAbortRef.current?.abort();
+      const refreshController = new AbortController();
+      terminalRefreshAbortRef.current = refreshController;
+      refreshedResponseRef.current = responseKey;
+      console.log(
+        '[TerminalRunRecovery] Completed job left an unreconciled response; refreshing messages:',
+        conversationId,
+      );
+
+      const finishFailedRefresh = (notFound: boolean): ResponseRefreshResult => {
+        if (refreshedResponseRef.current === responseKey) {
+          refreshedResponseRef.current = null;
+        }
+        if (terminalRefreshAbortRef.current === refreshController) {
+          terminalRefreshAbortRef.current = null;
+        }
+        return {
+          messages: getMessages(conversationId),
+          succeeded: false,
+          notFound,
+        };
       };
-    };
 
-    const finishSuccessfulRefresh = (): ResponseRefreshResult => {
-      if (terminalRefreshAbortRef.current === refreshController) {
-        terminalRefreshAbortRef.current = null;
-      }
-      return { messages: getMessages(conversationId), succeeded: true, notFound: false };
-    };
+      const finishSuccessfulRefresh = (): ResponseRefreshResult => {
+        if (terminalRefreshAbortRef.current === refreshController) {
+          terminalRefreshAbortRef.current = null;
+        }
+        return { messages: getMessages(conversationId), succeeded: true, notFound: false };
+      };
 
-    for (let attempt = 0; ; attempt++) {
-      try {
-        const messagesQueryKey = [QueryKeys.messages, conversationId];
-        const messagesQuery = queryClient.getQueryCache().find(messagesQueryKey);
-        if (messagesQuery?.isActive() === true) {
-          await queryClient.invalidateQueries(
-            { queryKey: messagesQueryKey },
-            { throwOnError: true },
-          );
-        } else {
-          // React Router can still observe `/c/new` while this resolved cache is
-          // inactive, so invalidation alone would not issue a request.
-          const persistedMessages = await dataService.getMessagesByConvoId(conversationId);
-          if (!refreshController.signal.aborted) {
-            queryClient.setQueryData<TMessage[]>(messagesQueryKey, persistedMessages);
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const messagesQueryKey = [QueryKeys.messages, conversationId];
+          const messagesQuery = queryClient.getQueryCache().find(messagesQueryKey);
+          if (messagesQuery?.isActive() === true) {
+            await queryClient.invalidateQueries(
+              { queryKey: messagesQueryKey },
+              { throwOnError: true },
+            );
+          } else {
+            const persistedMessages = await fetchMessagesWithCacheProtection({
+              id: conversationId,
+              pathname: activePathnameRef.current ?? '',
+              queryClient,
+            });
+            if (
+              !refreshController.signal.aborted &&
+              getResumableRunEpoch(queryClient, conversationId) === expectedRunEpoch
+            ) {
+              queryClient.setQueryData<TMessage[]>(messagesQueryKey, persistedMessages);
+            }
+          }
+          if (
+            refreshController.signal.aborted ||
+            getResumableRunEpoch(queryClient, conversationId) !== expectedRunEpoch
+          ) {
+            return finishFailedRefresh(false);
+          }
+          if (getUnreconciledAssistantTail(getMessages(conversationId)) == null) {
+            return finishSuccessfulRefresh();
+          }
+        } catch (error) {
+          if (isNotFoundError(error)) {
+            return finishFailedRefresh(true);
+          }
+          if (!isRetryableTerminalError(error)) {
+            return finishFailedRefresh(false);
           }
         }
-        if (refreshController.signal.aborted) {
+
+        const retryDelay =
+          TERMINAL_RETRY_DELAYS[Math.min(attempt, TERMINAL_RETRY_DELAYS.length - 1)];
+        if (!(await waitForRetryDelay(retryDelay, refreshController.signal))) {
           return finishFailedRefresh(false);
         }
+
+        const observed = observedActiveJobRef.current;
+        if (
+          observed.conversationId !== conversationId ||
+          observed.active ||
+          getResumableRunEpoch(queryClient, conversationId) !== expectedRunEpoch
+        ) {
+          return finishFailedRefresh(false);
+        }
+
         if (getUnreconciledAssistantTail(getMessages(conversationId)) == null) {
           return finishSuccessfulRefresh();
         }
-      } catch (error) {
-        if (isNotFoundError(error)) {
-          return finishFailedRefresh(true);
-        }
-        if (!isRetryableTerminalError(error)) {
-          return finishFailedRefresh(false);
-        }
       }
-
-      const retryDelay = TERMINAL_RETRY_DELAYS[Math.min(attempt, TERMINAL_RETRY_DELAYS.length - 1)];
-      if (!(await waitForRetryDelay(retryDelay, refreshController.signal))) {
-        return finishFailedRefresh(false);
-      }
-
-      const observed = observedActiveJobRef.current;
-      if (observed.conversationId !== conversationId || observed.active) {
-        return finishFailedRefresh(false);
-      }
-
-      if (getUnreconciledAssistantTail(getMessages(conversationId)) == null) {
-        return finishSuccessfulRefresh();
-      }
-    }
-  }, [conversationId, getMessages, queryClient]);
+    },
+    [conversationId, getMessages, queryClient],
+  );
 
   const recoverStatusSteers = useCallback(
     (status: StreamStatusResponse) => {
@@ -358,19 +232,25 @@ export default function useTerminalRunRecovery({
       status?: StreamStatusResponse,
       recoveryTarget?: RunRecoveryTarget,
       recoveredSteers = false,
+      expectedRunEpoch = 0,
     ) => {
       if (!conversationId || !shouldSignalRunEnd) {
         return;
       }
 
       const observed = observedActiveJobRef.current;
-      if (observed.conversationId !== conversationId || observed.active) {
+      if (
+        observed.conversationId !== conversationId ||
+        observed.active ||
+        getResumableRunEpoch(queryClient, conversationId) !== expectedRunEpoch
+      ) {
         return;
       }
 
       const disconnectedRun = getDisconnectedRunRecovery(queryClient, conversationId);
       const isUnpersistedFirstTurn =
         disconnectedRun?.startedAsNewConvo === true && refreshed.notFound;
+      const ownsRecoveryRoute = recoveryOwnsCurrentRoute(activePathnameRef.current, conversationId);
 
       if (isUnpersistedFirstTurn) {
         removeConvoFromAllQueries(queryClient, conversationId);
@@ -381,14 +261,30 @@ export default function useTerminalRunRecovery({
           queryKey: [QueryKeys.messages, conversationId],
         });
         queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
+        if (ownsRecoveryRoute) {
+          setConversation((current) =>
+            current?.conversationId === conversationId
+              ? {
+                  ...current,
+                  conversationId: String(Constants.NEW_CONVO),
+                  title: 'New Chat',
+                  createdAt: '',
+                  updatedAt: '',
+                }
+              : current,
+          );
+          setSubmission((current) =>
+            submissionBelongsToConversation(current, conversationId) ? null : current,
+          );
+        }
         setRunEnd({
           conversationId: String(Constants.NEW_CONVO),
           outcome: 'error',
           endedAt: Date.now(),
         });
         clearDisconnectedRunRecovery(queryClient, conversationId);
-        if (activePathnameRef.current === `/c/${conversationId}`) {
-          navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
+        if (ownsRecoveryRoute) {
+          navigate(withCurrentSearch(newConversationPath), { replace: true });
         }
         return;
       }
@@ -417,19 +313,43 @@ export default function useTerminalRunRecovery({
         endedAt: Date.now(),
       });
       clearDisconnectedRunRecovery(queryClient, conversationId);
-      if (
-        disconnectedRun?.startedAsNewConvo === true &&
-        activePathnameRef.current === `/c/${Constants.NEW_CONVO}`
-      ) {
-        navigate(`/c/${conversationId}`, { replace: true });
+      if (disconnectedRun?.startedAsNewConvo === true && ownsRecoveryRoute) {
+        const recoveredConversation = queryClient.getQueryData<TConversation>([
+          QueryKeys.conversation,
+          conversationId,
+        ]);
+        setConversation((current) => {
+          if (
+            current?.conversationId !== Constants.NEW_CONVO &&
+            current?.conversationId !== conversationId
+          ) {
+            return current;
+          }
+          return {
+            ...current,
+            ...recoveredConversation,
+            conversationId,
+          } as TConversation;
+        });
+        navigate(withCurrentSearch(`/c/${conversationId}`), { replace: true });
       }
     },
-    [conversationId, navigate, queryClient, setRunEnd],
+    [conversationId, navigate, queryClient, setConversation, setRunEnd, setSubmission],
   );
 
   const recoverInactiveResponse = useCallback(
-    async (status: StreamStatusResponse, recoveredSteersOverride?: boolean) => {
+    async (
+      status: StreamStatusResponse,
+      recoveredSteersOverride?: boolean,
+      expectedRunEpoch?: number,
+    ) => {
       if (!conversationId) {
+        return;
+      }
+
+      const recoveryRunEpoch =
+        expectedRunEpoch ?? getResumableRunEpoch(queryClient, conversationId);
+      if (getResumableRunEpoch(queryClient, conversationId) !== recoveryRunEpoch) {
         return;
       }
 
@@ -443,13 +363,14 @@ export default function useTerminalRunRecovery({
         recoveredSteers;
 
       restoreSteerChips(conversationId, undefined);
-      const refreshed = await refreshUnreconciledResponse();
+      const refreshed = await refreshUnreconciledResponse(recoveryRunEpoch);
       reconcileRefreshedResponse(
         refreshed,
         shouldSignalRunEnd,
         status,
         recoveryTarget,
         recoveredSteers,
+        recoveryRunEpoch,
       );
     },
     [
@@ -517,6 +438,7 @@ export default function useTerminalRunRecovery({
     if (previous.conversationId !== conversationId) {
       refreshedResponseRef.current = null;
       terminalStatusAbortRef.current?.abort();
+      terminalRefreshAbortRef.current?.abort();
       return;
     }
 
@@ -543,14 +465,17 @@ export default function useTerminalRunRecovery({
     }
 
     const terminalConversationId = conversationId;
+    const terminalRunEpoch = getResumableRunEpoch(queryClient, terminalConversationId);
     void fetchTerminalStatus(terminalConversationId).then((status) => {
       if (!status) {
         return;
       }
 
       const observed = observedActiveJobRef.current;
+      const sameRun =
+        getResumableRunEpoch(queryClient, terminalConversationId) === terminalRunEpoch;
       if (status.active) {
-        if (observed.conversationId === terminalConversationId && !observed.active) {
+        if (sameRun && observed.conversationId === terminalConversationId && !observed.active) {
           queryClient.setQueryData<ActiveJobsResponse>([QueryKeys.activeJobs], (old) => ({
             activeJobIds: [...new Set([...(old?.activeJobIds ?? []), terminalConversationId])],
           }));
@@ -561,10 +486,10 @@ export default function useTerminalRunRecovery({
       // The status response may have atomically claimed parked steers. Recover
       // them even if a newer run became active before the request resolved.
       const recoveredSteers = recoverStatusSteers(status);
-      if (observed.conversationId !== terminalConversationId || observed.active) {
+      if (!sameRun || observed.conversationId !== terminalConversationId || observed.active) {
         return;
       }
-      void recoverInactiveResponse(status, recoveredSteers);
+      void recoverInactiveResponse(status, recoveredSteers, terminalRunEpoch);
     });
   }, [
     conversationId,

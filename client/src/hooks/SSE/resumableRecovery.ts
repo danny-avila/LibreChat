@@ -12,9 +12,13 @@ const terminalEventQueryKey = (conversationId: string) =>
   ['resumable-terminal-event', conversationId] as const;
 
 const disconnectedRunQueryRoot = ['resumable-disconnected-run'] as const;
+const runEpochQueryRoot = ['resumable-run-epoch'] as const;
 
 const disconnectedRunQueryKey = (conversationId: string) =>
   [...disconnectedRunQueryRoot, conversationId] as const;
+
+const runEpochQueryKey = (conversationId: string) =>
+  [...runEpochQueryRoot, conversationId] as const;
 
 export function markTerminalEventSeen(queryClient: QueryClient, conversationId: string) {
   queryClient.setQueryData(terminalEventQueryKey(conversationId), true);
@@ -38,6 +42,17 @@ export function clearTerminalEventSeen(queryClient: QueryClient, conversationId:
     queryKey: terminalEventQueryKey(conversationId),
     exact: true,
   });
+}
+
+export function beginResumableRun(queryClient: QueryClient, conversationId: string): number {
+  queryClient.setQueryDefaults(runEpochQueryRoot, { cacheTime: Infinity });
+  const nextEpoch = getResumableRunEpoch(queryClient, conversationId) + 1;
+  queryClient.setQueryData(runEpochQueryKey(conversationId), nextEpoch);
+  return nextEpoch;
+}
+
+export function getResumableRunEpoch(queryClient: QueryClient, conversationId: string): number {
+  return queryClient.getQueryData<number>(runEpochQueryKey(conversationId)) ?? 0;
 }
 
 export function setDisconnectedRunRecovery(

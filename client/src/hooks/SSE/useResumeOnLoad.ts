@@ -83,6 +83,37 @@ function preferDefinedString(value?: string | null, fallback?: string): string |
   return value != null && value !== '' ? value : fallback;
 }
 
+function getRecoveryConversationId({
+  conversationId,
+  currentConversationId,
+  resolvedConversationId,
+}: {
+  conversationId: string | undefined;
+  currentConversationId: string | null | undefined;
+  resolvedConversationId: string | null | undefined;
+}): string | undefined {
+  if (conversationId !== Constants.NEW_CONVO) {
+    return conversationId;
+  }
+
+  const candidate =
+    resolvedConversationId ??
+    (currentConversationId &&
+    currentConversationId !== Constants.NEW_CONVO &&
+    currentConversationId !== Constants.PENDING_CONVO
+      ? currentConversationId
+      : undefined);
+  if (
+    !candidate ||
+    typeof window === 'undefined' ||
+    window.location.pathname !== `/c/${candidate}`
+  ) {
+    return conversationId;
+  }
+
+  return candidate;
+}
+
 /**
  * Build a submission object from resume state for reconnected streams.
  * This provides the minimum data needed for useResumableSSE to subscribe.
@@ -193,7 +224,7 @@ function buildSubmissionFromResumeState(
  * 3. useResumableSSE picks up the submission and subscribes to the stream
  *
  * @param messagesLoaded - Whether the messages query has finished loading (prevents race condition)
- * @param resolvedConversationId - Live stream ID for a first turn whose route still resolves to `new`
+ * @param resolvedConversationId - Retained stream ID for a first turn whose native URL owns that run
  */
 export default function useResumeOnLoad(
   conversationId: string | undefined,
@@ -210,16 +241,11 @@ export default function useResumeOnLoad(
   const actualEndpoint = endpointType ?? endpoint;
   const resumableEnabled = !isAssistantsEndpoint(actualEndpoint);
   const currentConversationId = currentConversation?.conversationId;
-  const hasResolvedCurrentConversation =
-    !!currentConversationId &&
-    currentConversationId !== Constants.NEW_CONVO &&
-    currentConversationId !== Constants.PENDING_CONVO;
-  // Native history replacement does not update useParams until final navigation.
-  const recoveryConversationId =
-    conversationId === Constants.NEW_CONVO
-      ? (resolvedConversationId ??
-        (hasResolvedCurrentConversation ? currentConversationId : conversationId))
-      : conversationId;
+  const recoveryConversationId = getRecoveryConversationId({
+    conversationId,
+    currentConversationId,
+    resolvedConversationId,
+  });
   // Track conversations we've already processed (either resumed or skipped)
   const processedConvoRef = useRef<string | null>(null);
   const restoreResumeBranch = useRecoilCallback(
