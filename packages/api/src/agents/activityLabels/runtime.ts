@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import { Constants } from 'librechat-data-provider';
 import { initializeModel } from '@librechat/agents';
 import type { ClientOptions, HookCallback, HookInputByEvent, Providers } from '@librechat/agents';
 
@@ -426,6 +427,17 @@ export function createActivityLabelHook(
       input.entries.length === 0 ||
       opts.signal?.aborted === true ||
       hookSignal?.aborted === true
+    ) {
+      return {};
+    }
+    /** A batch that is ONLY handoff calls gets no label. The transfer card
+     *  already names the destination, the client renders transfer parts
+     *  standalone (never groupable), so a claimed label could only orphan
+     *  into a stray line after the card — and the model call would be spent
+     *  describing what the card already says. Skipped BEFORE the quota so
+     *  handoffs never consume `maxPerRun`. */
+    if (
+      input.entries.every((entry) => entry.toolName?.startsWith(Constants.LC_TRANSFER_TO_) === true)
     ) {
       return {};
     }

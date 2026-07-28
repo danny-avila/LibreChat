@@ -251,6 +251,57 @@ describe('createActivityLabelHook', () => {
     expect(slots[0].filled).toEqual([null]);
   });
 
+  /** A pure-handoff batch gets no label: the transfer card already names
+   *  the destination, and the client renders transfers standalone, so a
+   *  label could only orphan. Must not consume `maxPerRun` either. */
+  it('claims nothing for a batch of only transfer calls', async () => {
+    const hook = createActivityLabelHook({ claimSlot, resolveLLM });
+    await hook(
+      batchInput({
+        entries: [
+          {
+            toolName: 'lc_transfer_to_billing_agent',
+            toolInput: {},
+            toolUseId: 'x1',
+            status: 'success',
+            toolOutput: '',
+          },
+        ],
+      }),
+      new AbortController().signal,
+    );
+    await flushDetached();
+    expect(slots).toHaveLength(0);
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('still claims for a mixed batch containing a transfer call', async () => {
+    const hook = createActivityLabelHook({ claimSlot, resolveLLM });
+    await hook(
+      batchInput({
+        entries: [
+          {
+            toolName: 'lc_transfer_to_billing_agent',
+            toolInput: {},
+            toolUseId: 'x1',
+            status: 'success',
+            toolOutput: '',
+          },
+          {
+            toolName: 'web_search',
+            toolInput: { query: 'refund policy' },
+            toolUseId: 'x2',
+            status: 'success',
+            toolOutput: 'found it',
+          },
+        ],
+      }),
+      new AbortController().signal,
+    );
+    await flushDetached();
+    expect(slots).toHaveLength(1);
+  });
+
   it('skips subagent scopes entirely', async () => {
     const hook = createActivityLabelHook({ claimSlot, resolveLLM });
     await hook(batchInput({ agentId: 'subagent-1' }), new AbortController().signal);

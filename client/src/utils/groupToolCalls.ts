@@ -24,6 +24,29 @@ function isGroupableToolCall(part: TMessageContentParts): boolean {
 }
 
 /**
+ * True when every tool call the label covers is a `transfer_to_*` handoff.
+ * Transfer parts are never groupable, so such a label can only orphan into a
+ * stray line after the handoff card — which already names the destination.
+ * Content persisted before the server stopped claiming labels for pure
+ * handoff batches still carries these; they are dropped at render.
+ */
+function isTransferOnlyLabel(labelPart: TMessageContentParts, allParts: PartWithIndex[]): boolean {
+  const ids = (labelPart as { tool_call_ids?: unknown }).tool_call_ids;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return false;
+  }
+  return ids.every((id) =>
+    allParts.some(({ part }) => {
+      if (part?.type !== ContentTypes.TOOL_CALL) {
+        return false;
+      }
+      const toolCall = part[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined;
+      return toolCall?.id === id && toolCall?.name?.startsWith(Constants.LC_TRANSFER_TO_) === true;
+    }),
+  );
+}
+
+/**
  * Groups message content for rendering.
  *
  * Activity blocks: reasoning (THINK) parts are absorbed tentatively; when an
@@ -96,8 +119,10 @@ export function groupSequentialToolCalls(parts: PartWithIndex[]): GroupedPart[] 
       flushWithoutLabel();
       if (claimed.length > 0) {
         result.push({ type: 'tool-group', parts: claimed, labelPart: item });
-      } else {
-        /** Orphan label (block parts hidden/filtered): renders standalone. */
+      } else if (!isTransferOnlyLabel(item.part, parts)) {
+        /** Orphan label (block parts hidden/filtered): renders standalone —
+         *  UNLESS its batch was only handoff calls, where the transfer card
+         *  already says everything and the label would be a stray line. */
         result.push({ type: 'single', part: item });
       }
       continue;

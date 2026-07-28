@@ -94,6 +94,44 @@ describe('groupSequentialToolCalls with activity labels', () => {
     expect(group.labelPart).toBeUndefined();
   });
 
+  /** A pure-handoff batch's label has nothing to head: the transfer card
+   *  names the destination, transfers are never groupable, and the label
+   *  would render as a stray line after the card. */
+  it('drops an orphan label whose batch was only transfer calls', () => {
+    const transfer = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: { id: 'x1', name: 'lc_transfer_to_billing', args: '{}' },
+    } as unknown as TMessageContentParts;
+    const transferLabel = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Handed off to billing',
+      tool_call_ids: ['x1'],
+      pending: false,
+    } as unknown as TMessageContentParts;
+
+    const grouped = groupSequentialToolCalls(withIndex([transfer, transferLabel]));
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]).toMatchObject({ type: 'single' });
+    expect((grouped[0] as { part: PartWithIndex }).part.idx).toBe(0);
+  });
+
+  it('keeps rendering an orphan label whose batch had real tool calls', () => {
+    const orphanLabel = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Searched the docs',
+      tool_call_ids: ['t9'],
+      pending: false,
+    } as unknown as TMessageContentParts;
+
+    const grouped = groupSequentialToolCalls(withIndex([orphanLabel]));
+
+    expect(grouped).toHaveLength(1);
+    expect((grouped[0] as { part: PartWithIndex }).part.part).toMatchObject({
+      [ContentTypes.ACTIVITY_LABEL]: 'Searched the docs',
+    });
+  });
+
   /** A filled label claims only its own batch — never one behind a blank slot. */
   it('stops a filled label from claiming a batch behind a blank label', () => {
     const grouped = groupSequentialToolCalls(
