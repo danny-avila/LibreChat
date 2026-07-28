@@ -10,7 +10,6 @@ import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import Image from '~/components/Chat/Messages/Content/Image';
-import { useAuthContext } from '~/hooks/AuthContext';
 import { fontSizeAtom } from '~/store/fontSize';
 import { useShareContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -41,7 +40,9 @@ const SteerPart = memo(function SteerPart({
   createdAt?: number;
 }) {
   const localize = useLocalize();
-  const { user } = useAuthContext();
+  /** Read the atom rather than the auth context: AuthContextProvider mirrors the
+   *  user into it, and the public share route mounts outside that provider. */
+  const user = useRecoilValue(store.user);
   const fontSize = useAtomValue(fontSizeAtom);
   const { isSharedConvo } = useShareContext();
   const usernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
