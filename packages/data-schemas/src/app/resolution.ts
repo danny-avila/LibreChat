@@ -1,9 +1,12 @@
+import logger from '~/config/winston';
 import {
+  EModelEndpoint,
+  validateAzureGroups,
   BASE_ONLY_CONFIG_SECTIONS,
   INTERFACE_PERMISSION_FIELDS,
   PERMISSION_SUB_KEYS,
 } from 'librechat-data-provider';
-import type { TCustomConfig } from 'librechat-data-provider';
+import type { TCustomConfig, TAzureConfig, TAzureGroups } from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
 
 type AnyObject = { [key: string]: unknown };
@@ -179,6 +182,35 @@ function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0,
 }
 
 /**
+ * A group/role/user override can re-introduce raw Azure `groups` into the merged
+ * config, but the deep-merge leaves the base config's derived `modelNames`,
+ * `modelGroupMap`, and `groupMap` untouched — so the override's models never reach
+ * the model list (picker + enforcement) or request-time routing. Re-validate the
+ * merged `groups` with the same `validateAzureGroups` the base path uses so scoped
+ * Azure overrides take effect; on invalid groups the base-derived config is kept.
+ *
+ * Assistant model derivation (an AppService base-load concern) is intentionally
+ * not recomputed here.
+ */
+function rederiveAzureGroups(merged: AppConfig): void {
+  const azure = merged.endpoints?.[EModelEndpoint.azureOpenAI] as
+    | (TAzureConfig & { groups?: TAzureGroups })
+    | undefined;
+  if (!azure || !Array.isArray(azure.groups)) {
+    return;
+  }
+
+  const { groups, ...rest } = azure;
+  const { isValid, modelNames, modelGroupMap, groupMap, errors } = validateAzureGroups(groups);
+  if (!isValid) {
+    logger.warn('[mergeConfigOverrides] Invalid Azure `groups` in override; keeping base:', errors);
+    return;
+  }
+
+  merged.endpoints![EModelEndpoint.azureOpenAI] = { ...rest, modelNames, modelGroupMap, groupMap };
+}
+
+/**
  * Merge DB config overrides into a base AppConfig.
  *
  * Configs are sorted by priority ascending (lowest first, highest wins).
@@ -247,6 +279,8 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
       merged = deepMerge(merged, remapped);
     }
   }
+
+  rederiveAzureGroups(merged);
 
   return merged;
 }
