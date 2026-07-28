@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test';
 import path from 'node:path';
 import mockConfig from './playwright.config.mock';
 import { buildReasoningPayload } from './benchmarks-reasoning/payload';
+import { getE2EBaseURL } from './setup/env';
 
 /**
  * Reasoning-stream perf benchmark config.
@@ -21,6 +22,7 @@ process.env.MOCK_LLM_CHUNK_DELAY_MS ??= '1';
 
 const rootPath = path.resolve(__dirname, '..');
 const DEV_SERVER_URL = 'http://localhost:3090';
+const backendPort = new URL(getE2EBaseURL()).port || '3080';
 
 const appServer = Array.isArray(mockConfig.webServer)
   ? mockConfig.webServer[0]
@@ -42,9 +44,10 @@ export default defineConfig({
     {
       command: 'npm run frontend:dev',
       cwd: rootPath,
-      /** The mock env exports PORT for the backend (3080); vite reads PORT for
-       *  its own listen port, so pin the dev server back to 3090. */
-      env: { ...process.env, PORT: '3090', HOST: 'localhost' },
+      /** The mock env exports PORT for the backend; vite reads PORT for its
+       *  own listen port, so pin the dev server back to 3090 and point its
+       *  /api proxy at whichever port the app server actually uses. */
+      env: { ...process.env, PORT: '3090', HOST: 'localhost', BACKEND_PORT: backendPort },
       url: DEV_SERVER_URL,
       stdout: 'pipe',
       timeout: 180_000,

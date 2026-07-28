@@ -182,6 +182,20 @@ test.describe('reasoning stream perf (react-scan)', () => {
     });
     await expect(thoughtToggles).toHaveCount(1);
 
+    /**
+     * One nonempty toggle is not enough — the ENTIRE reasoning section must
+     * survive the pipeline. Expand the toggle and compare the rendered think
+     * text against the source payload (whitespace-normalized; the UI strips
+     * the inline think tags and trims).
+     */
+    await thoughtToggles.click();
+    const thinkGroup = messagesView(page).getByRole('group', {
+      name: /^(Thoughts|Thinking)$/,
+    });
+    const renderedThink = (await thinkGroup.locator('p').first().textContent()) ?? '';
+    const normalize = (value: string) => value.replace(/\s+/g, ' ').trim();
+    expect(normalize(renderedThink)).toBe(normalize(thinkSection));
+
     await resetPerf(page);
     const input = page.getByRole('textbox', { name: 'Message input' });
     await input.click();
@@ -225,25 +239,33 @@ test.describe('reasoning stream perf (react-scan)', () => {
     await attachSnapshot(testInfo, 'typing-renders.json', typing, {});
 
     /**
-     * rAF coalescing must keep per-token work bounded: the think box may
-     * re-render at most once per animation frame, so its render count has to
-     * stay well below one render per streamed chunk.
+     * rAF coalescing must keep per-token work bounded: cache flushes happen at
+     * most once per animation frame, so render counts scale with elapsed
+     * frames, never with chunk count. The bound is derived from wall time
+     * (60fps + 50% headroom), which keeps it meaningful regardless of how many
+     * chunks streamed before `resetPerf` — without coalescing, renders track
+     * chunks (~5k in ~13s) and blow far past it (measured baseline: 122).
      */
+    const framesUpperBound = Math.ceil((streamMs / 1000) * 90);
     const thinkingContentRenders = streaming.renders['ThinkingContent']?.count ?? 0;
     expect(thinkingContentRenders).toBeGreaterThan(10);
-    expect(thinkingContentRenders).toBeLessThan(thinkChunks);
+    expect(thinkingContentRenders).toBeLessThan(framesUpperBound);
 
     /**
      * Markdown must not re-render every block on every token — total
-     * MarkdownBlock renders stay in the order of frames + blocks, far below
-     * blocks × tokens.
+     * MarkdownBlock renders stay in the order of frames + blocks (measured
+     * baseline: 153), far below blocks × tokens (~100k).
      */
     const markdownBlockRenders = streaming.renders['MarkdownBlock']?.count ?? 0;
-    expect(markdownBlockRenders).toBeLessThan(textChunks * 3);
+    expect(markdownBlockRenders).toBeLessThan(framesUpperBound);
 
-    /** The main thread must not seize up while the huge block streams. */
-    expect(worstLongTask).toBeLessThan(1000);
-    expect(longTaskTotal).toBeLessThan(streamMs * 0.5);
+    /**
+     * The main thread must stay responsive while the huge block streams:
+     * no single stall past 250ms, and no more than 10% of the stream's wall
+     * time spent in long tasks (measured baseline: one 96ms task in 13.4s).
+     */
+    expect(worstLongTask).toBeLessThan(250);
+    expect(longTaskTotal).toBeLessThan(streamMs * 0.1);
 
     /**
      * Typing after the long transcript must not re-render the transcript:
