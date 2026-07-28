@@ -120,6 +120,8 @@ interface InitializedAgent {
   toolContextMap: Record<string, unknown>;
   maxContextTokens: number;
   userMCPAuthMap?: Record<string, Record<string, string>>;
+  /** Names of tools with the host-injected `intent` label param (see `agents/intent.ts`). */
+  intentToolNames?: string[];
   [key: string]: unknown;
 }
 
@@ -580,6 +582,13 @@ export async function createAgentChatCompletion(
               thread_id: conversationId,
               user_id: userId,
               user: safeUser,
+              /** Same per-agent channel the in-repo controllers thread via
+               *  `loadTools`: without it, the executor's PTC path cannot
+               *  strip host-injected `intent` params from the schemas the
+               *  sandbox bridge advertises on this route. */
+              ...(initializedAgent.intentToolNames?.length
+                ? { intentToolNames: initializedAgent.intentToolNames }
+                : {}),
             },
             signal: abortController.signal,
             streamMode: 'values',

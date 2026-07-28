@@ -29,7 +29,6 @@ import { Constants as AgentConstants } from '@librechat/agents';
 import type { LCTool, LCToolRegistry, JsonSchemaType } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
-import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from './tools';
 
 /** Argument carrying the model-authored label for a tool call. */
@@ -40,6 +39,12 @@ export const INTENT_ARG = 'intent';
  * enabled (an explicit `describe_intent: false` opts one out). These are the
  * least legible calls in the UI today, and the convention only becomes a
  * convention if our own tools model it.
+ *
+ * `ask_user_question` is deliberately absent: its graph tool is rebuilt in
+ * `run.ts` from its own Zod schema (which is also the HITL card's wire
+ * shape), so definition-level injection never reaches the model. Its intent
+ * support lands with the HITL slice, which threads the label into the
+ * interrupt payload on purpose.
  */
 export const NATIVE_INTENT_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   Tools.web_search,
@@ -47,7 +52,6 @@ export const NATIVE_INTENT_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   EDIT_FILE_TOOL_NAME,
   SET_MEMORY_TOOL_NAME,
   DELETE_MEMORY_TOOL_NAME,
-  ASK_USER_QUESTION_TOOL_NAME,
 ]);
 
 /**
@@ -178,10 +182,28 @@ function canInjectIntentParam(def: LCTool): boolean {
   return params.type == null || params.type === 'object';
 }
 
-/** Returns a copy of the def without the injected `intent` property. */
+/**
+ * Discriminates the intent LABEL property (host-injected here, or SDK-native
+ * from `@librechat/agents`) from a tool's own business parameter that merely
+ * shares the name. Both contracts open with this exact instruction, while an
+ * MCP/action tool's real `intent` argument will not — removal paths must
+ * never strip a parameter the tool actually needs.
+ */
+const INTENT_LABEL_MARKER = 'ALWAYS write this field FIRST';
+
+function isIntentLabelProperty(property: JsonSchemaType | undefined): boolean {
+  return (
+    property != null &&
+    property.type === 'string' &&
+    typeof property.description === 'string' &&
+    property.description.startsWith(INTENT_LABEL_MARKER)
+  );
+}
+
+/** Returns a copy of the def without the intent LABEL property (marker-guarded). */
 function removeIntentParam(def: LCTool): LCTool {
   const params = def.parameters;
-  if (params?.properties == null || !(INTENT_ARG in params.properties)) {
+  if (params?.properties == null || !isIntentLabelProperty(params.properties[INTENT_ARG])) {
     return def;
   }
   const { [INTENT_ARG]: _omit, ...restProps } = params.properties;
@@ -325,6 +347,55 @@ export function applyIntentLabels(params: {
 }
 
 const MCP_ALL_PLACEHOLDER_PREFIX = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
+
+/**
+ * Post-registration sanitize pass, run AFTER every tool registration step —
+ * including the skill catalog, which appends its definition after the
+ * injection pass. Removes intent LABEL properties that must not be
+ * advertised: every one when the capability is disabled (the admin kill
+ * switch over SDK-native schemas, which otherwise pay the token cost with
+ * the feature off), or the explicitly opted-out ones when it is enabled.
+ * Marker-guarded, so a tool's own `intent` business parameter survives.
+ */
+export function sanitizeIntentLabels(params: {
+  toolDefinitions: LCTool[] | undefined;
+  toolRegistry: LCToolRegistry | undefined;
+  toolOptions: AgentToolOptions | undefined;
+  capabilityEnabled: boolean;
+}): { toolDefinitions: LCTool[] } {
+  const { toolRegistry, toolOptions, capabilityEnabled } = params;
+  const defs = params.toolDefinitions ?? [];
+  const shouldStrip = (name: string): boolean =>
+    capabilityEnabled ? toolOptions?.[name]?.describe_intent === false : true;
+
+  let changed = false;
+  const nextDefs = defs.map((def) => {
+    if (!shouldStrip(def.name)) {
+      return def;
+    }
+    const stripped = removeIntentParam(def);
+    if (stripped !== def) {
+      changed = true;
+      const registryEntry = toolRegistry?.get(def.name);
+      if (registryEntry) {
+        toolRegistry?.set(def.name, { ...registryEntry, parameters: stripped.parameters });
+      }
+    }
+    return stripped;
+  });
+  if (toolRegistry) {
+    for (const [name, entry] of toolRegistry) {
+      if (!shouldStrip(name)) {
+        continue;
+      }
+      const stripped = removeIntentParam(entry);
+      if (stripped !== entry) {
+        toolRegistry.set(name, stripped);
+      }
+    }
+  }
+  return { toolDefinitions: changed ? nextDefs : defs };
+}
 
 /**
  * Builds `tool_options` marking each eligible tool as intent-describing for

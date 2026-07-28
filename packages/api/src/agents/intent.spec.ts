@@ -11,6 +11,7 @@ import {
   stripIntentFromToolDefinitions,
   stripIntentFromToolRegistry,
   applyIntentLabels,
+  sanitizeIntentLabels,
   synthesizeIntentToolOptions,
   mergeSynthesizedToolOptions,
 } from './intent';
@@ -22,6 +23,24 @@ const mcpDef = (name: string): LCTool =>
     name,
     description: `${name} description`,
     parameters: { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] },
+  }) as unknown as LCTool;
+
+/** Mirrors an SDK-native intent schema: the label contract's marker text. */
+const sdkNativeDef = (name: string): LCTool =>
+  ({
+    name,
+    parameters: {
+      type: 'object',
+      properties: {
+        intent: {
+          type: 'string',
+          description:
+            'ALWAYS write this field FIRST, before any other argument. One short sentence…',
+        },
+        query: { type: 'string' },
+      },
+      required: ['query'],
+    },
   }) as unknown as LCTool;
 
 describe('isIntentEligibleToolName', () => {
@@ -192,14 +211,7 @@ describe('applyIntentLabels', () => {
   });
 
   it('strips an SDK-native intent property on explicit opt-out (def and registry)', () => {
-    const sdkNative = {
-      name: 'web_search',
-      parameters: {
-        type: 'object',
-        properties: { intent: { type: 'string' }, query: { type: 'string' } },
-        required: ['query'],
-      },
-    } as unknown as LCTool;
+    const sdkNative = sdkNativeDef('web_search');
     const toolRegistry: LCToolRegistry = new Map([['web_search', sdkNative]]);
     const { toolDefinitions, intentToolNames } = applyIntentLabels({
       toolDefinitions: [sdkNative],
@@ -213,6 +225,26 @@ describe('applyIntentLabels', () => {
       .properties;
     expect(INTENT_ARG in registryProps).toBe(false);
     expect(INTENT_ARG in (sdkNative.parameters as { properties: object }).properties).toBe(true);
+  });
+
+  it('never strips a tool-owned business `intent` parameter on opt-out', () => {
+    const businessIntent = {
+      name: 'create_record',
+      parameters: {
+        type: 'object',
+        properties: {
+          intent: { type: 'string', description: 'CRM intent category for the record' },
+          title: { type: 'string' },
+        },
+        required: ['intent'],
+      },
+    } as unknown as LCTool;
+    const { toolDefinitions } = applyIntentLabels({
+      toolDefinitions: [businessIntent],
+      toolRegistry: undefined,
+      toolOptions: { create_record: { describe_intent: false } },
+    });
+    expect(toolDefinitions[0]).toBe(businessIntent);
   });
 
   it('skips a non-object (string-input) schema without rewriting it', () => {
@@ -306,6 +338,81 @@ describe('stripIntentFromToolDefinitions / stripIntentFromToolRegistry', () => {
     const originalProps = (registry.get('search_mcp_docs')?.parameters as { properties: object })
       .properties;
     expect(INTENT_ARG in originalProps).toBe(true);
+  });
+});
+
+describe('sanitizeIntentLabels', () => {
+  it('strips every SDK-native label when the capability is disabled (kill switch)', () => {
+    const skill = sdkNativeDef('skill');
+    const search = sdkNativeDef('tool_search');
+    const toolRegistry: LCToolRegistry = new Map([
+      ['skill', skill],
+      ['tool_search', search],
+    ]);
+    const { toolDefinitions } = sanitizeIntentLabels({
+      toolDefinitions: [skill, search],
+      toolRegistry,
+      toolOptions: undefined,
+      capabilityEnabled: false,
+    });
+    for (const def of toolDefinitions) {
+      expect(INTENT_ARG in (def.parameters as { properties: object }).properties).toBe(false);
+    }
+    for (const entry of toolRegistry.values()) {
+      expect(INTENT_ARG in (entry.parameters as { properties: object }).properties).toBe(false);
+    }
+    expect(INTENT_ARG in (skill.parameters as { properties: object }).properties).toBe(true);
+  });
+
+  it('leaves defs untouched when the capability is on and nothing opted out', () => {
+    const skill = sdkNativeDef('skill');
+    const defs = [skill];
+    const { toolDefinitions } = sanitizeIntentLabels({
+      toolDefinitions: defs,
+      toolRegistry: undefined,
+      toolOptions: undefined,
+      capabilityEnabled: true,
+    });
+    expect(toolDefinitions).toBe(defs);
+  });
+
+  it('enforces explicit opt-outs on late-registered defs when the capability is on', () => {
+    const skill = sdkNativeDef('skill');
+    const toolRegistry: LCToolRegistry = new Map([['skill', skill]]);
+    const { toolDefinitions } = sanitizeIntentLabels({
+      toolDefinitions: [skill],
+      toolRegistry,
+      toolOptions: { skill: { describe_intent: false } },
+      capabilityEnabled: true,
+    });
+    expect(INTENT_ARG in (toolDefinitions[0].parameters as { properties: object }).properties).toBe(
+      false,
+    );
+    expect(
+      INTENT_ARG in (toolRegistry.get('skill')?.parameters as { properties: object }).properties,
+    ).toBe(false);
+  });
+
+  it('spares tool-owned business intent params in both modes', () => {
+    const businessIntent = {
+      name: 'create_record',
+      parameters: {
+        type: 'object',
+        properties: {
+          intent: { type: 'string', description: 'CRM intent category for the record' },
+        },
+        required: ['intent'],
+      },
+    } as unknown as LCTool;
+    for (const capabilityEnabled of [true, false]) {
+      const { toolDefinitions } = sanitizeIntentLabels({
+        toolDefinitions: [businessIntent],
+        toolRegistry: undefined,
+        toolOptions: { create_record: { describe_intent: false } },
+        capabilityEnabled,
+      });
+      expect(toolDefinitions[0]).toBe(businessIntent);
+    }
   });
 });
 

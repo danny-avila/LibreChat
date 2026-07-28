@@ -52,11 +52,11 @@ import {
 } from './tools';
 import { normalizeServerName, requiresEphemeralUserConnection, splitMCPToolKey } from '~/mcp/utils';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
+import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
-import { applyIntentLabels } from './intent';
 import { primeResources } from './resources';
 
 /**
@@ -1343,6 +1343,22 @@ export async function initializeAgent(
     executableSkillIds = skillResult.activeSkillIds;
     activeSkillNames = skillResult.activeSkillNames;
   }
+
+  /**
+   * Final intent-label sanitize, after EVERY registration step (the skill
+   * catalog above appends its SDK definition post-injection): with the
+   * capability off, strips SDK-native intent labels so disabling
+   * `tool_intents` is a real kill switch; with it on, enforces explicit
+   * per-tool opt-outs on late-registered definitions. Marker-guarded — a
+   * tool's own `intent` business parameter is never touched.
+   */
+  const intentSanitized = sanitizeIntentLabels({
+    toolDefinitions,
+    toolRegistry,
+    toolOptions: agent.tool_options,
+    capabilityEnabled: params.toolIntentsAvailable === true,
+  });
+  toolDefinitions = intentSanitized.toolDefinitions;
 
   const hasFinalAgentTools =
     (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
