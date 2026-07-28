@@ -53,13 +53,6 @@
   },
   "homepage": "https://librechat.ai",
   "devDependencies": {
-    "@rollup/plugin-alias": "^5.1.0",
-    "@rollup/plugin-commonjs": "^29.0.0",
-    "@rollup/plugin-json": "^6.1.0",
-    "@rollup/plugin-node-resolve": "^15.1.0",
-    "@rollup/plugin-replace": "^5.0.5",
-    "@rollup/plugin-terser": "^1.0.0",
-    "@rollup/plugin-typescript": "^12.1.2",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.2",
     "@types/node": "^24.12.4",
@@ -67,9 +60,6 @@
     "jest-junit": "^17.0.0",
     "mongodb-memory-server": "^11.0.1",
     "rimraf": "^6.1.3",
-    "rollup": "^4.34.9",
-    "rollup-plugin-peer-deps-external": "^2.2.4",
-    "rollup-plugin-typescript2": "^0.37.0",
     "ts-node": "^10.9.2",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.3"
