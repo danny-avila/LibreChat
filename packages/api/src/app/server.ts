@@ -2,9 +2,10 @@ import { logger } from '@librechat/data-schemas';
 import type { Server } from 'node:http';
 
 /**
- * Node sweeps header/request timeouts on `connectionsCheckingInterval`, which is a
- * `createServer` option that `app.listen()` leaves at its 30s default. Values below this
- * are rounded up to it. `keepAliveTimeout` is socket-driven and stays exact.
+ * Node detects header/request timeout expiry only on `connectionsCheckingInterval`, a
+ * `createServer` option that `app.listen()` leaves at its 30s default, so short values
+ * take effect late rather than at the configured deadline. `keepAliveTimeout` is
+ * socket-driven and stays exact.
  */
 const TIMEOUT_SWEEP_RESOLUTION_MS = 30_000;
 
@@ -61,7 +62,7 @@ export const configureServerTimeouts = (
 
   if (belowResolution.length > 0) {
     logger.warn(
-      `${belowResolution.join(', ')} set below the ${TIMEOUT_SWEEP_RESOLUTION_MS}ms connection sweep interval; expiry is only detected once per sweep, so the effective timeout is up to ${TIMEOUT_SWEEP_RESOLUTION_MS}ms.`,
+      `${belowResolution.join(', ')} set below the ${TIMEOUT_SWEEP_RESOLUTION_MS}ms connection sweep interval; expiry is only detected on the next sweep, so the connection can stay open well past the configured deadline. Use values at or above ${TIMEOUT_SWEEP_RESOLUTION_MS}ms for predictable enforcement.`,
     );
   }
 };
