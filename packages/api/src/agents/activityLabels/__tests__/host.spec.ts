@@ -78,6 +78,49 @@ describe('resolveActivityConfig', () => {
     expect(config.enabled).toBe(false);
     expect(config.model).toBe('gpt-4o-mini');
   });
+
+  /** `initializeAgent` rewrites `agent.endpoint` to the backing provider, so
+   *  the PUBLIC endpoint's block (`endpoints.agents`) must still be honored
+   *  — it inherits every activity field via `agentsEndpointSchema`. */
+  it('honors the public agents endpoint when the agent endpoint was rewritten', () => {
+    const config = resolveActivityConfig(
+      appConfig({ agents: { activityLabel: true, activityModel: 'agents-mini' } }),
+      'openAI',
+      undefined,
+      'agents',
+    );
+    expect(config.enabled).toBe(true);
+    expect(config.model).toBe('agents-mini');
+  });
+
+  it('lets the public endpoint win per field over the backing provider', () => {
+    const config = resolveActivityConfig(
+      appConfig({
+        agents: { activityModel: 'agents-mini' },
+        openAI: { activityLabel: true, activityModel: 'provider-mini', activityMaxPerRun: 3 },
+      }),
+      'openAI',
+      undefined,
+      'agents',
+    );
+    /** Field-wise: model from `agents`, the rest falls through to `openAI`. */
+    expect(config.enabled).toBe(true);
+    expect(config.model).toBe('agents-mini');
+    expect(config.maxPerRun).toBe(3);
+  });
+
+  it('keeps endpoints.all above the public endpoint', () => {
+    const config = resolveActivityConfig(
+      appConfig({
+        all: { activityModel: 'shared-model' },
+        agents: { activityLabel: true, activityModel: 'agents-mini' },
+      }),
+      'openAI',
+      undefined,
+      'agents',
+    );
+    expect(config.model).toBe('shared-model');
+  });
 });
 
 describe('resolveActivityLabelModel model precedence', () => {

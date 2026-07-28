@@ -100,6 +100,10 @@ export interface ActivityLabelAgent {
 export interface ResolveActivityLabelModelParams {
   req: ServerRequest;
   agent: ActivityLabelAgent;
+  /** The PUBLIC endpoint the request came in on (e.g. `agents`) when it
+   *  differs from the agent's rewritten provider endpoint — its config block
+   *  wins per field over the provider's. */
+  publicEndpoint?: string;
   /** Request-scoped ids for header placeholder resolution. */
   ids: { messageId?: string; conversationId?: string; parentMessageId?: string };
   db: EndpointDbMethods;
@@ -141,22 +145,35 @@ function pickEndpointField<K extends keyof TEndpoint>(
   endpoint: string,
   customEndpointConfig: Partial<TEndpoint> | undefined,
   key: K,
+  publicEndpoint?: string,
 ): TEndpoint[K] | undefined {
   const endpoints = appConfig?.endpoints as
     | (Record<string, TEndpoint | undefined> & { all?: TEndpoint })
     | undefined;
   const all = endpoints?.all as Partial<TEndpoint> | undefined;
+  /** The PUBLIC endpoint the request came in on, when it differs from the
+   *  backing provider. `initializeAgent` rewrites `agent.endpoint` to the
+   *  provider (an agents-endpoint run backed by OpenAI reads `openAI`), so
+   *  without this an admin's `endpoints.agents.activityLabel: true` — valid
+   *  config, since `agentsEndpointSchema` inherits every activity field —
+   *  is silently ignored. Public wins per field over the backing provider,
+   *  mirroring how request-path options resolve. */
+  const publicBlock =
+    publicEndpoint != null && publicEndpoint !== endpoint
+      ? (endpoints?.[publicEndpoint] as Partial<TEndpoint> | undefined)
+      : undefined;
   const named = (endpoints?.[endpoint] ?? customEndpointConfig) as Partial<TEndpoint> | undefined;
-  return all?.[key] ?? named?.[key];
+  return all?.[key] ?? publicBlock?.[key] ?? named?.[key];
 }
 
 export function resolveActivityConfig(
   appConfig: AppConfig | undefined,
   endpoint: string,
   customEndpointConfig?: Partial<TEndpoint>,
+  publicEndpoint?: string,
 ): ResolvedActivityConfig {
   const pick = <K extends keyof TEndpoint>(key: K): TEndpoint[K] | undefined =>
-    pickEndpointField(appConfig, endpoint, customEndpointConfig, key);
+    pickEndpointField(appConfig, endpoint, customEndpointConfig, key, publicEndpoint);
   return {
     enabled: pick('activityLabel') === true,
     model: pick('activityModel'),
@@ -179,6 +196,7 @@ export function resolveActivityConfig(
 export async function resolveActivityLabelModel({
   req,
   agent,
+  publicEndpoint,
   ids,
   db,
 }: ResolveActivityLabelModelParams): Promise<ActivityLabelLLM> {
@@ -189,6 +207,7 @@ export async function resolveActivityLabelModel({
     appConfig,
     agentEndpoint,
     providerConfig.customEndpointConfig,
+    publicEndpoint,
   );
 
   /**
@@ -205,6 +224,7 @@ export async function resolveActivityLabelModel({
     agentEndpoint,
     providerConfig.customEndpointConfig,
     'titleModel',
+    publicEndpoint,
   );
   let endpoint = agentEndpoint;
   if (activity.endpoint != null && activity.endpoint !== agentEndpoint) {

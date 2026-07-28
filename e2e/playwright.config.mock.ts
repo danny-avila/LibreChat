@@ -9,7 +9,8 @@ const mcpHttpServerPath = path.resolve(rootPath, 'e2e/setup/fake-mcp-http-server
 /** Must match the `e2e-http` server URL in e2e/config/librechat.e2e.yaml. */
 const MCP_HTTP_PORT = process.env.E2E_MCP_HTTP_PORT || '8765';
 const labelServerPath = path.resolve(rootPath, 'e2e/setup/fake-label-server.js');
-/** Must match the custom endpoints' `baseURL` in e2e/config/librechat.e2e.yaml. */
+/** The template's custom-endpoint `baseURL`s hard-code 8889;
+ *  `writeRuntimeMockConfig` substitutes any override into the generated copy. */
 const LABEL_PORT = process.env.E2E_LABEL_PORT || '8889';
 const fakeModelHookPath = path.resolve(rootPath, 'e2e/setup/fake-model.js');
 const configTemplatePath = path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml');
@@ -63,10 +64,17 @@ const preservedCredentialEnvKeys = new Set([
  */
 function writeRuntimeMockConfig() {
   const template = fs.readFileSync(configTemplatePath, 'utf8');
-  const config =
+  let config =
     process.env.E2E_MODEL_SPECS_ENFORCE === 'true'
       ? template.replace('\n  enforce: false\n', '\n  enforce: true\n')
       : template;
+  /** Keep the generated config in lockstep with the overridable label-server
+   *  port: the template hard-codes 8889, so an `E2E_LABEL_PORT` override that
+   *  moved only the server and its health check would report ready while
+   *  every activity-label request went to the wrong port. */
+  if (LABEL_PORT !== '8889') {
+    config = config.split('127.0.0.1:8889').join(`127.0.0.1:${LABEL_PORT}`);
+  }
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, config);
 }

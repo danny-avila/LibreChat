@@ -549,7 +549,13 @@ export default function useResumableSSE(
    *  bounded next-frame retry as pending actions, on its own handle so the
    *  two retries can't cancel each other. */
   const steerRetryRef = useRef<number | null>(null);
-  const activityLabelRetryRef = useRef<number | null>(null);
+  /** EVERY outstanding label-retry frame, not a single handle: labels fire
+   *  two events per slot (reservation, then fill), so concurrent retry
+   *  chains are the norm — a single ref would let cleanup cancel only the
+   *  newest chain while the others kept running for up to 120 frames and
+   *  could apply a stale label to a replacement generation that reuses the
+   *  same response id (edits do). */
+  const activityLabelRetryFramesRef = useRef<Set<number>>(new Set());
   /**
    * Set once a SYNC has replaced the response with the server's
    * completion-local snapshot, which discards the prefix an edited
@@ -836,9 +842,11 @@ export default function useResumableSSE(
       const applyActivityLabelToMessages = (event: TActivityLabelEvent, attempt = 0) => {
         const retryNextFrame = () => {
           if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
-            activityLabelRetryRef.current = requestAnimationFrame(() =>
-              applyActivityLabelToMessages(event, attempt + 1),
-            );
+            const frameId = requestAnimationFrame(() => {
+              activityLabelRetryFramesRef.current.delete(frameId);
+              applyActivityLabelToMessages(event, attempt + 1);
+            });
+            activityLabelRetryFramesRef.current.add(frameId);
           }
         };
         /** Same boundary as pending actions and steers: land queued deltas
@@ -1888,10 +1896,10 @@ export default function useResumableSSE(
         cancelAnimationFrame(pendingActionRetryRef.current);
         pendingActionRetryRef.current = null;
       }
-      if (activityLabelRetryRef.current != null) {
-        cancelAnimationFrame(activityLabelRetryRef.current);
-        activityLabelRetryRef.current = null;
+      for (const frameId of activityLabelRetryFramesRef.current) {
+        cancelAnimationFrame(frameId);
       }
+      activityLabelRetryFramesRef.current.clear();
       if (steerRetryRef.current != null) {
         cancelAnimationFrame(steerRetryRef.current);
         steerRetryRef.current = null;

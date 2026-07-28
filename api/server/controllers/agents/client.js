@@ -369,6 +369,8 @@ class AgentClient extends BaseClient {
       resolveActivityLabelModel({
         req: this.options.req,
         agent: this.options.agent,
+        /** Same public-endpoint-first field resolution as the wiring gate. */
+        publicEndpoint: this.options.endpoint,
         ids: {
           messageId: this.responseMessageId,
           conversationId: this.conversationId,
@@ -405,7 +407,15 @@ class AgentClient extends BaseClient {
     provider = undefined,
   ) {
     const appConfig = this.options.req?.config;
-    const collectedUsage = mapCollectedMetadataToUsage(collectedMetadata);
+    /** Provider ON EVERY ENTRY, not just the streamed event: `splitUsage`
+     *  keys additive-vs-subset cache math on `usage.provider`, and an
+     *  unknown provider takes the additive branch — for Anthropic/OpenAI
+     *  (cache already inside `input_tokens`) that re-adds cache_read and
+     *  cache_creation on top, double-charging the balance while the
+     *  streamed cost (which carries the provider) disagrees. */
+    const collectedUsage = mapCollectedMetadataToUsage(collectedMetadata).map((usage) =>
+      provider != null ? { ...usage, provider } : usage,
+    );
     if (collectedUsage.length === 0) {
       return;
     }
@@ -684,6 +694,11 @@ class AgentClient extends BaseClient {
       appConfigForActivity,
       agentEndpoint,
       customEndpointConfig,
+      /** The PUBLIC endpoint (`agents`): `initializeAgent` rewrites
+       *  `agent.endpoint` to the backing provider, so without this an
+       *  admin's `endpoints.agents.activityLabel: true` reads the
+       *  provider's block instead and the feature stays off. */
+      this.options.endpoint,
     );
     if (!activityConfig.enabled) {
       return undefined;
