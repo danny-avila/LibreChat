@@ -185,12 +185,16 @@ describe('resolveActivityLabelModel model precedence', () => {
     });
   });
 
-  it('strips the primary maxTokens like the title path', async () => {
+  /** The primary cap is not merely stripped — it is REPLACED with a small
+   *  label-specific one, so a model ignoring the 4–9-word instruction (or
+   *  steered by injected tool output) cannot generate and bill its
+   *  provider-default output for a header. */
+  it('replaces the primary maxTokens with the small label cap', async () => {
     mockGetOptions.mockResolvedValueOnce({
       llmConfig: { model: 'resolved', maxTokens: 64_000 },
     } as never);
     const resolved = await resolve({ activityLabel: true, activityModel: 'label-model' });
-    expect((resolved.clientOptions as Record<string, unknown>).maxTokens).toBeUndefined();
+    expect((resolved.clientOptions as Record<string, unknown>).maxTokens).toBe(256);
   });
 
   /** The Anthropic carrier holds client CONSTRUCTION options — for

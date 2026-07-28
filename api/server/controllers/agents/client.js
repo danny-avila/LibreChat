@@ -658,6 +658,12 @@ class AgentClient extends BaseClient {
         scope.abort.abort();
       }
     });
+    /** Settled either way — the abort listener has no remaining work, and
+     *  leaving it attached across HITL approval cycles accumulates dead
+     *  closures on the shared job signal. Idempotent on double settle. */
+    for (const scope of this.activityLabelScopes ?? []) {
+      scope.detach?.();
+    }
   }
 
   /**
@@ -712,7 +718,10 @@ class AgentClient extends BaseClient {
      * content itself recorded perfectly well. One retry costs nothing at run
      * setup and removes the only realistic way the gate goes stale.
      */
-    void GenerationJobManager.markActivityLabels(streamId).catch(() =>
+    /** Retained (not fire-and-forget): label emission is ORDERED after this
+     *  persist, below. The chain settles on failure (warned retry), so a
+     *  lost write can never wedge label emission. */
+    const activityLabelsMarked = GenerationJobManager.markActivityLabels(streamId).catch(() =>
       GenerationJobManager.markActivityLabels(streamId).catch(() => {
         logger.warn(
           `[AgentClient] Could not flag activity labels for ${streamId}; a label resolving during a resume gap may not be reconciled.`,
@@ -756,6 +765,12 @@ class AgentClient extends BaseClient {
         closeOnAbort();
       } else {
         abortSignal.addEventListener('abort', closeOnAbort, { once: true });
+        /** Detached once this segment settles: HITL runs rebuild a wiring
+         *  per approval cycle on the SAME job signal, and `once` only
+         *  removes the listener if an abort actually fires — long
+         *  multi-approval runs would otherwise accumulate obsolete
+         *  closures toward the listener-limit warning. */
+        labelScope.detach = () => abortSignal.removeEventListener('abort', closeOnAbort);
       }
     }
     /** Thin wrapper: slot claiming, lane stamping, emit ordering, and settle
@@ -770,8 +785,15 @@ class AgentClient extends BaseClient {
       bumpIndexOffset: () => {
         this.steerOffsetState.offset += 1;
       },
-      emitLabelEvent: (index, part) =>
-        GenerationJobManager.emitChunk(
+      emitLabelEvent: async (index, part) => {
+        /** ORDERED after the flag persist: resume-gap reconciliation is
+         *  gated on the flag, so a label event must never exist before the
+         *  flag does — an immediate cross-replica reconnect could otherwise
+         *  read the job between the two writes, see neither flag nor
+         *  snapshot label, and skip reconciling a label claimed in the
+         *  snapshot→subscribe window. */
+        await activityLabelsMarked;
+        return GenerationJobManager.emitChunk(
           streamId,
           {
             event: ActivityLabelEvents.ON_ACTIVITY_LABEL,
@@ -788,7 +810,8 @@ class AgentClient extends BaseClient {
            *  the new response — invisibly, since an empty label renders
            *  nothing — overwriting whatever occupies that slot. */
           { durable: true, expectedCreatedAt: this.jobCreatedAt },
-        ),
+        );
+      },
       trackPendingFill: (fillDone) => {
         this.pendingActivityLabelFills = this.pendingActivityLabelFills ?? [];
         this.pendingActivityLabelFills.push(fillDone);

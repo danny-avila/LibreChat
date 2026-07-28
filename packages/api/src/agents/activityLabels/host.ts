@@ -116,6 +116,14 @@ type MaybeAzureConfig = ClientOptions & {
   configuration?: OpenAIConfiguration;
 };
 
+/** Generation cap for label calls — ~25x the largest legitimate 4–9 word
+ *  header, so truncation can never clip a real label. Replaces the stripped
+ *  primary caps: with NO cap, a model that ignores the instruction (or is
+ *  steered by injection in untrusted tool output) generates and BILLS its
+ *  provider-default output on every batch; `normalizeLabelOutput` bounds
+ *  only what persists, not what the provider generates. */
+const LABEL_MAX_OUTPUT_TOKENS = 256;
+
 /** Effective activity-label settings for one endpoint. */
 export interface ResolvedActivityConfig {
   enabled: boolean;
@@ -329,6 +337,15 @@ export async function resolveActivityLabelModel({
   ) as MaybeAzureConfig & { clientOptions?: { defaultHeaders?: unknown } };
   if (anthropicCarrier != null && clientOptions.clientOptions == null) {
     clientOptions.clientOptions = anthropicCarrier;
+  }
+  /** Replace the stripped primary caps with a SMALL one — see
+   *  {@link LABEL_MAX_OUTPUT_TOKENS}. Installed after the filter so the
+   *  omit set cannot remove it; keyed per provider family (Google-style
+   *  wrappers read `maxOutputTokens`, the rest `maxTokens`). */
+  if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
+    (clientOptions as { maxOutputTokens?: number }).maxOutputTokens = LABEL_MAX_OUTPUT_TOKENS;
+  } else {
+    (clientOptions as { maxTokens?: number }).maxTokens = LABEL_MAX_OUTPUT_TOKENS;
   }
   if (options.configOptions) {
     clientOptions.configuration = options.configOptions;
