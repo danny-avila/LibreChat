@@ -1,15 +1,68 @@
 import isPlainObject from 'lodash/isPlainObject';
 import { encryptV3, decryptV3, logger } from '@librechat/data-schemas';
+import { envVarRegex, extractEnvVariable } from 'librechat-data-provider';
 
-const LANGFUSE_SECTION = 'langfuse';
-const LANGFUSE_SECRET_KEY = 'secretKey';
-const LANGFUSE_DISPLAY_SECRET_KEY = 'displaySecretKey';
-const LANGFUSE_SECRET_PATH = `${LANGFUSE_SECTION}.${LANGFUSE_SECRET_KEY}`;
-const LANGFUSE_DISPLAY_SECRET_PATH = `${LANGFUSE_SECTION}.${LANGFUSE_DISPLAY_SECRET_KEY}`;
 const ENCRYPTED_PREFIX = 'v3:';
+
+interface ConfigSecretField {
+  /** Dot-path of the secret value within config overrides */
+  path: string;
+  /** Non-secret display companion, written on encrypt and preserved by redaction. Must be a sibling of `path`. */
+  displayPath?: string;
+  /** When true, `${ENV_VAR}` placeholder values are stored and returned as plain references instead of being encrypted */
+  allowEnvPlaceholder?: boolean;
+}
+
+/**
+ * Registry of config fields that hold secret values. Writes through the admin
+ * config API encrypt these at rest, reads redact them, and omitting them on a
+ * subsequent write preserves the stored encrypted value.
+ */
+const CONFIG_SECRET_FIELDS: readonly ConfigSecretField[] = [
+  { path: 'langfuse.secretKey', displayPath: 'langfuse.displaySecretKey' },
+  { path: 'ocr.apiKey', allowEnvPlaceholder: true },
+  { path: 'speech.tts.openai.apiKey', allowEnvPlaceholder: true },
+  { path: 'speech.tts.azureOpenAI.apiKey', allowEnvPlaceholder: true },
+  { path: 'speech.tts.elevenlabs.apiKey', allowEnvPlaceholder: true },
+  { path: 'speech.tts.localai.apiKey', allowEnvPlaceholder: true },
+  { path: 'speech.stt.openai.apiKey', allowEnvPlaceholder: true },
+  { path: 'speech.stt.azureOpenAI.apiKey', allowEnvPlaceholder: true },
+  { path: 'webSearch.serperApiKey', allowEnvPlaceholder: true },
+  { path: 'webSearch.searxngApiKey', allowEnvPlaceholder: true },
+  { path: 'webSearch.firecrawlApiKey', allowEnvPlaceholder: true },
+  { path: 'webSearch.tavilyApiKey', allowEnvPlaceholder: true },
+  { path: 'webSearch.jinaApiKey', allowEnvPlaceholder: true },
+  { path: 'webSearch.cohereApiKey', allowEnvPlaceholder: true },
+  { path: 'endpoints.assistants.apiKey', allowEnvPlaceholder: true },
+  { path: 'endpoints.azureAssistants.apiKey', allowEnvPlaceholder: true },
+];
+
+const SECRET_FIELDS_BY_PATH = new Map<string, ConfigSecretField>(
+  CONFIG_SECRET_FIELDS.map((field) => [field.path, field]),
+);
+
+const DISPLAY_PATHS = new Set<string>(
+  CONFIG_SECRET_FIELDS.flatMap((field) => (field.displayPath ? [field.displayPath] : [])),
+);
+
+const ANCESTOR_PATHS = new Set<string>(
+  CONFIG_SECRET_FIELDS.flatMap((field) => {
+    const segments = field.path.split('.');
+    return segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1).join('.'));
+  }),
+);
+
+const SECRET_SECTIONS: readonly string[] = [
+  ...new Set(CONFIG_SECRET_FIELDS.map((field) => field.path.split('.')[0])),
+];
 
 export function getDisplaySecretKey(secret: string): string {
   return secret.slice(0, 6) + '...' + secret.slice(-4);
+}
+
+/** Top-level config sections containing registered secret fields. */
+export function getConfigSecretSections(): readonly string[] {
+  return SECRET_SECTIONS;
 }
 
 function normalizeSecretString(value: unknown): string | undefined {
@@ -20,19 +73,48 @@ function isEncryptedConfigSecret(value: unknown): boolean {
   return typeof value === 'string' && value.trim().startsWith(ENCRYPTED_PREFIX);
 }
 
+function isEnvPlaceholder(value: string): boolean {
+  return envVarRegex.test(value.trim());
+}
+
 function getPlainRecord(value: unknown): Record<string, unknown> | null {
   return isPlainObject(value) ? (value as Record<string, unknown>) : null;
 }
 
-function getLangfuseSection(root: unknown, basePath = ''): Record<string, unknown> | null {
-  const rootRecord = getPlainRecord(root);
-  if (!rootRecord) {
+function lastSegment(path: string): string {
+  return path.split('.').slice(-1)[0];
+}
+
+/**
+ * Returns the segments of `path` relative to `basePath`, or null when
+ * `basePath` is not an ancestor of `path`. An empty `basePath` yields the
+ * full segment list.
+ */
+function relativeSegments(path: string, basePath: string): string[] | null {
+  if (basePath === '') {
+    return path.split('.');
+  }
+  if (!path.startsWith(`${basePath}.`)) {
     return null;
   }
-  if (basePath === LANGFUSE_SECTION) {
-    return rootRecord;
+  return path.slice(basePath.length + 1).split('.');
+}
+
+/** Walks `root` along all but the last segment, returning the parent record of the final key. */
+function walkToParent(root: unknown, segments: string[]): Record<string, unknown> | null {
+  let cursor = getPlainRecord(root);
+  for (let i = 0; cursor != null && i < segments.length - 1; i++) {
+    cursor = getPlainRecord(cursor[segments[i]]);
   }
-  return getPlainRecord(rootRecord[LANGFUSE_SECTION]);
+  return cursor;
+}
+
+/** True when a dotted key equals, contains, or is contained by a registered secret or display path. */
+function isConfigSecretRelatedPath(fieldPath: string): boolean {
+  if (SECRET_FIELDS_BY_PATH.has(fieldPath) || DISPLAY_PATHS.has(fieldPath)) {
+    return true;
+  }
+  return ANCESTOR_PATHS.has(fieldPath) || isConfigSecretDescendantPath(fieldPath);
 }
 
 export function decryptConfigSecret(value: unknown): string | undefined {
@@ -48,93 +130,146 @@ export function decryptConfigSecret(value: unknown): string | undefined {
   }
 }
 
+/**
+ * Resolves a config credential for runtime use: decrypts encrypted values and
+ * resolves `${ENV_VAR}` placeholders, passing plain literals through unchanged.
+ */
+export function resolveConfigSecret(value?: string): string | undefined {
+  if (value == null || value === '') {
+    return value;
+  }
+  if (isEncryptedConfigSecret(value)) {
+    return decryptConfigSecret(value);
+  }
+  return extractEnvVariable(value);
+}
+
 export function getConfigSecretMutationPaths(fieldPath: string): string[] {
-  if (fieldPath === LANGFUSE_SECRET_PATH) {
-    return [LANGFUSE_SECRET_PATH, LANGFUSE_DISPLAY_SECRET_PATH];
+  const field = SECRET_FIELDS_BY_PATH.get(fieldPath);
+  if (field?.displayPath) {
+    return [field.path, field.displayPath];
   }
   return [fieldPath];
 }
 
 export function isConfigSecretDescendantPath(fieldPath: string): boolean {
-  return (
-    fieldPath.startsWith(`${LANGFUSE_SECRET_PATH}.`) ||
-    fieldPath.startsWith(`${LANGFUSE_DISPLAY_SECRET_PATH}.`)
-  );
-}
-
-export function isConfigSecretAncestorPath(fieldPath: string): boolean {
-  return fieldPath === LANGFUSE_SECTION;
-}
-
-export function getConfigSecretInputError(fieldPath: string, value: unknown): string | null {
-  if (fieldPath === LANGFUSE_DISPLAY_SECRET_PATH) {
-    return `Cannot write protected display secret path: ${fieldPath}`;
-  }
-  if (fieldPath === LANGFUSE_SECRET_PATH && isEncryptedConfigSecret(value)) {
-    return `Encrypted config secret values cannot be submitted: ${fieldPath}`;
-  }
-  const langfuseInput = fieldPath === LANGFUSE_SECTION ? getPlainRecord(value) : null;
-  if (langfuseInput && isEncryptedConfigSecret(langfuseInput[LANGFUSE_SECRET_KEY])) {
-    return `Encrypted config secret values cannot be submitted: ${LANGFUSE_SECRET_PATH}`;
-  }
-  return null;
-}
-
-function removeLangfuseArraySection(root: Record<string, unknown>): boolean {
-  if (Array.isArray(root[LANGFUSE_SECTION])) {
-    delete root[LANGFUSE_SECTION];
-    return true;
+  for (const field of CONFIG_SECRET_FIELDS) {
+    if (fieldPath.startsWith(`${field.path}.`)) {
+      return true;
+    }
+    if (field.displayPath && fieldPath.startsWith(`${field.displayPath}.`)) {
+      return true;
+    }
   }
   return false;
 }
 
-function applyLangfuseSecretWrite(section: Record<string, unknown>): void {
-  if (!(LANGFUSE_SECRET_KEY in section)) {
-    delete section[LANGFUSE_DISPLAY_SECRET_KEY];
-    return;
-  }
+export function isConfigSecretAncestorPath(fieldPath: string): boolean {
+  return ANCESTOR_PATHS.has(fieldPath);
+}
 
-  const value = section[LANGFUSE_SECRET_KEY];
-  if (typeof value !== 'string' || value.length === 0 || value.startsWith(ENCRYPTED_PREFIX)) {
-    section[LANGFUSE_SECRET_KEY] = '';
-    section[LANGFUSE_DISPLAY_SECRET_KEY] = '';
-    return;
+export function getConfigSecretInputError(fieldPath: string, value: unknown): string | null {
+  if (DISPLAY_PATHS.has(fieldPath)) {
+    return `Cannot write protected display secret path: ${fieldPath}`;
   }
-
-  section[LANGFUSE_SECRET_KEY] = encryptV3(value);
-  section[LANGFUSE_DISPLAY_SECRET_KEY] = getDisplaySecretKey(value);
+  if (SECRET_FIELDS_BY_PATH.has(fieldPath) && isEncryptedConfigSecret(value)) {
+    return `Encrypted config secret values cannot be submitted: ${fieldPath}`;
+  }
+  if (!isConfigSecretAncestorPath(fieldPath)) {
+    return null;
+  }
+  for (const field of CONFIG_SECRET_FIELDS) {
+    const segments = relativeSegments(field.path, fieldPath);
+    if (!segments) {
+      continue;
+    }
+    const parent = walkToParent(value, segments);
+    if (parent && isEncryptedConfigSecret(parent[segments[segments.length - 1]])) {
+      return `Encrypted config secret values cannot be submitted: ${field.path}`;
+    }
+  }
+  return null;
 }
 
 /**
- * Returns a new field map with Langfuse secret entries encrypted and their
- * displaySecretKey companion set. Empty values reset the secret and displaySecretKey.
+ * Encrypts a secret value in place within its parent record. Empty and
+ * non-string values reset the secret (and display companion). Env placeholder
+ * values are kept as plain references for fields that allow them.
+ */
+function writeSecretIntoSection(section: Record<string, unknown>, field: ConfigSecretField): void {
+  const key = lastSegment(field.path);
+  const displayKey = field.displayPath ? lastSegment(field.displayPath) : undefined;
+  if (!(key in section)) {
+    if (displayKey) {
+      delete section[displayKey];
+    }
+    return;
+  }
+
+  const value = section[key];
+  if (typeof value !== 'string' || value.length === 0 || value.startsWith(ENCRYPTED_PREFIX)) {
+    section[key] = '';
+    if (displayKey) {
+      section[displayKey] = '';
+    }
+    return;
+  }
+  if (field.allowEnvPlaceholder && isEnvPlaceholder(value)) {
+    return;
+  }
+
+  section[key] = encryptV3(value);
+  if (displayKey) {
+    section[displayKey] = getDisplaySecretKey(value);
+  }
+}
+
+function writeDottedSecret(result: Record<string, unknown>, field: ConfigSecretField): void {
+  const value = result[field.path];
+  if (typeof value !== 'string' || value.length === 0 || value.startsWith(ENCRYPTED_PREFIX)) {
+    result[field.path] = '';
+    if (field.displayPath) {
+      result[field.displayPath] = '';
+    }
+    return;
+  }
+  if (field.allowEnvPlaceholder && isEnvPlaceholder(value)) {
+    return;
+  }
+  result[field.path] = encryptV3(value);
+  if (field.displayPath) {
+    result[field.displayPath] = getDisplaySecretKey(value);
+  }
+}
+
+/**
+ * Returns a new field map with registered secret entries encrypted (and display
+ * companions set where configured). Empty values reset the secret and its
+ * display companion. Handles both dotted secret paths and object-valued
+ * ancestor entries.
  */
 export function encryptConfigSecretFields(
   fields: Record<string, unknown>,
 ): Record<string, unknown> {
   const result: Record<string, unknown> = { ...fields };
 
-  if (Array.isArray(result[LANGFUSE_SECTION])) {
-    delete result[LANGFUSE_SECTION];
-  } else {
-    const section = getPlainRecord(result[LANGFUSE_SECTION]);
-    if (section) {
-      result[LANGFUSE_SECTION] = encryptConfigSecrets(section, LANGFUSE_SECTION);
+  for (const key of Object.keys(result)) {
+    if (!isConfigSecretAncestorPath(key)) {
+      continue;
+    }
+    if (Array.isArray(result[key])) {
+      delete result[key];
+    } else if (isPlainObject(result[key])) {
+      result[key] = encryptConfigSecrets(result[key], key);
     }
   }
 
-  if (!(LANGFUSE_SECRET_PATH in result) && LANGFUSE_DISPLAY_SECRET_PATH in result) {
-    delete result[LANGFUSE_DISPLAY_SECRET_PATH];
-  }
-
-  if (LANGFUSE_SECRET_PATH in result) {
-    const value = result[LANGFUSE_SECRET_PATH];
-    if (typeof value !== 'string' || value.length === 0 || value.startsWith(ENCRYPTED_PREFIX)) {
-      result[LANGFUSE_SECRET_PATH] = '';
-      result[LANGFUSE_DISPLAY_SECRET_PATH] = '';
-    } else {
-      result[LANGFUSE_SECRET_PATH] = encryptV3(value);
-      result[LANGFUSE_DISPLAY_SECRET_PATH] = getDisplaySecretKey(value);
+  for (const field of CONFIG_SECRET_FIELDS) {
+    if (field.displayPath && !(field.path in result) && field.displayPath in result) {
+      delete result[field.displayPath];
+    }
+    if (field.path in result) {
+      writeDottedSecret(result, field);
     }
   }
 
@@ -142,8 +277,9 @@ export function encryptConfigSecretFields(
 }
 
 /**
- * Returns a cloned config override object with Langfuse secret values encrypted
- * before full-document writes. Empty secrets reset their displaySecretKey.
+ * Returns a cloned config object with registered secret values encrypted
+ * before writes. Empty secrets reset their display companions. `basePath`
+ * locates `root` within the config tree ('' for whole-overrides writes).
  */
 export function encryptConfigSecrets<T>(root: T, basePath = ''): T {
   if (root == null || typeof root !== 'object') {
@@ -151,23 +287,35 @@ export function encryptConfigSecrets<T>(root: T, basePath = ''): T {
   }
 
   const result = structuredClone(root);
+  const rootRecord = result as Record<string, unknown>;
   if (basePath === '') {
-    delete (result as Record<string, unknown>)[LANGFUSE_SECRET_PATH];
-    delete (result as Record<string, unknown>)[LANGFUSE_DISPLAY_SECRET_PATH];
-    removeLangfuseArraySection(result as Record<string, unknown>);
+    for (const key of Object.keys(rootRecord)) {
+      if (key.includes('.') && isConfigSecretRelatedPath(key)) {
+        delete rootRecord[key];
+      } else if (isConfigSecretAncestorPath(key) && Array.isArray(rootRecord[key])) {
+        delete rootRecord[key];
+      }
+    }
   }
 
-  const section = getLangfuseSection(result, basePath);
-  if (section) {
-    applyLangfuseSecretWrite(section);
+  for (const field of CONFIG_SECRET_FIELDS) {
+    const segments = relativeSegments(field.path, basePath);
+    if (!segments) {
+      continue;
+    }
+    const section = walkToParent(result, segments);
+    if (section) {
+      writeSecretIntoSection(section, field);
+    }
   }
   return result;
 }
 
 /**
- * Preserves an existing encrypted Langfuse secret when a whole Langfuse object is
- * replaced without a secret value. This lets redacted admin reads round-trip
- * safely: omitting a secret keeps it, while setting it to an empty value clears it.
+ * Preserves existing encrypted secrets when an object write omits them. This
+ * lets redacted admin reads round-trip safely: omitting a secret keeps it,
+ * while setting it to an empty value clears it. `basePath` locates `next`
+ * within the config tree; `existing` is always the full overrides object.
  */
 export function preserveConfigSecrets<T>(next: T, existing?: unknown, basePath = ''): T {
   if (
@@ -180,31 +328,43 @@ export function preserveConfigSecrets<T>(next: T, existing?: unknown, basePath =
   }
 
   const result = structuredClone(next);
-  const section = getLangfuseSection(result, basePath);
-  const existingSection = getLangfuseSection(existing);
-  if (
-    !section ||
-    !existingSection ||
-    LANGFUSE_SECRET_KEY in section ||
-    !isEncryptedConfigSecret(existingSection[LANGFUSE_SECRET_KEY])
-  ) {
-    return result;
-  }
+  for (const field of CONFIG_SECRET_FIELDS) {
+    const segments = relativeSegments(field.path, basePath);
+    if (!segments) {
+      continue;
+    }
+    const section = walkToParent(result, segments);
+    if (!section) {
+      continue;
+    }
+    const key = segments[segments.length - 1];
+    if (key in section) {
+      continue;
+    }
 
-  const existingSecret = normalizeSecretString(existingSection[LANGFUSE_SECRET_KEY]);
-  if (!existingSecret) {
-    return result;
-  }
-  section[LANGFUSE_SECRET_KEY] = existingSecret;
-  if (typeof existingSection[LANGFUSE_DISPLAY_SECRET_KEY] === 'string') {
-    section[LANGFUSE_DISPLAY_SECRET_KEY] = existingSection[LANGFUSE_DISPLAY_SECRET_KEY];
+    const existingSection = walkToParent(existing, field.path.split('.'));
+    if (!existingSection || !isEncryptedConfigSecret(existingSection[key])) {
+      continue;
+    }
+    const existingSecret = normalizeSecretString(existingSection[key]);
+    if (!existingSecret) {
+      continue;
+    }
+    section[key] = existingSecret;
+    if (field.displayPath) {
+      const displayKey = lastSegment(field.displayPath);
+      if (typeof existingSection[displayKey] === 'string') {
+        section[displayKey] = existingSection[displayKey];
+      }
+    }
   }
   return result;
 }
 
 /**
- * Deletes Langfuse secret fields from `root` in place so admin reads never
- * return secret values (encrypted or otherwise). Display companions are preserved.
+ * Deletes registered secret values from `root` in place so admin reads never
+ * return them (encrypted or plaintext). Display companions and plain
+ * `${ENV_VAR}` references (for fields that allow them) are preserved.
  * The caller passes a cloned object.
  */
 export function redactConfigSecrets<T>(root: T): T {
@@ -212,15 +372,30 @@ export function redactConfigSecrets<T>(root: T): T {
   if (!rootRecord) {
     return root;
   }
-  delete rootRecord[LANGFUSE_SECRET_PATH];
-  delete rootRecord[LANGFUSE_DISPLAY_SECRET_PATH];
-  if (Array.isArray(rootRecord[LANGFUSE_SECTION])) {
-    delete rootRecord[LANGFUSE_SECTION];
-    return root;
+
+  for (const key of Object.keys(rootRecord)) {
+    if (key.includes('.') && isConfigSecretRelatedPath(key)) {
+      delete rootRecord[key];
+    } else if (isConfigSecretAncestorPath(key) && Array.isArray(rootRecord[key])) {
+      delete rootRecord[key];
+    }
   }
-  const section = getPlainRecord(rootRecord[LANGFUSE_SECTION]);
-  if (section) {
-    delete section[LANGFUSE_SECRET_KEY];
+
+  for (const field of CONFIG_SECRET_FIELDS) {
+    const segments = field.path.split('.');
+    const section = walkToParent(rootRecord, segments);
+    if (!section) {
+      continue;
+    }
+    const key = segments[segments.length - 1];
+    if (!(key in section)) {
+      continue;
+    }
+    const value = section[key];
+    if (field.allowEnvPlaceholder && typeof value === 'string' && isEnvPlaceholder(value)) {
+      continue;
+    }
+    delete section[key];
   }
   return root;
 }

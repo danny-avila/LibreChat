@@ -7,8 +7,13 @@ let decryptConfigSecret: typeof import('./secrets').decryptConfigSecret;
 let encryptConfigSecretFields: typeof import('./secrets').encryptConfigSecretFields;
 let encryptConfigSecrets: typeof import('./secrets').encryptConfigSecrets;
 let getConfigSecretInputError: typeof import('./secrets').getConfigSecretInputError;
+let getConfigSecretMutationPaths: typeof import('./secrets').getConfigSecretMutationPaths;
+let getConfigSecretSections: typeof import('./secrets').getConfigSecretSections;
+let isConfigSecretAncestorPath: typeof import('./secrets').isConfigSecretAncestorPath;
+let isConfigSecretDescendantPath: typeof import('./secrets').isConfigSecretDescendantPath;
 let preserveConfigSecrets: typeof import('./secrets').preserveConfigSecrets;
 let redactConfigSecrets: typeof import('./secrets').redactConfigSecrets;
+let resolveConfigSecret: typeof import('./secrets').resolveConfigSecret;
 let decryptV3: typeof import('@librechat/data-schemas').decryptV3;
 
 beforeAll(async () => {
@@ -17,8 +22,13 @@ beforeAll(async () => {
     encryptConfigSecretFields,
     encryptConfigSecrets,
     getConfigSecretInputError,
+    getConfigSecretMutationPaths,
+    getConfigSecretSections,
+    isConfigSecretAncestorPath,
+    isConfigSecretDescendantPath,
     preserveConfigSecrets,
     redactConfigSecrets,
+    resolveConfigSecret,
   } = await import('./secrets'));
   ({ decryptV3 } = await import('@librechat/data-schemas'));
 });
@@ -189,5 +199,239 @@ describe('Langfuse config secrets', () => {
       publicKey: 'pk-lf-1',
       displaySecretKey: 'sk-lf-...cret',
     });
+  });
+});
+
+describe('Config secret registry fields', () => {
+  it('exposes the registered top-level sections', () => {
+    expect([...getConfigSecretSections()].sort()).toEqual([
+      'endpoints',
+      'langfuse',
+      'ocr',
+      'speech',
+      'webSearch',
+    ]);
+  });
+
+  it('encrypts assistants endpoint keys but leaves unrelated endpoints untouched', () => {
+    const out = encryptConfigSecrets({
+      endpoints: {
+        assistants: { apiKey: 'sk-assist', disableBuilder: true },
+        azureAssistants: { apiKey: '${AZURE_ASSISTANTS_API_KEY}' },
+        custom: [{ name: 'my-endpoint', apiKey: '${MY_KEY}', baseURL: 'https://x' }],
+      },
+    });
+    const endpoints = out.endpoints as {
+      assistants: Record<string, unknown>;
+      azureAssistants: Record<string, unknown>;
+      custom: Array<Record<string, unknown>>;
+    };
+    expect(decryptV3(endpoints.assistants.apiKey as string)).toBe('sk-assist');
+    expect(endpoints.assistants.disableBuilder).toBe(true);
+    expect(endpoints.azureAssistants.apiKey).toBe('${AZURE_ASSISTANTS_API_KEY}');
+    expect(endpoints.custom[0]).toEqual({
+      name: 'my-endpoint',
+      apiKey: '${MY_KEY}',
+      baseURL: 'https://x',
+    });
+  });
+
+  it('encrypts speech, ocr, and webSearch literals on object writes', () => {
+    const out = encryptConfigSecrets({
+      speech: {
+        tts: { openai: { apiKey: 'sk-tts', model: 'tts-1' } },
+        stt: { azureOpenAI: { apiKey: 'sk-stt', instanceName: 'inst' } },
+      },
+      ocr: { apiKey: 'sk-ocr', mistralModel: 'mistral-ocr-latest' },
+      webSearch: { serperApiKey: 'sk-serper', searchProvider: 'serper' },
+    });
+
+    expect(decryptV3(out.speech.tts.openai.apiKey)).toBe('sk-tts');
+    expect(out.speech.tts.openai.model).toBe('tts-1');
+    expect(decryptV3(out.speech.stt.azureOpenAI.apiKey)).toBe('sk-stt');
+    expect(out.speech.stt.azureOpenAI.instanceName).toBe('inst');
+    expect(decryptV3(out.ocr.apiKey)).toBe('sk-ocr');
+    expect(out.ocr.mistralModel).toBe('mistral-ocr-latest');
+    expect(decryptV3(out.webSearch.serperApiKey)).toBe('sk-serper');
+    expect(out.webSearch.searchProvider).toBe('serper');
+  });
+
+  it('keeps env placeholder references as plain strings for fields that allow them', () => {
+    const out = encryptConfigSecrets({
+      speech: { tts: { openai: { apiKey: '${TTS_API_KEY}' } } },
+      ocr: { apiKey: '${OCR_API_KEY}' },
+      webSearch: { serperApiKey: '${SERPER_API_KEY}' },
+    });
+
+    expect(out.speech.tts.openai.apiKey).toBe('${TTS_API_KEY}');
+    expect(out.ocr.apiKey).toBe('${OCR_API_KEY}');
+    expect(out.webSearch.serperApiKey).toBe('${SERPER_API_KEY}');
+  });
+
+  it('still encrypts placeholder-shaped Langfuse secrets (no placeholder exemption)', () => {
+    const out = encryptConfigSecrets({ langfuse: { secretKey: '${LANGFUSE_SECRET_KEY}' } });
+    expect(out.langfuse.secretKey).toMatch(/^v3:/);
+    expect(decryptV3(out.langfuse.secretKey)).toBe('${LANGFUSE_SECRET_KEY}');
+  });
+
+  it('encrypts dotted patch writes without creating display companions', () => {
+    const out = encryptConfigSecretFields({
+      'speech.tts.openai.apiKey': 'sk-tts',
+      'webSearch.serperApiKey': '${SERPER_API_KEY}',
+      'ocr.apiKey': '',
+    });
+
+    expect(decryptV3(out['speech.tts.openai.apiKey'] as string)).toBe('sk-tts');
+    expect(out['webSearch.serperApiKey']).toBe('${SERPER_API_KEY}');
+    expect(out['ocr.apiKey']).toBe('');
+    expect(Object.keys(out).sort()).toEqual([
+      'ocr.apiKey',
+      'speech.tts.openai.apiKey',
+      'webSearch.serperApiKey',
+    ]);
+  });
+
+  it('encrypts secrets nested inside object-valued ancestor patch entries', () => {
+    type SpeechPatch = { tts: { openai: Record<string, string> } };
+    const sectionPatch = encryptConfigSecretFields({
+      speech: { tts: { openai: { apiKey: 'sk-tts', model: 'tts-1' } } },
+    });
+    const speech = sectionPatch.speech as SpeechPatch;
+    expect(decryptV3(speech.tts.openai.apiKey)).toBe('sk-tts');
+    expect(speech.tts.openai.model).toBe('tts-1');
+
+    const midPatch = encryptConfigSecretFields({
+      'speech.tts': { openai: { apiKey: 'sk-tts' } },
+    });
+    const tts = midPatch['speech.tts'] as SpeechPatch['tts'];
+    expect(decryptV3(tts.openai.apiKey)).toBe('sk-tts');
+
+    const leafParentPatch = encryptConfigSecretFields({
+      'speech.tts.openai': { apiKey: 'sk-tts', model: 'tts-1' },
+    });
+    const openai = leafParentPatch['speech.tts.openai'] as Record<string, string>;
+    expect(decryptV3(openai.apiKey)).toBe('sk-tts');
+  });
+
+  it('strips dotted registry-related keys from whole-override writes', () => {
+    const out = encryptConfigSecrets({
+      'speech.tts.openai.apiKey': 'sk-smuggled',
+      'ocr.apiKey': 'sk-smuggled',
+      'webSearch.serperApiKey.nested': 'sk-smuggled',
+      'speech.tts': { openai: { apiKey: 'sk-smuggled' } },
+      ocr: { apiKey: 'sk-legit' },
+    });
+
+    expect(out).not.toHaveProperty(['speech.tts.openai.apiKey']);
+    expect(out).not.toHaveProperty(['ocr.apiKey']);
+    expect(out).not.toHaveProperty(['webSearch.serperApiKey.nested']);
+    expect(out).not.toHaveProperty(['speech.tts']);
+    expect(decryptV3(out.ocr.apiKey)).toBe('sk-legit');
+  });
+
+  it('redacts literal and encrypted values but keeps env placeholders and siblings', () => {
+    const redacted = redactConfigSecrets({
+      speech: {
+        tts: { openai: { apiKey: 'sk-literal', model: 'tts-1' } },
+        stt: { openai: { apiKey: 'v3:abc:def', model: 'whisper-1' } },
+      },
+      ocr: { apiKey: '${OCR_API_KEY}', mistralModel: 'mistral-ocr-latest' },
+      webSearch: { serperApiKey: 'sk-literal', searchProvider: 'serper' },
+    });
+
+    expect(redacted.speech.tts.openai).toEqual({ model: 'tts-1' });
+    expect(redacted.speech.stt.openai).toEqual({ model: 'whisper-1' });
+    expect(redacted.ocr).toEqual({
+      apiKey: '${OCR_API_KEY}',
+      mistralModel: 'mistral-ocr-latest',
+    });
+    expect(redacted.webSearch).toEqual({ searchProvider: 'serper' });
+  });
+
+  it('preserves omitted encrypted secrets on nested object writes', () => {
+    const existing = encryptConfigSecrets({
+      speech: { tts: { openai: { apiKey: 'sk-old', model: 'tts-1' } } },
+    });
+
+    const next = preserveConfigSecrets(
+      { speech: { tts: { openai: { model: 'tts-2' } as Record<string, string> } } },
+      existing,
+    );
+    expect(decryptV3(next.speech.tts.openai.apiKey)).toBe('sk-old');
+    expect(next.speech.tts.openai.model).toBe('tts-2');
+
+    const providerRemoved = preserveConfigSecrets({ speech: { tts: {} } }, existing);
+    expect(providerRemoved.speech.tts).toEqual({});
+
+    const ancestorPatch = preserveConfigSecrets(
+      { openai: { model: 'tts-2' } as Record<string, string> },
+      existing,
+      'speech.tts',
+    );
+    expect(decryptV3(ancestorPatch.openai.apiKey)).toBe('sk-old');
+  });
+
+  it('does not preserve explicitly cleared or plaintext existing secrets', () => {
+    const cleared = encryptConfigSecrets({
+      speech: { tts: { openai: { apiKey: '' } } },
+    });
+    const existing = encryptConfigSecrets({
+      speech: { tts: { openai: { apiKey: 'sk-old' } } },
+    });
+    expect(preserveConfigSecrets(cleared, existing).speech.tts.openai.apiKey).toBe('');
+
+    const fromPlaintext = preserveConfigSecrets(
+      { ocr: { mistralModel: 'm' } },
+      { ocr: { apiKey: 'sk-plain-existing' } },
+    );
+    expect(fromPlaintext.ocr).toEqual({ mistralModel: 'm' });
+  });
+
+  it('resolveConfigSecret decrypts, resolves env references, and passes literals through', () => {
+    const encrypted = encryptConfigSecrets({ ocr: { apiKey: 'sk-ocr' } }).ocr.apiKey;
+    expect(resolveConfigSecret(encrypted)).toBe('sk-ocr');
+
+    process.env.SECRETS_SPEC_TEST_KEY = 'sk-from-env';
+    expect(resolveConfigSecret('${SECRETS_SPEC_TEST_KEY}')).toBe('sk-from-env');
+    delete process.env.SECRETS_SPEC_TEST_KEY;
+
+    expect(resolveConfigSecret('sk-plain-literal')).toBe('sk-plain-literal');
+    expect(resolveConfigSecret('')).toBe('');
+    expect(resolveConfigSecret(undefined)).toBeUndefined();
+    expect(resolveConfigSecret('v3:not-valid-ciphertext')).toBeUndefined();
+  });
+
+  it('reports mutation paths and ancestor/descendant checks for registry fields', () => {
+    expect(getConfigSecretMutationPaths('speech.tts.openai.apiKey')).toEqual([
+      'speech.tts.openai.apiKey',
+    ]);
+    expect(getConfigSecretMutationPaths('langfuse.secretKey')).toEqual([
+      'langfuse.secretKey',
+      'langfuse.displaySecretKey',
+    ]);
+
+    for (const path of ['speech', 'speech.tts', 'speech.tts.openai', 'ocr', 'webSearch']) {
+      expect(isConfigSecretAncestorPath(path)).toBe(true);
+    }
+    expect(isConfigSecretAncestorPath('speech.tts.openai.apiKey')).toBe(false);
+    expect(isConfigSecretAncestorPath('interface')).toBe(false);
+
+    expect(isConfigSecretDescendantPath('speech.tts.openai.apiKey.hidden')).toBe(true);
+    expect(isConfigSecretDescendantPath('webSearch.serperApiKey.hidden')).toBe(true);
+    expect(isConfigSecretDescendantPath('speech.tts.openai.model')).toBe(false);
+  });
+
+  it('rejects encrypted submissions at registry paths and inside ancestor objects', () => {
+    expect(getConfigSecretInputError('webSearch.serperApiKey', 'v3:attacker')).toContain(
+      'Encrypted config secret values',
+    );
+    expect(
+      getConfigSecretInputError('speech', { tts: { openai: { apiKey: 'v3:attacker' } } }),
+    ).toContain('Encrypted config secret values');
+    expect(getConfigSecretInputError('speech.tts.openai', { apiKey: 'v3:attacker' })).toContain(
+      'Encrypted config secret values',
+    );
+    expect(getConfigSecretInputError('speech.tts.openai.apiKey', 'sk-legit')).toBeNull();
+    expect(getConfigSecretInputError('ocr.apiKey', '${OCR_API_KEY}')).toBeNull();
   });
 });

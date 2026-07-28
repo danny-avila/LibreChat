@@ -1,6 +1,11 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
-const { genAzureEndpoint, logAxiosError, applyAxiosProxyConfig } = require('@librechat/api');
+const {
+  genAzureEndpoint,
+  logAxiosError,
+  applyAxiosProxyConfig,
+  resolveConfigSecret,
+} = require('@librechat/api');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
 const { getAppConfig } = require('~/server/services/Config');
@@ -122,7 +127,7 @@ class TTSService {
 
     const headers = {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${extractEnvVariable(ttsSchema?.apiKey)}`,
+      Authorization: `Bearer ${resolveConfigSecret(ttsSchema?.apiKey)}`,
     };
 
     return [url, data, headers];
@@ -159,7 +164,7 @@ class TTSService {
 
     const headers = {
       'Content-Type': 'application/json',
-      'api-key': ttsSchema.apiKey ? extractEnvVariable(ttsSchema.apiKey) : '',
+      'api-key': ttsSchema.apiKey ? resolveConfigSecret(ttsSchema.apiKey) || '' : '',
     };
 
     return [url, data, headers];
@@ -197,7 +202,7 @@ class TTSService {
 
     const headers = {
       'Content-Type': 'application/json',
-      'xi-api-key': extractEnvVariable(ttsSchema?.apiKey),
+      'xi-api-key': resolveConfigSecret(ttsSchema?.apiKey),
       Accept: 'audio/mpeg',
     };
 
@@ -232,10 +237,10 @@ class TTSService {
 
     const headers = {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${extractEnvVariable(ttsSchema?.apiKey)}`,
+      Authorization: `Bearer ${resolveConfigSecret(ttsSchema?.apiKey)}`,
     };
 
-    if (extractEnvVariable(ttsSchema.apiKey) === '') {
+    if (resolveConfigSecret(ttsSchema.apiKey) === '') {
       delete headers.Authorization;
     }
 
