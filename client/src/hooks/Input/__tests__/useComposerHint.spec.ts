@@ -12,6 +12,7 @@ const baseState: ComposerHintState = {
   duringRunAction: 'queue' as const,
   answerModeActive: false,
   uploadingCount: 0,
+  enterToSend: true,
 };
 
 const hint = (overrides: Partial<ComposerHintState>, isMac = true) =>
@@ -65,6 +66,29 @@ describe('composeHint', () => {
       expect(hint({ duringRunActive: true, hasText: false, isSubmitting: true })).toBe(
         'com_ui_composer_hint_stop',
       );
+    });
+  });
+
+  describe('with Enter bound to a newline', () => {
+    it('names the chord as the send key while typing', () => {
+      const result = hint({ hasText: true, enterToSend: false });
+      expect(result).toContain('⌘⏎');
+      expect(result).toContain('com_ui_composer_hint_send');
+      expect(result).toContain('com_ui_composer_hint_newline');
+      expect(result).not.toContain('com_ui_composer_hint_typing');
+    });
+
+    it('drops the alternate during-run action, which the chord no longer reaches', () => {
+      const result = hint({
+        duringRunActive: true,
+        hasText: true,
+        isSubmitting: true,
+        duringRunAction: 'steer',
+        enterToSend: false,
+      });
+      expect(result).toContain('⌘⏎ com_ui_composer_hint_steer_verb');
+      expect(result).toContain('com_ui_composer_hint_interrupt');
+      expect(result).not.toContain('com_ui_composer_hint_queue');
     });
   });
 

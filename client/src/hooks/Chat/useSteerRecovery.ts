@@ -1,5 +1,6 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useRecoilCallback } from 'recoil';
+import type { Snapshot } from 'recoil';
 import type { PendingSteer } from '~/store/families';
 import { getSteerErrorCode, resolveAcknowledgedSteer } from '~/hooks/Chat/useSteering';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
@@ -16,16 +17,24 @@ export default function useSteerRecovery(conversationId: string) {
   const { mutateAsync: steerMessage } = useSteerMessageMutation();
   const convertSteersToQueued = useSteerConvert();
 
-  /** `PendingSteers` only renders while `isLast && isSubmitting` is true, so
-   *  its unmount IS the run ending. A retry's ack can resolve afterward;
-   *  mirrors `composerMountedRef` in `ChatForm`, which guards the equivalent
-   *  race for a reclaimed steer whose restore resolves post-unmount. */
-  const mountedRef = useRef(true);
-  useEffect(
-    () => () => {
-      mountedRef.current = false;
+  /** Whether the run this steer belongs to has finished, read live at ack time.
+   *  Unmounting is not the same signal: `PendingSteers` also unmounts when the
+   *  user navigates away from a run that is still going, and treating that as
+   *  the end queued the accepted steer as a follow-up on top of the injection
+   *  the server was already making. */
+  const isRunOver = useCallback(
+    (snapshot: Snapshot) => {
+      const keys = snapshot.getLoadable(store.conversationKeysAtom).getValue();
+      for (const key of keys) {
+        const convo = snapshot.getLoadable(store.conversationByIndex(key)).getValue();
+        if (convo?.conversationId !== conversationId) {
+          continue;
+        }
+        return snapshot.getLoadable(store.isSubmittingFamily(key)).getValue() !== true;
+      }
+      return true;
     },
-    [],
+    [conversationId],
   );
 
   const markStatus = useRecoilCallback(
@@ -39,10 +48,16 @@ export default function useSteerRecovery(conversationId: string) {
   );
 
   const acknowledgeRetry = useRecoilCallback(
-    (cbInterface) => (localId: string, steer: PendingSteer, runOver: boolean) => {
-      resolveAcknowledgedSteer(cbInterface, conversationId, localId, steer, runOver);
+    (cbInterface) => (localId: string, steer: PendingSteer) => {
+      resolveAcknowledgedSteer(
+        cbInterface,
+        conversationId,
+        localId,
+        steer,
+        isRunOver(cbInterface.snapshot),
+      );
     },
-    [conversationId],
+    [conversationId, isRunOver],
   );
 
   /** Routes a steer straight into the queue: reused for a retry that degrades
@@ -84,11 +99,7 @@ export default function useSteerRecovery(conversationId: string) {
            rest of the conversation with the words neither sent nor queued. */
         steerMessage({ conversationId, text: steer.text, files: steer.files })
           .then((response) => {
-            acknowledgeRetry(
-              steerId,
-              { ...steer, steerId: response.steerId, status: 'pending' },
-              !mountedRef.current,
-            );
+            acknowledgeRetry(steerId, { ...steer, steerId: response.steerId, status: 'pending' });
           })
           .catch((error: unknown) => {
             const code = getSteerErrorCode(error);

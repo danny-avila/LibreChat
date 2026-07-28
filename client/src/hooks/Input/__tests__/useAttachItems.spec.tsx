@@ -186,6 +186,22 @@ describe('useAttachItems', () => {
       ).toContain('local:image');
     });
 
+    /* Assistants carry their own file configuration and the old menu handed
+       them an unfiltered picker; scoping them to the image capability, which
+       the provider check would, silently dropped PDF support. */
+    it.each([EModelEndpoint.assistants, EModelEndpoint.azureAssistants])(
+      'offers one unfiltered upload for %s and no tool destinations',
+      (endpoint) => {
+        const ids = renderEntries({
+          endpoint,
+          contextEnabled: true,
+          fileSearchEnabled: true,
+          codeEnabled: true,
+        });
+        expect(ids).toEqual(['local:assistants']);
+      },
+    );
+
     it('reads a provider whatever its casing, which OpenRouter arrives in', () => {
       expect(renderEntries({ provider: 'OpenRouter' })).toContain('local:provider');
     });
