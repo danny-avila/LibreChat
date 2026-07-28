@@ -966,6 +966,8 @@ describe('File Routes - Delete with Agent Access', () => {
       /* The hold must remain a hold: still reapable, just later. */
       expect(held.expiresAt).toBeDefined();
       expect(held.expiresAt.getTime()).toBeGreaterThan(soon.getTime());
+      /* Anchored to upload time, so the deadline is a fixed point per file. */
+      expect(held.expiresAt.getTime()).toBe(held.createdAt.getTime() + 24 * 60 * 60 * 1000);
       /* A queue touch is not a send, so it must not inflate usage. */
       expect(held.usage).toBe(0);
     });
@@ -973,17 +975,25 @@ describe('File Routes - Delete with Agent Access', () => {
     it('cannot be replayed to preserve a file indefinitely', async () => {
       const ownFileId = await createQueuedFile(new Date(Date.now() + 60 * 1000));
 
+      const first = await request(app)
+        .post('/files/usage')
+        .send({ file_ids: [ownFileId] });
+      expect(first.body).toEqual({ held: 1 });
+      const afterFirst = (await File.findOne({ file_id: ownFileId }).lean()).expiresAt;
+
+      /* Replay must be inert, not merely bounded: a deadline derived from the
+       * request clock would advance a window per call and never converge. */
       for (let i = 0; i < 5; i++) {
-        const response = await request(app)
+        const repeat = await request(app)
           .post('/files/usage')
           .send({ file_ids: [ownFileId] });
-        expect(response.status).toBe(200);
+        expect(repeat.status).toBe(200);
+        expect(repeat.body).toEqual({ held: 0 });
       }
 
       const held = await File.findOne({ file_id: ownFileId }).lean();
       expect(held.expiresAt).toBeDefined();
-      /* Repeated touches converge on one bounded window, never unset the TTL. */
-      expect(held.expiresAt.getTime()).toBeLessThan(Date.now() + 25 * 60 * 60 * 1000);
+      expect(held.expiresAt.getTime()).toBe(afterFirst.getTime());
     });
 
     it('never re-adds a TTL to a file that was already sent', async () => {

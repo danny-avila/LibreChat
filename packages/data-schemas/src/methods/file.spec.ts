@@ -1124,6 +1124,8 @@ describe('File Methods', () => {
   });
 
   describe('extendFilesTTL', () => {
+    const HOLD_MS = 24 * 3_600_000;
+
     const seedTempFile = async (userId: mongoose.Types.ObjectId, expiresAt: Date) => {
       const fileId = uuidv4();
       await fileMethods.createFile({
@@ -1138,18 +1140,48 @@ describe('File Methods', () => {
       return fileId;
     };
 
-    it('pushes the TTL forward without unsetting it', async () => {
-      const userId = new mongoose.Types.ObjectId();
-      const soon = new Date(Date.now() + 60_000);
-      const fileId = await seedTempFile(userId, soon);
-      const target = new Date(Date.now() + 3_600_000);
+    const readCreatedAt = async (fileId: string) => {
+      const doc = await mongoose.models.File.findOne({ file_id: fileId })
+        .lean<{ createdAt: Date }>()
+        .exec();
+      return doc!.createdAt;
+    };
 
-      const count = await fileMethods.extendFilesTTL([fileId], target, { user: String(userId) });
+    it('widens the TTL to createdAt + holdMs without unsetting it', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = await seedTempFile(userId, new Date(Date.now() + 60_000));
+      const createdAt = await readCreatedAt(fileId);
+
+      const count = await fileMethods.extendFilesTTL([fileId], HOLD_MS, { user: String(userId) });
 
       expect(count).toBe(1);
       const file = await fileMethods.findFileById(fileId);
       expect(file?.expiresAt).toBeDefined();
-      expect(file?.expiresAt?.getTime()).toBe(target.getTime());
+      expect(file?.expiresAt?.getTime()).toBe(createdAt.getTime() + HOLD_MS);
+    });
+
+    /** The bound that makes the endpoint safe to expose: the deadline is a
+     *  function of the immutable createdAt, so replaying the call can never
+     *  walk a file's lifetime forward one window at a time. */
+    it('is idempotent under replay, never advancing the deadline', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = await seedTempFile(userId, new Date(Date.now() + 60_000));
+      const createdAt = await readCreatedAt(fileId);
+
+      const first = await fileMethods.extendFilesTTL([fileId], HOLD_MS, { user: String(userId) });
+      const afterFirst = (await fileMethods.findFileById(fileId))?.expiresAt;
+
+      for (let i = 0; i < 5; i++) {
+        const repeat = await fileMethods.extendFilesTTL([fileId], HOLD_MS, {
+          user: String(userId),
+        });
+        expect(repeat).toBe(0);
+      }
+
+      expect(first).toBe(1);
+      const file = await fileMethods.findFileById(fileId);
+      expect(file?.expiresAt?.getTime()).toBe(afterFirst?.getTime());
+      expect(file?.expiresAt?.getTime()).toBe(createdAt.getTime() + HOLD_MS);
     });
 
     it('does not resurrect a TTL on an already-released file', async () => {
@@ -1157,9 +1189,7 @@ describe('File Methods', () => {
       const fileId = await seedTempFile(userId, new Date(Date.now() + 60_000));
       await fileMethods.updateFileUsage({ file_id: fileId, user: String(userId) });
 
-      const count = await fileMethods.extendFilesTTL([fileId], new Date(Date.now() + 3_600_000), {
-        user: String(userId),
-      });
+      const count = await fileMethods.extendFilesTTL([fileId], HOLD_MS, { user: String(userId) });
 
       expect(count).toBe(0);
       const file = await fileMethods.findFileById(fileId);
@@ -1171,9 +1201,7 @@ describe('File Methods', () => {
       const farOut = new Date(Date.now() + 7 * 24 * 3_600_000);
       const fileId = await seedTempFile(userId, farOut);
 
-      const count = await fileMethods.extendFilesTTL([fileId], new Date(Date.now() + 60_000), {
-        user: String(userId),
-      });
+      const count = await fileMethods.extendFilesTTL([fileId], HOLD_MS, { user: String(userId) });
 
       expect(count).toBe(0);
       const file = await fileMethods.findFileById(fileId);
@@ -1186,7 +1214,7 @@ describe('File Methods', () => {
       const soon = new Date(Date.now() + 60_000);
       const fileId = await seedTempFile(ownerId, soon);
 
-      const count = await fileMethods.extendFilesTTL([fileId], new Date(Date.now() + 3_600_000), {
+      const count = await fileMethods.extendFilesTTL([fileId], HOLD_MS, {
         user: String(attackerId),
       });
 
@@ -1200,11 +1228,22 @@ describe('File Methods', () => {
       const soon = new Date(Date.now() + 60_000);
       const fileId = await seedTempFile(userId, soon);
 
-      const count = await fileMethods.extendFilesTTL([fileId], new Date(Date.now() + 3_600_000), {
-        user: '',
-      } as { user: string });
+      const count = await fileMethods.extendFilesTTL([fileId], HOLD_MS, { user: '' } as {
+        user: string;
+      });
 
       expect(count).toBe(0);
+      const file = await fileMethods.findFileById(fileId);
+      expect(file?.expiresAt?.getTime()).toBe(soon.getTime());
+    });
+
+    it('is a no-op for a non-positive hold', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const soon = new Date(Date.now() + 60_000);
+      const fileId = await seedTempFile(userId, soon);
+
+      expect(await fileMethods.extendFilesTTL([fileId], 0, { user: String(userId) })).toBe(0);
+      expect(await fileMethods.extendFilesTTL([fileId], -1, { user: String(userId) })).toBe(0);
       const file = await fileMethods.findFileById(fileId);
       expect(file?.expiresAt?.getTime()).toBe(soon.getTime());
     });

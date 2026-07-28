@@ -2,11 +2,9 @@ import { handleFilesUsageRequest, FILES_USAGE_MAX_IDS, FILES_USAGE_HOLD_MS } fro
 
 describe('handleFilesUsageRequest', () => {
   const user = { id: 'user-1', tenantId: 'tenant-1' };
-  const NOW = 1_700_000_000_000;
 
   const createDeps = (held = 0) => ({
     extendFilesTTL: jest.fn().mockResolvedValue(held),
-    now: () => NOW,
   });
 
   it('rejects unauthenticated requests without touching the DB', async () => {
@@ -39,25 +37,30 @@ describe('handleFilesUsageRequest', () => {
     expect(deps.extendFilesTTL).not.toHaveBeenCalled();
   });
 
-  it('extends the hold owner-scoped by a bounded window', async () => {
+  it('requests an owner-scoped hold of the fixed lifetime', async () => {
     const deps = createDeps(1);
     const result = await handleFilesUsageRequest(user, { file_ids: ['f1', 'f2'] }, deps);
     expect(deps.extendFilesTTL).toHaveBeenCalledTimes(1);
-    expect(deps.extendFilesTTL).toHaveBeenCalledWith(
-      ['f1', 'f2'],
-      new Date(NOW + FILES_USAGE_HOLD_MS),
-      { user: 'user-1', tenantId: 'tenant-1' },
-    );
+    expect(deps.extendFilesTTL).toHaveBeenCalledWith(['f1', 'f2'], FILES_USAGE_HOLD_MS, {
+      user: 'user-1',
+      tenantId: 'tenant-1',
+    });
     expect(result).toEqual({ status: 200, body: { held: 1 } });
   });
 
-  it('never requests an unbounded hold', async () => {
+  /** The hold must be a lifetime the data layer anchors to the upload, not a
+   *  deadline derived here: a request-clock deadline would let a caller walk
+   *  the file's lifetime forward one window per call. */
+  it('passes a constant lifetime, never a request-derived deadline', async () => {
     const deps = createDeps(1);
     await handleFilesUsageRequest(user, { file_ids: ['f1'] }, deps);
-    const [, expiresAt] = deps.extendFilesTTL.mock.calls[0];
-    expect(expiresAt).toBeInstanceOf(Date);
-    expect(Number.isFinite((expiresAt as Date).getTime())).toBe(true);
-    expect((expiresAt as Date).getTime()).toBeGreaterThan(NOW);
+    await handleFilesUsageRequest(user, { file_ids: ['f1'] }, deps);
+
+    const [, firstHold] = deps.extendFilesTTL.mock.calls[0];
+    const [, secondHold] = deps.extendFilesTTL.mock.calls[1];
+    expect(firstHold).toBe(FILES_USAGE_HOLD_MS);
+    expect(secondHold).toBe(firstHold);
+    expect(typeof firstHold).toBe('number');
   });
 
   it('returns 200 with zero held when no id resolves to an owned file', async () => {

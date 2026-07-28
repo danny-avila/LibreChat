@@ -2,9 +2,13 @@
 export const FILES_USAGE_MAX_IDS: number = 10;
 
 /**
- * How far forward a single touch pushes the upload-window TTL. Generous
+ * Total lifetime a held upload gets, measured from its upload time. Generous
  * enough to outlast any realistic queue wait (long run, approval pause),
  * short enough that a queue the user abandons still gets reaped.
+ *
+ * Measured from upload rather than from the request, so the deadline is a
+ * fixed point per file: replaying the touch re-asserts the same instant
+ * instead of walking the file's lifetime forward a window at a time.
  */
 export const FILES_USAGE_HOLD_MS: number = 24 * 60 * 60 * 1000;
 
@@ -27,11 +31,9 @@ export interface FilesUsageDeps {
   /** Owner-scoped TTL hold (`db.extendFilesTTL`-shaped). */
   extendFilesTTL: (
     fileIds: string[],
-    expiresAt: Date,
+    holdMs: number,
     owner: { user: string; tenantId?: string | null },
   ) => Promise<number>;
-  /** Injectable clock for deterministic tests. */
-  now?: () => number;
 }
 
 /**
@@ -43,7 +45,8 @@ export interface FilesUsageDeps {
  * A hold, not a release. The client queue is ephemeral browser state, so a
  * closed tab or a cleared queue leaves nothing referencing these files, and
  * clearing the TTL outright would strand them in storage permanently. The
- * deadline is only pushed forward; the real release happens at send, where
+ * hold only widens the window to a fixed point measured from upload, so it
+ * is idempotent under replay; the real release happens at send, where
  * `updateFilesUsage` marks the files used against an actual message.
  *
  * Best-effort 200: ids that do not resolve to a held file are not errors
@@ -71,8 +74,7 @@ export async function handleFilesUsageRequest(
     }
     fileIds.push(value);
   }
-  const nowMs = deps.now?.() ?? Date.now();
-  const held = await deps.extendFilesTTL(fileIds, new Date(nowMs + FILES_USAGE_HOLD_MS), {
+  const held = await deps.extendFilesTTL(fileIds, FILES_USAGE_HOLD_MS, {
     user: user.id,
     tenantId: user.tenantId,
   });
