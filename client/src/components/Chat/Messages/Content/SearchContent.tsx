@@ -1,4 +1,4 @@
-import { Suspense, useMemo } from 'react';
+import { Suspense, useMemo, Fragment } from 'react';
 import { useRecoilValue } from 'recoil';
 import { DelayedRender } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
@@ -9,6 +9,7 @@ import type {
   SearchResultData,
   TMessageContentParts,
 } from 'librechat-data-provider';
+import type { ReactNode, ReactElement } from 'react';
 import { UnfinishedMessage } from './MessageContent';
 import { cn, mapAttachments } from '~/utils';
 import { SearchContext } from '~/Providers';
@@ -20,10 +21,13 @@ const SearchContent = ({
   message,
   attachments,
   searchResults,
+  authorHeader,
 }: {
   message: TMessage;
   attachments?: TAttachment[];
   searchResults?: { [key: string]: SearchResultData };
+  /** Author icon + label re-rendered before content that resumes after an inline steer. */
+  authorHeader?: ReactNode;
 }) => {
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const { messageId } = message;
@@ -31,29 +35,38 @@ const SearchContent = ({
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
 
   if (Array.isArray(message.content) && message.content.length > 0) {
+    const parts = message.content.filter((part): part is TMessageContentParts => part != null);
     return (
       <SearchContext.Provider value={{ searchResults }}>
-        {message.content
-          .filter((part: TMessageContentParts | undefined) => part)
-          .map((part: TMessageContentParts | undefined, idx: number) => {
-            if (!part) {
-              return null;
-            }
-
-            const toolCallId =
-              (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
-            const partAttachments = attachmentMap[toolCallId];
-            return (
-              <Part
-                key={`display-${messageId}-${idx}`}
-                showCursor={false}
-                isSubmitting={false}
-                isCreatedByUser={message.isCreatedByUser}
-                attachments={partAttachments}
-                part={part}
-              />
-            );
-          })}
+        {parts.map((part: TMessageContentParts, idx: number) => {
+          const toolCallId =
+            (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+          const partAttachments = attachmentMap[toolCallId];
+          const resumesAfterSteer =
+            authorHeader != null &&
+            idx > 0 &&
+            parts[idx - 1].type === ContentTypes.STEER &&
+            part.type !== ContentTypes.STEER;
+          const rendered: ReactElement = (
+            <Part
+              key={`display-${messageId}-${idx}`}
+              showCursor={false}
+              isSubmitting={false}
+              isCreatedByUser={message.isCreatedByUser}
+              attachments={partAttachments}
+              part={part}
+            />
+          );
+          if (!resumesAfterSteer) {
+            return rendered;
+          }
+          return (
+            <Fragment key={`display-${messageId}-${idx}`}>
+              {authorHeader}
+              {rendered}
+            </Fragment>
+          );
+        })}
         {message.unfinished === true && (
           <Suspense>
             <DelayedRender delay={250}>

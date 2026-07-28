@@ -1,4 +1,4 @@
-import { memo, useRef, useMemo, useCallback } from 'react';
+import { memo, useRef, useMemo, useCallback, Fragment } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
@@ -6,6 +6,7 @@ import type {
   TAttachment,
   Agents,
 } from 'librechat-data-provider';
+import type { ReactNode, ReactElement } from 'react';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
@@ -112,6 +113,12 @@ type ContentPartsProps = {
   manualSkills?: string[];
   /** ISO timestamp of the parent message, surfaced in parallel column headers. */
   createdAt?: string | null;
+  /**
+   * Author icon + label node re-rendered before content that resumes after an
+   * inline STEER part — the steer renders as a full user turn inside the
+   * response, so what follows must be visibly re-attributed to the author.
+   */
+  authorHeader?: ReactNode;
   conversationId?: string | null;
   attachments?: TAttachment[];
   searchResults?: { [key: string]: SearchResultData };
@@ -146,6 +153,7 @@ const ContentParts = memo(function ContentParts({
   isSubmitting,
   setSiblingIdx,
   searchResults,
+  authorHeader,
   conversationId,
   isCreatedByUser,
   isLatestMessage,
@@ -302,17 +310,26 @@ const ContentParts = memo(function ContentParts({
     ],
   );
 
-  const sequentialParts = useMemo<PartWithIndex[]>(() => {
+  /** `postSteerIndices` marks each part that resumes the response after a
+   *  steer block — where `authorHeader` gets re-rendered. */
+  const { sequentialParts, postSteerIndices } = useMemo(() => {
+    const parts: PartWithIndex[] = [];
+    const indices = new Set<number>();
     if (!content) {
-      return [];
+      return { sequentialParts: parts, postSteerIndices: indices };
     }
-    const result: PartWithIndex[] = [];
+    let prevType: string | undefined;
     content.forEach((part, idx) => {
-      if (part) {
-        result.push({ part, idx });
+      if (!part) {
+        return;
       }
+      if (prevType === ContentTypes.STEER && part.type !== ContentTypes.STEER) {
+        indices.add(idx);
+      }
+      prevType = part.type;
+      parts.push({ part, idx });
     });
-    return result;
+    return { sequentialParts: parts, postSteerIndices: indices };
   }, [content]);
 
   const groupedParts = useMemo(
@@ -413,13 +430,19 @@ const ContentParts = memo(function ContentParts({
             <EmptyText />
           </Container>
         )}
-        {groupedParts.map((group) => {
+        {groupedParts.flatMap((group) => {
+          const firstIdx = group.type === 'single' ? group.part.idx : (group.parts[0]?.idx ?? -1);
+          const nodes: ReactElement[] = [];
+          if (authorHeader != null && postSteerIndices.has(firstIdx)) {
+            nodes.push(<Fragment key={`author-${messageId}-${firstIdx}`}>{authorHeader}</Fragment>);
+          }
           if (group.type === 'single') {
             const { part, idx } = group.part;
-            return renderPart(part, idx, idx === lastContentIdx);
+            nodes.push(renderPart(part, idx, idx === lastContentIdx));
+            return nodes;
           }
           const { groupId } = group;
-          return (
+          nodes.push(
             <ToolCallGroup
               key={`tool-group-${groupId}`}
               parts={group.parts}
@@ -430,8 +453,9 @@ const ContentParts = memo(function ContentParts({
               groupAttachments={group.groupAttachments}
               initialExpansionState={toolGroupExpansionRef.current.get(groupId)}
               onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
-            />
+            />,
           );
+          return nodes;
         })}
       </SearchContext.Provider>
     </ApprovalProvider>
