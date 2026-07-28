@@ -126,6 +126,7 @@ describe('PUT /:conversationId/:messageId/feedback', () => {
 
   it.each([
     ['an object tag', { rating: 'thumbsDown', tag: { key: 'inaccurate' } }],
+    ['a tag for the opposite rating', { rating: 'thumbsUp', tag: 'inaccurate' }],
     ['oversized text', { rating: 'thumbsDown', tag: 'other', text: 'x'.repeat(1025) }],
   ])('rejects %s before persistence or export', async (_name, feedback) => {
     const response = await request(app)
