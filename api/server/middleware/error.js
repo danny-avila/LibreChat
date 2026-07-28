@@ -54,7 +54,9 @@ const sendError = async (req, res, options, callback) => {
         interfaceConfig: req?.config?.interfaceConfig,
       },
       { ...errorMessage, user },
-      { context: 'api/server/utils/streamResponse.js - sendError' },
+      {
+        context: 'api/server/utils/streamResponse.js - sendError',
+      },
     );
   }
 

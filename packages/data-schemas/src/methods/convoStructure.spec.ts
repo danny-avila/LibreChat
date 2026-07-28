@@ -1,10 +1,10 @@
 import mongoose from 'mongoose';
+import type { TMessage } from 'librechat-data-provider';
 import { buildTree } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type { TMessage } from 'librechat-data-provider';
-import type { IMessage } from '..';
-import { createMessageMethods } from './message';
 import { createModels } from '~/models';
+import { createMessageMethods } from './message';
+import type { IMessage } from '..';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -26,7 +26,7 @@ beforeAll(async () => {
   Object.assign(mongoose.models, models);
   Message = mongoose.models.Message;
 
-  const methods = createMessageMethods(mongoose, async () => null);
+  const methods = createMessageMethods(mongoose);
   getMessages = methods.getMessages;
   bulkSaveMessages = methods.bulkSaveMessages;
 

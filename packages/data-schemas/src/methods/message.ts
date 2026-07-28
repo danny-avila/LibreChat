@@ -1,6 +1,5 @@
 import { RetentionMode } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
-import type { ApplyForcedRetention } from '~/utils/retention';
 import type { AppConfig, IMessage } from '~/types';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { createFallbackRetentionDate } from '~/utils/retention';
@@ -75,10 +74,7 @@ export interface MessageMethods {
   deleteMessages(filter: FilterQuery<IMessage>): Promise<DeleteResult>;
 }
 
-export function createMessageMethods(
-  mongoose: typeof import('mongoose'),
-  applyForcedRetention: ApplyForcedRetention,
-): MessageMethods {
+export function createMessageMethods(mongoose: typeof import('mongoose')): MessageMethods {
   /**
    * Saves a message in the database.
    */
@@ -116,8 +112,14 @@ export function createMessageMethods(
       };
 
       if (interfaceConfig?.retentionMode === RetentionMode.EPHEMERAL) {
-        delete update.isTemporary;
-        delete update.expiredAt;
+        update.isTemporary = true;
+        try {
+          update.expiredAt = createTempChatExpirationDate(interfaceConfig);
+        } catch (err) {
+          logger.error('Error creating temporary chat expiration date:', err);
+          logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
+          update.expiredAt = createFallbackRetentionDate();
+        }
       } else if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
         if (typeof isTemporary === 'boolean') {
           update.isTemporary = isTemporary;
@@ -150,7 +152,6 @@ export function createMessageMethods(
         logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
         update.tokenCount = 0;
       }
-
       const message = await Message.findOneAndUpdate(
         { messageId: params.messageId, user: userId },
         update,
@@ -168,17 +169,6 @@ export function createMessageMethods(
           { $set: { isTemporary: false } },
         );
         message.isTemporary = false;
-      }
-
-      const forcedExpiredAt = await applyForcedRetention(conversationId, userId, interfaceConfig);
-      if (forcedExpiredAt instanceof Date) {
-        message.isTemporary = true;
-        if (
-          !(message.expiredAt instanceof Date) ||
-          message.expiredAt.getTime() > forcedExpiredAt.getTime()
-        ) {
-          message.expiredAt = forcedExpiredAt;
-        }
       }
 
       return message.toObject();

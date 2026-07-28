@@ -5,7 +5,6 @@ const { getImporter } = require('./importers');
 
 // Mock the database methods
 jest.mock('~/models', () => ({
-  applyForcedRetention: jest.fn().mockResolvedValue(null),
   bulkSaveConvos: jest.fn(),
   bulkSaveMessages: jest.fn(),
   bulkIncrementTagCounts: jest.fn(),

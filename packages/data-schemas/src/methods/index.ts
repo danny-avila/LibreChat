@@ -46,14 +46,7 @@ import { createPresetMethods, type PresetMethods } from './preset';
 import { createConversationTagMethods, type ConversationTagMethods } from './conversationTag';
 import { createMessageMethods, type MessageMethods } from './message';
 import { createConversationMethods, type ConversationMethods } from './conversation';
-import {
-  createChatProjectMethods,
-  refreshChatProjectStatsForUser,
-  type ChatProjectMethods,
-} from './chatProject';
-import type { ApplyForcedRetention } from '~/utils/retention';
-import { createApplyForcedRetention } from '~/utils/retention';
-import logger from '~/config/winston';
+import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
 export type {
   AssignConversationToProjectResult,
   ChatProjectSortBy,
@@ -181,7 +174,8 @@ export type AllMethods = UserMethods &
   ConversationTagMethods &
   MessageMethods &
   ConversationMethods &
-  ChatProjectMethods & { applyForcedRetention: ApplyForcedRetention } & TxMethods &
+  ChatProjectMethods &
+  TxMethods &
   TransactionMethods &
   SpendTokensMethods &
   PromptMethods &
@@ -236,21 +230,12 @@ export function createMethods(
     createStructuredTransaction: transactionMethods.createStructuredTransaction,
   });
 
-  const applyForcedRetention = createApplyForcedRetention(mongoose, {
-    logger,
-    refreshProjectStats: (userId, projectId) =>
-      refreshChatProjectStatsForUser(mongoose, userId, projectId),
-  });
-  const messageMethods = createMessageMethods(mongoose, applyForcedRetention);
+  const messageMethods = createMessageMethods(mongoose);
 
-  const conversationMethods = createConversationMethods(
-    mongoose,
-    {
-      getMessages: messageMethods.getMessages,
-      deleteMessages: messageMethods.deleteMessages,
-    },
-    applyForcedRetention,
-  );
+  const conversationMethods = createConversationMethods(mongoose, {
+    getMessages: messageMethods.getMessages,
+    deleteMessages: messageMethods.deleteMessages,
+  });
 
   // ACL entry methods (used internally for removeAllPermissions)
   const aclEntryMethods = createAclEntryMethods(mongoose);
@@ -324,8 +309,7 @@ export function createMethods(
     ...createConversationTagMethods(mongoose),
     ...messageMethods,
     ...conversationMethods,
-    ...createChatProjectMethods(mongoose, applyForcedRetention),
-    applyForcedRetention,
+    ...createChatProjectMethods(mongoose),
     /* Tier 3 */
     ...txMethods,
     ...transactionMethods,

@@ -1,7 +1,6 @@
-import { EToolResources, FileContext, FileSources } from 'librechat-data-provider';
+import { EToolResources, FileContext } from 'librechat-data-provider';
 import type { FilterQuery, SortOrder, Model } from 'mongoose';
 import type { IMongoFile } from '~/types/file';
-import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '../config/winston';
 
@@ -376,45 +375,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       delete fileData.expiresAt;
     }
 
-    const uncastFields = Object.fromEntries(
-      Object.entries(fileData).filter(([, value]) => value !== undefined),
-    );
-
-    const activeTenantId = getTenantId();
-    if (activeTenantId !== SYSTEM_TENANT_ID) {
-      if (
-        activeTenantId &&
-        Object.prototype.hasOwnProperty.call(uncastFields, 'tenantId') &&
-        uncastFields.tenantId !== activeTenantId
-      ) {
-        throw new Error('[TenantIsolation] Cross-tenant tenantId mutation is not allowed');
-      }
-      delete uncastFields.tenantId;
-    }
-
-    const { expiredAt, ...definedFields } = File.castObject(uncastFields);
-    const insertDefaults = {
-      object: { $ifNull: ['$object', 'file'] },
-      usage: { $ifNull: ['$usage', 0] },
-      source: { $ifNull: ['$source', FileSources.local] },
-    };
-    let expiryUpdate = {};
-    if (expiredAt instanceof Date) {
-      expiryUpdate = {
-        expiredAt: {
-          $min: [{ $ifNull: ['$expiredAt', expiredAt] }, expiredAt],
-        },
-      };
-    }
-
-    return File.findOneAndUpdate(
-      { file_id: data.file_id },
-      [{ $set: { ...insertDefaults, ...definedFields, ...expiryUpdate } }],
-      {
-        new: true,
-        upsert: true,
-      },
-    ).lean<IMongoFile>();
+    return File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
+      new: true,
+      upsert: true,
+    }).lean<IMongoFile>();
   }
 
   /**

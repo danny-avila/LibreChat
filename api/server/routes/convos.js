@@ -189,7 +189,7 @@ router.delete('/all', configMiddleware, async (req, res) => {
  * @param {boolean} req.body.arg.isArchived - Whether to archive (true) or unarchive (false).
  * @returns {object} 200 - The updated conversation object.
  */
-router.post('/archive', configMiddleware, validateConvoAccess, async (req, res) => {
+router.post('/archive', validateConvoAccess, async (req, res) => {
   const { conversationId, isArchived } = req.body?.arg ?? {};
 
   if (!conversationId) {
@@ -217,7 +217,7 @@ router.post('/archive', configMiddleware, validateConvoAccess, async (req, res) 
   }
 });
 
-router.post('/pin', configMiddleware, validateConvoAccess, async (req, res) => {
+router.post('/pin', validateConvoAccess, async (req, res) => {
   const { conversationId, pinned } = req.body?.arg ?? {};
 
   if (!conversationId) {
@@ -234,11 +234,7 @@ router.post('/pin', configMiddleware, validateConvoAccess, async (req, res) => {
 
   try {
     const dbResponse = await db.saveConvo(
-      {
-        userId: req.user.id,
-        isTemporary: req?.body?.isTemporary,
-        interfaceConfig: req?.config?.interfaceConfig,
-      },
+      { userId: req.user.id },
       { conversationId, pinned },
       { context: `POST /api/convos/pin ${conversationId}` },
     );
@@ -259,7 +255,7 @@ const MAX_CONVO_TITLE_LENGTH = 1024;
  * @param {string} req.body.arg.title - The new title for the conversation.
  * @returns {object} 201 - The updated conversation object.
  */
-router.post('/update', configMiddleware, validateConvoAccess, async (req, res) => {
+router.post('/update', validateConvoAccess, async (req, res) => {
   const { conversationId, title } = req.body?.arg ?? {};
 
   if (!conversationId) {

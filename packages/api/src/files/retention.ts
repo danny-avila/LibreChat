@@ -1,5 +1,5 @@
+import { isAllDataRetention } from 'librechat-data-provider';
 import { createFallbackRetentionDate } from '@librechat/data-schemas';
-import { RetentionMode, isAllDataRetention } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 
 type InterfaceConfig = AppConfig['interfaceConfig'];
@@ -103,8 +103,7 @@ async function computeRetentionExpiry(
   req: RetentionRequest | null | undefined,
   dependencies: RetentionDependencies,
 ): Promise<RetentionExpiry> {
-  const retentionMode = req?.config?.interfaceConfig?.retentionMode;
-  if (isAllDataRetention(retentionMode)) {
+  if (isAllDataRetention(req?.config?.interfaceConfig?.retentionMode)) {
     return createRetentionExpiry(req, dependencies);
   }
 
@@ -178,11 +177,10 @@ const shouldRetainPersistentAgentFile = ({
   toolResource,
 }: AgentFileRetentionRequest): boolean => {
   const interfaceConfig = req?.config?.interfaceConfig;
-  const retentionMode = interfaceConfig?.retentionMode;
   return (
     isPersistentAgentResourceUpload({ messageAttachment, toolResource }) &&
-    (!isAllDataRetention(retentionMode) ||
-      (retentionMode === RetentionMode.ALL && interfaceConfig?.retainAgentFiles === true))
+    (!isAllDataRetention(interfaceConfig?.retentionMode) ||
+      interfaceConfig?.retainAgentFiles === true)
   );
 };
 
@@ -204,9 +202,6 @@ export async function getAgentFileRetentionExpiry(
  * - `undefined`: no decision can be made because the conversation id or row is missing.
  * - `null`: the share should be stored without an expiration.
  * - `Date`: the share should expire at that date; callers reject already-expired dates.
- *
- * Forced-retention parent/child alignment is deliberately not implemented here:
- * `applyForcedRetention` owns that invariant after the share and its ACL entries exist.
  */
 export async function getSharedLinkExpiration(
   {
