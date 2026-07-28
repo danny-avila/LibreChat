@@ -119,7 +119,11 @@ test.describe('mid-run steering and queuing', () => {
     await expect(messagesView(page).getByText(`E2E steer tool reply done ${label}`)).toBeVisible({
       timeout: 60000,
     });
-    await expect(messagesView(page).getByText('[steers-seen=1]')).toBeVisible({ timeout: 30000 });
+    // Ordered content proof, not just a count: the echo carries the exact
+    // injected words in message order.
+    await expect(messagesView(page).getByText(`[steers-seen=1] ${steerText}`)).toBeVisible({
+      timeout: 30000,
+    });
 
     // The steer stays INSIDE the response after run end — a user message at
     // its injection point, not a queued follow-up turn (4 turns: the setup
@@ -186,8 +190,11 @@ test.describe('mid-run steering and queuing', () => {
       timeout: 60000,
     });
     // Model-visible proof: the fake model echoes the steer-injected user
-    // messages it actually received on the post-boundary turn.
-    await expect(messagesView(page).getByText('[steers-seen=2]')).toBeVisible({ timeout: 30000 });
+    // messages it actually received on the post-boundary turn — both unique
+    // texts, in submission order, so duplicated or swapped words fail here.
+    await expect(
+      messagesView(page).getByText(`[steers-seen=2] ${firstSteer} | ${secondSteer}`),
+    ).toBeVisible({ timeout: 30000 });
 
     // Both survive run end inside the response — no queued follow-ups, no
     // extra turns (setup pair + this pair).
@@ -197,9 +204,12 @@ test.describe('mid-run steering and queuing', () => {
   });
 
   /**
-   * Human-cadence variant: the second steer is typed and submitted WITHOUT
-   * waiting for the first steer's 202 to come back, so the two POSTs (and
-   * their chip upserts) overlap in flight. Both must still inject.
+   * Human-cadence variant: the second steer is submitted while the FIRST
+   * steer's 202 is still pending, so the two POSTs (and their chip upserts)
+   * genuinely overlap in flight. The overlap is enforced, not raced: a route
+   * intercept forwards the first POST to the server (the enqueue happens in
+   * submission order) but holds its 202 from the client until the second POST
+   * has been observed. Both must still inject.
    */
   test('steers twice rapidly (second sent before the first ACK): both inject', async ({ page }) => {
     test.setTimeout(150000);
@@ -215,6 +225,30 @@ test.describe('mid-run steering and queuing', () => {
     const run = await sendMessage(page, `E2E_STEER_TOOL_REPLY:${label}`);
     expect(run.ok()).toBeTruthy();
 
+    let releaseFirstAck!: () => void;
+    const secondPosted = new Promise<void>((resolve) => (releaseFirstAck = resolve));
+    let steersSeen = 0;
+    let overlapProven = false;
+    await page.route('**/api/agents/chat/steer', async (route) => {
+      const ordinal = ++steersSeen;
+      if (ordinal === 2) {
+        releaseFirstAck();
+      }
+      // Forward to the real server first: the enqueue lands in submission
+      // order; only the CLIENT-side 202 delivery is held back.
+      const response = await route.fetch();
+      if (ordinal === 1) {
+        // Bounded so a broken second submit fails on assertions, not a hang.
+        await Promise.race([
+          secondPosted.then(() => {
+            overlapProven = true;
+          }),
+          new Promise<void>((resolve) => setTimeout(resolve, 10000)),
+        ]);
+      }
+      await route.fulfill({ response });
+    });
+
     const steerResponseFor = (text: string) =>
       page.waitForResponse(
         (response) =>
@@ -224,8 +258,6 @@ test.describe('mid-run steering and queuing', () => {
     const responses: Promise<Response>[] = [steerResponseFor(firstSteer)];
     await typeDuringRun(page, firstSteer);
     await messageInput(page).press('Enter');
-    // No ACK wait: refill and submit immediately, like a user firing two
-    // messages back to back.
     responses.push(steerResponseFor(secondSteer));
     await typeDuringRun(page, secondSteer);
     await messageInput(page).press('Enter');
@@ -233,6 +265,11 @@ test.describe('mid-run steering and queuing', () => {
     const [firstResponse, secondResponse] = await Promise.all(responses);
     expect(firstResponse.status()).toBe(202);
     expect(secondResponse.status()).toBe(202);
+    // The hold proves the overlap actually happened: the second POST was
+    // observed while the first 202 was still parked in the intercept.
+    expect(steersSeen).toBe(2);
+    expect(overlapProven).toBe(true);
+    await page.unroute('**/api/agents/chat/steer');
 
     await expect(appliedSteerParts(page).filter({ hasText: firstSteer })).toHaveCount(1, {
       timeout: 60000,
@@ -244,7 +281,9 @@ test.describe('mid-run steering and queuing', () => {
     await expect(messagesView(page).getByText(`E2E steer tool reply done ${label}`)).toBeVisible({
       timeout: 60000,
     });
-    await expect(messagesView(page).getByText('[steers-seen=2]')).toBeVisible({ timeout: 30000 });
+    await expect(
+      messagesView(page).getByText(`[steers-seen=2] ${firstSteer} | ${secondSteer}`),
+    ).toBeVisible({ timeout: 30000 });
     await expect(messageTurns(page)).toHaveCount(4);
     await expect(appliedSteerParts(page)).toHaveCount(2);
     await expect(queuedRows(page)).toHaveCount(0);
@@ -304,8 +343,11 @@ test.describe('mid-run steering and queuing', () => {
     await expect(messagesView(page).getByText(`E2E steer split reply done ${label}`)).toBeVisible({
       timeout: 60000,
     });
-    // The post-boundary-B turn must have BOTH injected steers in its context.
-    await expect(messagesView(page).getByText('[steers-seen=2]')).toBeVisible({ timeout: 30000 });
+    // The post-boundary-B turn must have BOTH injected steers in its context,
+    // as the exact words in submission order.
+    await expect(
+      messagesView(page).getByText(`[steers-seen=2] ${firstSteer} | ${secondSteer}`),
+    ).toBeVisible({ timeout: 30000 });
 
     await expect(messageTurns(page)).toHaveCount(4);
     await expect(appliedSteerParts(page)).toHaveCount(2);
