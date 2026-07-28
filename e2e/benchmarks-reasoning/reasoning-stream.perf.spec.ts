@@ -21,9 +21,11 @@ type RenderTally = Record<string, { count: number; time: number }>;
 type PerfSnapshot = {
   renders: RenderTally;
   longTasks: number[];
-  /** Milliseconds between the first render after the last reset (fallback:
-   *  the reset itself) and this snapshot, measured on the page's own clock so
-   *  it covers exactly the tallied interval without idle request setup. */
+  /** Milliseconds between the phase's anchor render and this snapshot, on
+   *  the page's own clock: the first ThinkingContent render (assistant
+   *  content = stream start) when one occurred, else the first render after
+   *  the reset (typing phase), else the reset itself. Idle request-setup
+   *  time before the assistant renders never pads the interval. */
   elapsedMs: number;
 };
 
@@ -32,6 +34,7 @@ type PerfGlobal = {
   longTasks: number[];
   startedAt: number;
   firstRenderAt: number | null;
+  firstStreamRenderAt: number | null;
   drain(): void;
   reset(): void;
 };
@@ -61,6 +64,7 @@ const TALLY_SETUP = `(() => {
     observer: null,
     startedAt: performance.now(),
     firstRenderAt: null,
+    firstStreamRenderAt: null,
     drain() {
       if (!this.observer) {
         return;
@@ -75,6 +79,7 @@ const TALLY_SETUP = `(() => {
       this.longTasks = [];
       this.startedAt = performance.now();
       this.firstRenderAt = null;
+      this.firstStreamRenderAt = null;
     },
   };
   window.__PERF__ = perf;
@@ -122,6 +127,9 @@ const TALLY_SETUP = `(() => {
         }
         for (const render of renders) {
           const name = render.componentName || nameOf(fiber) || 'anonymous';
+          if (perf.firstStreamRenderAt == null && name === 'ThinkingContent') {
+            perf.firstStreamRenderAt = performance.now();
+          }
           let slot = perf.renders[name];
           if (!slot) {
             slot = { count: 0, time: 0 };
@@ -149,7 +157,11 @@ async function snapshotPerf(page: Page): Promise<PerfSnapshot> {
     return {
       renders: window.__PERF__.renders,
       longTasks: window.__PERF__.longTasks.slice(),
-      elapsedMs: performance.now() - (window.__PERF__.firstRenderAt ?? window.__PERF__.startedAt),
+      elapsedMs:
+        performance.now() -
+        (window.__PERF__.firstStreamRenderAt ??
+          window.__PERF__.firstRenderAt ??
+          window.__PERF__.startedAt),
     };
   });
 }
@@ -220,10 +232,12 @@ test.describe('reasoning stream perf (react-scan)', () => {
 
     /** Reset BEFORE the send: with a 1ms chunk delay the earliest deltas can
      *  render between the response headers resolving and any later
-     *  evaluation, and a post-send reset would erase them. The clock starts
-     *  at the FIRST RENDER after the reset (stamped inside onRender, read in
-     *  the snapshot evaluation), so idle request-setup time between the reset
-     *  and the submit/stream renders never pads the wall-time denominators. */
+     *  evaluation, and a post-send reset would erase them. The clock anchors
+     *  to the first ThinkingContent render — the payload always opens with
+     *  reasoning, so that is the first assistant-content paint — keeping
+     *  composer renders and idle request setup out of the denominators (the
+     *  few pre-stream composer renders stay in the tally, which only makes
+     *  the bounds stricter). */
     await resetPerf(page);
     await sendMessage(page, 'Stream the long reasoning benchmark reply.');
 
@@ -356,6 +370,9 @@ test.describe('reasoning stream perf (react-scan)', () => {
     const thinkingContentRenders = streaming.renders['ThinkingContent']?.count ?? 0;
     expect(thinkingContentRenders).toBeGreaterThan(10);
     expect(thinkingContentRenders).toBeLessThan(framesUpperBound);
+    /** Rate-independent companion bound: even on a slow stream (where the
+     *  frame bound balloons), one-render-per-chunk behavior must still fail. */
+    expect(thinkingContentRenders).toBeLessThan(thinkChunks / 4);
 
     /**
      * Markdown must not re-render every block on every token — total
@@ -366,6 +383,7 @@ test.describe('reasoning stream perf (react-scan)', () => {
     const markdownBlockRenders = streaming.renders['MarkdownBlock']?.count ?? 0;
     expect(markdownBlockRenders).toBeGreaterThan(10);
     expect(markdownBlockRenders).toBeLessThan(framesUpperBound);
+    expect(markdownBlockRenders).toBeLessThan(textChunks / 4);
 
     /**
      * The main thread must stay responsive while the huge block streams:
@@ -406,7 +424,11 @@ test.describe('reasoning stream perf (react-scan)', () => {
       (max, duration) => Math.max(max, duration),
       0,
     );
+    const typingLongTaskTotal = typing.longTasks.reduce((sum, duration) => sum + duration, 0);
     expect(typingWorstLongTask).toBeLessThan(150);
+    /** Absolute cumulative budget — repeated sub-threshold stalls both evade
+     *  a worst-case check and inflate elapsedMs, so no ratio is used here. */
+    expect(typingLongTaskTotal).toBeLessThan(300);
     expect(typingTotals.time).toBeLessThan(typing.elapsedMs * 0.25);
   });
 });

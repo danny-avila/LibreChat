@@ -18,7 +18,10 @@ import { getE2EServerAddress } from './setup/env';
  * `displayName` assignments.
  */
 process.env.MOCK_LLM_REPLY = buildReasoningPayload();
-process.env.MOCK_LLM_CHUNK_DELAY_MS ??= '1';
+/** Pinned, not defaulted: the render-count thresholds are calibrated against
+ *  this delivery rate, and a slower stream would loosen the frame-derived
+ *  bounds. */
+process.env.MOCK_LLM_CHUNK_DELAY_MS = '1';
 
 const rootPath = path.resolve(__dirname, '..');
 const { host: backendHost, port: backendPort } = getE2EServerAddress();
