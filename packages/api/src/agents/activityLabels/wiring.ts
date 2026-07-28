@@ -286,9 +286,11 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
           fill: async (text) => {
             try {
               /** Finalization already passed: drop the result rather than
-               *  mutating a saved response or emitting into a closed job. */
+               *  mutating a saved response or emitting into a closed job.
+               *  `false` tells the hook the label never surfaced, so its
+               *  usage must not be billed. */
               if (deps.isClosed?.() === true) {
-                return;
+                return false;
               }
               part.pending = false;
               if (text != null && text.length > 0) {
@@ -299,6 +301,7 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
                *  would leave the client pinned at pending forever. An empty
                *  label still renders nothing. */
               await deps.emitLabelEvent(index, part);
+              return true;
             } finally {
               resolveFill();
             }

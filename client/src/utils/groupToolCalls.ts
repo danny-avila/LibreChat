@@ -39,6 +39,10 @@ function isGroupableToolCall(part: TMessageContentParts): boolean {
 export function groupSequentialToolCalls(parts: PartWithIndex[]): GroupedPart[] {
   const result: GroupedPart[] = [];
   let currentBlock: PartWithIndex[] = [];
+  /** Position in `currentBlock` just past the most recent BLANK label. A
+   *  filled label may only claim parts after it (its own batch); everything
+   *  before it belongs to earlier batches whose labels stayed empty. */
+  let claimStart = 0;
 
   const flushWithoutLabel = () => {
     let toolRun: PartWithIndex[] = [];
@@ -62,6 +66,7 @@ export function groupSequentialToolCalls(parts: PartWithIndex[]): GroupedPart[] 
     }
     flushToolRun();
     currentBlock = [];
+    claimStart = 0;
   };
 
   for (const item of parts) {
@@ -75,15 +80,22 @@ export function groupSequentialToolCalls(parts: PartWithIndex[]): GroupedPart[] 
         /** A reserved-but-unfilled slot (and a failed/blank fill) must be
          *  INVISIBLE. Every batch now publishes its reservation immediately,
          *  so forming a group here would wrap even a single tool call and pull
-         *  THINK parts inside it while generation is still pending. Flushing
-         *  the legacy way instead delimits the batch AND re-splits it exactly
-         *  as it renders with the feature off. */
-        flushWithoutLabel();
+         *  THINK parts inside it while generation is still pending. It cannot
+         *  flush either: two consecutive single-call batches would then render
+         *  as two standalone cards where the feature-off path merges them into
+         *  one legacy group. It only marks the claim boundary, so the block
+         *  keeps accumulating for legacy merging while a later filled label
+         *  still cannot reach back into this batch. */
+        claimStart = currentBlock.length;
         continue;
       }
-      if (currentBlock.length > 0) {
-        result.push({ type: 'tool-group', parts: [...currentBlock], labelPart: item });
-        currentBlock = [];
+      const claimed = currentBlock.slice(claimStart);
+      /** Earlier blank-labeled batches render legacy-style, in order, before
+       *  this label's group. */
+      currentBlock = currentBlock.slice(0, claimStart);
+      flushWithoutLabel();
+      if (claimed.length > 0) {
+        result.push({ type: 'tool-group', parts: claimed, labelPart: item });
       } else {
         /** Orphan label (block parts hidden/filtered): renders standalone. */
         result.push({ type: 'single', part: item });

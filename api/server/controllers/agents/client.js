@@ -516,6 +516,8 @@ class AgentClient extends BaseClient {
     charLimit,
     prompt,
     executingAgentId,
+    deferUsage,
+    scopeOpen,
   }) {
     /** Version gating happens at wiring time via the `sdkCapable` prototype
      *  probe, so this only catches a run that is missing or not yet built.
@@ -529,6 +531,50 @@ class AgentClient extends BaseClient {
     const { provider, clientOptions, endpointTokenConfig, sameEndpoint } =
       await this.resolveActivityLabelLLM();
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
+    /**
+     * Gate bound to the OWNING wiring's scope when the caller supplies one.
+     * The instance-wide fallback ("any scope open") lets a pre-pause
+     * straggler bill because the RESUMED generation's scope is still open —
+     * even though its own fill is dropped as closed: billed, never shown.
+     */
+    const scopeStillOpen =
+      scopeOpen ??
+      (() =>
+        (this.activityLabelScopes ?? []).length === 0 ||
+        (this.activityLabelScopes ?? []).some((scope) => scope.closed !== true));
+    /**
+     * Re-read at COMMIT time, not once up front. The settle deadline (or a
+     * run abort) can close the scope while this accounting is already in
+     * flight — a single check before the await passes, the charge lands
+     * after finalization, and the matching `slot.fill` then sees the closed
+     * scope and drops the label: billed but never surfaced, which is exactly
+     * what this guard exists to prevent.
+     */
+    const recordUsage = async () => {
+      if (!scopeStillOpen()) {
+        return;
+      }
+      await this.recordActivityLabelUsage(
+        collectedMetadata,
+        clientOptions.model,
+        endpointTokenConfig,
+        sameEndpoint,
+        scopeStillOpen,
+      );
+    };
+    /**
+     * Accounting is DEFERRED to the hook, which runs it only after the slot
+     * commit settles. Awaiting it here (pre-fill) let the settlement window
+     * expire during the balance write: the charge landed, then the fill was
+     * dropped as out-of-scope — billed, never shown. Registered before the
+     * call so a mid-call throw still bills whatever metadata the provider
+     * returned, exactly like the old `finally` did.
+     */
+    let usageDeferred = false;
+    if (typeof deferUsage === 'function') {
+      usageDeferred = true;
+      deferUsage(recordUsage);
+    }
     try {
       const { label } = await this.run.generateActivityLabel({
         provider,
@@ -566,33 +612,10 @@ class AgentClient extends BaseClient {
       });
       return label ?? null;
     } finally {
-      /**
-       * Skip accounting for a straggler that outlived its scope. Settle has
-       * already timed out, the response is past its usage flush and metadata
-       * snapshot, and the fill itself is dropped — so recording here would
-       * charge the balance and push into `usageEmitSink` after anything can
-       * surface it, producing a cost the user is billed for but never shown.
-       * Late bookkeeping is suppressed with the same gate as the late fill.
-       */
-      /**
-       * Re-read at COMMIT time, not once up front. The settle deadline (or a
-       * run abort) can close the scope while this accounting is already in
-       * flight — a single check before the await passes, the charge lands
-       * after finalization, and the matching `slot.fill` then sees the closed
-       * scope and drops the label: billed but never surfaced, which is exactly
-       * what this guard exists to prevent. Cheap enough to re-check.
-       */
-      const scopeOpen = () =>
-        (this.activityLabelScopes ?? []).length === 0 ||
-        (this.activityLabelScopes ?? []).some((scope) => scope.closed !== true);
-      if (scopeOpen()) {
-        await this.recordActivityLabelUsage(
-          collectedMetadata,
-          clientOptions.model,
-          endpointTokenConfig,
-          sameEndpoint,
-          scopeOpen,
-        );
+      /** Safety net for a caller that did not defer (none in-tree): the old
+       *  inline accounting, still scope-gated. */
+      if (!usageDeferred) {
+        await recordUsage();
       }
     }
   }
@@ -759,12 +782,23 @@ class AgentClient extends BaseClient {
               clientOptions.model,
               endpointTokenConfig,
               sameEndpoint,
+              /** Same commit-time gate as the SDK path: without it, a
+               *  fallback label whose fill was dropped as out-of-scope
+               *  still billed and emitted after finalization. */
+              () => labelScope.closed !== true,
             );
           },
         };
       },
       ...(sdkCapable && {
-        generateLabel: (payload) => this.generateActivityLabelViaRun(payload),
+        /** The wiring's OWN scope, not the instance-wide "any scope open"
+         *  fallback — a pre-pause straggler must not bill just because the
+         *  resumed generation's scope is still open. */
+        generateLabel: (payload) =>
+          this.generateActivityLabelViaRun({
+            ...payload,
+            scopeOpen: () => labelScope.closed !== true,
+          }),
       }),
     });
   }
@@ -2429,6 +2463,18 @@ class AgentClient extends BaseClient {
        * below the reply on finalize. Post-run unshift keeps the final
        * responseMessage.content in the right order.
        */
+      /**
+       * Settle in-flight label fills BEFORE the content is reshaped below.
+       * A fill emits its claim-time index; the skill-card unshift and the
+       * hide-sequential filter both shift positions, so a fill landing after
+       * either would emit a stale index — and a client that already synced
+       * the reshaped array applies it onto the wrong part. A paused turn
+       * never gets a final event to repair that. Costs nothing extra: these
+       * are the same promises the finalization settle would wait on, and
+       * that later call then sees an empty pending list.
+       */
+      await this.settleActivityLabels();
+
       const manualPrimed = this.options.agent?.manualSkillPrimes ?? [];
       if (manualPrimed.length > 0) {
         const runId = this.responseMessageId ?? 'skill-prime';
@@ -2734,7 +2780,11 @@ class AgentClient extends BaseClient {
       // question). Re-arm the same interrupt gate so the cycle can repeat.
       await this.handleRunInterrupt(run, streamId);
 
-      // Mirror chatCompletion: strip hidden intermediate sequential-agent content
+      // Mirror chatCompletion: settle label fills before the filter below can
+      // shift part positions out from under an in-flight fill's claimed index.
+      await this.settleActivityLabels();
+
+      // Strip hidden intermediate sequential-agent content
       // before resume finalize/re-pause persistence reads `this.contentParts`, so a
       // resumed sequential chain doesn't persist/emit outputs hide_sequential_outputs
       // is meant to hide.

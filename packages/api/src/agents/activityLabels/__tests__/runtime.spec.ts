@@ -112,6 +112,41 @@ describe('buildPrompt', () => {
     expect(prompt.startsWith('CUSTOM RULE')).toBe(true);
     expect(prompt).not.toContain('git commit subject');
   });
+
+  /**
+   * Serialization is bounded: a multi-megabyte tool result must not be fully
+   * materialized just to keep a few hundred characters, and what IS kept must
+   * truncate exactly as the unbounded path did.
+   */
+  it('truncates giant outputs with the ellipsis without serializing them whole', () => {
+    const giant = 'x'.repeat(5_000_000);
+    const prompt = buildPrompt(
+      [
+        {
+          toolName: 'reader',
+          toolInput: { rows: Array.from({ length: 100_000 }, (_, i) => ({ i, giant })) },
+          toolUseId: 'a',
+          status: 'success',
+          toolOutput: giant,
+        },
+      ],
+      600,
+    );
+    const line = prompt.split('\n').find((l) => l.startsWith('- reader')) ?? '';
+    /** Instruction + intent + one entry line: nothing retains the megabytes. */
+    expect(prompt.length).toBeLessThan(3_000);
+    expect(line).toContain('…');
+    expect(line).toContain('x'.repeat(100));
+  });
+
+  it('serializes small structured values exactly like JSON.stringify', () => {
+    const toolInput = { q: 'docs', filters: { lang: 'en', page: 2 }, ids: [1, 2] };
+    const prompt = buildPrompt(
+      [{ toolName: 'search', toolInput, toolUseId: 'a', status: 'success', toolOutput: 'ok' }],
+      600,
+    );
+    expect(prompt).toContain(`search(${JSON.stringify(toolInput)})`);
+  });
 });
 
 describe('createActivityLabelHook', () => {
@@ -128,7 +163,13 @@ describe('createActivityLabelHook', () => {
     claimSlot = () => {
       const record = { index: slots.length, filled: [] as Array<string | null> };
       slots.push(record);
-      return { index: record.index, fill: (text) => void record.filled.push(text) };
+      return {
+        index: record.index,
+        fill: (text) => {
+          record.filled.push(text);
+          return true;
+        },
+      };
     };
     mockInvoke.mockResolvedValue({ content: ' Searched the web for LibreChat docs. ' });
   });
@@ -187,7 +228,7 @@ describe('createActivityLabelHook', () => {
     const hook = createActivityLabelHook({
       claimSlot: (meta) => {
         captured.push(meta);
-        return { index: 0, fill: () => undefined };
+        return { index: 0, fill: () => true };
       },
       resolveLLM,
     });
@@ -238,6 +279,70 @@ describe('createActivityLabelHook', () => {
       expect.objectContaining({ callbacks: [{ handleLLMEnd }] }),
     );
     expect(collect).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Billing runs only AFTER the visible label commits. Billing first let the
+   * settlement deadline expire during the balance write, after which the fill
+   * was dropped as out-of-scope: charged, never shown.
+   */
+  it('collects usage after the fill commits, in that order', async () => {
+    const order: string[] = [];
+    const collect = jest.fn(() => void order.push('collect'));
+    const getInvokeCallbacks = jest.fn(() => ({ callbacks: [], collect }));
+    const hook = createActivityLabelHook({
+      claimSlot: () => ({
+        index: 0,
+        fill: () => {
+          order.push('fill');
+          return true;
+        },
+      }),
+      resolveLLM,
+      getInvokeCallbacks,
+    });
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    expect(order).toEqual(['fill', 'collect']);
+  });
+
+  it('suppresses usage collection when the host drops the fill', async () => {
+    const collect = jest.fn();
+    const getInvokeCallbacks = jest.fn(() => ({ callbacks: [], collect }));
+    const hook = createActivityLabelHook({
+      /** `false` = the response finalized and the label never surfaced. */
+      claimSlot: () => ({ index: 0, fill: () => false }),
+      resolveLLM,
+      getInvokeCallbacks,
+    });
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    expect(collect).not.toHaveBeenCalled();
+  });
+
+  it('runs usage accounting the SDK path deferred, after the commit', async () => {
+    const order: string[] = [];
+    const recordUsage = jest.fn(() => void order.push('usage'));
+    const generateLabel = jest.fn(
+      async ({ deferUsage }: { deferUsage: (fn: () => void) => void }) => {
+        deferUsage(recordUsage);
+        return 'Traced the failing request';
+      },
+    );
+    const hook = createActivityLabelHook({
+      claimSlot: () => ({
+        index: 0,
+        fill: () => {
+          order.push('fill');
+          return true;
+        },
+      }),
+      resolveLLM,
+      generateLabel,
+    });
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    expect(order).toEqual(['fill', 'usage']);
   });
 
   it('memoizes LLM resolution and enforces maxPerRun', async () => {

@@ -76,4 +76,39 @@ describe('groupSequentialToolCalls with activity labels', () => {
   it('drops an empty orphan label entirely', () => {
     expect(groupSequentialToolCalls(withIndex([label('')]))).toEqual([]);
   });
+
+  /**
+   * Two consecutive single-call batches whose labels stay blank: with the
+   * feature off these adjacent calls merge into one legacy group, so the
+   * invisible blank slots must not split them into standalone cards.
+   */
+  it('merges adjacent single-call batches across blank labels like the feature-off path', () => {
+    const grouped = groupSequentialToolCalls(
+      withIndex([toolCall('t1'), label(''), toolCall('t2'), label('')]),
+    );
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]).toMatchObject({ type: 'tool-group' });
+    const group = grouped[0] as { parts: PartWithIndex[]; labelPart?: PartWithIndex };
+    expect(group.parts.map((p) => p.idx)).toEqual([0, 2]);
+    expect(group.labelPart).toBeUndefined();
+  });
+
+  /** A filled label claims only its own batch — never one behind a blank slot. */
+  it('stops a filled label from claiming a batch behind a blank label', () => {
+    const grouped = groupSequentialToolCalls(
+      withIndex([toolCall('t1'), label(''), toolCall('t2'), label('Fetched the docs')]),
+    );
+
+    expect(grouped).toHaveLength(2);
+    /** The blank-labeled batch renders legacy-style, before the labeled group. */
+    expect(grouped[0]).toMatchObject({ type: 'single' });
+    expect((grouped[0] as { part: PartWithIndex }).part.idx).toBe(0);
+    expect(grouped[1].type).toBe('tool-group');
+    const group = grouped[1] as { parts: PartWithIndex[]; labelPart?: PartWithIndex };
+    expect(group.parts.map((p) => p.idx)).toEqual([2]);
+    expect(group.labelPart?.part).toMatchObject({
+      [ContentTypes.ACTIVITY_LABEL]: 'Fetched the docs',
+    });
+  });
 });

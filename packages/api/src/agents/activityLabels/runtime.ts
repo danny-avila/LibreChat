@@ -56,7 +56,12 @@ export interface ActivityLabelBlockContext {
  */
 export interface ActivityLabelSlot {
   index: number;
-  fill: (text: string | null) => void | Promise<void>;
+  /**
+   * Resolves `true` when the fill COMMITTED (mutated content + emitted) and
+   * `false` when the host dropped it because the response already finalized.
+   * Usage accounting keys on this: a dropped label must not be billed.
+   */
+  fill: (text: string | null) => boolean | Promise<boolean>;
   /** Snapshot of block context, captured synchronously at claim time. */
   context?: ActivityLabelBlockContext;
 }
@@ -82,6 +87,15 @@ export interface GenerateLabelPayload {
    * or redacted under the default agent's configuration.
    */
   executingAgentId?: string;
+  /**
+   * Defers usage accounting until AFTER the slot commits. A generator that
+   * bills inline consumes the settlement window with its balance write, so
+   * the deadline can expire mid-write — the charge lands but the fill is
+   * then dropped as out-of-scope: billed, never shown. Registering the
+   * accounting here instead lets the hook commit the visible label first and
+   * only then run it, and only for a committed fill.
+   */
+  deferUsage: (collect: () => void | Promise<void>) => void;
 }
 
 /** Per-generation LLM callbacks for usage accounting on the fallback path. */
@@ -151,17 +165,85 @@ function truncate(value: string, limit: number): string {
   return value.length > limit ? `${value.slice(0, limit)}…` : value;
 }
 
-function stringifyUnknown(value: unknown): string {
+/**
+ * Serializes at most `limit + 1` characters of an arbitrary value. Tool
+ * outputs are unbounded — a multi-megabyte result would otherwise be fully
+ * materialized by `JSON.stringify` on EVERY detached label task just to keep
+ * a few hundred characters, blocking the event loop for prompt fodder that
+ * is immediately discarded. Traversal stops the moment the budget is spent
+ * (the overshoot marks that `truncate` must append its ellipsis), which also
+ * bounds cyclic structures: every level emits before recursing, so depth can
+ * never exceed the budget. Output is JSON-shaped, not guaranteed JSON.
+ */
+function stringifyBounded(value: unknown, limit: number): string {
+  const out: string[] = [];
+  let length = 0;
+  const push = (chunk: string): boolean => {
+    out.push(chunk);
+    length += chunk.length;
+    return length <= limit;
+  };
+  const walk = (val: unknown): boolean => {
+    if (typeof val === 'string') {
+      /** Slice BEFORE quoting — quoting is what materializes the copy. */
+      return push(JSON.stringify(val.length > limit + 1 ? val.slice(0, limit + 1) : val));
+    }
+    if (val == null || typeof val === 'number' || typeof val === 'boolean') {
+      return push(String(val));
+    }
+    if (Array.isArray(val)) {
+      if (!push('[')) {
+        return false;
+      }
+      for (let i = 0; i < val.length; i++) {
+        if ((i > 0 && !push(',')) || !walk(val[i])) {
+          return false;
+        }
+      }
+      return push(']');
+    }
+    if (typeof val === 'object') {
+      const toJSON = (val as { toJSON?: () => unknown }).toJSON;
+      if (typeof toJSON === 'function') {
+        try {
+          return walk(toJSON.call(val));
+        } catch {
+          return push(String(val).slice(0, limit + 1));
+        }
+      }
+      if (!push('{')) {
+        return false;
+      }
+      let first = true;
+      for (const key of Object.keys(val)) {
+        const entry = (val as Record<string, unknown>)[key];
+        if (entry === undefined || typeof entry === 'function') {
+          continue;
+        }
+        if ((!first && !push(',')) || !push(`${JSON.stringify(key)}:`) || !walk(entry)) {
+          return false;
+        }
+        first = false;
+      }
+      return push('}');
+    }
+    return push(String(val).slice(0, limit + 1));
+  };
+  walk(value);
+  return out.join('').slice(0, limit + 1);
+}
+
+function stringifyUnknown(value: unknown, limit: number): string {
   if (value == null) {
     return '';
   }
   if (typeof value === 'string') {
-    return value;
+    return value.length > limit + 1 ? value.slice(0, limit + 1) : value;
   }
   try {
-    return JSON.stringify(value);
+    return stringifyBounded(value, limit);
   } catch {
-    return String(value);
+    return String(value).slice(0, limit + 1);
   }
 }
 
@@ -231,11 +313,11 @@ export function buildPrompt(
     );
   }
   const lines = entries.map((entry) => {
-    const input = truncate(stringifyUnknown(entry.toolInput), INPUT_CHAR_LIMIT);
+    const input = truncate(stringifyUnknown(entry.toolInput, INPUT_CHAR_LIMIT), INPUT_CHAR_LIMIT);
     const outcome =
       entry.status === 'error'
         ? `ERROR: ${truncate(entry.error ?? 'unknown error', charLimit)}`
-        : truncate(stringifyUnknown(entry.toolOutput), charLimit);
+        : truncate(stringifyUnknown(entry.toolOutput, charLimit), charLimit);
     return `- ${entry.toolName}(${input}) → ${outcome}`;
   });
   /** Flagged as reference material: without this the model tends to read the
@@ -310,6 +392,27 @@ export function createActivityLabelHook(
     });
 
     void (async () => {
+      /**
+       * Usage accounting registered by whichever generation path ran, invoked
+       * only after `slot.fill` settles. Billing BEFORE the commit let the
+       * settlement deadline expire during the accounting's balance write —
+       * the charge landed, then the fill was dropped as out-of-scope: billed,
+       * never shown. Committing first makes the charge conditional on the
+       * label actually surfacing.
+       */
+      let deferredUsage: (() => void | Promise<void>) | undefined;
+      const collectDeferredUsage = async (committed: boolean) => {
+        if (!committed || deferredUsage == null) {
+          return;
+        }
+        try {
+          await deferredUsage();
+        } catch (error) {
+          logger.warn(
+            `[activityLabel] usage accounting failed (slot ${slot.index}): ${(error as Error)?.message ?? error}`,
+          );
+        }
+      };
       try {
         /** Host run-abort signal AND the dispatch signal both cancel the
          *  label call — a user abort must not keep paying for generation
@@ -331,7 +434,7 @@ export function createActivityLabelHook(
             ...(invokeCallbacks && { callbacks: invokeCallbacks.callbacks }),
           });
           const direct = extractText(response?.content);
-          await invokeCallbacks?.collect();
+          deferredUsage = invokeCallbacks?.collect;
           return direct;
         };
 
@@ -345,6 +448,9 @@ export function createActivityLabelHook(
             traceSeed: `${input.runId}-activity-${slot.index}`,
             signal,
             charLimit,
+            deferUsage: (collect) => {
+              deferredUsage = collect;
+            },
             ...(opts.prompt != null && { prompt: opts.prompt }),
             ...(input.executingAgentId != null && { executingAgentId: input.executingAgentId }),
           });
@@ -356,16 +462,22 @@ export function createActivityLabelHook(
         /** Trim centrally: a whitespace-only label from either path must
          *  fill null so the UI keeps the deterministic counts fallback. */
         const trimmed = text?.trim() ?? '';
-        await slot.fill(trimmed.length > 0 ? trimmed : null);
+        const committed = (await slot.fill(trimmed.length > 0 ? trimmed : null)) === true;
+        await collectDeferredUsage(committed);
       } catch (error) {
         logger.warn(
           `[activityLabel] label generation failed (slot ${slot.index}): ${(error as Error)?.message ?? error}`,
         );
+        let committed = false;
         try {
-          await slot.fill(null);
+          committed = (await slot.fill(null)) === true;
         } catch {
           /* host fill must never throw into the void chain */
         }
+        /** A throw after the provider responded still consumed tokens; bill
+         *  them when the empty fill committed, on the same shown-iff-billed
+         *  rule (collect itself never throws past its own catch). */
+        await collectDeferredUsage(committed);
       }
     })();
 
