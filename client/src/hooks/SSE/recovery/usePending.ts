@@ -116,6 +116,12 @@ export function usePendingRunReconciliation({
           return;
         }
         if (refreshed.reconciledTaskIds.length > 0) {
+          const reconciledTaskIds = new Set(refreshed.reconciledTaskIds);
+          for (const task of tasks) {
+            if (!reconciledTaskIds.has(task.taskId)) {
+              attemptedBatch.taskIds.delete(task.taskId);
+            }
+          }
           removePendingRunReconciliations(queryClient, conversationId, refreshed.reconciledTaskIds);
         }
       })

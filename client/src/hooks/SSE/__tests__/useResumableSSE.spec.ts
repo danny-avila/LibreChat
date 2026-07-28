@@ -1277,6 +1277,64 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('queues a marker-free interrupted response from regeneration history', async () => {
+    const userMessage = {
+      messageId: 'regenerate-user',
+      conversationId: CONV_ID,
+      text: 'Original prompt',
+      isCreatedByUser: true,
+      sender: 'User',
+      parentMessageId: String(Constants.NO_PARENT),
+    } as TMessage;
+    const interruptedResponse = {
+      messageId: 'regenerate-response_',
+      conversationId: CONV_ID,
+      text: 'Interrupted response',
+      isCreatedByUser: false,
+      sender: 'Assistant',
+      parentMessageId: userMessage.messageId,
+    } as TMessage;
+    const replacementResponse = {
+      ...interruptedResponse,
+      text: '',
+    };
+    const submission = {
+      ...buildSubmission({
+        userMessage: {
+          ...userMessage,
+          responseMessageId: interruptedResponse.messageId,
+        },
+        messages: [userMessage],
+        initialResponse: replacementResponse,
+      }),
+      isRegenerate: true,
+      regenerateMessages: [userMessage, interruptedResponse],
+    } as TSubmission;
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([userMessage, replacementResponse]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await waitFor(() => {
+      expect(request.post).toHaveBeenCalledTimes(1);
+    });
+
+    const pendingUpdate = mockSetQueryData.mock.calls.find(
+      ([queryKey]) =>
+        Array.isArray(queryKey) &&
+        queryKey[0] === 'resumable-pending-run-reconciliation' &&
+        queryKey[1] === CONV_ID,
+    );
+    expect(pendingUpdate).toBeDefined();
+    expect(pendingUpdate?.[1]([])).toEqual([
+      expect.objectContaining({
+        userMessageId: userMessage.messageId,
+        responseMessageId: interruptedResponse.messageId,
+      }),
+    ]);
+    unmount();
+  });
+
   it('surfaces SSE error bodies returned while starting generation', async () => {
     (request.post as jest.Mock).mockResolvedValueOnce(
       'event: error\ndata: {"text":"No model spec selected"}\n\n',

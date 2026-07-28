@@ -528,10 +528,16 @@ describe('useTerminalRunRecovery', () => {
     expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(localMessages);
   });
 
-  it('reconciles ready pending runs without letting an earlier unfinished run block them', async () => {
+  it('retries unresolved pending runs after another task in the batch reconciles', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const firstUser = buildUserMessage();
     const firstResponse = buildAssistantMessage();
+    const finalFirstResponse = buildAssistantMessage({
+      messageId: 'terminal-response',
+      text: 'First pending result',
+      createdAt: '2026-07-28T08:03:00.000Z',
+      updatedAt: '2026-07-28T08:03:00.000Z',
+    });
     const secondUser = {
       ...buildUserMessage(),
       messageId: 'pending-user-2',
@@ -554,7 +560,7 @@ describe('useTerminalRunRecovery', () => {
       [QueryKeys.messages, CONVERSATION_ID],
       [firstUser, firstResponse, secondUser, secondResponse],
     );
-    const firstTask = queuePendingRunReconciliation(
+    queuePendingRunReconciliation(
       queryClient,
       CONVERSATION_ID,
       {
@@ -576,22 +582,19 @@ describe('useTerminalRunRecovery', () => {
       },
       2,
     );
-    mockGetMessagesByConvoId.mockResolvedValue([
-      firstUser,
-      firstResponse,
-      secondUser,
-      finalSecondResponse,
-    ]);
+    mockGetMessagesByConvoId
+      .mockResolvedValueOnce([firstUser, firstResponse, secondUser, finalSecondResponse])
+      .mockResolvedValue([firstUser, finalFirstResponse, secondUser, finalSecondResponse]);
 
     renderTerminalRecovery({ queryClient });
 
     await waitFor(() => {
-      expect(getPendingRunReconciliations(queryClient, CONVERSATION_ID)).toEqual([firstTask]);
+      expect(getPendingRunReconciliations(queryClient, CONVERSATION_ID)).toEqual([]);
     });
-    expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(1);
+    expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(2);
     expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual([
       firstUser,
-      firstResponse,
+      finalFirstResponse,
       secondUser,
       finalSecondResponse,
     ]);

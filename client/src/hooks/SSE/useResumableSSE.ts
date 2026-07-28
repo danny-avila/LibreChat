@@ -58,7 +58,6 @@ import {
   setDisconnectedRunRecovery,
   setResumableRunStarting,
 } from './resumableRecovery';
-import { getPriorRunRecoveryTarget } from './terminal';
 import {
   useGetUserBalance,
   useGetStartupConfig,
@@ -67,6 +66,7 @@ import {
 } from '~/data-provider';
 import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
+import { getPriorRunRecoveryTarget } from './terminal';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useUsageHandler from './useUsageHandler';
 import store from '~/store';
@@ -1718,9 +1718,13 @@ export default function useResumableSSE(
             wasRecoveringDisconnectedRun = true;
             moveDisconnectedRunToPendingReconciliation(queryClient, existingConversationId);
           } else {
+            const regenerationHistory =
+              submission.isRegenerate && submission.regenerateMessages?.length
+                ? submission.regenerateMessages
+                : undefined;
             const priorRecoveryTarget = getPriorRunRecoveryTarget(
-              getMessages(),
-              submission.userMessage?.messageId,
+              regenerationHistory ?? getMessages(),
+              regenerationHistory ? undefined : submission.userMessage?.messageId,
             );
             if (priorRecoveryTarget) {
               wasRecoveringDisconnectedRun = true;
