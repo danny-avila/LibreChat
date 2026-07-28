@@ -9,6 +9,7 @@ import type {
 import type { ReactNode, ReactElement } from 'react';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
+import { getActivityLabelPart, getActivityLabelText } from '~/utils/activityLabels';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { EditTextPart, EmptyText, AgentUpdate } from './Parts';
 import { MessageContext, SearchContext } from '~/Providers';
@@ -435,7 +436,22 @@ const ContentParts = memo(function ContentParts({
 
   const safeContent = content ?? [];
   const showEmptyCursor = safeContent.length === 0 && effectiveIsSubmitting;
-  const lastContentIdx = safeContent.length - 1;
+  /** A trailing BLANK label reservation renders nothing, so counting it as
+   *  the last part would strip the streaming cursor and last-item
+   *  affordances from the last VISIBLE part for the whole interval until
+   *  the next delta. Walk back past invisible label slots. */
+  let lastContentIdx = safeContent.length - 1;
+  while (lastContentIdx > 0) {
+    const tail = safeContent[lastContentIdx];
+    if (
+      tail?.type === ContentTypes.ACTIVITY_LABEL &&
+      getActivityLabelText(getActivityLabelPart(tail)).length === 0
+    ) {
+      lastContentIdx -= 1;
+    } else {
+      break;
+    }
+  }
 
   // Parallel content: use dedicated renderer with columns (TMessageContentParts includes ContentMetadata)
   const hasParallelContent = safeContent.some((part) => part?.groupId != null);

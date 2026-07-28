@@ -151,13 +151,20 @@ export default function ToolCallGroup({
     () => parts.some(({ part }) => hasPendingApprovalInPart(part)),
     [parts],
   );
-  const allCompleted = useMemo(
-    () => toolMetadata.every((m) => m.hasOutput === true),
-    [toolMetadata],
-  );
   const activityLabel = getActivityLabelPart(labelPart?.part);
   const activityLabelText = getActivityLabelText(activityLabel);
   const activityFailed = activityLabel?.status === 'failed' || activityLabel?.status === 'partial';
+  /** A settled, filled label is itself a completion proof: the PostToolBatch
+   *  claim only happens after every output in the batch returned. Without
+   *  it, a tool that legitimately returns an empty string reads as
+   *  `hasOutput: false` forever and its labeled group never auto-collapses. */
+  const labelSettled =
+    activityLabelText.length > 0 &&
+    (labelPart?.part as { pending?: boolean } | undefined)?.pending !== true;
+  const allCompleted = useMemo(
+    () => labelSettled || toolMetadata.every((m) => m.hasOutput === true),
+    [toolMetadata, labelSettled],
+  );
   const toolNames = useMemo(() => toolMetadata.map((m) => m.name), [toolMetadata]);
   const iconToolNames = useMemo(() => toolMetadata.map((m) => m.iconName), [toolMetadata]);
 
