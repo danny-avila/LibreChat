@@ -31,6 +31,7 @@ const {
   ScheduleRun,
 } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const { markUserDeleting } = require('~/models');
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
 
@@ -78,7 +79,62 @@ async function gracefulExit(code = 0) {
 
   const uid = user._id.toString();
 
-  // 5) Build and run deletion tasks
+  // Raise the durable deletion barrier BEFORE counting. A bare count is a
+  // time-of-check/time-of-use read: a fire can be claimed and accepted between the zero
+  // result and the deletes below, and this script cannot abort or drain it. The barrier
+  // is what makes the count meaningful — a live server refuses new fires at the dispatch
+  // boundary (fireSchedule's isOwnerDeleting probe) from this point on, so anything the
+  // count then misses cannot have started after it.
+  //
+  // Through markUserDeleting, never a raw update: the barrier is only in force once no
+  // CACHED pre-barrier user document can still populate req.user on a live server, and
+  // that method is what drops the auth cache entry. It fails closed, so a cache it
+  // cannot reach aborts the deletion rather than proceeding behind a barrier that was
+  // never actually raised.
+  try {
+    await markUserDeleting(uid);
+  } catch (err) {
+    console.red('✖ Could not raise the deletion barrier. Nothing was deleted.');
+    console.error(err);
+    return gracefulExit(1);
+  }
+
+  // REFUSE rather than warn when a scheduled run is in flight. This script talks to the
+  // database directly, so unlike the HTTP deletion paths it cannot abort a live loopback
+  // generation or wait for it to drain. That generation can already have passed its
+  // owner lookup, and it will persist its messages after the rows deleted here are gone
+  // — resurrecting data for an account the operator believes is erased.
+  const activeRuns = await ScheduleRun.countDocuments({
+    user: uid,
+    status: { $in: ['started', 'requires_action'] },
+  });
+  if (activeRuns > 0) {
+    console.red(
+      `✖ ${activeRuns} scheduled run(s) are still active for this user, and this script cannot abort them.`,
+    );
+    // Deliberately NOT "stop the server and retry": stopping it cannot transition a
+    // persisted row, so every offline retry would see the same active status forever.
+    // Only a running server settles these — by draining them (app deletion) or by
+    // reconciling an abandoned run whose lease expired.
+    console.yellow(
+      'Delete the account through the app instead, which drains active runs. If the server is',
+    );
+    console.yellow(
+      'already stopped, start it and let reconciliation settle the abandoned run, then retry.',
+    );
+    return gracefulExit(1);
+  }
+
+  // Runs BEFORE schedules so a partial failure stays retryable, mirroring
+  // deleteSchedulesByUser. A schedule carries the user's prompt text and has no TTL,
+  // so leaving it behind retains that content indefinitely.
+  await ScheduleRun.deleteMany({ user: uid });
+  await Schedule.deleteMany({ user: uid });
+
+  // 5) Run the deletion tasks. Constructed HERE rather than earlier: a Model.deleteMany()
+  // call dispatches the moment it is written, so building this list above the guards
+  // would start erasing the account before the barrier could be raised or an in-flight
+  // scheduled run could refuse the whole operation.
   const tasks = [
     Action.deleteMany({ user: uid }),
     Agent.deleteMany({ author: uid }),
@@ -101,42 +157,6 @@ async function gracefulExit(code = 0) {
     Token.deleteMany({ userId: uid }),
     AclEntry.deleteMany({ principalId: user._id }),
   ];
-
-  // Raise the durable deletion barrier BEFORE counting. A bare count is a
-  // time-of-check/time-of-use read: a fire can be claimed and accepted between the zero
-  // result and the deletes below, and this script cannot abort or drain it. The barrier
-  // is what makes the count meaningful — a live server refuses new fires at the dispatch
-  // boundary (fireSchedule's isOwnerDeleting probe) from this point on, so anything the
-  // count then misses cannot have started after it.
-  await User.updateOne(
-    { _id: uid, deletionRequestedAt: { $exists: false } },
-    { $set: { deletionRequestedAt: new Date() } },
-  );
-
-  // REFUSE rather than warn when a scheduled run is in flight. This script talks to the
-  // database directly, so unlike the HTTP deletion paths it cannot abort a live loopback
-  // generation or wait for it to drain. That generation can already have passed its
-  // owner lookup, and it will persist its messages after the rows deleted here are gone
-  // — resurrecting data for an account the operator believes is erased.
-  const activeRuns = await ScheduleRun.countDocuments({
-    user: uid,
-    status: { $in: ['started', 'requires_action'] },
-  });
-  if (activeRuns > 0) {
-    console.red(
-      `✖ ${activeRuns} scheduled run(s) are still active for this user, and this script cannot abort them.`,
-    );
-    console.yellow(
-      'Stop the server (or delete the account through the app, which drains them) and retry.',
-    );
-    return gracefulExit(1);
-  }
-
-  // Runs BEFORE schedules so a partial failure stays retryable, mirroring
-  // deleteSchedulesByUser. A schedule carries the user's prompt text and has no TTL,
-  // so leaving it behind retains that content indefinitely.
-  await ScheduleRun.deleteMany({ user: uid });
-  await Schedule.deleteMany({ user: uid });
 
   if (deleteTx) {
     tasks.push(Transaction.deleteMany({ user: uid }));

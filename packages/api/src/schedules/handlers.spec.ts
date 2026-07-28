@@ -219,4 +219,20 @@ describe('createSchedule late-create compensation', () => {
       expect.objectContaining({ nextRunAt: expect.any(Date) }),
     );
   });
+
+  /**
+   * updateScheduleById filters out rows marked `deleting`, so a null arming result means
+   * the deletion cascade claimed this row between the barrier re-check and the arming
+   * write. Reporting the pre-delete snapshot as a 201 tells the client a schedule exists
+   * that is already hidden and pending erasure.
+   */
+  it('does not report success when the arming write loses a delete race', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    (deps.methods.updateScheduleById as jest.Mock).mockResolvedValue(null);
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    expect(captured.status).toBe(410);
+    expect(captured.status).not.toBe(201);
+  });
 });

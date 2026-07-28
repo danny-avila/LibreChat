@@ -297,11 +297,22 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(410).json({ error: 'This account is being deleted' });
       return;
     }
-    // ARM last. A failure here leaves the schedule visible but unclaimed; the owner's
-    // next edit recomputes nextRunAt.
-    const armed = nextRunAt
-      ? ((await deps.methods.updateScheduleById(id, user.id, { nextRunAt })) ?? created)
-      : created;
+    // ARM last. A transient write fault THROWS, leaving the schedule visible but
+    // unclaimed; the owner's next edit (or the reconciler's unarmed sweep) recomputes
+    // nextRunAt. A null result is different in kind: updateScheduleById filters out
+    // deleting rows, so null means the row stopped being ours between the barrier
+    // re-check and here — the deletion cascade marked or erased it. Falling back to the
+    // pre-delete snapshot would answer 201 for a schedule that is already hidden and
+    // pending erasure.
+    let armed = created;
+    if (nextRunAt) {
+      const updated = await deps.methods.updateScheduleById(id, user.id, { nextRunAt });
+      if (updated == null) {
+        res.status(410).json({ error: 'Schedule no longer exists' });
+        return;
+      }
+      armed = updated;
+    }
     logger.info(`[schedules] created ${id} for user ${user.id}`);
     res.status(201).json(toWireSchedule(armed));
   }
