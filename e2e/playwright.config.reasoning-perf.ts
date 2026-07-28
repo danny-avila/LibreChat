@@ -21,8 +21,9 @@ process.env.MOCK_LLM_REPLY = buildReasoningPayload();
 process.env.MOCK_LLM_CHUNK_DELAY_MS ??= '1';
 
 const rootPath = path.resolve(__dirname, '..');
-const DEV_SERVER_URL = 'http://localhost:3090';
-const backendPort = getE2EServerAddress().port;
+const { host: backendHost, port: backendPort } = getE2EServerAddress();
+const devHost = backendHost.includes(':') ? `[${backendHost}]` : backendHost;
+const DEV_SERVER_URL = `http://${devHost}:3090`;
 
 const appServer = Array.isArray(mockConfig.webServer)
   ? mockConfig.webServer[0]
@@ -46,8 +47,9 @@ export default defineConfig({
       cwd: rootPath,
       /** The mock env exports PORT for the backend; vite reads PORT for its
        *  own listen port, so pin the dev server back to 3090 and point its
-       *  /api proxy at whichever port the app server actually uses. */
-      env: { ...process.env, PORT: '3090', HOST: 'localhost', BACKEND_PORT: backendPort },
+       *  /api proxy (HOST + BACKEND_PORT in client/vite.config.ts) at the
+       *  host/port the app server actually binds per the E2E base URL. */
+      env: { ...process.env, PORT: '3090', HOST: backendHost, BACKEND_PORT: backendPort },
       url: DEV_SERVER_URL,
       stdout: 'pipe',
       timeout: 180_000,

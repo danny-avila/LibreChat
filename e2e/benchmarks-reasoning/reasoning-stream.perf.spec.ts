@@ -21,8 +21,9 @@ type RenderTally = Record<string, { count: number; time: number }>;
 type PerfSnapshot = {
   renders: RenderTally;
   longTasks: number[];
-  /** Milliseconds between the last reset and this snapshot, measured on the
-   *  page's own clock so it covers exactly the tallied interval. */
+  /** Milliseconds between the first render after the last reset (fallback:
+   *  the reset itself) and this snapshot, measured on the page's own clock so
+   *  it covers exactly the tallied interval without idle request setup. */
   elapsedMs: number;
 };
 
@@ -30,6 +31,7 @@ type PerfGlobal = {
   renders: RenderTally;
   longTasks: number[];
   startedAt: number;
+  firstRenderAt: number | null;
   drain(): void;
   reset(): void;
 };
@@ -58,6 +60,7 @@ const TALLY_SETUP = `(() => {
     longTasks: [],
     observer: null,
     startedAt: performance.now(),
+    firstRenderAt: null,
     drain() {
       if (!this.observer) {
         return;
@@ -71,6 +74,7 @@ const TALLY_SETUP = `(() => {
       this.renders = Object.create(null);
       this.longTasks = [];
       this.startedAt = performance.now();
+      this.firstRenderAt = null;
     },
   };
   window.__PERF__ = perf;
@@ -113,6 +117,9 @@ const TALLY_SETUP = `(() => {
       trackUnnecessaryRenders: false,
       dangerouslyForceRunInProduction: true,
       onRender: (fiber, renders) => {
+        if (perf.firstRenderAt == null) {
+          perf.firstRenderAt = performance.now();
+        }
         for (const render of renders) {
           const name = render.componentName || nameOf(fiber) || 'anonymous';
           let slot = perf.renders[name];
@@ -142,7 +149,7 @@ async function snapshotPerf(page: Page): Promise<PerfSnapshot> {
     return {
       renders: window.__PERF__.renders,
       longTasks: window.__PERF__.longTasks.slice(),
-      elapsedMs: performance.now() - window.__PERF__.startedAt,
+      elapsedMs: performance.now() - (window.__PERF__.firstRenderAt ?? window.__PERF__.startedAt),
     };
   });
 }
@@ -199,6 +206,13 @@ test.describe('reasoning stream perf (react-scan)', () => {
 
     await page.addInitScript({ content: fs.readFileSync(resolveReactScanPath(), 'utf8') });
     await page.addInitScript({ content: TALLY_SETUP });
+    /** Stream with the reasoning box EXPANDED — the heavier layout path a
+     *  user gets with "Show Thinking" enabled — so the measured interval
+     *  covers live paragraph layout inside the box, not just the collapsed
+     *  header. */
+    await page.addInitScript(() => {
+      localStorage.setItem('showThinking', 'true');
+    });
 
     /** First load through the vite dev server transforms the module graph. */
     await page.goto(NEW_CHAT_PATH, { timeout: 180_000 });
@@ -206,10 +220,10 @@ test.describe('reasoning stream perf (react-scan)', () => {
 
     /** Reset BEFORE the send: with a 1ms chunk delay the earliest deltas can
      *  render between the response headers resolving and any later
-     *  evaluation, and a post-send reset would erase them. The composer's own
-     *  submit renders are a negligible constant. The reset stamps the start
-     *  time on the page's own clock; the matching end time is read inside the
-     *  snapshot evaluation, so wall time covers exactly the tallied interval. */
+     *  evaluation, and a post-send reset would erase them. The clock starts
+     *  at the FIRST RENDER after the reset (stamped inside onRender, read in
+     *  the snapshot evaluation), so idle request-setup time between the reset
+     *  and the submit/stream renders never pads the wall-time denominators. */
     await resetPerf(page);
     await sendMessage(page, 'Stream the long reasoning benchmark reply.');
 
@@ -240,8 +254,8 @@ test.describe('reasoning stream perf (react-scan)', () => {
      * renders whitespace-pre-wrap, so they are user-visible content). The
      * only transforms the UI applies are inline-tag stripping and edge
      * trimming, so the comparison is exact after trimming the source edges.
+     * The box is already expanded via the seeded showThinking preference.
      */
-    await thoughtToggles.click();
     const thinkGroup = messagesView(page).getByRole('group', {
       name: /^(Thoughts|Thinking)$/,
     });
@@ -381,5 +395,18 @@ test.describe('reasoning stream perf (react-scan)', () => {
       const renders = typing.renders[component]?.count ?? 0;
       expect(renders, `${component} re-rendered while typing`).toBeLessThanOrEqual(2);
     }
+
+    /**
+     * Quiet transcript components alone don't prove keystrokes feel fast —
+     * slow input handlers or layout can lag without re-rendering any named
+     * component. Bound the typing phase's own long tasks and cumulative
+     * render time (measured baseline: no long tasks, ~3% render time).
+     */
+    const typingWorstLongTask = typing.longTasks.reduce(
+      (max, duration) => Math.max(max, duration),
+      0,
+    );
+    expect(typingWorstLongTask).toBeLessThan(150);
+    expect(typingTotals.time).toBeLessThan(typing.elapsedMs * 0.25);
   });
 });
