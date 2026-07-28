@@ -10,7 +10,9 @@ import type { PendingSteer, QueuedMessage, RunEnd } from '~/store/families';
 import {
   beginResumableRun,
   getDisconnectedRunRecovery,
+  getPendingRunReconciliations,
   markTerminalEventSeen,
+  moveDisconnectedRunToPendingReconciliation,
   setDisconnectedRunRecovery,
   setResumableRunStarting,
 } from '../resumableRecovery';
@@ -236,6 +238,7 @@ const advanceRetryTimer = async (delay: number) => {
 describe('useResumeOnLoad', () => {
   beforeEach(() => {
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    jest.spyOn(Math, 'random').mockReturnValue(0.5);
     mockUseStreamStatus.mockReset();
     mockUseStreamStatus.mockReturnValue({
       data: undefined,
@@ -791,7 +794,7 @@ describe('useResumeOnLoad', () => {
         }),
       ];
       queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
-      const messageQueryFn = jest.fn().mockResolvedValue(finalMessages);
+      mockGetMessagesByConvoId.mockResolvedValue(finalMessages);
       mockUseStreamStatus.mockReturnValue({
         isSuccess: true,
         isFetching: false,
@@ -802,7 +805,6 @@ describe('useResumeOnLoad', () => {
         getMessages: () =>
           queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
         queryClient,
-        messageQueryFn,
       });
 
       await waitFor(() => {
@@ -810,7 +812,7 @@ describe('useResumeOnLoad', () => {
           finalMessages,
         );
       });
-      expect(messageQueryFn).toHaveBeenCalledTimes(1);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(1);
     });
 
     it('keeps a completed cached response without an extra message refresh', async () => {
@@ -983,8 +985,7 @@ describe('useResumeOnLoad', () => {
         }),
       ];
       queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
-      const messageQueryFn = jest
-        .fn()
+      mockGetMessagesByConvoId
         .mockResolvedValueOnce(finalMessages)
         .mockResolvedValueOnce(secondFinalMessages);
       mockUseActiveJobs.mockReturnValue({
@@ -996,7 +997,6 @@ describe('useResumeOnLoad', () => {
         getMessages: () =>
           queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
         queryClient,
-        messageQueryFn,
       });
 
       mockUseActiveJobs.mockReturnValue({
@@ -1009,7 +1009,7 @@ describe('useResumeOnLoad', () => {
           finalMessages,
         );
       });
-      expect(messageQueryFn).toHaveBeenCalledTimes(1);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(1);
 
       queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
       mockUseActiveJobs.mockReturnValue({
@@ -1031,7 +1031,7 @@ describe('useResumeOnLoad', () => {
         );
       });
       expect(mockFetchStreamStatus).toHaveBeenCalledTimes(2);
-      expect(messageQueryFn).toHaveBeenCalledTimes(2);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(2);
     });
 
     it.each([
@@ -1078,6 +1078,7 @@ describe('useResumeOnLoad', () => {
           data: { activeJobIds: [CONVERSATION_ID] },
         });
         mockFetchStreamStatus.mockResolvedValue({ active: false });
+        mockGetMessagesByConvoId.mockResolvedValue(refreshedMessages);
 
         const { rerender } = renderUseResumeOnLoad({
           submission: buildSubmission(CONVERSATION_ID),
@@ -1085,7 +1086,6 @@ describe('useResumeOnLoad', () => {
             queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
           onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
           queryClient,
-          messageQueryFn: jest.fn().mockResolvedValue(refreshedMessages),
         });
 
         mockUseActiveJobs.mockReturnValue({
@@ -1134,6 +1134,7 @@ describe('useResumeOnLoad', () => {
         }),
       ];
       queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
+      mockGetMessagesByConvoId.mockResolvedValue(finalMessages);
 
       const { rerender } = renderUseResumeOnLoad({
         submission: buildSubmission(CONVERSATION_ID),
@@ -1144,7 +1145,6 @@ describe('useResumeOnLoad', () => {
         onQueuedMessages: (queued) => observedQueues.push(queued),
         onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
         queryClient,
-        messageQueryFn: jest.fn().mockResolvedValue(finalMessages),
       });
 
       mockUseActiveJobs.mockReturnValue({
@@ -1273,7 +1273,7 @@ describe('useResumeOnLoad', () => {
       expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
     });
 
-    it('ignores a delayed terminal status after a newer run starts and finishes', async () => {
+    it('reconciles an older response after a newer run without stale run-end state', async () => {
       let resolveStatus!: (status: { active: boolean; status: 'error' }) => void;
       mockFetchStreamStatus.mockReturnValue(
         new Promise((resolve) => {
@@ -1286,7 +1286,16 @@ describe('useResumeOnLoad', () => {
         buildUserMessage(CONVERSATION_ID),
         buildAssistantMessage({ unfinished: true }),
       ];
+      const finalMessages = [
+        buildUserMessage(CONVERSATION_ID),
+        buildAssistantMessage({
+          messageId: 'response-message-final',
+          text: 'Recovered older response',
+          unfinished: false,
+        }),
+      ];
       queryClient.setQueryData([QueryKeys.messages, CONVERSATION_ID], unfinishedMessages);
+      mockGetMessagesByConvoId.mockResolvedValue(finalMessages);
       setDisconnectedRunRecovery(queryClient, CONVERSATION_ID, {
         startedAsNewConvo: false,
         created: true,
@@ -1314,6 +1323,7 @@ describe('useResumeOnLoad', () => {
         expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID);
       });
 
+      moveDisconnectedRunToPendingReconciliation(queryClient, CONVERSATION_ID);
       beginResumableRun(queryClient, CONVERSATION_ID);
       mockUseActiveJobs.mockReturnValue({
         data: { activeJobIds: [CONVERSATION_ID] },
@@ -1331,8 +1341,11 @@ describe('useResumeOnLoad', () => {
       });
 
       expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
+      await waitFor(() => {
+        expect(getPendingRunReconciliations(queryClient, CONVERSATION_ID)).toEqual([]);
+      });
       expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
-        unfinishedMessages,
+        finalMessages,
       );
     });
 
@@ -1457,6 +1470,7 @@ describe('useResumeOnLoad', () => {
         isAxiosError: true,
         response: { status: 404 },
       });
+      mockGetMessagesByConvoId.mockRejectedValue(notFoundError);
 
       const { rerender } = renderUseResumeOnLoad({
         submission: buildSubmission(CONVERSATION_ID),
@@ -1465,7 +1479,6 @@ describe('useResumeOnLoad', () => {
         onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
         onPathname: (pathname) => observedPathnames.push(pathname),
         queryClient,
-        messageQueryFn: jest.fn().mockRejectedValue(notFoundError),
       });
 
       mockUseActiveJobs.mockReturnValue({
@@ -1575,6 +1588,7 @@ describe('useResumeOnLoad', () => {
         isAxiosError: true,
         response: { status: 404 },
       });
+      mockGetMessagesByConvoId.mockRejectedValue(notFoundError);
 
       const { rerender } = renderUseResumeOnLoad({
         submission: buildSubmission(CONVERSATION_ID),
@@ -1583,7 +1597,6 @@ describe('useResumeOnLoad', () => {
         onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
         onPathname: (pathname) => observedPathnames.push(pathname),
         queryClient,
-        messageQueryFn: jest.fn().mockRejectedValue(notFoundError),
       });
 
       mockUseActiveJobs.mockReturnValue({
@@ -1633,6 +1646,7 @@ describe('useResumeOnLoad', () => {
         data: { activeJobIds: [CONVERSATION_ID] },
       });
       mockFetchStreamStatus.mockResolvedValue({ active: false });
+      mockGetMessagesByConvoId.mockResolvedValue([persistedUserMessage]);
 
       const { rerender } = renderUseResumeOnLoad({
         submission: buildSubmission(CONVERSATION_ID),
@@ -1641,7 +1655,6 @@ describe('useResumeOnLoad', () => {
         onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
         onPathname: (pathname) => observedPathnames.push(pathname),
         queryClient,
-        messageQueryFn: jest.fn().mockResolvedValue([persistedUserMessage]),
       });
 
       mockUseActiveJobs.mockReturnValue({
@@ -1687,8 +1700,7 @@ describe('useResumeOnLoad', () => {
         data: { activeJobIds: [CONVERSATION_ID] },
       });
       mockFetchStreamStatus.mockResolvedValue({ active: false });
-      const messageQueryFn = jest
-        .fn()
+      mockGetMessagesByConvoId
         .mockRejectedValueOnce(new Error('Network unavailable'))
         .mockResolvedValue(finalMessages);
 
@@ -1698,7 +1710,6 @@ describe('useResumeOnLoad', () => {
           queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
         onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
         queryClient,
-        messageQueryFn,
       });
 
       mockUseActiveJobs.mockReturnValue({
@@ -1707,10 +1718,10 @@ describe('useResumeOnLoad', () => {
       rerender();
       await flushMicrotasks();
 
-      expect(messageQueryFn).toHaveBeenCalledTimes(1);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(1);
       await advanceRetryTimer(1000);
 
-      expect(messageQueryFn).toHaveBeenCalledTimes(2);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(2);
       expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
         finalMessages,
       );
@@ -1741,8 +1752,7 @@ describe('useResumeOnLoad', () => {
         data: { activeJobIds: [CONVERSATION_ID] },
       });
       mockFetchStreamStatus.mockResolvedValue({ active: false });
-      const messageQueryFn = jest
-        .fn()
+      mockGetMessagesByConvoId
         .mockResolvedValueOnce(provisionalMessages)
         .mockResolvedValue(finalMessages);
 
@@ -1752,7 +1762,6 @@ describe('useResumeOnLoad', () => {
           queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
         onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
         queryClient,
-        messageQueryFn,
       });
 
       mockUseActiveJobs.mockReturnValue({
@@ -1761,12 +1770,12 @@ describe('useResumeOnLoad', () => {
       rerender();
       await flushMicrotasks();
 
-      expect(messageQueryFn).toHaveBeenCalledTimes(1);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(1);
       expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
 
       await advanceRetryTimer(1000);
 
-      expect(messageQueryFn).toHaveBeenCalledTimes(2);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(2);
       expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
         finalMessages,
       );
@@ -1803,8 +1812,7 @@ describe('useResumeOnLoad', () => {
         data: { activeJobIds: [CONVERSATION_ID] },
       });
       mockFetchStreamStatus.mockResolvedValue({ active: false });
-      const messageQueryFn = jest
-        .fn()
+      mockGetMessagesByConvoId
         .mockRejectedValueOnce(new Error('Network unavailable'))
         .mockRejectedValueOnce(new Error('Network unavailable'))
         .mockRejectedValueOnce(new Error('Network unavailable'))
@@ -1816,7 +1824,6 @@ describe('useResumeOnLoad', () => {
           queryClient.getQueryData<TMessage[]>([QueryKeys.messages, CONVERSATION_ID]),
         onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
         queryClient,
-        messageQueryFn,
       });
 
       mockUseActiveJobs.mockReturnValue({
@@ -1825,11 +1832,11 @@ describe('useResumeOnLoad', () => {
       rerender();
       await flushMicrotasks();
 
-      expect(messageQueryFn).toHaveBeenCalledTimes(1);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(1);
       await advanceRetryTimer(1000);
-      expect(messageQueryFn).toHaveBeenCalledTimes(2);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(2);
       await advanceRetryTimer(2000);
-      expect(messageQueryFn).toHaveBeenCalledTimes(3);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(3);
 
       expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
       expect(removeQueriesSpy).not.toHaveBeenCalledWith({
@@ -1845,7 +1852,7 @@ describe('useResumeOnLoad', () => {
 
       await advanceRetryTimer(5000);
 
-      expect(messageQueryFn).toHaveBeenCalledTimes(4);
+      expect(mockGetMessagesByConvoId).toHaveBeenCalledTimes(4);
       expect(mockFetchStreamStatus).toHaveBeenCalledTimes(1);
       expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual(
         finalMessages,
@@ -1891,6 +1898,7 @@ describe('useResumeOnLoad', () => {
           active: false,
           unrecoveredSteers: [pendingSteer],
         });
+      mockGetMessagesByConvoId.mockResolvedValue(finalMessages);
 
       const { rerender } = renderUseResumeOnLoad({
         submission: buildSubmission(CONVERSATION_ID),
@@ -1901,7 +1909,6 @@ describe('useResumeOnLoad', () => {
         onQueuedMessages: (queued) => observedQueues.push(queued),
         onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
         queryClient,
-        messageQueryFn: jest.fn().mockResolvedValue(finalMessages),
       });
 
       mockUseActiveJobs.mockReturnValue({

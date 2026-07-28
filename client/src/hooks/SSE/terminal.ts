@@ -3,6 +3,7 @@ import type { TMessage, TSubmission } from 'librechat-data-provider';
 import type { DisconnectedRunRecovery } from './resumableRecovery';
 import type { StreamStatusResponse } from '~/data-provider';
 import type { RunEnd } from '~/store/families';
+import { hasStreamStartFailed } from '~/utils/messages';
 
 export type RunRecoveryTarget = {
   userMessageId?: string;
@@ -15,7 +16,6 @@ export type PersistedRunState = {
   userMessageFound: boolean;
 };
 
-export const TERMINAL_RETRY_DELAYS = [1000, 2000, 5000, 10000, 30000] as const;
 export const newConversationPath = `/c/${Constants.NEW_CONVO}`;
 
 export function recoveryOwnsCurrentRoute(
@@ -49,47 +49,11 @@ export function submissionBelongsToConversation(
   );
 }
 
-export const waitForRetryDelay = (delay: number, signal: AbortSignal): Promise<boolean> =>
-  new Promise((resolve) => {
-    if (signal.aborted) {
-      resolve(false);
-      return;
-    }
-
-    function cleanup() {
-      signal.removeEventListener('abort', onAbort);
-    }
-    function onAbort() {
-      clearTimeout(timeout);
-      cleanup();
-      resolve(false);
-    }
-    const timeout = setTimeout(() => {
-      cleanup();
-      resolve(true);
-    }, delay);
-
-    signal.addEventListener('abort', onAbort, { once: true });
-  });
-
-export function isRetryableTerminalError(error: unknown): boolean {
-  if (error == null || typeof error !== 'object') {
-    return true;
-  }
-
-  const candidate = error as {
-    status?: number;
-    response?: { status?: number };
-  };
-  const status = candidate.response?.status ?? candidate.status;
-  return status == null || status === 408 || status === 429 || status >= 500;
-}
-
 export function getUnreconciledAssistantTail(
   messages: TMessage[] | undefined,
 ): TMessage | undefined {
   const lastMessage = messages?.[messages.length - 1];
-  if (!lastMessage || lastMessage.isCreatedByUser === true) {
+  if (!lastMessage || lastMessage.isCreatedByUser === true || hasStreamStartFailed(lastMessage)) {
     return undefined;
   }
 
@@ -115,6 +79,38 @@ export function getRunRecoveryTarget(
   }
 
   return { userMessageId, responseMessageId };
+}
+
+export function getPriorRunRecoveryTarget(
+  messages: TMessage[] | undefined,
+  currentUserMessageId: string | undefined,
+): RunRecoveryTarget | undefined {
+  if (!messages?.length) {
+    return undefined;
+  }
+
+  let priorMessages = messages;
+  if (currentUserMessageId) {
+    for (let index = messages.length - 1; index >= 0; index--) {
+      if (
+        messages[index].isCreatedByUser === true &&
+        messages[index].messageId === currentUserMessageId
+      ) {
+        priorMessages = messages.slice(0, index);
+        break;
+      }
+    }
+  }
+
+  const priorResponse = getUnreconciledAssistantTail(priorMessages);
+  if (!priorResponse) {
+    return undefined;
+  }
+
+  return {
+    userMessageId: priorResponse.parentMessageId ?? undefined,
+    responseMessageId: priorResponse.messageId ?? undefined,
+  };
 }
 
 export function preserveMessagesAfterRecoveryTarget(
@@ -166,18 +162,18 @@ export function preserveMessagesAfterRecoveryTarget(
 }
 
 function getMessageOutcome(message: TMessage): RunEnd['outcome'] | undefined {
-  if (message.error === true) {
-    return 'error';
-  }
-  if (message.unfinished === true) {
-    return 'aborted';
-  }
   if (
     message.createdAt == null ||
     message.updatedAt == null ||
     (message.messageId ?? '').endsWith('_')
   ) {
     return undefined;
+  }
+  if (message.error === true) {
+    return 'error';
+  }
+  if (message.unfinished === true) {
+    return 'aborted';
   }
   return 'completed';
 }

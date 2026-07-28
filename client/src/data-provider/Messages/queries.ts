@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
 import type { UseQueryOptions, QueryObserverResult, QueryClient } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
-import { isNotFoundError, logger } from '~/utils';
+import { hasStreamStartFailed, isNotFoundError, logger } from '~/utils';
 
 type StableMessagesParams = {
   pathname: string;
@@ -22,6 +22,7 @@ type FetchMessagesParams = {
   pathname: string;
   queryClient: QueryClient;
   isStreaming?: () => boolean;
+  protectActiveStream?: boolean;
 };
 
 function isUnhydratedMessage(message: t.TMessage) {
@@ -44,6 +45,36 @@ function isMessagePrefix(result: t.TMessage[], currentMessages: t.TMessage[]) {
   return result.every((message, index) => message.messageId === currentMessages[index]?.messageId);
 }
 
+function getStreamStartFailureSuffixIndex(messages: t.TMessage[]): number {
+  const responseIndex = messages.length - 1;
+  const response = messages[responseIndex];
+  const userMessage = messages[responseIndex - 1];
+
+  if (
+    response?.isCreatedByUser === true ||
+    !hasStreamStartFailed(response) ||
+    userMessage?.isCreatedByUser !== true ||
+    response.parentMessageId !== userMessage.messageId
+  ) {
+    return -1;
+  }
+
+  return responseIndex - 1;
+}
+
+function preserveStreamStartFailure(
+  result: t.TMessage[],
+  currentMessages: t.TMessage[],
+): t.TMessage[] | undefined {
+  const suffixIndex = getStreamStartFailureSuffixIndex(currentMessages);
+  if (suffixIndex === -1 || !isMessagePrefix(result, currentMessages)) {
+    return undefined;
+  }
+
+  const appendFrom = Math.max(result.length, suffixIndex);
+  return [...result, ...currentMessages.slice(appendFrom)];
+}
+
 export function getStableMessages({
   pathname,
   result,
@@ -56,6 +87,11 @@ export function getStableMessages({
 
   if (result.length >= currentMessages.length) {
     return result;
+  }
+
+  const messagesWithStartFailure = preserveStreamStartFailure(result, currentMessages);
+  if (messagesWithStartFailure) {
+    return messagesWithStartFailure;
   }
 
   if (
@@ -74,11 +110,14 @@ export function shouldPreserveMessagesOnNotFound({
   isStreaming = false,
   currentMessages,
 }: Pick<StableMessagesParams, 'pathname' | 'isStreaming' | 'currentMessages'>): boolean {
-  if (!isStreaming || pathname.includes('/c/new') || !currentMessages?.length) {
+  if (pathname.includes('/c/new') || !currentMessages?.length) {
     return false;
   }
 
-  return hasPendingAssistantTail(currentMessages);
+  return (
+    getStreamStartFailureSuffixIndex(currentMessages) !== -1 ||
+    (isStreaming && hasPendingAssistantTail(currentMessages))
+  );
 }
 
 function hasActiveJob(queryClient: QueryClient, id: string) {
@@ -94,6 +133,7 @@ export async function fetchMessagesWithCacheProtection({
   pathname,
   queryClient,
   isStreaming = () => false,
+  protectActiveStream = true,
 }: FetchMessagesParams): Promise<t.TMessage[]> {
   const queryKey = [QueryKeys.messages, id];
   const messagesAtRequestStart = queryClient.getQueryData<t.TMessage[]>(queryKey);
@@ -115,7 +155,7 @@ export async function fetchMessagesWithCacheProtection({
       return currentMessages;
     }
 
-    const hasLiveStream = isStreaming() || hasActiveJob(queryClient, id);
+    const hasLiveStream = protectActiveStream && (isStreaming() || hasActiveJob(queryClient, id));
     if (
       currentMessages &&
       isNotFoundError(error) &&
@@ -149,7 +189,7 @@ export async function fetchMessagesWithCacheProtection({
     pathname,
     result,
     currentMessages,
-    isStreaming: isStreaming() || hasActiveJob(queryClient, id),
+    isStreaming: protectActiveStream && (isStreaming() || hasActiveJob(queryClient, id)),
   });
 
   if (stableMessages === currentMessages) {

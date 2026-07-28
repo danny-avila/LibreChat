@@ -52,13 +52,15 @@ import {
   clearTerminalEventSeen,
   getDisconnectedRunRecovery,
   markTerminalEventSeen,
+  moveDisconnectedRunToPendingReconciliation,
+  queuePendingRunReconciliation,
   requestTerminalRunRecovery,
   setDisconnectedRunRecovery,
   setResumableRunStarting,
 } from './resumableRecovery';
+import { getPriorRunRecoveryTarget } from './terminal';
 import {
   useGetUserBalance,
-  fetchStreamStatus,
   useGetStartupConfig,
   queueTitleGeneration,
   streamStatusQueryKey,
@@ -1239,14 +1241,14 @@ export default function useResumableSSE(
 
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
 
-        // 404 → job completed & was cleaned up; messages are persisted in DB.
-        // Invalidate cache once so react-query refetches instead of showing an error.
+        // A 404 means the stream transport is gone. The terminal recovery
+        // coordinator owns status, persisted messages, steers, and run outcome.
         if (responseCode === 404) {
           const convoId = currentSubmission.conversation?.conversationId;
           const retainResolvedStreamId =
             optimisticStreamIdsRef.current.has(currentStreamId) &&
             !createdStreamIdsRef.current.has(currentStreamId);
-          logger.log('ResumableSSE', 'Stream 404, invalidating messages for:', convoId);
+          logger.log('ResumableSSE', 'Stream 404, requesting terminal recovery for:', convoId);
           sse.close();
           const existingRecovery = getDisconnectedRunRecovery(queryClient, currentStreamId);
           setDisconnectedRunRecovery(queryClient, currentStreamId, {
@@ -1266,7 +1268,6 @@ export default function useResumableSSE(
           }
           clearStepMaps();
           if (convoId) {
-            queryClient.invalidateQueries({ queryKey: [QueryKeys.messages, convoId] });
             queryClient.removeQueries({ queryKey: streamStatusQueryKey(convoId) });
           }
           if (
@@ -1282,29 +1283,10 @@ export default function useResumableSSE(
           setIsSubmitting(false);
           setShowStopButton(false);
           const recoveryConvoId = convoId ?? currentStreamId;
+          requestTerminalRunRecovery(queryClient, recoveryConvoId);
           // Terminal for this run: the job is gone, so no event will ever
           // resolve an acknowledged chip — convert them to queued chips.
           convertLocalSteersToQueued(recoveryConvoId);
-          // A terminal drain may have parked steers no subscriber received —
-          // the status route claims them exactly once (same recovery as
-          // useResumeOnLoad). Best-effort: chips are already converted above.
-          fetchStreamStatus(recoveryConvoId)
-            .then((status) => {
-              const unrecovered = status.unrecoveredSteers ?? [];
-              if (unrecovered.length > 0) {
-                convertSteersToQueued(recoveryConvoId, unrecovered);
-              }
-            })
-            .catch(() => undefined);
-          // The true outcome is unknown here (job record already cleaned up):
-          // a non-'completed' outcome releases parked interrupt flags without
-          // auto-sending queued messages the user may not want fired.
-          setRunEnd({
-            conversationId: recoveryConvoId,
-            outcome: 'aborted',
-            startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
-            endedAt: Date.now(),
-          });
           setStreamId(null);
           setResolvedStreamId(retainResolvedStreamId ? currentStreamId : null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
@@ -1731,8 +1713,24 @@ export default function useResumableSSE(
         const existingConversationId = submission.conversation?.conversationId;
         let wasRecoveringDisconnectedRun = false;
         if (hasConcreteConversationId(existingConversationId)) {
-          wasRecoveringDisconnectedRun =
-            getDisconnectedRunRecovery(queryClient, existingConversationId) != null;
+          const disconnectedRun = getDisconnectedRunRecovery(queryClient, existingConversationId);
+          if (disconnectedRun) {
+            wasRecoveringDisconnectedRun = true;
+            moveDisconnectedRunToPendingReconciliation(queryClient, existingConversationId);
+          } else {
+            const priorRecoveryTarget = getPriorRunRecoveryTarget(
+              getMessages(),
+              submission.userMessage?.messageId,
+            );
+            if (priorRecoveryTarget) {
+              wasRecoveringDisconnectedRun = true;
+              queuePendingRunReconciliation(queryClient, existingConversationId, {
+                startedAsNewConvo: false,
+                created: true,
+                ...priorRecoveryTarget,
+              });
+            }
+          }
           pendingStartConversationId = existingConversationId;
           beginResumableRun(queryClient, existingConversationId);
           setResumableRunStarting(queryClient, existingConversationId, true);

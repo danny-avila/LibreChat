@@ -7,6 +7,11 @@ export type DisconnectedRunRecovery = {
   responseMessageId?: string;
 };
 
+export type PendingRunReconciliation = DisconnectedRunRecovery & {
+  taskId: string;
+  runEpoch: number;
+};
+
 const terminalEventQueryKey = (conversationId: string) =>
   ['resumable-terminal-event', conversationId] as const;
 
@@ -14,6 +19,7 @@ const disconnectedRunQueryRoot = ['resumable-disconnected-run'] as const;
 const runEpochQueryRoot = ['resumable-run-epoch'] as const;
 const runStartingQueryRoot = ['resumable-run-starting'] as const;
 const terminalRecoveryRequestQueryRoot = ['resumable-terminal-recovery-request'] as const;
+const pendingRunReconciliationQueryRoot = ['resumable-pending-run-reconciliation'] as const;
 
 const disconnectedRunQueryKey = (conversationId: string) =>
   [...disconnectedRunQueryRoot, conversationId] as const;
@@ -26,6 +32,9 @@ export const resumableRunStartingQueryKey = (conversationId: string) =>
 
 export const terminalRecoveryRequestQueryKey = (conversationId: string) =>
   [...terminalRecoveryRequestQueryRoot, conversationId] as const;
+
+export const pendingRunReconciliationsQueryKey = (conversationId: string) =>
+  [...pendingRunReconciliationQueryRoot, conversationId] as const;
 
 export function markTerminalEventSeen(queryClient: QueryClient, conversationId: string) {
   queryClient.setQueryData(terminalEventQueryKey(conversationId), true);
@@ -107,7 +116,75 @@ export function clearDisconnectedRunRecovery(queryClient: QueryClient, conversat
   });
 }
 
+function getPendingRunTaskId(recovery: DisconnectedRunRecovery, runEpoch: number): string {
+  return [runEpoch, recovery.userMessageId ?? '', recovery.responseMessageId ?? ''].join(':');
+}
+
+export function getPendingRunReconciliations(
+  queryClient: QueryClient,
+  conversationId: string,
+): PendingRunReconciliation[] {
+  return (
+    queryClient.getQueryData<PendingRunReconciliation[]>(
+      pendingRunReconciliationsQueryKey(conversationId),
+    ) ?? []
+  );
+}
+
+export function queuePendingRunReconciliation(
+  queryClient: QueryClient,
+  conversationId: string,
+  recovery: DisconnectedRunRecovery,
+  runEpoch = getResumableRunEpoch(queryClient, conversationId),
+): PendingRunReconciliation {
+  queryClient.setQueryDefaults(pendingRunReconciliationQueryRoot, { cacheTime: Infinity });
+  const task = {
+    ...recovery,
+    runEpoch,
+    taskId: getPendingRunTaskId(recovery, runEpoch),
+  };
+  queryClient.setQueryData<PendingRunReconciliation[]>(
+    pendingRunReconciliationsQueryKey(conversationId),
+    (current = []) =>
+      current.some((pending) => pending.taskId === task.taskId) ? current : [...current, task],
+  );
+  return task;
+}
+
+export function moveDisconnectedRunToPendingReconciliation(
+  queryClient: QueryClient,
+  conversationId: string,
+): PendingRunReconciliation | undefined {
+  const recovery = getDisconnectedRunRecovery(queryClient, conversationId);
+  if (!recovery) {
+    return undefined;
+  }
+
+  const task = queuePendingRunReconciliation(queryClient, conversationId, recovery);
+  clearDisconnectedRunRecovery(queryClient, conversationId);
+  return task;
+}
+
+export function removePendingRunReconciliation(
+  queryClient: QueryClient,
+  conversationId: string,
+  taskId: string,
+) {
+  const queryKey = pendingRunReconciliationsQueryKey(conversationId);
+  queryClient.setQueryData<PendingRunReconciliation[]>(queryKey, (current = []) =>
+    current.filter((task) => task.taskId !== taskId),
+  );
+}
+
+export function clearPendingRunReconciliations(queryClient: QueryClient, conversationId: string) {
+  queryClient.removeQueries({
+    queryKey: pendingRunReconciliationsQueryKey(conversationId),
+    exact: true,
+  });
+}
+
 export function clearResumableRecovery(queryClient: QueryClient, conversationId: string) {
   clearTerminalEventSeen(queryClient, conversationId);
   clearDisconnectedRunRecovery(queryClient, conversationId);
+  clearPendingRunReconciliations(queryClient, conversationId);
 }

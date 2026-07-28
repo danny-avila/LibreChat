@@ -2,15 +2,16 @@ import { Constants } from 'librechat-data-provider';
 import type { TMessage, TSubmission } from 'librechat-data-provider';
 import {
   getPersistedRunState,
+  getPriorRunRecoveryTarget,
   getRunRecoveryTarget,
   getStatusRunOutcome,
   getUnreconciledAssistantTail,
-  isRetryableTerminalError,
   preserveMessagesAfterRecoveryTarget,
   recoveryOwnsCurrentRoute,
   submissionBelongsToConversation,
   withCurrentSearch,
 } from '../terminal';
+import { isRetryableTerminalError } from '../recovery/retry';
 
 const CONVERSATION_ID = 'conversation-1';
 const USER_MESSAGE_ID = 'user-1';
@@ -57,6 +58,13 @@ describe('terminal recovery policy', () => {
     [buildAssistantMessage({ messageId: 'response-1_' }), true],
     [buildAssistantMessage({ createdAt: undefined }), true],
     [buildAssistantMessage({ updatedAt: undefined }), true],
+    [
+      buildAssistantMessage({
+        updatedAt: undefined,
+        metadata: { streamStartFailed: true },
+      }),
+      false,
+    ],
     [buildUserMessage(), false],
   ])('detects whether the assistant tail needs reconciliation', (message, expected) => {
     expect(getUnreconciledAssistantTail([message]) != null).toBe(expected);
@@ -81,6 +89,35 @@ describe('terminal recovery policy', () => {
     ).toEqual({
       userMessageId: 'stored-user',
       responseMessageId: 'stored-response',
+    });
+  });
+
+  it('infers a prior provisional response before the new optimistic turn', () => {
+    const provisionalResponse = buildAssistantMessage({
+      messageId: 'prior-response_',
+      createdAt: undefined,
+      updatedAt: undefined,
+    });
+    const currentUserMessage = {
+      ...buildUserMessage(),
+      messageId: 'current-user',
+      parentMessageId: provisionalResponse.messageId,
+    };
+    const currentResponse = buildAssistantMessage({
+      messageId: 'current-response_',
+      parentMessageId: currentUserMessage.messageId,
+      createdAt: undefined,
+      updatedAt: undefined,
+    });
+
+    expect(
+      getPriorRunRecoveryTarget(
+        [buildUserMessage(), provisionalResponse, currentUserMessage, currentResponse],
+        currentUserMessage.messageId,
+      ),
+    ).toEqual({
+      userMessageId: USER_MESSAGE_ID,
+      responseMessageId: provisionalResponse.messageId,
     });
   });
 

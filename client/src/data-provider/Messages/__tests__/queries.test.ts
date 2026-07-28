@@ -141,6 +141,68 @@ describe('getStableMessages', () => {
     expect(result).toBe(serverMessages);
   });
 
+  it('preserves a definitive local start failure when the app is not streaming', () => {
+    const failedUserMessage = message({
+      messageId: 'failed-user',
+      parentMessageId: 'persisted-1',
+      text: 'Try again',
+    });
+    const failedResponse = message({
+      messageId: 'failed-response_',
+      parentMessageId: failedUserMessage.messageId,
+      isCreatedByUser: false,
+      createdAt: undefined,
+      updatedAt: undefined,
+      error: true,
+      metadata: { streamStartFailed: true },
+    });
+    const currentMessages = [
+      message({ messageId: 'persisted-1' }),
+      failedUserMessage,
+      failedResponse,
+    ];
+
+    const result = getStableMessages({
+      pathname: '/c/convo-id',
+      result: [currentMessages[0]],
+      currentMessages,
+      isStreaming: false,
+    });
+
+    expect(result).toEqual(currentMessages);
+  });
+
+  it('does not duplicate a failed user message already returned by the server', () => {
+    const failedUserMessage = message({
+      messageId: 'failed-user',
+      parentMessageId: 'persisted-1',
+      text: 'Try again',
+    });
+    const failedResponse = message({
+      messageId: 'failed-response_',
+      parentMessageId: failedUserMessage.messageId,
+      isCreatedByUser: false,
+      createdAt: undefined,
+      updatedAt: undefined,
+      error: true,
+      metadata: { streamStartFailed: true },
+    });
+    const currentMessages = [
+      message({ messageId: 'persisted-1' }),
+      failedUserMessage,
+      failedResponse,
+    ];
+
+    const result = getStableMessages({
+      pathname: '/c/convo-id',
+      result: currentMessages.slice(0, 2),
+      currentMessages,
+      isStreaming: false,
+    });
+
+    expect(result).toEqual(currentMessages);
+  });
+
   it('accepts a shorter result when an unhydrated message is not the assistant tail', () => {
     const currentMessages = [
       message({ messageId: 'persisted-1' }),
@@ -256,6 +318,27 @@ describe('shouldPreserveMessagesOnNotFound', () => {
         pathname: '/c/convo-id',
         currentMessages,
         isStreaming: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps a definitive start failure on 404 without an active stream', () => {
+    const failedUserMessage = message({ messageId: 'failed-user' });
+    const failedResponse = message({
+      messageId: 'failed-response_',
+      parentMessageId: failedUserMessage.messageId,
+      isCreatedByUser: false,
+      createdAt: undefined,
+      updatedAt: undefined,
+      error: true,
+      metadata: { streamStartFailed: true },
+    });
+
+    expect(
+      shouldPreserveMessagesOnNotFound({
+        pathname: '/c/convo-id',
+        currentMessages: [failedUserMessage, failedResponse],
+        isStreaming: false,
       }),
     ).toBe(true);
   });

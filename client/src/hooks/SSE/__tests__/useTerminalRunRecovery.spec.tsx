@@ -9,6 +9,8 @@ import type { ReactNode } from 'react';
 import type { RunEnd } from '~/store/families';
 import {
   getDisconnectedRunRecovery,
+  getPendingRunReconciliations,
+  queuePendingRunReconciliation,
   requestTerminalRunRecovery,
   setDisconnectedRunRecovery,
 } from '../resumableRecovery';
@@ -239,6 +241,66 @@ describe('useTerminalRunRecovery', () => {
       failedUserMessage,
       failedResponse,
     ]);
+  });
+
+  it('reconciles an older run after a newer run without emitting stale run-end state', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+    const observedRunEnds: Array<RunEnd | null> = [];
+    const newerUserMessage = {
+      ...buildUserMessage(),
+      messageId: 'newer-user',
+      parentMessageId: RESPONSE_MESSAGE_ID,
+      text: 'A newer run',
+    };
+    const newerResponse = buildAssistantMessage({
+      messageId: 'newer-response',
+      parentMessageId: newerUserMessage.messageId,
+      text: 'Newer result',
+      createdAt: '2026-07-28T08:01:00.000Z',
+      updatedAt: '2026-07-28T08:01:00.000Z',
+    });
+    const recoveredOlderResponse = buildAssistantMessage({
+      messageId: 'terminal-response',
+      text: 'Older result',
+      createdAt: '2026-07-28T08:00:00.000Z',
+      updatedAt: '2026-07-28T08:00:00.000Z',
+    });
+    queryClient.setQueryData(
+      [QueryKeys.messages, CONVERSATION_ID],
+      [buildUserMessage(), buildAssistantMessage(), newerUserMessage, newerResponse],
+    );
+    queuePendingRunReconciliation(
+      queryClient,
+      CONVERSATION_ID,
+      {
+        startedAsNewConvo: false,
+        created: true,
+        userMessageId: USER_MESSAGE_ID,
+        responseMessageId: RESPONSE_MESSAGE_ID,
+      },
+      1,
+    );
+    mockGetMessagesByConvoId.mockResolvedValue([buildUserMessage(), recoveredOlderResponse]);
+    active = false;
+
+    renderTerminalRecovery({
+      queryClient,
+      onRunEnd: (runEnd) => observedRunEnds.push(runEnd),
+    });
+
+    await waitFor(() => {
+      expect(getPendingRunReconciliations(queryClient, CONVERSATION_ID)).toEqual([]);
+    });
+    expect(queryClient.getQueryData([QueryKeys.messages, CONVERSATION_ID])).toEqual([
+      buildUserMessage(),
+      recoveredOlderResponse,
+      newerUserMessage,
+      newerResponse,
+    ]);
+    expect(mockFetchStreamStatus).not.toHaveBeenCalled();
+    expect(invalidateSpy).not.toHaveBeenCalled();
+    expect(observedRunEnds[observedRunEnds.length - 1]).toBeNull();
   });
 
   it('keeps the failed follow-up visible while the older response is still provisional', async () => {

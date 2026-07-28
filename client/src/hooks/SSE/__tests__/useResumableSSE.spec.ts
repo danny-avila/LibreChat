@@ -331,7 +331,7 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it('invalidates message cache and clears stream status on 404 instead of showing error', async () => {
+  it('publishes terminal recovery and clears stream status on 404 instead of showing error', async () => {
     const { unmount } = await render404Scenario(CONV_ID);
 
     expect(mockErrorHandler).not.toHaveBeenCalled();
@@ -339,12 +339,16 @@ describe('useResumableSSE', () => {
       ['resumable-terminal-event', 'stream-123'],
       true,
     );
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+    expect(mockInvalidateQueries).not.toHaveBeenCalledWith({
       queryKey: ['messages', CONV_ID],
     });
     expect(mockRemoveQueries).toHaveBeenCalledWith({
       queryKey: ['streamStatus', CONV_ID],
     });
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['resumable-terminal-recovery-request', CONV_ID],
+      1,
+    );
     expect(mockClearStepMaps).toHaveBeenCalled();
     expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
     unmount();
@@ -408,7 +412,7 @@ describe('useResumableSSE', () => {
       sse._emit('error', { responseCode: 404 });
     });
 
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+    expect(mockInvalidateQueries).not.toHaveBeenCalledWith({
       queryKey: [QueryKeys.messages, 'stream-123'],
     });
     expect(mockRemoveQueries).toHaveBeenCalledWith({
@@ -523,7 +527,7 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
-  it('claims parked steers and writes a non-completed run end on 404', async () => {
+  it('delegates status, persisted messages, steers, and run outcome on 404', async () => {
     const parked = [{ steerId: 'p1', text: 'parked words', createdAt: 1 }];
     mockFetchStreamStatus.mockResolvedValue({ active: false, unrecoveredSteers: parked });
 
@@ -532,32 +536,29 @@ describe('useResumableSSE', () => {
       await Promise.resolve();
     });
 
-    expect(mockFetchStreamStatus).toHaveBeenCalledTimes(1);
-    expect(mockFetchStreamStatus).toHaveBeenCalledWith(CONV_ID);
-    expect(mockConvertSteersToQueued).toHaveBeenCalledWith(CONV_ID, parked);
-    // The true outcome is unknown — the run-end signal must release parked
-    // interrupt flags WITHOUT auto-sending queued messages.
-    expect(mockSetRunEnd).toHaveBeenCalledWith(
-      expect.objectContaining({ conversationId: CONV_ID, outcome: 'aborted' }),
-    );
-    expect(mockSetRunEnd).not.toHaveBeenCalledWith(
-      expect.objectContaining({ outcome: 'completed' }),
+    expect(mockFetchStreamStatus).not.toHaveBeenCalled();
+    expect(mockConvertSteersToQueued).not.toHaveBeenCalled();
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['resumable-terminal-recovery-request', CONV_ID],
+      1,
     );
     unmount();
   });
 
-  it('does not convert anything when the 404 status claim returns no parked steers', async () => {
+  it('does not claim status or write a provisional run end on 404', async () => {
     const { unmount } = await render404Scenario(CONV_ID);
     await act(async () => {
       await Promise.resolve();
     });
 
     expect(mockConvertSteersToQueued).not.toHaveBeenCalled();
-    expect(mockSetRunEnd).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'aborted' }));
+    expect(mockFetchStreamStatus).not.toHaveBeenCalled();
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
     unmount();
   });
 
-  it('still completes 404 cleanup when the status claim fails', async () => {
+  it('completes connection cleanup without depending on a status claim', async () => {
     mockFetchStreamStatus.mockRejectedValue(new Error('network down'));
 
     const { unmount } = await render404Scenario(CONV_ID);
@@ -567,7 +568,8 @@ describe('useResumableSSE', () => {
 
     expect(mockErrorHandler).not.toHaveBeenCalled();
     expect(mockConvertSteersToQueued).not.toHaveBeenCalled();
-    expect(mockSetRunEnd).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'aborted' }));
+    expect(mockFetchStreamStatus).not.toHaveBeenCalled();
+    expect(mockSetRunEnd).not.toHaveBeenCalled();
     expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
     unmount();
   });
@@ -1267,6 +1269,14 @@ describe('useResumableSSE', () => {
       ['resumable-terminal-recovery-request', CONV_ID],
       1,
     );
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ['resumable-pending-run-reconciliation', CONV_ID],
+      expect.any(Function),
+    );
+    expect(mockRemoveQueries).toHaveBeenCalledWith({
+      queryKey: ['resumable-disconnected-run', CONV_ID],
+      exact: true,
+    });
     unmount();
   });
 
