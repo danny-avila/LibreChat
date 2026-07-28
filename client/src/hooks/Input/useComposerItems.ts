@@ -23,8 +23,15 @@ export interface ComposerItem {
 /**
  * Merges the staged-text sources into a single ordered list in one pass each,
  * so the tray renders one homogeneous list instead of a row per source.
+ *
+ * `includeQuotes` is false on the endpoints whose client path cannot transmit
+ * an excerpt: showing a quote as staged there promises something the send
+ * would silently drop.
  */
-export default function useComposerItems(conversationId: string): ComposerItem[] {
+export default function useComposerItems(
+  conversationId: string,
+  includeQuotes = true,
+): ComposerItem[] {
   const quotes = useRecoilValue(store.pendingQuotesByConvoId(conversationId));
   const skills = useRecoilValue(store.pendingManualSkillsByConvoId(conversationId));
   const setQuotes = useSetRecoilState(store.pendingQuotesByConvoId(conversationId));
@@ -46,7 +53,7 @@ export default function useComposerItems(conversationId: string): ComposerItem[]
        identical excerpts: an index in every id rewrote the ids of everything
        after a removal, remounting those chips and dropping focus. */
     const seen = new Map<string, number>();
-    for (let i = 0; i < quotes.length; i++) {
+    for (let i = 0; includeQuotes && i < quotes.length; i++) {
       const text = quotes[i];
       const repeat = seen.get(text) ?? 0;
       seen.set(text, repeat + 1);
@@ -70,5 +77,5 @@ export default function useComposerItems(conversationId: string): ComposerItem[]
     }
 
     return items;
-  }, [quotes, skills, removeQuoteAt, removeSkill]);
+  }, [quotes, skills, includeQuotes, removeQuoteAt, removeSkill]);
 }

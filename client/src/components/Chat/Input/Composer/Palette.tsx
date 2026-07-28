@@ -896,6 +896,9 @@ function Palette({
               disclosure's own click handler and the popover never opened. */}
           <Ariakit.PopoverDisclosure
             ref={disclosureRef}
+            /* The upload-file shortcut resolves its target by id, and this is
+               the control that replaced the attach menu it used to click. */
+            id="attach-file-menu-button"
             disabled={disabled}
             aria-label={dictating ? localize('com_ui_cancel') : localize('com_ui_composer_palette')}
             /* Kept as the disclosure while dictating rather than swapped for a

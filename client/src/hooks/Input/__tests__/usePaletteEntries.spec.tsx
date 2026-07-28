@@ -18,11 +18,13 @@ let mockContext: Record<string, unknown> | null;
 let mockSkills: Array<Record<string, unknown>>;
 let mockAgentsMap: Record<string, Record<string, unknown>>;
 let mockSkillsActive: boolean;
+let mockUser: { personalization?: { memories?: boolean } } | undefined;
 
 jest.mock('~/hooks', () => ({
   useHasAccess: ({ permissionType }: { permissionType: string }) =>
     mockPermissions[permissionType] ?? false,
   useHasMemoryAccess: () => mockMemoryAccess,
+  useAuthContext: () => ({ user: mockUser }),
   useAgentCapabilities: () => mockCapabilities,
   /* The real popover filter is used here, and it drops anything the user
      cannot invoke or that is not active for them. */
@@ -125,6 +127,7 @@ describe('usePaletteEntries', () => {
   beforeEach(() => {
     mockPermissions = { ...allPermissions };
     mockMemoryAccess = true;
+    mockUser = { personalization: { memories: true } };
     mockCapabilities = { ...allCapabilities };
     mockContext = fullContext();
     mockSkills = [];
@@ -176,6 +179,11 @@ describe('usePaletteEntries', () => {
 
     it('withholds memory without access, whatever the capability says', () => {
       mockMemoryAccess = false;
+      expect(keysOf(entries().result)).not.toContain('builtin:memory');
+    });
+
+    it('withholds memory from a user who opted out in personalization', () => {
+      mockUser = { personalization: { memories: false } };
       expect(keysOf(entries().result)).not.toContain('builtin:memory');
     });
   });

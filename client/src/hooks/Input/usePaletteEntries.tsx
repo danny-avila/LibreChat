@@ -12,6 +12,7 @@ import {
 import type { TSkillSummary, TToolFavoriteType } from 'librechat-data-provider';
 import {
   useHasAccess,
+  useAuthContext,
   useHasMemoryAccess,
   useAgentCapabilities,
   useSkillActiveState,
@@ -160,7 +161,11 @@ export default function usePaletteEntries({
     permissionType: PermissionTypes.SKILLS,
     permission: Permissions.USE,
   });
-  const canUseMemory = useHasMemoryAccess();
+  const { user } = useAuthContext();
+  /* Personalization is the user's own opt-out and the backend refuses to
+     register the memory tools once it is off, so role access and the global
+     capability are not enough to offer the toggle. */
+  const canUseMemory = useHasMemoryAccess() && user?.personalization?.memories !== false;
 
   const skillsListable = enabled && canUseSkills && skillsEnabled;
   const allSkills = useAllSkills(skillsListable);
