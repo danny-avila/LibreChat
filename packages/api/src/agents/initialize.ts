@@ -56,6 +56,7 @@ import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
+import { applyIntentLabels } from './intent';
 import { primeResources } from './resources';
 
 /**
@@ -265,6 +266,15 @@ export type InitializedAgent = Agent & {
    * opt-in and gate the `check_background_task` poll tool at execution time.
    */
   backgroundToolNames?: string[];
+  /**
+   * Names of this agent's tools that received the host-injected `intent`
+   * param (capability enabled AND opted in AND eligible). Threaded to the
+   * tool executor via `configurable` so the arg is stripped before invoking
+   * tools that don't declare it, and stripped from schemas a self-spawn
+   * child or PTC sandbox inherits. SDK-native intent schemas are the tools'
+   * own and are never listed here.
+   */
+  intentToolNames?: string[];
   /** Whether the inline memory tools (`set_memory`/`delete_memory`) were
    *  registered for this agent. Authoritative LibreChat-only signal of the
    *  inline memory opt-in for the execution path, since some contexts hold the
@@ -421,6 +431,13 @@ export interface InitializeAgentParams {
    * tool is registered.
    */
   backgroundToolsAvailable?: boolean;
+  /**
+   * Whether the `tool_intents` capability is enabled for this run. When true,
+   * tools opted in via `tool_options[name].describe_intent` (native host
+   * tools default on) get an `intent` string injected as the FIRST schema
+   * property, rendered by the client as the call's live status label.
+   */
+  toolIntentsAvailable?: boolean;
   /** Whether stateful code sessions are available (stateful_code_sessions capability enabled) */
   statefulSessionsAvailable?: boolean;
   /** Whether inline memory tools are available (memory capability enabled, memory
@@ -1171,6 +1188,26 @@ export async function initializeAgent(
   }
 
   /**
+   * Inject the `intent` label param into opted-in tools (native host tools
+   * default on; SDK-native intent schemas are skipped as their own). Runs
+   * after all built-in tool registration so the full, final `toolDefinitions`
+   * set is considered, and BEFORE the background injection so `intent` stays
+   * the FIRST schema property when a tool carries both.
+   */
+  let intentToolNames: string[] | undefined;
+  if (params.toolIntentsAvailable === true) {
+    const intentResult = applyIntentLabels({
+      toolDefinitions,
+      toolRegistry,
+      toolOptions: agent.tool_options,
+    });
+    toolDefinitions = intentResult.toolDefinitions;
+    if (intentResult.intentToolNames.length > 0) {
+      intentToolNames = intentResult.intentToolNames;
+    }
+  }
+
+  /**
    * Inject the `run_in_background` param into eligible opted-in tools and
    * register the `check_background_task` poll tool. Runs after all built-in
    * tool registration so the full, final `toolDefinitions` set is considered.
@@ -1367,6 +1404,7 @@ export async function initializeAgent(
     toolDefinitions,
     hasDeferredTools,
     backgroundToolNames,
+    intentToolNames,
     actionsEnabled,
     baseContextTokens,
     memoryToolsRegistered: inlineMemoryRegistered,

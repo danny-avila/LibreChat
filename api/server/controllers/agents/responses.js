@@ -460,6 +460,7 @@ const createResponse = async (req, res) => {
         }),
         codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
         backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+        toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
         statefulSessionsAvailable: enabledCapabilities.has(
           AgentCapabilities.stateful_code_sessions,
         ),
@@ -541,6 +542,7 @@ const createResponse = async (req, res) => {
           /** @see DiscoverConnectedAgentsParams.codeEnvAvailable */
           codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
           backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+          toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
           statefulSessionsAvailable: enabledCapabilities.has(
             AgentCapabilities.stateful_code_sessions,
           ),
@@ -723,6 +725,7 @@ const createResponse = async (req, res) => {
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
             backgroundToolNames: ctx.backgroundToolNames,
+            intentToolNames: ctx.intentToolNames,
             mcpAvailableTools: ctx.mcpAvailableTools,
             requestScopedConnections: ctx.requestScopedConnections,
             userMCPAuthMap: ctx.userMCPAuthMap,
@@ -904,6 +907,7 @@ const createResponse = async (req, res) => {
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
             backgroundToolNames: ctx.backgroundToolNames,
+            intentToolNames: ctx.intentToolNames,
             mcpAvailableTools: ctx.mcpAvailableTools,
             requestScopedConnections: ctx.requestScopedConnections,
             userMCPAuthMap: ctx.userMCPAuthMap,

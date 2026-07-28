@@ -245,6 +245,14 @@ export type ToolOptions = {
    * @default false
    */
   run_in_background?: boolean;
+  /**
+   * If true (and the `tool_intents` capability is enabled), the tool's schema
+   * gains an `intent` string as its FIRST property — one model-authored
+   * sentence per call, rendered as the call's live status label. Native host
+   * tools default on while the capability is enabled; `false` opts one out.
+   * @default false
+   */
+  describe_intent?: boolean;
 };
 
 /**

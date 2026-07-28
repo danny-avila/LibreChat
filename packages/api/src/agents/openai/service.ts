@@ -160,6 +160,12 @@ interface InitializeAgentParams {
    * absent / `undefined` disables background tool calls on this route.
    */
   backgroundToolsAvailable?: boolean;
+  /**
+   * Whether the admin-level `tool_intents` capability is enabled. Gates
+   * `applyIntentLabels` in `initializeAgent` (the injected `intent` label
+   * param); absent / `undefined` disables intent labels on this route.
+   */
+  toolIntentsAvailable?: boolean;
 }
 
 /**
@@ -467,6 +473,8 @@ export async function createAgentChatCompletion(
      *  tools in via tool_options.run_in_background silently lose the
      *  background param + poll tool on this route. */
     const backgroundToolsAvailable = capabilityEnabled(AgentCapabilities.run_in_background);
+    /** Same gate for the injected `intent` label param. */
+    const toolIntentsAvailable = capabilityEnabled(AgentCapabilities.tool_intents);
 
     // Initialize the agent first to check for disableStreaming
     const initializedAgent = await deps.initializeAgent({
@@ -485,6 +493,7 @@ export async function createAgentChatCompletion(
       codeEnvAvailable,
       statefulSessionsAvailable,
       backgroundToolsAvailable,
+      toolIntentsAvailable,
     });
 
     // Determine if streaming is enabled (check both request and agent config)

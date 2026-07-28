@@ -14,6 +14,7 @@ import type {
   Agent,
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import { synthesizeIntentToolOptions, mergeSynthesizedToolOptions } from '~/agents/intent';
 import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
 import { synthesizeBackgroundToolOptions } from '~/agents/background';
 import { requiresEphemeralUserConnection } from '~/mcp/utils';
@@ -157,6 +158,13 @@ export async function loadEphemeralAgent(
   );
   if (backgroundToolOptions) {
     result.tool_options = backgroundToolOptions;
+  }
+  const intentToolOptions: AgentToolOptions | undefined = synthesizeIntentToolOptions(tools, {
+    ephemeralAgent,
+    modelSpec,
+  });
+  if (intentToolOptions) {
+    result.tool_options = mergeSynthesizedToolOptions(result.tool_options, intentToolOptions);
   }
 
   if (ephemeralAgent?.artifacts) {

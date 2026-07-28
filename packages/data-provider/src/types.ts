@@ -117,6 +117,12 @@ export type TEphemeralAgent = {
    * `run_in_background` agent capability to be enabled by the admin.
    */
   run_in_background?: boolean;
+  /**
+   * Inject the `intent` label param into this ephemeral agent's eligible
+   * tools so each call streams a live status label. Requires the
+   * `tool_intents` agent capability to be enabled by the admin.
+   */
+  describe_intent?: boolean;
 };
 
 export type TPayload = Partial<TMessage> &
