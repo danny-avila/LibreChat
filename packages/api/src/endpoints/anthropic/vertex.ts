@@ -28,7 +28,7 @@ export interface VertexAIConfigInput {
   region?: string;
   serviceKeyFile?: string;
   deploymentName?: string;
-  models?: string[] | Record<string, boolean | { deploymentName?: string }>;
+  models?: string[] | Record<string, boolean | { deploymentName?: string; region?: string }>;
 }
 
 /**
@@ -162,6 +162,33 @@ export function getVertexDeploymentName(
 
   // Model has its own deployment name
   return modelConfig.deploymentName || vertexConfig.deploymentName || modelName;
+}
+
+/**
+ * Resolves the region/location for a specific model under Vertex AI configuration.
+ * @param modelName - The visible model name
+ * @param vertexConfig - The Vertex AI configuration
+ * @returns The region/location override if configured, otherwise undefined
+ */
+export function getVertexRegion(
+  modelName: string,
+  vertexConfig?: VertexAIConfigInput,
+): string | undefined {
+  if (!vertexConfig?.models) {
+    return undefined;
+  }
+
+  if (Array.isArray(vertexConfig.models)) {
+    return undefined;
+  }
+
+  const modelConfig = vertexConfig.models[modelName];
+
+  if (!modelConfig || typeof modelConfig === 'boolean') {
+    return undefined;
+  }
+
+  return modelConfig.region;
 }
 
 /**

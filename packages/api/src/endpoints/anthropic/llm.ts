@@ -28,6 +28,7 @@ import {
   createAnthropicVertexClient,
   isAnthropicVertexCredentials,
   getVertexDeploymentName,
+  getVertexRegion,
 } from './vertex';
 import { createSSRFSafeUndiciConnect } from '~/auth';
 import { getProxyDispatcher } from '~/utils/proxy';
@@ -217,10 +218,19 @@ function getLLMConfig(
       requestOptions.model ?? '',
       options.vertexConfig,
     );
+    const modelRegion = getVertexRegion(
+      requestOptions.model ?? '',
+      options.vertexConfig,
+    );
     requestOptions.model = deploymentName;
 
+    const clientVertexOptions = {
+      ...options.vertexOptions,
+      ...(modelRegion && { region: modelRegion }),
+    };
+
     requestOptions.createClient = () =>
-      createAnthropicVertexClient(creds, requestOptions.clientOptions, options.vertexOptions);
+      createAnthropicVertexClient(creds, requestOptions.clientOptions, clientVertexOptions);
   } else if (apiKey) {
     // Direct API configuration
     requestOptions.apiKey = apiKey;

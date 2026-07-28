@@ -82,6 +82,7 @@ export async function initializeGoogle({
   if (googleConfig) {
     clientOptions.streamRate = googleConfig.streamRate;
     clientOptions.titleModel = googleConfig.titleModel;
+    clientOptions.perModelLocation = googleConfig.perModelLocation;
   }
 
   if (allConfig) {
