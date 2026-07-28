@@ -22,6 +22,9 @@ jest.mock('~/Providers', () => ({
 jest.mock('../Parts', () => ({
   EditTextPart: () => <div data-testid="edit-text-part" />,
   EmptyText: () => <div data-testid="empty-text" />,
+  AgentUpdate: ({ currentAgentId }: { currentAgentId: string }) => (
+    <div data-testid="post-steer-agent-update" data-agent-id={currentAgentId} />
+  ),
 }));
 
 jest.mock('../MemoryArtifacts', () => ({
@@ -190,5 +193,39 @@ describe('ContentParts — post-steer author re-attribution', () => {
   it('renders no header when authorHeader is not provided', () => {
     render(<ContentParts {...baseProps} content={[textPart('a'), steerPart, textPart('b')]} />);
     expect(screen.queryByTestId('author-header')).toBeNull();
+  });
+
+  it('re-attributes to the ACTIVE agent when a handoff preceded the steer', () => {
+    const agentUpdate = {
+      type: ContentTypes.AGENT_UPDATE,
+      [ContentTypes.AGENT_UPDATE]: { agentId: 'agent_b', index: 1 },
+    } as unknown as TMessageContentParts;
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[textPart('a'), agentUpdate, textPart('b'), steerPart, textPart('c')]}
+        authorHeader={header}
+      />,
+    );
+    const marker = screen.getAllByTestId('post-steer-agent-update');
+    expect(marker).toHaveLength(1);
+    expect(marker[0]).toHaveAttribute('data-agent-id', 'agent_b');
+    expect(screen.queryByTestId('author-header')).toBeNull();
+  });
+
+  it('keeps the top-level header when the handoff comes AFTER the steer', () => {
+    const agentUpdate = {
+      type: ContentTypes.AGENT_UPDATE,
+      [ContentTypes.AGENT_UPDATE]: { agentId: 'agent_b', index: 2 },
+    } as unknown as TMessageContentParts;
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[textPart('a'), steerPart, agentUpdate, textPart('b')]}
+        authorHeader={header}
+      />,
+    );
+    expect(screen.getAllByTestId('author-header')).toHaveLength(1);
+    expect(screen.queryByTestId('post-steer-agent-update')).toBeNull();
   });
 });

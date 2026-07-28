@@ -14,6 +14,7 @@ import { UnfinishedMessage } from './MessageContent';
 import { cn, mapAttachments } from '~/utils';
 import { SearchContext } from '~/Providers';
 import MarkdownLite from './MarkdownLite';
+import { AgentUpdate } from './Parts';
 import store from '~/store';
 import Part from './Part';
 
@@ -36,6 +37,11 @@ const SearchContent = ({
 
   if (Array.isArray(message.content) && message.content.length > 0) {
     const parts = message.content.filter((part): part is TMessageContentParts => part != null);
+    /** Active agent from the latest preceding AGENT_UPDATE: post-steer content
+     *  after a handoff belongs to that agent, not the message-level author.
+     *  Captured BEFORE the current part's own handoff applies, mirroring
+     *  `ContentParts`' `postSteerAuthors` scan. */
+    let activeAgentId: string | undefined;
     return (
       <SearchContext.Provider value={{ searchResults }}>
         {parts.map((part: TMessageContentParts, idx: number) => {
@@ -47,6 +53,10 @@ const SearchContent = ({
             idx > 0 &&
             parts[idx - 1].type === ContentTypes.STEER &&
             part.type !== ContentTypes.STEER;
+          const resumeAgentId = resumesAfterSteer ? activeAgentId : undefined;
+          if (part.type === ContentTypes.AGENT_UPDATE) {
+            activeAgentId = part[ContentTypes.AGENT_UPDATE]?.agentId || undefined;
+          }
           const rendered: ReactElement = (
             <Part
               key={`display-${messageId}-${idx}`}
@@ -62,7 +72,11 @@ const SearchContent = ({
           }
           return (
             <Fragment key={`display-${messageId}-${idx}`}>
-              {authorHeader}
+              {resumeAgentId != null ? (
+                <AgentUpdate currentAgentId={resumeAgentId} />
+              ) : (
+                authorHeader
+              )}
               {rendered}
             </Fragment>
           );

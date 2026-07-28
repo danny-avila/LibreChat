@@ -10,9 +10,9 @@ import type { ReactNode, ReactElement } from 'react';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
+import { EditTextPart, EmptyText, AgentUpdate } from './Parts';
 import { MessageContext, SearchContext } from '~/Providers';
 import PendingSkillCall from './Parts/PendingSkillCall';
-import { EditTextPart, EmptyText } from './Parts';
 import ApprovalProvider from './ApprovalContext';
 import MemoryArtifacts from './MemoryArtifacts';
 import ToolCallGroup from './ToolCallGroup';
@@ -310,26 +310,35 @@ const ContentParts = memo(function ContentParts({
     ],
   );
 
-  /** `postSteerIndices` marks each part that resumes the response after a
-   *  steer block — where `authorHeader` gets re-rendered. */
-  const { sequentialParts, postSteerIndices } = useMemo(() => {
+  /** `postSteerAuthors` marks each part that resumes the response after a
+   *  steer block — where attribution is re-rendered. The value is the ACTIVE
+   *  agent id when a preceding AGENT_UPDATE handed the run off (the resumed
+   *  content belongs to that agent, not the message-level author), undefined
+   *  for the top-level `authorHeader`. Read BEFORE applying the current
+   *  part's own handoff, so a resume point that IS an agent update keeps the
+   *  pre-handoff author and lets the real marker announce the transition. */
+  const { sequentialParts, postSteerAuthors } = useMemo(() => {
     const parts: PartWithIndex[] = [];
-    const indices = new Set<number>();
+    const authors = new Map<number, string | undefined>();
     if (!content) {
-      return { sequentialParts: parts, postSteerIndices: indices };
+      return { sequentialParts: parts, postSteerAuthors: authors };
     }
     let prevType: string | undefined;
+    let activeAgentId: string | undefined;
     content.forEach((part, idx) => {
       if (!part) {
         return;
       }
       if (prevType === ContentTypes.STEER && part.type !== ContentTypes.STEER) {
-        indices.add(idx);
+        authors.set(idx, activeAgentId);
+      }
+      if (part.type === ContentTypes.AGENT_UPDATE) {
+        activeAgentId = part[ContentTypes.AGENT_UPDATE]?.agentId || undefined;
       }
       prevType = part.type;
       parts.push({ part, idx });
     });
-    return { sequentialParts: parts, postSteerIndices: indices };
+    return { sequentialParts: parts, postSteerAuthors: authors };
   }, [content]);
 
   const groupedParts = useMemo(
@@ -433,8 +442,18 @@ const ContentParts = memo(function ContentParts({
         {groupedParts.flatMap((group) => {
           const firstIdx = group.type === 'single' ? group.part.idx : (group.parts[0]?.idx ?? -1);
           const nodes: ReactElement[] = [];
-          if (authorHeader != null && postSteerIndices.has(firstIdx)) {
-            nodes.push(<Fragment key={`author-${messageId}-${firstIdx}`}>{authorHeader}</Fragment>);
+          if (authorHeader != null && postSteerAuthors.has(firstIdx)) {
+            const activeAgentId = postSteerAuthors.get(firstIdx);
+            nodes.push(
+              activeAgentId != null ? (
+                <AgentUpdate
+                  key={`author-${messageId}-${firstIdx}`}
+                  currentAgentId={activeAgentId}
+                />
+              ) : (
+                <Fragment key={`author-${messageId}-${firstIdx}`}>{authorHeader}</Fragment>
+              ),
+            );
           }
           if (group.type === 'single') {
             const { part, idx } = group.part;
