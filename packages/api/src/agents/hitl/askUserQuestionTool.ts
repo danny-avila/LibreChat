@@ -20,7 +20,7 @@ export const ASK_USER_QUESTION_TOOL_NAME = 'ask_user_question';
  */
 const QUESTION_MAX = 2000;
 const DESCRIPTION_MAX = 4000;
-const OPTION_LABEL_MAX = 120;
+const OPTION_LABEL_MAX = 280;
 const OPTION_VALUE_MAX = 500;
 const OPTIONS_MAX = 12;
 
