@@ -514,9 +514,8 @@ describe('createAdminLangfuseHandlers', () => {
       const [publicUrl, publicInit] = (global.fetch as unknown as jest.Mock).mock.calls[1];
       expect(publicUrl).toBe('https://cloud.langfuse.com/api/public/ingestion');
       expect(publicInit.method).toBe('POST');
-      expect(
-        Buffer.from(publicInit.headers.Authorization.replace('Basic ', ''), 'base64').toString(),
-      ).toBe('pk:sk');
+      expect(publicInit.headers.Authorization).toBe('Bearer pk');
+      expect(publicInit.headers['X-Langfuse-Public-Key']).toBe('pk');
       expect(publicInit.headers['Content-Type']).toBe('application/json');
       expect(JSON.parse(publicInit.body)).toEqual({ batch: [] });
       expect(publicInit.signal).toBe(init.signal);
