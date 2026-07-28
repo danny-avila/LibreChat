@@ -1,7 +1,7 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import SteerPart from '../SteerPart';
 import store from '~/store';
@@ -119,7 +119,7 @@ describe('SteerPart presentation', () => {
     renderPart();
     /** Asserts the real avatar rather than a stubbed one — the previous mock was
      *  what hid the auth-context crash inside this icon tree. */
-    expect(screen.getByTitle('danny')).toBeInTheDocument();
+    expect(screen.getByTitle('Danny')).toBeInTheDocument();
     expect(screen.getByText('steered words')).toBeInTheDocument();
   });
 
