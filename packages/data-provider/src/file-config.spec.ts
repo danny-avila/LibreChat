@@ -170,6 +170,18 @@ describe('defaultOCRMimeTypes', () => {
   ])('matches ODF type for OCR: %s', (mimeType) => {
     expect(checkOCRType(mimeType)).toBe(true);
   });
+
+  it('matches application/msword (.doc) for OCR', () => {
+    expect(checkOCRType('application/msword')).toBe(true);
+  });
+
+  it('matches application/vnd.ms-powerpoint (.ppt) for OCR', () => {
+    expect(checkOCRType('application/vnd.ms-powerpoint')).toBe(true);
+  });
+
+  it('does not match the non-existent application/vnd.ms-word type', () => {
+    expect(checkOCRType('application/vnd.ms-word')).toBe(false);
+  });
 });
 
 describe('supportedMimeTypes', () => {
