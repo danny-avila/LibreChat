@@ -35,6 +35,7 @@ const auth = require('./auth');
 const keys = require('./keys');
 const user = require('./user');
 const mcp = require('./mcp');
+const serviceFiles = require('./serviceFiles');
 const rum = require('./rum');
 
 module.exports = {
@@ -76,4 +77,5 @@ module.exports = {
   categories,
   staticRoute,
   accessPermissions,
+  serviceFiles
 };
