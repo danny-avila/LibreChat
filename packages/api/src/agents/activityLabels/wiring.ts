@@ -294,7 +294,10 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
               /** Finalization already passed: drop the result rather than
                *  mutating a saved response or emitting into a closed job.
                *  `false` tells the hook the label never surfaced, so its
-               *  usage must not be billed. */
+               *  usage must not be billed. A scope that closes AFTER this
+               *  check — while the durable emit below is in flight — does
+               *  NOT un-commit: the part is mutated and persisted, so the
+               *  fill still resolves `true` and the committed label bills. */
               if (deps.isClosed?.() === true) {
                 return false;
               }

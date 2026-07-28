@@ -397,9 +397,11 @@ class AgentClient extends BaseClient {
     model,
     endpointTokenConfig,
     sameEndpoint,
-    /** Re-checked immediately before anything is charged or emitted, so a
-     *  scope that closed while this was in flight still suppresses the write.
-     *  Defaults open for callers that own no scope. */
+    /** Optional suppression gate, defaulting open. The hook-driven paths
+     *  deliberately pass nothing: they invoke accounting ONLY for a
+     *  COMMITTED fill, and a committed (visible) label must bill even when
+     *  its scope closed during the durable emit — the commit flag, not the
+     *  scope, is the billing authority. */
     scopeOpen = () => true,
     /** The LABEL endpoint's provider — cost math needs it to know whether
      *  cache tokens are folded into `input_tokens` (additive providers like
@@ -537,7 +539,6 @@ class AgentClient extends BaseClient {
     prompt,
     executingAgentId,
     deferUsage,
-    scopeOpen,
   }) {
     /** Version gating happens at wiring time via the `sdkCapable` prototype
      *  probe, so this only catches a run that is missing or not yet built.
@@ -552,34 +553,22 @@ class AgentClient extends BaseClient {
       await this.resolveActivityLabelLLM();
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
     /**
-     * Gate bound to the OWNING wiring's scope when the caller supplies one.
-     * The instance-wide fallback ("any scope open") lets a pre-pause
-     * straggler bill because the RESUMED generation's scope is still open —
-     * even though its own fill is dropped as closed: billed, never shown.
-     */
-    const scopeStillOpen =
-      scopeOpen ??
-      (() =>
-        (this.activityLabelScopes ?? []).length === 0 ||
-        (this.activityLabelScopes ?? []).some((scope) => scope.closed !== true));
-    /**
-     * Re-read at COMMIT time, not once up front. The settle deadline (or a
-     * run abort) can close the scope while this accounting is already in
-     * flight — a single check before the await passes, the charge lands
-     * after finalization, and the matching `slot.fill` then sees the closed
-     * scope and drops the label: billed but never surfaced, which is exactly
-     * what this guard exists to prevent.
+     * NO scope gate here: the hook invokes this ONLY for a COMMITTED fill,
+     * and the commit flag is the single billing authority. A scope that
+     * closes while the fill's durable emit is in flight does not un-commit
+     * the label — it is persisted and visible — so gating on the scope here
+     * turned that race into a completed provider call escaping both the
+     * label charge and the primary abort accounting. The reverse direction
+     * (billed but never shown) is enforced by the commit gate itself: a
+     * dropped fill never reaches this callback.
      */
     const recordUsage = async () => {
-      if (!scopeStillOpen()) {
-        return;
-      }
       await this.recordActivityLabelUsage(
         collectedMetadata,
         clientOptions.model,
         endpointTokenConfig,
         sameEndpoint,
-        scopeStillOpen,
+        undefined,
         provider,
       );
     };
@@ -840,24 +829,19 @@ class AgentClient extends BaseClient {
               clientOptions.model,
               endpointTokenConfig,
               sameEndpoint,
-              /** Same commit-time gate as the SDK path: without it, a
-               *  fallback label whose fill was dropped as out-of-scope
-               *  still billed and emitted after finalization. */
-              () => labelScope.closed !== true,
+              /** No scope gate — the hook invokes collect ONLY for a
+               *  COMMITTED fill (the billing authority), and a scope that
+               *  closes during the fill's durable emit must not let a
+               *  visible label escape its charge. Dropped fills never
+               *  reach this callback. */
+              undefined,
               provider,
             );
           },
         };
       },
       ...(sdkCapable && {
-        /** The wiring's OWN scope, not the instance-wide "any scope open"
-         *  fallback — a pre-pause straggler must not bill just because the
-         *  resumed generation's scope is still open. */
-        generateLabel: (payload) =>
-          this.generateActivityLabelViaRun({
-            ...payload,
-            scopeOpen: () => labelScope.closed !== true,
-          }),
+        generateLabel: (payload) => this.generateActivityLabelViaRun(payload),
       }),
     });
   }
