@@ -75,7 +75,6 @@
     "@types/react": "^18.2.18",
     "@types/sanitize-html": "^2.13.0",
     "@types/supertest": "^7.2.0",
-    "@types/winston": "^2.4.4",
     "@types/yauzl": "^2.10.3",
     "aws-sdk-client-mock": "^4.1.0",
     "babel-plugin-replace-ts-export-assignment": "^0.0.2",
@@ -97,6 +96,7 @@
     "ts-node": "^10.9.2",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.3",
+    "winston": "^3.17.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "yauzl": "^3.2.1"
   },
