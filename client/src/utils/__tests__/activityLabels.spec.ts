@@ -1,6 +1,6 @@
 import { ContentTypes } from 'librechat-data-provider';
-import type { TActivityLabelEvent, TMessage } from 'librechat-data-provider';
-import { applyActivityLabelPart } from '../activityLabels';
+import type { TActivityLabelEvent, TMessage, TMessageContentParts } from 'librechat-data-provider';
+import { applyActivityLabelPart, lastVisibleContentIdx } from '../activityLabels';
 
 const buildMessage = (content: TMessage['content']): TMessage =>
   ({ messageId: 'm1', isCreatedByUser: false, content }) as TMessage;
@@ -47,5 +47,32 @@ describe('applyActivityLabelPart', () => {
       activity_label: 'Searched runtime release notes',
       pending: false,
     });
+  });
+});
+
+describe('lastVisibleContentIdx', () => {
+  const text = { type: ContentTypes.TEXT, text: 'hello' } as unknown as TMessageContentParts;
+  const tool = {
+    type: ContentTypes.TOOL_CALL,
+    [ContentTypes.TOOL_CALL]: { id: 't1', name: 'web_search', args: '{}', output: 'ok' },
+  } as unknown as TMessageContentParts;
+
+  it('skips a trailing blank label reservation', () => {
+    expect(lastVisibleContentIdx([text, tool, labelPart() as never])).toBe(1);
+  });
+
+  it('skips consecutive trailing blank labels', () => {
+    expect(lastVisibleContentIdx([tool, labelPart() as never, tool, labelPart() as never])).toBe(2);
+  });
+
+  it('counts a filled label as visible', () => {
+    const filled = labelPart({ activity_label: 'Fetched the docs', pending: false });
+    expect(lastVisibleContentIdx([tool, filled as never])).toBe(1);
+  });
+
+  it('falls back to the raw last index without labels', () => {
+    expect(lastVisibleContentIdx([text, tool])).toBe(1);
+    expect(lastVisibleContentIdx([])).toBe(-1);
+    expect(lastVisibleContentIdx(undefined)).toBe(-1);
   });
 });

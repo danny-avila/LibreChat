@@ -27,6 +27,33 @@ export function getActivityLabelText(part: ActivityLabelPart | undefined): strin
 }
 
 /**
+ * Last content index that actually renders something. Trailing BLANK label
+ * reservations are invisible (every batch publishes one at batch end), so
+ * counting one as the last part would suppress the streaming cursor and
+ * other last-item affordances on the last VISIBLE part for the whole
+ * interval until the label fills or the next delta arrives. Used by both
+ * the sequential and parallel content renderers so they stay in lockstep.
+ */
+export function lastVisibleContentIdx(
+  content: ReadonlyArray<TMessageContentParts | undefined> | undefined,
+): number {
+  const parts = content ?? [];
+  let last = parts.length - 1;
+  while (last > 0) {
+    const tail = parts[last];
+    if (
+      tail?.type === ContentTypes.ACTIVITY_LABEL &&
+      getActivityLabelText(getActivityLabelPart(tail)).length === 0
+    ) {
+      last -= 1;
+    } else {
+      break;
+    }
+  }
+  return last;
+}
+
+/**
  * Resolves the assistant response message an activity-label event targets.
  * Exact-id assistant match when `responseMessageId` is present (a miss
  * returns -1 so the caller retries next frame); best-effort last assistant
