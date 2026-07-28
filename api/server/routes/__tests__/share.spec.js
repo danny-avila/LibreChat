@@ -93,7 +93,6 @@ jest.mock('~/models', () => ({
   getSharedLink: jest.fn(),
   getSharedLinkFile: jest.fn(),
   backfillSharedLinkFiles: jest.fn(),
-  applyForcedRetention: jest.fn(),
   getRoleByName: jest.fn(),
 }));
 
@@ -148,7 +147,6 @@ const {
   getSharedLinks,
   getSharedLinkFile,
   backfillSharedLinkFiles,
-  applyForcedRetention,
   getRoleByName,
 } = require('~/models');
 const { forkSharedConversation } = require('~/server/utils/import/fork');
@@ -447,81 +445,6 @@ describe('share routes', () => {
 
     expect(response.status).toBe(404);
     expect(createSharedLink).not.toHaveBeenCalled();
-  });
-
-  it('converts the source conversation under forced retention when creating a share', async () => {
-    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
-    createSharedLink.mockResolvedValue({ _id: 'link-123', shareId: 'share-123' });
-
-    const response = await request(buildApp({ retentionMode: RetentionMode.EPHEMERAL }))
-      .post('/api/share/convo-123')
-      .send({ targetMessageId: 'msg-123' });
-
-    expect(response.status).toBe(200);
-    expect(applyForcedRetention).toHaveBeenCalledWith('convo-123', 'user-123', {
-      retentionMode: RetentionMode.EPHEMERAL,
-    });
-    expect(applyForcedRetention).toHaveBeenCalledTimes(2);
-    expect(createSharedLink).toHaveBeenCalledWith(
-      'user-123',
-      'convo-123',
-      'msg-123',
-      undefined,
-      true,
-    );
-    expect(mockGrantCreationPermissions).toHaveBeenCalledWith(
-      'link-123',
-      'user-123',
-      true,
-      undefined,
-    );
-    expect(applyForcedRetention.mock.invocationCallOrder[1]).toBeGreaterThan(
-      mockGrantCreationPermissions.mock.invocationCallOrder[0],
-    );
-  });
-
-  it('converts the source conversation before creating the share so retries stay covered', async () => {
-    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
-    createSharedLink.mockResolvedValue(null);
-
-    const response = await request(buildApp({ retentionMode: RetentionMode.EPHEMERAL }))
-      .post('/api/share/convo-123')
-      .send({ targetMessageId: 'msg-123' });
-
-    expect(response.status).toBe(404);
-    /**
-     * Retention runs before createSharedLink: a share attempt that fails (or hits an existing
-     * active share on retry) must still convert the touched conversation, otherwise a live
-     * share could outlast a source chat that never converts.
-     */
-    expect(applyForcedRetention).toHaveBeenCalledWith('convo-123', 'user-123', {
-      retentionMode: RetentionMode.EPHEMERAL,
-    });
-    expect(applyForcedRetention.mock.invocationCallOrder[0]).toBeLessThan(
-      createSharedLink.mock.invocationCallOrder[0],
-    );
-  });
-
-  it('converts the source conversation under forced retention when updating a share', async () => {
-    mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
-    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
-    updateSharedLink.mockResolvedValue({ _id: 'link-456', shareId: 'share-456' });
-
-    await request(buildApp({ retentionMode: RetentionMode.EPHEMERAL }))
-      .patch('/api/share/share-123')
-      .send({ snapshotFiles: false });
-
-    expect(applyForcedRetention).toHaveBeenCalledWith('convo-123', 'user-123', {
-      retentionMode: RetentionMode.EPHEMERAL,
-    });
-    expect(updateSharedLink).toHaveBeenCalledWith(
-      'user-123',
-      'share-123',
-      undefined,
-      undefined,
-      false,
-    );
-    expect(mockUpdateSharedLinkPermissionsExpiration).not.toHaveBeenCalled();
   });
 
   it('rejects new shares for expired conversations in all retention mode', async () => {

@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { generateCheckAccess } = require('@librechat/api');
@@ -9,10 +8,9 @@ const {
   createConversationTag,
   deleteConversationTag,
   getConversationTags,
-  applyForcedRetention,
   getRoleByName,
 } = require('~/models');
-const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
+const { requireJwtAuth } = require('~/server/middleware');
 
 const router = express.Router();
 
@@ -24,30 +22,6 @@ const checkBookmarkAccess = generateCheckAccess({
 
 router.use(requireJwtAuth);
 router.use(checkBookmarkAccess);
-
-/**
- * Enforces forced (ephemeral) retention after a bookmark-tag write converts an older
- * permanent conversation; a no-op outside forced retention.
- */
-const enforceForcedRetention = (req, conversationId) =>
-  applyForcedRetention(conversationId, req?.user?.id, req?.config?.interfaceConfig);
-
-/**
- * Enforces forced (ephemeral) retention on every conversation carrying a tag, for global
- * tag renames/deletes that rewrite conversation rows without converting them; a no-op
- * outside forced retention.
- */
-const enforceForcedRetentionForTag = async (req, tag) => {
-  const conversations = await mongoose.models.Conversation.find(
-    { user: req.user.id, tags: tag },
-    'conversationId',
-  ).lean();
-  await Promise.all(
-    conversations.map(({ conversationId }) =>
-      applyForcedRetention(conversationId, req.user.id, req?.config?.interfaceConfig),
-    ),
-  );
-};
 
 /**
  * GET /
@@ -75,12 +49,9 @@ router.get('/', async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-router.post('/', configMiddleware, async (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const tag = await createConversationTag(req.user.id, req.body);
-    if (req.body?.addToConversation && req.body?.conversationId) {
-      await enforceForcedRetention(req, req.body.conversationId);
-    }
     res.status(200).json(tag);
   } catch (error) {
     logger.error('Error creating conversation tag:', error);
@@ -94,17 +65,9 @@ router.post('/', configMiddleware, async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-router.put('/:tag', configMiddleware, async (req, res) => {
+router.put('/:tag', async (req, res) => {
   try {
     const decodedTag = decodeURIComponent(req.params.tag);
-    /**
-     * Enforce retention with the old tag before the rename commits. The rename rewrites the
-     * conversations' tag entries, so a cascade failure afterwards would 500 while a retried
-     * PUT /:oldTag hits the 404 path (the old tag no longer exists) and the affected chats
-     * never convert. The old tag selects the same conversations the renamed tag will carry,
-     * and enforcing on a nonexistent tag is a no-op, so a failed rename retries cleanly.
-     */
-    await enforceForcedRetentionForTag(req, decodedTag, 'PUT /api/tags/:tag');
     const tag = await updateConversationTag(req.user.id, decodedTag, req.body);
     if (tag) {
       res.status(200).json(tag);
@@ -123,10 +86,9 @@ router.put('/:tag', configMiddleware, async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-router.delete('/:tag', configMiddleware, async (req, res) => {
+router.delete('/:tag', async (req, res) => {
   try {
     const decodedTag = decodeURIComponent(req.params.tag);
-    await enforceForcedRetentionForTag(req, decodedTag, 'DELETE /api/tags/:tag');
     const tag = await deleteConversationTag(req.user.id, decodedTag);
     if (tag) {
       res.status(200).json(tag);
@@ -145,14 +107,13 @@ router.delete('/:tag', configMiddleware, async (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-router.put('/convo/:conversationId', configMiddleware, async (req, res) => {
+router.put('/convo/:conversationId', async (req, res) => {
   try {
     const conversationTags = await updateTagsForConversation(
       req.user.id,
       req.params.conversationId,
       req.body.tags,
     );
-    await enforceForcedRetention(req, req.params.conversationId);
     res.status(200).json(conversationTags);
   } catch (error) {
     logger.error('Error updating conversation tags', error);

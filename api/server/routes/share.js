@@ -25,12 +25,7 @@ const {
   SYSTEM_TENANT_ID,
   createTempChatExpirationDate,
 } = require('@librechat/data-schemas');
-const {
-  FileSources,
-  PermissionTypes,
-  Permissions,
-  RetentionMode,
-} = require('librechat-data-provider');
+const { FileSources, PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getFiles,
   updateFile,
@@ -41,7 +36,6 @@ const {
   getSharedLink,
   getSharedLinkFile,
   backfillSharedLinkFiles,
-  applyForcedRetention,
   getRoleByName,
 } = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -93,14 +87,6 @@ const resolveSharedLinkExpiration = (req, conversationId) =>
       logger,
     },
   );
-
-/**
- * Converts the shared source conversation (and its messages) under forced (ephemeral)
- * retention, so sharing an older permanent chat does not leave it visible and non-expiring
- * after the public link itself expires; a no-op outside forced retention.
- */
-const enforceForcedRetention = (req, conversationId) =>
-  applyForcedRetention(conversationId, req?.user?.id, req?.config?.interfaceConfig);
 
 /**
  * Shared messages
@@ -549,22 +535,10 @@ router.post(
         return res.status(400).json({ message: 'snapshotFiles must be a boolean' });
       }
 
-      /**
-       * Convert the source conversation before creating the link. createSharedLink rejects
-       * when an active share already exists, so a retention failure after creation would
-       * leave a live share whose source chat never converts, and no retry could reach the
-       * cascade again. Converting first also lets the share expiration below read the
-       * converted conversation's deadline.
-       */
-      await enforceForcedRetention(req, req.params.conversationId);
       const expiredAt = await resolveSharedLinkExpiration(req, req.params.conversationId);
       if (expiredAt != null && !isActiveExpirationDate(expiredAt)) {
         return res.status(404).end();
       }
-      const writeExpiredAt =
-        req.config?.interfaceConfig?.retentionMode === RetentionMode.EPHEMERAL
-          ? undefined
-          : expiredAt;
 
       const role = await getRoleByName(req.user.role);
       const sharedLinksPerms = role?.permissions?.[PermissionTypes.SHARED_LINKS] || {};
@@ -577,12 +551,11 @@ router.post(
         req.user.id,
         req.params.conversationId,
         targetMessageId,
-        writeExpiredAt,
+        expiredAt,
         snapshotFiles,
       );
       if (created) {
-        await grantCreationPermissions(created._id, req.user.id, grantPublic, writeExpiredAt);
-        await enforceForcedRetention(req, req.params.conversationId);
+        await grantCreationPermissions(created._id, req.user.id, grantPublic, expiredAt);
         res.status(200).json(created);
       } else {
         res.status(404).end();
@@ -627,31 +600,23 @@ router.patch(
       if (expiredAt != null && !isActiveExpirationDate(expiredAt)) {
         return res.status(404).end();
       }
-      const writeExpiredAt =
-        req.config?.interfaceConfig?.retentionMode === RetentionMode.EPHEMERAL
-          ? undefined
-          : expiredAt;
 
       // Re-scope the grants before re-publishing. The shareId survives an update, so a
       // failed ACL write after the write-through would leave the new messages and file
       // snapshot readable at the same URL while the owner is told the update failed.
-      if (existing?._id && writeExpiredAt !== undefined) {
-        await updateSharedLinkPermissionsExpiration(existing._id, writeExpiredAt);
+      if (existing?._id && expiredAt !== undefined) {
+        await updateSharedLinkPermissionsExpiration(existing._id, expiredAt);
       }
 
       const updatedShare = await updateSharedLink(
         req.user.id,
         req.params.shareId,
         targetMessageId,
-        writeExpiredAt,
+        expiredAt,
         isFileSnapshotEnabled(req.config) && requestedSnapshotFiles !== false,
       );
       if (!updatedShare) {
         return res.status(404).end();
-      }
-
-      if (existing?.conversationId) {
-        await enforceForcedRetention(req, existing.conversationId);
       }
 
       return res.status(200).json(updatedShare);

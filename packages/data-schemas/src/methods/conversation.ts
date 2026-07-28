@@ -2,7 +2,6 @@ import { RetentionMode, isForcedTemporaryRetention } from 'librechat-data-provid
 import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
 import type { AppConfig, IChatProjectDocument, IConversation, ISharedLink } from '~/types';
-import type { ApplyForcedRetention } from '~/utils/retention';
 import type { MessageMethods } from './message';
 import {
   refreshChatProjectStatsForUser,
@@ -163,7 +162,6 @@ export interface ConversationMethods {
 export function createConversationMethods(
   mongoose: typeof import('mongoose'),
   messageMethods?: Pick<MessageMethods, 'getMessages' | 'deleteMessages'>,
-  applyForcedRetention?: ApplyForcedRetention,
 ): ConversationMethods {
   function getMessageMethods() {
     if (!messageMethods) {
@@ -365,10 +363,14 @@ export function createConversationMethods(
       }
 
       if (interfaceConfig?.retentionMode === RetentionMode.EPHEMERAL) {
-        delete update.isTemporary;
-        delete update.expiredAt;
-        delete unsetFields.isTemporary;
-        delete unsetFields.expiredAt;
+        update.isTemporary = true;
+        try {
+          update.expiredAt = createTempChatExpirationDate(interfaceConfig);
+        } catch (err) {
+          logger.error('Error creating temporary chat expiration date:', err);
+          logger.info(`---\`saveConvo\` context: ${metadata?.context}`);
+          update.expiredAt = createFallbackRetentionDate();
+        }
       } else if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
         if (typeof isTemporary === 'boolean') {
           update.isTemporary = isTemporary;
@@ -509,18 +511,6 @@ export function createConversationMethods(
       if (!conversation) {
         logger.debug('[saveConvo] Conversation not found, skipping update');
         return null;
-      }
-
-      if (applyForcedRetention) {
-        const forcedExpiredAt = await applyForcedRetention(
-          conversation.conversationId ?? conversationId,
-          userId,
-          interfaceConfig,
-        );
-        if (forcedExpiredAt instanceof Date) {
-          conversation.isTemporary = true;
-          conversation.expiredAt = forcedExpiredAt;
-        }
       }
 
       if (

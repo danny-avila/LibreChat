@@ -3,12 +3,11 @@ import {
   MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
 } from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
-import type { AppConfig, IChatProject, IChatProjectDocument, IConversation } from '~/types';
-import type { ApplyForcedRetention } from '~/utils/retention';
-import { buildRetentionVisibilityFilter } from '~/utils/retention';
-import { isValidObjectIdString } from '~/utils/objectId';
-import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
+import { isValidObjectIdString } from '~/utils/objectId';
+import { buildRetentionVisibilityFilter } from '~/utils/retention';
+import { escapeRegExp } from '~/utils/string';
+import type { IChatProject, IChatProjectDocument, IConversation } from '~/types';
 
 export type ChatProjectSortBy = 'name' | 'createdAt' | 'lastConversationAt';
 export type ChatProjectSortDirection = 'asc' | 'desc';
@@ -56,16 +55,11 @@ export interface ChatProjectMethods {
     projectId: string,
     input: UpdateChatProjectInput,
   ): Promise<IChatProject | null>;
-  deleteChatProject(
-    user: string,
-    projectId: string,
-    interfaceConfig?: AppConfig['interfaceConfig'],
-  ): Promise<DeleteChatProjectResult>;
+  deleteChatProject(user: string, projectId: string): Promise<DeleteChatProjectResult>;
   assignConversationToProject(
     user: string,
     conversationId: string,
     projectId: string | null,
-    interfaceConfig?: AppConfig['interfaceConfig'],
   ): Promise<AssignConversationToProjectResult | null>;
   refreshChatProjectStats(user: string, projectId: string): Promise<IChatProject | null>;
 }
@@ -329,10 +323,7 @@ export async function updateChatProjectLastConversationForUser(
   }
 }
 
-export function createChatProjectMethods(
-  mongoose: typeof import('mongoose'),
-  applyForcedRetention: ApplyForcedRetention,
-): ChatProjectMethods {
+export function createChatProjectMethods(mongoose: typeof import('mongoose')): ChatProjectMethods {
   async function createChatProject(
     user: string,
     input: CreateChatProjectInput,
@@ -443,7 +434,6 @@ export function createChatProjectMethods(
   async function deleteChatProject(
     user: string,
     projectId: string,
-    interfaceConfig?: AppConfig['interfaceConfig'],
   ): Promise<DeleteChatProjectResult> {
     if (!isValidObjectIdString(projectId)) {
       return { deletedCount: 0, modifiedCount: 0 };
@@ -456,16 +446,6 @@ export function createChatProjectMethods(
     if (!project) {
       return { deletedCount: 0, modifiedCount: 0 };
     }
-
-    const conversations = await Conversation.find(
-      { user, chatProjectId: projectId },
-      'conversationId',
-    ).lean<Array<Pick<IConversation, 'conversationId'>>>();
-    await Promise.all(
-      conversations.map(({ conversationId }) =>
-        applyForcedRetention(conversationId, user, interfaceConfig),
-      ),
-    );
 
     const [conversationResult, deleteResult] = await Promise.all([
       Conversation.updateMany(
@@ -485,7 +465,6 @@ export function createChatProjectMethods(
     user: string,
     conversationId: string,
     projectId: string | null,
-    interfaceConfig?: AppConfig['interfaceConfig'],
   ): Promise<AssignConversationToProjectResult | null> {
     const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
@@ -511,16 +490,6 @@ export function createChatProjectMethods(
     }
 
     const previousProjectId = conversation.chatProjectId ?? null;
-
-    /**
-     * Convert the touched conversation to the forced (ephemeral) window before capturing the
-     * updated document. The caller returns this object straight to the client, which writes it
-     * into the active conversation and the React Query cache, so it must already carry the
-     * isTemporary/expiredAt fields rather than a stale pre-conversion snapshot. A no-op outside
-     * forced retention.
-     */
-    await applyForcedRetention(conversationId, user, interfaceConfig);
-
     const update =
       normalizedProjectId == null
         ? { $unset: { chatProjectId: '' } }

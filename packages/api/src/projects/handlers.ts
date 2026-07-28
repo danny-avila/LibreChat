@@ -1,7 +1,6 @@
 import { isValidObjectIdString, logger } from '@librechat/data-schemas';
 
 import type {
-  AppConfig,
   ChatProjectMethods,
   ChatProjectSortBy,
   ChatProjectSortDirection,
@@ -24,7 +23,6 @@ interface ProjectUser {
 
 interface ProjectRequest extends Request {
   user?: ProjectUser;
-  config?: AppConfig;
 }
 
 type ProjectHandlerDependencies = Pick<
@@ -141,7 +139,6 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies): {
         getUserId(req),
         conversationId,
         projectId,
-        req.config?.interfaceConfig,
       );
       if (!result) {
         return res.status(404).json({ error: CONVERSATION_NOT_FOUND });
@@ -211,11 +208,7 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies): {
     }
 
     try {
-      const result = await deps.deleteChatProject(
-        getUserId(req),
-        projectId,
-        req.config?.interfaceConfig,
-      );
+      const result = await deps.deleteChatProject(getUserId(req), projectId);
       if (!result.deletedCount) {
         return res.status(404).json({ error: PROJECT_NOT_FOUND });
       }

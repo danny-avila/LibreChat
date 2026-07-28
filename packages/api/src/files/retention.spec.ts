@@ -52,7 +52,7 @@ describe('retention helpers', () => {
     expect(dependencies.getConvo).not.toHaveBeenCalled();
   });
 
-  it('returns a fresh initial expiry for retentionMode EPHEMERAL', async () => {
+  it('returns expiry when retentionMode is EPHEMERAL', async () => {
     const result = await getRetentionExpiry(
       request({ config: { interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } } }),
       dependencies,
@@ -304,28 +304,6 @@ describe('retention helpers', () => {
     expect(dependencies.createExpirationDate).not.toHaveBeenCalled();
   });
 
-  it('applies ephemeral retention to persistent agent files even when retainAgentFiles is enabled', async () => {
-    const result = await getAgentFileRetentionExpiry(
-      {
-        req: request({
-          config: {
-            interfaceConfig: {
-              retentionMode: RetentionMode.EPHEMERAL,
-              retainAgentFiles: true,
-            },
-          },
-        }),
-        messageAttachment: false,
-        toolResource: 'context',
-      },
-      dependencies,
-    );
-
-    expect(result).toEqual({ expiredAt: expirationDate });
-    expect(dependencies.getConvo).not.toHaveBeenCalled();
-    expect(dependencies.createExpirationDate).toHaveBeenCalledTimes(1);
-  });
-
   it('still applies all-data retention to agent message attachments when retainAgentFiles is enabled', async () => {
     const result = await getAgentFileRetentionExpiry(
       {
@@ -440,43 +418,6 @@ describe('retention helpers', () => {
         getSharedLinkExpiration({ req: request(), conversationId: 'convo-1' }, dependencies),
       ).resolves.toBe(expiredAt);
       expect(dependencies.createExpirationDate).not.toHaveBeenCalled();
-    });
-
-    it('leaves forced-retention parent capping to the chokepoint', async () => {
-      const conversationExpiredAt = new Date(Date.now() + 60 * 60 * 1000);
-      dependencies.getConvo.mockResolvedValue({ expiredAt: conversationExpiredAt });
-
-      await expect(
-        getSharedLinkExpiration(
-          {
-            req: request({
-              config: { interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } },
-            }),
-            conversationId: 'convo-1',
-          },
-          dependencies,
-        ),
-      ).resolves.toBe(expirationDate);
-    });
-
-    it('returns null when creating a share expiration throws', async () => {
-      const conversationExpiredAt = new Date(Date.now() + 60 * 60 * 1000);
-      dependencies.getConvo.mockResolvedValue({ expiredAt: conversationExpiredAt });
-      dependencies.createExpirationDate.mockImplementation(() => {
-        throw new Error('boom');
-      });
-
-      await expect(
-        getSharedLinkExpiration(
-          {
-            req: request({
-              config: { interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } },
-            }),
-            conversationId: 'convo-1',
-          },
-          dependencies,
-        ),
-      ).resolves.toBeNull();
     });
   });
 });

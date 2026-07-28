@@ -94,8 +94,8 @@ module.exports = {
       forkIpLimiter: (req, res, next) => next(),
       forkUserLimiter: (req, res, next) => next(),
     })),
-    configMiddleware: jest.fn((req, res, next) => next()),
-    validateConvoAccess: jest.fn((req, res, next) => next()),
+    configMiddleware: (req, res, next) => next(),
+    validateConvoAccess: (req, res, next) => next(),
   }),
 
   forkUtils: () => ({
