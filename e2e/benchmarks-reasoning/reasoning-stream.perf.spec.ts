@@ -8,16 +8,28 @@ import {
   selectMockEndpoint,
   sendMessage,
 } from '../specs/mock/helpers';
-import { buildTextSection, buildThinkSection, countModelChunks, END_MARKER } from './payload';
+import {
+  buildTextSection,
+  buildThinkSection,
+  countModelChunks,
+  END_MARKER,
+  SENTENCE,
+} from './payload';
 
 type RenderTally = Record<string, { count: number; time: number }>;
 
 type PerfSnapshot = {
   renders: RenderTally;
   longTasks: number[];
+  /** Milliseconds between the last reset and this snapshot, measured on the
+   *  page's own clock so it covers exactly the tallied interval. */
+  elapsedMs: number;
 };
 
-type PerfGlobal = PerfSnapshot & {
+type PerfGlobal = {
+  renders: RenderTally;
+  longTasks: number[];
+  startedAt: number;
   drain(): void;
   reset(): void;
 };
@@ -45,6 +57,7 @@ const TALLY_SETUP = `(() => {
     renders: Object.create(null),
     longTasks: [],
     observer: null,
+    startedAt: performance.now(),
     drain() {
       if (!this.observer) {
         return;
@@ -57,6 +70,7 @@ const TALLY_SETUP = `(() => {
       this.drain();
       this.renders = Object.create(null);
       this.longTasks = [];
+      this.startedAt = performance.now();
     },
   };
   window.__PERF__ = perf;
@@ -125,7 +139,11 @@ const TALLY_SETUP = `(() => {
 async function snapshotPerf(page: Page): Promise<PerfSnapshot> {
   return page.evaluate(() => {
     window.__PERF__.drain();
-    return { renders: window.__PERF__.renders, longTasks: window.__PERF__.longTasks.slice() };
+    return {
+      renders: window.__PERF__.renders,
+      longTasks: window.__PERF__.longTasks.slice(),
+      elapsedMs: performance.now() - window.__PERF__.startedAt,
+    };
   });
 }
 
@@ -187,16 +205,23 @@ test.describe('reasoning stream perf (react-scan)', () => {
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
 
     await sendMessage(page, 'Stream the long reasoning benchmark reply.');
-    /** Clock and tally start together so wall time covers exactly the
-     *  measured interval — request-setup time is excluded from both. */
+    /** The tally reset stamps the start time on the page's own clock; the
+     *  matching end time is read inside the snapshot evaluation, so wall time
+     *  covers exactly the tallied interval — request setup excluded, work
+     *  between marker paint and snapshot included. */
     await resetPerf(page);
-    const streamStart = Date.now();
 
     await expect(messagesView(page).getByText(END_MARKER)).toBeVisible({
       timeout: 4 * 60 * 1000,
     });
-    const streamMs = Date.now() - streamStart;
+    /** The marker only proves the final text delta painted — generation
+     *  finalization (usage chunk, terminal events, save-time re-render) is
+     *  part of the measured stream, so wait for it to finish first. */
+    await expect(page.getByRole('button', { name: 'Stop generating' })).toBeHidden({
+      timeout: 30_000,
+    });
     const streaming = await snapshotPerf(page);
+    const streamMs = Math.ceil(streaming.elapsedMs);
 
     /**
      * The whole reasoning section must land in ONE think part — a single
@@ -209,33 +234,53 @@ test.describe('reasoning stream perf (react-scan)', () => {
 
     /**
      * One nonempty toggle is not enough — the ENTIRE reasoning section must
-     * survive the pipeline. Expand the toggle and compare the rendered think
-     * text against the source payload (whitespace-normalized; the UI strips
-     * the inline think tags and trims).
+     * survive the pipeline, internal paragraph breaks included (the box
+     * renders whitespace-pre-wrap, so they are user-visible content). The
+     * only transforms the UI applies are inline-tag stripping and edge
+     * trimming, so the comparison is exact after trimming the source edges.
      */
     await thoughtToggles.click();
     const thinkGroup = messagesView(page).getByRole('group', {
       name: /^(Thoughts|Thinking)$/,
     });
     const renderedThink = (await thinkGroup.locator('p').first().textContent()) ?? '';
-    const normalize = (value: string) => value.replace(/\s+/g, ' ').trim();
-    expect(normalize(renderedThink)).toBe(normalize(thinkSection));
+    expect(renderedThink).toBe(thinkSection.trim());
 
     /**
      * The markdown body must also arrive whole — END_MARKER only proves the
-     * suffix rendered. Every generated section heading must be present, along
-     * with the exact table count and the generated code block, so the
-     * measured render work covers the full payload.
+     * suffix rendered. Structure alone is not enough either: verify the prose
+     * itself — every section's heading, doubled-sentence paragraph, and both
+     * list items, plus the exact table count with cell values and the code
+     * block's lines — so the measured render work covers the full payload.
      */
     expect(sectionCount).toBeGreaterThan(0);
+    const doubledSentence = `${SENTENCE}${SENTENCE}`.trim();
+    await expect(messagesView(page).getByText(doubledSentence, { exact: true })).toHaveCount(
+      sectionCount,
+    );
     for (let section = 1; section <= sectionCount; section += 1) {
       await expect(
         messagesView(page).getByRole('heading', { name: `Section ${section}`, exact: true }),
       ).toBeVisible();
+      await expect(
+        messagesView(page).getByText(`Point one for section ${section}`, { exact: true }),
+      ).toBeVisible();
+      await expect(
+        messagesView(page).getByText(`Point two for section ${section}`, { exact: true }),
+      ).toBeVisible();
     }
     await expect(messagesView(page).getByRole('listitem')).toHaveCount(sectionCount * 2);
-    await expect(messagesView(page).getByRole('table')).toHaveCount(Math.floor(sectionCount / 4));
+    const tableCount = Math.floor(sectionCount / 4);
+    await expect(messagesView(page).getByRole('table')).toHaveCount(tableCount);
+    for (const cellValue of ['120000', '135500', '151200']) {
+      await expect(
+        messagesView(page).getByRole('cell', { name: cellValue, exact: true }),
+      ).toHaveCount(tableCount);
+    }
     await expect(messagesView(page).getByText('export function estimate').first()).toBeVisible();
+    await expect(
+      messagesView(page).getByText('return Math.round(total * rate);').first(),
+    ).toBeVisible();
 
     await resetPerf(page);
     const input = page.getByRole('textbox', { name: 'Message input' });

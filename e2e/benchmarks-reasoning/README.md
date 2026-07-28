@@ -22,14 +22,16 @@ injected into the page:
 
 ## Run
 
-react-scan is not a repo dependency; provide the bundle path:
+react-scan is not a repo dependency; provide the bundle path. The recorded
+baselines and thresholds were measured with react-scan 0.5.7 — instrumentation
+overhead and `onRender` semantics are version-dependent, so keep it pinned:
 
 ```bash
-npm i --no-save react-scan
+npm i --no-save react-scan@0.5.7
 npx playwright test --config=e2e/playwright.config.reasoning-perf.ts
 ```
 
 or point `REACT_SCAN_PATH` at an existing
-`react-scan/dist/auto.global.js`.
+`react-scan@0.5.7/dist/auto.global.js`.
 
 Requires a built client (`client/dist`) like the other mock e2e configs.

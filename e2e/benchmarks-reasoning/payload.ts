@@ -6,7 +6,7 @@
  * contiguous think part exercises exactly the case the legacy splitting
  * existed to protect against.
  */
-const SENTENCE =
+export const SENTENCE =
   'The quarterly analytics review shows sustained growth across every referral channel, with notable spikes on launch days. ';
 
 export const THINK_TARGET_CHARS = 18000;
