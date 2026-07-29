@@ -57,6 +57,10 @@ export interface RunImportInput {
   filepath: string;
   userId: string;
   tenantId?: string;
+  /** Retention deadline for everything this run writes, when the deployment
+   * sets one. The batch builder already applies it to conversations and
+   * messages; assets have to carry it too or they outlive the chats. */
+  expiredAt?: Date;
   defaultModel: string;
   /** The format `inspectExport` already identified. Omit it and `runImport`
    * re-reads the first shard to detect it. */

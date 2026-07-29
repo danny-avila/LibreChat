@@ -329,6 +329,7 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
       layout,
       userId: input.userId,
       tenantId: input.tenantId,
+      expiredAt: input.expiredAt,
       pointers: scan.pointers,
       attachments: scan.attachments,
       references: scan.references,
@@ -374,6 +375,10 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
         if (input.existingExternalIds.has(conv.conversation_id)) {
           report.skipped += 1;
           progress.conversations.done += 1;
+          /** Published like any other advance: re-importing a finished export
+           * is all skips, and without this the bar sits at its old value for
+           * the whole run and then jumps straight to completed. */
+          await input.onProgress?.(progress);
           continue;
         }
 

@@ -494,6 +494,9 @@ async function runImportJob(context, job) {
       filepath: job.filepath,
       userId,
       tenantId,
+      /** The same deadline the builder stamps on this import's conversations
+       * and messages, so an attachment expires with the chat that shows it. */
+      expiredAt: batch.getRetentionFields().expiredAt,
       format: target.format,
       defaultModel,
       deps: { saveBuffer, createFile: db.createFile, deleteFile: releaseAsset },

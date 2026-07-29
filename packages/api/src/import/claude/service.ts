@@ -130,6 +130,7 @@ export async function runClaudeImport(context: ProviderImportContext): Promise<v
       if (input.existingExternalIds.has(conv.uuid)) {
         report.skipped += 1;
         progress.conversations.done += 1;
+        await input.onProgress?.(progress);
         continue;
       }
 

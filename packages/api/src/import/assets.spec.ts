@@ -818,3 +818,54 @@ describe('ingestAssets storage strategy', () => {
     expect(sources).toEqual(['document_backend']);
   });
 });
+
+/** Under `retentionMode: all` the batch builder gives imported conversations
+ * and messages a deadline. An attachment without the same deadline outlives
+ * the chat that shows it, in exactly the deployments that require everything
+ * to expire. */
+describe('ingestAssets retention', () => {
+  const archive: Archive = {
+    entries: [{ name: 'png-one.dat', bytes: 4 }],
+    read: async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+    close: () => undefined,
+  };
+
+  async function ingestWith(expiredAt?: Date) {
+    const rows: Array<{ expiredAt?: Date }> = [];
+    await ingestAssets({
+      archive,
+      layout: resolveLayout(archive.entries, null),
+      userId: 'u1',
+      tenantId: undefined,
+      expiredAt,
+      pointers: ['file-service://png-one'],
+      deps: {
+        saveBuffer: async ({ fileName }) => ({
+          filepath: `/uploads/u1/${fileName}`,
+          source: 'local',
+        }),
+        createFile: async (data) => {
+          rows.push(data);
+          return { file_id: data.file_id };
+        },
+      },
+    });
+    return rows;
+  }
+
+  it('stamps the retention deadline on the imported file row', async () => {
+    const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+
+    const rows = await ingestWith(expiredAt);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].expiredAt).toEqual(expiredAt);
+  });
+
+  it('leaves the row without a deadline when the deployment sets none', async () => {
+    const rows = await ingestWith(undefined);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).not.toHaveProperty('expiredAt');
+  });
+});

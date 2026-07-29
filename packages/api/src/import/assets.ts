@@ -39,6 +39,8 @@ export interface CreateFileInput {
   source: string;
   context: string;
   tenantId?: string;
+  /** Retention deadline, when the deployment sets one. */
+  expiredAt?: Date;
 }
 
 export type CreateFileFn = (
@@ -63,6 +65,13 @@ export interface IngestInput {
   userId: string;
   tenantId: string | undefined;
   pointers: string[];
+  /** The retention deadline the conversations and messages of this import are
+   * getting. An imported attachment has to expire with the conversation that
+   * references it: without it the row and its storage object outlive the chat
+   * they belong to, in exactly the deployments that require everything to
+   * expire. `disableTTL` only suppresses the short upload TTL, which is a
+   * different field. */
+  expiredAt?: Date;
   deps: AssetDeps;
   /** Attachment metadata keyed by the raw id (pointer with its scheme
    * stripped). Supplies the authoritative `mime_type` the export recorded
@@ -304,6 +313,7 @@ async function ingestOne(
       source,
       context: FileContext.message_attachment,
       tenantId,
+      ...(input.expiredAt ? { expiredAt: input.expiredAt } : {}),
     },
     true,
   );
