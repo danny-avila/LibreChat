@@ -160,6 +160,29 @@ describe('useDictation', () => {
     expect(ask).toHaveBeenCalledTimes(1);
   });
 
+  /* The bar disables stop and send once a take is being transcribed, and the
+     hook refuses them too: a second stop would rewrite how a take that was
+     already committed gets spent. */
+  it('ignores a stop that arrives after the take has ended', async () => {
+    const { result, rerender, currentText } = setup();
+    act(() => result.current.start());
+    mockIsListening = true;
+    act(() => rerender());
+
+    act(() => mockSetTextCallback('already committed'));
+    act(() => result.current.stopToComposer());
+    mockIsListening = false;
+    act(() => rerender());
+
+    mockStop.mockClear();
+    act(() => result.current.stopAndSend());
+    await settle(rerender);
+
+    expect(mockStop).not.toHaveBeenCalled();
+    expect(ask).not.toHaveBeenCalled();
+    expect(currentText()).toBe('already committed');
+  });
+
   it('keeps the draft when a cancelled external transcription lands anyway', async () => {
     mockSpeechEndpoint = 'external';
     const { result, rerender, currentText } = setup({ draft: 'my unsent draft' });

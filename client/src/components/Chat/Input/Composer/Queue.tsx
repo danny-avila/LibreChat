@@ -1,8 +1,8 @@
 import { memo, useRef, useMemo, useState, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useDrag, useDrop } from 'react-dnd';
-import { useMediaQuery } from '@librechat/client';
 import { X, Pencil, GripVertical } from 'lucide-react';
+import { useMediaQuery, useToastContext } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { QueuedMessage } from '~/store/families';
@@ -71,6 +71,7 @@ function QueueRow({
   onAnnounce,
 }: QueueRowProps) {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const rowRef = useRef<HTMLDivElement>(null);
   const gripRef = useRef<HTMLButtonElement>(null);
   const { reorderQueued, restoreQueuedOrder } = steering;
@@ -241,7 +242,15 @@ function QueueRow({
           );
           if (restored) {
             steering.removeQueued(message.id);
+            return;
           }
+          /* Refusing silently reads as a dead button: the row stays, nothing
+             moves, and the reason (a draft in the box, another chat on screen)
+             is somewhere the click was not. */
+          showToast({
+            message: localize('com_ui_queue_remove_blocked'),
+            status: 'warning',
+          });
         }}
         className={ICON_BTN}
       >

@@ -201,8 +201,17 @@ export default function useDictation({
     startRecording();
   }, [getValues, startRecording]);
 
+  /* Only a running take can be stopped. The bar disables these controls once a
+     transcription is in flight, and this is the same rule stated where the mode
+     is actually written: a second stop would otherwise rewrite how a take that
+     was already committed gets spent. */
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const stopWith = useCallback(
     (mode: StopMode) => {
+      if (!activeRef.current) {
+        return;
+      }
       modeRef.current = mode;
       setSettling(true);
       if (mode === 'send') {
