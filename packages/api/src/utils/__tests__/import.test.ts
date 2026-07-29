@@ -2,7 +2,12 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-import { DEFAULT_IMPORT_MAX_FILE_SIZE, resolveImportMaxFileSize } from '../import';
+import {
+  DEFAULT_IMPORT_MAX_FILE_SIZE,
+  DEFAULT_IMPORT_MAX_SHARD_SIZE,
+  resolveImportMaxFileSize,
+  resolveImportMaxShardSize,
+} from '../import';
 import { logger } from '@librechat/data-schemas';
 
 describe('resolveImportMaxFileSize', () => {
@@ -72,5 +77,33 @@ describe('resolveImportMaxFileSize', () => {
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('Invalid CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES'),
     );
+  });
+});
+
+describe('resolveImportMaxShardSize', () => {
+  const original = process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES;
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES;
+      return;
+    }
+    process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES = original;
+  });
+
+  it('defaults to 256 MiB', () => {
+    delete process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES;
+    expect(resolveImportMaxShardSize()).toBe(DEFAULT_IMPORT_MAX_SHARD_SIZE);
+    expect(DEFAULT_IMPORT_MAX_SHARD_SIZE).toBe(268435456);
+  });
+
+  it('honours a configured override', () => {
+    process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES = '5242880';
+    expect(resolveImportMaxShardSize()).toBe(5242880);
+  });
+
+  it.each(['0', '-1', 'not-a-number'])('falls back to the default for %s', (raw) => {
+    process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES = raw;
+    expect(resolveImportMaxShardSize()).toBe(DEFAULT_IMPORT_MAX_SHARD_SIZE);
   });
 });

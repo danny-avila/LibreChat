@@ -7,20 +7,21 @@ import { megabyte } from 'librechat-data-provider';
 import type { Readable } from 'stream';
 
 import { ZipBombError } from '~/files/documents/zipSafety';
+import { resolveImportMaxShardSize } from '~/utils/import';
 import { ImportFileTooLargeError } from './errors';
 
 export { ZipBombError };
 
 const DEFAULT_MAX_ENTRIES = 20000;
-/**
- * Also the ceiling on what any single shard can be parsed as. V8 caps a
- * string at 536,870,888 characters (`buffer.constants.MAX_STRING_LENGTH`),
- * just under this, so an entry larger than it can never survive the
- * `.toString('utf8')` every reader performs — raising this cap would only
- * trade a clear rejection for an opaque V8 allocation failure.
- */
-const DEFAULT_MAX_ENTRY_BYTES = 512 * megabyte;
 const DEFAULT_MAX_TOTAL_BYTES = 4096 * megabyte;
+/**
+ * Hard ceiling on the per-entry cap, whatever a deployment configures. V8 caps
+ * a string at 536,870,888 characters (`buffer.constants.MAX_STRING_LENGTH`),
+ * just under 512 MiB, so a larger entry can never survive the
+ * `.toString('utf8')` every reader performs — allowing one would trade a clear
+ * rejection for an opaque V8 allocation failure.
+ */
+const ABSOLUTE_MAX_ENTRY_BYTES = 512 * megabyte;
 /** Local file header signature every ZIP file begins with. Its absence
  * means the upload is a bare file (e.g. a legacy un-zipped ChatGPT
  * `.json` export), not that it is malformed — `openArchive` wraps it in a
@@ -337,7 +338,10 @@ export async function openArchive(
 ): Promise<Archive> {
   const limits: ArchiveLimits = {
     maxEntries: options.maxEntries ?? DEFAULT_MAX_ENTRIES,
-    maxEntryBytes: options.maxEntryBytes ?? DEFAULT_MAX_ENTRY_BYTES,
+    maxEntryBytes: Math.min(
+      options.maxEntryBytes ?? resolveImportMaxShardSize(),
+      ABSOLUTE_MAX_ENTRY_BYTES,
+    ),
     maxTotalBytes: options.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES,
   };
   const totals: ArchiveTotals = { bytesRead: 0 };
