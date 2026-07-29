@@ -770,8 +770,10 @@ describe('web.ts', () => {
       // Check rerankers
       expect(webSearchAuth.rerankers).toHaveProperty('jina');
       expect(webSearchAuth.rerankers.jina).toHaveProperty('jinaApiKey', 1);
+      expect(webSearchAuth.rerankers.jina).toHaveProperty('jinaApiUrl', 0);
       expect(webSearchAuth.rerankers).toHaveProperty('cohere');
       expect(webSearchAuth.rerankers.cohere).toHaveProperty('cohereApiKey', 1);
+      expect(webSearchAuth.rerankers.cohere).toHaveProperty('cohereApiUrl', 0);
     });
 
     it('should mark required keys with value 1', () => {
@@ -785,6 +787,8 @@ describe('web.ts', () => {
     it('should mark optional keys with value 0', () => {
       // Keys with value 0 are optional
       expect(webSearchAuth.scrapers.firecrawl.firecrawlApiUrl).toBe(0);
+      expect(webSearchAuth.rerankers.jina.jinaApiUrl).toBe(0);
+      expect(webSearchAuth.rerankers.cohere.cohereApiUrl).toBe(0);
     });
   });
   describe('loadWebSearchAuth with specific services', () => {
