@@ -25,7 +25,7 @@ const OPTIONS = {
 };
 
 describe('convertConversation', () => {
-  it('carries archive, pin, model, and external id onto the conversation', () => {
+  it('carries archive, pin, and external id onto the conversation, on the configured model', () => {
     const result = convertConversation(
       conversation({
         root: { id: 'root', message: null, parent: null, children: ['a'] },
@@ -46,7 +46,10 @@ describe('convertConversation', () => {
 
     expect(result.isArchived).toBe(true);
     expect(result.pinned).toBe(true);
-    expect(result.model).toBe('gpt-5-thinking');
+    /** Not `default_model_slug` ('gpt-5-thinking'): the conversation's model is
+     * what its next prompt is sent with, and a historical ChatGPT slug is not a
+     * model any endpoint serves. */
+    expect(result.model).toBe('gpt-4o');
     expect(result.externalId).toBe('ext-1');
     expect(result.title).toBe('Trip planning');
   });

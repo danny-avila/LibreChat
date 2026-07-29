@@ -210,8 +210,6 @@ export function convertConversation(
 
   orderTree(messages);
 
-  const { model } = resolveModel(conv.default_model_slug ?? undefined, options.defaultModel);
-
   return {
     conversationId: uuidv4(),
     externalId: conv.conversation_id,
@@ -219,7 +217,15 @@ export function convertConversation(
     createdAt: new Date(fallbackTime),
     isArchived: conv.is_archived === true,
     pinned: conv.is_starred === true || conv.pinned_time != null,
-    model,
+    /** The conversation's model is what its *next* prompt is sent with, so it
+     * has to be a model this deployment actually serves. `default_model_slug`
+     * is a historical ChatGPT identifier — `auto`, `research`, `gpt-5-t` — that
+     * no endpoint accepts, and setting it here would leave every imported
+     * conversation unusable until the user picked a model by hand. The
+     * per-message `model` keeps the historical slug for display, which is
+     * where it belongs; the Claude and Grok converters resolve this field the
+     * same way. */
+    model: options.defaultModel,
     messages,
   };
 }
