@@ -9,10 +9,10 @@ const Container = ({ children, message }: { children: React.ReactNode; message?:
     dir="auto"
   >
     {message?.isCreatedByUser === true && <MessageQuotes quotes={message.quotes} />}
-    {/* Not user-only: this is the sole consumer of `message.files`, and an
-        imported assistant message can carry attachments — voice-mode audio —
-        that no content part renders. */}
-    {message?.files != null && message.files.length > 0 && <Files message={message} />}
+    {/* Not user-only: an assistant message can carry attachments — voice-mode
+        audio — that no content part renders. `ContentParts` renders the same
+        files for messages that never reach this container. */}
+    {message?.files != null && message.files.length > 0 && <Files files={message.files} />}
     {message?.isCreatedByUser === true && (
       <>
         <SkillPills skills={message.alwaysAppliedSkills} source="always-apply" />
