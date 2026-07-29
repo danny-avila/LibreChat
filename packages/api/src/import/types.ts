@@ -1,5 +1,14 @@
 import { Tools, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
-import type { SearchResultData } from 'librechat-data-provider';
+import type {
+  TImportJob,
+  TImportPhase,
+  TImportReport,
+  TImportCounter,
+  TImportSummary,
+  TImportProgress,
+  SearchResultData,
+  TImportJobStatus,
+} from 'librechat-data-provider';
 
 export interface ImportedAsset {
   file_id: string;
@@ -326,61 +335,27 @@ export interface ConvertedConversation {
  * archive layout. */
 export type ExportFormat = 'chatgpt' | 'claude' | 'grok';
 
-export type ImportPhase =
-  | 'queued'
-  | 'awaiting_confirmation'
-  | 'assets'
-  | 'conversations'
-  | 'completed'
-  | 'failed'
-  | 'cancelled';
+/**
+ * The job vocabulary is declared once, in `librechat-data-provider`, and
+ * aliased here. It is the contract between this package and the client, and
+ * the route that serves it (`GET /import/jobs/:jobId`) is untyped JS — so two
+ * hand-maintained copies could drift silently, and the first symptom would be
+ * a client that polls a phase it does not recognise forever.
+ */
+export type ImportPhase = TImportPhase;
+export type ImportCounter = TImportCounter;
+export type ImportProgress = TImportProgress;
+export type ImportSummary = TImportSummary;
+export type ImportReport = TImportReport;
+export type ImportJobStatus = TImportJobStatus;
 
-export interface ImportCounter {
-  done: number;
-  total: number;
-}
-
-export interface ImportProgress {
-  conversations: ImportCounter;
-  messages: ImportCounter;
-  assets: ImportCounter;
-}
-
-export interface ImportSummary {
-  source: 'chatgpt' | 'chatgpt-legacy' | 'claude' | 'grok' | 'chatbotui' | 'librechat';
-  manifestVersion: number | null;
-  conversations: number;
-  shards: number;
-  assets: number;
-  assetBytes: number;
-  archived: number;
-  starred: number;
-}
-
-export interface ImportReport {
-  imported: number;
-  skipped: number;
-  assetsImported: number;
-  assetsUnavailable: number;
-  errors: string[];
-}
-
-export type ImportJobStatus = 'active' | 'completed' | 'failed' | 'cancelled';
-
-export interface ImportJob {
-  jobId: string;
+/** The stored job: what the client sees, plus the two fields the route strips
+ * before responding. Deriving it this way is what makes that strip provably
+ * exhaustive rather than a comment. */
+export type ImportJob = TImportJob & {
   userId: string;
   filepath: string;
-  filename: string;
-  phase: ImportPhase;
-  status: ImportJobStatus;
-  summary: ImportSummary | null;
-  progress: ImportProgress;
-  report: ImportReport | null;
-  error: string | null;
-  createdAt: number;
-  updatedAt: number;
-}
+};
 
 export interface ImportedCitations {
   turn: number;
