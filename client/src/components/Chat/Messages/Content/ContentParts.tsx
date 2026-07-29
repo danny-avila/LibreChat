@@ -358,6 +358,22 @@ const ContentParts = memo(function ContentParts({
     [sequentialParts, attachmentMap, fallbackScope],
   );
 
+  /** The re-attribution node for a part resuming after a steer block, shared
+   *  by the sequential path and the parallel renderer's sequential stretches. */
+  const renderResumeAttribution = useCallback(
+    (idx: number): ReactElement | null => {
+      if (authorHeader == null || !postSteerAuthors.has(idx)) {
+        return null;
+      }
+      const activeAgentId = postSteerAuthors.get(idx);
+      if (activeAgentId != null) {
+        return <AgentUpdate key={`author-${messageId}-${idx}`} currentAgentId={activeAgentId} />;
+      }
+      return <Fragment key={`author-${messageId}-${idx}`}>{authorHeader}</Fragment>;
+    },
+    [authorHeader, postSteerAuthors, messageId],
+  );
+
   // Early return: no content to render AND no pending skill cards
   if (!content && !hasPendingSkills) {
     return null;
@@ -423,6 +439,7 @@ const ContentParts = memo(function ContentParts({
           searchResults={searchResults}
           isSubmitting={effectiveIsSubmitting}
           renderPart={renderPart}
+          renderResumeAttribution={renderResumeAttribution}
         />
       </ApprovalProvider>
     );
@@ -442,18 +459,9 @@ const ContentParts = memo(function ContentParts({
         {groupedParts.flatMap((group) => {
           const firstIdx = group.type === 'single' ? group.part.idx : (group.parts[0]?.idx ?? -1);
           const nodes: ReactElement[] = [];
-          if (authorHeader != null && postSteerAuthors.has(firstIdx)) {
-            const activeAgentId = postSteerAuthors.get(firstIdx);
-            nodes.push(
-              activeAgentId != null ? (
-                <AgentUpdate
-                  key={`author-${messageId}-${firstIdx}`}
-                  currentAgentId={activeAgentId}
-                />
-              ) : (
-                <Fragment key={`author-${messageId}-${firstIdx}`}>{authorHeader}</Fragment>
-              ),
-            );
+          const attribution = renderResumeAttribution(firstIdx);
+          if (attribution != null) {
+            nodes.push(attribution);
           }
           if (group.type === 'single') {
             const { part, idx } = group.part;

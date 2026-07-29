@@ -59,7 +59,19 @@ jest.mock('../Part', () => ({
 }));
 
 jest.mock('../ParallelContent', () => ({
-  ParallelContentRenderer: () => <div data-testid="parallel-renderer" />,
+  /** Invokes `renderResumeAttribution` per content index like the real
+   *  renderer does for its sequential stretches, so the wiring is testable. */
+  ParallelContentRenderer: ({
+    content,
+    renderResumeAttribution,
+  }: {
+    content?: Array<TMessageContentParts | undefined>;
+    renderResumeAttribution?: (idx: number) => React.ReactNode;
+  }) => (
+    <div data-testid="parallel-renderer">
+      {content?.map((_, idx) => renderResumeAttribution?.(idx))}
+    </div>
+  ),
 }));
 
 import ContentParts from '../ContentParts';
@@ -211,6 +223,24 @@ describe('ContentParts — post-steer author re-attribution', () => {
     expect(marker).toHaveLength(1);
     expect(marker[0]).toHaveAttribute('data-agent-id', 'agent_b');
     expect(screen.queryByTestId('author-header')).toBeNull();
+  });
+
+  it('provides resume attribution to the parallel renderer for its sequential stretches', () => {
+    const parallelText = {
+      type: ContentTypes.TEXT,
+      text: 'column',
+      groupId: 1,
+    } as unknown as TMessageContentParts;
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[parallelText, steerPart, textPart('resumed')]}
+        authorHeader={header}
+      />,
+    );
+    const renderer = screen.getByTestId('parallel-renderer');
+    expect(renderer).toBeTruthy();
+    expect(screen.getAllByTestId('author-header')).toHaveLength(1);
   });
 
   it('keeps the top-level header when the handoff comes AFTER the steer', () => {

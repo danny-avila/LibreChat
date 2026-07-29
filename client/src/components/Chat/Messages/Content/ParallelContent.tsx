@@ -202,6 +202,13 @@ type ParallelContentRendererProps = {
   searchResults?: { [key: string]: SearchResultData };
   isSubmitting: boolean;
   renderPart: (part: TMessageContentParts, idx: number, isLastPart: boolean) => React.ReactNode;
+  /**
+   * Author re-attribution for a part that resumes after an inline steer —
+   * returns the header node to render before that part, or null. Only the
+   * sequential before/after stretches consult it: column content already
+   * carries per-agent identity.
+   */
+  renderResumeAttribution?: (idx: number) => React.ReactNode;
 };
 
 /**
@@ -217,6 +224,7 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
   searchResults,
   isSubmitting,
   renderPart,
+  renderResumeAttribution,
 }: ParallelContentRendererProps) {
   const { parallelSections, sequentialParts } = useMemo(
     () => groupParallelContent(content),
@@ -249,7 +257,11 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
       <Sources messageId={messageId} conversationId={conversationId || undefined} />
 
       {/* Sequential content BEFORE parallel sections */}
-      {before.map(({ part, idx }) => renderPart(part, idx, false))}
+      {before.flatMap(({ part, idx }) => {
+        const attribution = renderResumeAttribution?.(idx);
+        const rendered = renderPart(part, idx, false);
+        return attribution != null ? [attribution, rendered] : [rendered];
+      })}
 
       {/* Parallel sections - each group renders as columns */}
       {parallelSections.map(({ groupId, columns }) => (
@@ -267,7 +279,11 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
       ))}
 
       {/* Sequential content AFTER parallel sections */}
-      {after.map(({ part, idx }) => renderPart(part, idx, idx === lastContentIdx))}
+      {after.flatMap(({ part, idx }) => {
+        const attribution = renderResumeAttribution?.(idx);
+        const rendered = renderPart(part, idx, idx === lastContentIdx);
+        return attribution != null ? [attribution, rendered] : [rendered];
+      })}
     </SearchContext.Provider>
   );
 });
