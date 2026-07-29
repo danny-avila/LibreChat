@@ -7,10 +7,18 @@ import { megabyte } from 'librechat-data-provider';
 import type { Readable } from 'stream';
 
 import { ZipBombError } from '~/files/documents/zipSafety';
+import { ImportFileTooLargeError } from './errors';
 
 export { ZipBombError };
 
 const DEFAULT_MAX_ENTRIES = 20000;
+/**
+ * Also the ceiling on what any single shard can be parsed as. V8 caps a
+ * string at 536,870,888 characters (`buffer.constants.MAX_STRING_LENGTH`),
+ * just under this, so an entry larger than it can never survive the
+ * `.toString('utf8')` every reader performs — raising this cap would only
+ * trade a clear rejection for an opaque V8 allocation failure.
+ */
 const DEFAULT_MAX_ENTRY_BYTES = 512 * megabyte;
 const DEFAULT_MAX_TOTAL_BYTES = 4096 * megabyte;
 /** Local file header signature every ZIP file begins with. Its absence
@@ -261,6 +269,20 @@ async function openSingleFileArchive(
   const name = path.basename(filepath);
   const stat = await fs.promises.stat(filepath);
 
+  /**
+   * Checked up front rather than after streaming the file: the upload limit
+   * (`CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES`, 1 GiB by default) is sized for
+   * a `.zip`, whose individual shards are each far below the per-entry cap, so
+   * a bare `.json` between the two limits passes both the client-side check
+   * and multer and only fails here. Failing on the stat means it fails
+   * immediately and for the real reason, instead of after reading half a
+   * gigabyte and reporting it as an oversized archive.
+   */
+  if (stat.size > limits.maxEntryBytes) {
+    throw new ImportFileTooLargeError(
+      `Upload of ${stat.size} bytes exceeds the ${limits.maxEntryBytes}-byte single-file limit`,
+    );
+  }
   if (stat.size > limits.maxTotalBytes) {
     throw new ZipBombError('Archive exceeds the maximum decompressed size');
   }

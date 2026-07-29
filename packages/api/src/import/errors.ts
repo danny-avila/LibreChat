@@ -2,6 +2,8 @@ import { logger } from '@librechat/data-schemas';
 
 const UNSUPPORTED_IMPORT_TYPE = 'Unsupported import type';
 const ARCHIVE_TOO_LARGE_MESSAGE = 'The uploaded archive exceeds the allowed size limits';
+const FILE_TOO_LARGE_MESSAGE =
+  'This JSON file is too large to import on its own. Compress it into a .zip and upload that instead';
 const ARCHIVE_CORRUPT_MESSAGE = 'The uploaded archive is corrupt or could not be read';
 const STORAGE_FAILURE_MESSAGE = 'A storage error occurred while processing the import';
 const IMPORT_FAILED_MESSAGE = 'The import could not be completed';
@@ -29,6 +31,21 @@ const FS_ERROR_CODES = new Set([
 const CORRUPT_ARCHIVE_PATTERN =
   /invalid relative path|absolute path|traversal|central directory|not a valid zip|unable to read archive|entry not found in archive|unable to read entry/i;
 
+/**
+ * A bare (un-zipped) upload larger than the per-entry cap. Distinct from
+ * `ZipBombError` because it is not a bomb and not the user's mistake: the
+ * upload limit is sized for a `.zip`, whose shards are each well under the
+ * cap, so this file passed every check before the one that can reject it.
+ * The message it maps to therefore names the workaround.
+ */
+export class ImportFileTooLargeError extends Error {
+  readonly code = 'IMPORT_FILE_TOO_LARGE';
+  constructor(message: string) {
+    super(message);
+    this.name = 'ImportFileTooLargeError';
+  }
+}
+
 function errorCode(error: Error): string | undefined {
   const code = (error as NodeJS.ErrnoException).code;
   return typeof code === 'string' ? code : undefined;
@@ -48,6 +65,9 @@ export function sanitizeImportError(error: unknown, context: string): string {
   logger.error(`[import] ${context}`, normalized);
 
   const code = errorCode(normalized);
+  if (code === 'IMPORT_FILE_TOO_LARGE') {
+    return FILE_TOO_LARGE_MESSAGE;
+  }
   if (code === 'ZIP_BOMB') {
     return ARCHIVE_TOO_LARGE_MESSAGE;
   }

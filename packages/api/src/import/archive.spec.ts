@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import JSZip from 'jszip';
-
+import { ImportFileTooLargeError, sanitizeImportError } from './errors';
 import { assertSafeName, openArchive, ZipBombError } from './archive';
 
 const createdDirs: string[] = [];
@@ -171,11 +171,23 @@ describe('openArchive (bare / non-zip upload)', () => {
     archive.close();
   });
 
-  it('rejects a bare JSON file larger than the per-entry cap while reading', async () => {
+  /** The upload limit is sized for a `.zip`, so a bare JSON between the two
+   * caps clears both the client-side check and multer. Rejecting on the stat
+   * means it fails in milliseconds and as its own error, rather than after
+   * streaming the whole file and reporting it as an oversized archive. */
+  it('rejects a bare JSON file larger than the per-entry cap without reading it', async () => {
     const filepath = writeBareFile('x'.repeat(5000), 'big.json');
-    const archive = await openArchive(filepath, { maxEntryBytes: 100 });
 
-    await expect(archive.read('big.json')).rejects.toThrow(ZipBombError);
+    await expect(openArchive(filepath, { maxEntryBytes: 100 })).rejects.toThrow(
+      ImportFileTooLargeError,
+    );
+  });
+
+  it('maps an oversized bare JSON file onto a message naming the workaround', async () => {
+    const filepath = writeBareFile('x'.repeat(5000), 'big.json');
+    const error = await openArchive(filepath, { maxEntryBytes: 100 }).catch((e: unknown) => e);
+
+    expect(sanitizeImportError(error, 'test')).toMatch(/compress it into a \.zip/i);
   });
 
   it('rejects immediately when a bare JSON file exceeds the total-bytes cap by its own size', async () => {
