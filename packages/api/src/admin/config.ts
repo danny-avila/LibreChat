@@ -1,5 +1,6 @@
 import { logger, BASE_CONFIG_PRINCIPAL_ID } from '@librechat/data-schemas';
 import {
+  BASE_PRINCIPAL_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_SECTIONS,
   PrincipalType,
   PrincipalModel,
@@ -29,6 +30,7 @@ const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
 const DEFAULT_PRIORITY = 10;
 const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
+const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_SECTIONS);
 
 export function isValidFieldPath(path: string): boolean {
   return (
@@ -533,6 +535,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           );
         }
       }
+      for (const key of Object.keys(filteredOverrides)) {
+        const section = getTopLevelSection(key);
+        if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
+          delete (filteredOverrides as Record<string, unknown>)[key];
+          logger.warn(
+            `[adminConfig] Stripping dedicated tenant-wide config section "${key}" from the generic config API`,
+          );
+        }
+      }
       const iface = (overrides as Record<string, unknown>).interface;
       if (iface != null && typeof iface === 'object' && !Array.isArray(iface)) {
         const filteredIface: Record<string, unknown> = {};
@@ -600,18 +611,33 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const encryptedOverrides = encryptConfigSecrets(filteredOverrides);
-      const existingForSecrets = getConfigSecretSections().some((section) =>
+      const needsExistingSecrets = getConfigSecretSections().some((section) =>
         isConfigSecretPreservablePatch(
           section,
           (filteredOverrides as Record<string, unknown>)[section],
         ),
-      )
-        ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
-        : null;
+      );
+      const needsProtectedBaseSections =
+        principalId === BASE_CONFIG_PRINCIPAL_ID &&
+        (overrideSections.length > 0 || priority != null);
+      const existingConfig =
+        needsExistingSecrets || needsProtectedBaseSections
+          ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+          : null;
       const preservedOverrides = preserveConfigSecrets(
         encryptedOverrides,
-        existingForSecrets?.overrides,
+        existingConfig?.overrides,
       );
+      if (needsProtectedBaseSections) {
+        for (const section of BASE_PRINCIPAL_OVERRIDE_SECTIONS) {
+          const storedSection = (
+            existingConfig?.overrides as Record<string, unknown> | undefined
+          )?.[section];
+          if (storedSection !== undefined) {
+            (preservedOverrides as Record<string, unknown>)[section] = storedSection;
+          }
+        }
+      }
       const config = await upsertConfig(
         principalType,
         principalId,
@@ -701,6 +727,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         if (isBaseOnlyFieldPath(entry.fieldPath)) {
           logger.warn(
             `[adminConfig] Stripping base-only config field "${entry.fieldPath}" - configure it in librechat.yaml instead`,
+          );
+          return false;
+        }
+        if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(entry.fieldPath))) {
+          logger.warn(
+            `[adminConfig] Stripping dedicated tenant-wide config field "${entry.fieldPath}" from the generic config API`,
           );
           return false;
         }
@@ -841,6 +873,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
+      if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
+        logger.warn(
+          `[adminConfig] Ignoring dedicated tenant-wide config tombstone "${fieldPath}" in the generic config API`,
+        );
+        return res.status(200).json({ message: 'No actionable field path provided' });
+      }
 
       if (priority != null && !hasBroadManage) {
         logger.warn(
@@ -921,6 +959,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (isBaseOnlyFieldPath(fieldPath)) {
         logger.warn(
           `[adminConfig] Ignoring delete for base-only config field "${fieldPath}" - configure it in librechat.yaml instead`,
+        );
+        return res.status(200).json({ message: 'No actionable field path provided' });
+      }
+
+      if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
+        logger.warn(
+          `[adminConfig] Ignoring dedicated tenant-wide config delete "${fieldPath}" in the generic config API`,
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }

@@ -450,6 +450,8 @@ router.put(
       if (!isAssistantsEndpoint(updatedMessage.endpoint)) {
         sendFeedbackScore({
           traceId: traceIdForMessage(messageId),
+          sampled: updatedMessage.langfuseSampled,
+          destinationIds: updatedMessage.langfuseDestinationIds,
           feedback: updatedMessage.feedback,
           appConfig: req.config,
           metadata: {

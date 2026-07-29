@@ -1571,6 +1571,7 @@ export async function createRun({
     // tracing is enabled. Requires @librechat/agents >= 3.2.21.
     langfuse: buildLangfuseConfig({
       appConfig,
+      runId,
       tenantId: tenantId ?? user?.tenantId,
       centralTraceExportEnabled,
     }),
