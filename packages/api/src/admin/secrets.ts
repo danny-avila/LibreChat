@@ -128,7 +128,7 @@ function normalizeSecretString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
 }
 
-function isEncryptedConfigSecret(value: unknown): boolean {
+export function isEncryptedConfigSecret(value: unknown): boolean {
   return typeof value === 'string' && value.trim().startsWith(ENCRYPTED_PREFIX);
 }
 
