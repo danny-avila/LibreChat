@@ -1,6 +1,6 @@
 import { SafeSearchTypes, SearchProviders, ScraperProviders } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
-import { loadWebSearchConfig } from './web';
+import { loadWebSearchConfig, webSearchAuth, getWebSearchKeys } from './web';
 
 describe('loadWebSearchConfig', () => {
   describe('firecrawlVersion', () => {
@@ -177,5 +177,26 @@ describe('loadWebSearchConfig', () => {
       expect(result?.firecrawlApiUrl).toBe('https://custom-firecrawl.com');
       expect(result?.jinaApiUrl).toBe('https://custom-jina.com');
     });
+  });
+});
+
+describe('webSearchAuth', () => {
+  it('registers Keenable in both the provider and the scraper category', () => {
+    expect(webSearchAuth.providers).toHaveProperty(SearchProviders.KEENABLE);
+    expect(webSearchAuth.scrapers).toHaveProperty(ScraperProviders.KEENABLE);
+  });
+
+  it('marks every Keenable auth field optional (keyless by default)', () => {
+    // A required field (1) would make Keenable unusable without a key, and the
+    // keyless carve-out in `loadWebSearchAuth` depends on there being none.
+    expect(Object.values(webSearchAuth.providers.keenable)).toEqual([0, 0]);
+    expect(Object.values(webSearchAuth.scrapers.keenable)).toEqual([0]);
+  });
+
+  it('exposes the Keenable keys once across categories', () => {
+    const keys = getWebSearchKeys();
+
+    expect(keys.filter((key) => key === 'keenableApiKey')).toHaveLength(1);
+    expect(keys).toContain('keenableApiUrl');
   });
 });

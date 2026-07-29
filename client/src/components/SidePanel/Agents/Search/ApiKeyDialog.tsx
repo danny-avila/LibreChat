@@ -194,6 +194,20 @@ export default function ApiKeyDialog({
         },
       },
     },
+    {
+      key: ScraperProviders.KEENABLE,
+      label: localize('com_ui_web_search_scraper_keenable'),
+      inputs: {
+        keenableApiKey: {
+          placeholder: localize('com_ui_enter_api_key_optional'),
+          type: 'password' as const,
+          link: {
+            url: 'https://keenable.ai',
+            text: localize('com_ui_web_search_provider_keenable_key'),
+          },
+        },
+      },
+    },
   ];
 
   const [dropdownOpen, setDropdownOpen] = useState({

@@ -593,6 +593,32 @@ describe('webSearchSchema', () => {
       }),
     ).toThrow();
   });
+
+  it('accepts Keenable as a scraper provider with its options', () => {
+    const result = webSearchSchema.parse({
+      searchProvider: 'keenable',
+      scraperProvider: 'keenable',
+      rerankerType: 'none',
+      keenableScraperOptions: {
+        attributionTitle: 'LibreChat',
+        timeout: 15000,
+      },
+    });
+
+    expect(result.scraperProvider).toBe('keenable');
+    expect(result.keenableScraperOptions?.attributionTitle).toBe('LibreChat');
+    expect(result.keenableScraperOptions?.timeout).toBe(15000);
+  });
+
+  it('rejects invalid Keenable scraper options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        keenableScraperOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+  });
 });
 
 describe('bedrockModels defaults', () => {

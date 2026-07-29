@@ -848,20 +848,28 @@ endpoints:
 #     # format: markdown        # 'markdown' (default) or 'text' (plain text, may increase latency)
 #     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000); Tavily Extract receives seconds clamped to 1-60
 #
-# Keenable as search provider example (keyless by default):
-# NOTE: web search still requires a scraper and a reranker to be authenticated.
-# Keenable only fills the *search* provider slot; pair it with a scraper
-# (firecrawl/serper/tavily) and a reranker or the web search tool will not load.
+# Keenable as both search provider and scraper example — a fully keyless web
+# search stack: no API key for any of the three categories. The public search and
+# fetch endpoints are rate-limited; a key only lifts the cap.
 # webSearch:
 #   searchProvider: keenable
-#   # keenableApiKey: '${KEENABLE_API_KEY}'   # Optional: a key only lifts rate limits (public endpoint used when unset)
-#   # keenableApiUrl: '${KEENABLE_API_URL}'   # Optional: custom API URL override
+#   scraperProvider: keenable
+#   rerankerType: none          # Rerankers all require a key; 'none' skips reranking
+#   # keenableApiKey: '${KEENABLE_API_KEY}'   # Optional: a key only lifts rate limits (public endpoints used when unset)
+#   # keenableApiUrl: '${KEENABLE_API_URL}'   # Optional: search API URL override (fetch uses KEENABLE_FETCH_URL)
 #   keenableSearchOptions:
 #     maxResults: 5             # 1-20 results per search (default: 5)
 #     # site: example.com       # Restrict search to a single domain
 #     # attributionTitle: LibreChat  # X-Keenable-Title header sent with each request
 #     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000)
-#   # Scraper is still required, e.g. Firecrawl:
+#   keenableScraperOptions:
+#     # attributionTitle: LibreChat  # X-Keenable-Title header sent with each fetch
+#     timeout: 15000            # HTTP request timeout in milliseconds (max 120000)
+#
+# Keenable search paired with another scraper (Firecrawl here) also works; each
+# category is configured independently:
+# webSearch:
+#   searchProvider: keenable
 #   scraperProvider: firecrawl
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 

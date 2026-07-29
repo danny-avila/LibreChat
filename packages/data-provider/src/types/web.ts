@@ -13,7 +13,7 @@ export enum DATE_RANGE {
 }
 
 export type SearchProvider = 'serper' | 'searxng' | 'tavily' | 'keenable';
-export type ScraperProvider = 'firecrawl' | 'serper' | 'tavily';
+export type ScraperProvider = 'firecrawl' | 'serper' | 'tavily' | 'keenable';
 export type RerankerType = 'infinity' | 'jina' | 'cohere' | 'none';
 
 export interface Highlight {
@@ -150,6 +150,7 @@ export interface KeenableConfig {
   keenableApiKey?: string;
   keenableApiUrl?: string;
   keenableSearchOptions?: z.infer<typeof webSearchSchema>['keenableSearchOptions'];
+  keenableScraperOptions?: z.infer<typeof webSearchSchema>['keenableScraperOptions'];
 }
 
 export interface ScraperContentResult {

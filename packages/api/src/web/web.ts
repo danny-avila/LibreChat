@@ -115,33 +115,15 @@ export async function loadWebSearchAuth({
   let authenticated = true;
   const authResult: Partial<TWebSearchConfig> = {};
 
-  /** Type-safe iterator for the category-service combinations */
-  async function checkAuth<C extends TWebSearchCategories>(
-    category: C,
-  ): Promise<[boolean, boolean]> {
-    type ServiceType = keyof (typeof webSearchAuth)[C];
-    let isUserProvided = false;
-
-    // Check if a specific service is specified in the config
-    let specificService: ServiceType | undefined;
-    if (category === SearchCategories.PROVIDERS && webSearchConfig?.searchProvider) {
-      specificService = webSearchConfig.searchProvider as unknown as ServiceType;
-    } else if (category === SearchCategories.SCRAPERS && webSearchConfig?.scraperProvider) {
-      specificService = webSearchConfig.scraperProvider as unknown as ServiceType;
-    } else if (category === SearchCategories.RERANKERS && webSearchConfig?.rerankerType) {
-      specificService = webSearchConfig.rerankerType as unknown as ServiceType;
-
-      // Special case: skipping the reranker means skipping auth as well
-      if (specificService === 'none') {
-        authResult.rerankerType = specificService as RerankerTypes;
-        return [true, false];
-      }
-    }
-
-    // Special case: Keenable is keyless by default. The public endpoint needs no
-    // key, so the provider authenticates even when nothing is configured. Pick up
-    // the optional key and URL override when present (a key only lifts rate limits).
-    if (category === SearchCategories.PROVIDERS && specificService === SearchProviders.KEENABLE) {
+  /**
+   * Keenable is keyless by default: both its search and its page fetch work
+   * against public endpoints with no key, so neither category needs a secret to
+   * authenticate. This resolves the optional key/URL overrides once (a key only
+   * lifts rate limits) and reports whether any of them came from the user.
+   */
+  let keenableAuth: Promise<boolean> | undefined;
+  function resolveKeenableAuth(): Promise<boolean> {
+    keenableAuth ??= (async () => {
       let keenableUserProvided = false;
       const keenableKeys: TWebSearchKeys[] = ['keenableApiKey', 'keenableApiUrl'];
       for (const originalKey of keenableKeys) {
@@ -177,7 +159,45 @@ export async function loadWebSearchAuth({
           continue;
         }
       }
+      return keenableUserProvided;
+    })();
+    return keenableAuth;
+  }
+
+  /** Type-safe iterator for the category-service combinations */
+  async function checkAuth<C extends TWebSearchCategories>(
+    category: C,
+  ): Promise<[boolean, boolean]> {
+    type ServiceType = keyof (typeof webSearchAuth)[C];
+    let isUserProvided = false;
+
+    // Check if a specific service is specified in the config
+    let specificService: ServiceType | undefined;
+    if (category === SearchCategories.PROVIDERS && webSearchConfig?.searchProvider) {
+      specificService = webSearchConfig.searchProvider as unknown as ServiceType;
+    } else if (category === SearchCategories.SCRAPERS && webSearchConfig?.scraperProvider) {
+      specificService = webSearchConfig.scraperProvider as unknown as ServiceType;
+    } else if (category === SearchCategories.RERANKERS && webSearchConfig?.rerankerType) {
+      specificService = webSearchConfig.rerankerType as unknown as ServiceType;
+
+      // Special case: skipping the reranker means skipping auth as well
+      if (specificService === 'none') {
+        authResult.rerankerType = specificService as RerankerTypes;
+        return [true, false];
+      }
+    }
+
+    // Special case: Keenable is keyless by default. The public endpoints need no
+    // key, so a pinned Keenable authenticates even when nothing is configured —
+    // as a search provider and as a scraper alike.
+    if (category === SearchCategories.PROVIDERS && specificService === SearchProviders.KEENABLE) {
+      const keenableUserProvided = await resolveKeenableAuth();
       authResult.searchProvider = SearchProviders.KEENABLE;
+      return [true, keenableUserProvided];
+    }
+    if (category === SearchCategories.SCRAPERS && specificService === ScraperProviders.KEENABLE) {
+      const keenableUserProvided = await resolveKeenableAuth();
+      authResult.scraperProvider = ScraperProviders.KEENABLE;
       return [true, keenableUserProvided];
     }
 
@@ -295,6 +315,40 @@ export async function loadWebSearchAuth({
       authResult.rerankerType = 'none' as RerankerTypes;
       return [true, false];
     }
+
+    /**
+     * Keyless fallback, reached only when no keyed service in the category
+     * authenticated. The loop above skips Keenable whenever it isn't pinned,
+     * because none of its auth fields are required (`requiredKeys.length === 0`),
+     * so a Keenable key submitted through the API-key dialog would otherwise
+     * leave the category unauthenticated — the dialog submits credentials, it
+     * cannot pin `searchProvider`. Gated on a Keenable value actually being
+     * present, so an install that configured nothing keeps behaving as before.
+     */
+    if (category === SearchCategories.PROVIDERS && !specificService) {
+      const keenableUserProvided = await resolveKeenableAuth();
+      if (authResult.keenableApiKey || authResult.keenableApiUrl) {
+        authResult.searchProvider = SearchProviders.KEENABLE;
+        return [true, keenableUserProvided];
+      }
+    }
+
+    /**
+     * Same for the scraper, and additionally gated on Keenable being the
+     * resolved search provider (providers are checked first). Keenable reads
+     * pages through its own keyless fetch endpoint, so this is what completes a
+     * fully keyless stack; it never silently scrapes for another provider.
+     */
+    if (
+      category === SearchCategories.SCRAPERS &&
+      !specificService &&
+      authResult.searchProvider === SearchProviders.KEENABLE
+    ) {
+      const keenableUserProvided = await resolveKeenableAuth();
+      authResult.scraperProvider = ScraperProviders.KEENABLE;
+      return [true, keenableUserProvided];
+    }
+
     return [false, isUserProvided];
   }
 
@@ -321,6 +375,8 @@ export async function loadWebSearchAuth({
     scraperOptionsTimeout = webSearchConfig?.tavilyScraperOptions?.timeout;
   } else if (scraperProvider === ScraperProviders.FIRECRAWL) {
     scraperOptionsTimeout = webSearchConfig?.firecrawlOptions?.timeout;
+  } else if (scraperProvider === ScraperProviders.KEENABLE) {
+    scraperOptionsTimeout = webSearchConfig?.keenableScraperOptions?.timeout;
   }
 
   const searchProvider = authResult.searchProvider ?? webSearchConfig?.searchProvider;
@@ -332,6 +388,7 @@ export async function loadWebSearchAuth({
   authResult.tavilySearchOptions = webSearchConfig?.tavilySearchOptions;
   authResult.tavilyScraperOptions = webSearchConfig?.tavilyScraperOptions;
   authResult.keenableSearchOptions = webSearchConfig?.keenableSearchOptions;
+  authResult.keenableScraperOptions = webSearchConfig?.keenableScraperOptions;
 
   return {
     authTypes,

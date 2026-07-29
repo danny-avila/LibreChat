@@ -36,6 +36,12 @@ export const webSearchAuth = {
       tavilyApiKey: 1 as const,
       tavilyExtractUrl: 0 as const,
     },
+    keenable: {
+      /** Optional (0) — Keenable's page fetch is keyless as well; a key only
+       * lifts rate limits. The fetch endpoint itself is overridden with the
+       * `KEENABLE_FETCH_URL` env var, not through this config. */
+      keenableApiKey: 0 as const,
+    },
   },
   rerankers: {
     jina: {
