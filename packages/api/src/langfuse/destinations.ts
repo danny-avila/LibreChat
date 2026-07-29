@@ -15,15 +15,15 @@ import { normalizeString } from '~/utils/text';
 const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
 
 export type LangfuseScoreDestination = {
-  id: string;
+  id?: string;
   name: 'central' | 'tenant' | 'connection';
   baseUrl: string;
   authorization: string;
 };
 
-function getDestinationId(baseUrl: string, publicKey: string): string {
+function getDestinationId(baseUrl: string, projectId: string): string {
   return createHash('sha256')
-    .update(`${baseUrl.replace(/\/+$/, '')}\n${publicKey}`)
+    .update(`${baseUrl.replace(/\/+$/, '')}\n${projectId}`)
     .digest('hex');
 }
 
@@ -47,7 +47,9 @@ function getCentralScoreDestination(): LangfuseScoreDestination | undefined {
   }
 
   return {
-    id: getDestinationId(getCentralEnvBaseUrl(), publicKey),
+    // The deployment-owned central destination is treated as one logical
+    // project across credential rotations.
+    id: getDestinationId(getCentralEnvBaseUrl(), 'central'),
     name: 'central',
     baseUrl: getCentralEnvBaseUrl(),
     authorization: toBasicAuthorization(publicKey, secretKey),
@@ -81,7 +83,7 @@ function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestinat
   }
 
   return {
-    id: getDestinationId(destination.baseUrl, tenantCredentials.publicKey),
+    id: config?.projectId ? getDestinationId(destination.baseUrl, config.projectId) : undefined,
     name: 'tenant',
     baseUrl: destination.baseUrl,
     authorization: toBasicAuthorization(tenantCredentials.publicKey, tenantCredentials.secretKey),
@@ -103,7 +105,7 @@ function getConfiguredScoreDestination(
   }
 
   return {
-    id: getDestinationId(destination.baseUrl, credentials.publicKey),
+    id: config?.projectId ? getDestinationId(destination.baseUrl, config.projectId) : undefined,
     name: 'connection',
     baseUrl: destination.baseUrl,
     authorization: toBasicAuthorization(credentials.publicKey, credentials.secretKey),
@@ -141,14 +143,18 @@ export function getScoreDestinations(
   const destinations = [getCentralScoreDestination(), getTenantScoreDestination(appConfig)].filter(
     (destination): destination is LangfuseScoreDestination => Boolean(destination),
   );
-  const seen = new Set<string>();
-  return destinations.filter((destination) => {
-    if (seen.has(destination.id)) {
-      return false;
+  const unique = new Map<string, LangfuseScoreDestination>();
+  for (const destination of destinations) {
+    const deduplicationKey = `${destination.baseUrl}\n${destination.authorization}`;
+    const existing = unique.get(deduplicationKey);
+    if (
+      existing == null ||
+      (existing.name === 'central' && destination.name !== 'central' && destination.id != null)
+    ) {
+      unique.set(deduplicationKey, destination);
     }
-    seen.add(destination.id);
-    return true;
-  });
+  }
+  return [...unique.values()];
 }
 
 /**
@@ -161,5 +167,5 @@ export function getLangfuseTraceDestinationIds(
   traceId: string,
   sampled?: boolean,
 ): string[] {
-  return getScoreDestinations(appConfig, traceId, sampled).map(({ id }) => id);
+  return getScoreDestinations(appConfig, traceId, sampled).flatMap(({ id }) => (id ? [id] : []));
 }

@@ -20,6 +20,9 @@ export { MAX_SUBAGENTS } from './limits';
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
 export const BASE_ONLY_CONFIG_SECTIONS = [] as const;
+/** Sections that may be stored in the tenant's base config document but must
+ * not be overridden or tombstoned by role, group, or user config documents. */
+export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
 
 export const defaultRetrievalModels = [
   'gpt-4o',
@@ -1907,6 +1910,8 @@ export const langfuseConfigSchema = z.object({
   enabled: z.boolean().optional(),
   publicKey: z.string().optional(),
   secretKey: z.string().optional(),
+  /** Stable Langfuse project identity returned when credentials are verified. */
+  projectId: z.string().optional(),
   /** Masked preview of the secret key, stored at write time so
    * admin reads can show which secret key is configured without returning the secret. */
   secretKeyPreview: z.string().optional(),

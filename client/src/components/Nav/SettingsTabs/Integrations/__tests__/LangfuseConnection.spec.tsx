@@ -306,7 +306,7 @@ describe('LangfuseConnection', () => {
     expect(screen.getByText('sk-lf-...cret')).toBeInTheDocument();
   });
 
-  it('tests a destination change immediately and saves without re-entering the secret', async () => {
+  it('requires secret re-entry before testing and saving a destination change', async () => {
     mockGet.mockReturnValue({
       data: {
         configured: true,
@@ -326,21 +326,28 @@ describe('LangfuseConnection', () => {
 
     await selectDestination('us');
 
-    expect(mockTest).toHaveBeenCalledTimes(1);
-    expect(mockTest.mock.calls[0][0]).toMatchObject({
-      destination: 'us',
-      publicKey: 'pk-lf-1',
-    });
-    expect(mockTest.mock.calls[0][0]).not.toHaveProperty('secretKey');
-    expect(screen.getByText('com_ui_langfuse_status_connected')).toBeInTheDocument();
+    expect(mockTest).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/com_ui_langfuse_secret_key/)).toBeVisible();
+    expect(screen.getByText('com_ui_langfuse_status_not_verified')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_langfuse_save_and_enable')).toBeDisabled();
 
-    mockTest.mockClear();
+    fireEvent.change(screen.getByLabelText(/com_ui_langfuse_secret_key/), {
+      target: { value: 'sk-lf-replacement' },
+    });
     await userEvent.click(screen.getByText('com_ui_langfuse_save_and_enable'));
 
     expect(mockTest).toHaveBeenCalledTimes(1);
+    expect(mockTest.mock.calls[0][0]).toEqual({
+      destination: 'us',
+      publicKey: 'pk-lf-1',
+      secretKey: 'sk-lf-replacement',
+    });
     expect(mockUpdate).toHaveBeenCalledTimes(1);
-    expect(mockUpdate.mock.calls[0][0]).not.toHaveProperty('secretKey');
-    expect(mockUpdate.mock.calls[0][0]).toMatchObject({ destination: 'us', publicKey: 'pk-lf-1' });
+    expect(mockUpdate.mock.calls[0][0]).toMatchObject({
+      destination: 'us',
+      publicKey: 'pk-lf-1',
+      secretKey: 'sk-lf-replacement',
+    });
   });
 
   it('opens each configured key independently when its masked value is clicked', async () => {
@@ -423,11 +430,8 @@ describe('LangfuseConnection', () => {
     render(<LangfuseConnection />);
     await waitFor(() => expect(mockTest).toHaveBeenCalledTimes(1));
 
-    mockTest.mockImplementationOnce((_payload, options) => {
-      options?.onSuccess?.({ success: false, errorCode: 'unexpected_response' });
-    });
     await selectDestination('us');
-    expect(await screen.findByText('com_ui_langfuse_test_unexpected_response')).toBeVisible();
+    expect(screen.getByText('com_ui_langfuse_status_not_verified')).toBeVisible();
     await userEvent.click(
       screen.getByRole('button', {
         name: 'com_ui_edit com_ui_langfuse_public_key',
@@ -436,11 +440,6 @@ describe('LangfuseConnection', () => {
     fireEvent.change(screen.getByLabelText('com_ui_langfuse_public_key'), {
       target: { value: 'pk-lf-edited' },
     });
-    await userEvent.click(
-      screen.getByRole('button', {
-        name: 'com_ui_edit com_ui_langfuse_secret_key',
-      }),
-    );
     fireEvent.change(screen.getByLabelText(/com_ui_langfuse_secret_key/), {
       target: { value: 'sk-lf-edited' },
     });
@@ -511,10 +510,16 @@ describe('LangfuseConnection', () => {
       target: { value: 'pk-lf-mangled' },
     });
     expect(screen.getByText('com_ui_langfuse_status_not_verified')).toBeVisible();
+    fireEvent.change(screen.getByLabelText(/com_ui_langfuse_secret_key/), {
+      target: { value: 'sk-lf-replacement' },
+    });
     await userEvent.click(screen.getByText('com_ui_langfuse_save_and_enable'));
 
     expect(mockTest).toHaveBeenCalledWith(
-      expect.objectContaining({ publicKey: 'pk-lf-mangled' }),
+      expect.objectContaining({
+        publicKey: 'pk-lf-mangled',
+        secretKey: 'sk-lf-replacement',
+      }),
       expect.any(Object),
     );
     expect(screen.getByText('com_ui_langfuse_test_invalid_credentials')).toBeVisible();

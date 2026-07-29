@@ -117,7 +117,7 @@ export async function sendFeedbackScore({
 
   const destinationIdSet = destinationIds == null ? undefined : new Set(destinationIds);
   const destinations = getScoreDestinations(appConfig, traceId, sampled).filter(
-    ({ id }) => destinationIdSet == null || destinationIdSet.has(id),
+    ({ id }) => destinationIdSet == null || (id != null && destinationIdSet.has(id)),
   );
   if (destinations.length === 0) {
     return;

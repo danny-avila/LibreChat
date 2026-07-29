@@ -468,7 +468,7 @@ describe('createAdminConfigHandlers', () => {
         })),
       });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           overrides: {
             langfuse: {
@@ -517,7 +517,7 @@ describe('createAdminConfigHandlers', () => {
         })),
       });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           overrides: {
             langfuse: {
@@ -567,7 +567,7 @@ describe('createAdminConfigHandlers', () => {
         })),
       });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           overrides: {
             langfuse: {
@@ -593,7 +593,7 @@ describe('createAdminConfigHandlers', () => {
     it('rejects encrypted Langfuse secret values on full override writes', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           overrides: {
             langfuse: {
@@ -620,7 +620,7 @@ describe('createAdminConfigHandlers', () => {
         })),
       });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           overrides: {
             'langfuse.secretKey': 'sk-lf-secret',
@@ -644,6 +644,28 @@ describe('createAdminConfigHandlers', () => {
       expect(responseConfig.overrides).toEqual({
         langfuse: { publicKey: 'pk-lf-1' },
       });
+    });
+
+    it('does not allow tenant-wide Langfuse settings on a role config', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            langfuse: {
+              enabled: false,
+              publicKey: 'pk-role',
+            },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({ message: 'No actionable override sections provided' });
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
     });
 
     it('encrypts custom endpoint API keys on full override writes and redacts responses', async () => {
@@ -991,7 +1013,7 @@ describe('createAdminConfigHandlers', () => {
     it('also tombstones the display secret key companion when tombstoning a secret field', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: { fieldPath: 'langfuse.secretKey' },
       });
       const res = mockRes();
@@ -1001,18 +1023,33 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(200);
       expect(deps.tombstoneConfigField).toHaveBeenCalledWith(
         'role',
-        'admin',
+        '__base__',
         expect.anything(),
         'langfuse.secretKey',
         10,
       );
       expect(deps.tombstoneConfigField).toHaveBeenCalledWith(
         'role',
-        'admin',
+        '__base__',
         expect.anything(),
         'langfuse.secretKeyPreview',
         10,
       );
+    });
+
+    it('ignores tenant-wide Langfuse tombstones on a role config', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'langfuse.enabled' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({ message: 'No actionable field path provided' });
+      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
     });
 
     it('rejects tombstones of the displayed secret key', async () => {
@@ -1120,7 +1157,7 @@ describe('createAdminConfigHandlers', () => {
     it('clears stale Langfuse secret previews when clearing a secret', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           entries: [{ fieldPath: 'langfuse.secretKey', value: '' }],
         },
@@ -1138,7 +1175,7 @@ describe('createAdminConfigHandlers', () => {
     it('encrypts Langfuse secret keys inside object-valued patch entries', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           entries: [
             {
@@ -1177,7 +1214,7 @@ describe('createAdminConfigHandlers', () => {
         }),
       });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           priority: 12,
           entries: [
@@ -1220,7 +1257,7 @@ describe('createAdminConfigHandlers', () => {
         }),
       });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           entries: [
             {
@@ -1270,7 +1307,7 @@ describe('createAdminConfigHandlers', () => {
     it('does not store non-string values at Langfuse secret paths', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           entries: [{ fieldPath: 'langfuse.secretKey', value: { hidden: 'sk-lf-secret' } }],
         },
@@ -1283,6 +1320,23 @@ describe('createAdminConfigHandlers', () => {
       const patchedFields = deps.patchConfigFields.mock.calls[0][3];
       expect(patchedFields['langfuse.secretKey']).toBe('');
       expect(patchedFields['langfuse.secretKeyPreview']).toBe('');
+    });
+
+    it('does not allow tenant-wide Langfuse patches on a role config', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [{ fieldPath: 'langfuse.enabled', value: false }],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({ message: 'No actionable field entries provided' });
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 
     it('rejects direct display secret key patch entries', async () => {

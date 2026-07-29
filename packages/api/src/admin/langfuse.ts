@@ -121,7 +121,7 @@ function getLangfuseTestFailure(status: number): LangfuseVerificationFailure {
 }
 
 type LangfuseVerificationResult =
-  | { success: true }
+  | { success: true; projectId: string }
   | {
       success: false;
       errorCode: TLangfuseConnectionTestErrorCode;
@@ -148,6 +148,33 @@ async function verifyLangfuseCredentials(
         responseStatus: secretResponse.status >= 500 ? 502 : 400,
       };
     }
+    let projects: unknown;
+    try {
+      projects = await secretResponse.json();
+    } catch {
+      return {
+        success: false,
+        errorCode: 'unexpected_response',
+        message: 'Langfuse returned an invalid project response',
+        responseStatus: 400,
+      };
+    }
+    const projectId =
+      projects != null &&
+      typeof projects === 'object' &&
+      Array.isArray((projects as { data?: unknown }).data) &&
+      (projects as { data: unknown[] }).data.length === 1 &&
+      typeof (projects as { data: Array<{ id?: unknown }> }).data[0]?.id === 'string'
+        ? (projects as { data: Array<{ id: string }> }).data[0].id.trim()
+        : '';
+    if (!projectId) {
+      return {
+        success: false,
+        errorCode: 'unexpected_response',
+        message: 'Langfuse did not return a project identity',
+        responseStatus: 400,
+      };
+    }
 
     const publicResponse = await fetch(`${destination.baseUrl}/api/public/ingestion`, {
       method: 'POST',
@@ -167,7 +194,7 @@ async function verifyLangfuseCredentials(
       };
     }
 
-    return { success: true };
+    return { success: true, projectId };
   } catch (error) {
     logger.error('[adminLangfuse] connection verification error:', error);
     if (error instanceof Error && error.name === 'TimeoutError') {
@@ -202,8 +229,10 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
   const { findConfigByPrincipal, patchConfigFields, toggleConfigActive, invalidateConfigCaches } =
     deps;
 
-  function findBaseConfig(): Promise<IConfig | null> {
-    return findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID);
+  function findBaseConfig(options?: { includeInactive?: boolean }): Promise<IConfig | null> {
+    return options
+      ? findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, options)
+      : findConfigByPrincipal(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID);
   }
 
   async function getConnection(req: ServerRequest, res: Response): Promise<Response> {
@@ -244,7 +273,7 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         return res.status(400).json({ error: 'Encrypted secretKey values cannot be submitted' });
       }
 
-      const existing = await findBaseConfig();
+      const existing = await findBaseConfig({ includeInactive: true });
       const stored = readStoredLangfuse(existing);
       const hasStoredSecret = Boolean(stored?.secretKey);
       const tenantDestination = resolveLangfuseTenantDestination(destination);
@@ -269,24 +298,27 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         secretKey !== '' ||
         stored?.destination !== persistedDestination ||
         stored?.publicKey !== publicKey;
+      let verifiedProjectId = stored?.projectId;
       if (connectionChanged) {
         if (!tenantDestination) {
           return res.status(400).json({ error: 'destination is not configured' });
         }
-        const verificationSecret = secretKey || decryptConfigSecret(stored?.secretKey) || '';
-        if (!verificationSecret) {
-          return res.status(400).json({ error: 'Stored secret key could not be decrypted' });
+        if (!secretKey) {
+          return res
+            .status(400)
+            .json({ error: 'secretKey is required when changing the destination or publicKey' });
         }
         const verification = await verifyLangfuseCredentials(
           tenantDestination,
           publicKey,
-          verificationSecret,
+          secretKey,
         );
         if (!verification.success) {
           return res
             .status(verification.responseStatus ?? 400)
             .json({ error: verification.message });
         }
+        verifiedProjectId = verification.projectId;
       }
 
       const fields: Record<string, unknown> = {
@@ -294,6 +326,9 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         'langfuse.destination': persistedDestination,
         'langfuse.publicKey': publicKey,
       };
+      if (verifiedProjectId) {
+        fields['langfuse.projectId'] = verifiedProjectId;
+      }
       if (secretKey) {
         fields['langfuse.secretKey'] = secretKey;
       }
@@ -345,9 +380,11 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
 
       if (!secretKey) {
         const existing = await findBaseConfig();
-        const storedSecret = readStoredLangfuse(existing)?.secretKey;
-        if (storedSecret) {
-          secretKey = decryptConfigSecret(storedSecret) ?? '';
+        const stored = readStoredLangfuse(existing);
+        const unchangedConnection =
+          stored?.destination === tenantDestination.key && stored.publicKey === publicKey;
+        if (unchangedConnection && stored.secretKey) {
+          secretKey = decryptConfigSecret(stored.secretKey) ?? '';
           if (!secretKey) {
             const failed: TLangfuseConnectionTestResponse = {
               success: false,

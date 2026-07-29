@@ -1,5 +1,6 @@
 import { logger, BASE_CONFIG_PRINCIPAL_ID } from '@librechat/data-schemas';
 import {
+  BASE_PRINCIPAL_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_SECTIONS,
   PrincipalType,
   PrincipalModel,
@@ -29,6 +30,7 @@ const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
 const DEFAULT_PRIORITY = 10;
 const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
+const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_SECTIONS);
 
 export function isValidFieldPath(path: string): boolean {
   return (
@@ -533,6 +535,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           );
         }
       }
+      if (principalId !== BASE_CONFIG_PRINCIPAL_ID) {
+        for (const section of BASE_PRINCIPAL_OVERRIDE_SECTIONS) {
+          if (section in filteredOverrides) {
+            delete (filteredOverrides as Record<string, unknown>)[section];
+            logger.warn(
+              `[adminConfig] Stripping tenant-wide config section "${section}" from ${principalType}/${principalId}`,
+            );
+          }
+        }
+      }
       const iface = (overrides as Record<string, unknown>).interface;
       if (iface != null && typeof iface === 'object' && !Array.isArray(iface)) {
         const filteredIface: Record<string, unknown> = {};
@@ -704,6 +716,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           );
           return false;
         }
+        if (
+          principalId !== BASE_CONFIG_PRINCIPAL_ID &&
+          BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(entry.fieldPath))
+        ) {
+          logger.warn(
+            `[adminConfig] Stripping tenant-wide config field "${entry.fieldPath}" from ${principalType}/${principalId}`,
+          );
+          return false;
+        }
         if (isInterfacePermissionPath(entry.fieldPath)) {
           logger.warn(
             `[adminConfig] Stripping interface permission field "${entry.fieldPath}" — use role permissions instead`,
@@ -838,6 +859,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (isInterfacePermissionPath(fieldPath)) {
         logger.warn(
           `[adminConfig] Ignoring tombstone for interface permission field "${fieldPath}" — use role permissions instead`,
+        );
+        return res.status(200).json({ message: 'No actionable field path provided' });
+      }
+      if (
+        principalId !== BASE_CONFIG_PRINCIPAL_ID &&
+        BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)
+      ) {
+        logger.warn(
+          `[adminConfig] Ignoring tenant-wide config tombstone "${fieldPath}" on ${principalType}/${principalId}`,
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }

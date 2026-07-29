@@ -93,6 +93,7 @@ function appConfigWithLangfuse(langfuse: AppConfig['langfuse']): AppConfig {
   return {
     langfuse: {
       enabled: true,
+      projectId: 'tenant-project-id',
       ...langfuse,
     },
   } as AppConfig;
@@ -357,6 +358,37 @@ describe('Langfuse feedback scores', () => {
     });
 
     expect(getFetchMock()).not.toHaveBeenCalled();
+  });
+
+  it('keeps the destination identity stable when project credentials rotate', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    delete process.env.LANGFUSE_PUBLIC_KEY;
+    delete process.env.LANGFUSE_SECRET_KEY;
+    const { sendFeedbackScore } = await loadFeedback();
+    const { getLangfuseTraceDestinationIds } = await import('./destinations');
+    const originalConfig = appConfigWithLangfuse({
+      projectId: 'stable-project-id',
+      publicKey: 'old-public-key',
+      secretKey: encryptedTenantSecret(),
+      destination: 'eu',
+    });
+    const destinationIds = getLangfuseTraceDestinationIds(originalConfig, 'trace-id', true);
+
+    await sendFeedbackScore({
+      traceId: 'trace-id',
+      sampled: true,
+      destinationIds,
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        projectId: 'stable-project-id',
+        publicKey: 'new-public-key',
+        secretKey: encryptedTenantSecret(),
+        destination: 'eu',
+      }),
+    });
+
+    expect(destinationIds).toHaveLength(1);
+    expect(getFetchMock()).toHaveBeenCalledTimes(1);
   });
 
   it('decrypts encrypted tenant secrets before sending tenant feedback scores', async () => {

@@ -182,14 +182,16 @@ export default function LangfuseConnection() {
   const publicKeyInputVisible = !secretConfigured || isEditingPublicKey;
   const secretInputVisible = !secretConfigured || isEditingSecretKey;
   const displayPublicKey = getDisplayPublicKey(publicKey);
-  const hasUnsavedChanges =
+  const connectionCredentialsChanged =
     destination !== (connectionStatus?.destination ?? '') ||
-    trimmedPublicKey !== (connectionStatus?.publicKey ?? '') ||
-    trimmedSecretKey !== '';
+    trimmedPublicKey !== (connectionStatus?.publicKey ?? '');
+  const hasUnsavedChanges = connectionCredentialsChanged || trimmedSecretKey !== '';
   const isEditing =
     !secretConfigured || isEditingPublicKey || isEditingSecretKey || hasUnsavedChanges;
   const canSubmit =
-    destination !== '' && trimmedPublicKey !== '' && (secretConfigured || trimmedSecretKey !== '');
+    destination !== '' &&
+    trimmedPublicKey !== '' &&
+    ((!connectionCredentialsChanged && secretConfigured) || trimmedSecretKey !== '');
   const busy = testMutation.isLoading || updateMutation.isLoading;
 
   useEffect(() => {
@@ -357,13 +359,20 @@ export default function LangfuseConnection() {
   const handleDestinationChange = (nextDestination: string) => {
     setDestination(nextDestination);
     const requestId = ++connectionTestRequestRef.current;
+    const credentialsChanged =
+      nextDestination !== (connectionStatus?.destination ?? '') ||
+      trimmedPublicKey !== (connectionStatus?.publicKey ?? '');
+
+    if (secretConfigured && credentialsChanged) {
+      setIsEditingSecretKey(true);
+    }
 
     if (
       nextDestination === '' ||
       trimmedPublicKey === '' ||
-      (!secretConfigured && trimmedSecretKey === '')
+      ((!secretConfigured || credentialsChanged) && trimmedSecretKey === '')
     ) {
-      setConnectionTestState('idle');
+      setConnectionTestState(credentialsChanged ? 'unverified' : 'idle');
       setConnectionTestMessage('');
       return;
     }
@@ -546,7 +555,14 @@ export default function LangfuseConnection() {
             placeholder="pk-lf-..."
             onChange={(e) => {
               connectionTestRequestRef.current += 1;
-              setPublicKey(e.target.value);
+              const nextPublicKey = e.target.value;
+              setPublicKey(nextPublicKey);
+              if (
+                secretConfigured &&
+                nextPublicKey.trim() !== (connectionStatus?.publicKey ?? '')
+              ) {
+                setIsEditingSecretKey(true);
+              }
               setConnectionTestState('unverified');
               setConnectionTestMessage('');
             }}

@@ -10,6 +10,14 @@ let encryptV3: typeof import('@librechat/data-schemas').encryptV3;
 let createAdminLangfuseHandlers: typeof import('./langfuse').createAdminLangfuseHandlers;
 const realFetch = global.fetch;
 
+function projectResponse(projectId = 'project-1') {
+  return {
+    ok: true,
+    status: 200,
+    json: jest.fn().mockResolvedValue({ data: [{ id: projectId, name: 'Project' }] }),
+  };
+}
+
 beforeAll(async () => {
   ({ encryptV3 } = await import('@librechat/data-schemas'));
   ({ createAdminLangfuseHandlers } = await import('./langfuse'));
@@ -19,7 +27,7 @@ beforeEach(() => {
   process.env.TENANT_ISOLATION_STRICT = 'true';
   process.env.LANGFUSE_FANOUT_ENABLED = 'true';
   process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
-  global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 }) as unknown as typeof fetch;
+  global.fetch = jest.fn().mockResolvedValue(projectResponse()) as unknown as typeof fetch;
 });
 
 afterEach(() => {
@@ -360,11 +368,12 @@ describe('createAdminLangfuseHandlers', () => {
       expect(fields['langfuse.enabled']).toBe(true);
       expect(fields['langfuse.destination']).toBe('eu');
       expect(fields['langfuse.publicKey']).toBe('pk-lf-1');
+      expect(fields['langfuse.projectId']).toBe('project-1');
       expect(res.body?.secretKey).toBeUndefined();
       expect(deps.invalidateConfigCaches).toHaveBeenCalledWith('t1');
     });
 
-    it('verifies changed connection fields with the stored secret', async () => {
+    it('requires a new secret when connection fields change', async () => {
       const { handlers, deps } = createHandlers({
         findConfigByPrincipal: jest
           .fn()
@@ -379,17 +388,49 @@ describe('createAdminLangfuseHandlers', () => {
         res,
       );
 
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: 'secretKey is required when changing the destination or publicKey',
+      });
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('verifies changed connection fields with the submitted secret', async () => {
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(
+          baseConfigDoc({
+            destination: 'eu',
+            publicKey: 'pk-1',
+            secretKey: encryptV3('sk-lf-secret'),
+          }),
+        ),
+      });
+      const res = mockRes();
+
+      await handlers.updateConnection(
+        mockReq({
+          body: {
+            enabled: true,
+            destination: 'us',
+            publicKey: 'pk-2',
+            secretKey: 'sk-lf-replacement',
+          },
+        }),
+        res,
+      );
+
       expect(res.statusCode).toBe(200);
       const fields = deps.patchConfigFields.mock.calls[0][3];
-      expect(fields['langfuse.secretKey']).toBeUndefined();
       expect(fields['langfuse.destination']).toBe('us');
       expect(fields['langfuse.publicKey']).toBe('pk-2');
+      expect(fields['langfuse.projectId']).toBe('project-1');
       expect(global.fetch).toHaveBeenCalledTimes(2);
       const [url, init] = (global.fetch as unknown as jest.Mock).mock.calls[0];
       expect(url).toBe('https://us.cloud.langfuse.com/api/public/projects');
       expect(
         Buffer.from(init.headers.Authorization.replace('Basic ', ''), 'base64').toString(),
-      ).toBe('pk-2:sk-lf-secret');
+      ).toBe('pk-2:sk-lf-replacement');
     });
 
     it('rejects changed credentials before persisting when Langfuse verification fails', async () => {
@@ -418,12 +459,40 @@ describe('createAdminLangfuseHandlers', () => {
       expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 
+    it('rejects credentials when Langfuse does not return a stable project identity', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({ data: [] }),
+      }) as unknown as typeof fetch;
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.updateConnection(
+        mockReq({
+          body: {
+            enabled: true,
+            destination: 'eu',
+            publicKey: 'pk-lf-1',
+            secretKey: 'sk-lf-secret',
+          },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({ error: 'Langfuse did not return a project identity' });
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
     it('does not re-verify a pure enable or disable update', async () => {
       const stored = {
         enabled: false,
         destination: 'eu',
         publicKey: 'pk-lf-1',
         secretKey: encryptV3('sk-lf-secret'),
+        projectId: 'project-1',
       };
       const { handlers, deps } = createHandlers({
         findConfigByPrincipal: jest.fn().mockResolvedValue(baseConfigDoc(stored)),
@@ -439,6 +508,7 @@ describe('createAdminLangfuseHandlers', () => {
       expect(global.fetch).not.toHaveBeenCalled();
       expect(deps.patchConfigFields).toHaveBeenCalledTimes(1);
       expect(deps.patchConfigFields.mock.calls[0][3]['langfuse.enabled']).toBe(true);
+      expect(deps.patchConfigFields.mock.calls[0][3]['langfuse.projectId']).toBe('project-1');
     });
 
     it('allows an existing connection to be disabled after its destination is removed', async () => {
@@ -485,7 +555,12 @@ describe('createAdminLangfuseHandlers', () => {
         isActive: false,
       };
       const activeUpdated = { ...inactiveUpdated, isActive: true };
+      const inactiveExisting = {
+        ...inactiveUpdated,
+        priority: 42,
+      };
       const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(inactiveExisting),
         patchConfigFields: jest.fn().mockResolvedValue(inactiveUpdated),
         toggleConfigActive: jest.fn().mockResolvedValue(activeUpdated),
       });
@@ -504,6 +579,10 @@ describe('createAdminLangfuseHandlers', () => {
       );
 
       expect(res.statusCode).toBe(200);
+      expect(deps.findConfigByPrincipal).toHaveBeenCalledWith('role', '__base__', {
+        includeInactive: true,
+      });
+      expect(deps.patchConfigFields.mock.calls[0][4]).toBe(42);
       expect(deps.toggleConfigActive).toHaveBeenCalledWith('role', '__base__', true);
       expect(res.body).toMatchObject({ configured: true, enabled: true });
     });
@@ -540,7 +619,7 @@ describe('createAdminLangfuseHandlers', () => {
     it('returns success when Langfuse responds ok', async () => {
       global.fetch = jest
         .fn()
-        .mockResolvedValueOnce({ ok: true, status: 200 })
+        .mockResolvedValueOnce(projectResponse())
         .mockResolvedValueOnce({ ok: true, status: 207 }) as unknown as typeof fetch;
       const { handlers } = createHandlers();
       const res = mockRes();
@@ -572,7 +651,7 @@ describe('createAdminLangfuseHandlers', () => {
       timeoutError.name = 'TimeoutError';
       global.fetch = jest
         .fn()
-        .mockResolvedValueOnce({ ok: true, status: 200 })
+        .mockResolvedValueOnce(projectResponse())
         .mockRejectedValueOnce(timeoutError) as unknown as typeof fetch;
       const { handlers } = createHandlers();
       const res = mockRes();
@@ -594,7 +673,7 @@ describe('createAdminLangfuseHandlers', () => {
     it('rejects an invalid public key even when the secret key is valid', async () => {
       global.fetch = jest
         .fn()
-        .mockResolvedValueOnce({ ok: true, status: 200 })
+        .mockResolvedValueOnce(projectResponse())
         .mockResolvedValueOnce({ ok: false, status: 401 }) as unknown as typeof fetch;
       const { handlers } = createHandlers();
       const res = mockRes();
@@ -673,15 +752,19 @@ describe('createAdminLangfuseHandlers', () => {
       expect(res.body).toEqual({ success: false, errorCode });
     });
 
-    it('falls back to the stored (decrypted) secret when none is supplied', async () => {
+    it('falls back to the stored secret only for the unchanged connection', async () => {
       global.fetch = jest
         .fn()
-        .mockResolvedValueOnce({ ok: true, status: 200 })
+        .mockResolvedValueOnce(projectResponse())
         .mockResolvedValueOnce({ ok: true, status: 207 }) as unknown as typeof fetch;
       const { handlers } = createHandlers({
-        findConfigByPrincipal: jest
-          .fn()
-          .mockResolvedValue(baseConfigDoc({ secretKey: encryptV3('sk-stored') })),
+        findConfigByPrincipal: jest.fn().mockResolvedValue(
+          baseConfigDoc({
+            destination: 'eu',
+            publicKey: 'pk',
+            secretKey: encryptV3('sk-stored'),
+          }),
+        ),
       });
       const res = mockRes();
 
@@ -694,6 +777,27 @@ describe('createAdminLangfuseHandlers', () => {
         'base64',
       ).toString();
       expect(decoded).toBe('pk:sk-stored');
+    });
+
+    it('does not reuse the stored secret for a changed connection test', async () => {
+      const { handlers } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(
+          baseConfigDoc({
+            destination: 'eu',
+            publicKey: 'pk-old',
+            secretKey: encryptV3('sk-stored'),
+          }),
+        ),
+      });
+      const res = mockRes();
+
+      await handlers.testConnection(
+        mockReq({ body: { destination: 'us', publicKey: 'pk-new' } }),
+        res,
+      );
+
+      expect(res.body).toEqual({ success: false, errorCode: 'missing_secret' });
+      expect(global.fetch).not.toHaveBeenCalled();
     });
   });
 });
