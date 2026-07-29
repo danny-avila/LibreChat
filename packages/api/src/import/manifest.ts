@@ -21,6 +21,11 @@ export interface ExportManifest {
 export interface ExportLayout {
   version: number | null;
   conversationShards: string[];
+  /** Shards the manifest lists that the archive does not contain. Dropping
+   * them silently made a truncated export look complete: the remaining shards
+   * were treated as the whole thing, so inspection undercounted and the job
+   * reported success having skipped the missing conversations. */
+  missingShards: string[];
   assetNames: string | null;
   assetEntries: ArchiveEntry[];
 }
@@ -58,12 +63,25 @@ export function parseManifest(buffer: Buffer): ExportManifest | null {
   }
 }
 
-function shardsFromManifest(manifest: ExportManifest, present: Set<string>): string[] {
+function shardsFromManifest(
+  manifest: ExportManifest,
+  present: Set<string>,
+): { found: string[]; missing: string[] } {
   const logical = manifest.logical_files[CONVERSATIONS_LOGICAL];
   if (!logical?.files || !Array.isArray(logical.files) || logical.files.length === 0) {
-    return [];
+    return { found: [], missing: [] };
   }
-  return logical.files.filter((name) => present.has(name));
+
+  const found: string[] = [];
+  const missing: string[] = [];
+  for (const name of logical.files) {
+    if (present.has(name)) {
+      found.push(name);
+      continue;
+    }
+    missing.push(name);
+  }
+  return { found, missing };
 }
 
 function grokShards(entries: ArchiveEntry[]): string[] {
@@ -187,13 +205,20 @@ export function resolveLayout(
 ): ExportLayout {
   const present = new Set(entries.map((entry) => entry.name));
 
-  const fromManifest = manifest ? shardsFromManifest(manifest, present) : [];
-  const conversationShards =
-    fromManifest.length > 0 ? fromManifest : shardsFromFilenames(entries, present);
+  const fromManifest = manifest
+    ? shardsFromManifest(manifest, present)
+    : { found: [], missing: [] };
+  const useManifest = fromManifest.found.length > 0;
+  const conversationShards = useManifest
+    ? fromManifest.found
+    : shardsFromFilenames(entries, present);
 
   return {
     version: manifest?.version ?? null,
     conversationShards,
+    /** Only meaningful when the manifest was actually used: the filename
+     * fallback has no declared list to be missing from. */
+    missingShards: useManifest ? fromManifest.missing : [],
     assetNames: present.has(ASSET_NAMES_ENTRY) ? ASSET_NAMES_ENTRY : null,
     assetEntries: entries.filter((entry) => entry.name.endsWith('.dat')),
   };

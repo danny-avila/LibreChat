@@ -255,3 +255,33 @@ describe('detectExportFormat', () => {
     expect(detectExportFormat('nope')).toBeNull();
   });
 });
+
+describe('resolveLayout missing shards', () => {
+  it('reports a manifest-listed shard the archive does not contain', () => {
+    const manifest = parseManifest(
+      Buffer.from(
+        JSON.stringify({
+          version: 1,
+          logical_files: {
+            'conversations.json': {
+              files: ['conversations-000.json', 'conversations-001.json'],
+              sharded: true,
+            },
+          },
+        }),
+      ),
+    );
+
+    const layout = resolveLayout([{ name: 'conversations-000.json', bytes: 2 }], manifest);
+
+    expect(layout.conversationShards).toEqual(['conversations-000.json']);
+    expect(layout.missingShards).toEqual(['conversations-001.json']);
+  });
+
+  it('reports nothing missing when the filename fallback is used', () => {
+    const layout = resolveLayout([{ name: 'conversations.json', bytes: 2 }], null);
+
+    expect(layout.conversationShards).toEqual(['conversations.json']);
+    expect(layout.missingShards).toEqual([]);
+  });
+});

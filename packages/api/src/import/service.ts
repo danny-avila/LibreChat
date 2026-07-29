@@ -223,6 +223,13 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
     const manifest = hasManifest ? parseManifest(await archive.read(MANIFEST_ENTRY)) : null;
     const layout = resolveLayout(archive.entries, manifest);
 
+    /** A shard the manifest declares but the archive omits is missing data, not
+     * an absent feature: without this the run imports what survived and reports
+     * success, and the user never learns which conversations were skipped. */
+    for (const shard of layout.missingShards) {
+      report.errors.push(`${shard}: listed in the manifest but missing from the archive`);
+    }
+
     const providerRun: ProviderImportContext = {
       archive,
       shards: layout.conversationShards,
