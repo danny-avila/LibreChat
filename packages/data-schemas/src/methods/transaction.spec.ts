@@ -19,12 +19,14 @@ jest.mock('~/config/winston', () => ({
 let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let Balance: mongoose.Model<IBalance>;
 let Transaction: mongoose.Model<ITransaction>;
+let User: mongoose.Model<mongoose.Document>;
 let spendTokens: ReturnType<typeof createSpendTokensMethods>['spendTokens'];
 let spendStructuredTokens: ReturnType<typeof createSpendTokensMethods>['spendStructuredTokens'];
 let createTransaction: ReturnType<typeof createTransactionMethods>['createTransaction'];
 let createStructuredTransaction: ReturnType<
   typeof createTransactionMethods
 >['createStructuredTransaction'];
+let getUserUsageSummary: ReturnType<typeof createTransactionMethods>['getUserUsageSummary'];
 let getMultiplier: ReturnType<typeof createTxMethods>['getMultiplier'];
 let getCacheMultiplier: ReturnType<typeof createTxMethods>['getCacheMultiplier'];
 
@@ -38,6 +40,7 @@ beforeAll(async () => {
 
   Balance = mongoose.models.Balance;
   Transaction = mongoose.models.Transaction;
+  User = mongoose.models.User;
 
   // Create methods from factories (following the chain in methods/index.ts)
   const txMethods = createTxMethods(mongoose, { matchModelName, findMatchingPattern });
@@ -50,6 +53,7 @@ beforeAll(async () => {
   });
   createTransaction = transactionMethods.createTransaction;
   createStructuredTransaction = transactionMethods.createStructuredTransaction;
+  getUserUsageSummary = transactionMethods.getUserUsageSummary;
 
   const spendMethods = createSpendTokensMethods(mongoose, {
     createTransaction: transactionMethods.createTransaction,
@@ -1079,5 +1083,97 @@ describe('Premium Token Pricing Integration Tests', () => {
 
     const updatedBalance = await Balance.findOne({ user: userId });
     expect(updatedBalance?.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
+  });
+});
+
+describe('getUserUsageSummary', () => {
+  async function spendFor(userId: mongoose.Types.ObjectId, promptTokens: number) {
+    await Balance.create({ user: userId, tokenCredits: 100000000 });
+    await spendTokens(
+      {
+        user: userId,
+        conversationId: `usage-summary-${userId.toString()}`,
+        model: 'gpt-3.5-turbo',
+        context: 'message',
+        endpointTokenConfig: null,
+        balance: { enabled: true },
+      },
+      { promptTokens, completionTokens: 0 },
+    );
+  }
+
+  test('aggregates cost per user, sorted highest spend first, excluding refills', async () => {
+    const bigSpenderId = new mongoose.Types.ObjectId();
+    const smallSpenderId = new mongoose.Types.ObjectId();
+    await User.create({ _id: bigSpenderId, email: 'big@example.com', name: 'Big Spender' });
+    await User.create({ _id: smallSpenderId, email: 'small@example.com', name: 'Small Spender' });
+
+    await spendFor(bigSpenderId, 300000);
+    await spendFor(smallSpenderId, 1000);
+    // A refill (positive tokenValue) must not count as "cost".
+    await Balance.findOneAndUpdate(
+      { user: smallSpenderId },
+      { $inc: { tokenCredits: 5000000 } },
+      { upsert: true },
+    );
+    await Transaction.create({
+      user: smallSpenderId,
+      tokenType: 'credits',
+      context: 'autoRefill',
+      rawAmount: 5000000,
+      tokenValue: 5000000,
+    });
+
+    const result = await getUserUsageSummary({ limit: 10, offset: 0 });
+
+    expect(result.total).toBe(2);
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0]).toMatchObject({
+      user: bigSpenderId.toString(),
+      name: 'Big Spender',
+      email: 'big@example.com',
+    });
+    expect(result.items[0].totalCost).toBeGreaterThan(result.items[1].totalCost);
+    expect(result.items.every((item) => item.totalCost > 0)).toBe(true);
+  });
+
+  test('respects the date range filter', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    await User.create({ _id: userId, email: 'dated@example.com', name: 'Dated User' });
+    await spendFor(userId, 1000);
+
+    const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const past = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const withinRange = await getUserUsageSummary({
+      startDate: past,
+      endDate: future,
+      limit: 10,
+      offset: 0,
+    });
+    const outsideRange = await getUserUsageSummary({
+      startDate: future,
+      endDate: new Date(future.getTime() + 1000),
+      limit: 10,
+      offset: 0,
+    });
+
+    expect(withinRange.total).toBe(1);
+    expect(outsideRange.total).toBe(0);
+  });
+
+  test('respects limit/offset pagination', async () => {
+    for (let i = 0; i < 3; i += 1) {
+      const userId = new mongoose.Types.ObjectId();
+      await User.create({ _id: userId, email: `user${i}@example.com`, name: `User ${i}` });
+      await spendFor(userId, 1000 * (i + 1));
+    }
+
+    const page1 = await getUserUsageSummary({ limit: 2, offset: 0 });
+    const page2 = await getUserUsageSummary({ limit: 2, offset: 2 });
+
+    expect(page1.items).toHaveLength(2);
+    expect(page1.total).toBe(3);
+    expect(page2.items).toHaveLength(1);
   });
 });

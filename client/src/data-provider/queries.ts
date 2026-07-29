@@ -535,3 +535,18 @@ export const useUserTermsQuery = (
     ...config,
   });
 };
+
+export const useAdminUsageSummaryQuery = (
+  params?: t.TAdminUsageSummaryParams,
+  config?: UseQueryOptions<t.TAdminUsageSummaryResponse>,
+): QueryObserverResult<t.TAdminUsageSummaryResponse> => {
+  return useQuery<t.TAdminUsageSummaryResponse>(
+    [QueryKeys.adminUsageSummary, params],
+    () => dataService.getAdminUsageSummary(params),
+    {
+      refetchOnWindowFocus: false,
+      ...config,
+      enabled: config?.enabled !== undefined ? config.enabled : true,
+    },
+  );
+};

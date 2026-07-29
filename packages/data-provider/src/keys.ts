@@ -69,6 +69,8 @@ export enum QueryKeys {
   mcpServer = 'mcpServer',
   /* Active Jobs */
   activeJobs = 'activeJobs',
+  /* Admin — usage/cost reporting */
+  adminUsageSummary = 'adminUsageSummary',
   /* Agent API Keys */
   agentApiKeys = 'agentApiKeys',
   /* Skills */
