@@ -89,16 +89,23 @@ async function drainAndBuildInjections(opts: SteerDrainHookOptions): Promise<Inj
   // The replacement guard lives INSIDE the store's atomic drain: a separate
   // check-then-drain could still consume a replacement job's queue if
   // createJob landed between the two steps.
+  /**
+   * Snapshotted BEFORE the drain so an empty boundary disarms only the
+   * requests it was responsible for. A second steer can enqueue and arm while
+   * the drain is in flight; that arm is backed by a live queue item and must
+   * survive.
+   */
+  const armedBeforeDrain = GenerationJobManager.getArmedPreemptIds(streamId, jobCreatedAt);
   const steers = await GenerationJobManager.steering.drain(streamId, jobCreatedAt);
   if (steers.length === 0) {
     /**
-     * Nothing to inject. Any request still armed points at a steer that has
-     * already left the queue (drained at the other boundary, cancelled, or
-     * arrived as a late cross-replica arm), so disarm the generation — a
-     * level-triggered poll left true would seal again on the next chunk and
-     * truncate an unrelated answer.
+     * Nothing to inject. The snapshotted ids point at steers that have
+     * already left the queue (drained at the other boundary, cancelled, or a
+     * late cross-replica arm), so disarm them — a level-triggered poll left
+     * true would seal again on the next chunk and truncate an unrelated
+     * answer.
      */
-    GenerationJobManager.clearPreemptRequests(streamId, jobCreatedAt);
+    GenerationJobManager.clearPreemptRequests(streamId, armedBeforeDrain, jobCreatedAt);
     return [];
   }
   const injectedMessages: InjectedMessage[] = [];

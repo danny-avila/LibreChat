@@ -977,14 +977,32 @@ describe('preempt request lifecycle (in-memory)', () => {
     expect(manager.isPreemptRequested(streamId)).toBe(false);
   });
 
-  test('clearPreemptRequests disarms everything for the generation', async () => {
+  test('clearPreemptRequests disarms the ids it is given', async () => {
     const streamId = 'preempt-clear-all';
     const job = await manager.createJob(streamId, 'user-1');
     manager.requestPreempt(streamId, 'steer-1', job.createdAt);
     manager.requestPreempt(streamId, 'steer-2', job.createdAt);
 
-    manager.clearPreemptRequests(streamId, job.createdAt);
+    const armed = manager.getArmedPreemptIds(streamId, job.createdAt);
+    expect(armed.sort()).toEqual(['steer-1', 'steer-2']);
+    manager.clearPreemptRequests(streamId, armed, job.createdAt);
     expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  /**
+   * A steer can enqueue and arm while a drain is in flight. The empty-boundary
+   * disarm must not wipe it — its queue item is live and uninjected.
+   */
+  test('clearPreemptRequests spares an arm that landed after the snapshot', async () => {
+    const streamId = 'preempt-clear-scoped';
+    const job = await manager.createJob(streamId, 'user-1');
+    manager.requestPreempt(streamId, 'steer-old', job.createdAt);
+
+    const snapshot = manager.getArmedPreemptIds(streamId, job.createdAt);
+    manager.requestPreempt(streamId, 'steer-new', job.createdAt);
+    manager.clearPreemptRequests(streamId, snapshot, job.createdAt);
+
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
   });
 
   test('clearPreemptRequests refuses a stale generation', async () => {
@@ -992,7 +1010,25 @@ describe('preempt request lifecycle (in-memory)', () => {
     const job = await manager.createJob(streamId, 'user-1');
     manager.requestPreempt(streamId, 'steer-1', job.createdAt);
 
-    manager.clearPreemptRequests(streamId, job.createdAt - 1);
+    manager.clearPreemptRequests(streamId, ['steer-1'], job.createdAt - 1);
     expect(manager.isPreemptRequested(streamId)).toBe(true);
+  });
+
+  /**
+   * Every drained or cancelled steer is tombstoned, not just preempting ones,
+   * so a refusing cap would stop recording after a long generation and let the
+   * late-arm race resurface. Eviction keeps the newest removals authoritative.
+   */
+  test('tombstones evict oldest-first instead of refusing new removals', async () => {
+    const streamId = 'preempt-tombstone-evict';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    for (let i = 0; i < STEER_QUEUE_MAX_DEPTH * 2 + 5; i++) {
+      manager.noteSteersRemoved(streamId, [`bulk-${i}`], job.createdAt);
+    }
+    /** The most recent removal must still be remembered. */
+    const recent = `bulk-${STEER_QUEUE_MAX_DEPTH * 2 + 4}`;
+    manager.requestPreempt(streamId, recent, job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
   });
 });

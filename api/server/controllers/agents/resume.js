@@ -17,6 +17,7 @@ const {
   filterMalformedContentParts,
   decrementPendingRequest,
   checkAndIncrementPendingRequest,
+  isSteerPreemptSupported,
   toPendingSteer,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
@@ -246,6 +247,17 @@ async function finalizeResumedTurn({
   // part that breaks reload/rendering.
   const content = filterMalformedContentParts(rawContent);
 
+  /**
+   * A resumed segment can end on an empty preempt boundary just as a fresh
+   * one can — the boundary hook is re-registered by `buildSteerWiring` on
+   * resume. Persisting that as complete would contradict the honest contract
+   * the normal request path now keeps.
+   */
+  const preemptStats = client?.run?.getPreemptStats?.();
+  const preemptIncomplete =
+    (preemptStats?.emptyBoundaries ?? 0) > 0 ||
+    client?.run?.getHaltReason?.() === 'preempt_incomplete';
+
   const responseMessage = {
     messageId: responseMessageId,
     parentMessageId,
@@ -255,7 +267,7 @@ async function finalizeResumedTurn({
     endpoint: meta.endpoint,
     iconURL: meta.iconURL,
     model: meta.model,
-    unfinished: false,
+    unfinished: preemptIncomplete,
     error: false,
     isCreatedByUser: false,
     user: userId,
@@ -695,6 +707,20 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     if (client.contentParts) {
       GenerationJobManager.setContentParts(streamId, client.contentParts, job.createdAt);
     }
+
+    /**
+     * Ownership moves on resume: this replica now generates the turn, so the
+     * job's recorded seal capability must describe THIS process. Without the
+     * refresh a job created on a capable replica could resume on an older one
+     * during a rolling deploy and still acknowledge steers as interrupting.
+     */
+    await GenerationJobManager.updateMetadata(
+      streamId,
+      { preemptCapable: isSteerPreemptSupported() },
+      job.createdAt,
+    ).catch((error) => {
+      logger.warn('[ResumeAgentController] Failed to refresh preempt capability', error);
+    });
 
     await client.resumeCompletion({
       resumeValue: mapped.resumeValue,

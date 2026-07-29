@@ -37,6 +37,12 @@ import {
   isPendingActionExpired,
   STEER_QUEUE_MAX_DEPTH,
 } from './interfaces/IJobStore';
+
+/**
+ * Tombstone budget per generation. Twice the queue depth so a full queue's
+ * worth of removals plus in-flight arms fit without eviction in practice.
+ */
+const PREEMPT_TOMBSTONE_MAX = STEER_QUEUE_MAX_DEPTH * 2;
 import {
   SteeringLifecycle,
   toPendingSteer,
@@ -612,14 +618,28 @@ class GenerationJobManagerClass {
     }
   }
 
-  /** Disarms ids and tombstones them against a late-arriving arm. */
+  /**
+   * Disarms ids and tombstones them against a late-arriving arm. The
+   * tombstone set is bounded by EVICTING its oldest entry rather than
+   * refusing new ones: every drained or cancelled steer is tombstoned, not
+   * just preempting ones, so a refusing cap would silently stop recording
+   * after a long generation and let the late-arm race resurface. Set
+   * iteration is insertion-ordered, so the first key is the oldest.
+   */
   private clearPreemptIds(runtime: RuntimeJobState, createdAt: number, steerIds: string[]): void {
     const state = this.ensurePreemptState(runtime, createdAt);
     for (const id of steerIds) {
       state.ids.delete(id);
-      if (state.cleared.size < STEER_QUEUE_MAX_DEPTH * 2) {
-        state.cleared.add(id);
+      if (state.cleared.has(id)) {
+        continue;
       }
+      if (state.cleared.size >= PREEMPT_TOMBSTONE_MAX) {
+        const oldest = state.cleared.values().next().value;
+        if (oldest != null) {
+          state.cleared.delete(oldest);
+        }
+      }
+      state.cleared.add(id);
     }
   }
 
@@ -3236,12 +3256,35 @@ class GenerationJobManagerClass {
   }
 
   /**
-   * Disarms every outstanding request for the generation. Called when a
-   * boundary drains nothing: the seal has already been spent, and whatever
-   * was armed refers to a steer no longer in the queue — leaving it armed
-   * would seal again immediately and truncate an unrelated answer.
+   * Snapshot of the ids armed right now, taken BEFORE a drain so the
+   * empty-boundary disarm can scope itself to them.
    */
-  clearPreemptRequests(streamId: string, jobCreatedAt?: number): void {
+  getArmedPreemptIds(streamId: string, jobCreatedAt?: number): string[] {
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime?.preempt == null) {
+      return [];
+    }
+    if (jobCreatedAt != null && runtime.createdAt !== jobCreatedAt) {
+      return [];
+    }
+    return [...runtime.preempt.ids];
+  }
+
+  /**
+   * Disarms the requests a spent boundary was responsible for. Called when a
+   * boundary drains nothing: the seal is already spent and those ids refer to
+   * steers no longer in the queue, so leaving them armed would seal again on
+   * the next chunk and truncate an unrelated answer.
+   *
+   * Scoped to an explicit id list rather than wiping the set: a second steer
+   * can enqueue and arm between the atomic drain returning empty and this
+   * call, and that arm is backed by a live queue item that has not been
+   * injected yet.
+   */
+  clearPreemptRequests(streamId: string, steerIds: string[], jobCreatedAt?: number): void {
+    if (steerIds.length === 0) {
+      return;
+    }
     const runtime = this.runtimeState.get(streamId);
     if (runtime?.preempt == null) {
       return;
@@ -3249,7 +3292,7 @@ class GenerationJobManagerClass {
     if (jobCreatedAt != null && runtime.createdAt !== jobCreatedAt) {
       return;
     }
-    this.clearPreemptIds(runtime, runtime.createdAt, [...runtime.preempt.ids]);
+    this.clearPreemptIds(runtime, runtime.createdAt, steerIds);
   }
 
   /**
