@@ -10,6 +10,21 @@ const { getLogStores } = require('~/cache');
 const { getMessage } = require('~/models');
 
 /**
+ * Strips <think>...</think> reasoning blocks from text.
+ * Handles unclosed thinking blocks gracefully.
+ * @param {string} text
+ * @returns {string}
+ */
+function stripThinkBlocks(text) {
+  if (!text) return text;
+  let clean = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  if (clean.includes('<think>')) {
+    clean = clean.split('<think>')[0];
+  }
+  return clean;
+}
+
+/**
  * @param {string[]} voiceIds - Array of voice IDs
  * @returns {string}
  */
@@ -63,6 +78,7 @@ function createChunkProcessor(user, messageId) {
   let notFoundCount = 0;
   let noChangeCount = 0;
   let processedText = '';
+  let processedRawText = '';
   if (!messageId) {
     throw new Error('Message ID is required');
   }
@@ -93,7 +109,7 @@ function createChunkProcessor(user, messageId) {
       notFoundCount++;
       return [];
     } else {
-      const text = message.content?.length > 0 ? parseTextParts(message.content) : message.text;
+      const text = message.content?.length > 0 ? parseTextParts(message.content, true) : message.text;
       messageCache.set(
         cacheKey,
         {
@@ -104,12 +120,17 @@ function createChunkProcessor(user, messageId) {
       );
     }
 
-    const text = typeof message === 'string' ? message : message.text;
+    const rawText = typeof message === 'string' ? message : message.text;
     const complete = typeof message === 'string' ? false : (message.complete ?? true);
 
-    if (text === processedText) {
+    if (rawText === processedRawText) {
       noChangeCount++;
+    } else {
+      noChangeCount = 0;
     }
+    processedRawText = rawText;
+
+    const text = stripThinkBlocks(rawText);
 
     const remainingText = text.slice(processedText.length);
     const chunks = [];

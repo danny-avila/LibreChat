@@ -6,6 +6,21 @@ const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require(
 const { getAppConfig } = require('~/server/services/Config');
 
 /**
+ * Strips <think>...</think> reasoning blocks from text before TTS synthesis.
+ * Handles multi-line blocks and collapses excess whitespace.
+ * @param {string} text
+ * @returns {string}
+ */
+function stripThinkBlocks(text) {
+  if (!text) return text;
+  let clean = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  if (clean.includes('<think>')) {
+    clean = clean.split('<think>')[0];
+  }
+  return clean.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
  * Service class for handling Text-to-Speech (TTS) operations.
  * @class
  */
@@ -101,7 +116,7 @@ class TTSService {
    * @returns {Array} An array containing the URL, data, and headers for the request.
    * @throws {Error} If the selected voice is not available.
    */
-  openAIProvider(ttsSchema, input, voice) {
+  openAIProvider(ttsSchema, input, voice, stream, instruct) {
     const url = ttsSchema?.url || 'https://api.openai.com/v1/audio/speech';
 
     if (
@@ -118,6 +133,7 @@ class TTSService {
       model: ttsSchema?.model,
       voice: ttsSchema?.voices && ttsSchema.voices.length > 0 ? voice : undefined,
       backend: ttsSchema?.backend,
+      instruct: instruct || undefined,
     };
 
     const headers = {
@@ -212,7 +228,7 @@ class TTSService {
    * @returns {Array} An array containing the URL, data, and headers for the request.
    * @throws {Error} If the selected voice is not available.
    */
-  localAIProvider(ttsSchema, input, voice) {
+  localAIProvider(ttsSchema, input, voice, stream, instruct) {
     const url = ttsSchema?.url;
 
     if (
@@ -228,6 +244,7 @@ class TTSService {
       input,
       model: ttsSchema?.voices && ttsSchema.voices.length > 0 ? voice : undefined,
       backend: ttsSchema?.backend,
+      instruct: instruct || undefined,
     };
 
     const headers = {
@@ -254,13 +271,13 @@ class TTSService {
    * @returns {Promise<Object>} The axios response object.
    * @throws {Error} If the provider is invalid or the request fails.
    */
-  async ttsRequest(provider, ttsSchema, { input, voice, stream = true }) {
+  async ttsRequest(provider, ttsSchema, { input, voice, stream = true, instruct }) {
     const strategy = this.providerStrategies[provider];
     if (!strategy) {
       throw new Error('Invalid provider');
     }
 
-    const [url, data, headers] = strategy.call(this, ttsSchema, input, voice, stream);
+    const [url, data, headers] = strategy.call(this, ttsSchema, input, voice, stream, instruct);
 
     [data, headers].forEach(this.removeUndefined.bind(this));
 
@@ -284,11 +301,14 @@ class TTSService {
    * @returns {Promise<void>}
    */
   async processTextToSpeech(req, res) {
-    const { input, voice: requestVoice } = req.body;
+    const { input: rawInput, voice: requestVoice } = req.body;
 
-    if (!input) {
+    if (!rawInput) {
       return res.status(400).send('Missing text in request body');
     }
+
+    // Strip model reasoning blocks before synthesising
+    const input = stripThinkBlocks(rawInput);
 
     const appConfig =
       req.config ??
@@ -303,8 +323,20 @@ class TTSService {
       const ttsSchema = appConfig?.speech?.tts?.[provider];
       const voice = await this.getVoice(ttsSchema, requestVoice);
 
+      let instruct = null;
+      try {
+        const { getVoiceInstructForUser } = require('~/models/VoiceProfileHelper');
+        instruct = await getVoiceInstructForUser(req.user, voice);
+      } catch (err) {
+        logger.error(`[TTS] Voice Profile access check failed: ${err.message}`);
+        if (!res.headersSent) {
+          return res.status(403).json({ error: err.message });
+        }
+        return;
+      }
+
       if (input.length < 4096) {
-        const response = await this.ttsRequest(provider, ttsSchema, { input, voice });
+        const response = await this.ttsRequest(provider, ttsSchema, { input, voice, instruct });
         response.data.pipe(res);
         return;
       }
@@ -317,6 +349,7 @@ class TTSService {
             voice,
             input: chunk.text,
             stream: true,
+            instruct,
           });
 
           logger.debug(`[textToSpeech] user: ${req?.user?.id} | writing audio stream`);
@@ -371,6 +404,18 @@ class TTSService {
     const ttsSchema = appConfig?.speech?.tts?.[provider];
     const voice = await this.getVoice(ttsSchema, req.body.voice);
 
+    let instruct = null;
+    try {
+      const { getVoiceInstructForUser } = require('~/models/VoiceProfileHelper');
+      instruct = await getVoiceInstructForUser(req.user, voice);
+    } catch (err) {
+      logger.error(`[TTS] Voice Profile access check failed: ${err.message}`);
+      if (!res.headersSent) {
+        return res.status(403).json({ error: err.message });
+      }
+      return;
+    }
+
     let shouldContinue = true;
 
     req.on('close', () => {
@@ -397,8 +442,9 @@ class TTSService {
           try {
             const response = await this.ttsRequest(provider, ttsSchema, {
               voice,
-              input: update.text,
+              input: stripThinkBlocks(update.text),
               stream: true,
+              instruct,
             });
 
             if (!shouldContinue) {

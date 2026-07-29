@@ -9,6 +9,13 @@ import useAudioRef from '~/hooks/Audio/useAudioRef';
 import { logger } from '~/utils';
 import store from '~/store';
 
+function stripThinkBlocks(text: string) {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 type TUseTextToSpeech = {
   messageId?: string;
   content?: TMessageContentParts[] | string;
@@ -62,8 +69,8 @@ const useTTSExternal = (props?: TUseTextToSpeech) => {
       if (isMouseDownRef.current) {
         const messageContent = content ?? '';
         const parsedMessage =
-          typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
-        generateSpeech(parsedMessage, false);
+          typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent, true);
+        generateSpeech(stripThinkBlocks(parsedMessage), false);
       }
     }, 1000);
   };
@@ -82,8 +89,8 @@ const useTTSExternal = (props?: TUseTextToSpeech) => {
     } else {
       const messageContent = content ?? '';
       const parsedMessage =
-        typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
-      generateSpeech(parsedMessage, false);
+        typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent, true);
+      generateSpeech(stripThinkBlocks(parsedMessage), false);
     }
   };
 

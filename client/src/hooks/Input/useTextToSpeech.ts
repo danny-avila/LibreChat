@@ -120,7 +120,7 @@ const useTextToSpeech = (props?: TUseTextToSpeech) => {
       if (isMouseDownRef.current) {
         const messageContent = content ?? '';
         const parsedMessage =
-          typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
+          typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent, true);
         generateSpeech(parsedMessage, false);
       }
     }, 1000);
@@ -140,7 +140,7 @@ const useTextToSpeech = (props?: TUseTextToSpeech) => {
     } else {
       const messageContent = content ?? '';
       const parsedMessage =
-        typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent);
+        typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent, true);
       generateSpeech(parsedMessage, false);
     }
   };

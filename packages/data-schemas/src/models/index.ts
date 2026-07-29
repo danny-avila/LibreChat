@@ -1,4 +1,5 @@
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
+import { createVoiceProfileModel } from './voiceProfile';
 import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
 import { createAgentCategoryModel } from './agentCategory';
@@ -77,6 +78,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
   AuditLog: ReturnType<typeof createAuditLogModel>;
   Group: ReturnType<typeof createGroupModel>;
   Config: ReturnType<typeof createConfigModel>;
+  VoiceProfile: ReturnType<typeof createVoiceProfileModel>;
 } {
   return {
     User: createUserModel(mongoose),
@@ -116,5 +118,6 @@ export function createModels(mongoose: typeof import('mongoose')): {
     AuditLog: createAuditLogModel(mongoose),
     Group: createGroupModel(mongoose),
     Config: createConfigModel(mongoose),
+    VoiceProfile: createVoiceProfileModel(mongoose),
   };
 }

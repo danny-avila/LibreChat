@@ -4,6 +4,13 @@ import type { VoiceOption } from '~/common';
 import { subscribeSpeechVoices, getSpeechVoicesSnapshot } from '~/utils';
 import store from '~/store';
 
+function stripThinkBlocks(text: string) {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function useTextToSpeechBrowser({
   setIsSpeaking,
 }: {
@@ -40,7 +47,7 @@ function useTextToSpeechBrowser({
 
     try {
       synth.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
+      const utterance = new SpeechSynthesisUtterance(stripThinkBlocks(text));
       utterance.voice = synth.getVoices().find((v) => v.name === voice.value) || null;
       utterance.onend = () => {
         setIsSpeaking(false);

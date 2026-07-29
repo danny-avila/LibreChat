@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # 1. Text-To-Speech (Faster Qwen)
+  tts-server:
+    build: .
+    container_name: faster-qwen-tts
+    ports:
+      - "8080:8080"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - .:/app
+    environment:
+      - VOICE_NAME=demo
+      - REF_AUDIO=reference.wav
+      - REF_TEXT=This is a reference text.
+    networks:
+      - hstai-voice
+
+  # 2. Speech-To-Text (WhisperLiveKit English)
+  wlk-gpu-sortformer:
+    image: wlk:gpu-sortformer
+    container_name: whisperlivekit-english-stt
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports:
+      - "8888:8000"
+    volumes:
+      - hf-cache:/root/.cache/huggingface/hub
+    environment:
+      - HF_TOKEN
+    command: ["--model", "large-v3-turbo", "--language", "en","--diarization", "--pcm-input"]
+    networks:
+      - hstai-voice
+
+networks:
+  hstai-voice:
+    external: true
+
+volumes:
+  hf-cache:

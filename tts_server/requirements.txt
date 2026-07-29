@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+pydantic
+realtimetts[qwen]
+faster-qwen3-tts==0.2.5

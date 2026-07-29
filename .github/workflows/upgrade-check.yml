@@ -1,0 +1,100 @@
+name: LibreChat Upgrade Check
+
+on:
+  # Run when a new tag is pushed to this fork
+  push:
+    tags:
+      - 'v*'
+  # Allow manual runs
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'Upstream LibreChat tag to test against (e.g. v0.9.0)'
+        required: true
+        default: 'latest'
+
+jobs:
+  upgrade-check:
+    name: Apply AnanseLabs patch onto upstream tag
+    runs-on: ubuntu-latest
+    env:
+      N8N_WEBHOOK_URL: ${{ secrets.N8N_UPGRADE_WEBHOOK_URL }}
+
+    steps:
+      - name: Detect upstream tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.upstream_tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          # Fetch latest from upstream if 'latest'
+          if [ "$TAG" = "latest" ]; then
+            TAG=$(curl -s https://api.github.com/repos/danny-avila/LibreChat/releases/latest | jq -r .tag_name)
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Targeting upstream tag: $TAG"
+
+      - name: Checkout upstream LibreChat at tag
+        uses: actions/checkout@v4
+        with:
+          repository: danny-avila/LibreChat
+          ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Apply ananselabs.patch
+        id: patch
+        continue-on-error: true
+        run: |
+          # Download the patch from the AnanseLabs fork
+          curl -sL "https://raw.githubusercontent.com/AnanseLabs-Org/LibreChat/new/feature/voice-integration/ananselabs.patch" -o ananselabs.patch
+          git config user.email "ci@ananselabs.org"
+          git config user.name "AnanseLabs CI"
+          git am --3way ananselabs.patch 2>&1 | tee patch_output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Run build smoke test
+        id: build
+        if: steps.patch.outcome == 'success'
+        continue-on-error: true
+        run: |
+          npm ci --omit=dev 2>&1 | tail -5
+          npm run build:packages 2>&1 | tail -10
+
+      - name: Notify n8n — success
+        if: steps.patch.outcome == 'success' && steps.build.outcome == 'success'
+        run: |
+          curl -s -X POST "$N8N_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "status": "ready",
+              "tag": "${{ steps.tag.outputs.tag }}",
+              "message": "LibreChat ${{ steps.tag.outputs.tag }} — patch applied cleanly, build passed. Ready to deploy horlap/prod."
+            }'
+
+      - name: Notify n8n — patch conflict
+        if: steps.patch.outcome == 'failure'
+        run: |
+          DIFF=$(cat patch_output.txt | tail -30 | jq -Rs .)
+          curl -s -X POST "$N8N_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"status\": \"conflict\",
+              \"tag\": \"${{ steps.tag.outputs.tag }}\",
+              \"message\": \"LibreChat ${{ steps.tag.outputs.tag }} — patch has conflicts. Manual review needed.\",
+              \"diff\": $DIFF
+            }"
+          exit 1
+
+      - name: Notify n8n — build failure
+        if: steps.patch.outcome == 'success' && steps.build.outcome == 'failure'
+        run: |
+          curl -s -X POST "$N8N_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "status": "build_failed",
+              "tag": "${{ steps.tag.outputs.tag }}",
+              "message": "LibreChat ${{ steps.tag.outputs.tag }} — patch applied but build failed. Check CI logs."
+            }'
+          exit 1
