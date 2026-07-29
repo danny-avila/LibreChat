@@ -20,21 +20,77 @@ interface ConfigSecretField {
  */
 const CONFIG_SECRET_FIELDS: readonly ConfigSecretField[] = [
   { path: 'langfuse.secretKey', displayPath: 'langfuse.displaySecretKey' },
-  { path: 'ocr.apiKey', allowEnvPlaceholder: true },
-  { path: 'speech.tts.openai.apiKey', allowEnvPlaceholder: true },
-  { path: 'speech.tts.azureOpenAI.apiKey', allowEnvPlaceholder: true },
-  { path: 'speech.tts.elevenlabs.apiKey', allowEnvPlaceholder: true },
-  { path: 'speech.tts.localai.apiKey', allowEnvPlaceholder: true },
-  { path: 'speech.stt.openai.apiKey', allowEnvPlaceholder: true },
-  { path: 'speech.stt.azureOpenAI.apiKey', allowEnvPlaceholder: true },
-  { path: 'webSearch.serperApiKey', allowEnvPlaceholder: true },
-  { path: 'webSearch.searxngApiKey', allowEnvPlaceholder: true },
-  { path: 'webSearch.firecrawlApiKey', allowEnvPlaceholder: true },
-  { path: 'webSearch.tavilyApiKey', allowEnvPlaceholder: true },
-  { path: 'webSearch.jinaApiKey', allowEnvPlaceholder: true },
-  { path: 'webSearch.cohereApiKey', allowEnvPlaceholder: true },
-  { path: 'endpoints.assistants.apiKey', allowEnvPlaceholder: true },
-  { path: 'endpoints.azureAssistants.apiKey', allowEnvPlaceholder: true },
+  { path: 'ocr.apiKey', displayPath: 'ocr.displayApiKey', allowEnvPlaceholder: true },
+  {
+    path: 'speech.tts.openai.apiKey',
+    displayPath: 'speech.tts.openai.displayApiKey',
+    allowEnvPlaceholder: true,
+  },
+  {
+    path: 'speech.tts.azureOpenAI.apiKey',
+    displayPath: 'speech.tts.azureOpenAI.displayApiKey',
+    allowEnvPlaceholder: true,
+  },
+  {
+    path: 'speech.tts.elevenlabs.apiKey',
+    displayPath: 'speech.tts.elevenlabs.displayApiKey',
+    allowEnvPlaceholder: true,
+  },
+  {
+    path: 'speech.tts.localai.apiKey',
+    displayPath: 'speech.tts.localai.displayApiKey',
+    allowEnvPlaceholder: true,
+  },
+  {
+    path: 'speech.stt.openai.apiKey',
+    displayPath: 'speech.stt.openai.displayApiKey',
+    allowEnvPlaceholder: true,
+  },
+  {
+    path: 'speech.stt.azureOpenAI.apiKey',
+    displayPath: 'speech.stt.azureOpenAI.displayApiKey',
+    allowEnvPlaceholder: true,
+  },
+  {
+    path: 'webSearch.serperApiKey',
+    displayPath: 'webSearch.displaySerperApiKey',
+    allowEnvPlaceholder: true,
+  },
+  {
+    path: 'webSearch.searxngApiKey',
+    displayPath: 'webSearch.displaySearxngApiKey',
+    allowEnvPlaceholder: true,
+  },
+  {
+    path: 'webSearch.firecrawlApiKey',
+    displayPath: 'webSearch.displayFirecrawlApiKey',
+    allowEnvPlaceholder: true,
+  },
+  {
+    path: 'webSearch.tavilyApiKey',
+    displayPath: 'webSearch.displayTavilyApiKey',
+    allowEnvPlaceholder: true,
+  },
+  {
+    path: 'webSearch.jinaApiKey',
+    displayPath: 'webSearch.displayJinaApiKey',
+    allowEnvPlaceholder: true,
+  },
+  {
+    path: 'webSearch.cohereApiKey',
+    displayPath: 'webSearch.displayCohereApiKey',
+    allowEnvPlaceholder: true,
+  },
+  {
+    path: 'endpoints.assistants.apiKey',
+    displayPath: 'endpoints.assistants.displayApiKey',
+    allowEnvPlaceholder: true,
+  },
+  {
+    path: 'endpoints.azureAssistants.apiKey',
+    displayPath: 'endpoints.azureAssistants.displayApiKey',
+    allowEnvPlaceholder: true,
+  },
 ];
 
 const SECRET_FIELDS_BY_PATH = new Map<string, ConfigSecretField>(

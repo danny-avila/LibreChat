@@ -666,6 +666,11 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
       ]),
     /* general */
     apiKey: z.string().optional(),
+    /** Non-secret display value of the API key, stored at write time so admin
+     * reads can show which key is configured without returning the secret.
+     * Shared by both `endpoints.assistants` and `endpoints.azureAssistants`,
+     * which both use this schema. */
+    displayApiKey: z.string().optional(),
     models: z
       .object({
         default: z.array(modelItemSchema).min(1),
@@ -1096,9 +1101,14 @@ export const anthropicEndpointSchema = baseEndpointSchema.merge(
 
 export type TAnthropicEndpoint = z.infer<typeof anthropicEndpointSchema>;
 
+/** Non-secret display value of the API key, stored at write time so admin
+ * reads can show which key is configured without returning the secret. */
+const displayApiKeySchema = z.string().optional();
+
 const ttsOpenaiSchema = z.object({
   url: z.string().optional(),
   apiKey: z.string(),
+  displayApiKey: displayApiKeySchema,
   model: z.string(),
   voices: z.array(z.string()),
 });
@@ -1106,6 +1116,7 @@ const ttsOpenaiSchema = z.object({
 const ttsAzureOpenAISchema = z.object({
   instanceName: z.string(),
   apiKey: z.string(),
+  displayApiKey: displayApiKeySchema,
   deploymentName: z.string(),
   apiVersion: z.string(),
   model: z.string(),
@@ -1116,6 +1127,7 @@ const ttsElevenLabsSchema = z.object({
   url: z.string().optional(),
   websocketUrl: z.string().optional(),
   apiKey: z.string(),
+  displayApiKey: displayApiKeySchema,
   model: z.string(),
   voices: z.array(z.string()),
   voice_settings: z
@@ -1132,6 +1144,7 @@ const ttsElevenLabsSchema = z.object({
 const ttsLocalaiSchema = z.object({
   url: z.string(),
   apiKey: z.string().optional(),
+  displayApiKey: displayApiKeySchema,
   voices: z.array(z.string()),
   backend: z.string(),
 });
@@ -1146,12 +1159,14 @@ const ttsSchema = z.object({
 const sttOpenaiSchema = z.object({
   url: z.string().optional(),
   apiKey: z.string(),
+  displayApiKey: displayApiKeySchema,
   model: z.string(),
 });
 
 const sttAzureOpenAISchema = z.object({
   instanceName: z.string(),
   apiKey: z.string(),
+  displayApiKey: displayApiKeySchema,
   deploymentName: z.string(),
   apiVersion: z.string(),
 });
@@ -1634,17 +1649,23 @@ export enum SafeSearchTypes {
 
 export const webSearchSchema = z.object({
   serperApiKey: z.string().optional().default('${SERPER_API_KEY}'),
+  displaySerperApiKey: displayApiKeySchema,
   searxngInstanceUrl: z.string().optional().default('${SEARXNG_INSTANCE_URL}'),
   searxngApiKey: z.string().optional().default('${SEARXNG_API_KEY}'),
+  displaySearxngApiKey: displayApiKeySchema,
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
+  displayFirecrawlApiKey: displayApiKeySchema,
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
   firecrawlVersion: z.string().optional().default('${FIRECRAWL_VERSION}'),
   tavilyApiKey: z.string().optional().default('${TAVILY_API_KEY}'),
+  displayTavilyApiKey: displayApiKeySchema,
   tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
   tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
+  displayJinaApiKey: displayApiKeySchema,
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
+  displayCohereApiKey: displayApiKeySchema,
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
@@ -1717,6 +1738,7 @@ export type TWebSearchConfig = DeepPartial<z.infer<typeof webSearchSchema>>;
 export const ocrSchema = z.object({
   mistralModel: z.string().optional(),
   apiKey: z.string().optional().default('${OCR_API_KEY}'),
+  displayApiKey: displayApiKeySchema,
   baseURL: z.string().optional().default('${OCR_BASEURL}'),
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
 });
