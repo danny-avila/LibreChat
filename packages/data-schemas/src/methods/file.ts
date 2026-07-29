@@ -461,14 +461,35 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    * @returns A promise that resolves to the result of the deletion operation
    */
   async function deleteFiles(
-    file_ids: string[],
+    file_ids: string[] | null | undefined,
     user?: string,
   ): Promise<{ deletedCount?: number }> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    let deleteQuery: FilterQuery<IMongoFile> = { file_id: { $in: file_ids } };
-    if (user) {
-      deleteQuery = { user: user };
+    const hasIds = Array.isArray(file_ids) && file_ids.length > 0;
+
+    /**
+     * `user` narrows the id filter rather than replacing it.
+     *
+     * Replacing it made `deleteFiles([oneId], user)` delete every file that
+     * user owns, which reads exactly like the opposite of what it does — a
+     * caller removing one file would silently wipe the account's attachments.
+     * Passing no ids (or an empty array) with a user still means "everything
+     * this user owns", which is how account deletion calls it.
+     */
+    const deleteQuery: FilterQuery<IMongoFile> = {};
+    if (hasIds) {
+      deleteQuery.file_id = { $in: file_ids as string[] };
     }
+    if (user) {
+      deleteQuery.user = user;
+    }
+
+    /** An unscoped `deleteMany({})` would empty the collection. */
+    if (!hasIds && !user) {
+      logger.warn('[deleteFiles] Refusing to delete with neither file ids nor a user');
+      return { deletedCount: 0 };
+    }
+
     return File.deleteMany(deleteQuery);
   }
 

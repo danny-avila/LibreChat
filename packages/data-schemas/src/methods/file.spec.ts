@@ -1398,6 +1398,77 @@ describe('File Methods', () => {
       expect(remaining).toHaveLength(1);
       expect(remaining![0].user?.toString()).toBe(otherUserId.toString());
     });
+
+    /**
+     * `user` narrows the id filter; it does not replace it. When it replaced
+     * it, a caller removing a single file by id silently deleted every file
+     * that user owned.
+     */
+    it('should delete only the named file when both ids and a user are given', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const doomed = uuidv4();
+      const spared = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: doomed,
+        user: userId,
+        filename: 'doomed.txt',
+        filepath: '/uploads/doomed.txt',
+        type: 'text/plain',
+        bytes: 100,
+      });
+      await fileMethods.createFile({
+        file_id: spared,
+        user: userId,
+        filename: 'spared.txt',
+        filepath: '/uploads/spared.txt',
+        type: 'text/plain',
+        bytes: 100,
+      });
+
+      const result = await fileMethods.deleteFiles([doomed], userId.toString());
+
+      expect(result.deletedCount).toBe(1);
+      const remaining = await fileMethods.getFiles({});
+      expect(remaining).toHaveLength(1);
+      expect(remaining![0].file_id).toBe(spared);
+    });
+
+    it("should not delete another user's file that happens to share an id", async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const otherUserId = new mongoose.Types.ObjectId();
+      const sharedId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: sharedId,
+        user: otherUserId,
+        filename: 'theirs.txt',
+        filepath: '/uploads/theirs.txt',
+        type: 'text/plain',
+        bytes: 100,
+      });
+
+      const result = await fileMethods.deleteFiles([sharedId], userId.toString());
+
+      expect(result.deletedCount).toBe(0);
+      expect(await fileMethods.getFiles({})).toHaveLength(1);
+    });
+
+    it('should refuse to delete anything when given neither ids nor a user', async () => {
+      await fileMethods.createFile({
+        file_id: uuidv4(),
+        user: new mongoose.Types.ObjectId(),
+        filename: 'safe.txt',
+        filepath: '/uploads/safe.txt',
+        type: 'text/plain',
+        bytes: 100,
+      });
+
+      const result = await fileMethods.deleteFiles([]);
+
+      expect(result.deletedCount).toBe(0);
+      expect(await fileMethods.getFiles({})).toHaveLength(1);
+    });
   });
 
   describe('batchUpdateFiles', () => {
