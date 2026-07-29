@@ -12,6 +12,8 @@ const {
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   encodeAndFormatDocuments,
+  isLangfuseTraceSampled,
+  traceIdForMessage,
 } = require('@librechat/api');
 const {
   Constants,
@@ -716,6 +718,9 @@ class BaseClient {
       conversationId,
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
+      ...(isAgentsEndpoint(this.options.endpoint) && {
+        langfuseSampled: isLangfuseTraceSampled(traceIdForMessage(responseMessageId)),
+      }),
       isEdited,
       model: this.getResponseModel(),
       sender: this.sender,

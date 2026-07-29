@@ -3,6 +3,7 @@ import {
   hasLangfuseEnvCredentials,
   isLangfuseFanoutEnabled,
   isLangfuseTenantExportEnabled,
+  isLangfuseTracingEnabled,
   isLangfuseTraceSampled,
   usesLangfuseMultiTenantRouting,
 } from './policy';
@@ -106,8 +107,13 @@ function getConfiguredScoreDestination(
 export function getScoreDestinations(
   appConfig: AppConfig | undefined,
   traceId: string,
+  sampled?: boolean,
 ): LangfuseScoreDestination[] {
-  if (!isLangfuseTraceSampled(traceId)) {
+  if (
+    !isLangfuseTracingEnabled() ||
+    sampled === false ||
+    (sampled == null && !isLangfuseTraceSampled(traceId))
+  ) {
     return [];
   }
 

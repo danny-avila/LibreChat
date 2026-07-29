@@ -158,6 +158,20 @@ describe('Message Operations', () => {
       expect(updatedMessage?.text).toBe('Updated text');
     });
 
+    it('returns the generation-time Langfuse sampling decision with feedback updates', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        langfuseSampled: true,
+      });
+
+      const result = await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        feedback: { rating: 'thumbsUp' },
+      });
+
+      expect(result?.langfuseSampled).toBe(true);
+    });
+
     it('should throw an error if message is not found', async () => {
       await expect(
         updateMessage(mockCtx.userId, { messageId: 'nonexistent', text: 'Test' }),

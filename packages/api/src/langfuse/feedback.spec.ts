@@ -256,6 +256,32 @@ describe('Langfuse feedback scores', () => {
     expect(getFetchMock()).not.toHaveBeenCalled();
   });
 
+  it('preserves a sampled trace when the sample rate decreases', async () => {
+    process.env.LANGFUSE_SAMPLE_RATE = '0.1';
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '658f74b0a232417fc3e6e4d9ef5f563a',
+      sampled: true,
+      feedback: { rating: 'thumbsUp' },
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves an excluded trace when the sample rate increases', async () => {
+    process.env.LANGFUSE_SAMPLE_RATE = '1';
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      sampled: false,
+      feedback: { rating: 'thumbsUp' },
+    });
+
+    expect(getFetchMock()).not.toHaveBeenCalled();
+  });
+
   it('posts feedback scores to central fanout and tenant Langfuse projects', async () => {
     enableTenantFanout();
     delete process.env.TENANT_ISOLATION_STRICT;

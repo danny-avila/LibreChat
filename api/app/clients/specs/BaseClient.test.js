@@ -746,6 +746,30 @@ describe('BaseClient', () => {
       );
     });
 
+    test('persists the generation-time Langfuse sampling decision for agent responses', async () => {
+      const previousSampleRate = process.env.LANGFUSE_SAMPLE_RATE;
+      process.env.LANGFUSE_SAMPLE_RATE = '0';
+      TestClient.options.endpoint = 'agents';
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
+
+      try {
+        const response = await TestClient.sendMessage('Hello, world!', { user: {} });
+
+        expect(response.langfuseSampled).toBe(false);
+        expect(saveSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ langfuseSampled: false }),
+          expect.any(Object),
+          expect.any(Object),
+        );
+      } finally {
+        if (previousSampleRate == null) {
+          delete process.env.LANGFUSE_SAMPLE_RATE;
+        } else {
+          process.env.LANGFUSE_SAMPLE_RATE = previousSampleRate;
+        }
+      }
+    });
+
     test('should handle existing conversation when getConvo retrieves one', async () => {
       const existingConvo = {
         conversationId: 'existing-convo-id',

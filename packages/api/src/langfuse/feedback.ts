@@ -12,6 +12,7 @@ export type LangfuseFeedbackMetadata = Record<string, string | number | boolean 
 
 export type SendFeedbackScoreParams = {
   traceId: string;
+  sampled?: boolean;
   feedback?: LangfuseFeedback | null;
   metadata?: LangfuseFeedbackMetadata;
   observationId?: string;
@@ -102,6 +103,7 @@ function buildScorePayload({
 
 export async function sendFeedbackScore({
   traceId,
+  sampled,
   feedback,
   metadata = {},
   observationId,
@@ -111,7 +113,7 @@ export async function sendFeedbackScore({
     return;
   }
 
-  const destinations = getScoreDestinations(appConfig, traceId);
+  const destinations = getScoreDestinations(appConfig, traceId, sampled);
   if (destinations.length === 0) {
     return;
   }
