@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import type { TStartupConfig } from 'librechat-data-provider';
 import type { Page } from '@playwright/test';
 import {
   NEW_CHAT_PATH,
@@ -166,8 +167,10 @@ test.describe('soft default model spec', () => {
     test.setTimeout(120000);
     await page.route('**/api/config', async (route) => {
       const response = await route.fetch();
-      const config = (await response.json()) as { modelSpecs?: Record<string, unknown> };
-      config.modelSpecs = { ...config.modelSpecs, addedEndpoints: ['agents'] };
+      const config = (await response.json()) as TStartupConfig;
+      if (config.modelSpecs) {
+        config.modelSpecs = { ...config.modelSpecs, addedEndpoints: ['agents'] };
+      }
       await route.fulfill({ response, json: config });
     });
 
