@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
-const { sanitizeFilename } = require('@librechat/api');
+const { sanitizeFilename, FILENAME_SEGMENT_MAX_BYTES } = require('@librechat/api');
 const {
   mergeFileConfig,
   inferMimeType,
@@ -42,21 +42,37 @@ const importStorage = multer.diskStorage({
   filename: function (req, file, cb) {
     req.file_id = crypto.randomUUID();
     file.originalname = decodeURIComponent(file.originalname);
-    cb(null, `${req.file_id}-${sanitizeFilename(file.originalname)}`);
+    /** The id prefix has to come out of the same NAME_MAX budget the
+     * sanitizer truncates against. Left at the default, a legitimately long
+     * export name sanitizes to a full 255 bytes and the prefix then pushes the
+     * component past the limit, so multer fails with ENAMETOOLONG. */
+    const prefix = `${req.file_id}-`;
+    const budget = FILENAME_SEGMENT_MAX_BYTES - Buffer.byteLength(prefix, 'utf8');
+    cb(null, `${prefix}${sanitizeFilename(file.originalname, budget)}`);
   },
 });
 
 const IMPORT_EXTENSIONS = new Set(['.json', '.zip']);
+const IMPORT_MIME_TYPES = new Set(['application/json', 'text/json']);
 
 /**
  * Accepts `.json` and `.zip` conversation exports. The extension is
- * authoritative: browsers frequently send `application/octet-stream` for
- * `.zip` uploads, so trusting the MIME type alone would let any file
- * through under that generic type.
+ * authoritative for `.zip`: browsers frequently send
+ * `application/octet-stream` for archives, so trusting the MIME type alone
+ * would let any file through under that generic type.
+ *
+ * A declared JSON MIME type is accepted without the extension, which API
+ * clients and some drag-and-drop sources rely on. That is safe because the
+ * upload's actual content is inspected before anything is imported — the
+ * filter only decides whether the bytes are worth writing to disk.
  */
 const importFileFilter = (req, file, cb) => {
   const extension = path.extname(file.originalname).toLowerCase();
   if (IMPORT_EXTENSIONS.has(extension)) {
+    cb(null, true);
+    return;
+  }
+  if (IMPORT_MIME_TYPES.has((file.mimetype || '').toLowerCase())) {
     cb(null, true);
     return;
   }

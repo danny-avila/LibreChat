@@ -11,7 +11,7 @@ const USER_FACING_UPLOAD_ERRORS = [
 
 const ASCII_FILENAME_SAFE_PATTERN = /^[a-zA-Z0-9._-]$/;
 const UNSAFE_UNICODE_FILENAME_PATTERN = /[^\p{L}\p{M}\p{N}\p{Emoji}\u200d._-]/gu;
-const FILENAME_SEGMENT_MAX_BYTES = 255;
+export const FILENAME_SEGMENT_MAX_BYTES = 255;
 
 function sanitizeFilenameSegment(segment: string): string {
   const asciiSanitized = Array.from(segment.normalize('NFC'), (char) => {
@@ -94,7 +94,16 @@ export function resolveUploadErrorMessage(
  * Sanitize a filename by removing any directory components, replacing unsafe characters
  * @param inputName
  */
-export function sanitizeFilename(inputName: string): string {
+/**
+ * @param maxBytes - Byte budget for the returned name. Callers that prepend
+ * their own prefix (an upload id, say) must reduce this by the prefix's length,
+ * or the combined path component exceeds `NAME_MAX` and the write fails with
+ * `ENAMETOOLONG` — precisely the failure this function exists to prevent.
+ */
+export function sanitizeFilename(
+  inputName: string,
+  maxBytes: number = FILENAME_SEGMENT_MAX_BYTES,
+): string {
   // Remove any directory components
   let name = path.basename(inputName);
 
@@ -107,11 +116,7 @@ export function sanitizeFilename(inputName: string): string {
   }
 
   // Limit the filename to filesystem NAME_MAX, which is byte-based on Linux/APFS.
-  name = truncateLeafWithSuffix(
-    name,
-    '-' + crypto.randomBytes(3).toString('hex'),
-    FILENAME_SEGMENT_MAX_BYTES,
-  );
+  name = truncateLeafWithSuffix(name, '-' + crypto.randomBytes(3).toString('hex'), maxBytes);
 
   return name;
 }
