@@ -126,6 +126,18 @@ describe('Startup readiness wiring', () => {
     expect(shutdownRegistrationIndex).toBeLessThan(listenIndex);
   });
 
+  it('configures HTTP timeouts before graceful shutdown handling', () => {
+    const listenIndex = source.indexOf('const server = app.listen');
+    const timeoutConfigIndex = source.indexOf('configureServerTimeouts(server);');
+    const shutdownIndex = source.indexOf('setupGracefulShutdown(server);');
+
+    expect(listenIndex).toBeGreaterThan(-1);
+    expect(timeoutConfigIndex).toBeGreaterThan(-1);
+    expect(shutdownIndex).toBeGreaterThan(-1);
+    expect(listenIndex).toBeLessThan(timeoutConfigIndex);
+    expect(timeoutConfigIndex).toBeLessThan(shutdownIndex);
+  });
+
   it('mounts the chat-start readiness gate before agent routes', () => {
     const readinessGateIndex = source.indexOf(
       "app.use('/api/agents/chat', rejectChatStartsUntilReady);",

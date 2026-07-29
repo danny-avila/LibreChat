@@ -1197,6 +1197,45 @@ describe('useStepHandler', () => {
       );
     });
 
+    it('applies every entry of a multi-part text delta in order', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_MESSAGE_DELTA,
+            data: {
+              id: 'step-1',
+              delta: {
+                content: [
+                  { type: ContentTypes.TEXT, text: 'Hello ' },
+                  { type: ContentTypes.TEXT, text: 'streaming ' },
+                  { type: ContentTypes.TEXT, text: 'world' },
+                ],
+              },
+            },
+          },
+          submission,
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const responseMsg = lastCall[lastCall.length - 1];
+      expect(responseMsg.content).toContainEqual(
+        expect.objectContaining({ type: ContentTypes.TEXT, text: 'Hello streaming world' }),
+      );
+    });
+
     it('coalesces multiple deltas into a single flush per animation frame', () => {
       const rafQueue: FrameRequestCallback[] = [];
       (window.requestAnimationFrame as jest.Mock).mockImplementation((cb: FrameRequestCallback) => {
@@ -1403,6 +1442,47 @@ describe('useStepHandler', () => {
       const responseMsg = lastCall[lastCall.length - 1];
       expect(responseMsg.content).toContainEqual(
         expect.objectContaining({ type: ContentTypes.THINK, think: 'First thought' }),
+      );
+    });
+
+    it('applies every entry of a multi-part reasoning delta in order', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_REASONING_DELTA,
+            data: {
+              id: 'step-1',
+              delta: {
+                content: [
+                  { type: ContentTypes.THINK, think: 'First reasoning block. ' },
+                  { type: ContentTypes.THINK, think: 'Second reasoning block.' },
+                ],
+              },
+            },
+          },
+          submission,
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const responseMsg = lastCall[lastCall.length - 1];
+      expect(responseMsg.content).toContainEqual(
+        expect.objectContaining({
+          type: ContentTypes.THINK,
+          think: 'First reasoning block. Second reasoning block.',
+        }),
       );
     });
   });

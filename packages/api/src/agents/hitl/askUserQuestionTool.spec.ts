@@ -80,11 +80,11 @@ describe('ask_user_question tool contract', () => {
           type: 'tool_call',
           args: {
             question: 'How should I get the data?',
-            options: [{ label: 'x'.repeat(161), value: 'public-data' }],
+            options: [{ label: 'x'.repeat(281), value: 'public-data' }],
           },
         }),
       ).rejects.toThrow(
-        'Option labels must be 120 characters or fewer. Shorten the label and retry.',
+        'Option labels must be 280 characters or fewer. Shorten the label and retry.',
       );
       expect(validationErrors).toEqual(
         new Map([['tool-1', { fieldPath: 'options[0].label', isLengthLimit: true }]]),
@@ -149,7 +149,7 @@ describe('ask_user_question tool contract', () => {
       ).toBe(true);
       expect(
         AskUserQuestionToolDefinition.schema.properties.options.items.properties.label.maxLength,
-      ).toBe(120);
+      ).toBe(280);
       expect(
         askUserQuestionToolSchema.safeParse({
           question: 'pick',
@@ -163,10 +163,10 @@ describe('ask_user_question tool contract', () => {
       expect(instance.description).toBe(AskUserQuestionToolDefinition.description);
       expect(instance.description).toContain('exactly ONE question per turn');
       expect(instance.description).toContain('NEVER call this tool in parallel');
-      expect(instance.description).toContain('option label within 120 characters');
+      expect(instance.description).toContain('option label within 280 characters');
       expect(
         AskUserQuestionToolDefinition.schema.properties.options.items.properties.label.description,
-      ).toContain('Maximum 120 characters');
+      ).toContain('Maximum 280 characters');
     });
   });
 });

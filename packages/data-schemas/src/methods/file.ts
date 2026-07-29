@@ -557,20 +557,23 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    *
    * A renewable hold, not a release: unlike `updateFileUsage` this never
    * unsets `expiresAt`, so a file that is held but never actually sent is
-   * still reaped once the hold lapses. Four properties hold by
-   * construction, which is what makes the write safe to drive from a
-   * client-supplied id list:
-   * - `$min` against `createdAt + maxLifetimeMs` caps every renewal against
-   *   an immutable anchor, so repeated calls converge on a fixed ceiling
+   * still reaped once the hold lapses. Candidates are read first, then each
+   * doc gets a guarded write — no aggregation-pipeline update, which Amazon
+   * DocumentDB rejects. Four properties hold by construction, which is what
+   * makes the write safe to drive from a client-supplied id list:
+   * - capping the renewal at `createdAt + maxLifetimeMs` anchors it to an
+   *   immutable ceiling, so repeated calls converge on a fixed deadline
    *   instead of walking a file's lifetime forward a window at a time;
    * - renewing from `now` up to that ceiling lets a queue that is still
    *   draining keep its attachments alive across successive runs, while an
    *   abandoned queue lapses a single `renewMs` after its last touch rather
    *   than surviving to the ceiling;
-   * - `$max` against the current value means a hold only ever widens;
-   * - `expiresAt: { $exists: true }` means a file whose TTL was already
-   *   cleared by a real send stays permanent. Re-adding `expiresAt` there
-   *   would schedule a live file for deletion.
+   * - the `expiresAt: { $lt: next }` write guard means a hold only ever
+   *   widens, even against renewals landing between the read and the write;
+   * - `expiresAt: { $exists: true }` in the read filter and the write guard
+   *   means a file whose TTL was already cleared by a real send stays
+   *   permanent. Re-adding `expiresAt` there would schedule a live file for
+   *   deletion.
    *
    * `createdAt` is required rather than defaulted: without the anchor there
    * is no ceiling to enforce, so such a file is skipped instead of held.
@@ -603,23 +606,34 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       },
       { userId: owner.user, tenantId: owner.tenantId },
     );
-    const renewUntil = new Date(Date.now() + renewMs);
-    const result = await File.updateMany(
-      filter,
-      [
+    const renewUntil = Date.now() + renewMs;
+    const candidates = await File.find(filter)
+      .select({ _id: 1, expiresAt: 1, createdAt: 1 })
+      .lean<Pick<IMongoFile, '_id' | 'expiresAt' | 'createdAt'>[]>();
+    const holdOps = candidates.flatMap((file) => {
+      if (!file.createdAt || !file.expiresAt) {
+        return [];
+      }
+      const next = new Date(Math.min(renewUntil, file.createdAt.getTime() + maxLifetimeMs));
+      if (file.expiresAt.getTime() >= next.getTime()) {
+        return [];
+      }
+      return [
         {
-          $set: {
-            expiresAt: {
-              $max: ['$expiresAt', { $min: [renewUntil, { $add: ['$createdAt', maxLifetimeMs] }] }],
-            },
+          updateOne: {
+            filter: { _id: file._id, expiresAt: { $exists: true, $lt: next } },
+            update: { $set: { expiresAt: next } },
           },
         },
-      ],
-      /** `timestamps: false`: a hold is TTL bookkeeping, not a content write.
-       *  Bumping `updatedAt` would also make every re-touch count as a
-       *  modification, hiding whether the deadline actually moved. */
-      { timestamps: false },
-    );
+      ];
+    });
+    if (holdOps.length === 0) {
+      return 0;
+    }
+    /** `timestamps: false`: a hold is TTL bookkeeping, not a content write.
+     *  Bumping `updatedAt` would also make every re-touch count as a
+     *  modification, hiding whether the deadline actually moved. */
+    const result = await tenantSafeBulkWrite(File, holdOps, { timestamps: false });
     return result.modifiedCount ?? 0;
   }
 

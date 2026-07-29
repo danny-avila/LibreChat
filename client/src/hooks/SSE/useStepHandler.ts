@@ -894,29 +894,38 @@ export default function useStepHandler({
 
         const response = messageMap.current.get(responseMessageId);
         if (response && messageDelta.delta.content) {
-          const contentPart = Array.isArray(messageDelta.delta.content)
-            ? messageDelta.delta.content[0]
-            : messageDelta.delta.content;
+          /** A delta may carry several parts (e.g. Google server-side tool
+           *  chunks) — every entry must be applied, in order, or streamed
+           *  text is silently dropped. */
+          const contentParts = Array.isArray(messageDelta.delta.content)
+            ? messageDelta.delta.content
+            : [messageDelta.delta.content];
 
-          if (contentPart == null) {
-            return;
+          let updatedResponse = response;
+          let hasUpdate = false;
+          for (const contentPart of contentParts) {
+            if (contentPart == null) {
+              continue;
+            }
+            const currentIndex = calculateContentIndex(
+              runStep.index,
+              initialContent,
+              contentPart.type || '',
+              updatedResponse.content,
+            );
+            updatedResponse = updateContent(
+              updatedResponse,
+              currentIndex,
+              contentPart,
+              false,
+              getStepMetadata(runStep),
+            );
+            hasUpdate = true;
           }
-
-          const currentIndex = calculateContentIndex(
-            runStep.index,
-            initialContent,
-            contentPart.type || '',
-            response.content,
-          );
-          const updatedResponse = updateContent(
-            response,
-            currentIndex,
-            contentPart,
-            false,
-            getStepMetadata(runStep),
-          );
-          messageMap.current.set(responseMessageId, updatedResponse);
-          scheduleCoalescedMessagesFlush(responseMessageId);
+          if (hasUpdate) {
+            messageMap.current.set(responseMessageId, updatedResponse);
+            scheduleCoalescedMessagesFlush(responseMessageId);
+          }
         }
       } else if (stepEvent.event === StepEvents.ON_REASONING_DELTA) {
         const reasoningDelta = stepEvent.data;
@@ -936,29 +945,37 @@ export default function useStepHandler({
 
         const response = messageMap.current.get(responseMessageId);
         if (response && reasoningDelta.delta.content != null) {
-          const contentPart = Array.isArray(reasoningDelta.delta.content)
-            ? reasoningDelta.delta.content[0]
-            : reasoningDelta.delta.content;
+          /** Same multi-part contract as message deltas: Google server-side
+           *  tool chunks emit several think entries in one delta. */
+          const contentParts = Array.isArray(reasoningDelta.delta.content)
+            ? reasoningDelta.delta.content
+            : [reasoningDelta.delta.content];
 
-          if (contentPart == null) {
-            return;
+          let updatedResponse = response;
+          let hasUpdate = false;
+          for (const contentPart of contentParts) {
+            if (contentPart == null) {
+              continue;
+            }
+            const currentIndex = calculateContentIndex(
+              runStep.index,
+              initialContent,
+              contentPart.type || '',
+              updatedResponse.content,
+            );
+            updatedResponse = updateContent(
+              updatedResponse,
+              currentIndex,
+              contentPart,
+              false,
+              getStepMetadata(runStep),
+            );
+            hasUpdate = true;
           }
-
-          const currentIndex = calculateContentIndex(
-            runStep.index,
-            initialContent,
-            contentPart.type || '',
-            response.content,
-          );
-          const updatedResponse = updateContent(
-            response,
-            currentIndex,
-            contentPart,
-            false,
-            getStepMetadata(runStep),
-          );
-          messageMap.current.set(responseMessageId, updatedResponse);
-          scheduleCoalescedMessagesFlush(responseMessageId);
+          if (hasUpdate) {
+            messageMap.current.set(responseMessageId, updatedResponse);
+            scheduleCoalescedMessagesFlush(responseMessageId);
+          }
         }
       } else if (stepEvent.event === StepEvents.ON_RUN_STEP_DELTA) {
         const runStepDelta = stepEvent.data;
