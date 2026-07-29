@@ -103,8 +103,17 @@ export function convertContent(
     return { text, parts: [{ type: 'text', text }], files: [] };
   }
 
+  /**
+   * `tether_browsing_display` and `tether_quote` carry no `parts` at all — the
+   * payload sits in `result`, `text`, or `content`. `isEmitted` still saves
+   * these messages, so returning empty here rendered them as blank bubbles and
+   * lost every browsed page and quotation in the export.
+   */
   if (!content.parts) {
-    return { text: '', parts: [], files: [] };
+    const text = content.result ?? content.text ?? content.content ?? '';
+    return text
+      ? { text, parts: [{ type: 'text', text }], files: [] }
+      : { text: '', parts: [], files: [] };
   }
 
   const parts: ContentPart[] = [];

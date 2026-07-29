@@ -113,6 +113,26 @@ describe('convertContent', () => {
     expect(JSON.stringify(result)).not.toContain('asset_pointer');
   });
 
+  /** `tether_browsing_display` and `tether_quote` carry no `parts` — the
+   * payload sits in `result`, `text`, or `content`. `isEmitted` saves these
+   * messages regardless, so an empty return rendered them as blank bubbles. */
+  it.each([
+    ['tether_browsing_display', { result: 'Page title\nBody text' }, 'Page title\nBody text'],
+    ['tether_quote', { text: 'A quoted passage' }, 'A quoted passage'],
+    ['system_error', { content: 'the error body' }, 'the error body'],
+  ])('keeps the payload of a partless %s block', (content_type, payload, expected) => {
+    const result = convertContent(message({ content_type, ...payload }), new Map());
+
+    expect(result.text).toBe(expected);
+    expect(result.parts).toEqual([{ type: 'text', text: expected }]);
+  });
+
+  it('stays empty for a partless block that carries no payload at all', () => {
+    const result = convertContent(message({ content_type: 'tether_quote' }), new Map());
+
+    expect(result).toEqual({ text: '', parts: [], files: [] });
+  });
+
   it('still handles legacy code and execution_output blocks', () => {
     expect(
       convertContent(

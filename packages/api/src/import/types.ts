@@ -59,6 +59,8 @@ export interface ChatGptContent {
   text?: string;
   language?: string;
   content?: string;
+  /** Payload of a `tether_browsing_display` block, which carries no `parts`. */
+  result?: string;
   thoughts?: ChatGptThought[];
   source_analysis_msg_id?: string;
 }
