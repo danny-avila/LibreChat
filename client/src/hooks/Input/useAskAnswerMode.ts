@@ -61,13 +61,15 @@ const askAnswerCheckedAtom = atom<number[]>({
  */
 export default function useAskAnswerMode(conversationId?: string | null) {
   const enabled = conversationId != null && conversationId !== 'new';
-  const { data: messages } = useGetMessagesByConvoId(enabled ? conversationId : '', {
+  /** `select` projects straight to the live pause: streaming deltas leave the
+   * settled ask part untouched, so structural sharing keeps this null (or the
+   * same ask object) and the subscription stays quiet until a pause actually
+   * starts or resolves. */
+  const { data: liveAskData } = useGetMessagesByConvoId(enabled ? conversationId : '', {
     enabled,
+    select: findLiveAskUserQuestion,
   });
-  const liveAsk = useMemo(
-    () => (enabled ? findLiveAskUserQuestion(messages) : null),
-    [enabled, messages],
-  );
+  const liveAsk = enabled ? (liveAskData ?? null) : null;
   const [dismissedIds, setDismissedIds] = useRecoilState(dismissedAskActionsAtom);
   const [collapsedIds, setCollapsedIds] = useRecoilState(collapsedAskActionsAtom);
   const [selected, setSelected] = useRecoilState(askAnswerSelectionAtom);

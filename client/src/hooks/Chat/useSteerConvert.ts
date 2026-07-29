@@ -2,9 +2,14 @@ import { useCallback } from 'react';
 import { useRecoilCallback } from 'recoil';
 import type { TPendingSteer } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
+import type { SteerCarriedContext } from '~/utils';
 import { appendAppliedSteerIds, carriedSteerContext } from '~/utils';
 import { fetchStreamStatus } from '~/data-provider';
 import store from '~/store';
+
+/** A server-reported steer, or a local one that carries its own client-only
+ *  context (quotes / skill picks) because its chip may already be gone. */
+type ConvertibleSteer = TPendingSteer & SteerCarriedContext;
 
 interface SteerConvertOptions {
   /** Live-delivered terminal steers also have a parked server copy (the
@@ -35,7 +40,7 @@ interface SteerConvertOptions {
 export default function useSteerConvert() {
   const convert = useRecoilCallback(
     ({ snapshot, set }) =>
-      (conversationId: string, steers: TPendingSteer[]) => {
+      (conversationId: string, steers: ConvertibleSteer[]) => {
         if (steers.length === 0) {
           return;
         }
@@ -76,7 +81,10 @@ export default function useSteerConvert() {
               text: steer.text,
               createdAt: steer.createdAt ?? Date.now(),
               ...(steer.files && steer.files.length > 0 && { files: steer.files }),
-              ...carriedSteerContext(chipById.get(steer.steerId)),
+              // The chip is the usual source, but a reclaimed steer may have
+              // lost its chip to a competing cancel mid-round-trip — it carries
+              // the context itself so the picks survive either way.
+              ...carriedSteerContext(chipById.get(steer.steerId) ?? steer),
             }));
           if (fresh.length === 0) {
             return prev;
@@ -96,7 +104,7 @@ export default function useSteerConvert() {
   );
 
   return useCallback(
-    (conversationId: string, steers: TPendingSteer[], options?: SteerConvertOptions) => {
+    (conversationId: string, steers: ConvertibleSteer[], options?: SteerConvertOptions) => {
       convert(conversationId, steers);
       if (options?.claimParked !== true || steers.length === 0) {
         return;

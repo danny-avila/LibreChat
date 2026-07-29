@@ -47,6 +47,8 @@ import {
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
 import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
+import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
+import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
@@ -341,6 +343,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   hasDeferredTools?: boolean;
   /** Names of tools injected with the `run_in_background` param (excluded from eager execution). */
   backgroundToolNames?: string[];
+  /** Names of tools with the host-injected `intent` param (stripped from self-spawn inputs). */
+  intentToolNames?: string[];
   /**
    * Per-agent codeenv gate set by `initializeAgent`: admin-level
    * `execute_code` capability AND the agent actually requested
@@ -882,13 +886,16 @@ function buildSubagentConfigs(
     const selfName = agentInput.name ?? agent.name ?? 'self';
     countSubagentConfig(state);
     /**
-     * Self-spawn reuses the parent's AgentInputs. When the parent has background
-     * tools, provide a sanitized copy so the isolated child — which runs the
-     * direct/child-graph path rather than the host background interceptor —
-     * doesn't advertise `run_in_background` / `check_background_task`. The
+     * Self-spawn reuses the parent's AgentInputs. When the parent has
+     * background or host-injected intent tools, provide a sanitized copy so
+     * the isolated child — which runs the direct/child-graph path rather
+     * than the host interceptors — doesn't advertise `run_in_background` /
+     * `check_background_task` or an injected `intent` param its direct tool
+     * invocations would forward to tools that never declared it. The
      * resolver keeps a provided `agentInputs` even with `self: true`.
      */
     const hasBackground = (agent.backgroundToolNames?.length ?? 0) > 0;
+    const hasInjectedIntent = (agent.intentToolNames?.length ?? 0) > 0;
     configs.push({
       self: true,
       type: SELF_SUBAGENT_TYPE,
@@ -896,17 +903,20 @@ function buildSubagentConfigs(
       description: `Spawn ${selfName} in an isolated context to handle a focused subtask. Verbose tool output stays in the child's context; only a summary returns.`,
       /** Self-spawn reuses the parent's config, so mirror the parent's recursion limit. */
       maxTurns: resolveSubagentMaxTurns(agentsEConfig, agent),
-      ...(hasBackground
+      ...(hasBackground || hasInjectedIntent
         ? {
             agentInputs: {
               ...agentInput,
-              toolDefinitions: stripBackgroundFromToolDefinitions(
-                agentInput.toolDefinitions,
-                agent.backgroundToolNames,
+              toolDefinitions: stripIntentFromToolDefinitions(
+                stripBackgroundFromToolDefinitions(
+                  agentInput.toolDefinitions,
+                  agent.backgroundToolNames,
+                ),
+                agent.intentToolNames,
               ),
-              toolRegistry: stripBackgroundFromToolRegistry(
-                agentInput.toolRegistry,
-                agent.backgroundToolNames,
+              toolRegistry: stripIntentFromToolRegistry(
+                stripBackgroundFromToolRegistry(agentInput.toolRegistry, agent.backgroundToolNames),
+                agent.intentToolNames,
               ),
             },
           }
@@ -964,6 +974,18 @@ function buildSubagentConfigs(
         child.backgroundToolNames,
       );
     }
+    /** Same sanitization for the host-injected `intent` param (see the
+     *  self-spawn path above). */
+    if ((child.intentToolNames?.length ?? 0) > 0) {
+      childInputs.toolDefinitions = stripIntentFromToolDefinitions(
+        childInputs.toolDefinitions,
+        child.intentToolNames,
+      );
+      childInputs.toolRegistry = stripIntentFromToolRegistry(
+        childInputs.toolRegistry,
+        child.intentToolNames,
+      );
+    }
     /**
      * Recursively resolve the child's own spawn targets so multi-level
      * delegation (A → B → C) works. Without this, a child whose own
@@ -991,6 +1013,8 @@ function buildSubagentConfigs(
         child.description ??
         `Delegate a subtask to the ${child.name ?? child.id} agent in an isolated context.`,
       agentInputs: childInputs,
+      /** Preserve the child's resolved subagent configs when the SDK builds its isolated graph. */
+      allowNested: true,
       /** Honor each child agent's own resolved recursion limit. */
       maxTurns: resolveSubagentMaxTurns(agentsEConfig, child),
     });
@@ -1034,6 +1058,7 @@ export async function createRun({
   appConfig,
   subagentUsageSink,
   steering,
+  activityLabel,
   hitlCapable = false,
   toolInputValidationErrors,
   streaming = true,
@@ -1092,6 +1117,12 @@ export async function createRun({
    * OpenAI-compatible and Responses controllers have no job/SSE surface.
    */
   steering?: { hook: HookCallback<'PostToolBatch'> };
+  /**
+   * Run-scoped tool-batch summary hook (PostToolBatch). Like steering, it
+   * registers independently of the approval policy and needs no checkpointer;
+   * the hook returns immediately and generates off the critical path.
+   */
+  activityLabel?: { hook: HookCallback<'PostToolBatch'> };
   /**
    * Whether the caller implements the HITL pause/resume lifecycle (inspects
    * `run.getInterrupt()`, persists a pending action, exposes a resume route). Gates the
@@ -1350,6 +1381,8 @@ export async function createRun({
     );
     if (subagentConfigs.length > 0) {
       agentInput.subagentConfigs = subagentConfigs;
+      /** Seed the SDK countdown that bounds nested delegation across isolated child graphs. */
+      agentInput.maxSubagentDepth = MAX_SUBAGENT_DEPTH;
     }
     agentInputs.push(agentInput);
   }
@@ -1357,7 +1390,7 @@ export async function createRun({
   const graphConfig: RunConfig['graphConfig'] = {
     signal,
     agents: agentInputs,
-    edges: agents[0].edges,
+    edges: agents[0].edges ?? [],
   };
 
   if (agentInputs.length > 1 || ((graphConfig as MultiAgentGraphConfig).edges?.length ?? 0) > 0) {
@@ -1449,6 +1482,16 @@ export async function createRun({
    * this guard is defense in depth).
    */
   let hooks = hitl?.hooks;
+  /** Activity labels register BEFORE the steer drain: the label must claim
+   *  its slot while the batch's tool parts are still the content tail. If a
+   *  steer drained first, its injected part would flush the tool block in
+   *  sequential rendering and orphan the label outside its group. With the
+   *  label claimed first, parts order as [tools…, label, steer] — the label
+   *  terminates the group and the steer renders after it. */
+  if (activityLabel != null) {
+    hooks = hooks ?? new HookRegistry();
+    hooks.register('PostToolBatch', { hooks: [activityLabel.hook] });
+  }
   if (steering != null && isSteeringSupported()) {
     hooks = hooks ?? new HookRegistry();
     hooks.register('PostToolBatch', { hooks: [steering.hook] });
@@ -1511,7 +1554,17 @@ export async function createRun({
     // API's per-user default runtime session and cannot see files bash_tool
     // just wrote in the conversation's session. Requires @librechat/agents
     // with codeSessionToolNames support (agents#283); older versions ignore it.
-    codeSessionToolNames: [CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME, Constants.READ_FILE],
+    // `check_background_task` participates so a backgrounded code call's exec
+    // session/files (returned as the poll result's artifact when claimed) fold
+    // into the shared code session, keeping same-run continuity for later
+    // foreground code calls. Poll results carry an artifact only for code
+    // tasks, so non-code polls never touch the session.
+    codeSessionToolNames: [
+      CREATE_FILE_TOOL_NAME,
+      EDIT_FILE_TOOL_NAME,
+      Constants.READ_FILE,
+      CHECK_BACKGROUND_TASK_NAME,
+    ],
     // Derive the Langfuse trace id deterministically from runId so message
     // feedback can be scored against the trace without a lookup (see the
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse
@@ -1545,6 +1598,7 @@ export async function createRun({
   };
   const run = await Run.create(runConfig);
 
+  applyCustomHandoffPromptKeyCompatibility(run, runConfig.graphConfig);
   applyTestRunHook(run, { messages, agents });
   return run;
 }

@@ -96,7 +96,7 @@ export function appendAppliedSteerIds(prev: string[], steerIds: string[]): strin
   return [...prev, ...fresh].slice(-APPLIED_STEER_IDS_CAP);
 }
 
-type SteerCarriedContext = { quotes?: string[]; manualSkills?: string[] };
+export type SteerCarriedContext = { quotes?: string[]; manualSkills?: string[] };
 
 /** Quotes/skill picks are client-only (a steer never sends them to the
  *  server); chip mints, reseeds, and queued conversions carry them from the

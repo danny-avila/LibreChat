@@ -10,11 +10,11 @@ import type {
   ReasoningResponseKey,
   ReasoningParameterFormat,
 } from './schemas';
+import type { Agent, EToolResources } from './types/assistants';
 import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
-import type { Agent } from './types/assistants';
 
 export * from './schemas';
 
@@ -117,6 +117,12 @@ export type TEphemeralAgent = {
    * `run_in_background` agent capability to be enabled by the admin.
    */
   run_in_background?: boolean;
+  /**
+   * Inject the `intent` label param into this ephemeral agent's eligible
+   * tools so each call streams a live status label. Requires the
+   * `tool_intents` agent capability to be enabled by the admin.
+   */
+  describe_intent?: boolean;
 };
 
 export type TPayload = Partial<TMessage> &
@@ -139,6 +145,13 @@ export type TPayload = Partial<TMessage> &
     manualSkills?: string[];
     /** Browser IANA timezone (e.g. `America/New_York`) used to resolve local-time prompt variables server-side. */
     timezone?: string;
+    /**
+     * Stable per-submission idempotency key (uuid) generated once per `ask()`. Identical
+     * across the client's start-generation network retries, unique per user action (including
+     * regenerate). The server dedups retried start requests on it so a lost/reset response
+     * cannot trigger a second billed generation.
+     */
+    clientRequestId?: string;
   };
 
 export type TEditedContent =
@@ -168,10 +181,36 @@ export type TSubmission = {
   clientTimestamp?: string;
   ephemeralAgent?: TEphemeralAgent | null;
   editedContent?: TEditedContent | null;
+  /**
+   * Length of the retained content prefix for an edited resubmission, captured
+   * when the submission is built.
+   *
+   * The server indexes only NEW content, so the client offsets incoming
+   * indices by the prefix it kept. `initialResponse.content` cannot be used
+   * for that after a reconnect: the resume sync overwrites it with the
+   * server's completion-local snapshot, whose length is unrelated to the
+   * prefix. Recording the length up front keeps the offset stable across
+   * resumes for run steps and activity labels alike.
+   */
+  editPrefixLength?: number;
+  /**
+   * Set once a resume SYNC has replaced the response's retained prefix with
+   * the server's completion-local snapshot. From that point the prefix is
+   * gone from the rendered message and server indices are absolute in the
+   * new space, so {@link editPrefixLength} must NOT be applied — by run
+   * steps or by activity labels. Both event paths read this flag so a
+   * batch's tool cards and its header always land in one index space.
+   *
+   * Stamped per event by the resumable transport, which owns the SYNC
+   * boundary; the non-resumable path never sets it.
+   */
+  editPrefixCleared?: boolean;
   /** Added conversation for multi-convo feature */
   addedConvo?: TConversation;
   /** Skills the user invoked via the `$` popover for this submission. */
   manualSkills?: string[];
+  /** Stable per-submission idempotency key (uuid) forwarded to the server to dedup retried start-generation requests. */
+  clientRequestId?: string;
 };
 
 export type EventSubmission = Omit<TSubmission, 'initialResponse'> & { initialResponse: TMessage };
@@ -208,6 +247,8 @@ export type TMarketplaceCategory = TCategory & {
 export type TError = {
   message: string;
   code?: number | string;
+  file_id?: string;
+  tool_resource?: EToolResources;
   response?: {
     data?: {
       message?: string;

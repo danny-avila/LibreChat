@@ -3,6 +3,12 @@ import type { Agents } from 'librechat-data-provider';
 import type { IJobStore } from '~/stream/interfaces/IJobStore';
 import { isPendingActionExpired, isPendingActionStale } from '~/stream/interfaces/IJobStore';
 
+export interface ApprovalLifecycleCallbacks {
+  onPaused?: (streamId: string, createdAt: number) => void;
+  onResumed?: (streamId: string, createdAt: number) => void;
+  onExpired?: (streamId: string, createdAt: number) => void;
+}
+
 /**
  * The guarded lifecycle of a run paused for human review (`requires_action`).
  *
@@ -26,7 +32,10 @@ import { isPendingActionExpired, isPendingActionStale } from '~/stream/interface
  * ```
  */
 export class ApprovalLifecycle {
-  constructor(private readonly store: IJobStore) {}
+  constructor(
+    private readonly store: IJobStore,
+    private readonly callbacks: ApprovalLifecycleCallbacks = {},
+  ) {}
 
   /**
    * `running → requires_action`, attaching the pending review record.
@@ -34,13 +43,19 @@ export class ApprovalLifecycle {
    * so a late interrupt is dropped rather than pausing a dead job.
    */
   async pause(streamId: string, pendingAction: Agents.PendingAction): Promise<boolean> {
+    const job = await this.store.getJob(streamId);
+    if (!job || job.status !== 'running') {
+      return false;
+    }
     const ok = await this.store.transitionStatus(streamId, {
       from: 'running',
       to: 'requires_action',
       // pendingActionId is the flat mirror the atomic resolve/expire guard on.
       patch: { pendingAction, pendingActionId: pendingAction.actionId },
+      expectCreatedAt: job.createdAt,
     });
     if (ok) {
+      this.callbacks.onPaused?.(streamId, job.createdAt);
       logger.debug(
         `[ApprovalLifecycle] paused for review: ${streamId} action=${pendingAction.actionId}`,
       );
@@ -79,22 +94,25 @@ export class ApprovalLifecycle {
    */
   async resolve(streamId: string, expectedActionId?: string): Promise<boolean> {
     const job = await this.store.getJob(streamId);
-    if (job?.status === 'requires_action' && !job.pendingAction) {
+    if (!job || job.status !== 'requires_action') {
+      return false;
+    }
+    if (!job.pendingAction) {
       // The prompt was lost (e.g. a malformed record dropped on deserialize).
       // It can't be reviewed, so finalize the job instead of driving a resumed
       // run with no reviewed interrupt payload — consistent with how the active
       // listing and cleanup treat a stale pending action.
-      await this.expire(streamId);
+      await this.expire(streamId, undefined, job.createdAt);
       return false;
     }
-    if (job?.status === 'requires_action' && job.pendingAction && isPendingActionExpired(job)) {
+    if (isPendingActionExpired(job)) {
       // Target the exact record observed as expired. If the caller didn't pin an
       // actionId, fall back to the one just read — otherwise a concurrent
       // resume + re-pause for a new action could let this expire abort it.
-      await this.expire(streamId, expectedActionId ?? job.pendingAction.actionId);
+      await this.expire(streamId, expectedActionId ?? job.pendingAction.actionId, job.createdAt);
       return false;
     }
-    return this.store.transitionStatus(streamId, {
+    const resumed = await this.store.transitionStatus(streamId, {
       from: 'requires_action',
       to: 'running',
       clear: ['pendingAction', 'pendingActionId'],
@@ -102,7 +120,12 @@ export class ApprovalLifecycle {
       // immediately after resuming (cleanup keys off lastActiveAt).
       patch: { lastActiveAt: Date.now() },
       expectActionId: expectedActionId,
+      expectCreatedAt: job.createdAt,
     });
+    if (resumed) {
+      this.callbacks.onResumed?.(streamId, job.createdAt);
+    }
+    return resumed;
   }
 
   /**
@@ -111,7 +134,32 @@ export class ApprovalLifecycle {
    * transition. Returns `true` to the single caller that expired it. Honors
    * `expectedActionId` for the same stale-decision protection as `resolve`.
    */
-  async expire(streamId: string, expectedActionId?: string): Promise<boolean> {
+  async expire(
+    streamId: string,
+    expectedActionId?: string,
+    expectedCreatedAt?: number,
+  ): Promise<boolean> {
+    return (await this.expireWithIdentity(streamId, expectedActionId, expectedCreatedAt)) != null;
+  }
+
+  /**
+   * Expires the observed approval and returns the winning job identity. Callers
+   * that need to notify runtime-local subscribers can use the identity to avoid
+   * delivering the predecessor's terminal event to a replacement generation.
+   */
+  async expireWithIdentity(
+    streamId: string,
+    expectedActionId?: string,
+    expectedCreatedAt?: number,
+  ): Promise<number | null> {
+    let createdAt = expectedCreatedAt;
+    if (createdAt == null) {
+      const job = await this.store.getJob(streamId);
+      if (!job || job.status !== 'requires_action') {
+        return null;
+      }
+      createdAt = job.createdAt;
+    }
     const ok = await this.store.transitionStatus(streamId, {
       from: 'requires_action',
       to: 'aborted',
@@ -120,10 +168,12 @@ export class ApprovalLifecycle {
       // it an expired approval lingers in the in-memory map indefinitely.
       patch: { error: 'Approval expired before a decision was made', completedAt: Date.now() },
       expectActionId: expectedActionId,
+      expectCreatedAt: createdAt,
     });
     if (ok) {
+      this.callbacks.onExpired?.(streamId, createdAt);
       logger.debug(`[ApprovalLifecycle] expired pending review: ${streamId}`);
     }
-    return ok;
+    return ok ? createdAt : null;
   }
 }

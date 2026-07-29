@@ -95,6 +95,10 @@ function tagApprovalOnPart(
     const reviewConfig = reviewByToolCallId.get(toolCallId);
     nextToolCall = {
       ...nextToolCall,
+      // A PreToolUse hook may replace the model's original args before asking.
+      // The interrupt payload is authoritative so the reviewer sees, edits, and
+      // approves the same arguments the resumed tool will actually execute.
+      args: request.arguments,
       approval: {
         actionId,
         allowed_decisions: reviewConfig?.allowed_decisions ?? [],

@@ -33,6 +33,19 @@ describe('promptTokensFromUsage', () => {
     expect(promptTokensFromUsage({ provider: 'anthropic' })).toBe(0);
   });
 
+  it('accepts the activity-label usage bucket emitted on the wire', () => {
+    /** Type-level pin: the backend emits this literal for fast-model header
+     *  calls, so the union must be able to represent the actual payload. */
+    const event: TTokenUsageEvent = {
+      input_tokens: 120,
+      output_tokens: 9,
+      usage_type: 'activity-label',
+      runId: 'msg-1:1700000000000',
+      seq: -1,
+    };
+    expect(promptTokensFromUsage(event)).toBe(120);
+  });
+
   it('uses the magnitude heuristic when the provider is absent (cache ≤ input ⇒ included)', () => {
     /** OpenAI-compatible/custom payload with no provider: cache already folded
      *  into input_tokens, so it must NOT be re-added. */

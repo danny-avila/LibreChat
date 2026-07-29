@@ -35,6 +35,7 @@ const {
   resolveAgentScopedSkillIds,
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
+  stripActivityLabelParts,
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
@@ -336,6 +337,7 @@ const OpenAIChatCompletionController = async (req, res) => {
         }),
         codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
         backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+        toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
         statefulSessionsAvailable: enabledCapabilities.has(
           AgentCapabilities.stateful_code_sessions,
         ),
@@ -417,6 +419,7 @@ const OpenAIChatCompletionController = async (req, res) => {
           /** @see DiscoverConnectedAgentsParams.codeEnvAvailable */
           codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
           backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+          toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
           statefulSessionsAvailable: enabledCapabilities.has(
             AgentCapabilities.stateful_code_sessions,
           ),
@@ -503,6 +506,7 @@ const OpenAIChatCompletionController = async (req, res) => {
           signal: abortController.signal,
           toolRegistry: ctx.toolRegistry,
           backgroundToolNames: ctx.backgroundToolNames,
+          intentToolNames: ctx.intentToolNames,
           mcpAvailableTools: ctx.mcpAvailableTools,
           requestScopedConnections: ctx.requestScopedConnections,
           userMCPAuthMap: ctx.userMCPAuthMap,
@@ -524,7 +528,7 @@ const OpenAIChatCompletionController = async (req, res) => {
     const openaiMessages = convertMessages(request.messages);
 
     const toolSet = buildToolSet(primaryConfig);
-    const formatted = formatAgentMessages(openaiMessages, {}, toolSet);
+    const formatted = formatAgentMessages(stripActivityLabelParts(openaiMessages), {}, toolSet);
     const formattedMessages = formatted.messages;
     const initialSummary = formatted.summary;
     let indexTokenCountMap = formatted.indexTokenCountMap;

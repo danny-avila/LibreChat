@@ -48,7 +48,7 @@ export interface IAgent extends Omit<Document, 'model'> {
   is_promoted?: boolean;
   /** MCP server names extracted from tools for efficient querying */
   mcpServerNames?: string[];
-  /** Per-tool configuration (defer_loading, allowed_callers) */
+  /** Per-tool configuration (defer_loading, allowed_callers, run_in_background, describe_intent) */
   tool_options?: AgentToolOptions;
   /** Subagent spawning configuration — isolated-context child agents. */
   subagents?: AgentSubagentsConfig;

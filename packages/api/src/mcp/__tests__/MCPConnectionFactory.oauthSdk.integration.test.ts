@@ -42,6 +42,7 @@ jest.mock('~/auth', () => ({
 jest.mock('~/mcp/mcpConfig', () => ({
   mcpConfig: {
     CONNECTION_CHECK_TTL: 0,
+    OAUTH_HANDLING_TIMEOUT: 10 * 60 * 1000,
     USER_CONNECTION_IDLE_TIMEOUT: 30 * 60 * 1000,
     TOOLS_LIST_MAX_PAGES: 50,
     TOOLS_LIST_MAX_TOOLS: 1000,

@@ -1,6 +1,11 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
-const { genAzureEndpoint, logAxiosError, applyAxiosProxyConfig } = require('@librechat/api');
+const {
+  genAzureEndpoint,
+  logAxiosError,
+  applyAxiosProxyConfig,
+  resolveConfigSecret,
+} = require('@librechat/api');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
 const { getAppConfig } = require('~/server/services/Config');
@@ -120,9 +125,10 @@ class TTSService {
       backend: ttsSchema?.backend,
     };
 
+    const apiKey = resolveConfigSecret(ttsSchema?.apiKey) || '';
     const headers = {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${extractEnvVariable(ttsSchema?.apiKey)}`,
+      ...(apiKey && { Authorization: `Bearer ${apiKey}` }),
     };
 
     return [url, data, headers];
@@ -159,7 +165,7 @@ class TTSService {
 
     const headers = {
       'Content-Type': 'application/json',
-      'api-key': ttsSchema.apiKey ? extractEnvVariable(ttsSchema.apiKey) : '',
+      'api-key': ttsSchema.apiKey ? resolveConfigSecret(ttsSchema.apiKey) || '' : '',
     };
 
     return [url, data, headers];
@@ -195,9 +201,10 @@ class TTSService {
       pronunciation_dictionary_locators: ttsSchema?.pronunciation_dictionary_locators,
     };
 
+    const apiKey = resolveConfigSecret(ttsSchema?.apiKey) || '';
     const headers = {
       'Content-Type': 'application/json',
-      'xi-api-key': extractEnvVariable(ttsSchema?.apiKey),
+      ...(apiKey && { 'xi-api-key': apiKey }),
       Accept: 'audio/mpeg',
     };
 
@@ -230,14 +237,11 @@ class TTSService {
       backend: ttsSchema?.backend,
     };
 
+    const apiKey = resolveConfigSecret(ttsSchema?.apiKey) || '';
     const headers = {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${extractEnvVariable(ttsSchema?.apiKey)}`,
+      ...(apiKey && { Authorization: `Bearer ${apiKey}` }),
     };
-
-    if (extractEnvVariable(ttsSchema.apiKey) === '') {
-      delete headers.Authorization;
-    }
 
     return [url, data, headers];
   }
@@ -492,4 +496,5 @@ module.exports = {
   textToSpeech,
   streamAudio,
   getProvider,
+  TTSService,
 };

@@ -306,6 +306,7 @@ router.get('/', async function (req, res) {
       langfuseConnectionAccess,
       ...(cloudFront ? { cloudFront } : {}),
       ...(rum ? { rum } : {}),
+      fileUploadSseEnabled: isEnabled(process.env.FILE_UPLOAD_SSE_ENABLED),
     };
 
     const webSearch = buildWebSearchConfig(appConfig);

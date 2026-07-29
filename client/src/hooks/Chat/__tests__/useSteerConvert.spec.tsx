@@ -72,6 +72,31 @@ describe('useSteerConvert', () => {
     ]);
   });
 
+  it('falls back to context carried on the steer when its chip is already gone', () => {
+    // A reclaimed steer stays interactive during its cancel round-trip, so a
+    // competing X can delete the chip before the conversion runs. The steer
+    // carries its own picks so they survive that race.
+    const { result } = setup();
+    act(() => {
+      result.current.convert(CONVO_ID, [
+        {
+          steerId: 'reclaimed',
+          text: 'carried',
+          createdAt: 1,
+          quotes: ['carried quote'],
+          manualSkills: ['carried-skill'],
+        },
+      ]);
+    });
+    expect(result.current.queue).toEqual([
+      expect.objectContaining({
+        id: 'reclaimed',
+        quotes: ['carried quote'],
+        manualSkills: ['carried-skill'],
+      }),
+    ]);
+  });
+
   it('adds no context fields when no local chip matches (fresh reload)', () => {
     const { result } = setup();
     act(() => {

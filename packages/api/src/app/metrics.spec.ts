@@ -7,10 +7,13 @@ import {
   createMetrics,
   instrumentMongooseQueryMetrics,
   normalizePath,
+  recordAgentStartupMilestone,
+  recordAgentStartupResult,
   recordGenerationJob,
   recordGenerationStreamResumePendingEvents,
   recordGenerationStreamSubscription,
   recordOpenIDUserLookup,
+  recordRedisOperation,
   recordRumProxyRequest,
   setGenerationJobsInFlight,
 } from './metrics';
@@ -272,6 +275,31 @@ describe('createMetrics', () => {
     expect(response.text).toMatch(/openid_user_lookup_duration_seconds_sum\{result="found"\} 0.2/);
   });
 
+  it('tracks Redis operation outcomes and latency by use case', async () => {
+    const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
+    const { metricsRouter } = createMetrics();
+    app.use('/metrics', metricsRouter);
+
+    recordRedisOperation('keyv', 'auth_user_doc', 'get', 'success', 0.02);
+    recordRedisOperation('ioredis', 'rate_limit', 'eval', 'error', 0.05);
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toMatch(
+      /redis_operations_total\{client="keyv",use_case="auth_user_doc",operation="get",status="success"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /redis_operation_duration_seconds_count\{client="ioredis",use_case="rate_limit",operation="eval",status="error"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /redis_operation_duration_seconds_sum\{client="ioredis",use_case="rate_limit",operation="eval",status="error"\} 0.05/,
+    );
+  });
+
   it('tracks RUM proxy request outcomes', async () => {
     const app = express();
     process.env.METRICS_SECRET = 'test-secret';
@@ -409,5 +437,36 @@ describe('createMetrics', () => {
     expect(response.text).toMatch(
       /generation_stream_resume_pending_events_total\{store="memory"\} 3/,
     );
+  });
+
+  it('tracks cumulative agent startup milestones and terminal results', async () => {
+    const app = express();
+    process.env.METRICS_SECRET = 'test-secret';
+    const { metricsRouter } = createMetrics();
+    app.use('/metrics', metricsRouter);
+
+    recordAgentStartupMilestone('job_created', 0.125);
+    recordAgentStartupMilestone('first_response_event_queued', 0.75);
+    recordAgentStartupResult('content_queued');
+    Reflect.apply(recordAgentStartupMilestone, undefined, ['unbounded-user-value', 1]);
+    Reflect.apply(recordAgentStartupMilestone, undefined, ['job_created', Number.NaN]);
+    Reflect.apply(recordAgentStartupResult, undefined, ['unbounded-user-value']);
+
+    const response = await request(app)
+      .get('/metrics')
+      .set('Authorization', 'Bearer test-secret')
+      .expect(200);
+
+    expect(response.text).toMatch(
+      /agent_startup_milestone_duration_seconds_count\{milestone="job_created"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /agent_startup_milestone_duration_seconds_sum\{milestone="job_created"\} 0.125/,
+    );
+    expect(response.text).toMatch(
+      /agent_startup_milestone_duration_seconds_count\{milestone="first_response_event_queued"\} 1/,
+    );
+    expect(response.text).toMatch(/agent_startups_total\{result="content_queued"\} 1/);
+    expect(response.text).not.toContain('unbounded-user-value');
   });
 });

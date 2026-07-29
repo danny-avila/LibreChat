@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Constants } from 'librechat-data-provider';
+import { Constants, splitMCPToolKey } from 'librechat-data-provider';
 import type { TPlugin } from 'librechat-data-provider';
 import type { MCPServerInfo } from '~/common';
 
@@ -23,13 +23,14 @@ export function useVisibleTools(
   mcpServersMap: Map<string, MCPServerInfo>,
 ): VisibleToolsResult {
   return useMemo(() => {
+    const knownServerNames = Array.from(mcpServersMap.keys());
     const mcpServers = new Set<string>();
     const regularToolIds: string[] = [];
 
     for (const toolId of selectedToolIds ?? []) {
       // MCP tools/servers
       if (toolId.includes(Constants.mcp_delimiter)) {
-        const serverName = toolId.split(Constants.mcp_delimiter)[1];
+        const [, serverName] = splitMCPToolKey(toolId, knownServerNames);
         if (serverName) {
           mcpServers.add(serverName);
         }

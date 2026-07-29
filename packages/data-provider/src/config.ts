@@ -579,6 +579,7 @@ export enum AgentCapabilities {
   chain = 'chain',
   ocr = 'ocr',
   run_in_background = 'run_in_background',
+  tool_intents = 'tool_intents',
 }
 
 export const defaultAssistantsVersion = {
@@ -613,6 +614,27 @@ export const baseEndpointSchema = z.object({
    * completes (legacy behavior).
    */
   titleTiming: z.union([z.literal('immediate'), z.literal('final')]).optional(),
+  /**
+   * Agent activity groups: collapse each contiguous block of reasoning and
+   * tool calls under a generated one-line header. Mirrors the title options
+   * above — `activityLabel` enables it (like `titleConvo`), the rest tune
+   * the fast model that writes the label.
+   *
+   * NOTE: fields added here reach `endpoints.all` automatically (that schema
+   * is `baseEndpointSchema.omit({ baseURL })`), but NOT Azure — see the
+   * enumerated `.pick()` in `azureEndpointSchema` below.
+   */
+  activityLabel: z.boolean().optional(),
+  /** Model used to write activity labels. Defaults to `titleModel`, then the agent's model. */
+  activityModel: z.string().optional(),
+  /** Endpoint whose credentials the label model runs on. Defaults to the agent's endpoint. */
+  activityEndpoint: z.string().optional(),
+  /** Overrides the system prompt used to write activity labels. */
+  activityPrompt: z.string().optional(),
+  /** Cost cap: maximum labels generated per run. Default 20. */
+  activityMaxPerRun: z.number().int().positive().optional(),
+  /** Per-entry truncation of tool input/output in the label prompt. Default 600. */
+  activityCharLimit: z.number().int().positive().optional(),
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars: z.number().positive().optional(),
 });
@@ -666,6 +688,11 @@ export const assistantEndpointSchema = baseEndpointSchema.merge(
       ]),
     /* general */
     apiKey: z.string().optional(),
+    /** Masked preview of the API key, stored at write time so admin
+     * reads can show which key is configured without returning the secret.
+     * Shared by both `endpoints.assistants` and `endpoints.azureAssistants`,
+     * which both use this schema. */
+    apiKeyPreview: z.string().optional(),
     models: z
       .object({
         default: z.array(modelItemSchema).min(1),
@@ -962,6 +989,9 @@ export const endpointSchema = baseEndpointSchema.merge(
       ).join(', ')}`,
     }),
     apiKey: z.string(),
+    /** Masked preview of the API key, stored at write time so admin
+     * reads can show which key is configured without returning the secret. */
+    apiKeyPreview: z.string().optional(),
     baseURL: z.string(),
     models: z.object({
       default: z.array(modelItemSchema).min(1),
@@ -1019,6 +1049,13 @@ export const azureEndpointSchema = z
     assistants: z.boolean().optional(),
   })
   .and(
+    /**
+     * Azure carries only the base-endpoint fields enumerated here. This is a
+     * `.pick()`, NOT an omit, so a field added to `baseEndpointSchema` is
+     * silently unavailable on Azure endpoints until it is listed below —
+     * unlike `endpoints.all`, which omits and therefore inherits new fields
+     * automatically. Keep this list in sync when adding endpoint options.
+     */
     endpointSchema
       .pick({
         streamRate: true,
@@ -1028,6 +1065,12 @@ export const azureEndpointSchema = z
         titlePrompt: true,
         titleTiming: true,
         titlePromptTemplate: true,
+        activityLabel: true,
+        activityModel: true,
+        activityEndpoint: true,
+        activityPrompt: true,
+        activityMaxPerRun: true,
+        activityCharLimit: true,
       })
       .partial(),
   );
@@ -1096,9 +1139,14 @@ export const anthropicEndpointSchema = baseEndpointSchema.merge(
 
 export type TAnthropicEndpoint = z.infer<typeof anthropicEndpointSchema>;
 
+/** Masked preview of the API key, stored at write time so admin
+ * reads can show which key is configured without returning the secret. */
+const apiKeyPreviewSchema = z.string().optional();
+
 const ttsOpenaiSchema = z.object({
   url: z.string().optional(),
   apiKey: z.string(),
+  apiKeyPreview: apiKeyPreviewSchema,
   model: z.string(),
   voices: z.array(z.string()),
 });
@@ -1106,6 +1154,7 @@ const ttsOpenaiSchema = z.object({
 const ttsAzureOpenAISchema = z.object({
   instanceName: z.string(),
   apiKey: z.string(),
+  apiKeyPreview: apiKeyPreviewSchema,
   deploymentName: z.string(),
   apiVersion: z.string(),
   model: z.string(),
@@ -1116,6 +1165,7 @@ const ttsElevenLabsSchema = z.object({
   url: z.string().optional(),
   websocketUrl: z.string().optional(),
   apiKey: z.string(),
+  apiKeyPreview: apiKeyPreviewSchema,
   model: z.string(),
   voices: z.array(z.string()),
   voice_settings: z
@@ -1132,6 +1182,7 @@ const ttsElevenLabsSchema = z.object({
 const ttsLocalaiSchema = z.object({
   url: z.string(),
   apiKey: z.string().optional(),
+  apiKeyPreview: apiKeyPreviewSchema,
   voices: z.array(z.string()),
   backend: z.string(),
 });
@@ -1146,12 +1197,14 @@ const ttsSchema = z.object({
 const sttOpenaiSchema = z.object({
   url: z.string().optional(),
   apiKey: z.string(),
+  apiKeyPreview: apiKeyPreviewSchema,
   model: z.string(),
 });
 
 const sttAzureOpenAISchema = z.object({
   instanceName: z.string(),
   apiKey: z.string(),
+  apiKeyPreview: apiKeyPreviewSchema,
   deploymentName: z.string(),
   apiVersion: z.string(),
 });
@@ -1580,6 +1633,7 @@ export type TStartupConfig = {
     branch?: string | null;
     buildDate?: string | null;
   };
+  fileUploadSseEnabled?: boolean;
 };
 
 export type TSharedLinkStartupInterface = Pick<
@@ -1635,17 +1689,23 @@ export enum SafeSearchTypes {
 
 export const webSearchSchema = z.object({
   serperApiKey: z.string().optional().default('${SERPER_API_KEY}'),
+  serperApiKeyPreview: apiKeyPreviewSchema,
   searxngInstanceUrl: z.string().optional().default('${SEARXNG_INSTANCE_URL}'),
   searxngApiKey: z.string().optional().default('${SEARXNG_API_KEY}'),
+  searxngApiKeyPreview: apiKeyPreviewSchema,
   firecrawlApiKey: z.string().optional().default('${FIRECRAWL_API_KEY}'),
+  firecrawlApiKeyPreview: apiKeyPreviewSchema,
   firecrawlApiUrl: z.string().optional().default('${FIRECRAWL_API_URL}'),
   firecrawlVersion: z.string().optional().default('${FIRECRAWL_VERSION}'),
   tavilyApiKey: z.string().optional().default('${TAVILY_API_KEY}'),
+  tavilyApiKeyPreview: apiKeyPreviewSchema,
   tavilySearchUrl: z.string().optional().default('${TAVILY_SEARCH_URL}'),
   tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
+  jinaApiKeyPreview: apiKeyPreviewSchema,
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
+  cohereApiKeyPreview: apiKeyPreviewSchema,
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
@@ -1718,6 +1778,7 @@ export type TWebSearchConfig = DeepPartial<z.infer<typeof webSearchSchema>>;
 export const ocrSchema = z.object({
   mistralModel: z.string().optional(),
   apiKey: z.string().optional().default('${OCR_API_KEY}'),
+  apiKeyPreview: apiKeyPreviewSchema,
   baseURL: z.string().optional().default('${OCR_BASEURL}'),
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
 });
@@ -1846,9 +1907,9 @@ export const langfuseConfigSchema = z.object({
   enabled: z.boolean().optional(),
   publicKey: z.string().optional(),
   secretKey: z.string().optional(),
-  /** Non-secret display value of the secret key, stored at write time so
+  /** Masked preview of the secret key, stored at write time so
    * admin reads can show which secret key is configured without returning the secret. */
-  displaySecretKey: z.string().optional(),
+  secretKeyPreview: z.string().optional(),
   /** Routing key for one of the deployment-configured tenant Langfuse destinations. */
   destination: z.string().optional(),
 });
@@ -1908,6 +1969,13 @@ export const configSchema = z.object({
   endpoints: z
     .object({
       allowedAddresses: allowedAddressesSchema,
+      /**
+       * Defaults applied to every endpoint. Omit-based, so options added to
+       * `baseEndpointSchema` are inherited here automatically — no list to
+       * maintain (contrast `azureEndpointSchema`, which enumerates via
+       * `.pick()`). Resolution order at read sites is `all` > the named
+       * endpoint > a custom endpoint's own config.
+       */
       all: baseEndpointSchema.omit({ baseURL: true }).optional(),
       [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
       [EModelEndpoint.google]: baseEndpointSchema.optional(),
@@ -2041,6 +2109,7 @@ const sharedOpenAIModels = [
 
 const sharedAnthropicModels = [
   'claude-fable-5',
+  'claude-opus-5',
   'claude-opus-4-8',
   'claude-opus-4-7',
   'claude-sonnet-5',
@@ -2065,19 +2134,25 @@ const sharedAnthropicModels = [
   'claude-3-5-sonnet-latest',
 ];
 
+/**
+ * Claude 4+ models are not invocable on-demand by their bare foundation-model
+ * ID on the Converse path — Bedrock rejects those with "Invocation of model ID
+ * ... with on-demand throughput isn't supported. Retry your request with the ID
+ * or ARN of an inference profile that contains this model." Default to the
+ * `global.` cross-region profile (no regional pricing premium, widest
+ * availability); Opus 4.1 has no global profile, so it uses `us.`.
+ */
 export const bedrockModels = [
-  'anthropic.claude-fable-5',
-  'anthropic.claude-opus-4-8',
-  'anthropic.claude-opus-4-7',
-  'anthropic.claude-sonnet-5',
-  'anthropic.claude-sonnet-4-6',
-  'anthropic.claude-opus-4-6-v1',
-  'anthropic.claude-sonnet-4-5-20250929-v1:0',
-  'anthropic.claude-haiku-4-5-20251001-v1:0',
-  'anthropic.claude-opus-4-1-20250805-v1:0',
-  'anthropic.claude-3-5-sonnet-20241022-v2:0',
-  'anthropic.claude-3-5-sonnet-20240620-v1:0',
-  'anthropic.claude-3-5-haiku-20241022-v1:0',
+  'global.anthropic.claude-fable-5',
+  'global.anthropic.claude-opus-5',
+  'global.anthropic.claude-opus-4-8',
+  'global.anthropic.claude-opus-4-7',
+  'global.anthropic.claude-sonnet-5',
+  'global.anthropic.claude-sonnet-4-6',
+  'global.anthropic.claude-opus-4-6-v1',
+  'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+  'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+  'us.anthropic.claude-opus-4-1-20250805-v1:0',
   // 'cohere.command-text-v14', // no conversation history
   // 'cohere.command-light-text-v14', // no conversation history
   'cohere.command-r-v1:0',
@@ -2107,8 +2182,11 @@ export const defaultModels = {
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   [EModelEndpoint.agents]: sharedOpenAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.google]: [
+    // Gemini 3.6 Models
+    'gemini-3.6-flash',
     // Gemini 3.5 Models
     'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
     // Gemini 3.1 Models
     'gemini-3.1-pro-preview',
     'gemini-3.1-pro-preview-customtools',
@@ -2516,6 +2594,10 @@ export enum ErrorTypes {
    */
   GOOGLE_TOOL_CONFLICT = 'google_tool_conflict',
   /**
+   * Google provider could not process a linked video (most often longer than the model accepts)
+   */
+  GOOGLE_VIDEO_UNPROCESSABLE = 'google_video_unprocessable',
+  /**
    * Invalid Agent Provider (excluded by Admin)
    */
   INVALID_AGENT_PROVIDER = 'invalid_agent_provider',
@@ -2739,6 +2821,107 @@ export enum Constants {
   SUBAGENT = 'subagent',
   /** Poll tool for retrieving the status/result of a backgrounded tool call. */
   CHECK_BACKGROUND_TASK = 'check_background_task',
+}
+
+/**
+ * Normalizes a server name into the character set tool keys are built from.
+ * Tool keys embed this output, so any candidate list matched against a key must
+ * be normalized the same way.
+ */
+export function normalizeServerName(serverName: string): string {
+  if (/^[a-zA-Z0-9_.-]+$/.test(serverName)) {
+    return serverName;
+  }
+
+  const normalized = serverName.replace(/[^a-zA-Z0-9_.-]/g, '_').replace(/^_+|_+$/g, '');
+  if (normalized) {
+    return normalized;
+  }
+
+  /** All characters were stripped; hash the original so the name stays unique. */
+  let hash = 0;
+  for (let i = 0; i < serverName.length; i++) {
+    hash = (hash << 5) - hash + serverName.charCodeAt(i);
+    hash |= 0;
+  }
+  return `server_${Math.abs(hash)}`;
+}
+
+/**
+ * Splits a combined MCP tool key (`${rawToolName}${mcp_delimiter}${serverName}`)
+ * back into its two parts.
+ *
+ * Both halves can legitimately contain the delimiter, so position alone cannot
+ * identify the boundary. Raw tool names come from the upstream server and are
+ * untrusted (`get_mcp_server_version`, or a gateway-prefixed
+ * `gitlab-get_mcp_server_version`), and `normalizeServerName` preserves
+ * underscores, so a configured server may be named `Google_mcp_Workspace`.
+ *
+ * When `knownServerNames` is supplied the boundary is resolved against it: the
+ * longest configured name the key actually ends with wins. Otherwise this falls
+ * back to the last delimiter, which is correct whenever only the tool half
+ * contains one and matches `.split()` when neither does.
+ *
+ * One case stays undecidable from the key alone: if both `bar` and `foo_mcp_bar`
+ * are configured, `tool_mcp_foo_mcp_bar` is a valid key for either. Longest match
+ * is the deterministic tiebreak; resolving it properly needs the tool/server
+ * mapping carried alongside the key rather than re-derived from the string.
+ */
+export function splitMCPToolKey(
+  toolKey: string,
+  knownServerNames?: readonly string[],
+): [string, string | undefined] {
+  if (knownServerNames?.length) {
+    let matched: string | undefined;
+    for (let i = 0; i < knownServerNames.length; i++) {
+      const serverName = knownServerNames[i];
+      if (!serverName || serverName.length <= (matched?.length ?? 0)) {
+        continue;
+      }
+      if (toolKey.endsWith(`${Constants.mcp_delimiter}${serverName}`)) {
+        matched = serverName;
+      }
+    }
+    if (matched != null) {
+      return [
+        toolKey.slice(0, toolKey.length - matched.length - Constants.mcp_delimiter.length),
+        matched,
+      ];
+    }
+  }
+
+  const idx = toolKey.lastIndexOf(Constants.mcp_delimiter);
+  if (idx === -1) {
+    return [toolKey, undefined];
+  }
+  return [toolKey.slice(0, idx), toolKey.slice(idx + Constants.mcp_delimiter.length)];
+}
+
+/**
+ * Splits a tool-call name for display, where the key may be a synthetic MCP OAuth
+ * call (`oauth${mcp_delimiter}${serverName}`) rather than a real tool key.
+ *
+ * A configured server name is authoritative when one matches, because a real tool key
+ * always ends in its server. Only when none matches does the `oauth` prefix decide,
+ * which keeps a genuine upstream tool named `oauth${mcp_delimiter}...` from being read
+ * as a synthetic call while still resolving OAuth prompts for unconfigured servers.
+ */
+export function splitToolCallName(
+  toolCallName: string,
+  knownServerNames?: readonly string[],
+): [string, string | undefined] {
+  if (knownServerNames?.length) {
+    const [toolName, serverName] = splitMCPToolKey(toolCallName, knownServerNames);
+    if (serverName != null && knownServerNames.includes(serverName)) {
+      return [toolName, serverName];
+    }
+  }
+
+  const oauthPrefix = `oauth${Constants.mcp_delimiter}`;
+  if (toolCallName.startsWith(oauthPrefix)) {
+    return ['oauth', toolCallName.slice(oauthPrefix.length)];
+  }
+  return splitMCPToolKey(toolCallName, knownServerNames);
 }
 
 /** Maximum explicit subagent hops allowed from any root agent at runtime. */

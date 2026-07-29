@@ -19,7 +19,7 @@ import {
   checkIfScrollable,
 } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
-import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
+import { useLatestMessageMeta } from '~/hooks/Messages/useLatestMessage';
 import useFileUploadRouter from '~/hooks/Files/useFileUploadRouter';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
@@ -81,7 +81,7 @@ export default function useTextarea({
   }, [customShortcuts]);
 
   const { index, conversation, isSubmitting, filesLoading, setFilesLoading } = useChatContext();
-  const latestMessage = useLatestMessage(index);
+  const latestMessage = useLatestMessageMeta(index);
   const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
 
   const { endpoint = '' } = conversation || {};

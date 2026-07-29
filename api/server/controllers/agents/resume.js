@@ -10,6 +10,7 @@ const {
   findDisallowedDecisions,
   findIncompleteDecisions,
   computeAgentRequestFingerprint,
+  captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
   buildAbortedResponseMetadata,
   sanitizeMessageForTransmit,
@@ -194,7 +195,15 @@ function resolveResumeValue(pendingAction, body) {
  * job, and prune the checkpoint. Mirrors the abort route's save shape but for a
  * successful finish. Best-effort title generation for a first-turn pause.
  */
-async function finalizeResumedTurn({ req, client, job, streamId, conversationId, addTitle }) {
+async function finalizeResumedTurn({
+  req,
+  client,
+  job,
+  streamId,
+  conversationId,
+  addTitle,
+  checkpointGeneration,
+}) {
   const userId = req.user.id;
   const checkpointerCfg = req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
   const meta = job.metadata ?? {};
@@ -318,10 +327,14 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
         client,
         onTitleGenerated: ({ conversationId: titleConvoId, title }) => {
           conversation.title = title;
-          return GenerationJobManager.emitChunk(streamId, {
-            event: 'title',
-            data: { conversationId: titleConvoId, title },
-          });
+          return GenerationJobManager.emitChunk(
+            streamId,
+            {
+              event: 'title',
+              data: { conversationId: titleConvoId, title },
+            },
+            { expectedCreatedAt: job.createdAt },
+          );
         },
       });
     } catch (err) {
@@ -361,10 +374,15 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
       // via /chat/status within the recovery TTL). NOTE: `job` is the manager
       // facade — owner fields live under `metadata` (a bare `job.userId` is
       // undefined and would make the parked payload unclaimable).
-      await GenerationJobManager.steering.park(streamId, pendingSteers, {
-        userId: job.metadata?.userId,
-        tenantId: job.metadata?.tenantId,
-      });
+      await GenerationJobManager.steering.park(
+        streamId,
+        pendingSteers,
+        {
+          userId: job.metadata?.userId,
+          tenantId: job.metadata?.tenantId,
+        },
+        job.createdAt,
+      );
     }
   } catch (drainErr) {
     logger.warn('[ResumeAgentController] Failed to drain leftover steers', drainErr);
@@ -391,15 +409,15 @@ async function finalizeResumedTurn({ req, client, job, streamId, conversationId,
     ...(pendingSteers && { pendingSteers }),
   };
 
-  await GenerationJobManager.emitDone(streamId, finalEvent);
+  await GenerationJobManager.emitDone(streamId, finalEvent, job.createdAt);
   // Awaited (not fire-and-forget) so the job's terminal write lands before the
   // checkpoint prune, and so a failure here doesn't race the controller's error path.
   try {
-    await GenerationJobManager.completeJob(streamId);
+    await GenerationJobManager.completeJob(streamId, undefined, job.createdAt);
   } catch (completeErr) {
     logger.error('[ResumeAgentController] Failed to complete resumed turn', completeErr);
   }
-  await deleteAgentCheckpoint(conversationId, checkpointerCfg);
+  await deleteAgentCheckpoint(conversationId, checkpointerCfg, checkpointGeneration);
 }
 
 /**
@@ -510,6 +528,23 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     });
   }
 
+  // Snapshot the exact durable checkpoint ids before the atomic resume claim. The
+  // claim is the linearization point: a replacement that already owns this stream
+  // makes it fail, while one that starts afterward writes fresh ids outside the
+  // snapshot. Terminal cleanup can therefore delete this generation without a
+  // check-then-delete race against a later pause on the same conversation.
+  //
+  // Start the indexed read alongside the independent concurrency check so the
+  // generation guard adds minimal time to the resume ACK path.
+  const checkpointerCfg = req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer;
+  const checkpointGenerationPromise = captureAgentCheckpointGeneration(
+    conversationId,
+    checkpointerCfg,
+  ).catch((err) => {
+    logger.warn('[ResumeAgentController] Failed to capture checkpoint generation', err);
+    return { threadId: conversationId, checkpointIds: [] };
+  });
+
   // Count the resume against the concurrency limit. The original turn released its slot
   // when it paused, so resuming must re-acquire one — otherwise pausing several turns
   // and resuming them at once would bypass LIMIT_CONCURRENT_MESSAGES.
@@ -527,7 +562,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   // would leak the concurrency slot until the counter TTL expires — spuriously 429'ing
   // the user when they retry the still-paused approval. Release the slot on that path too.
   let claimed;
+  let checkpointGeneration;
   try {
+    checkpointGeneration = await checkpointGenerationPromise;
     claimed = await GenerationJobManager.approvals.resolve(streamId, pendingAction.actionId);
   } catch (err) {
     await decrementPendingRequest(userId);
@@ -626,6 +663,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       res,
       endpointOption: req.body.endpointOption,
       signal: job.abortController.signal,
+      jobCreatedAt: job.createdAt,
     });
     client = result.client;
 
@@ -655,12 +693,13 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       );
     }
     if (client.contentParts) {
-      GenerationJobManager.setContentParts(streamId, client.contentParts);
+      GenerationJobManager.setContentParts(streamId, client.contentParts, job.createdAt);
     }
 
     await client.resumeCompletion({
       resumeValue: mapped.resumeValue,
       seedContent,
+      runSteps: resumeState?.runSteps ?? [],
       abortController: job.abortController,
       // Carry the user's MCP auth so approved MCP tools run with their credentials.
       userMCPAuthMap: result.userMCPAuthMap,
@@ -690,7 +729,15 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       return;
     }
 
-    await finalizeResumedTurn({ req, client, job, streamId, conversationId, addTitle });
+    await finalizeResumedTurn({
+      req,
+      client,
+      job,
+      streamId,
+      conversationId,
+      addTitle,
+      checkpointGeneration,
+    });
   } catch (err) {
     logger.error('[ResumeAgentController] Resume failed', err);
     // Job-replacement guard (mirrors finalizeResumedTurn's success-path guard): if a
@@ -720,30 +767,47 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         );
         if (leftoverSteers.length > 0) {
           // Facade shape: owner fields are under `metadata` (see finalize).
-          await GenerationJobManager.steering.park(streamId, leftoverSteers.map(toPendingSteer), {
-            userId: job.metadata?.userId,
-            tenantId: job.metadata?.tenantId,
-          });
+          await GenerationJobManager.steering.park(
+            streamId,
+            leftoverSteers.map(toPendingSteer),
+            {
+              userId: job.metadata?.userId,
+              tenantId: job.metadata?.tenantId,
+            },
+            job.createdAt,
+          );
         }
       } catch (drainErr) {
         logger.warn('[ResumeAgentController] Failed to drain steers on resume failure', drainErr);
       }
       try {
-        await GenerationJobManager.emitError(streamId, err?.message ?? 'Resume failed');
+        await GenerationJobManager.emitError(
+          streamId,
+          err?.message ?? 'Resume failed',
+          job.createdAt,
+        );
       } catch (emitErr) {
         logger.error('[ResumeAgentController] Failed to emit resume error', emitErr);
       }
       try {
-        await GenerationJobManager.completeJob(streamId, err?.message ?? 'Resume failed');
+        await GenerationJobManager.completeJob(
+          streamId,
+          err?.message ?? 'Resume failed',
+          job.createdAt,
+        );
       } catch (completeErr) {
         logger.error('[ResumeAgentController] Failed to finalize failed resume', completeErr);
         // Last resort: force a terminal state so the job isn't orphaned in `running`.
         await GenerationJobManager.getJobStore()
-          .updateJob(streamId, {
-            status: 'error',
-            completedAt: Date.now(),
-            error: 'Resume failed',
-          })
+          .updateJob(
+            streamId,
+            {
+              status: 'error',
+              completedAt: Date.now(),
+              error: 'Resume failed',
+            },
+            job.createdAt,
+          )
           .catch((updErr) =>
             logger.error('[ResumeAgentController] Fallback job finalize failed', updErr),
           );
@@ -751,6 +815,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       await deleteAgentCheckpoint(
         conversationId,
         req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
+        checkpointGeneration,
       );
     }
   } finally {

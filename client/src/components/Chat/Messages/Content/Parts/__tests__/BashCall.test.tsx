@@ -13,6 +13,9 @@ jest.mock('~/hooks', () => ({
         com_ui_command_finished: 'Finished running',
         com_ui_cancelled: 'Cancelled',
         com_ui_copy_code: 'Copy code',
+        com_ui_background_running: 'Running in background',
+        com_ui_background_finished: 'Finished in background',
+        com_ui_tool_failed: 'tool failed',
       };
       return translations[key] ?? key;
     },
@@ -33,11 +36,18 @@ jest.mock('~/components/Chat/Messages/Content/ProgressText', () => ({
     progress,
     inProgressText,
     finishedText,
+    errorSuffix,
   }: {
     progress: number;
     inProgressText: string;
     finishedText: string;
-  }) => <div data-testid="progress-text">{progress < 1 ? inProgressText : finishedText}</div>,
+    errorSuffix?: string;
+  }) => (
+    <div data-testid="progress-text">
+      {progress < 1 ? inProgressText : finishedText}
+      {errorSuffix != null ? ` — ${errorSuffix}` : ''}
+    </div>
+  ),
 }));
 
 jest.mock('~/components/Messages/Content/CopyButton', () => ({
@@ -110,4 +120,69 @@ describe('BashCall status text', () => {
       expect(screen.getByText(/echo hi/)).toBeInTheDocument();
     },
   );
+});
+
+describe('BashCall backgrounded calls', () => {
+  const HANDLE_OUTPUT = JSON.stringify({
+    background_task_id: 'task-1',
+    tool: 'bash_tool',
+    status: 'running',
+    message:
+      'Started "bash_tool" in the background. Call check_background_task with background_task_id "task-1" to check progress and retrieve the result.',
+  });
+
+  const renderBackgrounded = (attachments?: Array<Record<string, unknown>>) =>
+    render(
+      <RecoilRoot>
+        <BashCall
+          initialProgress={1}
+          isSubmitting={false}
+          args={{ command: 'sleep 600' }}
+          output={HANDLE_OUTPUT}
+          attachments={attachments as never}
+        />
+      </RecoilRoot>,
+    );
+
+  it('shows a background-running state instead of rendering the handle JSON as stdout', () => {
+    renderBackgrounded();
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Running in background');
+    expect(screen.queryByText(/background_task_id/)).not.toBeInTheDocument();
+  });
+
+  it('flips to finished once attachments arrive for the call', () => {
+    renderBackgrounded([{ file_id: 'f1' }]);
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Finished in background');
+  });
+
+  it('flips to finished on the status marker alone (stdout-only completion)', () => {
+    renderBackgrounded([
+      { type: 'background_task_status', file_id: 'bg-tc-1', toolCallId: 'tc-1' },
+    ]);
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Finished in background');
+    expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
+  });
+
+  it('surfaces failure when the marker carries an error status', () => {
+    renderBackgrounded([
+      { type: 'background_task_status', file_id: 'bg-tc-1', toolCallId: 'tc-1', status: 'error' },
+    ]);
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Finished in background');
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('tool failed');
+  });
+
+  it('renders real stdout normally after the background result patches the output', () => {
+    render(
+      <RecoilRoot>
+        <BashCall
+          initialProgress={1}
+          isSubmitting={false}
+          args={{ command: 'echo hi' }}
+          output="hi"
+        />
+      </RecoilRoot>,
+    );
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Finished running');
+    expect(screen.getByText('hi')).toBeInTheDocument();
+  });
 });

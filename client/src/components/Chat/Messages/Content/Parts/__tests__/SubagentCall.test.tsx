@@ -125,6 +125,11 @@ jest.mock('~/components/Share/MessageIcon', () => ({
   ),
 }));
 
+jest.mock('~/hooks/MCP', () => {
+  const mcpServerNames: string[] = [];
+  return { useMCPServerNames: () => mcpServerNames };
+});
+
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/groupToolCalls'),
   ...jest.requireActual('~/utils/toolLabels'),
