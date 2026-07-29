@@ -15,6 +15,7 @@ let isConfigSecretDescendantPath: typeof import('./secrets').isConfigSecretDesce
 let preserveConfigSecrets: typeof import('./secrets').preserveConfigSecrets;
 let redactConfigSecrets: typeof import('./secrets').redactConfigSecrets;
 let resolveConfigSecret: typeof import('./secrets').resolveConfigSecret;
+let resolveCustomEndpointSecrets: typeof import('./secrets').resolveCustomEndpointSecrets;
 let decryptV3: typeof import('@librechat/data-schemas').decryptV3;
 
 beforeAll(async () => {
@@ -31,6 +32,7 @@ beforeAll(async () => {
     preserveConfigSecrets,
     redactConfigSecrets,
     resolveConfigSecret,
+    resolveCustomEndpointSecrets,
   } = await import('./secrets'));
   ({ decryptV3 } = await import('@librechat/data-schemas'));
 });
@@ -646,5 +648,286 @@ describe('Config secret registry fields', () => {
       expect(out.ocr).not.toHaveProperty('apiKey');
       expect(out.ocr.mistralModel).toBe('x');
     });
+  });
+});
+
+describe('Custom endpoint config secrets', () => {
+  const endpointsWith = (custom: Array<Record<string, unknown>>) => ({ endpoints: { custom } });
+
+  it('encrypts literal API keys on full-document writes and stores display companions', () => {
+    const out = encryptConfigSecrets(
+      endpointsWith([
+        { name: 'OpenRouter', apiKey: 'sk-or-super-secret', baseURL: 'https://openrouter.ai' },
+      ]),
+    );
+    const entry = out.endpoints.custom[0] as Record<string, string>;
+
+    expect(entry.apiKey).toMatch(/^v3:/);
+    expect(decryptV3(entry.apiKey)).toBe('sk-or-super-secret');
+    expect(entry.apiKeyPreview).toBe('sk-or-...cret');
+    expect(entry.baseURL).toBe('https://openrouter.ai');
+  });
+
+  it('leaves user_provided and env-reference API keys readable', () => {
+    const out = encryptConfigSecrets(
+      endpointsWith([
+        { name: 'A', apiKey: 'user_provided', apiKeyPreview: 'spoofed' },
+        { name: 'B', apiKey: '${OPENROUTER_KEY}' },
+      ]),
+    );
+    const [a, b] = out.endpoints.custom as Array<Record<string, string>>;
+
+    expect(a.apiKey).toBe('user_provided');
+    expect(a.apiKeyPreview).toBeUndefined();
+    expect(b.apiKey).toBe('${OPENROUTER_KEY}');
+    expect(b.apiKeyPreview).toBeUndefined();
+  });
+
+  it('encrypts section and array patched values from field maps', () => {
+    const viaSection = encryptConfigSecretFields({
+      endpoints: { custom: [{ name: 'A', apiKey: 'sk-section-key' }] },
+    });
+    const sectionEntry = (viaSection.endpoints as { custom: Array<Record<string, string>> })
+      .custom[0];
+    expect(decryptV3(sectionEntry.apiKey)).toBe('sk-section-key');
+    expect(sectionEntry.apiKeyPreview).toBe('sk-sec...-key');
+
+    const viaArray = encryptConfigSecretFields({
+      'endpoints.custom': [{ name: 'A', apiKey: 'sk-array-key0' }],
+    });
+    const arrayEntry = (viaArray['endpoints.custom'] as Array<Record<string, string>>)[0];
+    expect(decryptV3(arrayEntry.apiKey)).toBe('sk-array-key0');
+    expect(arrayEntry.apiKeyPreview).toBe('sk-arr...key0');
+  });
+
+  it('clears empty, non-string, or pre-encrypted API key submissions', () => {
+    const out = encryptConfigSecrets(
+      endpointsWith([
+        { name: 'A', apiKey: '' },
+        { name: 'B', apiKey: null },
+        { name: 'C', apiKey: 'v3:smuggled', apiKeyPreview: 'spoofed' },
+      ]),
+    );
+
+    for (const item of out.endpoints.custom as Array<Record<string, string>>) {
+      expect(item.apiKey).toBe('');
+      expect(item.apiKeyPreview).toBe('');
+    }
+  });
+
+  it('rejects encrypted submissions and indexed secret writes', () => {
+    expect(
+      getConfigSecretInputError('endpoints', { custom: [{ name: 'A', apiKey: 'v3:smuggled' }] }),
+    ).toContain('Encrypted config secret values');
+    expect(
+      getConfigSecretInputError('endpoints.custom', [{ name: 'A', apiKey: 'v3:smuggled' }]),
+    ).toContain('Encrypted config secret values');
+    expect(getConfigSecretInputError('endpoints', [])).toBeNull();
+    expect(getConfigSecretInputError('endpoints.custom.0.apiKey', 'sk-new')).toContain(
+      'Cannot write secret fields by array index',
+    );
+    expect(getConfigSecretInputError('endpoints.custom.0.apiKeyPreview', undefined)).toContain(
+      'Cannot write secret fields by array index',
+    );
+    expect(
+      getConfigSecretInputError('endpoints.custom.0', { name: 'A', apiKey: 'sk-new' }),
+    ).toContain('Cannot replace endpoints.custom entries by array index');
+    expect(getConfigSecretInputError('endpoints.custom.0', { name: 'A' })).toContain(
+      'Cannot replace endpoints.custom entries by array index',
+    );
+    expect(getConfigSecretInputError('endpoints.custom.0.baseURL', 'https://x')).toBeNull();
+    expect(getConfigSecretInputError('endpoints.custom.apiKey', 'sk-smuggled')).toContain(
+      'has no named fields',
+    );
+    expect(getConfigSecretInputError('endpoints.custom.slot.apiKey', 'sk-smuggled')).toContain(
+      'has no named fields',
+    );
+    expect(getConfigSecretInputError('endpoints.custom.apiKeyPreview', 'spoofed')).toContain(
+      'has no named fields',
+    );
+    expect(
+      getConfigSecretInputError('endpoints.custom', [{ name: 'A', apiKey: 'sk-plain-1234' }]),
+    ).toBeNull();
+  });
+
+  it('rejects and strips non-array protected containers', () => {
+    expect(getConfigSecretInputError('endpoints', { custom: { apiKey: 'sk-smuggled' } })).toContain(
+      'Protected secret container must be an array',
+    );
+    expect(getConfigSecretInputError('endpoints.custom', { apiKey: 'sk-smuggled' })).toContain(
+      'Protected secret container must be an array',
+    );
+    expect(getConfigSecretInputError('endpoints', { custom: null })).toContain(
+      'Protected secret container must be an array',
+    );
+    expect(getConfigSecretInputError('endpoints.custom', null)).toContain(
+      'Protected secret container must be an array',
+    );
+    expect(getConfigSecretInputError('endpoints.custom', undefined)).toBeNull();
+
+    const encrypted = encryptConfigSecrets({ endpoints: { custom: { apiKey: 'sk-smuggled' } } });
+    expect(encrypted.endpoints).toEqual({});
+
+    const nullStripped = encryptConfigSecrets({ endpoints: { custom: null } });
+    expect(nullStripped.endpoints).toEqual({});
+
+    const redacted = redactConfigSecrets({ endpoints: { custom: { apiKey: 'sk-smuggled' } } });
+    expect(redacted.endpoints).toEqual({});
+
+    const fields = encryptConfigSecretFields({ 'endpoints.custom': { apiKey: 'sk-smuggled' } });
+    expect(fields['endpoints.custom']).toBeUndefined();
+  });
+
+  it('rejects positional-operator writes to secret fields', () => {
+    expect(getConfigSecretInputError('endpoints.custom.$[].apiKey', 'sk-new-value')).toContain(
+      'Cannot write secret fields by array index',
+    );
+    expect(getConfigSecretInputError('endpoints.custom.$.apiKeyPreview', 'spoof')).toContain(
+      'Cannot write secret fields by array index',
+    );
+    expect(
+      getConfigSecretInputError('endpoints.custom.$[elem]', { name: 'A', apiKey: 'sk-new' }),
+    ).toContain('Cannot replace endpoints.custom entries by array index');
+  });
+
+  it('fully masks display previews of short secrets', () => {
+    const out = encryptConfigSecrets(endpointsWith([{ name: 'A', apiKey: 'secret' }]));
+    const entry = out.endpoints.custom[0] as Record<string, string>;
+
+    expect(decryptV3(entry.apiKey)).toBe('secret');
+    expect(entry.apiKeyPreview).toBe('******');
+  });
+
+  it('preserves omitted API keys by endpoint name across redacted round-trips', () => {
+    const existing = encryptConfigSecrets(
+      endpointsWith([
+        { name: 'OpenRouter', apiKey: 'sk-or-old-secret' },
+        { name: 'Renamed', apiKey: 'sk-renamed-1234' },
+      ]),
+    );
+
+    const next = encryptConfigSecrets(
+      endpointsWith([
+        { name: 'OpenRouter', baseURL: 'https://openrouter.ai' },
+        { name: 'BrandNew', baseURL: 'https://new.example' },
+      ]),
+    );
+    const preserved = preserveConfigSecrets(next, existing);
+    const [openRouter, brandNew] = preserved.endpoints.custom as Array<Record<string, string>>;
+
+    expect(decryptV3(openRouter.apiKey)).toBe('sk-or-old-secret');
+    expect(openRouter.apiKeyPreview).toBe('sk-or-...cret');
+    expect(brandNew.apiKey).toBeUndefined();
+  });
+
+  it('preserves and encrypts plaintext-legacy API keys on redacted round-trips', () => {
+    const existing = endpointsWith([
+      { name: 'Legacy', apiKey: 'sk-legacy-plaintext' },
+      { name: 'EnvRef', apiKey: '${OPENROUTER_KEY}' },
+    ]);
+    const next = encryptConfigSecrets(
+      endpointsWith([
+        { name: 'Legacy', baseURL: 'https://legacy.example' },
+        { name: 'EnvRef', baseURL: 'https://ref.example' },
+      ]),
+    );
+
+    const preserved = preserveConfigSecrets(next, existing);
+    const [legacy, envRef] = preserved.endpoints.custom as Array<Record<string, string>>;
+
+    expect(legacy.apiKey).toMatch(/^v3:/);
+    expect(decryptV3(legacy.apiKey)).toBe('sk-legacy-plaintext');
+    expect(legacy.apiKeyPreview).toBe('sk-leg...text');
+    expect(envRef.apiKey).toBeUndefined();
+  });
+
+  it('matches identities verbatim so whitespace-distinct names keep their own keys', () => {
+    const existing = encryptConfigSecrets(
+      endpointsWith([
+        { name: 'Prod', apiKey: 'sk-prod-exact-key' },
+        { name: ' Prod ', apiKey: 'sk-prod-spaced-key' },
+      ]),
+    );
+    const next = encryptConfigSecrets(endpointsWith([{ name: 'Prod' }, { name: ' Prod ' }]));
+
+    const preserved = preserveConfigSecrets(next, existing);
+    const [exact, spaced] = preserved.endpoints.custom as Array<Record<string, string>>;
+
+    expect(decryptV3(exact.apiKey)).toBe('sk-prod-exact-key');
+    expect(decryptV3(spaced.apiKey)).toBe('sk-prod-spaced-key');
+  });
+
+  it('does not preserve keys for duplicated endpoint identities', () => {
+    const existing = encryptConfigSecrets(
+      endpointsWith([
+        { name: 'Doubled', apiKey: 'sk-first-key-value' },
+        { name: 'Doubled', apiKey: 'sk-second-key-value' },
+        { name: 'Unique', apiKey: 'sk-unique-key-value' },
+      ]),
+    );
+    const next = encryptConfigSecrets(endpointsWith([{ name: 'Doubled' }, { name: 'Unique' }]));
+
+    const preserved = preserveConfigSecrets(next, existing);
+    const [doubled, unique] = preserved.endpoints.custom as Array<Record<string, string>>;
+
+    expect(doubled.apiKey).toBeUndefined();
+    expect(decryptV3(unique.apiKey)).toBe('sk-unique-key-value');
+  });
+
+  it('preserves omitted API keys for array-valued patches, not cleared ones', () => {
+    const existing = encryptConfigSecrets(endpointsWith([{ name: 'A', apiKey: 'sk-old-value' }]));
+
+    const kept = preserveConfigSecrets(
+      [{ name: 'A', baseURL: 'https://a.example' }],
+      existing,
+      'endpoints.custom',
+    ) as Array<Record<string, string>>;
+    expect(decryptV3(kept[0].apiKey)).toBe('sk-old-value');
+
+    const cleared = preserveConfigSecrets(
+      encryptConfigSecrets([{ name: 'A', apiKey: '' }], 'endpoints.custom'),
+      existing,
+      'endpoints.custom',
+    ) as Array<Record<string, string>>;
+    expect(cleared[0].apiKey).toBe('');
+    expect(cleared[0].apiKeyPreview).toBe('');
+  });
+
+  it('redacts encrypted and plaintext-legacy keys while keeping readable references', () => {
+    const redacted = redactConfigSecrets({
+      endpoints: {
+        custom: [
+          { name: 'A', apiKey: 'v3:abc:def', apiKeyPreview: 'sk-a...key' },
+          { name: 'B', apiKey: 'sk-plaintext-legacy' },
+          { name: 'C', apiKey: 'user_provided' },
+          { name: 'D', apiKey: '${OPENROUTER_KEY}' },
+          { name: 'E', apiKey: '' },
+        ],
+      },
+    });
+    const [a, b, c, d, e] = redacted.endpoints.custom as Array<Record<string, string>>;
+
+    expect(a.apiKey).toBeUndefined();
+    expect(a.apiKeyPreview).toBe('sk-a...key');
+    expect(b.apiKey).toBeUndefined();
+    expect(c.apiKey).toBe('user_provided');
+    expect(d.apiKey).toBe('${OPENROUTER_KEY}');
+    expect(e.apiKey).toBe('');
+  });
+
+  it('resolves stored values for runtime use', () => {
+    const encrypted = encryptConfigSecrets(endpointsWith([{ name: 'A', apiKey: 'sk-runtime' }]))
+      .endpoints.custom[0] as Record<string, string>;
+
+    expect(resolveConfigSecret(encrypted.apiKey)).toBe('sk-runtime');
+    expect(resolveConfigSecret('sk-plain')).toBe('sk-plain');
+    expect(resolveConfigSecret('${OPENROUTER_KEY}')).toBe('${OPENROUTER_KEY}');
+    expect(resolveConfigSecret('v3:provider-literal-token')).toBe('v3:provider-literal-token');
+    expect(resolveConfigSecret('v3:not-valid-ciphertext')).toBe('v3:not-valid-ciphertext');
+
+    const resolved = resolveCustomEndpointSecrets({ name: 'A', apiKey: encrypted.apiKey });
+    expect(resolved.apiKey).toBe('sk-runtime');
+    const passthrough = { name: 'B', apiKey: 'user_provided' };
+    expect(resolveCustomEndpointSecrets(passthrough)).toBe(passthrough);
   });
 });

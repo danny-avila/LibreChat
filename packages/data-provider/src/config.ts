@@ -988,6 +988,9 @@ export const endpointSchema = baseEndpointSchema.merge(
       ).join(', ')}`,
     }),
     apiKey: z.string(),
+    /** Masked preview of the API key, stored at write time so admin
+     * reads can show which key is configured without returning the secret. */
+    apiKeyPreview: z.string().optional(),
     baseURL: z.string(),
     models: z.object({
       default: z.array(modelItemSchema).min(1),

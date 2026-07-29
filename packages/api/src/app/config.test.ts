@@ -1,8 +1,8 @@
-import { getTransactionsConfig, getBalanceConfig, getCustomEndpointConfig } from './config';
-import { logger } from '@librechat/data-schemas';
+import { logger, encryptV3 } from '@librechat/data-schemas';
 import { FileSources, EModelEndpoint } from 'librechat-data-provider';
 import type { TCustomConfig, TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import { getTransactionsConfig, getBalanceConfig, getCustomEndpointConfig } from './config';
 
 // Helper function to create a minimal AppConfig for testing
 const createTestAppConfig = (overrides: Partial<AppConfig> = {}): AppConfig => {
@@ -32,11 +32,19 @@ const createTestAppConfig = (overrides: Partial<AppConfig> = {}): AppConfig => {
   };
 };
 
-jest.mock('@librechat/data-schemas', () => ({
-  logger: {
-    warn: jest.fn(),
-  },
-}));
+jest.mock('@librechat/data-schemas', () => {
+  process.env.CREDS_KEY =
+    process.env.CREDS_KEY ?? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+  const actual = jest.requireActual('@librechat/data-schemas');
+  return {
+    encryptV3: actual.encryptV3,
+    decryptV3: actual.decryptV3,
+    logger: {
+      warn: jest.fn(),
+      error: jest.fn(),
+    },
+  };
+});
 
 jest.mock('~/utils', () => ({
   isEnabled: jest.fn((value) => value === 'true'),
@@ -316,6 +324,25 @@ describe('getCustomEndpointConfig', () => {
         name: 'TestEndpoint',
         apiKey: 'test-key',
       });
+    });
+
+    it('should decrypt admin-encrypted API keys without mutating the stored config', () => {
+      const appConfig = createTestAppConfig({
+        endpoints: {
+          [EModelEndpoint.custom]: [
+            {
+              name: 'Encrypted',
+              apiKey: encryptV3('sk-real-key'),
+              baseURL: 'https://encrypted.example',
+            } as TEndpoint,
+          ],
+        },
+      });
+
+      const result = getCustomEndpointConfig({ endpoint: 'Encrypted', appConfig });
+      expect(result?.apiKey).toBe('sk-real-key');
+      expect(result?.baseURL).toBe('https://encrypted.example');
+      expect(appConfig.endpoints?.[EModelEndpoint.custom]?.[0].apiKey).toMatch(/^v3:/);
     });
 
     it('should handle case-insensitive matching for Ollama endpoint', () => {

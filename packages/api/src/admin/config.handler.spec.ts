@@ -646,6 +646,69 @@ describe('createAdminConfigHandlers', () => {
       });
     });
 
+    it('encrypts custom endpoint API keys on full override writes and redacts responses', async () => {
+      const { handlers, deps } = createHandlers({
+        upsertConfig: jest.fn(async (_type, _id, _model, overrides) => ({
+          _id: 'c1',
+          configVersion: 1,
+          overrides,
+        })),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            endpoints: {
+              custom: [
+                {
+                  name: 'OpenRouter',
+                  apiKey: 'sk-or-secret-key',
+                  baseURL: 'https://openrouter.ai/api/v1',
+                },
+                { name: 'EnvRef', apiKey: '${OPENROUTER_KEY}' },
+              ],
+            },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      const savedOverrides = deps.upsertConfig.mock.calls[0][3];
+      const [saved, envRef] = savedOverrides.endpoints.custom as Array<Record<string, string>>;
+      expect(saved.apiKey).toBe('v3:test:sk-or-secret-key');
+      expect(saved.apiKeyPreview).toBe('sk-or-...-key');
+      expect(envRef.apiKey).toBe('${OPENROUTER_KEY}');
+      expect(envRef.apiKeyPreview).toBeUndefined();
+      const responseConfig = res.body!.config as {
+        overrides: { endpoints: { custom: Array<Record<string, string>> } };
+      };
+      expect(responseConfig.overrides.endpoints.custom[0].apiKey).toBeUndefined();
+      expect(responseConfig.overrides.endpoints.custom[0].apiKeyPreview).toBe('sk-or-...-key');
+      expect(responseConfig.overrides.endpoints.custom[1].apiKey).toBe('${OPENROUTER_KEY}');
+    });
+
+    it('rejects encrypted custom endpoint API key submissions on full override writes', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            endpoints: {
+              custom: [{ name: 'A', apiKey: 'v3:attacker-controlled' }],
+            },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
     it('preserves UI sub-keys in composite permission fields like mcpServers', async () => {
       const { handlers, deps } = createHandlers({
         upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),

@@ -1,6 +1,7 @@
 import isPlainObject from 'lodash/isPlainObject';
 import { encryptV3, decryptV3, logger } from '@librechat/data-schemas';
 import { envVarRegex, extractEnvVariable } from 'librechat-data-provider';
+import { isUserProvided } from '~/utils/common';
 
 const ENCRYPTED_PREFIX = 'v3:';
 const ENCRYPTED_PAYLOAD_REGEX = /^v3:[0-9a-f]{32}:[0-9a-f]+$/;
@@ -54,6 +55,37 @@ const LEGACY_PREVIEW_PATHS: ReadonlyMap<string, string> = new Map([
   ['langfuse.secretKey', 'langfuse.displaySecretKey'],
 ]);
 
+/**
+ * A secret stored on every item of an array config field, which dot-path
+ * registry entries cannot express.
+ */
+interface ArraySecretField {
+  /** Dot-path of the array container within config overrides */
+  arrayPath: string;
+  secretKey: string;
+  /** Masked-preview companion on each item, always the sibling `<secretKey>Preview`. */
+  previewKey: string;
+  /** Item field matched verbatim across writes for omit-to-keep round-trips. */
+  identityKey: string;
+  /** Reference values that must stay readable and never encrypt, e.g. `user_provided`, `${ENV_VAR}`. */
+  isPassthroughValue: (value: string) => boolean;
+}
+
+/**
+ * Registry of array-item secret locations, the sibling of
+ * `CONFIG_SECRET_FIELDS` for secrets that live on entries of an array
+ * (e.g. `endpoints.custom[*].apiKey`).
+ */
+const ARRAY_SECRET_FIELDS: readonly ArraySecretField[] = [
+  {
+    arrayPath: 'endpoints.custom',
+    secretKey: 'apiKey',
+    previewKey: 'apiKeyPreview',
+    identityKey: 'name',
+    isPassthroughValue: (value) => isUserProvided(value) || envVarRegex.test(value),
+  },
+];
+
 const SECRET_FIELDS_BY_PATH = new Map<string, ConfigSecretField>(
   CONFIG_SECRET_FIELDS.map((field) => [field.path, field]),
 );
@@ -71,7 +103,10 @@ const ANCESTOR_PATHS = new Set<string>(
 );
 
 const SECRET_SECTIONS: readonly string[] = [
-  ...new Set(CONFIG_SECRET_FIELDS.map((field) => field.path.split('.')[0])),
+  ...new Set([
+    ...CONFIG_SECRET_FIELDS.map((field) => field.path.split('.')[0]),
+    ...ARRAY_SECRET_FIELDS.map((field) => field.arrayPath.split('.')[0]),
+  ]),
 ];
 
 export function getSecretPreview(secret: string): string {
@@ -162,6 +197,13 @@ function isConfigSecretRelatedPath(fieldPath: string): boolean {
   if (SECRET_FIELDS_BY_PATH.has(fieldPath) || PREVIEW_PATHS.has(fieldPath)) {
     return true;
   }
+  if (
+    ARRAY_SECRET_FIELDS.some(
+      (field) => fieldPath === field.arrayPath || fieldPath.startsWith(`${field.arrayPath}.`),
+    )
+  ) {
+    return true;
+  }
   return ANCESTOR_PATHS.has(fieldPath) || isConfigSecretDescendantPath(fieldPath);
 }
 
@@ -234,6 +276,10 @@ export function getConfigSecretInputError(fieldPath: string, value: unknown): st
   if (SECRET_FIELDS_BY_PATH.has(fieldPath) && isEncryptedConfigSecret(value)) {
     return `Encrypted config secret values cannot be submitted: ${fieldPath}`;
   }
+  const arrayError = getArraySecretInputError(fieldPath, value);
+  if (arrayError) {
+    return arrayError;
+  }
   if (!isConfigSecretAncestorPath(fieldPath)) {
     return null;
   }
@@ -273,6 +319,238 @@ function migrateLegacyPreviewKey(section: Record<string, unknown>, field: Config
     section[previewKey] = legacyValue;
   }
   delete section[lastSegment(legacyPath)];
+}
+
+/**
+ * Locates a registered secret array within `root`, where `basePath` identifies
+ * what `root` is: `''` for a whole overrides/config object, the array's parent
+ * section, or the array path itself.
+ */
+function getSecretArray(root: unknown, field: ArraySecretField, basePath = ''): unknown[] | null {
+  if (basePath === field.arrayPath) {
+    return Array.isArray(root) ? root : null;
+  }
+  const segments = relativeSegments(field.arrayPath, basePath);
+  if (!segments) {
+    return null;
+  }
+  const container = walkToParent(root, segments);
+  const array = container?.[segments[segments.length - 1]];
+  return Array.isArray(array) ? array : null;
+}
+
+/**
+ * Exact-string entry identity for preserve matching. Deliberately untrimmed:
+ * the runtime config merge keys entries by their verbatim name, so `"Prod"`
+ * and `" Prod "` are distinct endpoints with distinct credentials.
+ */
+function getEntryIdentity(
+  entry: Record<string, unknown> | null,
+  field: ArraySecretField,
+): string | undefined {
+  const value = entry?.[field.identityKey];
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+/**
+ * Deletes a present non-array protected container (e.g. an object- or
+ * null-valued `endpoints.custom`) so malformed input can never carry secrets
+ * past the encryption and redaction traversals.
+ */
+function removeMalformedSecretContainers(root: unknown, basePath = ''): void {
+  for (const field of ARRAY_SECRET_FIELDS) {
+    const segments = relativeSegments(field.arrayPath, basePath);
+    if (!segments) {
+      continue;
+    }
+    const container = walkToParent(root, segments);
+    const arrayKey = segments[segments.length - 1];
+    if (container != null && arrayKey in container && !Array.isArray(container[arrayKey])) {
+      delete container[arrayKey];
+    }
+  }
+}
+
+function applyArraySecretWrites(entries: unknown[], field: ArraySecretField): void {
+  for (const item of entries) {
+    const entry = getPlainRecord(item);
+    if (!entry) {
+      continue;
+    }
+    if (!(field.secretKey in entry)) {
+      delete entry[field.previewKey];
+      continue;
+    }
+    const rawValue = entry[field.secretKey];
+    if (typeof rawValue !== 'string' || rawValue.startsWith(ENCRYPTED_PREFIX)) {
+      entry[field.secretKey] = '';
+      entry[field.previewKey] = '';
+      continue;
+    }
+    const value = normalizeSecretString(rawValue);
+    if (!value) {
+      entry[field.secretKey] = '';
+      entry[field.previewKey] = '';
+      continue;
+    }
+    if (field.isPassthroughValue(value)) {
+      entry[field.secretKey] = value;
+      delete entry[field.previewKey];
+      continue;
+    }
+    entry[field.secretKey] = encryptV3(value);
+    entry[field.previewKey] = getSecretPreview(value);
+  }
+}
+
+function preserveArraySecrets(result: unknown, existing: unknown, basePath: string): void {
+  for (const field of ARRAY_SECRET_FIELDS) {
+    const entries = getSecretArray(result, field, basePath);
+    const existingEntries = getSecretArray(existing, field);
+    if (!entries || !existingEntries) {
+      continue;
+    }
+
+    const duplicateIdentities = new Set<string>();
+    const existingByIdentity = new Map<string, Record<string, unknown>>();
+    for (const item of existingEntries) {
+      const entry = getPlainRecord(item);
+      const identity = getEntryIdentity(entry, field);
+      if (!entry || identity === undefined) {
+        continue;
+      }
+      if (existingByIdentity.has(identity)) {
+        duplicateIdentities.add(identity);
+        continue;
+      }
+      existingByIdentity.set(identity, entry);
+    }
+
+    for (const item of entries) {
+      const entry = getPlainRecord(item);
+      if (!entry || field.secretKey in entry) {
+        continue;
+      }
+      const identity = getEntryIdentity(entry, field);
+      if (identity === undefined || duplicateIdentities.has(identity)) {
+        continue;
+      }
+      const existingEntry = existingByIdentity.get(identity);
+      const existingSecret = normalizeSecretString(existingEntry?.[field.secretKey]);
+      if (!existingEntry || !existingSecret) {
+        continue;
+      }
+      if (isEncryptedConfigSecret(existingSecret)) {
+        entry[field.secretKey] = existingSecret;
+        if (typeof existingEntry[field.previewKey] === 'string') {
+          entry[field.previewKey] = existingEntry[field.previewKey];
+        }
+        continue;
+      }
+      if (field.isPassthroughValue(existingSecret)) {
+        continue;
+      }
+      entry[field.secretKey] = encryptV3(existingSecret);
+      entry[field.previewKey] = getSecretPreview(existingSecret);
+    }
+  }
+}
+
+function shouldRedactArraySecretValue(value: unknown, field: ArraySecretField): boolean {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  if (isEncryptedConfigSecret(value)) {
+    return true;
+  }
+  const normalized = normalizeSecretString(value);
+  return normalized != null && !field.isPassthroughValue(normalized);
+}
+
+/** Numeric indices plus MongoDB positional operators (`$`, `$[]`, `$[id]`). */
+function isArrayIndexSegment(segment: string): boolean {
+  return /^\d+$/.test(segment) || segment.includes('$');
+}
+
+function getArraySecretPathError(fieldPath: string): string | null {
+  for (const field of ARRAY_SECRET_FIELDS) {
+    const prefix = `${field.arrayPath}.`;
+    if (!fieldPath.startsWith(prefix)) {
+      continue;
+    }
+    const segments = fieldPath.slice(prefix.length).split('.');
+    if (!isArrayIndexSegment(segments[0])) {
+      return `${field.arrayPath} is an array and has no named fields: ${fieldPath}. Write the ${field.arrayPath} array instead`;
+    }
+    if (segments.length === 1) {
+      return `Cannot replace ${field.arrayPath} entries by array index: ${fieldPath}. Write the ${field.arrayPath} array instead`;
+    }
+    if (segments[1] === field.secretKey || segments[1] === field.previewKey) {
+      return `Cannot write secret fields by array index: ${fieldPath}. Write the ${field.arrayPath} array instead`;
+    }
+  }
+  return null;
+}
+
+function getArraySecretInputError(fieldPath: string, value: unknown): string | null {
+  const pathError = getArraySecretPathError(fieldPath);
+  if (pathError) {
+    return pathError;
+  }
+  for (const field of ARRAY_SECRET_FIELDS) {
+    const basePath =
+      fieldPath === field.arrayPath || relativeSegments(field.arrayPath, fieldPath) != null
+        ? fieldPath
+        : null;
+    if (basePath == null) {
+      continue;
+    }
+    if (fieldPath === field.arrayPath) {
+      if (value !== undefined && !Array.isArray(value)) {
+        return `Protected secret container must be an array: ${field.arrayPath}`;
+      }
+    } else {
+      const segments = relativeSegments(field.arrayPath, fieldPath) ?? [];
+      const container = walkToParent(value, segments);
+      const arrayKey = segments[segments.length - 1];
+      if (container != null && arrayKey in container && !Array.isArray(container[arrayKey])) {
+        return `Protected secret container must be an array: ${field.arrayPath}`;
+      }
+    }
+    const entries = getSecretArray(value, field, fieldPath);
+    if (
+      entries?.some((entry) => isEncryptedConfigSecret(getPlainRecord(entry)?.[field.secretKey]))
+    ) {
+      return `Encrypted config secret values cannot be submitted: ${field.arrayPath}[].${field.secretKey}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Returns a copy of a custom endpoint config with its stored `apiKey`
+ * decrypted for runtime use; unencrypted configs return unchanged. Decryption
+ * failures resolve to an empty string (never the ciphertext) so downstream
+ * requests fail visibly instead of sending an encrypted blob as a credential.
+ */
+export function resolveCustomEndpointSecrets<T extends { apiKey?: string }>(endpointConfig: T): T {
+  const apiKey = endpointConfig.apiKey;
+  if (typeof apiKey !== 'string' || !isEncryptedSecretPayload(apiKey)) {
+    return endpointConfig;
+  }
+  return { ...endpointConfig, apiKey: decryptConfigSecret(apiKey) ?? '' };
+}
+
+/**
+ * Whether a patched value at `fieldPath` is shaped such that omitted secrets
+ * should be preserved from the existing overrides: an object at a registered
+ * ancestor path, or an array at a registered array-secret path.
+ */
+export function isConfigSecretPreservablePatch(fieldPath: string, value: unknown): boolean {
+  if (isConfigSecretAncestorPath(fieldPath) && isPlainObject(value)) {
+    return true;
+  }
+  return ARRAY_SECRET_FIELDS.some((field) => field.arrayPath === fieldPath && Array.isArray(value));
 }
 
 /**
@@ -363,6 +641,18 @@ export function encryptConfigSecretFields(
   const result: Record<string, unknown> = { ...fields };
 
   for (const key of Object.keys(result)) {
+    if (getArraySecretPathError(key) !== null) {
+      delete result[key];
+      continue;
+    }
+    if (ARRAY_SECRET_FIELDS.some((field) => field.arrayPath === key)) {
+      if (Array.isArray(result[key])) {
+        result[key] = encryptConfigSecrets(result[key], key);
+      } else {
+        delete result[key];
+      }
+      continue;
+    }
     if (!isConfigSecretAncestorPath(key)) {
       continue;
     }
@@ -407,6 +697,7 @@ export function encryptConfigSecrets<T>(root: T, basePath = ''): T {
     }
   }
   pruneSecretAncestorArrays(rootRecord, basePath);
+  removeMalformedSecretContainers(rootRecord, basePath);
 
   for (const field of CONFIG_SECRET_FIELDS) {
     const segments = relativeSegments(field.path, basePath);
@@ -416,6 +707,13 @@ export function encryptConfigSecrets<T>(root: T, basePath = ''): T {
     const section = walkToParent(result, segments);
     if (section) {
       writeSecretIntoSection(section, field);
+    }
+  }
+
+  for (const field of ARRAY_SECRET_FIELDS) {
+    const entries = getSecretArray(result, field, basePath);
+    if (entries) {
+      applyArraySecretWrites(entries, field);
     }
   }
   return result;
@@ -478,6 +776,8 @@ export function preserveConfigSecrets<T>(next: T, existing?: unknown, basePath =
       }
     }
   }
+
+  preserveArraySecrets(result, existing, basePath);
   return result;
 }
 
@@ -501,6 +801,7 @@ export function redactConfigSecrets<T>(root: T): T {
     }
   }
   pruneSecretAncestorArrays(rootRecord, '');
+  removeMalformedSecretContainers(rootRecord);
 
   for (const field of CONFIG_SECRET_FIELDS) {
     const segments = field.path.split('.');
@@ -518,6 +819,19 @@ export function redactConfigSecrets<T>(root: T): T {
       continue;
     }
     delete section[key];
+  }
+
+  for (const field of ARRAY_SECRET_FIELDS) {
+    const entries = getSecretArray(rootRecord, field);
+    if (!entries) {
+      continue;
+    }
+    for (const item of entries) {
+      const entry = getPlainRecord(item);
+      if (entry && shouldRedactArraySecretValue(entry[field.secretKey], field)) {
+        delete entry[field.secretKey];
+      }
+    }
   }
   return root;
 }

@@ -14,6 +14,7 @@ import type { GetAppConfigOptions } from '~/app/service';
 import { fetchModels as defaultFetchModels } from '~/endpoints/models';
 import { getTokenConfigKey } from '~/endpoints/custom/initialize';
 import { getAppConfigOptionsFromUser } from '~/app/service';
+import { resolveConfigSecret } from '~/admin/secrets';
 import { validateEndpointURL } from '~/auth';
 import { tokenConfigCache } from '~/cache';
 import { isUserProvided } from '~/utils';
@@ -107,7 +108,7 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
       endpointsMap[name] = endpoint;
       modelsConfig[name] = [];
 
-      const resolvedApiKey = extractEnvVariable(apiKey);
+      const resolvedApiKey = resolveConfigSecret(apiKey) ?? '';
       const resolvedBaseURL = extractEnvVariable(baseURL);
       const entry: ResolvedEndpoint = {
         name,
