@@ -62,14 +62,14 @@ export default function Progress({ job, onCancel, onReset, isCancelling }: Progr
             <>
               <p className="text-text-secondary">
                 {localize('com_ui_import_report', {
-                  0: job.report.imported,
-                  1: job.report.skipped,
+                  count: job.report.imported,
+                  skipped: job.report.skipped,
                 })}
               </p>
               <p className="text-text-secondary">
                 {localize('com_ui_import_report_assets', {
-                  0: job.report.assetsImported,
-                  1: job.report.assetsUnavailable,
+                  count: job.report.assetsImported,
+                  unavailable: job.report.assetsUnavailable,
                 })}
               </p>
             </>
@@ -116,7 +116,7 @@ export default function Progress({ job, onCancel, onReset, isCancelling }: Progr
       {isTerminal && job.report && job.report.errors.length > 0 && (
         <details>
           <summary className="cursor-pointer text-sm text-text-secondary">
-            {localize('com_ui_import_errors', { 0: job.report.errors.length })}
+            {localize('com_ui_import_errors', { count: job.report.errors.length })}
           </summary>
           <ul className="mt-2 list-inside list-disc text-sm text-text-secondary">
             {job.report.errors.map((error, index) => (
