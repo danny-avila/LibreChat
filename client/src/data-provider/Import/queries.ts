@@ -4,9 +4,12 @@ import type { QueryClient, QueryObserverResult } from '@tanstack/react-query';
 import type { TImportJob } from 'librechat-data-provider';
 
 const POLL_MS = 2000;
+/** Transient failures are retried this many times before the panel gives up
+ * and shows the "job lost" screen. */
+const TRANSIENT_RETRIES = 3;
 
 /** The subset of React Query's `Query` that the interval callback reads. */
-type ImportJobQueryState = { state: { status: string } };
+type ImportJobQueryState = { state: { status: string; error?: unknown } };
 
 const TERMINAL_PHASES = new Set<TImportJob['phase']>([
   'awaiting_confirmation',
@@ -15,6 +18,17 @@ const TERMINAL_PHASES = new Set<TImportJob['phase']>([
   'cancelled',
 ]);
 
+/** Phases whose job may have written conversations to the database. `failed`
+ * is included deliberately: a run that throws after a batch flush leaves every
+ * conversation up to that flush permanently saved, so the sidebar has to be
+ * refreshed even though the import as a whole did not succeed. */
+const WROTE_CONVERSATIONS = new Set<TImportJob['phase']>(['completed', 'failed', 'cancelled']);
+
+/** A job the server will never return again — as opposed to a request that
+ * failed on the way there. Only the former is worth giving up on. */
+export const isJobGone = (error: unknown): boolean =>
+  (error as { response?: { status?: number } })?.response?.status === 404;
+
 /**
  * Determines the polling cadence for an import job.
  *
@@ -22,16 +36,19 @@ const TERMINAL_PHASES = new Set<TImportJob['phase']>([
  * conversations/assets, and while no data has arrived yet. Stops on every
  * terminal phase, including `awaiting_confirmation`: the job is idle there,
  * waiting on the user to confirm before it starts, so continuing to poll
- * would burn requests for nothing. Also stops once the query has errored —
- * a job that 404s (TTL expiry, cache eviction, a server restart on the
- * default in-memory backend) will never appear, so retrying every two
- * seconds forever only wastes requests.
+ * would burn requests for nothing.
+ *
+ * A 404 also stops it — a job lost to TTL expiry, cache eviction, or a server
+ * restart on the default in-memory backend will never reappear. Any other
+ * failure keeps polling: a dropped connection or a single 5xx says nothing
+ * about the import, which is still running server-side, and abandoning the
+ * poll there strands the panel on a job it would have seen finish.
  */
 export const importJobRefetchInterval = (
   data: TImportJob | undefined,
   query?: ImportJobQueryState,
 ): number | false => {
-  if (query?.state.status === 'error') {
+  if (query?.state.status === 'error' && isJobGone(query.state.error)) {
     return false;
   }
   if (!data) {
@@ -41,9 +58,10 @@ export const importJobRefetchInterval = (
 };
 
 /**
- * Fetches a single import job and, the moment a fetch reveals the job just
- * finished, invalidates the conversation list so the sidebar reflects what
- * the background job wrote to the database.
+ * Fetches a single import job and, the moment a fetch reveals the job has
+ * stopped running, invalidates the conversation list so the sidebar reflects
+ * what the background job wrote to the database — succeeded or not, since a
+ * run that stops partway leaves everything it already flushed behind.
  *
  * This lives in the fetcher itself rather than in `useQuery`'s `onSuccess`
  * config on purpose: `onSuccess` is a per-observer callback tied to React
@@ -59,7 +77,7 @@ export const fetchImportJob = async (
   queryClient: QueryClient,
 ): Promise<TImportJob> => {
   const data = await dataService.getImportJob(jobId);
-  if (data.phase === 'completed') {
+  if (WROTE_CONVERSATIONS.has(data.phase)) {
     queryClient.invalidateQueries([QueryKeys.allConversations]);
   }
   return data;
@@ -75,9 +93,14 @@ export const useImportJobQuery = (
     () => fetchImportJob(jobId ?? '', queryClient),
     {
       enabled: jobId != null,
-      retry: false,
+      /** A 404 is the job's final answer and is surfaced immediately as the
+       * "job lost" screen; everything else gets a few attempts before the
+       * panel concludes anything, so one dropped request mid-import does not
+       * replace a running job with an error state. */
+      retry: (failureCount: number, error: unknown) =>
+        !isJobGone(error) && failureCount < TRANSIENT_RETRIES,
       refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
+      refetchOnReconnect: true,
       /**
        * Once mounted, `refetchInterval` alone keeps an active job fresh;
        * a stale-but-cached job needs no forced refetch on remount. This

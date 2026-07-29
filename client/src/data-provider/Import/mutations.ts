@@ -35,7 +35,16 @@ export const useStartImportMutation = (options?: {
     onSuccess: (_data, jobId) => {
       queryClient.invalidateQueries([QueryKeys.importJob, jobId]);
     },
-    onError: (error) => {
+    /**
+     * A failed `/start` does not mean the job did not start. The server
+     * responds before launching the run, so a timeout or a dropped connection
+     * leaves the client holding an error for an import that is underway — and
+     * `awaiting_confirmation` is a phase the poller deliberately sits idle on,
+     * so nothing would ever correct it. Refetching the job asks the server
+     * which of the two happened instead of assuming.
+     */
+    onError: (error, jobId) => {
+      queryClient.invalidateQueries([QueryKeys.importJob, jobId]);
       options?.onError?.(error);
     },
   });

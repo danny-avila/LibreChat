@@ -36,6 +36,11 @@ function job(phase: TImportJob['phase']): TImportJob {
   };
 }
 
+/** The axios error shape the panel reads: only a 404 means the job itself is
+ * gone, and everything else is a request that failed on the way there. */
+const notFound = () => ({ response: { status: 404 } });
+const serverError = () => ({ response: { status: 503 } });
+
 function createWrapper(queryClient: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return createElement(QueryClientProvider, { client: queryClient }, children);
@@ -70,8 +75,24 @@ describe('importJobRefetchInterval', () => {
     expect(importJobRefetchInterval(undefined)).toBe(2000);
   });
 
-  it('stops once the query has errored, so a 404 does not poll forever', () => {
-    expect(importJobRefetchInterval(undefined, { state: { status: 'error' } })).toBe(false);
+  it('stops once the job is gone, so a 404 does not poll forever', () => {
+    expect(
+      importJobRefetchInterval(undefined, { state: { status: 'error', error: notFound() } }),
+    ).toBe(false);
+  });
+
+  /** The import runs server-side; a request that failed on the way there says
+   * nothing about it. Giving up here would strand the panel on a job it would
+   * otherwise have watched finish. */
+  it('keeps polling through a transient failure', () => {
+    expect(
+      importJobRefetchInterval(undefined, { state: { status: 'error', error: serverError() } }),
+    ).toBe(2000);
+    expect(
+      importJobRefetchInterval(undefined, {
+        state: { status: 'error', error: new Error('Network Error') },
+      }),
+    ).toBe(2000);
   });
 });
 
@@ -90,18 +111,35 @@ describe('fetchImportJob', () => {
     expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.allConversations]);
   });
 
-  it('does not invalidate the conversation list for non-completed phases, including other terminal ones', async () => {
+  /** Neither is a rollback: a run that throws or is cancelled after a batch
+   * flush leaves every conversation up to that flush permanently saved, so the
+   * sidebar has to be refreshed even though the import did not succeed. */
+  it.each(['failed', 'cancelled'] as const)(
+    'invalidates the conversation list for a %s job, which may have written before stopping',
+    async (phase) => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+      const mockGetImportJob = dataService.getImportJob as jest.MockedFunction<
+        typeof dataService.getImportJob
+      >;
+      mockGetImportJob.mockResolvedValue(job(phase));
+
+      await fetchImportJob('job-1', queryClient);
+
+      expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.allConversations]);
+    },
+  );
+
+  it('does not invalidate the conversation list while the job is still running', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
     const mockGetImportJob = dataService.getImportJob as jest.MockedFunction<
       typeof dataService.getImportJob
     >;
 
-    mockGetImportJob.mockResolvedValue(job('failed'));
-    await fetchImportJob('job-1', queryClient);
-    mockGetImportJob.mockResolvedValue(job('cancelled'));
-    await fetchImportJob('job-1', queryClient);
     mockGetImportJob.mockResolvedValue(job('assets'));
+    await fetchImportJob('job-1', queryClient);
+    mockGetImportJob.mockResolvedValue(job('awaiting_confirmation'));
     await fetchImportJob('job-1', queryClient);
 
     expect(invalidateSpy).not.toHaveBeenCalled();
@@ -109,12 +147,12 @@ describe('fetchImportJob', () => {
 });
 
 describe('useImportJobQuery', () => {
-  it('surfaces the error and stops polling when the job cannot be fetched', async () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  it('surfaces the error without retrying when the job is gone', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retryDelay: 0 } } });
     const mockGetImportJob = dataService.getImportJob as jest.MockedFunction<
       typeof dataService.getImportJob
     >;
-    mockGetImportJob.mockRejectedValue(new Error('Request failed with status code 404'));
+    mockGetImportJob.mockRejectedValue(notFound());
 
     const { result, unmount } = renderHook(() => useImportJobQuery('job-1'), {
       wrapper: createWrapper(queryClient),
@@ -124,6 +162,26 @@ describe('useImportJobQuery', () => {
       expect(result.current.isError).toBe(true);
     });
     expect(mockGetImportJob).toHaveBeenCalledTimes(1);
+
+    unmount();
+  });
+
+  it('rides out a transient failure instead of declaring the job lost', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retryDelay: 0 } } });
+    const mockGetImportJob = dataService.getImportJob as jest.MockedFunction<
+      typeof dataService.getImportJob
+    >;
+    mockGetImportJob.mockRejectedValueOnce(serverError()).mockResolvedValue(job('conversations'));
+
+    const { result, unmount } = renderHook(() => useImportJobQuery('job-1'), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.data?.phase).toBe('conversations');
+    });
+    expect(result.current.isError).toBe(false);
+    expect(mockGetImportJob).toHaveBeenCalledTimes(2);
 
     unmount();
   });

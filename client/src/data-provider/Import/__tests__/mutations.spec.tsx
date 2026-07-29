@@ -156,7 +156,10 @@ describe('useStartImportMutation', () => {
     unmount();
   });
 
-  it('surfaces start failures through onError', async () => {
+  /** The server responds before it launches the run, so a failed `/start` does
+   * not mean the job did not start — and `awaiting_confirmation` is a phase the
+   * poller sits idle on, so nothing else would ever correct the panel. */
+  it('surfaces start failures through onError and refetches the job to find out what happened', async () => {
     const mockStart = dataService.startImportJob as jest.MockedFunction<
       typeof dataService.startImportJob
     >;
@@ -177,7 +180,8 @@ describe('useStartImportMutation', () => {
     await waitFor(() => {
       expect(onError).toHaveBeenCalledWith(error);
     });
-    expect(invalidateSpy).not.toHaveBeenCalled();
+    expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.importJob, 'job-1']);
+    expect(invalidateSpy).not.toHaveBeenCalledWith([QueryKeys.allConversations]);
 
     unmount();
   });
