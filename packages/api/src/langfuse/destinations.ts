@@ -14,7 +14,13 @@ import { normalizeString } from '~/utils/text';
 
 const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
 const PROJECT_LOOKUP_TIMEOUT_MS = 10_000;
-const centralProjectIdCache = new Map<string, Promise<string | undefined>>();
+const PROJECT_LOOKUP_RETRY_MS = 30_000;
+type CentralProjectIdCacheEntry = {
+  projectId?: string;
+  lookup?: Promise<string | undefined>;
+  retryAt: number;
+};
+const centralProjectIdCache = new Map<string, CentralProjectIdCacheEntry>();
 
 export type LangfuseScoreDestination = {
   id?: string;
@@ -42,6 +48,7 @@ async function resolveCentralProjectId(
   baseUrl: string,
   publicKey: string,
   secretKey: string,
+  waitForLookup: boolean,
 ): Promise<string | undefined> {
   const configuredProjectId = normalizeString(process.env.LANGFUSE_PROJECT_ID);
   if (configuredProjectId) {
@@ -51,48 +58,63 @@ async function resolveCentralProjectId(
   const cacheKey = createHash('sha256')
     .update(`${baseUrl}\n${publicKey}\n${secretKey}`)
     .digest('hex');
-  const cached = centralProjectIdCache.get(cacheKey);
-  if (cached) {
-    return cached;
+  const cached = centralProjectIdCache.get(cacheKey) ?? { retryAt: 0 };
+  centralProjectIdCache.set(cacheKey, cached);
+  if (cached.projectId) {
+    return cached.projectId;
   }
 
-  const lookup = (async () => {
-    try {
-      const response = await fetch(`${baseUrl}/api/public/projects`, {
-        headers: { Authorization: toBasicAuthorization(publicKey, secretKey) },
-        signal: AbortSignal.timeout(PROJECT_LOOKUP_TIMEOUT_MS),
-      });
-      if (!response.ok) {
-        logger.warn(
-          `[langfuse] Could not resolve central project identity: Langfuse responded with ${response.status}`,
-        );
+  if (!cached.lookup && Date.now() >= cached.retryAt) {
+    cached.lookup = (async () => {
+      try {
+        const response = await fetch(`${baseUrl}/api/public/projects`, {
+          headers: { Authorization: toBasicAuthorization(publicKey, secretKey) },
+          signal: AbortSignal.timeout(PROJECT_LOOKUP_TIMEOUT_MS),
+        });
+        if (!response.ok) {
+          logger.warn(
+            `[langfuse] Could not resolve central project identity: Langfuse responded with ${response.status}`,
+          );
+          return undefined;
+        }
+
+        const projects: unknown = await response.json();
+        const projectId =
+          projects != null &&
+          typeof projects === 'object' &&
+          Array.isArray((projects as { data?: unknown }).data) &&
+          (projects as { data: unknown[] }).data.length === 1 &&
+          typeof (projects as { data: Array<{ id?: unknown }> }).data[0]?.id === 'string'
+            ? (projects as { data: Array<{ id: string }> }).data[0].id.trim()
+            : '';
+        if (!projectId) {
+          logger.warn(
+            '[langfuse] Could not resolve central project identity from Langfuse response',
+          );
+          return undefined;
+        }
+        return projectId;
+      } catch (error) {
+        logger.warn('[langfuse] Could not resolve central project identity:', error);
         return undefined;
       }
-
-      const projects: unknown = await response.json();
-      const projectId =
-        projects != null &&
-        typeof projects === 'object' &&
-        Array.isArray((projects as { data?: unknown }).data) &&
-        (projects as { data: unknown[] }).data.length === 1 &&
-        typeof (projects as { data: Array<{ id?: unknown }> }).data[0]?.id === 'string'
-          ? (projects as { data: Array<{ id: string }> }).data[0].id.trim()
-          : '';
-      if (!projectId) {
-        logger.warn('[langfuse] Could not resolve central project identity from Langfuse response');
-        return undefined;
+    })().then((projectId) => {
+      cached.lookup = undefined;
+      if (projectId) {
+        cached.projectId = projectId;
+      } else {
+        cached.retryAt = Date.now() + PROJECT_LOOKUP_RETRY_MS;
       }
       return projectId;
-    } catch (error) {
-      logger.warn('[langfuse] Could not resolve central project identity:', error);
-      return undefined;
-    }
-  })();
-  centralProjectIdCache.set(cacheKey, lookup);
-  return lookup;
+    });
+  }
+
+  return waitForLookup && cached.lookup ? cached.lookup : undefined;
 }
 
-async function getCentralScoreDestination(): Promise<LangfuseScoreDestination | undefined> {
+async function getCentralScoreDestination(
+  waitForProjectId: boolean,
+): Promise<LangfuseScoreDestination | undefined> {
   // Central feedback scores are sent directly by the app, not through the
   // collector, so they use LibreChat's normal central Langfuse credentials.
   // LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER is intentionally collector-only.
@@ -103,7 +125,7 @@ async function getCentralScoreDestination(): Promise<LangfuseScoreDestination | 
   }
 
   const baseUrl = getCentralEnvBaseUrl();
-  const projectId = await resolveCentralProjectId(baseUrl, publicKey, secretKey);
+  const projectId = await resolveCentralProjectId(baseUrl, publicKey, secretKey, waitForProjectId);
   return {
     id: projectId ? getDestinationId(baseUrl, projectId) : undefined,
     name: 'central',
@@ -177,6 +199,7 @@ export async function getScoreDestinations(
   appConfig: AppConfig | undefined,
   traceId: string,
   sampled?: boolean,
+  options?: { waitForCentralProjectId?: boolean },
 ): Promise<LangfuseScoreDestination[]> {
   if (
     !isLangfuseTracingEnabled() ||
@@ -188,7 +211,7 @@ export async function getScoreDestinations(
 
   if (!usesLangfuseMultiTenantRouting()) {
     return hasLangfuseEnvCredentials()
-      ? [await getCentralScoreDestination()].filter(
+      ? [await getCentralScoreDestination(options?.waitForCentralProjectId !== false)].filter(
           (destination): destination is LangfuseScoreDestination => Boolean(destination),
         )
       : [getConfiguredScoreDestination(appConfig)].filter(
@@ -197,7 +220,7 @@ export async function getScoreDestinations(
   }
 
   const destinations = [
-    await getCentralScoreDestination(),
+    await getCentralScoreDestination(options?.waitForCentralProjectId !== false),
     getTenantScoreDestination(appConfig),
   ].filter((destination): destination is LangfuseScoreDestination => Boolean(destination));
   const unique = new Map<string, LangfuseScoreDestination>();
@@ -224,9 +247,17 @@ export async function getLangfuseTraceDestinationIds(
   traceId: string,
   sampled?: boolean,
 ): Promise<string[] | undefined> {
-  const destinations = await getScoreDestinations(appConfig, traceId, sampled);
+  const destinations = await getScoreDestinations(appConfig, traceId, sampled, {
+    waitForCentralProjectId: false,
+  });
   if (destinations.some(({ id }) => id == null)) {
     return undefined;
   }
   return destinations.map(({ id }) => id as string);
+}
+
+const centralPublicKey = normalizeString(process.env.LANGFUSE_PUBLIC_KEY);
+const centralSecretKey = normalizeString(process.env.LANGFUSE_SECRET_KEY);
+if (centralPublicKey && centralSecretKey) {
+  void resolveCentralProjectId(getCentralEnvBaseUrl(), centralPublicKey, centralSecretKey, false);
 }

@@ -450,6 +450,7 @@ describe('Langfuse feedback scores', () => {
       .mockResolvedValueOnce(new Response(null, { status: 200 }));
     const { sendFeedbackScore } = await loadFeedback();
     const { getLangfuseTraceDestinationIds } = await import('./destinations');
+    await new Promise((resolve) => setImmediate(resolve));
     const destinationIds = await getLangfuseTraceDestinationIds(undefined, 'trace-id', true);
 
     await sendFeedbackScore({
@@ -473,6 +474,65 @@ describe('Langfuse feedback scores', () => {
       'https://cloud.langfuse.com/api/public/scores',
       expect.any(Object),
     );
+  });
+
+  it('does not block trace completion while central project discovery is pending', async () => {
+    delete process.env.LANGFUSE_PROJECT_ID;
+    let resolveLookup!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveLookup = resolve;
+        }),
+    );
+    await loadFeedback();
+    const { getLangfuseTraceDestinationIds } = await import('./destinations');
+
+    const pendingDestinationIds = await getLangfuseTraceDestinationIds(undefined, 'trace-id', true);
+
+    expect(pendingDestinationIds).toBeUndefined();
+    expect(getFetchMock()).toHaveBeenCalledTimes(1);
+
+    resolveLookup(
+      new Response(JSON.stringify({ data: [{ id: 'background-project-id' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(getLangfuseTraceDestinationIds(undefined, 'trace-id', true)).resolves.toHaveLength(
+      1,
+    );
+  });
+
+  it('retries a failed central project lookup after the cooldown', async () => {
+    delete process.env.LANGFUSE_PROJECT_ID;
+    let now = 1_000;
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 })).mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: [{ id: 'recovered-project-id' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    try {
+      await loadFeedback();
+      const { getScoreDestinations } = await import('./destinations');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(await getScoreDestinations(undefined, 'trace-id', true)).toEqual([
+        expect.objectContaining({ id: undefined, name: 'central' }),
+      ]);
+
+      now += 30_001;
+      expect(await getScoreDestinations(undefined, 'trace-id', true)).toEqual([
+        expect.objectContaining({ id: expect.any(String), name: 'central' }),
+      ]);
+      expect(getFetchMock()).toHaveBeenCalledTimes(2);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it('preserves legacy feedback behavior when a connection has no project identity', async () => {
