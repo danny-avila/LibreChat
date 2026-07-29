@@ -494,6 +494,61 @@ describe('Import panel', () => {
     expect(window.localStorage.getItem('importJobId')).toBeNull();
   });
 
+  /**
+   * The id used to outlive the import: reopening Settings showed a stale report
+   * instead of the import control, and once the 24h server TTL expired the
+   * row's resting state became the "job lost" card for anyone who had ever run
+   * an import. The report still has to stay on screen for this mount.
+   */
+  it.each(['completed', 'failed', 'cancelled'] as const)(
+    'stops remembering a %s job while still showing its outcome',
+    (phase) => {
+      window.localStorage.setItem('importJobId', 'job-99');
+      dataProvider.useImportJobQuery.mockReturnValue({
+        data: job({
+          phase,
+          status: phase,
+          report: {
+            imported: 1,
+            skipped: 0,
+            assetsImported: 0,
+            assetsUnavailable: 0,
+            errors: [],
+          },
+        }),
+      });
+
+      render(<Import />);
+
+      expect(window.localStorage.getItem('importJobId')).toBeNull();
+      expect(screen.getByRole('button', { name: /import another/i })).toBeInTheDocument();
+    },
+  );
+
+  it('keeps remembering a job that is still running', () => {
+    window.localStorage.setItem('importJobId', 'job-99');
+    dataProvider.useImportJobQuery.mockReturnValue({
+      data: job({ phase: 'conversations', status: 'active' }),
+    });
+
+    render(<Import />);
+
+    expect(window.localStorage.getItem('importJobId')).toBe('job-99');
+  });
+
+  it('stops remembering a job the server no longer has', () => {
+    window.localStorage.setItem('importJobId', 'job-99');
+    dataProvider.useImportJobQuery.mockReturnValue({
+      data: undefined,
+      isError: true,
+      error: { response: { status: 404 } },
+    });
+
+    render(<Import />);
+
+    expect(window.localStorage.getItem('importJobId')).toBeNull();
+  });
+
   it('shows a distinct toast for an unsupported file type', () => {
     render(<Import />);
 

@@ -1,13 +1,14 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { useToastContext } from '@librechat/client';
 import { isImportJobStarted } from 'librechat-data-provider';
-import type { TImportResponse } from 'librechat-data-provider';
+import type { TImportResponse, TImportPhase } from 'librechat-data-provider';
 import {
   useGetStartupConfig,
   useUploadImportMutation,
   useStartImportMutation,
   useCancelImportMutation,
   useImportJobQuery,
+  isJobGone,
 } from '~/data-provider';
 import { readActiveJobId, writeActiveJobId } from './storage';
 import { NotificationSeverity } from '~/common';
@@ -17,6 +18,10 @@ import Progress from './Progress';
 import Loading from './Loading';
 import Summary from './Summary';
 import Lost from './Lost';
+
+/** Phases the job will never move out of. Once one is reached the panel has
+ * nothing left to rejoin, so the id must stop being remembered. */
+const SETTLED_PHASES = new Set<TImportPhase>(['completed', 'failed', 'cancelled']);
 
 function getUploadErrorMessage(error: unknown): string | undefined {
   const data = (error as { response?: { data?: { message?: string } } })?.response?.data;
@@ -37,7 +42,23 @@ export default function Import() {
   const cameFromResetRef = useRef(false);
 
   const { data: startupConfig } = useGetStartupConfig();
-  const { data: job, isError: isJobError } = useImportJobQuery(jobId);
+  const { data: job, error: jobError, isError: isJobError } = useImportJobQuery(jobId);
+
+  /**
+   * Stop remembering a job the moment it settles, while keeping it in state so
+   * the report stays on screen for this mount. Without this the id outlived the
+   * import: reopening Settings showed a stale report instead of the import
+   * control, and once the 24h server TTL expired the row's resting state became
+   * the "job lost" card for every user who had ever run an import.
+   * `localStorage` is an external system, so this is a real effect.
+   */
+  const isSettled = job != null && SETTLED_PHASES.has(job.phase);
+  const isGone = isJobError && isJobGone(jobError);
+  useEffect(() => {
+    if (isSettled || isGone) {
+      writeActiveJobId(null);
+    }
+  }, [isSettled, isGone]);
 
   const trackJob = useCallback((next: string | null) => {
     writeActiveJobId(next);
