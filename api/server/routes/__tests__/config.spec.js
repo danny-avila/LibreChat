@@ -436,6 +436,17 @@ describe('GET /api/config', () => {
       expect(response.body.langfuseConnectionAccess).toBe(false);
     });
 
+    it('skips the Langfuse management capability check without admin access', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(false);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.langfuseConnectionAccess).toBe(false);
+      expect(mockHasConfigCapability).not.toHaveBeenCalled();
+    });
+
     it('advertises Langfuse connection access by default in single-tenant mode', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       mockHasCapability.mockResolvedValue(true);

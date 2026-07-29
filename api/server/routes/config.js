@@ -265,11 +265,13 @@ router.get('/', async function (req, res) {
             tenantId: req.user.tenantId,
             idOnTheSource: req.user.idOnTheSource ?? null,
           };
-          const [hasAdminAccess, canManageLangfuse] = await Promise.all([
-            hasCapability(capabilityUser, SystemCapabilities.ACCESS_ADMIN),
-            hasConfigCapability(capabilityUser, 'langfuse'),
-          ]);
-          langfuseConnectionAccess = hasAdminAccess && canManageLangfuse;
+          const hasAdminAccess = await hasCapability(
+            capabilityUser,
+            SystemCapabilities.ACCESS_ADMIN,
+          );
+          if (hasAdminAccess) {
+            langfuseConnectionAccess = await hasConfigCapability(capabilityUser, 'langfuse');
+          }
         }
       } catch (err) {
         logger.warn(`[config] Langfuse capability check failed: ${err.message}`);
