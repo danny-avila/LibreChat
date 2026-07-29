@@ -36,6 +36,9 @@ interface ExportScan {
   pointers: string[];
   attachments: Map<string, ChatGptAttachment>;
   references: Map<string, AssetReference>;
+  /** Set when the scan stopped early because the job was cancelled, so the run
+   * does not go on to ingest assets for a partial pointer list. */
+  cancelled?: boolean;
   /** The format the first shard that parsed turned out to be. A Claude or Grok
    * export aborts the scan immediately — neither has assets a conversation can
    * resolve, so nothing this pass collects applies to them. */
@@ -116,6 +119,7 @@ async function scanExport(
   shards: string[],
   errors: string[],
   existingExternalIds: ReadonlySet<string>,
+  isCancelled?: () => Promise<boolean>,
 ): Promise<ExportScan> {
   const scan: ExportScan = {
     shards: [],
@@ -129,6 +133,14 @@ async function scanExport(
   let detected = false;
 
   for (const shard of shards) {
+    /** The scan runs before any phase is announced, and a large sharded export
+     * spends real time here inflating and parsing. Without this the job reports
+     * cancelled while the process works on through every remaining shard. */
+    if (isCancelled && (await isCancelled())) {
+      scan.cancelled = true;
+      return scan;
+    }
+
     try {
       const parsed = await readShardJson(archive, shard);
 
@@ -181,7 +193,7 @@ function importConversation(
   conv: ChatGptConversation,
   input: RunImportInput,
   assets: Map<string, ImportedAsset>,
-  usedPointers: Set<string>,
+  pendingPointers: Set<string>,
 ): number {
   const converted = convertConversation(conv, {
     userId: input.userId,
@@ -205,11 +217,13 @@ function importConversation(
     converted.model,
   );
 
-  /** Recorded only once the conversation is buffered, so an asset whose
-   * conversation never made it is left unclaimed and gets cleaned up. */
+  /** Held pending, not claimed. The conversation is only buffered at this
+   * point; a flush that rejects loses it, and an asset claimed here would then
+   * survive the cleanup with nothing referencing it. `commitPending` promotes
+   * these once a flush actually lands. */
   for (const message of converted.messages) {
     for (const pointer of message.assetPointers) {
-      usedPointers.add(pointer);
+      pendingPointers.add(pointer);
     }
   }
 
@@ -254,7 +268,18 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
    * claimed. Declared out here so the `finally` can release the difference on
    * every exit path — completed, cancelled, or thrown. */
   const ingested = new Map<string, ImportedAsset>();
+  /** Claimed: referenced by a conversation the sink has actually committed. */
   const usedPointers = new Set<string>();
+  /** Buffered but not yet flushed. Promoted on a successful flush, dropped if
+   * one rejects — the conversations it held were never written. */
+  const pendingPointers = new Set<string>();
+
+  const commitPending = (): void => {
+    for (const pointer of pendingPointers) {
+      usedPointers.add(pointer);
+    }
+    pendingPointers.clear();
+  };
 
   const report: ImportReport = {
     imported: 0,
@@ -300,7 +325,12 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
       layout.conversationShards,
       report.errors,
       input.existingExternalIds,
+      input.isCancelled,
     );
+
+    if (scan.cancelled) {
+      return report;
+    }
 
     if (scan.format === 'claude') {
       await runClaudeImport(providerRun);
@@ -383,7 +413,12 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
         }
 
         try {
-          progress.messages.done += importConversation(conv, input, assetResult.map, usedPointers);
+          progress.messages.done += importConversation(
+            conv,
+            input,
+            assetResult.map,
+            pendingPointers,
+          );
           report.imported += 1;
           /** The skip set is a snapshot taken once at job start, so without
            * this a `conversation_id` appearing twice in one export — across
@@ -398,12 +433,15 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
         }
 
         progress.conversations.done += 1;
-        await input.batch.maybeFlush();
+        if (await input.batch.maybeFlush()) {
+          commitPending();
+        }
         await input.onProgress?.(progress);
       }
     }
 
     await input.batch.saveBatch();
+    commitPending();
     return report;
   } catch (error) {
     logger.error('[import] Import run failed', error);

@@ -183,13 +183,16 @@ class ImportBatchBuilder {
    * Flushes the buffered batch once the number of buffered conversations
    * reaches flushThreshold. Intended to be called periodically while importing
    * to bound peak memory and Mongo op size.
-   * @returns {Promise<void>} A promise that resolves once any triggered flush completes.
+   * @returns {Promise<boolean>} Whether a flush actually ran. Callers that
+   *   promote bookkeeping on commit (the importer's asset claims) need to know
+   *   the difference between "buffered" and "written".
    */
   async maybeFlush() {
     if (this.conversations.length < this.flushThreshold) {
-      return;
+      return false;
     }
     await this.flush();
+    return true;
   }
 
   /**

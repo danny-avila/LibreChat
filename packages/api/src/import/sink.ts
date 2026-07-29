@@ -38,7 +38,10 @@ export interface BatchSink {
     convo: ConversationOverrides,
     model: string,
   ): void;
-  maybeFlush(): Promise<void>;
+  /** Resolves `true` when a flush actually ran. "Buffered" and "written" are
+   * different states, and the importer's asset cleanup depends on the
+   * difference. */
+  maybeFlush(): Promise<boolean>;
   saveBatch(): Promise<void>;
 }
 

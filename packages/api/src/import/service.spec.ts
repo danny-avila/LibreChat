@@ -26,7 +26,7 @@ function recorder(): { sink: Parameters<typeof runImport>[0]['batch']; recorded:
       finishConversation: (title, _createdAt, convo, model) => {
         recorded.conversations.push({ title, convo, model });
       },
-      maybeFlush: async () => undefined,
+      maybeFlush: async () => false,
       saveBatch: async () => undefined,
     },
   };
@@ -207,6 +207,46 @@ describe('runImport', () => {
     expect(recorded.conversations).toEqual([]);
   });
 
+  /** A conversation is only buffered when it is converted; the flush is what
+   * writes it. Claiming its assets at buffer time meant a flush that rejected
+   * left those files behind, referenced by a conversation that was never
+   * written and skipped by the cleanup. */
+  it('releases assets whose conversations were buffered but never flushed', async () => {
+    const filepath = await buildFixtureExport();
+    const deleted: string[] = [];
+    const recorded: string[] = [];
+
+    await expect(
+      runImport({
+        filepath,
+        userId: 'u1',
+        defaultModel: 'gpt-4o',
+        deps: {
+          ...DEPS,
+          deleteFile: async (asset: { file_id: string }) => {
+            deleted.push(asset.file_id);
+          },
+        },
+        batch: {
+          startConversation: () => undefined,
+          saveMessage: () => undefined,
+          finishConversation: (title: string) => {
+            recorded.push(title);
+          },
+          maybeFlush: async () => false,
+          saveBatch: async () => {
+            throw new Error('mongo unavailable');
+          },
+        },
+        existingExternalIds: new Set(),
+      }),
+    ).rejects.toThrow('mongo unavailable');
+
+    expect(recorded.length).toBeGreaterThan(0);
+    /** Every asset the fixture ships, since no conversation was committed. */
+    expect(deleted).toHaveLength(3);
+  });
+
   it('reports progress as it advances', async () => {
     const filepath = await buildFixtureExport();
     const { sink } = recorder();
@@ -372,15 +412,62 @@ describe('runImport', () => {
       deps: DEPS,
       batch: sink,
       existingExternalIds: new Set(),
+      /** Keyed off what has actually been written rather than a probe count,
+       * so it keeps meaning "cancelled after the first conversation" however
+       * many times the run checks along the way. */
       isCancelled: async () => {
         checks += 1;
-        return checks > 1;
+        return recorded.conversations.length >= 1;
       },
     });
 
+    expect(checks).toBeGreaterThan(0);
     expect(recorded.conversations).toHaveLength(1);
     expect(report.imported).toBe(1);
     expect(report.skipped).toBe(0);
+  });
+
+  /** The scan runs before any phase is announced and spends real time
+   * inflating and parsing a large sharded export. Without a check here the job
+   * reports cancelled while the process works on through every shard. */
+  it('abandons the pre-scan when the job is already cancelled', async () => {
+    const filepath = await writeZip({
+      'conversations-000.json': JSON.stringify([
+        textConversation('ext-first', 'First convo', 1700005000),
+      ]),
+      'export_manifest.json': shardedManifest(['conversations-000.json']),
+    });
+    const { sink, recorded } = recorder();
+    const reads: string[] = [];
+    const realOpen = archiveModule.openArchive;
+    jest.spyOn(archiveModule, 'openArchive').mockImplementation(async (path, options) => {
+      const archive = await realOpen(path, options);
+      return {
+        ...archive,
+        read: async (name: string) => {
+          reads.push(name);
+          return archive.read(name);
+        },
+      };
+    });
+
+    try {
+      const report = await runImport({
+        filepath,
+        userId: 'u1',
+        defaultModel: 'gpt-4o',
+        deps: DEPS,
+        batch: sink,
+        existingExternalIds: new Set(),
+        isCancelled: async () => true,
+      });
+
+      expect(recorded.conversations).toEqual([]);
+      expect(report.imported).toBe(0);
+      expect(reads).not.toContain('conversations-000.json');
+    } finally {
+      jest.restoreAllMocks();
+    }
   });
 
   it('records a shard parse failure and still imports the other shard', async () => {
