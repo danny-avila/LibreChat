@@ -210,7 +210,16 @@ describe('Langfuse config secrets', () => {
     const redacted = redactConfigSecrets({
       langfuse: { publicKey: 'pk-lf-1', secretKey: 'v3:abc:def', displaySecretKey: 'sk-lf-...old' },
     });
-    expect(redacted.langfuse).toEqual({ publicKey: 'pk-lf-1' });
+    expect(redacted.langfuse).toEqual({ publicKey: 'pk-lf-1', secretKeyPreview: 'sk-lf-...old' });
+
+    const alreadyMigrated = redactConfigSecrets({
+      langfuse: {
+        secretKey: 'v3:abc:def',
+        secretKeyPreview: 'sk-lf-...new',
+        displaySecretKey: 'sk-lf-...old',
+      },
+    });
+    expect(alreadyMigrated.langfuse).toEqual({ secretKeyPreview: 'sk-lf-...new' });
 
     const encrypted = encryptConfigSecrets({
       langfuse: { secretKey: 'sk-lf-new-secret', displaySecretKey: 'sk-lf-...old' },

@@ -246,6 +246,24 @@ function deleteLegacyPreviewKey(section: Record<string, unknown>, field: ConfigS
 }
 
 /**
+ * Translates a legacy preview companion to its `<field>Preview` name in place,
+ * so reads of not-yet-migrated documents still indicate a configured secret.
+ * The stored document migrates for real on its next write.
+ */
+function migrateLegacyPreviewKey(section: Record<string, unknown>, field: ConfigSecretField): void {
+  const legacyPath = LEGACY_PREVIEW_PATHS.get(field.path);
+  if (!legacyPath) {
+    return;
+  }
+  const legacyValue = section[lastSegment(legacyPath)];
+  const previewKey = lastSegment(field.previewPath);
+  if (typeof legacyValue === 'string' && section[previewKey] === undefined) {
+    section[previewKey] = legacyValue;
+  }
+  delete section[lastSegment(legacyPath)];
+}
+
+/**
  * Encrypts a secret value in place within its parent record. Empty and
  * non-string values reset the secret (and preview companion). Env placeholder
  * values are kept as plain references for fields that allow them.
@@ -478,7 +496,7 @@ export function redactConfigSecrets<T>(root: T): T {
     if (!section) {
       continue;
     }
-    deleteLegacyPreviewKey(section, field);
+    migrateLegacyPreviewKey(section, field);
     const key = segments[segments.length - 1];
     if (!(key in section)) {
       continue;
