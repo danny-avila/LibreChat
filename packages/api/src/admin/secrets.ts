@@ -168,6 +168,33 @@ function walkToParent(root: unknown, segments: string[]): Record<string, unknown
   return cursor;
 }
 
+/**
+ * Deletes any array value found along a registered secret's ancestor chain
+ * (relative to `basePath`), at any depth, not just the top level. `walkToParent`
+ * silently stops and returns null at an array, which would otherwise let a
+ * secret smuggled inside an unexpected array-of-objects shape (e.g.
+ * `speech.tts.openai` submitted as an array) bypass both encryption and
+ * redaction entirely instead of being stripped like a top-level array is.
+ */
+function pruneSecretAncestorArrays(root: Record<string, unknown>, basePath: string): void {
+  for (const field of CONFIG_SECRET_FIELDS) {
+    const segments = relativeSegments(field.path, basePath);
+    if (!segments) {
+      continue;
+    }
+    let cursor: Record<string, unknown> | null = root;
+    for (let i = 0; cursor != null && i < segments.length - 1; i++) {
+      const value = cursor[segments[i]];
+      if (Array.isArray(value)) {
+        delete cursor[segments[i]];
+        cursor = null;
+        continue;
+      }
+      cursor = getPlainRecord(value);
+    }
+  }
+}
+
 /** True when a dotted key equals, contains, or is contained by a registered secret or display path. */
 function isConfigSecretRelatedPath(fieldPath: string): boolean {
   if (SECRET_FIELDS_BY_PATH.has(fieldPath) || DISPLAY_PATHS.has(fieldPath)) {
@@ -380,6 +407,7 @@ export function encryptConfigSecrets<T>(root: T, basePath = ''): T {
       }
     }
   }
+  pruneSecretAncestorArrays(rootRecord, basePath);
 
   for (const field of CONFIG_SECRET_FIELDS) {
     const segments = relativeSegments(field.path, basePath);
@@ -463,6 +491,7 @@ export function redactConfigSecrets<T>(root: T): T {
       delete rootRecord[key];
     }
   }
+  pruneSecretAncestorArrays(rootRecord, '');
 
   for (const field of CONFIG_SECRET_FIELDS) {
     const segments = field.path.split('.');

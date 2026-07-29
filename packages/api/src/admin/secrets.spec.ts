@@ -381,6 +381,24 @@ describe('Config secret registry fields', () => {
     expect(out.ocr.displayApiKey).toBe(getDisplaySecretKey('sk-legit'));
   });
 
+  it('strips a nested array smuggled at any depth along a secret ancestor path, not just the top level', () => {
+    const encrypted = encryptConfigSecrets({
+      speech: { tts: { openai: [{ apiKey: 'sk-smuggled-via-array' }] } },
+    });
+    const speechOut = encrypted.speech as { tts: Record<string, unknown> };
+    expect(speechOut.tts).not.toHaveProperty('openai');
+    expect(JSON.stringify(encrypted)).not.toContain('sk-smuggled-via-array');
+
+    const readBack = redactConfigSecrets(
+      structuredClone({
+        speech: { tts: { openai: [{ apiKey: 'sk-smuggled-via-array' }] } },
+      }),
+    );
+    const speechRead = readBack.speech as { tts: Record<string, unknown> };
+    expect(speechRead.tts).not.toHaveProperty('openai');
+    expect(JSON.stringify(readBack)).not.toContain('sk-smuggled-via-array');
+  });
+
   it('redacts secrets but keeps display companions, env placeholders, and siblings visible on read', () => {
     const redacted = redactConfigSecrets({
       speech: {
