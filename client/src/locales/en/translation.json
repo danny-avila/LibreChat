@@ -1368,6 +1368,7 @@
   "com_ui_import_lost": "This import could not be found. It may have already finished or expired.",
   "com_ui_import_phase_assets": "Importing attachments",
   "com_ui_import_phase_conversations": "Importing conversations",
+  "com_ui_import_progress_of": "{{0}} of {{1}}",
   "com_ui_import_report": "{{0}} conversations imported, {{1}} skipped",
   "com_ui_import_report_assets": "{{0}} attachments imported, {{1}} unavailable",
   "com_ui_import_source_chatgpt": "ChatGPT",

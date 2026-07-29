@@ -36,43 +36,50 @@ export default function Progress({ job, onCancel, onReset, isCancelling }: Progr
 
   return (
     <section className="flex flex-col gap-3">
-      {/* The live region wraps the heading AND the counts, so a screen reader
-          hears the outcome rather than just the phase name. */}
-      <div
-        ref={statusRef}
-        tabIndex={-1}
-        aria-live="polite"
-        role="status"
-        className="flex flex-col gap-1 text-sm text-text-primary focus:outline-none"
-      >
-        <div className="flex items-baseline justify-between gap-3">
+      {/* The live region carries the phase heading and the final outcome, and
+          deliberately not the counter. `role="status"` is implicitly
+          `aria-atomic`, so everything inside it is re-announced in full on
+          every change — and the counter moves every two seconds for the length
+          of a multi-minute import, which would flood the polite queue and
+          starve every other announcement in the app. The numbers stay
+          available on demand through the progress bar's `aria-valuetext`.
+          What is left announces a handful of times per run: once per phase,
+          once for the result. */}
+      <div className="flex items-baseline justify-between gap-3">
+        <div
+          ref={statusRef}
+          tabIndex={-1}
+          role="status"
+          className="flex min-w-0 flex-col gap-1 text-sm text-text-primary focus:outline-none"
+        >
           <p className="font-medium">{statusHeading}</p>
-          {!isTerminal && total > 0 && (
-            <p className="shrink-0 tabular-nums text-text-secondary">
-              {done} / {total}
-            </p>
+
+          {isTerminal && job.phase === 'failed' && job.error != null && (
+            <p className="text-red-500 dark:text-red-400">{job.error}</p>
+          )}
+
+          {isTerminal && job.report && (
+            <>
+              <p className="text-text-secondary">
+                {localize('com_ui_import_report', {
+                  0: job.report.imported,
+                  1: job.report.skipped,
+                })}
+              </p>
+              <p className="text-text-secondary">
+                {localize('com_ui_import_report_assets', {
+                  0: job.report.assetsImported,
+                  1: job.report.assetsUnavailable,
+                })}
+              </p>
+            </>
           )}
         </div>
 
-        {isTerminal && job.phase === 'failed' && job.error != null && (
-          <p className="text-red-500 dark:text-red-400">{job.error}</p>
-        )}
-
-        {isTerminal && job.report && (
-          <>
-            <p className="text-text-secondary">
-              {localize('com_ui_import_report', {
-                0: job.report.imported,
-                1: job.report.skipped,
-              })}
-            </p>
-            <p className="text-text-secondary">
-              {localize('com_ui_import_report_assets', {
-                0: job.report.assetsImported,
-                1: job.report.assetsUnavailable,
-              })}
-            </p>
-          </>
+        {!isTerminal && total > 0 && (
+          <p aria-hidden="true" className="shrink-0 text-sm tabular-nums text-text-secondary">
+            {done} / {total}
+          </p>
         )}
       </div>
 
@@ -90,6 +97,9 @@ export default function Progress({ job, onCancel, onReset, isCancelling }: Progr
             aria-valuemin={0}
             aria-valuemax={total > 0 ? total : undefined}
             aria-valuenow={total > 0 ? done : undefined}
+            aria-valuetext={
+              total > 0 ? localize('com_ui_import_progress_of', { 0: done, 1: total }) : undefined
+            }
             aria-label={phaseLabel}
             className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-tertiary"
           >
