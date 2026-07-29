@@ -579,6 +579,7 @@ export enum AgentCapabilities {
   chain = 'chain',
   ocr = 'ocr',
   run_in_background = 'run_in_background',
+  tool_intents = 'tool_intents',
 }
 
 export const defaultAssistantsVersion = {

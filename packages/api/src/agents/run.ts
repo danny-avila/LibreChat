@@ -48,6 +48,7 @@ import {
 } from '~/agents/hitl/askUserQuestionTool';
 import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
+import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
@@ -342,6 +343,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   hasDeferredTools?: boolean;
   /** Names of tools injected with the `run_in_background` param (excluded from eager execution). */
   backgroundToolNames?: string[];
+  /** Names of tools with the host-injected `intent` param (stripped from self-spawn inputs). */
+  intentToolNames?: string[];
   /**
    * Per-agent codeenv gate set by `initializeAgent`: admin-level
    * `execute_code` capability AND the agent actually requested
@@ -883,13 +886,16 @@ function buildSubagentConfigs(
     const selfName = agentInput.name ?? agent.name ?? 'self';
     countSubagentConfig(state);
     /**
-     * Self-spawn reuses the parent's AgentInputs. When the parent has background
-     * tools, provide a sanitized copy so the isolated child — which runs the
-     * direct/child-graph path rather than the host background interceptor —
-     * doesn't advertise `run_in_background` / `check_background_task`. The
+     * Self-spawn reuses the parent's AgentInputs. When the parent has
+     * background or host-injected intent tools, provide a sanitized copy so
+     * the isolated child — which runs the direct/child-graph path rather
+     * than the host interceptors — doesn't advertise `run_in_background` /
+     * `check_background_task` or an injected `intent` param its direct tool
+     * invocations would forward to tools that never declared it. The
      * resolver keeps a provided `agentInputs` even with `self: true`.
      */
     const hasBackground = (agent.backgroundToolNames?.length ?? 0) > 0;
+    const hasInjectedIntent = (agent.intentToolNames?.length ?? 0) > 0;
     configs.push({
       self: true,
       type: SELF_SUBAGENT_TYPE,
@@ -897,17 +903,20 @@ function buildSubagentConfigs(
       description: `Spawn ${selfName} in an isolated context to handle a focused subtask. Verbose tool output stays in the child's context; only a summary returns.`,
       /** Self-spawn reuses the parent's config, so mirror the parent's recursion limit. */
       maxTurns: resolveSubagentMaxTurns(agentsEConfig, agent),
-      ...(hasBackground
+      ...(hasBackground || hasInjectedIntent
         ? {
             agentInputs: {
               ...agentInput,
-              toolDefinitions: stripBackgroundFromToolDefinitions(
-                agentInput.toolDefinitions,
-                agent.backgroundToolNames,
+              toolDefinitions: stripIntentFromToolDefinitions(
+                stripBackgroundFromToolDefinitions(
+                  agentInput.toolDefinitions,
+                  agent.backgroundToolNames,
+                ),
+                agent.intentToolNames,
               ),
-              toolRegistry: stripBackgroundFromToolRegistry(
-                agentInput.toolRegistry,
-                agent.backgroundToolNames,
+              toolRegistry: stripIntentFromToolRegistry(
+                stripBackgroundFromToolRegistry(agentInput.toolRegistry, agent.backgroundToolNames),
+                agent.intentToolNames,
               ),
             },
           }
@@ -963,6 +972,18 @@ function buildSubagentConfigs(
       childInputs.toolRegistry = stripBackgroundFromToolRegistry(
         childInputs.toolRegistry,
         child.backgroundToolNames,
+      );
+    }
+    /** Same sanitization for the host-injected `intent` param (see the
+     *  self-spawn path above). */
+    if ((child.intentToolNames?.length ?? 0) > 0) {
+      childInputs.toolDefinitions = stripIntentFromToolDefinitions(
+        childInputs.toolDefinitions,
+        child.intentToolNames,
+      );
+      childInputs.toolRegistry = stripIntentFromToolRegistry(
+        childInputs.toolRegistry,
+        child.intentToolNames,
       );
     }
     /**
