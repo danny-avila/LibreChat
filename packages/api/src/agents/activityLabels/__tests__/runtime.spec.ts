@@ -15,7 +15,7 @@ import {
   classifyBatch,
   createActivityLabelHook,
 } from '../runtime';
-import type { ActivityLabelBatchMeta, ActivityLabelSlot } from '../runtime';
+import type { ActivityLabelBatchMeta, ActivityLabelSlot, GenerateLabelPayload } from '../runtime';
 
 /** Flushes the hook's detached generation chain. */
 async function flushDetached(): Promise<void> {
@@ -111,6 +111,27 @@ describe('buildPrompt', () => {
     const prompt = buildPrompt([], 600, undefined, 'CUSTOM RULE');
     expect(prompt.startsWith('CUSTOM RULE')).toBe(true);
     expect(prompt).not.toContain('git commit subject');
+  });
+
+  it('renders previous headers ahead of block context, oldest dropped at the cap', () => {
+    const prompt = buildPrompt(
+      batchInput().entries,
+      600,
+      { lastAssistantText: 'Now verifying persistence.' },
+      undefined,
+      ['One header', 'Two header', 'Three header', 'Four header'],
+    );
+    expect(prompt).toContain('Previous headers in this run (most recent last):');
+    expect(prompt).not.toContain('- One header');
+    expect(prompt.indexOf('- Two header')).toBeLessThan(prompt.indexOf('- Three header'));
+    expect(prompt.indexOf('- Four header')).toBeLessThan(prompt.indexOf('Intent'));
+  });
+
+  it('omits the previous-headers section when the list is empty', () => {
+    /** The instruction itself references "Previous headers", so the absence
+     *  check must target the section heading, not the phrase. */
+    const prompt = buildPrompt(batchInput().entries, 600, undefined, undefined, []);
+    expect(prompt).not.toContain('Previous headers in this run');
   });
 
   /**
@@ -378,6 +399,83 @@ describe('createActivityLabelHook', () => {
     expect(slots[0].filled).toEqual(['Searched runtime release notes']);
   });
 
+  describe('continuity', () => {
+    it('threads committed labels into later payloads, oldest dropped at the cap', async () => {
+      const payloads: GenerateLabelPayload[] = [];
+      let seq = 0;
+      const generateLabel = jest.fn(async (payload: GenerateLabelPayload) => {
+        payloads.push(payload);
+        seq += 1;
+        return `Header ${seq}`;
+      });
+      const hook = createActivityLabelHook({ claimSlot, resolveLLM, generateLabel });
+      for (let i = 0; i < 5; i += 1) {
+        await hook(batchInput(), new AbortController().signal);
+        await flushDetached();
+      }
+      expect(payloads[0].previousLabels).toBeUndefined();
+      expect(payloads[1].previousLabels).toEqual(['Header 1']);
+      expect(payloads[3].previousLabels).toEqual(['Header 1', 'Header 2', 'Header 3']);
+      expect(payloads[4].previousLabels).toEqual(['Header 2', 'Header 3', 'Header 4']);
+    });
+
+    it('excludes uncommitted fills from continuity', async () => {
+      const payloads: GenerateLabelPayload[] = [];
+      const generateLabel = jest.fn(async (payload: GenerateLabelPayload) => {
+        payloads.push(payload);
+        return 'Dropped header';
+      });
+      let claims = 0;
+      const hook = createActivityLabelHook({
+        claimSlot: () => ({ index: claims++, fill: () => false }),
+        resolveLLM,
+        generateLabel,
+      });
+      await hook(batchInput(), new AbortController().signal);
+      await flushDetached();
+      await hook(batchInput(), new AbortController().signal);
+      await flushDetached();
+      expect(payloads[1].previousLabels).toBeUndefined();
+    });
+
+    it('seeds continuity from resumed labels, in index order', async () => {
+      const payloads: GenerateLabelPayload[] = [];
+      const generateLabel = jest.fn(async (payload: GenerateLabelPayload) => {
+        payloads.push(payload);
+        return 'Fresh header';
+      });
+      let claims = 0;
+      const hook = createActivityLabelHook({
+        claimSlot: () => ({ index: 10 + claims++, fill: () => true }),
+        resolveLLM,
+        generateLabel,
+        initialGeneratedCount: 2,
+        initialLabels: [
+          { index: 7, text: 'Resumed late header' },
+          { index: 4, text: 'Resumed early header' },
+        ],
+      });
+      await hook(batchInput(), new AbortController().signal);
+      await flushDetached();
+      expect(payloads[0].previousLabels).toEqual(['Resumed early header', 'Resumed late header']);
+    });
+
+    it('renders previous headers on the fallback path', async () => {
+      mockInvoke
+        .mockResolvedValueOnce({ content: 'Wrote the marker file' })
+        .mockResolvedValueOnce({ content: 'Confirmed the marker persists' });
+      const hook = createActivityLabelHook({ claimSlot, resolveLLM });
+      await hook(batchInput(), new AbortController().signal);
+      await flushDetached();
+      await hook(batchInput(), new AbortController().signal);
+      await flushDetached();
+      const secondPrompt = mockInvoke.mock.calls[1][0] as string;
+      expect(secondPrompt).toContain(
+        'Previous headers in this run (most recent last):\n- Wrote the marker file',
+      );
+    });
+  });
+
   it('claims nothing when the host abort signal is already aborted', async () => {
     const controller = new AbortController();
     controller.abort();
@@ -494,6 +592,48 @@ describe('createActivityLabelHook', () => {
     await hook(batchInput(), new AbortController().signal);
     await flushDetached();
     expect(order).toEqual(['fill', 'usage']);
+  });
+
+  /** Title-convention estimated billing: when the provider omits usage
+   *  metadata, the biller falls back to counting text — so the hook must
+   *  hand it the EXACT prompt the direct path sent plus the final label. */
+  it('passes a lazy usage estimate carrying the exact prompt and final label', async () => {
+    const collect = jest.fn();
+    const getInvokeCallbacks = jest.fn(() => ({ callbacks: [], collect }));
+    const hook = createActivityLabelHook({ claimSlot, resolveLLM, getInvokeCallbacks });
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    expect(collect).toHaveBeenCalledTimes(1);
+    const estimateThunk = collect.mock.calls[0][0] as () => {
+      promptText: string;
+      completionText: string;
+    };
+    expect(typeof estimateThunk).toBe('function');
+    const estimate = estimateThunk();
+    expect(estimate.promptText).toBe(mockInvoke.mock.calls[0][0]);
+    expect(estimate.completionText).toBe('Searched the web for LibreChat docs.');
+  });
+
+  it('passes no estimate when generation threw before a label', async () => {
+    const recordUsage = jest.fn();
+    const generateLabel = jest.fn(
+      async ({ deferUsage }: { deferUsage: (fn: (estimate?: unknown) => void) => void }) => {
+        deferUsage(recordUsage);
+        throw new Error('mid-call failure');
+      },
+    );
+    const hook = createActivityLabelHook({
+      claimSlot: () => ({ index: 0, fill: () => true }),
+      resolveLLM,
+      generateLabel,
+    });
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    /** Billed only from REAL collected metadata on the failure path — an
+     *  estimate would charge a full prompt for a call that may have
+     *  consumed nothing. */
+    expect(recordUsage).toHaveBeenCalledTimes(1);
+    expect(recordUsage.mock.calls[0][0]).toBeUndefined();
   });
 
   it('memoizes LLM resolution and enforces maxPerRun', async () => {

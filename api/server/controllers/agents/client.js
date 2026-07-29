@@ -407,6 +407,11 @@ class AgentClient extends BaseClient {
      *  cache tokens are folded into `input_tokens` (additive providers like
      *  Bedrock keep them separate). */
     provider = undefined,
+    /** Lazy `() => ({ promptText, completionText })` fallback. When the
+     *  provider omits usage metadata entirely, labels bill by ESTIMATE —
+     *  the title convention — from locally counted text rather than going
+     *  unbilled. Invoked only when no entry carries a real token count. */
+    estimate = undefined,
   ) {
     const appConfig = this.options.req?.config;
     /** Provider ON EVERY ENTRY, not just the streamed event: `splitUsage`
@@ -415,10 +420,34 @@ class AgentClient extends BaseClient {
      *  (cache already inside `input_tokens`) that re-adds cache_read and
      *  cache_creation on top, double-charging the balance while the
      *  streamed cost (which carries the provider) disagrees. */
-    const collectedUsage = mapCollectedMetadataToUsage(collectedMetadata).map((usage) =>
+    let collectedUsage = mapCollectedMetadataToUsage(collectedMetadata).map((usage) =>
       provider != null ? { ...usage, provider } : usage,
     );
-    if (collectedUsage.length === 0) {
+    const hasRealUsage = collectedUsage.some(
+      (usage) => usage.input_tokens != null || usage.output_tokens != null,
+    );
+    if (!hasRealUsage && typeof estimate === 'function') {
+      try {
+        const { promptText = '', completionText = '' } = estimate() ?? {};
+        const [input_tokens, output_tokens] = await Promise.all([
+          countTokens(promptText),
+          countTokens(completionText),
+        ]);
+        collectedUsage = [
+          provider != null
+            ? { input_tokens, output_tokens, provider }
+            : { input_tokens, output_tokens },
+        ];
+      } catch (err) {
+        logger.warn(
+          `[AgentClient] Failed to estimate activity-label usage: ${err?.message ?? err}`,
+        );
+      }
+    }
+    if (
+      collectedUsage.length === 0 ||
+      !collectedUsage.some((usage) => usage.input_tokens != null || usage.output_tokens != null)
+    ) {
       return;
     }
     if (!scopeOpen()) {
@@ -533,6 +562,7 @@ class AgentClient extends BaseClient {
   async generateActivityLabelViaRun({
     entries,
     context,
+    previousLabels,
     traceSeed,
     signal,
     charLimit,
@@ -562,7 +592,7 @@ class AgentClient extends BaseClient {
      * (billed but never shown) is enforced by the commit gate itself: a
      * dropped fill never reaches this callback.
      */
-    const recordUsage = async () => {
+    const recordUsage = async (estimate) => {
       await this.recordActivityLabelUsage(
         collectedMetadata,
         clientOptions.model,
@@ -570,6 +600,7 @@ class AgentClient extends BaseClient {
         sameEndpoint,
         undefined,
         provider,
+        estimate,
       );
     };
     /**
@@ -598,6 +629,7 @@ class AgentClient extends BaseClient {
         })),
         thinkingExcerpts: context.thinkingExcerpts,
         lastAssistantText: context.lastAssistantText,
+        ...(previousLabels != null && { previousLabels }),
         traceSeed,
         charLimit,
         /** Selects the EXECUTING agent's Langfuse metadata and, more
@@ -821,7 +853,7 @@ class AgentClient extends BaseClient {
         const { handleLLMEnd, collected } = createMetadataAggregator();
         return {
           callbacks: [{ handleLLMEnd }],
-          collect: async () => {
+          collect: async (estimate) => {
             const { provider, clientOptions, endpointTokenConfig, sameEndpoint } =
               await this.resolveActivityLabelLLM();
             await this.recordActivityLabelUsage(
@@ -836,6 +868,7 @@ class AgentClient extends BaseClient {
                *  reach this callback. */
               undefined,
               provider,
+              estimate,
             );
           },
         };

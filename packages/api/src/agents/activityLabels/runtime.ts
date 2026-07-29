@@ -71,6 +71,15 @@ export interface ActivityLabelSlot {
 export interface GenerateLabelPayload {
   entries: BatchEntry[];
   context: ActivityLabelBlockContext;
+  /**
+   * Committed headers from earlier batches in this run (run order, most
+   * recent last, max {@link MAX_PREVIOUS_LABELS}) — continuity context so
+   * consecutive same-activity batches extend the story instead of restating
+   * it. Present only when at least one earlier label committed. An SDK
+   * without the field ignores it harmlessly; the fallback path renders it
+   * regardless.
+   */
+  previousLabels?: string[];
   /** Deterministic Langfuse trace seed, unique per slot. */
   traceSeed: string;
   signal: AbortSignal;
@@ -94,15 +103,27 @@ export interface GenerateLabelPayload {
    * the deadline can expire mid-write — the charge lands but the fill is
    * then dropped as out-of-scope: billed, never shown. Registering the
    * accounting here instead lets the hook commit the visible label first and
-   * only then run it, and only for a committed fill.
+   * only then run it, and only for a committed fill. The hook passes a lazy
+   * {@link LabelUsageEstimate} on the success path so the biller can fall
+   * back to title-style estimated billing when the provider omits usage.
    */
-  deferUsage: (collect: () => void | Promise<void>) => void;
+  deferUsage: (collect: (estimate?: () => LabelUsageEstimate) => void | Promise<void>) => void;
+}
+
+/**
+ * Text the biller can count locally when the provider omits usage metadata,
+ * following the title convention of estimate-based billing. Produced lazily —
+ * tokenizing costs CPU, so the thunk runs only when real usage is absent.
+ */
+export interface LabelUsageEstimate {
+  promptText: string;
+  completionText: string;
 }
 
 /** Per-generation LLM callbacks for usage accounting on the fallback path. */
 export interface ActivityLabelInvokeCallbacks {
   callbacks: Array<Record<string, unknown>>;
-  collect: () => void | Promise<void>;
+  collect: (estimate?: () => LabelUsageEstimate) => void | Promise<void>;
 }
 
 export interface ActivityLabelHookOptions {
@@ -156,6 +177,13 @@ export interface ActivityLabelHookOptions {
    */
   initialGeneratedCount?: number;
   /**
+   * Committed label texts already on the response, keyed by content index —
+   * the continuity seed for a HITL resume, so post-approval batches still
+   * see the pre-pause headers. Unfilled reservations are excluded by the
+   * host; only text the user is actually reading belongs here.
+   */
+  initialLabels?: ReadonlyArray<{ index: number; text: string }>;
+  /**
    * Receives the whole detached task (generate → fill → deferred usage) so
    * the host's bounded settle covers the accounting too. Deferring usage
    * until after the commit moved it PAST the fill's resolution, so a settle
@@ -168,6 +196,10 @@ export interface ActivityLabelHookOptions {
 
 const DEFAULT_MAX_PER_RUN = 20;
 const DEFAULT_CHAR_LIMIT = 600;
+/** Continuity window: matching the SDK prompt builder's own cap, and small
+ *  because the point is avoiding a restatement of what is on screen NEAR the
+ *  new header — a 20-label history would only dilute the batch content. */
+const MAX_PREVIOUS_LABELS = 3;
 /** Intent-line truncation only. Tool inputs and outputs both truncate at the
  *  configured `activityCharLimit` — the schema documents it as the per-entry
  *  limit for BOTH, so a hard-coded input cap would make the setting unable to
@@ -330,16 +362,22 @@ export function classifyBatch(entries: BatchEntry[]): ActivityLabelBatchMeta {
  *
  * Because this fires after the batch, the tool OUTPUTS are available: prefer
  * the answer the calls produced over a restatement of what was attempted.
+ *
+ * Sentence ORDER is deliberate, not stylistic: content rules first and
+ * format rules last measurably improves both format adherence and opening-
+ * verb diversity on small label models (eval corpus:
+ * scripts/activity-labels/), so a reshuffle here regresses real output.
  */
 export const ACTIVITY_INSTRUCTION: string = [
   'You write the one-line header above a group of tool calls an AI agent just made.',
-  'Write it like a git commit subject: past tense, verb first, leading with the most distinctive file, name, or finding.',
   'Say what the calls established or produced — the outcome, not the attempt. If they answered a question, the answer is the line.',
-  'Never name the tools, never count them, never echo the arguments: the cards below the header already show all three.',
-  'Write 4 to 9 words, sentence case, no trailing punctuation, no quotes or markdown.',
+  'Write it like a git commit subject: past tense, verb first, leading with the most distinctive file, name, or finding.',
   'Good: "Confirmed /mnt/data resets between calls". "Traced the leak to formatAgentMessages". "Found 3 failing auth tests".',
   'Bad: "Ran 1 command". "Used bash_tool twice". "Executed ls /mnt/data". "Searched the codebase".',
   'If every call failed, say what failed and why, plainly.',
+  'A "Previous headers" list may precede the batch: never restate one — if this batch continues that activity, say only what is new.',
+  'Never name the tools, never count them, never echo the arguments: the cards below the header already show all three.',
+  'Write 4 to 9 words, sentence case, no trailing punctuation, no quotes or markdown.',
   'Output only the line.',
 ].join(' ');
 
@@ -348,8 +386,18 @@ export function buildPrompt(
   charLimit: number,
   context?: ActivityLabelBlockContext,
   instruction?: string,
+  previousLabels?: string[],
 ): string {
   const sections: string[] = [instruction ?? ACTIVITY_INSTRUCTION];
+  if (previousLabels != null && previousLabels.length > 0) {
+    sections.push(
+      'Previous headers in this run (most recent last):\n' +
+        previousLabels
+          .slice(-MAX_PREVIOUS_LABELS)
+          .map((label) => `- ${label}`)
+          .join('\n'),
+    );
+  }
   if (context?.lastAssistantText) {
     sections.push(
       `Intent (assistant's last message): ${truncate(context.lastAssistantText, INTENT_CHAR_LIMIT)}`,
@@ -434,6 +482,26 @@ export function createActivityLabelHook(
   const charLimit = opts.charLimit ?? DEFAULT_CHAR_LIMIT;
   let generated = opts.initialGeneratedCount ?? 0;
   let llmPromise: Promise<ActivityLabelLLM> | null = null;
+  /** Committed label text by content index. A Map because fills land in
+   *  COMPLETION order, not run order — batch N+1's label can commit before
+   *  batch N's — so continuity reads must re-sort by index rather than
+   *  trusting insertion order. */
+  const committedLabels = new Map<number, string>();
+  for (const seed of opts.initialLabels ?? []) {
+    committedLabels.set(seed.index, seed.text);
+  }
+  const recentLabels = (beforeIndex: number): string[] => {
+    const prior: Array<[number, string]> = [];
+    for (const entry of committedLabels) {
+      if (entry[0] < beforeIndex) {
+        prior.push(entry);
+      }
+    }
+    return prior
+      .sort((a, b) => a[0] - b[0])
+      .slice(-MAX_PREVIOUS_LABELS)
+      .map(([, text]) => text);
+  };
 
   const getLLM = (): Promise<ActivityLabelLLM> => {
     llmPromise =
@@ -491,13 +559,18 @@ export function createActivityLabelHook(
        * never shown. Committing first makes the charge conditional on the
        * label actually surfacing.
        */
-      let deferredUsage: (() => void | Promise<void>) | undefined;
-      const collectDeferredUsage = async (committed: boolean) => {
+      let deferredUsage:
+        | ((estimate?: () => LabelUsageEstimate) => void | Promise<void>)
+        | undefined;
+      const collectDeferredUsage = async (
+        committed: boolean,
+        estimate?: () => LabelUsageEstimate,
+      ) => {
         if (!committed || deferredUsage == null) {
           return;
         }
         try {
-          await deferredUsage();
+          await deferredUsage(estimate);
         } catch (error) {
           logger.warn(
             `[activityLabel] usage accounting failed (slot ${slot.index}): ${(error as Error)?.message ?? error}`,
@@ -509,8 +582,14 @@ export function createActivityLabelHook(
          *  label call — a user abort must not keep paying for generation
          *  until the timeout. */
         const signal = buildSignal(opts.signal, hookSignal);
+        /** Read at request-build time, not claim time: earlier batches'
+         *  fills usually land in the gap between batch boundaries, so this
+         *  captures labels a claim-time snapshot would miss — exactly the
+         *  rapid consecutive batches where continuity matters most. */
+        const previousLabels = recentLabels(slot.index);
         /** Direct, untraced call: the fallback when no SDK bridge is wired or
          *  when the bridge declines because the package is too old. */
+        let directPromptText: string | undefined;
         const generateDirect = async (): Promise<string | null> => {
           const { provider, clientOptions } = await getLLM();
           const model = initializeModel({
@@ -518,9 +597,16 @@ export function createActivityLabelHook(
             clientOptions: { ...clientOptions, streaming: false } as ClientOptions,
           });
           const invokeCallbacks = opts.getInvokeCallbacks?.();
+          directPromptText = buildPrompt(
+            input.entries,
+            charLimit,
+            slot.context,
+            opts.prompt,
+            previousLabels,
+          );
           const response = await (
             model as { invoke: (input: string, config?: object) => Promise<{ content?: unknown }> }
-          ).invoke(buildPrompt(input.entries, charLimit, slot.context, opts.prompt), {
+          ).invoke(directPromptText, {
             signal,
             ...(invokeCallbacks && { callbacks: invokeCallbacks.callbacks }),
           });
@@ -536,6 +622,7 @@ export function createActivityLabelHook(
           const bridged = await opts.generateLabel({
             entries: input.entries,
             context: slot.context ?? {},
+            ...(previousLabels.length > 0 && { previousLabels }),
             traceSeed: `${input.runId}-activity-${slot.index}`,
             signal,
             charLimit,
@@ -555,7 +642,25 @@ export function createActivityLabelHook(
          *  counts fallback. */
         const normalized = normalizeLabelOutput(text);
         const committed = (await slot.fill(normalized.length > 0 ? normalized : null)) === true;
-        await collectDeferredUsage(committed);
+        /** Continuity records only what actually surfaced: a dropped fill
+         *  never reached the user, so later headers must not write around
+         *  a line that is not on screen. */
+        if (committed && normalized.length > 0) {
+          committedLabels.set(slot.index, normalized);
+        }
+        /** Estimate for providers that omit usage metadata — title-style
+         *  billing from locally counted text. LAZY: the thunk runs only when
+         *  real usage is absent. The direct path counts the EXACT prompt it
+         *  sent; the SDK path counts the locally built equivalent (same
+         *  entries, context, instruction, and truncation contract). Success
+         *  path only: a throw before a response consumed nothing billable
+         *  beyond what real metadata already captured. */
+        await collectDeferredUsage(committed, () => ({
+          promptText:
+            directPromptText ??
+            buildPrompt(input.entries, charLimit, slot.context, opts.prompt, previousLabels),
+          completionText: normalized,
+        }));
       } catch (error) {
         logger.warn(
           `[activityLabel] label generation failed (slot ${slot.index}): ${(error as Error)?.message ?? error}`,

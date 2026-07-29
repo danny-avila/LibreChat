@@ -64,6 +64,42 @@ describe('createActivityLabelWiring', () => {
     /** And the label part landed at the tail with the claimed index. */
     expect(parts[2]).toMatchObject({ type: 'activity_label', pending: false });
   });
+
+  it('threads committed labels across batches and seeds from resumed parts', async () => {
+    const parts: Array<LooseContentPart | null | undefined> = [
+      { type: 'activity_label', activity_label: 'Resumed header', pending: false },
+      { type: 'activity_label', activity_label: '', pending: true },
+      { type: 'tool_call', tool_call: { id: 'tool-1' } },
+    ];
+    const payloads: GenerateLabelPayload[] = [];
+    let seq = 0;
+    const generateLabel = jest.fn(async (payload: GenerateLabelPayload) => {
+      payloads.push(payload);
+      seq += 1;
+      return `Fresh header ${seq}`;
+    });
+    const { hook } = createActivityLabelWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      resolveLLM: jest.fn(async () => ({
+        provider: Providers.OPENAI,
+        clientOptions: { model: 'm' },
+      })),
+      generateLabel,
+    });
+
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+    await hook(batchInput(), new AbortController().signal);
+    await flushDetached();
+
+    /** The unfilled pending reservation is excluded from the seed; the
+     *  committed resumed text and the first fresh commit both thread. */
+    expect(payloads[0]?.previousLabels).toEqual(['Resumed header']);
+    expect(payloads[1]?.previousLabels).toEqual(['Resumed header', 'Fresh header 1']);
+  });
 });
 
 describe('captureActivityBlockContext', () => {

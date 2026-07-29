@@ -209,6 +209,24 @@ export interface ActivityLabelHostDeps {
 export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
   hook: HookCallback<'PostToolBatch'>;
 } {
+  /** One pass over resumed content for BOTH seeds: the quota counts every
+   *  label part (filled or not, so a HITL resume cannot mint a fresh quota
+   *  after every approval) while continuity keeps only committed text,
+   *  keyed by content index so run order survives out-of-order fills. */
+  const resumedParts = deps.getContentParts();
+  let initialGeneratedCount = 0;
+  const initialLabels: Array<{ index: number; text: string }> = [];
+  for (let i = 0; i < resumedParts.length; i++) {
+    const part = resumedParts[i];
+    if (part?.type !== ContentTypes.ACTIVITY_LABEL) {
+      continue;
+    }
+    initialGeneratedCount += 1;
+    const text = part[ContentTypes.ACTIVITY_LABEL];
+    if (typeof text === 'string' && text.length > 0 && part.pending !== true) {
+      initialLabels.push({ index: i, text });
+    }
+  }
   return {
     hook: createActivityLabelHook({
       resolveLLM: deps.resolveLLM,
@@ -218,11 +236,8 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
        *  the published package's own generic prompt, so the register this
        *  module defines would apply to the fallback path only. */
       prompt: deps.prompt ?? ACTIVITY_INSTRUCTION,
-      /** Seed the cap from labels already on the response so a HITL resume
-       *  cannot mint a fresh quota after every approval. */
-      initialGeneratedCount: deps
-        .getContentParts()
-        .filter((part) => part?.type === ContentTypes.ACTIVITY_LABEL).length,
+      initialGeneratedCount,
+      initialLabels,
       /** The settle must cover the whole detached task: deferred usage runs
        *  AFTER the fill resolves, so tracking fills alone would let
        *  finalization flush the usage sink mid-billing. */
