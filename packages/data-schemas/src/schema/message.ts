@@ -100,6 +100,10 @@ const messageSchema: Schema<IMessage> = new Schema(
     langfuseSampled: {
       type: Boolean,
     },
+    langfuseDestinationIds: {
+      type: [String],
+      default: undefined,
+    },
     _meiliIndex: {
       type: Boolean,
       required: false,

@@ -233,16 +233,12 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
       const destination = typeof body.destination === 'string' ? body.destination.trim() : '';
       const publicKey = typeof body.publicKey === 'string' ? body.publicKey.trim() : '';
       const secretKey = typeof body.secretKey === 'string' ? body.secretKey.trim() : '';
-      const tenantDestination = resolveLangfuseTenantDestination(destination);
 
       if (!destination) {
         return res.status(400).json({ error: 'destination is required' });
       }
       if (!publicKey) {
         return res.status(400).json({ error: 'publicKey is required' });
-      }
-      if (!tenantDestination) {
-        return res.status(400).json({ error: 'destination is not configured' });
       }
       if (secretKey.startsWith(ENCRYPTED_PREFIX)) {
         return res.status(400).json({ error: 'Encrypted secretKey values cannot be submitted' });
@@ -251,17 +247,32 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
       const existing = await findBaseConfig();
       const stored = readStoredLangfuse(existing);
       const hasStoredSecret = Boolean(stored?.secretKey);
+      const tenantDestination = resolveLangfuseTenantDestination(destination);
+      const isPureDisableOfStoredConnection =
+        !enabled &&
+        secretKey === '' &&
+        hasStoredSecret &&
+        stored?.destination === destination &&
+        stored.publicKey === publicKey;
+
+      if (!tenantDestination && !isPureDisableOfStoredConnection) {
+        return res.status(400).json({ error: 'destination is not configured' });
+      }
       if (!secretKey && !hasStoredSecret) {
         return res
           .status(400)
           .json({ error: 'secretKey is required for first-time configuration' });
       }
 
+      const persistedDestination = tenantDestination?.key ?? destination;
       const connectionChanged =
         secretKey !== '' ||
-        stored?.destination !== tenantDestination.key ||
+        stored?.destination !== persistedDestination ||
         stored?.publicKey !== publicKey;
       if (connectionChanged) {
+        if (!tenantDestination) {
+          return res.status(400).json({ error: 'destination is not configured' });
+        }
         const verificationSecret = secretKey || decryptConfigSecret(stored?.secretKey) || '';
         if (!verificationSecret) {
           return res.status(400).json({ error: 'Stored secret key could not be decrypted' });
@@ -280,7 +291,7 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
 
       const fields: Record<string, unknown> = {
         'langfuse.enabled': enabled,
-        'langfuse.destination': tenantDestination.key,
+        'langfuse.destination': persistedDestination,
         'langfuse.publicKey': publicKey,
       };
       if (secretKey) {

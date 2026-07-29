@@ -28,6 +28,7 @@ export interface IMessage extends Document {
     text?: string;
   };
   langfuseSampled?: boolean;
+  langfuseDestinationIds?: string[];
   _meiliIndex?: boolean;
   files?: unknown[];
   plugin?: {

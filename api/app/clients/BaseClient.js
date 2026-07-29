@@ -12,6 +12,7 @@ const {
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   encodeAndFormatDocuments,
+  getLangfuseTraceDestinationIds,
   isLangfuseTraceSampled,
   traceIdForMessage,
 } = require('@librechat/api');
@@ -714,14 +715,24 @@ class BaseClient {
       this.abortController.requestCompleted = true;
     }
 
+    const isAgentResponse = isAgentsEndpoint(this.options.endpoint);
+    const langfuseTraceId = isAgentResponse ? traceIdForMessage(responseMessageId) : undefined;
+    const langfuseSampled =
+      langfuseTraceId != null ? isLangfuseTraceSampled(langfuseTraceId) : undefined;
+
     /** @type {TMessage} */
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
-      ...(isAgentsEndpoint(this.options.endpoint) && {
-        langfuseSampled: isLangfuseTraceSampled(traceIdForMessage(responseMessageId)),
+      ...(isAgentResponse && {
+        langfuseSampled,
+        langfuseDestinationIds: getLangfuseTraceDestinationIds(
+          appConfig,
+          langfuseTraceId,
+          langfuseSampled,
+        ),
       }),
       isEdited,
       model: this.getResponseModel(),

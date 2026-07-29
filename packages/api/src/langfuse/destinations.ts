@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { AppConfig } from '@librechat/data-schemas';
 import {
   hasLangfuseEnvCredentials,
@@ -14,10 +15,17 @@ import { normalizeString } from '~/utils/text';
 const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
 
 export type LangfuseScoreDestination = {
+  id: string;
   name: 'central' | 'tenant' | 'connection';
   baseUrl: string;
   authorization: string;
 };
+
+function getDestinationId(baseUrl: string, publicKey: string): string {
+  return createHash('sha256')
+    .update(`${baseUrl.replace(/\/+$/, '')}\n${publicKey}`)
+    .digest('hex');
+}
 
 function getCentralEnvBaseUrl(): string {
   return (
@@ -39,6 +47,7 @@ function getCentralScoreDestination(): LangfuseScoreDestination | undefined {
   }
 
   return {
+    id: getDestinationId(getCentralEnvBaseUrl(), publicKey),
     name: 'central',
     baseUrl: getCentralEnvBaseUrl(),
     authorization: toBasicAuthorization(publicKey, secretKey),
@@ -72,6 +81,7 @@ function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestinat
   }
 
   return {
+    id: getDestinationId(destination.baseUrl, tenantCredentials.publicKey),
     name: 'tenant',
     baseUrl: destination.baseUrl,
     authorization: toBasicAuthorization(tenantCredentials.publicKey, tenantCredentials.secretKey),
@@ -93,6 +103,7 @@ function getConfiguredScoreDestination(
   }
 
   return {
+    id: getDestinationId(destination.baseUrl, credentials.publicKey),
     name: 'connection',
     baseUrl: destination.baseUrl,
     authorization: toBasicAuthorization(credentials.publicKey, credentials.secretKey),
@@ -132,11 +143,23 @@ export function getScoreDestinations(
   );
   const seen = new Set<string>();
   return destinations.filter((destination) => {
-    const key = `${destination.baseUrl}\n${destination.authorization}`;
-    if (seen.has(key)) {
+    if (seen.has(destination.id)) {
       return false;
     }
-    seen.add(key);
+    seen.add(destination.id);
     return true;
   });
+}
+
+/**
+ * Captures the concrete Langfuse projects eligible to receive a generated
+ * trace. The opaque IDs let later feedback avoid newly configured or replaced
+ * destinations without persisting credentials on the message.
+ */
+export function getLangfuseTraceDestinationIds(
+  appConfig: AppConfig | undefined,
+  traceId: string,
+  sampled?: boolean,
+): string[] {
+  return getScoreDestinations(appConfig, traceId, sampled).map(({ id }) => id);
 }

@@ -560,6 +560,38 @@ describe('LangfuseConnection', () => {
     expect(screen.getByRole('button', { name: 'com_ui_langfuse_enable' })).toBeEnabled();
   });
 
+  it('allows disabling a connection whose saved destination was removed', async () => {
+    mockGet.mockReturnValue({
+      data: {
+        configured: true,
+        enabled: true,
+        destinations: [{ key: 'eu', baseUrl: 'https://cloud.langfuse.com' }],
+        destination: 'removed-destination',
+        publicKey: 'pk-lf-1',
+        secretKeyPreview: 'sk-lf-...515f',
+      },
+    });
+
+    render(<LangfuseConnection />);
+
+    expect(screen.getByTestId('langfuse-destination')).toHaveTextContent(
+      'removed-destination - com_ui_langfuse_destination_unavailable',
+    );
+    expect(screen.getByText('com_ui_langfuse_destination_removed')).toBeVisible();
+    expect(mockTest).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_langfuse_disable' }));
+
+    expect(mockUpdate).toHaveBeenCalledWith(
+      {
+        enabled: false,
+        destination: 'removed-destination',
+        publicKey: 'pk-lf-1',
+      },
+      expect.any(Object),
+    );
+  });
+
   it('saves immediately without testing when enabling a configured connection', async () => {
     mockGet.mockReturnValue({
       data: {

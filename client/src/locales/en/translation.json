@@ -1734,6 +1734,8 @@
   "com_ui_langfuse_description": "Send this organization's traces and feedback scores to your own Langfuse project.",
   "com_ui_langfuse_beta_info": "This feature is in beta. Enabling this connection will send traces from all agents in your org to Langfuse.",
   "com_ui_langfuse_destination": "Destination",
+  "com_ui_langfuse_destination_unavailable": "Unavailable",
+  "com_ui_langfuse_destination_removed": "The saved Langfuse destination is no longer available. Disable the connection or select another destination.",
   "com_ui_langfuse_public_key": "Public key",
   "com_ui_langfuse_secret_key": "Secret key",
   "com_ui_langfuse_status_checking": "Checking connection",

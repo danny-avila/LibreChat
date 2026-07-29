@@ -338,6 +338,27 @@ describe('Langfuse feedback scores', () => {
     });
   });
 
+  it('does not send feedback to a destination that did not receive the original trace', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    delete process.env.LANGFUSE_PUBLIC_KEY;
+    delete process.env.LANGFUSE_SECRET_KEY;
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: 'trace-id',
+      sampled: true,
+      destinationIds: ['original-destination-id'],
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        publicKey: 'new-public-key',
+        secretKey: encryptedTenantSecret(),
+        destination: 'eu',
+      }),
+    });
+
+    expect(getFetchMock()).not.toHaveBeenCalled();
+  });
+
   it('decrypts encrypted tenant secrets before sending tenant feedback scores', async () => {
     enableTenantFanout();
     process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';

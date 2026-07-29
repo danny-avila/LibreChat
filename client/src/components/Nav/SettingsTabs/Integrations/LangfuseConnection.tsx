@@ -150,22 +150,33 @@ export default function LangfuseConnection() {
     if (!connectionStatus) {
       return;
     }
-    const availableDestinations = connectionStatus.destinations ?? [];
-    const storedDestination = availableDestinations.some(
-      (option) => option.key === connectionStatus.destination,
-    )
-      ? connectionStatus.destination
-      : undefined;
-    setDestination(storedDestination ?? '');
+    setDestination(connectionStatus.destination ?? '');
     setPublicKey(connectionStatus.publicKey ?? '');
   }, [connectionStatus]);
 
   const secretConfigured = connectionStatus?.configured === true;
   const destinations = connectionStatus?.destinations ?? [];
-  const destinationOptions = destinations.map(({ key, baseUrl }) => ({
-    value: key,
-    label: `${key} - ${baseUrl}`,
-  }));
+  const connectionDestinationAvailable = destinations.some(
+    ({ key }) => key === connectionStatus?.destination,
+  );
+  const storedDestinationUnavailable =
+    secretConfigured && Boolean(connectionStatus?.destination) && !connectionDestinationAvailable;
+  const destinationOptions = [
+    ...(storedDestinationUnavailable && connectionStatus?.destination
+      ? [
+          {
+            value: connectionStatus.destination,
+            label: `${connectionStatus.destination} - ${localize(
+              'com_ui_langfuse_destination_unavailable',
+            )}`,
+          },
+        ]
+      : []),
+    ...destinations.map(({ key, baseUrl }) => ({
+      value: key,
+      label: `${key} - ${baseUrl}`,
+    })),
+  ];
   const trimmedPublicKey = publicKey.trim();
   const trimmedSecretKey = secretKey.trim();
   const publicKeyInputVisible = !secretConfigured || isEditingPublicKey;
@@ -186,6 +197,13 @@ export default function LangfuseConnection() {
     if (!connectionStatus || !storedConnectionTestKey) {
       setConnectionTestState('idle');
       setConnectionTestMessage('');
+      return;
+    }
+
+    if (!connectionStatus.destinations?.some(({ key }) => key === connectionStatus.destination)) {
+      connectionTestRequestRef.current += 1;
+      setConnectionTestState('failed');
+      setConnectionTestMessage(localize('com_ui_langfuse_destination_removed'));
       return;
     }
 
@@ -294,12 +312,7 @@ export default function LangfuseConnection() {
   };
 
   const handleCancel = () => {
-    const availableDestinations = connectionStatus?.destinations ?? [];
-    const storedDestination = availableDestinations.some(
-      (option) => option.key === connectionStatus?.destination,
-    )
-      ? connectionStatus?.destination
-      : undefined;
+    const storedDestination = connectionStatus?.destination;
     setDestination(storedDestination ?? '');
     setPublicKey(connectionStatus?.publicKey ?? '');
     setSecretKey('');
@@ -309,6 +322,13 @@ export default function LangfuseConnection() {
     if (!storedDestination || !connectionStatus?.publicKey) {
       setConnectionTestState('idle');
       setConnectionTestMessage('');
+      return;
+    }
+
+    if (!connectionStatus.destinations?.some(({ key }) => key === storedDestination)) {
+      connectionTestRequestRef.current += 1;
+      setConnectionTestState('failed');
+      setConnectionTestMessage(localize('com_ui_langfuse_destination_removed'));
       return;
     }
 
@@ -591,7 +611,9 @@ export default function LangfuseConnection() {
         ) : (
           <Button
             variant={connectionStatus?.enabled === true ? 'outline' : 'submit'}
-            disabled={busy}
+            disabled={
+              busy || (connectionStatus?.enabled !== true && !connectionDestinationAvailable)
+            }
             onClick={handleEnabledChange}
           >
             {localize(

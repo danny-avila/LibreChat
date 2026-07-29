@@ -441,6 +441,39 @@ describe('createAdminLangfuseHandlers', () => {
       expect(deps.patchConfigFields.mock.calls[0][3]['langfuse.enabled']).toBe(true);
     });
 
+    it('allows an existing connection to be disabled after its destination is removed', async () => {
+      const stored = {
+        enabled: true,
+        destination: 'removed-destination',
+        publicKey: 'pk-lf-1',
+        secretKey: encryptV3('sk-lf-secret'),
+      };
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(baseConfigDoc(stored)),
+      });
+      const res = mockRes();
+
+      await handlers.updateConnection(
+        mockReq({
+          body: {
+            enabled: false,
+            destination: 'removed-destination',
+            publicKey: 'pk-lf-1',
+          },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(deps.patchConfigFields).toHaveBeenCalledTimes(1);
+      expect(deps.patchConfigFields.mock.calls[0][3]).toMatchObject({
+        'langfuse.enabled': false,
+        'langfuse.destination': 'removed-destination',
+        'langfuse.publicKey': 'pk-lf-1',
+      });
+    });
+
     it('reactivates an inactive base config updated by the field patch', async () => {
       const inactiveUpdated = {
         ...baseConfigDoc({
