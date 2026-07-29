@@ -19,6 +19,10 @@ const mockAskQuestion = jest.fn();
 
 jest.mock('../connect', () => jest.fn(async () => {}));
 jest.mock('mongoose', () => ({ disconnect: jest.fn(async () => {}) }));
+// The real package cannot load here: this suite mocks mongoose to a bare stub, and
+// @librechat/api reads Types.ObjectId at import time. The live CLI harness exercises
+// the real wiring; this suite only needs the constant.
+jest.mock('@librechat/api', () => ({ AUTH_USER_DOC_CACHE_TTL_MS: 5000 }));
 jest.mock('@librechat/data-schemas', () => ({
   createModels: () => new Proxy({}, { get: (_target, prop) => mockModelFor(prop) }),
 }));
@@ -49,6 +53,7 @@ describe('Delete user CLI', () => {
   let logSpy;
 
   beforeEach(() => {
+    delete process.env.AUTH_USER_CACHE_MODE;
     process.argv = ['node', 'delete-user.js', 'deleted@example.com'];
     logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -108,6 +113,29 @@ describe('Delete user CLI', () => {
     expect(mockModelFor('ScheduleRun').deleteMany).not.toHaveBeenCalled();
     expect(mockModelFor('Message').deleteMany).not.toHaveBeenCalled();
   });
+
+  it('waits out the live auth cache before any destructive read or write', async () => {
+    // In-process cache mode: markUserDeleting can only invalidate THIS process's
+    // cache, so a live server keeps serving a pre-barrier req.user for up to the
+    // cache TTL — long enough for a request to recreate data mid-cascade. The
+    // script must sleep through that window between the barrier and the cascade.
+    process.env.AUTH_USER_CACHE_MODE = 'on';
+    const timeoutSpy = jest.spyOn(global, 'setTimeout');
+    try {
+      const started = Date.now();
+      const code = await runCli();
+      expect(code).toBe(0);
+      const waits = timeoutSpy.mock.calls.map((c) => c[1]).filter((ms) => ms >= 5000);
+      expect(waits.length).toBeGreaterThanOrEqual(1);
+      expect(Date.now() - started).toBeGreaterThanOrEqual(5000);
+      const barrierAt = mockMarkUserDeleting.mock.invocationCallOrder[0];
+      const countAt = mockModelFor('ScheduleRun').countDocuments.mock.invocationCallOrder[0];
+      expect(barrierAt).toBeLessThan(countAt);
+    } finally {
+      delete process.env.AUTH_USER_CACHE_MODE;
+      timeoutSpy.mockRestore();
+    }
+  }, 20000);
 
   it('refuses while a scheduled run is still active', async () => {
     mockModelFor('ScheduleRun').countDocuments.mockResolvedValue(2);

@@ -31,6 +31,7 @@ const {
   ScheduleRun,
 } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const { AUTH_USER_DOC_CACHE_TTL_MS } = require('@librechat/api');
 const { markUserDeleting } = require('~/models');
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
@@ -89,16 +90,25 @@ async function gracefulExit(code = 0) {
   // Through markUserDeleting, never a raw update: that method also drops the auth
   // user-doc cache entry, and fails closed — a cache it cannot reach aborts the
   // deletion rather than proceeding behind a barrier that was never actually raised.
-  // With a shared (Redis) cache this invalidation reaches the live server. With the
-  // in-process cache no external script can, but the residual window is bounded by the
-  // 5s AUTH_USER_DOC_CACHE_TTL_MS, and the schedule-fire guard (isOwnerDeleting) reads
-  // Mongo directly rather than trusting req.user.
   try {
     await markUserDeleting(uid);
   } catch (err) {
     console.red('✖ Could not raise the deletion barrier. Nothing was deleted.');
     console.error(err);
     return gracefulExit(1);
+  }
+
+  // WAIT OUT the live server's auth cache before anything destructive. With a shared
+  // (Redis) cache the invalidation above reached the server; with the IN-PROCESS cache
+  // no external script can, so a request served from a stale pre-barrier req.user could
+  // still mutate conversations/files during the cascade and recreate data for the
+  // removed account — only the schedule routes consult the Mongo barrier directly.
+  // Sleeping through the full TTL (plus slack) is the one mechanism that covers both
+  // topologies; this is a manual admin command, so the pause is free.
+  if (process.env.AUTH_USER_CACHE_MODE === 'on') {
+    const waitMs = AUTH_USER_DOC_CACHE_TTL_MS + 1000;
+    console.orange(`Waiting ${waitMs}ms for any live server's auth cache to expire...`);
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
 
   // REFUSE rather than warn when a scheduled run is in flight. This script talks to the
