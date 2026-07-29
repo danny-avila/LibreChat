@@ -13,10 +13,21 @@ export interface SaveBufferInput {
   userId: string;
   buffer: Buffer;
   fileName: string;
+  /** The asset's resolved MIME type. A deployment can point images and
+   * documents at different backends, so the strategy cannot be chosen once for
+   * a whole archive that mixes images, audio, video, and PDFs. */
+  type: string;
   tenantId?: string;
 }
 
-export type SaveBufferFn = (input: SaveBufferInput) => Promise<string>;
+export interface SavedAsset {
+  filepath: string;
+  /** The backend the bytes actually landed on, recorded on the file row so a
+   * later read or delete resolves the same one. */
+  source: string;
+}
+
+export type SaveAssetFn = (input: SaveBufferInput) => Promise<SavedAsset>;
 
 export interface CreateFileInput {
   user: string;
@@ -41,7 +52,7 @@ export type CreateFileFn = (
 export type DeleteAssetFn = (asset: ImportedAsset) => Promise<void>;
 
 export interface AssetDeps {
-  saveBuffer: SaveBufferFn;
+  saveBuffer: SaveAssetFn;
   createFile: CreateFileFn;
   deleteFile?: DeleteAssetFn;
 }
@@ -51,7 +62,6 @@ export interface IngestInput {
   layout: ExportLayout;
   userId: string;
   tenantId: string | undefined;
-  source: string;
   pointers: string[];
   deps: AssetDeps;
   /** Attachment metadata keyed by the raw id (pointer with its scheme
@@ -281,7 +291,7 @@ async function ingestOne(
    * names sanitize to the same string still land at distinct paths. */
   const fileName = `${fileId}-${sanitizeFilename(originalName)}`;
 
-  const filepath = await deps.saveBuffer({ userId, buffer, fileName, tenantId });
+  const { filepath, source } = await deps.saveBuffer({ userId, buffer, fileName, type, tenantId });
 
   await deps.createFile(
     {
@@ -291,7 +301,7 @@ async function ingestOne(
       filepath,
       filename: originalName,
       type,
-      source: input.source,
+      source,
       context: FileContext.message_attachment,
       tenantId,
     },

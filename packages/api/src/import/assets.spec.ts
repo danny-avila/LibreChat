@@ -43,12 +43,11 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one', 'file-service://file-two', 'sediment://file_gone'],
       deps: {
         saveBuffer: async ({ fileName, buffer }) => {
           saved.push({ fileName, bytes: buffer.byteLength });
-          return `/uploads/u1/${fileName}`;
+          return { filepath: `/uploads/u1/${fileName}`, source: 'local' };
         },
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
@@ -78,12 +77,11 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one'],
       deps: {
         saveBuffer: async ({ fileName }) => {
           names.push(fileName);
-          return `/uploads/u1/${fileName}`;
+          return { filepath: `/uploads/u1/${fileName}`, source: 'local' };
         },
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
@@ -107,7 +105,6 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one', 'file-service://file-two'],
       deps: {
         saveBuffer: async ({ fileName }) => {
@@ -115,7 +112,7 @@ describe('ingestAssets', () => {
           if (calls === 1) {
             throw new Error('quota exceeded');
           }
-          return `/uploads/u1/${fileName}`;
+          return { filepath: `/uploads/u1/${fileName}`, source: 'local' };
         },
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
@@ -144,11 +141,13 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one'],
       attachments: new Map([['file-one', { id: 'file-one', width: 640, height: 480 }]]),
       deps: {
-        saveBuffer: async ({ fileName }) => `/uploads/u1/${fileName}`,
+        saveBuffer: async ({ fileName }) => ({
+          filepath: `/uploads/u1/${fileName}`,
+          source: 'local',
+        }),
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
     });
@@ -173,11 +172,13 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one'],
       attachments: new Map([['file-one', { id: 'file-one', mime_type: 'image/heic' }]]),
       deps: {
-        saveBuffer: async ({ fileName }) => `/uploads/u1/${fileName}`,
+        saveBuffer: async ({ fileName }) => ({
+          filepath: `/uploads/u1/${fileName}`,
+          source: 'local',
+        }),
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
     });
@@ -200,10 +201,12 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['sediment://file_generated'],
       deps: {
-        saveBuffer: async ({ fileName }) => `/uploads/u1/${fileName}`,
+        saveBuffer: async ({ fileName }) => ({
+          filepath: `/uploads/u1/${fileName}`,
+          source: 'local',
+        }),
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
     });
@@ -228,7 +231,6 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['sediment://file_generated'],
       references: new Map([
         [
@@ -237,7 +239,10 @@ describe('ingestAssets', () => {
         ],
       ]),
       deps: {
-        saveBuffer: async ({ fileName }) => `/uploads/u1/${fileName}`,
+        saveBuffer: async ({ fileName }) => ({
+          filepath: `/uploads/u1/${fileName}`,
+          source: 'local',
+        }),
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
     });
@@ -264,13 +269,15 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers,
       onProgress: (done) => {
         progress.push(done);
       },
       deps: {
-        saveBuffer: async ({ fileName }) => `/uploads/u1/${fileName}`,
+        saveBuffer: async ({ fileName }) => ({
+          filepath: `/uploads/u1/${fileName}`,
+          source: 'local',
+        }),
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
     });
@@ -295,7 +302,6 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one', 'file-service://file-two'],
       isCancelled: async () => {
         cancelChecks += 1;
@@ -304,7 +310,7 @@ describe('ingestAssets', () => {
       deps: {
         saveBuffer: async ({ fileName }) => {
           saveCalls.push(fileName);
-          return `/uploads/u1/${fileName}`;
+          return { filepath: `/uploads/u1/${fileName}`, source: 'local' };
         },
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
@@ -331,12 +337,11 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one', 'file-service://file-one', 'file-service://file-one'],
       deps: {
         saveBuffer: async ({ fileName }) => {
           saveCalls.push(fileName);
-          return `/uploads/u1/${fileName}`;
+          return { filepath: `/uploads/u1/${fileName}`, source: 'local' };
         },
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
@@ -362,10 +367,12 @@ describe('ingestAssets', () => {
       layout: { ...layout, assetNames: null },
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one'],
       deps: {
-        saveBuffer: async ({ fileName }) => `/uploads/u1/${fileName}`,
+        saveBuffer: async ({ fileName }) => ({
+          filepath: `/uploads/u1/${fileName}`,
+          source: 'local',
+        }),
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
     });
@@ -388,10 +395,12 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one'],
       deps: {
-        saveBuffer: async ({ fileName }) => `/uploads/u1/${fileName}`,
+        saveBuffer: async ({ fileName }) => ({
+          filepath: `/uploads/u1/${fileName}`,
+          source: 'local',
+        }),
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
     });
@@ -415,10 +424,12 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one'],
       deps: {
-        saveBuffer: async ({ fileName }) => `/uploads/u1/${fileName}`,
+        saveBuffer: async ({ fileName }) => ({
+          filepath: `/uploads/u1/${fileName}`,
+          source: 'local',
+        }),
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
     });
@@ -442,13 +453,15 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one', 'file-service://file-two'],
       onProgress: (done) => {
         progress.push(done);
       },
       deps: {
-        saveBuffer: async ({ fileName }) => `/uploads/u1/${fileName}`,
+        saveBuffer: async ({ fileName }) => ({
+          filepath: `/uploads/u1/${fileName}`,
+          source: 'local',
+        }),
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
     });
@@ -474,10 +487,12 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one', 'file-service://file-two'],
       deps: {
-        saveBuffer: async ({ fileName }) => `/uploads/u1/${fileName}`,
+        saveBuffer: async ({ fileName }) => ({
+          filepath: `/uploads/u1/${fileName}`,
+          source: 'local',
+        }),
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
     });
@@ -508,12 +523,11 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one'],
       deps: {
         saveBuffer: async ({ fileName }) => {
           saved.push(fileName);
-          return `/uploads/u1/${fileName}`;
+          return { filepath: `/uploads/u1/${fileName}`, source: 'local' };
         },
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
@@ -544,12 +558,11 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one'],
       deps: {
         saveBuffer: async ({ fileName }) => {
           saved.push(fileName);
-          return `/uploads/u1/${fileName}`;
+          return { filepath: `/uploads/u1/${fileName}`, source: 'local' };
         },
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
@@ -583,12 +596,11 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one'],
       deps: {
         saveBuffer: async ({ fileName }) => {
           saved.push(fileName);
-          return `/uploads/u1/${fileName}`;
+          return { filepath: `/uploads/u1/${fileName}`, source: 'local' };
         },
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
@@ -624,12 +636,11 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one', 'file-service://file-two'],
       deps: {
         saveBuffer: async ({ fileName }) => {
           saved.push(fileName);
-          return `/uploads/u1/${fileName}`;
+          return { filepath: `/uploads/u1/${fileName}`, source: 'local' };
         },
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
@@ -657,13 +668,12 @@ describe('ingestAssets', () => {
       layout,
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one'],
       attachments: new Map([['file-one', { id: 'file-one', name: 'conv-a/images/photo.png' }]]),
       deps: {
         saveBuffer: async ({ fileName }) => {
           saved.push(fileName);
-          return `/uploads/u1/${fileName}`;
+          return { filepath: `/uploads/u1/${fileName}`, source: 'local' };
         },
         createFile: async (data) => ({ file_id: data.file_id as string }),
       },
@@ -693,7 +703,10 @@ describe('ingestAssets with a malformed asset-name map', () => {
   }
 
   const deps = {
-    saveBuffer: async ({ fileName }: { fileName: string }) => `/uploads/u1/${fileName}`,
+    saveBuffer: async ({ fileName }: { fileName: string }) => ({
+      filepath: `/uploads/u1/${fileName}`,
+      source: 'local',
+    }),
     createFile: async (data: { file_id: string }) => ({ file_id: data.file_id }),
   };
 
@@ -711,7 +724,6 @@ describe('ingestAssets with a malformed asset-name map', () => {
       layout: { ...layout, assetNames: ASSET_NAMES_ENTRY },
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one'],
       deps,
     });
@@ -730,11 +742,79 @@ describe('ingestAssets with a malformed asset-name map', () => {
       layout: { ...layout, assetNames: ASSET_NAMES_ENTRY },
       userId: 'u1',
       tenantId: undefined,
-      source: 'local',
       pointers: ['file-service://file-one'],
       deps,
     });
 
     expect(result.map.get('file-service://file-one')?.filename).toBe('holiday.png');
+  });
+});
+
+/** A deployment can point `fileStrategies.image` and `.document` at different
+ * backends, and an export mixes images with audio, video, and PDFs. Resolving
+ * one strategy for the whole archive put non-image attachments on the image
+ * backend, where the deployment never meant them to live. */
+describe('ingestAssets storage strategy', () => {
+  it('passes each asset its resolved type and records the backend it landed on', async () => {
+    const seen: Array<{ type: string }> = [];
+    const archive: Archive = {
+      entries: [
+        { name: 'png-one.dat', bytes: 4 },
+        { name: 'pdf-one.dat', bytes: 4 },
+      ],
+      read: async (entry: string) =>
+        entry === 'png-one.dat'
+          ? Buffer.from([0x89, 0x50, 0x4e, 0x47])
+          : Buffer.from([0x25, 0x50, 0x44, 0x46]),
+      close: () => undefined,
+    };
+
+    const result = await ingestAssets({
+      archive,
+      layout: resolveLayout(archive.entries, null),
+      userId: 'u1',
+      tenantId: undefined,
+      pointers: ['file-service://png-one', 'file-service://pdf-one'],
+      deps: {
+        saveBuffer: async ({ fileName, type }) => {
+          seen.push({ type });
+          return {
+            filepath: `/${type.startsWith('image/') ? 'images' : 'documents'}/${fileName}`,
+            source: type.startsWith('image/') ? 'image_backend' : 'document_backend',
+          };
+        },
+        createFile: async (data) => ({ file_id: data.file_id }),
+      },
+    });
+
+    expect(seen.map((entry) => entry.type).sort()).toEqual(['application/pdf', 'image/png']);
+    expect(result.map.get('file-service://png-one')?.filepath).toMatch(/^\/images\//);
+    expect(result.map.get('file-service://pdf-one')?.filepath).toMatch(/^\/documents\//);
+  });
+
+  it('records the backend on the file row, not a single archive-wide value', async () => {
+    const sources: string[] = [];
+    const archive: Archive = {
+      entries: [{ name: 'pdf-one.dat', bytes: 4 }],
+      read: async () => Buffer.from([0x25, 0x50, 0x44, 0x46]),
+      close: () => undefined,
+    };
+
+    await ingestAssets({
+      archive,
+      layout: resolveLayout(archive.entries, null),
+      userId: 'u1',
+      tenantId: undefined,
+      pointers: ['file-service://pdf-one'],
+      deps: {
+        saveBuffer: async () => ({ filepath: '/documents/x', source: 'document_backend' }),
+        createFile: async (data) => {
+          sources.push(data.source);
+          return { file_id: data.file_id };
+        },
+      },
+    });
+
+    expect(sources).toEqual(['document_backend']);
   });
 });

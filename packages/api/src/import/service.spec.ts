@@ -33,7 +33,10 @@ function recorder(): { sink: Parameters<typeof runImport>[0]['batch']; recorded:
 }
 
 const DEPS = {
-  saveBuffer: async ({ fileName }: { fileName: string }) => `/uploads/u1/${fileName}`,
+  saveBuffer: async ({ fileName }: { fileName: string }) => ({
+    filepath: `/uploads/u1/${fileName}`,
+    source: 'local',
+  }),
   createFile: async (data: { file_id: string }) => ({ file_id: data.file_id }),
 };
 
@@ -104,7 +107,6 @@ describe('runImport', () => {
     const report = await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: DEPS,
       batch: sink,
@@ -137,7 +139,6 @@ describe('runImport', () => {
     await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: DEPS,
       batch: sink,
@@ -165,7 +166,6 @@ describe('runImport', () => {
     const report = await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: DEPS,
       batch: sink,
@@ -188,13 +188,12 @@ describe('runImport', () => {
     const report = await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: {
         ...DEPS,
         saveBuffer: async ({ fileName }: { fileName: string }) => {
           saved.push(fileName);
-          return `/uploads/u1/${fileName}`;
+          return { filepath: `/uploads/u1/${fileName}`, source: 'local' };
         },
       },
       batch: sink,
@@ -216,7 +215,6 @@ describe('runImport', () => {
     await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: DEPS,
       batch: sink,
@@ -237,7 +235,6 @@ describe('runImport', () => {
     await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: DEPS,
       batch: sink,
@@ -258,7 +255,6 @@ describe('runImport', () => {
     await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: DEPS,
       batch: sink,
@@ -283,7 +279,6 @@ describe('runImport', () => {
     await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: DEPS,
       batch: sink,
@@ -330,7 +325,6 @@ describe('runImport', () => {
     await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: DEPS,
       batch: sink,
@@ -349,7 +343,6 @@ describe('runImport', () => {
     const report = await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: DEPS,
       batch: sink,
@@ -375,7 +368,6 @@ describe('runImport', () => {
     const report = await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: DEPS,
       batch: sink,
@@ -404,7 +396,6 @@ describe('runImport', () => {
     const report = await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: DEPS,
       batch: sink,
@@ -431,7 +422,6 @@ describe('runImport', () => {
     const report = await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: DEPS,
       batch: sink,
@@ -459,7 +449,6 @@ describe('runImport', () => {
     const report = await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: DEPS,
       batch: sink,
@@ -510,7 +499,6 @@ describe('runImport', () => {
     const report = await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: DEPS,
       batch: sink,
@@ -532,7 +520,6 @@ describe('runImport', () => {
     const report = await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps: {
         saveBuffer: async ({ fileName }: { fileName: string }) => {
@@ -540,7 +527,7 @@ describe('runImport', () => {
           if (saveCalls === 1) {
             throw new Error('quota exceeded');
           }
-          return `/uploads/u1/${fileName}`;
+          return { filepath: `/uploads/u1/${fileName}`, source: 'local' };
         },
         createFile: async (data: { file_id: string }) => ({ file_id: data.file_id }),
       },
@@ -583,7 +570,6 @@ describe('runImport', () => {
       runImport({
         filepath,
         userId: 'u1',
-        source: 'local',
         defaultModel: 'gpt-4o',
         deps: DEPS,
         batch: sink,
@@ -623,7 +609,6 @@ describe('runImport asset cleanup', () => {
     const report = await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps,
       batch: sink,
@@ -645,7 +630,6 @@ describe('runImport asset cleanup', () => {
     const report = await runImport({
       filepath,
       userId: 'u1',
-      source: 'local',
       defaultModel: 'gpt-4o',
       deps,
       batch: sink,
@@ -671,7 +655,6 @@ describe('runImport asset cleanup', () => {
       runImport({
         filepath,
         userId: 'u1',
-        source: 'local',
         defaultModel: 'gpt-4o',
         deps: DEPS,
         batch: sink,

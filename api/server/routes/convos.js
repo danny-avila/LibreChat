@@ -442,8 +442,34 @@ async function runImportJob(context, job) {
      */
     await fs.promises.utimes(job.filepath, new Date(), new Date()).catch(() => undefined);
 
-    const source = getFileStrategy(appConfig, { isImage: true });
-    const { saveBuffer, deleteFile } = getStrategyFunctions(source);
+    /**
+     * Both backends are resolved up front — a misconfigured strategy is a
+     * setup failure that should fail the job immediately, not surface as a
+     * per-asset error halfway through — but the choice between them is made
+     * per asset. A deployment can point `fileStrategies.image` and
+     * `fileStrategies.document` at different places, and an export mixes
+     * images with audio, video, and PDFs; fixing `isImage: true` for the whole
+     * archive put non-image attachments on the image backend, where the
+     * deployment never meant them to live.
+     */
+    const imageSource = getFileStrategy(appConfig, { isImage: true });
+    const documentSource = getFileStrategy(appConfig, { isImage: false });
+    const imageBackend = { source: imageSource, fns: getStrategyFunctions(imageSource) };
+    const documentBackend = { source: documentSource, fns: getStrategyFunctions(documentSource) };
+    const backendFor = (type) =>
+      (type ?? '').startsWith('image/') ? imageBackend : documentBackend;
+
+    const saveBuffer = async ({ userId: owner, buffer, fileName, type, tenantId: tenant }) => {
+      const backend = backendFor(type);
+      const filepath = await backend.fns.saveBuffer({
+        userId: owner,
+        buffer,
+        fileName,
+        tenantId: tenant,
+      });
+      return { filepath, source: backend.source };
+    };
+
     /** The strategy's delete takes a request-shaped object for its paths and
      * owner; the background run has both on its snapshot. Used to release
      * assets no committed conversation claimed — a run cancelled between the
@@ -451,7 +477,7 @@ async function runImportJob(context, job) {
      * it created referenced by nothing and exempt from every sweep. */
     const storageContext = { config: appConfig, user: { id: userId } };
     const releaseAsset = async (asset) => {
-      await deleteFile(storageContext, asset);
+      await backendFor(asset.type).fns.deleteFile(storageContext, asset);
       await db.deleteFiles([asset.file_id], userId);
     };
     const batch = createImportBatchBuilder(userId, appConfig?.interfaceConfig);
@@ -468,7 +494,6 @@ async function runImportJob(context, job) {
       filepath: job.filepath,
       userId,
       tenantId,
-      source,
       format: target.format,
       defaultModel,
       deps: { saveBuffer, createFile: db.createFile, deleteFile: releaseAsset },

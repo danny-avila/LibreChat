@@ -329,7 +329,6 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
       layout,
       userId: input.userId,
       tenantId: input.tenantId,
-      source: input.source,
       pointers: scan.pointers,
       attachments: scan.attachments,
       references: scan.references,

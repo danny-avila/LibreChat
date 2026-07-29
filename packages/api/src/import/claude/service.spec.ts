@@ -36,13 +36,15 @@ function recorder(): { sink: Parameters<typeof runImport>[0]['batch']; recorded:
 }
 
 const DEPS = {
-  saveBuffer: async ({ fileName }: { fileName: string }) => `/uploads/u1/${fileName}`,
+  saveBuffer: async ({ fileName }: { fileName: string }) => ({
+    filepath: `/uploads/u1/${fileName}`,
+    source: 'local',
+  }),
   createFile: async (data: { file_id: string }) => ({ file_id: data.file_id }),
 };
 
 const BASE = {
   userId: 'u1',
-  source: 'local',
   defaultModel: 'claude-opus-4-7',
   deps: DEPS,
 };

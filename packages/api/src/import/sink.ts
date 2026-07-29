@@ -57,7 +57,6 @@ export interface RunImportInput {
   filepath: string;
   userId: string;
   tenantId?: string;
-  source: string;
   defaultModel: string;
   /** The format `inspectExport` already identified. Omit it and `runImport`
    * re-reads the first shard to detect it. */
