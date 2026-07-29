@@ -100,8 +100,9 @@ export default function Import() {
   const handleFile = useCallback(
     (file: File) => {
       const maxFileSize = startupConfig?.conversationImportMaxFileSize;
-      /** A non-positive limit means "no limit": the config route emits `0`
-       * whenever the env var is unset, which is the documented default. */
+      /** The config route emits the limit the server actually enforces, so this
+       * check runs on every deployment. A non-positive value is still treated
+       * as "no limit" for an operator who has explicitly disabled the cap. */
       if (maxFileSize != null && maxFileSize > 0 && file.size > maxFileSize) {
         showToast({
           message: localize('com_error_files_upload_too_large', {

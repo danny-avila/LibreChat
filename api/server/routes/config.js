@@ -11,6 +11,7 @@ const {
   sanitizeModelSpecs,
   excludeHiddenModelSpecs,
   isFileSnapshotEnabled,
+  resolveImportMaxFileSize,
 } = require('@librechat/api');
 const { EModelEndpoint, defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
@@ -299,9 +300,11 @@ router.get('/', async function (req, res) {
       sharePointBaseUrl: process.env.SHAREPOINT_BASE_URL,
       sharePointPickerGraphScope: process.env.SHAREPOINT_PICKER_GRAPH_SCOPE,
       sharePointPickerSharePointScope: process.env.SHAREPOINT_PICKER_SHAREPOINT_SCOPE,
-      conversationImportMaxFileSize: process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES
-        ? parseInt(process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES, 10)
-        : 0,
+      /** The value the server actually enforces, not the raw env var. Emitting
+       * 0 when it is unset made the client read "no limit" on every default
+       * install, so its pre-flight size check never ran and a too-large export
+       * was only rejected after the whole upload, as a 413. */
+      conversationImportMaxFileSize: resolveImportMaxFileSize(),
       langfuseFanoutEnabled,
       langfuseConnectionAccess,
       ...(cloudFront ? { cloudFront } : {}),
