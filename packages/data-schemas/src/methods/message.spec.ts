@@ -166,7 +166,7 @@ describe('Message Operations', () => {
 
       const result = await updateMessage(mockCtx.userId, {
         messageId: 'msg123',
-        feedback: { rating: 'thumbsUp' },
+        feedback: { rating: 'thumbsUp', tag: undefined },
       });
 
       expect(result?.langfuseSampled).toBe(true);
