@@ -127,6 +127,10 @@ function renderResult(blocks: ClaudeResultBlock[], sources: SourceIndex): Result
     }
 
     if (block.type === 'local_resource') {
+      /** The export ships the name or path but never the bytes, so this is a
+       * missing attachment even though it renders a label. Not counting it made
+       * the report understate what the import could not bring across. */
+      unavailable += 1;
       const label = block.name ?? block.file_path;
       if (label) {
         lines.push(`- ${label}`);

@@ -117,7 +117,7 @@ describe('completeToolCall', () => {
     );
   });
 
-  it('counts image results as unavailable and names local resources', () => {
+  it('counts images and local resources as unavailable, and still names the resource', () => {
     const registry = createToolRegistry();
     const sources = createSourceIndex();
     beginToolCall(registry, use('tu-1', 'present_files'));
@@ -132,7 +132,9 @@ describe('completeToolCall', () => {
       sources,
     );
 
-    expect(resolved.unavailable).toBe(2);
+    /** All three reference bytes the export does not ship. `local_resource`
+     * renders a label, which is not the same as being available. */
+    expect(resolved.unavailable).toBe(3);
     expect(resolved.output).toBe('- notes');
   });
 

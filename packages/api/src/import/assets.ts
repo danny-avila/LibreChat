@@ -302,21 +302,33 @@ async function ingestOne(
 
   const { filepath, source } = await deps.saveBuffer({ userId, buffer, fileName, type, tenantId });
 
-  await deps.createFile(
-    {
-      user: userId,
-      file_id: fileId,
-      bytes: buffer.byteLength,
-      filepath,
-      filename: originalName,
-      type,
-      source,
-      context: FileContext.message_attachment,
-      tenantId,
-      ...(input.expiredAt ? { expiredAt: input.expiredAt } : {}),
-    },
-    true,
-  );
+  try {
+    await deps.createFile(
+      {
+        user: userId,
+        file_id: fileId,
+        bytes: buffer.byteLength,
+        filepath,
+        filename: originalName,
+        type,
+        source,
+        context: FileContext.message_attachment,
+        tenantId,
+        ...(input.expiredAt ? { expiredAt: input.expiredAt } : {}),
+      },
+      true,
+    );
+  } catch (error) {
+    /** The bytes are in storage but no row points at them, and the caller only
+     * learns an asset exists once this function resolves — so nothing else
+     * could ever find this object to clean up. */
+    try {
+      await deps.deleteFile?.({ file_id: fileId, filepath, filename: originalName, type });
+    } catch (cleanupError) {
+      logger.error(`[import] Could not roll back the stored asset ${fileId}`, cleanupError);
+    }
+    throw error;
+  }
 
   return buildImportedAsset(
     fileId,
