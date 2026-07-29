@@ -25,7 +25,11 @@
 
 import { logger } from '@librechat/data-schemas';
 import { Tools, Constants } from 'librechat-data-provider';
-import { Constants as AgentConstants } from '@librechat/agents';
+import {
+  Constants as AgentConstants,
+  INTENT_LABEL_MARKER,
+  INTENT_DESCRIPTION,
+} from '@librechat/agents';
 import type { LCTool, LCToolRegistry, JsonSchemaType } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
@@ -128,17 +132,14 @@ export function stripIntentArg(args: unknown): unknown {
  * Canonical (frozen) shape of the injected property. Injection embeds a
  * copy so downstream schema tooling that mutates subschemas (JSON-schema
  * dereferencers stamp URI markers) never trips on a frozen shared instance.
+ *
+ * The description is the SDK's, not a local copy: host-injected tools and
+ * SDK-native tools must present the model with one identical instruction, and
+ * a divergent copy would also miss the SDK's token trimming.
  */
 const INTENT_PROPERTY: JsonSchemaType = Object.freeze<JsonSchemaType>({
   type: 'string',
-  description:
-    'ALWAYS write this field FIRST, before any other argument. One short sentence, ' +
-    'present progressive, stating what this specific call is about to do: ' +
-    '"Searching for OAuth handling in the callback router". It is shown to the user ' +
-    'as the live status label for this call while it runs, so write it for a human ' +
-    'reading a progress line. Do not restate the tool name. Do not exceed one sentence. ' +
-    'When you make several calls to the same tool in one turn, each intent must ' +
-    'distinguish that call from its siblings.',
+  description: INTENT_DESCRIPTION,
 });
 
 /**
@@ -188,9 +189,12 @@ function canInjectIntentParam(def: LCTool): boolean {
  * shares the name. Both contracts open with this exact instruction, while an
  * MCP/action tool's real `intent` argument will not — removal paths must
  * never strip a parameter the tool actually needs.
+ *
+ * Imported rather than redeclared: a local copy that drifts from the SDK's
+ * would make every removal path here stop recognizing SDK-native labels, and
+ * it would fail OPEN — labels left in schemas, opt-outs silently inert, no
+ * error anywhere.
  */
-const INTENT_LABEL_MARKER = 'ALWAYS write this field FIRST';
-
 function isIntentLabelProperty(property: JsonSchemaType | undefined): boolean {
   return (
     property != null &&
