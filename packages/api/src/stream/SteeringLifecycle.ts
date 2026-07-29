@@ -130,9 +130,9 @@ export class SteeringLifecycle {
     return this.store.closeAndDrainSteers(streamId, expectedCreatedAt);
   }
 
-  /** Non-destructive FIFO read (status/resume surfaces). */
-  peek(streamId: string): Promise<SteerQueueItem[]> {
-    return this.store.peekSteers(streamId);
+  /** Non-destructive FIFO read, optionally scoped to one generation. */
+  peek(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
+    return this.store.peekSteers(streamId, expectedCreatedAt);
   }
 
   /**
@@ -160,7 +160,12 @@ export class SteeringLifecycle {
    * using the final/abort event copy; recovery is idempotent (queued chips
    * dedupe by steer id).
    */
-  async park(streamId: string, steers: TPendingSteer[], owner: SteerOwner): Promise<void> {
+  async park(
+    streamId: string,
+    steers: TPendingSteer[],
+    owner: SteerOwner,
+    expectedCreatedAt?: number,
+  ): Promise<void> {
     if (steers.length === 0) {
       return;
     }
@@ -170,7 +175,7 @@ export class SteeringLifecycle {
       steers,
     };
     try {
-      await this.store.parkSteers(streamId, JSON.stringify(payload));
+      await this.store.parkSteers(streamId, JSON.stringify(payload), expectedCreatedAt);
     } catch (error) {
       logger.warn(`[SteeringLifecycle] Failed to park leftover steers: ${streamId}`, error);
     }

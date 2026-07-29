@@ -50,6 +50,13 @@ export function useAskSubmitStatus(): {
 }
 
 interface ApprovalContextValue {
+  /**
+   * Bumped whenever registrations or decisions change. Decisions live in refs
+   * (synchronous reads), so this is what makes the context value a NEW reference
+   * on each change; without it, consumers never re-render and never re-read
+   * `isReady`/`getLeadToolCallId` after an update.
+   */
+  version: number;
   /** Record (or clear) a card's decision for its tool_call within an action. */
   setDecision: (
     actionId: string,
@@ -88,6 +95,7 @@ export const useApprovalContext = (): ApprovalContextValue => {
 };
 
 const FALLBACK: ApprovalContextValue = {
+  version: 0,
   setDecision: () => undefined,
   getDecision: () => undefined,
   getDecisions: () => [],
@@ -120,11 +128,14 @@ const isExpiredError = (error: unknown): boolean => {
  * and the cards only render inside a live chat view where those providers exist.
  */
 export default function ApprovalProvider({ children }: { children: React.ReactNode }) {
-  /** actionId → (tool_call_id → resolution). Mutable ref + a version bump so
-   *  reads are synchronous for `isReady`/submit while renders stay cheap. */
+  /** actionId → (tool_call_id → resolution). Mutable refs so reads are
+   *  synchronous for `isReady`/submit; `version` is threaded into the context
+   *  value so each bump produces a new value reference and consumers re-render
+   *  (the callbacks alone are referentially stable, so without it a bump would
+   *  never propagate past the memoized value). */
   const decisionsRef = useRef(new Map<string, Map<string, Agents.ToolApprovalResolution>>());
   const registeredRef = useRef(new Map<string, Set<string>>());
-  const [, bump] = useState(0);
+  const [version, bump] = useState(0);
   const rerender = useCallback(() => bump((v) => v + 1), []);
   const [statusByAction, setStatusByAction] = useState<Record<string, ActionStatus>>({});
 
@@ -220,6 +231,7 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
 
   const value = useMemo<ApprovalContextValue>(
     () => ({
+      version,
       setDecision,
       getDecision,
       getDecisions,
@@ -232,6 +244,7 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
       setStatus,
     }),
     [
+      version,
       setDecision,
       getDecision,
       getDecisions,
@@ -268,6 +281,9 @@ export function useResumeSubmit() {
   const approvalMutation = useSubmitToolApprovalMutation();
   const askMutation = useSubmitAskAnswerMutation();
   const { getDecisions, isReady, setStatus } = useApprovalContext();
+  /** React state cannot lock a second click in the same browser task. Keep a
+   *  synchronous action-id guard alongside the rendered submission status. */
+  const submittingToolActionIdsRef = useRef(new Set<string>());
   /** Ask status lives in Recoil so it works from the composer (outside the
    *  provider); tool-approval status stays on the context. */
   const { setAskStatus } = useAskSubmitStatus();
@@ -298,12 +314,23 @@ export function useResumeSubmit() {
       if (!fields || decisions.length === 0 || !isReady(actionId)) {
         return;
       }
+      if (submittingToolActionIdsRef.current.has(actionId)) {
+        return;
+      }
+      submittingToolActionIdsRef.current.add(actionId);
       setStatus(actionId, 'submitting');
       approvalMutation.mutate(
         { ...fields, actionId, decisions },
         {
           onSuccess: () => setStatus(actionId, 'submitted'),
-          onError: (error) => setStatus(actionId, isExpiredError(error) ? 'expired' : 'error'),
+          onError: (error) => {
+            const expired = isExpiredError(error);
+            if (!expired) {
+              // Network/validation failures are retryable; a 409 is terminal.
+              submittingToolActionIdsRef.current.delete(actionId);
+            }
+            setStatus(actionId, expired ? 'expired' : 'error');
+          },
         },
       );
     },

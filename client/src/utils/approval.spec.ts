@@ -11,6 +11,7 @@ import {
   resolveAskUserQuestionPart,
   getSubmittedAskAnswer,
   findLiveAskUserQuestion,
+  isAnsweredAskUserQuestionPart,
   splitOtherOption,
 } from './approval';
 
@@ -68,6 +69,37 @@ describe('applyPendingAction — tool_approval', () => {
       allowed_decisions: ['approve', 'reject'],
       description: 'Run search',
     });
+  });
+
+  it('replaces displayed tool args with the matching action request arguments', () => {
+    const originalArgs = { query: 'original model args' };
+    const rewrittenArgs = { query: 'rewritten by policy hook' };
+    const message = msg({ content: [toolCallPart('tc1', { args: originalArgs })] });
+    const action = toolApprovalAction({
+      payload: {
+        type: 'tool_approval',
+        action_requests: [
+          {
+            name: 'search',
+            arguments: rewrittenArgs,
+            tool_call_id: 'tc1',
+            description: 'Review rewritten search',
+          },
+        ],
+        review_configs: [
+          {
+            action_name: 'search',
+            tool_call_id: 'tc1',
+            allowed_decisions: ['approve', 'reject', 'edit', 'respond'],
+          },
+        ],
+      },
+    });
+
+    const result = applyPendingAction(message, action);
+
+    expect(getToolCall(result.content?.[0] as TMessageContentParts)?.args).toEqual(rewrittenArgs);
+    expect(getToolCall(message.content?.[0] as TMessageContentParts)?.args).toEqual(originalArgs);
   });
 
   it('leaves a completed tool call (with output) untouched and returns the same message reference', () => {
@@ -390,6 +422,52 @@ describe('findLiveAskUserQuestion', () => {
     expect(findLiveAskUserQuestion([msg({ content: [textPart('hi')] })])).toBeNull();
     expect(findLiveAskUserQuestion(null)).toBeNull();
     expect(findLiveAskUserQuestion(undefined)).toBeNull();
+  });
+
+  /**
+   * The strip on answer-submit is a store write, so any holder of an older copy
+   * of the message (the SSE step handler's in-flight cache, a replayed event)
+   * can put the card back. Honouring a resurrected card reopened the popover
+   * over a question the user had already answered, options greyed out.
+   */
+  it('ignores a resurrected card for an answered question', () => {
+    const paused = applyPendingAction(msg({ content: [] }), askAction({ actionId: 'a-answered' }));
+    expect(findLiveAskUserQuestion([paused])?.actionId).toBe('a-answered');
+
+    resolveAskUserQuestionPart(paused, 'a-answered', 'Ada');
+
+    // `paused` is the pre-answer copy — exactly what a stale cache writes back.
+    expect(findLiveAskUserQuestion([paused])).toBeNull();
+  });
+
+  it('falls back to an older live question when the newest is answered', () => {
+    const older = applyPendingAction(msg({ content: [] }), askAction({ actionId: 'a-live' }));
+    const newer = applyPendingAction(
+      { ...msg({ content: [] }), messageId: 'm2' },
+      askAction({ actionId: 'a-done' }),
+    );
+    resolveAskUserQuestionPart(newer, 'a-done', 'Ada');
+
+    expect(findLiveAskUserQuestion([older, newer])?.actionId).toBe('a-live');
+  });
+});
+
+describe('isAnsweredAskUserQuestionPart', () => {
+  it('marks only cards whose question was actually answered', () => {
+    const live = applyPendingAction(msg({ content: [] }), askAction({ actionId: 'a-open' }));
+    const answered = applyPendingAction(msg({ content: [] }), askAction({ actionId: 'a-closed' }));
+    resolveAskUserQuestionPart(answered, 'a-closed', 'Ada');
+
+    expect(isAnsweredAskUserQuestionPart(answered.content?.[0])).toBe(true);
+    expect(isAnsweredAskUserQuestionPart(live.content?.[0])).toBe(false);
+    expect(isAnsweredAskUserQuestionPart(textPart('hi'))).toBe(false);
+    expect(isAnsweredAskUserQuestionPart(undefined)).toBe(false);
+  });
+
+  it('stays false for a question whose resolve found no matching card', () => {
+    const paused = applyPendingAction(msg({ content: [] }), askAction({ actionId: 'a-other' }));
+    resolveAskUserQuestionPart(paused, 'a-missing', 'Ada');
+    expect(isAnsweredAskUserQuestionPart(paused.content?.[0])).toBe(false);
   });
 });
 

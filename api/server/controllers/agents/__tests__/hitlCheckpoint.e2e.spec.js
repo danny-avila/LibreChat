@@ -147,14 +147,9 @@ beforeAll(async () => {
 
   GenerationJobManager.configure({ ...createStreamServices(), cleanupOnComplete: false });
   GenerationJobManager.initialize();
-  // Mirrors api/server/index.js: expiry prunes the paused run's durable checkpoint.
-  GenerationJobManager.setApprovalExpiredHandler(async (conversationId) => {
-    await deleteAgentCheckpoint(conversationId, MONGO_CFG);
-  });
 }, 60000);
 
 afterAll(async () => {
-  GenerationJobManager.setApprovalExpiredHandler(null);
   await GenerationJobManager.destroy();
   await mongoose.disconnect();
   await mongoServer.stop();
@@ -313,7 +308,7 @@ describe('HITL checkpoint lifecycle (full wiring)', () => {
     expect(job).toBeDefined();
   });
 
-  test('an abandoned pause is pruned eagerly on approval EXPIRY (not left to the TTL)', async () => {
+  test('an abandoned pause expires without deleting a replacement-scoped checkpoint', async () => {
     const conversationId = `e2e-expiry-${Date.now()}`;
     const run = await buildHitlRun({
       saver,
@@ -336,12 +331,15 @@ describe('HITL checkpoint lifecycle (full wiring)', () => {
     });
     await GenerationJobManager.approvals.pause(conversationId, pendingAction);
 
-    // The sweeper/stale-submit path: expiry fires the registered checkpoint prune.
+    // Expiry finalizes the stream, while checkpoint cleanup remains TTL-scoped. A
+    // thread-wide eager delete can race a replacement run on the same conversation.
     expect(await GenerationJobManager.expireApproval(conversationId, pendingAction.actionId)).toBe(
       true,
     );
 
     expect(await GenerationJobManager.getJobStatus(conversationId)).toBe('aborted');
+    expect((await checkpointCounts(conversationId)).checkpoints).toBeGreaterThan(0);
+    await deleteAgentCheckpoint(conversationId, MONGO_CFG);
     expect(await checkpointCounts(conversationId)).toEqual({ checkpoints: 0, writes: 0 });
   });
 });

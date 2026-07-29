@@ -26,6 +26,8 @@ jest.mock('~/store', () => {
     default: {
       conversationByIndex: () =>
         atom({ key: `mock-conversationByIndex-${counter++}`, default: null }),
+      conversationIdByIndex: () =>
+        atom({ key: `mock-conversationIdByIndex-${counter++}`, default: null }),
       newChatSwitchToHistory: switchAtom,
       customShortcuts: customShortcutsAtom,
     },

@@ -13,6 +13,7 @@ on:
       - "packages/data-provider/src/**"
       - "packages/client/**"
       - "packages/data-schemas/src/**"
+      - "!**.md"
 
 jobs:
   detect-unused-i18n-keys:

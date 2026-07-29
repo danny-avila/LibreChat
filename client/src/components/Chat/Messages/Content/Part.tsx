@@ -222,6 +222,7 @@ const Part = memo(function Part({
               output={typeof toolCall.output === 'string' ? toolCall.output : ''}
               toolCallId={toolCall.id}
               isSubmitting={isSubmitting}
+              failed={'inputValidationError' in toolCall && toolCall.inputValidationError === true}
             />
           );
         } else if (toolCall.name === 'skill') {
@@ -326,6 +327,7 @@ const Part = memo(function Part({
           <ToolCall
             args={toolCall.args ?? ''}
             name={toolCall.name || ''}
+            toolCallId={toolCallId}
             output={toolCall.output ?? ''}
             initialProgress={toolCall.progress ?? 0.1}
             isSubmitting={isSubmitting}

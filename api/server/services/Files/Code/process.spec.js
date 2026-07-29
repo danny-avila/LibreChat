@@ -115,10 +115,11 @@ jest.mock('@librechat/agents', () => ({
 
 // Mock models
 const mockClaimCodeFile = jest.fn();
+const mockUpdateFile = jest.fn();
 jest.mock('~/models', () => ({
   createFile: jest.fn().mockResolvedValue({}),
   getFiles: jest.fn(),
-  updateFile: jest.fn(),
+  updateFile: mockUpdateFile,
   claimCodeFile: (...args) => mockClaimCodeFile(...args),
 }));
 
@@ -165,6 +166,7 @@ const {
   processCodeOutput,
   getSessionInfo,
   readSandboxFile,
+  readSandboxImage,
   writeSandboxFile,
   primeFiles,
 } = require('./process');
@@ -224,6 +226,7 @@ describe('Code Process', () => {
         conversationId: 'conv-123',
         file_id: 'mock-uuid-1234',
         user: 'user-123',
+        sourceDispatchedAt: expect.any(Number),
       });
 
       expect(result.file_id).toBe('existing-file-id');
@@ -245,6 +248,138 @@ describe('Code Process', () => {
       expect(result.file_id).toBe('mock-uuid-1234');
       expect(result.usage).toBe(1);
       expect(getRetentionExpiry).toHaveBeenCalledWith(baseParams.req);
+    });
+
+    it('skips the file when the claim is newer than the background run (stale-harvest guard)', async () => {
+      /* A newer run owns the filename slot and the (filename, conversationId)
+       * unique index leaves stale bytes nowhere to live — the detached
+       * harvest must not overwrite fresh content. */
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        messageId: 'newer-run-msg',
+        updatedAt: '2024-01-02T00:00:00.000Z',
+      });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const result = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-01T00:00:00.000Z').getTime(),
+      });
+
+      expect(result).toBeNull();
+    });
+
+    it('still reuses the claim when it predates the background run', async () => {
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      });
+      mockUpdateFile.mockResolvedValue({ file_id: 'existing-file-id' });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const { file: result } = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-02T00:00:00.000Z').getTime(),
+      });
+
+      expect(result.file_id).toBe('existing-file-id');
+    });
+
+    it('skips when a newer task holds an unwritten claim (insert stamp, no updatedAt yet)', async () => {
+      /* A newer task claimed the filename but its content write is still in
+       * flight: the claim-insert stamp alone must trip the guard. */
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        metadata: {
+          sourceDispatchedAt: new Date('2024-01-02T00:00:00.000Z').getTime(),
+        },
+      });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const result = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-01T00:00:00.000Z').getTime(),
+      });
+
+      expect(result).toBeNull();
+    });
+
+    it('commits background writes conditionally: an inserter overtaken mid-flight misses', async () => {
+      /* This task INSERTED the claim, then a newer task stamped and wrote
+       * while this one was still downloading — the ownership predicate is in
+       * the write's own filter, so the commit atomically misses. */
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'mock-uuid-1234',
+        user: 'user-123',
+      });
+      mockUpdateFile.mockResolvedValueOnce(null);
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const result = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-01T00:00:00.000Z').getTime(),
+      });
+
+      expect(result).toBeNull();
+      expect(mockUpdateFile).toHaveBeenCalledWith(
+        expect.objectContaining({ file_id: 'mock-uuid-1234' }),
+        {
+          $or: [
+            { 'metadata.sourceDispatchedAt': { $exists: false } },
+            {
+              'metadata.sourceDispatchedAt': {
+                $lte: new Date('2024-01-01T00:00:00.000Z').getTime(),
+              },
+            },
+          ],
+        },
+      );
+    });
+
+    it('commits when the conditional write matches (ownership held through the write)', async () => {
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      });
+      mockUpdateFile.mockResolvedValueOnce({ file_id: 'existing-file-id' });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const { file: result } = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-02T00:00:00.000Z').getTime(),
+      });
+
+      expect(result.file_id).toBe('existing-file-id');
+    });
+
+    it('lets a newer task overwrite an OLDER task that wrote late (writer dispatch order wins)', async () => {
+      /* Old task (dispatched Jan 1) settled late and wrote at Jan 3;
+       * this task was dispatched Jan 2. Wall-clock updatedAt is newer
+       * than our dispatch, but the WRITER is older — overwrite. */
+      mockClaimCodeFile.mockResolvedValue({
+        file_id: 'existing-file-id',
+        filename: 'test-file.txt',
+        updatedAt: '2024-01-03T00:00:00.000Z',
+        metadata: {
+          sourceDispatchedAt: new Date('2024-01-01T00:00:00.000Z').getTime(),
+        },
+      });
+      mockUpdateFile.mockResolvedValue({ file_id: 'existing-file-id' });
+      mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+      const { file: result } = await processCodeOutput({
+        ...baseParams,
+        freshClaimAfter: new Date('2024-01-02T00:00:00.000Z').getTime(),
+      });
+
+      expect(result.file_id).toBe('existing-file-id');
+      expect(result.metadata.sourceDispatchedAt).toBe(
+        new Date('2024-01-02T00:00:00.000Z').getTime(),
+      );
     });
   });
 
@@ -767,6 +902,7 @@ describe('Code Process', () => {
             storage_session_id: 'session-123',
             file_id: 'file-id-123',
           },
+          sourceDispatchedAt: expect.any(Number),
         });
       });
 
@@ -2067,6 +2203,115 @@ describe('Code Process', () => {
       });
       expect(result.toolContext).toContain('data-ready.xlsx');
       expect(result.toolContext).not.toContain('preview');
+    });
+  });
+
+  /**
+   * These drive the REAL reader against a mocked `/exec` transport (rather
+   * than mocking `readSandboxImage` itself), because the bug this covers
+   * lived entirely in the transport: base64 leaves the sandbox on stdout,
+   * which the runner truncates + SIGKILLs past `SANDBOX_OUTPUT_MAX_SIZE`.
+   */
+  describe('readSandboxImage', () => {
+    const crypto = require('crypto');
+    const PNG_HEADER = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    /** Reply as the sandbox would: serve `buffer` through the windowed reader. */
+    const serveFile = (buffer) =>
+      mockAxios.mockImplementation(async ({ data }) => {
+        const payload = JSON.parse(
+          Buffer.from(JSON.parse(/payload = ("[^"]+")/.exec(data.code)[1]), 'base64').toString(),
+        );
+        const slice = buffer.subarray(payload.offset, payload.offset + payload.chunk);
+        return {
+          data: {
+            stdout: JSON.stringify({
+              total: buffer.length,
+              n: slice.length,
+              b64: slice.toString('base64'),
+            }),
+          },
+        };
+      });
+
+    beforeEach(() => {
+      process.env.LIBRECHAT_CODE_BASEURL = 'http://code.test/v1';
+      delete process.env.LIBRECHAT_CODE_IMAGE_CHUNK_BYTES;
+      mockAxios.mockReset();
+    });
+
+    it('reassembles an image larger than one chunk, byte-for-byte', async () => {
+      /* 200KB of PNG-headed noise: > 6 chunks at the 32KB default, and the
+       * exact shape that used to blow the stdout cap and SIGKILL the job. */
+      const source = Buffer.concat([PNG_HEADER, crypto.randomBytes(200 * 1024)]);
+      serveFile(source);
+
+      const result = await readSandboxImage({ file_path: '/mnt/data/big.png' });
+
+      expect(mockAxios.mock.calls.length).toBeGreaterThan(1);
+      expect(result.bytes).toBe(source.length);
+      expect(Buffer.from(result.base64, 'base64').equals(source)).toBe(true);
+    });
+
+    it('reads a single-chunk image in one round-trip', async () => {
+      const source = Buffer.concat([PNG_HEADER, crypto.randomBytes(1024)]);
+      serveFile(source);
+
+      const result = await readSandboxImage({ file_path: '/mnt/data/small.png' });
+
+      expect(mockAxios).toHaveBeenCalledTimes(1);
+      expect(Buffer.from(result.base64, 'base64').equals(source)).toBe(true);
+    });
+
+    it('names the real cause when a chunk overflows the runner stdout cap', async () => {
+      /* The runner truncates stdout and SIGKILLs with status `OL`; the old
+       * reader parsed the truncated base64 and reported a misleading
+       * "unexpected output" instead of the fixable limit. */
+      mockAxios.mockResolvedValue({
+        data: { stdout: '{"total":999999,"n":32768,"b64":"iVBORw0KGg', status: 'OL', code: 137 },
+      });
+
+      await expect(readSandboxImage({ file_path: '/mnt/data/big.png' })).rejects.toThrow(
+        /exceeded the sandbox stdout limit/,
+      );
+    });
+
+    it('honors LIBRECHAT_CODE_IMAGE_CHUNK_BYTES', async () => {
+      process.env.LIBRECHAT_CODE_IMAGE_CHUNK_BYTES = '1024';
+      const source = Buffer.concat([PNG_HEADER, crypto.randomBytes(4 * 1024)]);
+      serveFile(source);
+
+      const result = await readSandboxImage({ file_path: '/mnt/data/x.png' });
+
+      expect(mockAxios.mock.calls.length).toBe(5);
+      expect(Buffer.from(result.base64, 'base64').equals(source)).toBe(true);
+    });
+
+    it('parses the reader JSON even when the shell emits a banner first', async () => {
+      const source = Buffer.concat([PNG_HEADER, crypto.randomBytes(64)]);
+      mockAxios.mockResolvedValue({
+        data: {
+          stdout: `motd banner\n${JSON.stringify({
+            total: source.length,
+            n: source.length,
+            b64: source.toString('base64'),
+          })}`,
+        },
+      });
+
+      const result = await readSandboxImage({ file_path: '/mnt/data/x.png' });
+
+      expect(Buffer.from(result.base64, 'base64').equals(source)).toBe(true);
+    });
+
+    it('refuses an oversize file in-sandbox without transferring bytes', async () => {
+      mockAxios.mockResolvedValue({
+        data: { stdout: JSON.stringify({ too_large: true, bytes: 9 * 1024 * 1024 }) },
+      });
+
+      const result = await readSandboxImage({ file_path: '/mnt/data/huge.png' });
+
+      expect(result).toEqual({ tooLarge: true, bytes: 9 * 1024 * 1024 });
+      expect(mockAxios).toHaveBeenCalledTimes(1);
     });
   });
 });

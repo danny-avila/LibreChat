@@ -22,7 +22,8 @@ import type { RunnableConfig } from '@langchain/core/runnables';
  *
  * Storage is bounded two ways: a Mongo TTL index reclaims runs that are never
  * resolved ({@link DEFAULT_CHECKPOINT_TTL_SECONDS}), and {@link deleteAgentCheckpoint}
- * prunes a thread's checkpoints eagerly on every terminal transition.
+ * prunes a thread's checkpoints after ordinary terminal transitions. Approval
+ * expiry relies on the TTL because a thread-wide eager delete can race a replacement run.
  */
 
 /**
@@ -413,6 +414,18 @@ export interface ResolvedCheckpointerConfig {
 }
 
 /**
+ * Exact checkpoint ids present before a resumed generation is claimed.
+ *
+ * Terminal resume cleanup deletes only this immutable set. A replacement turn
+ * that later pauses on the same `thread_id` receives fresh checkpoint ids and
+ * therefore cannot be removed by the predecessor's delayed cleanup.
+ */
+export interface AgentCheckpointGeneration {
+  threadId: string;
+  checkpointIds: string[];
+}
+
+/**
  * Apply defaults to the YAML `endpoints.agents.checkpointer` block. Mirrors
  * {@link resolveRecursionLimit} — the schema stays descriptive, defaults live here.
  */
@@ -514,16 +527,60 @@ async function buildMongoSaver(
 }
 
 /**
+ * Snapshot the durable checkpoint ids that belong to the generation about to
+ * resume. Capture this before atomically claiming the paused job; a replacement
+ * that wins before the claim makes that claim fail, while one that starts after
+ * the claim writes ids outside this snapshot.
+ */
+export async function captureAgentCheckpointGeneration(
+  threadId: string,
+  cfg?: TCheckpointerConfig,
+): Promise<AgentCheckpointGeneration> {
+  const generation: AgentCheckpointGeneration = { threadId, checkpointIds: [] };
+  if (!threadId) {
+    return generation;
+  }
+  try {
+    const saver = await getAgentCheckpointer(cfg);
+    const db = mongoose.connection.db;
+    if (!saver || !db) {
+      return generation;
+    }
+    const resolved = resolveCheckpointerConfig(cfg);
+    const checkpoints = await db
+      .collection<{ checkpoint_id?: string }>(resolved.checkpointCollectionName)
+      .find({ thread_id: threadId }, { projection: { _id: 0, checkpoint_id: 1 } })
+      .toArray();
+    generation.checkpointIds = checkpoints.reduce<string[]>((ids, checkpoint) => {
+      if (typeof checkpoint.checkpoint_id === 'string') {
+        ids.push(checkpoint.checkpoint_id);
+      }
+      return ids;
+    }, []);
+  } catch (err) {
+    logger.warn(
+      `[checkpointer] Failed to capture checkpoint generation for thread ${threadId}:`,
+      err,
+    );
+  }
+  return generation;
+}
+
+/**
  * Prune a thread's checkpoints on a terminal transition — natural completion,
  * abort, or expiry — so the durable store stays bounded. The TTL index is the
  * safety net; this is the eager cleanup. No-op in memory mode or before any run
  * has built the saver (nothing to delete).
  *
  * @param threadId - the LangGraph `thread_id` (LibreChat's conversationId).
+ * @param generation - when present, delete only the checkpoint ids captured for
+ * this resumed generation; omitted by legacy callers that intentionally prune
+ * the entire thread.
  */
 export async function deleteAgentCheckpoint(
   threadId: string | undefined,
   cfg?: TCheckpointerConfig,
+  generation?: AgentCheckpointGeneration,
 ): Promise<void> {
   if (!threadId) {
     return;
@@ -533,6 +590,25 @@ export async function deleteAgentCheckpoint(
     return;
   }
   try {
+    if (generation) {
+      if (generation.threadId !== threadId || generation.checkpointIds.length === 0) {
+        return;
+      }
+      const db = mongoose.connection.db;
+      if (!db) {
+        return;
+      }
+      const resolved = resolveCheckpointerConfig(cfg);
+      const filter = {
+        thread_id: threadId,
+        checkpoint_id: { $in: generation.checkpointIds },
+      };
+      await Promise.all([
+        db.collection(resolved.checkpointCollectionName).deleteMany(filter),
+        db.collection(resolved.checkpointWritesCollectionName).deleteMany(filter),
+      ]);
+      return;
+    }
     await saver.deleteThread(threadId);
   } catch (err) {
     logger.warn(`[checkpointer] Failed to delete checkpoints for thread ${threadId}:`, err);

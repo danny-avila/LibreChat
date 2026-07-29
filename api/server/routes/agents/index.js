@@ -71,8 +71,18 @@ router.use(uaParser);
 router.get('/chat/stream/:streamId', async (req, res) => {
   const { streamId } = req.params;
   const isResume = req.query.resume === 'true';
+  let result;
+  const attachmentAbortController = new AbortController();
+  req.on('close', () => {
+    logger.debug(`[AgentStream] Client disconnected from ${streamId}`);
+    attachmentAbortController.abort();
+    result?.unsubscribe();
+  });
 
   const job = await GenerationJobManager.getJob(streamId);
+  if (attachmentAbortController.signal.aborted) {
+    return;
+  }
   if (!job) {
     return res.status(404).json({
       error: 'Stream not found',
@@ -129,13 +139,13 @@ router.get('/chat/stream/:streamId', async (req, res) => {
     }
   };
 
-  let result;
-
   if (isResume) {
     const { subscription, resumeState, pendingEvents } =
-      await GenerationJobManager.subscribeWithResume(streamId, writeEvent, onDone, onError);
+      await GenerationJobManager.subscribeWithResume(streamId, writeEvent, onDone, onError, {
+        signal: attachmentAbortController.signal,
+      });
 
-    if (!res.writableEnded) {
+    if (subscription && !attachmentAbortController.signal.aborted && !res.writableEnded) {
       if (resumeState) {
         writeEvent({ sync: true, resumeState, pendingEvents });
         GenerationJobManager.markSyncSent(streamId);
@@ -150,23 +160,27 @@ router.get('/chat/stream/:streamId', async (req, res) => {
           `[AgentStream] Resume state null for ${streamId}, replayed ${pendingEvents.length} gap events directly`,
         );
       }
+      subscription.activate();
+    } else {
+      subscription?.unsubscribe();
     }
 
     result = subscription;
   } else {
-    result = await GenerationJobManager.subscribe(streamId, writeEvent, onDone, onError);
+    result = await GenerationJobManager.subscribe(streamId, writeEvent, onDone, onError, {
+      signal: attachmentAbortController.signal,
+    });
   }
 
+  if (attachmentAbortController.signal.aborted) {
+    result?.unsubscribe();
+    return;
+  }
   if (!result) {
     streamTelemetry.recordSubscribeFailed();
     onError('Failed to subscribe to stream');
     return;
   }
-
-  req.on('close', () => {
-    logger.debug(`[AgentStream] Client disconnected from ${streamId}`);
-    result.unsubscribe();
-  });
 });
 
 /**

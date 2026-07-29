@@ -1,8 +1,7 @@
 import { memo, useMemo, useState, useCallback } from 'react';
-import { X } from 'lucide-react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
-import { InfoHoverCard, ESide } from '@librechat/client';
+import { InfoHoverCard, ESide, UserIcon } from '@librechat/client';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import type { TMessageIcon } from '~/common';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
@@ -11,7 +10,6 @@ import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import Image from '~/components/Chat/Messages/Content/Image';
-import { useAuthContext } from '~/hooks/AuthContext';
 import { fontSizeAtom } from '~/store/fontSize';
 import { useShareContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -25,29 +23,26 @@ const USER_ICON: TMessageIcon = { isCreatedByUser: true };
  * assistant response — same icon, author header, and text presentation as any
  * user turn, placed where the words enter the run so the visible order equals
  * what the next turn replays (`ContentTypes.STEER` splits back into a
- * HumanMessage server-side). Renders identically as the optimistic entry
- * (`pending`, before the server applies it), as the persisted part live and
- * on reload, and in shared/search views.
+ * HumanMessage server-side). Only the server-applied part renders here, at its
+ * authoritative index; a steer still in flight lives in the composer's chip
+ * stack. Renders identically live, on reload, and in shared/search views.
  */
 const SteerPart = memo(function SteerPart({
   steer,
   files,
   steerId,
   createdAt,
-  pending = false,
-  onCancel,
 }: {
   steer: string;
   files?: TMessage['files'];
   /** Anchors the part for the message-nav rail (`#steer-<id>` rib target). */
   steerId?: string;
   createdAt?: number;
-  pending?: boolean;
-  /** Cancels a steer still waiting on its injection boundary (pending only). */
-  onCancel?: () => void;
 }) {
   const localize = useLocalize();
-  const { user } = useAuthContext();
+  /** Read the atom rather than the auth context: AuthContextProvider mirrors the
+   *  user into it, and the public share route mounts outside that provider. */
+  const user = useRecoilValue(store.user);
   const fontSize = useAtomValue(fontSizeAtom);
   const { isSharedConvo } = useShareContext();
   const usernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
@@ -91,14 +86,29 @@ const SteerPart = memo(function SteerPart({
         /* Outdented past the response's icon column so the steer sits flush
          * with top-level message rows — it reads as a regular user message. */
         'steer-render group relative my-4 -ml-9 flex w-[calc(100%+2.25rem)] gap-3',
-        pending && 'opacity-80',
       )}
       data-testid="steer-part"
-      data-steer-pending={pending || undefined}
     >
       <div className="relative flex flex-shrink-0 flex-col items-center">
         <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-          <MessageIcon iconData={USER_ICON} />
+          {isSharedConvo === true ? (
+            /** The atom still holds the viewer's identity when a signed-in user opens
+             *  a share link, so rendering the identity-bearing avatar here would put
+             *  the viewer's face on the sharer's steer. Mirrors Share/MessageIcon. */
+            <div
+              style={{
+                backgroundColor: 'rgb(121, 137, 255)',
+                width: '20px',
+                height: '20px',
+                boxShadow: 'rgba(240, 246, 252, 0.1) 0px 0px 0px 1px',
+              }}
+              className="relative flex h-9 w-9 items-center justify-center rounded-sm p-1 text-white"
+            >
+              <UserIcon />
+            </div>
+          ) : (
+            <MessageIcon iconData={USER_ICON} />
+          )}
         </div>
       </div>
       <div className="user-turn relative flex w-11/12 flex-col">
@@ -115,17 +125,6 @@ const SteerPart = memo(function SteerPart({
             <InfoHoverCard side={ESide.Top} text={localize('com_ui_steered_info')} />
           </span>
           <MessageTimestamp value={timestamp} />
-          {onCancel != null && (
-            <button
-              type="button"
-              onClick={onCancel}
-              aria-label={localize('com_ui_steer_cancel')}
-              data-testid="steer-cancel"
-              className="ml-2 rounded-full p-0.5 align-middle text-text-secondary opacity-0 transition-opacity duration-200 hover:bg-surface-tertiary hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy group-hover:opacity-100"
-            >
-              <X className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          )}
         </h2>
         <div className="flex flex-col items-start gap-2">
           {(imageFiles.length > 0 || otherFiles.length > 0) && (

@@ -38,6 +38,7 @@ jest.mock('sharp', () =>
 
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
+  mergeDeploymentSkillIds: jest.fn((ids) => ids),
   refreshS3Url: jest.fn(),
 }));
 
@@ -92,7 +93,7 @@ const {
   getResourcePermissionsMap,
 } = require('~/server/services/PermissionService');
 
-const { refreshS3Url } = require('@librechat/api');
+const { mergeDeploymentSkillIds, refreshS3Url } = require('@librechat/api');
 
 /**
  * @type {import('mongoose').Model<import('@librechat/data-schemas').IAgent>}
@@ -155,6 +156,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
     // Reset all mocks
     jest.clearAllMocks();
+    mergeDeploymentSkillIds.mockImplementation((ids) => ids);
 
     // Setup mock request and response objects
     mockReq = {
@@ -1850,6 +1852,32 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(response.data[0].skills_enabled).toBeUndefined();
     });
 
+    test('should preserve deployment skill scope for VIEW list callers', async () => {
+      const deploymentSkillId = new mongoose.Types.ObjectId();
+      await Agent.findByIdAndUpdate(agentA1._id, {
+        skills_enabled: true,
+        skills: [deploymentSkillId.toString()],
+      });
+
+      mockReq.user.id = userB.toString();
+      mockReq.query.requiredPermission = String(PermissionBits.VIEW);
+      findAccessibleResources.mockImplementation(({ resourceType }) => {
+        if (resourceType === ResourceType.AGENT) {
+          return Promise.resolve([agentA1._id]);
+        }
+        return Promise.resolve([]);
+      });
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+      mergeDeploymentSkillIds.mockImplementation((ids) => [...ids, deploymentSkillId]);
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].skills_enabled).toBe(true);
+      expect(response.data[0].skills).toEqual([deploymentSkillId.toString()]);
+    });
+
     test('should preserve enabled skill scope for VIEW list callers with an empty allowlist', async () => {
       await Agent.findByIdAndUpdate(agentA1._id, {
         skills_enabled: true,
@@ -2447,7 +2475,7 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         name: 'Attacker Agent',
         provider: 'openai',
         model: 'gpt-4',
-        edges: [{ from: 'self_placeholder', to: targetAgent.id, edgeType: 'handoff' }],
+        edges: [{ from: '', to: targetAgent.id, edgeType: 'handoff' }],
       };
 
       await createAgentHandler(mockReq, mockRes);
@@ -2465,25 +2493,33 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         name: 'Legit Agent',
         provider: 'openai',
         model: 'gpt-4',
-        edges: [{ from: 'self_placeholder', to: targetAgent.id, edgeType: 'handoff' }],
+        edges: [{ from: '', to: targetAgent.id, edgeType: 'handoff' }],
       };
 
       await createAgentHandler(mockReq, mockRes);
 
       expect(mockRes.status).toHaveBeenCalledWith(201);
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.edges).toEqual([
+        { from: response.id, to: targetAgent.id, edgeType: 'handoff' },
+      ]);
     });
 
-    test('createAgentHandler should allow edges referencing non-existent agents (self-reference at create time)', async () => {
+    test('createAgentHandler should reject a non-existent handoff target', async () => {
       mockReq.body = {
-        name: 'Self-Ref Agent',
+        name: 'Dangling Edge Agent',
         provider: 'openai',
         model: 'gpt-4',
-        edges: [{ from: 'agent_does_not_exist_yet', to: 'agent_also_new', edgeType: 'handoff' }],
+        edges: [{ from: '', to: 'agent_missing_target', edgeType: 'handoff' }],
       };
 
       await createAgentHandler(mockReq, mockRes);
 
-      expect(mockRes.status).toHaveBeenCalledWith(201);
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'One or more agents referenced in edges do not exist',
+        agent_ids: ['agent_missing_target'],
+      });
     });
 
     test('updateAgentHandler should return 403 when user lacks VIEW on an edge-referenced agent', async () => {
@@ -2512,6 +2548,42 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(response.agent_ids).not.toContain(ownedAgent.id);
     });
 
+    test('updateAgentHandler should repair a legacy empty handoff source', async () => {
+      const ownedAgent = await Agent.create({
+        id: `agent_${nanoid()}`,
+        author: mockReq.user.id,
+        name: 'Legacy Router',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+        edges: [{ from: '', to: targetAgent.id, edgeType: 'handoff' }],
+      });
+      getResourcePermissionsMap.mockResolvedValueOnce(
+        new Map([
+          [ownedAgent._id.toString(), PermissionBits.VIEW],
+          [targetAgent._id.toString(), PermissionBits.VIEW],
+        ]),
+      );
+
+      mockReq.params = { id: ownedAgent.id };
+      mockReq.body = {
+        edges: [{ from: '', to: targetAgent.id, edgeType: 'handoff' }],
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          edges: [{ from: ownedAgent.id, to: targetAgent.id, edgeType: 'handoff' }],
+        }),
+      );
+      const persisted = await Agent.findOne({ id: ownedAgent.id }).lean();
+      expect(persisted.edges).toEqual([
+        { from: ownedAgent.id, to: targetAgent.id, edgeType: 'handoff' },
+      ]);
+    });
+
     test('updateAgentHandler should succeed when edges field is absent from payload', async () => {
       const ownedAgent = await Agent.create({
         id: `agent_${nanoid()}`,
@@ -2530,6 +2602,239 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(mockRes.status).not.toHaveBeenCalledWith(403);
       const response = mockRes.json.mock.calls[0][0];
       expect(response.name).toBe('Renamed Agent');
+    });
+
+    test('duplicateAgentHandler should move current and legacy handoff sources to the clone', async () => {
+      const sourceAgentId = `agent_${nanoid()}`;
+      const secondTarget = await Agent.create({
+        id: `agent_${nanoid()}`,
+        author: new mongoose.Types.ObjectId().toString(),
+        name: 'Second Target Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+      });
+      const sourceAgent = await Agent.create({
+        id: sourceAgentId,
+        author: mockReq.user.id,
+        name: 'Legacy Clone Source',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+        edges: [
+          { from: sourceAgentId, to: targetAgent.id, edgeType: 'handoff' },
+          { from: '', to: secondTarget.id, edgeType: 'handoff' },
+        ],
+      });
+      getResourcePermissionsMap.mockResolvedValueOnce(
+        new Map([
+          [targetAgent._id.toString(), PermissionBits.VIEW],
+          [secondTarget._id.toString(), PermissionBits.VIEW],
+        ]),
+      );
+      jest.spyOn(require('~/models'), 'getActions').mockResolvedValueOnce([]);
+
+      mockReq.params = { id: sourceAgent.id };
+
+      await duplicateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      const { agent } = mockRes.json.mock.calls[0][0];
+      expect(agent.edges).toEqual([
+        { from: agent.id, to: targetAgent.id, edgeType: 'handoff' },
+        { from: agent.id, to: secondTarget.id, edgeType: 'handoff' },
+      ]);
+    });
+
+    test('duplicateAgentHandler should return 400 for a missing handoff target', async () => {
+      const missingTargetId = `agent_${nanoid()}`;
+      const sourceAgent = await Agent.create({
+        id: `agent_${nanoid()}`,
+        author: mockReq.user.id,
+        name: 'Stale Clone Source',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+        edges: [{ from: '', to: missingTargetId, edgeType: 'handoff' }],
+      });
+
+      mockReq.params = { id: sourceAgent.id };
+
+      await duplicateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'One or more agents referenced in edges do not exist',
+        agent_ids: [missingTargetId],
+      });
+      expect(await Agent.countDocuments()).toBe(2);
+    });
+
+    test('duplicateAgentHandler should return 403 without VIEW access to a handoff target', async () => {
+      const sourceAgentId = `agent_${nanoid()}`;
+      const sourceAgent = await Agent.create({
+        id: sourceAgentId,
+        author: mockReq.user.id,
+        name: 'Restricted Clone Source',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+        edges: [{ from: sourceAgentId, to: targetAgent.id, edgeType: 'handoff' }],
+      });
+      getResourcePermissionsMap.mockResolvedValueOnce(new Map());
+
+      mockReq.params = { id: sourceAgent.id };
+
+      await duplicateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'You do not have access to one or more agents referenced in edges',
+        agent_ids: [targetAgent.id],
+      });
+      expect(await Agent.countDocuments()).toBe(2);
+    });
+
+    test('revertAgentVersionHandler should clear handoffs when the historical version has none', async () => {
+      const agentId = `agent_${nanoid()}`;
+      await Agent.create({
+        id: agentId,
+        author: mockReq.user.id,
+        name: 'Current Router',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+        edges: [{ from: agentId, to: targetAgent.id, edgeType: 'handoff' }],
+        versions: [
+          {
+            name: 'Historical Router',
+            provider: 'openai',
+            model: 'gpt-4',
+            tools: [],
+          },
+        ],
+      });
+
+      mockReq.params = { id: agentId };
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(400);
+      const persisted = await Agent.findOne({ id: agentId }).lean();
+      expect(persisted.name).toBe('Historical Router');
+      expect(persisted.edges).toEqual([]);
+    });
+
+    test('revertAgentVersionHandler should restore accessible historical handoffs', async () => {
+      const agentId = `agent_${nanoid()}`;
+      const sourceAgent = await Agent.create({
+        id: agentId,
+        author: mockReq.user.id,
+        name: 'Current Router',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+        edges: [],
+        versions: [
+          {
+            name: 'Historical Router',
+            provider: 'openai',
+            model: 'gpt-4',
+            tools: [],
+            edges: [{ from: '', to: targetAgent.id, edgeType: 'handoff' }],
+          },
+        ],
+      });
+      getResourcePermissionsMap.mockResolvedValueOnce(
+        new Map([
+          [sourceAgent._id.toString(), PermissionBits.VIEW],
+          [targetAgent._id.toString(), PermissionBits.VIEW],
+        ]),
+      );
+
+      mockReq.params = { id: agentId };
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(400);
+      expect(mockRes.status).not.toHaveBeenCalledWith(403);
+      const persisted = await Agent.findOne({ id: agentId }).lean();
+      expect(persisted.name).toBe('Historical Router');
+      expect(persisted.edges).toEqual([{ from: agentId, to: targetAgent.id, edgeType: 'handoff' }]);
+    });
+
+    test('revertAgentVersionHandler should return 400 before restoring a missing handoff target', async () => {
+      const agentId = `agent_${nanoid()}`;
+      const missingTargetId = `agent_${nanoid()}`;
+      await Agent.create({
+        id: agentId,
+        author: mockReq.user.id,
+        name: 'Current Router',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+        versions: [
+          {
+            name: 'Stale Historical Router',
+            provider: 'openai',
+            model: 'gpt-4',
+            tools: [],
+            edges: [{ from: agentId, to: missingTargetId, edgeType: 'handoff' }],
+          },
+        ],
+      });
+
+      mockReq.params = { id: agentId };
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'One or more agents referenced in edges do not exist',
+        agent_ids: [missingTargetId],
+      });
+      const persisted = await Agent.findOne({ id: agentId }).lean();
+      expect(persisted.name).toBe('Current Router');
+    });
+
+    test('revertAgentVersionHandler should return 403 before restoring a restricted handoff target', async () => {
+      const agentId = `agent_${nanoid()}`;
+      const sourceAgent = await Agent.create({
+        id: agentId,
+        author: mockReq.user.id,
+        name: 'Current Router',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+        versions: [
+          {
+            name: 'Restricted Historical Router',
+            provider: 'openai',
+            model: 'gpt-4',
+            tools: [],
+            edges: [{ from: agentId, to: targetAgent.id, edgeType: 'handoff' }],
+          },
+        ],
+      });
+      getResourcePermissionsMap.mockResolvedValueOnce(
+        new Map([[sourceAgent._id.toString(), PermissionBits.VIEW]]),
+      );
+
+      mockReq.params = { id: agentId };
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'You do not have access to one or more agents referenced in edges',
+        agent_ids: [targetAgent.id],
+      });
+      const persisted = await Agent.findOne({ id: agentId }).lean();
+      expect(persisted.name).toBe('Current Router');
     });
   });
 });

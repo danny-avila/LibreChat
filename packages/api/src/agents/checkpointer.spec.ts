@@ -2,6 +2,7 @@ import {
   resolveCheckpointerConfig,
   getApprovalTtlMs,
   getAgentCheckpointer,
+  captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
   DEFAULT_CHECKPOINT_TTL_SECONDS,
   __resetCheckpointerForTests,
@@ -68,5 +69,12 @@ describe('deleteAgentCheckpoint', () => {
 
   test('is a no-op (no throw) when no durable saver is available', async () => {
     await expect(deleteAgentCheckpoint('conversation-1')).resolves.toBeUndefined();
+  });
+
+  test('captures an empty generation when no durable saver is available', async () => {
+    await expect(captureAgentCheckpointGeneration('conversation-1')).resolves.toEqual({
+      threadId: 'conversation-1',
+      checkpointIds: [],
+    });
   });
 });

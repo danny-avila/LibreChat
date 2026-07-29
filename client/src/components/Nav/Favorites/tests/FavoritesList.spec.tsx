@@ -526,4 +526,44 @@ describe('FavoritesList', () => {
       expect(types).toEqual(['agent', 'model', 'spec']);
     });
   });
+
+  describe('drag source by pointer capability', () => {
+    const mockHover = (hasHover: boolean) => {
+      (window.matchMedia as jest.Mock).mockImplementation((query: string) => ({
+        matches: query === '(hover: hover)' ? hasHover : false,
+        media: query,
+        onchange: null,
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        dispatchEvent: jest.fn(),
+      }));
+    };
+
+    const renderFavoriteWrapper = async () => {
+      mockFavorites.push({ model: 'gpt-5', endpoint: 'openai' });
+      const { findByTestId } = renderWithProviders(<FavoritesList />);
+      const item = await findByTestId('favorite-item');
+      return item.closest('[data-handler-id]');
+    };
+
+    it('connects the drag source on a hover-capable pointer', async () => {
+      mockHover(true);
+
+      const wrapper = await renderFavoriteWrapper();
+
+      await waitFor(() => expect(wrapper).toHaveAttribute('draggable', 'true'));
+    });
+
+    it('leaves the row undraggable on touch so the first tap selects it', async () => {
+      mockHover(false);
+
+      const wrapper = await renderFavoriteWrapper();
+
+      /** iOS Safari gives a touch on a draggable element to the drag recognizer
+       * instead of synthesizing a click, costing the row its first tap. */
+      expect(wrapper).not.toHaveAttribute('draggable', 'true');
+    });
+  });
 });

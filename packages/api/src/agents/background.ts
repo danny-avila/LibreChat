@@ -41,6 +41,16 @@ import { truncateMiddle } from '~/utils';
 /** Argument the model sets on a tool call to dispatch it in the background. */
 export const RUN_IN_BACKGROUND_ARG = 'run_in_background';
 
+/**
+ * `type` of the synthetic attachment emitted on a poll turn when a harvested
+ * code task settles — the live "this backgrounded call finished" signal for
+ * the original tool-call card (stdout-only runs emit no file attachments, so
+ * attachment presence alone can't signal completion). Rides the existing
+ * `attachment` SSE channel; never persisted. Mirrored in
+ * `client/src/components/Chat/Messages/Content/Parts/handle.ts`.
+ */
+export const BACKGROUND_STATUS_ATTACHMENT_TYPE = 'background_task_status';
+
 /** Poll tool name (LibreChat host-special-cased, not an SDK tool). */
 export const CHECK_BACKGROUND_TASK_NAME: string = Constants.CHECK_BACKGROUND_TASK;
 
@@ -49,10 +59,14 @@ export const CHECK_BACKGROUND_TASK_NAME: string = Constants.CHECK_BACKGROUND_TAS
  * direct/host-special path (so the host `ON_TOOL_EXECUTE` interception never
  * sees them), depend on synchronous artifact/code-session continuity, or are
  * the background machinery itself.
+ *
+ * `execute_code`/`bash_tool` are NOT excluded: they flow through the generic
+ * `ON_TOOL_EXECUTE` path, the detached invoke carries their code-session
+ * config, and their completion is harvested onto the dispatch turn's message
+ * (files persisted + tool-call output patched), with the exec session folded
+ * back into the run's shared code session on poll.
  */
 const EXCLUDED_BACKGROUND_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
-  AgentConstants.EXECUTE_CODE,
-  AgentConstants.BASH_TOOL,
   AgentConstants.READ_FILE,
   AgentConstants.SKILL_TOOL,
   AgentConstants.TOOL_SEARCH,
@@ -79,6 +93,37 @@ const EXCLUDED_BACKGROUND_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   'image_gen_oai',
   'image_edit_oai',
 ]);
+
+/**
+ * The `execute_code` capability marker expands into the `bash_tool` definition
+ * at load time (there is one code-execution tool path end-to-end), so a code
+ * background opt-in keyed by EITHER name covers the pair. Synthesized
+ * ephemeral/model-spec options and hand-edited agents typically carry only the
+ * `execute_code` key; without this the actual runtime def (`bash_tool`) would
+ * silently never receive the injected param.
+ */
+function expandCodeToolOptions(toolOptions?: AgentToolOptions): AgentToolOptions | undefined {
+  if (!toolOptions) {
+    return toolOptions;
+  }
+  const codeOptIn =
+    toolOptions[AgentConstants.EXECUTE_CODE]?.run_in_background === true ||
+    toolOptions[AgentConstants.BASH_TOOL]?.run_in_background === true;
+  if (!codeOptIn) {
+    return toolOptions;
+  }
+  return {
+    ...toolOptions,
+    [AgentConstants.EXECUTE_CODE]: {
+      ...toolOptions[AgentConstants.EXECUTE_CODE],
+      run_in_background: true,
+    },
+    [AgentConstants.BASH_TOOL]: {
+      ...toolOptions[AgentConstants.BASH_TOOL],
+      run_in_background: true,
+    },
+  };
+}
 
 /**
  * Whether a tool may be dispatched in the background. Handoff tools
@@ -333,7 +378,8 @@ export function applyBackgroundToolCalls(params: {
    */
   excludeTool?: (toolName: string) => boolean;
 }): { toolDefinitions: LCTool[]; backgroundToolNames: string[] } {
-  const { toolRegistry, toolOptions, excludeTool } = params;
+  const { toolRegistry, excludeTool } = params;
+  const toolOptions = expandCodeToolOptions(params.toolOptions);
   const defs = params.toolDefinitions ?? [];
   if (!toolOptions || !Object.values(toolOptions).some((o) => o?.run_in_background === true)) {
     return { toolDefinitions: defs, backgroundToolNames: [] };
@@ -410,6 +456,11 @@ export interface BackgroundTask {
   id: string;
   toolName: string;
   toolCallId: string;
+  /** The dispatch turn's response messageId, for post-hoc result anchoring. */
+  messageId?: string;
+  /** The dispatching agent, disambiguating repeated provider tool-call ids
+   *  (e.g. `call_0`) across agents when patching the dispatch turn. */
+  agentId?: string;
   status: BackgroundTaskStatus;
   /** Tool result content once completed. */
   result?: string;
@@ -419,6 +470,20 @@ export interface BackgroundTask {
    * it can't ride that turn). Cleared once delivered to free memory.
    */
   artifact?: unknown;
+  /**
+   * Attachments persisted onto the dispatch turn's message by the
+   * completion-time harvest (code tools). Retained until the task is swept so
+   * every poll can re-emit them on its live stream (the client upserts by
+   * `file_id`, so re-emission is idempotent) and re-anchor the row patch.
+   */
+  attachments?: unknown[];
+  /**
+   * True when a completion-time harvest was dispatched for this task (code
+   * tools with a wired persister). Suppresses the poll turn's legacy
+   * `toolEndCallback` delivery — the harvest already persisted the files with
+   * the ORIGINAL tool-call identity.
+   */
+  harvestStarted?: boolean;
   /** True once the artifact has been handed to a live poll turn's callback. */
   artifactDelivered?: boolean;
   /** Error message when status === 'error'. */
@@ -445,6 +510,19 @@ const MAX_TASKS_PER_BUCKET = 200;
 const MAX_RESULT_CHARS = 100_000;
 const MAX_ARTIFACT_CHARS = 10_000_000;
 const GLOBAL_SWEEP_INTERVAL_MS = 60 * 1000;
+
+let lastDispatchStamp = 0;
+/**
+ * Strictly-increasing dispatch stamp. `createdAt` orders writers in the
+ * stale-output guard (`sourceDispatchedAt`), which accepts equal stamps so
+ * idempotent re-commits of the SAME task pass — two same-millisecond
+ * dispatches would tie on raw `Date.now()` and let the older task overwrite
+ * the newer one's committed file. Process-local, like the registry itself.
+ */
+function nextDispatchStamp(now: number): number {
+  lastDispatchStamp = lastDispatchStamp < now ? now : lastDispatchStamp + 1;
+  return lastDispatchStamp;
+}
 
 function toStoredContent(content: unknown): string {
   const asString = typeof content === 'string' ? content : JSON.stringify(content ?? '');
@@ -562,8 +640,13 @@ export class BackgroundTaskRegistryClass {
     conversationId: string;
     toolCallId: string;
     toolName: string;
+    messageId?: string;
     runId?: string;
     agentId?: string;
+    /** Set at dispatch when a settle-time harvest WILL run, so tasks that
+     *  never settle (reaped as timed out) still take the marker/heal path
+     *  instead of leaving the original card on "running" forever. */
+    harvestStarted?: boolean;
   }): { task: BackgroundTask; isNew: boolean } | { atCapacity: true } {
     const now = Date.now();
     this.sweep(now);
@@ -611,8 +694,11 @@ export class BackgroundTaskRegistryClass {
       id: randomUUID(),
       toolName: params.toolName,
       toolCallId: params.toolCallId,
+      messageId: params.messageId,
+      agentId: params.agentId,
+      ...(params.harvestStarted === true ? { harvestStarted: true } : {}),
       status: 'running',
-      createdAt: now,
+      createdAt: nextDispatchStamp(now),
       updatedAt: now,
     };
     bucket.tasks.set(task.id, task);
@@ -638,16 +724,35 @@ export class BackgroundTaskRegistryClass {
     userId: string,
     conversationId: string,
     taskId: string,
-    result: { content: unknown; artifact?: unknown },
+    result: { content: unknown; artifact?: unknown; harvestStarted?: boolean },
   ): void {
     this.update(userId, conversationId, taskId, {
       status: 'completed',
       result: toStoredContent(result.content),
       artifact: toStoredArtifact(taskId, result.artifact),
+      ...(result.harvestStarted === true ? { harvestStarted: true } : {}),
       /** Marks that an artifact existed even after `claimArtifact` clears it,
        *  so re-polls keep the "produced an artifact" note. */
       artifactDelivered: false,
     });
+  }
+
+  /**
+   * Records the attachments a (possibly still in-flight when polled)
+   * completion-time harvest persisted for a settled task. Arrives after
+   * `complete()` because the harvest must not gate task completion — the
+   * dispatch turn's message row may not exist until that turn finalizes.
+   */
+  attachHarvest(
+    userId: string,
+    conversationId: string,
+    taskId: string,
+    attachments: unknown[],
+  ): void {
+    if (attachments.length === 0) {
+      return;
+    }
+    this.update(userId, conversationId, taskId, { attachments });
   }
 
   /**
@@ -663,7 +768,16 @@ export class BackgroundTaskRegistryClass {
     userId: string,
     conversationId: string,
     taskId: string,
-  ): { toolName: string; artifact: unknown; content?: string } | undefined {
+  ):
+    | {
+        toolName: string;
+        toolCallId: string;
+        messageId?: string;
+        harvestStarted?: boolean;
+        artifact: unknown;
+        content?: string;
+      }
+    | undefined {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
     if (!task || task.status !== 'completed' || task.artifact == null || task.artifactDelivered) {
@@ -672,7 +786,14 @@ export class BackgroundTaskRegistryClass {
     const artifact = task.artifact;
     task.artifactDelivered = true;
     task.artifact = undefined;
-    return { toolName: task.toolName, artifact, content: task.result };
+    return {
+      toolName: task.toolName,
+      toolCallId: task.toolCallId,
+      messageId: task.messageId,
+      harvestStarted: task.harvestStarted,
+      artifact,
+      content: task.result,
+    };
   }
 
   /**
@@ -686,12 +807,44 @@ export class BackgroundTaskRegistryClass {
     if (!task || task.artifact != null) {
       return;
     }
-    task.artifact = artifact;
+    /** Same size bound as `complete()` — a restore path must not resurrect
+     *  an artifact the memory cap already discarded. */
+    task.artifact = toStoredArtifact(taskId, artifact);
     task.artifactDelivered = false;
   }
 
-  fail(userId: string, conversationId: string, taskId: string, error: string): void {
-    this.update(userId, conversationId, taskId, { status: 'error', error });
+  fail(
+    userId: string,
+    conversationId: string,
+    taskId: string,
+    error: string,
+    options?: { harvestStarted?: boolean },
+  ): void {
+    this.update(userId, conversationId, taskId, {
+      status: 'error',
+      error,
+      ...(options?.harvestStarted === true ? { harvestStarted: true } : {}),
+    });
+  }
+
+  /**
+   * Reverses `harvestStarted` after the detached harvest failed to persist
+   * anything, restoring the artifact if a poll already claimed it, so the
+   * legacy poll-turn `toolEndCallback` delivery takes over on a later poll
+   * instead of the files being silently lost.
+   */
+  revokeHarvest(userId: string, conversationId: string, taskId: string, artifact?: unknown): void {
+    const bucket = this.buckets.get(this.key(userId, conversationId));
+    const task = bucket?.tasks.get(taskId);
+    if (!task) {
+      return;
+    }
+    task.harvestStarted = undefined;
+    if (task.artifact == null && artifact != null) {
+      task.artifact = artifact;
+      task.artifactDelivered = false;
+    }
+    task.updatedAt = Date.now();
   }
 
   get(userId: string, conversationId: string, taskId: string): BackgroundTask | undefined {
@@ -774,6 +927,23 @@ function resultFields(
   return { result_available: true, result_chars: task.result.length };
 }
 
+function taskNote(task: BackgroundTask): Pick<SerializedBackgroundTask, 'note'> {
+  if (task.attachments != null && task.attachments.length > 0) {
+    return {
+      note: 'Generated files were saved and attached to the tool call that dispatched this task.',
+    };
+  }
+  if (task.harvestStarted === true && task.status === 'completed') {
+    return {
+      note: 'Output and any generated files are being attached to the tool call that dispatched this task.',
+    };
+  }
+  if (task.artifact != null || task.artifactDelivered === true) {
+    return { note: 'The tool produced an artifact that is not included inline.' };
+  }
+  return {};
+}
+
 function serializeTask(
   task: BackgroundTask,
   { includeResult }: { includeResult: boolean },
@@ -784,9 +954,7 @@ function serializeTask(
     status: task.status,
     progress: task.status === 'running' ? 0 : 1,
     ...resultFields(task, includeResult),
-    ...(task.artifact != null || task.artifactDelivered === true
-      ? { note: 'The tool produced an artifact that is not included inline.' }
-      : {}),
+    ...taskNote(task),
     ...(task.error !== undefined ? { error: task.error } : {}),
   };
 }
@@ -830,11 +998,29 @@ export function claimBackgroundArtifact(params: {
   userId: string;
   conversationId: string;
   args: unknown;
-}): { taskId: string; toolName: string; artifact: unknown; content?: string } | undefined {
+  /** Evaluated before claiming; a `false` return leaves the artifact held. */
+  shouldClaim?: (task: BackgroundTask) => boolean;
+}):
+  | {
+      taskId: string;
+      toolName: string;
+      toolCallId: string;
+      messageId?: string;
+      harvestStarted?: boolean;
+      artifact: unknown;
+      content?: string;
+    }
+  | undefined {
   const rawId = coerceArgsObject(params.args)?.background_task_id;
   const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
   if (!taskId) {
     return undefined;
+  }
+  if (params.shouldClaim) {
+    const task = backgroundTaskRegistry.get(params.userId, params.conversationId, taskId);
+    if (!task || !params.shouldClaim(task)) {
+      return undefined;
+    }
   }
   const claimed = backgroundTaskRegistry.claimArtifact(
     params.userId,
@@ -842,6 +1028,54 @@ export function claimBackgroundArtifact(params: {
     taskId,
   );
   return claimed ? { taskId, ...claimed } : undefined;
+}
+
+/**
+ * Read-only view of a settled code task's harvest state for the poll turn:
+ * attachments to re-emit on the live stream and the identity needed to
+ * re-anchor the row patch (a HITL-pause/resume full-row save can revert it;
+ * re-application is idempotent). Independent of the one-shot artifact claim so
+ * late-landing harvests still deliver on subsequent polls.
+ */
+export function getBackgroundCodeDelivery(params: {
+  userId: string;
+  conversationId: string;
+  args: unknown;
+}):
+  | {
+      taskId: string;
+      status: BackgroundTaskStatus;
+      toolName: string;
+      toolCallId: string;
+      messageId?: string;
+      agentId?: string;
+      harvestStarted?: boolean;
+      result?: string;
+      error?: string;
+      attachments?: unknown[];
+    }
+  | undefined {
+  const rawId = coerceArgsObject(params.args)?.background_task_id;
+  const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
+  if (!taskId) {
+    return undefined;
+  }
+  const task = backgroundTaskRegistry.get(params.userId, params.conversationId, taskId);
+  if (!task || task.harvestStarted !== true) {
+    return undefined;
+  }
+  return {
+    taskId,
+    status: task.status,
+    toolName: task.toolName,
+    toolCallId: task.toolCallId,
+    messageId: task.messageId,
+    agentId: task.agentId,
+    harvestStarted: task.harvestStarted,
+    result: task.result,
+    error: task.error,
+    attachments: task.attachments,
+  };
 }
 
 /** Reverses a `claimBackgroundArtifact` after a failed delivery (see `restoreArtifact`). */

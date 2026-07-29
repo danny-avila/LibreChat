@@ -3,6 +3,7 @@ import type { TFileConfig } from './file-config';
 import type * as t from './types';
 import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
+import { uploadEventStream } from './upload';
 import * as mcp from './types/mcpServers';
 import * as a from './types/assistants';
 import * as m from './types/mutations';
@@ -455,13 +456,24 @@ export const getFileConfig = (): Promise<TFileConfig> => {
 export const uploadImage = (
   data: FormData,
   signal?: AbortSignal | null,
+  sseEnabled = false,
 ): Promise<f.TFileUpload> => {
   const requestConfig = signal ? { signal } : undefined;
+  if (sseEnabled) {
+    return uploadEventStream(endpoints.images(), data, signal);
+  }
   return request.postMultiPart(endpoints.images(), data, requestConfig);
 };
 
-export const uploadFile = (data: FormData, signal?: AbortSignal | null): Promise<f.TFileUpload> => {
+export const uploadFile = (
+  data: FormData,
+  signal?: AbortSignal | null,
+  sseEnabled = false,
+): Promise<f.TFileUpload> => {
   const requestConfig = signal ? { signal } : undefined;
+  if (sseEnabled) {
+    return uploadEventStream(endpoints.files(), data, signal);
+  }
   return request.postMultiPart(endpoints.files(), data, requestConfig);
 };
 

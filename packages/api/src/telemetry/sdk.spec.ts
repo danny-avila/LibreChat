@@ -512,7 +512,9 @@ describe('telemetry SDK lifecycle', () => {
     const { registerShutdownTask } = await import('../app/shutdown');
     initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
 
-    expect(registerShutdownTask).toHaveBeenCalledWith('telemetry', expect.any(Function));
+    expect(registerShutdownTask).toHaveBeenCalledWith('telemetry', expect.any(Function), {
+      priority: -100,
+    });
   });
 
   it('the registered shutdown task warns when telemetry shutdown rejects', async () => {
