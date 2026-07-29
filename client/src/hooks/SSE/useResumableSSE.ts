@@ -11,6 +11,7 @@ import {
   StepEvents,
   apiBaseUrl,
   SteerEvents,
+  ActivityLabelEvents,
   UsageEvents,
   createPayload,
   ApprovalEvents,
@@ -26,6 +27,7 @@ import type {
   TPendingSteer,
   EventSubmission,
   TSteerAppliedEvent,
+  TActivityLabelEvent,
 } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { ActiveJobsResponse } from '~/data-provider';
@@ -38,6 +40,8 @@ import {
   carriedSteerContext,
   resolveRunEndTarget,
   findSteerMessageIndex,
+  applyActivityLabelPart,
+  findActivityLabelMessageIndex,
   appendAppliedSteerIds,
   removeConvoFromAllQueries,
   upsertConvoInAllQueries,
@@ -545,6 +549,25 @@ export default function useResumableSSE(
    *  bounded next-frame retry as pending actions, on its own handle so the
    *  two retries can't cancel each other. */
   const steerRetryRef = useRef<number | null>(null);
+  /** EVERY outstanding label-retry frame, not a single handle: labels fire
+   *  two events per slot (reservation, then fill), so concurrent retry
+   *  chains are the norm — a single ref would let cleanup cancel only the
+   *  newest chain while the others kept running for up to 120 frames and
+   *  could apply a stale label to a replacement generation that reuses the
+   *  same response id (edits do). */
+  const activityLabelRetryFramesRef = useRef<Set<number>>(new Set());
+  /**
+   * Set once a SYNC has replaced the response with the server's
+   * completion-local snapshot, which discards the prefix an edited
+   * resubmission retained. From that point incoming indices are absolute and
+   * `editPrefixLength` must no longer be applied — by run steps or labels.
+   */
+  const editPrefixClearedRef = useRef(false);
+  /** Generation the cleared-prefix state above belongs to, so it is dropped
+   *  when a new generation starts rather than when a subscribe happens to be
+   *  live. Keyed by response message id — the stream id is the conversation
+   *  id and is therefore shared by every generation within it. */
+  const prefixStateGenerationIdRef = useRef<string | null>(null);
 
   /** Removes the pending chip once its steer is injected (the inline content
    *  part becomes the durable record), and records the id so a 202 ACK that
@@ -620,7 +643,7 @@ export default function useResumableSSE(
   const setRunEnd = useSetRecoilState(store.runEndByIndex(runIndex));
 
   const {
-    stepHandler,
+    stepHandler: rawStepHandler,
     finalHandler,
     errorHandler,
     clearStepMaps,
@@ -642,6 +665,11 @@ export default function useResumableSSE(
     newConversation,
     setShowStopButton,
   });
+
+  /** Run steps dispatch straight through: their index math is upstream's and
+   *  is deliberately left untouched by this feature. Only the activity-label
+   *  handler applies the resume-aware prefix offset. */
+  const stepHandler = rawStepHandler;
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
@@ -665,6 +693,35 @@ export default function useResumableSSE(
    */
   const subscribeToStream = useCallback(
     (currentStreamId: string, currentSubmission: TSubmission, isResume = false) => {
+      /**
+       * A NEW generation starts with its retained prefix intact, so the
+       * cleared-prefix state from a previous one must not carry over — the
+       * hook outlives any single submission, and a later edited resubmission
+       * would otherwise dispatch with no offset and overwrite the content it
+       * kept.
+       *
+       * Keyed on `clientRequestId`, the per-submission uuid. Each of the
+       * narrower keys tried before it crossed a real boundary:
+       *   - `isResume` — a submission whose POST succeeded but lost its
+       *     response retries and returns `resumed: true`, so a NEW generation
+       *     arrives in resume mode and skipped the reset.
+       *   - the stream id — `request.js` sets `streamId = conversationId`, so
+       *     every generation in a conversation shares it.
+       *   - the response message id — editing an assistant response reuses
+       *     that same id (`editedMessageId`), so re-editing one response
+       *     produced the same key twice.
+       * `clientRequestId` is minted per submission and forwarded unchanged on
+       * retries, which is exactly "new per edit attempt, stable across
+       * reconnects".
+       */
+      const generationId =
+        currentSubmission.clientRequestId ??
+        (currentSubmission.initialResponse as TMessage | undefined)?.messageId ??
+        currentStreamId;
+      if (prefixStateGenerationIdRef.current !== generationId) {
+        prefixStateGenerationIdRef.current = generationId;
+        editPrefixClearedRef.current = false;
+      }
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
       let finalReceived = false;
@@ -772,6 +829,66 @@ export default function useResumableSSE(
         const chipConvoId =
           event.conversationId ?? currentSubmission.conversation?.conversationId ?? currentStreamId;
         resolveSteerChip(chipConvoId, event.steerId);
+      };
+
+      /**
+       * Places an activity-label part at its claimed content index on the
+       * in-flight response message. Fires twice per block (the empty
+       * reservation at batch end, the generated label on resolve);
+       * `applyActivityLabelPart` is referentially stable on duplicate replays
+       * and refuses to overwrite filled text with a stale placeholder. Same
+       * bounded next-frame retry as steers for the inject-before-render race.
+       */
+      const applyActivityLabelToMessages = (event: TActivityLabelEvent, attempt = 0) => {
+        const retryNextFrame = () => {
+          if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
+            const frameId = requestAnimationFrame(() => {
+              activityLabelRetryFramesRef.current.delete(frameId);
+              applyActivityLabelToMessages(event, attempt + 1);
+            });
+            activityLabelRetryFramesRef.current.add(frameId);
+          }
+        };
+        /** Same boundary as pending actions and steers: land queued deltas
+         * before the label part is placed and synced, or the later flush
+         * would clobber it (and `syncStepMessage` would sync a pre-delta
+         * copy back into the step handler's authoritative map). */
+        flushPendingDeltas();
+        const messages = getMessages() ?? [];
+        const index = findActivityLabelMessageIndex(messages, event);
+        if (index < 0) {
+          retryNextFrame();
+          return;
+        }
+        /** Edit-and-resubmit replays the kept prefix into the response before
+         *  the run starts, and the server indexes only the NEW content — so
+         *  run steps offset by that prefix (`useStepHandler`). The label index
+         *  is claimed in the same server-side space and needs the identical
+         *  shift, or it lands inside the prefix and overwrites kept content.
+         *
+         *  Uses `editPrefixLength`, captured when the submission was built,
+         *  for the same reason `useStepHandler` does: a resume sync replaces
+         *  `initialResponse.content` with the server's completion-local
+         *  snapshot, so its length no longer describes the retained prefix.
+         *  Tool cards and the label heading them must land in one index
+         *  space — a label shifting differently from its tools would overwrite
+         *  another part, and a gap fill would miss its own reservation and
+         *  leave the placeholder pending forever. */
+        const prefixLength =
+          currentSubmission.editedContent != null && !editPrefixClearedRef.current
+            ? (currentSubmission.editPrefixLength ??
+              (currentSubmission.initialResponse as TMessage | undefined)?.content?.length ??
+              0)
+            : 0;
+        const offsetEvent =
+          prefixLength > 0 ? { ...event, index: event.index + prefixLength } : event;
+        const updated = applyActivityLabelPart(messages[index], offsetEvent);
+        if (updated !== messages[index]) {
+          const nextMessages = [...messages];
+          nextMessages[index] = updated;
+          setMessages(nextMessages);
+          syncStepMessage(updated);
+        }
       };
 
       const baseUrl = `${apiBaseUrl()}/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
@@ -932,6 +1049,11 @@ export default function useResumableSSE(
             return;
           }
 
+          if (data.event === ActivityLabelEvents.ON_ACTIVITY_LABEL) {
+            applyActivityLabelToMessages(data.data as TActivityLabelEvent);
+            return;
+          }
+
           if (data.event != null) {
             if (
               data.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -1045,6 +1167,19 @@ export default function useResumableSSE(
                   matchedByResponseId &&
                   Array.isArray(oldContent) &&
                   oldContent.length > 0;
+                /**
+                 * Replacing the response with `aggregatedContent` drops the
+                 * prefix an edited resubmission had retained: the snapshot is
+                 * completion-local, indexed from zero. Every later event must
+                 * therefore stop offsetting, or it writes past the end of the
+                 * shorter array — for an activity label that means the fill
+                 * misses its own reservation and the placeholder never
+                 * resolves. Preserving `oldContent` keeps the prefix, and with
+                 * it the offset. Run steps and labels both read this.
+                 */
+                if (!preserveLoadedContent) {
+                  editPrefixClearedRef.current = true;
+                }
                 const responseMessage = {
                   ...messages[responseIdx],
                   content: preserveLoadedContent ? oldContent : data.resumeState.aggregatedContent,
@@ -1067,6 +1202,13 @@ export default function useResumableSSE(
                 syncStepMessage(responseMessage);
                 logger.log('ResumableSSE', 'SYNC complete, handlers synced');
               } else {
+                /** Same reasoning as the matched branch above: this row is
+                 *  built straight from the server's completion-local
+                 *  `aggregatedContent`, so it holds no retained prefix and
+                 *  later steps and labels must stop offsetting. Setting it
+                 *  only in the matched branch left this path adding an offset
+                 *  to indices that were already absolute. */
+                editPrefixClearedRef.current = true;
                 const responseId = serverResponseId ?? `${userMsgId}_`;
                 const newMessage = {
                   messageId: responseId,
@@ -1127,6 +1269,8 @@ export default function useResumableSSE(
                   applyPendingActionToMessages(replayEvent.data as Agents.PendingAction);
                 } else if (replayEvent.event === SteerEvents.ON_STEER_APPLIED) {
                   applySteerToMessages(replayEvent.data as TSteerAppliedEvent);
+                } else if (replayEvent.event === ActivityLabelEvents.ON_ACTIVITY_LABEL) {
+                  applyActivityLabelToMessages(replayEvent.data as TActivityLabelEvent);
                 } else if (replayEvent.event != null) {
                   if (
                     replayEvent.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -1156,6 +1300,8 @@ export default function useResumableSSE(
                   applyPendingActionToMessages(pendingEvent.data as Agents.PendingAction);
                 } else if (pendingEvent.event === SteerEvents.ON_STEER_APPLIED) {
                   applySteerToMessages(pendingEvent.data as TSteerAppliedEvent);
+                } else if (pendingEvent.event === ActivityLabelEvents.ON_ACTIVITY_LABEL) {
+                  applyActivityLabelToMessages(pendingEvent.data as TActivityLabelEvent);
                 } else if (pendingEvent.event != null) {
                   if (
                     pendingEvent.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -1736,6 +1882,10 @@ export default function useResumableSSE(
 
     initStream();
 
+    /** The Set object itself is never reassigned, so this alias reads the
+     *  LIVE frame ids at cleanup time (satisfies react-hooks/exhaustive-deps
+     *  without changing behavior). */
+    const activityLabelRetryFrames = activityLabelRetryFramesRef.current;
     return () => {
       logger.log('ResumableSSE', 'Cleanup - closing SSE, resetting UI state');
       startController.abort();
@@ -1750,6 +1900,10 @@ export default function useResumableSSE(
         cancelAnimationFrame(pendingActionRetryRef.current);
         pendingActionRetryRef.current = null;
       }
+      for (const frameId of activityLabelRetryFrames) {
+        cancelAnimationFrame(frameId);
+      }
+      activityLabelRetryFrames.clear();
       if (steerRetryRef.current != null) {
         cancelAnimationFrame(steerRetryRef.current);
         steerRetryRef.current = null;

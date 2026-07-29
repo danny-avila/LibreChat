@@ -1037,6 +1037,7 @@ export async function createRun({
   appConfig,
   subagentUsageSink,
   steering,
+  activityLabel,
   hitlCapable = false,
   toolInputValidationErrors,
   streaming = true,
@@ -1095,6 +1096,12 @@ export async function createRun({
    * OpenAI-compatible and Responses controllers have no job/SSE surface.
    */
   steering?: { hook: HookCallback<'PostToolBatch'> };
+  /**
+   * Run-scoped tool-batch summary hook (PostToolBatch). Like steering, it
+   * registers independently of the approval policy and needs no checkpointer;
+   * the hook returns immediately and generates off the critical path.
+   */
+  activityLabel?: { hook: HookCallback<'PostToolBatch'> };
   /**
    * Whether the caller implements the HITL pause/resume lifecycle (inspects
    * `run.getInterrupt()`, persists a pending action, exposes a resume route). Gates the
@@ -1454,6 +1461,16 @@ export async function createRun({
    * this guard is defense in depth).
    */
   let hooks = hitl?.hooks;
+  /** Activity labels register BEFORE the steer drain: the label must claim
+   *  its slot while the batch's tool parts are still the content tail. If a
+   *  steer drained first, its injected part would flush the tool block in
+   *  sequential rendering and orphan the label outside its group. With the
+   *  label claimed first, parts order as [tools…, label, steer] — the label
+   *  terminates the group and the steer renders after it. */
+  if (activityLabel != null) {
+    hooks = hooks ?? new HookRegistry();
+    hooks.register('PostToolBatch', { hooks: [activityLabel.hook] });
+  }
   if (steering != null && isSteeringSupported()) {
     hooks = hooks ?? new HookRegistry();
     hooks.register('PostToolBatch', { hooks: [steering.hook] });
