@@ -26,7 +26,11 @@ const {
   messageUserLimiter,
 } = require('~/server/middleware');
 const SteerController = require('~/server/controllers/agents/steer');
-const { recordScheduleOutcome, clearScheduledJob } = require('~/server/services/Schedules');
+const {
+  recordScheduleOutcome,
+  clearScheduledJob,
+  requestScheduledRunAbort,
+} = require('~/server/services/Schedules');
 const { saveMessage } = require('~/models');
 const responses = require('./responses');
 const openai = require('./openai');
@@ -360,6 +364,15 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
     // gets the question too, not just the saved message on reload.
     const abortedAskPayload = job.metadata?.pendingAction?.payload;
     const scheduleId = job.metadata?.scheduleId;
+    // Stamp the run abort-REQUESTED before signalling. abortJob flips the job to
+    // `aborted` (or removes it) the moment it wins its status CAS, while this handler
+    // still has to save the partial below and settle LAST. Without the stamp, an
+    // account-deletion quiesce reading that post-abort state takes it as proof the
+    // generation is done, confirms its drain, and destroys the user's data seconds
+    // before saveMessage writes a message back for the deleted account.
+    if (scheduleId && job.metadata?.scheduledFor) {
+      await requestScheduledRunAbort(scheduleId, new Date(job.metadata.scheduledFor));
+    }
     const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
       transformAbortContent: (content) =>
         abortedAskPayload?.type === 'ask_user_question' && Array.isArray(content)

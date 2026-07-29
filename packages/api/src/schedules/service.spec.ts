@@ -5,6 +5,13 @@ import { createSchedulesService } from './service';
 /** Swappable per test: null keeps the no-job-store harness the drain tests rely on. */
 let mockJobStore: { getJob: jest.Mock } | null = null;
 
+jest.mock('../agents/checkpointer', () => ({
+  deleteAgentCheckpoint: jest.fn(async () => undefined),
+}));
+const checkpointerModule = jest.requireMock('../agents/checkpointer') as {
+  deleteAgentCheckpoint: jest.Mock;
+};
+
 jest.mock('../stream/GenerationJobManager', () => ({
   GenerationJobManager: {
     // No configured job store by default: abortScheduledJob returns false, so the drain
@@ -110,6 +117,12 @@ describe('balance initialization', () => {
 });
 
 describe('deleteScheduleForOwner', () => {
+  beforeEach(() => {
+    // Module-level mock: without this it accumulates calls across tests and the
+    // prune assertions below read a previous test's invocation.
+    checkpointerModule.deleteAgentCheckpoint.mockClear();
+  });
+
   /**
    * markScheduleDeleting runs FIRST and is one-shot: it matches only a not-yet-deleting
    * row, so a retry answers 404. Anything between it and the aborts that can throw
@@ -246,6 +259,60 @@ describe('deleteScheduleForOwner', () => {
       expect.objectContaining({ scheduleId: 's1', status: 'interrupted' }),
     );
     expect(methods.eraseScheduleIfDrained).toHaveBeenCalledWith('s1');
+  });
+
+  /**
+   * The durable checkpoint is keyed by conversationId ALONE, so pruning it when a
+   * REPLACEMENT turn owns the conversation strips the resume state of a live generation
+   * that has nothing to do with this schedule — the same hazard the interactive abort
+   * route refuses with a 409.
+   */
+  it('does not prune the checkpoint when a replacement owns the conversation', async () => {
+    const { service } = makeDeleteHarness({
+      scheduleId: 's1',
+      scheduledFor: new Date('2026-01-01T00:00:00.000Z'),
+      conversationId: 'c1',
+      status: 'requires_action',
+    });
+    // A job IS present, but it carries a DIFFERENT occurrence's identity: this
+    // conversation now belongs to someone else's turn.
+    mockJobStore = {
+      getJob: jest.fn(async () => ({
+        status: 'running',
+        createdAt: 99,
+        scheduleId: 'a-different-schedule',
+        scheduledFor: new Date('2030-01-01T00:00:00.000Z').toISOString(),
+      })),
+    } as unknown as typeof mockJobStore;
+    const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
+    manager.abortJob = jest.fn(async () => ({ success: true }));
+
+    await service.deleteScheduleForOwner('s1', 'user-1');
+
+    expect(checkpointerModule.deleteAgentCheckpoint).not.toHaveBeenCalled();
+  });
+
+  it('prunes the checkpoint of a paused run it does own', async () => {
+    const { service } = makeDeleteHarness({
+      scheduleId: 's1',
+      scheduledFor: new Date('2026-01-01T00:00:00.000Z'),
+      conversationId: 'c1',
+      status: 'requires_action',
+    });
+    mockJobStore = {
+      getJob: jest.fn(async () => ({
+        status: 'requires_action',
+        createdAt: 1,
+        scheduleId: 's1',
+        scheduledFor: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+      })),
+    } as unknown as typeof mockJobStore;
+    const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
+    manager.abortJob = jest.fn(async () => ({ success: true }));
+
+    await service.deleteScheduleForOwner('s1', 'user-1');
+
+    expect(checkpointerModule.deleteAgentCheckpoint).toHaveBeenCalledWith('c1', undefined);
   });
 
   it('reports draining when a live run was aborted but has not yet settled', async () => {
@@ -442,6 +509,70 @@ describe('quiesceUserSchedules drain wait', () => {
     expect(deleteJob).toHaveBeenCalled();
     expect(recordRunOutcome.mock.invocationCallOrder[0]).toBeLessThan(
       deleteJob.mock.invocationCallOrder[0],
+    );
+  });
+
+  /**
+   * `aborted` is the abort REQUEST landing, not the generation finishing: abortJob wins
+   * its status CAS before the owner unwinds, and both owner paths settle LAST, after
+   * saveMessage. Settling on that evidence confirms the drain while the partial write is
+   * still in flight — account deletion then destroys the user's data and the owner
+   * writes a message back for the account that no longer exists.
+   */
+  it('does not settle a run whose abort is still in flight', async () => {
+    jest.useFakeTimers();
+    const aborting = {
+      ...run(),
+      status: 'started',
+      abortRequestedAt: new Date(Date.now() - 1000),
+    };
+    const service = makeService(
+      jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([aborting]),
+    );
+    mockJobStore = {
+      getJob: jest.fn(async () => ({
+        status: 'aborted',
+        createdAt: 1,
+        scheduleId: 's1',
+        scheduledFor: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+      })),
+      deleteJob: jest.fn(async () => undefined),
+    } as unknown as typeof mockJobStore;
+
+    const pending = service.quiesceUserSchedules('user-1');
+    await jest.advanceTimersByTimeAsync(10_000);
+    // Unconfirmed, so the caller defers deletion (503 + Retry-After) instead of
+    // destroying data the owner is still writing.
+    await expect(pending).resolves.toBe(false);
+    expect(recordRunOutcome).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The other direction: an abort whose owner never came back is presumed dead past the
+   * grace, or the account could never be deleted at all.
+   */
+  it('settles a run whose abort request has outlived the owner grace', async () => {
+    jest.useFakeTimers();
+    const abandoned = {
+      ...run(),
+      status: 'started',
+      abortRequestedAt: new Date(Date.now() - 45 * 60 * 1000),
+    };
+    const getActive = jest
+      .fn<Promise<ActiveRun[]>, [string]>()
+      .mockResolvedValueOnce([abandoned])
+      .mockResolvedValue([]);
+    const service = makeService(getActive);
+    mockJobStore = {
+      getJob: jest.fn(async () => null),
+      deleteJob: jest.fn(async () => undefined),
+    } as unknown as typeof mockJobStore;
+
+    const pending = service.quiesceUserSchedules('user-1');
+    await jest.advanceTimersByTimeAsync(500);
+    await expect(pending).resolves.toBe(true);
+    expect(recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ scheduleId: 's1', status: 'interrupted' }),
     );
   });
 

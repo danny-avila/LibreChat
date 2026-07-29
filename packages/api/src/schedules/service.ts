@@ -47,6 +47,42 @@ const QUIESCE_SETTLE_ERRORS: Partial<Record<ScheduleRunOutcomeStatus, string>> =
 };
 
 /**
+ * How long an abort's OWNER is presumed alive and obliged to settle the run itself.
+ *
+ * The rule this enforces: **job state is never persistence acknowledgement.** A job
+ * reads `aborted` — or vanishes, or carries `completedAt` — the moment `abortJob` wins
+ * its status CAS, which is BEFORE the owner unwinds and writes anything. Both owner
+ * paths deliberately settle LAST, after `saveMessage`, so the ONLY acknowledgement that
+ * all persistence-producing work finished is the owner's own terminal outcome write
+ * (i.e. the run row leaving the active set). Reading post-abort job state as "nothing is
+ * generating" confirms a drain mid-write: account deletion destroys the user's data and
+ * the owner then writes a message back for the deleted account.
+ *
+ * So while an abort is in flight this settles NOTHING itself — it fails closed. The
+ * bounded drain waits for the owner's write; an unconfirmed drain defers deletion
+ * (503 + Retry-After), which is the recoverable direction.
+ *
+ * Deliberately reusing the reconciler's ORPHAN cutoff rather than inventing a shorter
+ * one: past it the owner is presumed dead, and that presumption already exists and is
+ * already the thing that would eventually clear the row. One rule, not two — a shorter
+ * local grace would be a second, weaker presumption competing with it.
+ */
+const ABORT_OWNER_PRESUMED_ALIVE_MS = 30 * 60_000;
+
+/**
+ * Whether an abort was requested for this run recently enough that its owner is still
+ * expected to persist and settle. `abortRequestedAt` is stamped BEFORE any abort is
+ * signalled (see `abortActiveRun` and the interactive abort route), which is what makes
+ * it usable as evidence that post-abort job state is not yet a settled generation.
+ */
+function hasAbortInFlight(run: { abortRequestedAt?: Date }, now: number): boolean {
+  if (run.abortRequestedAt == null) {
+    return false;
+  }
+  return now - new Date(run.abortRequestedAt).getTime() < ABORT_OWNER_PRESUMED_ALIVE_MS;
+}
+
+/**
  * Whether this process may arm the scheduler at all.
  *
  * v1 is single-process by design, but the standard entrypoint runs
@@ -144,6 +180,8 @@ export interface SchedulesService {
     limits: ScheduleLimits,
   ) => Promise<FireResult | null>;
   recordScheduleOutcome: (input: RecordScheduleOutcomeInput) => Promise<boolean>;
+  /** Stamps a run abort-requested ahead of an abort this service does not signal. */
+  requestScheduledRunAbort: (scheduleId: string, scheduledFor: Date) => Promise<void>;
   /**
    * Whether a schedule is still live (exists and not soft-deleted). The loopback
    * chat controller calls this right after creating the generation job to re-fence
@@ -637,6 +675,20 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     return false;
   }
 
+  /**
+   * Stamps a scheduled run as abort-REQUESTED, for an abort this service is not the one
+   * signalling (the interactive Stop route drives `abortJob` itself). Must run BEFORE
+   * that abort: the stamp is what tells a concurrent account-deletion quiesce that the
+   * job state it is about to read is post-abort but pre-persistence, so it defers to
+   * this handler's own settle instead of confirming the drain mid-write. Best-effort —
+   * a failed stamp only costs the deferral, and the pre-abort job read is unaffected.
+   */
+  async function requestScheduledRunAbort(scheduleId: string, scheduledFor: Date): Promise<void> {
+    await methods
+      .requestRunAbort(scheduleId, scheduledFor)
+      .catch((err) => logger.warn('[schedules] failed to record interactive abort request:', err));
+  }
+
   async function isScheduleLive(
     scheduleId: string,
     expectedConfigRevision?: number,
@@ -768,7 +820,13 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
           scheduleId: run.scheduleId,
           scheduledFor: run.scheduledFor,
         });
-      const settleable = live.known && !(isThisGeneration && live.job?.status === 'running');
+      // Same abort-in-flight deferral as quiesce: post-abort job state (status `aborted`,
+      // or absence once the abort deleted the job) appears before the owner has persisted
+      // and settled, so it is not evidence that the generation is done.
+      const settleable =
+        live.known &&
+        !hasAbortInFlight(run, Date.now()) &&
+        !(isThisGeneration && live.job?.status === 'running');
       if (settleable) {
         // Positive evidence nothing is generating: settle the row HERE so the erase
         // below can proceed without any reconciler — the clustered entrypoint has
@@ -813,7 +871,15 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       // HITL: prune the durable checkpoint of a run aborted while paused so a new turn
       // in this conversation can't rehydrate the stale interrupt before the Mongo TTL
       // reclaims it (thread_id === conversationId). Idempotent / no-op otherwise.
-      if (run.status === 'requires_action' && run.conversationId) {
+      //
+      // NOT when a REPLACEMENT owns the conversation. The checkpoint is keyed by
+      // conversationId alone, so pruning on an identity MISMATCH strips the resume state
+      // of a live turn that has nothing to do with this schedule — the same hazard the
+      // interactive abort route refuses with a 409. An identity match, or a confirmed
+      // absence, is this run's own checkpoint and is safe to prune; an unreadable store
+      // (live.known false) proves nothing, so it is left alone.
+      const ownsConversation = live.known && (live.job == null || isThisGeneration);
+      if (run.status === 'requires_action' && run.conversationId && ownsConversation) {
         await deleteAgentCheckpoint(run.conversationId, checkpointer).catch(() => undefined);
       }
     }
@@ -865,7 +931,14 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
       // job that is not running, an identity MISMATCH (a replacement turn owns the
       // conversation, so this occurrence's generation is already gone), or a confirmed
       // absence. Anything unknown falls through and the drain waits for it.
-      const settleable = live.known && !(isThisGeneration && live.job?.status === 'running');
+      //
+      // An abort IN FLIGHT is not such evidence, and this is the subtle case: `aborted`
+      // and post-abort ABSENCE both appear the instant abortJob wins its CAS, while the
+      // owner has yet to persist. Deferring to the owner's settle (see
+      // ABORT_SETTLE_GRACE_MS) is what stops a drain from being confirmed mid-write.
+      const abortInFlight = hasAbortInFlight(run, Date.now());
+      const settleable =
+        live.known && !abortInFlight && !(isThisGeneration && live.job?.status === 'running');
       // Aborts here never preserve for reconcile: account deletion hard-deletes these
       // run rows, so no reconcile pass would ever finalize or clear a retained job.
       const retainedOutcome = isThisGeneration
@@ -961,6 +1034,7 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     engineDeps,
     fireScheduleNow,
     recordScheduleOutcome,
+    requestScheduledRunAbort,
     isScheduleLive,
     deleteScheduleForOwner,
     quiesceUserSchedules,

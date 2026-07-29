@@ -82,6 +82,28 @@ async function rejectIfUserDeleting(
 /** Bounded attempts to extend the upload hold on a schedule's attachments. */
 const FILE_RETAIN_ATTEMPTS = 3;
 
+/** Soft-deleted rows re-checked for erasure per list request. Small: it is a retry for
+ *  a rare stranded row, not a sweep, and it rides a user-facing read. */
+const DEFERRED_ERASE_RETRY_LIMIT = 5;
+
+/**
+ * Whether an existing row is the schedule this create attempt is asking for. Used only
+ * when an idempotency key resolved to a row a PREVIOUS attempt committed: a genuine
+ * retry sends identical content, so a mismatch means the key was reused for a different
+ * intent rather than replayed.
+ */
+function matchesCreatedSchedule(existing: ISchedule, payload: TCreateSchedule): boolean {
+  return (
+    existing.name === payload.name &&
+    existing.prompt === payload.prompt &&
+    existing.agent_id === payload.agent_id &&
+    existing.timezone === payload.timezone &&
+    existing.cadence?.frequency === payload.cadence.frequency &&
+    existing.cadence?.hour === payload.cadence.hour &&
+    existing.cadence?.minute === payload.cadence.minute
+  );
+}
+
 /** Public projection of a schedule — an allowlist of the `TSchedule` fields, so internal
  *  bookkeeping (_id, tenantId, __v, claimToken, lease*, slot, deleting, countedFor,
  *  balanceSkipCount, bookkept, ...) never reaches the browser. */
@@ -200,11 +222,36 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     return false;
   }
 
+  /**
+   * Re-drives the deferred erase of the caller's soft-deleted schedules, off the
+   * response path.
+   *
+   * A `deleting` row is erased by whichever actor observes it drained: the delete
+   * request itself, or the terminal outcome write (erase-on-settle). Both are
+   * best-effort single attempts, and the reconciler that would otherwise retry does not
+   * exist in the clustered entrypoint — so one transient failure, or a lease that
+   * outlived the delete, strands a hidden row holding the user's prompt indefinitely.
+   * The row is hidden from the list, so the owner cannot even retry it themselves.
+   *
+   * A read the owner performs anyway is the cheapest place to retry: bounded, scoped to
+   * their own rows, and a no-op when nothing is deleting (the erase re-checks drained-ness
+   * itself, so this can never race a live run).
+   */
+  function retryDeferredErases(userId: string): void {
+    void deps.methods
+      .getDeletingScheduleIds(userId, DEFERRED_ERASE_RETRY_LIMIT)
+      .then((ids) =>
+        Promise.all(ids.map((id) => deps.methods.eraseScheduleIfDrained(id).catch(() => false))),
+      )
+      .catch((err) => logger.warn('[schedules] deferred erase retry failed', err));
+  }
+
   async function listSchedules(req: ServerRequest, res: Response): Promise<void> {
     const [schedules, limits] = await Promise.all([
       deps.methods.getSchedulesByUser(requestUser(req).id),
       deps.getLimits(requestUser(req)),
     ]);
+    retryDeferredErases(requestUser(req).id);
     res.json({
       schedules: schedules.map(toWireSchedule),
       limits: { maxPerUser: limits.maxPerUser },
@@ -289,6 +336,20 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       });
       return;
     }
+    // A retry carrying the same clientRequestId resolves to the row its first attempt
+    // committed, so the arming below re-drives THAT row rather than adding a second
+    // recurring schedule. `id` must follow, or the compensation and 410 paths would act
+    // on the fresh uuid this attempt generated and never on the row that actually exists.
+    const scheduleId = created.id;
+    // A key identifies one create INTENT. Reusing it for different content is a client
+    // bug, and silently returning the first row would hide it behind a 201 describing a
+    // schedule the caller did not ask for — so say so instead.
+    if (scheduleId !== id && !matchesCreatedSchedule(created, parsed.data)) {
+      res.status(409).json({
+        error: 'clientRequestId was already used to create a different schedule',
+      });
+      return;
+    }
     // POST-INSERT barrier re-check. The admission check at the top of this handler
     // shrinks the window to roughly one request, but cannot close it: account deletion
     // can raise the barrier after we passed that check and before this insert landed,
@@ -299,7 +360,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       // load-bearing for BILLING: the row is unarmed, and even once the reconciler's
       // sweep arms it, the fire path refuses it at the account-deletion barrier
       // (isOwnerDeleting). The residual is a retained row, not a billed generation.
-      if (!(await compensateLateCreate(deps, id, user.id))) {
+      if (!(await compensateLateCreate(deps, scheduleId, user.id))) {
         res.status(500).json({ error: 'Failed to roll back schedule creation' });
         return;
       }
@@ -312,20 +373,35 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     // 201 for a schedule that is already hidden and pending erasure.
     //
     // A THROWN (or ambiguously acknowledged) arming write must ROLL THE ROW BACK, not
-    // leave it: the client retries the failed create with a fresh UUID, the retry
-    // commits a second row, and the reconciler's unarmed sweep later arms the first as
-    // well — one intended schedule becomes several recurring, billable ones. With the
-    // row compensated away, a retry recreates exactly one. Only when BOTH compensation
-    // writes also fail does the unarmed row remain (it cannot fire until swept), and
-    // the 500 is the same either way.
+    // leave it: an unarmed row the reconciler later arms, plus a client retry that
+    // commits a second row, is one intended schedule becoming several recurring,
+    // billable ones. Compensation makes that retry recreate exactly one — but it is two
+    // writes that can THEMSELVES fail, which is why a `clientRequestId` is the real
+    // guarantee: with one, the retry collides on the idempotency index and re-arms the
+    // original row, so duplication is impossible even when every compensation write
+    // fails. Without one, compensation is the best available and its failure is
+    // reported, leaving an inert row that cannot fire until swept.
     let armed = created;
     if (nextRunAt) {
       let updated: ISchedule | null;
       try {
-        updated = await deps.methods.updateScheduleById(id, user.id, { nextRunAt });
+        updated = await deps.methods.updateScheduleById(scheduleId, user.id, { nextRunAt });
       } catch (armError) {
-        logger.error(`[schedules] arming failed for ${id}; rolling back the create`, armError);
-        await compensateLateCreate(deps, id, user.id);
+        logger.error(
+          `[schedules] arming failed for ${scheduleId}; rolling back the create`,
+          armError,
+        );
+        const rolledBack = await compensateLateCreate(deps, scheduleId, user.id);
+        if (!rolledBack && parsed.data.clientRequestId == null) {
+          // Say what actually happened: a row may survive and later self-arm, and a
+          // blind retry could add a second one. A retry WITH an idempotency key is
+          // still safe, hence the distinct message.
+          res.status(500).json({
+            error:
+              'Failed to create schedule, and could not roll it back. Check your schedules before retrying.',
+          });
+          return;
+        }
         res.status(500).json({ error: 'Failed to create schedule. Please retry.' });
         return;
       }
@@ -335,7 +411,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       }
       armed = updated;
     }
-    logger.info(`[schedules] created ${id} for user ${user.id}`);
+    logger.info(`[schedules] created ${scheduleId} for user ${user.id}`);
     res.status(201).json(toWireSchedule(armed));
   }
 
@@ -421,8 +497,25 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(500).json({ error: 'Failed to retain schedule attachments' });
       return;
     }
-    const schedule = await deps.methods.updateScheduleById(existing.id, user.id, update, unset);
+    // FENCED on the revision this edit was computed from. `nextRunAt` above is derived
+    // from (cadence, timezone) resolved against the row read at the top of this handler,
+    // so two overlapping edits — one changing cadence, one changing timezone — would
+    // each persist a nextRunAt consistent with neither final state, and it would stay
+    // wrong until the next edit (advanceSchedule recomputes from the row, so a fire
+    // propagates the bad occurrence rather than repairing it). configRevision is already
+    // the row's edit generation and is $inc'd inside the same atomic update, so the
+    // loser simply retries against fresh state.
+    const schedule = await deps.methods.updateScheduleById(existing.id, user.id, update, unset, {
+      expectedConfigRevision: existing.configRevision,
+    });
     if (schedule == null) {
+      // Either the row is gone, or a concurrent edit moved the revision. Distinguish
+      // them so the owner sees a retryable conflict rather than a phantom 404.
+      const stillThere = await deps.methods.getScheduleById(existing.id, user.id);
+      if (stillThere != null) {
+        res.status(409).json({ error: 'Schedule was modified concurrently. Please retry.' });
+        return;
+      }
       res.status(404).json({ error: 'Schedule not found' });
       return;
     }

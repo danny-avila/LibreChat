@@ -165,6 +165,13 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             );
           }
         }
+        // Stamp EVERY row this pass looked at, including the ones that threw — a row
+        // that keeps failing must still rotate to the back, or it re-fills the window
+        // and starves the rest, which is the same starvation the ordering exists to
+        // prevent (and the per-row try/catch above already exists because of).
+        await deps.methods
+          .markRunsReconciled(runs)
+          .catch((err) => logger.warn('[schedules] failed to stamp reconciled runs:', err));
       });
 
       // Catch terminal runs whose schedule bookkeeping never landed (a crash

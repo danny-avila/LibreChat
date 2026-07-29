@@ -24,6 +24,7 @@ const {
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
   configureServerTimeouts,
+  startScheduleErasureSweep,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -38,6 +39,8 @@ const {
   updateAccessPermissions,
   seedDatabase,
   sweepOrphanedPreviews,
+  getDeletingSchedules,
+  eraseScheduleIfDrained,
 } = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
 const { configureGenerationStreams } = require('@librechat/api');
@@ -346,6 +349,13 @@ if (cluster.isMaster) {
     configureGenerationStreams();
     expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
     startExpiredFileSweepOnce();
+    // Cleanup ONLY — never claims, leases, fires or reconciles a run, so it does not
+    // make this entrypoint a scheduler. It exists because DELETE is accepted here while
+    // no engine is: a soft-deleted schedule whose one erase attempt failed (or whose
+    // lease outlived the delete) would otherwise keep the user's prompt forever, hidden
+    // from the very list they would use to retry. Idempotent and drain-checked, so
+    // running it in every worker is safe.
+    startScheduleErasureSweep({ methods: { getDeletingSchedules, eraseScheduleIfDrained } });
     await performStartupChecks(appConfig);
     await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
 

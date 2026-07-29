@@ -31,8 +31,7 @@ const {
   ScheduleRun,
 } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
-const { AUTH_USER_DOC_CACHE_TTL_MS } = require('@librechat/api');
-const { markUserDeleting } = require('~/models');
+const { markUserDeleting, disableUserSchedulesForDeletion } = require('~/models');
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
 
@@ -98,18 +97,26 @@ async function gracefulExit(code = 0) {
     return gracefulExit(1);
   }
 
-  // WAIT OUT the live server's auth cache before anything destructive. With a shared
-  // (Redis) cache the invalidation above reached the server; with the IN-PROCESS cache
-  // no external script can, so a request served from a stale pre-barrier req.user could
-  // still mutate conversations/files during the cascade and recreate data for the
-  // removed account — only the schedule routes consult the Mongo barrier directly.
-  // Sleeping through the full TTL (plus slack) is the one mechanism that covers both
-  // topologies; this is a manual admin command, so the pause is free.
-  if (process.env.AUTH_USER_CACHE_MODE === 'on') {
-    const waitMs = AUTH_USER_DOC_CACHE_TTL_MS + 1000;
-    console.orange(`Waiting ${waitMs}ms for any live server's auth cache to expire...`);
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
-  }
+  // FENCE IN-FLIGHT FIRES before counting. The barrier alone does not close this: a
+  // fire consults the owner-deleting probe once, at the START of its preflight (user,
+  // permission, balance and attachment lookups), so one that passed that probe moments
+  // before the barrier went up is still mid-preflight — invisible to the count below,
+  // and free to reserve and dispatch afterwards because every later fence revalidates
+  // the SCHEDULE, not the user. Disabling the schedules rotates each claim token, which
+  // is exactly what those later fences check: a fire not yet reserved steps aside, and
+  // one already reserved rolls back at its pre-POST revalidation. Only then does the
+  // count actually close over every fire, as the comment above claims.
+  await disableUserSchedulesForDeletion(uid);
+
+  // SCOPE, stated plainly: this barrier stops SCHEDULING — the engine's claims, the
+  // fire dispatch boundary, and every schedule write consult it. It is NOT a general
+  // request barrier: the auth strategies do not read `deletionRequestedAt`, so a live
+  // server keeps admitting this user's existing access tokens for the rest of the
+  // cascade, and an in-flight request can still write. Nothing here can drain those,
+  // and no sleep bounds them (an access token outlives any cache TTL by minutes), so
+  // this script does not pretend to — refusing the ACTIVE-RUN case below is what it can
+  // honestly guarantee. Closing the general case needs a barrier at authentication;
+  // tracked in packages/api/src/schedules/FOLLOWUPS.md.
 
   // REFUSE rather than warn when a scheduled run is in flight. This script talks to the
   // database directly, so unlike the HTTP deletion paths it cannot abort a live loopback

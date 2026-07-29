@@ -475,8 +475,12 @@ describe('recordRunOutcome', () => {
     const updated = await getSchedule(schedule.id);
     expect(updated.lastRun?.status).toBe('success');
     expect(updated.lastRun?.conversationId).toBe('convo-newer');
-    // The counters are order-insensitive and still count the older failure.
-    expect(updated.failureCount).toBe(1);
+    // The streak counters are order-fenced too, not just the card. This assertion used
+    // to expect 1 on the reasoning that counters are order-insensitive — but a streak
+    // is not: letting the stale failure land rebuilds one the newer success had
+    // cleared, and at `autoDisableAfterFailures: 1` that alone disables the schedule.
+    expect(updated.failureCount).toBe(0);
+    // The row still settles; only the schedule-level streak ignores the late outcome.
     expect(await getRun(schedule.id, older)).toMatchObject({ status: 'error' });
   });
 });
@@ -1624,5 +1628,169 @@ describe('skip bookkeeping is fenced by the same derived seam', () => {
     const after = await getSchedule(schedule.id);
     expect(after.balanceSkipCount).toBe(0);
     expect(after.enabled).toBe(true);
+  });
+});
+
+describe('streak counters are order-fenced', () => {
+  const older = new Date('2026-07-20T08:00:00Z');
+  const newer = new Date('2026-07-20T09:00:00Z');
+
+  /**
+   * A `requires_action` run holds no capacity slot and does not block its schedule's
+   * later occurrences, so an older occurrence routinely settles AFTER a newer one — a
+   * resumed pause, or a reconciler replay. Unfenced, its late `error` rebuilds a streak
+   * the newer success had cleared.
+   */
+  it('does not let an older failure rebuild a streak a newer success cleared', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await ScheduleRun.create(runData(schedule, { scheduledFor: older, status: 'requires_action' }));
+    await ScheduleRun.create(runData(schedule, { scheduledFor: newer }));
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: newer,
+      status: 'success',
+      autoDisableAfterFailures: 5,
+    });
+    expect((await getSchedule(schedule.id)).failureCount).toBe(0);
+
+    // The older occurrence settles late, in error.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: older,
+      status: 'error',
+      error: 'late failure',
+      autoDisableAfterFailures: 5,
+    });
+
+    const after = await getSchedule(schedule.id);
+    expect(after.failureCount).toBe(0);
+  });
+
+  /**
+   * `autoDisableAfterFailures` may be configured as low as 1, where a single stale
+   * failure is the difference between a healthy schedule and a disabled one.
+   */
+  it('does not auto-disable a healthy schedule on a stale failure at threshold 1', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await ScheduleRun.create(runData(schedule, { scheduledFor: older, status: 'requires_action' }));
+    await ScheduleRun.create(runData(schedule, { scheduledFor: newer }));
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: newer,
+      status: 'success',
+      autoDisableAfterFailures: 1,
+    });
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: older,
+      status: 'error',
+      autoDisableAfterFailures: 1,
+    });
+
+    const after = await getSchedule(schedule.id);
+    expect(after.enabled).toBe(true);
+    expect(after.disabledReason).toBeUndefined();
+  });
+
+  it('still counts occurrences that settle in order', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    // The older row is `requires_action`: the single-active partial index admits only
+    // one `started` run per schedule, which is exactly why pauses can pile up.
+    await ScheduleRun.create(runData(schedule, { scheduledFor: older, status: 'requires_action' }));
+    await ScheduleRun.create(runData(schedule, { scheduledFor: newer }));
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: older,
+      status: 'error',
+      autoDisableAfterFailures: 5,
+    });
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: newer,
+      status: 'error',
+      autoDisableAfterFailures: 5,
+    });
+
+    expect((await getSchedule(schedule.id)).failureCount).toBe(2);
+  });
+});
+
+describe('updateScheduleById revision fence', () => {
+  it('refuses an edit computed from a superseded revision', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const staleRevision = schedule.configRevision ?? 0;
+    // A concurrent edit lands first and moves the revision on.
+    await methods.updateScheduleById(schedule.id, schedule.user, { name: 'winner' });
+
+    const loser = await methods.updateScheduleById(
+      schedule.id,
+      schedule.user,
+      { name: 'loser' },
+      undefined,
+      { expectedConfigRevision: staleRevision },
+    );
+
+    // Otherwise the loser would persist a nextRunAt derived from a (cadence, timezone)
+    // pair that no longer describes the row.
+    expect(loser).toBeNull();
+    expect((await getSchedule(schedule.id)).name).toBe('winner');
+  });
+
+  it('applies an edit whose revision is still current', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const updated = await methods.updateScheduleById(
+      schedule.id,
+      schedule.user,
+      { name: 'renamed' },
+      undefined,
+      { expectedConfigRevision: schedule.configRevision ?? 0 },
+    );
+    expect(updated?.name).toBe('renamed');
+  });
+});
+
+describe('reconciliation rotates the paused window', () => {
+  /**
+   * Paused runs accumulate without bound (no capacity slot, no occurrence block) and
+   * the approval TTL that ends them has no ceiling, so a full window of still-LIVE
+   * pauses can sit at the front of an oldest-first ordering forever. Ordering by when
+   * each row was last examined is what guarantees every row eventually gets a turn.
+   */
+  it('serves rows behind a full window once the leaders have been examined', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const base = Date.parse('2026-07-01T00:00:00Z');
+    const olderThan = new Date(base + 10_000_000);
+    for (let i = 0; i < 100; i++) {
+      await ScheduleRun.create(
+        runData(schedule, {
+          scheduledFor: new Date(base + i * 60_000),
+          status: 'requires_action',
+          firedAt: new Date(base + i * 60_000),
+        }),
+      );
+    }
+    // Newer than the 100 leaders, but still inside the age filter — the point is that
+    // ORDERING keeps it out of the first window, not that it is too young to qualify.
+    const queuedAt = new Date(base + 120 * 60_000);
+    await ScheduleRun.create(
+      runData(schedule, {
+        scheduledFor: queuedAt,
+        status: 'requires_action',
+        firedAt: queuedAt,
+      }),
+    );
+
+    const first = await methods.getRunsForReconciliation(olderThan, 100);
+    // The newest row is behind a full batch, so this pass cannot reach it.
+    expect(first.some((run) => run.scheduledFor?.getTime() === queuedAt.getTime())).toBe(false);
+
+    // Examining the batch rotates it to the back.
+    await methods.markRunsReconciled(first);
+
+    const second = await methods.getRunsForReconciliation(olderThan, 100);
+    expect(second.some((run) => run.scheduledFor?.getTime() === queuedAt.getTime())).toBe(true);
   });
 });

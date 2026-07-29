@@ -259,6 +259,98 @@ describe('createSchedule late-create compensation', () => {
   });
 });
 
+describe('create idempotency', () => {
+  const withKey = (): ServerRequest => {
+    const req = makeCreateReq() as unknown as { body: Record<string, unknown> };
+    req.body.clientRequestId = 'intent-1';
+    return req as unknown as ServerRequest;
+  };
+
+  /**
+   * The retry is the whole point: the first attempt committed a row and then failed to
+   * arm, so the client cannot know what persisted. Resolving to the ORIGINAL row is
+   * what keeps one user intent from becoming two recurring schedules.
+   */
+  it('re-arms the row a previous attempt committed instead of creating another', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    // A faithful replica of what the first attempt committed — a genuine retry sends
+    // identical content, which is exactly what distinguishes it from a reused key.
+    const original = {
+      id: 'sched-original',
+      name: 'Digest',
+      prompt: 'Summarize',
+      agent_id: 'agent-1',
+      timezone: 'America/New_York',
+      cadence: { frequency: 'daily', hour: 8, minute: 0 },
+    } as ISchedule;
+    (deps.methods.createScheduleWithSlot as jest.Mock).mockResolvedValue(original);
+    (deps.methods.updateScheduleById as jest.Mock).mockResolvedValue(original);
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).createSchedule(withKey(), res);
+
+    expect(captured.status ?? 201).toBe(201);
+    // Armed by the ORIGINAL id, not the uuid this attempt happened to generate.
+    expect(deps.methods.updateScheduleById).toHaveBeenCalledWith(
+      'sched-original',
+      'user-1',
+      expect.objectContaining({ nextRunAt: expect.any(Date) }),
+    );
+  });
+
+  it('refuses a key reused for a different schedule', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    // Same key, but the row it resolves to is a different intent entirely.
+    (deps.methods.createScheduleWithSlot as jest.Mock).mockResolvedValue({
+      id: 'sched-original',
+      name: 'Something else',
+      prompt: 'Different prompt',
+      agent_id: 'agent-9',
+    } as ISchedule);
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).createSchedule(withKey(), res);
+
+    // A 201 here would describe a schedule the caller never asked for.
+    expect(captured.status).toBe(409);
+    expect(deps.methods.updateScheduleById).not.toHaveBeenCalled();
+  });
+
+  it('warns distinctly when a keyless create cannot be rolled back', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    (deps.methods.updateScheduleById as jest.Mock).mockRejectedValue(new Error('mongo down'));
+    (deps.methods.deleteScheduleById as jest.Mock).mockRejectedValue(new Error('mongo down'));
+    (deps.methods.markScheduleDeleting as jest.Mock).mockRejectedValue(new Error('mongo down'));
+    const { res, captured } = makeRes();
+
+    // Without an idempotency key AND with both compensation writes failing, a row can
+    // survive, self-arm via the unarmed sweep, and a blind retry would add a second.
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    expect(captured.status).toBe(500);
+    expect((captured.body as { error: string }).error).toMatch(/could not roll it back/i);
+  });
+});
+
+describe('deferred erase retry', () => {
+  it('re-drives the erase of the caller’s soft-deleted schedules on list', async () => {
+    const deps = makeCreateDeps();
+    (deps.methods.getSchedulesByUser as jest.Mock) = jest.fn(async () => []);
+    (deps.methods.getDeletingScheduleIds as jest.Mock) = jest.fn(async () => ['stranded-1']);
+    (deps.methods.eraseScheduleIfDrained as jest.Mock) = jest.fn(async () => true);
+    const { res } = makeRes();
+
+    await createSchedulesHandlers(deps).listSchedules(
+      { user: { id: 'user-1' } } as unknown as ServerRequest,
+      res,
+    );
+    // Fire-and-forget, so let the microtask chain settle before asserting.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(deps.methods.eraseScheduleIfDrained).toHaveBeenCalledWith('stranded-1');
+  });
+});
+
 describe('deleteSchedule result mapping', () => {
   function makeDeleteReq(): ServerRequest {
     return {

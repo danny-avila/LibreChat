@@ -128,6 +128,14 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
       type: Number,
       min: 0,
     },
+    /** Client-supplied idempotency key for the CREATE that produced this row, unique
+     *  per user via the partial index below. Creation commits the row and arms it in
+     *  two writes, so a retry after a failure between them would otherwise mint a
+     *  second recurring schedule; the index makes that retry collide and resolve to
+     *  this row instead. */
+    clientRequestId: {
+      type: String,
+    },
     lastRun: {
       type: {
         conversationId: { type: String },
@@ -154,6 +162,13 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
       type: [Date],
       default: undefined,
     },
+    /** Newest occurrence whose outcome has been applied to the streak counters.
+     *  `countedFor` makes counting idempotent per occurrence; this makes it ORDERED,
+     *  so an older occurrence settling late cannot rebuild a streak a newer one
+     *  cleared. Absent on rows written before it existed (fence disabled). */
+    countersAsOf: {
+      type: Date,
+    },
     failureCount: {
       type: Number,
       default: 0,
@@ -179,6 +194,15 @@ scheduleSchema.index({ enabled: 1, nextRunAt: 1 });
 scheduleSchema.index(
   { user: 1, slot: 1 },
   { unique: true, partialFilterExpression: { deleting: false, slot: { $exists: true } } },
+);
+
+// Makes a client's create RETRY idempotent: the second attempt collides here instead of
+// committing a second recurring schedule. Deliberately NOT filtered on `deleting` —
+// a key must stay claimed while its row is being erased, or a retry arriving mid-erase
+// would create a duplicate that outlives it.
+scheduleSchema.index(
+  { user: 1, clientRequestId: 1 },
+  { unique: true, partialFilterExpression: { clientRequestId: { $exists: true } } },
 );
 
 export default scheduleSchema;

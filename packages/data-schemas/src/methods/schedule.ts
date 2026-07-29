@@ -64,6 +64,14 @@ function isSlotConflict(error: unknown): boolean {
   return err?.code === DUPLICATE_KEY && err.keyPattern != null && 'slot' in err.keyPattern;
 }
 
+/** A duplicate-key error whose conflict is the per-user create-idempotency index. */
+function isClientRequestConflict(error: unknown): boolean {
+  const err = error as DuplicateKeyError;
+  return (
+    err?.code === DUPLICATE_KEY && err.keyPattern != null && 'clientRequestId' in err.keyPattern
+  );
+}
+
 export interface ClaimDueScheduleParams {
   instanceId: string;
   leaseMs: number;
@@ -108,6 +116,7 @@ export type ScheduleMethods = {
     userId: string | Types.ObjectId,
     update: Partial<ISchedule>,
     unset?: Record<string, 1>,
+    options?: { expectedConfigRevision?: number },
   ) => Promise<ISchedule | null>;
   deleteScheduleById: (id: string, userId: string | Types.ObjectId) => Promise<boolean>;
   getScheduleById: (id: string, userId?: string | Types.ObjectId) => Promise<ISchedule | null>;
@@ -158,6 +167,7 @@ export type ScheduleMethods = {
   getActiveRunsForUser: (userId: string | Types.ObjectId) => Promise<IScheduleRun[]>;
   disableUserSchedulesForDeletion: (userId: string | Types.ObjectId) => Promise<void>;
   getDeletingSchedules: (limit: number) => Promise<ISchedule[]>;
+  getDeletingScheduleIds: (userId: string | Types.ObjectId, limit: number) => Promise<string[]>;
   getUnarmedSchedules: (limit: number) => Promise<ISchedule[]>;
   armSchedule: (id: string, nextRunAt: Date) => Promise<void>;
   eraseScheduleIfDrained: (id: string) => Promise<boolean>;
@@ -174,6 +184,7 @@ export type ScheduleMethods = {
     balanceSkipDisableThreshold?: number,
   ) => Promise<void>;
   getRunsForReconciliation: (olderThan: Date, limit: number) => Promise<IScheduleRun[]>;
+  markRunsReconciled: (runs: Array<Pick<IScheduleRun, '_id'>>) => Promise<void>;
 };
 
 export function createScheduleMethods(mongoose: typeof import('mongoose')): ScheduleMethods {
@@ -236,6 +247,17 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
         if (isSlotConflict(error)) {
           continue;
         }
+        // A RETRY of a create whose first attempt already committed. Hand back the
+        // original row so the caller re-arms and reports that one, instead of minting a
+        // second recurring schedule for a single user intent.
+        if (isClientRequestConflict(error) && data.clientRequestId) {
+          const existing = await Schedule()
+            .findOne({ user: userId, clientRequestId: data.clientRequestId })
+            .lean<ISchedule>();
+          if (existing != null) {
+            return existing;
+          }
+        }
         throw error;
       }
     }
@@ -253,10 +275,20 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     userId: string | Types.ObjectId,
     update: Partial<ISchedule>,
     unset?: Record<string, 1>,
+    /** Optional edit-generation fence, so two overlapping owner edits cannot each
+     *  persist state derived from a row the other has already replaced. */
+    options?: { expectedConfigRevision?: number },
   ): Promise<ISchedule | null> {
     return Schedule()
       .findOneAndUpdate(
-        { id, user: userId, deleting: { $ne: true } },
+        {
+          id,
+          user: userId,
+          deleting: { $ne: true },
+          ...(options?.expectedConfigRevision !== undefined
+            ? { configRevision: options.expectedConfigRevision }
+            : {}),
+        },
         {
           $set: { ...update, claimToken: randomUUID() },
           // The ONLY writer of configRevision: an owner edit moves the config
@@ -657,11 +689,36 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // pre-existing rows/schedules keep today's behavior instead of wedging.
     const revisionFilter =
       params.expectConfigRevision != null ? { configRevision: params.expectConfigRevision } : {};
+    // ORDER FENCE, the same one the card projection has always had. `failureCount` and
+    // `balanceSkipCount` are CONSECUTIVE streaks, so they are order-sensitive in a way
+    // per-occurrence idempotency (`countedFor`) cannot express: a `requires_action` run
+    // does not block later occurrences, so an older occurrence — a resumed pause, a
+    // reconciler replay — routinely settles AFTER a newer one. Unfenced, its late `error`
+    // rebuilds a streak a newer success had already cleared, and since
+    // `autoDisableAfterFailures` may be configured as low as 1, a single stale failure
+    // can disable a healthy schedule.
+    //
+    // The fence covers the WHOLE counter update rather than the streak fields alone:
+    // splitting it would break the atomicity that keeps a crash from half-applying the
+    // count, and DocumentDB rules out expressing it as a pipeline update. The cost is
+    // that a late occurrence's success does not add to `runCount` — a display total
+    // under-counting a rare out-of-order run, which is the cheap side of this trade.
+    // Absent-tolerant, so schedules written before the watermark existed count once and
+    // then order normally.
+    const counterOrderFilter = {
+      $or: [{ countersAsOf: { $exists: false } }, { countersAsOf: { $lte: params.scheduledFor } }],
+    };
     await Schedule().updateOne(
-      { id: params.scheduleId, countedFor: { $ne: params.scheduledFor }, ...revisionFilter },
+      {
+        id: params.scheduleId,
+        countedFor: { $ne: params.scheduledFor },
+        ...revisionFilter,
+        ...counterOrderFilter,
+      },
       {
         $set: {
           balanceSkipCount: 0,
+          countersAsOf: params.scheduledFor,
           ...(isSuccess ? { failureCount: 0 } : {}),
         },
         $push: { countedFor: { $each: [params.scheduledFor], $slice: -COUNTED_FOR_WINDOW } },
@@ -847,10 +904,15 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       data.scheduledFor,
       skipRevisionFilter,
     );
+    // Same order fence as the terminal counters: these are consecutive streaks, so an
+    // older occurrence settling late must not reset or extend one a newer outcome owns.
+    const skipOrderFilter = {
+      $or: [{ countersAsOf: { $exists: false } }, { countersAsOf: { $lte: data.scheduledFor } }],
+    };
     if (data.status !== 'skipped_balance') {
       await Schedule().updateOne(
-        { id: data.scheduleId, ...skipRevisionFilter },
-        { $set: { balanceSkipCount: 0 } },
+        { id: data.scheduleId, ...skipRevisionFilter, ...skipOrderFilter },
+        { $set: { balanceSkipCount: 0, countersAsOf: data.scheduledFor } },
       );
     }
     if (data.status !== 'skipped_balance' || balanceSkipDisableThreshold == null) {
@@ -861,9 +923,15 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // terminal counters use; an occurrence is only ever skipped OR fired, never both).
     const schedule = await Schedule()
       .findOneAndUpdate(
-        { id: data.scheduleId, countedFor: { $ne: data.scheduledFor }, ...skipRevisionFilter },
+        {
+          id: data.scheduleId,
+          countedFor: { $ne: data.scheduledFor },
+          ...skipRevisionFilter,
+          ...skipOrderFilter,
+        },
         {
           $inc: { balanceSkipCount: 1 },
+          $set: { countersAsOf: data.scheduledFor },
           $push: { countedFor: { $each: [data.scheduledFor], $slice: -COUNTED_FOR_WINDOW } },
         },
         { new: true },
@@ -908,18 +976,42 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
    */
   async function getRunsForReconciliation(olderThan: Date, limit: number): Promise<IScheduleRun[]> {
     const [started, paused] = await Promise.all([
+      // `started` runs are bounded by the global fireConcurrency cap, so this window
+      // can never fill with rows that have nothing to do — oldest-first is right here.
       ScheduleRun()
         .find({ status: 'started', firedAt: { $lt: olderThan } })
         .sort({ firedAt: 1 })
         .limit(limit)
         .lean<IScheduleRun[]>(),
+      // ROUND-ROBIN, not oldest-first. A paused run holds no capacity slot and does not
+      // block its schedule's later occurrences, so pauses accumulate without bound — a
+      // handful of hourly schedules can leave hundreds live at once, and the approval
+      // TTL that ends them is operator-configured with no ceiling. Under oldest-first
+      // the same full window of still-live pauses is re-fetched every tick while an
+      // ABANDONED row behind them is never reached, so its run stays active forever.
+      // Ordering by when each row was last examined (never-examined first) gives every
+      // row a turn, which makes that starvation impossible for any number of pauses.
       ScheduleRun()
         .find({ status: 'requires_action', firedAt: { $lt: olderThan } })
-        .sort({ firedAt: 1 })
+        .sort({ reconciledAt: 1, firedAt: 1 })
         .limit(limit)
         .lean<IScheduleRun[]>(),
     ]);
     return [...started, ...paused];
+  }
+
+  /** Stamps rows as examined, so the paused window rotates instead of re-serving the
+   *  same rows forever. Bookkeeping only: never touches `updatedAt`. */
+  async function markRunsReconciled(runs: Array<Pick<IScheduleRun, '_id'>>): Promise<void> {
+    const ids = runs.map((run) => run._id).filter((id) => id != null);
+    if (ids.length === 0) {
+      return;
+    }
+    await ScheduleRun().updateMany(
+      { _id: { $in: ids } },
+      { $set: { reconciledAt: new Date() } },
+      { timestamps: false },
+    );
   }
 
   /** Terminal runs whose schedule bookkeeping never landed (crash between the two writes). */
@@ -1066,6 +1158,21 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     return Schedule().find({ deleting: true }).limit(limit).lean<ISchedule[]>();
   }
 
+  /** Ids of an owner's soft-deleted schedules, for a lazy erase retry on a read path
+   *  in topologies that run no reconciler. Projected to ids: the caller only re-drives
+   *  eraseScheduleIfDrained, and the rows carry prompt text this need not load. */
+  async function getDeletingScheduleIds(
+    userId: string | Types.ObjectId,
+    limit: number,
+  ): Promise<string[]> {
+    const rows = await Schedule()
+      .find({ user: userId, deleting: true })
+      .select('id')
+      .limit(limit)
+      .lean<Array<Pick<ISchedule, 'id'>>>();
+    return rows.map((row) => row.id);
+  }
+
   /**
    * Erases a soft-deleted schedule and its runs ONLY once it has fully drained, so a
    * live loopback generation's evidence is never destroyed out from under it. Drained
@@ -1138,6 +1245,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     getActiveRunsForUser,
     disableUserSchedulesForDeletion,
     getDeletingSchedules,
+    getDeletingScheduleIds,
     getUnarmedSchedules,
     armSchedule,
     eraseScheduleIfDrained,
@@ -1147,5 +1255,6 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     recordRunOutcome,
     recordSkippedRun,
     getRunsForReconciliation,
+    markRunsReconciled,
   };
 }

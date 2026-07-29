@@ -29,6 +29,8 @@ export interface ISchedule {
   configRevision?: number;
   deleting?: boolean;
   slot?: number;
+  /** Client-supplied idempotency key of the create that produced this row. */
+  clientRequestId?: string;
   lastRun?: {
     conversationId?: string;
     status: ScheduleRunStatus;
@@ -42,6 +44,8 @@ export interface ISchedule {
   failureCount: number;
   balanceSkipCount: number;
   countedFor?: Date[];
+  /** Newest occurrence applied to the streak counters; orders them like the card. */
+  countersAsOf?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -51,6 +55,7 @@ export interface IScheduleDocument extends Omit<ISchedule, 'id' | '_id'>, Docume
 }
 
 export interface IScheduleRun {
+  _id?: Types.ObjectId;
   scheduleId: string;
   user: Types.ObjectId;
   tenantId?: string;
@@ -68,8 +73,11 @@ export interface IScheduleRun {
   abortRequestedAt?: Date;
   /** The schedule's configRevision at claim time. */
   configRevision?: number;
+  /** When reconciliation last examined this row; orders the paused window so no row
+   *  can be starved by a full batch of still-live pauses ahead of it. */
+  reconciledAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-export interface IScheduleRunDocument extends IScheduleRun, Document {}
+export interface IScheduleRunDocument extends Omit<IScheduleRun, '_id'>, Document {}

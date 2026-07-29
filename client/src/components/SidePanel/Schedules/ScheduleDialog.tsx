@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useForm, Controller } from 'react-hook-form';
 import { PermissionBits, scheduleFrequencies } from 'librechat-data-provider';
@@ -182,8 +182,13 @@ export default function ScheduleDialog({
     [schedule],
   );
 
+  /** Idempotency key for the create being attempted. Held in a ref so every retry of
+   *  the same intent reuses it, and rotated only after one succeeds. */
+  const createRequestId = useRef(crypto.randomUUID());
+
   const createSchedule = useCreateScheduleMutation({
     onSuccess: () => {
+      createRequestId.current = crypto.randomUUID();
       showToast({ message: localize('com_ui_schedule_created'), status: 'success' });
       onOpenChange(false);
     },
@@ -243,6 +248,12 @@ export default function ScheduleDialog({
       timezone,
       target: 'new',
       enabled: true,
+      // STABLE across retries of this one create intent, which is the whole point: the
+      // server commits the row and arms it in two writes, so a failure between them
+      // leaves the client unable to tell what persisted. A fresh key per attempt would
+      // make each retry a new schedule; this key makes them all resolve to the first
+      // row. Reset only once a create SUCCEEDS (see the mutation's onSuccess).
+      clientRequestId: createRequestId.current,
     };
     createSchedule.mutate(payload);
   };

@@ -39,10 +39,20 @@ export const createSchedulePayloadSchema = z.object({
   target: z.enum(scheduleTargets).default('new'),
   file_ids: z.array(z.string()).max(10).optional(),
   enabled: z.boolean().default(true),
+  /**
+   * Client-generated key making creation idempotent across retries. Creation commits
+   * the row and arms it in two writes, so a failure between them leaves the client
+   * unable to tell whether anything persisted; retrying blind can produce two recurring
+   * schedules. A retry carrying the same key resolves to the original row instead.
+   */
+  clientRequestId: z.string().trim().min(1).max(128).optional(),
 });
 export type TCreateSchedule = z.infer<typeof createSchedulePayloadSchema>;
 
-export const updateSchedulePayloadSchema = createSchedulePayloadSchema.partial();
+/** Idempotency is a property of the CREATE attempt, not of the schedule's config. */
+export const updateSchedulePayloadSchema = createSchedulePayloadSchema
+  .omit({ clientRequestId: true })
+  .partial();
 export type TUpdateSchedule = z.infer<typeof updateSchedulePayloadSchema>;
 
 export type TScheduleLastRun = {

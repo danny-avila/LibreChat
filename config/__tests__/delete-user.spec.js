@@ -14,6 +14,7 @@ const mockModelFor = (name) => {
 };
 
 const mockMarkUserDeleting = jest.fn(async () => new Date());
+const mockDisableUserSchedules = jest.fn(async () => undefined);
 const mockSilentExit = jest.fn();
 const mockAskQuestion = jest.fn();
 
@@ -22,11 +23,13 @@ jest.mock('mongoose', () => ({ disconnect: jest.fn(async () => {}) }));
 // The real package cannot load here: this suite mocks mongoose to a bare stub, and
 // @librechat/api reads Types.ObjectId at import time. The live CLI harness exercises
 // the real wiring; this suite only needs the constant.
-jest.mock('@librechat/api', () => ({ AUTH_USER_DOC_CACHE_TTL_MS: 5000 }));
 jest.mock('@librechat/data-schemas', () => ({
   createModels: () => new Proxy({}, { get: (_target, prop) => mockModelFor(prop) }),
 }));
-jest.mock('~/models', () => ({ markUserDeleting: mockMarkUserDeleting }));
+jest.mock('~/models', () => ({
+  markUserDeleting: mockMarkUserDeleting,
+  disableUserSchedulesForDeletion: mockDisableUserSchedules,
+}));
 jest.mock('../helpers', () => ({
   ...jest.requireActual('../helpers'),
   askQuestion: mockAskQuestion,
@@ -68,6 +71,7 @@ describe('Delete user CLI', () => {
     });
     mockModelFor('ScheduleRun').countDocuments.mockResolvedValue(0);
     mockMarkUserDeleting.mockReset().mockResolvedValue(new Date());
+    mockDisableUserSchedules.mockReset().mockResolvedValue(undefined);
     // Confirm deletion, decline transaction history.
     mockAskQuestion.mockReset().mockResolvedValueOnce('y').mockResolvedValueOnce('n');
   });
@@ -114,28 +118,19 @@ describe('Delete user CLI', () => {
     expect(mockModelFor('Message').deleteMany).not.toHaveBeenCalled();
   });
 
-  it('waits out the live auth cache before any destructive read or write', async () => {
-    // In-process cache mode: markUserDeleting can only invalidate THIS process's
-    // cache, so a live server keeps serving a pre-barrier req.user for up to the
-    // cache TTL — long enough for a request to recreate data mid-cascade. The
-    // script must sleep through that window between the barrier and the cascade.
-    process.env.AUTH_USER_CACHE_MODE = 'on';
-    const timeoutSpy = jest.spyOn(global, 'setTimeout');
-    try {
-      const started = Date.now();
-      const code = await runCli();
-      expect(code).toBe(0);
-      const waits = timeoutSpy.mock.calls.map((c) => c[1]).filter((ms) => ms >= 5000);
-      expect(waits.length).toBeGreaterThanOrEqual(1);
-      expect(Date.now() - started).toBeGreaterThanOrEqual(5000);
-      const barrierAt = mockMarkUserDeleting.mock.invocationCallOrder[0];
-      const countAt = mockModelFor('ScheduleRun').countDocuments.mock.invocationCallOrder[0];
-      expect(barrierAt).toBeLessThan(countAt);
-    } finally {
-      delete process.env.AUTH_USER_CACHE_MODE;
-      timeoutSpy.mockRestore();
-    }
-  }, 20000);
+  it('fences in-flight fires before the count can mean anything', async () => {
+    // The barrier alone leaves a fire that passed the owner-deleting probe moments
+    // earlier still in preflight: invisible to the count, then free to reserve and
+    // dispatch, because every later fence revalidates the SCHEDULE, not the user.
+    // Disabling the schedules rotates each claim token, which is what those fences
+    // check — so it has to land before the count, not merely before the deletes.
+    await runCli();
+
+    const disableAt = mockDisableUserSchedules.mock.invocationCallOrder[0];
+    const countAt = mockModelFor('ScheduleRun').countDocuments.mock.invocationCallOrder[0];
+    expect(mockDisableUserSchedules).toHaveBeenCalledWith(USER_ID);
+    expect(disableAt).toBeLessThan(countAt);
+  });
 
   it('refuses while a scheduled run is still active', async () => {
     mockModelFor('ScheduleRun').countDocuments.mockResolvedValue(2);

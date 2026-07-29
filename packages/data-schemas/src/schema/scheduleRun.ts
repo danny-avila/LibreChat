@@ -70,6 +70,11 @@ const scheduleRunSchema: Schema<IScheduleRunDocument> = new Schema(
     abortRequestedAt: {
       type: Date,
     },
+    /** When reconciliation last examined this row. Orders the paused window so a full
+     *  batch of still-live pauses cannot starve an abandoned row behind them. */
+    reconciledAt: {
+      type: Date,
+    },
     /** The schedule's configRevision at claim time. Fences terminal bookkeeping and
      *  auto-disable from owner edits/re-enables that landed after this run started. */
     configRevision: {

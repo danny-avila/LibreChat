@@ -81,3 +81,36 @@ A platform-level worker that automatically finishes such accounts (query:
   terminal/pause/skip, so its status can never be `started`.
 - `minIntervalMinutes` in the wire type + dialog gating; the server enforces a floor the
   client neither surfaces nor explains.
+
+## Account deletion: no barrier at AUTHENTICATION (out of scope, pre-existing)
+
+`deletionRequestedAt` is a SCHEDULING barrier. It is consulted by the engine's claims,
+the fire dispatch boundary (`isOwnerDeleting`), and every schedule write — so no new
+scheduled work is admitted once it is up. It is **not** consulted by
+`api/strategies/jwtStrategy.js` or `openIdJwtStrategy.js`, so a user whose deletion has
+begun still authenticates, and an already-issued access token keeps working until it
+expires (15 minutes by default). A request admitted that way can write during the
+cascade and leave rows behind for an account the operator believes is erased.
+
+This predates the scheduler: on `dev` the account-deletion path has no barrier at all,
+so the same window exists and is strictly wider. Closing it means refusing admission in
+the auth strategies (and/or invalidating the user's sessions) — a platform-level change
+affecting every route, which is why it is not folded into the scheduler PR.
+
+Related: `setCachedAuthUserDoc` writes its cache entry and reverse index in two steps,
+so an invalidation interleaving between them can miss the entry it never indexed. Bounded
+by the entry's own TTL, and it cannot weaken the barrier itself (every barrier check
+reads Mongo directly, never the auth cache), but it belongs with the work above.
+
+## Balance: an insufficient (but positive) balance is classified as a schedule failure
+
+`isOutOfBalance` can only pre-skip a balance a fire has ALREADY exhausted; the true cost
+of a run is unknowable before its payload is built, so an owner whose credits sit between
+zero and the run's cost passes the pre-check and fails mid-generation. That failure is
+then recorded as a generic `error`, walking the schedule toward `too_many_failures`
+instead of `insufficient_balance` — the wrong reason, and it counts against a schedule
+that is not at fault.
+
+The pre-skip cannot be made exact, but the CLASSIFICATION can: the loopback generation
+returns a distinguishable balance violation, and the fire's definite-rejection branch
+could map it to `skipped_balance`. Deferred on priority, not because it is inherent.

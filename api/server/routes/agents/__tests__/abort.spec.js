@@ -27,10 +27,14 @@ const mockSaveMessage = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn(async () => undefined);
 const mockRecordScheduleOutcome = jest.fn(async () => true);
 const mockClearScheduledJob = jest.fn(async () => undefined);
+const mockRequestScheduledRunAbort = jest.fn(async () => undefined);
 
 jest.mock('~/server/services/Schedules', () => ({
   recordScheduleOutcome: (...args) => mockRecordScheduleOutcome(...args),
   clearScheduledJob: (...args) => mockClearScheduledJob(...args),
+  // Omitting this made the handler throw before abortJob, so the assertions below
+  // "passed" on a route that never ran.
+  requestScheduledRunAbort: (...args) => mockRequestScheduledRunAbort(...args),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -623,6 +627,25 @@ describe('Agent Abort Endpoint', () => {
         // Terminalizing it as `interrupted` here would release the capacity slot and
         // make the real outcome's write a no-op against an already-terminal row.
         expect(mockRecordScheduleOutcome).not.toHaveBeenCalled();
+      });
+
+      /**
+       * abortJob flips the job to `aborted` (or removes it) the moment it wins its
+       * status CAS, while this handler still has to save the partial and settle LAST.
+       * The stamp is the only thing telling a concurrent account-deletion quiesce that
+       * the post-abort job state it reads is not yet a finished generation — so it has
+       * to be durable BEFORE the abort, not after.
+       */
+      it('stamps the run abort-requested before signalling the abort', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        mockGenerationJobManager.abortJob.mockResolvedValue({ success: true, content: [] });
+
+        await request(app).post('/api/agents/chat/abort').send({ conversationId: 'sched-conv' });
+
+        expect(mockRequestScheduledRunAbort).toHaveBeenCalledWith('sched-1', expect.any(Date));
+        expect(mockRequestScheduledRunAbort.mock.invocationCallOrder[0]).toBeLessThan(
+          mockGenerationJobManager.abortJob.mock.invocationCallOrder[0],
+        );
       });
 
       it('records the interruption and clears the preserved job once the abort wins', async () => {
