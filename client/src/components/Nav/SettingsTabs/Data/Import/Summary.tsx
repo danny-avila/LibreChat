@@ -57,11 +57,11 @@ export default function Summary({
         {localize('com_ui_import_detected', { 0: sourceLabel })}
       </h3>
       <ul className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm text-text-secondary">
-        <li>{localize('com_ui_import_stat_conversations', { count: summary.conversations })}</li>
+        <li>{localize('com_ui_import_stat_conversations', { 0: summary.conversations })}</li>
         <li>
           {localize('com_ui_import_assets', {
-            count: summary.assets,
-            size: formatAssetSize(summary.assetBytes),
+            0: summary.assets,
+            1: formatAssetSize(summary.assetBytes),
           })}
         </li>
         <li>{localize('com_ui_import_stat_archived', { 0: summary.archived })}</li>
