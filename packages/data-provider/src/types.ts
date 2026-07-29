@@ -867,7 +867,17 @@ export type TLangfuseConnectionTestRequest = {
   secretKey?: string;
 };
 
-export type TLangfuseConnectionTestResponse = {
-  success: boolean;
-  message?: string;
-};
+export type TLangfuseConnectionTestErrorCode =
+  | 'invalid_credentials'
+  | 'access_denied'
+  | 'rate_limited'
+  | 'server_error'
+  | 'timeout'
+  | 'unreachable'
+  | 'missing_secret'
+  | 'stored_secret_unavailable'
+  | 'unexpected_response';
+
+export type TLangfuseConnectionTestResponse =
+  | { success: true }
+  | { success: false; errorCode: TLangfuseConnectionTestErrorCode };

@@ -143,7 +143,7 @@ describe('LangfuseConnection', () => {
 
   it('shows a failed saved-connection status when the load-time test fails', async () => {
     mockTest.mockImplementation((_payload, options) => {
-      options?.onSuccess?.({ success: false, message: 'Langfuse rejected these keys' });
+      options?.onSuccess?.({ success: false, errorCode: 'invalid_credentials' });
     });
     mockGet.mockReturnValue({
       data: {
@@ -159,12 +159,11 @@ describe('LangfuseConnection', () => {
     render(<LangfuseConnection />);
 
     await waitFor(() =>
-      expect(screen.getByText('Langfuse rejected these keys')).toBeInTheDocument(),
+      expect(screen.getByText('com_ui_langfuse_test_invalid_credentials')).toBeInTheDocument(),
     );
-    expect(screen.getByText('Langfuse rejected these keys').closest('div')).toHaveAttribute(
-      'title',
-      'com_ui_langfuse_status_failed_hover',
-    );
+    expect(
+      screen.getByText('com_ui_langfuse_test_invalid_credentials').closest('div'),
+    ).toHaveAttribute('title', 'com_ui_langfuse_status_failed_hover');
   });
 
   it('tests and saves the typed secret key when enabling a new connection', async () => {
@@ -343,10 +342,10 @@ describe('LangfuseConnection', () => {
     await waitFor(() => expect(mockTest).toHaveBeenCalledTimes(1));
 
     mockTest.mockImplementationOnce((_payload, options) => {
-      options?.onSuccess?.({ success: false, message: 'invalid edited connection' });
+      options?.onSuccess?.({ success: false, errorCode: 'unexpected_response' });
     });
     await selectDestination('us');
-    expect(await screen.findByText('invalid edited connection')).toBeVisible();
+    expect(await screen.findByText('com_ui_langfuse_test_unexpected_response')).toBeVisible();
     await userEvent.click(
       screen.getByRole('button', {
         name: 'com_ui_edit com_ui_langfuse_public_key',
@@ -383,7 +382,7 @@ describe('LangfuseConnection', () => {
 
   it('blocks saving when the implicit connection test fails', async () => {
     mockTest.mockImplementation((_payload, options) => {
-      options?.onSuccess?.({ success: false, message: 'bad key' });
+      options?.onSuccess?.({ success: false, errorCode: 'invalid_credentials' });
     });
     render(<LangfuseConnection />);
     await selectDestination('us');
@@ -417,7 +416,7 @@ describe('LangfuseConnection', () => {
     mockTest.mockImplementation((_payload, options) => {
       options?.onSuccess?.({
         success: false,
-        message: 'Langfuse rejected these keys. Check the destination and keys',
+        errorCode: 'invalid_credentials',
       });
     });
 
@@ -436,9 +435,7 @@ describe('LangfuseConnection', () => {
       expect.objectContaining({ publicKey: 'pk-lf-mangled' }),
       expect.any(Object),
     );
-    expect(
-      screen.getByText('Langfuse rejected these keys. Check the destination and keys'),
-    ).toBeVisible();
+    expect(screen.getByText('com_ui_langfuse_test_invalid_credentials')).toBeVisible();
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 

@@ -540,7 +540,7 @@ describe('createAdminLangfuseHandlers', () => {
 
       expect(res.body).toEqual({
         success: false,
-        message: 'Langfuse verification timed out',
+        errorCode: 'timeout',
       });
       expect(global.fetch).toHaveBeenCalledTimes(2);
     });
@@ -562,7 +562,7 @@ describe('createAdminLangfuseHandlers', () => {
 
       expect(res.body).toEqual({
         success: false,
-        message: 'Langfuse rejected these keys. Check the destination and keys',
+        errorCode: 'invalid_credentials',
       });
       expect(global.fetch).toHaveBeenCalledTimes(2);
     });
@@ -583,7 +583,7 @@ describe('createAdminLangfuseHandlers', () => {
 
       expect(res.body).toEqual({
         success: false,
-        message: 'Langfuse rejected these keys. Check the destination and keys',
+        errorCode: 'invalid_credentials',
       });
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
@@ -604,8 +604,27 @@ describe('createAdminLangfuseHandlers', () => {
 
       expect(res.body).toEqual({
         success: false,
-        message: 'Langfuse is returning server errors. This may be a Langfuse incident.',
+        errorCode: 'server_error',
       });
+    });
+
+    it.each([
+      [403, 'access_denied'],
+      [429, 'rate_limited'],
+      [400, 'unexpected_response'],
+    ])('maps Langfuse status %i to %s', async (status, errorCode) => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: false, status }) as unknown as typeof fetch;
+      const { handlers } = createHandlers();
+      const res = mockRes();
+
+      await handlers.testConnection(
+        mockReq({
+          body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
+        }),
+        res,
+      );
+
+      expect(res.body).toEqual({ success: false, errorCode });
     });
 
     it('falls back to the stored (decrypted) secret when none is supplied', async () => {

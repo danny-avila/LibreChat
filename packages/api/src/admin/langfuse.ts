@@ -5,6 +5,7 @@ import type {
   LangfuseConfig,
   TLangfuseConnectionStatus,
   TUpdateLangfuseConnectionRequest,
+  TLangfuseConnectionTestErrorCode,
   TLangfuseConnectionTestRequest,
   TLangfuseConnectionTestResponse,
 } from 'librechat-data-provider';
@@ -79,21 +80,54 @@ function rejectWhenConnectionUnavailable(res: Response): Response | undefined {
   return res.status(404).json({ error: 'Langfuse connection settings are not available' });
 }
 
-function getLangfuseTestFailureMessage(status: number): string {
+type LangfuseVerificationFailure = {
+  errorCode: TLangfuseConnectionTestErrorCode;
+  message: string;
+};
+
+function getLangfuseTestFailure(status: number): LangfuseVerificationFailure {
   if (status === 401) {
-    return 'Langfuse rejected these keys. Check the destination and keys';
+    return {
+      errorCode: 'invalid_credentials',
+      message: 'Langfuse rejected these keys. Check the destination and keys',
+    };
+  }
+
+  if (status === 403) {
+    return {
+      errorCode: 'access_denied',
+      message: 'Langfuse denied access. Check the API key type and project status.',
+    };
+  }
+
+  if (status === 429) {
+    return {
+      errorCode: 'rate_limited',
+      message: 'Langfuse is rate limiting verification. Try again later.',
+    };
   }
 
   if (status >= 500) {
-    return 'Langfuse is returning server errors. This may be a Langfuse incident.';
+    return {
+      errorCode: 'server_error',
+      message: 'Langfuse is returning server errors. This may be a Langfuse incident.',
+    };
   }
 
-  return `Langfuse responded with status ${status}`;
+  return {
+    errorCode: 'unexpected_response',
+    message: `Langfuse responded with status ${status}`,
+  };
 }
 
-type LangfuseVerificationResult = TLangfuseConnectionTestResponse & {
-  responseStatus?: number;
-};
+type LangfuseVerificationResult =
+  | { success: true }
+  | {
+      success: false;
+      errorCode: TLangfuseConnectionTestErrorCode;
+      message: string;
+      responseStatus?: number;
+    };
 
 async function verifyLangfuseCredentials(
   destination: LangfuseTenantDestination,
@@ -110,7 +144,7 @@ async function verifyLangfuseCredentials(
     if (!secretResponse.ok) {
       return {
         success: false,
-        message: getLangfuseTestFailureMessage(secretResponse.status),
+        ...getLangfuseTestFailure(secretResponse.status),
         responseStatus: secretResponse.status >= 500 ? 502 : 400,
       };
     }
@@ -128,7 +162,7 @@ async function verifyLangfuseCredentials(
     if (!publicResponse.ok) {
       return {
         success: false,
-        message: getLangfuseTestFailureMessage(publicResponse.status),
+        ...getLangfuseTestFailure(publicResponse.status),
         responseStatus: publicResponse.status >= 500 ? 502 : 400,
       };
     }
@@ -139,12 +173,14 @@ async function verifyLangfuseCredentials(
     if (error instanceof Error && error.name === 'TimeoutError') {
       return {
         success: false,
+        errorCode: 'timeout',
         message: 'Langfuse verification timed out',
         responseStatus: 502,
       };
     }
     return {
       success: false,
+      errorCode: 'unreachable',
       message: 'Could not reach the Langfuse host',
       responseStatus: 502,
     };
@@ -304,7 +340,7 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
           if (!secretKey) {
             const failed: TLangfuseConnectionTestResponse = {
               success: false,
-              message: 'Stored secret key could not be decrypted',
+              errorCode: 'stored_secret_unavailable',
             };
             return res.status(200).json(failed);
           }
@@ -314,22 +350,21 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
       if (!secretKey) {
         const failed: TLangfuseConnectionTestResponse = {
           success: false,
-          message: 'secretKey is required to test the connection',
+          errorCode: 'missing_secret',
         };
         return res.status(200).json(failed);
       }
 
       const result = await verifyLangfuseCredentials(tenantDestination, publicKey, secretKey);
-      const response: TLangfuseConnectionTestResponse = {
-        success: result.success,
-        ...(result.message ? { message: result.message } : {}),
-      };
+      const response: TLangfuseConnectionTestResponse = result.success
+        ? { success: true }
+        : { success: false, errorCode: result.errorCode };
       return res.status(200).json(response);
     } catch (error) {
       logger.error('[adminLangfuse] testConnection error:', error);
       const result: TLangfuseConnectionTestResponse = {
         success: false,
-        message: 'Could not reach the Langfuse host',
+        errorCode: 'unreachable',
       };
       return res.status(200).json(result);
     }

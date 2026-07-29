@@ -12,7 +12,10 @@ import {
   Spinner,
   useToastContext,
 } from '@librechat/client';
-import type { TLangfuseConnectionStatus } from 'librechat-data-provider';
+import type {
+  TLangfuseConnectionStatus,
+  TLangfuseConnectionTestErrorCode,
+} from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
 import {
   useGetLangfuseConnectionQuery,
@@ -45,6 +48,32 @@ function getConnectionStatusLabelKey(state: ConnectionTestState): TranslationKey
     case 'idle':
     default:
       return 'com_ui_langfuse_status_not_configured';
+  }
+}
+
+function getConnectionTestErrorLabelKey(
+  errorCode?: TLangfuseConnectionTestErrorCode,
+): TranslationKeys {
+  switch (errorCode) {
+    case 'invalid_credentials':
+      return 'com_ui_langfuse_test_invalid_credentials';
+    case 'access_denied':
+      return 'com_ui_langfuse_test_access_denied';
+    case 'rate_limited':
+      return 'com_ui_langfuse_test_rate_limited';
+    case 'server_error':
+      return 'com_ui_langfuse_test_server_error';
+    case 'timeout':
+      return 'com_ui_langfuse_test_timeout';
+    case 'missing_secret':
+      return 'com_ui_langfuse_test_missing_secret';
+    case 'stored_secret_unavailable':
+      return 'com_ui_langfuse_test_stored_secret_unavailable';
+    case 'unexpected_response':
+      return 'com_ui_langfuse_test_unexpected_response';
+    case 'unreachable':
+    default:
+      return 'com_ui_langfuse_test_error';
   }
 }
 
@@ -171,7 +200,9 @@ export default function LangfuseConnection() {
             return;
           }
           setConnectionTestState(result.success ? 'connected' : 'failed');
-          setConnectionTestMessage(result.success ? '' : (result.message ?? ''));
+          setConnectionTestMessage(
+            result.success ? '' : localize(getConnectionTestErrorLabelKey(result.errorCode)),
+          );
         },
         onError: () => {
           if (requestId !== connectionTestRequestRef.current) {
@@ -232,12 +263,10 @@ export default function LangfuseConnection() {
             return;
           }
           if (!result.success) {
+            const message = localize(getConnectionTestErrorLabelKey(result.errorCode));
             setConnectionTestState('failed');
-            setConnectionTestMessage(result.message ?? localize('com_ui_langfuse_test_error'));
-            showToast({
-              message: result.message ?? localize('com_ui_langfuse_test_error'),
-              status: 'error',
-            });
+            setConnectionTestMessage(message);
+            showToast({ message, status: 'error' });
             return;
           }
 
@@ -285,7 +314,9 @@ export default function LangfuseConnection() {
         onSuccess: (result) => {
           if (requestId !== connectionTestRequestRef.current) return;
           setConnectionTestState(result.success ? 'connected' : 'failed');
-          setConnectionTestMessage(result.success ? '' : (result.message ?? ''));
+          setConnectionTestMessage(
+            result.success ? '' : localize(getConnectionTestErrorLabelKey(result.errorCode)),
+          );
         },
         onError: () => {
           if (requestId !== connectionTestRequestRef.current) return;
@@ -324,7 +355,9 @@ export default function LangfuseConnection() {
             return;
           }
           setConnectionTestState(result.success ? 'connected' : 'failed');
-          setConnectionTestMessage(result.success ? '' : (result.message ?? ''));
+          setConnectionTestMessage(
+            result.success ? '' : localize(getConnectionTestErrorLabelKey(result.errorCode)),
+          );
         },
         onError: () => {
           if (requestId !== connectionTestRequestRef.current) {
