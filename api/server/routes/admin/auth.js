@@ -46,6 +46,26 @@ const setBalanceConfig = createSetBalanceConfig({
 
 const router = express.Router();
 
+function getOptionalOpenIdConfig() {
+  try {
+    return getOpenIdConfig();
+  } catch {
+    return null;
+  }
+}
+
+function requireOpenIdConfig(req, res, next) {
+  const openidConfig = getOptionalOpenIdConfig();
+  if (!openidConfig) {
+    return res.status(404).json({
+      error: 'OpenID configuration not found',
+      error_code: 'OPENID_NOT_CONFIGURED',
+    });
+  }
+
+  next();
+}
+
 function resolveRequestOrigin(req) {
   const originHeader = req.get('origin');
   if (originHeader) {
@@ -88,7 +108,7 @@ router.get('/verify', middleware.requireJwtAuth, requireAdminAccess, (req, res) 
 });
 
 router.get('/oauth/openid/check', (req, res) => {
-  const openidConfig = getOpenIdConfig();
+  const openidConfig = getOptionalOpenIdConfig();
   if (!openidConfig) {
     return res.status(404).json({
       error: 'OpenID configuration not found',
@@ -145,7 +165,7 @@ function retrievePkceChallenge(provider) {
  * OpenID Admin Routes
  * ────────────────────────────────────────────── */
 
-router.get('/oauth/openid', async (req, res, next) => {
+router.get('/oauth/openid', requireOpenIdConfig, async (req, res, next) => {
   const state = generateState();
   const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
   const stored = await storeAndStripChallenge(cache, req, state, 'openid');
@@ -167,6 +187,7 @@ router.get(
     req.oauthState = typeof req.query.state === 'string' ? req.query.state : undefined;
     next();
   },
+  requireOpenIdConfig,
   passport.authenticate('openidAdmin', {
     failureRedirect: `${getAdminPanelUrl()}/auth/openid/callback?error=auth_failed&error_description=Authentication+failed`,
     failureMessage: true,

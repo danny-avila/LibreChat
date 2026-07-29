@@ -103,9 +103,15 @@ jest.mock('~/server/middleware', () => ({
   checkDomainAllowed: jest.fn((req, res, next) => next()),
 }));
 
+const passport = require('passport');
 const openIdClient = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled, applyAdminRefresh, buildOpenIDRefreshParams } = require('@librechat/api');
+const {
+  isEnabled,
+  applyAdminRefresh,
+  storeAndStripChallenge,
+  buildOpenIDRefreshParams,
+} = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies');
 const middleware = require('~/server/middleware');
 const adminAuthRouter = require('./auth');
@@ -113,6 +119,62 @@ const adminAuthRouter = require('./auth');
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
 const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
 const ORIGINAL_SESSION_EXPIRY = process.env.SESSION_EXPIRY;
+
+describe('admin auth OpenID route availability', () => {
+  let app;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    app = express();
+    app.use(express.json());
+    app.use('/api/admin', adminAuthRouter);
+  });
+
+  it('returns not configured for the OpenID availability check when config lookup throws', async () => {
+    getOpenIdConfig.mockImplementation(() => {
+      throw new Error('OpenID client is not initialized. Please call setupOpenId first.');
+    });
+
+    const response = await request(app).get('/api/admin/oauth/openid/check');
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: 'OpenID configuration not found',
+      error_code: 'OPENID_NOT_CONFIGURED',
+    });
+  });
+
+  it('does not start OpenID admin login when config lookup throws', async () => {
+    getOpenIdConfig.mockImplementation(() => {
+      throw new Error('OpenID client is not initialized. Please call setupOpenId first.');
+    });
+
+    const response = await request(app).get('/api/admin/oauth/openid');
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: 'OpenID configuration not found',
+      error_code: 'OPENID_NOT_CONFIGURED',
+    });
+    expect(storeAndStripChallenge).not.toHaveBeenCalled();
+    expect(passport.authenticate).not.toHaveBeenCalled();
+  });
+
+  it('does not run OpenID admin callback auth when config lookup throws', async () => {
+    getOpenIdConfig.mockImplementation(() => {
+      throw new Error('OpenID client is not initialized. Please call setupOpenId first.');
+    });
+
+    const response = await request(app).get('/api/admin/oauth/openid/callback?state=state');
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: 'OpenID configuration not found',
+      error_code: 'OPENID_NOT_CONFIGURED',
+    });
+  });
+});
 
 describe('admin auth OpenID refresh route', () => {
   const openIdConfig = {
