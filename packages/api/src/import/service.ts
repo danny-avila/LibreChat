@@ -103,11 +103,19 @@ function scanConversation(conv: ChatGptConversation, scan: ExportScan, seen: Set
  *
  * One corrupt or non-array shard is recorded in `errors` and excluded from
  * the conversion pass without discarding the conversations in the others.
+ *
+ * A conversation the conversion pass will skip contributes no pointers:
+ * ingesting its assets would create a second copy of every file and storage
+ * object on every re-upload of an export already imported, all of them
+ * unreferenced once the conversation itself is skipped. It still counts
+ * towards `conversations`, which is the progress denominator the skip loop
+ * advances.
  */
 async function scanExport(
   archive: Archive,
   shards: string[],
   errors: string[],
+  existingExternalIds: ReadonlySet<string>,
 ): Promise<ExportScan> {
   const scan: ExportScan = {
     shards: [],
@@ -136,6 +144,9 @@ async function scanExport(
       scan.shards.push(shard);
       scan.conversations += conversations.length;
       for (const conv of conversations) {
+        if (existingExternalIds.has(conv.conversation_id)) {
+          continue;
+        }
         scanConversation(conv, scan, seen);
       }
     } catch (error) {
@@ -231,7 +242,12 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
       return report;
     }
 
-    const scan = await scanExport(archive, layout.conversationShards, report.errors);
+    const scan = await scanExport(
+      archive,
+      layout.conversationShards,
+      report.errors,
+      input.existingExternalIds,
+    );
 
     if (scan.format === 'claude') {
       await runClaudeImport(providerRun);

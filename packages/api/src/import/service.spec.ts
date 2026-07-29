@@ -177,6 +177,37 @@ describe('runImport', () => {
     expect(recorded.conversations).toHaveLength(1);
   });
 
+  /** Re-uploading a finished export used to ingest every asset before the
+   * conversation loop reached the skip check, leaving a second copy of every
+   * file and storage object behind that nothing referenced. */
+  it('ingests no assets for an export whose conversations are all already imported', async () => {
+    const filepath = await buildFixtureExport();
+    const { sink, recorded } = recorder();
+    const saved: string[] = [];
+
+    const report = await runImport({
+      filepath,
+      userId: 'u1',
+      source: 'local',
+      defaultModel: 'gpt-4o',
+      deps: {
+        ...DEPS,
+        saveBuffer: async ({ fileName }: { fileName: string }) => {
+          saved.push(fileName);
+          return `/uploads/u1/${fileName}`;
+        },
+      },
+      batch: sink,
+      existingExternalIds: new Set(['ext-cited', 'ext-media']),
+    });
+
+    expect(report.imported).toBe(0);
+    expect(report.skipped).toBe(2);
+    expect(report.assetsImported).toBe(0);
+    expect(saved).toEqual([]);
+    expect(recorded.conversations).toEqual([]);
+  });
+
   it('reports progress as it advances', async () => {
     const filepath = await buildFixtureExport();
     const { sink } = recorder();
