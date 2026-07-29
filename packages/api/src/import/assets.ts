@@ -1,15 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '@librechat/data-schemas';
 import { FileContext } from 'librechat-data-provider';
-
 import type { ChatGptAttachment, ImportedAsset } from './types';
 import type { AssetReference } from './chatgpt/content';
 import type { ExportLayout } from './manifest';
 import type { Archive } from './archive';
-
+import { recordError, sanitizeImportError } from './errors';
 import { sanitizeFilename } from '~/utils/files';
 import { ASSET_NAMES_ENTRY } from './manifest';
-import { sanitizeImportError } from './errors';
 
 export interface SaveBufferInput {
   userId: string;
@@ -37,9 +35,15 @@ export type CreateFileFn = (
   disableTTL: boolean,
 ) => Promise<{ file_id: string } | null>;
 
+/** Removes one already-ingested asset — its storage object and its file row.
+ * Optional so a provider with no assets, or a caller that cannot delete, is
+ * unaffected. */
+export type DeleteAssetFn = (asset: ImportedAsset) => Promise<void>;
+
 export interface AssetDeps {
   saveBuffer: SaveBufferFn;
   createFile: CreateFileFn;
+  deleteFile?: DeleteAssetFn;
 }
 
 export interface IngestInput {
@@ -336,7 +340,10 @@ export async function ingestAssets(input: IngestInput): Promise<IngestResult> {
       map.set(pointer, asset);
       imported += 1;
     } catch (error) {
-      errors.push(`${entryName}: ${sanitizeImportError(error, `import asset ${entryName}`)}`);
+      recordError(
+        errors,
+        `${entryName}: ${sanitizeImportError(error, `import asset ${entryName}`)}`,
+      );
     }
 
     processed += 1;

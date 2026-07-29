@@ -594,3 +594,90 @@ describe('runImport', () => {
     expect(closed).toBe(true);
   });
 });
+
+/**
+ * Assets are ingested in full before the first conversation is written, so a
+ * run that stops in between leaves every file it created referenced by
+ * nothing. The rows are created with the TTL disabled and nothing else knows
+ * they exist, so the run has to clean up after itself.
+ */
+describe('runImport asset cleanup', () => {
+  function recordingDeps() {
+    const deleted: string[] = [];
+    return {
+      deleted,
+      deps: {
+        ...DEPS,
+        deleteFile: async (asset: { file_id: string }) => {
+          deleted.push(asset.file_id);
+        },
+      },
+    };
+  }
+
+  it('keeps every asset a committed conversation references', async () => {
+    const filepath = await buildFixtureExport();
+    const { sink } = recorder();
+    const { deleted, deps } = recordingDeps();
+
+    const report = await runImport({
+      filepath,
+      userId: 'u1',
+      source: 'local',
+      defaultModel: 'gpt-4o',
+      deps,
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    expect(report.assetsImported).toBeGreaterThan(0);
+    expect(deleted).toEqual([]);
+  });
+
+  it('removes every asset when the run is cancelled before any conversation lands', async () => {
+    const filepath = await buildFixtureExport();
+    const { sink, recorded } = recorder();
+    const { deleted, deps } = recordingDeps();
+
+    /** Cancels the moment the asset phase has finished, which is the window
+     * the conversation loop exits immediately on. */
+    let assetsDone = false;
+    const report = await runImport({
+      filepath,
+      userId: 'u1',
+      source: 'local',
+      defaultModel: 'gpt-4o',
+      deps,
+      batch: sink,
+      existingExternalIds: new Set(),
+      onPhase: async (phase) => {
+        if (phase === 'conversations') {
+          assetsDone = true;
+        }
+      },
+      isCancelled: async () => assetsDone,
+    });
+
+    expect(report.assetsImported).toBeGreaterThan(0);
+    expect(recorded.conversations).toEqual([]);
+    expect(deleted).toHaveLength(report.assetsImported);
+  });
+
+  it('is a no-op when the caller supplies no delete function', async () => {
+    const filepath = await buildFixtureExport();
+    const { sink } = recorder();
+
+    await expect(
+      runImport({
+        filepath,
+        userId: 'u1',
+        source: 'local',
+        defaultModel: 'gpt-4o',
+        deps: DEPS,
+        batch: sink,
+        existingExternalIds: new Set(),
+        isCancelled: async () => true,
+      }),
+    ).resolves.toBeDefined();
+  });
+});
