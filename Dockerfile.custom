@@ -73,10 +73,10 @@ USER root
 # Copy MCP servers
 COPY mcp-servers/image/package.json /app/mcp-servers/image/package.json
 COPY mcp-servers/image/index.js /app/mcp-servers/image/index.js
-COPY mcp-servers/image-edit/package.json /app/mcp-servers/image-edit/package.json
-COPY mcp-servers/image-edit/index.js /app/mcp-servers/image-edit/index.js
 COPY mcp-servers/image-openrouter/package.json /app/mcp-servers/image-openrouter/package.json
 COPY mcp-servers/image-openrouter/index.js /app/mcp-servers/image-openrouter/index.js
+COPY mcp-servers/video/package.json /app/mcp-servers/video/package.json
+COPY mcp-servers/video/index.js /app/mcp-servers/video/index.js
 COPY mcp-servers/video-openrouter/package.json /app/mcp-servers/video-openrouter/package.json
 COPY mcp-servers/video-openrouter/index.js /app/mcp-servers/video-openrouter/index.js
 COPY mcp-servers/document-generator/package.json /app/mcp-servers/document-generator/package.json
@@ -85,8 +85,8 @@ COPY mcp-servers/document-generator/generators /app/mcp-servers/document-generat
 
 # Install MCP server dependencies
 RUN cd /app/mcp-servers/image && npm install --production
-RUN cd /app/mcp-servers/image-edit && npm install --production
 RUN cd /app/mcp-servers/image-openrouter && npm install --production
+RUN cd /app/mcp-servers/video && npm install --production
 RUN cd /app/mcp-servers/video-openrouter && npm install --production
 RUN cd /app/mcp-servers/document-generator && npm install --production
 
