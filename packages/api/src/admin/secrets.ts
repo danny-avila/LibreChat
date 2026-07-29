@@ -454,18 +454,26 @@ export function preserveConfigSecrets<T>(next: T, existing?: unknown, basePath =
     }
 
     const existingSection = walkToParent(existing, field.path.split('.'));
-    if (!existingSection || !isEncryptedConfigSecret(existingSection[key])) {
+    if (!existingSection) {
       continue;
     }
     const existingSecret = normalizeSecretString(existingSection[key]);
     if (!existingSecret) {
       continue;
     }
-    section[key] = existingSecret;
+    const isAlreadyEncrypted = isEncryptedConfigSecret(existingSecret);
+    const isPlaceholder = field.allowEnvPlaceholder && isEnvPlaceholder(existingSecret);
+    // A legacy plaintext secret stored before this field was registered has
+    // no ciphertext to preserve verbatim — encrypt it now instead of
+    // silently dropping it the first time an unrelated field is edited.
+    section[key] = isAlreadyEncrypted || isPlaceholder ? existingSecret : encryptV3(existingSecret);
     if (field.displayPath) {
       const displayKey = lastSegment(field.displayPath);
-      if (typeof existingSection[displayKey] === 'string') {
-        section[displayKey] = existingSection[displayKey];
+      const existingDisplay = existingSection[displayKey];
+      if (typeof existingDisplay === 'string') {
+        section[displayKey] = existingDisplay;
+      } else if (!isAlreadyEncrypted && !isPlaceholder) {
+        section[displayKey] = getDisplaySecretKey(existingSecret);
       }
     }
   }

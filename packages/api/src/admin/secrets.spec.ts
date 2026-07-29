@@ -130,7 +130,7 @@ describe('Langfuse config secrets', () => {
     expect(preserved.langfuse.publicKey).toBe('pk-new');
   });
 
-  it('does not preserve plaintext existing secrets or explicitly cleared secrets', () => {
+  it('migrates a legacy plaintext existing secret by encrypting it, and drops explicitly cleared secrets', () => {
     const next = encryptConfigSecrets({
       langfuse: {
         publicKey: 'pk-new',
@@ -143,7 +143,10 @@ describe('Langfuse config secrets', () => {
         secretKey: 'sk-plain-existing',
       },
     });
-    expect(fromPlaintext.langfuse).toEqual({ publicKey: 'pk-new' });
+    const preservedLangfuse = fromPlaintext.langfuse as Record<string, string>;
+    expect(preservedLangfuse.publicKey).toBe('pk-new');
+    expect(decryptV3(preservedLangfuse.secretKey)).toBe('sk-plain-existing');
+    expect(preservedLangfuse.displaySecretKey).toBe(getDisplaySecretKey('sk-plain-existing'));
 
     const existing = encryptConfigSecrets({
       langfuse: {
@@ -466,7 +469,7 @@ describe('Config secret registry fields', () => {
     expect(ancestorPatch.openai.displayApiKey).toBe(existingDisplay);
   });
 
-  it('does not preserve explicitly cleared or plaintext existing secrets, and clears the display companion too', () => {
+  it('does not preserve explicitly cleared secrets, and clears the display companion too', () => {
     const cleared = encryptConfigSecrets({
       speech: { tts: { openai: { apiKey: '' } as Record<string, string> } },
     });
@@ -477,12 +480,27 @@ describe('Config secret registry fields', () => {
     const preservedAfterClear = preserveConfigSecrets(cleared, existing);
     expect(preservedAfterClear.speech.tts.openai.apiKey).toBe('');
     expect(preservedAfterClear.speech.tts.openai.displayApiKey).toBe('');
+  });
 
+  it('migrates a legacy plaintext existing secret on an omitted allow-placeholder field too', () => {
     const fromPlaintext = preserveConfigSecrets(
       { ocr: { mistralModel: 'm' } },
       { ocr: { apiKey: 'sk-plain-existing' } },
     );
-    expect(fromPlaintext.ocr).toEqual({ mistralModel: 'm' });
+    const ocr = fromPlaintext.ocr as Record<string, string>;
+    expect(ocr.mistralModel).toBe('m');
+    expect(decryptV3(ocr.apiKey)).toBe('sk-plain-existing');
+    expect(ocr.displayApiKey).toBe(getDisplaySecretKey('sk-plain-existing'));
+  });
+
+  it('preserves an existing env placeholder secret verbatim without encrypting it', () => {
+    const fromPlaceholder = preserveConfigSecrets(
+      { ocr: { mistralModel: 'm' } },
+      { ocr: { apiKey: '${OCR_API_KEY}' } },
+    );
+    const ocr = fromPlaceholder.ocr as Record<string, string>;
+    expect(ocr.apiKey).toBe('${OCR_API_KEY}');
+    expect(ocr.displayApiKey).toBeUndefined();
   });
 
   it('resolveConfigSecret decrypts, resolves env references, and passes literals through', () => {
