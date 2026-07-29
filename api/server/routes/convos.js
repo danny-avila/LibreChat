@@ -379,6 +379,15 @@ function resolveJobTarget(job) {
  */
 async function runImportJob(req, job) {
   try {
+    /**
+     * `sweepStaleTempUploads` deletes temp uploads by mtime alone, and the job
+     * TTL matches its age cutoff — so a job confirmed just short of a day after
+     * its upload would have its archive removed out from under the run. Marking
+     * the file as touched when the run claims it restarts that clock, which is
+     * the only signal the sweep can see.
+     */
+    await fs.promises.utimes(job.filepath, new Date(), new Date()).catch(() => undefined);
+
     const appConfig = req.config;
     const source = getFileStrategy(appConfig, { isImage: true });
     const { saveBuffer } = getStrategyFunctions(source);
