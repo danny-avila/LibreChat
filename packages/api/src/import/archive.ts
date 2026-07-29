@@ -47,11 +47,39 @@ export interface Archive {
 
 type ArchiveLimits = Required<ArchiveOptions>;
 
-/** Actual decompressed bytes delivered so far, shared by every `read()`
- * call on one archive instance so the aggregate cap is enforced against
- * real bytes rather than the (spoofable) central directory total. */
+/**
+ * Actual decompressed bytes delivered so far, shared by every `read()` call on
+ * one archive instance so the aggregate cap is enforced against real bytes
+ * rather than the (spoofable) central directory total.
+ *
+ * Counted once per distinct entry. A ChatGPT run reads every shard twice —
+ * once to scan for assets, once to convert — and charging both passes made a
+ * legitimate export over half the cap fail partway through the second one with
+ * a zip-bomb error. What the cap bounds is how much distinct data the archive
+ * can yield; re-reading an entry yields nothing new, and each read is still
+ * bounded individually by the per-entry cap.
+ */
 interface ArchiveTotals {
   bytesRead: number;
+  counted: Set<string>;
+}
+
+/** Charges an entry's decompressed size against the aggregate budget the
+ * first time that entry is read, and throws once the budget is exceeded. */
+function chargeEntry(
+  name: string,
+  bytes: number,
+  limits: ArchiveLimits,
+  totals: ArchiveTotals,
+): void {
+  if (totals.counted.has(name)) {
+    return;
+  }
+  totals.counted.add(name);
+  totals.bytesRead += bytes;
+  if (totals.bytesRead > limits.maxTotalBytes) {
+    throw new ZipBombError('Archive exceeds the maximum decompressed size');
+  }
 }
 
 export function assertSafeName(name: string): void {
@@ -306,22 +334,27 @@ async function openSingleFileArchive(
       readStream.on('data', (chunk: Buffer | string) => {
         const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
         bytes += buffer.byteLength;
-        totals.bytesRead += buffer.byteLength;
 
         if (bytes > limits.maxEntryBytes) {
           reject(new ZipBombError(`Entry ${entryName} exceeds the maximum decompressed size`));
           readStream.destroy();
           return;
         }
-        if (totals.bytesRead > limits.maxTotalBytes) {
-          reject(new ZipBombError('Archive exceeds the maximum decompressed size'));
-          readStream.destroy();
-          return;
-        }
         chunks.push(buffer);
       });
       readStream.on('error', reject);
-      readStream.on('end', () => resolve(Buffer.concat(chunks)));
+      readStream.on('end', () => {
+        /** Charged on completion, and only for the first read of this entry:
+         * the conversion pass re-reads what the scan already read, and
+         * charging both made a legitimate large export fail partway through. */
+        try {
+          chargeEntry(entryName, bytes, limits, totals);
+        } catch (error) {
+          reject(error);
+          return;
+        }
+        resolve(Buffer.concat(chunks));
+      });
     });
   }
 
@@ -344,7 +377,7 @@ export async function openArchive(
     ),
     maxTotalBytes: options.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES,
   };
-  const totals: ArchiveTotals = { bytesRead: 0 };
+  const totals: ArchiveTotals = { bytesRead: 0, counted: new Set() };
 
   if (!(await isZipFile(filepath))) {
     return openSingleFileArchive(filepath, limits, totals);
@@ -376,10 +409,7 @@ export async function openArchive(
     const output =
       entry.compressionMethod === 0 ? raw : await inflateEntry(raw, name, limits.maxEntryBytes);
 
-    totals.bytesRead += output.byteLength;
-    if (totals.bytesRead > limits.maxTotalBytes) {
-      throw new ZipBombError('Archive exceeds the maximum decompressed size');
-    }
+    chargeEntry(name, output.byteLength, limits, totals);
 
     return output;
   }

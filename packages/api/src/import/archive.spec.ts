@@ -57,6 +57,24 @@ function buildVariedJson(entryCount: number): string {
   return JSON.stringify(records);
 }
 
+/**
+ * Rewrites every central-directory record's uncompressed-size field to zero,
+ * leaving the actual entry data intact. yauzl indexes from the central
+ * directory, so this is how an archive lies about how much it will inflate to.
+ */
+function zeroDeclaredSizes(filepath: string): void {
+  const buffer = fs.readFileSync(filepath);
+  const CENTRAL_SIGNATURE = 0x02014b50;
+  const UNCOMPRESSED_SIZE_OFFSET = 24;
+
+  for (let i = 0; i <= buffer.length - 4; i++) {
+    if (buffer.readUInt32LE(i) === CENTRAL_SIGNATURE) {
+      buffer.writeUInt32LE(0, i + UNCOMPRESSED_SIZE_OFFSET);
+    }
+  }
+  fs.writeFileSync(filepath, buffer);
+}
+
 afterEach(() => {
   while (createdDirs.length > 0) {
     const dir = createdDirs.pop();
@@ -105,12 +123,56 @@ describe('openArchive', () => {
     archive.close();
   });
 
-  it('accumulates actual decompressed bytes across repeated reads and rejects once the aggregate cap is exceeded', async () => {
+  /**
+   * The index-time sum uses the central directory's declared sizes, which an
+   * archive controls. Zeroing them walks the whole archive past that check, so
+   * the only thing standing between a lying archive and unbounded output is
+   * the real byte count accumulated across reads.
+   */
+  it('accumulates real decompressed bytes even when the archive understates them', async () => {
+    /** DEFLATE, because yauzl requires a STORED entry's compressed and
+     * uncompressed sizes to match and would reject the doctored header. */
+    const filepath = await writeZipEntries([
+      { name: 'a.json', content: 'x'.repeat(60), compression: 'DEFLATE' },
+      { name: 'b.json', content: 'y'.repeat(60), compression: 'DEFLATE' },
+    ]);
+    zeroDeclaredSizes(filepath);
+    const archive = await openArchive(filepath, { maxTotalBytes: 100 });
+
+    expect(archive.entries.every((entry) => entry.bytes === 0)).toBe(true);
+    await archive.read('a.json');
+    await expect(archive.read('b.json')).rejects.toThrow(ZipBombError);
+
+    archive.close();
+  });
+
+  /**
+   * A ChatGPT run reads every shard twice — once to scan for assets, once to
+   * convert. Charging both passes made a legitimate export over half the cap
+   * fail partway through the second one with a zip-bomb error. The cap bounds
+   * how much distinct data the archive can yield; a re-read yields nothing new
+   * and is still bounded individually by the per-entry cap.
+   */
+  it('charges an entry once however many times it is read', async () => {
     const filepath = await writeZip({ 'a.json': 'x'.repeat(60) });
     const archive = await openArchive(filepath, { maxTotalBytes: 100 });
 
-    await archive.read('a.json');
-    await expect(archive.read('a.json')).rejects.toThrow(ZipBombError);
+    await expect(archive.read('a.json')).resolves.toHaveLength(60);
+    await expect(archive.read('a.json')).resolves.toHaveLength(60);
+    await expect(archive.read('a.json')).resolves.toHaveLength(60);
+
+    archive.close();
+  });
+
+  it('charges a bare JSON upload once however many times it is read', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-import-reread-'));
+    createdDirs.push(dir);
+    const filepath = path.join(dir, 'export.json');
+    fs.writeFileSync(filepath, 'x'.repeat(60));
+    const archive = await openArchive(filepath, { maxTotalBytes: 100 });
+
+    await expect(archive.read('export.json')).resolves.toHaveLength(60);
+    await expect(archive.read('export.json')).resolves.toHaveLength(60);
 
     archive.close();
   });
