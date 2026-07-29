@@ -131,6 +131,7 @@ export default function AgentFooter({
           type="submit"
           disabled={isSaving}
           aria-busy={isSaving}
+          aria-label={saveLabel}
         >
           {renderSaveButton()}
         </button>

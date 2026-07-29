@@ -121,19 +121,29 @@ const TooltipPopup = memo(function TooltipPopup({
 export const TooltipAnchor: ForwardRefExoticComponent<
   Omit<TooltipAnchorProps, 'ref'> & RefAttributes<HTMLDivElement>
 > = forwardRef<HTMLDivElement, TooltipAnchorProps>(function TooltipAnchor(
-  { description, side = 'top', className, role, enableHTML = false, ...props },
+  { description, side = 'top', className, role, enableHTML = false, onKeyDown, ...props },
   ref,
 ) {
   const tooltip = Ariakit.useTooltipStore({ placement: side });
 
+  /**
+   * `role="button"` renders a plain element with no native activation, so Enter and
+   * Space must both be handled to match a real button (WCAG 2.1.1). Space is also
+   * preventDefault'd to suppress page scroll.
+   */
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (role === 'button' && event.key === 'Enter') {
-        event.preventDefault();
-        (event.target as HTMLDivElement).click();
+      onKeyDown?.(event);
+      if (role !== 'button' || event.defaultPrevented) {
+        return;
       }
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+      }
+      event.preventDefault();
+      event.currentTarget.click();
     },
-    [role],
+    [role, onKeyDown],
   );
 
   return (

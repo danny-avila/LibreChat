@@ -109,12 +109,17 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
       ? localize('com_ui_new_chat_in_project', { name: project.name })
       : undefined;
 
+  const conversationTitle = chatHelpers.conversation?.title?.trim();
+  const pageHeading =
+    isLandingPage || !conversationTitle ? localize('com_ui_new_chat') : conversationTitle;
+
   return (
     <ChatFormProvider {...methods}>
       <ChatContext.Provider value={chatHelpers}>
         <AddedChatContext.Provider value={addedChatHelpers}>
           <Presentation>
             <div className="relative flex h-full w-full flex-col">
+              <h1 className="sr-only">{pageHeading}</h1>
               <Header />
               <>
                 <div
