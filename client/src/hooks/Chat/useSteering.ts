@@ -381,12 +381,9 @@ export default function useSteering({
   visibleConversationRef.current = conversationId;
 
   /**
-   * How each conversation's last run ended, kept because `useQueueDrain`
-   * CONSUMES the one-shot signal — by the time a reclaim resolves it is already
-   * gone. Every subscriber renders before the drain's effect nulls it, so the
-   * outcome is captured first. Both carriers are watched: the index signal, and
-   * the copy parked under the conversation when the run ended while the user
-   * was looking elsewhere.
+   * The most recent run end seen for a conversation: either the live one for
+   * this pane's index, or the copy parked under the conversation when the run
+   * ended while the user was looking elsewhere.
    *
    * Keyed by conversation because this hook is REUSED across chats: a single
    * slot would answer for whichever chat is on screen when the reclaim lands,
