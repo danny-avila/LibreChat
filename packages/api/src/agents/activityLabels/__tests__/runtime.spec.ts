@@ -597,12 +597,19 @@ describe('createActivityLabelHook', () => {
   /** Title-convention estimated billing: when the provider omits usage
    *  metadata, the biller falls back to counting text — so the hook must
    *  hand it the EXACT prompt the direct path sent plus the final label. */
-  it('passes a lazy usage estimate carrying the exact prompt and final label', async () => {
+  it('passes a lazy usage estimate carrying the exact prompt and raw completion', async () => {
+    /** Multi-line reply: only line one persists as the label, but the model
+     *  GENERATED (and the provider would bill) the whole thing — the
+     *  estimate must count the raw output, not the normalized 200-char cap. */
+    mockInvoke.mockResolvedValue({
+      content: 'Searched the web for LibreChat docs.\nExtra verbose reasoning the model emitted.',
+    });
     const collect = jest.fn();
     const getInvokeCallbacks = jest.fn(() => ({ callbacks: [], collect }));
     const hook = createActivityLabelHook({ claimSlot, resolveLLM, getInvokeCallbacks });
     await hook(batchInput(), new AbortController().signal);
     await flushDetached();
+    expect(slots[0].filled).toEqual(['Searched the web for LibreChat docs.']);
     expect(collect).toHaveBeenCalledTimes(1);
     const estimateThunk = collect.mock.calls[0][0] as () => {
       promptText: string;
@@ -611,7 +618,7 @@ describe('createActivityLabelHook', () => {
     expect(typeof estimateThunk).toBe('function');
     const estimate = estimateThunk();
     expect(estimate.promptText).toBe(mockInvoke.mock.calls[0][0]);
-    expect(estimate.completionText).toBe('Searched the web for LibreChat docs.');
+    expect(estimate.completionText).toContain('Extra verbose reasoning the model emitted.');
   });
 
   it('passes no estimate when generation threw before a label', async () => {

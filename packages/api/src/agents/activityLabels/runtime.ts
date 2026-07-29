@@ -652,14 +652,17 @@ export function createActivityLabelHook(
          *  billing from locally counted text. LAZY: the thunk runs only when
          *  real usage is absent. The direct path counts the EXACT prompt it
          *  sent; the SDK path counts the locally built equivalent (same
-         *  entries, context, instruction, and truncation contract). Success
+         *  entries, context, instruction, and truncation contract). The
+         *  completion counts the RAW model output, not the normalized label —
+         *  a verbose multi-line reply consumed tokens up to the generation
+         *  cap even though only its bounded first line persists. Success
          *  path only: a throw before a response consumed nothing billable
          *  beyond what real metadata already captured. */
         await collectDeferredUsage(committed, () => ({
           promptText:
             directPromptText ??
             buildPrompt(input.entries, charLimit, slot.context, opts.prompt, previousLabels),
-          completionText: normalized,
+          completionText: text ?? '',
         }));
       } catch (error) {
         logger.warn(
