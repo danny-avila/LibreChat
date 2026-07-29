@@ -138,14 +138,14 @@ describe('ImportJobStore', () => {
        * cancellation then reads and writes entirely inside that window, so the
        * progress write is left holding a job snapshot taken before it. */
       let stall = true;
-      jest.spyOn(backing, 'get').mockImplementation(async (key: string) => {
+      jest.spyOn(backing, 'get').mockImplementation((async (key: string) => {
         const value = await read(key);
         if (stall) {
           stall = false;
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
         return value;
-      });
+      }) as typeof backing.get);
       const slowStore = new ImportJobStore(backing, 60000);
       const job = await slowStore.create({
         userId: 'u1',
