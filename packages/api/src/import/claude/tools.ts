@@ -1,6 +1,7 @@
 import { ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type { ToolCallPart, ClaudeResultBlock, ClaudeContentBlock } from '~/import/types';
 import type { SourceIndex } from './citations';
+import { safeSourceUrl } from '~/import/url';
 import { addSource } from './citations';
 
 type ToolCallData = ToolCallPart[ContentTypes.TOOL_CALL];
@@ -81,10 +82,11 @@ export function beginToolCall(registry: ToolRegistry, block: ClaudeContentBlock)
 }
 
 function knowledgeSource(block: ClaudeResultBlock): { link: string; title?: string } | null {
-  if (!block.url) {
+  const link = safeSourceUrl(block.url);
+  if (!link) {
     return null;
   }
-  return { link: block.url, title: block.title ?? undefined };
+  return { link, title: block.title ?? undefined };
 }
 
 /** Result blocks that reference bytes the export never ships. */

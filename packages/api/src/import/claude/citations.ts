@@ -1,6 +1,7 @@
 import { Tools } from 'librechat-data-provider';
 import type { SearchResultData } from 'librechat-data-provider';
 import type { ClaudeCitation, ImportAttachment } from '~/import/types';
+import { safeSourceUrl } from '~/import/url';
 
 type OrganicSource = NonNullable<SearchResultData['organic']>[number];
 
@@ -128,7 +129,7 @@ function isInsideCode(position: number, regions: CodeRegion[]): boolean {
 }
 
 function sourceOfCitation(citation: ClaudeCitation): OrganicSource | null {
-  const url = citation.details?.url;
+  const url = safeSourceUrl(citation.details?.url);
   if (!url) {
     return null;
   }

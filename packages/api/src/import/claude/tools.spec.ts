@@ -193,3 +193,42 @@ describe('file-authoring arg aliases', () => {
     expect(args.file_path).toBeUndefined();
   });
 });
+
+/** Claude's `knowledge` blocks are the other archive-controlled URL source, and
+ * they feed both the tool card's markdown link and the message's citations. */
+describe('renderResult rejects unsafe knowledge urls', () => {
+  it.each(['javascript:alert(1)', 'data:text/html,<script>alert(1)</script>'])(
+    'drops a %s knowledge block',
+    (url) => {
+      const sources = createSourceIndex();
+      const result = completeToolCall(
+        createToolRegistry(),
+        {
+          type: 'tool_result',
+          name: 'web_search',
+          content: [{ type: 'knowledge', url, title: 'Docs' }],
+        } as ClaudeContentBlock,
+        sources,
+      );
+
+      expect(sources.sources).toEqual([]);
+      expect(result.output).not.toContain(url);
+    },
+  );
+
+  it('keeps an http knowledge block', () => {
+    const sources = createSourceIndex();
+    const result = completeToolCall(
+      createToolRegistry(),
+      {
+        type: 'tool_result',
+        name: 'web_search',
+        content: [{ type: 'knowledge', url: 'https://good.example/x', title: 'Docs' }],
+      } as ClaudeContentBlock,
+      sources,
+    );
+
+    expect(sources.sources).toEqual([{ link: 'https://good.example/x', title: 'Docs' }]);
+    expect(result.output).toContain('https://good.example/x');
+  });
+});

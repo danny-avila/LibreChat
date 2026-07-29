@@ -5,6 +5,7 @@ import type {
   ChatGptSearchEntry,
   ChatGptContentReference,
 } from '~/import/types';
+import { safeSourceUrl } from '~/import/url';
 
 type OrganicSource = NonNullable<SearchResultData['organic']>[number];
 
@@ -58,11 +59,12 @@ function findGroups(text: string): GroupSpan[] {
 }
 
 function fromEntry(entry: ChatGptSearchEntry): OrganicSource | null {
-  if (!entry.url) {
+  const link = safeSourceUrl(entry.url);
+  if (!link) {
     return null;
   }
   return {
-    link: entry.url,
+    link,
     title: entry.title ?? undefined,
     snippet: entry.snippet ?? undefined,
     attribution: entry.attributions ?? undefined,
@@ -74,12 +76,13 @@ function sourcesOfReference(reference: ChatGptContentReference): OrganicSource[]
   if (items?.length) {
     return items.map(fromEntry).filter((source): source is OrganicSource => source !== null);
   }
-  if (!reference.url) {
+  const link = safeSourceUrl(reference.url);
+  if (!link) {
     return [];
   }
   return [
     {
-      link: reference.url,
+      link,
       title: reference.title ?? undefined,
       snippet: reference.snippet ?? undefined,
       attribution: reference.attribution ?? undefined,
