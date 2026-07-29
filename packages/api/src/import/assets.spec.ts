@@ -675,3 +675,66 @@ describe('ingestAssets', () => {
     archive.close();
   });
 });
+
+/** The name map is optional decoration; any shape other than an object of
+ * strings used to reach `originalLeafName` and throw on `.split`, losing the
+ * attachment over a cosmetic file the import does not need. */
+describe('ingestAssets with a malformed asset-name map', () => {
+  function stubArchive(names: string): Archive {
+    return {
+      entries: [
+        { name: ASSET_NAMES_ENTRY, bytes: names.length },
+        { name: 'file-one.dat', bytes: 4 },
+      ],
+      read: async (entry: string) =>
+        entry === ASSET_NAMES_ENTRY ? Buffer.from(names) : Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+      close: () => undefined,
+    };
+  }
+
+  const deps = {
+    saveBuffer: async ({ fileName }: { fileName: string }) => `/uploads/u1/${fileName}`,
+    createFile: async (data: { file_id: string }) => ({ file_id: data.file_id }),
+  };
+
+  it.each([
+    ['null', 'null'],
+    ['an array', '[1,2,3]'],
+    ['a non-string value', '{"file-one.dat":{"nested":true}}'],
+    ['a number value', '{"file-one.dat":42}'],
+  ])('ignores a map that is %s and still imports the asset', async (_label, names) => {
+    const archive = stubArchive(names);
+    const layout = resolveLayout(archive.entries, null);
+
+    const result = await ingestAssets({
+      archive,
+      layout: { ...layout, assetNames: ASSET_NAMES_ENTRY },
+      userId: 'u1',
+      tenantId: undefined,
+      source: 'local',
+      pointers: ['file-service://file-one'],
+      deps,
+    });
+
+    expect(result.imported).toBe(1);
+    expect(result.errors).toEqual([]);
+    expect(result.map.get('file-service://file-one')?.type).toBe('image/png');
+  });
+
+  it('still honours a well-formed map', async () => {
+    const archive = stubArchive('{"file-one.dat":"holiday.png"}');
+    const layout = resolveLayout(archive.entries, null);
+
+    const result = await ingestAssets({
+      archive,
+      layout: { ...layout, assetNames: ASSET_NAMES_ENTRY },
+      userId: 'u1',
+      tenantId: undefined,
+      source: 'local',
+      pointers: ['file-service://file-one'],
+      deps,
+    });
+
+    expect(result.map.get('file-service://file-one')?.filename).toBe('holiday.png');
+  });
+});

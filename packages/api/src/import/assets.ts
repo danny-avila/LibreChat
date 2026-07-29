@@ -196,6 +196,27 @@ function resolveOriginalName(
   return originalLeafName(rawName);
 }
 
+/**
+ * The name map is optional decoration, so any shape other than an object of
+ * strings is discarded rather than allowed to fail the assets that reference
+ * it. `JSON.parse` succeeds for `null`, an array, and a nested object, and each
+ * of those reaches `originalLeafName` and throws on `.split` — losing an
+ * attachment over a cosmetic file the import does not need.
+ */
+function asNameMap(parsed: unknown): Record<string, string> {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return {};
+  }
+
+  const names: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value === 'string') {
+      names[key] = value;
+    }
+  }
+  return names;
+}
+
 async function readAssetNames(
   archive: Archive,
   layout: ExportLayout,
@@ -204,7 +225,8 @@ async function readAssetNames(
     return {};
   }
   try {
-    return JSON.parse((await archive.read(ASSET_NAMES_ENTRY)).toString('utf8'));
+    const parsed: unknown = JSON.parse((await archive.read(ASSET_NAMES_ENTRY)).toString('utf8'));
+    return asNameMap(parsed);
   } catch (error) {
     logger.warn('[import] Unreadable asset name map', error);
     return {};
