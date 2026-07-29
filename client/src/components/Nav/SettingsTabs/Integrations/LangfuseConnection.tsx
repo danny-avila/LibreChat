@@ -509,7 +509,7 @@ export default function LangfuseConnection() {
             onClick={() => setIsEditingSecretKey(true)}
           >
             <code className="block min-w-0 truncate font-mono text-sm text-text-primary">
-              {connectionStatus?.displaySecretKey}
+              {connectionStatus?.secretKeyPreview}
             </code>
           </button>
         )}

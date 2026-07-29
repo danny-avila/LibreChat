@@ -67,7 +67,7 @@ function buildStatus(config: IConfig | null): TLangfuseConnectionStatus {
     destinations: getLangfuseTenantDestinations(),
     destination: stored?.destination,
     publicKey: stored?.publicKey,
-    displaySecretKey: stored?.displaySecretKey,
+    secretKeyPreview: stored?.secretKeyPreview,
     updatedAt: config?.updatedAt ? new Date(config.updatedAt).toISOString() : undefined,
   };
 }

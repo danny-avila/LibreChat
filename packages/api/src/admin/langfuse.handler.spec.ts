@@ -225,7 +225,7 @@ describe('createAdminLangfuseHandlers', () => {
             destination: 'eu',
             publicKey: 'pk-lf-1',
             secretKey: encryptV3('sk-lf-secret'),
-            displaySecretKey: 'sk-lf...cret',
+            secretKeyPreview: 'sk-lf...cret',
           }),
         ),
       });
@@ -238,7 +238,7 @@ describe('createAdminLangfuseHandlers', () => {
         enabled: true,
         destination: 'eu',
         publicKey: 'pk-lf-1',
-        displaySecretKey: 'sk-lf...cret',
+        secretKeyPreview: 'sk-lf...cret',
       });
       expect(res.body?.destinations).toEqual(
         expect.arrayContaining([{ key: 'eu', baseUrl: 'https://cloud.langfuse.com' }]),
@@ -343,7 +343,7 @@ describe('createAdminLangfuseHandlers', () => {
       const fields = deps.patchConfigFields.mock.calls[0][3];
       expect(fields['langfuse.secretKey']).toMatch(/^v3:/);
       expect(fields['langfuse.secretKey']).not.toContain('sk-lf-secret');
-      expect(fields['langfuse.displaySecretKey']).toBe('sk-lf-...cret');
+      expect(fields['langfuse.secretKeyPreview']).toBe('sk-lf-...cret');
       expect(fields['langfuse.enabled']).toBe(true);
       expect(fields['langfuse.destination']).toBe('eu');
       expect(fields['langfuse.publicKey']).toBe('pk-lf-1');

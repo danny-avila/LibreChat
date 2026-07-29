@@ -886,7 +886,7 @@ export type TLangfuseConnectionStatus = {
   destinations: TLangfuseDestinationOption[];
   destination?: string;
   publicKey?: string;
-  displaySecretKey?: string;
+  secretKeyPreview?: string;
   updatedAt?: string;
 };
 

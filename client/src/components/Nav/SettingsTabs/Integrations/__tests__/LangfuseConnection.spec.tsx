@@ -120,7 +120,7 @@ describe('LangfuseConnection', () => {
         ],
         destination: 'us',
         publicKey: 'pk-lf-12345678-515f',
-        displaySecretKey: 'sk-lf-...515f',
+        secretKeyPreview: 'sk-lf-...515f',
       },
     });
     render(<LangfuseConnection />);
@@ -152,7 +152,7 @@ describe('LangfuseConnection', () => {
         destinations: [{ key: 'eu', baseUrl: 'https://cloud.langfuse.com' }],
         destination: 'eu',
         publicKey: 'pk-lf-1',
-        displaySecretKey: 'sk-lf-...515f',
+        secretKeyPreview: 'sk-lf-...515f',
       },
     });
 
@@ -204,7 +204,7 @@ describe('LangfuseConnection', () => {
         ],
         destination: 'us',
         publicKey: 'pk-lf-1',
-        displaySecretKey: 'sk-lf-...cret',
+        secretKeyPreview: 'sk-lf-...cret',
       });
     });
 
@@ -235,7 +235,7 @@ describe('LangfuseConnection', () => {
         ],
         destination: 'eu',
         publicKey: 'pk-lf-1',
-        displaySecretKey: 'sk-lf-...515f',
+        secretKeyPreview: 'sk-lf-...515f',
       },
     });
     render(<LangfuseConnection />);
@@ -269,7 +269,7 @@ describe('LangfuseConnection', () => {
         destinations: [{ key: 'eu', baseUrl: 'https://cloud.langfuse.com' }],
         destination: 'eu',
         publicKey: 'pk-lf-1',
-        displaySecretKey: 'sk-lf-...515f',
+        secretKeyPreview: 'sk-lf-...515f',
       },
     });
     render(<LangfuseConnection />);
@@ -335,7 +335,7 @@ describe('LangfuseConnection', () => {
         ],
         destination: 'eu',
         publicKey: 'pk-lf-original',
-        displaySecretKey: 'sk-lf-...515f',
+        secretKeyPreview: 'sk-lf-...515f',
       },
     });
     render(<LangfuseConnection />);
@@ -407,7 +407,7 @@ describe('LangfuseConnection', () => {
         destinations: [{ key: 'eu', baseUrl: 'https://cloud.langfuse.com' }],
         destination: 'eu',
         publicKey: 'pk-lf-valid',
-        displaySecretKey: 'sk-lf-...515f',
+        secretKeyPreview: 'sk-lf-...515f',
       },
     });
     render(<LangfuseConnection />);
@@ -447,7 +447,7 @@ describe('LangfuseConnection', () => {
         destinations: [{ key: 'eu', baseUrl: 'https://cloud.langfuse.com' }],
         destination: 'eu',
         publicKey: 'pk-lf-1',
-        displaySecretKey: 'sk-lf-...515f',
+        secretKeyPreview: 'sk-lf-...515f',
       },
     });
     render(<LangfuseConnection />);
@@ -460,7 +460,7 @@ describe('LangfuseConnection', () => {
         destinations: [{ key: 'eu', baseUrl: 'https://cloud.langfuse.com' }],
         destination: 'eu',
         publicKey: 'pk-lf-1',
-        displaySecretKey: 'sk-lf-...515f',
+        secretKeyPreview: 'sk-lf-...515f',
         updatedAt: '2026-07-10T15:30:00.000Z',
       });
     });
@@ -486,7 +486,7 @@ describe('LangfuseConnection', () => {
         destinations: [{ key: 'eu', baseUrl: 'https://cloud.langfuse.com' }],
         destination: 'eu',
         publicKey: 'pk-lf-1',
-        displaySecretKey: 'sk-lf-...515f',
+        secretKeyPreview: 'sk-lf-...515f',
       },
     });
     mockUpdate.mockImplementation((_payload, options) => {
@@ -496,7 +496,7 @@ describe('LangfuseConnection', () => {
         destinations: [{ key: 'eu', baseUrl: 'https://cloud.langfuse.com' }],
         destination: 'eu',
         publicKey: 'pk-lf-1',
-        displaySecretKey: 'sk-lf-...515f',
+        secretKeyPreview: 'sk-lf-...515f',
         updatedAt: '2026-07-10T15:31:00.000Z',
       });
     });
