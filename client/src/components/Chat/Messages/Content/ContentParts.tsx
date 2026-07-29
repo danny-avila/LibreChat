@@ -204,6 +204,17 @@ const ContentParts = memo(function ContentParts({
     () => files?.filter((file) => file.type?.startsWith('image/') !== true),
     [files],
   );
+  /** Rendered by every branch below, and by none of the parts: images already
+   * have an `image_file` part, and `Container` is only reached by messages that
+   * carry no content at all. Hoisted rather than inlined once so the edit and
+   * parallel paths cannot silently drop it the way the sequential path was the
+   * only one to handle. */
+  const filesSlot =
+    nonImageFiles != null && nonImageFiles.length > 0 ? (
+      <Container>
+        <Files files={nonImageFiles} />
+      </Container>
+    ) : null;
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
   const localToolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
   const expansionState = toolGroupExpansionState ?? localToolGroupExpansionRef.current;
@@ -435,6 +446,7 @@ const ContentParts = memo(function ContentParts({
   if (edit === true && enterEdit && setSiblingIdx) {
     return (
       <>
+        {filesSlot}
         {(content ?? []).map((part, localIdx) => {
           if (!part) {
             return null;
@@ -558,6 +570,7 @@ const ContentParts = memo(function ContentParts({
   if (hasParallelContent) {
     const parallelContent = (
       <>
+        {!nestedActivityPhase && filesSlot}
         {renderPendingSkills()}
         <ParallelContentRenderer
           content={content}
@@ -585,11 +598,7 @@ const ContentParts = memo(function ContentParts({
   const sequentialContent = (
     <SearchContext.Provider value={{ searchResults }}>
       {!nestedActivityPhase && <MemoryArtifacts attachments={attachments} />}
-      {!nestedActivityPhase && nonImageFiles != null && nonImageFiles.length > 0 && (
-        <Container>
-          <Files files={nonImageFiles} />
-        </Container>
-      )}
+      {!nestedActivityPhase && filesSlot}
       {!nestedActivityPhase && renderPendingSkills()}
       {showEmptyCursor && (
         <Container>
