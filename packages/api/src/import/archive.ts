@@ -128,8 +128,20 @@ function indexEntries(
   return new Promise((resolve, reject) => {
     const index = new Map<string, yauzl.Entry>();
     let total = 0;
+    /** Counted per record, not per indexed entry. `index.size` undercounts:
+     * directory records return before it is ever consulted, and a repeated
+     * filename overwrites the same key. Either lets an archive hold millions
+     * of records that cost real central-directory traversal while the cap
+     * believes it is nearly empty. */
+    let records = 0;
 
     zipfile.on('entry', (entry: yauzl.Entry) => {
+      records += 1;
+      if (records > options.maxEntries) {
+        reject(new ZipBombError(`Archive exceeds ${options.maxEntries} entries`));
+        return;
+      }
+
       if (/\/$/.test(entry.fileName)) {
         zipfile.readEntry();
         return;
@@ -139,11 +151,6 @@ function indexEntries(
         assertSafeName(entry.fileName);
       } catch (error) {
         reject(error);
-        return;
-      }
-
-      if (index.size + 1 > options.maxEntries) {
-        reject(new ZipBombError(`Archive exceeds ${options.maxEntries} entries`));
         return;
       }
 
