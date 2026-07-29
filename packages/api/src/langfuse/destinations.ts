@@ -166,6 +166,10 @@ export function getLangfuseTraceDestinationIds(
   appConfig: AppConfig | undefined,
   traceId: string,
   sampled?: boolean,
-): string[] {
-  return getScoreDestinations(appConfig, traceId, sampled).flatMap(({ id }) => (id ? [id] : []));
+): string[] | undefined {
+  const destinations = getScoreDestinations(appConfig, traceId, sampled);
+  if (destinations.some(({ id }) => id == null)) {
+    return undefined;
+  }
+  return destinations.map(({ id }) => id as string);
 }

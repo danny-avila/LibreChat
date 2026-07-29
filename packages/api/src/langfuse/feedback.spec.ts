@@ -391,6 +391,32 @@ describe('Langfuse feedback scores', () => {
     expect(getFetchMock()).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves legacy feedback behavior when a connection has no project identity', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    delete process.env.LANGFUSE_PUBLIC_KEY;
+    delete process.env.LANGFUSE_SECRET_KEY;
+    const { sendFeedbackScore } = await loadFeedback();
+    const { getLangfuseTraceDestinationIds } = await import('./destinations');
+    const legacyConfig = appConfigWithLangfuse({
+      projectId: undefined,
+      publicKey: 'tenant-public-key',
+      secretKey: encryptedTenantSecret(),
+      destination: 'eu',
+    });
+    const destinationIds = getLangfuseTraceDestinationIds(legacyConfig, 'trace-id', true);
+
+    await sendFeedbackScore({
+      traceId: 'trace-id',
+      sampled: true,
+      destinationIds,
+      feedback: { rating: 'thumbsUp' },
+      appConfig: legacyConfig,
+    });
+
+    expect(destinationIds).toBeUndefined();
+    expect(getFetchMock()).toHaveBeenCalledTimes(1);
+  });
+
   it('decrypts encrypted tenant secrets before sending tenant feedback scores', async () => {
     enableTenantFanout();
     process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';

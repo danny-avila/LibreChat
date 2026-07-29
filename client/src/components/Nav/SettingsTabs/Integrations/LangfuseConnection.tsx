@@ -196,9 +196,10 @@ export default function LangfuseConnection() {
 
   useEffect(() => {
     const storedConnectionTestKey = getStoredConnectionTestKey(connectionStatus);
-    if (!connectionStatus || !storedConnectionTestKey) {
-      setConnectionTestState('idle');
-      setConnectionTestMessage('');
+    if (!connectionStatus) {
+      return;
+    }
+    if (!storedConnectionTestKey) {
       return;
     }
 
@@ -253,7 +254,6 @@ export default function LangfuseConnection() {
     connectionTestState === 'failed' ? localize('com_ui_langfuse_status_failed_hover') : undefined;
 
   const handleSave = () => {
-    const requestId = ++connectionTestRequestRef.current;
     const payload = {
       enabled: true,
       destination,
@@ -261,56 +261,24 @@ export default function LangfuseConnection() {
       ...(trimmedSecretKey ? { secretKey: trimmedSecretKey } : {}),
     };
 
-    const saveConnection = () => {
-      updateMutation.mutate(payload, {
-        onSuccess: (nextStatus) => {
-          autoTestedConnectionRef.current = getStoredConnectionTestKey(nextStatus);
-          setConnectionStatus(nextStatus);
-          setConnectionTestState('connected');
-          setConnectionTestMessage('');
-          setSecretKey('');
-          setIsEditingPublicKey(false);
-          setIsEditingSecretKey(false);
-          showToast({ message: localize('com_ui_langfuse_saved'), status: 'success' });
-        },
-        onError: () =>
-          showToast({ message: localize('com_ui_langfuse_save_error'), status: 'error' }),
-      });
-    };
-
-    testMutation.mutate(
-      {
-        destination,
-        publicKey: trimmedPublicKey,
-        ...(trimmedSecretKey ? { secretKey: trimmedSecretKey } : {}),
+    connectionTestRequestRef.current += 1;
+    updateMutation.mutate(payload, {
+      onSuccess: (nextStatus) => {
+        autoTestedConnectionRef.current = getStoredConnectionTestKey(nextStatus);
+        setConnectionStatus(nextStatus);
+        setConnectionTestState('connected');
+        setConnectionTestMessage('');
+        setSecretKey('');
+        setIsEditingPublicKey(false);
+        setIsEditingSecretKey(false);
+        showToast({ message: localize('com_ui_langfuse_saved'), status: 'success' });
       },
-      {
-        onSuccess: (result) => {
-          if (requestId !== connectionTestRequestRef.current) {
-            return;
-          }
-          if (!result.success) {
-            const message = localize(getConnectionTestErrorLabelKey(result.errorCode));
-            setConnectionTestState('failed');
-            setConnectionTestMessage(message);
-            showToast({ message, status: 'error' });
-            return;
-          }
-
-          setConnectionTestState('connected');
-          setConnectionTestMessage('');
-          saveConnection();
-        },
-        onError: () => {
-          if (requestId !== connectionTestRequestRef.current) {
-            return;
-          }
-          setConnectionTestState('failed');
-          setConnectionTestMessage(localize('com_ui_langfuse_test_error'));
-          showToast({ message: localize('com_ui_langfuse_test_error'), status: 'error' });
-        },
+      onError: () => {
+        setConnectionTestState('failed');
+        setConnectionTestMessage(localize('com_ui_langfuse_save_error'));
+        showToast({ message: localize('com_ui_langfuse_save_error'), status: 'error' });
       },
-    );
+    });
   };
 
   const handleCancel = () => {

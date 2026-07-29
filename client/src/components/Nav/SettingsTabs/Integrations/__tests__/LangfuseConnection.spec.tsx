@@ -248,7 +248,7 @@ describe('LangfuseConnection', () => {
     ).toHaveAttribute('title', 'com_ui_langfuse_status_failed_hover');
   });
 
-  it('tests and saves the typed secret key when enabling a new connection', async () => {
+  it('saves the typed secret key without a duplicate preflight test', async () => {
     render(<LangfuseConnection />);
     await selectDestination('us');
     fireEvent.change(screen.getByLabelText('com_ui_langfuse_public_key'), {
@@ -260,12 +260,7 @@ describe('LangfuseConnection', () => {
 
     await userEvent.click(screen.getByText('com_ui_langfuse_save_and_enable'));
 
-    expect(mockTest).toHaveBeenCalledTimes(1);
-    expect(mockTest.mock.calls[0][0]).toEqual({
-      destination: 'us',
-      publicKey: 'pk-lf-1',
-      secretKey: 'sk-lf-secret',
-    });
+    expect(mockTest).not.toHaveBeenCalled();
     expect(mockUpdate).toHaveBeenCalledTimes(1);
     expect(mockUpdate.mock.calls[0][0]).toEqual({
       enabled: true,
@@ -301,12 +296,12 @@ describe('LangfuseConnection', () => {
 
     await userEvent.click(screen.getByText('com_ui_langfuse_save_and_enable'));
 
-    expect(mockTest).toHaveBeenCalledTimes(1);
+    expect(mockTest).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('com_ui_langfuse_secret_key')).not.toBeInTheDocument();
     expect(screen.getByText('sk-lf-...cret')).toBeInTheDocument();
   });
 
-  it('requires secret re-entry before testing and saving a destination change', async () => {
+  it('requires secret re-entry before saving a destination change', async () => {
     mockGet.mockReturnValue({
       data: {
         configured: true,
@@ -336,12 +331,7 @@ describe('LangfuseConnection', () => {
     });
     await userEvent.click(screen.getByText('com_ui_langfuse_save_and_enable'));
 
-    expect(mockTest).toHaveBeenCalledTimes(1);
-    expect(mockTest.mock.calls[0][0]).toEqual({
-      destination: 'us',
-      publicKey: 'pk-lf-1',
-      secretKey: 'sk-lf-replacement',
-    });
+    expect(mockTest).not.toHaveBeenCalled();
     expect(mockUpdate).toHaveBeenCalledTimes(1);
     expect(mockUpdate.mock.calls[0][0]).toMatchObject({
       destination: 'us',
@@ -399,12 +389,7 @@ describe('LangfuseConnection', () => {
     });
     await userEvent.click(screen.getByText('com_ui_langfuse_save_and_enable'));
 
-    expect(mockTest).toHaveBeenCalledTimes(1);
-    expect(mockTest.mock.calls[0][0]).toMatchObject({
-      destination: 'eu',
-      publicKey: 'pk-lf-1',
-      secretKey: 'sk-lf-replacement',
-    });
+    expect(mockTest).not.toHaveBeenCalled();
     expect(mockUpdate).toHaveBeenCalledTimes(1);
     expect(mockUpdate.mock.calls[0][0]).toMatchObject({
       destination: 'eu',
@@ -461,9 +446,9 @@ describe('LangfuseConnection', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
-  it('blocks saving when the implicit connection test fails', async () => {
-    mockTest.mockImplementation((_payload, options) => {
-      options?.onSuccess?.({ success: false, errorCode: 'invalid_credentials' });
+  it('shows a save failure when mandatory server verification rejects the connection', async () => {
+    mockUpdate.mockImplementation((_payload, options) => {
+      options?.onError?.();
     });
     render(<LangfuseConnection />);
     await selectDestination('us');
@@ -476,8 +461,9 @@ describe('LangfuseConnection', () => {
 
     await userEvent.click(screen.getByText('com_ui_langfuse_save_and_enable'));
 
-    expect(mockTest).toHaveBeenCalledTimes(1);
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockTest).not.toHaveBeenCalled();
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('com_ui_langfuse_save_error')).toBeVisible();
   });
 
   it('replaces a connected status with a failure when an edited public key is rejected', async () => {
@@ -494,11 +480,8 @@ describe('LangfuseConnection', () => {
     render(<LangfuseConnection />);
     await waitFor(() => expect(screen.getByText('com_ui_langfuse_status_connected')).toBeVisible());
     mockTest.mockClear();
-    mockTest.mockImplementation((_payload, options) => {
-      options?.onSuccess?.({
-        success: false,
-        errorCode: 'invalid_credentials',
-      });
+    mockUpdate.mockImplementation((_payload, options) => {
+      options?.onError?.();
     });
 
     await userEvent.click(
@@ -515,15 +498,15 @@ describe('LangfuseConnection', () => {
     });
     await userEvent.click(screen.getByText('com_ui_langfuse_save_and_enable'));
 
-    expect(mockTest).toHaveBeenCalledWith(
+    expect(mockTest).not.toHaveBeenCalled();
+    expect(mockUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         publicKey: 'pk-lf-mangled',
         secretKey: 'sk-lf-replacement',
       }),
       expect.any(Object),
     );
-    expect(screen.getByText('com_ui_langfuse_test_invalid_credentials')).toBeVisible();
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(screen.getByText('com_ui_langfuse_save_error')).toBeVisible();
   });
 
   it('saves immediately without testing when disabling a configured connection', async () => {

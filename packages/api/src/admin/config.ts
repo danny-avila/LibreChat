@@ -535,14 +535,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           );
         }
       }
-      if (principalId !== BASE_CONFIG_PRINCIPAL_ID) {
-        for (const section of BASE_PRINCIPAL_OVERRIDE_SECTIONS) {
-          if (section in filteredOverrides) {
-            delete (filteredOverrides as Record<string, unknown>)[section];
-            logger.warn(
-              `[adminConfig] Stripping tenant-wide config section "${section}" from ${principalType}/${principalId}`,
-            );
-          }
+      for (const key of Object.keys(filteredOverrides)) {
+        const section = getTopLevelSection(key);
+        if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
+          delete (filteredOverrides as Record<string, unknown>)[key];
+          logger.warn(
+            `[adminConfig] Stripping dedicated tenant-wide config section "${key}" from the generic config API`,
+          );
         }
       }
       const iface = (overrides as Record<string, unknown>).interface;
@@ -716,12 +715,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           );
           return false;
         }
-        if (
-          principalId !== BASE_CONFIG_PRINCIPAL_ID &&
-          BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(entry.fieldPath))
-        ) {
+        if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(entry.fieldPath))) {
           logger.warn(
-            `[adminConfig] Stripping tenant-wide config field "${entry.fieldPath}" from ${principalType}/${principalId}`,
+            `[adminConfig] Stripping dedicated tenant-wide config field "${entry.fieldPath}" from the generic config API`,
           );
           return false;
         }
@@ -862,12 +858,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
-      if (
-        principalId !== BASE_CONFIG_PRINCIPAL_ID &&
-        BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)
-      ) {
+      if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
         logger.warn(
-          `[adminConfig] Ignoring tenant-wide config tombstone "${fieldPath}" on ${principalType}/${principalId}`,
+          `[adminConfig] Ignoring dedicated tenant-wide config tombstone "${fieldPath}" in the generic config API`,
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
@@ -951,6 +944,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       if (isBaseOnlyFieldPath(fieldPath)) {
         logger.warn(
           `[adminConfig] Ignoring delete for base-only config field "${fieldPath}" - configure it in librechat.yaml instead`,
+        );
+        return res.status(200).json({ message: 'No actionable field path provided' });
+      }
+
+      if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(section)) {
+        logger.warn(
+          `[adminConfig] Ignoring dedicated tenant-wide config delete "${fieldPath}" in the generic config API`,
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
