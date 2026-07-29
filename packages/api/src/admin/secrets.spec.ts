@@ -276,6 +276,44 @@ describe('Config secret registry fields', () => {
     expect(decryptV3(out.langfuse.secretKey)).toBe('${LANGFUSE_SECRET_KEY}');
   });
 
+  it('clears a stale display mask when a literal secret is rotated to an env placeholder', () => {
+    const dottedOut = encryptConfigSecretFields({ 'ocr.apiKey': '${OCR_API_KEY}' });
+    expect(dottedOut['ocr.apiKey']).toBe('${OCR_API_KEY}');
+    expect(dottedOut['ocr.displayApiKey']).toBe('');
+
+    const objectOut = encryptConfigSecrets({
+      ocr: { apiKey: '${OCR_API_KEY}', displayApiKey: 'sk-sta...LE00' },
+    });
+    expect(objectOut.ocr.apiKey).toBe('${OCR_API_KEY}');
+    expect(objectOut.ocr.displayApiKey).toBe('');
+  });
+
+  it('never persists a client-supplied display mask alongside an env placeholder secret', () => {
+    const out = encryptConfigSecrets({
+      ocr: { apiKey: '${OCR_API_KEY}', displayApiKey: 'sk-atk...ACK' },
+    });
+    expect(out.ocr.apiKey).toBe('${OCR_API_KEY}');
+    expect(out.ocr.displayApiKey).toBe('');
+  });
+
+  it('trims whitespace from a literal secret before encrypting and masking', () => {
+    const out = encryptConfigSecretFields({ 'ocr.apiKey': '  sk-padded-secret  ' });
+    expect(decryptV3(out['ocr.apiKey'] as string)).toBe('sk-padded-secret');
+    expect(out['ocr.displayApiKey']).toBe(getDisplaySecretKey('sk-padded-secret'));
+  });
+
+  it('treats a whitespace-only literal secret as empty and clears it', () => {
+    const out = encryptConfigSecretFields({ 'ocr.apiKey': '   ' });
+    expect(out['ocr.apiKey']).toBe('');
+    expect(out['ocr.displayApiKey']).toBe('');
+  });
+
+  it('masks short credentials fully instead of disclosing them via the display companion', () => {
+    expect(getDisplaySecretKey('short12')).toBe('*******');
+    expect(getDisplaySecretKey('0123456789')).toBe('**********');
+    expect(getDisplaySecretKey('sk-longer-secret-value')).toBe('sk-lon...alue');
+  });
+
   it('encrypts dotted patch writes and sets a masked display companion for every field', () => {
     const out = encryptConfigSecretFields({
       'speech.tts.openai.apiKey': 'sk-tts',
@@ -286,7 +324,7 @@ describe('Config secret registry fields', () => {
     expect(decryptV3(out['speech.tts.openai.apiKey'] as string)).toBe('sk-tts');
     expect(out['speech.tts.openai.displayApiKey']).toBe(getDisplaySecretKey('sk-tts'));
     expect(out['webSearch.serperApiKey']).toBe('${SERPER_API_KEY}');
-    expect(out['webSearch.displaySerperApiKey']).toBeUndefined();
+    expect(out['webSearch.displaySerperApiKey']).toBe('');
     expect(out['ocr.apiKey']).toBe('');
     expect(out['ocr.displayApiKey']).toBe('');
     expect(Object.keys(out).sort()).toEqual([
@@ -294,6 +332,7 @@ describe('Config secret registry fields', () => {
       'ocr.displayApiKey',
       'speech.tts.openai.apiKey',
       'speech.tts.openai.displayApiKey',
+      'webSearch.displaySerperApiKey',
       'webSearch.serperApiKey',
     ]);
   });

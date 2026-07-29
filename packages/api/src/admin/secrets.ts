@@ -113,6 +113,9 @@ const SECRET_SECTIONS: readonly string[] = [
 ];
 
 export function getDisplaySecretKey(secret: string): string {
+  if (secret.length <= 10) {
+    return '*'.repeat(secret.length);
+  }
   return secret.slice(0, 6) + '...' + secret.slice(-4);
 }
 
@@ -262,8 +265,16 @@ function writeSecretIntoSection(section: Record<string, unknown>, field: ConfigS
     return;
   }
 
-  const value = section[key];
-  if (typeof value !== 'string' || value.length === 0 || value.startsWith(ENCRYPTED_PREFIX)) {
+  const rawValue = section[key];
+  if (typeof rawValue !== 'string' || rawValue.startsWith(ENCRYPTED_PREFIX)) {
+    section[key] = '';
+    if (displayKey) {
+      section[displayKey] = '';
+    }
+    return;
+  }
+  const value = normalizeSecretString(rawValue);
+  if (!value) {
     section[key] = '';
     if (displayKey) {
       section[displayKey] = '';
@@ -271,6 +282,10 @@ function writeSecretIntoSection(section: Record<string, unknown>, field: ConfigS
     return;
   }
   if (field.allowEnvPlaceholder && isEnvPlaceholder(value)) {
+    section[key] = value;
+    if (displayKey) {
+      section[displayKey] = '';
+    }
     return;
   }
 
@@ -281,8 +296,16 @@ function writeSecretIntoSection(section: Record<string, unknown>, field: ConfigS
 }
 
 function writeDottedSecret(result: Record<string, unknown>, field: ConfigSecretField): void {
-  const value = result[field.path];
-  if (typeof value !== 'string' || value.length === 0 || value.startsWith(ENCRYPTED_PREFIX)) {
+  const rawValue = result[field.path];
+  if (typeof rawValue !== 'string' || rawValue.startsWith(ENCRYPTED_PREFIX)) {
+    result[field.path] = '';
+    if (field.displayPath) {
+      result[field.displayPath] = '';
+    }
+    return;
+  }
+  const value = normalizeSecretString(rawValue);
+  if (!value) {
     result[field.path] = '';
     if (field.displayPath) {
       result[field.displayPath] = '';
@@ -290,6 +313,10 @@ function writeDottedSecret(result: Record<string, unknown>, field: ConfigSecretF
     return;
   }
   if (field.allowEnvPlaceholder && isEnvPlaceholder(value)) {
+    result[field.path] = value;
+    if (field.displayPath) {
+      result[field.displayPath] = '';
+    }
     return;
   }
   result[field.path] = encryptV3(value);
