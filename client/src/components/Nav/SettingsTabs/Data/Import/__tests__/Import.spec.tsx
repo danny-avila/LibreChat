@@ -62,6 +62,8 @@ describe('Import panel', () => {
   let capturedStartOptions: { onError?: (error: unknown) => void } = {};
   let showToast: jest.Mock;
   let uploadMutate: jest.Mock;
+  let startMutate: jest.Mock;
+  let cancelMutate: jest.Mock;
 
   beforeEach(() => {
     capturedUploadOptions = {};
@@ -77,13 +79,18 @@ describe('Import panel', () => {
         return { mutate: uploadMutate, isLoading: false };
       },
     );
+    startMutate = jest.fn();
+    cancelMutate = jest.fn();
     dataProvider.useStartImportMutation.mockImplementation(
       (options: typeof capturedStartOptions) => {
         capturedStartOptions = options ?? {};
-        return { mutate: jest.fn(), isLoading: false };
+        return { mutate: startMutate, isLoading: false };
       },
     );
-    dataProvider.useCancelImportMutation.mockReturnValue({ mutate: jest.fn(), isLoading: false });
+    dataProvider.useCancelImportMutation.mockReturnValue({
+      mutate: cancelMutate,
+      isLoading: false,
+    });
     dataProvider.useImportJobQuery.mockReturnValue({ data: undefined });
     window.localStorage.clear();
   });
@@ -374,10 +381,52 @@ describe('Import panel', () => {
 
     render(<Import />);
     /* Exactly once: the count is the <details> summary. It used to also be
-       repeated in the status block above, which this assertion enshrined. */
-    expect(screen.getAllByText(/1 items could not be imported/i)).toHaveLength(1);
+       repeated in the status block above, which this assertion enshrined.
+       Singular, because a single failure is one item, not "1 items". */
+    expect(screen.getAllByText(/^1 item could not be imported$/i)).toHaveLength(1);
     expect(screen.getByText(/conversation 11 malformed/i)).toBeInTheDocument();
     expect(screen.getByText(/archive truncated/i)).toBeInTheDocument();
+  });
+
+  it('pluralizes the error count for more than one failure', () => {
+    dataProvider.useImportJobQuery.mockReturnValue({
+      data: job({
+        phase: 'failed',
+        status: 'failed',
+        report: {
+          imported: 10,
+          skipped: 0,
+          assetsImported: 0,
+          assetsUnavailable: 0,
+          errors: ['conversation 11 malformed', 'conversation 12 malformed'],
+        },
+      }),
+    });
+
+    render(<Import />);
+
+    expect(screen.getByText(/^2 items could not be imported$/i)).toBeInTheDocument();
+  });
+
+  it('pluralizes the report counts, so a single conversation is not "1 conversations"', () => {
+    dataProvider.useImportJobQuery.mockReturnValue({
+      data: job({
+        phase: 'completed',
+        status: 'completed',
+        report: {
+          imported: 1,
+          skipped: 0,
+          assetsImported: 1,
+          assetsUnavailable: 0,
+          errors: [],
+        },
+      }),
+    });
+
+    render(<Import />);
+
+    expect(screen.getByText('1 conversation imported, 0 skipped')).toBeInTheDocument();
+    expect(screen.getByText('1 attachment imported, 0 unavailable')).toBeInTheDocument();
   });
 
   it('moves focus back to the import control after starting another import', () => {
@@ -547,6 +596,66 @@ describe('Import panel', () => {
     render(<Import />);
 
     expect(window.localStorage.getItem('importJobId')).toBeNull();
+  });
+
+  /**
+   * The buttons were only ever asserted on for their labels and disabled
+   * state, so the panel could have called mutate with undefined, an empty
+   * string, or a stale id and every test still passed. On a multi-minute
+   * import that is a Cancel button that silently does nothing.
+   */
+  it('starts the job the panel is currently tracking', () => {
+    window.localStorage.setItem('importJobId', 'job-99');
+    dataProvider.useImportJobQuery.mockReturnValue({ data: job() });
+
+    render(<Import />);
+    fireEvent.click(screen.getByRole('button', { name: /^import$/i }));
+
+    expect(startMutate).toHaveBeenCalledWith('job-99');
+  });
+
+  it('cancels the job it is tracking, from the confirmation screen', () => {
+    window.localStorage.setItem('importJobId', 'job-99');
+    dataProvider.useImportJobQuery.mockReturnValue({ data: job() });
+
+    render(<Import />);
+    fireEvent.click(screen.getByRole('button', { name: /cancel import/i }));
+
+    expect(cancelMutate).toHaveBeenCalledWith('job-99');
+  });
+
+  it('cancels the job it is tracking, mid-run', () => {
+    window.localStorage.setItem('importJobId', 'job-99');
+    dataProvider.useImportJobQuery.mockReturnValue({
+      data: job({
+        phase: 'conversations',
+        status: 'active',
+        progress: {
+          conversations: { done: 10, total: 100 },
+          messages: { done: 0, total: 0 },
+          assets: { done: 0, total: 0 },
+        },
+      }),
+    });
+
+    render(<Import />);
+    fireEvent.click(screen.getByRole('button', { name: /cancel import/i }));
+
+    expect(cancelMutate).toHaveBeenCalledWith('job-99');
+  });
+
+  it('starts the job returned by the upload, not a stale one', () => {
+    render(<Import />);
+
+    /* Queued before the state change so the re-render the upload triggers
+       already shows the confirmation screen. */
+    dataProvider.useImportJobQuery.mockReturnValue({ data: job() });
+    act(() => {
+      capturedUploadOptions.onSuccess?.({ jobId: 'job-42', summary: summary() });
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^import$/i }));
+
+    expect(startMutate).toHaveBeenCalledWith('job-42');
   });
 
   it('shows a distinct toast for an unsupported file type', () => {
