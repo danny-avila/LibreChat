@@ -321,6 +321,9 @@ const importJobs = new ImportJobStore(getLogStores(CacheKeys.IMPORT_JOBS));
  */
 const activeImports = new Map();
 const MAX_CONCURRENT_IMPORTS_PER_USER = 1;
+/** Minimum gap between job-store progress writes. The client polls every two
+ * seconds, so anything below that is written for nobody to read. */
+const PROGRESS_WRITE_INTERVAL_MS = 500;
 
 function activeImportCount(userId) {
   return activeImports.get(userId) ?? 0;
@@ -440,7 +443,17 @@ async function runImportJob(context, job) {
     await fs.promises.utimes(job.filepath, new Date(), new Date()).catch(() => undefined);
 
     const source = getFileStrategy(appConfig, { isImage: true });
-    const { saveBuffer } = getStrategyFunctions(source);
+    const { saveBuffer, deleteFile } = getStrategyFunctions(source);
+    /** The strategy's delete takes a request-shaped object for its paths and
+     * owner; the background run has both on its snapshot. Used to release
+     * assets no committed conversation claimed — a run cancelled between the
+     * asset phase and the first conversation would otherwise leave every file
+     * it created referenced by nothing and exempt from every sweep. */
+    const storageContext = { config: appConfig, user: { id: userId } };
+    const releaseAsset = async (asset) => {
+      await deleteFile(storageContext, asset);
+      await db.deleteFiles([asset.file_id], userId);
+    };
     const batch = createImportBatchBuilder(userId, appConfig?.interfaceConfig);
     const target = resolveJobTarget(job);
 
@@ -450,6 +463,7 @@ async function runImportJob(context, job) {
       userRole,
     });
 
+    let lastProgressWrite = 0;
     const report = await runImport({
       filepath: job.filepath,
       userId,
@@ -457,11 +471,22 @@ async function runImportJob(context, job) {
       source,
       format: target.format,
       defaultModel,
-      deps: { saveBuffer, createFile: db.createFile },
+      deps: { saveBuffer, createFile: db.createFile, deleteFile: releaseAsset },
       batch,
       existingExternalIds: await loadExistingExternalIds(userId, target.source),
       isCancelled: () => importJobs.isCancelled(userId, job.jobId),
       onProgress: async (progress) => {
+        /** Throttled because this fires once per conversation and once per
+         * asset, and each call is a read and a write against the job store.
+         * On a Redis-backed deployment a 10k-conversation import is tens of
+         * thousands of serialized round trips, which at managed-Redis latency
+         * costs more wall time than the import itself. The client polls on an
+         * interval, so a sub-second write cadence is invisible to it. */
+        const now = Date.now();
+        if (now - lastProgressWrite < PROGRESS_WRITE_INTERVAL_MS) {
+          return;
+        }
+        lastProgressWrite = now;
         await importJobs.patch(userId, job.jobId, { progress });
       },
       onPhase: async (phase) => {
