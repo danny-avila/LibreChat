@@ -26,6 +26,11 @@ const vanillaOverrides = {
   ALLOW_SOCIAL_LOGIN: 'false',
   ALLOW_SOCIAL_REGISTRATION: 'false',
   STREAM_KEEP_COMPLETED_JOBS: 'true',
+  /** A local `.env` may enable balance enforcement, which `neutralizeCredentialEnv`
+   *  does not blank (not credential-shaped); the fresh e2e user has no balance
+   *  record, so every streaming spec would be refused with a token_balance
+   *  violation before the mock model runs. */
+  CHECK_BALANCE: 'false',
 };
 
 const baseEnv = {
