@@ -33,6 +33,7 @@ const {
   // Responses API
   writeDone,
   buildResponse,
+  RESPONSE_ID_PREFIX,
   generateResponseId,
   isValidationFailure,
   emitResponseCreated,
@@ -123,7 +124,8 @@ function convertToInternalMessages(input) {
  * Per the Open Responses spec, clients hand back the `id` they were given,
  * which is a response ID (`resp_…`, stored as the assistant message's
  * `messageId`). Conversation IDs are also accepted, since this API previously
- * only resolved those.
+ * only resolved those. The two forms are distinguishable by prefix, so neither
+ * pays a lookup that is guaranteed to miss.
  *
  * @param {string} userId - The user ID
  * @param {string} id - A response ID or a conversation ID
@@ -131,9 +133,9 @@ function convertToInternalMessages(input) {
  * resolved conversation, plus the response's `messageId` when the ID named a response
  */
 async function resolveConversation(userId, id) {
-  const conversation = await db.getConvo(userId, id);
-  if (conversation) {
-    return { conversationId: id, conversation };
+  if (!id.startsWith(RESPONSE_ID_PREFIX)) {
+    const conversation = await db.getConvo(userId, id);
+    return conversation ? { conversationId: id, conversation } : {};
   }
 
   const message = await db.getMessage({ user: userId, messageId: id });
@@ -763,8 +765,11 @@ const createResponse = async (req, res) => {
       emitResponseInProgress(handlerConfig);
 
       // Create event handlers
-      const { handlers: responsesHandlers, finalizeStream } =
-        createResponsesEventHandlers(handlerConfig);
+      const {
+        handlers: responsesHandlers,
+        closeOpenStreams,
+        completeStream,
+      } = createResponsesEventHandlers(handlerConfig);
 
       // Collect usage for balance tracking
       const collectedUsage = [];
@@ -917,12 +922,11 @@ const createResponse = async (req, res) => {
         logger.error('[Responses API] Error recording usage:', err);
       });
 
-      // Finalize the stream
-      finalizeStream();
-      res.end();
-
-      const duration = Date.now() - requestStartTime;
-      logger.debug(`[Responses API] Request ${responseId} completed in ${duration}ms (streaming)`);
+      /**
+       * Close the open items first: their accumulated text is only written onto the tracker's
+       * content parts here, so the response has to be closed before it can be persisted.
+       */
+      closeOpenStreams();
 
       // Save to database if store: true
       if (request.store === true) {
@@ -958,6 +962,13 @@ const createResponse = async (req, res) => {
           // Don't fail the request if saving fails
         }
       }
+
+      /** Terminal events last, so the response ID is resolvable by the time the client sees it */
+      completeStream();
+      res.end();
+
+      const duration = Date.now() - requestStartTime;
+      logger.debug(`[Responses API] Request ${responseId} completed in ${duration}ms (streaming)`);
 
       // Wait for artifact processing after response ends (non-blocking)
       if (artifactPromises.length > 0) {

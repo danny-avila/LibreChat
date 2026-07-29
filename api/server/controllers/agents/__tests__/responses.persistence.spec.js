@@ -13,6 +13,10 @@ const { createModels, createMethods } = require('@librechat/data-schemas');
 
 const mockGetAgent = jest.fn();
 const mockGetMessages = jest.fn();
+const mockGetConvo = jest.fn();
+const mockBuildResponse = jest.fn();
+/** Ordered log of the calls that must stay ordered relative to each other */
+const callOrder = [];
 const mockFormatAgentMessages = jest.fn().mockReturnValue({ messages: [], indexTokenCountMap: {} });
 const mockGenerateResponseId = jest.fn();
 const mockValidateResponseRequest = jest.fn();
@@ -69,7 +73,8 @@ jest.mock('@librechat/api', () => ({
   getRemoteAgentPermissions: jest.fn().mockResolvedValue({}),
   // Responses API
   writeDone: jest.fn(),
-  buildResponse: jest.fn().mockReturnValue({ id: 'resp_stream', output: [] }),
+  RESPONSE_ID_PREFIX: 'resp_',
+  buildResponse: (...args) => mockBuildResponse(...args),
   generateResponseId: (...args) => mockGenerateResponseId(...args),
   isValidationFailure: jest.fn().mockReturnValue(false),
   findPiiMatchInMessages: jest.fn().mockReturnValue(null),
@@ -89,7 +94,9 @@ jest.mock('@librechat/api', () => ({
   sendResponsesErrorResponse: (...args) => mockSendResponsesErrorResponse(...args),
   createResponsesEventHandlers: jest.fn().mockReturnValue({
     handlers: {},
-    finalizeStream: jest.fn(),
+    closeOpenStreams: () => callOrder.push('closeOpenStreams'),
+    completeStream: () => callOrder.push('completeStream'),
+    finalizeStream: () => callOrder.push('finalizeStream'),
   }),
   createAggregatorEventHandlers: jest.fn().mockReturnValue({
     on_message_delta: { handle: jest.fn() },
@@ -163,6 +170,18 @@ jest.mock('~/models', () => {
       mockGetMessages(...args);
       return methods.getMessages(...args);
     },
+    getConvo: (...args) => {
+      mockGetConvo(...args);
+      return methods.getConvo(...args);
+    },
+    saveMessage: (...args) => {
+      callOrder.push('saveMessage');
+      return methods.saveMessage(...args);
+    },
+    saveConvo: (...args) => {
+      callOrder.push('saveConvo');
+      return methods.saveConvo(...args);
+    },
     getAgent: (...args) => mockGetAgent(...args),
   };
 });
@@ -192,6 +211,7 @@ describe('Responses API - store: true persistence', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    callOrder.length = 0;
     await mongoose.connection.db.dropDatabase();
 
     mockGetAgent.mockResolvedValue({ id: AGENT_ID, name: 'Test Agent', model: 'claude-3' });
@@ -238,6 +258,34 @@ describe('Responses API - store: true persistence', () => {
       ],
       usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
     });
+
+    await controller.createResponse(req, res);
+  };
+
+  /** Drive one streaming `store: true` turn through the controller */
+  const runStreamingTurn = async ({ input, responseId }) => {
+    mockGenerateResponseId.mockReturnValue(responseId);
+    mockValidateResponseRequest.mockReturnValue({
+      request: { model: AGENT_ID, input, store: true, stream: true },
+    });
+    mockConvertInputToMessages.mockReturnValue([{ role: 'user', content: input }]);
+    /** Mirrors the real `buildResponse`, whose text is only materialized once streams close */
+    mockBuildResponse.mockImplementation(() => ({
+      id: responseId,
+      status: callOrder.includes('closeOpenStreams') ? 'completed' : 'in_progress',
+      output: [
+        {
+          type: 'message',
+          content: [
+            {
+              type: 'output_text',
+              text: callOrder.includes('closeOpenStreams') ? `answer to ${input}` : '',
+            },
+          ],
+        },
+      ],
+      usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+    }));
 
     await controller.createResponse(req, res);
   };
@@ -334,6 +382,29 @@ describe('Responses API - store: true persistence', () => {
     );
   });
 
+  describe('streaming', () => {
+    it('persists the response before emitting the terminal stream event', async () => {
+      await runStreamingTurn({ input: 'hello', responseId: 'resp_1' });
+
+      expect(callOrder).toEqual([
+        'closeOpenStreams',
+        'saveMessage',
+        'saveMessage',
+        'saveConvo',
+        'completeStream',
+      ]);
+    });
+
+    it('persists the streamed text, which is only materialized once streams close', async () => {
+      await runStreamingTurn({ input: 'hello', responseId: 'resp_1' });
+
+      const { conversationId } = await getStoredConversation();
+      const messages = await getStoredMessages(conversationId);
+      expect(messages).toHaveLength(2);
+      expect(messages[1]).toMatchObject({ messageId: 'resp_1', text: 'answer to hello' });
+    });
+  });
+
   describe('history reads', () => {
     it('reads no history to parent the first turn', async () => {
       await runTurn({ input: 'hello', responseId: 'resp_1' });
@@ -348,6 +419,15 @@ describe('Responses API - store: true persistence', () => {
       await runTurn({ input: 'second', responseId: 'resp_2', previousResponseId: 'resp_1' });
 
       expect(mockGetMessages).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips the guaranteed-miss conversation lookup for a response id', async () => {
+      await runTurn({ input: 'first', responseId: 'resp_1' });
+      mockGetConvo.mockClear();
+
+      await runTurn({ input: 'second', responseId: 'resp_2', previousResponseId: 'resp_1' });
+
+      expect(mockGetConvo).not.toHaveBeenCalledWith(USER_ID, 'resp_1');
     });
   });
 
