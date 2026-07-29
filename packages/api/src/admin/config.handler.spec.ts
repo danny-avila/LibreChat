@@ -480,6 +480,51 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.upsertConfig).not.toHaveBeenCalled();
     });
 
+    it('preserves stored Langfuse settings during a full base-config replacement', async () => {
+      const storedLangfuse = {
+        enabled: true,
+        destination: 'eu',
+        publicKey: 'pk-stored',
+        secretKey: 'v3:test:sk-stored',
+        secretKeyPreview: 'sk-sto...ored',
+        projectId: 'project-stored',
+      };
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          overrides: { langfuse: storedLangfuse },
+        }),
+        upsertConfig: jest.fn(async (_type, _id, _model, overrides) => ({
+          _id: 'c1',
+          configVersion: 2,
+          overrides,
+        })),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: {
+          overrides: {
+            interface: { modelSelect: false },
+            langfuse: {
+              enabled: false,
+              publicKey: 'pk-caller',
+              projectId: 'project-caller',
+            },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const savedOverrides = deps.upsertConfig.mock.calls[0][3];
+      expect(savedOverrides).toEqual({
+        interface: { modelSelect: false },
+        langfuse: storedLangfuse,
+      });
+    });
+
     it('encrypts custom endpoint API keys on full override writes and redacts responses', async () => {
       const { handlers, deps } = createHandlers({
         upsertConfig: jest.fn(async (_type, _id, _model, overrides) => ({

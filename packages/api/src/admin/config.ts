@@ -611,18 +611,33 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const encryptedOverrides = encryptConfigSecrets(filteredOverrides);
-      const existingForSecrets = getConfigSecretSections().some((section) =>
+      const needsExistingSecrets = getConfigSecretSections().some((section) =>
         isConfigSecretPreservablePatch(
           section,
           (filteredOverrides as Record<string, unknown>)[section],
         ),
-      )
-        ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
-        : null;
+      );
+      const needsProtectedBaseSections =
+        principalId === BASE_CONFIG_PRINCIPAL_ID &&
+        (overrideSections.length > 0 || priority != null);
+      const existingConfig =
+        needsExistingSecrets || needsProtectedBaseSections
+          ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+          : null;
       const preservedOverrides = preserveConfigSecrets(
         encryptedOverrides,
-        existingForSecrets?.overrides,
+        existingConfig?.overrides,
       );
+      if (needsProtectedBaseSections) {
+        for (const section of BASE_PRINCIPAL_OVERRIDE_SECTIONS) {
+          const storedSection = (
+            existingConfig?.overrides as Record<string, unknown> | undefined
+          )?.[section];
+          if (storedSection !== undefined) {
+            (preservedOverrides as Record<string, unknown>)[section] = storedSection;
+          }
+        }
+      }
       const config = await upsertConfig(
         principalType,
         principalId,

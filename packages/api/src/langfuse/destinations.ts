@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { AppConfig } from '@librechat/data-schemas';
+import { logger, type AppConfig } from '@librechat/data-schemas';
 import {
   hasLangfuseEnvCredentials,
   isLangfuseFanoutEnabled,
@@ -13,6 +13,8 @@ import { resolveLangfuseTenantDestination } from './tenantDestinations';
 import { normalizeString } from '~/utils/text';
 
 const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
+const PROJECT_LOOKUP_TIMEOUT_MS = 10_000;
+const centralProjectIdCache = new Map<string, Promise<string | undefined>>();
 
 export type LangfuseScoreDestination = {
   id?: string;
@@ -36,7 +38,61 @@ function getCentralEnvBaseUrl(): string {
   );
 }
 
-function getCentralScoreDestination(): LangfuseScoreDestination | undefined {
+async function resolveCentralProjectId(
+  baseUrl: string,
+  publicKey: string,
+  secretKey: string,
+): Promise<string | undefined> {
+  const configuredProjectId = normalizeString(process.env.LANGFUSE_PROJECT_ID);
+  if (configuredProjectId) {
+    return configuredProjectId;
+  }
+
+  const cacheKey = createHash('sha256')
+    .update(`${baseUrl}\n${publicKey}\n${secretKey}`)
+    .digest('hex');
+  const cached = centralProjectIdCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const lookup = (async () => {
+    try {
+      const response = await fetch(`${baseUrl}/api/public/projects`, {
+        headers: { Authorization: toBasicAuthorization(publicKey, secretKey) },
+        signal: AbortSignal.timeout(PROJECT_LOOKUP_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        logger.warn(
+          `[langfuse] Could not resolve central project identity: Langfuse responded with ${response.status}`,
+        );
+        return undefined;
+      }
+
+      const projects: unknown = await response.json();
+      const projectId =
+        projects != null &&
+        typeof projects === 'object' &&
+        Array.isArray((projects as { data?: unknown }).data) &&
+        (projects as { data: unknown[] }).data.length === 1 &&
+        typeof (projects as { data: Array<{ id?: unknown }> }).data[0]?.id === 'string'
+          ? (projects as { data: Array<{ id: string }> }).data[0].id.trim()
+          : '';
+      if (!projectId) {
+        logger.warn('[langfuse] Could not resolve central project identity from Langfuse response');
+        return undefined;
+      }
+      return projectId;
+    } catch (error) {
+      logger.warn('[langfuse] Could not resolve central project identity:', error);
+      return undefined;
+    }
+  })();
+  centralProjectIdCache.set(cacheKey, lookup);
+  return lookup;
+}
+
+async function getCentralScoreDestination(): Promise<LangfuseScoreDestination | undefined> {
   // Central feedback scores are sent directly by the app, not through the
   // collector, so they use LibreChat's normal central Langfuse credentials.
   // LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER is intentionally collector-only.
@@ -46,12 +102,12 @@ function getCentralScoreDestination(): LangfuseScoreDestination | undefined {
     return undefined;
   }
 
+  const baseUrl = getCentralEnvBaseUrl();
+  const projectId = await resolveCentralProjectId(baseUrl, publicKey, secretKey);
   return {
-    // The deployment-owned central destination is treated as one logical
-    // project across credential rotations.
-    id: getDestinationId(getCentralEnvBaseUrl(), 'central'),
+    id: projectId ? getDestinationId(baseUrl, projectId) : undefined,
     name: 'central',
-    baseUrl: getCentralEnvBaseUrl(),
+    baseUrl,
     authorization: toBasicAuthorization(publicKey, secretKey),
   };
 }
@@ -117,11 +173,11 @@ function getConfiguredScoreDestination(
  * collector availability gate used by traces; single-tenant connections send
  * directly to their configured destination.
  */
-export function getScoreDestinations(
+export async function getScoreDestinations(
   appConfig: AppConfig | undefined,
   traceId: string,
   sampled?: boolean,
-): LangfuseScoreDestination[] {
+): Promise<LangfuseScoreDestination[]> {
   if (
     !isLangfuseTracingEnabled() ||
     sampled === false ||
@@ -132,7 +188,7 @@ export function getScoreDestinations(
 
   if (!usesLangfuseMultiTenantRouting()) {
     return hasLangfuseEnvCredentials()
-      ? [getCentralScoreDestination()].filter(
+      ? [await getCentralScoreDestination()].filter(
           (destination): destination is LangfuseScoreDestination => Boolean(destination),
         )
       : [getConfiguredScoreDestination(appConfig)].filter(
@@ -140,9 +196,10 @@ export function getScoreDestinations(
         );
   }
 
-  const destinations = [getCentralScoreDestination(), getTenantScoreDestination(appConfig)].filter(
-    (destination): destination is LangfuseScoreDestination => Boolean(destination),
-  );
+  const destinations = [
+    await getCentralScoreDestination(),
+    getTenantScoreDestination(appConfig),
+  ].filter((destination): destination is LangfuseScoreDestination => Boolean(destination));
   const unique = new Map<string, LangfuseScoreDestination>();
   for (const destination of destinations) {
     const deduplicationKey = `${destination.baseUrl}\n${destination.authorization}`;
@@ -162,12 +219,12 @@ export function getScoreDestinations(
  * trace. The opaque IDs let later feedback avoid newly configured or replaced
  * destinations without persisting credentials on the message.
  */
-export function getLangfuseTraceDestinationIds(
+export async function getLangfuseTraceDestinationIds(
   appConfig: AppConfig | undefined,
   traceId: string,
   sampled?: boolean,
-): string[] | undefined {
-  const destinations = getScoreDestinations(appConfig, traceId, sampled);
+): Promise<string[] | undefined> {
+  const destinations = await getScoreDestinations(appConfig, traceId, sampled);
   if (destinations.some(({ id }) => id == null)) {
     return undefined;
   }

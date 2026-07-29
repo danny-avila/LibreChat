@@ -728,7 +728,7 @@ class BaseClient {
       isCreatedByUser: false,
       ...(isAgentResponse && {
         langfuseSampled,
-        langfuseDestinationIds: getLangfuseTraceDestinationIds(
+        langfuseDestinationIds: await getLangfuseTraceDestinationIds(
           appConfig,
           langfuseTraceId,
           langfuseSampled,

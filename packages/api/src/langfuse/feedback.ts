@@ -116,7 +116,7 @@ export async function sendFeedbackScore({
   }
 
   const destinationIdSet = destinationIds == null ? undefined : new Set(destinationIds);
-  const destinations = getScoreDestinations(appConfig, traceId, sampled).filter(
+  const destinations = (await getScoreDestinations(appConfig, traceId, sampled)).filter(
     ({ id }) => destinationIdSet == null || (id != null && destinationIdSet.has(id)),
   );
   if (destinations.length === 0) {

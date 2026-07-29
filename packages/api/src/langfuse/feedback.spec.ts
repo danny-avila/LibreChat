@@ -31,6 +31,7 @@ jest.mock('~/admin/secrets', () => ({
 const langfuseEnvKeys = [
   'LANGFUSE_PUBLIC_KEY',
   'LANGFUSE_SECRET_KEY',
+  'LANGFUSE_PROJECT_ID',
   'LANGFUSE_BASE_URL',
   'LANGFUSE_HOST',
   'LANGFUSE_BASEURL',
@@ -57,6 +58,7 @@ function clearLangfuseEnv() {
 function setLangfuseCredentials() {
   process.env.LANGFUSE_PUBLIC_KEY = 'public-key';
   process.env.LANGFUSE_SECRET_KEY = 'secret-key';
+  process.env.LANGFUSE_PROJECT_ID = 'central-project-id';
 }
 
 function enableTenantFanout() {
@@ -372,7 +374,7 @@ describe('Langfuse feedback scores', () => {
       secretKey: encryptedTenantSecret(),
       destination: 'eu',
     });
-    const destinationIds = getLangfuseTraceDestinationIds(originalConfig, 'trace-id', true);
+    const destinationIds = await getLangfuseTraceDestinationIds(originalConfig, 'trace-id', true);
 
     await sendFeedbackScore({
       traceId: 'trace-id',
@@ -391,6 +393,88 @@ describe('Langfuse feedback scores', () => {
     expect(getFetchMock()).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the central destination identity stable when credentials rotate', async () => {
+    const { sendFeedbackScore } = await loadFeedback();
+    const { getLangfuseTraceDestinationIds } = await import('./destinations');
+    const destinationIds = await getLangfuseTraceDestinationIds(undefined, 'trace-id', true);
+    process.env.LANGFUSE_PUBLIC_KEY = 'rotated-public-key';
+    process.env.LANGFUSE_SECRET_KEY = 'rotated-secret-key';
+
+    await sendFeedbackScore({
+      traceId: 'trace-id',
+      sampled: true,
+      destinationIds,
+      feedback: { rating: 'thumbsUp' },
+    });
+
+    expect(destinationIds).toHaveLength(1);
+    expect(getFetchMock()).toHaveBeenCalledTimes(1);
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'https://cloud.langfuse.com/api/public/scores',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: getTenantAuthorization('rotated-public-key', 'rotated-secret-key'),
+        }),
+      }),
+    );
+  });
+
+  it('does not reroute central feedback after a project replacement on the same host', async () => {
+    const { sendFeedbackScore } = await loadFeedback();
+    const { getLangfuseTraceDestinationIds } = await import('./destinations');
+    const destinationIds = await getLangfuseTraceDestinationIds(undefined, 'trace-id', true);
+    process.env.LANGFUSE_PROJECT_ID = 'replacement-project-id';
+    process.env.LANGFUSE_PUBLIC_KEY = 'replacement-public-key';
+    process.env.LANGFUSE_SECRET_KEY = 'replacement-secret-key';
+
+    await sendFeedbackScore({
+      traceId: 'trace-id',
+      sampled: true,
+      destinationIds,
+      feedback: { rating: 'thumbsUp' },
+    });
+
+    expect(destinationIds).toHaveLength(1);
+    expect(getFetchMock()).not.toHaveBeenCalled();
+  });
+
+  it('discovers and caches the central project identity when it is not configured', async () => {
+    delete process.env.LANGFUSE_PROJECT_ID;
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: [{ id: 'discovered-project-id' }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    const { sendFeedbackScore } = await loadFeedback();
+    const { getLangfuseTraceDestinationIds } = await import('./destinations');
+    const destinationIds = await getLangfuseTraceDestinationIds(undefined, 'trace-id', true);
+
+    await sendFeedbackScore({
+      traceId: 'trace-id',
+      sampled: true,
+      destinationIds,
+      feedback: { rating: 'thumbsUp' },
+    });
+
+    expect(destinationIds).toHaveLength(1);
+    expect(getFetchMock()).toHaveBeenCalledTimes(2);
+    expect(getFetchMock()).toHaveBeenNthCalledWith(
+      1,
+      'https://cloud.langfuse.com/api/public/projects',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: getCentralAuthorization() }),
+      }),
+    );
+    expect(getFetchMock()).toHaveBeenNthCalledWith(
+      2,
+      'https://cloud.langfuse.com/api/public/scores',
+      expect.any(Object),
+    );
+  });
+
   it('preserves legacy feedback behavior when a connection has no project identity', async () => {
     delete process.env.TENANT_ISOLATION_STRICT;
     delete process.env.LANGFUSE_PUBLIC_KEY;
@@ -403,7 +487,7 @@ describe('Langfuse feedback scores', () => {
       secretKey: encryptedTenantSecret(),
       destination: 'eu',
     });
-    const destinationIds = getLangfuseTraceDestinationIds(legacyConfig, 'trace-id', true);
+    const destinationIds = await getLangfuseTraceDestinationIds(legacyConfig, 'trace-id', true);
 
     await sendFeedbackScore({
       traceId: 'trace-id',
