@@ -3,9 +3,9 @@ import type { SaveMessageDetails, RunImportInput, ProviderImportContext } from '
 import type { ClaudeConversation, ImportProgress } from '~/import/types';
 import type { ConvertedClaudeConversation } from './convert';
 import type { Archive } from '~/import/archive';
+import { recordError, sanitizeImportError } from '~/import/errors';
 import { hasClaudeConversationShape } from '~/import/manifest';
 import { convertClaudeConversation } from './convert';
-import { sanitizeImportError } from '~/import/errors';
 
 export const CLAUDE_SOURCE = 'claude';
 
@@ -115,7 +115,7 @@ export async function runClaudeImport(context: ProviderImportContext): Promise<v
     try {
       conversations = await parseShard(archive, shard);
     } catch (error) {
-      report.errors.push(`${shard}: ${describeShardError(error, shard)}`);
+      recordError(report.errors, `${shard}: ${describeShardError(error, shard)}`);
       continue;
     }
 
@@ -139,8 +139,12 @@ export async function runClaudeImport(context: ProviderImportContext): Promise<v
         report.assetsImported += converted.extracted;
         report.assetsUnavailable += converted.unavailable;
         report.imported += 1;
+        /** The skip set is a snapshot taken at job start, so a uuid repeated
+         * within one export would otherwise import twice. */
+        input.existingExternalIds.add(conv.uuid);
       } catch (error) {
-        report.errors.push(
+        recordError(
+          report.errors,
           `${conv.uuid}: ${sanitizeImportError(error, `import conversation ${conv.uuid}`)}`,
         );
       }

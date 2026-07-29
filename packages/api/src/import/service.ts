@@ -19,11 +19,11 @@ import {
   detectExportFormat,
   hasChatGptConversationShape,
 } from './manifest';
+import { recordError, sanitizeImportError } from './errors';
 import { collectAssetReferences } from './chatgpt/content';
 import { convertConversation } from './chatgpt/convert';
 import { runClaudeImport } from './claude/service';
 import { runGrokImport } from './grok/service';
-import { sanitizeImportError } from './errors';
 import { openArchive } from './archive';
 import { ingestAssets } from './assets';
 
@@ -150,7 +150,7 @@ async function scanExport(
         scanConversation(conv, scan, seen);
       }
     } catch (error) {
-      errors.push(`${shard}: ${describeShardError(error, shard)}`);
+      recordError(errors, `${shard}: ${describeShardError(error, shard)}`);
     }
   }
 
@@ -181,6 +181,7 @@ function importConversation(
   conv: ChatGptConversation,
   input: RunImportInput,
   assets: Map<string, ImportedAsset>,
+  usedPointers: Set<string>,
 ): number {
   const converted = convertConversation(conv, {
     userId: input.userId,
@@ -204,11 +205,56 @@ function importConversation(
     converted.model,
   );
 
+  /** Recorded only once the conversation is buffered, so an asset whose
+   * conversation never made it is left unclaimed and gets cleaned up. */
+  for (const message of converted.messages) {
+    for (const pointer of message.assetPointers) {
+      usedPointers.add(pointer);
+    }
+  }
+
   return converted.messages.length;
+}
+
+/**
+ * Deletes assets no committed conversation ended up referencing.
+ *
+ * The asset phase runs to completion before the first conversation is written,
+ * so cancelling during it — or failing anywhere after it — otherwise leaves
+ * every ingested file permanently orphaned: the rows are created with the TTL
+ * disabled, and nothing else knows they exist. `expiresAt` is not an
+ * alternative here; it is a MongoDB TTL index that drops the row and leaves
+ * the storage object behind.
+ */
+async function releaseUnusedAssets(
+  assets: Map<string, ImportedAsset>,
+  usedPointers: Set<string>,
+  input: RunImportInput,
+): Promise<void> {
+  const deleteFile = input.deps.deleteFile;
+  if (!deleteFile || assets.size === 0) {
+    return;
+  }
+
+  for (const [pointer, asset] of assets) {
+    if (usedPointers.has(pointer)) {
+      continue;
+    }
+    try {
+      await deleteFile(asset);
+    } catch (error) {
+      logger.error(`[import] Could not remove the unreferenced asset ${asset.file_id}`, error);
+    }
+  }
 }
 
 export async function runImport(input: RunImportInput): Promise<ImportReport> {
   const archive = await openArchive(input.filepath);
+  /** Assets ingested this run, and the pointers a committed conversation
+   * claimed. Declared out here so the `finally` can release the difference on
+   * every exit path — completed, cancelled, or thrown. */
+  const ingested = new Map<string, ImportedAsset>();
+  const usedPointers = new Set<string>();
 
   const report: ImportReport = {
     imported: 0,
@@ -227,7 +273,7 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
      * an absent feature: without this the run imports what survived and reports
      * success, and the user never learns which conversations were skipped. */
     for (const shard of layout.missingShards) {
-      report.errors.push(`${shard}: listed in the manifest but missing from the archive`);
+      recordError(report.errors, `${shard}: listed in the manifest but missing from the archive`);
     }
 
     const providerRun: ProviderImportContext = {
@@ -295,9 +341,14 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
       },
     });
 
+    for (const [pointer, asset] of assetResult.map) {
+      ingested.set(pointer, asset);
+    }
     report.assetsImported = assetResult.imported;
     report.assetsUnavailable = assetResult.unavailable;
-    report.errors.push(...assetResult.errors);
+    for (const message of assetResult.errors) {
+      recordError(report.errors, message);
+    }
 
     await input.onPhase?.('conversations');
 
@@ -311,7 +362,7 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
       try {
         conversations = await parseShard(archive, shard);
       } catch (error) {
-        report.errors.push(`${shard}: ${describeShardError(error, shard)}`);
+        recordError(report.errors, `${shard}: ${describeShardError(error, shard)}`);
         continue;
       }
 
@@ -328,10 +379,16 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
         }
 
         try {
-          progress.messages.done += importConversation(conv, input, assetResult.map);
+          progress.messages.done += importConversation(conv, input, assetResult.map, usedPointers);
           report.imported += 1;
+          /** The skip set is a snapshot taken once at job start, so without
+           * this a `conversation_id` appearing twice in one export — across
+           * shards, or because the user concatenated two exports — imports as
+           * two separate conversations. */
+          input.existingExternalIds.add(conv.conversation_id);
         } catch (error) {
-          report.errors.push(
+          recordError(
+            report.errors,
             `${conv.conversation_id}: ${sanitizeImportError(error, `import conversation ${conv.conversation_id}`)}`,
           );
         }
@@ -348,6 +405,7 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
     logger.error('[import] Import run failed', error);
     throw error;
   } finally {
+    await releaseUnusedAssets(ingested, usedPointers, input);
     archive.close();
   }
 }

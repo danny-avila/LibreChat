@@ -82,3 +82,26 @@ export function sanitizeImportError(error: unknown, context: string): string {
   }
   return IMPORT_FAILED_MESSAGE;
 }
+
+/** How many per-item failures a report keeps. A systematically broken export
+ * produces one entry per conversation and per asset, and the whole array is
+ * serialized into the job's cache record and returned in full on every poll —
+ * so an uncapped list is hundreds of KB of Redis value and response body for
+ * an import that told the user nothing more than the first hundred would. */
+export const MAX_REPORT_ERRORS = 100;
+
+/**
+ * Appends a failure to a report, keeping the first `MAX_REPORT_ERRORS` and
+ * replacing the rest with a single running count. Returns nothing: callers
+ * push through this rather than onto the array directly.
+ */
+export function recordError(errors: string[], message: string): void {
+  if (errors.length < MAX_REPORT_ERRORS) {
+    errors.push(message);
+    return;
+  }
+
+  const suffix = errors[MAX_REPORT_ERRORS];
+  const hidden = suffix ? Number(suffix.match(/^(\d+)/)?.[1] ?? 0) + 1 : 1;
+  errors[MAX_REPORT_ERRORS] = `${hidden} further failures were not recorded`;
+}

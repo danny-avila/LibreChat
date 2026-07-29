@@ -3,7 +3,7 @@ import type { SaveMessageDetails, RunImportInput, ProviderImportContext } from '
 import type { GrokExport, ImportProgress, GrokConversationEntry } from '~/import/types';
 import type { ConvertedGrokConversation } from './convert';
 import type { Archive } from '~/import/archive';
-import { sanitizeImportError } from '~/import/errors';
+import { recordError, sanitizeImportError } from '~/import/errors';
 import { convertGrokConversation } from './convert';
 import { isGrokExport } from '~/import/manifest';
 
@@ -112,7 +112,7 @@ export async function runGrokImport(context: ProviderImportContext): Promise<voi
     try {
       parsed = await parseShard(archive, shard);
     } catch (error) {
-      report.errors.push(`${shard}: ${describeShardError(error, shard)}`);
+      recordError(report.errors, `${shard}: ${describeShardError(error, shard)}`);
       continue;
     }
 
@@ -133,10 +133,13 @@ export async function runGrokImport(context: ProviderImportContext): Promise<voi
           const converted = writeGrokConversation(entry, input);
           progress.messages.done += converted.messages.length;
           report.imported += 1;
+          /** The skip set is a snapshot taken at job start, so an id repeated
+           * within one export would otherwise import twice. */
+          input.existingExternalIds.add(externalId);
         }
       } catch (error) {
         const label = externalId || 'conversation';
-        report.errors.push(`${label}: ${sanitizeImportError(error, `import ${label}`)}`);
+        recordError(report.errors, `${label}: ${sanitizeImportError(error, `import ${label}`)}`);
       }
 
       progress.conversations.done += 1;
