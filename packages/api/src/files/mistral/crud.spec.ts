@@ -42,7 +42,7 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('~/admin/secrets', () => ({
   decryptConfigSecret: jest.fn(),
-  isEncryptedConfigSecret: jest.fn(),
+  isEncryptedSecretPayload: jest.fn(),
 }));
 
 jest.mock('~/utils/axios', () => ({
@@ -65,7 +65,7 @@ import type {
   OCRResult,
 } from '~/types';
 import { logger as mockLogger } from '@librechat/data-schemas';
-import { decryptConfigSecret, isEncryptedConfigSecret } from '~/admin/secrets';
+import { decryptConfigSecret, isEncryptedSecretPayload } from '~/admin/secrets';
 import { readFileAsBuffer } from '~/utils/files';
 import {
   uploadDocumentToMistral,
@@ -1082,7 +1082,7 @@ describe('MistralOCR Service', () => {
     it('should fail closed to env-var loading instead of sending a corrupted ciphertext as the apiKey', async () => {
       // Simulates a stored v3 ciphertext that fails to decrypt (e.g. corrupted at rest).
       const corruptedCiphertext = 'v3:corrupted-ciphertext';
-      (isEncryptedConfigSecret as jest.Mock).mockReturnValueOnce(true);
+      (isEncryptedSecretPayload as jest.Mock).mockReturnValueOnce(true);
       (decryptConfigSecret as jest.Mock).mockReturnValueOnce(undefined);
 
       mockLoadAuthValues.mockResolvedValue({ OCR_API_KEY: 'env-fallback-key' });

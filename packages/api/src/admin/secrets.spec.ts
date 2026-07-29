@@ -553,7 +553,8 @@ describe('Config secret registry fields', () => {
     expect(resolveConfigSecret('sk-plain-literal')).toBe('sk-plain-literal');
     expect(resolveConfigSecret('')).toBe('');
     expect(resolveConfigSecret(undefined)).toBeUndefined();
-    expect(resolveConfigSecret('v3:not-valid-ciphertext')).toBeUndefined();
+    expect(resolveConfigSecret('v3:not-valid-ciphertext')).toBe('v3:not-valid-ciphertext');
+    expect(resolveConfigSecret('v3:provider-literal-token')).toBe('v3:provider-literal-token');
   });
 
   it('reports mutation paths (including the preview companion) and ancestor/descendant checks for registry fields', () => {

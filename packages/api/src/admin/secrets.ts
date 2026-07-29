@@ -3,6 +3,7 @@ import { encryptV3, decryptV3, logger } from '@librechat/data-schemas';
 import { envVarRegex, extractEnvVariable } from 'librechat-data-provider';
 
 const ENCRYPTED_PREFIX = 'v3:';
+const ENCRYPTED_PAYLOAD_REGEX = /^v3:[0-9a-f]{32}:[0-9a-f]+$/;
 
 interface ConfigSecretFieldInput {
   /** Dot-path of the secret value within config overrides */
@@ -181,11 +182,22 @@ export function decryptConfigSecret(value: unknown): string | undefined {
  * Resolves a config credential for runtime use: decrypts encrypted values and
  * resolves `${ENV_VAR}` placeholders, passing plain literals through unchanged.
  */
+/**
+ * Whether a value has the exact shape `encryptV3` produces
+ * (`v3:<32-hex-iv>:<hex-ciphertext>`). Runtime resolution uses this strict
+ * check so a legitimate literal credential that merely starts with `v3:`
+ * (e.g. from a YAML config never touched by the admin write path) resolves
+ * as a literal instead of failing decryption.
+ */
+export function isEncryptedSecretPayload(value: string): boolean {
+  return ENCRYPTED_PAYLOAD_REGEX.test(value.trim());
+}
+
 export function resolveConfigSecret(value?: string): string | undefined {
   if (value == null || value === '') {
     return value;
   }
-  if (isEncryptedConfigSecret(value)) {
+  if (isEncryptedSecretPayload(value)) {
     return decryptConfigSecret(value);
   }
   return extractEnvVariable(value);

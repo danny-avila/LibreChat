@@ -20,7 +20,7 @@ import type {
   OCRResult,
   OCRImage,
 } from '~/types';
-import { decryptConfigSecret, isEncryptedConfigSecret } from '~/admin/secrets';
+import { decryptConfigSecret, isEncryptedSecretPayload } from '~/admin/secrets';
 import { logAxiosError, createAxiosInstance } from '~/utils/axios';
 import { applyAxiosProxyConfig } from '~/utils/proxy';
 import { readFileAsBuffer } from '~/utils/files';
@@ -258,7 +258,7 @@ async function loadAuthConfig(context: OCRContext): Promise<AuthConfig> {
   const appConfig = context.req.config;
   const ocrConfig = appConfig?.ocr;
   const rawApiKeyConfig = ocrConfig?.apiKey || '';
-  const apiKeyConfig = isEncryptedConfigSecret(rawApiKeyConfig)
+  const apiKeyConfig = isEncryptedSecretPayload(rawApiKeyConfig)
     ? (decryptConfigSecret(rawApiKeyConfig) ?? '')
     : rawApiKeyConfig;
   const baseURLConfig = ocrConfig?.baseURL || '';
