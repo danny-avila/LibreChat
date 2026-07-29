@@ -666,10 +666,28 @@ export default function useResumableSSE(
     setShowStopButton,
   });
 
-  /** Run steps dispatch straight through: their index math is upstream's and
-   *  is deliberately left untouched by this feature. Only the activity-label
-   *  handler applies the resume-aware prefix offset. */
-  const stepHandler = rawStepHandler;
+  /**
+   * Run steps and activity labels must resolve indices in ONE space, and the
+   * resume SYNC boundary that invalidates the edit prefix is owned here — so
+   * this transport stamps its cleared state onto every dispatched
+   * submission. `useStepHandler` reads the flag (alongside the captured
+   * `editPrefixLength`) instead of measuring the live
+   * `initialResponse.content`, which SYNC replaces with the server's
+   * completion-local snapshot.
+   *
+   * Only allocates once the prefix is actually cleared; before that, and on
+   * the non-resumable transport, the submission passes through untouched.
+   */
+  const stepHandler = useCallback(
+    (...[event, submission]: Parameters<typeof rawStepHandler>) =>
+      rawStepHandler(
+        event,
+        editPrefixClearedRef.current
+          ? ({ ...submission, editPrefixCleared: true } as EventSubmission)
+          : submission,
+      ),
+    [rawStepHandler],
+  );
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({

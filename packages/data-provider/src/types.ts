@@ -187,6 +187,18 @@ export type TSubmission = {
    * resumes for run steps and activity labels alike.
    */
   editPrefixLength?: number;
+  /**
+   * Set once a resume SYNC has replaced the response's retained prefix with
+   * the server's completion-local snapshot. From that point the prefix is
+   * gone from the rendered message and server indices are absolute in the
+   * new space, so {@link editPrefixLength} must NOT be applied — by run
+   * steps or by activity labels. Both event paths read this flag so a
+   * batch's tool cards and its header always land in one index space.
+   *
+   * Stamped per event by the resumable transport, which owns the SYNC
+   * boundary; the non-resumable path never sets it.
+   */
+  editPrefixCleared?: boolean;
   /** Added conversation for multi-convo feature */
   addedConvo?: TConversation;
   /** Skills the user invoked via the `$` popover for this submission. */
