@@ -3,6 +3,7 @@ import type * as t from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { isUserSourced, requiresUserScopedConnection } from './utils';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { notifyMCPToolsChanged } from './toolsChanged';
 import { MCPConnection } from './connection';
 
 const CONNECT_CONCURRENCY = 3;
@@ -91,6 +92,12 @@ export class ConnectionsRepository {
       },
       this.oauthOpts,
     );
+
+    /* Both scopes get the same treatment: this repository is per-owner, so ownerId already says
+     * whose tool cache a change belongs to (undefined = the app-level, shared one). */
+    connection.on('toolsChanged', () => {
+      void notifyMCPToolsChanged({ serverName, userId: this.ownerId });
+    });
 
     this.connections.set(serverName, connection);
     return connection;

@@ -30,6 +30,10 @@ export interface MCPToolCacheService {
     serverConfig?: ParsedServerConfig;
   }) => Promise<LCAvailableTools>;
   mergeAppTools: (appTools: LCAvailableTools) => Promise<void>;
+  replaceAppServerTools: (params: {
+    serverName: string;
+    serverTools: LCAvailableTools;
+  }) => Promise<void>;
   cacheMCPServerTools: (params: {
     userId: string;
     serverName: string;
@@ -138,6 +142,37 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     }
   }
 
+  /**
+   * Swaps one server's app-level tools for the set it reports now.
+   *
+   * Unlike mergeAppTools this also drops what disappeared: a server that removes a tool at runtime
+   * would otherwise keep it advertised forever, since merging can only ever add. Only entries
+   * belonging to `serverName` are touched, so other servers' tools survive untouched.
+   */
+  async function replaceAppServerTools(params: {
+    serverName: string;
+    serverTools: LCAvailableTools;
+  }): Promise<void> {
+    const { serverName, serverTools } = params;
+    try {
+      const cachedTools = (await getCachedTools()) ?? {};
+      const suffix = `${Constants.mcp_delimiter}${serverName}`;
+      const kept: LCAvailableTools = {};
+      for (const [name, tool] of Object.entries(cachedTools)) {
+        if (!name.endsWith(suffix)) {
+          kept[name] = tool;
+        }
+      }
+      await setCachedTools({ ...kept, ...serverTools });
+      logger.debug(
+        `[MCP Cache] Replaced app-level tools for ${serverName} with ${Object.keys(serverTools).length} tool(s)`,
+      );
+    } catch (error) {
+      logger.error(`[MCP Cache] Failed to replace app-level tools for ${serverName}:`, error);
+      throw error;
+    }
+  }
+
   async function cacheMCPServerTools(params: {
     userId: string;
     serverName: string;
@@ -180,5 +215,11 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     }
   }
 
-  return { updateMCPServerTools, mergeAppTools, cacheMCPServerTools, getMCPServerTools };
+  return {
+    updateMCPServerTools,
+    mergeAppTools,
+    replaceAppServerTools,
+    cacheMCPServerTools,
+    getMCPServerTools,
+  };
 }

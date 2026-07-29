@@ -45,12 +45,36 @@ const mockMCPManagerInstance = {
   getAppToolFunctions: jest.fn(),
 };
 
+const mockGetMCPManager = jest.fn();
+
 jest.mock('~/config', () => ({
   get createMCPServersRegistry() {
     return mockCreateMCPServersRegistry;
   },
   get createMCPManager() {
     return mockCreateMCPManager;
+  },
+  get getMCPManager() {
+    return mockGetMCPManager;
+  },
+}));
+
+const mockSetMCPToolsChangedHandler = jest.fn();
+const mockReplaceAppServerTools = jest.fn();
+const mockCacheMCPServerTools = jest.fn();
+
+jest.mock('@librechat/api', () => ({
+  get setMCPToolsChangedHandler() {
+    return mockSetMCPToolsChangedHandler;
+  },
+}));
+
+jest.mock('./Config/mcp', () => ({
+  get replaceAppServerTools() {
+    return mockReplaceAppServerTools;
+  },
+  get cacheMCPServerTools() {
+    return mockCacheMCPServerTools;
   },
 }));
 
@@ -313,5 +337,72 @@ describe('initializeMCPs', () => {
       // Verify manager was created with empty config (not null/undefined)
       expect(mockCreateMCPManager).toHaveBeenCalledWith({});
     });
+  });
+});
+
+describe('refreshChangedServerTools', () => {
+  const { refreshChangedServerTools } = require('./initializeMCPs');
+  const serverTools = { [`tool${'_mcp_'}dynamic`]: { type: 'function' } };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('writes to the user cache when the change came from a user connection', async () => {
+    mockGetMCPManager.mockReturnValue({
+      getServerToolFunctions: jest.fn().mockResolvedValue(serverTools),
+    });
+
+    await refreshChangedServerTools({ serverName: 'dynamic', userId: 'user-1' });
+
+    expect(mockCacheMCPServerTools).toHaveBeenCalledWith({
+      userId: 'user-1',
+      serverName: 'dynamic',
+      serverTools,
+    });
+    expect(mockReplaceAppServerTools).not.toHaveBeenCalled();
+  });
+
+  it('replaces the app-level entry when there is no user scope', async () => {
+    mockGetMCPManager.mockReturnValue({
+      getServerToolFunctions: jest.fn().mockResolvedValue(serverTools),
+    });
+
+    await refreshChangedServerTools({ serverName: 'dynamic' });
+
+    expect(mockReplaceAppServerTools).toHaveBeenCalledWith({ serverName: 'dynamic', serverTools });
+    expect(mockCacheMCPServerTools).not.toHaveBeenCalled();
+  });
+
+  it('leaves the cache alone when no connection answers', async () => {
+    mockGetMCPManager.mockReturnValue({
+      getServerToolFunctions: jest.fn().mockResolvedValue(null),
+    });
+
+    await refreshChangedServerTools({ serverName: 'dynamic', userId: 'user-1' });
+
+    expect(mockCacheMCPServerTools).not.toHaveBeenCalled();
+    expect(mockReplaceAppServerTools).not.toHaveBeenCalled();
+  });
+
+  it('applies an empty tool set, so removals take effect', async () => {
+    mockGetMCPManager.mockReturnValue({
+      getServerToolFunctions: jest.fn().mockResolvedValue({}),
+    });
+
+    await refreshChangedServerTools({ serverName: 'dynamic' });
+
+    expect(mockReplaceAppServerTools).toHaveBeenCalledWith({
+      serverName: 'dynamic',
+      serverTools: {},
+    });
+  });
+
+  it('is registered as the tools-changed handler during initialization', async () => {
+    mockGetAppConfig.mockResolvedValue({ mcpConfig: null, mcpSettings: {} });
+
+    await initializeMCPs();
+
+    expect(mockSetMCPToolsChangedHandler).toHaveBeenCalledWith(refreshChangedServerTools);
   });
 });

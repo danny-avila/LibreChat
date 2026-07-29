@@ -5,12 +5,15 @@ import { fetch as undiciFetch, Agent, ProxyAgent } from 'undici';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
-import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {
   StdioClientTransport,
   getDefaultEnvironment,
 } from '@modelcontextprotocol/sdk/client/stdio.js';
+import {
+  ResourceListChangedNotificationSchema,
+  ToolListChangedNotificationSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import type {
   RequestInit as UndiciRequestInit,
   RequestInfo as UndiciRequestInfo,
@@ -1773,6 +1776,7 @@ export class MCPConnection extends EventEmitter {
     });
 
     this.subscribeToResources();
+    this.subscribeToToolListChanges();
   }
 
   private async handleReconnection(): Promise<void> {
@@ -1851,6 +1855,20 @@ export class MCPConnection extends EventEmitter {
   private subscribeToResources(): void {
     this.client.setNotificationHandler(ResourceListChangedNotificationSchema, async () => {
       this.emit('resourcesChanged');
+    });
+  }
+
+  /**
+   * A server that builds tools at runtime tells us so instead of us polling for it.
+   *
+   * The spec's list-changed flow is: the server notifies, the client asks for the list again. Until
+   * this was handled the tool list stayed at whatever it was when the connection came up, so a
+   * server that adds a tool mid-session was invisible until a restart (#7117).
+   */
+  private subscribeToToolListChanges(): void {
+    this.client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
+      logger.debug(`${this.getLogPrefix()} Server reported a changed tool list`);
+      this.emit('toolsChanged');
     });
   }
 
