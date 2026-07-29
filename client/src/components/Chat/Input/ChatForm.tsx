@@ -1,7 +1,7 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
 import { TextareaAutosize } from '@librechat/client';
-import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter, ConvoGenerator } from '~/common';
@@ -23,6 +23,7 @@ import {
   useAssistantsMapContext,
   BadgeRowProvider,
 } from '~/Providers';
+import useComposerRestore from '~/hooks/Input/useComposerRestore';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import useComposerItems from '~/hooks/Input/useComposerItems';
@@ -33,7 +34,6 @@ import DuringRunSendButton from './DuringRunSendButton';
 import useDictation from '~/hooks/Input/useDictation';
 import { useGetStartupConfig } from '~/data-provider';
 import useSteering from '~/hooks/Chat/useSteering';
-
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
 import SkillsCommand from './SkillsCommand';
@@ -206,58 +206,14 @@ const ChatForm = memo(function ChatForm({
       }),
     [submitMessage],
   );
-  /** Chip "Edit message" restore: quote chips + skill picks merge back into
-   *  their compose-time atoms (the chips above the textarea re-render them). */
-  const restoreComposerContext = useRecoilCallback(
-    ({ set }) =>
-      (context?: QueuedMessageContext) => {
-        const { quotes, manualSkills } = context ?? {};
-        if (quotes != null && quotes.length > 0) {
-          set(store.pendingQuotesByConvoId(conversationId), (prev) => [
-            ...new Set([...prev, ...quotes]),
-          ]);
-        }
-        if (manualSkills != null && manualSkills.length > 0) {
-          set(store.pendingManualSkillsByConvoId(conversationId), (prev) => [
-            ...new Set([...prev, ...manualSkills]),
-          ]);
-        }
-      },
-    [conversationId],
-  );
-  /** Chip "Edit message": the text replaces the composer draft and the chip's
-   *  attachments merge back into the composer file map (already uploaded, so
-   *  they restore as completed entries — same shape as draft recovery). */
-  const editToComposer = useCallback(
-    (text: string, chipFiles?: TMessage['files'], context?: QueuedMessageContext) => {
-      methods.setValue('text', text, { shouldDirty: true });
-      if (chipFiles != null && chipFiles.length > 0) {
-        setFiles((prev) => {
-          const next = new Map(prev);
-          for (const file of chipFiles) {
-            if (!file.file_id) {
-              continue;
-            }
-            next.set(file.file_id, {
-              file_id: file.file_id,
-              filename: file.filename,
-              filepath: file.filepath,
-              type: file.type ?? '',
-              height: file.height,
-              width: file.width,
-              size: file.bytes ?? 0,
-              progress: 1,
-              attached: true,
-            });
-          }
-          return next;
-        });
-      }
-      restoreComposerContext(context);
-      textAreaRef.current?.focus();
-    },
-    [methods, setFiles, restoreComposerContext],
-  );
+  const { editToComposer, restoreReclaimedSteer } = useComposerRestore({
+    conversationId,
+    methods,
+    files,
+    setFiles,
+    textAreaRef,
+    answerModeActive: answerMode.active,
+  });
   const steering = useSteering({
     index,
     conversationId,
@@ -270,83 +226,6 @@ const ChatForm = memo(function ChatForm({
     sendNow,
     stopGenerating,
   });
-
-  /** Read at call time, not captured: a reclaim resolves into the callback from
-   *  the render it was clicked in, so the closure's `conversationId` is the OLD
-   *  chat — comparing it against itself would pass while `methods` (one form,
-   *  reused across conversations) writes into the chat now on screen. */
-  const liveConversationIdRef = useRef(conversationId);
-  liveConversationIdRef.current = conversationId;
-  /** Same reason: attachments staged after the click must be seen. */
-  const liveFilesRef = useRef(files);
-  liveFilesRef.current = files;
-  /** Same reason: the run can pause on `ask_user_question` mid-reclaim. */
-  const liveAnswerModeRef = useRef(answerMode.active);
-  liveAnswerModeRef.current = answerMode.active;
-  /** A reclaim can resolve after this form unmounts (left the route, closed the
-   *  pane). Its refs still hold the origin chat, so the restore would pass its
-   *  checks and write into a dead form — reporting success and making the caller
-   *  drop the steer, losing the text. Track mount so the restore refuses and the
-   *  caller queues it instead. */
-  const composerMountedRef = useRef(true);
-  useEffect(
-    () => () => {
-      composerMountedRef.current = false;
-    },
-    [],
-  );
-
-  /** A draft is anything the user has staged, not just typed: `editToComposer`
-   *  MERGES the steer's attachments into the composer's file map and its quotes
-   *  and skill picks into their atoms, so restoring over staged context would
-   *  glue the two submissions together. */
-  const hasStagedComposerContext = useRecoilCallback(
-    ({ snapshot }) =>
-      (convoId: string) =>
-        snapshot.getLoadable(store.pendingQuotesByConvoId(convoId)).getValue().length > 0 ||
-        snapshot.getLoadable(store.pendingManualSkillsByConvoId(convoId)).getValue().length > 0,
-    [],
-  );
-
-  /**
-   * `editToComposer` for a steer whose reclaim was a round-trip: by the time it
-   * resolves the composer may have moved on. Refuses (returning false, so the
-   * caller re-homes the words instead of dropping them) rather than overwrite a
-   * draft the user has since staged, or drop a steer into whatever chat they
-   * navigated to.
-   */
-  const restoreReclaimedSteer = useCallback(
-    (
-      text: string,
-      steerFiles: TMessage['files'],
-      context: QueuedMessageContext,
-      originConversationId: string,
-    ): boolean => {
-      if (!composerMountedRef.current) {
-        return false;
-      }
-      const liveConversationId = liveConversationIdRef.current;
-      if (originConversationId !== liveConversationId) {
-        return false;
-      }
-      /** Answer mode owns the composer: `onSubmit` hands its text to
-       *  `answerMode.submitText` before any send/steer routing, so restoring
-       *  here would turn the steer into the tool's answer on the next Enter. */
-      if (liveAnswerModeRef.current) {
-        return false;
-      }
-      if (
-        (methods.getValues('text') ?? '').trim().length > 0 ||
-        (liveFilesRef.current?.size ?? 0) > 0 ||
-        hasStagedComposerContext(liveConversationId)
-      ) {
-        return false;
-      }
-      editToComposer(text, steerFiles, context);
-      return true;
-    },
-    [methods, editToComposer, hasStagedComposerContext],
-  );
 
   /** ⌘/Ctrl+Enter = the non-default during-run action, ⌥/Alt+Enter =
    *  interrupt & send (discards the answer), ⌘/Ctrl+Shift+Enter = interrupt &
