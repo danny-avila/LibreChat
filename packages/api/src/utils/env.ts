@@ -258,6 +258,37 @@ function processBodyPlaceholders(value: string, body: RequestBody): string {
   return value;
 }
 
+function customUserVarPlaceholder(varName: string): RegExp {
+  const escaped = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\{\\{${escaped}\\}\\}`, 'g');
+}
+
+/**
+ * Names of `optional` customUserVars the user has not supplied a usable value for.
+ *
+ * Unlike required vars - whose absence hides the server's tools - these leave the server running
+ * on the deployment's own default, so their placeholders have to resolve to nothing.
+ */
+function unsetOptionalVars(
+  declared: MCPOptions['customUserVars'],
+  provided?: Record<string, string>,
+): string[] {
+  if (!declared) {
+    return [];
+  }
+  return Object.keys(declared).filter((key) => {
+    if (declared[key]?.optional !== true) {
+      return false;
+    }
+    const value = provided?.[key];
+    return typeof value !== 'string' || value.trim() === '';
+  });
+}
+
+function referencesAnyVar(value: string, varNames: string[]): boolean {
+  return varNames.some((varName) => customUserVarPlaceholder(varName).test(value));
+}
+
 /**
  * Processes a single string value by replacing various types of placeholders
  *
@@ -266,6 +297,7 @@ function processBodyPlaceholders(value: string, body: RequestBody): string {
  * @param user - Optional user object for replacing user field placeholders
  * @param body - Optional request body object for replacing body field placeholders
  * @param isHeader - Whether this value will be used in an HTTP header (enables encoding)
+ * @param clearVars - Names of declared vars whose placeholders resolve to an empty string
  * @returns The processed string with all placeholders replaced
  */
 function processSingleValue({
@@ -275,6 +307,7 @@ function processSingleValue({
   body = undefined,
   isHeader = false,
   dbSourced = false,
+  clearVars,
 }: {
   originalValue: string;
   customUserVars?: Record<string, string>;
@@ -283,6 +316,7 @@ function processSingleValue({
   isHeader?: boolean;
   /** When true, only resolve customUserVars — skip env vars, user/OpenID/body placeholders */
   dbSourced?: boolean;
+  clearVars?: string[];
 }): string {
   // Type guard: ensure we're working with a string
   if (typeof originalValue !== 'string') {
@@ -305,9 +339,17 @@ function processSingleValue({
   /** Runs for both dbSourced and non-dbSourced — it is the only resolution DB-stored servers get */
   if (customUserVars) {
     for (const [varName, varVal] of Object.entries(customUserVars)) {
-      const escapedVarName = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const placeholderRegex = new RegExp(`\\{\\{${escapedVarName}\\}\\}`, 'g');
-      value = value.replace(placeholderRegex, varVal);
+      value = value.replace(customUserVarPlaceholder(varName), varVal);
+    }
+  }
+
+  /**
+   * An optional var the user never set has no value to substitute. Clearing it keeps the literal
+   * `{{VAR}}` from reaching the server as if it were the credential.
+   */
+  if (clearVars) {
+    for (const varName of clearVars) {
+      value = value.replace(customUserVarPlaceholder(varName), '');
     }
   }
 
@@ -376,6 +418,7 @@ export function processMCPEnv(params: {
   const dbSourced = params.dbSourced ?? !!options.dbId;
 
   const newObj: MCPOptions = structuredClone(options);
+  const clearVars = unsetOptionalVars(newObj.customUserVars, customUserVars);
 
   // Apply admin-provided API key to headers at runtime
   // Note: User-provided keys use {{MCP_API_KEY}} placeholder in headers,
@@ -416,6 +459,7 @@ export function processMCPEnv(params: {
         user,
         body,
         dbSourced,
+        clearVars,
         originalValue,
         customUserVars,
       });
@@ -427,7 +471,7 @@ export function processMCPEnv(params: {
     const processedArgs: string[] = [];
     for (const originalValue of newObj.args) {
       processedArgs.push(
-        processSingleValue({ originalValue, customUserVars, user, body, dbSourced }),
+        processSingleValue({ originalValue, customUserVars, user, body, dbSourced, clearVars }),
       );
     }
     newObj.args = processedArgs;
@@ -438,14 +482,24 @@ export function processMCPEnv(params: {
   if ('headers' in newObj && newObj.headers) {
     const processedHeaders: Record<string, string> = {};
     for (const [key, originalValue] of Object.entries(newObj.headers)) {
-      processedHeaders[key] = processSingleValue({
+      const processed = processSingleValue({
         user,
         body,
         dbSourced,
+        clearVars,
         originalValue,
         customUserVars,
         isHeader: true, // Important: Enable header encoding
       });
+      /**
+       * A header whose whole value came from an unset optional var carries no credential at all.
+       * Omitting it lets the server apply its own default, where sending it empty would instead
+       * read as a deliberate empty credential.
+       */
+      if (processed.trim() === '' && referencesAnyVar(originalValue, clearVars)) {
+        continue;
+      }
+      processedHeaders[key] = processed;
     }
     newObj.headers = processedHeaders;
   }
@@ -454,14 +508,19 @@ export function processMCPEnv(params: {
   if ('oauth_headers' in newObj && newObj.oauth_headers) {
     const processedOAuthHeaders: Record<string, string> = {};
     for (const [key, originalValue] of Object.entries(newObj.oauth_headers)) {
-      processedOAuthHeaders[key] = processSingleValue({
+      const processed = processSingleValue({
         user,
         body,
         dbSourced,
+        clearVars,
         originalValue,
         customUserVars,
         isHeader: true,
       });
+      if (processed.trim() === '' && referencesAnyVar(originalValue, clearVars)) {
+        continue;
+      }
+      processedOAuthHeaders[key] = processed;
     }
     newObj.oauth_headers = processedOAuthHeaders;
   }
@@ -472,6 +531,7 @@ export function processMCPEnv(params: {
       user,
       body,
       dbSourced,
+      clearVars,
       customUserVars,
       originalValue: newObj.url,
     });
