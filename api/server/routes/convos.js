@@ -312,6 +312,33 @@ const upload = multer({
 const uploadSingle = upload.single('file');
 const importJobs = new ImportJobStore(getLogStores(CacheKeys.IMPORT_JOBS));
 
+/**
+ * Imports running right now, per user. A run decompresses and JSON-parses a
+ * whole shard, which peaks at several times the shard's size in heap, so
+ * letting one account start its 50 uploaded archives at once is an OOM rather
+ * than a slow import. Process-local by design: it bounds what a single node
+ * will take on, which is exactly the resource being protected.
+ */
+const activeImports = new Map();
+const MAX_CONCURRENT_IMPORTS_PER_USER = 1;
+
+function activeImportCount(userId) {
+  return activeImports.get(userId) ?? 0;
+}
+
+function trackImportStart(userId) {
+  activeImports.set(userId, activeImportCount(userId) + 1);
+}
+
+function trackImportEnd(userId) {
+  const remaining = activeImportCount(userId) - 1;
+  if (remaining > 0) {
+    activeImports.set(userId, remaining);
+    return;
+  }
+  activeImports.delete(userId);
+}
+
 function handleUpload(req, res, next) {
   uploadSingle(req, res, (err) => {
     if (err && err.code === 'LIMIT_FILE_SIZE') {
@@ -338,11 +365,26 @@ function handleUpload(req, res, next) {
  */
 async function loadExistingExternalIds(userId, source) {
   const Conversation = mongoose.models.Conversation;
-  const rows = await Conversation.find(
+  /** `_id: 0` is what makes this a covered query: without it Mongo fetches
+   * every matching document off disk to read one 36-character string, which
+   * for a user with 100k imported conversations is 50-200 MB of collection
+   * reads and an equivalent eviction from the WiredTiger cache. The cursor
+   * avoids materializing the whole result set before the Set is built. */
+  const cursor = Conversation.find(
     { user: userId, 'importedFrom.source': source },
-    { 'importedFrom.externalId': 1 },
-  ).lean();
-  return new Set(rows.map((row) => row.importedFrom?.externalId).filter(Boolean));
+    { 'importedFrom.externalId': 1, _id: 0 },
+  )
+    .lean()
+    .cursor();
+
+  const ids = new Set();
+  for await (const row of cursor) {
+    const externalId = row.importedFrom?.externalId;
+    if (externalId) {
+      ids.add(externalId);
+    }
+  }
+  return ids;
 }
 
 /**
@@ -354,15 +396,23 @@ async function loadExistingExternalIds(userId, source) {
  * @returns {{ format: string, endpoint: string, source: string }}
  */
 function resolveJobTarget(job) {
-  if (job.summary?.source === 'claude') {
-    return { format: 'claude', endpoint: EModelEndpoint.anthropic, source: 'claude' };
+  switch (job.summary?.source) {
+    case 'claude':
+      return { format: 'claude', endpoint: EModelEndpoint.anthropic, source: 'claude' };
+    /** xAI has no first-class endpoint, so Grok conversations land on OpenAI —
+     * see `GROK_ENDPOINT`, which this must stay in step with. */
+    case 'grok':
+      return { format: 'grok', endpoint: GROK_ENDPOINT, source: GROK_SOURCE };
+    case 'chatgpt':
+    case 'chatgpt-legacy':
+      return { format: 'chatgpt', endpoint: EModelEndpoint.openAI, source: 'chatgpt' };
+    /** Defaulting to chatgpt would be worse than failing: `source` also scopes
+     * the already-imported id lookup, so a Claude archive that fell through
+     * here would compare against the chatgpt namespace, find nothing, and
+     * duplicate every conversation on each re-import. */
+    default:
+      throw new Error('Import job has no inspected summary');
   }
-  /** xAI has no first-class endpoint, so Grok conversations land on OpenAI —
-   * see `GROK_ENDPOINT`, which this must stay in step with. */
-  if (job.summary?.source === 'grok') {
-    return { format: 'grok', endpoint: GROK_ENDPOINT, source: GROK_SOURCE };
-  }
-  return { format: 'chatgpt', endpoint: EModelEndpoint.openAI, source: 'chatgpt' };
 }
 
 /**
@@ -377,7 +427,8 @@ function resolveJobTarget(job) {
  * @param {import('@librechat/api').ImportJob} job
  * @returns {Promise<void>}
  */
-async function runImportJob(req, job) {
+async function runImportJob(context, job) {
+  const { userId, userRole, tenantId, appConfig } = context;
   try {
     /**
      * `sweepStaleTempUploads` deletes temp uploads by mtime alone, and the job
@@ -388,37 +439,36 @@ async function runImportJob(req, job) {
      */
     await fs.promises.utimes(job.filepath, new Date(), new Date()).catch(() => undefined);
 
-    const appConfig = req.config;
     const source = getFileStrategy(appConfig, { isImage: true });
     const { saveBuffer } = getStrategyFunctions(source);
-    const batch = createImportBatchBuilder(req.user.id, appConfig?.interfaceConfig);
+    const batch = createImportBatchBuilder(userId, appConfig?.interfaceConfig);
     const target = resolveJobTarget(job);
 
     const defaultModel = await resolveImportDefaultModel({
       endpoint: target.endpoint,
-      requestUserId: req.user.id,
-      userRole: req.user.role,
+      requestUserId: userId,
+      userRole,
     });
 
     const report = await runImport({
       filepath: job.filepath,
-      userId: req.user.id,
-      tenantId: req.user.tenantId,
+      userId,
+      tenantId,
       source,
       format: target.format,
       defaultModel,
       deps: { saveBuffer, createFile: db.createFile },
       batch,
-      existingExternalIds: await loadExistingExternalIds(req.user.id, target.source),
-      isCancelled: () => importJobs.isCancelled(req.user.id, job.jobId),
+      existingExternalIds: await loadExistingExternalIds(userId, target.source),
+      isCancelled: () => importJobs.isCancelled(userId, job.jobId),
       onProgress: async (progress) => {
-        await importJobs.patch(req.user.id, job.jobId, { progress });
+        await importJobs.patch(userId, job.jobId, { progress });
       },
       onPhase: async (phase) => {
-        if (await importJobs.isCancelled(req.user.id, job.jobId)) {
+        if (await importJobs.isCancelled(userId, job.jobId)) {
           return;
         }
-        await importJobs.patch(req.user.id, job.jobId, { phase });
+        await importJobs.patch(userId, job.jobId, { phase });
       },
     });
 
@@ -428,28 +478,29 @@ async function runImportJob(req, job) {
      * `cancelled` phase and only gains the partial report describing what
      * was already written.
      */
-    const current = await importJobs.get(req.user.id, job.jobId);
+    const current = await importJobs.get(userId, job.jobId);
     if (current?.status === 'cancelled') {
-      await importJobs.patch(req.user.id, job.jobId, { report });
+      await importJobs.patch(userId, job.jobId, { report });
       return;
     }
 
-    await importJobs.patch(req.user.id, job.jobId, {
+    await importJobs.patch(userId, job.jobId, {
       report,
       phase: 'completed',
       status: 'completed',
     });
   } catch (error) {
-    const message = sanitizeImportError(
-      error,
-      `Import job ${job.jobId} failed for user ${req.user.id}`,
-    );
-    await importJobs.patch(req.user.id, job.jobId, {
-      phase: 'failed',
-      status: 'failed',
-      error: message,
-    });
+    const message = sanitizeImportError(error, `Import job ${job.jobId} failed for user ${userId}`);
+    /** The recovery patch is best-effort: it writes to the same store whose
+     * unavailability is the likeliest reason we are in this catch, and a
+     * rejection here would escape a function nobody awaits. */
+    await importJobs
+      .patch(userId, job.jobId, { phase: 'failed', status: 'failed', error: message })
+      .catch((patchError) =>
+        logger.error(`[runImportJob] Could not record the failure of job ${job.jobId}`, patchError),
+      );
   } finally {
+    trackImportEnd(userId);
     await fs.promises.unlink(job.filepath).catch(() => undefined);
   }
 }
@@ -506,6 +557,15 @@ router.post(
   handleUpload,
   restoreTenantContextFromReq,
   async (req, res) => {
+    /** Multer leaves `req.file` undefined for a non-multipart body or a
+     * multipart body with no `file` part, and reports neither as an error — so
+     * without this the handler throws a TypeError and the client gets a 500
+     * with no JSON message for what is plainly a bad request. */
+    if (!req.file) {
+      res.status(400).json({ message: 'No file uploaded' });
+      return;
+    }
+
     const isZip = path.extname(req.file.originalname).toLowerCase() === '.zip';
 
     let inspected;
@@ -557,22 +617,56 @@ router.post(
  * @returns {object} 404 - no such job for this user
  * @returns {object} 409 - the job already started, completed, failed, or was cancelled
  */
-router.post('/import/jobs/:jobId/start', configMiddleware, async (req, res) => {
-  const result = await importJobs.confirmStart(req.user.id, req.params.jobId);
+router.post(
+  '/import/jobs/:jobId/start',
+  importIpLimiter,
+  importUserLimiter,
+  configMiddleware,
+  async (req, res) => {
+    const result = await importJobs.confirmStart(req.user.id, req.params.jobId);
 
-  if (result.status === 'not_found') {
-    res.status(404).json({ message: 'Import job not found' });
-    return;
-  }
-  if (result.status === 'conflict') {
-    res.status(409).json({ message: 'Import job is not awaiting confirmation' });
-    return;
-  }
+    if (result.status === 'not_found') {
+      res.status(404).json({ message: 'Import job not found' });
+      return;
+    }
+    /** A replay of the job that is already running lands here, not on the
+     * concurrency check below: it has left `awaiting_confirmation`, so the
+     * honest answer is that this job already started. */
+    if (result.status === 'conflict') {
+      res.status(409).json({ message: 'Import job is not awaiting confirmation' });
+      return;
+    }
 
-  res.status(202).json({ jobId: result.job.jobId });
+    /** Checked after the transition so it only ever rejects a *different*
+     * import. The job is handed back to `awaiting_confirmation` rather than
+     * failed, so the user can start it once the running one finishes. */
+    if (activeImportCount(req.user.id) >= MAX_CONCURRENT_IMPORTS_PER_USER) {
+      await importJobs.patch(req.user.id, result.job.jobId, { phase: 'awaiting_confirmation' });
+      res.status(429).json({ message: 'Another import is already running' });
+      return;
+    }
 
-  runImportJob(req, result.job);
-});
+    /** Everything the background run needs, read while the request is still
+     * the thing being handled. Holding `req` instead would pin the socket and
+     * its buffers for the length of a multi-minute import, per concurrent job. */
+    const context = {
+      userId: req.user.id,
+      userRole: req.user.role,
+      tenantId: req.user.tenantId,
+      appConfig: req.config,
+    };
+
+    trackImportStart(context.userId);
+    res.status(202).json({ jobId: result.job.jobId });
+
+    /** Detached on purpose, so the terminal catch is the only thing standing
+     * between a rejection in the run's own error handling and an unhandled
+     * rejection in a process that serves live chat streams. */
+    runImportJob(context, result.job).catch((error) => {
+      logger.error(`[startImportJob] Background import job ${result.job.jobId} crashed`, error);
+    });
+  },
+);
 
 /**
  * Returns the status of an import job. `filepath` and `userId` are always
