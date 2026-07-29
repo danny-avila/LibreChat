@@ -1,4 +1,3 @@
-import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { LocalizeFunction } from '~/common';
 import { isMacPlatform } from '~/utils/shortcuts';
 import useLocalize from '~/hooks/useLocalize';

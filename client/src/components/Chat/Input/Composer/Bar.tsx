@@ -428,7 +428,12 @@ function Bar({
             <RoundButton
               label={dictating ? localize('com_ui_stop') : localize('com_ui_use_micrphone')}
               onClick={dictating ? dictation.stopToComposer : dictation.start}
-              disabled={speechDisabled && !dictating}
+              /* Once the take is handed to the transcriber there is nothing left
+                 to stop, and pressing either of these again would only rewrite
+                 how a take that has already been committed gets spent. Cancel,
+                 on the `+`, stays live: an external transcription in flight can
+                 still be thrown away. */
+              disabled={(speechDisabled && !dictating) || dictation.transcribing}
             >
               {dictating ? (
                 <Square className="size-4 fill-current" aria-hidden="true" />
@@ -442,6 +447,7 @@ function Bar({
               primary
               label={localize('com_nav_send_message')}
               onClick={dictation.stopAndSend}
+              disabled={dictation.transcribing}
             >
               <SendIcon size={18} />
             </RoundButton>

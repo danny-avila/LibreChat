@@ -18,6 +18,12 @@ jest.mock('~/hooks', () => ({
   },
 }));
 
+const mockShowToast = jest.fn();
+jest.mock('@librechat/client', () => ({
+  ...jest.requireActual('@librechat/client'),
+  useToastContext: () => ({ showToast: mockShowToast }),
+}));
+
 const CONVO_ID = 'convo-1';
 const mockSendQueuedNow = jest.fn();
 const mockRemoveQueued = jest.fn();
@@ -184,6 +190,11 @@ describe('Queue', () => {
     fireEvent.click(screen.getByLabelText('com_ui_remove_queued'));
     expect(onRestore).toHaveBeenCalled();
     expect(mockRemoveQueued).not.toHaveBeenCalled();
+    /* Keeping the words is right; saying nothing about it is not. Without this
+       the row simply does not react and the button reads as broken. */
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_queue_remove_blocked' }),
+    );
   });
 
   it('hands the whole message to the composer to edit', () => {
