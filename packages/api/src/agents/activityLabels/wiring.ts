@@ -311,20 +311,29 @@ export function createActivityLabelWiring(deps: ActivityLabelHostDeps): {
                *  `false` tells the hook the label never surfaced, so its
                *  usage must not be billed. A scope that closes AFTER this
                *  check — while the durable emit below is in flight — does
-               *  NOT un-commit: the part is mutated and persisted, so the
-               *  fill still resolves `true` and the committed label bills. */
+               *  NOT un-commit: the emit was already dispatched and the
+               *  mutation lands with it, so the fill still resolves `true`
+               *  and the committed label bills. */
               if (deps.isClosed?.() === true) {
                 return false;
               }
+              /** Staged on a COPY; the shared part mutates only AFTER the
+               *  durable emit succeeds. Mutating first let a FAILED emit
+               *  leave the text on `contentParts` anyway — persistence could
+               *  then save and display a label that no client ever received
+               *  and that billing (keyed on the commit flag) never charged.
+               *  Emitted even when generation produced nothing: the claim
+               *  already published a PENDING part, so staying silent would
+               *  leave the client pinned at pending forever. */
+              const next: LooseContentPart = { ...part, pending: false };
+              if (text != null && text.length > 0) {
+                next[ContentTypes.ACTIVITY_LABEL] = text;
+              }
+              await deps.emitLabelEvent(index, next);
               part.pending = false;
               if (text != null && text.length > 0) {
                 part[ContentTypes.ACTIVITY_LABEL] = text;
               }
-              /** Emitted even when generation produced nothing: the claim
-               *  already published a PENDING part, so staying silent here
-               *  would leave the client pinned at pending forever. An empty
-               *  label still renders nothing. */
-              await deps.emitLabelEvent(index, part);
               return true;
             } finally {
               resolveFill();

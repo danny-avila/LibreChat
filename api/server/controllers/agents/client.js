@@ -592,7 +592,43 @@ class AgentClient extends BaseClient {
      * (billed but never shown) is enforced by the commit gate itself: a
      * dropped fill never reaches this callback.
      */
+    /**
+     * The PROMPT THE SDK ACTUALLY SENT, captured at chain start. The hook's
+     * estimate thunk carries this module's locally built prompt — same
+     * entries and instruction but different framing — so estimated billing
+     * on this path would count a prompt that was never sent. When capture
+     * succeeded, it replaces the thunk's promptText.
+     */
+    let sdkPromptText;
+    const capturePrompt = {
+      handleLLMStart: (_llm, prompts) => {
+        sdkPromptText = Array.isArray(prompts) ? prompts.join('\n') : undefined;
+      },
+      handleChatModelStart: (_llm, messages) => {
+        try {
+          sdkPromptText = (messages ?? [])
+            .flat()
+            .map((message) =>
+              typeof message?.content === 'string'
+                ? message.content
+                : JSON.stringify(message?.content ?? ''),
+            )
+            .join('\n');
+        } catch {
+          /** Estimation falls back to the local approximation. */
+        }
+      },
+    };
     const recordUsage = async (estimate) => {
+      const refined =
+        typeof estimate === 'function'
+          ? () => {
+              const base = estimate() ?? {};
+              return sdkPromptText != null && sdkPromptText.length > 0
+                ? { ...base, promptText: sdkPromptText }
+                : base;
+            }
+          : estimate;
       await this.recordActivityLabelUsage(
         collectedMetadata,
         clientOptions.model,
@@ -600,7 +636,7 @@ class AgentClient extends BaseClient {
         sameEndpoint,
         undefined,
         provider,
-        estimate,
+        refined,
       );
     };
     /**
@@ -645,7 +681,7 @@ class AgentClient extends BaseClient {
         }),
         chainOptions: {
           signal,
-          callbacks: [{ handleLLMEnd }],
+          callbacks: [{ handleLLMEnd, ...capturePrompt }],
           configurable: {
             thread_id: this.conversationId,
             user_id: this.user ?? this.options.req?.user?.id,
