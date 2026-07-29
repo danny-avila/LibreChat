@@ -18,14 +18,38 @@ export type StartTransitionResult =
   | { status: 'not_found' }
   | { status: 'conflict'; job: ImportJob };
 
+/**
+ * Statuses a job never moves out of. Reaching one freezes `status` and
+ * `phase`: the background run's `isCancelled`/`onPhase`/`onProgress`
+ * callbacks each read and write separately, so a `DELETE` landing between
+ * one of those reads and its write would otherwise walk a cancelled job back
+ * into `phase: 'conversations'` — leaving the client polling forever a job
+ * whose run has already stopped. Every other field (`report`, `progress`)
+ * still applies, so a cancelled job still gains the partial report
+ * describing what was written before it stopped.
+ */
+const TERMINAL_STATUSES = new Set<ImportJob['status']>(['cancelled', 'completed', 'failed']);
+
+type ImportJobPatch = Omit<Partial<ImportJob>, 'userId' | 'jobId'>;
+
+function applyTerminalGuard(existing: ImportJob, patch: ImportJobPatch): ImportJobPatch {
+  if (!TERMINAL_STATUSES.has(existing.status)) {
+    return patch;
+  }
+  const { status: _status, phase: _phase, ...rest } = patch;
+  return rest;
+}
+
 export class ImportJobStore {
   private readonly store: Keyv;
   private readonly ttl: number;
-  /** Serializes `confirmStart` calls sharing the same job key. `Keyv`'s
+  /** Serializes every mutation sharing the same job key. `Keyv`'s
    * `get`/`set` pair is not itself atomic — without this, two racing
    * `/start` requests can both read `awaiting_confirmation` before either
-   * write lands, launching the background run twice over the same
-   * archive. Scoped to this process; see `confirmStart`. */
+   * write lands (launching the background run twice over the same archive),
+   * and a progress update that read an active job can land after a
+   * cancellation and resurrect it. Scoped to this process; see
+   * `confirmStart`. */
   private readonly transitionLocks = new Map<string, Promise<void>>();
 
   constructor(store: Keyv, ttl: number = DEFAULT_TTL) {
@@ -63,19 +87,32 @@ export class ImportJobStore {
     return job ?? null;
   }
 
-  async patch(
+  /** The read-modify-write itself, without the lock. Only ever called from
+   * inside `withTransitionLock`; re-entering the lock here would deadlock
+   * `confirmStart`, which already holds it. */
+  private async applyPatch(
     userId: string,
     jobId: string,
-    patch: Omit<Partial<ImportJob>, 'userId' | 'jobId'>,
+    patch: ImportJobPatch,
   ): Promise<ImportJob | null> {
     const existing = await this.get(userId, jobId);
     if (!existing) {
       return null;
     }
 
-    const updated: ImportJob = { ...existing, ...patch, updatedAt: Date.now() };
+    const updated: ImportJob = {
+      ...existing,
+      ...applyTerminalGuard(existing, patch),
+      updatedAt: Date.now(),
+    };
     await this.store.set(this.key(userId, jobId), updated, this.ttl);
     return updated;
+  }
+
+  async patch(userId: string, jobId: string, patch: ImportJobPatch): Promise<ImportJob | null> {
+    return this.withTransitionLock(this.key(userId, jobId), () =>
+      this.applyPatch(userId, jobId, patch),
+    );
   }
 
   async cancel(userId: string, jobId: string): Promise<boolean> {
@@ -129,7 +166,7 @@ export class ImportJobStore {
       if (existing.phase !== 'awaiting_confirmation') {
         return { status: 'conflict', job: existing };
       }
-      const updated = await this.patch(userId, jobId, { phase: 'queued' });
+      const updated = await this.applyPatch(userId, jobId, { phase: 'queued' });
       if (!updated) {
         return { status: 'not_found' };
       }

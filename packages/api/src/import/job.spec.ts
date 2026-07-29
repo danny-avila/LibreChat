@@ -98,6 +98,76 @@ describe('ImportJobStore', () => {
     expect(owned?.updatedAt).toBe(job.updatedAt);
   });
 
+  describe('terminal jobs', () => {
+    it('ignores a phase update that lands after cancellation', async () => {
+      const job = await store.create({ userId: 'u1', filepath: '/tmp/a.zip', filename: 'a.zip' });
+      await store.cancel('u1', job.jobId);
+
+      const patched = await store.patch('u1', job.jobId, { phase: 'conversations' });
+
+      expect(patched?.phase).toBe('cancelled');
+      expect(patched?.status).toBe('cancelled');
+      expect(await store.isCancelled('u1', job.jobId)).toBe(true);
+    });
+
+    it('still records the partial report a cancelled run produced', async () => {
+      const job = await store.create({ userId: 'u1', filepath: '/tmp/a.zip', filename: 'a.zip' });
+      await store.cancel('u1', job.jobId);
+
+      const report = {
+        imported: 12,
+        skipped: 0,
+        assetsImported: 3,
+        assetsUnavailable: 0,
+        errors: [],
+      };
+      const patched = await store.patch('u1', job.jobId, { report });
+
+      expect(patched?.report).toEqual(report);
+      expect(patched?.phase).toBe('cancelled');
+    });
+
+    /** The background run reads the cancel flag and writes progress in two
+     * separate round trips. Without serialization the progress write lands on a
+     * job it read before the cancellation, resurrecting `status: 'active'` —
+     * and the very next `isCancelled` then tells the run to keep importing. */
+    it('does not let a progress update in flight during a cancellation resurrect the job', async () => {
+      const backing = new Keyv();
+      const read = backing.get.bind(backing);
+      /** Only the first read stalls, which is the progress update's: the
+       * cancellation then reads and writes entirely inside that window, so the
+       * progress write is left holding a job snapshot taken before it. */
+      let stall = true;
+      jest.spyOn(backing, 'get').mockImplementation(async (key: string) => {
+        const value = await read(key);
+        if (stall) {
+          stall = false;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        return value;
+      });
+      const slowStore = new ImportJobStore(backing, 60000);
+      const job = await slowStore.create({
+        userId: 'u1',
+        filepath: '/tmp/a.zip',
+        filename: 'a.zip',
+      });
+
+      const progress = slowStore.patch('u1', job.jobId, {
+        progress: {
+          conversations: { done: 5, total: 10 },
+          messages: { done: 40, total: 80 },
+          assets: { done: 0, total: 0 },
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      await slowStore.cancel('u1', job.jobId);
+      await progress;
+
+      expect(await slowStore.isCancelled('u1', job.jobId)).toBe(true);
+    });
+  });
+
   describe('confirmStart', () => {
     it('returns not_found for a job that does not exist', async () => {
       expect(await store.confirmStart('u1', 'missing')).toEqual({ status: 'not_found' });
