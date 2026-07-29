@@ -20,6 +20,7 @@ import {
   getConfigSecretSections,
   isConfigSecretAncestorPath,
   isConfigSecretDescendantPath,
+  isConfigSecretPreservablePatch,
   preserveConfigSecrets,
   redactConfigSecrets,
 } from './secrets';
@@ -321,22 +322,13 @@ function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
   return safeConfig;
 }
 
-function isObjectValuedSecretAncestorPatch(fieldPath: string, value: unknown): boolean {
-  return (
-    isConfigSecretAncestorPath(fieldPath) &&
-    value != null &&
-    typeof value === 'object' &&
-    !Array.isArray(value)
-  );
-}
-
 function preservePatchedConfigSecretFields(
   fields: Record<string, unknown>,
   existingOverrides?: unknown,
 ): Record<string, unknown> {
   const result = { ...fields };
   for (const [fieldPath, value] of Object.entries(result)) {
-    if (isObjectValuedSecretAncestorPatch(fieldPath, value)) {
+    if (isConfigSecretPreservablePatch(fieldPath, value)) {
       result[fieldPath] = preserveConfigSecrets(value, existingOverrides, fieldPath);
     }
   }
@@ -609,7 +601,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const encryptedOverrides = encryptConfigSecrets(filteredOverrides);
       const existingForSecrets = getConfigSecretSections().some((section) =>
-        isObjectValuedSecretAncestorPatch(
+        isConfigSecretPreservablePatch(
           section,
           (filteredOverrides as Record<string, unknown>)[section],
         ),
@@ -761,7 +753,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const requestedPriority = hasBroadManage ? priority : undefined;
 
       const hasObjectValuedSecretPatch = Object.entries(fields).some(([fieldPath, value]) =>
-        isObjectValuedSecretAncestorPatch(fieldPath, value),
+        isConfigSecretPreservablePatch(fieldPath, value),
       );
       const existing =
         requestedPriority == null || hasObjectValuedSecretPatch
