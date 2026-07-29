@@ -1626,4 +1626,88 @@ describe('RedisEventTransport Integration Tests', () => {
       subscriber.disconnect();
     });
   });
+
+  describe('Cross-Replica Preempt Delivery', () => {
+    test('delivers a fenced arm/clear payload across instances', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber1 = (ioredisClient as Redis).duplicate();
+      const subscriber2 = (ioredisClient as Redis).duplicate();
+      const transport1 = new RedisEventTransport(ioredisClient, subscriber1);
+      const transport2 = new RedisEventTransport(ioredisClient, subscriber2);
+      const streamId = `preempt-cross-${Date.now()}`;
+      const received: Array<{ op: string; createdAt: number; steerIds: string[] }> = [];
+
+      try {
+        await transport1.onPreempt(streamId, (msg) => {
+          received.push(msg);
+        });
+
+        transport2.emitPreempt(streamId, {
+          op: 'arm',
+          createdAt: 1234,
+          steerIds: ['steer-a', 'steer-b'],
+        });
+        transport2.emitPreempt(streamId, { op: 'clear', createdAt: 1234, steerIds: ['steer-a'] });
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        expect(received).toEqual([
+          { op: 'arm', createdAt: 1234, steerIds: ['steer-a', 'steer-b'] },
+          { op: 'clear', createdAt: 1234, steerIds: ['steer-a'] },
+        ]);
+      } finally {
+        transport1.cleanup(streamId);
+        transport1.destroy();
+        transport2.destroy();
+        subscriber1.disconnect();
+        subscriber2.disconnect();
+      }
+    });
+
+    test('unsubscribe removes only this registration and keeps the channel for a replacement', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber1 = (ioredisClient as Redis).duplicate();
+      const subscriber2 = (ioredisClient as Redis).duplicate();
+      const transport1 = new RedisEventTransport(ioredisClient, subscriber1);
+      const transport2 = new RedisEventTransport(ioredisClient, subscriber2);
+      const streamId = `preempt-unsub-${Date.now()}`;
+      const oldGeneration: string[] = [];
+      const newGeneration: string[] = [];
+
+      try {
+        const unsubscribeOld = await transport1.onPreempt(streamId, (msg) => {
+          oldGeneration.push(...msg.steerIds);
+        });
+        await transport1.onPreempt(streamId, (msg) => {
+          newGeneration.push(...msg.steerIds);
+        });
+
+        unsubscribeOld();
+        transport2.emitPreempt(streamId, { op: 'arm', createdAt: 99, steerIds: ['steer-live'] });
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        expect(oldGeneration).toEqual([]);
+        expect(newGeneration).toEqual(['steer-live']);
+      } finally {
+        transport1.cleanup(streamId);
+        transport1.destroy();
+        transport2.destroy();
+        subscriber1.disconnect();
+        subscriber2.disconnect();
+      }
+    });
+  });
 });

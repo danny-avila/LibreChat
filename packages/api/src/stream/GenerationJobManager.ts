@@ -33,11 +33,15 @@ import {
   recordGenerationJob,
 } from '~/app/metrics';
 import {
+  isPendingActionStale,
+  isPendingActionExpired,
+  STEER_QUEUE_MAX_DEPTH,
+} from './interfaces/IJobStore';
+import {
   SteeringLifecycle,
   toPendingSteer,
   synthesizeAppliedSteerEvents,
 } from './SteeringLifecycle';
-import { isPendingActionStale, isPendingActionExpired } from './interfaces/IJobStore';
 import { synthesizeActivityLabelGapEvents } from '~/agents/activityLabels/wiring';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
@@ -206,6 +210,31 @@ interface RuntimeJobState {
   abortController: AbortController;
   /** Removes this generation's cross-replica abort listener without touching a replacement. */
   abortUnsubscribe?: () => void;
+  /**
+   * Cooperative-seal requests for THIS generation. Armed by `requestPreempt`
+   * (locally or via a fenced cross-replica publish), polled O(1) by the run's
+   * `shouldPreempt`, and cleared by `noteSteersRemoved` when the steer drains
+   * at any boundary or is cancelled. Lives and dies with the runtime object —
+   * no terminal bookkeeping needed beyond the listener release.
+   */
+  preempt?: {
+    /** Generation identity this request set belongs to. */
+    createdAt: number;
+    /** Server-minted steerIds requested but not yet drained/cancelled. */
+    ids: Set<string>;
+    /**
+     * steerIds whose removal was observed BEFORE their arm. Arm and clear are
+     * published by different replicas over different connections, so a steer
+     * drained at a tool boundary during the arming replica's enqueue round
+     * trip can have its clear land first — without this tombstone the late
+     * arm would resurrect a request no steer backs, sealing an unrelated
+     * stretch of generation. steerIds are single-use UUIDs, so a tombstoned
+     * id can never legitimately be re-armed.
+     */
+    cleared: Set<string>;
+  };
+  /** Removes this generation's cross-replica preempt listener without touching a replacement. */
+  preemptUnsubscribe?: () => void;
   readyPromise: Promise<void>;
   resolveReady: () => void;
   startupTelemetry?: AgentStartupTelemetry;
@@ -462,7 +491,14 @@ class GenerationJobManagerClass {
     return released;
   }
 
+  /**
+   * Releases this generation's cross-replica listeners — abort AND preempt —
+   * and drops any armed preempt requests. Every terminal site that retires a
+   * runtime goes through here, so preempt state cannot outlive the
+   * generation it belongs to.
+   */
   private releaseAbortSubscription(runtime: RuntimeJobState): void {
+    this.releasePreemptSubscription(runtime);
     const unsubscribe = runtime.abortUnsubscribe;
     runtime.abortUnsubscribe = undefined;
     if (!unsubscribe) {
@@ -473,6 +509,21 @@ class GenerationJobManagerClass {
       unsubscribe();
     } catch (err) {
       logger.error('[GenerationJobManager] Failed to release abort subscription:', err);
+    }
+  }
+
+  private releasePreemptSubscription(runtime: RuntimeJobState): void {
+    runtime.preempt = undefined;
+    const unsubscribe = runtime.preemptUnsubscribe;
+    runtime.preemptUnsubscribe = undefined;
+    if (!unsubscribe) {
+      return;
+    }
+
+    try {
+      unsubscribe();
+    } catch (err) {
+      logger.error('[GenerationJobManager] Failed to release preempt subscription:', err);
     }
   }
 
@@ -539,6 +590,74 @@ class GenerationJobManagerClass {
     }
     if (this.runtimeState.get(streamId) !== runtime || runtime.abortController.signal.aborted) {
       this.releaseAbortSubscription(runtime);
+    }
+  }
+
+  private ensurePreemptState(
+    runtime: RuntimeJobState,
+    createdAt: number,
+  ): NonNullable<RuntimeJobState['preempt']> {
+    runtime.preempt ??= { createdAt, ids: new Set(), cleared: new Set() };
+    return runtime.preempt;
+  }
+
+  /** Arms ids that have not already been observed as removed. */
+  private armPreemptIds(runtime: RuntimeJobState, createdAt: number, steerIds: string[]): void {
+    const state = this.ensurePreemptState(runtime, createdAt);
+    for (const id of steerIds) {
+      if (state.cleared.has(id) || state.ids.size >= STEER_QUEUE_MAX_DEPTH) {
+        continue;
+      }
+      state.ids.add(id);
+    }
+  }
+
+  /** Disarms ids and tombstones them against a late-arriving arm. */
+  private clearPreemptIds(runtime: RuntimeJobState, createdAt: number, steerIds: string[]): void {
+    const state = this.ensurePreemptState(runtime, createdAt);
+    for (const id of steerIds) {
+      state.ids.delete(id);
+      if (state.cleared.size < STEER_QUEUE_MAX_DEPTH * 2) {
+        state.cleared.add(id);
+      }
+    }
+  }
+
+  /**
+   * Mirrors {@link registerAbortSubscription} for cooperative preempts. The
+   * same double fence applies — runtime object identity plus the generation
+   * `createdAt` carried by every {@link PreemptMessage} — so a stale
+   * cross-replica publish can never arm a replacement job on the same
+   * streamId. Arm requests cap at {@link STEER_QUEUE_MAX_DEPTH}, matching
+   * the durable queue they mirror.
+   */
+  private async registerPreemptSubscription(
+    streamId: string,
+    runtime: RuntimeJobState,
+  ): Promise<void> {
+    if (!this.eventTransport.onPreempt) {
+      return;
+    }
+
+    const unsubscribe = await this.eventTransport.onPreempt(streamId, (msg) => {
+      const currentRuntime = this.runtimeState.get(streamId);
+      if (currentRuntime !== runtime || currentRuntime.createdAt !== msg.createdAt) {
+        return;
+      }
+
+      if (msg.op === 'clear') {
+        this.clearPreemptIds(currentRuntime, msg.createdAt, msg.steerIds);
+        return;
+      }
+
+      this.armPreemptIds(currentRuntime, msg.createdAt, msg.steerIds);
+    });
+
+    if (typeof unsubscribe === 'function') {
+      runtime.preemptUnsubscribe = unsubscribe;
+    }
+    if (this.runtimeState.get(streamId) !== runtime || runtime.abortController.signal.aborted) {
+      this.releasePreemptSubscription(runtime);
     }
   }
 
@@ -760,6 +879,7 @@ class GenerationJobManagerClass {
       this.registerAllSubscribersLeft(streamId);
 
       await this.registerAbortSubscription(streamId, runtime);
+      await this.registerPreemptSubscription(streamId, runtime);
       if (this.runtimeState.get(streamId) !== runtime) {
         throw new Error('Generation job was replaced during initialization');
       }
@@ -888,6 +1008,9 @@ class GenerationJobManagerClass {
         // Surface deferred tools discovered before the pause so the resume route can
         // replay them into createRun (the rebuilt graph passes `messages: []`).
         discoveredTools: jobData.discoveredTools,
+        // Surface the owning replica's seal capability so the steer route can
+        // honour it instead of probing its own (possibly older) SDK.
+        preemptCapable: jobData.preemptCapable,
         // Surface the pending review so status/resume routes built on the
         // facade can render the prompt for a `requires_action` job.
         pendingAction: jobData.pendingAction,
@@ -982,6 +1105,7 @@ class GenerationJobManagerClass {
 
     if (jobData.status === 'running' || jobData.status === 'requires_action') {
       await this.registerAbortSubscription(streamId, runtime);
+      await this.registerPreemptSubscription(streamId, runtime);
     }
 
     const runtimeAfterAbortRegistration = this.runtimeState.get(streamId);
@@ -3062,6 +3186,70 @@ class GenerationJobManagerClass {
    */
   get steering(): SteeringLifecycle {
     return this._steering;
+  }
+
+  /**
+   * Arms a cooperative-seal request for one queued steer. Never a rejection
+   * surface and never touches job status: with no runtime (or a replaced
+   * one) the local arm is skipped, while the fenced publish still reaches
+   * the generating replica, whose own `createdAt` fence decides. The run's
+   * `shouldPreempt` poll turns true until the steer drains at ANY boundary
+   * or is cancelled ({@link noteSteersRemoved}).
+   */
+  requestPreempt(streamId: string, steerId: string, jobCreatedAt: number): void {
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime != null && runtime.createdAt === jobCreatedAt) {
+      this.armPreemptIds(runtime, jobCreatedAt, [steerId]);
+    }
+    this.eventTransport.emitPreempt?.(streamId, {
+      op: 'arm',
+      createdAt: jobCreatedAt,
+      steerIds: [steerId],
+    });
+  }
+
+  /** O(1) level-triggered poll consumed by the run's `shouldPreempt`. */
+  isPreemptRequested(streamId: string): boolean {
+    return (this.runtimeState.get(streamId)?.preempt?.ids.size ?? 0) > 0;
+  }
+
+  /**
+   * Clears preempt requests for steers that left the durable queue — drained
+   * at a boundary (tool or preempt), cancelled, or dropped. The fenced
+   * cross-replica `clear` keeps a request from outliving its steer on the
+   * generating replica; without a fence identity the publish is skipped and
+   * the empty-boundary path's self-clear bounds the damage to one seal.
+   */
+  noteSteersRemoved(streamId: string, steerIds: string[], jobCreatedAt?: number): void {
+    if (steerIds.length === 0) {
+      return;
+    }
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime != null && (jobCreatedAt == null || runtime.createdAt === jobCreatedAt)) {
+      this.clearPreemptIds(runtime, jobCreatedAt ?? runtime.createdAt, steerIds);
+    }
+    const createdAt = jobCreatedAt ?? runtime?.createdAt;
+    if (createdAt == null) {
+      return;
+    }
+    this.eventTransport.emitPreempt?.(streamId, { op: 'clear', createdAt, steerIds });
+  }
+
+  /**
+   * Disarms every outstanding request for the generation. Called when a
+   * boundary drains nothing: the seal has already been spent, and whatever
+   * was armed refers to a steer no longer in the queue — leaving it armed
+   * would seal again immediately and truncate an unrelated answer.
+   */
+  clearPreemptRequests(streamId: string, jobCreatedAt?: number): void {
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime?.preempt == null) {
+      return;
+    }
+    if (jobCreatedAt != null && runtime.createdAt !== jobCreatedAt) {
+      return;
+    }
+    this.clearPreemptIds(runtime, runtime.createdAt, [...runtime.preempt.ids]);
   }
 
   /**

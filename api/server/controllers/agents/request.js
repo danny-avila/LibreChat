@@ -16,6 +16,7 @@ const {
   resolveConversationAnchor,
   getAgentStartupTelemetry,
   acceptAgentStartupTelemetry,
+  isSteerPreemptSupported,
 } = require('@librechat/api');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const {
@@ -357,6 +358,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         endpoint: endpointOption.endpoint,
         iconURL: endpointIconURL,
         model: responseModel,
+        // Recorded HERE because this process owns the generation: the steer
+        // route may land on a different replica whose own SDK probe would
+        // answer for the wrong process during a rolling deploy.
+        preemptCapable: isSteerPreemptSupported(),
         // Persist the originating agent so a HITL resume can refuse to rebuild this
         // paused run on a different agent (see resume.js).
         agent_id: endpointOption.agent_id ?? req.body?.agent_id,
@@ -835,6 +840,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         // Check abort state BEFORE calling completeJob (which triggers abort signal for cleanup)
         const wasAbortedBeforeComplete = job.abortController.signal.aborted;
+        /**
+         * A preempt boundary that had nothing to inject (cancelled/stale
+         * request) ends the turn with a genuinely truncated answer — the SDK
+         * reports it via preempt stats and the halt reason. Persist it with
+         * the same honest `unfinished` contract an abort gets, never as a
+         * silent completion.
+         */
+        const preemptStats = client?.run?.getPreemptStats?.();
+        const preemptIncomplete =
+          (preemptStats?.emptyBoundaries ?? 0) > 0 ||
+          client?.run?.getHaltReason?.() === 'preempt_incomplete';
         const shouldGenerateTitle =
           addTitle &&
           parentMessageId === Constants.NO_PARENT &&
@@ -861,8 +877,26 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         if (client.savedMessageIds && !client.savedMessageIds.has(messageId)) {
           await saveMessage(
             reqCtx,
-            { ...response, user: userId, unfinished: wasAbortedBeforeComplete },
+            {
+              ...response,
+              user: userId,
+              unfinished: wasAbortedBeforeComplete || preemptIncomplete,
+            },
             { context: 'api/server/controllers/agents/request.js - resumable response end' },
+          );
+        } else if (preemptIncomplete) {
+          /**
+           * A completed send already saved this row as `unfinished: false`
+           * from `BaseClient.sendMessage`, and registered it in
+           * `savedMessageIds` — so the branch above is skipped and the flag
+           * would never reach the database. An empty preempt boundary IS a
+           * completed send (the SDK halts and returns content), so re-mark
+           * it explicitly, the same way the HITL pause re-marks above.
+           */
+          await saveMessage(
+            reqCtx,
+            { ...response, user: userId, unfinished: true },
+            { context: 'api/server/controllers/agents/request.js - preempt incomplete' },
           );
         }
 
@@ -955,7 +989,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             conversation,
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
-            responseMessage: { ...response },
+            responseMessage: { ...response, ...(preemptIncomplete && { unfinished: true }) },
             ...(pendingSteers && { pendingSteers }),
           };
 

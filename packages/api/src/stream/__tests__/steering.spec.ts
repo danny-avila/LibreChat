@@ -839,3 +839,160 @@ describe('emitChunk durability (Redis-mode chunk log)', () => {
     }
   });
 });
+
+describe('preempt request lifecycle (in-memory)', () => {
+  let manager: GenerationJobManagerClass;
+
+  beforeEach(() => {
+    manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    manager.initialize();
+  });
+
+  afterEach(async () => {
+    await manager.destroy();
+  });
+
+  test('requestPreempt without a runtime is a no-op and the poll stays false', () => {
+    manager.requestPreempt('preempt-no-runtime', 'steer-1', Date.now());
+    expect(manager.isPreemptRequested('preempt-no-runtime')).toBe(false);
+  });
+
+  test('arms against the live generation and stays armed until cleared', async () => {
+    const streamId = 'preempt-arm';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+
+    manager.noteSteersRemoved(streamId, ['steer-1'], job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('refuses to arm when jobCreatedAt does not match the live generation', async () => {
+    const streamId = 'preempt-stale-arm';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt - 1);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('clears only the removed steerIds', async () => {
+    const streamId = 'preempt-partial-clear';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+    manager.requestPreempt(streamId, 'steer-2', job.createdAt);
+    manager.noteSteersRemoved(streamId, ['steer-1'], job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+    manager.noteSteersRemoved(streamId, ['steer-2'], job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('caps armed requests at STEER_QUEUE_MAX_DEPTH', async () => {
+    const streamId = 'preempt-cap';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    for (let i = 0; i < STEER_QUEUE_MAX_DEPTH + 5; i++) {
+      manager.requestPreempt(streamId, `steer-${i}`, job.createdAt);
+    }
+    for (let i = 0; i < STEER_QUEUE_MAX_DEPTH; i++) {
+      manager.noteSteersRemoved(streamId, [`steer-${i}`], job.createdAt);
+    }
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('arming never changes job status', async () => {
+    const streamId = 'preempt-status';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+    expect((await manager.getJob(streamId))?.status).toBe('running');
+  });
+
+  test('abortJob retires the armed set with the runtime', async () => {
+    const streamId = 'preempt-abort';
+    const job = await manager.createJob(streamId, 'user-1');
+    await manager.steering.enqueue(streamId, {
+      steerId: 'steer-1',
+      text: 'interrupt me',
+      userId: 'user-1',
+      createdAt: Date.now(),
+      preempt: true,
+    });
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+
+    await manager.abortJob(streamId);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('completeJob retires the armed set', async () => {
+    const streamId = 'preempt-complete';
+    const job = await manager.createJob(streamId, 'user-1');
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+
+    await manager.completeJob(streamId, undefined, job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('toPendingSteer keeps the preempt label for parked/replayed chips', () => {
+    const item: SteerQueueItem = {
+      steerId: 'steer-1',
+      text: 'interrupt me',
+      userId: 'user-1',
+      createdAt: Date.now(),
+      preempt: true,
+    };
+    expect(toPendingSteer(item).preempt).toBe(true);
+    expect(toPendingSteer({ ...item, preempt: undefined }).preempt).toBeUndefined();
+  });
+
+  test('a late arm cannot resurrect an already-cleared steer', async () => {
+    const streamId = 'preempt-late-arm';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    /** The generating replica drained + cleared before this replica's arm. */
+    manager.noteSteersRemoved(streamId, ['steer-1'], job.createdAt);
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('the tombstone is per-steer, not a blanket disarm', async () => {
+    const streamId = 'preempt-tombstone-scope';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    manager.noteSteersRemoved(streamId, ['steer-1'], job.createdAt);
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+    manager.requestPreempt(streamId, 'steer-2', job.createdAt);
+
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+    manager.noteSteersRemoved(streamId, ['steer-2'], job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('clearPreemptRequests disarms everything for the generation', async () => {
+    const streamId = 'preempt-clear-all';
+    const job = await manager.createJob(streamId, 'user-1');
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+    manager.requestPreempt(streamId, 'steer-2', job.createdAt);
+
+    manager.clearPreemptRequests(streamId, job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('clearPreemptRequests refuses a stale generation', async () => {
+    const streamId = 'preempt-clear-stale';
+    const job = await manager.createJob(streamId, 'user-1');
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+
+    manager.clearPreemptRequests(streamId, job.createdAt - 1);
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+  });
+});

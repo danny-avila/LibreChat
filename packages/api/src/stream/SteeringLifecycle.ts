@@ -11,6 +11,7 @@ export function toPendingSteer(item: SteerQueueItem): TPendingSteer {
     text: item.text,
     createdAt: item.createdAt,
     ...(item.files && item.files.length > 0 && { files: item.files }),
+    ...(item.preempt === true && { preempt: true }),
   };
 }
 

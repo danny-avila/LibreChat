@@ -1,6 +1,7 @@
 import * as agentsSdk from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
 import type {
+  StreamPreemption,
   HookCallback,
   HookInputByEvent,
   HookOutputByEvent,
@@ -71,31 +72,37 @@ export interface SteerDrainHookOptions {
 }
 
 /**
- * Build the run-scoped `PostToolBatch` hook that drains the job's steer queue
- * at each tool-batch boundary and injects each steer into graph state as its
- * own user message (`role: 'user'`, `source: 'steer'` — never consolidated
- * with hook context). Steers with attachments inject as multimodal content
- * arrays via `buildMedia`.
+ * Shared drain body for BOTH injection boundaries (PostToolBatch and
+ * PreemptBoundary) — the provider-safety argument rests on the two sites
+ * emitting identical `InjectedMessage` shapes, so they must share one body.
  *
- * Subagent scopes are skipped (`input.agentId` set): a steer targets the
- * top-level conversation, not a child agent's context. Hook errors are
- * swallowed by the SDK's `executeHooks`, so a broken drain can never kill the
- * run.
+ * The injections array builds incrementally under a swallow-all catch: once a
+ * steer leaves the durable queue its part is persisted by `applySteer`
+ * first, so a mid-loop throw must still inject whatever was already applied
+ * rather than dropping the batch. `noteSteersRemoved` runs in `finally` —
+ * the drained items are out of the queue no matter what, so any armed
+ * preempt request for them must clear even on the failure path, or a
+ * satisfied preempt could seal a later, unrelated stretch of generation.
  */
-export function createSteerDrainHook(opts: SteerDrainHookOptions): HookCallback<'PostToolBatch'> {
+async function drainAndBuildInjections(opts: SteerDrainHookOptions): Promise<InjectedMessage[]> {
   const { streamId, jobCreatedAt, applySteer, buildMedia } = opts;
-  return async (input: HookInputByEvent['PostToolBatch']): Promise<SteerDrainOutput> => {
-    if (input.agentId != null) {
-      return {};
-    }
-    // The replacement guard lives INSIDE the store's atomic drain: a separate
-    // check-then-drain could still consume a replacement job's queue if
-    // createJob landed between the two steps.
-    const steers = await GenerationJobManager.steering.drain(streamId, jobCreatedAt);
-    if (steers.length === 0) {
-      return {};
-    }
-    const injectedMessages: InjectedMessage[] = [];
+  // The replacement guard lives INSIDE the store's atomic drain: a separate
+  // check-then-drain could still consume a replacement job's queue if
+  // createJob landed between the two steps.
+  const steers = await GenerationJobManager.steering.drain(streamId, jobCreatedAt);
+  if (steers.length === 0) {
+    /**
+     * Nothing to inject. Any request still armed points at a steer that has
+     * already left the queue (drained at the other boundary, cancelled, or
+     * arrived as a late cross-replica arm), so disarm the generation — a
+     * level-triggered poll left true would seal again on the next chunk and
+     * truncate an unrelated answer.
+     */
+    GenerationJobManager.clearPreemptRequests(streamId, jobCreatedAt);
+    return [];
+  }
+  const injectedMessages: InjectedMessage[] = [];
+  try {
     for (const item of steers) {
       try {
         await applySteer(item);
@@ -122,6 +129,87 @@ export function createSteerDrainHook(opts: SteerDrainHookOptions): HookCallback<
         source: 'steer' as const,
       });
     }
+  } catch (error) {
+    logger.error(`[steering] Drain interrupted for ${streamId}; injecting applied items:`, error);
+  } finally {
+    GenerationJobManager.noteSteersRemoved(
+      streamId,
+      steers.map((item) => item.steerId),
+      jobCreatedAt,
+    );
+  }
+  return injectedMessages;
+}
+
+/**
+ * Build the run-scoped `PostToolBatch` hook that drains the job's steer queue
+ * at each tool-batch boundary and injects each steer into graph state as its
+ * own user message (`role: 'user'`, `source: 'steer'` — never consolidated
+ * with hook context). Steers with attachments inject as multimodal content
+ * arrays via `buildMedia`.
+ *
+ * Subagent scopes are skipped (`input.agentId` set): a steer targets the
+ * top-level conversation, not a child agent's context. Hook errors are
+ * swallowed by the SDK's `executeHooks`, so a broken drain can never kill the
+ * run.
+ */
+export function createSteerDrainHook(opts: SteerDrainHookOptions): HookCallback<'PostToolBatch'> {
+  return async (input: HookInputByEvent['PostToolBatch']): Promise<SteerDrainOutput> => {
+    if (input.agentId != null) {
+      return {};
+    }
+    const injectedMessages = await drainAndBuildInjections(opts);
+    if (injectedMessages.length === 0) {
+      return {};
+    }
     return { injectedMessages };
   };
+}
+
+/**
+ * The PreemptBoundary twin of {@link createSteerDrainHook}: fires after the
+ * SDK seals a model stream mid-generation, drains the same durable queue
+ * through the same shared body, and injects the same message shapes. Because
+ * `noteSteersRemoved` lives in that shared body, a preempt satisfied at an
+ * ordinary tool boundary clears its request there and cannot cause a
+ * spurious seal later.
+ */
+export function createSteerPreemptBoundaryHook(
+  opts: SteerDrainHookOptions,
+): HookCallback<'PreemptBoundary'> {
+  return async (
+    input: HookInputByEvent['PreemptBoundary'],
+  ): Promise<HookOutputByEvent['PreemptBoundary']> => {
+    if (input.agentId != null) {
+      return {};
+    }
+    const injectedMessages = await drainAndBuildInjections(opts);
+    if (injectedMessages.length === 0) {
+      return {};
+    }
+    return { injectedMessages };
+  };
+}
+
+/**
+ * The run's `RunConfig.preemption` — a level-triggered O(1) poll over the
+ * job's armed preempt requests, exactly as the SDK contract requires: it
+ * keeps returning true until the boundary drain (either boundary) clears the
+ * request via `noteSteersRemoved`. Never consumes on read.
+ */
+export function createSteerPreemptPoll(streamId: string): StreamPreemption {
+  return {
+    shouldPreempt: () => GenerationJobManager.isPreemptRequested(streamId),
+  };
+}
+
+/**
+ * Whether the installed SDK can seal a generation mid-stream and inject at
+ * the resulting boundary. A SEPARATE probe from `isSteeringSupported()`:
+ * reusing that flag would arm an interrupt affordance that silently does
+ * nothing on an SDK that can only inject at tool boundaries.
+ */
+export function isSteerPreemptSupported(): boolean {
+  const sdk = agentsSdk as { HOOK_PREEMPT_BOUNDARY_CAPABLE?: boolean };
+  return isSteeringSupported() && sdk.HOOK_PREEMPT_BOUNDARY_CAPABLE === true;
 }

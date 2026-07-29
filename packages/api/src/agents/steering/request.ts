@@ -4,8 +4,8 @@ import type { TFile } from 'librechat-data-provider';
 import type { SteerFileFetcher } from './media';
 import { STEER_ENQUEUE_NOT_RUNNING, STEER_ENQUEUE_QUEUE_FULL } from '~/stream/interfaces/IJobStore';
 import { toSteerFileRef, collectFileIds, buildOwnerFilter } from './refs';
+import { isSteeringSupported, isSteerPreemptSupported } from './runtime';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
-import { isSteeringSupported } from './runtime';
 
 /** Attachment cap per steer, mirroring the composer's practical limits. */
 export const STEER_MAX_FILES = 10;
@@ -26,6 +26,11 @@ export interface SteerRequestBody {
   conversationId?: unknown;
   text?: unknown;
   files?: unknown;
+  /** Ask the generating replica to seal the live model stream at the next
+   *  provider-safe boundary instead of waiting for a tool step. NEVER a
+   *  rejection reason: on an SDK without the capability the steer still
+   *  enqueues and the 202 echoes `preempt: false`. */
+  preempt?: unknown;
 }
 
 export interface SteerCancelBody {
@@ -223,12 +228,24 @@ export async function handleSteerRequest(
     resolvedFileIds = resolved.fileIds;
   }
 
+  /**
+   * The OWNER's recorded capability, not this replica's probe: a steer can
+   * land on any replica, so during a rolling deploy a local probe would
+   * answer for the wrong process and label a steer "interrupting" that the
+   * old owner can only inject at a tool boundary. Jobs created before
+   * preempt shipped carry no flag, which reads as incapable — the honest
+   * outcome, and the chip relabels to ordinary steering.
+   */
+  const wantsPreempt = body.preempt === true;
+  const preemptArmed =
+    wantsPreempt && job.metadata?.preemptCapable === true && isSteerPreemptSupported();
   const item = {
     steerId: randomUUID(),
     text,
     userId: user.id ?? '',
     createdAt: Date.now(),
     ...(queuedFiles && { files: queuedFiles }),
+    ...(preemptArmed && { preempt: true }),
   };
   const depth = await GenerationJobManager.steering.enqueue(streamId, item);
   if (depth === STEER_ENQUEUE_NOT_RUNNING) {
@@ -236,6 +253,12 @@ export async function handleSteerRequest(
   }
   if (depth === STEER_ENQUEUE_QUEUE_FULL) {
     return { status: 429, body: { code: 'STEER_QUEUE_FULL' } };
+  }
+
+  /** Strictly AFTER a successful enqueue: an armed request whose steer never
+   *  made the durable queue could seal a generation with nothing to inject. */
+  if (preemptArmed) {
+    GenerationJobManager.requestPreempt(streamId, item.steerId, job.createdAt);
   }
 
   /** Fire-and-forget: the persisted steer part references these uploads, so
@@ -255,7 +278,13 @@ export async function handleSteerRequest(
 
   return {
     status: 202,
-    body: { status: 'queued', steerId: item.steerId, position: depth, conversationId },
+    body: {
+      status: 'queued',
+      steerId: item.steerId,
+      position: depth,
+      conversationId,
+      preempt: preemptArmed,
+    },
   };
 }
 
@@ -295,5 +324,11 @@ export async function handleSteerCancel(
   }
 
   const removed = await GenerationJobManager.steering.cancel(streamId, body.steerId);
+  /** A cancelled steer must also disarm any preempt request it carried —
+   *  cancel is live UI, and a request left armed would seal an unrelated
+   *  stretch of generation, drain nothing, and end the run mid-sentence. */
+  if (removed) {
+    GenerationJobManager.noteSteersRemoved(streamId, [body.steerId], job.createdAt);
+  }
   return { status: 200, body: { removed } };
 }
