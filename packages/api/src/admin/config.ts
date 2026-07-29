@@ -36,6 +36,7 @@ export function isValidFieldPath(path: string): boolean {
     !path.startsWith('.') &&
     !path.endsWith('.') &&
     !path.includes('..') &&
+    !path.includes('$') &&
     !UNSAFE_SEGMENTS.test(path)
   );
 }

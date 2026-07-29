@@ -4,102 +4,63 @@ import { envVarRegex, extractEnvVariable } from 'librechat-data-provider';
 
 const ENCRYPTED_PREFIX = 'v3:';
 
-interface ConfigSecretField {
+interface ConfigSecretFieldInput {
   /** Dot-path of the secret value within config overrides */
   path: string;
-  /** Non-secret display companion, written on encrypt and preserved by redaction. Must be a sibling of `path`. */
-  displayPath?: string;
   /** When true, `${ENV_VAR}` placeholder values are stored and returned as plain references instead of being encrypted */
   allowEnvPlaceholder?: boolean;
+}
+
+interface ConfigSecretField extends ConfigSecretFieldInput {
+  /** Non-secret masked-preview companion, always the sibling `<field>Preview`. Written on encrypt, preserved by redaction. */
+  previewPath: string;
 }
 
 /**
  * Registry of config fields that hold secret values. Writes through the admin
  * config API encrypt these at rest, reads redact them, and omitting them on a
- * subsequent write preserves the stored encrypted value.
+ * subsequent write preserves the stored encrypted value. Each secret's
+ * masked-preview companion is derived as `<path>Preview` — recognizing a new
+ * sensitive field is a one-line path addition (plus the `<field>Preview`
+ * companion in the config schema).
  */
-const CONFIG_SECRET_FIELDS: readonly ConfigSecretField[] = [
-  { path: 'langfuse.secretKey', displayPath: 'langfuse.displaySecretKey' },
-  { path: 'ocr.apiKey', displayPath: 'ocr.displayApiKey', allowEnvPlaceholder: true },
-  {
-    path: 'speech.tts.openai.apiKey',
-    displayPath: 'speech.tts.openai.displayApiKey',
-    allowEnvPlaceholder: true,
-  },
-  {
-    path: 'speech.tts.azureOpenAI.apiKey',
-    displayPath: 'speech.tts.azureOpenAI.displayApiKey',
-    allowEnvPlaceholder: true,
-  },
-  {
-    path: 'speech.tts.elevenlabs.apiKey',
-    displayPath: 'speech.tts.elevenlabs.displayApiKey',
-    allowEnvPlaceholder: true,
-  },
-  {
-    path: 'speech.tts.localai.apiKey',
-    displayPath: 'speech.tts.localai.displayApiKey',
-    allowEnvPlaceholder: true,
-  },
-  {
-    path: 'speech.stt.openai.apiKey',
-    displayPath: 'speech.stt.openai.displayApiKey',
-    allowEnvPlaceholder: true,
-  },
-  {
-    path: 'speech.stt.azureOpenAI.apiKey',
-    displayPath: 'speech.stt.azureOpenAI.displayApiKey',
-    allowEnvPlaceholder: true,
-  },
-  {
-    path: 'webSearch.serperApiKey',
-    displayPath: 'webSearch.displaySerperApiKey',
-    allowEnvPlaceholder: true,
-  },
-  {
-    path: 'webSearch.searxngApiKey',
-    displayPath: 'webSearch.displaySearxngApiKey',
-    allowEnvPlaceholder: true,
-  },
-  {
-    path: 'webSearch.firecrawlApiKey',
-    displayPath: 'webSearch.displayFirecrawlApiKey',
-    allowEnvPlaceholder: true,
-  },
-  {
-    path: 'webSearch.tavilyApiKey',
-    displayPath: 'webSearch.displayTavilyApiKey',
-    allowEnvPlaceholder: true,
-  },
-  {
-    path: 'webSearch.jinaApiKey',
-    displayPath: 'webSearch.displayJinaApiKey',
-    allowEnvPlaceholder: true,
-  },
-  {
-    path: 'webSearch.cohereApiKey',
-    displayPath: 'webSearch.displayCohereApiKey',
-    allowEnvPlaceholder: true,
-  },
-  {
-    path: 'endpoints.assistants.apiKey',
-    displayPath: 'endpoints.assistants.displayApiKey',
-    allowEnvPlaceholder: true,
-  },
-  {
-    path: 'endpoints.azureAssistants.apiKey',
-    displayPath: 'endpoints.azureAssistants.displayApiKey',
-    allowEnvPlaceholder: true,
-  },
-];
+const CONFIG_SECRET_FIELDS: readonly ConfigSecretField[] = (
+  [
+    { path: 'langfuse.secretKey' },
+    { path: 'ocr.apiKey', allowEnvPlaceholder: true },
+    { path: 'speech.tts.openai.apiKey', allowEnvPlaceholder: true },
+    { path: 'speech.tts.azureOpenAI.apiKey', allowEnvPlaceholder: true },
+    { path: 'speech.tts.elevenlabs.apiKey', allowEnvPlaceholder: true },
+    { path: 'speech.tts.localai.apiKey', allowEnvPlaceholder: true },
+    { path: 'speech.stt.openai.apiKey', allowEnvPlaceholder: true },
+    { path: 'speech.stt.azureOpenAI.apiKey', allowEnvPlaceholder: true },
+    { path: 'webSearch.serperApiKey', allowEnvPlaceholder: true },
+    { path: 'webSearch.searxngApiKey', allowEnvPlaceholder: true },
+    { path: 'webSearch.firecrawlApiKey', allowEnvPlaceholder: true },
+    { path: 'webSearch.tavilyApiKey', allowEnvPlaceholder: true },
+    { path: 'webSearch.jinaApiKey', allowEnvPlaceholder: true },
+    { path: 'webSearch.cohereApiKey', allowEnvPlaceholder: true },
+    { path: 'endpoints.assistants.apiKey', allowEnvPlaceholder: true },
+    { path: 'endpoints.azureAssistants.apiKey', allowEnvPlaceholder: true },
+  ] satisfies ConfigSecretFieldInput[]
+).map((field) => ({ ...field, previewPath: `${field.path}Preview` }));
+
+/**
+ * Preview companions written under earlier naming conventions. Stripped from
+ * writes and reads so stored documents self-clean; never written.
+ */
+const LEGACY_PREVIEW_PATHS: ReadonlyMap<string, string> = new Map([
+  ['langfuse.secretKey', 'langfuse.displaySecretKey'],
+]);
 
 const SECRET_FIELDS_BY_PATH = new Map<string, ConfigSecretField>(
   CONFIG_SECRET_FIELDS.map((field) => [field.path, field]),
 );
 
-const DISPLAY_PATHS = new Set<string>(
-  CONFIG_SECRET_FIELDS.flatMap((field) => (field.displayPath ? [field.displayPath] : [])),
-);
+const PREVIEW_PATHS = new Set<string>([
+  ...CONFIG_SECRET_FIELDS.map((field) => field.previewPath),
+  ...LEGACY_PREVIEW_PATHS.values(),
+]);
 
 const ANCESTOR_PATHS = new Set<string>(
   CONFIG_SECRET_FIELDS.flatMap((field) => {
@@ -112,7 +73,7 @@ const SECRET_SECTIONS: readonly string[] = [
   ...new Set(CONFIG_SECRET_FIELDS.map((field) => field.path.split('.')[0])),
 ];
 
-export function getDisplaySecretKey(secret: string): string {
+export function getSecretPreview(secret: string): string {
   if (secret.length <= 10) {
     return '*'.repeat(secret.length);
   }
@@ -195,9 +156,9 @@ function pruneSecretAncestorArrays(root: Record<string, unknown>, basePath: stri
   }
 }
 
-/** True when a dotted key equals, contains, or is contained by a registered secret or display path. */
+/** True when a dotted key equals, contains, or is contained by a registered secret or preview path. */
 function isConfigSecretRelatedPath(fieldPath: string): boolean {
-  if (SECRET_FIELDS_BY_PATH.has(fieldPath) || DISPLAY_PATHS.has(fieldPath)) {
+  if (SECRET_FIELDS_BY_PATH.has(fieldPath) || PREVIEW_PATHS.has(fieldPath)) {
     return true;
   }
   return ANCESTOR_PATHS.has(fieldPath) || isConfigSecretDescendantPath(fieldPath);
@@ -232,8 +193,8 @@ export function resolveConfigSecret(value?: string): string | undefined {
 
 export function getConfigSecretMutationPaths(fieldPath: string): string[] {
   const field = SECRET_FIELDS_BY_PATH.get(fieldPath);
-  if (field?.displayPath) {
-    return [field.path, field.displayPath];
+  if (field?.previewPath) {
+    return [field.path, field.previewPath];
   }
   return [fieldPath];
 }
@@ -243,7 +204,7 @@ export function isConfigSecretDescendantPath(fieldPath: string): boolean {
     if (fieldPath.startsWith(`${field.path}.`)) {
       return true;
     }
-    if (field.displayPath && fieldPath.startsWith(`${field.displayPath}.`)) {
+    if (field.previewPath && fieldPath.startsWith(`${field.previewPath}.`)) {
       return true;
     }
   }
@@ -255,8 +216,8 @@ export function isConfigSecretAncestorPath(fieldPath: string): boolean {
 }
 
 export function getConfigSecretInputError(fieldPath: string, value: unknown): string | null {
-  if (DISPLAY_PATHS.has(fieldPath)) {
-    return `Cannot write protected display secret path: ${fieldPath}`;
+  if (PREVIEW_PATHS.has(fieldPath)) {
+    return `Cannot write protected secret preview path: ${fieldPath}`;
   }
   if (SECRET_FIELDS_BY_PATH.has(fieldPath) && isEncryptedConfigSecret(value)) {
     return `Encrypted config secret values cannot be submitted: ${fieldPath}`;
@@ -277,17 +238,25 @@ export function getConfigSecretInputError(fieldPath: string, value: unknown): st
   return null;
 }
 
+function deleteLegacyPreviewKey(section: Record<string, unknown>, field: ConfigSecretField): void {
+  const legacyPath = LEGACY_PREVIEW_PATHS.get(field.path);
+  if (legacyPath) {
+    delete section[lastSegment(legacyPath)];
+  }
+}
+
 /**
  * Encrypts a secret value in place within its parent record. Empty and
- * non-string values reset the secret (and display companion). Env placeholder
+ * non-string values reset the secret (and preview companion). Env placeholder
  * values are kept as plain references for fields that allow them.
  */
 function writeSecretIntoSection(section: Record<string, unknown>, field: ConfigSecretField): void {
   const key = lastSegment(field.path);
-  const displayKey = field.displayPath ? lastSegment(field.displayPath) : undefined;
+  const previewKey = field.previewPath ? lastSegment(field.previewPath) : undefined;
+  deleteLegacyPreviewKey(section, field);
   if (!(key in section)) {
-    if (displayKey) {
-      delete section[displayKey];
+    if (previewKey) {
+      delete section[previewKey];
     }
     return;
   }
@@ -295,30 +264,30 @@ function writeSecretIntoSection(section: Record<string, unknown>, field: ConfigS
   const rawValue = section[key];
   if (typeof rawValue !== 'string' || rawValue.startsWith(ENCRYPTED_PREFIX)) {
     section[key] = '';
-    if (displayKey) {
-      section[displayKey] = '';
+    if (previewKey) {
+      section[previewKey] = '';
     }
     return;
   }
   const value = normalizeSecretString(rawValue);
   if (!value) {
     section[key] = '';
-    if (displayKey) {
-      section[displayKey] = '';
+    if (previewKey) {
+      section[previewKey] = '';
     }
     return;
   }
   if (field.allowEnvPlaceholder && isEnvPlaceholder(value)) {
     section[key] = value;
-    if (displayKey) {
-      section[displayKey] = '';
+    if (previewKey) {
+      section[previewKey] = '';
     }
     return;
   }
 
   section[key] = encryptV3(value);
-  if (displayKey) {
-    section[displayKey] = getDisplaySecretKey(value);
+  if (previewKey) {
+    section[previewKey] = getSecretPreview(value);
   }
 }
 
@@ -326,36 +295,36 @@ function writeDottedSecret(result: Record<string, unknown>, field: ConfigSecretF
   const rawValue = result[field.path];
   if (typeof rawValue !== 'string' || rawValue.startsWith(ENCRYPTED_PREFIX)) {
     result[field.path] = '';
-    if (field.displayPath) {
-      result[field.displayPath] = '';
+    if (field.previewPath) {
+      result[field.previewPath] = '';
     }
     return;
   }
   const value = normalizeSecretString(rawValue);
   if (!value) {
     result[field.path] = '';
-    if (field.displayPath) {
-      result[field.displayPath] = '';
+    if (field.previewPath) {
+      result[field.previewPath] = '';
     }
     return;
   }
   if (field.allowEnvPlaceholder && isEnvPlaceholder(value)) {
     result[field.path] = value;
-    if (field.displayPath) {
-      result[field.displayPath] = '';
+    if (field.previewPath) {
+      result[field.previewPath] = '';
     }
     return;
   }
   result[field.path] = encryptV3(value);
-  if (field.displayPath) {
-    result[field.displayPath] = getDisplaySecretKey(value);
+  if (field.previewPath) {
+    result[field.previewPath] = getSecretPreview(value);
   }
 }
 
 /**
- * Returns a new field map with registered secret entries encrypted (and display
+ * Returns a new field map with registered secret entries encrypted (and preview
  * companions set where configured). Empty values reset the secret and its
- * display companion. Handles both dotted secret paths and object-valued
+ * preview companion. Handles both dotted secret paths and object-valued
  * ancestor entries.
  */
 export function encryptConfigSecretFields(
@@ -375,8 +344,8 @@ export function encryptConfigSecretFields(
   }
 
   for (const field of CONFIG_SECRET_FIELDS) {
-    if (field.displayPath && !(field.path in result) && field.displayPath in result) {
-      delete result[field.displayPath];
+    if (field.previewPath && !(field.path in result) && field.previewPath in result) {
+      delete result[field.previewPath];
     }
     if (field.path in result) {
       writeDottedSecret(result, field);
@@ -388,7 +357,7 @@ export function encryptConfigSecretFields(
 
 /**
  * Returns a cloned config object with registered secret values encrypted
- * before writes. Empty secrets reset their display companions. `basePath`
+ * before writes. Empty secrets reset their preview companions. `basePath`
  * locates `root` within the config tree ('' for whole-overrides writes).
  */
 export function encryptConfigSecrets<T>(root: T, basePath = ''): T {
@@ -467,13 +436,15 @@ export function preserveConfigSecrets<T>(next: T, existing?: unknown, basePath =
     // no ciphertext to preserve verbatim — encrypt it now instead of
     // silently dropping it the first time an unrelated field is edited.
     section[key] = isAlreadyEncrypted || isPlaceholder ? existingSecret : encryptV3(existingSecret);
-    if (field.displayPath) {
-      const displayKey = lastSegment(field.displayPath);
-      const existingDisplay = existingSection[displayKey];
-      if (typeof existingDisplay === 'string') {
-        section[displayKey] = existingDisplay;
+    if (field.previewPath) {
+      const previewKey = lastSegment(field.previewPath);
+      const legacyPath = LEGACY_PREVIEW_PATHS.get(field.path);
+      const legacyPreview = legacyPath ? existingSection[lastSegment(legacyPath)] : undefined;
+      const existingPreview = existingSection[previewKey] ?? legacyPreview;
+      if (typeof existingPreview === 'string') {
+        section[previewKey] = existingPreview;
       } else if (!isAlreadyEncrypted && !isPlaceholder) {
-        section[displayKey] = getDisplaySecretKey(existingSecret);
+        section[previewKey] = getSecretPreview(existingSecret);
       }
     }
   }
@@ -482,7 +453,7 @@ export function preserveConfigSecrets<T>(next: T, existing?: unknown, basePath =
 
 /**
  * Deletes registered secret values from `root` in place so admin reads never
- * return them (encrypted or plaintext). Display companions and plain
+ * return them (encrypted or plaintext). Preview companions and plain
  * `${ENV_VAR}` references (for fields that allow them) are preserved.
  * The caller passes a cloned object.
  */
@@ -507,6 +478,7 @@ export function redactConfigSecrets<T>(root: T): T {
     if (!section) {
       continue;
     }
+    deleteLegacyPreviewKey(section, field);
     const key = segments[segments.length - 1];
     if (!(key in section)) {
       continue;

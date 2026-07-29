@@ -13,13 +13,13 @@ type AdminConfigHandlers = ReturnType<typeof import('./config').createAdminConfi
 let mongoServer: MongoMemoryServer;
 let handlers: AdminConfigHandlers;
 let decryptV3: DataSchemas['decryptV3'];
-let getDisplaySecretKey: typeof import('./secrets').getDisplaySecretKey;
+let getSecretPreview: typeof import('./secrets').getSecretPreview;
 
 interface SecretFieldCase {
   /** Dot-path of the secret field */
   path: string;
-  /** Dot-path of the non-secret masked display companion for `path` */
-  displayPath: string;
+  /** Dot-path of the non-secret masked preview companion for `path` */
+  previewPath: string;
   /** Section object containing the secret plus a non-secret sibling */
   section: string;
   object: Record<string, unknown>;
@@ -33,7 +33,7 @@ const SECRET = 'sk-super-secret-literal';
 const SECRET_FIELD_CASES: SecretFieldCase[] = [
   {
     path: 'langfuse.secretKey',
-    displayPath: 'langfuse.displaySecretKey',
+    previewPath: 'langfuse.secretKeyPreview',
     section: 'langfuse',
     object: { publicKey: 'pk-lf-1', secretKey: SECRET },
     siblingPath: 'langfuse.publicKey',
@@ -41,7 +41,7 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
   {
     path: 'ocr.apiKey',
-    displayPath: 'ocr.displayApiKey',
+    previewPath: 'ocr.apiKeyPreview',
     section: 'ocr',
     object: { apiKey: SECRET, mistralModel: 'mistral-ocr-latest' },
     siblingPath: 'ocr.mistralModel',
@@ -49,7 +49,7 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
   {
     path: 'speech.tts.openai.apiKey',
-    displayPath: 'speech.tts.openai.displayApiKey',
+    previewPath: 'speech.tts.openai.apiKeyPreview',
     section: 'speech',
     object: { tts: { openai: { apiKey: SECRET, model: 'tts-1', voices: ['alloy'] } } },
     siblingPath: 'speech.tts.openai.model',
@@ -57,7 +57,7 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
   {
     path: 'speech.tts.azureOpenAI.apiKey',
-    displayPath: 'speech.tts.azureOpenAI.displayApiKey',
+    previewPath: 'speech.tts.azureOpenAI.apiKeyPreview',
     section: 'speech',
     object: { tts: { azureOpenAI: { apiKey: SECRET, instanceName: 'inst' } } },
     siblingPath: 'speech.tts.azureOpenAI.instanceName',
@@ -65,7 +65,7 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
   {
     path: 'speech.tts.elevenlabs.apiKey',
-    displayPath: 'speech.tts.elevenlabs.displayApiKey',
+    previewPath: 'speech.tts.elevenlabs.apiKeyPreview',
     section: 'speech',
     object: { tts: { elevenlabs: { apiKey: SECRET, model: 'eleven_multilingual_v2' } } },
     siblingPath: 'speech.tts.elevenlabs.model',
@@ -73,7 +73,7 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
   {
     path: 'speech.tts.localai.apiKey',
-    displayPath: 'speech.tts.localai.displayApiKey',
+    previewPath: 'speech.tts.localai.apiKeyPreview',
     section: 'speech',
     object: { tts: { localai: { apiKey: SECRET, url: 'http://localai:8080' } } },
     siblingPath: 'speech.tts.localai.url',
@@ -81,7 +81,7 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
   {
     path: 'speech.stt.openai.apiKey',
-    displayPath: 'speech.stt.openai.displayApiKey',
+    previewPath: 'speech.stt.openai.apiKeyPreview',
     section: 'speech',
     object: { stt: { openai: { apiKey: SECRET, model: 'whisper-1' } } },
     siblingPath: 'speech.stt.openai.model',
@@ -89,7 +89,7 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
   {
     path: 'speech.stt.azureOpenAI.apiKey',
-    displayPath: 'speech.stt.azureOpenAI.displayApiKey',
+    previewPath: 'speech.stt.azureOpenAI.apiKeyPreview',
     section: 'speech',
     object: { stt: { azureOpenAI: { apiKey: SECRET, instanceName: 'inst' } } },
     siblingPath: 'speech.stt.azureOpenAI.instanceName',
@@ -97,7 +97,7 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
   {
     path: 'webSearch.serperApiKey',
-    displayPath: 'webSearch.displaySerperApiKey',
+    previewPath: 'webSearch.serperApiKeyPreview',
     section: 'webSearch',
     object: { serperApiKey: SECRET, searchProvider: 'serper' },
     siblingPath: 'webSearch.searchProvider',
@@ -105,7 +105,7 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
   {
     path: 'webSearch.searxngApiKey',
-    displayPath: 'webSearch.displaySearxngApiKey',
+    previewPath: 'webSearch.searxngApiKeyPreview',
     section: 'webSearch',
     object: { searxngApiKey: SECRET, searxngInstanceUrl: 'https://searx.example.com' },
     siblingPath: 'webSearch.searxngInstanceUrl',
@@ -113,7 +113,7 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
   {
     path: 'webSearch.firecrawlApiKey',
-    displayPath: 'webSearch.displayFirecrawlApiKey',
+    previewPath: 'webSearch.firecrawlApiKeyPreview',
     section: 'webSearch',
     object: { firecrawlApiKey: SECRET, firecrawlApiUrl: 'https://api.firecrawl.dev' },
     siblingPath: 'webSearch.firecrawlApiUrl',
@@ -121,7 +121,7 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
   {
     path: 'webSearch.tavilyApiKey',
-    displayPath: 'webSearch.displayTavilyApiKey',
+    previewPath: 'webSearch.tavilyApiKeyPreview',
     section: 'webSearch',
     object: { tavilyApiKey: SECRET, scraperTimeout: 7500 },
     siblingPath: 'webSearch.scraperTimeout',
@@ -129,7 +129,7 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
   {
     path: 'webSearch.jinaApiKey',
-    displayPath: 'webSearch.displayJinaApiKey',
+    previewPath: 'webSearch.jinaApiKeyPreview',
     section: 'webSearch',
     object: { jinaApiKey: SECRET, jinaApiUrl: 'https://r.jina.ai' },
     siblingPath: 'webSearch.jinaApiUrl',
@@ -137,7 +137,7 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
   {
     path: 'webSearch.cohereApiKey',
-    displayPath: 'webSearch.displayCohereApiKey',
+    previewPath: 'webSearch.cohereApiKeyPreview',
     section: 'webSearch',
     object: { cohereApiKey: SECRET, rerankerType: 'cohere' },
     siblingPath: 'webSearch.rerankerType',
@@ -145,7 +145,7 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
   {
     path: 'endpoints.assistants.apiKey',
-    displayPath: 'endpoints.assistants.displayApiKey',
+    previewPath: 'endpoints.assistants.apiKeyPreview',
     section: 'endpoints',
     object: { assistants: { apiKey: SECRET, disableBuilder: true } },
     siblingPath: 'endpoints.assistants.disableBuilder',
@@ -153,7 +153,7 @@ const SECRET_FIELD_CASES: SecretFieldCase[] = [
   },
   {
     path: 'endpoints.azureAssistants.apiKey',
-    displayPath: 'endpoints.azureAssistants.displayApiKey',
+    previewPath: 'endpoints.azureAssistants.apiKeyPreview',
     section: 'endpoints',
     object: { azureAssistants: { apiKey: SECRET, disableBuilder: true } },
     siblingPath: 'endpoints.azureAssistants.disableBuilder',
@@ -236,7 +236,7 @@ beforeAll(async () => {
   jest.spyOn(dataSchemas.logger, 'debug').mockReturnValue(dataSchemas.logger);
 
   const { createAdminConfigHandlers } = await import('./config');
-  ({ getDisplaySecretKey } = await import('./secrets'));
+  ({ getSecretPreview } = await import('./secrets'));
 
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
@@ -266,8 +266,8 @@ afterAll(async () => {
 describe('config secret registry — real handlers against a real Config collection', () => {
   describe.each(SECRET_FIELD_CASES)(
     '$path',
-    ({ path, displayPath, section, object, siblingPath, siblingValue }) => {
-      it('encrypts dotted patch writes at rest, sets the masked display companion, and redacts the secret from the response', async () => {
+    ({ path, previewPath, section, object, siblingPath, siblingValue }) => {
+      it('encrypts dotted patch writes at rest, sets the masked preview companion, and redacts the secret from the response', async () => {
         const principalId = nextPrincipalId();
         const res = mockRes();
         await handlers.patchConfigField(
@@ -285,15 +285,15 @@ describe('config secret registry — real handlers against a real Config collect
         expect(typeof stored).toBe('string');
         expect(stored).toMatch(/^v3:/);
         expect(decryptV3(stored as string)).toBe(SECRET);
-        expect(getAtPath(overrides, displayPath)).toBe(getDisplaySecretKey(SECRET));
+        expect(getAtPath(overrides, previewPath)).toBe(getSecretPreview(SECRET));
 
         const responseOverrides = (res.body!.config as { overrides: Record<string, unknown> })
           .overrides;
         expect(getAtPath(responseOverrides, path)).toBeUndefined();
-        expect(getAtPath(responseOverrides, displayPath)).toBe(getDisplaySecretKey(SECRET));
+        expect(getAtPath(responseOverrides, previewPath)).toBe(getSecretPreview(SECRET));
       });
 
-      it('encrypts object-valued upsert writes at rest, sets the masked display companion, and redacts reads', async () => {
+      it('encrypts object-valued upsert writes at rest, sets the masked preview companion, and redacts reads', async () => {
         const principalId = nextPrincipalId();
         const upsertRes = mockRes();
         await handlers.upsertConfigOverrides(
@@ -308,7 +308,7 @@ describe('config secret registry — real handlers against a real Config collect
 
         const overrides = await readRawOverrides(principalId);
         expect(decryptV3(getAtPath(overrides, path) as string)).toBe(SECRET);
-        expect(getAtPath(overrides, displayPath)).toBe(getDisplaySecretKey(SECRET));
+        expect(getAtPath(overrides, previewPath)).toBe(getSecretPreview(SECRET));
 
         const getRes = mockRes();
         await handlers.getConfig(
@@ -321,7 +321,7 @@ describe('config secret registry — real handlers against a real Config collect
         const getOverrides = (getRes.body!.config as { overrides: Record<string, unknown> })
           .overrides;
         expect(getAtPath(getOverrides, path)).toBeUndefined();
-        expect(getAtPath(getOverrides, displayPath)).toBe(getDisplaySecretKey(SECRET));
+        expect(getAtPath(getOverrides, previewPath)).toBe(getSecretPreview(SECRET));
 
         const listRes = mockRes();
         await handlers.listConfigs(mockReq(), listRes);
@@ -330,7 +330,7 @@ describe('config secret registry — real handlers against a real Config collect
         expect(JSON.stringify(listRes.body)).not.toContain('v3:');
       });
 
-      it('preserves the stored secret and its display companion across an unrelated dotted patch', async () => {
+      it('preserves the stored secret and its preview companion across an unrelated dotted patch', async () => {
         const principalId = nextPrincipalId();
         await handlers.patchConfigField(
           mockReq({
@@ -341,8 +341,8 @@ describe('config secret registry — real handlers against a real Config collect
         );
         const rawBefore = await readRawOverrides(principalId);
         const before = getAtPath(rawBefore, path);
-        const displayBefore = getAtPath(rawBefore, displayPath);
-        expect(displayBefore).toBe(getDisplaySecretKey(SECRET));
+        const displayBefore = getAtPath(rawBefore, previewPath);
+        expect(displayBefore).toBe(getSecretPreview(SECRET));
 
         await handlers.patchConfigField(
           mockReq({
@@ -355,11 +355,11 @@ describe('config secret registry — real handlers against a real Config collect
         const overrides = await readRawOverrides(principalId);
         expect(getAtPath(overrides, path)).toBe(before);
         expect(decryptV3(getAtPath(overrides, path) as string)).toBe(SECRET);
-        expect(getAtPath(overrides, displayPath)).toBe(displayBefore);
+        expect(getAtPath(overrides, previewPath)).toBe(displayBefore);
         expect(getAtPath(overrides, siblingPath)).toEqual(siblingValue);
       });
 
-      it('round-trips a redacted read (including the visible display companion) back through a full upsert without clobbering the secret', async () => {
+      it('round-trips a redacted read (including the visible preview companion) back through a full upsert without clobbering the secret', async () => {
         const principalId = nextPrincipalId();
         await handlers.upsertConfigOverrides(
           mockReq({
@@ -370,7 +370,7 @@ describe('config secret registry — real handlers against a real Config collect
         );
         const rawBefore = await readRawOverrides(principalId);
         const before = getAtPath(rawBefore, path);
-        const displayBefore = getAtPath(rawBefore, displayPath);
+        const displayBefore = getAtPath(rawBefore, previewPath);
 
         const getRes = mockRes();
         await handlers.getConfig(
@@ -380,7 +380,7 @@ describe('config secret registry — real handlers against a real Config collect
         const redactedOverrides = (getRes.body!.config as { overrides: Record<string, unknown> })
           .overrides;
         expect(getAtPath(redactedOverrides, path)).toBeUndefined();
-        expect(getAtPath(redactedOverrides, displayPath)).toBe(displayBefore);
+        expect(getAtPath(redactedOverrides, previewPath)).toBe(displayBefore);
 
         const clientEdited = JSON.parse(JSON.stringify(redactedOverrides)) as Record<
           string,
@@ -400,10 +400,10 @@ describe('config secret registry — real handlers against a real Config collect
         const overrides = await readRawOverrides(principalId);
         expect(getAtPath(overrides, path)).toBe(before);
         expect(decryptV3(getAtPath(overrides, path) as string)).toBe(SECRET);
-        expect(getAtPath(overrides, displayPath)).toBe(displayBefore);
+        expect(getAtPath(overrides, previewPath)).toBe(displayBefore);
       });
 
-      it('clears the secret and its display companion when explicitly set to an empty value', async () => {
+      it('clears the secret and its preview companion when explicitly set to an empty value', async () => {
         const principalId = nextPrincipalId();
         await handlers.patchConfigField(
           mockReq({
@@ -421,7 +421,7 @@ describe('config secret registry — real handlers against a real Config collect
         );
         const overrides = await readRawOverrides(principalId);
         expect(getAtPath(overrides, path)).toBe('');
-        expect(getAtPath(overrides, displayPath)).toBe('');
+        expect(getAtPath(overrides, previewPath)).toBe('');
       });
 
       it('rejects encrypted value submissions', async () => {
@@ -436,7 +436,7 @@ describe('config secret registry — real handlers against a real Config collect
         expect(res.statusCode).toBe(400);
       });
 
-      it('rejects a direct dotted-patch write to the display companion path itself', async () => {
+      it('rejects a direct dotted-patch write to the preview companion path itself', async () => {
         const principalId = nextPrincipalId();
         await handlers.patchConfigField(
           mockReq({
@@ -450,7 +450,7 @@ describe('config secret registry — real handlers against a real Config collect
         await handlers.patchConfigField(
           mockReq({
             params: { principalType: 'role', principalId },
-            body: { entries: [{ fieldPath: displayPath, value: 'attacker-supplied-display' }] },
+            body: { entries: [{ fieldPath: previewPath, value: 'attacker-supplied-display' }] },
           }),
           res,
         );
@@ -458,7 +458,7 @@ describe('config secret registry — real handlers against a real Config collect
 
         const overrides = await readRawOverrides(principalId);
         expect(decryptV3(getAtPath(overrides, path) as string)).toBe(SECRET);
-        expect(getAtPath(overrides, displayPath)).toBe(getDisplaySecretKey(SECRET));
+        expect(getAtPath(overrides, previewPath)).toBe(getSecretPreview(SECRET));
       });
 
       it('never persists a client-supplied display value as the real secret via an object-valued upsert', async () => {
@@ -470,9 +470,9 @@ describe('config secret registry — real handlers against a real Config collect
           cursor = cursor[objectPathSegments[i]] as Record<string, unknown>;
         }
         const secretKey = objectPathSegments[objectPathSegments.length - 1];
-        const displayKey = displayPath.split('.').slice(-1)[0];
+        const previewKey = previewPath.split('.').slice(-1)[0];
         delete cursor[secretKey];
-        cursor[displayKey] = 'v3:attacker-supplied-looks-encrypted';
+        cursor[previewKey] = 'v3:attacker-supplied-looks-encrypted';
 
         const res = mockRes();
         await handlers.upsertConfigOverrides(
@@ -486,7 +486,7 @@ describe('config secret registry — real handlers against a real Config collect
 
         const overrides = await readRawOverrides(principalId);
         expect(getAtPath(overrides, path)).toBeUndefined();
-        expect(getAtPath(overrides, displayPath)).toBeUndefined();
+        expect(getAtPath(overrides, previewPath)).toBeUndefined();
       });
     },
   );
@@ -535,12 +535,12 @@ describe('config secret registry — real handlers against a real Config collect
       const overrides = (getRes.body!.config as { overrides: Record<string, unknown> }).overrides;
       expect(getAtPath(overrides, 'speech.tts.openai.model')).toBe('tts-1');
       expect(getAtPath(overrides, 'webSearch.searchProvider')).toBe('serper');
-      // Documents written before this field existed have no display companion at all.
+      // Documents written before this field existed have no preview companion at all.
       // Redaction must not fabricate one — it only ever copies forward a companion
       // that a prior encrypt actually wrote.
-      expect(getAtPath(overrides, 'speech.tts.openai.displayApiKey')).toBeUndefined();
-      expect(getAtPath(overrides, 'ocr.displayApiKey')).toBeUndefined();
-      expect(getAtPath(overrides, 'webSearch.displaySerperApiKey')).toBeUndefined();
+      expect(getAtPath(overrides, 'speech.tts.openai.apiKeyPreview')).toBeUndefined();
+      expect(getAtPath(overrides, 'ocr.apiKeyPreview')).toBeUndefined();
+      expect(getAtPath(overrides, 'webSearch.serperApiKeyPreview')).toBeUndefined();
 
       const listRes = mockRes();
       await handlers.listConfigs(mockReq(), listRes);
@@ -553,12 +553,12 @@ describe('config secret registry — real handlers against a real Config collect
       const appConfig = {
         speech: {
           tts: {
-            openai: { apiKey: SECRET, displayApiKey: getDisplaySecretKey(SECRET), model: 'tts-1' },
+            openai: { apiKey: SECRET, apiKeyPreview: getSecretPreview(SECRET), model: 'tts-1' },
           },
         },
         ocr: { apiKey: '${OCR_API_KEY}' },
         webSearch: { serperApiKey: SECRET, searchProvider: 'serper' },
-        langfuse: { publicKey: 'pk-lf-1', secretKey: 'v3:stored', displaySecretKey: 'sk-...ret' },
+        langfuse: { publicKey: 'pk-lf-1', secretKey: 'v3:stored', secretKeyPreview: 'sk-...ret' },
         paths: { uploads: '/tmp' },
         config: {
           speech: { tts: { openai: { apiKey: SECRET, model: 'tts-1' } } },
@@ -590,10 +590,8 @@ describe('config secret registry — real handlers against a real Config collect
       expect(getAtPath(config, 'ocr.apiKey')).toBe('${OCR_API_KEY}');
       expect(getAtPath(config, 'speech.tts.openai.model')).toBe('tts-1');
       expect(getAtPath(config, 'speech.tts.openai.apiKey')).toBeUndefined();
-      expect(getAtPath(config, 'speech.tts.openai.displayApiKey')).toBe(
-        getDisplaySecretKey(SECRET),
-      );
-      expect(getAtPath(config, 'langfuse.displaySecretKey')).toBe('sk-...ret');
+      expect(getAtPath(config, 'speech.tts.openai.apiKeyPreview')).toBe(getSecretPreview(SECRET));
+      expect(getAtPath(config, 'langfuse.secretKeyPreview')).toBe('sk-...ret');
       expect(getAtPath(config, 'config.speech.tts.openai.apiKey')).toBeUndefined();
     });
   });
