@@ -1,10 +1,11 @@
 import userEvent from '@testing-library/user-event';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import LangfuseConnection from '../LangfuseConnection';
 
 const mockGet = jest.fn();
 const mockUpdate = jest.fn();
 const mockTest = jest.fn();
+const mockRefetch = jest.fn();
 const destinationLabels = {
   eu: 'eu - https://cloud.langfuse.com',
   us: 'us - https://us.cloud.langfuse.com',
@@ -39,10 +40,15 @@ beforeEach(() => {
   mockGet.mockReset();
   mockUpdate.mockReset();
   mockTest.mockReset();
+  mockRefetch.mockReset();
   mockTest.mockImplementation((_payload, options) => {
     options?.onSuccess?.({ success: true });
   });
   mockGet.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    isFetching: false,
+    refetch: mockRefetch,
     data: {
       configured: false,
       enabled: false,
@@ -94,8 +100,8 @@ describe('LangfuseConnection', () => {
       'autocomplete',
       'off',
     );
-    expect(screen.getByLabelText(/com_ui_langfuse_secret_key/)).toHaveAttribute('type', 'text');
-    expect(screen.queryByRole('button', { name: 'Show secret' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/com_ui_langfuse_secret_key/)).toHaveAttribute('type', 'password');
+    expect(screen.getByRole('button', { name: 'Show secret' })).toBeInTheDocument();
     expect(screen.queryByText('com_ui_langfuse_test')).not.toBeInTheDocument();
     expect(screen.getByText('com_ui_langfuse_status_not_configured')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'com_ui_cancel' })).toBeVisible();
@@ -108,6 +114,82 @@ describe('LangfuseConnection', () => {
     ).not.toBeInTheDocument();
     expect(mockTest).not.toHaveBeenCalled();
   });
+
+  it('renders a loading state while the stored connection is loading', () => {
+    mockGet.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      isFetching: true,
+      refetch: mockRefetch,
+    });
+
+    render(<LangfuseConnection />);
+
+    expect(screen.getByTestId('langfuse-connection-loading')).toBeVisible();
+    expect(screen.getByText('com_ui_loading')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_langfuse_status_not_configured')).not.toBeInTheDocument();
+  });
+
+  it('renders a retryable error when the stored connection cannot be loaded', async () => {
+    mockGet.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      isFetching: false,
+      refetch: mockRefetch,
+    });
+
+    render(<LangfuseConnection />);
+
+    expect(screen.getByText('com_ui_langfuse_load_error')).toBeVisible();
+    expect(screen.queryByText('com_ui_langfuse_status_not_configured')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    {
+      credential: 'public key',
+      editButton: 'com_ui_edit com_ui_langfuse_public_key',
+      inputLabel: 'com_ui_langfuse_public_key',
+      value: 'pk-lf-updated',
+    },
+    {
+      credential: 'secret key',
+      editButton: 'com_ui_edit com_ui_langfuse_secret_key',
+      inputLabel: 'com_ui_langfuse_secret_key',
+      value: 'sk-lf-updated',
+    },
+  ])(
+    'keeps edited $credential unverified when an earlier automatic test completes',
+    async ({ editButton, inputLabel, value }) => {
+      let completeTest: ((result: { success: boolean }) => void) | undefined;
+      mockTest.mockImplementation((_payload, options) => {
+        completeTest = options?.onSuccess;
+      });
+      mockGet.mockReturnValue({
+        data: {
+          configured: true,
+          enabled: true,
+          destinations: [{ key: 'eu', baseUrl: 'https://cloud.langfuse.com' }],
+          destination: 'eu',
+          publicKey: 'pk-lf-original',
+          secretKeyPreview: 'sk-lf-...inal',
+        },
+      });
+
+      render(<LangfuseConnection />);
+      await waitFor(() => expect(mockTest).toHaveBeenCalledTimes(1));
+      await userEvent.click(screen.getByRole('button', { name: editButton }));
+      fireEvent.change(screen.getByLabelText(inputLabel), { target: { value } });
+
+      expect(screen.getByText('com_ui_langfuse_status_not_verified')).toBeVisible();
+      act(() => completeTest?.({ success: true }));
+      expect(screen.getByText('com_ui_langfuse_status_not_verified')).toBeVisible();
+      expect(screen.queryByText('com_ui_langfuse_status_connected')).not.toBeInTheDocument();
+    },
+  );
 
   it('prefills stored values, tests on load, and keeps destination editable', async () => {
     mockGet.mockReturnValue({

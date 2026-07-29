@@ -25,6 +25,7 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.LANGFUSE_FANOUT_ENABLED;
   delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+  delete process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED;
   delete process.env.LANGFUSE_PUBLIC_KEY;
   delete process.env.LANGFUSE_SECRET_KEY;
   delete process.env.LANGFUSE_TRACING_ENABLED;
@@ -164,6 +165,18 @@ describe('createAdminLangfuseHandlers', () => {
       expect(res.body).toEqual({ error: 'Langfuse connection settings are not available' });
       expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
       expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects connection settings when tenant fanout export is emergency-disabled', async () => {
+      process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = 'true';
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.getConnection(mockReq(), res);
+
+      expect(res.statusCode).toBe(404);
+      expect(res.body).toEqual({ error: 'Langfuse connection settings are not available' });
+      expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
     });
 
     it('allows connection settings without fanout in single-tenant mode', async () => {

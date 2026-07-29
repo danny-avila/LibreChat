@@ -9,6 +9,7 @@ import {
   HoverCardTrigger,
   Input,
   Label,
+  SecretInput,
   Spinner,
   useToastContext,
 } from '@librechat/client';
@@ -103,7 +104,13 @@ function getDisplayPublicKey(publicKey: string): string {
 export default function LangfuseConnection() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { data: status } = useGetLangfuseConnectionQuery();
+  const {
+    data: status,
+    isLoading: isConnectionLoading,
+    isError: isConnectionError,
+    isFetching: isConnectionFetching,
+    refetch: refetchConnection,
+  } = useGetLangfuseConnectionQuery();
   const updateMutation = useUpdateLangfuseConnectionMutation();
   const testMutation = useTestLangfuseConnectionMutation();
 
@@ -406,6 +413,34 @@ export default function LangfuseConnection() {
     saveEnabledState();
   };
 
+  if (isConnectionLoading && connectionStatus == null) {
+    return (
+      <div
+        data-testid="langfuse-connection-loading"
+        className="flex items-center justify-center rounded-xl border border-border-light py-12"
+      >
+        <Spinner className="h-6 w-6 text-text-secondary" />
+        <span className="sr-only">{localize('com_ui_loading')}</span>
+      </div>
+    );
+  }
+
+  if (isConnectionError && connectionStatus == null) {
+    return (
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-border-light px-6 py-10 text-center">
+        <p className="text-sm text-text-secondary">{localize('com_ui_langfuse_load_error')}</p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => refetchConnection()}
+          disabled={isConnectionFetching}
+        >
+          {localize('com_ui_retry')}
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <HoverCard openDelay={50}>
@@ -490,6 +525,7 @@ export default function LangfuseConnection() {
             disabled={busy}
             placeholder="pk-lf-..."
             onChange={(e) => {
+              connectionTestRequestRef.current += 1;
               setPublicKey(e.target.value);
               setConnectionTestState('unverified');
               setConnectionTestMessage('');
@@ -514,10 +550,9 @@ export default function LangfuseConnection() {
           </button>
         )}
         {secretInputVisible && (
-          <Input
+          <SecretInput
             ref={secretKeyInputRef}
             id="langfuse-private-token"
-            type="text"
             autoComplete="off"
             data-lpignore="true"
             data-1p-ignore="true"
@@ -527,6 +562,7 @@ export default function LangfuseConnection() {
             disabled={busy}
             placeholder="sk-lf-..."
             onChange={(e) => {
+              connectionTestRequestRef.current += 1;
               setSecretKey(e.target.value);
               setConnectionTestState('unverified');
               setConnectionTestMessage('');

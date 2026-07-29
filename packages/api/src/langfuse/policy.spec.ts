@@ -5,6 +5,7 @@ const envKeys = [
   'LANGFUSE_SAMPLE_RATE',
   'LANGFUSE_FANOUT_ENABLED',
   'LANGFUSE_FANOUT_COLLECTOR_URL',
+  'LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED',
   'TENANT_ISOLATION_STRICT',
 ];
 
@@ -60,6 +61,23 @@ describe('Langfuse policy', () => {
     );
 
     expect(usesLangfuseMultiTenantRouting()).toBe(true);
+    expect(isLangfuseConnectionAvailable()).toBe(true);
+  });
+
+  it('hides fanout connection settings when tenant export is emergency-disabled', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector:4318';
+    process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = 'true';
+    const { isLangfuseConnectionAvailable, isLangfuseFanoutEnabled } = await import('./policy');
+
+    expect(isLangfuseFanoutEnabled()).toBe(true);
+    expect(isLangfuseConnectionAvailable()).toBe(false);
+  });
+
+  it('does not apply the fanout emergency switch to single-tenant connections', async () => {
+    process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = 'true';
+    const { isLangfuseConnectionAvailable } = await import('./policy');
+
     expect(isLangfuseConnectionAvailable()).toBe(true);
   });
 

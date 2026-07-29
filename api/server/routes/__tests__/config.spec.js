@@ -108,6 +108,7 @@ afterEach(() => {
   delete process.env.HELP_AND_FAQ_URL;
   delete process.env.LANGFUSE_FANOUT_ENABLED;
   delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+  delete process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED;
   delete process.env.LANGFUSE_PUBLIC_KEY;
   delete process.env.LANGFUSE_SECRET_KEY;
   delete process.env.LANGFUSE_TRACING_ENABLED;
@@ -414,6 +415,23 @@ describe('GET /api/config', () => {
       response = await request(app).get('/api/config');
       expect(response.body.langfuseFanoutEnabled).toBe(true);
       expect(response.body.langfuseConnectionAccess).toBe(true);
+    });
+
+    it('hides Langfuse connection access when tenant export is emergency-disabled', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      mockHasConfigCapability.mockResolvedValue(true);
+      process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
+      process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = 'true';
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.langfuseFanoutEnabled).toBe(true);
+      expect(response.body.langfuseConnectionAccess).toBe(false);
+      expect(mockHasCapability).not.toHaveBeenCalled();
+      expect(mockHasConfigCapability).not.toHaveBeenCalled();
     });
 
     it('advertises Langfuse connection access from capabilities rather than the user role', async () => {

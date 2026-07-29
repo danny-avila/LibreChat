@@ -75,7 +75,7 @@ export function isLangfuseConnectionAvailable(): boolean {
     return false;
   }
   if (usesLangfuseMultiTenantRouting()) {
-    return isLangfuseFanoutEnabled();
+    return isLangfuseFanoutEnabled() && isLangfuseTenantExportEnabled();
   }
   return !hasLangfuseEnvCredentials();
 }
