@@ -124,6 +124,7 @@ export default function useSteering({
   const { mutate: markFilesUsage } = useMarkFilesUsageMutation();
   const defaultAction = useRecoilValue<DuringRunAction>(store.duringRunDefaultAction);
   const setDefaultAction = useSetRecoilState(store.duringRunDefaultAction);
+  const steerInterruptsByDefault = useRecoilValue(store.steerInterruptsByDefault);
 
   const endpoint = conversation?.endpointType ?? conversation?.endpoint;
   const steerable = !isAssistantsEndpoint(endpoint);
@@ -449,11 +450,17 @@ export default function useSteering({
    *  the item's quotes and manual skills survive. Composer-origin steers pass
    *  nothing, leaving their context staged in the composer atoms. */
   const submitSteer = useCallback(
-    (text: string, steerFiles?: TMessage['files'], context?: QueuedMessageContext): boolean => {
+    (
+      text: string,
+      steerFiles?: TMessage['files'],
+      context?: QueuedMessageContext,
+      opts?: { preempt?: boolean },
+    ): boolean => {
       const trimmed = text.trim();
       if (trimmed.length === 0 || !hasRealConvoId) {
         return false;
       }
+      const preempt = opts?.preempt === true;
       const files = steerFiles && steerFiles.length > 0 ? steerFiles : undefined;
       /** Rides every chip state so a terminal conversion (late ACK, run-end
        *  leftover report) can restore the queued item's full context. */
@@ -470,18 +477,24 @@ export default function useSteering({
         status: 'sending',
         createdAt,
         ...(files && { files }),
+        ...(preempt && { preempt: true }),
         ...carried,
       });
       steerMessage(
-        { conversationId, text: trimmed, ...(files && { files }) },
+        { conversationId, text: trimmed, ...(files && { files }), ...(preempt && { preempt }) },
         {
           onSuccess: (response) => {
+            /** The server's echo is authoritative: a deployment whose SDK
+             *  cannot seal mid-stream still queues the steer and answers
+             *  `preempt: false`, which relabels the chip to the ordinary
+             *  wording instead of surfacing an error. */
             acknowledgeSteer(conversationId, localId, {
               steerId: response.steerId,
               text: trimmed,
               status: 'pending',
               createdAt,
               ...(files && { files }),
+              ...(response.preempt === true && { preempt: true }),
               ...carried,
             });
           },
@@ -528,6 +541,7 @@ export default function useSteering({
               status: 'failed',
               createdAt,
               ...(files && { files }),
+              ...(preempt && { preempt: true }),
               ...carried,
             });
           },
@@ -553,12 +567,12 @@ export default function useSteering({
    *  ride the steer as one unit (the server re-fetches + encodes them at the
    *  injection boundary). Files are taken only after the guards pass. */
   const steerFromComposer = useCallback(
-    (text: string): boolean => {
+    (text: string, preempt = false): boolean => {
       const trimmed = text.trim();
       if (trimmed.length === 0 || filesLoading || !hasRealConvoId) {
         return false;
       }
-      const consumed = submitSteer(trimmed, takeComposerFiles());
+      const consumed = submitSteer(trimmed, takeComposerFiles(), undefined, { preempt });
       if (consumed) {
         takeComposerDraft();
       }
@@ -589,9 +603,12 @@ export default function useSteering({
       text: string,
       steerFiles?: TMessage['files'],
       context?: QueuedMessageContext,
+      opts?: { preempt?: boolean },
     ) => {
       replaceSteerChip(conversationId, steerId, null);
-      submitSteer(text, steerFiles, context);
+      /** A failed interrupt-steer must retry AS an interrupt — resubmitting it
+       *  as an ordinary steer would silently let generation run on. */
+      submitSteer(text, steerFiles, context, opts);
     },
     [conversationId, replaceSteerChip, submitSteer],
   );
@@ -740,6 +757,51 @@ export default function useSteering({
     ],
   );
 
+  /**
+   * Interrupt & steer: the same POST, queue, chip lifecycle and degradation
+   * ladder as an ordinary steer — the only difference is that the server asks
+   * the generating replica to seal its model stream at the next
+   * provider-safe boundary instead of waiting for a tool step. The partial
+   * answer is kept and generation resumes in the same message.
+   *
+   * Falls back to `interruptAndSend` ONLY before a conversation exists:
+   * steering needs a server-side job, so `submitSteer` hard-refuses without a
+   * real conversationId, and an always-visible button would otherwise be dead
+   * for the entire first turn — exactly when a user most wants to stop a long
+   * answer.
+   *
+   * A run paused on tool approval refuses outright instead. `canSteer` is
+   * false there too, but routing that into `interruptAndSend` would hard-abort
+   * the run and discard the partial answer — the exact opposite of what this
+   * action promises. The standalone button is disabled while paused; the
+   * keyboard and hovercard paths reach here, so the guard lives here.
+   */
+  const interruptSteer = useCallback(
+    (text: string): boolean => {
+      const trimmed = text.trim();
+      if (trimmed.length === 0 || filesLoading || pausedOnApproval) {
+        return false;
+      }
+      if (!hasRealConvoId) {
+        return interruptAndSend(trimmed);
+      }
+      const consumed = submitSteer(trimmed, takeComposerFiles(), undefined, { preempt: true });
+      if (consumed) {
+        takeComposerDraft();
+      }
+      return consumed;
+    },
+    [
+      filesLoading,
+      pausedOnApproval,
+      hasRealConvoId,
+      interruptAndSend,
+      takeComposerFiles,
+      takeComposerDraft,
+      submitSteer,
+    ],
+  );
+
   /** Routes a during-run submit to the effective action. Returns true when consumed. */
   const submitDuringRun = useCallback(
     (text: string): boolean => {
@@ -747,11 +809,20 @@ export default function useSteering({
         return false;
       }
       if (effectiveAction === 'steer') {
-        return steerFromComposer(text);
+        /** Only the DEFAULT route honours the preference — the explicit Steer
+         *  row and the Ctrl/Cmd+Enter alternate stay non-preempting, or they
+         *  would become indistinguishable from Interrupt & steer. */
+        return steerFromComposer(text, steerInterruptsByDefault);
       }
       return queueFromComposer(text);
     },
-    [duringRunActive, effectiveAction, steerFromComposer, queueFromComposer],
+    [
+      duringRunActive,
+      effectiveAction,
+      steerInterruptsByDefault,
+      steerFromComposer,
+      queueFromComposer,
+    ],
   );
 
   /** Memoized so consumers like `memo(PendingSteerChips)` can bail on the
@@ -778,6 +849,7 @@ export default function useSteering({
       removeQueued,
       sendQueuedNow,
       interruptAndSend,
+      interruptSteer,
     }),
     [
       enabled,
@@ -800,6 +872,7 @@ export default function useSteering({
       removeQueued,
       sendQueuedNow,
       interruptAndSend,
+      interruptSteer,
     ],
   );
 }

@@ -252,6 +252,7 @@ export default function useResumeOnLoad(
               status: 'pending' as const,
               createdAt: steer.createdAt ?? Date.now(),
               ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+              ...(steer.preempt === true && { preempt: true }),
               ...carriedSteerContext(chipById.get(steer.steerId)),
             })),
             ...prev.filter((steer) => steer.status === 'failed'),

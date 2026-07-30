@@ -508,6 +508,169 @@ describe('useSteering', () => {
     });
   });
 
+  describe('interrupt & steer (preempt)', () => {
+    it('posts preempt: true and marks the optimistic chip', () => {
+      const { result } = setup();
+      act(() => {
+        result.current.interruptSteer('stop and do this');
+      });
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'stop and do this', preempt: true }),
+        expect.anything(),
+      );
+    });
+
+    /**
+     * Steering needs a server-side job, so `submitSteer` hard-refuses without
+     * a real conversationId. Without this fallback the always-visible button
+     * would be dead for the whole first turn.
+     */
+    it('falls back to interruptAndSend before a conversation exists', () => {
+      const { result, stopGenerating } = setup({
+        conversationId: Constants.NEW_CONVO as string,
+      });
+      let consumed = false;
+      act(() => {
+        consumed = result.current.interruptSteer('turn one interrupt');
+      });
+      expect(consumed).toBe(true);
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(stopGenerating).toHaveBeenCalled();
+    });
+
+    it('refuses empty text without touching the run', () => {
+      const { result, stopGenerating } = setup();
+      let consumed = true;
+      act(() => {
+        consumed = result.current.interruptSteer('   ');
+      });
+      expect(consumed).toBe(false);
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(stopGenerating).not.toHaveBeenCalled();
+    });
+
+    /**
+     * `canSteer` is false while paused, but routing that into
+     * `interruptAndSend` would hard-abort the run and discard the partial
+     * answer — the opposite of what the action promises.
+     */
+    it('refuses while paused on tool approval instead of aborting', () => {
+      mockMessages = [
+        {
+          messageId: 'm1',
+          conversationId: CONVO_ID,
+          isCreatedByUser: false,
+          content: [
+            {
+              type: ContentTypes.TOOL_CALL,
+              [ContentTypes.TOOL_CALL]: { id: 'call_1', name: 't', approval: 'pending' },
+            },
+          ],
+        } as unknown as TMessage,
+      ];
+      const { result, stopGenerating } = setup();
+      let consumed = true;
+      act(() => {
+        consumed = result.current.interruptSteer('do not abort me');
+      });
+      mockMessages = undefined;
+
+      expect(consumed).toBe(false);
+      expect(stopGenerating).not.toHaveBeenCalled();
+      expect(mockMutate).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The explicit Steer row and the Ctrl/Cmd+Enter alternate must stay
+     * non-preempting, or they become indistinguishable from Interrupt & steer.
+     */
+    it('leaves the explicit Steer action non-preempting even with the preference on', () => {
+      const { result } = setup({}, ({ set }) => {
+        set(store.steerInterruptsByDefault, true);
+      });
+      act(() => {
+        result.current.steerFromComposer('explicit steer row');
+      });
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.not.objectContaining({ preempt: true }),
+        expect.anything(),
+      );
+    });
+
+    it('retry resubmits a failed interrupt-steer AS an interrupt', () => {
+      const { result } = setup();
+      act(() => {
+        result.current.retrySteer('chip-1', 'retry me', undefined, undefined, { preempt: true });
+      });
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'retry me', preempt: true }),
+        expect.anything(),
+      );
+    });
+
+    it('an ordinary steer does not preempt by default', () => {
+      const { result } = setup();
+      act(() => {
+        result.current.submitDuringRun('just steer');
+      });
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.not.objectContaining({ preempt: true }),
+        expect.anything(),
+      );
+    });
+
+    it('steerInterruptsByDefault makes the default Enter route preempt', () => {
+      const { result } = setup({}, ({ set }) => {
+        set(store.steerInterruptsByDefault, true);
+      });
+      act(() => {
+        result.current.submitDuringRun('enter should interrupt');
+      });
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ preempt: true }),
+        expect.anything(),
+      );
+    });
+
+    /**
+     * Capability degradation is a relabel, never an error: the server echoes
+     * what it actually armed and the chip follows it.
+     */
+    it('honours a server echo of preempt: false on the ACK', () => {
+      mockMutate.mockImplementation((_params, { onSuccess }) => {
+        onSuccess({
+          status: 'queued',
+          steerId: 'server-1',
+          position: 1,
+          conversationId: CONVO_ID,
+          preempt: false,
+        });
+      });
+      const { result } = setup();
+      act(() => {
+        result.current.interruptSteer('interrupt me');
+      });
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ preempt: true }),
+        expect.anything(),
+      );
+    });
+
+    it('is idempotent enough for a double click (two chips, both armed)', () => {
+      const { result } = setup();
+      act(() => {
+        result.current.interruptSteer('first');
+        result.current.interruptSteer('second');
+      });
+      expect(mockMutate).toHaveBeenCalledTimes(2);
+      expect(mockMutate).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ text: 'second', preempt: true }),
+        expect.anything(),
+      );
+    });
+  });
+
   describe('interruptAndSend + queue helpers', () => {
     function setupWithState(
       params: HookParams = {},

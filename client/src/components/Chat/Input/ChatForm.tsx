@@ -26,6 +26,7 @@ import PendingManualSkillsChips from './PendingManualSkillsChips';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import { cn, getModelSpec, removeFocusRings } from '~/utils';
+import InterruptSteerButton from './InterruptSteerButton';
 import DuringRunSendButton from './DuringRunSendButton';
 import { useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
@@ -344,13 +345,16 @@ const ChatForm = memo(function ChatForm({
   );
 
   /** ⌘/Ctrl+Enter = the non-default during-run action, ⌥/Alt+Enter =
-   *  interrupt & send — the counterpart of Enter's `submitDuringRun`. */
+   *  interrupt & send (discards the answer), ⌘/Ctrl+Shift+Enter = interrupt &
+   *  steer (keeps it) — all counterparts of Enter's `submitDuringRun`. */
   const handleDuringRunModifier = useCallback(
-    (kind: 'other' | 'interrupt') => {
+    (kind: 'other' | 'interrupt' | 'preempt') => {
       const text = methods.getValues('text');
       let consumed = false;
       if (kind === 'interrupt') {
         consumed = steering.interruptAndSend(text);
+      } else if (kind === 'preempt') {
+        consumed = steering.interruptSteer(text);
       } else if (steering.effectiveAction === 'steer') {
         consumed = steering.queueFromComposer(text);
       } else {
@@ -660,6 +664,16 @@ const ChatForm = memo(function ChatForm({
                     disabled={disableInputs || isNotAppendable}
                     isSubmitting={isSubmitting}
                   />
+                )}
+                {steering.duringRunActive && (textValue?.trim() ?? '') !== '' && (
+                  <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
+                    <InterruptSteerButton
+                      steering={steering}
+                      getText={() => methods.getValues('text')}
+                      onConsumed={() => methods.reset()}
+                      disabled={filesLoading}
+                    />
+                  </div>
                 )}
                 <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
                   {isSubmitting && showStopButton && !answerMode.active
