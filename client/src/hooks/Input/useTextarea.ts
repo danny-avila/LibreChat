@@ -51,7 +51,7 @@ export default function useTextarea({
   allowSubmitWhileGenerating?: boolean;
   /** During-run modifier chords: ⌘/Ctrl+Enter = the non-default action,
    *  ⌥/Alt+Enter = interrupt & send. Enter itself submits the default. */
-  onDuringRunModifier?: (kind: 'other' | 'interrupt') => void;
+  onDuringRunModifier?: (kind: 'other' | 'interrupt' | 'preempt') => void;
 }) {
   const localize = useLocalize();
   const getSender = useGetSender();
@@ -210,6 +210,15 @@ export default function useTextarea({
         if (e.altKey) {
           e.preventDefault();
           onDuringRunModifier('interrupt');
+          return;
+        }
+        // Before the bare Ctrl/Cmd branch below, which would otherwise
+        // swallow the shifted chord. Yields to a rebound submit shortcut for
+        // the same reason that branch does: a user who bound submit to this
+        // chord must keep getting submit.
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && submitOverride === undefined) {
+          e.preventDefault();
+          onDuringRunModifier('preempt');
           return;
         }
         // Only when plain Enter is the submit key — for Ctrl/Cmd+Enter

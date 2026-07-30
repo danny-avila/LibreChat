@@ -308,10 +308,11 @@ const pendingQuotesByConvoId = atomFamily<string[], string>({
 
 /**
  * A steer message submitted mid-run. Server truth: `sending` covers the POST
- * in flight, `pending` means the server queued it (awaiting a tool-batch
- * boundary), `failed` keeps the text recoverable after a rejected POST. The
- * chip disappears when `on_steer_applied` lands (the inline content part
- * becomes the durable record).
+ * in flight, `pending` means the server queued it (awaiting its injection
+ * boundary — the next tool batch, or the next safe token boundary when
+ * `preempt` was armed), `failed` keeps the text recoverable after a rejected
+ * POST. The chip disappears when `on_steer_applied` lands (the inline content
+ * part becomes the durable record).
  */
 export type PendingSteer = {
   steerId: string;
@@ -325,6 +326,10 @@ export type PendingSteer = {
   quotes?: string[];
   /** Manual skill picks carried the same way as `quotes`. */
   manualSkills?: string[];
+  /** Asked the run to seal generation at the next safe boundary rather than
+   *  wait for a tool step. Labelling only — the server owns the behaviour and
+   *  echoes what it actually armed. */
+  preempt?: boolean;
 };
 
 /**

@@ -2,7 +2,7 @@ import React, { forwardRef } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useWatch } from 'react-hook-form';
 import { SendIcon } from '@librechat/client';
-import { Zap, Clock, OctagonPause } from 'lucide-react';
+import { Zap, Clock, OctagonPause, ZapOff } from 'lucide-react';
 import type { Control } from 'react-hook-form';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import { isMacPlatform } from '~/utils/shortcuts';
@@ -43,8 +43,10 @@ type DuringRunSendButtonProps = {
  * (and `submitButtonRef`, so Enter's synthetic click routes here) whenever the
  * composer holds text — submitting steers or queues per the effective action.
  * Hovering it reveals the full action list with its shortcuts: steer, queue
- * (⌘/Ctrl+Enter routes to the non-default action), and interrupt & send
- * (⌥/Alt+Enter). Clearing the composer restores the Stop button.
+ * (⌘/Ctrl+Enter routes to the non-default action), interrupt & steer
+ * (⌘/Ctrl+Shift+Enter — stops writing now but keeps what is written), and
+ * interrupt & send (⌥/Alt+Enter — discards the answer and starts over).
+ * Clearing the composer restores the Stop button.
  */
 const DuringRunSendButton = React.memo(
   forwardRef((props: DuringRunSendButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
@@ -55,6 +57,7 @@ const DuringRunSendButton = React.memo(
     const primary = steering.effectiveAction;
     const modEnter = isMacPlatform ? '⌘⏎' : 'Ctrl ⏎';
     const altEnter = isMacPlatform ? '⌥⏎' : 'Alt ⏎';
+    const modShiftEnter = isMacPlatform ? '⌘⇧⏎' : 'Ctrl ⇧ ⏎';
 
     const runAction = (action: (text: string) => boolean | void) => {
       const text = props.getText().trim();
@@ -83,6 +86,14 @@ const DuringRunSendButton = React.memo(
       icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
       onClick: () => runAction((text) => steering.queueFromComposer(text)),
     };
+    /** Keeps the half-written answer, unlike interrupt & send below it. */
+    const interruptSteerRow: ActionRow = {
+      key: 'interrupt-steer',
+      label: localize('com_ui_interrupt_steer'),
+      kbd: modShiftEnter,
+      icon: <ZapOff className="h-4 w-4 text-amber-500" aria-hidden="true" />,
+      onClick: () => runAction((text) => steering.interruptSteer(text)),
+    };
     const interruptRow: ActionRow = {
       key: 'interrupt',
       label: localize('com_ui_interrupt_send'),
@@ -91,7 +102,7 @@ const DuringRunSendButton = React.memo(
       onClick: () => runAction((text) => steering.interruptAndSend(text)),
     };
     const rows = primary === 'steer' ? [steerRow, queueRow] : [queueRow, steerRow];
-    rows.push(interruptRow);
+    rows.push(interruptSteerRow, interruptRow);
 
     const label =
       primary === 'steer' ? localize('com_ui_steer_send') : localize('com_ui_queue_send');
