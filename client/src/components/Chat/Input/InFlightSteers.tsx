@@ -144,6 +144,14 @@ const InFlightSteer = memo(function InFlightSteer({
   );
   const setEscalating = useSetAtom(escalatingSteerFamily(conversationId));
 
+  /** Latest controls for the escalation's async continuation: the `.then`
+   *  closure otherwise holds the render's stale `steering`, blind to a run
+   *  that paused (approval, answer mode) while the reclaim was in flight. */
+  const steeringRef = useRef(steering);
+  useEffect(() => {
+    steeringRef.current = steering;
+  });
+
   /**
    * Takes the steer back off the server queue so its words can be re-homed.
    * The chip is left alone until the answer is known: only `reclaimed` proves
@@ -245,15 +253,28 @@ const InFlightSteer = memo(function InFlightSteer({
                     });
                     return;
                   }
+                  /* Live controls, not the render's: the run can pause (or an
+                   * interrupt can arm) while the reclaim is in flight, and the
+                   * boundary slot is already surrendered — re-home the words
+                   * rather than resubmit into a rejection. */
+                  const live = steeringRef.current;
+                  if (!live.duringRunActive || live.pausedOnApproval) {
+                    live.queueReclaimedSteer(steer);
+                    showToast({
+                      message: localize('com_ui_steer_run_paused_queued'),
+                      status: 'info',
+                    });
+                    return;
+                  }
                   if (hasUnresolvedInterrupt()) {
-                    steering.queueReclaimedSteer(steer);
+                    live.queueReclaimedSteer(steer);
                     showToast({
                       message: localize('com_ui_steer_interrupt_busy_queued'),
                       status: 'info',
                     });
                     return;
                   }
-                  steering.retrySteer(
+                  live.retrySteer(
                     steer.steerId,
                     steer.text,
                     steer.files,
