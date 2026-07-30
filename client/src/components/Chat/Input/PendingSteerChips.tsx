@@ -1,8 +1,7 @@
 import { memo, useMemo } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
-import * as Ariakit from '@ariakit/react';
-import { X, Zap, Send, Clock, Pencil, Trash2, ZapOff, Paperclip, RotateCcw } from 'lucide-react';
+import { X, Zap, Send, Clock, Pencil, Trash2, Paperclip, RotateCcw } from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
@@ -12,8 +11,8 @@ import {
   RowMenu,
   ICON_BTN_CLASS,
   PRIMARY_BTN_CLASS,
+  EscalateNowButton,
   useDefaultToggleEntry,
-  useInterruptChordHint,
   useInterruptToggleEntry,
 } from './SteerMenu';
 import { escalatingSteerFamily } from '~/store/steer';
@@ -34,40 +33,6 @@ function AttachmentCount({ count, label }: { count: number; label: string }) {
       {count}
       <span className="sr-only">{label}</span>
     </span>
-  );
-}
-
-/**
- * Escalate one message past the queue: interrupt & steer it now, at the next
- * safe token boundary instead of the next tool step. Icon-only ZapOff, the
- * interrupt glyph everywhere in this UI; the tooltip teaches the composer
- * chord that does this in one step. Disabled while another interrupt is
- * unresolved or the run is paused on approval.
- */
-function InterruptNowButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
-  const localize = useLocalize();
-  const chordHint = useInterruptChordHint();
-  const label = localize('com_ui_interrupt_steer_now');
-  return (
-    <Ariakit.TooltipProvider placement="top" timeout={300}>
-      <Ariakit.TooltipAnchor
-        render={
-          <button
-            type="button"
-            aria-label={label}
-            data-testid="queued-interrupt-now"
-            disabled={disabled}
-            onClick={onClick}
-            className={cn(ICON_BTN_CLASS, 'disabled:cursor-not-allowed disabled:opacity-40')}
-          >
-            <ZapOff className="h-4 w-4 text-amber-500" aria-hidden="true" />
-          </button>
-        }
-      />
-      <Ariakit.Tooltip className="z-50 rounded-lg bg-surface-tertiary px-2 py-1 text-xs text-text-primary shadow-lg">
-        {chordHint == null ? label : `${label} · ${chordHint}`}
-      </Ariakit.Tooltip>
-    </Ariakit.TooltipProvider>
   );
 }
 
@@ -114,9 +79,8 @@ function QueuedRow({
         });
       },
     },
-    toggleEntry,
-    interruptToggle,
   ];
+  const preferences: MenuEntry[] = [toggleEntry, interruptToggle];
 
   return (
     <div role="listitem" className={ROW_CLASS} data-testid="queued-message-row">
@@ -148,7 +112,8 @@ function QueuedRow({
         </button>
       )}
       {showEscalate && (
-        <InterruptNowButton
+        <EscalateNowButton
+          surface="queued"
           disabled={steering.pausedOnApproval || interruptPending}
           onClick={() => steering.sendQueuedNow(message, { preempt: true })}
         />
@@ -172,7 +137,11 @@ function QueuedRow({
       >
         <Trash2 className="h-4 w-4" aria-hidden="true" />
       </button>
-      <RowMenu label={localize('com_ui_more_options')} entries={entries} />
+      <RowMenu
+        label={localize('com_ui_more_options')}
+        entries={entries}
+        preferences={preferences}
+      />
     </div>
   );
 }
@@ -217,9 +186,8 @@ function FailedSteerRow({
           manualSkills: steer.manualSkills,
         }),
     },
-    toggleEntry,
-    interruptToggle,
   ];
+  const preferences: MenuEntry[] = [toggleEntry, interruptToggle];
 
   return (
     <div
@@ -256,7 +224,11 @@ function FailedSteerRow({
       >
         <X className="h-4 w-4" aria-hidden="true" />
       </button>
-      <RowMenu label={localize('com_ui_more_options')} entries={entries} />
+      <RowMenu
+        label={localize('com_ui_more_options')}
+        entries={entries}
+        preferences={preferences}
+      />
     </div>
   );
 }

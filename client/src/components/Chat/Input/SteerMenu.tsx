@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
+import { useRecoilState } from 'recoil';
 import * as Ariakit from '@ariakit/react';
-import { useRecoilState, useRecoilValue } from 'recoil';
-import { Zap, ZapOff, Clock, MoreHorizontal } from 'lucide-react';
+import { InfoHoverCard, ESide } from '@librechat/client';
+import { Zap, ZapOff, Clock, ArrowUp, MoreHorizontal } from 'lucide-react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
-import { isMacPlatform, resolveComposerKeyDown, bindingDisplayString } from '~/utils/shortcuts';
-import useComposerBindings from '~/hooks/Input/useComposerBindings';
+import { useShortcutDisplay } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 import store from '~/store';
 
 /** Shared row/bubble affordances for the during-run surfaces: the in-flight
@@ -26,34 +27,112 @@ export type MenuEntry = {
   icon: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
+  /** Localized description shown as the standard info hovercard. */
+  info?: string;
 };
 
-/** Per-row "…" overflow menu (edit / mode toggle / conversions). */
-export function RowMenu({ label, entries }: { label: string; entries: MenuEntry[] }) {
+/**
+ * Per-row "…" overflow menu: message actions first, then a visually separated
+ * "Preferences" section for the sticky mode toggles, so one-off actions and
+ * persistent behavior changes never read as the same kind of choice.
+ */
+export function RowMenu({
+  label,
+  entries,
+  preferences,
+}: {
+  label: string;
+  entries: MenuEntry[];
+  preferences?: MenuEntry[];
+}) {
+  const localize = useLocalize();
   const menu = Ariakit.useMenuStore({ placement: 'top-end' });
+  const renderEntry = (entry: MenuEntry) => (
+    <Ariakit.MenuItem
+      key={entry.key}
+      className={MENU_ITEM_CLASS}
+      disabled={entry.disabled === true}
+      accessibleWhenDisabled
+      onClick={() => {
+        entry.onClick();
+        menu.hide();
+      }}
+    >
+      {entry.icon}
+      {entry.label}
+      {entry.info != null && (
+        <span className="ml-auto flex items-center" onClick={(event) => event.stopPropagation()}>
+          <InfoHoverCard side={ESide.Top} text={entry.info} />
+        </span>
+      )}
+    </Ariakit.MenuItem>
+  );
   return (
     <>
       <Ariakit.MenuButton store={menu} aria-label={label} className={ICON_BTN_CLASS}>
         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
       </Ariakit.MenuButton>
       <Ariakit.Menu store={menu} portal gutter={6} className={MENU_CLASS}>
-        {entries.map((entry) => (
-          <Ariakit.MenuItem
-            key={entry.key}
-            className={MENU_ITEM_CLASS}
-            disabled={entry.disabled === true}
-            accessibleWhenDisabled
-            onClick={() => {
-              entry.onClick();
-              menu.hide();
-            }}
-          >
-            {entry.icon}
-            {entry.label}
-          </Ariakit.MenuItem>
-        ))}
+        {entries.map(renderEntry)}
+        {preferences != null && preferences.length > 0 && (
+          <>
+            <div role="separator" className="mx-2 my-1 border-t border-border-light" />
+            <div className="px-2 pb-0.5 pt-1 text-[11px] font-medium uppercase tracking-wide text-text-secondary">
+              {localize('com_ui_preferences')}
+            </div>
+            {preferences.map(renderEntry)}
+          </>
+        )}
       </Ariakit.Menu>
     </>
+  );
+}
+
+/**
+ * The always-visible escalation control on a waiting message: interrupt &
+ * steer it now, at the next safe token boundary. The tooltip teaches this
+ * action's OWN shortcut (registry-aware, so a rebinding shows correctly);
+ * the shortcut handler clicks whichever of these buttons is newest, so the
+ * two can never diverge.
+ */
+export function EscalateNowButton({
+  surface,
+  disabled,
+  onClick,
+}: {
+  surface: 'bubble' | 'queued';
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const localize = useLocalize();
+  const chord = useShortcutDisplay('escalateSteer');
+  const label = localize('com_ui_interrupt_steer_now');
+  return (
+    <Ariakit.TooltipProvider placement="top" timeout={300}>
+      <Ariakit.TooltipAnchor
+        render={
+          <button
+            type="button"
+            aria-label={label}
+            data-escalate-steer={surface}
+            data-testid={surface === 'queued' ? 'queued-interrupt-now' : 'steer-escalate-now'}
+            disabled={disabled}
+            onClick={onClick}
+            className={cn(
+              'flex size-7 shrink-0 items-center justify-center rounded-full border border-border-medium',
+              'text-text-primary transition-colors hover:bg-surface-hover',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
+              'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent',
+            )}
+          >
+            <ArrowUp className="h-4 w-4" aria-hidden="true" />
+          </button>
+        }
+      />
+      <Ariakit.Tooltip className="z-50 rounded-lg bg-surface-tertiary px-2 py-1 text-xs text-text-primary shadow-lg">
+        {chord ? `${label} · ${chord}` : label}
+      </Ariakit.Tooltip>
+    </Ariakit.TooltipProvider>
   );
 }
 
@@ -78,6 +157,7 @@ export function useDefaultToggleEntry(steering: SteeringControls): MenuEntry {
         ) : (
           <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />
         ),
+      info: localize('com_nav_info_during_run_action'),
       onClick: () => steering.setDefaultAction(next),
     };
   }, [steering, localize]);
@@ -102,43 +182,9 @@ export function useInterruptToggleEntry(): MenuEntry {
       ) : (
         <ZapOff className="h-4 w-4 text-amber-500" aria-hidden="true" />
       ),
+      info: localize('com_ui_steer_interrupts_default_info'),
       onClick: () => setInterrupts(!interrupts),
     }),
     [interrupts, setInterrupts, localize],
   );
-}
-
-/**
- * The interrupt chord for tooltips, present only while the chord still
- * preempts: a chord rebound to a global shortcut (or claimed by a rebound
- * submit) must not be advertised, and `resolveComposerKeyDown` is the one
- * source of that answer.
- */
-export function useInterruptChordHint(): string | undefined {
-  const enterToSend = useRecoilValue(store.enterToSend);
-  const { submitOverride, yieldedChords } = useComposerBindings();
-  return useMemo(() => {
-    const chord = {
-      meta: isMacPlatform,
-      ctrl: !isMacPlatform,
-      alt: false,
-      shift: true,
-      key: 'Enter',
-    };
-    const verdict = resolveComposerKeyDown(
-      { key: 'Enter', altKey: false, ctrlKey: chord.ctrl, metaKey: chord.meta, shiftKey: true },
-      {
-        isComposing: false,
-        isSubmitting: true,
-        allowSubmitWhileGenerating: true,
-        hasDuringRunModifier: true,
-        enterToSend,
-        submitOverride,
-        yieldedChords,
-      },
-    );
-    return verdict === 'preempt'
-      ? (bindingDisplayString(chord, isMacPlatform) ?? undefined)
-      : undefined;
-  }, [enterToSend, submitOverride, yieldedChords]);
 }

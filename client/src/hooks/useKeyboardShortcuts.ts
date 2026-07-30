@@ -115,6 +115,14 @@ export const shortcutDefinitions = {
     ariaMac: 'Meta+Shift+X',
     ariaOther: 'Control+Shift+X',
   },
+  escalateSteer: {
+    labelKey: 'com_ui_interrupt_steer_now',
+    groupKey: 'com_shortcut_group_chat',
+    displayMac: '⌘ ⇧ .',
+    displayOther: 'Ctrl+Shift+.',
+    ariaMac: 'Meta+Shift+.',
+    ariaOther: 'Control+Shift+.',
+  },
   regenerateResponse: {
     labelKey: 'com_shortcut_regenerate_response',
     groupKey: 'com_shortcut_group_chat',
@@ -289,6 +297,7 @@ export const EDITING_ALLOWED_SHORTCUTS: ReadonlySet<ShortcutActionId> = new Set(
   'focusSearch',
   'showShortcuts',
   'submitMessage',
+  'escalateSteer',
 ]);
 
 export type ShortcutAction = ShortcutDefinition & {
@@ -551,6 +560,25 @@ export function useShortcutActions(): ShortcutAction[] {
     [],
   );
 
+  /** Escalate the newest waiting message to an interrupt by pressing its own
+   *  visible arrow control, so the shortcut can never diverge from the
+   *  button's semantics. A waiting steer bubble beats a queued follow-up (it
+   *  is closer to the run); newest-last matches how both stacks append. */
+  const handleEscalateSteer = useCallback(() => {
+    const pick = (surface: string) => {
+      const list = document.querySelectorAll<HTMLButtonElement>(
+        `[data-escalate-steer="${surface}"]`,
+      );
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (!isUnavailableElement(list[i])) {
+          return list[i];
+        }
+      }
+      return null;
+    };
+    return clickTarget(pick('bubble') ?? pick('queued'));
+  }, []);
+
   const handleEditLastMessage = useCallback(() => {
     const userTurns = document.querySelectorAll('.user-turn');
     if (userTurns.length === 0) {
@@ -750,6 +778,7 @@ export function useShortcutActions(): ShortcutAction[] {
       focusSearch: handleFocusSearch,
       openSettings: handleOpenSettings,
       stopGenerating: handleStopGenerating,
+      escalateSteer: handleEscalateSteer,
       regenerateResponse: handleRegenerateResponse,
       editLastMessage: handleEditLastMessage,
       copyLastCode: handleCopyLastCode,
@@ -779,6 +808,7 @@ export function useShortcutActions(): ShortcutAction[] {
       handleUploadFile,
       handleToggleSidebar,
       handleOpenModelSelector,
+      handleEscalateSteer,
       handleFocusSearch,
       handleOpenSettings,
       handleStopGenerating,

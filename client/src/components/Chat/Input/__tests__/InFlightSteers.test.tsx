@@ -25,6 +25,8 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
+  InfoHoverCard: () => null,
+  ESide: { Top: 'top', Bottom: 'bottom' },
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -610,7 +612,9 @@ describe('InFlightSteers — interrupt-now escalation', () => {
 
   it("arms the interrupt in place, keeping the steer's id and position", async () => {
     renderSteers([{ steerId: 's1', text: 'hold on', status: 'pending', createdAt: 1 }]);
-    await clickMenuItem('com_ui_interrupt_steer_now');
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    });
 
     expect(mockArmMutateAsync).toHaveBeenCalledWith({
       conversationId: CONVO_ID,
@@ -622,32 +626,31 @@ describe('InFlightSteers — interrupt-now escalation', () => {
     expect(screen.getByText('hold on')).toBeInTheDocument();
 
     /** The chip relabelled in place: an interrupting steer offers no further
-     *  escalation, so the entry is gone on reopen. */
-    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
-    expect(await screen.findByText('com_ui_steer_cancel')).toBeInTheDocument();
-    expect(screen.queryByText('com_ui_interrupt_steer_now')).toBeNull();
+     *  escalation, so its arrow control is gone. */
+    expect(screen.queryByTestId('steer-escalate-now')).toBeNull();
   });
 
   it('does not offer escalation on a steer that is already interrupting', async () => {
     renderSteers([
       { steerId: 's1', text: 'already sealing', status: 'pending', createdAt: 1, preempt: true },
     ]);
+    expect(screen.queryByTestId('steer-escalate-now')).toBeNull();
     fireEvent.click(screen.getByLabelText('com_ui_more_options'));
     expect(await screen.findByText('com_ui_steer_cancel')).toBeInTheDocument();
-    expect(screen.queryByText('com_ui_interrupt_steer_now')).toBeNull();
   });
 
   it('keeps the chip an ordinary steer when the deployment cannot seal', async () => {
     mockArmMutateAsync.mockResolvedValue({ armed: false, code: 'PREEMPT_UNSUPPORTED' });
     renderSteers([{ steerId: 's1', text: 'no seal here', status: 'pending', createdAt: 1 }]);
-    await clickMenuItem('com_ui_interrupt_steer_now');
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    });
 
     expect(mockShowToast).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'com_ui_steer_preempt_unsupported' }),
     );
     /** Still an ordinary steer: escalation stays offered. */
-    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
-    expect(await screen.findByText('com_ui_interrupt_steer_now')).toBeInTheDocument();
+    expect(screen.getByTestId('steer-escalate-now')).toBeEnabled();
   });
 
   it('stays neutral when the arm loses its race, whatever the reason', async () => {
@@ -655,7 +658,9 @@ describe('InFlightSteers — interrupt-now escalation', () => {
      *  alike, so the toast must not claim one specific outcome. */
     mockArmMutateAsync.mockResolvedValue({ armed: false });
     renderSteers([{ steerId: 's1', text: 'too late', status: 'pending', createdAt: 1 }]);
-    await clickMenuItem('com_ui_interrupt_steer_now');
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    });
 
     expect(mockRetrySteer).not.toHaveBeenCalled();
     expect(mockShowToast).toHaveBeenCalledWith(
@@ -666,7 +671,9 @@ describe('InFlightSteers — interrupt-now escalation', () => {
   it('reports an arm failure without touching the steer', async () => {
     mockArmMutateAsync.mockRejectedValue(new Error('network'));
     renderSteers([{ steerId: 's1', text: 'still queued', status: 'pending', createdAt: 1 }]);
-    await clickMenuItem('com_ui_interrupt_steer_now');
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    });
 
     expect(mockShowToast).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'com_ui_steer_arm_failed', status: 'error' }),
@@ -689,19 +696,12 @@ describe('InFlightSteers — interrupt-now escalation', () => {
       { steerId: 's1', text: 'first', status: 'pending', createdAt: 1 },
       { steerId: 's2', text: 'second', status: 'pending', createdAt: 2 },
     ]);
-    /** Every bubble's menu content mounts (hidden) up front, so item lookups
-     *  must scope to the menu the clicked button controls. */
-    const menuFor = (button: HTMLElement) =>
-      document.getElementById(button.getAttribute('aria-controls') ?? '') as HTMLElement;
-    const menus = screen.getAllByLabelText('com_ui_more_options');
-    fireEvent.click(menus[0]);
-    fireEvent.click(await within(menuFor(menus[0])).findByText('com_ui_interrupt_steer_now'));
+    const buttons = screen.getAllByTestId('steer-escalate-now');
+    fireEvent.click(buttons[0]);
 
-    fireEvent.click(menus[1]);
-    const secondItem = await within(menuFor(menus[1])).findByText('com_ui_interrupt_steer_now');
-    expect(secondItem.closest('[role="menuitem"]')).toHaveAttribute('aria-disabled', 'true');
+    expect(buttons[1]).toBeDisabled();
     await act(async () => {
-      fireEvent.click(secondItem);
+      fireEvent.click(buttons[1]);
     });
 
     await act(async () => {
@@ -716,12 +716,11 @@ describe('InFlightSteers — interrupt-now escalation', () => {
       { steerId: 's1', text: 'plain steer', status: 'pending', createdAt: 1 },
       { steerId: 's2', text: 'sealing now', status: 'pending', createdAt: 2, preempt: true },
     ]);
-    fireEvent.click(screen.getAllByLabelText('com_ui_more_options')[0]);
-    const item = await screen.findByText('com_ui_interrupt_steer_now');
-    expect(item.closest('[role="menuitem"]')).toHaveAttribute('aria-disabled', 'true');
+    const button = screen.getByTestId('steer-escalate-now');
+    expect(button).toBeDisabled();
 
     await act(async () => {
-      fireEvent.click(item);
+      fireEvent.click(button);
     });
     expect(mockArmMutateAsync).not.toHaveBeenCalled();
   });
@@ -743,13 +742,42 @@ describe('InFlightSteers — escalation while the run cannot accept a steer', ()
     renderSteers([{ steerId: 's1', text: 'waiting', status: 'pending', createdAt: 1 }], {
       duringRunActive: false,
     });
-    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
-    const item = await screen.findByText('com_ui_interrupt_steer_now');
-    expect(item.closest('[role="menuitem"]')).toHaveAttribute('aria-disabled', 'true');
+    const button = screen.getByTestId('steer-escalate-now');
+    expect(button).toBeDisabled();
 
     await act(async () => {
-      fireEvent.click(item);
+      fireEvent.click(button);
     });
     expect(mockArmMutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * One-off message actions and sticky behavior changes must never read as the
+ * same kind of choice: actions first (edit, cancel, queue), then a separated
+ * "Preferences" section holding the two mode toggles. Escalation is not a
+ * menu entry at all — it has its own always-visible arrow control.
+ */
+describe('InFlightSteers — menu structure', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCancelMutateAsync.mockResolvedValue({ removed: true });
+  });
+
+  it('orders actions above a separated Preferences section, with no escalation entry', async () => {
+    renderSteers([{ steerId: 's1', text: 'structured', status: 'pending', createdAt: 1 }]);
+    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
+    await screen.findByText('com_ui_edit_message');
+
+    const items = screen.getAllByRole('menuitem').map((item) => item.textContent);
+    expect(items).toEqual([
+      'com_ui_edit_message',
+      'com_ui_steer_cancel',
+      'com_ui_convert_to_queue',
+      'com_ui_turn_on_queueing',
+      'com_ui_always_interrupt',
+    ]);
+    expect(screen.getByText('com_ui_preferences')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_interrupt_steer_now')).toBeNull();
   });
 });
