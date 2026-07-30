@@ -4,6 +4,23 @@ import type { RequestBody } from '~/types';
 
 export const mcpToolPattern: RegExp = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 
+/**
+ * Prefix of the lazily-expanded MCP placeholder `mcp_all<delim><server>`,
+ * pushed into an ephemeral agent's `tools` for overlay/user-connection servers
+ * whose tool names are not known until the definitions loader expands them.
+ *
+ * Anything that keys per-tool config by exact name must skip it: an entry
+ * recorded under the placeholder can never match an expanded tool name, so it
+ * is a silent no-op. Kept here rather than per-consumer so the two capability
+ * synthesizers cannot drift apart on which names they ignore.
+ */
+export const MCP_ALL_PLACEHOLDER_PREFIX = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
+
+/** Whether a tool entry is the lazily-expanded `mcp_all` placeholder. */
+export function isMCPAllPlaceholder(toolName: string): boolean {
+  return toolName.startsWith(MCP_ALL_PLACEHOLDER_PREFIX);
+}
+
 const RUNTIME_CONTEXT_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:USER|OPENID|GRAPH|BODY)_[^}]+\}\}/;
 const RUNTIME_BODY_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_BODY_[^}]+\}\}/;
 const RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN = /\{\{LIBRECHAT_BODY_([^}]+)\}\}/g;

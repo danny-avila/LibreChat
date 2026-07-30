@@ -36,6 +36,7 @@ import type { AgentToolOptions } from 'librechat-data-provider';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from './tools';
+import { isMCPAllPlaceholder } from '~/mcp/utils';
 import { truncateMiddle } from '~/utils';
 
 /** Argument the model sets on a tool call to dispatch it in the background. */
@@ -53,12 +54,6 @@ export const BACKGROUND_STATUS_ATTACHMENT_TYPE = 'background_task_status';
 
 /** Poll tool name (LibreChat host-special-cased, not an SDK tool). */
 export const CHECK_BACKGROUND_TASK_NAME: string = Constants.CHECK_BACKGROUND_TASK;
-
-/**
- * Prefix of the lazily-expanded MCP placeholder (`mcp_all<delim><server>`).
- * Options recorded under it can never match a real expanded tool name.
- */
-const MCP_ALL_PLACEHOLDER_PREFIX = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
 
 /**
  * Tools that must never be backgrounded — they either run through the SDK's
@@ -472,7 +467,7 @@ export function synthesizeBackgroundToolOptions(
 
   const toolOptions: AgentToolOptions = {};
   for (const name of tools) {
-    if (name.startsWith(MCP_ALL_PLACEHOLDER_PREFIX)) {
+    if (isMCPAllPlaceholder(name)) {
       continue;
     }
     if (narrowTo != null && !narrowTo.has(name)) {

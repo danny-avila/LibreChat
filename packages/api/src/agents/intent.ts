@@ -34,6 +34,7 @@ import type { LCTool, LCToolRegistry, JsonSchemaType } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from './tools';
+import { isMCPAllPlaceholder } from '~/mcp/utils';
 
 /** Argument carrying the model-authored label for a tool call. */
 export const INTENT_ARG = 'intent';
@@ -372,8 +373,6 @@ export function applyIntentLabels(params: {
   return { toolDefinitions: nextDefs, intentToolNames };
 }
 
-const MCP_ALL_PLACEHOLDER_PREFIX = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
-
 /**
  * Post-registration sanitize pass, run AFTER every tool registration step —
  * including the skill catalog, which appends its definition after the
@@ -471,7 +470,7 @@ export function synthesizeIntentToolOptions(
 
   const toolOptions: AgentToolOptions = {};
   for (const name of tools) {
-    if (name.startsWith(MCP_ALL_PLACEHOLDER_PREFIX)) {
+    if (isMCPAllPlaceholder(name)) {
       continue;
     }
     if (narrowTo != null && !narrowTo.has(name)) {
