@@ -395,6 +395,68 @@ describe('stripIntentFromToolDefinitions / stripIntentFromToolRegistry', () => {
   });
 });
 
+describe('capability marker expansion', () => {
+  const memoryDefs = (): LCTool[] => [mcpDef('set_memory'), mcpDef('delete_memory')];
+
+  it('propagates a marker OPT-OUT to the names it expands into', () => {
+    /** A spec's tools carry `memory`, but initialization registers
+     *  set_memory/delete_memory — both default-on natives, so without
+     *  expansion a narrowing selection would leave them labelled. */
+    const { intentToolNames } = applyIntentLabels({
+      toolDefinitions: memoryDefs(),
+      toolRegistry: undefined,
+      toolOptions: { memory: { describe_intent: false } },
+    });
+    expect(intentToolNames).toEqual([]);
+  });
+
+  it('propagates a marker OPT-IN to the names it expands into', () => {
+    const { intentToolNames } = applyIntentLabels({
+      toolDefinitions: [mcpDef('bash_tool')],
+      toolRegistry: undefined,
+      toolOptions: { execute_code: { describe_intent: true } },
+    });
+    expect(intentToolNames).toEqual(['bash_tool']);
+  });
+
+  it('lets an explicit per-tool entry win over the marker', () => {
+    const { intentToolNames } = applyIntentLabels({
+      toolDefinitions: memoryDefs(),
+      toolRegistry: undefined,
+      toolOptions: {
+        memory: { describe_intent: false },
+        set_memory: { describe_intent: true },
+      },
+    });
+    expect(intentToolNames).toEqual(['set_memory']);
+  });
+
+  it('carries a marker opt-out through the capability-on sanitize pass', () => {
+    /** SDK-native labels persist unless sanitize sees an explicit false. */
+    const nativeBash = sdkNativeDef('bash_tool');
+    const { toolDefinitions } = sanitizeIntentLabels({
+      toolDefinitions: [nativeBash],
+      toolRegistry: undefined,
+      toolOptions: { execute_code: { describe_intent: false } },
+      capabilityEnabled: true,
+    });
+    expect(INTENT_ARG in (toolDefinitions[0].parameters as { properties: object }).properties).toBe(
+      false,
+    );
+  });
+
+  it('leaves options untouched when no marker is present', () => {
+    const options = { web_search: { describe_intent: true } };
+    const { intentToolNames } = applyIntentLabels({
+      toolDefinitions: [mcpDef('web_search')],
+      toolRegistry: undefined,
+      toolOptions: options,
+    });
+    expect(intentToolNames).toEqual(['web_search']);
+    expect(options).toEqual({ web_search: { describe_intent: true } });
+  });
+});
+
 describe('sanitizeIntentLabels', () => {
   it('strips every SDK-native label when the capability is disabled (kill switch)', () => {
     const skill = sdkNativeDef('skill');

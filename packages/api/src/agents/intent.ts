@@ -316,6 +316,56 @@ function isIntentOptedIn(name: string, toolOptions?: AgentToolOptions): boolean 
  * Both saved agents and ephemeral/model-spec agents reach this with
  * `tool_options` populated, so the logic is written once.
  */
+/**
+ * Capability markers a model spec / ephemeral agent equips, mapped to the
+ * runtime definition names they expand into during initialization.
+ *
+ * A spec's `tools` carries markers, not final names, so an option recorded
+ * under a marker never matches the definition that actually gets registered —
+ * the same silent no-op as an `mcp_all` placeholder entry. That is harmless
+ * for an opt-IN (the tool simply keeps its default) but not for an opt-OUT:
+ * `set_memory`/`delete_memory` are default-on natives and `bash_tool` carries
+ * an SDK-native label, so a `describeIntent` selection that excluded them
+ * would leave both labelled.
+ *
+ * Mirrors `expandCodeToolOptions` in `background.ts`, which solves the same
+ * problem for the code marker.
+ */
+const INTENT_MARKER_EXPANSIONS: ReadonlyMap<string, readonly string[]> = new Map([
+  [String(Tools.memory), [SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME]],
+  [
+    String(AgentConstants.EXECUTE_CODE),
+    [String(AgentConstants.EXECUTE_CODE), String(AgentConstants.BASH_TOOL)],
+  ],
+]);
+
+/**
+ * Propagates each marker's `describe_intent` to the names it expands into,
+ * so a selection made against spec markers still governs the definitions that
+ * are registered later. An explicit per-tool entry always wins — expansion
+ * only fills names the caller did not already decide.
+ */
+function expandIntentToolOptions(toolOptions?: AgentToolOptions): AgentToolOptions | undefined {
+  if (!toolOptions) {
+    return toolOptions;
+  }
+  let expanded: AgentToolOptions | undefined;
+  for (const [marker, names] of INTENT_MARKER_EXPANSIONS) {
+    const markerValue = toolOptions[marker]?.describe_intent;
+    if (markerValue == null) {
+      continue;
+    }
+    for (const name of names) {
+      if (toolOptions[name]?.describe_intent != null) {
+        continue;
+      }
+      expanded ??= { ...toolOptions };
+      expanded[name] = { ...expanded[name], describe_intent: markerValue };
+    }
+  }
+  return expanded ?? toolOptions;
+}
+
 export function applyIntentLabels(params: {
   toolDefinitions: LCTool[] | undefined;
   toolRegistry: LCToolRegistry | undefined;
@@ -323,7 +373,8 @@ export function applyIntentLabels(params: {
   /** Extra host-context exclusion, mirroring `applyBackgroundToolCalls`. */
   excludeTool?: (toolName: string) => boolean;
 }): { toolDefinitions: LCTool[]; intentToolNames: string[] } {
-  const { toolRegistry, toolOptions, excludeTool } = params;
+  const { toolRegistry, excludeTool } = params;
+  const toolOptions = expandIntentToolOptions(params.toolOptions);
   const defs = params.toolDefinitions ?? [];
 
   let changed = false;
@@ -388,7 +439,8 @@ export function sanitizeIntentLabels(params: {
   toolOptions: AgentToolOptions | undefined;
   capabilityEnabled: boolean;
 }): { toolDefinitions: LCTool[] } {
-  const { toolRegistry, toolOptions, capabilityEnabled } = params;
+  const { toolRegistry, capabilityEnabled } = params;
+  const toolOptions = expandIntentToolOptions(params.toolOptions);
   const defs = params.toolDefinitions ?? [];
   const shouldStrip = (name: string): boolean =>
     capabilityEnabled ? toolOptions?.[name]?.describe_intent === false : true;
