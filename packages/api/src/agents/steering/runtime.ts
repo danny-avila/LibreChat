@@ -139,14 +139,28 @@ async function drainAndBuildInjections(opts: SteerDrainHookOptions): Promise<Inj
   } catch (error) {
     logger.error(`[steering] Drain interrupted for ${streamId}; injecting applied items:`, error);
   } finally {
-    /** Not awaited: this runs on the OWNER, where the local disarm is
-     *  synchronous and already effective — the publish only informs other
-     *  replicas, and blocking a boundary drain on it would delay injection. */
-    void GenerationJobManager.noteSteersRemoved(
-      streamId,
-      steers.map((item) => item.steerId),
-      jobCreatedAt,
-    );
+    /**
+     * Everything armed at snapshot time PLUS everything just drained. The
+     * boundary has spent its seal, so a snapshotted id that did NOT come back
+     * from the drain is stale — its steer left the queue by another route
+     * (typically a cancel whose cross-replica clear was lost). Clearing only
+     * the drained ids would leave that one level-triggered, sealing the very
+     * continuation meant to answer the steer we just injected and landing on
+     * an empty boundary as `preempt_incomplete`.
+     *
+     * Ids armed AFTER the snapshot are deliberately excluded: their queue
+     * items are live and uninjected, and disarming them would strand an
+     * interrupt the client was already told about.
+     *
+     * Not awaited: this runs on the OWNER, where the local disarm is
+     * synchronous and already effective — the publish only informs other
+     * replicas, and blocking a boundary drain on it would delay injection.
+     */
+    const spent = new Set(armedBeforeDrain);
+    for (const item of steers) {
+      spent.add(item.steerId);
+    }
+    void GenerationJobManager.noteSteersRemoved(streamId, [...spent], jobCreatedAt);
   }
   return injectedMessages;
 }

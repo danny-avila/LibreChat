@@ -50,6 +50,10 @@ const mockGenerationJobManager = {
   getJobStore: jest.fn(() => mockJobStore),
   getResumeState: jest.fn(),
   setContentParts: jest.fn(),
+  /** Resume moves ownership: the new owner records its own seal capability
+   *  and rebuilds armed interrupts from the durable queue. */
+  updateMetadata: jest.fn().mockResolvedValue(undefined),
+  rearmQueuedPreempts: jest.fn().mockResolvedValue(0),
   emitChunk: jest.fn(),
   emitDone: jest.fn(),
   emitError: jest.fn(),

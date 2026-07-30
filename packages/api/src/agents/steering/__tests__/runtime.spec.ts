@@ -409,6 +409,64 @@ describe('createSteerPreemptBoundaryHook', () => {
     expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(false);
   });
 
+  /**
+   * A cancel whose cross-replica clear was lost leaves a stale arm. If the
+   * next boundary drains a DIFFERENT steer, clearing only the drained id
+   * would leave the stale one level-triggered — it would immediately seal
+   * the continuation meant to answer the steer just injected, landing on an
+   * empty boundary as `preempt_incomplete`.
+   */
+  it('a nonempty drain also clears stale arms held since the snapshot', async () => {
+    const streamId = `preempt-stale-snapshot-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+
+    /** Stale: armed, but its steer never reaches the queue (cancelled). */
+    await GenerationJobManager.requestPreempt(streamId, 'steer-cancelled', job.createdAt);
+    /** Live: queued and armed, and this is what the boundary will drain. */
+    await GenerationJobManager.steering.enqueue(streamId, {
+      ...buildSteer('steer-live', 'interrupt me'),
+      preempt: true,
+    });
+    await GenerationJobManager.requestPreempt(streamId, 'steer-live', job.createdAt);
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(true);
+
+    const hook = createSteerPreemptBoundaryHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer: jest.fn(),
+    });
+    const output: SteerDrainOutput = await hook(boundaryInput(), abortSignal);
+
+    expect(output.injectedMessages).toHaveLength(1);
+    /** Both the drained id and the stale snapshot id are spent. */
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  /** An arm that lands AFTER the snapshot is backed by a live queue item. */
+  it('a nonempty drain spares an arm that landed after the snapshot', async () => {
+    const streamId = `preempt-post-snapshot-${Date.now()}`;
+    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    await GenerationJobManager.steering.enqueue(streamId, {
+      ...buildSteer('steer-first', 'first'),
+      preempt: true,
+    });
+    await GenerationJobManager.requestPreempt(streamId, 'steer-first', job.createdAt);
+
+    const hook = createSteerPreemptBoundaryHook({
+      streamId,
+      jobCreatedAt: job.createdAt,
+      applySteer: async () => {
+        /** Arrives mid-drain, after the snapshot was taken. */
+        await GenerationJobManager.requestPreempt(streamId, 'steer-later', job.createdAt);
+      },
+    });
+    await hook(boundaryInput(), abortSignal);
+
+    expect(GenerationJobManager.getArmedPreemptIds(streamId, job.createdAt)).toEqual([
+      'steer-later',
+    ]);
+  });
+
   it('clears the request even when applySteer throws mid-drain', async () => {
     const streamId = `preempt-clears-on-error-${Date.now()}`;
     const job = await GenerationJobManager.createJob(streamId, 'user-1');
