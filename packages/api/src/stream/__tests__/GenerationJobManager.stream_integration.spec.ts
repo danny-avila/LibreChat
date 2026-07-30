@@ -2431,83 +2431,125 @@ describe('GenerationJobManager Integration Tests', () => {
    * processes would exercise the same objects over the same Redis.
    */
   describeRedis('Cross-Replica Preempt (Redis, two manager instances)', () => {
-    const services: Array<{ eventTransport: { destroy: () => void } }> = [];
+    const replicas: GenerationJobManagerClass[] = [];
 
     function createReplica(): GenerationJobManagerClass {
       const manager = new GenerationJobManagerClass();
-      const config = createStreamServices({ useRedis: true, redisClient: ioredisClient! });
-      services.push(config);
-      manager.configure(config);
+      manager.configure(createStreamServices({ useRedis: true, redisClient: ioredisClient! }));
       manager.initialize();
+      replicas.push(manager);
       return manager;
     }
 
-    afterEach(() => {
-      for (const service of services.splice(0)) {
-        service.eventTransport.destroy();
+    afterEach(async () => {
+      /** `destroy()`, not `eventTransport.destroy()`: it also clears the
+       *  manager's cleanup interval and disposes the job store and its timer.
+       *  Dropping only the transport leaves each manager alive inside its own
+       *  interval closure, still doing cleanup work against a dead transport. */
+      for (const manager of replicas.splice(0)) {
+        await manager.destroy().catch(() => {});
       }
     });
+
+    /**
+     * Redis pub/sub never replays and the owner's `SUBSCRIBE` is fired
+     * detached, so a one-shot publish can be dropped simply for arriving
+     * before anyone is listening — a fixed sleep only decides how often that
+     * happens on a loaded worker. Republishing until the owner's state
+     * converges is safe because both operations are idempotent set writes
+     * keyed by steerId, and it removes the timing assumption entirely.
+     */
+    async function publishUntil(
+      publish: () => Promise<unknown>,
+      settled: () => boolean,
+      what: string,
+      timeoutMs = 15000,
+    ): Promise<void> {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        await publish();
+        for (let attempt = 0; attempt < 10; attempt++) {
+          if (settled()) {
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      }
+      throw new Error(`Timed out waiting for ${what}`);
+    }
 
     test('a steer routed to a non-owning replica arms the owner and flips its poll', async () => {
       const owner = createReplica();
       const router = createReplica();
       const streamId = `${testPrefix}-preempt-xreplica-${Date.now()}`;
 
-      try {
-        const job = await owner.createJob(streamId, 'user-1', undefined, {
-          initialMetadata: { preemptCapable: true },
-        });
-        /** Let the owner's preempt SUBSCRIBE settle — it is fired detached. */
-        await new Promise((resolve) => setTimeout(resolve, 300));
+      const job = await owner.createJob(streamId, 'user-1', undefined, {
+        initialMetadata: { preemptCapable: true },
+      });
 
-        /**
-         * The routing replica reads the job, which installs a FACADE runtime
-         * entry on it. That facade must not make it look like an owner.
-         */
-        const seenByRouter = await router.getJob(streamId);
-        expect(seenByRouter?.createdAt).toBe(job.createdAt);
-        expect(router.isPreemptRequested(streamId)).toBe(false);
+      /**
+       * The routing replica reads the job, which installs a FACADE runtime
+       * entry on it. That facade must not make it look like an owner.
+       */
+      const seenByRouter = await router.getJob(streamId);
+      expect(seenByRouter?.createdAt).toBe(job.createdAt);
+      expect(router.isPreemptRequested(streamId)).toBe(false);
 
-        /**
-         * Guards the round-trip that shipped broken once: `preemptCapable` was
-         * serialized but never deserialized, so every Redis deployment read it
-         * back as undefined and the feature was a silent no-op. A same-replica
-         * read cannot catch that — this one crosses Redis.
-         */
-        expect(seenByRouter?.metadata?.preemptCapable).toBe(true);
+      /**
+       * Guards the round-trip that shipped broken once: `preemptCapable` was
+       * serialized but never deserialized, so every Redis deployment read it
+       * back as undefined and the feature was a silent no-op. A same-replica
+       * read cannot catch that — this one crosses Redis.
+       */
+      expect(seenByRouter?.metadata?.preemptCapable).toBe(true);
 
-        await router.requestPreempt(streamId, 'steer-x', job.createdAt);
-        await new Promise((resolve) => setTimeout(resolve, 300));
+      /** The whole point: the owner's level-triggered poll flips from a
+       *  request that was accepted on a different replica. */
+      await publishUntil(
+        () => router.requestPreempt(streamId, 'steer-x', job.createdAt),
+        () => owner.isPreemptRequested(streamId),
+        'the owner to arm',
+      );
+      expect(owner.getArmedPreemptIds(streamId)).toContain('steer-x');
 
-        /** The whole point: the owner's level-triggered poll now reads true. */
-        expect(owner.isPreemptRequested(streamId)).toBe(true);
-        expect(owner.getArmedPreemptIds(streamId)).toContain('steer-x');
-
-        await router.noteSteersRemoved(streamId, ['steer-x'], job.createdAt);
-        await new Promise((resolve) => setTimeout(resolve, 300));
-
-        expect(owner.isPreemptRequested(streamId)).toBe(false);
-      } finally {
-        await owner.abortJob(streamId).catch(() => {});
-      }
-    }, 30000);
+      await publishUntil(
+        () => router.noteSteersRemoved(streamId, ['steer-x'], job.createdAt),
+        () => !owner.isPreemptRequested(streamId),
+        'the owner to disarm',
+      );
+      expect(owner.getArmedPreemptIds(streamId)).not.toContain('steer-x');
+    }, 40000);
 
     test('a stale generation id from another replica cannot arm the live job', async () => {
       const owner = createReplica();
       const router = createReplica();
       const streamId = `${testPrefix}-preempt-xreplica-stale-${Date.now()}`;
 
-      try {
-        const job = await owner.createJob(streamId, 'user-1');
-        await new Promise((resolve) => setTimeout(resolve, 300));
+      const job = await owner.createJob(streamId, 'user-1');
 
-        await router.requestPreempt(streamId, 'steer-stale', job.createdAt - 1);
-        await new Promise((resolve) => setTimeout(resolve, 300));
+      /**
+       * A negative assertion cannot be established by waiting: an undelivered
+       * stale arm and a fenced one look identical. So bracket it between two
+       * control arms on the same channel. The first proves the owner is
+       * listening BEFORE the stale one is published, and the second — sent
+       * after it, over the same publisher connection, so Redis orders it
+       * behind — proves the stale arm has already had its chance to land.
+       */
+      await publishUntil(
+        () => router.requestPreempt(streamId, 'control-before', job.createdAt),
+        () => owner.getArmedPreemptIds(streamId).includes('control-before'),
+        'the first control arm',
+      );
 
-        expect(owner.isPreemptRequested(streamId)).toBe(false);
-      } finally {
-        await owner.abortJob(streamId).catch(() => {});
-      }
-    }, 30000);
+      await router.requestPreempt(streamId, 'steer-stale', job.createdAt - 1);
+
+      await publishUntil(
+        () => router.requestPreempt(streamId, 'control-after', job.createdAt),
+        () => owner.getArmedPreemptIds(streamId).includes('control-after'),
+        'the second control arm',
+      );
+
+      expect(owner.getArmedPreemptIds(streamId)).not.toContain('steer-stale');
+    }, 40000);
   });
 });
