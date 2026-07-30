@@ -121,7 +121,7 @@ export default function FavoriteItem(props: FavoriteItemProps) {
       role="button"
       tabIndex={0}
       aria-label={ariaLabel}
-      className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+      className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg p-2 text-sm text-text-primary outline-none hover:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       data-testid="favorite-item"
@@ -137,7 +137,7 @@ export default function FavoriteItem(props: FavoriteItemProps) {
           // hidden-until-hover on hover-capable pointers. Otherwise the
           // whole row is hover-dependent and the first tap just reveals
           // this instead of selecting (the iOS double-tap).
-          'absolute right-2 flex items-center group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0'
+          'absolute right-1 flex items-center group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0'
         }
         onClick={(e) => e.stopPropagation()}
       >
@@ -149,7 +149,7 @@ export default function FavoriteItem(props: FavoriteItemProps) {
               type="button"
               aria-label={localize('com_ui_unpin')}
               data-testid="favorite-unpin-button"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-transparent p-0 text-text-secondary transition-colors duration-150 hover:border-border-medium hover:bg-surface-active hover:text-text-primary focus-visible:border-border-medium focus-visible:bg-surface-active focus-visible:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md p-0 text-text-secondary transition-colors duration-150 hover:border-border-medium hover:bg-surface-active hover:text-text-primary focus-visible:border-border-medium focus-visible:bg-surface-active focus-visible:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0"
               onClick={handleRemove}
               onKeyDown={(e: React.KeyboardEvent<HTMLButtonElement>) => {
                 if (e.key === 'Enter' || e.key === ' ') {
