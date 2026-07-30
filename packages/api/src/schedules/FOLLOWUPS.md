@@ -122,3 +122,17 @@ now settles the run as `skipped_balance` instead of `error`: `recordRunOutcome` 
 same guarded terminal transition but walks the consecutive-balance-skip streak (toward
 `insufficient_balance`) rather than the failure streak (toward `too_many_failures`). The
 pre-skip itself remains inexact by nature; only the classification was wrong.
+
+## Resume re-pause hand-off has a narrower version of the drain race (open)
+
+The `started`-row-plus-paused-job drain gate closes the ORIGINAL pause hand-off: every
+write in the request controller's pause branch happens while the row is still `started`,
+and quiesce defers exactly that state. A resumed run that pauses AGAIN has no such
+marker — the row is `requires_action` throughout the resume, so a drain observing the
+re-paused job can settle the row while resume.js's re-pause branch is still persisting
+the segment content. The window is one branch, not the whole turn (the resume claim keeps
+the job `running` — not settleable — until the re-interrupt), and the writes are
+unfinished-marked segment saves rather than settlement-ordered outcomes. Closing it
+cleanly needs a hand-off marker the row can carry across pause generations (e.g., the
+pending action's createdAt fenced against the drain's observation), which touches the
+resume claim protocol — deferred until the shape is needed elsewhere.
