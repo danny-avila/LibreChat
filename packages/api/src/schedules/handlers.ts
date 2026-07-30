@@ -298,9 +298,19 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
   function retryDeferredDeletions(userId: string): void {
     void deps.methods
       .getDeletingScheduleIds(userId, DEFERRED_ERASE_RETRY_LIMIT)
-      .then((ids) =>
-        Promise.all(ids.map((id) => deps.deleteSchedule(id, userId).catch(() => 'unconfirmed'))),
-      )
+      .then(async (ids) => {
+        if (ids.length === 0) {
+          return;
+        }
+        // Stamp BEFORE attempting: the read window is least-recently-attempted
+        // first, so rows this pass touches rotate to the back and an owner with
+        // more stuck rows than the limit reaches all of them across successive
+        // lists instead of re-driving the same unconfirmable few forever.
+        await deps.methods.markEraseAttempted(ids);
+        await Promise.all(
+          ids.map((id) => deps.deleteSchedule(id, userId).catch(() => 'unconfirmed')),
+        );
+      })
       .catch((err) => logger.warn('[schedules] deferred deletion retry failed', err));
   }
 

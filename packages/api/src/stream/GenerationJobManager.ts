@@ -11,6 +11,7 @@ import type {
   TMessageContentParts,
   TContextUsageEvent,
   TTokenUsageEvent,
+  TPendingSteer,
   Agents,
 } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
@@ -1619,20 +1620,34 @@ class GenerationJobManagerClass {
      *  the createdAt guard keeps it off a replacement job's queue. Runs only
      *  after WINNING the terminal CAS: a losing abort must not close or drain
      *  the winner's queue. */
-    const pendingSteers = (
-      await this.jobStore.closeAndDrainSteers(streamId, jobData.createdAt)
-    ).map(toPendingSteer);
-    // No-subscriber recovery: the abort response/final are transient, so park
-    // the leftovers for /chat/status claim-on-read within the recovery TTL.
-    await this.steering.park(
-      streamId,
-      pendingSteers,
-      {
-        userId: jobData.userId,
-        tenantId: jobData.tenantId,
-      },
-      jobData.createdAt,
-    );
+    // BEST-EFFORT from here to the abort signal: the terminal CAS above is already
+    // durable, so a rejection in drain/park would exit before `emitAbort` and the
+    // local `abortController.abort()` — leaving a job every retry sees as terminal
+    // while the generation keeps running and billing. Losing the queue report
+    // (steers re-surface via /chat/status or expire by TTL) is strictly cheaper
+    // than losing the stop signal.
+    let pendingSteers: TPendingSteer[] = [];
+    try {
+      pendingSteers = (await this.jobStore.closeAndDrainSteers(streamId, jobData.createdAt)).map(
+        toPendingSteer,
+      );
+      // No-subscriber recovery: the abort response/final are transient, so park
+      // the leftovers for /chat/status claim-on-read within the recovery TTL.
+      await this.steering.park(
+        streamId,
+        pendingSteers,
+        {
+          userId: jobData.userId,
+          tenantId: jobData.tenantId,
+        },
+        jobData.createdAt,
+      );
+    } catch (err) {
+      logger.error(
+        `[GenerationJobManager] Steer drain/park failed during abort for ${streamId}; continuing to signal:`,
+        err,
+      );
+    }
 
     /** Final event for abort */
     const userMessageId = jobData.userMessage?.messageId;

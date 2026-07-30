@@ -977,14 +977,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // in-flight user-message / conversation save, then tear down WITHOUT saving a
         // partial response, emitting a terminal event, or completing the job.
         if (client?.pendingApproval) {
-          // Every write launched during this segment must land before the pause is
-          // recorded: a deletion drain treats a recorded pause as settleable and can
-          // cascade immediately after. That covers the disconnect-partial save, the
-          // background user-message save, AND the immediate-mode title — a title is
-          // billed work (balance upsert + transaction insert), and its aborted task
-          // unwinding through usage persistence after the cascade would recreate rows
-          // for a deleted account. All never-rejecting by construction.
-          await awaitPendingPersistence();
           if (response?.databasePromise) {
             try {
               await response.databasePromise;
@@ -996,6 +988,22 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             }
             delete response.databasePromise;
           }
+          // UNBLOCK the title BEFORE the persistence barrier below: `addTitle` waits
+          // on `convoReady` before persisting, so awaiting `immediateTitlePromise`
+          // with `convoReady` still pending deadlocks this branch. The conversation
+          // row was saved just above, so a title that already finished generating may
+          // persist now; the abort only cancels a still-in-flight title model call.
+          titleAbortController.abort();
+          acceptsTitleEvents = false;
+          resolveConvoReady();
+          // Every write launched during this segment must land before the pause is
+          // recorded: a deletion drain treats a recorded pause as settleable and can
+          // cascade immediately after. That covers the disconnect-partial save, the
+          // background user-message save, AND the immediate-mode title — a title is
+          // billed work (balance upsert + transaction insert), and its aborted task
+          // unwinding through usage persistence after the cascade would recreate rows
+          // for a deleted account. All never-rejecting by construction.
+          await awaitPendingPersistence();
           // BaseClient saved the response as completed (unfinished:false), but the turn
           // is paused awaiting a decision. Re-mark it unfinished so an expired / never-
           // resumed approval doesn't leave a "finished" response in history; the resume
@@ -1053,9 +1061,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               }
             }
           }
-          titleAbortController.abort();
-          acceptsTitleEvents = false;
-          resolveConvoReady();
           // handleRunInterrupt already released the concurrency slot the moment it paused
           // (so a fast /resume isn't 429'd); only release here if that didn't happen.
           // Always run the MCP request-context cleanup.

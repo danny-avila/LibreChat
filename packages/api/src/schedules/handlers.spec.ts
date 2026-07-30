@@ -545,6 +545,7 @@ describe('deferred deletion retry', () => {
     } as Partial<SchedulesHandlersDeps>);
     (deps.methods.getSchedulesByUser as jest.Mock) = jest.fn(async () => []);
     (deps.methods.getDeletingScheduleIds as jest.Mock) = jest.fn(async () => ['stranded-1']);
+    (deps.methods.markEraseAttempted as jest.Mock) = jest.fn(async () => undefined);
     const { res } = makeRes();
 
     await createSchedulesHandlers(deps).listSchedules(
@@ -557,6 +558,8 @@ describe('deferred deletion retry', () => {
     // The service delete (abort + settle + erase), not a bare erase probe: a schedule
     // stranded mid-drain with a still-active run needs the abort re-driven too.
     expect(deps.deleteSchedule).toHaveBeenCalledWith('stranded-1', 'user-1');
+    // Stamped attempted so the bounded window rotates past rows that stay unconfirmed.
+    expect(deps.methods.markEraseAttempted).toHaveBeenCalledWith(['stranded-1']);
   });
 
   it('keeps listing even when a stranded deletion re-drive rejects', async () => {
@@ -567,6 +570,7 @@ describe('deferred deletion retry', () => {
     } as Partial<SchedulesHandlersDeps>);
     (deps.methods.getSchedulesByUser as jest.Mock) = jest.fn(async () => []);
     (deps.methods.getDeletingScheduleIds as jest.Mock) = jest.fn(async () => ['stranded-1']);
+    (deps.methods.markEraseAttempted as jest.Mock) = jest.fn(async () => undefined);
     const { res, captured } = makeRes();
 
     await createSchedulesHandlers(deps).listSchedules(

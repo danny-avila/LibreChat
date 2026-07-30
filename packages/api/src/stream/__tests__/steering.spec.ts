@@ -464,6 +464,25 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       expect(await manager.steering.peek(streamId)).toEqual([]);
     });
 
+    test('abortJob still signals and finalizes when the steer drain fails', async () => {
+      // The terminal CAS is already durable when the drain runs; a drain rejection
+      // must not exit before the abort signal, or every retry sees a terminal job
+      // while the generation keeps running and billing.
+      const streamId = 'steer-abort-drain-fails';
+      await manager.createJob(streamId, 'user-1');
+      await manager.steering.enqueue(streamId, buildSteer('stranded but non-fatal'));
+      jest
+        .spyOn(jobStore, 'closeAndDrainSteers')
+        .mockRejectedValueOnce(new Error('transient store failure'));
+
+      const result = await manager.abortJob(streamId);
+
+      expect(result.success).toBe(true);
+      expect(result.finalEvent).toMatchObject({ aborted: true });
+      expect(result.pendingSteers ?? []).toEqual([]);
+      await expect(jobStore.getJob(streamId)).resolves.toMatchObject({ status: 'aborted' });
+    });
+
     test('abortJob publishes nothing when natural completion wins its terminal CAS', async () => {
       const streamId = 'steer-abort-loses-terminal-race';
       const eventTransport = new InMemoryEventTransport();

@@ -2138,6 +2138,22 @@ describe('erasure sweep rotation and idempotency-key lookup', () => {
     expect(rotated[0].id).not.toBe(window[0].id);
   });
 
+  it('rotates the per-owner deletion-retry window the same way', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await Schedule.create(scheduleData({ user, deleting: true, nextRunAt: undefined }));
+    await Schedule.create(scheduleData({ user, deleting: true, nextRunAt: undefined }));
+
+    const window = await methods.getDeletingScheduleIds(user, 1);
+    expect(window).toHaveLength(1);
+    await methods.markEraseAttempted(window);
+
+    // The list-path retry is bounded too; without least-recently-attempted
+    // ordering an owner with more stuck rows than the limit re-drives the same
+    // unconfirmable few on every list and never reaches the rest.
+    const rotated = await methods.getDeletingScheduleIds(user, 1);
+    expect(rotated[0]).not.toBe(window[0]);
+  });
+
   it('resolves an idempotency key even while its row is draining', async () => {
     const user = new mongoose.Types.ObjectId();
     const schedule = scheduleData({ user, deleting: true, clientRequestId: 'intent-9' });

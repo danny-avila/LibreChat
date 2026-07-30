@@ -473,6 +473,11 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
         liveJob = await GenerationJobManager.getJob(jobStreamId);
       } catch (err) {
         logger.error(`[AgentStream] Could not verify abort state: ${jobStreamId}`, err);
+        // This attempt is over either way — nothing was stopped, so this route has no
+        // persistence left to perform. Leaving the stamp unresolved would make every
+        // retry answer 'in_progress' (a false success) and hold the owner's settlement
+        // barrier + the reconciler fence for the full stale window.
+        await resolveStopAttempt();
         return res
           .status(503)
           .json({ error: 'Could not verify the generation state. Please retry.', aborted: null });

@@ -1527,8 +1527,14 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     userId: string | Types.ObjectId,
     limit: number,
   ): Promise<string[]> {
+    // Least-recently-attempted first (missing sorts before any date), for the same
+    // reason the erasure sweep rotates: an unsorted `.limit()` window pins the same
+    // stuck rows forever once the owner has more deleting rows than the limit, and
+    // the ones beyond it never get their deletion re-driven. Callers stamp
+    // markEraseAttempted after each attempt to rotate the window.
     const rows = await Schedule()
       .find({ user: userId, deleting: true })
+      .sort({ eraseAttemptedAt: 1 })
       .select('id')
       .limit(limit)
       .lean<Array<Pick<ISchedule, 'id'>>>();
