@@ -1,5 +1,5 @@
-import throttle from 'lodash/throttle';
 import React, { useCallback, useEffect, useRef } from 'react';
+import throttle from 'lodash/throttle';
 import type { FetchNextPageOptions, InfiniteQueryObserverResult } from '@tanstack/react-query';
 
 export default function useNavScrolling<TData>({
@@ -59,6 +59,21 @@ export default function useNavScrolling<TData>({
       }
     };
   }, [handleScroll]);
+
+  /**
+   * A page that doesn't fill the scrollport produces no scroll event, so nothing
+   * would ever request the next one. Keep fetching until the list overflows (or
+   * the cursor runs out); `clientHeight` of 0 means the panel isn't laid out yet.
+   */
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || nextCursor == null || isFetchingNext) {
+      return;
+    }
+    if (container.clientHeight > 0 && container.scrollHeight <= container.clientHeight) {
+      fetchNext();
+    }
+  }, [nextCursor, isFetchingNext, fetchNext]);
 
   const moveToTop = useCallback(() => {
     const container = containerRef.current;
