@@ -15,11 +15,16 @@ const variableKeys = Object.keys(specialVariables) as Array<keyof typeof special
 interface VariablesDropdownProps {
   fieldName?: string;
   className?: string;
+  finalFocus?: React.RefObject<HTMLElement>;
+  /** Portaled menus are unclickable inside a modal dialog, which locks pointer events on the body */
+  portal?: boolean;
 }
 
 export default function VariablesDropdown({
   fieldName = 'prompt',
   className = '',
+  finalFocus,
+  portal = true,
 }: VariablesDropdownProps) {
   const menuId = useId();
   const localize = useLocalize();
@@ -102,15 +107,17 @@ export default function VariablesDropdown({
   return (
     <div className={className}>
       <DropdownPopup
-        portal={true}
+        portal={portal}
         mountByState={true}
         unmountOnHide={true}
         preserveTabOrder={true}
+        finalFocus={finalFocus}
         isOpen={isMenuOpen}
         setIsOpen={setIsMenuOpen}
         trigger={
           <Menu.MenuButton
             id="variables-menu-button"
+            onMouseDown={(e) => e.preventDefault()}
             aria-label={localize('com_ui_add_special_variables')}
             className={`group flex h-8 items-center gap-1.5 rounded-lg bg-transparent px-2 text-sm ${buttonClass}`}
           >
