@@ -5,6 +5,7 @@ import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import useToolCallState from './useToolCallState';
 import { AttachmentGroup } from './Attachment';
 import parseJsonField from './parseJsonField';
+import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
@@ -28,6 +29,7 @@ export default function SkillCall({
 }) {
   const localize = useLocalize();
   const skillName = useMemo(() => parseJsonField(args, 'skillName'), [args]);
+  const intent = useToolCallIntent(args);
 
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
     useToolCallState(initialProgress, isSubmitting, output, !!skillName, onExpand);
@@ -38,11 +40,11 @@ export default function SkillCall({
         <ProgressText
           progress={progress}
           onClick={toggleCode}
-          inProgressText={localize('com_ui_skill_running', { 0: skillName })}
+          inProgressText={intent ?? localize('com_ui_skill_running', { 0: skillName })}
           finishedText={
             cancelled
               ? localize('com_ui_cancelled')
-              : localize('com_ui_skill_finished', { 0: skillName })
+              : (intent ?? localize('com_ui_skill_finished', { 0: skillName }))
           }
           errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={

@@ -122,6 +122,46 @@ describe('BashCall status text', () => {
   );
 });
 
+describe('BashCall intent label', () => {
+  it('shows a streaming intent before any other arg exists (first key, partial JSON)', () => {
+    renderBashCall('{"intent":"Checking the countdown ta');
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Checking the countdown ta');
+    expect(screen.queryByText('Writing command')).not.toBeInTheDocument();
+  });
+
+  it('keeps the intent as the in-progress label once the command has streamed', () => {
+    renderBashCall('{"intent":"Waiting for the task to settle","command":"sleep 8; echo waited"}');
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Waiting for the task to settle');
+    expect(screen.queryByText('Running command')).not.toBeInTheDocument();
+    expect(screen.getByText(/sleep 8/)).toBeInTheDocument();
+  });
+
+  it('keeps the intent as the settled label (completion is a UI state, not a tense change)', () => {
+    render(
+      <RecoilRoot>
+        <BashCall
+          initialProgress={1}
+          isSubmitting={false}
+          args={'{"intent":"Waiting for the task to settle","command":"sleep 8"}'}
+          output="waited"
+        />
+      </RecoilRoot>,
+    );
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Waiting for the task to settle');
+    expect(screen.queryByText('Finished running')).not.toBeInTheDocument();
+  });
+
+  it('falls back to the generic labels when no intent is present', () => {
+    renderBashCall({ command: 'sleep 10' });
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Running command');
+  });
+
+  it('ignores a non-string intent arg (a business param, not the label contract)', () => {
+    renderBashCall({ intent: { nested: true }, command: 'sleep 10' });
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Running command');
+  });
+});
+
 describe('BashCall backgrounded calls', () => {
   const HANDLE_OUTPUT = JSON.stringify({
     background_task_id: 'task-1',
