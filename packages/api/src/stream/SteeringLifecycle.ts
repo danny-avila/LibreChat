@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { ContentTypes, SteerEvents } from 'librechat-data-provider';
 import type { TPendingSteer } from 'librechat-data-provider';
-import type { IJobStore, SteerQueueItem } from '~/stream/interfaces/IJobStore';
+import type { IJobStore, SteerArmOutcome, SteerQueueItem } from '~/stream/interfaces/IJobStore';
 import type { ServerSentEvent } from '~/types';
 
 /** Client-safe projection of a queued steer (drops the server-only userId). */
@@ -154,10 +154,11 @@ export class SteeringLifecycle {
    * Escalate a still-queued steer to an interrupt IN PLACE — the durable
    * `preempt` flag flips on the existing item, so its FIFO position survives
    * (the whole queue drains at the seal, in order). Races with a drain,
-   * cancel, or replacement run settle inside the store's atomic update:
-   * `false` simply means the steer is no longer this generation's to arm.
+   * cancel, or replacement run settle inside the store's atomic update as
+   * `missing`, and the owner's LIVE capability is part of the same predicate
+   * (`incapable`) — see {@link IJobStore.armSteer}.
    */
-  arm(streamId: string, steerId: string, expectedCreatedAt?: number): Promise<boolean> {
+  arm(streamId: string, steerId: string, expectedCreatedAt?: number): Promise<SteerArmOutcome> {
     return this.store.armSteer(streamId, steerId, expectedCreatedAt);
   }
 

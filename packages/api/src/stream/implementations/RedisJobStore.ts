@@ -13,6 +13,7 @@ import type {
   JobStatusTransition,
   IdempotencyClaimValue,
   IdempotencyClaimResult,
+  SteerArmOutcome,
 } from '~/stream/interfaces/IJobStore';
 import {
   STEER_ENQUEUE_NOT_RUNNING,
@@ -395,11 +396,14 @@ const STEER_REMOVE_LUA =
  * set `preempt`, and LSET it back at its index, so its FIFO position is
  * untouched (the entire queue drains at the seal, in order). Guarded like
  * {@link STEER_ENQUEUE_LUA}: a closed queue or a generation mismatch refuses,
- * so a stale request can never arm a replacement run's steer.
+ * so a stale request can never arm a replacement run's steer. The owner's
+ * LIVE `preemptCapable` is part of the same atomic predicate — a HITL resume
+ * on a rolling deploy rewrites it for the SAME generation, so a value the
+ * caller read earlier is not trustworthy.
  *
  *   KEYS: [job, steers]
  *   ARGV: [steerIdFragment, expectedCreatedAt or ""]
- *   Returns: 1 armed, 0 not found / closed / fenced
+ *   Returns: 1 armed, 0 not found / closed / fenced, -1 owner cannot seal
  */
 const STEER_ARM_LUA =
   'if ARGV[2] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[2] then return 0 end ' +
@@ -407,6 +411,7 @@ const STEER_ARM_LUA =
   'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
   'for i = 1, #items do ' +
   'if string.find(items[i], ARGV[1], 1, true) then ' +
+  'if redis.call("HGET", KEYS[1], "preemptCapable") ~= "1" then return -1 end ' +
   'local decoded, item = pcall(cjson.decode, items[i]) ' +
   'if not decoded then return 0 end ' +
   'item.preempt = true ' +
@@ -1905,7 +1910,11 @@ export class RedisJobStore implements IJobStore {
     return removed === 1;
   }
 
-  async armSteer(streamId: string, steerId: string, expectedCreatedAt?: number): Promise<boolean> {
+  async armSteer(
+    streamId: string,
+    steerId: string,
+    expectedCreatedAt?: number,
+  ): Promise<SteerArmOutcome> {
     const armed = (await this.redis.eval(
       STEER_ARM_LUA,
       2,
@@ -1914,7 +1923,10 @@ export class RedisJobStore implements IJobStore {
       `"steerId":"${steerId}"`,
       expectedCreatedAt != null ? String(expectedCreatedAt) : '',
     )) as number;
-    return armed === 1;
+    if (armed === 1) {
+      return 'armed';
+    }
+    return armed === -1 ? 'incapable' : 'missing';
   }
 
   async parkSteers(streamId: string, payload: string, expectedCreatedAt?: number): Promise<void> {

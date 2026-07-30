@@ -646,14 +646,16 @@ describe('InFlightSteers — interrupt-now escalation', () => {
     expect(await screen.findByText('com_ui_interrupt_steer_now')).toBeInTheDocument();
   });
 
-  it('defers to the events when the steer already left the queue', async () => {
+  it('stays neutral when the arm loses its race, whatever the reason', async () => {
+    /** `armed: false` covers injected, cancelled, re-homed, and run-over
+     *  alike, so the toast must not claim one specific outcome. */
     mockArmMutateAsync.mockResolvedValue({ armed: false });
     renderSteers([{ steerId: 's1', text: 'too late', status: 'pending', createdAt: 1 }]);
     await clickMenuItem('com_ui_interrupt_steer_now');
 
     expect(mockRetrySteer).not.toHaveBeenCalled();
     expect(mockShowToast).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'com_ui_steer_already_applied' }),
+      expect.objectContaining({ message: 'com_ui_steer_arm_lost_race' }),
     );
   });
 

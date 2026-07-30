@@ -492,15 +492,21 @@ export async function handleSteerArm(
   if (hasTenantMismatch(job.metadata, user)) {
     return { status: 403, body: { code: 'UNAUTHORIZED' } };
   }
-  if (job.metadata?.preemptCapable !== true) {
-    /** Same honesty rule as the POST's echo: an owner that cannot seal must
-     *  not have its steer relabelled "interrupting". The steer stays queued
-     *  for the next tool boundary, which is the documented degradation. */
+
+  /**
+   * Capability is decided INSIDE the atomic store predicate, not from the job
+   * read above: a HITL resume on a rolling deploy rewrites `preemptCapable`
+   * for the SAME generation, so a value read here can be stale by the time
+   * the flag flips. An incapable owner answers `PREEMPT_UNSUPPORTED` (same
+   * honesty rule as the POST's echo — the chip must not read "interrupting"
+   * for a run that can only inject at a tool boundary), with the item left
+   * unflagged and still queued.
+   */
+  const outcome = await GenerationJobManager.steering.arm(streamId, body.steerId, job.createdAt);
+  if (outcome === 'incapable') {
     return { status: 200, body: { armed: false, code: 'PREEMPT_UNSUPPORTED' } };
   }
-
-  const armed = await GenerationJobManager.steering.arm(streamId, body.steerId, job.createdAt);
-  if (!armed) {
+  if (outcome !== 'armed') {
     return { status: 200, body: { armed: false } };
   }
   /** NOT awaited, exactly like the POST: the durable flag is already the

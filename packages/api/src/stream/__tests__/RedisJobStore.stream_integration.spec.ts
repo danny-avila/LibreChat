@@ -399,7 +399,9 @@ describe('RedisJobStore Integration Tests', () => {
       const streamId = `arm-steer-${Date.now()}`;
 
       try {
-        const job = await store.createJob(streamId, 'user-1', streamId);
+        const job = await store.createJob(streamId, 'user-1', streamId, undefined, {
+          preemptCapable: true,
+        });
         await store.enqueueSteer(streamId, {
           steerId: 'first',
           text: 'earlier instruction',
@@ -414,7 +416,7 @@ describe('RedisJobStore Integration Tests', () => {
           createdAt: 2,
         });
 
-        await expect(store.armSteer(streamId, 'first', job.createdAt)).resolves.toBe(true);
+        await expect(store.armSteer(streamId, 'first', job.createdAt)).resolves.toBe('armed');
 
         const queue = await store.peekSteers(streamId);
         expect(queue.map((item) => item.steerId)).toEqual(['first', 'second']);
@@ -451,8 +453,13 @@ describe('RedisJobStore Integration Tests', () => {
           createdAt: 1,
         });
 
-        await expect(store.armSteer(streamId, 'absent', job.createdAt)).resolves.toBe(false);
-        await expect(store.armSteer(streamId, 'kept', job.createdAt + 999)).resolves.toBe(false);
+        await expect(store.armSteer(streamId, 'absent', job.createdAt)).resolves.toBe('missing');
+        await expect(store.armSteer(streamId, 'kept', job.createdAt + 999)).resolves.toBe(
+          'missing',
+        );
+        /** Live-capability predicate: the job above carries no preemptCapable,
+         *  so an otherwise-valid arm answers `incapable` and leaves the item. */
+        await expect(store.armSteer(streamId, 'kept', job.createdAt)).resolves.toBe('incapable');
         expect((await store.peekSteers(streamId))[0].preempt).toBeUndefined();
 
         /** `enqueueSteer` refuses once closed, so plant a raw item directly to
@@ -467,7 +474,7 @@ describe('RedisJobStore Integration Tests', () => {
             createdAt: 1,
           }),
         );
-        await expect(store.armSteer(streamId, 'kept', job.createdAt)).resolves.toBe(false);
+        await expect(store.armSteer(streamId, 'kept', job.createdAt)).resolves.toBe('missing');
       } finally {
         await store.destroy();
       }
