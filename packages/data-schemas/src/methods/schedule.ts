@@ -12,6 +12,17 @@ import { createIndexesWithRetry } from '~/utils/retry';
 const DUPLICATE_KEY = 11000;
 
 /**
+ * Tolerance for inter-replica wall-clock skew on the worker-clock lease
+ * comparisons (DocumentDB rules out the server-clock `$$NOW` CAS). Applied only
+ * where one worker judges ANOTHER worker's lease expired — taking over a due
+ * claim, or declaring a deleting schedule drained — so a clock-ahead worker
+ * cannot steal a lease its holder still considers live. Never applied where a
+ * worker checks its OWN lease (revalidateClaim), which is self-consistent.
+ * NTP-managed fleets sit orders of magnitude under this.
+ */
+const LEASE_SKEW_MARGIN_MS = 30_000;
+
+/**
  * Upper bound on the per-schedule `countedFor` idempotency set. Far larger than
  * the number of a single schedule's occurrences that can be terminal (or awaiting
  * reconciliation) at once, so an occurrence's marker is never evicted before any
@@ -128,7 +139,8 @@ export type ScheduleMethods = {
   deleteUnarmedSchedule: (
     id: string,
     userId: string | Types.ObjectId,
-  ) => Promise<'deleted' | 'armed' | 'missing'>;
+    expectedConfigRevision?: number,
+  ) => Promise<'deleted' | 'kept' | 'missing'>;
   getScheduleById: (id: string, userId?: string | Types.ObjectId) => Promise<ISchedule | null>;
   getSchedulesByUser: (userId: string | Types.ObjectId) => Promise<ISchedule[]>;
   countSchedulesByUser: (userId: string | Types.ObjectId) => Promise<number>;
@@ -196,7 +208,7 @@ export type ScheduleMethods = {
   ) => Promise<ISchedule | null>;
   getDeletingScheduleIds: (userId: string | Types.ObjectId, limit: number) => Promise<string[]>;
   getUnarmedSchedules: (limit: number) => Promise<ISchedule[]>;
-  armSchedule: (id: string, nextRunAt: Date) => Promise<void>;
+  armSchedule: (id: string, nextRunAt: Date, expectedConfigRevision?: number) => Promise<boolean>;
   eraseScheduleIfDrained: (id: string) => Promise<boolean>;
   deleteSchedulesByUser: (userId: string | Types.ObjectId) => Promise<void>;
   getUnbookkeptRuns: (olderThan: Date, limit: number) => Promise<IScheduleRun[]>;
@@ -343,26 +355,31 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
 
   /**
    * Rolls back a fresh create whose arming write failed — but ONLY while the row is
-   * still unarmed. An ambiguously-committed arm, or a concurrent create-retry that
-   * armed the row and already answered 201, leaves an ARMED row this rollback must
-   * not erase; 'armed' tells the caller the schedule survived as requested.
+   * still the unarmed, unedited revision this attempt inserted. An
+   * ambiguously-committed arm, or a concurrent create-retry that armed the row and
+   * already answered 201, leaves an ARMED row this rollback must not erase; a
+   * concurrent PATCH that edited the row while leaving it unarmed (e.g. disabling
+   * it) moved the revision, and deleting it would erase the owner's edit. 'kept'
+   * tells the caller the row survived in some later state.
    */
   async function deleteUnarmedSchedule(
     id: string,
     userId: string | Types.ObjectId,
-  ): Promise<'deleted' | 'armed' | 'missing'> {
+    expectedConfigRevision?: number,
+  ): Promise<'deleted' | 'kept' | 'missing'> {
     const result = await Schedule().deleteOne({
       id,
       user: userId,
       deleting: { $ne: true },
       nextRunAt: { $exists: false },
+      ...(expectedConfigRevision != null ? { configRevision: expectedConfigRevision } : {}),
     });
     if (result.deletedCount > 0) {
       await ScheduleRun().deleteMany({ scheduleId: id });
       return 'deleted';
     }
     const still = await Schedule().findOne({ id, user: userId }).select('_id').lean();
-    return still == null ? 'missing' : 'armed';
+    return still == null ? 'missing' : 'kept';
   }
 
   async function getScheduleById(
@@ -408,6 +425,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   async function claimDueSchedule(params: ClaimDueScheduleParams): Promise<ISchedule | null> {
     const claimToken = randomUUID();
     const now = new Date();
+    const takeoverCutoff = new Date(now.getTime() - LEASE_SKEW_MARGIN_MS);
     return Schedule()
       .findOneAndUpdate(
         {
@@ -417,7 +435,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
           $or: [
             { leaseUntil: { $exists: false } },
             { leaseUntil: null },
-            { leaseUntil: { $lt: now } },
+            { leaseUntil: { $lt: takeoverCutoff } },
           ],
         },
         {
@@ -455,6 +473,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // The claimToken already fences the lease, so reuse it as the holder discriminator.
     const leaseBy = `manual:${claimToken}`;
     const now = new Date();
+    const takeoverCutoff = new Date(now.getTime() - LEASE_SKEW_MARGIN_MS);
     return Schedule()
       .findOneAndUpdate(
         {
@@ -464,7 +483,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
           $or: [
             { leaseUntil: { $exists: false } },
             { leaseUntil: null },
-            { leaseUntil: { $lt: now } },
+            { leaseUntil: { $lt: takeoverCutoff } },
           ],
         },
         { $set: { leaseUntil: new Date(now.getTime() + leaseMs), leaseBy, claimToken } },
@@ -657,33 +676,57 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     return { takenSlots, unslotted };
   }
 
-  /** Records that an abort was requested WITHOUT freeing the capacity slot: the run
-   *  keeps counting against fireConcurrency until its generation owner confirms
-   *  settlement by writing a terminal outcome. First writer wins the stamp (and its
-   *  `abortSource`); a later request leaves both untouched. Two classic-operator
-   *  statements instead of a `$ifNull` pipeline update (DocumentDB). */
+  /**
+   * Records that an abort was requested WITHOUT freeing the capacity slot: the run
+   * keeps counting against fireConcurrency until its generation owner confirms
+   * settlement by writing a terminal outcome.
+   *
+   * The stamp is RENEWED per attempt, not first-wins: the fences read
+   * `abortRequestedAt` for freshness, and a retry abort signalled against a live
+   * generation must re-arm them — a 31-minute-old stamp from a failed first attempt
+   * must not let a drain read the retry's post-abort job state as settled. Callers
+   * therefore only invoke this against a generation they observed LIVE (or unknown);
+   * stamping cleanup aborts of already-terminal jobs would re-fence a dead owner
+   * forever and block the reconciler's recovery.
+   *
+   * Source semantics: a 'stop' attempt takes the source and re-opens the persistence
+   * marker (the Stop route persists writes the owner's barrier must wait on, and each
+   * attempt resolves it anew); a 'deletion' request renews freshness but never steals
+   * the source from an UNRESOLVED stop attempt — the route may still be persisting,
+   * and the owner's barrier keys off `abortSource === 'stop'`.
+   * Classic operators only (DocumentDB).
+   */
   async function requestRunAbort(
     scheduleId: string,
     scheduledFor: Date,
     source?: IScheduleRun['abortSource'],
   ): Promise<boolean> {
-    const stamped = await ScheduleRun().updateOne(
+    const now = new Date();
+    if (source === 'stop') {
+      const stamped = await ScheduleRun().updateOne(
+        { scheduleId, scheduledFor, status: { $in: ACTIVE_RUN_STATUSES } },
+        { $set: { abortRequestedAt: now, abortSource: 'stop' }, $unset: { abortPersistedAt: 1 } },
+      );
+      return (stamped.matchedCount ?? 0) > 0;
+    }
+    const claimed = await ScheduleRun().updateOne(
       {
         scheduleId,
         scheduledFor,
         status: { $in: ACTIVE_RUN_STATUSES },
-        abortRequestedAt: { $exists: false },
+        $or: [{ abortSource: { $ne: 'stop' } }, { abortPersistedAt: { $exists: true } }],
       },
-      { $set: { abortRequestedAt: new Date(), ...(source ? { abortSource: source } : {}) } },
+      { $set: { abortRequestedAt: now, ...(source ? { abortSource: source } : {}) } },
     );
-    if ((stamped.matchedCount ?? 0) > 0) {
+    if ((claimed.matchedCount ?? 0) > 0) {
       return true;
     }
-    const existing = await ScheduleRun()
-      .findOne({ scheduleId, scheduledFor, status: { $in: ACTIVE_RUN_STATUSES } })
-      .select('_id')
-      .lean();
-    return existing != null;
+    // An unresolved stop attempt holds the source; renew freshness only.
+    const renewed = await ScheduleRun().updateOne(
+      { scheduleId, scheduledFor, status: { $in: ACTIVE_RUN_STATUSES } },
+      { $set: { abortRequestedAt: now } },
+    );
+    return (renewed.matchedCount ?? 0) > 0;
   }
 
   /** The abort-coordination view of a run row, for the generation owner's settlement
@@ -1318,13 +1361,32 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       .lean<ISchedule[]>();
   }
 
-  /** Arms an unarmed schedule. Conditional on still being unarmed, so it can never
-   *  disturb one that armed itself (or was edited) in the meantime. */
-  async function armSchedule(id: string, nextRunAt: Date): Promise<void> {
-    await Schedule().updateOne(
-      { id, enabled: true, deleting: { $ne: true }, nextRunAt: { $exists: false } },
+  /**
+   * Arms an unarmed schedule — the ONE arming CAS every creation path shares (the
+   * original POST, its idempotent replay, and the reconciler's unarmed sweep).
+   * Conditional on still being unarmed, so concurrent armers collapse to a single
+   * write: it never rotates the claim token (which would fence an occurrence the
+   * engine already claimed off the freshly-armed row) and never bumps the config
+   * revision (which would break a concurrent PATCH's CAS). `expectedConfigRevision`
+   * additionally fences the original POST's arm against a PATCH that landed after
+   * the insert — the edit's own arming governs then. Returns whether THIS call armed.
+   */
+  async function armSchedule(
+    id: string,
+    nextRunAt: Date,
+    expectedConfigRevision?: number,
+  ): Promise<boolean> {
+    const result = await Schedule().updateOne(
+      {
+        id,
+        enabled: true,
+        deleting: { $ne: true },
+        nextRunAt: { $exists: false },
+        ...(expectedConfigRevision != null ? { configRevision: expectedConfigRevision } : {}),
+      },
       { $set: { nextRunAt } },
     );
+    return (result.modifiedCount ?? 0) > 0;
   }
 
   /** Soft-deleted schedules awaiting erasure (drained of active runs). ROUND-ROBIN
@@ -1389,9 +1451,15 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   async function eraseScheduleIfDrained(id: string): Promise<boolean> {
     // A live lease (leaseUntil in the future) means a worker still holds the claim.
     // Worker clock, DocumentDB-portable: `$gt` matches neither missing nor null, so a
-    // released lease reads as drained.
+    // released lease reads as drained. Skew margin: a lease reads as live until
+    // MARGIN past its expiry, so a clock-ahead erasure worker cannot destroy a row a
+    // skew-behind holder still legitimately claims.
     const leased = await Schedule()
-      .findOne({ id, deleting: true, leaseUntil: { $gt: new Date() } })
+      .findOne({
+        id,
+        deleting: true,
+        leaseUntil: { $gt: new Date(Date.now() - LEASE_SKEW_MARGIN_MS) },
+      })
       .select('_id')
       .lean();
     if (leased != null) {

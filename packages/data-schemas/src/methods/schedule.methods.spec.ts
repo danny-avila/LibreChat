@@ -118,14 +118,26 @@ describe('claimDueSchedule', () => {
     expect(second).toBeNull();
   });
 
-  it('allows re-claim after the lease expires', async () => {
+  it('allows re-claim after the lease expires past the skew margin', async () => {
     const created = await methods.createSchedule(scheduleData());
-    const first = await methods.claimDueSchedule({ instanceId: 'inst-a', leaseMs: 50 });
+    // Takeover requires expiry to be at least LEASE_SKEW_MARGIN_MS in the past
+    // (worker-clock comparisons tolerate inter-replica skew), so lease a NEGATIVE
+    // duration deep enough to clear the margin instead of sleeping it out.
+    const first = await methods.claimDueSchedule({ instanceId: 'inst-a', leaseMs: -31_000 });
     expect(first?.id).toBe(created.id);
-    await new Promise((resolve) => setTimeout(resolve, 60));
     const second = await methods.claimDueSchedule({ instanceId: 'inst-b', leaseMs: 60_000 });
     expect(second?.id).toBe(created.id);
     expect(second?.leaseBy).toBe('inst-b');
+  });
+
+  it('does not take over a lease expired less than the skew margin ago', async () => {
+    await methods.createSchedule(scheduleData());
+    // Expired 1s ago by this clock — within the margin, so a skew-behind holder may
+    // still legitimately consider it live.
+    const first = await methods.claimDueSchedule({ instanceId: 'inst-a', leaseMs: -1_000 });
+    expect(first).not.toBeNull();
+    const contender = await methods.claimDueSchedule({ instanceId: 'inst-b', leaseMs: 60_000 });
+    expect(contender).toBeNull();
   });
 
   it('claims due schedules in nextRunAt order', async () => {
@@ -1795,32 +1807,64 @@ describe('reconciliation rotates the paused window', () => {
   });
 });
 
-describe('requestRunAbort (classic-operator first-wins stamp)', () => {
-  it('stamps the first request with its source and preserves both on a later one', async () => {
+describe('requestRunAbort (renewable, source-aware stamp)', () => {
+  const scheduledFor = new Date('2026-07-20T12:00:00Z');
+
+  it('renews freshness on a deletion retry without stealing an unresolved stop source', async () => {
     const schedule = await methods.createSchedule(scheduleData());
     await ScheduleRun.create(runData(schedule));
 
-    expect(
-      await methods.requestRunAbort(schedule.id, new Date('2026-07-20T12:00:00Z'), 'stop'),
-    ).toBe(true);
-    const first = await methods.getScheduleRunAbortState(
-      schedule.id,
-      new Date('2026-07-20T12:00:00Z'),
-    );
+    expect(await methods.requestRunAbort(schedule.id, scheduledFor, 'stop')).toBe(true);
+    const first = await methods.getScheduleRunAbortState(schedule.id, scheduledFor);
     expect(first?.abortRequestedAt).toBeInstanceOf(Date);
     expect(first?.abortSource).toBe('stop');
 
-    // A racing deletion must not overwrite the stop's stamp: the settlement barrier
-    // reads the SOURCE to know the Stop route still has writes in flight.
-    expect(
-      await methods.requestRunAbort(schedule.id, new Date('2026-07-20T12:00:00Z'), 'deletion'),
-    ).toBe(true);
-    const second = await methods.getScheduleRunAbortState(
-      schedule.id,
-      new Date('2026-07-20T12:00:00Z'),
-    );
+    // A racing deletion must not steal the source (the settlement barrier reads it to
+    // know the Stop route still has writes in flight) but MUST renew the freshness
+    // stamp — its abort is a new signal the fences have to cover.
+    expect(await methods.requestRunAbort(schedule.id, scheduledFor, 'deletion')).toBe(true);
+    const second = await methods.getScheduleRunAbortState(schedule.id, scheduledFor);
     expect(second?.abortSource).toBe('stop');
-    expect(second?.abortRequestedAt?.getTime()).toBe(first?.abortRequestedAt?.getTime());
+    expect(second?.abortRequestedAt!.getTime()).toBeGreaterThanOrEqual(
+      first!.abortRequestedAt!.getTime(),
+    );
+  });
+
+  it('lets a stop attempt take over a deletion-stamped run and re-open its persistence', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await ScheduleRun.create(runData(schedule));
+
+    // Deletion stamps first; the user's Stop then wins the abort — the owner's
+    // barrier must now wait on the ROUTE's persistence, so the stop takes the source.
+    expect(await methods.requestRunAbort(schedule.id, scheduledFor, 'deletion')).toBe(true);
+    expect(await methods.requestRunAbort(schedule.id, scheduledFor, 'stop')).toBe(true);
+    const state = await methods.getScheduleRunAbortState(schedule.id, scheduledFor);
+    expect(state?.abortSource).toBe('stop');
+    expect(state?.abortPersistedAt).toBeUndefined();
+  });
+
+  it('lets deletion claim the source once the stop attempt resolved', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await ScheduleRun.create(runData(schedule));
+
+    await methods.requestRunAbort(schedule.id, scheduledFor, 'stop');
+    await methods.markRunAbortPersisted(schedule.id, scheduledFor);
+    expect(await methods.requestRunAbort(schedule.id, scheduledFor, 'deletion')).toBe(true);
+    const state = await methods.getScheduleRunAbortState(schedule.id, scheduledFor);
+    expect(state?.abortSource).toBe('deletion');
+  });
+
+  it('re-opens the persistence marker on a fresh stop attempt', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await ScheduleRun.create(runData(schedule));
+
+    await methods.requestRunAbort(schedule.id, scheduledFor, 'stop');
+    await methods.markRunAbortPersisted(schedule.id, scheduledFor);
+    // A SECOND stop attempt persists anew; the resolved marker of the first must not
+    // release the owner's barrier while the new attempt's writes are in flight.
+    await methods.requestRunAbort(schedule.id, scheduledFor, 'stop');
+    const state = await methods.getScheduleRunAbortState(schedule.id, scheduledFor);
+    expect(state?.abortPersistedAt).toBeUndefined();
   });
 
   it('reports false when no active run holds the occurrence', async () => {
@@ -1942,8 +1986,40 @@ describe('deleteUnarmedSchedule (guarded create rollback)', () => {
     // An ambiguously-committed arm (or a concurrent replay's arm) landed: the row is a
     // live schedule another response may have confirmed, so the rollback must not
     // erase it.
-    expect(await methods.deleteUnarmedSchedule(schedule.id, schedule.user)).toBe('armed');
+    expect(await methods.deleteUnarmedSchedule(schedule.id, schedule.user)).toBe('kept');
     expect(await Schedule.findOne({ id: schedule.id }).lean()).not.toBeNull();
+  });
+
+  it('refuses to delete an unarmed row a concurrent edit has moved past', async () => {
+    const schedule = await methods.createSchedule(
+      scheduleData({ nextRunAt: undefined, configRevision: 0 }),
+    );
+    // A PATCH that disables the schedule leaves it UNARMED but bumps the revision —
+    // the row now embodies the owner's edit, and the POST's rollback must not erase it.
+    await methods.updateScheduleById(schedule.id, schedule.user, { enabled: false });
+
+    expect(await methods.deleteUnarmedSchedule(schedule.id, schedule.user, 0)).toBe('kept');
+    expect(await Schedule.findOne({ id: schedule.id }).lean()).not.toBeNull();
+  });
+
+  it('arms through the shared CAS without rotating the claim token or revision', async () => {
+    const schedule = await methods.createSchedule(
+      scheduleData({ nextRunAt: undefined, claimToken: 'ct-live', configRevision: 0 }),
+    );
+    expect(await methods.armSchedule(schedule.id, new Date(Date.now() + 60_000), 0)).toBe(true);
+    // A second armer (the original POST racing a replay) must collapse to a no-op.
+    expect(await methods.armSchedule(schedule.id, new Date(Date.now() + 120_000), 0)).toBe(false);
+    const row = await Schedule.findOne({ id: schedule.id }).lean();
+    expect(row?.claimToken).toBe('ct-live');
+    expect(row?.configRevision).toBe(0);
+  });
+
+  it('refuses the revision-fenced arm after a concurrent edit', async () => {
+    const schedule = await methods.createSchedule(
+      scheduleData({ nextRunAt: undefined, configRevision: 0 }),
+    );
+    await methods.updateScheduleById(schedule.id, schedule.user, { name: 'edited' });
+    expect(await methods.armSchedule(schedule.id, new Date(Date.now() + 60_000), 0)).toBe(false);
   });
 
   it('reports a missing row distinctly', async () => {

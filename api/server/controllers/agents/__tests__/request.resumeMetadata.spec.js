@@ -9,6 +9,7 @@ const mockLogger = {
 
 const mockGenerationJobManager = {
   createJob: jest.fn(),
+  getJob: jest.fn(),
   emitError: jest.fn(),
   completeJob: jest.fn(),
   abortJob: jest.fn(),
@@ -174,7 +175,7 @@ jest.mock('~/server/services/Schedules', () => ({
   // liveness re-check a call on undefined.
   isScheduleLive: jest.fn(() => Promise.resolve(true)),
   clearScheduledJob: jest.fn(() => Promise.resolve()),
-  awaitStopAbortPersistence: jest.fn(() => Promise.resolve()),
+  awaitStopAbortPersistence: jest.fn(() => Promise.resolve(true)),
 }));
 
 jest.mock('~/models', () => ({
@@ -222,6 +223,9 @@ describe('ResumableAgentController resume metadata', () => {
       abortController: new AbortController(),
       emitter: { on: jest.fn() },
     });
+    // The disconnect-partial save re-checks liveness before writing; a live incarnation
+    // of the created generation is the default.
+    mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000, status: 'running' });
     mockGenerationJobManager.getResumeState.mockResolvedValue(null);
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.emitError.mockResolvedValue(undefined);
@@ -658,7 +662,10 @@ describe('ResumableAgentController resume metadata', () => {
     };
     const textPart = { type: 'text', text: 'Partial response...' };
 
+    // The handler dispatches the save asynchronously (assigning it synchronously to
+    // the settlement-awaited promise); drain the queue before asserting.
     await allSubscribersLeftHandler([oauthPart, textPart]);
+    await nextTick();
 
     expect(mockFilterPersistableAbortContent).toHaveBeenCalledWith([oauthPart, textPart]);
     expect(mockSaveMessage).toHaveBeenCalledWith(
@@ -742,6 +749,7 @@ describe('ResumableAgentController resume metadata', () => {
 
     const textPart = { type: 'text', text: 'Partial response...' };
     await allSubscribersLeftHandler([textPart]);
+    await nextTick();
 
     expect(mockSaveMessage).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'user-123' }),

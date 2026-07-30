@@ -8,6 +8,7 @@ const {
   toClientPendingAction,
   isHITLEnabled,
   deleteAgentCheckpoint,
+  captureAgentCheckpointGeneration,
   attachAskUserQuestionArgs,
   createMessageFilterPii,
   readScheduleFireClaims,
@@ -365,6 +366,7 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
     // gets the question too, not just the saved message on reload.
     const abortedAskPayload = job.metadata?.pendingAction?.payload;
     const scheduleId = job.metadata?.scheduleId;
+    const jobIsLive = job.status === 'running' || job.status === 'requires_action';
     // Stamp the run abort-REQUESTED (source 'stop') before signalling. abortJob flips
     // the job to `aborted` (or removes it) the moment it wins its status CAS, while
     // this handler still has to save the partial below. Without the stamp, an
@@ -373,17 +375,51 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
     // before saveMessage writes a message back for the deleted account. The stamp is
     // therefore LOAD-BEARING: if it cannot be made durable the abort must not proceed
     // (nothing has been signalled yet, so refusing here is side-effect free).
-    if (scheduleId && job.metadata?.scheduledFor) {
-      const stamped = await requestScheduledRunAbort(
-        scheduleId,
-        new Date(job.metadata.scheduledFor),
+    //
+    // Only against a job observed LIVE: the stamp RENEWS the owner-death fence, and
+    // renewing it for a cleanup abort of an already-terminal job would re-fence a dead
+    // owner's run on every Stop click, keeping it from ever aging into the
+    // reconciler's recovery. `stamped` is remembered so every exit below resolves the
+    // attempt (abortPersistedAt) once this route has nothing further to persist —
+    // otherwise the generation owner's settlement barrier waits its full timeout on
+    // an attempt that lost.
+    const scheduledFireIdentity =
+      scheduleId && job.metadata?.scheduledFor
+        ? { scheduleId, scheduledFor: new Date(job.metadata.scheduledFor) }
+        : null;
+    let scheduledStopStamped = false;
+    if (scheduledFireIdentity && jobIsLive) {
+      const stampResult = await requestScheduledRunAbort(
+        scheduledFireIdentity.scheduleId,
+        scheduledFireIdentity.scheduledFor,
       );
-      if (!stamped) {
+      if (stampResult === 'failed') {
         return res
           .status(503)
           .json({ error: 'Could not record the stop request. Please retry.', aborted: null });
       }
+      scheduledStopStamped = stampResult === 'stamped';
     }
+    const resolveStopAttempt = async () => {
+      if (!scheduledStopStamped || !scheduledFireIdentity) {
+        return;
+      }
+      await markScheduledRunAbortPersisted(
+        scheduledFireIdentity.scheduleId,
+        scheduledFireIdentity.scheduledFor,
+      ).catch((err) =>
+        logger.error(`[AgentStream] Failed to stamp abort persistence: ${jobStreamId}`, err),
+      );
+    };
+    // Capture the paused thread's checkpoint ids BEFORE the terminal CAS: the prune
+    // after the abort is scoped to exactly this set, so checkpoints a replacement
+    // turn writes after the final event can never be swept up by it.
+    const agentsCfg = req.config?.endpoints?.agents;
+    const shouldPruneCheckpoint =
+      isHITLEnabled(agentsCfg?.toolApproval) || job.metadata?.pendingAction != null;
+    const checkpointGeneration = shouldPruneCheckpoint
+      ? await captureAgentCheckpointGeneration(jobStreamId, agentsCfg?.checkpointer)
+      : null;
     const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
       transformAbortContent: (content) =>
         abortedAskPayload?.type === 'ask_user_question' && Array.isArray(content)
@@ -403,23 +439,26 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
       abortResultResponseMessageId: abortResult.jobData?.responseMessageId,
     });
 
-    // LOST THE FENCE to a REPLACEMENT: another turn claimed this conversationId between
-    // the lookup above and the abort. Everything below acts on the conversation as a
-    // whole — pruning the checkpoint would strip the replacement's resume state, and
-    // persisting `abortResult` content would write a partial for a generation that is
-    // still running. Refuse instead.
-    //
-    // Deliberately gated on a replacement actually being there. abortJob also reports
-    // `success: false, jobData: null` when the job simply VANISHED between the lookup
-    // and the abort — the benign race of pressing Stop as a generation completes. There
-    // is nothing to damage in that case, so it keeps its previous behaviour rather than
-    // turning a routine stop into an error.
-    if (!abortResult.success && abortResult.jobData == null) {
-      // FAIL CLOSED on an unreadable store: null means "confirmed absent" (benign),
-      // but a thrown read means UNKNOWN — a replacement may be live, and everything
-      // below acts on the conversation as a whole (the checkpoint prune would strip
-      // its resume state). Nothing of ours was stopped (the abort already failed), so
-      // refusing here has no side effects and the client simply retries.
+    // Every side effect below (checkpoint prune, partial save, settle) belongs
+    // exclusively to a WON abort. A lost CAS means a concurrent transition owns the
+    // job now — a completion, or a pause→running resume whose live turn a prune
+    // would strip the resume state from — so nothing here may act on it.
+    if (!abortResult.success) {
+      if (abortResult.jobData != null) {
+        // Lost the terminal CAS between abortJob's own fresh read and its transition:
+        // a completion or a resume claimed the job. Nothing was stopped; nothing may
+        // be pruned or persisted. The stop attempt is over, so resolve it — the
+        // generation owner's settlement barrier must not wait on a loser.
+        await resolveStopAttempt();
+        logger.debug(`[AgentStream] Abort lost to a concurrent transition: ${jobStreamId}`);
+        return res.json({ success: false, aborted: null });
+      }
+      // jobData == null: either the job simply VANISHED between the lookup and the
+      // abort (the benign race of pressing Stop as a generation completes), or a
+      // REPLACEMENT claimed the conversationId. FAIL CLOSED on an unreadable store:
+      // null from getJob means confirmed absent (benign), a thrown read means UNKNOWN
+      // — a replacement may be live. Nothing of ours was stopped, so refusing here
+      // has no side effects and the client simply retries.
       let liveJob;
       try {
         liveJob = await GenerationJobManager.getJob(jobStreamId);
@@ -433,21 +472,32 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
         logger.debug(
           `[AgentStream] Abort refused: generation was replaced before it landed: ${jobStreamId}`,
         );
+        await resolveStopAttempt();
         return res.status(409).json({ error: 'This generation was superseded', aborted: null });
       }
+      // Confirmed benign vanish: nothing to prune or persist for it.
+      await resolveStopAttempt();
+      return res.json({ success: true, aborted: jobStreamId });
     }
 
-    // HITL: prune the durable checkpoint of a run aborted while paused, so a new turn
+    // HITL: prune the durable checkpoints of a run aborted while paused, so a new turn
     // in this conversation can't rehydrate the stale interrupt before the Mongo TTL
     // reclaims it (thread_id is the stable conversationId). Idempotent / no-op when
     // HITL is off or nothing was written. The pendingAction check covers ask-only
     // pauses (ask_user_question attaches a checkpointer WITHOUT the approval policy):
     // a job aborted while paused still carries its pendingAction in metadata, which is
-    // exactly the case whose checkpoint would otherwise go stale.
-    const agentsCfg = req.config?.endpoints?.agents;
-    if (isHITLEnabled(agentsCfg?.toolApproval) || job.metadata?.pendingAction != null) {
-      await deleteAgentCheckpoint(jobStreamId, agentsCfg?.checkpointer).catch((err) =>
-        logger.error(`[AgentStream] Failed to prune checkpoint on abort: ${jobStreamId}`, err),
+    // exactly the case whose checkpoint would otherwise go stale. SCOPED to the ids
+    // captured before the abort CAS: the final event has already been emitted by now,
+    // so a follow-up turn can be writing new checkpoints on this thread — a
+    // thread-wide delete would strip them.
+    if (
+      shouldPruneCheckpoint &&
+      checkpointGeneration != null &&
+      checkpointGeneration.checkpointIds.length > 0
+    ) {
+      await deleteAgentCheckpoint(jobStreamId, agentsCfg?.checkpointer, checkpointGeneration).catch(
+        (err) =>
+          logger.error(`[AgentStream] Failed to prune checkpoint on abort: ${jobStreamId}`, err),
       );
     }
 
@@ -513,12 +563,7 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
     // Stamp that durably: the GENERATION OWNER's settlement barrier waits for this
     // stamp (see awaitStopAbortPersistence), so the run cannot leave the active set —
     // and no deletion drain can confirm — while this route was still persisting.
-    if (scheduleId && job.metadata?.scheduledFor && abortResult.success) {
-      await markScheduledRunAbortPersisted(scheduleId, new Date(job.metadata.scheduledFor)).catch(
-        (err) =>
-          logger.error(`[AgentStream] Failed to stamp abort persistence: ${jobStreamId}`, err),
-      );
-    }
+    await resolveStopAttempt();
 
     // SETTLE ONLY A PAUSED RUN. A run caught `requires_action` at the abort CAS has no
     // generation loop left to unwind — its pause already awaited every save — so this

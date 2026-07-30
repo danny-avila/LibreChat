@@ -107,7 +107,7 @@ jest.mock('~/server/services/Schedules', () => ({
   recordScheduleOutcome: (...args) => mockRecordScheduleOutcome(...args),
   isScheduleLive: (...args) => mockIsScheduleLive(...args),
   clearScheduledJob: (...args) => mockClearScheduledJob(...args),
-  awaitStopAbortPersistence: jest.fn(() => Promise.resolve()),
+  awaitStopAbortPersistence: jest.fn(() => Promise.resolve(true)),
 }));
 
 jest.mock('~/server/services/MCPRequestContext', () => ({

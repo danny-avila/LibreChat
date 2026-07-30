@@ -17,11 +17,11 @@ import type { SerializableJobData } from '../stream/interfaces/IJobStore';
 import type { BalanceUpdateFields } from '../types/balance';
 import type { GetAppConfigOptions } from '../app/service';
 import { generateShortLivedToken, SCHEDULE_FIRE_SCOPE, SCHEDULE_MANUAL_CLAIM } from '../crypto/jwt';
+import { deleteAgentCheckpoint, captureAgentCheckpointGeneration } from '../agents/checkpointer';
 import { fireSchedule, SCHEDULE_FIRE_TOKEN_TTL, BALANCE_SKIP_DISABLE_THRESHOLD } from './fire';
 import { DEFAULT_SCHEDULE_LIMITS, SCHEDULE_FILE_HOLD, hasAbortInFlight } from './types';
 import { GenerationJobManager } from '../stream/GenerationJobManager';
 import { buildBalanceUpdateFields } from '../middleware/balance';
-import { deleteAgentCheckpoint } from '../agents/checkpointer';
 import { getAppConfigOptionsFromUser } from '../app/service';
 import { startScheduleErasureSweep } from './erasure';
 import { getBalanceConfig } from '../app/config';
@@ -147,12 +147,17 @@ export interface SchedulesService {
   recordScheduleOutcome: (input: RecordScheduleOutcomeInput) => Promise<boolean>;
   /**
    * Stamps a run abort-requested (source: the interactive Stop route) ahead of an
-   * abort this service does not signal. Returns whether the stamp is DURABLE: false
-   * means the abort must NOT proceed, because without the stamp a concurrent
+   * abort this service does not signal. 'stamped' means the fence is durable and the
+   * abort may proceed; 'no_active_run' means the occurrence is already settled (no
+   * fence needed, nothing to settle); 'failed' means the stamp could not be made
+   * durable and the abort must NOT proceed — without it a concurrent
    * account-deletion quiesce would read the post-abort job state as a settled
    * generation and confirm its drain mid-write.
    */
-  requestScheduledRunAbort: (scheduleId: string, scheduledFor: Date) => Promise<boolean>;
+  requestScheduledRunAbort: (
+    scheduleId: string,
+    scheduledFor: Date,
+  ) => Promise<'stamped' | 'no_active_run' | 'failed'>;
   /**
    * Stamped by the interactive Stop route once every write it makes (checkpoint prune,
    * partial-response save) has landed; releases the generation owner's settlement
@@ -165,11 +170,16 @@ export interface SchedulesService {
    * abort was signalled), waits — bounded — for the route to stamp
    * `abortPersistedAt`, i.e. for its checkpoint prune and partial-response save to
    * land. Settling before that lets the run leave the active set while the route is
-   * still persisting, so an account-deletion drain can confirm mid-write. A no-op for
-   * deletion-sourced aborts (nothing is persisted after those) and for runs with no
-   * abort stamp; on timeout it returns so a dead route can never wedge settlement.
+   * still persisting, so an account-deletion drain can confirm mid-write.
+   *
+   * FAILS CLOSED: returns true only when the barrier is genuinely clear (no stop
+   * attempt pending, or its persistence acknowledged, or the whole owner-death fence
+   * has lapsed). On timeout or unreadable state it returns false, and the caller must
+   * NOT settle — it leaves the run active for the reconciler, which finalizes it once
+   * the fence expires. Trivially true for deletion-sourced aborts (nothing is
+   * persisted after those) and for runs with no abort stamp.
    */
-  awaitStopAbortPersistence: (scheduleId: string, scheduledFor: Date) => Promise<void>;
+  awaitStopAbortPersistence: (scheduleId: string, scheduledFor: Date) => Promise<boolean>;
   /**
    * Whether a schedule is still live (exists and not soft-deleted). The loopback
    * chat controller calls this right after creating the generation job to re-fence
@@ -205,12 +215,23 @@ export interface ScheduleEngineInitOptions {
   address?: AddressInfo | string | null;
 }
 
+/** Test-only overrides for the service's bounded waits (drains, barriers). */
+export interface ScheduleServiceTimings {
+  drainTimeoutMs?: number;
+  drainPollMs?: number;
+  stopBarrierTimeoutMs?: number;
+  stopBarrierPollMs?: number;
+}
+
 /**
  * Builds the scheduler service around api-side dependencies. Each call owns its
  * own engine singleton and job-store-shared flag, so state never leaks between
  * instances.
  */
-export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesService {
+export function createSchedulesService(
+  deps: SchedulesServiceDeps,
+  timings?: ScheduleServiceTimings,
+): SchedulesService {
   const { methods } = deps;
 
   /** Resolved from the listener at arm time; see getSelfUrl. */
@@ -291,8 +312,8 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
   // before the message/conversation cascade runs. Long enough to cover a generation that
   // already returned from the model finishing its persistence; capped so account deletion
   // never blocks indefinitely on an unreachable peer-worker run.
-  const QUIESCE_DRAIN_TIMEOUT_MS = 10 * 1000;
-  const QUIESCE_DRAIN_POLL_MS = 250;
+  const QUIESCE_DRAIN_TIMEOUT_MS = timings?.drainTimeoutMs ?? 10 * 1000;
+  const QUIESCE_DRAIN_POLL_MS = timings?.drainPollMs ?? 250;
 
   /**
    * Whether a refill would top up this zero-credit balance record right now,
@@ -703,13 +724,13 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
   async function requestScheduledRunAbort(
     scheduleId: string,
     scheduledFor: Date,
-  ): Promise<boolean> {
+  ): Promise<'stamped' | 'no_active_run' | 'failed'> {
     try {
-      await methods.requestRunAbort(scheduleId, scheduledFor, 'stop');
-      return true;
+      const stamped = await methods.requestRunAbort(scheduleId, scheduledFor, 'stop');
+      return stamped ? 'stamped' : 'no_active_run';
     } catch (err) {
       logger.error('[schedules] failed to record interactive abort request:', err);
-      return false;
+      return 'failed';
     }
   }
 
@@ -720,36 +741,40 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     await methods.markRunAbortPersisted(scheduleId, scheduledFor);
   }
 
-  const STOP_PERSISTENCE_WAIT_MS = 15_000;
-  const STOP_PERSISTENCE_POLL_MS = 250;
+  const STOP_PERSISTENCE_WAIT_MS = timings?.stopBarrierTimeoutMs ?? 15_000;
+  const STOP_PERSISTENCE_POLL_MS = timings?.stopBarrierPollMs ?? 250;
 
-  async function awaitStopAbortPersistence(scheduleId: string, scheduledFor: Date): Promise<void> {
+  async function awaitStopAbortPersistence(
+    scheduleId: string,
+    scheduledFor: Date,
+  ): Promise<boolean> {
     const deadline = Date.now() + STOP_PERSISTENCE_WAIT_MS;
     for (;;) {
-      let run;
+      let pending: boolean;
       try {
-        run = await methods.getScheduleRunAbortState(scheduleId, scheduledFor);
+        const run = await methods.getScheduleRunAbortState(scheduleId, scheduledFor);
+        // Only a FRESH interactive-stop abort holds the barrier: deletion-sourced
+        // aborts persist nothing after signalling, an absent stamp means no abort
+        // actor is writing, and a stale one means the owner-death rules govern.
+        pending =
+          run != null &&
+          run.abortSource === 'stop' &&
+          run.abortPersistedAt == null &&
+          hasAbortInFlight(run, Date.now());
       } catch (err) {
+        // FAIL CLOSED: an unreadable row proves nothing about the route's writes.
         logger.warn('[schedules] abort-persistence barrier read failed:', err);
-        return;
+        pending = true;
       }
-      // Only a FRESH interactive-stop abort holds the barrier: deletion-sourced aborts
-      // persist nothing after signalling, an absent stamp means no abort actor is
-      // writing, and a stale one means the route is presumed dead.
-      const waiting =
-        run != null &&
-        run.abortSource === 'stop' &&
-        run.abortPersistedAt == null &&
-        hasAbortInFlight(run, Date.now());
-      if (!waiting) {
-        return;
+      if (!pending) {
+        return true;
       }
       if (Date.now() >= deadline) {
         logger.warn(
           `[schedules] stop-abort persistence not confirmed for ${scheduleId} within ` +
-            `${STOP_PERSISTENCE_WAIT_MS}ms; settling anyway`,
+            `${STOP_PERSISTENCE_WAIT_MS}ms; leaving the run for the reconciler`,
         );
-        return;
+        return false;
       }
       await new Promise((resolve) => setTimeout(resolve, STOP_PERSISTENCE_POLL_MS));
     }
@@ -798,6 +823,7 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
   async function abortActiveRun(
     run: { scheduleId: string; scheduledFor: Date; conversationId?: string },
     preserve: boolean,
+    options?: { stampRenewal?: boolean },
   ): Promise<boolean> {
     if (!run.conversationId) {
       return false;
@@ -809,11 +835,19 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
     // what makes a concurrent drain (and the reconciler) defer to the owner's settle,
     // so if it cannot be made durable the abort must NOT be signalled — report
     // undelivered and let the caller's unconfirmed/retry path re-drive both.
-    try {
-      await methods.requestRunAbort(run.scheduleId, run.scheduledFor, 'deletion');
-    } catch (err) {
-      logger.warn('[schedules] failed to record abort request; abort withheld:', err);
-      return false;
+    //
+    // `stampRenewal: false` skips the stamp entirely: callers pass it for CLEANUP
+    // aborts of a job they just observed terminal/absent (nothing live will be
+    // signalled). Renewing there would re-arm the 30-minute owner-death fence on
+    // every retry against a dead owner, so the run could never age into the
+    // reconciler's recovery.
+    if (options?.stampRenewal !== false) {
+      try {
+        await methods.requestRunAbort(run.scheduleId, run.scheduledFor, 'deletion');
+      } catch (err) {
+        logger.warn('[schedules] failed to record abort request; abort withheld:', err);
+        return false;
+      }
     }
     return engineDeps
       .abortScheduledJob(
@@ -892,6 +926,13 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
           scheduleId: run.scheduleId,
           scheduledFor: run.scheduledFor,
         });
+      // Capture the paused run's checkpoint ids BEFORE any terminal transition below:
+      // the prune afterwards is scoped to exactly this set, so checkpoints a
+      // replacement turn writes after this point can never be swept up by it.
+      const checkpointGeneration =
+        run.status === 'requires_action' && run.conversationId
+          ? await captureAgentCheckpointGeneration(run.conversationId, checkpointer)
+          : undefined;
       // Same abort-in-flight deferral as quiesce: post-abort job state (status `aborted`,
       // or absence once the abort deleted the job) appears before the owner has persisted
       // and settled, so it is not evidence that the generation is done.
@@ -926,7 +967,11 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
             },
           );
         if (settled) {
-          await abortActiveRun(run, false);
+          // Cleanup abort of a job just observed terminal/absent: nothing live gets
+          // signalled, so the stamp is NOT renewed — re-arming the owner-death fence
+          // on every delete retry would keep a dead owner's row from ever aging into
+          // the reconciler's recovery.
+          await abortActiveRun(run, false, { stampRenewal: false });
         } else {
           unconfirmed += 1;
         }
@@ -940,20 +985,22 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
           unconfirmed += 1;
         }
       }
-      // HITL: prune the durable checkpoint of a run aborted while paused so a new turn
+      // HITL: prune the durable checkpoints of a run aborted while paused so a new turn
       // in this conversation can't rehydrate the stale interrupt before the Mongo TTL
       // reclaims it (thread_id === conversationId). Idempotent / no-op otherwise.
       //
-      // NOT when a REPLACEMENT owns the conversation. The checkpoint is keyed by
-      // conversationId alone, so pruning on an identity MISMATCH strips the resume state
-      // of a live turn that has nothing to do with this schedule — the same hazard the
-      // interactive abort route refuses with a 409. Ownership is re-read HERE, not
-      // taken from the pre-abort `live` snapshot: the settle/abort awaits above are a
-      // window in which a replacement turn can claim this conversationId, and a stale
-      // "absent" read would then prune the replacement's resume state. An identity
-      // match, or a confirmed absence, is this run's own checkpoint and is safe to
-      // prune; an unreadable store proves nothing, so it is left alone.
-      if (run.status === 'requires_action' && run.conversationId) {
+      // Two guards against a REPLACEMENT owning the conversation: ownership is re-read
+      // fresh (the settle/abort awaits above are a window a replacement can claim the
+      // conversationId in), and the deletion is SCOPED to the checkpoint ids captured
+      // before the terminal transition — so even a replacement that slips in between
+      // this read and the delete only ever loses checkpoints that predate the abort,
+      // never its own. An unreadable store proves nothing, so it is left alone.
+      if (
+        run.status === 'requires_action' &&
+        run.conversationId &&
+        checkpointGeneration != null &&
+        checkpointGeneration.checkpointIds.length > 0
+      ) {
         const fresh = await engineDeps.getJobStatus(run.conversationId).then(
           (job) => ({ known: true, job }),
           () => ({ known: false, job: null }),
@@ -966,12 +1013,30 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
           });
         const ownsConversation = fresh.known && (fresh.job == null || freshIsThisGeneration);
         if (ownsConversation) {
-          await deleteAgentCheckpoint(run.conversationId, checkpointer).catch(() => undefined);
+          await deleteAgentCheckpoint(run.conversationId, checkpointer, checkpointGeneration).catch(
+            () => undefined,
+          );
         }
       }
     }
     if (unconfirmed > 0) {
-      return 'unconfirmed';
+      // The run row leaving the active set is the durable acknowledgement that its
+      // generation stopped and persisted (the owner settles LAST) — wait for it,
+      // bounded, before answering. Without this, every cross-replica delete whose
+      // abort delivery cannot be locally proven would answer 503 even though the
+      // owner settles moments later.
+      const deadline = Date.now() + QUIESCE_DRAIN_TIMEOUT_MS;
+      let remaining = unconfirmed;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, QUIESCE_DRAIN_POLL_MS));
+        remaining = (await methods.getActiveRunsForSchedule(scheduleId)).length;
+        if (remaining === 0) {
+          break;
+        }
+      }
+      if (remaining > 0) {
+        return 'unconfirmed';
+      }
     }
     const erased = await methods.eraseScheduleIfDrained(scheduleId).catch((err) => {
       logger.warn(`[schedules] erase failed for ${scheduleId}:`, err);
@@ -1066,9 +1131,11 @@ export function createSchedulesService(deps: SchedulesServiceDeps): SchedulesSer
           });
         // Only now is the job disposable. On a failed settle, leave it: the row is still
         // active, so the drain reports unconfirmed and a later pass retries with its
-        // evidence intact.
+        // evidence intact. Cleanup abort of an observed-settled job — no stamp renewal,
+        // or every quiesce retry would re-arm the owner-death fence and a dead owner's
+        // row could never age into recovery.
         if (settled) {
-          await abortActiveRun(run, false);
+          await abortActiveRun(run, false, { stampRenewal: false });
         }
         continue;
       }

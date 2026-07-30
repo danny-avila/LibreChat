@@ -1455,18 +1455,22 @@ class GenerationJobManagerClass {
 
     // Signal only the generation whose terminal transition won above. The
     // transport tag prevents a delayed predecessor abort from reaching a
-    // same-stream replacement on another replica. AWAITED: with no local runtime the
-    // publication is the ONLY path to a live peer-replica generation, so a failed
-    // publish must surface as an undelivered signal (`signalDelivered: false`) — the
-    // terminal CAS has already landed, but the generating replica keeps producing
-    // until its own completion loses that CAS, and deletion drains must defer rather
-    // than read this abort as delivered. A paused job has no live generation loop to
-    // signal, so delivery is vacuously true for it.
-    let abortSignalDelivered = abortableStatus === 'requires_action' || runtime != null;
+    // same-stream replacement on another replica. Local delivery is judged by
+    // GENERATION OWNERSHIP (`ownedJobs`), never by mere runtime presence — a
+    // subscriber-only replica also holds runtime state, and counting it as
+    // delivery would report a stop no generating process ever received. For an
+    // unowned running job the publication is the only path to the live peer, and
+    // Redis PUBLISH is not consumption proof (this replica's own subscription is
+    // among the receivers), so delivery stays UNCONFIRMED: callers treat the run
+    // row leaving the active set — the owner settling — as the durable
+    // acknowledgement and wait on that instead. A paused job has no generation
+    // loop to signal, so delivery is vacuously true for it. The publish is still
+    // awaited so a failed one surfaces in the log with the abort it stranded.
+    const abortSignalDelivered =
+      abortableStatus === 'requires_action' || this.ownedJobs.get(streamId) === jobData.createdAt;
     if (this.eventTransport.emitAbort) {
       try {
         await this.eventTransport.emitAbort(streamId, jobData.createdAt);
-        abortSignalDelivered = true;
       } catch (err) {
         logger.error(`[GenerationJobManager] Failed to publish abort for ${streamId}:`, err);
       }

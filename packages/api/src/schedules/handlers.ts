@@ -37,22 +37,28 @@ export interface SchedulesHandlersDeps {
 }
 
 /**
- * Rolls back a create that raced past the account-deletion cascade. Hard-deletes first;
- * if that write fails, falls back to the durable soft-delete, which makes the row
- * non-claimable at once and hands it to the reconciler's `deleting` sweep for erasure.
- * Returns false only when BOTH fail, which the caller must surface rather than
- * answering a clean 410.
+ * Rolls back a create that raced past the account-deletion cascade. Hard-deletes only
+ * the exact unarmed, unedited revision this attempt inserted: a concurrent same-key
+ * replay can have ARMED the row — and the engine can have CLAIMED it — before the
+ * post-insert barrier re-check ran, and hard deletion there would bypass run
+ * quiescence and erase evidence out from under a live fire. Anything past that
+ * revision is soft-deleted instead, which makes it non-claimable at once and hands it
+ * to the ordinary drain-then-erase teardown. Returns false only when BOTH fail, which
+ * the caller must surface rather than answering a clean 410.
  */
 async function compensateLateCreate(
   deps: SchedulesHandlersDeps,
   id: string,
   userId: string,
+  expectedConfigRevision: number,
 ): Promise<boolean> {
-  const deleted = await deps.methods.deleteScheduleById(id, userId).catch((err) => {
-    logger.error(`[schedules] compensating delete failed for late create ${id}`, err);
-    return false;
-  });
-  if (deleted) {
+  const rolled = await deps.methods
+    .deleteUnarmedSchedule(id, userId, expectedConfigRevision)
+    .catch((err) => {
+      logger.error(`[schedules] compensating delete failed for late create ${id}`, err);
+      return null;
+    });
+  if (rolled === 'deleted' || rolled === 'missing') {
     return true;
   }
   const marked = await deps.methods.markScheduleDeleting(id, userId).catch((err) => {
@@ -403,6 +409,17 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     // case never clears an upload TTL it then can't use. The {user, slot} partial
     // unique index below is the atomic arbiter for the concurrent-create race.
     if ((await deps.methods.countSchedulesByUser(user.id)) >= limits.maxPerUser) {
+      // A concurrent first attempt with this key can have landed between the replay
+      // lookup above and this count — and can itself be what filled the last slot.
+      // The retry must resolve to that row, not be refused for being at capacity.
+      const raced = await deps.methods.getScheduleByClientRequestId(
+        user.id,
+        parsed.data.clientRequestId,
+      );
+      if (raced != null) {
+        await respondToReplay(raced);
+        return;
+      }
       res.status(400).json({
         error: `Schedule limit reached (${limits.maxPerUser}). Delete a schedule to add another.`,
       });
@@ -474,35 +491,41 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     // and its one-shot disable scan would not have seen a row that did not exist yet.
     // Re-checking AFTER the write is what makes the barrier authoritative.
     if (await deps.isUserDeleting(user.id)) {
-      // Best-effort tidy-up of an unarmed row. Its failure is reported but no longer
-      // load-bearing for BILLING: the row is unarmed, and even once the reconciler's
-      // sweep arms it, the fire path refuses it at the account-deletion barrier
+      // Best-effort tidy-up. Hard-deletes only the exact unarmed revision this
+      // attempt inserted (a concurrent replay can have armed it, and the engine can
+      // have claimed the armed row); anything past that is soft-deleted into the
+      // ordinary drain-then-erase teardown. Its failure is reported but no longer
+      // load-bearing for BILLING: even once the reconciler's sweep arms a residual
+      // row, the fire path refuses it at the account-deletion barrier
       // (isOwnerDeleting). The residual is a retained row, not a billed generation.
-      if (!(await compensateLateCreate(deps, id, user.id))) {
+      if (!(await compensateLateCreate(deps, id, user.id, created.configRevision ?? 0))) {
         res.status(500).json({ error: 'Failed to roll back schedule creation' });
         return;
       }
       res.status(410).json({ error: 'This account is being deleted' });
       return;
     }
-    // ARM last, fenced on the revision stamped at insert: a PATCH racing this arm
-    // bumps configRevision, and this POST must not overwrite the nextRunAt that PATCH
-    // derived from newer config with one derived from the create payload.
-    let armed = created;
+    // ARM last, through the SAME unarmed-guarded CAS the replay path and the
+    // reconciler's sweep use — one arming write per schedule, ever. Fenced on the
+    // revision stamped at insert: a PATCH racing this arm bumps configRevision, and
+    // this POST must not overwrite the nextRunAt that PATCH derived from newer
+    // config. Never updateScheduleById here: its claim-token rotation would fence an
+    // occurrence the engine may have claimed off a row a concurrent replay armed
+    // first, and its revision bump would break a concurrent PATCH's CAS.
     if (nextRunAt) {
-      let updated: ISchedule | null;
+      let armedNow: boolean;
       try {
-        updated = await deps.methods.updateScheduleById(id, user.id, { nextRunAt }, undefined, {
-          expectedConfigRevision: created.configRevision ?? 0,
-        });
+        armedNow = await deps.methods.armSchedule(id, nextRunAt, created.configRevision ?? 0);
       } catch (armError) {
-        // Roll back ONLY while the row is still unarmed. An ambiguously-committed arm
-        // — or a concurrent replay of this key that armed the row and already answered
-        // 201 — leaves an ARMED row that must survive; deleting it would erase a
-        // schedule another response has confirmed.
+        // Roll back ONLY the exact unarmed, unedited revision this attempt inserted.
+        // An ambiguously-committed arm, a concurrent replay that armed the row and
+        // already answered 201, or a concurrent PATCH that edited it (even while
+        // leaving it unarmed) all leave a row that must survive.
         logger.error(`[schedules] arming failed for ${id}; rolling back the create`, armError);
-        const rolledBack = await deps.methods.deleteUnarmedSchedule(id, user.id).catch(() => null);
-        if (rolledBack === 'armed') {
+        const rolledBack = await deps.methods
+          .deleteUnarmedSchedule(id, user.id, created.configRevision ?? 0)
+          .catch(() => null);
+        if (rolledBack === 'kept') {
           const current = await deps.methods.getScheduleById(id, user.id);
           if (current != null) {
             res.status(201).json(toWireSchedule(current));
@@ -514,22 +537,26 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
         res.status(500).json({ error: 'Failed to create schedule. Please retry.' });
         return;
       }
-      if (updated == null) {
-        // Either the row is gone (the deletion cascade claimed it), or a concurrent
-        // PATCH moved the revision — in which case ITS validation and arming govern,
-        // and this POST reports the row as that edit left it.
-        const current = await deps.methods.getScheduleById(id, user.id);
-        if (current != null) {
-          res.status(201).json(toWireSchedule(current));
-          return;
-        }
+      // Whether THIS call armed or a concurrent actor got there first (a replay's
+      // arm, a PATCH whose own arming governs), the response reports the row as it
+      // now stands; only a row the deletion cascade claimed answers 410.
+      const current = await deps.methods.getScheduleById(id, user.id);
+      if (current == null) {
         res.status(410).json({ error: 'Schedule no longer exists' });
         return;
       }
-      armed = updated;
+      if (!armedNow && current.nextRunAt == null && current.enabled) {
+        // Unarmed with an unmoved revision would have matched the CAS; reaching here
+        // means the revision moved to an edit that keeps it enabled but unarmed —
+        // report it as-is, the reconciler's sweep recovers the arm.
+        logger.warn(`[schedules] create for ${id} left unarmed after a concurrent edit`);
+      }
+      logger.info(`[schedules] created ${id} for user ${user.id}`);
+      res.status(201).json(toWireSchedule(current));
+      return;
     }
     logger.info(`[schedules] created ${id} for user ${user.id}`);
-    res.status(201).json(toWireSchedule(armed));
+    res.status(201).json(toWireSchedule(created));
   }
 
   async function updateSchedule(req: ServerRequest, res: Response): Promise<void> {

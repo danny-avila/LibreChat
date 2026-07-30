@@ -343,10 +343,11 @@ export interface UsageMetadata {
 export interface AbortResult {
   /** Whether the abort was successful */
   success: boolean;
-  /** Whether a live generation, if one exists, actually received the stop signal:
-   *  true when the runtime is local or the cross-replica publish succeeded (or the
-   *  job was paused, with no generation loop to signal). False means a peer-replica
-   *  generation may still be producing — deletion drains must not confirm on it. */
+  /** Whether a live generation, if one exists, provably received the stop signal:
+   *  true only when THIS process owns the generation (`ownedJobs`) or the job was
+   *  paused (no generation loop to signal). A cross-replica publish is never proof
+   *  of consumption, so peer-owned aborts stay false — callers must treat the run
+   *  settling (leaving the active set) as the durable acknowledgement instead. */
   signalDelivered?: boolean;
   /** The job data at time of abort */
   jobData: SerializableJobData | null;

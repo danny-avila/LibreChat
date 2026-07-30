@@ -157,6 +157,7 @@ if (cluster.isMaster) {
   let activeWorkers = 0;
   const listeningWorkers = new Set();
   let retentionSweepWorkerId = null;
+  let shuttingDown = false;
   const startTime = Date.now();
 
   const assignRetentionSweepWorker = () => {
@@ -221,6 +222,19 @@ if (cluster.isMaster) {
   cluster.on('exit', (worker, code, signal) => {
     activeWorkers--;
     listeningWorkers.delete(worker.id);
+    // SHUTTING DOWN: worker exits are the drain completing, not failures. Respawning
+    // here restarted workers the master had just asked to stop, and reassigning the
+    // retention sweep handed a background job to a process about to be killed.
+    if (shuttingDown) {
+      logger.info(
+        `Worker ${worker.process.pid} exited during shutdown (${activeWorkers} remaining)`,
+      );
+      if (activeWorkers <= 0) {
+        logger.info('All workers drained; master exiting');
+        process.exit(0);
+      }
+      return;
+    }
     if (worker.id === retentionSweepWorkerId) {
       retentionSweepWorkerId = null;
       assignRetentionSweepWorker();
@@ -234,14 +248,24 @@ if (cluster.isMaster) {
 
   /** Graceful shutdown on SIGTERM/SIGINT */
   const shutdown = () => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
     logger.info('Master received shutdown signal, terminating workers...');
     for (const id in cluster.workers) {
       cluster.workers[id].kill();
     }
+    if (activeWorkers <= 0) {
+      process.exit(0);
+    }
+    // Workers run a 60-second graceful-shutdown coordinator (setupGracefulShutdown);
+    // the master's force-exit must outlast it or it truncates their drains — SSE
+    // streams mid-close, stream teardown, the erasure sweep's final pass.
     setTimeout(() => {
       logger.info('Forcing shutdown after timeout');
       process.exit(0);
-    }, 10000);
+    }, 70000);
   };
 
   process.on('SIGTERM', shutdown);

@@ -27,10 +27,14 @@ const mockSaveMessage = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn(async () => undefined);
 const mockRecordScheduleOutcome = jest.fn(async () => true);
 const mockClearScheduledJob = jest.fn(async () => undefined);
-// True by default: the stamp is load-bearing, and a falsy result makes the route
-// refuse the abort with a 503 before abortJob ever runs.
-const mockRequestScheduledRunAbort = jest.fn(async () => true);
+// 'stamped' by default: the stamp is load-bearing, and a 'failed' result makes the
+// route refuse the abort with a 503 before abortJob ever runs.
+const mockRequestScheduledRunAbort = jest.fn(async () => 'stamped');
 const mockMarkScheduledRunAbortPersisted = jest.fn(async () => undefined);
+const mockCaptureCheckpointGeneration = jest.fn(async (threadId) => ({
+  threadId,
+  checkpointIds: ['ck-1'],
+}));
 
 jest.mock('~/server/services/Schedules', () => ({
   recordScheduleOutcome: (...args) => mockRecordScheduleOutcome(...args),
@@ -51,6 +55,7 @@ jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn().mockReturnValue(false),
   GenerationJobManager: mockGenerationJobManager,
   deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
+  captureAgentCheckpointGeneration: (...args) => mockCaptureCheckpointGeneration(...args),
 }));
 
 jest.mock('~/models', () => ({
@@ -598,6 +603,7 @@ describe('Agent Abort Endpoint', () => {
 
     describe('Scheduled runs', () => {
       const scheduledJob = {
+        status: 'running',
         metadata: {
           userId: 'test-user-123',
           scheduleId: 'sched-1',
@@ -654,7 +660,7 @@ describe('Agent Abort Endpoint', () => {
 
       it('refuses the abort with a 503 when the stamp cannot be made durable', async () => {
         mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
-        mockRequestScheduledRunAbort.mockResolvedValueOnce(false);
+        mockRequestScheduledRunAbort.mockResolvedValueOnce('failed');
 
         const response = await request(app)
           .post('/api/agents/chat/abort')
@@ -745,6 +751,50 @@ describe('Agent Abort Endpoint', () => {
         expect(mockSaveMessage.mock.invocationCallOrder[0]).toBeLessThan(
           mockMarkScheduledRunAbortPersisted.mock.invocationCallOrder[0],
         );
+      });
+
+      it('acts on nothing when the abort loses the CAS to a concurrent transition', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        // A pause->running resume (or a completion) won between abortJob's own fresh
+        // read and its terminal transition: the job belongs to a LIVE turn now.
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: false,
+          content: [],
+          jobData: { status: 'requires_action' },
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: 'sched-conv' });
+
+        // Pruning here would strip the live resume's checkpoint thread; saving would
+        // persist a partial for a generation still running; settling would terminalize
+        // a run its real owner still has to settle.
+        expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+        expect(mockSaveMessage).not.toHaveBeenCalled();
+        expect(mockRecordScheduleOutcome).not.toHaveBeenCalled();
+        // The lost stop attempt is RESOLVED so the generation owner's settlement
+        // barrier never waits on it.
+        expect(mockMarkScheduledRunAbortPersisted).toHaveBeenCalled();
+        expect(response.status).toBe(200);
+      });
+
+      it('does not renew the abort stamp for a job observed terminal', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          ...scheduledJob,
+          status: 'aborted',
+        });
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: false,
+          content: [],
+          jobData: null,
+        });
+
+        await request(app).post('/api/agents/chat/abort').send({ conversationId: 'sched-conv' });
+
+        // Stamping a cleanup abort of a dead owner re-arms the 30-minute fence on
+        // every Stop click, so the run could never age into the reconciler's recovery.
+        expect(mockRequestScheduledRunAbort).not.toHaveBeenCalled();
       });
 
       it('keeps the preserved job when the outcome write exhausted its retries', async () => {

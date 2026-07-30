@@ -184,14 +184,19 @@ export default function ScheduleDialog({
   );
 
   /** Idempotency key for the create being attempted. Held in a ref so every retry of
-   *  the same intent reuses it, and rotated only after one succeeds. `uuid` rather
-   *  than `crypto.randomUUID`, which secure contexts gate — an HTTP/IP deployment
-   *  would throw here and never open the dialog. */
+   *  the same intent reuses it, and rotated when the attempt SUCCEEDS or when the
+   *  form content changes after a failed one (the server pins each key to the exact
+   *  payload it first saw, so retrying edited content under the old key answers 409).
+   *  `uuid` rather than `crypto.randomUUID`, which secure contexts gate — an HTTP/IP
+   *  deployment would throw here and never open the dialog. */
   const createRequestId = useRef(v4());
+  /** Fingerprint of the payload the current key was last attempted with. */
+  const lastAttemptedPayload = useRef<string | null>(null);
 
   const createSchedule = useCreateScheduleMutation({
     onSuccess: () => {
       createRequestId.current = v4();
+      lastAttemptedPayload.current = null;
       showToast({ message: localize('com_ui_schedule_created'), status: 'success' });
       onOpenChange(false);
     },
@@ -243,19 +248,29 @@ export default function ScheduleDialog({
       });
       return;
     }
-    const payload: TCreateSchedule = {
+    const content = {
       name: values.name.trim(),
       prompt: values.prompt.trim(),
       agent_id: values.agent_id,
       cadence: buildCadence(values),
       timezone,
-      target: 'new',
+      target: 'new' as const,
       enabled: true,
-      // STABLE across retries of this one create intent, which is the whole point: the
-      // server commits the row and arms it in two writes, so a failure between them
-      // leaves the client unable to tell what persisted. A fresh key per attempt would
-      // make each retry a new schedule; this key makes them all resolve to the first
-      // row. Reset only once a create SUCCEEDS (see the mutation's onSuccess).
+    };
+    // STABLE across retries of the SAME intent, which is the whole point: the server
+    // commits the row and arms it in two writes, so a failure between them leaves the
+    // client unable to tell what persisted, and a fresh key per attempt would make
+    // each retry a new schedule. But the server pins each key to the exact payload it
+    // first saw — so once the user EDITS the form after a failed attempt, this is a
+    // new intent and needs a new key, or the retry answers 409 until the dialog is
+    // reopened.
+    const fingerprint = JSON.stringify(content);
+    if (lastAttemptedPayload.current != null && lastAttemptedPayload.current !== fingerprint) {
+      createRequestId.current = v4();
+    }
+    lastAttemptedPayload.current = fingerprint;
+    const payload: TCreateSchedule = {
+      ...content,
       clientRequestId: createRequestId.current,
     };
     createSchedule.mutate(payload);

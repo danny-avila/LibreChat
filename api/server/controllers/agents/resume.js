@@ -28,6 +28,7 @@ const {
   recordScheduleOutcome,
   isScheduleLive,
   clearScheduledJob,
+  awaitStopAbortPersistence,
 } = require('~/server/services/Schedules');
 const { saveMessage, getConvo, getMessages } = require('~/models');
 
@@ -37,6 +38,49 @@ const { saveMessage, getConvo, getMessages } = require('~/models');
  * inject into the resumed run's ToolMessage.
  */
 const MAX_ASK_ANSWER_LENGTH = 16_000;
+
+/**
+ * Settles a scheduled run whose RESUMED generation was aborted. The abort route
+ * settles only jobs it caught paused; a resumed job is `running` at the abort CAS,
+ * making this controller the generation owner and therefore the settler — after the
+ * route's persistence barrier (its checkpoint prune and partial save must land
+ * before the run leaves the active set deletion drains confirm on). FAILS CLOSED:
+ * an unconfirmed barrier skips the settle and leaves the run for the reconciler,
+ * which finalizes it from the preserved aborted job once the owner-death fence
+ * lapses.
+ */
+async function settleAbortedScheduledResume(job, streamId, conversationId) {
+  const scheduleId = job.metadata?.scheduleId;
+  const scheduledFor = job.metadata?.scheduledFor;
+  if (!scheduleId || !scheduledFor) {
+    return;
+  }
+  const cleared = await awaitStopAbortPersistence(scheduleId, new Date(scheduledFor)).catch(
+    (err) => {
+      logger.warn('[ResumeAgentController] Stop-abort persistence barrier failed', err);
+      return false;
+    },
+  );
+  if (!cleared) {
+    logger.warn(
+      `[ResumeAgentController] Aborted resume left for the reconciler (barrier unconfirmed): ${streamId}`,
+    );
+    return;
+  }
+  const recorded = await recordScheduleOutcome({
+    scheduleId,
+    scheduledFor,
+    status: 'interrupted',
+    conversationId,
+  });
+  // Reconcile only scans ACTIVE runs; with the run terminal, nothing else would
+  // ever reap the job the abort route preserved as evidence.
+  if (recorded) {
+    await clearScheduledJob(streamId, { scheduleId, scheduledFor }).catch((err) =>
+      logger.warn('[ResumeAgentController] Failed to clear reconciled job', err),
+    );
+  }
+}
 
 /** De-duplicate a merged attachment list by a stable artifact identity. */
 function mergeAttachments(existing, incoming) {
@@ -879,11 +923,18 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     }
 
     // If the user aborted mid-resume, the abort route already emitted the terminal
-    // event and finalized the job — don't double-save / double-finalize here.
+    // event and finalized the job — don't double-save / double-finalize here. The
+    // scheduled RUN, though, is THIS controller's to settle: the route settles only
+    // jobs it caught paused, and a resumed job is `running` at the abort CAS, so
+    // returning without settling left the run active until the 30-minute reconciler
+    // cutoff — blocking schedule and account deletion the whole time. Mirror the
+    // request controller: settle after the route's persistence barrier, and FAIL
+    // CLOSED (leave the run for the reconciler) when it cannot be confirmed.
     if (job.abortController.signal.aborted) {
       logger.debug(
-        `[ResumeAgentController] Aborted during resume; abort route finalizes: ${streamId}`,
+        `[ResumeAgentController] Aborted during resume; abort route finalizes the job: ${streamId}`,
       );
+      await settleAbortedScheduledResume(job, streamId, conversationId);
       return;
     }
 
@@ -897,6 +948,17 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       checkpointGeneration,
     });
   } catch (err) {
+    // An abort is not a failure: abortJob already emitted the terminal event and
+    // finalized the job, so the error flow below (emitError, completeJob, an `error`
+    // outcome walking the failure streak) belongs only to genuine failures. A
+    // resumed generation usually surfaces its abort as a THROW out of
+    // resumeCompletion, so this classification — not the pre-finalize signal check —
+    // is the path most stops actually take.
+    if (job.abortController.signal.aborted || err?.message?.includes('abort')) {
+      logger.debug(`[ResumeAgentController] Resume aborted; settling the run: ${streamId}`);
+      await settleAbortedScheduledResume(job, streamId, conversationId);
+      return;
+    }
     logger.error('[ResumeAgentController] Resume failed', err);
     // Job-replacement guard (mirrors finalizeResumedTurn's success-path guard): if a
     // newer request reused this conversationId while the resume was failing, do NOT emit

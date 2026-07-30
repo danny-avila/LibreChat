@@ -57,6 +57,14 @@ refuses schedule writes with `501 SCHEDULES_NOT_SUPPORTED` (reads stay open).
 is the wrong signal; the check must be the live `GenerationJobManager.isRedis` read
 AFTER `configureGenerationStreams` (a Redis config can fall back to in-memory).
 
+**Known v1 residual this deferral leaves:** the clustered entrypoint's erasure sweep
+only erases DRAINED rows — it deliberately never settles a run, because settling
+requires job-store visibility a process-local store cannot give. A deleting schedule
+whose abort owner died therefore stays hidden-but-retained until the run-row TTL
+(~90 days) reclaims its runs. Bounded, reachable only via owner-death on a topology
+v1 does not schedule on, and fixed by this fast-follow's reconciliation — not by
+teaching the sweep to settle rows it cannot verify.
+
 **Note:** the shared stream-service initialization (`86255b8c7`) was KEPT in v1. It fixed
 a real bug — clustered workers never configured their stream services at all — and is
 correct independent of scheduling.

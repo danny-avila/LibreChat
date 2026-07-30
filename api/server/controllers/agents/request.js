@@ -527,26 +527,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // The response closes normally after res.json(), which is not an abort condition.
     // Abort handling is done through GenerationJobManager via the SSE stream connection.
 
-    // Track if partial response was already saved to avoid duplicates
+    // Track if partial response was already saved to avoid duplicates. Finalization
+    // sets it too, so a disconnect firing while the terminal saves run cannot
+    // overwrite the completed response with an `unfinished` partial.
     let partialResponseSaved = false;
-    /** In-flight disconnect-partial save; scheduled-run settlement awaits it so the
-     *  run cannot leave the active set while this write is still pending. */
+    /** The ENTIRE in-flight disconnect-save operation, assigned SYNCHRONOUSLY at
+     *  event dispatch — never from inside the async body, whose first await would
+     *  leave a window where settlement sees no pending write while one is starting.
+     *  Terminal paths (success, abort, error) await it before they save or settle. */
     let partialSavePromise = null;
 
-    /**
-     * Listen for all subscribers leaving to save partial response.
-     * This ensures the response is saved to DB even if all clients disconnect
-     * while generation continues.
-     *
-     * Note: The messageId used here falls back to `${userMessage.messageId}_` if the
-     * actual response messageId isn't available yet. The final response save will
-     * overwrite this with the complete response using the same messageId pattern.
-     */
-    job.emitter.on('allSubscribersLeft', async (aggregatedContent) => {
-      if (partialResponseSaved || !aggregatedContent || aggregatedContent.length === 0) {
-        return;
-      }
-
+    const savePartialOnDisconnect = async (aggregatedContent) => {
       const persistableContent = filterPersistableAbortContent(aggregatedContent);
       if (persistableContent.length === 0) {
         logger.debug('[ResumableAgentController] No persistable content to save partial response');
@@ -556,6 +547,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       const resumeState = await GenerationJobManager.getResumeState(streamId);
       if (!resumeState?.userMessage) {
         logger.debug('[ResumableAgentController] No user message to save partial response for');
+        return;
+      }
+
+      // Re-check liveness right before writing: this handler can resume from its
+      // awaits after the generation finished or was replaced, and a partial written
+      // then would mark a COMPLETED response unfinished (or write for a job that no
+      // longer exists). Only a still-live incarnation of THIS generation may save.
+      const liveJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+      if (
+        !liveJob ||
+        liveJob.createdAt !== jobCreatedAt ||
+        (liveJob.status !== 'running' && liveJob.status !== 'requires_action') ||
+        partialResponseSaved
+      ) {
         return;
       }
 
@@ -582,7 +587,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           partialMessage.agent_id = req.body.agent_id;
         }
 
-        const save = saveMessage(
+        await saveMessage(
           {
             userId: req?.user?.id,
             isTemporary: req?.body?.isTemporary,
@@ -591,9 +596,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           partialMessage,
           { context: 'api/server/controllers/agents/request.js - partial response on disconnect' },
         );
-        // Settlement awaits completion, not success, so store a never-rejecting view.
-        partialSavePromise = save.catch(() => undefined);
-        await save;
 
         logger.debug(
           `[ResumableAgentController] Saved partial response for ${streamId}, content parts: ${persistableContent.length}`,
@@ -603,6 +605,25 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // Reset flag so we can try again if subscribers reconnect and leave again
         partialResponseSaved = false;
       }
+    };
+
+    /**
+     * Listen for all subscribers leaving to save partial response.
+     * This ensures the response is saved to DB even if all clients disconnect
+     * while generation continues.
+     *
+     * Note: The messageId used here falls back to `${userMessage.messageId}_` if the
+     * actual response messageId isn't available yet. The final response save will
+     * overwrite this with the complete response using the same messageId pattern.
+     */
+    job.emitter.on('allSubscribersLeft', (aggregatedContent) => {
+      if (partialResponseSaved || !aggregatedContent || aggregatedContent.length === 0) {
+        return;
+      }
+      // Never-rejecting: settlement awaits completion, not success.
+      partialSavePromise = savePartialOnDisconnect(aggregatedContent).catch((error) => {
+        logger.error('[ResumableAgentController] Disconnect-partial save failed:', error);
+      });
     });
 
     /** @type {{ client: TAgentClient; userMCPAuthMap?: Record<string, Record<string, string>> }} */
@@ -627,16 +648,24 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // (abortJob -> reconcile 'interrupted', not 'success').
         // An interactive Stop can be what aborted this init: wait for the route's own
         // writes (durable abortPersistedAt stamp) before settling, same barrier as the
-        // generation catch below.
-        await awaitStopAbortPersistence(scheduleId, new Date(scheduledFor)).catch((err) =>
-          logger.warn('[ResumableAgentController] Stop-abort persistence barrier failed', err),
+        // generation catch below. FAIL CLOSED: an unconfirmed barrier means the route
+        // may still be persisting, so don't settle — leave the run active and the
+        // aborted job preserved for the reconciler, which finalizes it once the
+        // owner-death fence lapses.
+        const persisted = await awaitStopAbortPersistence(scheduleId, new Date(scheduledFor)).catch(
+          (err) => {
+            logger.warn('[ResumableAgentController] Stop-abort persistence barrier failed', err);
+            return false;
+          },
         );
-        const recorded = await recordScheduleOutcome({
-          scheduleId,
-          scheduledFor,
-          status: 'interrupted',
-          conversationId: streamId,
-        });
+        const recorded = persisted
+          ? await recordScheduleOutcome({
+              scheduleId,
+              scheduledFor,
+              status: 'interrupted',
+              conversationId: streamId,
+            })
+          : false;
         await GenerationJobManager.abortJob(streamId, {
           preserveForReconcile: !recorded,
           expectedCreatedAt: jobCreatedAt,
@@ -716,6 +745,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
      * awaited via the durable `abortPersistedAt` stamp. Without this, account
      * deletion can observe zero active runs, destroy the user's data, and have one
      * of these pending writes recreate messages for the deleted account.
+     *
+     * Returns whether settlement is CLEARED. False only when a requested stop-abort
+     * barrier could not be confirmed (route still persisting, or its state
+     * unreadable) — the caller must then NOT settle, leaving the run active for the
+     * reconciler to finalize once the owner-death fence lapses. Failing open here
+     * would be the original bug with extra steps.
      */
     const awaitPendingPersistence = async ({ stopAbort = false } = {}) => {
       if (userMessagePromise) {
@@ -725,10 +760,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         await partialSavePromise;
       }
       if (stopAbort && scheduleId && scheduledFor) {
-        await awaitStopAbortPersistence(scheduleId, new Date(scheduledFor)).catch((err) =>
-          logger.warn('[ResumableAgentController] Stop-abort persistence barrier failed', err),
-        );
+        return awaitStopAbortPersistence(scheduleId, new Date(scheduledFor)).catch((err) => {
+          logger.warn('[ResumableAgentController] Stop-abort persistence barrier failed', err);
+          return false;
+        });
       }
+      return true;
     };
 
     let immediateTitlePromise = null;
@@ -1057,6 +1094,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           isNewConvo &&
           !wasAbortedBeforeComplete;
 
+        // FINALIZATION owns the response record from here: stop any new
+        // disconnect-partial save (a subscriber leaving mid-teardown would mark the
+        // completed response `unfinished`), and let an already-launched one land
+        // BEFORE the final saves so the completed record is the last writer.
+        partialResponseSaved = true;
+        if (partialSavePromise) {
+          await partialSavePromise;
+        }
+
         // Save user message BEFORE sending final event to avoid race condition
         // where client refetch happens before database is updated
         const reqCtx = {
@@ -1107,6 +1153,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // its output; skipping the outcome left the row `started`, holding a global
           // capacity slot and blocking account deletion until the orphan sweep.
           if (scheduleId) {
+            await awaitPendingPersistence();
             await recordScheduleOutcome({
               scheduleId,
               scheduledFor,
@@ -1206,6 +1253,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // instead of deleting the evidence.
           let scheduleOutcomeRecorded = true;
           if (scheduleId) {
+            await awaitPendingPersistence();
             scheduleOutcomeRecorded = await recordScheduleOutcome({
               scheduleId,
               scheduledFor,
@@ -1258,16 +1306,21 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // Record the abort BEFORE completeJob so the run doesn't linger as `started`
           // (blocking run-now/overlap until the 30-minute orphan cutoff) — but AFTER
           // every pending persistence write, including the Stop route's (settlement is
-          // what deletion drains confirm on).
+          // what deletion drains confirm on). An UNCONFIRMED barrier means the route
+          // may still be persisting: FAIL CLOSED and leave the run active — the
+          // reconciler finalizes it from the preserved aborted job once the
+          // owner-death fence lapses.
           let abortOutcomeRecorded = true;
           if (scheduleId) {
-            await awaitPendingPersistence({ stopAbort: true });
-            abortOutcomeRecorded = await recordScheduleOutcome({
-              scheduleId,
-              scheduledFor,
-              status: 'interrupted',
-              conversationId: conversation?.conversationId,
-            });
+            const cleared = await awaitPendingPersistence({ stopAbort: true });
+            abortOutcomeRecorded = cleared
+              ? await recordScheduleOutcome({
+                  scheduleId,
+                  scheduledFor,
+                  status: 'interrupted',
+                  conversationId: conversation?.conversationId,
+                })
+              : false;
           }
           startupTelemetry?.end('aborted');
           // Only finalize/clean the job when the outcome is recorded. When it isn't
@@ -1343,7 +1396,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // user-message/conversation save, a disconnect-partial save, and — for an
           // interactive Stop — the abort route's own writes) before the outcome write
           // drops this run out of the active set that deletion drains confirm on.
-          await awaitPendingPersistence({ stopAbort: wasAborted });
+          // An UNCONFIRMED stop barrier means the route may still be persisting:
+          // FAIL CLOSED, skip the settle, and leave the run active — the reconciler
+          // finalizes it from the preserved aborted job once the fence lapses.
+          const cleared = await awaitPendingPersistence({ stopAbort: wasAborted });
           // The balance middleware's structured refusal is the OWNER's credits, not a
           // schedule fault: settle as `skipped_balance` so it walks the
           // insufficient_balance streak instead of too_many_failures.
@@ -1354,13 +1410,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           } else if (balanceRefusal) {
             outcomeStatus = 'skipped_balance';
           }
-          errorScheduleOutcomeRecorded = await recordScheduleOutcome({
-            scheduleId,
-            scheduledFor,
-            status: outcomeStatus,
-            conversationId: streamId,
-            error: outcomeStatus === 'error' ? error.message : undefined,
-          });
+          errorScheduleOutcomeRecorded = cleared
+            ? await recordScheduleOutcome({
+                scheduleId,
+                scheduledFor,
+                status: outcomeStatus,
+                conversationId: streamId,
+                error: outcomeStatus === 'error' ? error.message : undefined,
+              })
+            : false;
         }
 
         if (wasAborted) {

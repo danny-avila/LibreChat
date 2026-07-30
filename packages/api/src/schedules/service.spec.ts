@@ -7,9 +7,15 @@ let mockJobStore: { getJob: jest.Mock } | null = null;
 
 jest.mock('../agents/checkpointer', () => ({
   deleteAgentCheckpoint: jest.fn(async () => undefined),
+  // Non-empty by default so the scoped prune has something to delete in tests.
+  captureAgentCheckpointGeneration: jest.fn(async (threadId: string) => ({
+    threadId,
+    checkpointIds: ['ck-1'],
+  })),
 }));
 const checkpointerModule = jest.requireMock('../agents/checkpointer') as {
   deleteAgentCheckpoint: jest.Mock;
+  captureAgentCheckpointGeneration: jest.Mock;
 };
 
 jest.mock('../stream/GenerationJobManager', () => ({
@@ -52,7 +58,13 @@ function makeService(
     resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
     isUserDeleting: jest.fn(async () => false),
   } as unknown as SchedulesServiceDeps;
-  return createSchedulesService(deps);
+  // Short bounded waits so fail-closed paths (drains, barriers) resolve in test time.
+  return createSchedulesService(deps, {
+    drainTimeoutMs: 400,
+    drainPollMs: 25,
+    stopBarrierTimeoutMs: 400,
+    stopBarrierPollMs: 25,
+  });
 }
 
 const run = (): ActiveRun => ({
@@ -312,7 +324,12 @@ describe('deleteScheduleForOwner', () => {
 
     await service.deleteScheduleForOwner('s1', 'user-1');
 
-    expect(checkpointerModule.deleteAgentCheckpoint).toHaveBeenCalledWith('c1', undefined);
+    // SCOPED to the checkpoint ids captured before the terminal transition, so a
+    // replacement's later checkpoints can never be swept up by this prune.
+    expect(checkpointerModule.deleteAgentCheckpoint).toHaveBeenCalledWith('c1', undefined, {
+      threadId: 'c1',
+      checkpointIds: ['ck-1'],
+    });
   });
 
   it('reports draining when a live run was aborted but has not yet settled', async () => {
@@ -982,7 +999,7 @@ describe('awaitStopAbortPersistence (generation-owner settlement barrier)', () =
     expect(reads.mock.calls.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('does not wedge on an unreadable run row', async () => {
+  it('fails CLOSED on an unreadable run row', async () => {
     const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
     const methods = service.engineDeps.methods as unknown as {
       getScheduleRunAbortState: jest.Mock;
@@ -990,6 +1007,62 @@ describe('awaitStopAbortPersistence (generation-owner settlement barrier)', () =
     methods.getScheduleRunAbortState = jest.fn(async () => {
       throw new Error('mongo down');
     });
-    await expect(service.awaitStopAbortPersistence('s1', scheduledFor)).resolves.toBeUndefined();
+    // An unreadable row proves nothing about the route's writes — releasing the
+    // barrier here was the original fail-open bug with extra steps.
+    await expect(service.awaitStopAbortPersistence('s1', scheduledFor)).resolves.toBe(false);
+  });
+
+  it('fails CLOSED when the route never resolves its persistence in time', async () => {
+    const { service } = serviceWithAbortState([
+      {
+        status: 'started',
+        abortRequestedAt: new Date(),
+        abortSource: 'stop',
+        abortPersistedAt: undefined,
+      },
+    ]);
+    // The caller must NOT settle on false: the run stays active for the reconciler,
+    // which finalizes it once the owner-death fence lapses.
+    await expect(service.awaitStopAbortPersistence('s1', scheduledFor)).resolves.toBe(false);
+  });
+});
+
+describe('deleteScheduleForOwner waits for the settle acknowledgement', () => {
+  it('converges when an unconfirmed abort settles during the bounded drain', async () => {
+    const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
+    const methods = service.engineDeps.methods as unknown as {
+      markScheduleDeleting: jest.Mock;
+      getActiveRunsForSchedule: jest.Mock;
+      eraseScheduleIfDrained: jest.Mock;
+    };
+    methods.markScheduleDeleting = jest.fn(async () => ({ id: 's1', user: 'user-1' }));
+    // Active at the abort pass, drained by the first drain poll: the owner settled.
+    methods.getActiveRunsForSchedule = jest
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          scheduleId: 's1',
+          scheduledFor: new Date('2026-01-01T00:00:00.000Z'),
+          conversationId: 'c1',
+          status: 'started',
+        },
+      ])
+      .mockResolvedValue([]);
+    methods.eraseScheduleIfDrained = jest.fn(async () => true);
+    mockJobStore = {
+      getJob: jest.fn(async () => ({
+        status: 'running',
+        createdAt: 1,
+        scheduleId: 's1',
+        scheduledFor: '2026-01-01T00:00:00.000Z',
+      })),
+    } as unknown as typeof mockJobStore;
+    const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
+    // Delivery cannot be locally proven (peer-owned generation): honest false...
+    manager.abortJob = jest.fn(async () => ({ success: true, signalDelivered: false }));
+
+    // ...but the run row leaving the active set is the durable acknowledgement, so
+    // the delete converges instead of answering a spurious 503.
+    await expect(service.deleteScheduleForOwner('s1', 'user-1')).resolves.toBe('deleted');
   });
 });
