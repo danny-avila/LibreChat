@@ -452,37 +452,40 @@ export function synthesizeIntentToolOptions(
 ): AgentToolOptions | undefined {
   const specSelection = sources.modelSpec?.describeIntent;
   const selectedNames = Array.isArray(specSelection) ? specSelection : undefined;
-  const enabled =
-    sources.ephemeralAgent?.describe_intent === true ||
-    specSelection === true ||
-    (selectedNames != null && selectedNames.length > 0);
+  const ephemeralEnabled = sources.ephemeralAgent?.describe_intent === true;
+  const enabled = ephemeralEnabled || specSelection === true || selectedNames != null;
   if (!enabled) {
     return undefined;
   }
 
-  /** An explicit list narrows the scope; the ephemeral/`true` paths do not. */
+  /**
+   * A list is a SELECTION POLICY, not an additive filter, so unselected tools
+   * must be opted out EXPLICITLY rather than merely omitted. Two defaults
+   * would otherwise survive the narrowing: `isIntentOptedIn` treats every
+   * `NATIVE_INTENT_TOOL_NAMES` member as on when it finds no entry, and
+   * `sanitizeIntentLabels` keeps an SDK-native label unless it sees
+   * `describe_intent: false`. Omission alone would leave
+   * `describeIntent: ['web_search']` still labelling `set_memory`, and an
+   * empty list — an explicit "none" — disabling nothing at all.
+   *
+   * The ephemeral/`true` paths do not narrow: `true` means every eligible
+   * tool, and the ephemeral switch has no per-tool UI to drive a selection.
+   */
   const narrowTo =
-    selectedNames != null &&
-    sources.ephemeralAgent?.describe_intent !== true &&
-    specSelection !== true
+    selectedNames != null && !ephemeralEnabled && specSelection !== true
       ? new Set(selectedNames)
       : undefined;
 
   const toolOptions: AgentToolOptions = {};
   for (const name of tools) {
-    if (isMCPAllPlaceholder(name)) {
+    if (isMCPAllPlaceholder(name) || !isIntentEligibleToolName(name)) {
       continue;
     }
-    if (narrowTo != null && !narrowTo.has(name)) {
-      continue;
-    }
-    if (isIntentEligibleToolName(name)) {
-      toolOptions[name] = { describe_intent: true };
-    }
+    toolOptions[name] = { describe_intent: narrowTo == null || narrowTo.has(name) };
   }
 
   if (narrowTo != null) {
-    const unmatched = [...narrowTo].filter((name) => toolOptions[name] == null);
+    const unmatched = [...narrowTo].filter((name) => toolOptions[name]?.describe_intent !== true);
     if (unmatched.length > 0) {
       logger.warn(
         `[intent] describeIntent named ${unmatched.length} tool(s) that are not eligible or not equipped on this spec: ${unmatched.join(', ')}`,

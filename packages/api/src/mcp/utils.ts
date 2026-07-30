@@ -14,7 +14,7 @@ export const mcpToolPattern: RegExp = new RegExp(`^.+${Constants.mcp_delimiter}.
  * is a silent no-op. Kept here rather than per-consumer so the two capability
  * synthesizers cannot drift apart on which names they ignore.
  */
-export const MCP_ALL_PLACEHOLDER_PREFIX = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
+export const MCP_ALL_PLACEHOLDER_PREFIX: string = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
 
 /** Whether a tool entry is the lazily-expanded `mcp_all` placeholder. */
 export function isMCPAllPlaceholder(toolName: string): boolean {

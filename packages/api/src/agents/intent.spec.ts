@@ -505,6 +505,7 @@ describe('synthesizeIntentToolOptions', () => {
     expect(options).toEqual({
       web_search: { describe_intent: true },
       search_code_mcp_github: { describe_intent: true },
+      file_search: { describe_intent: false },
     });
   });
 
@@ -515,10 +516,28 @@ describe('synthesizeIntentToolOptions', () => {
     expect(options).toEqual({ web_search: { describe_intent: true } });
   });
 
-  it('treats an empty list as disabled', () => {
-    expect(
-      synthesizeIntentToolOptions(['web_search'], { modelSpec: { describeIntent: [] } }),
-    ).toBeUndefined();
+  it('opts unselected tools OUT explicitly, so defaults cannot survive narrowing', () => {
+    /** `set_memory` is default-on via NATIVE_INTENT_TOOL_NAMES and SDK-native
+     *  labels persist unless they see an explicit false, so omission alone
+     *  would leave both labelled despite the narrowing. */
+    const options = synthesizeIntentToolOptions(['web_search', 'set_memory', 'read_file'], {
+      modelSpec: { describeIntent: ['web_search'] },
+    });
+    expect(options).toEqual({
+      web_search: { describe_intent: true },
+      set_memory: { describe_intent: false },
+      read_file: { describe_intent: false },
+    });
+  });
+
+  it('treats an empty list as an explicit none, disabling default-on tools', () => {
+    const options = synthesizeIntentToolOptions(['web_search', 'set_memory'], {
+      modelSpec: { describeIntent: [] },
+    });
+    expect(options).toEqual({
+      web_search: { describe_intent: false },
+      set_memory: { describe_intent: false },
+    });
   });
 
   it('warns about named tools the spec does not equip, rather than silently skipping', () => {
