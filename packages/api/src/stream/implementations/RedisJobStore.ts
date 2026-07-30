@@ -2237,6 +2237,12 @@ export class RedisJobStore implements IJobStore {
       isTemporary: data.isTemporary != null ? data.isTemporary === '1' : undefined,
       // Deferred tools discovered before a HITL pause; replayed into createRun on resume.
       discoveredTools: data.discoveredTools ? JSON.parse(data.discoveredTools) : undefined,
+      /** The owning replica's seal capability. `serializeJob` writes every
+       *  boolean generically, but this mapper is explicit — omitting it here
+       *  drops the flag on every read, so the steer route would compute
+       *  `preemptArmed: false` and silently degrade interrupt-steer to
+       *  tool-boundary steering in EVERY Redis deployment. */
+      preemptCapable: data.preemptCapable != null ? data.preemptCapable === '1' : undefined,
       titleEvent: data.titleEvent || undefined,
       replayEvents: data.replayEvents || undefined,
       contextUsage: data.contextUsage || undefined,

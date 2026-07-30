@@ -588,6 +588,23 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     return res.status(409).json({ error: 'This action was already resolved or has expired' });
   }
 
+  /**
+   * Ownership moves on resume, so the job's recorded seal capability must
+   * describe THIS replica — otherwise a job created on a capable replica that
+   * resumes on an older one during a rolling deploy keeps acknowledging
+   * steers as interrupting. Written IMMEDIATELY after the claim, before
+   * client reconstruction: `approvals.resolve` has already flipped the job
+   * back to `running`, so the steer route is accepting requests from here on
+   * and every one of them reads this flag.
+   */
+  await GenerationJobManager.updateMetadata(
+    streamId,
+    { preemptCapable: isSteerPreemptSupported() },
+    job.createdAt,
+  ).catch((error) => {
+    logger.warn('[ResumeAgentController] Failed to refresh preempt capability', error);
+  });
+
   // Seed the run-scoped MCP request-context store BEFORE the ACK: once `res.json`
   // finishes the response, a later `getMCPRequestContext(req, res)` (from tool loading)
   // sees `res` as ended and returns undefined, leaving the resumed run without its MCP
@@ -707,20 +724,6 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     if (client.contentParts) {
       GenerationJobManager.setContentParts(streamId, client.contentParts, job.createdAt);
     }
-
-    /**
-     * Ownership moves on resume: this replica now generates the turn, so the
-     * job's recorded seal capability must describe THIS process. Without the
-     * refresh a job created on a capable replica could resume on an older one
-     * during a rolling deploy and still acknowledge steers as interrupting.
-     */
-    await GenerationJobManager.updateMetadata(
-      streamId,
-      { preemptCapable: isSteerPreemptSupported() },
-      job.createdAt,
-    ).catch((error) => {
-      logger.warn('[ResumeAgentController] Failed to refresh preempt capability', error);
-    });
 
     await client.resumeCompletion({
       resumeValue: mapped.resumeValue,
