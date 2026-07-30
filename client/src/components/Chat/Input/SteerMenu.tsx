@@ -108,31 +108,38 @@ export function EscalateNowButton({
   const chord = useShortcutDisplay('escalateSteer');
   const label = localize('com_ui_interrupt_steer_now');
   return (
-    <Ariakit.TooltipProvider placement="top" timeout={300}>
-      <Ariakit.TooltipAnchor
-        render={
-          <button
-            type="button"
-            aria-label={label}
-            data-escalate-steer={surface}
-            data-testid={surface === 'queued' ? 'queued-interrupt-now' : 'steer-escalate-now'}
-            disabled={disabled}
-            onClick={onClick}
-            className={cn(
-              'flex size-7 shrink-0 items-center justify-center rounded-full border border-border-medium',
-              'text-text-primary transition-colors hover:bg-surface-hover',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
-              'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent',
-            )}
-          >
-            <ArrowUp className="h-4 w-4" aria-hidden="true" />
-          </button>
-        }
-      />
-      <Ariakit.Tooltip className="z-50 rounded-lg bg-surface-tertiary px-2 py-1 text-xs text-text-primary shadow-lg">
-        {chord ? `${label} · ${chord}` : label}
-      </Ariakit.Tooltip>
-    </Ariakit.TooltipProvider>
+    <>
+      {/* Thin divider binds the arrow to the message on its left, so it can
+       *  never read as part of the bare-glyph menu control beside it — the
+       *  send-now belongs to THIS chip, and the pairing repeats cleanly when
+       *  several messages stack. */}
+      <span aria-hidden="true" className="h-[18px] w-px shrink-0 bg-border-medium" />
+      <Ariakit.TooltipProvider placement="top" timeout={300}>
+        <Ariakit.TooltipAnchor
+          render={
+            <button
+              type="button"
+              aria-label={label}
+              data-escalate-steer={surface}
+              data-testid={surface === 'queued' ? 'queued-interrupt-now' : 'steer-escalate-now'}
+              disabled={disabled}
+              onClick={onClick}
+              className={cn(
+                'flex size-6 shrink-0 items-center justify-center rounded-full',
+                'bg-text-primary text-surface-primary transition-opacity hover:opacity-85',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
+                'disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:opacity-35',
+              )}
+            >
+              <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.4} aria-hidden="true" />
+            </button>
+          }
+        />
+        <Ariakit.Tooltip className="z-50 rounded-lg bg-surface-tertiary px-2 py-1 text-xs text-text-primary shadow-lg">
+          {chord ? `${label} · ${chord}` : label}
+        </Ariakit.Tooltip>
+      </Ariakit.TooltipProvider>
+    </>
   );
 }
 
