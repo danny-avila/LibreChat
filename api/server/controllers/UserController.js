@@ -385,16 +385,15 @@ const deleteUserController = async (req, res) => {
     // Bounded retries because a swallowed failure here recreates the lockout.
     let committed = false;
     for (let attempt = 1; attempt <= 3 && !committed; attempt++) {
-      committed = await db
-        .markUserDeletionCommitted(user.id)
-        .then(() => true)
-        .catch((error) => {
-          logger.error(
-            `[deleteUserController] Failed to commit deletion (attempt ${attempt}/3)`,
-            error,
-          );
-          return false;
-        });
+      try {
+        await db.markUserDeletionCommitted(user.id);
+        committed = true;
+      } catch (error) {
+        logger.error(
+          `[deleteUserController] Failed to commit deletion (attempt ${attempt}/3)`,
+          error,
+        );
+      }
     }
     if (!committed) {
       logger.error(

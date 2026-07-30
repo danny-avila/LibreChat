@@ -48,6 +48,9 @@ jest.mock('~/server/services/Schedules', () => ({
 
 jest.mock('~/models', () => ({
   markUserDeleting: jest.fn().mockResolvedValue(new Date()),
+  markUserDeletionCommitted: jest.fn().mockResolvedValue(undefined),
+  getUsersPendingDeletion: jest.fn().mockResolvedValue([]),
+  markDeletionSweepAttempted: jest.fn().mockResolvedValue(undefined),
   deleteAllUserSessions: (...args) => mockDeleteAllUserSessions(...args),
   deleteAllSharedLinks: (...args) => mockDeleteAllSharedLinks(...args),
   updateUserPlugins: (...args) => mockUpdateUserPlugins(...args),
