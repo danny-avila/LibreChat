@@ -1,6 +1,7 @@
+import { logger } from '@librechat/data-schemas';
 import { SteerEvents } from 'librechat-data-provider';
 import type { TPendingSteer, Agents } from 'librechat-data-provider';
-import type { SteerQueueItem } from '~/stream/interfaces/IJobStore';
+import type { SteerQueueItem, IEventTransport } from '~/stream/interfaces/IJobStore';
 import type { ResumeState, ServerSentEvent } from '~/types';
 import {
   STEER_ENQUEUE_NOT_RUNNING,
@@ -914,6 +915,50 @@ describe('preempt request lifecycle (in-memory)', () => {
 
     manager.requestPreempt(streamId, 'steer-1', job.createdAt);
     expect((await manager.getJob(streamId))?.status).toBe('running');
+  });
+
+  test('a failing preempt subscription degrades the job instead of crashing the process', async () => {
+    const transport: IEventTransport = new InMemoryEventTransport();
+    transport.onPreempt = jest.fn().mockRejectedValue(new Error('SUBSCRIBE failed'));
+
+    /**
+     * The registration is deliberately detached, so a rejection propagating out
+     * of it would be unhandled — fatal under Node's default settings.
+     */
+    const unhandled: unknown[] = [];
+    const collect = (reason: unknown): number => unhandled.push(reason);
+    process.on('unhandledRejection', collect);
+    const logged = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+
+    const degraded = new GenerationJobManagerClass();
+    degraded.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: transport,
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    degraded.initialize();
+
+    try {
+      const streamId = 'preempt-subscribe-fails';
+      const job = await degraded.createJob(streamId, 'user-1');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(unhandled).toEqual([]);
+      expect(job.status).toBe('running');
+      expect(logged).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to subscribe to preempts'),
+        expect.any(Error),
+      );
+
+      /** Same-replica arming is runtime state, so it survives the lost channel. */
+      degraded.requestPreempt(streamId, 'steer-1', job.createdAt);
+      expect(degraded.isPreemptRequested(streamId)).toBe(true);
+    } finally {
+      process.off('unhandledRejection', collect);
+      logged.mockRestore();
+      await degraded.destroy();
+    }
   });
 
   test('abortJob retires the armed set with the runtime', async () => {

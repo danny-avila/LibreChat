@@ -658,6 +658,13 @@ class GenerationJobManagerClass {
    * cross-replica publish can never arm a replacement job on the same
    * streamId. Arm requests cap at {@link STEER_QUEUE_MAX_DEPTH}, matching
    * the durable queue they mirror.
+   *
+   * Never rejects. Every caller fires this without awaiting (see the
+   * createJob registration for why), so a propagating subscription error
+   * would be an unhandled rejection — fatal under Node's default
+   * `--unhandled-rejections=throw`. A failed subscription is not worth a
+   * process: it degrades this generation's preemptive steers to the next
+   * tool boundary, which is the documented fallback.
    */
   private async registerPreemptSubscription(
     streamId: string,
@@ -667,25 +674,33 @@ class GenerationJobManagerClass {
       return;
     }
 
-    const unsubscribe = await this.eventTransport.onPreempt(streamId, (msg) => {
-      const currentRuntime = this.runtimeState.get(streamId);
-      if (currentRuntime !== runtime || currentRuntime.createdAt !== msg.createdAt) {
-        return;
+    try {
+      const unsubscribe = await this.eventTransport.onPreempt(streamId, (msg) => {
+        const currentRuntime = this.runtimeState.get(streamId);
+        if (currentRuntime !== runtime || currentRuntime.createdAt !== msg.createdAt) {
+          return;
+        }
+
+        if (msg.op === 'clear') {
+          this.clearPreemptIds(currentRuntime, msg.createdAt, msg.steerIds);
+          return;
+        }
+
+        this.armPreemptIds(currentRuntime, msg.createdAt, msg.steerIds);
+      });
+
+      if (typeof unsubscribe === 'function') {
+        runtime.preemptUnsubscribe = unsubscribe;
       }
-
-      if (msg.op === 'clear') {
-        this.clearPreemptIds(currentRuntime, msg.createdAt, msg.steerIds);
-        return;
+      if (this.runtimeState.get(streamId) !== runtime || runtime.abortController.signal.aborted) {
+        this.releasePreemptSubscription(runtime);
       }
-
-      this.armPreemptIds(currentRuntime, msg.createdAt, msg.steerIds);
-    });
-
-    if (typeof unsubscribe === 'function') {
-      runtime.preemptUnsubscribe = unsubscribe;
-    }
-    if (this.runtimeState.get(streamId) !== runtime || runtime.abortController.signal.aborted) {
-      this.releasePreemptSubscription(runtime);
+    } catch (err) {
+      logger.error(
+        `[GenerationJobManager] Failed to subscribe to preempts for ${streamId}; ` +
+          'steers on this generation will apply at the next tool boundary:',
+        err,
+      );
     }
   }
 
@@ -914,7 +929,8 @@ class GenerationJobManagerClass {
        * documented fallback, so blocking job creation on a second channel
        * subscription would trade a real hang risk for a cosmetic guarantee.
        * The registration's own lost-race tail releases it if the runtime is
-       * retired before the subscription resolves.
+       * retired before the subscription resolves, and it swallows and logs
+       * its own failures, so this detached call cannot reject.
        */
       void this.registerPreemptSubscription(streamId, runtime);
       if (this.runtimeState.get(streamId) !== runtime) {
