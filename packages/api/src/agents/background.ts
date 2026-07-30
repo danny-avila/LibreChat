@@ -48,6 +48,9 @@ import { truncateMiddle } from '~/utils';
 /** Argument the model sets on a tool call to dispatch it in the background. */
 export const RUN_IN_BACKGROUND_ARG = 'run_in_background';
 
+/** Log prefix for selection diagnostics, phrased in the spec's own field name. */
+const BACKGROUND_SELECTION_LABEL = '[background] runInBackground';
+
 /**
  * `type` of the synthetic attachment emitted on a poll turn when a harvested
  * code task settles — the live "this backgrounded call finished" signal for
@@ -403,7 +406,7 @@ export function applyBackgroundToolCalls(params: {
     return injected;
   });
 
-  warnUnmatchedSelectionNames(selectionNames, effectiveSources, '[background] runInBackground');
+  warnUnmatchedSelectionNames(selectionNames, effectiveSources, BACKGROUND_SELECTION_LABEL);
 
   if (backgroundToolNames.length === 0) {
     return { toolDefinitions: defs, backgroundToolNames: [] };
@@ -439,6 +442,7 @@ export function synthesizeBackgroundToolOptions(sources: {
     'run_in_background',
     sources.modelSpec?.runInBackground,
     sources.ephemeralAgent?.run_in_background === true,
+    BACKGROUND_SELECTION_LABEL,
   );
 }
 

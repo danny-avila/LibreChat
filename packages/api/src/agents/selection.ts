@@ -113,12 +113,16 @@ export function resolveToolOption(
  * opt-ins for the named entries — names are NOT validated here, because the
  * definitions they must match only exist at injection time, where
  * {@link resolveToolOption} consumes them and the apply pass diagnoses
- * selections that never took effect.
+ * selections that never took effect. The one exception is the reserved
+ * wildcard itself: a literal `*` list entry would overwrite the opt-out
+ * default and silently enable the capability for EVERY eligible tool, so it
+ * is dropped and warned about here, where it is knowably invalid.
  */
 export function synthesizeSelectionToolOptions(
   field: SelectionField,
   selection: boolean | string[] | undefined,
   ephemeralEnabled: boolean,
+  label: string,
 ): AgentToolOptions | undefined {
   const selectedNames = Array.isArray(selection) ? selection : undefined;
   if (!ephemeralEnabled && selection !== true && selectedNames == null) {
@@ -129,6 +133,12 @@ export function synthesizeSelectionToolOptions(
   }
   const toolOptions: AgentToolOptions = { [TOOL_SELECTION_WILDCARD]: { [field]: false } };
   for (const name of selectedNames ?? []) {
+    if (name === TOOL_SELECTION_WILDCARD) {
+      logger.warn(
+        `${label} contains the reserved wildcard "${TOOL_SELECTION_WILDCARD}"; ignoring it. Set the option to true to cover every eligible tool.`,
+      );
+      continue;
+    }
     toolOptions[name] = { [field]: true };
   }
   return toolOptions;

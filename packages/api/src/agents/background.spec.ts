@@ -331,6 +331,22 @@ describe('synthesizeBackgroundToolOptions', () => {
     });
   });
 
+  it('drops and warns about a literal wildcard in the list (reserved)', () => {
+    /** `runInBackground: ['*']` would otherwise overwrite the opt-out default
+     *  and detach-enable every eligible tool instead of selecting one. */
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    expect(
+      synthesizeBackgroundToolOptions({
+        modelSpec: { runInBackground: [TOOL_SELECTION_WILDCARD, 'search_mcp_docs'] },
+      }),
+    ).toEqual({
+      [TOOL_SELECTION_WILDCARD]: { run_in_background: false },
+      search_mcp_docs: { run_in_background: true },
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('reserved'));
+    warn.mockRestore();
+  });
+
   it('the ephemeral toggle stays global even when the spec narrows', () => {
     expect(
       synthesizeBackgroundToolOptions({

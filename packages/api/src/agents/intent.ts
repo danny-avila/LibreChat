@@ -40,22 +40,20 @@ import {
   synthesizeSelectionToolOptions,
 } from './selection';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
+import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from './tools';
 
 /** Argument carrying the model-authored label for a tool call. */
 export const INTENT_ARG = 'intent';
+
+/** Log prefix for selection diagnostics, phrased in the spec's own field name. */
+const INTENT_SELECTION_LABEL = '[intent] describeIntent';
 
 /**
  * Host-native tools that default INTO intent labels while the capability is
  * enabled (an explicit `describe_intent: false` opts one out). These are the
  * least legible calls in the UI today, and the convention only becomes a
  * convention if our own tools model it.
- *
- * `ask_user_question` is deliberately absent: its graph tool is rebuilt in
- * `run.ts` from its own Zod schema (which is also the HITL card's wire
- * shape), so definition-level injection never reaches the model. Its intent
- * support lands with the HITL slice, which threads the label into the
- * interrupt payload on purpose.
  */
 export const NATIVE_INTENT_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   Tools.web_search,
@@ -68,11 +66,20 @@ export const NATIVE_INTENT_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
 /**
  * Tools that never get the injected param: the background poll tool is host
  * machinery, and handoff tools run through the direct path where no card
- * renders a label. Intent labels are otherwise inert, so — unlike
- * background's correctness-driven list — nothing else is excluded.
+ * renders a label.
+ *
+ * `ask_user_question` is excluded because injection into its definition can
+ * never reach the model: `createRun` strips the definition and rebuilds the
+ * graph tool from its own Zod schema (also the HITL card's wire shape).
+ * Excluding it makes an explicit selection warn as ineligible instead of
+ * crediting a label that will be discarded. Its intent support lands with
+ * the HITL slice, which threads the label into the interrupt payload on
+ * purpose. Intent labels are otherwise inert, so — unlike background's
+ * correctness-driven list — nothing else is excluded.
  */
 const EXCLUDED_INTENT_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   String(Constants.CHECK_BACKGROUND_TASK),
+  ASK_USER_QUESTION_TOOL_NAME,
 ]);
 
 /** Whether a tool may carry an intent label. */
@@ -381,7 +388,7 @@ export function applyIntentLabels(params: {
     return injected;
   });
 
-  warnUnmatchedSelectionNames(selectionNames, effectiveSources, '[intent] describeIntent');
+  warnUnmatchedSelectionNames(selectionNames, effectiveSources, INTENT_SELECTION_LABEL);
 
   if (!changed) {
     return { toolDefinitions: defs, intentToolNames };
@@ -471,5 +478,6 @@ export function synthesizeIntentToolOptions(sources: {
     'describe_intent',
     sources.modelSpec?.describeIntent,
     sources.ephemeralAgent?.describe_intent === true,
+    INTENT_SELECTION_LABEL,
   );
 }

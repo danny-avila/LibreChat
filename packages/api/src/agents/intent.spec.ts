@@ -45,9 +45,13 @@ const sdkNativeDef = (name: string): LCTool =>
   }) as unknown as LCTool;
 
 describe('isIntentEligibleToolName', () => {
-  it('excludes only the poll tool and handoff tools', () => {
+  it('excludes the poll tool, handoff tools, and the rebuilt ask tool', () => {
     expect(isIntentEligibleToolName(CHECK_BACKGROUND_TASK_NAME)).toBe(false);
     expect(isIntentEligibleToolName('lc_transfer_to_researcher')).toBe(false);
+    /** `createRun` strips this definition and rebuilds the graph tool from
+     *  its own Zod schema, so definition-level injection never reaches the
+     *  model; eligibility must say so or a selection credits a dead label. */
+    expect(isIntentEligibleToolName('ask_user_question')).toBe(false);
   });
 
   it('allows MCP, native, and code-execution tools (labels are inert)', () => {
@@ -58,7 +62,6 @@ describe('isIntentEligibleToolName', () => {
       'edit_file',
       'set_memory',
       'delete_memory',
-      'ask_user_question',
       'execute_code',
       'bash_tool',
       'file_search',
@@ -611,6 +614,22 @@ describe('synthesizeIntentToolOptions', () => {
     });
   });
 
+  it('drops and warns about a literal wildcard in the list (reserved)', () => {
+    /** A verbatim `*` entry would overwrite the opt-out default and silently
+     *  enable every tool instead of the named selection. */
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    expect(
+      synthesizeIntentToolOptions({
+        modelSpec: { describeIntent: [TOOL_SELECTION_WILDCARD, 'web_search'] },
+      }),
+    ).toEqual({
+      [TOOL_SELECTION_WILDCARD]: { describe_intent: false },
+      web_search: { describe_intent: true },
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('reserved'));
+    warn.mockRestore();
+  });
+
   it('the ephemeral toggle stays global even when the spec narrows', () => {
     /** The ephemeral switch has no per-tool UI, so it must not be narrowed by
      *  a co-present spec list — otherwise enabling it would silently cover
@@ -698,6 +717,25 @@ describe('selection policy at injection time', () => {
       toolOptions,
     });
     expect(intentToolNames).toEqual(['search_mcp_overlay_server']);
+  });
+
+  it('diagnoses a selection naming the rebuilt ask tool instead of crediting a dead label', () => {
+    /** The provisional `ask_user_question` definition is discarded by
+     *  `createRun` and rebuilt without an intent field, so a selection
+     *  naming it must warn rather than inject into a definition the model
+     *  never sees. */
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const toolOptions = synthesizeIntentToolOptions({
+      modelSpec: { describeIntent: ['ask_user_question'] },
+    });
+    const { intentToolNames } = applyIntentLabels({
+      toolDefinitions: [mcpDef('ask_user_question')],
+      toolRegistry: undefined,
+      toolOptions,
+    });
+    expect(intentToolNames).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('ask_user_question'));
+    warn.mockRestore();
   });
 
   it('still enforces eligibility for explicitly named tools, and diagnoses them', () => {
