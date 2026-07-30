@@ -1,10 +1,10 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { getDefaultStore } from 'jotai';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, within, fireEvent, act } from '@testing-library/react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import type { PendingSteer } from '~/store/families';
-import { steerOverlayHeightFamily } from '~/store/steer';
+import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
 import InFlightSteers from '../InFlightSteers';
 import store from '~/store';
 
@@ -599,9 +599,13 @@ describe('InFlightSteers', () => {
 describe('InFlightSteers — interrupt-now escalation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockArmMutateAsync.mockReset();
     mockCancelMutateAsync.mockResolvedValue({ removed: true });
     mockArmMutateAsync.mockResolvedValue({ armed: true });
     mockRestoreToComposer.mockReturnValue(true);
+    act(() => {
+      getDefaultStore().set(escalatingSteerFamily(CONVO_ID), false);
+    });
   });
 
   it("arms the interrupt in place, keeping the steer's id and position", async () => {
@@ -668,6 +672,43 @@ describe('InFlightSteers — interrupt-now escalation', () => {
       expect.objectContaining({ message: 'com_ui_steer_arm_failed', status: 'error' }),
     );
     expect(screen.getByText('still queued')).toBeInTheDocument();
+  });
+
+  it('locks every escalation control while an arm request is in flight', async () => {
+    /** The chip-derived gate cannot see an arm until its response lands, so
+     *  the flag flips synchronously at click — otherwise two bubbles could
+     *  both arm on a slow connection, belying the disabled controls. */
+    let resolveArm: (value: { armed: boolean }) => void = () => {};
+    mockArmMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveArm = resolve;
+        }),
+    );
+    renderSteers([
+      { steerId: 's1', text: 'first', status: 'pending', createdAt: 1 },
+      { steerId: 's2', text: 'second', status: 'pending', createdAt: 2 },
+    ]);
+    /** Every bubble's menu content mounts (hidden) up front, so item lookups
+     *  must scope to the menu the clicked button controls. */
+    const menuFor = (button: HTMLElement) =>
+      document.getElementById(button.getAttribute('aria-controls') ?? '') as HTMLElement;
+    const menus = screen.getAllByLabelText('com_ui_more_options');
+    fireEvent.click(menus[0]);
+    fireEvent.click(await within(menuFor(menus[0])).findByText('com_ui_interrupt_steer_now'));
+
+    fireEvent.click(menus[1]);
+    const secondItem = await within(menuFor(menus[1])).findByText('com_ui_interrupt_steer_now');
+    expect(secondItem.closest('[role="menuitem"]')).toHaveAttribute('aria-disabled', 'true');
+    await act(async () => {
+      fireEvent.click(secondItem);
+    });
+
+    await act(async () => {
+      resolveArm({ armed: true });
+    });
+    expect(mockArmMutateAsync).toHaveBeenCalledTimes(1);
+    expect(mockArmMutateAsync).toHaveBeenCalledWith({ conversationId: CONVO_ID, steerId: 's1' });
   });
 
   it('disables escalation on every bubble while an interrupt is unresolved', async () => {
