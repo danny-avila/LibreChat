@@ -2416,4 +2416,98 @@ describe('GenerationJobManager Integration Tests', () => {
       expect(services.isRedis).toBe(false);
     });
   });
+
+  /**
+   * The production topology for interrupt & steer: the steer POST is routed to
+   * whichever replica the load balancer picks, which is usually NOT the replica
+   * running the generation. Everything else in the preempt suite runs against a
+   * single manager, so the hop that actually carries the request — non-owner
+   * publishes, owner arms, owner's SDK poll flips — has no coverage.
+   *
+   * Two `GenerationJobManagerClass` instances are a faithful pair of replicas
+   * here: `runtimeState` and `ownedJobs` are private instance fields, there is
+   * no module-level mutable state between them, and `createStreamServices`
+   * duplicates a dedicated subscriber connection per call. Separate OS
+   * processes would exercise the same objects over the same Redis.
+   */
+  describeRedis('Cross-Replica Preempt (Redis, two manager instances)', () => {
+    const services: Array<{ eventTransport: { destroy: () => void } }> = [];
+
+    function createReplica(): GenerationJobManagerClass {
+      const manager = new GenerationJobManagerClass();
+      const config = createStreamServices({ useRedis: true, redisClient: ioredisClient! });
+      services.push(config);
+      manager.configure(config);
+      manager.initialize();
+      return manager;
+    }
+
+    afterEach(() => {
+      for (const service of services.splice(0)) {
+        service.eventTransport.destroy();
+      }
+    });
+
+    test('a steer routed to a non-owning replica arms the owner and flips its poll', async () => {
+      const owner = createReplica();
+      const router = createReplica();
+      const streamId = `${testPrefix}-preempt-xreplica-${Date.now()}`;
+
+      try {
+        const job = await owner.createJob(streamId, 'user-1', undefined, {
+          initialMetadata: { preemptCapable: true },
+        });
+        /** Let the owner's preempt SUBSCRIBE settle — it is fired detached. */
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        /**
+         * The routing replica reads the job, which installs a FACADE runtime
+         * entry on it. That facade must not make it look like an owner.
+         */
+        const seenByRouter = await router.getJob(streamId);
+        expect(seenByRouter?.createdAt).toBe(job.createdAt);
+        expect(router.isPreemptRequested(streamId)).toBe(false);
+
+        /**
+         * Guards the round-trip that shipped broken once: `preemptCapable` was
+         * serialized but never deserialized, so every Redis deployment read it
+         * back as undefined and the feature was a silent no-op. A same-replica
+         * read cannot catch that — this one crosses Redis.
+         */
+        expect(seenByRouter?.metadata?.preemptCapable).toBe(true);
+
+        await router.requestPreempt(streamId, 'steer-x', job.createdAt);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        /** The whole point: the owner's level-triggered poll now reads true. */
+        expect(owner.isPreemptRequested(streamId)).toBe(true);
+        expect(owner.getArmedPreemptIds(streamId)).toContain('steer-x');
+
+        await router.noteSteersRemoved(streamId, ['steer-x'], job.createdAt);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        expect(owner.isPreemptRequested(streamId)).toBe(false);
+      } finally {
+        await owner.abortJob(streamId).catch(() => {});
+      }
+    }, 30000);
+
+    test('a stale generation id from another replica cannot arm the live job', async () => {
+      const owner = createReplica();
+      const router = createReplica();
+      const streamId = `${testPrefix}-preempt-xreplica-stale-${Date.now()}`;
+
+      try {
+        const job = await owner.createJob(streamId, 'user-1');
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        await router.requestPreempt(streamId, 'steer-stale', job.createdAt - 1);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        expect(owner.isPreemptRequested(streamId)).toBe(false);
+      } finally {
+        await owner.abortJob(streamId).catch(() => {});
+      }
+    }, 30000);
+  });
 });
