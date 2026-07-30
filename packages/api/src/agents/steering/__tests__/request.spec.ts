@@ -529,6 +529,48 @@ describe('preempt flag on the steer request', () => {
   });
 
   /**
+   * The guard ladder — ownership, tenant, paused-state, agent ACL — runs
+   * against the job read at the top. The owner re-read happens several awaits
+   * later and can cross a replacement, so a different generation there is a
+   * run this request was never authorized against. Accepting into it would
+   * carry the wrong agent's metadata.
+   */
+  it('refuses when the run is replaced between the guards and the owner re-read', async () => {
+    const streamId = 'preempt-req-replaced-midflight';
+    const original = await createCapableJob(streamId);
+    const originalSnapshot = await GenerationJobManager.getJob(streamId);
+    /** The run is genuinely replaced, so the owner re-read returns a REAL
+     *  live generation — an enqueue fenced to it would succeed. */
+    const replacement = await createCapableJob(streamId);
+    expect(replacement.createdAt).not.toBe(original.createdAt);
+
+    const realGetJob = GenerationJobManager.getJob.bind(GenerationJobManager);
+    let calls = 0;
+    const spy = jest
+      .spyOn(GenerationJobManager, 'getJob')
+      .mockImplementation(async (id: string) => {
+        calls += 1;
+        /** The guard ladder ran before the replacement; the owner re-read after. */
+        return calls === 1 ? originalSnapshot : realGetJob(id);
+      });
+
+    try {
+      const result = await handleSteerRequest(user, {
+        conversationId: streamId,
+        text: 'interrupt me',
+        preempt: true,
+      });
+
+      expect(result.status).toBe(404);
+      expect(result.body.code).toBe('NO_ACTIVE_RUN');
+      /** Nothing reached the replacement's queue. */
+      expect(await GenerationJobManager.steering.peek(streamId)).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  /**
    * The queue item is already durable by the time the arm is published, and
    * the 202 reports capability rather than delivery — so waiting on a stalled
    * Redis buys nothing and risks the caller timing out and retrying, which

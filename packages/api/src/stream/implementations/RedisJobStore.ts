@@ -81,6 +81,7 @@ const JOB_CAS_LUA =
   'if decoded and type(item) == "table" then ' +
   'local projected = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
   'if item.files then projected.files = item.files end ' +
+  'if item.preempt then projected.preempt = item.preempt end ' +
   'steers[#steers + 1] = projected ' +
   'end ' +
   'end ' +
@@ -214,6 +215,7 @@ const STALE_JOB_DELETE_LUA =
   'if decoded and type(item) == "table" then ' +
   'local projected = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
   'if item.files then projected.files = item.files end ' +
+  'if item.preempt then projected.preempt = item.preempt end ' +
   'steers[#steers + 1] = projected ' +
   'end ' +
   'end ' +

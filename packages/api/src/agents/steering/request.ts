@@ -259,6 +259,18 @@ export async function handleSteerRequest(
    * would consult is the one this process already wrote at `createJob`.
    */
   const owner = wantsPreempt ? ((await GenerationJobManager.getJob(streamId)) ?? job) : job;
+  /**
+   * The re-read may have crossed a replacement. Every guard above — ownership,
+   * tenant, paused-state, agent ACL — was evaluated against `job`, so a
+   * different generation here is a run this request was never authorized
+   * against, and accepting into it would carry the wrong agent's metadata.
+   * Refuse rather than re-derive: the run the caller targeted is gone, and
+   * `NO_ACTIVE_RUN` is the code the client already turns into a queued
+   * follow-up.
+   */
+  if (owner.createdAt !== job.createdAt) {
+    return { status: 404, body: { code: 'NO_ACTIVE_RUN' } };
+  }
   const preemptCapable = wantsPreempt && owner.metadata?.preemptCapable === true;
   const item = {
     steerId: randomUUID(),
