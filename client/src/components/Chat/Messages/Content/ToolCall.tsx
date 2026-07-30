@@ -215,15 +215,16 @@ export default function ToolCall({
 
   return (
     <>
+      {/* The live region gets a STABLE in-progress value: the streaming
+          intent grows on every delta, and an atomic polite region would
+          re-announce the whole sentence each time. The settled intent is
+          announced once via getFinishedText. */}
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {(() => {
           if (progress < 1 && !showCancelled) {
-            return (
-              intent ??
-              (function_name
-                ? localize('com_assistants_running_var', { 0: function_name })
-                : localize('com_assistants_running_action'))
-            );
+            return function_name
+              ? localize('com_assistants_running_var', { 0: function_name })
+              : localize('com_assistants_running_action');
           }
           return getFinishedText();
         })()}

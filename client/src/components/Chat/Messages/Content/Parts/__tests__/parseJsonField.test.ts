@@ -123,6 +123,19 @@ describe('parseJsonField', () => {
       expect(parseJsonField(partial, 'intent')).toBe('Searching ');
     });
 
+    it.each(['\\', '\\u', '\\uD', '\\uDE0'])(
+      'holds the high surrogate while the low escape is still streaming: "\\ud83d%s"',
+      (lowPrefix) => {
+        const partial = `{"intent":"Searching \\ud83d${lowPrefix}`;
+        expect(parseJsonField(partial, 'intent')).toBe('Searching ');
+      },
+    );
+
+    it('emits a lone high surrogate when followed by ordinary text (matches JSON.parse)', () => {
+      const partial = '{"intent":"odd \\ud83d tail","incomplete":';
+      expect(parseJsonField(partial, 'intent')).toBe('odd \ud83d tail');
+    });
+
     it('keeps a malformed \\u (bad hex mid-string) literal rather than corrupting the tail', () => {
       const partial = '{"command":"regex \\uZZZZ tail","incomplete":';
       expect(parseJsonField(partial, 'command')).toBe('regex \\uZZZZ tail');

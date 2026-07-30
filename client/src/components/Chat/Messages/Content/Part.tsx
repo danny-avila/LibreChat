@@ -332,6 +332,7 @@ const Part = memo(function Part({
             <RetrievalCall
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
+              args={toolCall.args}
               output={toolCall.output ?? undefined}
               attachments={attachments}
               onExpand={onToolExpand}

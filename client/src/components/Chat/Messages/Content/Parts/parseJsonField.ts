@@ -68,8 +68,16 @@ function unescapeJsonString(value: string): string {
     }
     i += 4;
     const code = parseInt(hex, 16);
-    if (code >= 0xd800 && code <= 0xdbff && i + 1 >= value.length) {
-      return out;
+    if (code >= 0xd800 && code <= 0xdbff) {
+      /** Hold back a high surrogate while its low half could still be
+       *  streaming in — the remainder being any proper prefix of `\uXXXX`
+       *  (including the empty string). A complete following escape decodes
+       *  on the next iteration and composes the pair; anything else means
+       *  the lone surrogate is real data (matches `JSON.parse`). */
+      const rest = value.slice(i + 1);
+      if (/^(?:\\(?:u[0-9a-fA-F]{0,3})?)?$/.test(rest)) {
+        return out;
+      }
     }
     out += String.fromCharCode(code);
   }

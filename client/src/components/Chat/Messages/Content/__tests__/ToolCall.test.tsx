@@ -133,7 +133,10 @@ describe('ToolCall', () => {
       expect(
         screen.getAllByText(/Searching for OAuth handling in the callbac/).length,
       ).toBeGreaterThan(0);
-      expect(screen.queryByText('Running testFunction')).not.toBeInTheDocument();
+      /** The aria-live region keeps its STABLE generic value while the intent
+       *  streams — an atomic polite region would otherwise re-announce the
+       *  whole growing sentence on every delta. */
+      expect(screen.getByText('Running testFunction')).toBeInTheDocument();
     });
 
     it('keeps the intent as the settled label instead of the generic completion text', () => {
