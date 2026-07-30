@@ -33,6 +33,9 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   if (metadata.promptTokens !== undefined) {
     patch.promptTokens = metadata.promptTokens;
   }
+  if (metadata.preemptCapable !== undefined) {
+    patch.preemptCapable = metadata.preemptCapable;
+  }
   if (metadata.discoveredTools) {
     patch.discoveredTools = metadata.discoveredTools;
   }

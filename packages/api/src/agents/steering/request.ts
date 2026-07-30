@@ -12,6 +12,13 @@ export const STEER_MAX_FILES = 10;
 
 const DEFAULT_STEER_MAX_LENGTH = 16000;
 
+/**
+ * How long a cancel waits for its disarm to publish before answering anyway.
+ * The steer is already durably removed by then, so this only buys the clear a
+ * head start; a stalled Redis must not hold the response open behind it.
+ */
+const STEER_DISARM_ACK_TIMEOUT_MS = 1000;
+
 /** Character cap for a single steer message (env-overridable). */
 export function getSteerMaxLength(): number {
   return parseInt(process.env.STEER_MAX_LENGTH ?? '', 10) || DEFAULT_STEER_MAX_LENGTH;
@@ -26,6 +33,11 @@ export interface SteerRequestBody {
   conversationId?: unknown;
   text?: unknown;
   files?: unknown;
+  /** Ask the generating replica to seal the live model stream at the next
+   *  provider-safe boundary instead of waiting for a tool step. NEVER a
+   *  rejection reason: on an SDK without the capability the steer still
+   *  enqueues and the 202 echoes `preempt: false`. */
+  preempt?: unknown;
 }
 
 export interface SteerCancelBody {
@@ -223,19 +235,112 @@ export async function handleSteerRequest(
     resolvedFileIds = resolved.fileIds;
   }
 
+  const wantsPreempt = body.preempt === true;
+  /**
+   * The OWNER's recorded capability, not this replica's probe: a steer can
+   * land on any replica, so during a rolling deploy a local probe would
+   * answer for the wrong process and label a steer "interrupting" that the
+   * old owner can only inject at a tool boundary. Jobs created before
+   * preempt shipped carry no flag, which reads as incapable — the honest
+   * outcome, and the chip relabels to ordinary steering.
+   *
+   * Re-read rather than reused from the `job` fetched at the top of the
+   * ladder: `checkAgentAccess` and file resolution are awaits, so a request
+   * can span an entire HITL pause/resume that hands ownership to a replica
+   * with different capability and rewrites this very flag. Only paid for by
+   * requests that actually asked to interrupt.
+   *
+   * THIS replica's own SDK is deliberately not consulted. It never seals —
+   * it enqueues and publishes an arm, neither of which touches the SDK — so
+   * ANDing in a local probe would answer for the wrong process and silently
+   * drop interrupts during a rolling deploy whenever the request happened to
+   * land on an un-upgraded replica while a capable owner generated. When
+   * this replica IS the owner the probe is redundant anyway: the flag it
+   * would consult is the one this process already wrote at `createJob`.
+   */
+  const owner = wantsPreempt ? ((await GenerationJobManager.getJob(streamId)) ?? job) : job;
+  /**
+   * The re-read may have crossed a replacement. Every guard above — ownership,
+   * tenant, paused-state, agent ACL — was evaluated against `job`, so a
+   * different generation here is a run this request was never authorized
+   * against, and accepting into it would carry the wrong agent's metadata.
+   * Refuse rather than re-derive: the run the caller targeted is gone, and
+   * `NO_ACTIVE_RUN` is the code the client already turns into a queued
+   * follow-up.
+   */
+  if (owner.createdAt !== job.createdAt) {
+    return { status: 404, body: { code: 'NO_ACTIVE_RUN' } };
+  }
+  const preemptCapable = wantsPreempt && owner.metadata?.preemptCapable === true;
   const item = {
     steerId: randomUUID(),
     text,
     userId: user.id ?? '',
     createdAt: Date.now(),
     ...(queuedFiles && { files: queuedFiles }),
+    ...(preemptCapable && { preempt: true }),
   };
-  const depth = await GenerationJobManager.steering.enqueue(streamId, item);
+  /**
+   * Fenced to the generation the capability decision was made against. The
+   * access checks, file resolution and owner re-read above are all awaits, so
+   * the run can be replaced before this line: without the fence the item
+   * lands on the REPLACEMENT queue while `preempt` and the arm below still
+   * describe the previous epoch, so the arm is fenced out at the owner and
+   * the 202 claims an interrupt that can never happen. Rejecting is honest —
+   * the run the caller was told about is gone, and `NO_ACTIVE_RUN` is what
+   * the client already handles by converting to a queued follow-up.
+   */
+  const depth = await GenerationJobManager.steering.enqueue(streamId, item, owner.createdAt);
   if (depth === STEER_ENQUEUE_NOT_RUNNING) {
     return { status: 404, body: { code: 'NO_ACTIVE_RUN' } };
   }
   if (depth === STEER_ENQUEUE_QUEUE_FULL) {
     return { status: 429, body: { code: 'STEER_QUEUE_FULL' } };
+  }
+
+  /**
+   * Strictly AFTER a successful enqueue: an armed request whose steer never
+   * made the durable queue could seal a generation with nothing to inject.
+   *
+   * `preempt` in the 202 means "queued as an interrupt request", NOT "a seal
+   * is guaranteed" — it mirrors the durable `item.preempt` exactly. A route
+   * cannot synchronously know whether another replica will seal: proving that
+   * needs a correlated request/response over pub-sub, and even then the owner
+   * may finish before the arm lands. Reporting delivery instead made the
+   * response disagree with the durable flag, which `rearmQueuedPreempts`
+   * trusts on resume — the two must agree or a resumed owner honours an
+   * interrupt the client was told had degraded.
+   *
+   * The gates that ARE knowable stay: the owner's recorded capability and a
+   * successful enqueue. Everything past that degrades to the documented
+   * fallback of injecting at the next tool boundary.
+   */
+  if (preemptCapable) {
+    /**
+     * NOT awaited. The answer no longer depends on it — the 202 reports
+     * `preemptCapable`, not delivery — so awaiting only exposes the caller to
+     * Redis latency after the queue item is already durable. A client that
+     * times out on a stalled publish and retries mints a SECOND steer while
+     * the first stays queued, injecting the same instruction twice; a lost
+     * publish merely takes the documented tool-boundary fallback. The
+     * asymmetry is the whole argument for detaching.
+     */
+    void GenerationJobManager.requestPreempt(streamId, item.steerId, owner.createdAt).then(
+      (armed) => {
+        if (!armed) {
+          logger.warn(
+            `[handleSteerRequest] Preempt arm not confirmed for ${streamId} steer=${item.steerId}; ` +
+              'the steer remains queued and will inject at the next boundary',
+          );
+        }
+      },
+      (error: unknown) => {
+        logger.error(
+          `[handleSteerRequest] Preempt arm failed for ${streamId} steer=${item.steerId}:`,
+          error,
+        );
+      },
+    );
   }
 
   /** Fire-and-forget: the persisted steer part references these uploads, so
@@ -255,7 +360,13 @@ export async function handleSteerRequest(
 
   return {
     status: 202,
-    body: { status: 'queued', steerId: item.steerId, position: depth, conversationId },
+    body: {
+      status: 'queued',
+      steerId: item.steerId,
+      position: depth,
+      conversationId,
+      preempt: preemptCapable,
+    },
   };
 }
 
@@ -295,5 +406,53 @@ export async function handleSteerCancel(
   }
 
   const removed = await GenerationJobManager.steering.cancel(streamId, body.steerId);
+  /** A cancelled steer must also disarm any preempt request it carried —
+   *  cancel is live UI, and a request left armed would seal an unrelated
+   *  stretch of generation, drain nothing, and end the run mid-sentence. */
+  if (!removed) {
+    return { status: 200, body: { removed } };
+  }
+  /**
+   * Waited on so a failed disarm is retried and logged before the response,
+   * but BOUNDED, and its outcome is deliberately NOT reported to the client.
+   *
+   * The bound is the load-bearing part. ioredis queues commands while a
+   * connection is down rather than rejecting them, so an unbounded await here
+   * can hang for as long as the outage lasts — and the item is already
+   * durably cancelled at this point. A client that gives up then treats the
+   * cancel as failed and restores a chip for a steer that no longer exists
+   * and can never produce an applied event, which is strictly worse than the
+   * lost clear this wait was protecting against. Every successful cancel
+   * publishes, so ordinary steers are exposed to it too, not just preemptive
+   * ones. The publish keeps running with its retry and logging intact after
+   * the timeout — it is simply no longer in front of the response.
+   *
+   * A resolved publish is not proof the owner heard it — the delivery count
+   * includes this replica's own facade subscription — so any `disarmed` flag
+   * would claim a certainty the transport cannot provide, which is the same
+   * over-promise the `preempt` flag was corrected for. Disarm is best effort
+   * with a bounded, self-healing failure: if the clear is lost the owner
+   * seals once, its empty boundary self-clears, and the turn is persisted
+   * `unfinished: true` rather than silently truncated.
+   *
+   * `removed` stays true because it is true — the steer really did leave the
+   * queue, and inverting it would make the client re-show a chip for a steer
+   * that can never arrive.
+   */
+  const disarm = GenerationJobManager.noteSteersRemoved(streamId, [body.steerId], job.createdAt);
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    disarm,
+    new Promise<void>((resolve) => {
+      settleTimer = setTimeout(() => {
+        logger.warn(
+          `[handleSteerCancel] Disarm publish for ${streamId} steer=${body.steerId} still pending ` +
+            `after ${STEER_DISARM_ACK_TIMEOUT_MS}ms; answering the cancel and letting it retry`,
+        );
+        resolve();
+      }, STEER_DISARM_ACK_TIMEOUT_MS);
+    }),
+  ]);
+  clearTimeout(settleTimer);
   return { status: 200, body: { removed } };
 }

@@ -48,7 +48,10 @@ const {
   createContentIndexOffsetHandlers,
   createSteerIndexOffsetHandlers,
   createSteerDrainHook,
+  createSteerPreemptBoundaryHook,
+  createSteerPreemptPoll,
   isSteeringSupported,
+  isSteerPreemptSupported,
   buildSteerMedia,
   stampSteerPartMedia,
   createActivityLabelWiring,
@@ -324,8 +327,11 @@ class AgentClient extends BaseClient {
 
   /**
    * The `steering` fragment for `createRun`: the run-scoped PostToolBatch
-   * drain hook, or `undefined` when there is no resumable job surface or the
-   * installed SDK cannot inject hook messages (draining would drop them).
+   * drain hook — plus, when the SDK can seal mid-stream, the PreemptBoundary
+   * twin and the preempt poll built from the SAME drain closures, so both
+   * boundaries inject byte-identical shapes. `undefined` when there is no
+   * resumable job surface or the installed SDK cannot inject hook messages
+   * (draining would drop them).
    *
    * @param {string | undefined} streamId
    */
@@ -333,18 +339,23 @@ class AgentClient extends BaseClient {
     if (!streamId || !isSteeringSupported()) {
       return undefined;
     }
+    const drainOptions = {
+      streamId,
+      jobCreatedAt: this.jobCreatedAt,
+      applySteer: (item) => this.applySteerPart(streamId, item),
+      buildMedia: (item) =>
+        buildSteerMedia({
+          client: this,
+          user: this.options.req?.user,
+          item,
+          getFiles: db.getFiles,
+        }),
+    };
     return {
-      hook: createSteerDrainHook({
-        streamId,
-        jobCreatedAt: this.jobCreatedAt,
-        applySteer: (item) => this.applySteerPart(streamId, item),
-        buildMedia: (item) =>
-          buildSteerMedia({
-            client: this,
-            user: this.options.req?.user,
-            item,
-            getFiles: db.getFiles,
-          }),
+      hook: createSteerDrainHook(drainOptions),
+      ...(isSteerPreemptSupported() && {
+        preemptHook: createSteerPreemptBoundaryHook(drainOptions),
+        preemption: createSteerPreemptPoll(streamId),
       }),
     };
   }

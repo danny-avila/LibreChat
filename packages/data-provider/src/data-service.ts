@@ -222,7 +222,7 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
   return request.post(endpoints.userPlugins(), payload);
 };
 
-export const reinitializeMCPServer = (serverName: string) => {
+export const reinitializeMCPServer = (serverName: string): Promise<mcp.MCPReinitializeResponse> => {
   return request.post(endpoints.mcpReinitialize(serverName));
 };
 

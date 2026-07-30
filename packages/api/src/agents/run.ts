@@ -15,6 +15,7 @@ import type {
   ContextPruningConfig,
   OpenAIClientOptions,
   StandardGraphConfig,
+  StreamPreemption,
   LCToolRegistry,
   SubagentConfig,
   HookCallback,
@@ -49,10 +50,10 @@ import {
 import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
+import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
-import { isSteeringSupported } from '~/agents/steering/runtime';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
@@ -1116,7 +1117,21 @@ export async function createRun({
    * node). Only the resumable agents controller passes this; the
    * OpenAI-compatible and Responses controllers have no job/SSE surface.
    */
-  steering?: { hook: HookCallback<'PostToolBatch'> };
+  steering?: {
+    hook: HookCallback<'PostToolBatch'>;
+    /**
+     * The PreemptBoundary twin of `hook`, built via
+     * `createSteerPreemptBoundaryHook` from the same drain closures. Fires
+     * when the SDK seals a model stream mid-generation on a preempt request.
+     */
+    preemptHook?: HookCallback<'PreemptBoundary'>;
+    /**
+     * Level-triggered O(1) poll over the job's armed preempt requests
+     * (`createSteerPreemptPoll`). Threaded into `RunConfig.preemption`, which
+     * also makes the SDK reserve recursion-limit headroom for its seals.
+     */
+    preemption?: StreamPreemption;
+  };
   /**
    * Run-scoped tool-batch summary hook (PostToolBatch). Like steering, it
    * registers independently of the approval policy and needs no checkpointer;
@@ -1495,6 +1510,9 @@ export async function createRun({
   if (steering != null && isSteeringSupported()) {
     hooks = hooks ?? new HookRegistry();
     hooks.register('PostToolBatch', { hooks: [steering.hook] });
+    if (steering.preemptHook != null && isSteerPreemptSupported()) {
+      hooks.register('PreemptBoundary', { hooks: [steering.preemptHook] });
+    }
   }
 
   /**
@@ -1595,6 +1613,11 @@ export async function createRun({
     // (it gates on result-altering hooks, not registry presence).
     ...(hitl && { humanInTheLoop: hitl.humanInTheLoop }),
     ...(hooks && { hooks }),
+    // Preemption is observation-only like the boundary hooks: the poll never
+    // mutates and the SDK refuses to seal unless a PreemptBoundary matcher is
+    // live, so gating both on the same capability keeps them in lockstep.
+    ...(steering?.preemption != null &&
+      isSteerPreemptSupported() && { preemption: steering.preemption }),
   };
   const run = await Run.create(runConfig);
 

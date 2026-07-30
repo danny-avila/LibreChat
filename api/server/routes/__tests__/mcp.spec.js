@@ -1885,6 +1885,37 @@ describe('MCP Routes', () => {
       });
     });
 
+    it('should return structured reinitialization failure details', async () => {
+      const mockMcpManager = {
+        disconnectUserConnection: jest.fn().mockResolvedValue(),
+      };
+
+      mockRegistryInstance.getServerConfig.mockResolvedValue({});
+      require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
+      require('~/server/services/Tools/mcp').reinitMCPServer.mockResolvedValue({
+        success: false,
+        message: "MCP server 'test-server' requires user-provided variables",
+        serverName: 'test-server',
+        oauthRequired: false,
+        oauthUrl: null,
+        failureReason: 'missing_custom_user_vars',
+        missingUserVars: ['API_KEY'],
+      });
+
+      const response = await request(app).post('/api/mcp/test-server/reinitialize');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        success: false,
+        message: "MCP server 'test-server' requires user-provided variables",
+        serverName: 'test-server',
+        oauthRequired: false,
+        oauthUrl: null,
+        failureReason: 'missing_custom_user_vars',
+        missingUserVars: ['API_KEY'],
+      });
+    });
+
     it('should return 500 when reinitialize fails with non-OAuth error', async () => {
       const mockMcpManager = {
         disconnectUserConnection: jest.fn().mockResolvedValue(),

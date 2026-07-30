@@ -236,7 +236,16 @@ describe('RedisJobStore', () => {
       isTemporary: false,
       promptTokens: 0,
       discoveredTools: [],
+      preemptCapable: true,
     });
+
+    /**
+     * `serializeJob` writes every boolean generically but `deserializeJob` is
+     * an explicit field map, so a new flag silently vanishes on read unless
+     * it is added there too. For `preemptCapable` that meant interrupt-steer
+     * degrading to ordinary steering in every Redis deployment.
+     */
+    expect(job.preemptCapable).toBe(true);
 
     expect(job).toMatchObject({
       streamId: 'stream-metadata',

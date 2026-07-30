@@ -4,6 +4,7 @@ import type {
   UseMutationResult,
   QueryObserverResult,
 } from '@tanstack/react-query';
+import type { MCPReinitializeResponse } from '../types/mcpServers';
 import { MCPServerConnectionStatusResponse } from '../types/queries';
 import { Constants, initialModelsConfig } from '../config';
 import { defaultOrderQuery } from '../types/assistants';
@@ -334,16 +335,7 @@ export const useUpdateUserPluginsMutation = (
 };
 
 export const useReinitializeMCPServerMutation = (): UseMutationResult<
-  {
-    success: boolean;
-    message: string;
-    serverName: string;
-    oauthRequired?: boolean;
-    oauthUrl?: string;
-    /** True when the server uses request-scoped placeholders and the connection
-     *  was deferred to the next chat turn (tools are not enumerable up front). */
-    connectionDeferred?: boolean;
-  },
+  MCPReinitializeResponse,
   unknown,
   string,
   unknown
