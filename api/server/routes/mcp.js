@@ -459,11 +459,38 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
             );
           }
 
+          /**
+           * Without this, getUserConnection resolves `headers`/`oauth_headers`
+           * customUserVars templates (e.g. `{{MY_VAR}}`) with no substitution
+           * data, so the literal placeholder is sent on this first post-callback
+           * connection attempt even though the user's value is already saved -
+           * surfaces upstream as a generic auth rejection from the MCP server.
+           * The other reconnect path (oauth/reinitialize route below) already
+           * resolves this the same way; this one was missing it.
+           */
+          let userMCPAuthMap;
+          if (serverConfig?.customUserVars && typeof serverConfig.customUserVars === 'object') {
+            try {
+              userMCPAuthMap = await getUserMCPAuthMap({
+                userId: flowState.userId,
+                servers: [serverName],
+                findPluginAuthsByKeys: db.findPluginAuthsByKeys,
+              });
+            } catch (error) {
+              logger.warn(
+                `[MCP OAuth] Could not resolve customUserVars for ${serverName} before reconnecting:`,
+                error,
+              );
+            }
+          }
+          const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+
           const userConnection = await mcpManager.getUserConnection({
             user,
             serverName,
             flowManager,
             serverConfig,
+            customUserVars,
             tokenMethods: {
               findToken: db.findToken,
               updateToken: db.updateToken,
