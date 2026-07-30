@@ -227,7 +227,10 @@ const InFlightSteer = memo(function InFlightSteer({
             key: 'interrupt',
             label: localize('com_ui_interrupt_steer_now'),
             icon: <ZapOff className="h-4 w-4 text-amber-500" aria-hidden="true" />,
-            disabled: interruptPending || steering.pausedOnApproval,
+            /* `!duringRunActive` also covers answer mode (`ask_user_question`),
+             * where `pausedOnApproval` stays false but a resubmit would bounce
+             * off RUN_PAUSED after the reclaim already gave up the boundary. */
+            disabled: interruptPending || steering.pausedOnApproval || !steering.duringRunActive,
             onClick: () => {
               setEscalating(true);
               void reclaim()
