@@ -127,6 +127,12 @@ export default function ScheduleDialog({
   } = useForm<ScheduleFormValues>({
     defaultValues: getDefaultValues(schedule),
   });
+  /** The revision the form defaults were built from, captured at the same instant.
+   *  The `schedule` prop keeps refreshing while the dialog is open (the schedules
+   *  query polls), so fencing with the LIVE prop's revision would stamp a freshly
+   *  refreshed revision onto a cadence rebuilt from this stale snapshot — exactly
+   *  the overwrite the fence exists to refuse. */
+  const openedConfigRevision = useRef(schedule?.configRevision);
   const name = watch('name');
   const prompt = watch('prompt');
   const agentId = watch('agent_id');
@@ -259,13 +265,14 @@ export default function ScheduleDialog({
       }
       updateSchedule.mutate({
         id: schedule.id,
-        // Fence on the revision this dialog opened with: cadence is rebuilt whole
-        // from that snapshot, so an edit from another tab would otherwise be
+        // Fence on the revision this dialog OPENED with (not the live prop, which
+        // polling refreshes under the stale form): cadence is rebuilt whole from
+        // the opening snapshot, so an edit from another tab would otherwise be
         // silently overwritten — the server answers 409 instead.
         payload: {
           ...payload,
-          ...(schedule.configRevision != null
-            ? { expectedConfigRevision: schedule.configRevision }
+          ...(openedConfigRevision.current != null
+            ? { expectedConfigRevision: openedConfigRevision.current }
             : {}),
         },
       });

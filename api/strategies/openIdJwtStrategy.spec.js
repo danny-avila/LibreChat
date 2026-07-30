@@ -81,6 +81,12 @@ function resetAuthUserDocCacheMocks() {
 
 beforeEach(() => {
   resetAuthUserDocCacheMocks();
+  // Default: the deletion-barrier recheck (findUser by _id) reports a live user.
+  // Tests that mock findUser themselves replace this; a null/undefined answer to
+  // the recheck is a REFUSAL by design (fail closed), not a pass-through.
+  findUser.mockImplementation(async (query) =>
+    query?._id != null ? { _id: query._id, deletionRequestedAt: undefined } : null,
+  );
 });
 
 function withEnv(env, callback) {
@@ -575,6 +581,36 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     });
   });
 
+  it('refuses authentication when the durable barrier rose after the lookup', async () => {
+    const existingUser = {
+      _id: 'user-id-1',
+      provider: 'openid',
+      openidId: payload.sub,
+      openidIssuer: 'https://issuer.example.com',
+      email: payload.email,
+      role: SystemRoles.USER,
+    };
+    findUser.mockImplementation(async (query) => {
+      if (query.openidId === payload.sub) {
+        // The lookup completed BEFORE markUserDeleting: the doc carries no barrier.
+        return existingUser;
+      }
+      if (query._id === 'user-id-1') {
+        // The recheck reads AFTER the barrier rose.
+        return { _id: 'user-id-1', deletionRequestedAt: new Date() };
+      }
+      return null;
+    });
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    const { user, info } = await invokeVerify(req, payload);
+
+    // Without the recheck this request authenticated with the pre-barrier document
+    // and could recreate data during the destructive cascade.
+    expect(user).toBe(false);
+    expect(info?.message).toMatch(/deletion/i);
+  });
+
   it('should use OPENID_EMAIL_CLAIM when set for email lookup', async () => {
     process.env.OPENID_EMAIL_CLAIM = 'upn';
     findUser.mockResolvedValue(null);
@@ -690,13 +726,18 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
       if (query.email === 'legacy@corp.com') {
         return legacyUser;
       }
+      if (query._id === 'legacy-db-id') {
+        return legacyUser;
+      }
       return null;
     });
 
     const req = { headers: { authorization: 'Bearer tok' }, session: {} };
     const { user } = await invokeVerify(req, payloadNoEmail);
 
-    expect(findUser).toHaveBeenCalledTimes(2);
+    // openid lookup + email fallback + the deletion-barrier recheck (the migration
+    // branch invalidates rather than fills, so the fence is not conclusive there).
+    expect(findUser).toHaveBeenCalledTimes(3);
     expect(findUser.mock.calls[1][0]).toEqual({ email: 'legacy@corp.com' });
     expect(user).toBeTruthy();
     expect(updateUser).toHaveBeenCalledWith(

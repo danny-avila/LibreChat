@@ -1,5 +1,11 @@
 const mongoose = require('mongoose');
-const { logger, getTenantId, webSearchKeys } = require('@librechat/data-schemas');
+const {
+  logger,
+  getTenantId,
+  webSearchKeys,
+  runAsSystem,
+  tenantStorage,
+} = require('@librechat/data-schemas');
 const {
   getNewS3URL,
   needsRefresh,
@@ -372,6 +378,31 @@ const deleteUserController = async (req, res) => {
       });
     }
 
+    // COMMIT to automatic completion before anything can defer: the barrier refuses
+    // authentication, so if this request defers (or dies mid-cascade) the sweep is the
+    // only party that can ever finish — and it only consumes committed deletions (the
+    // CLI raises the same barrier but can refuse, and must never be auto-completed).
+    // Bounded retries because a swallowed failure here recreates the lockout.
+    let committed = false;
+    for (let attempt = 1; attempt <= 3 && !committed; attempt++) {
+      committed = await db
+        .markUserDeletionCommitted(user.id)
+        .then(() => true)
+        .catch((error) => {
+          logger.error(
+            `[deleteUserController] Failed to commit deletion (attempt ${attempt}/3)`,
+            error,
+          );
+          return false;
+        });
+    }
+    if (!committed) {
+      logger.error(
+        `[deleteUserController] Proceeding without a recorded deletion commitment for ${user.id}; ` +
+          'a deferred cascade would need this endpoint retried or operator intervention.',
+      );
+    }
+
     const quiesced = await quiesceUserSchedules(user.id).catch((error) => {
       logger.error('[deleteUserController] Failed to quiesce scheduled chats', error);
       return false;
@@ -477,7 +508,10 @@ const PENDING_DELETION_MIN_AGE_MS = 60_000;
  * Every step is idempotent and the window rotates, so concurrent workers are safe.
  */
 const processPendingUserDeletions = async () => {
-  const pending = await db.getUsersPendingDeletion(PENDING_DELETION_BATCH);
+  // System context for the cross-tenant scan and stamp; strict tenant isolation
+  // would otherwise throw on this timer-driven pass (no request, no ALS context)
+  // and every deferred user would stay locked behind the barrier forever.
+  const pending = await runAsSystem(() => db.getUsersPendingDeletion(PENDING_DELETION_BATCH));
   const due = pending.filter(
     (user) =>
       user.deletionRequestedAt != null &&
@@ -486,26 +520,30 @@ const processPendingUserDeletions = async () => {
   if (due.length === 0) {
     return;
   }
-  await db
-    .markDeletionSweepAttempted(due.map((user) => user._id.toString()))
-    .catch((err) => logger.warn('[processPendingUserDeletions] Failed to stamp attempts', err));
+  await runAsSystem(() =>
+    db.markDeletionSweepAttempted(due.map((user) => user._id.toString())),
+  ).catch((err) => logger.warn('[processPendingUserDeletions] Failed to stamp attempts', err));
   for (const pendingUser of due) {
     const user = { ...pendingUser, id: pendingUser._id.toString() };
-    try {
-      const quiesced = await quiesceUserSchedules(user.id).catch((error) => {
-        logger.error(`[processPendingUserDeletions] Quiesce failed for ${user.id}`, error);
-        return false;
-      });
-      if (!quiesced) {
-        logger.warn(
-          `[processPendingUserDeletions] Deferring ${user.id} again: scheduled runs did not confirm settlement`,
-        );
-        continue;
+    // Each user's quiesce + cascade runs in THEIR tenant context, matching the
+    // interactive controller's request-scoped context.
+    await tenantStorage.run({ tenantId: user.tenantId, userId: user.id }, async () => {
+      try {
+        const quiesced = await quiesceUserSchedules(user.id).catch((error) => {
+          logger.error(`[processPendingUserDeletions] Quiesce failed for ${user.id}`, error);
+          return false;
+        });
+        if (!quiesced) {
+          logger.warn(
+            `[processPendingUserDeletions] Deferring ${user.id} again: scheduled runs did not confirm settlement`,
+          );
+          return;
+        }
+        await executeUserDeletion(user);
+      } catch (error) {
+        logger.error(`[processPendingUserDeletions] Cascade failed for ${user.id}`, error);
       }
-      await executeUserDeletion(user);
-    } catch (error) {
-      logger.error(`[processPendingUserDeletions] Cascade failed for ${user.id}`, error);
-    }
+    });
   }
 };
 

@@ -1611,18 +1611,35 @@ describe('account-deletion barrier (delete vs create)', () => {
     expect(await userMethods.isUserDeleting(new mongoose.Types.ObjectId().toString())).toBe(true);
   });
 
-  it('surfaces unfinished cascades as a resumable work list', async () => {
+  it('surfaces unfinished COMMITTED cascades as a resumable work list', async () => {
     const User = mongoose.models.User;
     const pendingUser = await User.create({
       email: `pending-${Date.now()}@test.dev`,
       name: 'P',
     });
     await userMethods.markUserDeleting(pendingUser._id.toString());
+    await userMethods.markUserDeletionCommitted(pendingUser._id.toString());
 
     // A deletion deferred on an unconfirmed quiesce (or crashed part-way) leaves the
     // barrier up with the document still present — exactly what a later pass queries.
     const pending = await userMethods.getUsersPendingDeletion(50);
     expect(pending.some((u) => u._id.toString() === pendingUser._id.toString())).toBe(true);
+  });
+
+  it('never surfaces a barrier the CLI raised without committing', async () => {
+    const User = mongoose.models.User;
+    const refusedUser = await User.create({
+      email: `cli-refused-${Date.now()}@test.dev`,
+      name: 'R',
+    });
+    // config/delete-user.js raises the admission barrier, then can REFUSE (active
+    // runs) and exit. The sweep auto-completing that barrier would delete an account
+    // — and transactions the operator chose to retain — after the CLI reported the
+    // deletion as refused.
+    await userMethods.markUserDeleting(refusedUser._id.toString());
+
+    const pending = await userMethods.getUsersPendingDeletion(50);
+    expect(pending.some((u) => u._id.toString() === refusedUser._id.toString())).toBe(false);
   });
 
   it('rotates the pending-deletion window past cascades that keep deferring', async () => {
@@ -1631,7 +1648,9 @@ describe('account-deletion barrier (delete vs create)', () => {
     const first = await User.create({ email: `rot-a-${suffix}@test.dev`, name: 'A' });
     const second = await User.create({ email: `rot-b-${suffix}@test.dev`, name: 'B' });
     await userMethods.markUserDeleting(first._id.toString());
+    await userMethods.markUserDeletionCommitted(first._id.toString());
     await userMethods.markUserDeleting(second._id.toString());
+    await userMethods.markUserDeletionCommitted(second._id.toString());
 
     const window = await userMethods.getUsersPendingDeletion(1);
     expect(window).toHaveLength(1);

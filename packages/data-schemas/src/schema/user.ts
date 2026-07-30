@@ -171,6 +171,14 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
     deletionSweepAt: {
       type: Date,
     },
+    /** Set ONLY by deletion paths committed to automatic completion (the self-service
+     *  controller). The CLI raises the admission barrier too but can refuse and exit,
+     *  and the deferred-deletion sweep must never consume a barrier that path left —
+     *  it would delete an account (and transactions the operator chose to retain)
+     *  after the CLI reported the deletion as refused. */
+    deletionCommittedAt: {
+      type: Date,
+    },
     /** Field for external source identification (for consistency with TPrincipal schema) */
     idOnTheSource: {
       type: String,

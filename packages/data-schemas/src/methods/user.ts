@@ -126,6 +126,8 @@ export function createUserMethods(
   getUsersPendingDeletion: (limit: number) => Promise<IUser[]>;
   /** Stamps deferred-deletion sweep attempts so the bounded window rotates. */
   markDeletionSweepAttempted: (userIds: string[]) => Promise<void>;
+  /** Commits a deletion to automatic completion; only these are swept. */
+  markUserDeletionCommitted: (userId: string) => Promise<void>;
   updateUserPlugins: (
     userId: string,
     plugins: string[] | undefined,
@@ -398,13 +400,32 @@ export function createUserMethods(
    */
   async function getUsersPendingDeletion(limit: number): Promise<IUser[]> {
     const User = mongoose.models.User;
+    // Only COMMITTED deletions: the CLI raises the admission barrier too, then can
+    // refuse and exit — a bare-barrier row is not the sweep's to finish.
     // Least-recently-attempted first (missing sorts before any date): a cascade that
     // keeps deferring must rotate to the back of this bounded window, or it starves
     // every pending deletion behind it. Callers stamp markDeletionSweepAttempted.
-    return User.find({ deletionRequestedAt: { $exists: true } })
+    return User.find({
+      deletionRequestedAt: { $exists: true },
+      deletionCommittedAt: { $exists: true },
+    })
       .sort({ deletionSweepAt: 1, deletionRequestedAt: 1 })
       .limit(limit)
       .lean<IUser[]>();
+  }
+
+  /**
+   * Marks this deletion as COMMITTED to automatic completion — the sweep's
+   * eligibility signal, distinct from the admission barrier. One-way and monotonic
+   * like the barrier itself.
+   */
+  async function markUserDeletionCommitted(userId: string): Promise<void> {
+    const User = mongoose.models.User;
+    await User.updateOne(
+      { _id: userId, deletionCommittedAt: { $exists: false } },
+      { $set: { deletionCommittedAt: new Date() } },
+      { timestamps: false },
+    );
   }
 
   /** Rotation stamp for the deferred-deletion sweep window. Bookkeeping only. */
@@ -735,6 +756,7 @@ export function createUserMethods(
     isUserDeleting,
     getUsersPendingDeletion,
     markDeletionSweepAttempted,
+    markUserDeletionCommitted,
     updateUserPlugins,
     toggleUserMemories,
   };

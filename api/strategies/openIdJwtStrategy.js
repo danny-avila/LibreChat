@@ -176,6 +176,13 @@ const openIdJwtLogin = (openIdConfig) => {
             await updateUser(user.id, updateData);
           }
 
+          // Whether the post-read deletion fence was CONCLUSIVELY evaluated. A served
+          // cache entry counts: fills only persist after passing the fence, and the
+          // barrier sweeps existing entries. Every other path must re-read the durable
+          // barrier below, or a lookup that completed before markUserDeleting could
+          // still authenticate after it (caching disabled, the migration/role-update
+          // branch, or a fill whose tombstone read failed).
+          let deletionFenceConclusive = servedCachedUser === true;
           if (authUserCacheStore && authUserCacheKey) {
             if (Object.keys(updateData).length > 0) {
               await invalidateCachedAuthUserDoc(authUserCacheStore, {
@@ -199,6 +206,27 @@ const openIdJwtLogin = (openIdConfig) => {
                 done(null, false, { message: 'Account deletion in progress' });
                 return;
               }
+              deletionFenceConclusive = fillResult === 'cached';
+            }
+          }
+          if (!deletionFenceConclusive) {
+            // Durable-barrier recheck, ordered AFTER the lookup: any barrier raised
+            // before this read is observed here, so the vulnerable interleaving
+            // (lookup before the stamp, done() after it) cannot complete. Fail
+            // closed like isUserDeleting — refusing a live user is retryable,
+            // admitting a deleting one is not.
+            let barrier = null;
+            try {
+              barrier = await findUser({ _id: user._id }, 'deletionRequestedAt');
+            } catch {
+              barrier = null;
+            }
+            if (barrier == null || barrier.deletionRequestedAt != null) {
+              logger.warn(
+                `[openIdJwtLogin] Refusing authentication for ${user.id}: deletion barrier raised or unverifiable`,
+              );
+              done(null, false, { message: 'Account deletion in progress' });
+              return;
             }
           }
 
