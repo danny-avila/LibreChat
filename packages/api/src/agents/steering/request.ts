@@ -228,6 +228,7 @@ export async function handleSteerRequest(
     resolvedFileIds = resolved.fileIds;
   }
 
+  const wantsPreempt = body.preempt === true;
   /**
    * The OWNER's recorded capability, not this replica's probe: a steer can
    * land on any replica, so during a rolling deploy a local probe would
@@ -235,17 +236,23 @@ export async function handleSteerRequest(
    * old owner can only inject at a tool boundary. Jobs created before
    * preempt shipped carry no flag, which reads as incapable — the honest
    * outcome, and the chip relabels to ordinary steering.
+   *
+   * Re-read rather than reused from the `job` fetched at the top of the
+   * ladder: `checkAgentAccess` and file resolution are awaits, so a request
+   * can span an entire HITL pause/resume that hands ownership to a replica
+   * with different capability and rewrites this very flag. Only paid for by
+   * requests that actually asked to interrupt.
    */
-  const wantsPreempt = body.preempt === true;
-  const preemptArmed =
-    wantsPreempt && job.metadata?.preemptCapable === true && isSteerPreemptSupported();
+  const owner = wantsPreempt ? ((await GenerationJobManager.getJob(streamId)) ?? job) : job;
+  const preemptCapable =
+    wantsPreempt && owner.metadata?.preemptCapable === true && isSteerPreemptSupported();
   const item = {
     steerId: randomUUID(),
     text,
     userId: user.id ?? '',
     createdAt: Date.now(),
     ...(queuedFiles && { files: queuedFiles }),
-    ...(preemptArmed && { preempt: true }),
+    ...(preemptCapable && { preempt: true }),
   };
   const depth = await GenerationJobManager.steering.enqueue(streamId, item);
   if (depth === STEER_ENQUEUE_NOT_RUNNING) {
@@ -255,11 +262,18 @@ export async function handleSteerRequest(
     return { status: 429, body: { code: 'STEER_QUEUE_FULL' } };
   }
 
-  /** Strictly AFTER a successful enqueue: an armed request whose steer never
-   *  made the durable queue could seal a generation with nothing to inject. */
-  if (preemptArmed) {
-    GenerationJobManager.requestPreempt(streamId, item.steerId, job.createdAt);
-  }
+  /**
+   * Strictly AFTER a successful enqueue: an armed request whose steer never
+   * made the durable queue could seal a generation with nothing to inject.
+   *
+   * The 202 reports what was actually ARMED, not what was asked for: a
+   * cross-replica publish that failed or reached nobody leaves the owner
+   * without a poll, so the steer still injects at the next tool boundary but
+   * must not be labelled as interrupting.
+   */
+  const preemptArmed = preemptCapable
+    ? await GenerationJobManager.requestPreempt(streamId, item.steerId, owner.createdAt)
+    : false;
 
   /** Fire-and-forget: the persisted steer part references these uploads, so
    *  mark them used (parity with `updateFilesUsage` on normal sends) or the

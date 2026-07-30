@@ -1079,4 +1079,57 @@ describe('preempt request lifecycle (in-memory)', () => {
     expect(await manager.rearmQueuedPreempts(streamId, job.createdAt - 1)).toBe(0);
     expect(manager.isPreemptRequested(streamId)).toBe(false);
   });
+
+  /**
+   * A cross-replica arm that reaches nobody leaves the owner without a poll.
+   * The steer still injects at the next tool boundary, but the 202 must not
+   * claim it is interrupting.
+   */
+  test('reports not-armed when the cross-replica publish reaches no one', async () => {
+    const streamId = 'preempt-undelivered';
+    const undelivered = new GenerationJobManagerClass();
+    undelivered.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: Object.assign(new InMemoryEventTransport(), {
+        emitPreempt: async () => 0,
+      }),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    undelivered.initialize();
+    try {
+      /** No local runtime for this stream: stands in for a non-owning replica. */
+      expect(await undelivered.requestPreempt(streamId, 'steer-1', Date.now())).toBe(false);
+    } finally {
+      await undelivered.destroy();
+    }
+  });
+
+  test('reports armed when this replica owns the generation', async () => {
+    const streamId = 'preempt-owned-here';
+    const job = await manager.createJob(streamId, 'user-1');
+    expect(await manager.requestPreempt(streamId, 'steer-1', job.createdAt)).toBe(true);
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+  });
+
+  test('a failed publish does not throw out of requestPreempt', async () => {
+    const streamId = 'preempt-publish-throws';
+    const failing = new GenerationJobManagerClass();
+    failing.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: Object.assign(new InMemoryEventTransport(), {
+        emitPreempt: async () => {
+          throw new Error('redis down');
+        },
+      }),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    failing.initialize();
+    try {
+      expect(await failing.requestPreempt(streamId, 'steer-1', Date.now())).toBe(false);
+    } finally {
+      await failing.destroy();
+    }
+  });
 });

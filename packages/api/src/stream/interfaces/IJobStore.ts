@@ -785,7 +785,7 @@ export interface IEventTransport {
    * {@link PreemptMessage.createdAt} against replacement jobs.
    * Optional - only implemented in Redis transport.
    */
-  emitPreempt?(streamId: string, msg: PreemptMessage): void;
+  emitPreempt?(streamId: string, msg: PreemptMessage): void | Promise<number>;
 
   /**
    * Register callback for preempt signals from any replica (Redis mode).

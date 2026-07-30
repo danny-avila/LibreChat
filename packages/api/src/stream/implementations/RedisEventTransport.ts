@@ -955,16 +955,22 @@ export class RedisEventTransport implements IEventTransport {
    * the next provider-safe boundary. Same channel and subscription as every
    * other stream event; fenced by `msg.createdAt` on the receiving side.
    */
-  emitPreempt(streamId: string, msg: PreemptMessage): void {
+  /**
+   * Resolves to the number of replicas that received the message, so an ARM
+   * can be acknowledged only once it actually reached someone. Unlike abort
+   * (fire-and-forget, because a failed abort is retried by the user hitting
+   * stop again) an unheard arm is invisible: the route would answer
+   * `preempt: true` for a seal that never happens. Rejects on publish
+   * failure; callers decide what to do.
+   */
+  async emitPreempt(streamId: string, msg: PreemptMessage): Promise<number> {
     const channel = CHANNELS.events(streamId);
     const message: PubSubMessage = {
       type: EventTypes.PREEMPT,
       preempt: msg,
     };
 
-    this.publisher.publish(channel, JSON.stringify(message)).catch((err) => {
-      logger.error(`[RedisEventTransport] Failed to publish preempt:`, err);
-    });
+    return this.publisher.publish(channel, JSON.stringify(message));
   }
 
   /**

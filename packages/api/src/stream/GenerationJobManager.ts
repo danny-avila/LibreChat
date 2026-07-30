@@ -3209,23 +3209,37 @@ class GenerationJobManagerClass {
   }
 
   /**
-   * Arms a cooperative-seal request for one queued steer. Never a rejection
-   * surface and never touches job status: with no runtime (or a replaced
-   * one) the local arm is skipped, while the fenced publish still reaches
-   * the generating replica, whose own `createdAt` fence decides. The run's
-   * `shouldPreempt` poll turns true until the steer drains at ANY boundary
-   * or is cancelled ({@link noteSteersRemoved}).
+   * Arms a cooperative-seal request for one queued steer and reports whether
+   * the arm actually reached an owner. Never touches job status.
+   *
+   * Returns true when this replica owns the generation (armed locally), or
+   * when the fenced publish was received by at least one subscriber. Returns
+   * FALSE when the publish failed or nobody was listening: the steer is still
+   * durably queued and will inject at the next tool boundary, but nothing
+   * will seal for it, so the caller must not acknowledge it as interrupting.
+   * The owner's own `createdAt` fence still decides whether to honour it.
    */
-  requestPreempt(streamId: string, steerId: string, jobCreatedAt: number): void {
+  async requestPreempt(streamId: string, steerId: string, jobCreatedAt: number): Promise<boolean> {
     const runtime = this.runtimeState.get(streamId);
-    if (runtime != null && runtime.createdAt === jobCreatedAt) {
+    const ownedHere = runtime != null && runtime.createdAt === jobCreatedAt;
+    if (ownedHere) {
       this.armPreemptIds(runtime, jobCreatedAt, [steerId]);
     }
-    this.eventTransport.emitPreempt?.(streamId, {
-      op: 'arm',
-      createdAt: jobCreatedAt,
-      steerIds: [steerId],
-    });
+    if (this.eventTransport.emitPreempt == null) {
+      /** Single-process transport: the local arm is the whole mechanism. */
+      return ownedHere;
+    }
+    try {
+      const delivered = await this.eventTransport.emitPreempt(streamId, {
+        op: 'arm',
+        createdAt: jobCreatedAt,
+        steerIds: [steerId],
+      });
+      return ownedHere || delivered == null || delivered > 0;
+    } catch (error) {
+      logger.error(`[GenerationJobManager] Failed to publish preempt arm for ${streamId}:`, error);
+      return ownedHere;
+    }
   }
 
   /** O(1) level-triggered poll consumed by the run's `shouldPreempt`. */
@@ -3274,7 +3288,7 @@ class GenerationJobManagerClass {
       if (item.preempt !== true) {
         continue;
       }
-      this.requestPreempt(streamId, item.steerId, jobCreatedAt);
+      await this.requestPreempt(streamId, item.steerId, jobCreatedAt);
       rearmed += 1;
     }
     return rearmed;
