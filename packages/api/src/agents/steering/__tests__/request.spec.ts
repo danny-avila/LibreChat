@@ -497,12 +497,15 @@ describe('preempt flag on the steer request', () => {
   });
 
   /**
-   * Capability degradation is a relabel, never a rejection: the steer still
-   * enqueues and lands at the next tool boundary exactly as it does today.
+   * The mirror of the owner-incapable case below, and the direction a local
+   * probe used to get wrong: during a rolling deploy the steer can land on an
+   * un-upgraded replica while a capable replica owns the generation. The
+   * route never seals — it enqueues and publishes an arm — so its own SDK is
+   * irrelevant and dropping the interrupt here would lose it for no reason.
    */
-  it('still enqueues and 202s with preempt: false when the SDK cannot seal', async () => {
+  it('honours a capable OWNER even when the routing replica cannot seal', async () => {
     mockIsPreemptSupported.mockReturnValue(false);
-    const streamId = 'preempt-req-unsupported';
+    const streamId = 'preempt-req-old-router';
     await createCapableJob(streamId);
 
     const result = await handleSteerRequest(user, {
@@ -512,11 +515,9 @@ describe('preempt flag on the steer request', () => {
     });
 
     expect(result.status).toBe(202);
-    expect(result.body.preempt).toBe(false);
-    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(false);
-    expect((await GenerationJobManager.steering.peek(streamId)).map((s) => s.text)).toEqual([
-      'interrupt me',
-    ]);
+    expect(result.body.preempt).toBe(true);
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(true);
+    expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBe(true);
   });
 
   /**

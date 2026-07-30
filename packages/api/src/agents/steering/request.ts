@@ -4,8 +4,8 @@ import type { TFile } from 'librechat-data-provider';
 import type { SteerFileFetcher } from './media';
 import { STEER_ENQUEUE_NOT_RUNNING, STEER_ENQUEUE_QUEUE_FULL } from '~/stream/interfaces/IJobStore';
 import { toSteerFileRef, collectFileIds, buildOwnerFilter } from './refs';
-import { isSteeringSupported, isSteerPreemptSupported } from './runtime';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
+import { isSteeringSupported } from './runtime';
 
 /** Attachment cap per steer, mirroring the composer's practical limits. */
 export const STEER_MAX_FILES = 10;
@@ -242,10 +242,17 @@ export async function handleSteerRequest(
    * can span an entire HITL pause/resume that hands ownership to a replica
    * with different capability and rewrites this very flag. Only paid for by
    * requests that actually asked to interrupt.
+   *
+   * THIS replica's own SDK is deliberately not consulted. It never seals —
+   * it enqueues and publishes an arm, neither of which touches the SDK — so
+   * ANDing in a local probe would answer for the wrong process and silently
+   * drop interrupts during a rolling deploy whenever the request happened to
+   * land on an un-upgraded replica while a capable owner generated. When
+   * this replica IS the owner the probe is redundant anyway: the flag it
+   * would consult is the one this process already wrote at `createJob`.
    */
   const owner = wantsPreempt ? ((await GenerationJobManager.getJob(streamId)) ?? job) : job;
-  const preemptCapable =
-    wantsPreempt && owner.metadata?.preemptCapable === true && isSteerPreemptSupported();
+  const preemptCapable = wantsPreempt && owner.metadata?.preemptCapable === true;
   const item = {
     steerId: randomUUID(),
     text,
