@@ -1,6 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import type { Redis, Cluster } from 'ioredis';
-import type { IEventTransport } from '~/stream/interfaces/IJobStore';
+import type { IEventTransport, PreemptMessage } from '~/stream/interfaces/IJobStore';
 import { registerChunkPublicationCapability } from '~/stream/internal/chunkPublication';
 import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
 
@@ -32,6 +32,7 @@ const EventTypes = {
   DONE: 'done',
   ERROR: 'error',
   ABORT: 'abort',
+  PREEMPT: 'preempt',
 } as const;
 
 interface PubSubMessage {
@@ -42,6 +43,8 @@ interface PubSubMessage {
   error?: string;
   /** Immutable identity of the generation that emitted the event. */
   generationId?: number;
+  /** Payload for PREEMPT messages; fenced by its own createdAt. */
+  preempt?: PreemptMessage;
 }
 
 /**
@@ -61,6 +64,10 @@ interface ReorderBuffer {
 
 interface AbortRegistration {
   callback: (generationId?: number) => void;
+}
+
+interface PreemptRegistration {
+  callback: (msg: PreemptMessage) => void;
 }
 
 /**
@@ -147,6 +154,7 @@ interface StreamSubscribers {
   allSubscribersLeftCallback?: () => void;
   /** Abort callbacks - called when abort signal is received from any replica */
   abortCallbacks: Set<AbortRegistration>;
+  preemptCallbacks: Set<PreemptRegistration>;
   /** Reorder buffer for handling out-of-order delivery in Redis Cluster */
   reorderBuffer: ReorderBuffer;
 }
@@ -600,6 +608,8 @@ export class RedisEventTransport implements IEventTransport {
           break;
         case EventTypes.ABORT:
           break;
+        case EventTypes.PREEMPT:
+          break;
       }
     }
 
@@ -613,6 +623,16 @@ export class RedisEventTransport implements IEventTransport {
           }
         } catch (err) {
           logger.error(`[RedisEventTransport] Error in abort callback:`, err);
+        }
+      }
+    }
+
+    if (message.type === EventTypes.PREEMPT && message.preempt != null) {
+      for (const registration of streamState.preemptCallbacks) {
+        try {
+          registration.callback(message.preempt);
+        } catch (err) {
+          logger.error(`[RedisEventTransport] Error in preempt callback:`, err);
         }
       }
     }
@@ -631,7 +651,12 @@ export class RedisEventTransport implements IEventTransport {
   }
 
   private unsubscribeUnusedChannel(streamId: string, state: StreamSubscribers): void {
-    if (this.streams.get(streamId) !== state || state.count > 0 || state.abortCallbacks.size > 0) {
+    if (
+      this.streams.get(streamId) !== state ||
+      state.count > 0 ||
+      state.abortCallbacks.size > 0 ||
+      state.preemptCallbacks.size > 0
+    ) {
       return;
     }
 
@@ -673,6 +698,7 @@ export class RedisEventTransport implements IEventTransport {
         count: 0,
         handlers: new Map(),
         abortCallbacks: new Set(),
+        preemptCallbacks: new Set(),
         reorderBuffer: {
           nextSeq: 0,
           pending: new Map(),
@@ -848,6 +874,7 @@ export class RedisEventTransport implements IEventTransport {
         handlers: new Map(),
         allSubscribersLeftCallback: callback,
         abortCallbacks: new Set(),
+        preemptCallbacks: new Set(),
         reorderBuffer: {
           nextSeq: 0,
           pending: new Map(),
@@ -892,6 +919,7 @@ export class RedisEventTransport implements IEventTransport {
         count: 0,
         handlers: new Map(),
         abortCallbacks: new Set(),
+        preemptCallbacks: new Set(),
         reorderBuffer: {
           nextSeq: 0,
           pending: new Map(),
@@ -915,6 +943,76 @@ export class RedisEventTransport implements IEventTransport {
 
     return () => {
       if (this.streams.get(streamId) !== state || !state.abortCallbacks.delete(registration)) {
+        return;
+      }
+      this.unsubscribeUnusedChannel(streamId, state);
+    };
+  }
+
+  /**
+   * Publish a preempt arm/clear to all replicas. Unlike abort this does NOT
+   * stop the run — the generating replica seals its current model stream at
+   * the next provider-safe boundary. Same channel and subscription as every
+   * other stream event; fenced by `msg.createdAt` on the receiving side.
+   */
+  /**
+   * Resolves to the number of replicas that received the message, so an ARM
+   * can be acknowledged only once it actually reached someone. Unlike abort
+   * (fire-and-forget, because a failed abort is retried by the user hitting
+   * stop again) an unheard arm is invisible: the route would answer
+   * `preempt: true` for a seal that never happens. Rejects on publish
+   * failure; callers decide what to do.
+   */
+  async emitPreempt(streamId: string, msg: PreemptMessage): Promise<number> {
+    const channel = CHANNELS.events(streamId);
+    const message: PubSubMessage = {
+      type: EventTypes.PREEMPT,
+      preempt: msg,
+    };
+
+    return this.publisher.publish(channel, JSON.stringify(message));
+  }
+
+  /**
+   * Register callback for preempt signals from any replica.
+   * Resolves once the Redis channel is active so callers can safely arm.
+   * The returned function removes only this registration, so a terminal
+   * generation releases its channel without touching a same-stream
+   * replacement.
+   */
+  async onPreempt(streamId: string, callback: (msg: PreemptMessage) => void): Promise<() => void> {
+    const channel = CHANNELS.events(streamId);
+    let state = this.streams.get(streamId);
+
+    if (!state) {
+      state = {
+        count: 0,
+        handlers: new Map(),
+        abortCallbacks: new Set(),
+        preemptCallbacks: new Set(),
+        reorderBuffer: {
+          nextSeq: 0,
+          pending: new Map(),
+          flushTimeout: null,
+          deliveryDeferred: false,
+        },
+      };
+      this.streams.set(streamId, state);
+    }
+
+    const registration = { callback };
+    state.preemptCallbacks.add(registration);
+
+    try {
+      await this.ensureChannelSubscription(channel);
+    } catch (error) {
+      state.preemptCallbacks.delete(registration);
+      this.unsubscribeUnusedChannel(streamId, state);
+      throw error;
+    }
+
+    return () => {
+      if (this.streams.get(streamId) !== state || !state.preemptCallbacks.delete(registration)) {
         return;
       }
       this.unsubscribeUnusedChannel(streamId, state);
@@ -946,6 +1044,7 @@ export class RedisEventTransport implements IEventTransport {
       state.handlers.clear();
       state.allSubscribersLeftCallback = undefined;
       state.abortCallbacks.clear();
+      state.preemptCallbacks.clear();
     }
 
     this.resetReorderBuffer(streamId);

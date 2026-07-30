@@ -103,6 +103,9 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  /** Recorded onto the job so the steer route can honour the OWNING replica's
+   *  seal capability rather than its own probe. */
+  isSteerPreemptSupported: jest.fn(() => true),
   getViolationInfo: (...args) => mockGetViolationInfo(...args),
   buildMessageFiles: jest.fn(() => []),
   resolveTitleTiming: jest.fn(() => 'immediate'),
@@ -347,6 +350,8 @@ describe('ResumableAgentController resume metadata', () => {
           endpoint: 'agents',
           iconURL: 'https://example.com/spec-icon.png',
           model: 'gpt-3.5-turbo',
+          /** The OWNING replica's seal capability, read by the steer route. */
+          preemptCapable: true,
           agent_id: undefined,
           isTemporary: true,
           responseMessageId: 'follow-up-user_',

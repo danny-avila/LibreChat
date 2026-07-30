@@ -17,6 +17,7 @@ const {
   filterMalformedContentParts,
   decrementPendingRequest,
   checkAndIncrementPendingRequest,
+  isSteerPreemptSupported,
   toPendingSteer,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
@@ -32,6 +33,13 @@ const { saveMessage, getConvo, getMessages } = require('~/models');
  * inject into the resumed run's ToolMessage.
  */
 const MAX_ASK_ANSWER_LENGTH = 16_000;
+
+/**
+ * How long a resume waits on best-effort steering bookkeeping before answering
+ * anyway. The approval is already consumed by that point, so a stalled Redis
+ * must not strand the client behind a chip label and an arm.
+ */
+const STEER_RESUME_SETUP_TIMEOUT_MS = 1000;
 
 /** De-duplicate a merged attachment list by a stable artifact identity. */
 function mergeAttachments(existing, incoming) {
@@ -246,6 +254,17 @@ async function finalizeResumedTurn({
   // part that breaks reload/rendering.
   const content = filterMalformedContentParts(rawContent);
 
+  /**
+   * A resumed segment can end on an empty preempt boundary just as a fresh
+   * one can — the boundary hook is re-registered by `buildSteerWiring` on
+   * resume. Persisting that as complete would contradict the honest contract
+   * the normal request path now keeps.
+   */
+  const preemptStats = client?.run?.getPreemptStats?.();
+  const preemptIncomplete =
+    (preemptStats?.emptyBoundaries ?? 0) > 0 ||
+    client?.run?.getHaltReason?.() === 'preempt_incomplete';
+
   const responseMessage = {
     messageId: responseMessageId,
     parentMessageId,
@@ -255,7 +274,7 @@ async function finalizeResumedTurn({
     endpoint: meta.endpoint,
     iconURL: meta.iconURL,
     model: meta.model,
-    unfinished: false,
+    unfinished: preemptIncomplete,
     error: false,
     isCreatedByUser: false,
     user: userId,
@@ -575,6 +594,70 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     await decrementPendingRequest(userId);
     return res.status(409).json({ error: 'This action was already resolved or has expired' });
   }
+
+  /**
+   * Ownership moves on resume, so the job's recorded seal capability must
+   * describe THIS replica — otherwise a job created on a capable replica that
+   * resumes on an older one during a rolling deploy keeps acknowledging
+   * steers as interrupting. Written IMMEDIATELY after the claim, before
+   * client reconstruction: `approvals.resolve` has already flipped the job
+   * back to `running`, so the steer route is accepting requests from here on
+   * and every one of them reads this flag.
+   */
+  const capabilityRefresh = GenerationJobManager.updateMetadata(
+    streamId,
+    { preemptCapable: isSteerPreemptSupported() },
+    job.createdAt,
+  ).catch((error) => {
+    /**
+     * Logged, not fatal: this is a chip-label accuracy write, and failing the
+     * user's resume over it would be disproportionate. The write only fails
+     * when the job store is erroring, in which case the steer route's own
+     * `getJob` is degraded too — it cannot read a stale flag it cannot read.
+     */
+    logger.error('[ResumeAgentController] Failed to refresh preempt capability', error);
+  });
+
+  /**
+   * An interrupt steer enqueued just before the pause survives durably with
+   * its `preempt` flag, but the ARM lived only in the previous owner's
+   * runtime. Rebuild it from the queue so the resumed segment honours an
+   * interrupt the user already had acknowledged.
+   */
+  const preemptRearm = GenerationJobManager.rearmQueuedPreempts(streamId, job.createdAt).catch(
+    (error) => {
+      logger.error('[ResumeAgentController] Failed to re-arm queued preempts', error);
+    },
+  );
+
+  /**
+   * BOUNDED, and the bound is the point. `.catch` only fires on rejection,
+   * but ioredis queues commands while a connection is down instead of
+   * rejecting, so either of these can simply never settle. That would block
+   * here — after `approvals.resolve` has already consumed the action and
+   * flipped the job to `running`, and before both `res.json` and the resume
+   * lifecycle's own try/finally. The client times out, its retry gets a 409
+   * because the action is spent, and neither the continuation nor the
+   * failed-resume cleanup ever runs.
+   *
+   * Both writes are steering bookkeeping — a chip label and an arm that the
+   * next tool boundary would honour anyway — so they finish in the background
+   * rather than holding a resume the user is waiting on.
+   */
+  let steeringSetupTimer;
+  await Promise.race([
+    Promise.all([capabilityRefresh, preemptRearm]),
+    new Promise((resolve) => {
+      steeringSetupTimer = setTimeout(() => {
+        logger.warn(
+          `[ResumeAgentController] Steering setup for ${streamId} still pending after ` +
+            `${STEER_RESUME_SETUP_TIMEOUT_MS}ms; continuing the resume without it`,
+        );
+        resolve();
+      }, STEER_RESUME_SETUP_TIMEOUT_MS);
+    }),
+  ]);
+  clearTimeout(steeringSetupTimer);
 
   // Seed the run-scoped MCP request-context store BEFORE the ACK: once `res.json`
   // finishes the response, a later `getMCPRequestContext(req, res)` (from tool loading)

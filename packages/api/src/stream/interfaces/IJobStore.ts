@@ -59,6 +59,14 @@ export interface SerializableJobData {
    * absent from the schema-only toolMap and resume would fail with "unknown tool".
    */
   discoveredTools?: string[];
+  /**
+   * Whether the replica that OWNS this generation can seal mid-stream
+   * (`PreemptBoundary` wiring). Recorded at createJob because the steer route
+   * may land on a different replica — during a rolling deploy its own SDK
+   * probe would answer for the wrong process. Absent on jobs created before
+   * preempt shipped, which reads as incapable: the honest outcome.
+   */
+  preemptCapable?: boolean;
 
   /** Whether the user-message created event has been emitted */
   createdEventEmitted?: boolean;
@@ -149,6 +157,7 @@ export type JobMetadataPatch = Partial<
     | 'isTemporary'
     | 'promptTokens'
     | 'discoveredTools'
+    | 'preemptCapable'
   >
 >;
 
@@ -186,6 +195,24 @@ export interface SteerQueueItem {
    *  drain re-fetches each file by id scoped to the run's user and encodes
    *  fresh, so nothing here is trusted beyond identifying the file. */
   files?: Partial<TFile>[];
+  /** The steer asked to seal the live model stream at the next provider-safe
+   *  boundary instead of waiting for a tool step. Durable so a parked,
+   *  claimed, or replayed chip keeps its "interrupting" label. */
+  preempt?: boolean;
+}
+
+/**
+ * Cross-replica preempt signal. Unlike abort this does NOT stop the run — it
+ * asks the generating replica to seal its current model stream at the next
+ * provider-safe boundary so the queued steer can inject there. Fenced by
+ * `createdAt`: a stale publish must never arm a replacement job on the same
+ * streamId.
+ */
+export interface PreemptMessage {
+  op: 'arm' | 'clear';
+  /** Generation identity (`SerializableJobData.createdAt`) this belongs to. */
+  createdAt: number;
+  steerIds: string[];
 }
 
 /** Maximum steers a single run can have queued at once. */
@@ -624,7 +651,7 @@ export interface IJobStore {
    * {@link STEER_ENQUEUE_NOT_RUNNING} when the job is missing, not running,
    * or closed, or {@link STEER_ENQUEUE_QUEUE_FULL} at max depth.
    */
-  enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number>;
+  enqueueSteer(streamId: string, item: SteerQueueItem, expectedCreatedAt?: number): Promise<number>;
 
   /**
    * Atomically take ALL queued steers, FIFO. Empty array when none. With
@@ -749,6 +776,27 @@ export interface IEventTransport {
   onAbort?(
     streamId: string,
     callback: (generationId?: number) => void,
+  ): void | (() => void) | Promise<void | (() => void)>;
+
+  /**
+   * Publish a preempt arm/clear to all replicas (Redis mode). Unlike abort
+   * this does NOT stop the run — it asks the generating replica to seal its
+   * current model stream at the next provider-safe boundary. Fenced by
+   * {@link PreemptMessage.createdAt} against replacement jobs.
+   * Optional - only implemented in Redis transport.
+   */
+  emitPreempt?(streamId: string, msg: PreemptMessage): void | Promise<number>;
+
+  /**
+   * Register callback for preempt signals from any replica (Redis mode).
+   * An async implementation resolves only after it can receive messages.
+   * The returned function removes only this registration, allowing a terminal
+   * generation to release its channel without affecting a same-stream replacement.
+   * Optional - only implemented in Redis transport.
+   */
+  onPreempt?(
+    streamId: string,
+    callback: (msg: PreemptMessage) => void,
   ): void | (() => void) | Promise<void | (() => void)>;
 
   /** Get subscriber count for a stream */

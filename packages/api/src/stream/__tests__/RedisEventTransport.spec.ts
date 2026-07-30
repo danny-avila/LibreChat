@@ -804,7 +804,10 @@ describe('RedisEventTransport', () => {
       mockPublisher as unknown as Redis,
       mockSubscriber as unknown as Redis,
     );
+    /** Both manager-level channel registrations are suppressed so the gated
+     *  `subscribe` below belongs to the SSE subscription under test. */
     Object.defineProperty(transport, 'onAbort', { value: undefined });
+    Object.defineProperty(transport, 'onPreempt', { value: undefined });
     const manager = new GenerationJobManagerClass();
     manager.configure({
       jobStore: new InMemoryJobStore({ ttlAfterComplete: 60_000 }),

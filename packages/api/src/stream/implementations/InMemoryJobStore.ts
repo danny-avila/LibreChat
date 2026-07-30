@@ -591,9 +591,16 @@ export class InMemoryJobStore implements IJobStore {
   // Single-threaded event loop makes each read-check-write indivisible, so
   // the status guard and depth cap are exact without extra locking.
 
-  async enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number> {
+  async enqueueSteer(
+    streamId: string,
+    item: SteerQueueItem,
+    expectedCreatedAt?: number,
+  ): Promise<number> {
     const job = this.jobs.get(streamId);
     if (!job || job.status !== 'running' || this.closedSteerQueues.has(streamId)) {
+      return STEER_ENQUEUE_NOT_RUNNING;
+    }
+    if (expectedCreatedAt != null && job.createdAt !== expectedCreatedAt) {
       return STEER_ENQUEUE_NOT_RUNNING;
     }
     let queue = this.steerQueues.get(streamId);

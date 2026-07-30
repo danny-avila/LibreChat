@@ -118,6 +118,9 @@ export type TPendingSteer = {
   text: string;
   createdAt?: number;
   files?: Partial<TFile>[];
+  /** The steer asked to interrupt generation at the next safe boundary —
+   *  kept on parked/replayed chips so the "interrupting" label survives. */
+  preempt?: boolean;
 };
 
 /** Payload of the `on_steer_applied` SSE event. */
