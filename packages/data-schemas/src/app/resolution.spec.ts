@@ -1,16 +1,18 @@
 import { INTERFACE_PERMISSION_FIELDS, PermissionTypes } from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
+import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { mergeConfigOverrides } from './resolution';
 
 function fakeConfig(
   overrides: Record<string, unknown>,
   priority: number,
   tombstones?: string[],
+  principalId = 'test',
 ): IConfig {
   return {
     _id: 'fake',
     principalType: 'role',
-    principalId: 'test',
+    principalId,
     principalModel: 'Role',
     priority,
     overrides,
@@ -34,6 +36,37 @@ describe('mergeConfigOverrides', () => {
   it('returns base config when configs is null/undefined', () => {
     expect(mergeConfigOverrides(baseConfig, null as unknown as IConfig[])).toBe(baseConfig);
     expect(mergeConfigOverrides(baseConfig, undefined as unknown as IConfig[])).toBe(baseConfig);
+  });
+
+  it('applies tenant-wide Langfuse settings only from the base principal', () => {
+    const configs = [
+      fakeConfig(
+        { langfuse: { enabled: true, destination: 'eu', publicKey: 'pk-base' } },
+        10,
+        undefined,
+        BASE_CONFIG_PRINCIPAL_ID,
+      ),
+      fakeConfig({ langfuse: { enabled: false, publicKey: 'pk-role' } }, 100),
+    ];
+
+    const result = mergeConfigOverrides(baseConfig, configs);
+
+    expect(result.langfuse).toMatchObject({
+      enabled: true,
+      destination: 'eu',
+      publicKey: 'pk-base',
+    });
+  });
+
+  it('ignores tenant-wide Langfuse tombstones outside the base principal', () => {
+    const base = {
+      ...baseConfig,
+      langfuse: { enabled: true, destination: 'eu', publicKey: 'pk-base' },
+    } as AppConfig;
+
+    const result = mergeConfigOverrides(base, [fakeConfig({}, 100, ['langfuse'])]);
+
+    expect(result.langfuse).toEqual(base.langfuse);
   });
 
   it('deep merges interface UI fields into interfaceConfig', () => {

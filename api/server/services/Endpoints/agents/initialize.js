@@ -165,6 +165,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
   const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
   const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
   const backgroundToolsAvailable = enabledCapabilities.has(AgentCapabilities.run_in_background);
+  const toolIntentsAvailable = enabledCapabilities.has(AgentCapabilities.tool_intents);
   const statefulSessionsAvailable = enabledCapabilities.has(
     AgentCapabilities.stateful_code_sessions,
   );
@@ -272,6 +273,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
         agent: ctx.agent,
         toolRegistry: ctx.toolRegistry,
         backgroundToolNames: ctx.backgroundToolNames,
+        intentToolNames: ctx.intentToolNames,
         mcpAvailableTools: ctx.mcpAvailableTools,
         requestScopedConnections: ctx.requestScopedConnections,
         userMCPAuthMap: ctx.userMCPAuthMap,
@@ -455,6 +457,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
       skillAuthoringAvailable: primarySkillAuthoringAvailable,
       codeEnvAvailable,
       backgroundToolsAvailable,
+      toolIntentsAvailable,
       statefulSessionsAvailable,
       memoryAvailable,
       skillStates,
@@ -533,6 +536,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
       defaultActiveOnShare,
       codeEnvAvailable,
       backgroundToolsAvailable,
+      toolIntentsAvailable,
       statefulSessionsAvailable,
       memoryAvailable,
     },
@@ -607,6 +611,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
     defaultActiveOnShare,
     codeEnvAvailable,
     backgroundToolsAvailable,
+    toolIntentsAvailable,
     statefulSessionsAvailable,
     memoryAvailable,
   });

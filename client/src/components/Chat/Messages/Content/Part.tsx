@@ -23,13 +23,13 @@ import {
   SubagentCall,
   SteerPart,
 } from './Parts';
+import { getCachedPreview, getActivityLabelPart, getActivityLabelText } from '~/utils';
 import { getAskUserQuestionPart } from '~/utils/approval';
 import AskUserQuestionCall from './AskUserQuestionCall';
 import { isBashProgrammaticToolCall } from './routing';
 import { ErrorMessage } from './MessageContent';
 import AskUserQuestion from './AskUserQuestion';
 import RetrievalCall from './RetrievalCall';
-import { getCachedPreview } from '~/utils';
 import ToolApproval from './ToolApproval';
 import AgentHandoff from './AgentHandoff';
 import CodeAnalyze from './CodeAnalyze';
@@ -152,6 +152,22 @@ const Part = memo(function Part({
         tokenCount={part.tokenCount}
         summarizing={part.summarizing}
       />
+    );
+  } else if (part.type === ContentTypes.ACTIVITY_LABEL) {
+    /** Orphan label (its block's parts were filtered/hidden): renders as a
+     *  standalone line. Labeled blocks normally render via ToolCallGroup,
+     *  which consumes the label part as the group header instead. */
+    const display = getActivityLabelText(getActivityLabelPart(part));
+    if (!display) {
+      return null;
+    }
+    const failed = part.status === 'failed' || part.status === 'partial';
+    return (
+      <div
+        className={`my-1 pl-1 text-sm italic ${failed ? 'text-amber-600 dark:text-amber-400' : 'text-text-secondary'}`}
+      >
+        {display}
+      </div>
     );
   } else if (part.type === ContentTypes.TOOL_CALL) {
     const toolCall = part[ContentTypes.TOOL_CALL];

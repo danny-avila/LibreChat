@@ -560,6 +560,8 @@ export default function useChatFunctions({
           )
         : null) ??
       null;
+    /** Set only for edited resubmissions; see `TSubmission.editPrefixLength`. */
+    let editPrefixLength: number | undefined;
     const initialResponseId =
       responseMessageId ?? `${isRegenerate ? messageId : intermediateId}`.replace(/_+$/, '') + '_';
 
@@ -607,6 +609,10 @@ export default function useChatFunctions({
 
       if (editedContent && latestMessage?.content) {
         initialResponse.content = cloneDeep(latestMessage.content);
+        /** Captured now, while it is still the retained prefix: a later resume
+         *  sync replaces this array with the server's completion-local
+         *  snapshot, after which its length no longer describes the offset. */
+        editPrefixLength = initialResponse.content.length;
         const { index, type, ...part } = editedContent;
         if (initialResponse.content && index >= 0 && index < initialResponse.content.length) {
           const contentPart = initialResponse.content[index];
@@ -667,6 +673,7 @@ export default function useChatFunctions({
       isTemporary,
       ephemeralAgent,
       editedContent,
+      editPrefixLength,
       addedConvo,
       manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
       clientRequestId,

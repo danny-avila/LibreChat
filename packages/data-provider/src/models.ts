@@ -61,6 +61,12 @@ export type TModelSpec = {
    * agent capability to be enabled by the admin.
    */
   runInBackground?: boolean;
+  /**
+   * Inject the `intent` label param into this spec's eligible tools so each
+   * call streams a live status label. Requires the `tool_intents` agent
+   * capability to be enabled by the admin.
+   */
+  describeIntent?: boolean;
   artifacts?: string | boolean;
   mcpServers?: string[];
   skills?: boolean | string[];
@@ -97,6 +103,7 @@ export const tModelSpecSchema = z.object({
   memory: z.boolean().optional(),
   askUserQuestion: z.boolean().optional(),
   runInBackground: z.boolean().optional(),
+  describeIntent: z.boolean().optional(),
   artifacts: z.union([z.string(), z.boolean()]).optional(),
   mcpServers: z.array(z.string()).optional(),
   skills: z.union([z.boolean(), z.array(z.string())]).optional(),

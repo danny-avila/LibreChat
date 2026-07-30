@@ -1493,6 +1493,7 @@ async function loadToolsForExecution({
   toolNames,
   toolRegistry,
   backgroundToolNames,
+  intentToolNames,
   mcpAvailableTools,
   requestScopedConnections,
   userMCPAuthMap,
@@ -1510,6 +1511,12 @@ async function loadToolsForExecution({
    *  `check_background_task` poll tool on this reliable per-agent channel. */
   if (backgroundToolNames?.length) {
     configurable.backgroundToolNames = backgroundToolNames;
+  }
+  /** Per-agent set of tools that received the host-injected `intent` label
+   *  param; the executor strips the arg before invocation and removes the
+   *  param from schemas the PTC sandbox sees. */
+  if (intentToolNames?.length) {
+    configurable.intentToolNames = intentToolNames;
   }
 
   const isToolSearch = toolNames.includes(AgentConstants.TOOL_SEARCH);
