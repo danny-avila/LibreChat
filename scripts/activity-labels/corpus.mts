@@ -14,12 +14,21 @@
  * step's generated label into the next step's `previousLabels` for variants
  * that opt in.
  */
-const fs = require('fs');
-const path = require('path');
+import { readFileSync } from 'node:fs';
 
-const captured = JSON.parse(fs.readFileSync(path.join(__dirname, 'captured.json'), 'utf8'));
+import type { EvalCase, EvalStep, ToolEntry } from './types.mts';
 
-const capturedRun = {
+interface CapturedEntry {
+  id: string;
+  prompt: string;
+  productionLabel: string;
+}
+
+const captured = JSON.parse(
+  readFileSync(new URL('./captured.json', import.meta.url), 'utf8'),
+) as CapturedEntry[];
+
+const capturedRun: EvalCase = {
   id: 'sandbox-probe-run',
   notes: 'the real 9-batch production run, verbatim payloads',
   steps: captured.map((entry) => ({
@@ -29,7 +38,7 @@ const capturedRun = {
   })),
 };
 
-const synthetic = [
+const synthetic: EvalCase[] = [
   {
     id: 'all-failed',
     notes: 'every call fails — failure register, verb-first under failure',
@@ -443,13 +452,13 @@ const synthetic = [
 
 /** Tool names for echo checks; captured steps bake entries into the
  *  verbatim prompt, so they are recovered from the "Tool calls:" lines. */
-function stepEntries(step) {
+export function stepEntries(step: EvalStep): ToolEntry[] {
   if (step.payload?.entries) {
     return step.payload.entries;
   }
   return [...(step.verbatim ?? '').matchAll(/^- ([A-Za-z0-9_]+)\(/gm)].map((match) => ({
-    toolName: match[1],
+    toolName: match[1] ?? '',
   }));
 }
 
-module.exports = { cases: [capturedRun, ...synthetic], stepEntries };
+export const cases: EvalCase[] = [capturedRun, ...synthetic];

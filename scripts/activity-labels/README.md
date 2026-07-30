@@ -7,11 +7,12 @@ hypotheses that felt most obvious when this was built both turned out wrong
 under measurement (see **Findings**).
 
 ```bash
-node scripts/activity-labels/run.js                       # every variant, 1 sample
-node scripts/activity-labels/run.js --samples 3           # 3 samples each
-node scripts/activity-labels/run.js --variants baseline,shipping --cases fib-rapid
-node scripts/activity-labels/run.js --dry --cases mega-batch    # render prompts, no API calls
-node scripts/activity-labels/rescore.js                   # re-grade stored results, no re-spend
+node scripts/activity-labels/run.mts                       # every variant, 1 sample
+node scripts/activity-labels/run.mts --samples 3           # 3 samples each
+node scripts/activity-labels/run.mts --variants baseline,shipping --cases fib-rapid
+node scripts/activity-labels/run.mts --dry --cases mega-batch    # render prompts, no API calls
+node scripts/activity-labels/rescore.mts                   # re-grade stored results, no re-spend
+npx tsc -p scripts/activity-labels/tsconfig.json           # type-check the harness
 ```
 
 Requires `ANTHROPIC_API_KEY` (env or `.env`). A full sweep is roughly $0.03 per
@@ -28,14 +29,16 @@ aggregate is the regression guard.
 
 ## Layout
 
-| File                    | Role                                                                                                                                                                                                                                                                                    |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `captured.json`         | 9 real production payloads pulled verbatim from Langfuse, with the headers that shipped. Irreplaceable — traces age out.                                                                                                                                                                |
-| `corpus.js`             | 17 cases / 28 steps: the captured run as one sequence, plus synthetic cases for modes it never hit (all-failed, partial, parallel, rapid duplicates, entry overflow, truncated output, error-shaped success). Multi-step cases chain each generated label into the next step's context. |
-| `prompt.js`             | Faithful port of the SDK's `buildActivityLabelPrompt`, so synthetic cases render the bytes production would send. Adds `previousLabelCap` for continuity-window experiments.                                                                                                            |
-| `variants.js`           | Single-factor instruction variants. `baseline` is read from the built `packages/api` dist, so drift from the shipped instruction is impossible.                                                                                                                                         |
-| `checks.js`             | Mechanical grading: length, punctuation, markdown, tool-name echo, count echo, and overlap split into `restate` (adds nothing) vs `template` (same frame, new payload).                                                                                                                 |
-| `run.js` / `rescore.js` | Live runner (production wire shape, `max_tokens: 256`) and offline re-grader.                                                                                                                                                                                                           |
+| File                      | Role                                                                                                                                                                                                                                                                                    |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `captured.json`           | 9 real production payloads pulled verbatim from Langfuse, with the headers that shipped. Irreplaceable — traces age out.                                                                                                                                                                |
+| `corpus.mts`              | 17 cases / 28 steps: the captured run as one sequence, plus synthetic cases for modes it never hit (all-failed, partial, parallel, rapid duplicates, entry overflow, truncated output, error-shaped success). Multi-step cases chain each generated label into the next step's context. |
+| `prompt.mts`              | Faithful port of the SDK's `buildActivityLabelPrompt`, so synthetic cases render the bytes production would send. Adds `previousLabelCap` for continuity-window experiments.                                                                                                            |
+| `variants.mts`            | Single-factor instruction variants. `baseline` is read from the built `packages/api` dist, so drift from the shipped instruction is impossible.                                                                                                                                         |
+| `checks.mts`              | Mechanical grading: length, punctuation, markdown, tool-name echo, count echo, and overlap split into `restate` (adds nothing) vs `template` (same frame, new payload).                                                                                                                 |
+| `run.mts` / `rescore.mts` | Live runner (production wire shape, `max_tokens: 256`) and offline re-grader.                                                                                                                                                                                                           |
+| `types.mts`               | Shared corpus, variant, result, and report types used by the runner and rescorer.                                                                                                                                                                                                       |
+| `tsconfig.json`           | Strict, no-emit type-checking configuration for the harness.                                                                                                                                                                                                                            |
 
 ## Findings this produced
 
