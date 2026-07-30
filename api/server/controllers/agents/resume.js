@@ -602,7 +602,23 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     { preemptCapable: isSteerPreemptSupported() },
     job.createdAt,
   ).catch((error) => {
-    logger.warn('[ResumeAgentController] Failed to refresh preempt capability', error);
+    /**
+     * Logged, not fatal: this is a chip-label accuracy write, and failing the
+     * user's resume over it would be disproportionate. The write only fails
+     * when the job store is erroring, in which case the steer route's own
+     * `getJob` is degraded too — it cannot read a stale flag it cannot read.
+     */
+    logger.error('[ResumeAgentController] Failed to refresh preempt capability', error);
+  });
+
+  /**
+   * An interrupt steer enqueued just before the pause survives durably with
+   * its `preempt` flag, but the ARM lived only in the previous owner's
+   * runtime. Rebuild it from the queue so the resumed segment honours an
+   * interrupt the user already had acknowledged.
+   */
+  await GenerationJobManager.rearmQueuedPreempts(streamId, job.createdAt).catch((error) => {
+    logger.error('[ResumeAgentController] Failed to re-arm queued preempts', error);
   });
 
   // Seed the run-scoped MCP request-context store BEFORE the ACK: once `res.json`

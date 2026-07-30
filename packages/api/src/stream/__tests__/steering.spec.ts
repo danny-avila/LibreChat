@@ -1031,4 +1031,52 @@ describe('preempt request lifecycle (in-memory)', () => {
     manager.requestPreempt(streamId, recent, job.createdAt);
     expect(manager.isPreemptRequested(streamId)).toBe(false);
   });
+
+  /**
+   * An arm lives only in the owning replica's runtime; the steer's `preempt`
+   * flag is durable. A resume landing on another replica must rebuild the
+   * armed set from the queue or the acknowledged interrupt silently waits for
+   * an ordinary tool boundary.
+   */
+  test('rearmQueuedPreempts rebuilds the armed set from the durable queue', async () => {
+    const streamId = 'preempt-rearm';
+    const job = await manager.createJob(streamId, 'user-1');
+    await manager.steering.enqueue(streamId, {
+      steerId: 'steer-preempt',
+      text: 'interrupt me',
+      userId: 'user-1',
+      createdAt: Date.now(),
+      preempt: true,
+    });
+    await manager.steering.enqueue(streamId, {
+      steerId: 'steer-plain',
+      text: 'ordinary steer',
+      userId: 'user-1',
+      createdAt: Date.now(),
+    });
+
+    /** Fresh owner: nothing armed locally yet. */
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+
+    const rearmed = await manager.rearmQueuedPreempts(streamId, job.createdAt);
+
+    expect(rearmed).toBe(1);
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+    expect(manager.getArmedPreemptIds(streamId, job.createdAt)).toEqual(['steer-preempt']);
+  });
+
+  test('rearmQueuedPreempts refuses a stale generation and arms nothing', async () => {
+    const streamId = 'preempt-rearm-stale';
+    const job = await manager.createJob(streamId, 'user-1');
+    await manager.steering.enqueue(streamId, {
+      steerId: 'steer-preempt',
+      text: 'interrupt me',
+      userId: 'user-1',
+      createdAt: Date.now(),
+      preempt: true,
+    });
+
+    expect(await manager.rearmQueuedPreempts(streamId, job.createdAt - 1)).toBe(0);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
 });

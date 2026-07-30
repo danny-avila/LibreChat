@@ -3256,6 +3256,31 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * Rebuilds the armed set from the DURABLE queue for a generation whose
+   * ownership just moved (HITL resume landing on another replica).
+   *
+   * An arm lives only in the owning replica's runtime plus a transient
+   * pub/sub message, while the steer's `preempt` flag is durable on the queue
+   * item. A replica that never observed the original arm therefore starts
+   * with an empty set and its poll stays false, so an interrupt the user
+   * already had acknowledged would silently wait for an ordinary tool
+   * boundary. Re-arming from the queue is safe by construction: every item
+   * peeked here is still queued, so no drained steer can be resurrected.
+   */
+  async rearmQueuedPreempts(streamId: string, jobCreatedAt: number): Promise<number> {
+    const queued = await this._steering.peek(streamId, jobCreatedAt);
+    let rearmed = 0;
+    for (const item of queued) {
+      if (item.preempt !== true) {
+        continue;
+      }
+      this.requestPreempt(streamId, item.steerId, jobCreatedAt);
+      rearmed += 1;
+    }
+    return rearmed;
+  }
+
+  /**
    * Snapshot of the ids armed right now, taken BEFORE a drain so the
    * empty-boundary disarm can scope itself to them.
    */
