@@ -363,19 +363,21 @@ export async function handleSteerCancel(
     return { status: 200, body: { removed } };
   }
   /**
-   * Awaited: a dropped disarm leaves the owner armed for a steer that no
-   * longer exists, costing one sealed-and-empty boundary — a visibly
-   * truncated answer, not just a stale label.
+   * Awaited so a failed disarm is retried and logged before the response,
+   * but its outcome is deliberately NOT reported to the client.
    *
-   * `removed` stays true regardless: the steer really did leave the queue,
-   * and reporting otherwise would make the client re-show a chip for a steer
-   * that can never arrive. `disarmed: false` surfaces the residual risk
-   * without lying about the removal.
+   * A resolved publish is not proof the owner heard it — the delivery count
+   * includes this replica's own facade subscription — so any `disarmed` flag
+   * would claim a certainty the transport cannot provide, which is the same
+   * over-promise the `preempt` flag was corrected for. Disarm is best effort
+   * with a bounded, self-healing failure: if the clear is lost the owner
+   * seals once, its empty boundary self-clears, and the turn is persisted
+   * `unfinished: true` rather than silently truncated.
+   *
+   * `removed` stays true because it is true — the steer really did leave the
+   * queue, and inverting it would make the client re-show a chip for a steer
+   * that can never arrive.
    */
-  const disarmed = await GenerationJobManager.noteSteersRemoved(
-    streamId,
-    [body.steerId],
-    job.createdAt,
-  );
-  return { status: 200, body: { removed, ...(disarmed === false && { disarmed: false }) } };
+  await GenerationJobManager.noteSteersRemoved(streamId, [body.steerId], job.createdAt);
+  return { status: 200, body: { removed } };
 }

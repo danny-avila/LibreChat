@@ -3302,15 +3302,21 @@ class GenerationJobManagerClass {
       return Promise.resolve(true);
     }
     /**
-     * Awaitable so a CANCEL can react to a failed disarm. A dropped clear is
-     * worse than a dropped arm: the owner keeps a level-triggered request for
-     * a steer that no longer exists, seals its next chunk, drains nothing,
-     * and truncates an unrelated answer. Retried once — a transient publish
-     * error is the common case and the retry is cheap — then reported to the
-     * caller so it is not silently swallowed.
+     * Awaitable so a CANCEL retries and logs before responding. A dropped
+     * clear is worse than a dropped arm: the owner keeps a level-triggered
+     * request for a steer that no longer exists, seals its next chunk,
+     * drains nothing, and truncates an unrelated answer. Retried once — a
+     * transient publish error is the common case and the retry is cheap.
      *
-     * Damage is bounded even if both attempts fail: the empty-boundary
-     * self-clear disarms the generation after that single seal.
+     * The returned boolean means "published without error", NOT "the owner
+     * disarmed": the delivery count includes this replica's own facade
+     * subscription, so publication cannot prove receipt. It is for logging
+     * only and must not be surfaced as a guarantee. Proving receipt needs a
+     * correlated request/response over pub-sub.
+     *
+     * Damage is bounded regardless: if the clear is lost the owner seals
+     * once, the empty-boundary self-clear disarms the generation, and the
+     * turn is persisted `unfinished: true` rather than silently truncated.
      */
     const publish = (): Promise<unknown> =>
       Promise.resolve(
