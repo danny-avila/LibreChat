@@ -6,6 +6,7 @@ import { useLocalize, useMCPServerManager, useHasAccess } from '~/hooks';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import MCPAdminSettings from './MCPAdminSettings';
 import MCPServerDialog from './MCPServerDialog';
+import { PanelFooter } from '~/components/ui';
 import MCPServerList from './MCPServerList';
 
 export default function MCPBuilderPanel() {
@@ -36,9 +37,13 @@ export default function MCPBuilderPanel() {
   }, [availableMCPServers, searchQuery]);
 
   return (
-    <div className="flex h-auto w-full flex-col px-3 pb-3 pt-2">
-      <div role="region" aria-label={localize('com_ui_mcp_servers')} className="space-y-2">
-        {/* Toolbar: Search + Add Button */}
+    <div
+      role="region"
+      aria-label={localize('com_ui_mcp_servers')}
+      className="flex h-full w-full flex-col overflow-hidden pt-2"
+    >
+      {/* Sticky header: Search + Add Button */}
+      <div className="shrink-0 px-3 pb-2">
         <div className="flex items-center gap-2">
           <FilterInput
             inputId="mcp-filter"
@@ -74,8 +79,10 @@ export default function MCPBuilderPanel() {
             </MCPServerDialog>
           )}
         </div>
+      </div>
 
-        {/* Server Cards List */}
+      {/* Only the list scrolls */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         {isLoading ? (
           <div className="flex items-center justify-center p-8">
             <Spinner className="size-6" aria-label={localize('com_ui_loading')} />
@@ -87,13 +94,14 @@ export default function MCPBuilderPanel() {
             isFiltered={searchQuery.trim().length > 0}
           />
         )}
-
-        {/* Config Dialog for custom user vars */}
-        {configDialogProps && <MCPConfigDialog {...configDialogProps} />}
-
-        {/* Admin Settings Section */}
-        <MCPAdminSettings />
       </div>
+
+      {/* Config Dialog for custom user vars */}
+      {configDialogProps && <MCPConfigDialog {...configDialogProps} />}
+
+      <PanelFooter>
+        <MCPAdminSettings />
+      </PanelFooter>
     </div>
   );
 }

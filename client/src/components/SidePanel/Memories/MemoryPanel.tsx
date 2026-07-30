@@ -21,10 +21,10 @@ import {
 import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
 import MemoryCreateDialog from './MemoryCreateDialog';
 import MemoryUsageBadge from './MemoryUsageBadge';
+import { PanelFooter } from '~/components/ui';
 import AdminSettings from './AdminSettings';
 import MemoryList from './MemoryList';
-
-const pageSize = 10;
+import { cn } from '~/utils';
 
 /** Partition filter sentinels; any other value is an agent id */
 const PARTITION_ALL = 'all';
@@ -36,7 +36,6 @@ export default function MemoryPanel() {
   const { data: userData } = useGetUserQuery();
   const { data: memData, isLoading } = useMemoriesQuery();
   const { showToast } = useToastContext();
-  const [pageIndex, setPageIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [partitionFilter, setPartitionFilter] = useState(PARTITION_ALL);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -134,15 +133,6 @@ export default function MemoryPanel() {
     });
   }, [memories, searchQuery, activePartition]);
 
-  const currentRows = useMemo(() => {
-    return filteredMemories.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
-  }, [filteredMemories, pageIndex]);
-
-  // Reset page when search or partition changes
-  useEffect(() => {
-    setPageIndex(0);
-  }, [searchQuery, activePartition]);
-
   if (isLoading) {
     return (
       <div className="flex h-full w-full items-center justify-center p-4">
@@ -161,11 +151,17 @@ export default function MemoryPanel() {
     );
   }
 
-  const totalPages = Math.ceil(filteredMemories.length / pageSize);
+  const tokenLimit = memData?.tokenLimit ?? null;
+  const showUsageBadge = tokenLimit != null;
 
   return (
-    <div className="flex h-auto w-full flex-col px-3 pb-3 pt-2">
-      <div role="region" aria-label={localize('com_ui_memories')} className="space-y-2">
+    <div
+      role="region"
+      aria-label={localize('com_ui_memories')}
+      className="flex h-full w-full flex-col overflow-hidden pt-2"
+    >
+      {/* Sticky header: filter, partition, usage + toggle */}
+      <div className="shrink-0 space-y-2 px-3 pb-2">
         {/* Header: Filter + Create Button */}
         <div className="flex items-center gap-2">
           <FilterInput
@@ -211,14 +207,14 @@ export default function MemoryPanel() {
         )}
 
         {/* Controls: Usage Badge + Memory Toggle */}
-        {(memData?.tokenLimit != null || hasOptOutAccess) && (
+        {(showUsageBadge || hasOptOutAccess) && (
           <div className="flex items-center justify-between">
             {/* Usage Badge */}
-            {memData?.tokenLimit != null && (
+            {showUsageBadge && (
               <MemoryUsageBadge
-                percentage={memData.usagePercentage ?? 0}
-                tokenLimit={memData.tokenLimit}
-                totalTokens={memData.totalTokens}
+                percentage={memData?.usagePercentage ?? 0}
+                tokenLimit={tokenLimit}
+                totalTokens={memData?.totalTokens ?? 0}
               />
             )}
 
@@ -227,7 +223,10 @@ export default function MemoryPanel() {
               <Button
                 size="sm"
                 variant="outline"
-                className={`ml-auto ${referenceSavedMemories ? 'bg-surface-hover hover:bg-surface-hover' : ''}`}
+                className={cn(
+                  showUsageBadge ? 'ml-auto' : 'w-full',
+                  referenceSavedMemories && 'bg-surface-hover hover:bg-surface-hover',
+                )}
                 onClick={() => handleMemoryToggle(!referenceSavedMemories)}
                 aria-label={localize('com_ui_use_memory')}
                 aria-pressed={referenceSavedMemories}
@@ -238,56 +237,29 @@ export default function MemoryPanel() {
                   tabIndex={-1}
                   aria-hidden="true"
                   aria-label={localize('com_ui_use_memory')}
-                  className="pointer-events-none mr-2"
+                  className="pointer-events-none"
                 />
                 {localize('com_ui_use_memory')}
               </Button>
             )}
           </div>
         )}
+      </div>
 
-        {/* Memory List */}
+      {/* Only the list scrolls */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         <MemoryList
-          memories={currentRows}
+          memories={filteredMemories}
           hasUpdateAccess={hasUpdateAccess}
           isFiltered={searchQuery.length > 0}
         />
-
-        {/* Footer: Admin Settings + Pagination */}
-        {(user?.role === SystemRoles.ADMIN || filteredMemories.length > pageSize) && (
-          <div className="flex items-center justify-between gap-2">
-            {/* Admin Settings - Left */}
-            {user?.role === SystemRoles.ADMIN ? <AdminSettings /> : <div />}
-
-            {/* Pagination - Right */}
-            {filteredMemories.length > pageSize && (
-              <div className="flex items-center gap-2" role="navigation" aria-label="Pagination">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPageIndex((prev) => Math.max(prev - 1, 0))}
-                  disabled={pageIndex === 0}
-                  aria-label={localize('com_ui_prev')}
-                >
-                  {localize('com_ui_prev')}
-                </Button>
-                <div className="whitespace-nowrap text-sm" aria-live="polite">
-                  {pageIndex + 1} / {totalPages}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPageIndex((prev) => (prev + 1 < totalPages ? prev + 1 : prev))}
-                  disabled={pageIndex + 1 >= totalPages}
-                  aria-label={localize('com_ui_next')}
-                >
-                  {localize('com_ui_next')}
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
       </div>
+
+      {user?.role === SystemRoles.ADMIN && (
+        <PanelFooter>
+          <AdminSettings />
+        </PanelFooter>
+      )}
     </div>
   );
 }
