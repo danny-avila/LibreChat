@@ -14,12 +14,15 @@ interface CategorySelectorProps {
   currentCategory?: string;
   onValueChange?: (value: string) => void;
   className?: string;
+  /** Portaled menus are unclickable inside a modal dialog, which locks pointer events on the body */
+  portal?: boolean;
 }
 
 const CategorySelector: React.FC<CategorySelectorProps> = ({
   currentCategory,
   onValueChange,
   className = '',
+  portal = true,
 }) => {
   const { t } = useTranslation();
   const formContext = useFormContext();
@@ -103,7 +106,7 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
           setIsOpen={setIsOpen}
           menuId="category-selector-menu"
           className="mt-2"
-          portal={true}
+          portal={portal}
         />
       )}
     />
@@ -115,7 +118,7 @@ const CategorySelector: React.FC<CategorySelectorProps> = ({
       setIsOpen={setIsOpen}
       menuId="category-selector-menu"
       className="mt-2"
-      portal={true}
+      portal={portal}
     />
   );
 };

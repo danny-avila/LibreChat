@@ -12,11 +12,11 @@ import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
-import WithRum from '~/lib/rum/WithRum';
 import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
 import LoginLayout from './Layouts/Login';
 import dashboardRoutes from './Dashboard';
+import WithRum from '~/lib/rum/WithRum';
 import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
@@ -136,11 +136,7 @@ export const router = createBrowserRouter(
             },
             {
               path: 'prompts',
-              element: <Navigate to="/prompts/new" replace={true} />,
-            },
-            {
-              path: 'prompts/new',
-              lazy: loadInlinePromptsView,
+              element: <Navigate to="/c/new" replace={true} />,
             },
             {
               path: 'prompts/:promptId',
