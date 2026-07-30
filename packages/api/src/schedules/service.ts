@@ -964,9 +964,21 @@ export function createSchedulesService(
       // Same abort-in-flight deferral as quiesce: post-abort job state (status `aborted`,
       // or absence once the abort deleted the job) appears before the owner has persisted
       // and settled, so it is not evidence that the generation is done.
+      //
+      // A paused job whose run row is still `started` is a pause HAND-OFF in flight:
+      // the job reports requires_action the instant the run interrupts, while the
+      // controller's pause branch is still flushing this segment's writes and records
+      // the pause on the row only after them. Settling on the job state alone let the
+      // cascade complete before those writes landed, which then recreated the paused
+      // response for the deleted schedule. The controller's record (or the paused-
+      // window reconciler) flips the row to requires_action, so the deferral is
+      // bounded — a later pass settles it.
+      const pauseHandoffInFlight =
+        isThisGeneration && live.job?.status === 'requires_action' && run.status === 'started';
       const settleable =
         live.known &&
         !hasAbortInFlight(run, Date.now()) &&
+        !pauseHandoffInFlight &&
         !(isThisGeneration && live.job?.status === 'running');
       if (settleable) {
         // Positive evidence nothing is generating: settle the row HERE so the erase
@@ -1117,8 +1129,16 @@ export function createSchedulesService(
       // owner has yet to persist. Deferring to the owner's settle (see
       // ABORT_SETTLE_GRACE_MS) is what stops a drain from being confirmed mid-write.
       const abortInFlight = hasAbortInFlight(run, Date.now());
+      // Same pause hand-off deferral as the schedule delete path: a paused job whose
+      // row is still `started` has the controller's pause-branch writes in flight,
+      // and settling on the job state alone confirms the drain before they land.
+      const pauseHandoffInFlight =
+        isThisGeneration && live.job?.status === 'requires_action' && run.status === 'started';
       const settleable =
-        live.known && !abortInFlight && !(isThisGeneration && live.job?.status === 'running');
+        live.known &&
+        !abortInFlight &&
+        !pauseHandoffInFlight &&
+        !(isThisGeneration && live.job?.status === 'running');
       // Aborts here never preserve for reconcile: account deletion hard-deletes these
       // run rows, so no reconcile pass would ever finalize or clear a retained job.
       const retainedOutcome = isThisGeneration

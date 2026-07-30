@@ -1777,8 +1777,19 @@ class GenerationJobManagerClass {
       runtime.startupTelemetry = undefined;
     }
     if (this._cleanupOnComplete && !options?.preserveForReconcile) {
-      // A replacement created after the abort CAS makes this a safe no-op.
-      await this.jobStore.deleteJob(streamId, jobData.createdAt);
+      // A replacement created after the abort CAS makes this a safe no-op. Best-effort
+      // and bounded like every other post-CAS store/transport call: the job is already
+      // terminal, so a leaked record falls to the store TTL / retained-job reaper,
+      // while an unbounded await here kept the Stop route from ever persisting.
+      try {
+        await withTimeout(
+          this.jobStore.deleteJob(streamId, jobData.createdAt),
+          ABORT_PUBLISH_TIMEOUT_MS,
+          `Post-abort job deletion timed out for ${streamId}`,
+        );
+      } catch (err) {
+        logger.error(`[GenerationJobManager] Post-abort job deletion failed for ${streamId}:`, err);
+      }
     }
     if (runtime && this.runtimeState.get(streamId) === runtime) {
       this.jobStore.clearContentState(streamId, jobData.createdAt);

@@ -164,11 +164,19 @@ export async function getCachedAuthUserDoc(
   }
 }
 
+export type AuthUserDocCacheFillResult = 'cached' | 'tombstoned' | 'error';
+
+/**
+ * Caches the sanitized user document. Returns 'tombstoned' when the user's
+ * deletion barrier rose while this fill was in flight — the entry has been
+ * unwound, and the CALLER's user document predates the barrier, so the caller
+ * must refuse the authentication too, not just lose the cache entry.
+ */
 export async function setCachedAuthUserDoc(
   store: AuthUserDocCacheStore,
   cacheKey: string,
   user: Partial<IUser>,
-): Promise<void> {
+): Promise<AuthUserDocCacheFillResult> {
   try {
     const sanitized = sanitizeUserForCache(user);
     await store.set(
@@ -192,12 +200,15 @@ export async function setCachedAuthUserDoc(
       if (tombstoned != null) {
         await store.delete(cacheKey);
         await store.delete(buildAuthUserDocReverseIndexKey(userId));
+        return 'tombstoned';
       }
     }
+    return 'cached';
   } catch (error) {
     logger.warn('[authUserDocCache] Cache write failed', {
       error: error instanceof Error ? error.message : String(error),
     });
+    return 'error';
   }
 }
 

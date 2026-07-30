@@ -183,7 +183,22 @@ const openIdJwtLogin = (openIdConfig) => {
                 cacheKey: authUserCacheKey,
               });
             } else if (!servedCachedUser) {
-              await setCachedAuthUserDoc(authUserCacheStore, authUserCacheKey, user);
+              const fillResult = await setCachedAuthUserDoc(
+                authUserCacheStore,
+                authUserCacheKey,
+                user,
+              );
+              // The tombstone means THIS request's Mongo read predates the deletion
+              // barrier (the deletionRequestedAt check above saw a pre-barrier doc).
+              // Unwinding the cache entry alone would still hand the stale document
+              // to done() and let this request mutate data during the cascade.
+              if (fillResult === 'tombstoned') {
+                logger.warn(
+                  `[openIdJwtLogin] Refusing pre-deletion-barrier authentication for ${user.id}`,
+                );
+                done(null, false, { message: 'Account deletion in progress' });
+                return;
+              }
             }
           }
 

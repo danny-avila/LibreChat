@@ -204,6 +204,37 @@ describe('deleteScheduleForOwner', () => {
     return { service, methods };
   }
 
+  it('defers settling a pause hand-off still in flight (started row, paused job)', async () => {
+    const { service, methods } = makeDeleteHarness({
+      scheduleId: 's1',
+      scheduledFor: new Date('2026-01-01T00:00:00.000Z'),
+      conversationId: 'c1',
+      status: 'started',
+    });
+    // The job reports requires_action the instant the run interrupts, while the
+    // controller's pause branch is still flushing this segment's writes and records
+    // the pause on the row only after them. Settling on the job state alone let the
+    // cascade complete before those writes landed.
+    mockJobStore = {
+      getJob: jest.fn(async () => ({
+        status: 'requires_action',
+        createdAt: 1,
+        scheduleId: 's1',
+        scheduledFor: '2026-01-01T00:00:00.000Z',
+      })),
+    } as unknown as typeof mockJobStore;
+    const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
+    manager.abortJob = jest.fn(async () => ({
+      success: true,
+      signalDelivered: true,
+      jobData: { status: 'requires_action' },
+    }));
+
+    await service.deleteScheduleForOwner('s1', 'user-1');
+
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
   it('does not report success when the abort of a live run is not delivered', async () => {
     const { service, methods } = makeDeleteHarness({
       scheduleId: 's1',
@@ -494,6 +525,31 @@ describe('quiesceUserSchedules drain wait', () => {
    * terminal state onto the row first — otherwise the row stays active, the bounded
    * drain can never confirm, and deletion defers until the 30-minute orphan cutoff.
    */
+  it('does not settle a pause hand-off still in flight (started row, paused job)', async () => {
+    jest.useFakeTimers();
+    const started = { ...run(), status: 'started' };
+    const getActive = jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([started]);
+    const service = makeService(getActive);
+    mockJobStore = {
+      getJob: jest.fn(async () => ({
+        status: 'requires_action',
+        createdAt: 1,
+        scheduleId: 's1',
+        scheduledFor: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+      })),
+    } as unknown as typeof mockJobStore;
+
+    const pending = service.quiesceUserSchedules('user-1');
+    await jest.advanceTimersByTimeAsync(10_000);
+    // The pause hand-off's writes are still in flight; confirming the drain here
+    // let the destructive cascade run before they landed. Deferral is bounded: the
+    // controller (or the paused-window reconciler) flips the row to requires_action
+    // and the pending-deletion sweep retries.
+    await expect(pending).resolves.toBe(false);
+
+    expect(recordRunOutcome).not.toHaveBeenCalled();
+  });
+
   it('settles a started run from its retained terminal job before dropping the evidence', async () => {
     jest.useFakeTimers();
     const started = { ...run(), status: 'started' };

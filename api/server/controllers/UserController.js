@@ -397,58 +397,134 @@ const deleteUserController = async (req, res) => {
       });
     }
 
-    await db.deleteMessages({ user: user.id });
-    await db.deleteAllUserSessions({ userId: user.id });
-    await db.deleteTransactions({ user: user.id });
-    await db.deleteUserKey({ userId: user.id, all: true });
-    await db.deleteBalances({ user: user._id });
-    await db.deletePresets(user.id);
-    try {
-      const convoDeletion = await db.deleteConvos(user.id);
-      // HITL: prune the deleted conversations' durable checkpoints — a paused run's
-      // checkpoint would otherwise persist until the Mongo TTL. Never throws.
-      const appConfig =
-        req.config ??
-        (await getAppConfig({
-          role: req.user?.role,
-          userId: req.user?.id,
-          tenantId: req.user?.tenantId,
-        }));
-      await deleteAgentCheckpoints(
-        convoDeletion?.conversationIds,
-        appConfig?.endpoints?.agents?.checkpointer,
-      );
-    } catch (error) {
-      logger.error('[deleteUserController] Error deleting user convos, likely no convos', error);
-    }
-    await deleteUserPluginAuth(user.id, null, true);
-    // BEFORE the irreversible user delete: if this throws afterwards the user document
-    // is already gone, so they can no longer authenticate to retry the cascade and their
-    // schedule prompts (which have no TTL) would persist indefinitely.
-    await db.deleteSchedulesByUser(user.id);
-    await db.deleteUserById(user.id);
-    await deleteAllSharedLinksWithCleanup(user.id);
-    await deleteUserFiles(req);
-    await db.deleteFiles(null, user.id);
-    await db.deleteToolCalls(user.id);
-    await db.deleteUserAgents(user.id);
-    await db.deleteAllAgentApiKeys(user._id);
-    await db.deleteAssistants({ user: user.id });
-    await db.deleteConversationTags({ user: user.id });
-    await db.deleteAllUserMemories(user.id);
-    await db.deleteUserPrompts(user.id);
-    await db.deleteUserSkills(user.id);
-    await deleteUserMcpServers(user.id);
-    await db.deleteActions({ user: user.id });
-    await db.deleteTokens({ userId: user.id });
-    await db.removeUserFromAllGroups(user.id);
-    await db.deleteAclEntries({ principalId: user._id });
-    logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
+    await executeUserDeletion(user, req.config);
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
     logger.error('[deleteUserController]', err);
     return res.status(500).json({ message: 'Something went wrong.' });
   }
+};
+
+/**
+ * The destructive account-deletion cascade. Runs only AFTER the durable barrier is up
+ * and the schedule quiesce confirmed settlement. Shared by the interactive controller
+ * and the deferred-deletion sweep: a quiesce that could not confirm defers with the
+ * barrier still raised, and authentication is refused behind the barrier, so no client
+ * retry can ever arrive — the sweep is the promised retry.
+ */
+const executeUserDeletion = async (user, providedAppConfig) => {
+  const appConfig =
+    providedAppConfig ??
+    (await getAppConfig({
+      role: user.role,
+      userId: user.id,
+      tenantId: user.tenantId,
+    }));
+  /** Minimal request shim for the file-deletion service (reads user, config, body). */
+  const req = { user, config: appConfig, body: {} };
+  await db.deleteMessages({ user: user.id });
+  await db.deleteAllUserSessions({ userId: user.id });
+  await db.deleteTransactions({ user: user.id });
+  await db.deleteUserKey({ userId: user.id, all: true });
+  await db.deleteBalances({ user: user._id });
+  await db.deletePresets(user.id);
+  try {
+    const convoDeletion = await db.deleteConvos(user.id);
+    // HITL: prune the deleted conversations' durable checkpoints — a paused run's
+    // checkpoint would otherwise persist until the Mongo TTL. Never throws.
+    await deleteAgentCheckpoints(
+      convoDeletion?.conversationIds,
+      appConfig?.endpoints?.agents?.checkpointer,
+    );
+  } catch (error) {
+    logger.error('[executeUserDeletion] Error deleting user convos, likely no convos', error);
+  }
+  await deleteUserPluginAuth(user.id, null, true);
+  // BEFORE the irreversible user delete: if this throws afterwards the user document
+  // is already gone, so nothing can retry the cascade and their schedule prompts
+  // (which have no TTL) would persist indefinitely.
+  await db.deleteSchedulesByUser(user.id);
+  await db.deleteUserById(user.id);
+  await deleteAllSharedLinksWithCleanup(user.id);
+  await deleteUserFiles(req);
+  await db.deleteFiles(null, user.id);
+  await db.deleteToolCalls(user.id);
+  await db.deleteUserAgents(user.id);
+  await db.deleteAllAgentApiKeys(user._id);
+  await db.deleteAssistants({ user: user.id });
+  await db.deleteConversationTags({ user: user.id });
+  await db.deleteAllUserMemories(user.id);
+  await db.deleteUserPrompts(user.id);
+  await db.deleteUserSkills(user.id);
+  await deleteUserMcpServers(user.id);
+  await db.deleteActions({ user: user.id });
+  await db.deleteTokens({ userId: user.id });
+  await db.removeUserFromAllGroups(user.id);
+  await db.deleteAclEntries({ principalId: user._id });
+  logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
+};
+
+/** Deferred deletions retried per sweep pass; small — deferral is a rare race. */
+const PENDING_DELETION_BATCH = 5;
+/** Head start for the interactive request that raised the barrier (or a local-auth
+ *  retry) before the sweep competes with it. */
+const PENDING_DELETION_MIN_AGE_MS = 60_000;
+
+/**
+ * Finishes account deletions that deferred on an unconfirmed schedule quiesce. The
+ * barrier is durable and blocks authentication, so without this pass a deferred
+ * OpenID account stays locked-but-undeleted with no way to issue the promised retry.
+ * Every step is idempotent and the window rotates, so concurrent workers are safe.
+ */
+const processPendingUserDeletions = async () => {
+  const pending = await db.getUsersPendingDeletion(PENDING_DELETION_BATCH);
+  const due = pending.filter(
+    (user) =>
+      user.deletionRequestedAt != null &&
+      Date.now() - new Date(user.deletionRequestedAt).getTime() >= PENDING_DELETION_MIN_AGE_MS,
+  );
+  if (due.length === 0) {
+    return;
+  }
+  await db
+    .markDeletionSweepAttempted(due.map((user) => user._id.toString()))
+    .catch((err) => logger.warn('[processPendingUserDeletions] Failed to stamp attempts', err));
+  for (const pendingUser of due) {
+    const user = { ...pendingUser, id: pendingUser._id.toString() };
+    try {
+      const quiesced = await quiesceUserSchedules(user.id).catch((error) => {
+        logger.error(`[processPendingUserDeletions] Quiesce failed for ${user.id}`, error);
+        return false;
+      });
+      if (!quiesced) {
+        logger.warn(
+          `[processPendingUserDeletions] Deferring ${user.id} again: scheduled runs did not confirm settlement`,
+        );
+        continue;
+      }
+      await executeUserDeletion(user);
+    } catch (error) {
+      logger.error(`[processPendingUserDeletions] Cascade failed for ${user.id}`, error);
+    }
+  }
+};
+
+const PENDING_DELETION_SWEEP_INTERVAL_MS = 5 * 60_000;
+let pendingDeletionSweepStarted = false;
+
+/** Idempotent per process; safe in every worker (the pass itself is idempotent). */
+const startPendingDeletionSweep = () => {
+  if (pendingDeletionSweepStarted) {
+    return;
+  }
+  pendingDeletionSweepStarted = true;
+  const run = () =>
+    processPendingUserDeletions().catch((err) =>
+      logger.error('[startPendingDeletionSweep] Sweep pass failed', err),
+    );
+  const timer = setInterval(run, PENDING_DELETION_SWEEP_INTERVAL_MS);
+  timer.unref?.();
+  setTimeout(run, PENDING_DELETION_MIN_AGE_MS).unref?.();
 };
 
 const verifyEmailController = async (req, res) => {
@@ -657,6 +733,8 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
 };
 
 module.exports = {
+  processPendingUserDeletions,
+  startPendingDeletionSweep,
   getUserController,
   getTermsStatusController,
   acceptTermsController,

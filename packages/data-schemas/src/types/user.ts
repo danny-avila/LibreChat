@@ -59,6 +59,7 @@ export interface IUser extends Document {
   updatedAt?: Date;
   /** Set when account deletion begins; durably blocks all new scheduling for this user. */
   deletionRequestedAt?: Date;
+  deletionSweepAt?: Date;
   /** Field for external source identification (for consistency with TPrincipal schema) */
   idOnTheSource?: string;
   tenantId?: string;

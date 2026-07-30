@@ -1461,8 +1461,31 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         acceptsTitleEvents = false;
         resolveConvoReady();
 
-        // Check if this was an abort (not a real error)
-        const wasAborted = job.abortController.signal.aborted || error.message?.includes('abort');
+        // Abort classification, mirroring resume.js: the SIGNAL is authoritative; an
+        // abort-shaped error alone is not. A genuine failure can mention 'abort'
+        // (driver errors like 'transaction aborted') with nothing having finalized
+        // the job — routing it here recorded `interrupted` (skipping the failure
+        // streak and auto-disable policy), emitted no error event, and left the job
+        // `running` with no controller driving it. abortJob flips the job terminal
+        // BEFORE any signal fires, so a job still running under this generation is
+        // proof no abort finalized it.
+        const abortShaped = error?.name === 'AbortError' || error?.message?.includes('abort');
+        let wasAborted = job.abortController.signal.aborted;
+        if (!wasAborted && abortShaped) {
+          try {
+            const liveJob = await GenerationJobManager.getJob(streamId);
+            wasAborted = !(
+              liveJob &&
+              liveJob.createdAt === jobCreatedAt &&
+              liveJob.status === 'running'
+            );
+          } catch (readErr) {
+            logger.warn(
+              '[ResumableAgentController] Abort classification read failed; treating as failure',
+              readErr,
+            );
+          }
+        }
 
         let errorScheduleOutcomeRecorded = true;
         if (scheduleId) {

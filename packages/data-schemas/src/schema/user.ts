@@ -166,6 +166,11 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
     deletionRequestedAt: {
       type: Date,
     },
+    /** Last deferred-deletion sweep attempt; rotates the sweep's bounded window so a
+     *  cascade that keeps deferring cannot starve pending deletions behind it. */
+    deletionSweepAt: {
+      type: Date,
+    },
     /** Field for external source identification (for consistency with TPrincipal schema) */
     idOnTheSource: {
       type: String,

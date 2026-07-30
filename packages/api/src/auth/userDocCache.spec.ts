@@ -170,7 +170,7 @@ describe('auth user document cache helpers', () => {
     // document is served for the full TTL while the destructive cascade runs.
     store.values.set(buildAuthUserDocTombstoneKey(userId.toString()), Date.now());
 
-    await setCachedAuthUserDoc(store, cacheKey, {
+    const result = await setCachedAuthUserDoc(store, cacheKey, {
       _id: userId,
       id: userId.toString(),
       email: 'user@example.com',
@@ -178,6 +178,9 @@ describe('auth user document cache helpers', () => {
 
     expect(store.values.has(cacheKey)).toBe(false);
     expect(store.values.has(buildAuthUserDocReverseIndexKey(userId.toString()))).toBe(false);
+    // The caller's own user document predates the barrier too: the strategy must
+    // refuse the authentication, not just lose the cache entry.
+    expect(result).toBe('tombstoned');
   });
 
   it('deduplicates reverse-index keys and caps the remembered set', async () => {

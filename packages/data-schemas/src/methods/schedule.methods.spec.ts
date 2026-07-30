@@ -1624,6 +1624,24 @@ describe('account-deletion barrier (delete vs create)', () => {
     const pending = await userMethods.getUsersPendingDeletion(50);
     expect(pending.some((u) => u._id.toString() === pendingUser._id.toString())).toBe(true);
   });
+
+  it('rotates the pending-deletion window past cascades that keep deferring', async () => {
+    const User = mongoose.models.User;
+    const suffix = Date.now();
+    const first = await User.create({ email: `rot-a-${suffix}@test.dev`, name: 'A' });
+    const second = await User.create({ email: `rot-b-${suffix}@test.dev`, name: 'B' });
+    await userMethods.markUserDeleting(first._id.toString());
+    await userMethods.markUserDeleting(second._id.toString());
+
+    const window = await userMethods.getUsersPendingDeletion(1);
+    expect(window).toHaveLength(1);
+    await userMethods.markDeletionSweepAttempted([window[0]._id.toString()]);
+
+    // Same rotation discipline as every other bounded recovery window: a quiesce
+    // that keeps deferring must not pin the window and starve deletions behind it.
+    const rotated = await userMethods.getUsersPendingDeletion(1);
+    expect(rotated[0]._id.toString()).not.toBe(window[0]._id.toString());
+  });
 });
 
 describe('config fence is DERIVED at the seam, not passed by callers', () => {

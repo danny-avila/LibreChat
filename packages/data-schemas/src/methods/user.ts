@@ -124,6 +124,8 @@ export function createUserMethods(
   isUserDeleting: (userId: string) => Promise<boolean>;
   /** Users whose barrier is up but whose document still exists (unfinished cascades). */
   getUsersPendingDeletion: (limit: number) => Promise<IUser[]>;
+  /** Stamps deferred-deletion sweep attempts so the bounded window rotates. */
+  markDeletionSweepAttempted: (userIds: string[]) => Promise<void>;
   updateUserPlugins: (
     userId: string,
     plugins: string[] | undefined,
@@ -396,10 +398,26 @@ export function createUserMethods(
    */
   async function getUsersPendingDeletion(limit: number): Promise<IUser[]> {
     const User = mongoose.models.User;
+    // Least-recently-attempted first (missing sorts before any date): a cascade that
+    // keeps deferring must rotate to the back of this bounded window, or it starves
+    // every pending deletion behind it. Callers stamp markDeletionSweepAttempted.
     return User.find({ deletionRequestedAt: { $exists: true } })
-      .sort({ deletionRequestedAt: 1 })
+      .sort({ deletionSweepAt: 1, deletionRequestedAt: 1 })
       .limit(limit)
       .lean<IUser[]>();
+  }
+
+  /** Rotation stamp for the deferred-deletion sweep window. Bookkeeping only. */
+  async function markDeletionSweepAttempted(userIds: string[]): Promise<void> {
+    if (userIds.length === 0) {
+      return;
+    }
+    const User = mongoose.models.User;
+    await User.updateMany(
+      { _id: { $in: userIds } },
+      { $set: { deletionSweepAt: new Date() } },
+      { timestamps: false },
+    );
   }
 
   /**
@@ -716,6 +734,7 @@ export function createUserMethods(
     markUserDeleting,
     isUserDeleting,
     getUsersPendingDeletion,
+    markDeletionSweepAttempted,
     updateUserPlugins,
     toggleUserMemories,
   };

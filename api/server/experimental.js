@@ -30,6 +30,7 @@ const {
   setupGracefulShutdown,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
+const { startPendingDeletionSweep } = require('./controllers/UserController');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
@@ -406,6 +407,10 @@ if (cluster.isMaster) {
     startScheduleErasureSweep({
       methods: { getDeletingSchedules, eraseScheduleIfDrained, markEraseAttempted },
     });
+    // Same category of cleanup: finishes account deletions deferred on an unconfirmed
+    // schedule quiesce (the durable barrier refuses authentication, so no client retry
+    // can arrive). Idempotent, rotation-windowed, safe in every worker.
+    startPendingDeletionSweep();
     await performStartupChecks(appConfig);
     await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
 

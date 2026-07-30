@@ -45,6 +45,7 @@ const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeScheduleEngine } = require('./services/Schedules');
+const { startPendingDeletionSweep } = require('./controllers/UserController');
 const { configureGenerationStreams: configureSharedGenerationStreams } = require('@librechat/api');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { checkMigrations } = require('./services/start/migration');
@@ -403,6 +404,10 @@ const startServer = async () => {
             'until an operator resolves the cause logged above and restarts.',
         );
       }
+      // Finishes account deletions deferred on an unconfirmed schedule quiesce. The
+      // durable barrier refuses authentication, so without this pass a deferred
+      // account stays locked-but-undeleted with no way to issue the promised retry.
+      startPendingDeletionSweep();
       logger.info('Server readiness checks passing.');
     } catch (initErr) {
       serverReady = false;
