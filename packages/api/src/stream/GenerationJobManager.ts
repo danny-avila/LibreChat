@@ -607,15 +607,23 @@ class GenerationJobManagerClass {
     return runtime.preempt;
   }
 
-  /** Arms ids that have not already been observed as removed. */
-  private armPreemptIds(runtime: RuntimeJobState, createdAt: number, steerIds: string[]): void {
+  /**
+   * Arms ids that have not already been observed as removed. Returns how many
+   * were actually accepted: a tombstoned id (its steer already drained at an
+   * ordinary boundary while this request was in flight) or an over-cap id is
+   * skipped, and the caller must not report those as armed.
+   */
+  private armPreemptIds(runtime: RuntimeJobState, createdAt: number, steerIds: string[]): number {
     const state = this.ensurePreemptState(runtime, createdAt);
+    let accepted = 0;
     for (const id of steerIds) {
       if (state.cleared.has(id) || state.ids.size >= STEER_QUEUE_MAX_DEPTH) {
         continue;
       }
       state.ids.add(id);
+      accepted += 1;
     }
+    return accepted;
   }
 
   /**
@@ -899,7 +907,16 @@ class GenerationJobManagerClass {
       this.registerAllSubscribersLeft(streamId);
 
       await this.registerAbortSubscription(streamId, runtime);
-      await this.registerPreemptSubscription(streamId, runtime);
+      /**
+       * NOT awaited, unlike abort. Abort must be deliverable before the job
+       * is exposed — a missed abort strands a run. A missed preempt only
+       * degrades that steer to the next tool boundary, which is the
+       * documented fallback, so blocking job creation on a second channel
+       * subscription would trade a real hang risk for a cosmetic guarantee.
+       * The registration's own lost-race tail releases it if the runtime is
+       * retired before the subscription resolves.
+       */
+      void this.registerPreemptSubscription(streamId, runtime);
       if (this.runtimeState.get(streamId) !== runtime) {
         throw new Error('Generation job was replaced during initialization');
       }
@@ -1125,7 +1142,8 @@ class GenerationJobManagerClass {
 
     if (jobData.status === 'running' || jobData.status === 'requires_action') {
       await this.registerAbortSubscription(streamId, runtime);
-      await this.registerPreemptSubscription(streamId, runtime);
+      /** Best-effort, non-blocking — see the createJob registration. */
+      void this.registerPreemptSubscription(streamId, runtime);
     }
 
     const runtimeAfterAbortRegistration = this.runtimeState.get(streamId);
@@ -3220,25 +3238,41 @@ class GenerationJobManagerClass {
    * The owner's own `createdAt` fence still decides whether to honour it.
    */
   async requestPreempt(streamId: string, steerId: string, jobCreatedAt: number): Promise<boolean> {
+    /**
+     * `ownedJobs`, NOT `runtimeState`: a cross-replica `getJob` installs a
+     * facade runtime on THIS replica via `getOrCreateRuntimeState`, so a
+     * matching `runtime.createdAt` proves only that we have looked at the
+     * job — not that we generate it. Arming that facade would satisfy
+     * nothing while reporting success.
+     */
+    const ownedHere = this.ownedJobs.get(streamId) === jobCreatedAt;
     const runtime = this.runtimeState.get(streamId);
-    const ownedHere = runtime != null && runtime.createdAt === jobCreatedAt;
-    if (ownedHere) {
-      this.armPreemptIds(runtime, jobCreatedAt, [steerId]);
+    if (ownedHere && runtime != null && runtime.createdAt === jobCreatedAt) {
+      /** Zero accepted means the id was tombstoned (its steer drained at an
+       *  ordinary boundary mid-request) — not an arm, so do not claim one. */
+      return this.armPreemptIds(runtime, jobCreatedAt, [steerId]) > 0;
     }
     if (this.eventTransport.emitPreempt == null) {
       /** Single-process transport: the local arm is the whole mechanism. */
-      return ownedHere;
+      return false;
     }
     try {
-      const delivered = await this.eventTransport.emitPreempt(streamId, {
+      await this.eventTransport.emitPreempt(streamId, {
         op: 'arm',
         createdAt: jobCreatedAt,
         steerIds: [steerId],
       });
-      return ownedHere || delivered == null || delivered > 0;
+      /**
+       * Best effort, and deliberately not read as proof. The publisher's
+       * subscriber count includes THIS replica's own facade subscription, so
+       * it cannot distinguish "the owner heard" from "we heard ourselves";
+       * proving owner receipt would need a correlated request/response over
+       * pub-sub. See the acknowledgement-semantics note on the PR.
+       */
+      return true;
     } catch (error) {
       logger.error(`[GenerationJobManager] Failed to publish preempt arm for ${streamId}:`, error);
-      return ownedHere;
+      return false;
     }
   }
 
@@ -3254,19 +3288,37 @@ class GenerationJobManagerClass {
    * generating replica; without a fence identity the publish is skipped and
    * the empty-boundary path's self-clear bounds the damage to one seal.
    */
-  noteSteersRemoved(streamId: string, steerIds: string[], jobCreatedAt?: number): void {
+  noteSteersRemoved(streamId: string, steerIds: string[], jobCreatedAt?: number): Promise<void> {
     if (steerIds.length === 0) {
-      return;
+      return Promise.resolve();
     }
     const runtime = this.runtimeState.get(streamId);
     if (runtime != null && (jobCreatedAt == null || runtime.createdAt === jobCreatedAt)) {
       this.clearPreemptIds(runtime, jobCreatedAt ?? runtime.createdAt, steerIds);
     }
     const createdAt = jobCreatedAt ?? runtime?.createdAt;
-    if (createdAt == null) {
-      return;
+    if (createdAt == null || this.eventTransport.emitPreempt == null) {
+      return Promise.resolve();
     }
-    this.eventTransport.emitPreempt?.(streamId, { op: 'clear', createdAt, steerIds });
+    /**
+     * Awaitable so a CANCEL can surface a failed disarm. A dropped clear is
+     * worse than a dropped arm: the owner keeps a level-triggered request for
+     * a steer that no longer exists, seals its next chunk, drains nothing,
+     * and truncates an unrelated answer. The empty-boundary self-clear bounds
+     * that to a single seal, but the truncation still happened.
+     */
+    return Promise.resolve(
+      this.eventTransport.emitPreempt(streamId, { op: 'clear', createdAt, steerIds }),
+    ).then(
+      () => undefined,
+      (error: unknown) => {
+        logger.error(
+          `[GenerationJobManager] Failed to publish preempt clear for ${streamId}; ` +
+            'the owner may seal once before its empty boundary self-clears:',
+          error,
+        );
+      },
+    );
   }
 
   /**

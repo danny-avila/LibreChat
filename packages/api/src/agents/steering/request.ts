@@ -342,7 +342,10 @@ export async function handleSteerCancel(
    *  cancel is live UI, and a request left armed would seal an unrelated
    *  stretch of generation, drain nothing, and end the run mid-sentence. */
   if (removed) {
-    GenerationJobManager.noteSteersRemoved(streamId, [body.steerId], job.createdAt);
+    /** Awaited: a dropped disarm leaves the owner armed for a steer that no
+     *  longer exists, which costs one sealed-and-empty boundary — a visibly
+     *  truncated answer, not just a stale label. */
+    await GenerationJobManager.noteSteersRemoved(streamId, [body.steerId], job.createdAt);
   }
   return { status: 200, body: { removed } };
 }

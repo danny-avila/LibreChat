@@ -139,7 +139,10 @@ async function drainAndBuildInjections(opts: SteerDrainHookOptions): Promise<Inj
   } catch (error) {
     logger.error(`[steering] Drain interrupted for ${streamId}; injecting applied items:`, error);
   } finally {
-    GenerationJobManager.noteSteersRemoved(
+    /** Not awaited: this runs on the OWNER, where the local disarm is
+     *  synchronous and already effective — the publish only informs other
+     *  replicas, and blocking a boundary drain on it would delay injection. */
+    void GenerationJobManager.noteSteersRemoved(
       streamId,
       steers.map((item) => item.steerId),
       jobCreatedAt,

@@ -1657,10 +1657,24 @@ describe('RedisEventTransport Integration Tests', () => {
 
         await new Promise((resolve) => setTimeout(resolve, 300));
 
-        expect(received).toEqual([
-          { op: 'arm', createdAt: 1234, steerIds: ['steer-a', 'steer-b'] },
-          { op: 'clear', createdAt: 1234, steerIds: ['steer-a'] },
-        ]);
+        /**
+         * Payload fidelity and delivery, NOT ordering: two publishes from the
+         * same replica carry no cross-message ordering guarantee to a
+         * subscriber, which is exactly why the receiving side tombstones
+         * cleared ids rather than assuming arm-before-clear. Asserting order
+         * here would test something stronger than the protocol promises.
+         */
+        expect(received).toHaveLength(2);
+        expect(received).toContainEqual({
+          op: 'arm',
+          createdAt: 1234,
+          steerIds: ['steer-a', 'steer-b'],
+        });
+        expect(received).toContainEqual({
+          op: 'clear',
+          createdAt: 1234,
+          steerIds: ['steer-a'],
+        });
       } finally {
         transport1.cleanup(streamId);
         transport1.destroy();

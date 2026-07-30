@@ -1081,14 +1081,15 @@ describe('preempt request lifecycle (in-memory)', () => {
   });
 
   /**
-   * A cross-replica arm that reaches nobody leaves the owner without a poll.
-   * The steer still injects at the next tool boundary, but the 202 must not
-   * claim it is interrupting.
+   * A non-owning replica can only publish. The subscriber count is NOT proof
+   * of owner receipt — this replica's own facade subscription is counted too
+   * — so a successful publish is reported as armed and only a rejected one
+   * is reported as unarmed. See the acknowledgement-semantics note on #14518.
    */
-  test('reports not-armed when the cross-replica publish reaches no one', async () => {
-    const streamId = 'preempt-undelivered';
-    const undelivered = new GenerationJobManagerClass();
-    undelivered.configure({
+  test('a successful cross-replica publish reports armed', async () => {
+    const streamId = 'preempt-published';
+    const published = new GenerationJobManagerClass();
+    published.configure({
       jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
       eventTransport: Object.assign(new InMemoryEventTransport(), {
         emitPreempt: async () => 0,
@@ -1096,13 +1097,50 @@ describe('preempt request lifecycle (in-memory)', () => {
       isRedis: false,
       cleanupOnComplete: false,
     });
-    undelivered.initialize();
+    published.initialize();
     try {
-      /** No local runtime for this stream: stands in for a non-owning replica. */
-      expect(await undelivered.requestPreempt(streamId, 'steer-1', Date.now())).toBe(false);
+      expect(await published.requestPreempt(streamId, 'steer-1', Date.now())).toBe(true);
     } finally {
-      await undelivered.destroy();
+      await published.destroy();
     }
+  });
+
+  /**
+   * A facade runtime exists on any replica that merely READ the job, so
+   * ownership must come from `ownedJobs` — arming a facade satisfies nothing
+   * while reporting success.
+   */
+  test('a facade runtime on a non-owning replica does not count as armed locally', async () => {
+    const streamId = 'preempt-facade';
+    const facade = new GenerationJobManagerClass();
+    facade.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    facade.initialize();
+    try {
+      /** No transport publish and no ownership: nothing can arm. */
+      expect(await facade.requestPreempt(streamId, 'steer-1', Date.now())).toBe(false);
+      expect(facade.isPreemptRequested(streamId)).toBe(false);
+    } finally {
+      await facade.destroy();
+    }
+  });
+
+  /**
+   * The steer drained at an ordinary boundary while the request was still in
+   * flight, so its id is tombstoned and no arm is accepted — the 202 must not
+   * claim an interrupt that cannot happen.
+   */
+  test('reports not-armed when the id was already tombstoned', async () => {
+    const streamId = 'preempt-tombstoned-arm';
+    const job = await manager.createJob(streamId, 'user-1');
+    await manager.noteSteersRemoved(streamId, ['steer-late'], job.createdAt);
+
+    expect(await manager.requestPreempt(streamId, 'steer-late', job.createdAt)).toBe(false);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
   });
 
   test('reports armed when this replica owns the generation', async () => {
