@@ -6,6 +6,7 @@ import type { TAttachment, ValidSource, SearchResultData } from 'librechat-data-
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import { StackedFavicons } from '~/components/Web/Sources';
 import { useLocalize, useExpandCollapse } from '~/hooks';
+import { useToolCallIntent } from './Parts/intent';
 import { useSearchContext } from '~/Providers';
 import cn from '~/utils/cn';
 import store from '~/store';
@@ -80,18 +81,23 @@ export default function WebSearch({
   initialProgress: progress = 0.1,
   isSubmitting,
   isLast,
+  args,
   output,
   attachments,
   onExpand,
 }: {
   isLast?: boolean;
   isSubmitting: boolean;
+  args?: string | Record<string, unknown>;
   output?: string | null;
   initialProgress: number;
   attachments?: TAttachment[];
   onExpand?: () => void;
 }) {
   const localize = useLocalize();
+  /** Model-authored live label (web_search carries `intent` natively);
+   *  persists as the settled label like the other tool cards. */
+  const intent = useToolCallIntent(args);
   const { searchResults } = useSearchContext();
   const error = typeof output === 'string' && output.toLowerCase().includes('error processing');
 
@@ -157,6 +163,9 @@ export default function WebSearch({
 
   const showSources = streamingSources.length > 0;
   const progressText = useMemo(() => {
+    if (intent != null) {
+      return intent;
+    }
     let text: ProgressKeys =
       ownTurn !== '0' ? 'com_ui_web_searching_again' : 'com_ui_web_searching';
     if (showSources) {
@@ -166,7 +175,7 @@ export default function WebSearch({
       text = 'com_ui_web_search_reading';
     }
     return localize(text);
-  }, [ownTurn, localize, showSources, finalizing]);
+  }, [intent, ownTurn, localize, showSources, finalizing]);
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const sourceCount = allSources.length;
@@ -195,7 +204,7 @@ export default function WebSearch({
 
   if (complete) {
     const hasSourceData = sourceCount > 0;
-    const completedText = localize('com_ui_web_searched');
+    const completedText = intent ?? localize('com_ui_web_searched');
 
     return (
       <div className="mb-2">

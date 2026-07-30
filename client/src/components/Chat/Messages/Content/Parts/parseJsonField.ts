@@ -21,16 +21,59 @@ function fieldRegex(field: string, flags?: string): RegExp {
   return new RegExp(`"${escaped}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)(?:"|\\\\?$)`, flags);
 }
 
+const SIMPLE_ESCAPES: Record<string, string> = {
+  n: '\n',
+  t: '\t',
+  r: '\r',
+  b: '\b',
+  f: '\f',
+  '"': '"',
+  '\\': '\\',
+  '/': '/',
+};
+
+/**
+ * Decodes the full JSON string escape set so a partially streamed value
+ * renders exactly as its settled `JSON.parse` form will — without this,
+ * `café` displays literally mid-stream and then snaps to `café` once
+ * the object becomes valid JSON. Stream-boundary incompletions (a dangling
+ * `\`, a partial `\uXX`, or the high half of a split surrogate pair) are
+ * dropped rather than shown, since the next delta completes them; unknown
+ * escapes elsewhere are preserved literally.
+ */
 function unescapeJsonString(value: string): string {
-  return value.replace(/\\(.)/g, (_, c: string) => {
-    if (c === 'n') {
-      return '\n';
+  let out = '';
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (ch !== '\\') {
+      out += ch;
+      continue;
     }
-    if (c === '"' || c === '\\') {
-      return c;
+    const next = value[i + 1];
+    if (next === undefined) {
+      break;
     }
-    return `\\${c}`;
-  });
+    i++;
+    if (next !== 'u') {
+      out += SIMPLE_ESCAPES[next] ?? `\\${next}`;
+      continue;
+    }
+    const hex = value.slice(i + 1, i + 5);
+    if (!/^[0-9a-fA-F]{4}$/.test(hex)) {
+      if (i + 5 > value.length) {
+        return out;
+      }
+      out += '\\u';
+      continue;
+    }
+    i += 4;
+    const code = parseInt(hex, 16);
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 >= value.length) {
+      return out;
+    }
+    out += String.fromCharCode(code);
+  }
+  return out;
 }
 
 /** Extracts a string field from tool call args, handling object, JSON string, and partial-JSON fallback. */

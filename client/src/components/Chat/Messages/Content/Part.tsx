@@ -318,6 +318,7 @@ const Part = memo(function Part({
         } else if (toolCall.name === Tools.web_search) {
           return (
             <WebSearch
+              args={toolCall.args}
               output={toolCall.output ?? ''}
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}

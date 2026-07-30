@@ -160,6 +160,25 @@ describe('BashCall intent label', () => {
     renderBashCall({ intent: { nested: true }, command: 'sleep 10' });
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Running command');
   });
+
+  it('ignores an intent that is not the FIRST args key (label contract is first-position)', () => {
+    renderBashCall('{"command":"sleep 10","intent":"billing_inquiry"}');
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Running command');
+    expect(screen.queryByText('billing_inquiry')).not.toBeInTheDocument();
+  });
+
+  it('bounds a runaway intent to a single 256-char line', () => {
+    const runaway = `Checking ${'a very long clause '.repeat(30)}end`;
+    renderBashCall({ intent: runaway, command: 'sleep 10' });
+    const text = screen.getByTestId('progress-text').textContent ?? '';
+    expect(text.length).toBeLessThanOrEqual(256);
+    expect(text.endsWith('…')).toBe(true);
+  });
+
+  it('decodes unicode escapes in a streaming intent (no literal \\uXXXX flash)', () => {
+    renderBashCall('{"intent":"Checking caf\\u00e9 menu da');
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Checking café menu da');
+  });
 });
 
 describe('BashCall backgrounded calls', () => {
