@@ -100,6 +100,13 @@ async function tickOnce(deps: ScheduleEngineDeps): Promise<void> {
   await engine.runTick();
 }
 
+/** Drives one AWAITED reconciliation pass (startup's own is fire-and-forget). */
+async function reconcileOnce(deps: ScheduleEngineDeps): Promise<void> {
+  const engine = startScheduleEngine(deps);
+  engine.stop();
+  await engine.reconcile();
+}
+
 afterEach(() => jest.restoreAllMocks());
 
 /** Overdue past MISFIRE_GRACE_MS (15m), so the tick skips it forward instead of firing. */
@@ -236,6 +243,63 @@ describe('reconciliation is isolated per row', () => {
     );
     expect(settled).toContain('poison');
     expect(settled).toContain('healthy');
+  });
+});
+
+describe('unarmed recovery sweep', () => {
+  it('disables an unarmed schedule whose cadence is uncomputable', async () => {
+    const methods = makeMethods(makeClaimedSchedule());
+    methods.claimDueSchedule.mockResolvedValue(null);
+    const broken = makeClaimedSchedule({
+      id: 'sched-broken',
+      timezone: 'Not/AZone',
+      claimToken: 'ct-9',
+      configRevision: 4,
+      nextRunAt: undefined,
+    });
+    const healthy = makeClaimedSchedule({
+      id: 'sched-ok',
+      claimToken: 'ct-10',
+      nextRunAt: undefined,
+    });
+    (methods.getUnarmedSchedules as jest.Mock).mockResolvedValue([broken, healthy]);
+
+    await reconcileOnce(makeDeps(methods));
+
+    // Skipping the broken row left it enabled-but-unarmed forever: holding the
+    // owner's slot, never firing, and re-filling the bounded window ahead of
+    // valid crash-left rows. Fenced on token + revision so a concurrent edit
+    // that repairs the cadence wins over this observation of the broken one.
+    expect(methods.disableSchedule).toHaveBeenCalledWith(
+      'sched-broken',
+      'invalid_schedule',
+      'ct-9',
+      4,
+    );
+    expect(methods.armSchedule).toHaveBeenCalledWith('sched-ok', expect.any(Date));
+  });
+});
+
+describe('bookkeeping replay rotation', () => {
+  it('stamps every replayed row so persistent failures rotate out of the window', async () => {
+    const methods = makeMethods(makeClaimedSchedule());
+    methods.claimDueSchedule.mockResolvedValue(null);
+    const poison = {
+      _id: 'row-1',
+      scheduleId: 'poison',
+      scheduledFor: new Date(0),
+      user: 'u1',
+      status: 'success',
+    };
+    (methods.getUnbookkeptRuns as jest.Mock).mockResolvedValue([poison]);
+    (methods.finalizeBookkeeping as jest.Mock).mockRejectedValue(new Error('permanently broken'));
+
+    await reconcileOnce(makeDeps(methods));
+
+    // getUnbookkeptRuns reads least-recently-attempted first; without the stamp a
+    // batch of failing rows re-fills the bounded window and every later terminal
+    // row's counters never land.
+    expect(methods.markRunsReconciled).toHaveBeenCalledWith([poison]);
   });
 });
 

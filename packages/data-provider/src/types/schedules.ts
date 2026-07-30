@@ -37,7 +37,11 @@ export const createSchedulePayloadSchema = z.object({
   cadence: scheduleCadenceSchema,
   timezone: z.string().min(1),
   target: z.enum(scheduleTargets).default('new'),
-  file_ids: z.array(z.string()).max(10).optional(),
+  file_ids: z
+    .array(z.string())
+    .max(10)
+    .transform((ids) => Array.from(new Set(ids)))
+    .optional(),
   enabled: z.boolean().default(true),
   /**
    * Client-generated key making creation idempotent across retries. Creation commits

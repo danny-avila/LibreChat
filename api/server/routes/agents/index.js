@@ -409,16 +409,31 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
       }
       scheduledStopStamped = stampResult === 'stamped';
     }
+    // Bounded retries, not a single swallowed attempt: an unresolved stamp makes
+    // every subsequent Stop answer 'in_progress' — a false success that retries
+    // nothing — while fencing the owner's settlement barrier and the reconciler
+    // for the full stale window. One transient Mongo failure must not buy all that.
     const resolveStopAttempt = async () => {
       if (!scheduledStopStamped || !scheduledFireIdentity) {
         return;
       }
-      await markScheduledRunAbortPersisted(
-        scheduledFireIdentity.scheduleId,
-        scheduledFireIdentity.scheduledFor,
-      ).catch((err) =>
-        logger.error(`[AgentStream] Failed to stamp abort persistence: ${jobStreamId}`, err),
-      );
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await markScheduledRunAbortPersisted(
+            scheduledFireIdentity.scheduleId,
+            scheduledFireIdentity.scheduledFor,
+          );
+          return;
+        } catch (err) {
+          logger.error(
+            `[AgentStream] Failed to stamp abort persistence (attempt ${attempt}/3): ${jobStreamId}`,
+            err,
+          );
+          if (attempt < 3) {
+            await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+          }
+        }
+      }
     };
     // Capture the paused thread's checkpoint ids BEFORE the terminal CAS: the prune
     // after the abort is scoped to exactly this set, so checkpoints a replacement

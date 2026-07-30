@@ -483,6 +483,35 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       await expect(jobStore.getJob(streamId)).resolves.toMatchObject({ status: 'aborted' });
     });
 
+    test('abortJob stops the local generation before awaiting the abort publication', async () => {
+      // The publish can hang indefinitely during a Redis outage; the owned local
+      // generation must already be signalled by then or it keeps running and
+      // billing behind a job every retry sees as terminal.
+      const streamId = 'steer-abort-local-first';
+      const transport = new InMemoryEventTransport();
+      let localAbortedAtPublish: boolean | null = null;
+      (transport as IEventTransport).emitAbort = async () => {
+        localAbortedAtPublish = job.abortController.signal.aborted;
+      };
+      const localManager = new GenerationJobManagerClass();
+      localManager.configure({
+        jobStore,
+        eventTransport: transport,
+        isRedis: false,
+        cleanupOnComplete: false,
+      });
+      localManager.initialize();
+      const job = await localManager.createJob(streamId, 'user-1');
+
+      try {
+        const result = await localManager.abortJob(streamId);
+        expect(result.success).toBe(true);
+        expect(localAbortedAtPublish).toBe(true);
+      } finally {
+        await localManager.destroy();
+      }
+    });
+
     test('abortJob publishes nothing when natural completion wins its terminal CAS', async () => {
       const streamId = 'steer-abort-loses-terminal-race';
       const eventTransport = new InMemoryEventTransport();

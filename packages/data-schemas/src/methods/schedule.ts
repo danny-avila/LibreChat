@@ -1303,7 +1303,10 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   }
 
   /** Settled runs (terminal outcomes AND skips) whose schedule bookkeeping never
-   *  landed — a crash between the row write and the card/counter writes. */
+   *  landed — a crash between the row write and the card/counter writes.
+   *  Least-recently-attempted first (the paused window's rotation): a row whose
+   *  replay keeps failing must rotate to the back, or a batch of them re-fills
+   *  this bounded window forever and every later row's counters never land. */
   async function getUnbookkeptRuns(olderThan: Date, limit: number): Promise<IScheduleRun[]> {
     return ScheduleRun()
       .find({
@@ -1313,7 +1316,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
         bookkept: false,
         firedAt: { $lt: olderThan },
       })
-      .sort({ firedAt: 1 })
+      .sort({ reconciledAt: 1, firedAt: 1 })
       .limit(limit)
       .lean<IScheduleRun[]>();
   }

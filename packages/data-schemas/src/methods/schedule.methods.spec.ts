@@ -749,6 +749,30 @@ describe('recordRunOutcome idempotency + crash-retry (bookkeeping)', () => {
     expect(await methods.getUnbookkeptRuns(new Date(Date.now() + 1000), 100)).toHaveLength(0);
   });
 
+  it('rotates the unbookkept window past rows whose replay keeps failing', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const early = new Date('2026-07-20T10:00:00Z');
+    const late = new Date('2026-07-20T11:00:00Z');
+    await methods.insertScheduleRun(
+      runData(schedule, { scheduledFor: early, firedAt: early, status: 'success' }),
+    );
+    await methods.insertScheduleRun(
+      runData(schedule, { scheduledFor: late, firedAt: late, status: 'success' }),
+    );
+    await ScheduleRun.updateMany({ scheduleId: schedule.id }, { $set: { bookkept: false } });
+
+    const cutoff = new Date(Date.now() + 1000);
+    const first = await methods.getUnbookkeptRuns(cutoff, 1);
+    expect(first).toHaveLength(1);
+    expect(new Date(first[0].firedAt!).toISOString()).toBe(early.toISOString());
+
+    // The engine stamps every row it attempted (success or failure); the next
+    // bounded read must then surface the row BEHIND it, not the same one again.
+    await methods.markRunsReconciled(first);
+    const second = await methods.getUnbookkeptRuns(cutoff, 1);
+    expect(new Date(second[0].firedAt!).toISOString()).toBe(late.toISOString());
+  });
+
   it('replayed bookkeeping projects the ORIGINAL firedAt, not the replay time', async () => {
     const schedule = await methods.createSchedule(scheduleData());
     const originalFiredAt = new Date('2026-07-20T12:00:03Z');

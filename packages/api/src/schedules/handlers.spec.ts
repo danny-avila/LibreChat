@@ -671,6 +671,31 @@ describe('updateSchedule refuses field-less payloads', () => {
   });
 });
 
+describe('attachment id deduplication', () => {
+  it('accepts a create whose payload repeats an owned file id', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    (deps.methods.armSchedule as jest.Mock).mockResolvedValue(true);
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue({
+      ...CREATE_BODY,
+      id: 'sched-1',
+      file_ids: ['file-a'],
+    } as unknown as ISchedule);
+    const req = makeCreateReq() as unknown as { body: Record<string, unknown> };
+    req.body.file_ids = ['file-a', 'file-a'];
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).createSchedule(req as unknown as ServerRequest, res);
+
+    // The ownership query returns one doc per UNIQUE id, so an un-deduped list
+    // read as a missing file and 400'd a valid request. The schema dedupes.
+    expect(captured.status ?? 201).toBe(201);
+    expect(deps.methods.createScheduleWithSlot).toHaveBeenCalledWith(
+      expect.objectContaining({ file_ids: ['file-a'] }),
+      expect.any(Number),
+    );
+  });
+});
+
 describe('updateSchedule re-enable attachment revalidation', () => {
   const disabledWithFiles = () =>
     ({

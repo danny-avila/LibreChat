@@ -44,12 +44,20 @@ import {
  * worth of removals plus in-flight arms fit without eviction in practice.
  */
 const PREEMPT_TOMBSTONE_MAX = STEER_QUEUE_MAX_DEPTH * 2;
+
+/**
+ * Bound on the cross-replica abort publication. During a Redis outage a queued
+ * ioredis command can stay pending indefinitely, and an unbounded await here
+ * would wedge the abort path after the terminal CAS already landed.
+ */
+const ABORT_PUBLISH_TIMEOUT_MS = 5_000;
 import {
   SteeringLifecycle,
   toPendingSteer,
   synthesizeAppliedSteerEvents,
 } from './SteeringLifecycle';
 import { synthesizeActivityLabelGapEvents } from '~/agents/activityLabels/wiring';
+import { withTimeout } from '~/utils';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
@@ -1465,7 +1473,11 @@ class GenerationJobManagerClass {
     }
     if (this.eventTransport.emitAbort) {
       try {
-        await this.eventTransport.emitAbort(streamId, jobData.createdAt);
+        await withTimeout(
+          Promise.resolve(this.eventTransport.emitAbort(streamId, jobData.createdAt)),
+          ABORT_PUBLISH_TIMEOUT_MS,
+          `Abort republication timed out for ${streamId}`,
+        );
       } catch (err) {
         logger.error(`[GenerationJobManager] Failed to republish abort for ${streamId}:`, err);
       }
@@ -1703,17 +1715,26 @@ class GenerationJobManagerClass {
     // awaited so a failed one surfaces in the log with the abort it stranded.
     const abortSignalDelivered =
       abortableStatus === 'requires_action' || this.ownedJobs.get(streamId) === jobData.createdAt;
-    if (this.eventTransport.emitAbort) {
-      try {
-        await this.eventTransport.emitAbort(streamId, jobData.createdAt);
-      } catch (err) {
-        logger.error(`[GenerationJobManager] Failed to publish abort for ${streamId}:`, err);
-      }
-    }
+    // Stop the LOCAL generation BEFORE any network publication, and bound the
+    // publish: a Redis outage can leave the queued command pending forever, and
+    // an unbounded await here kept an owned same-replica generation running and
+    // billing behind a job every retry already sees as terminal. The unsubscribe
+    // runs first so this replica doesn't consume its own publication.
     if (runtime) {
       this.releaseAbortSubscription(runtime);
     }
     runtime?.abortController.abort();
+    if (this.eventTransport.emitAbort) {
+      try {
+        await withTimeout(
+          Promise.resolve(this.eventTransport.emitAbort(streamId, jobData.createdAt)),
+          ABORT_PUBLISH_TIMEOUT_MS,
+          `Abort publication timed out for ${streamId}`,
+        );
+      } catch (err) {
+        logger.error(`[GenerationJobManager] Failed to publish abort for ${streamId}:`, err);
+      }
+    }
 
     if (runtime) {
       runtime.finalEvent = abortFinalEvent;

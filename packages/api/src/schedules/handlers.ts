@@ -672,15 +672,19 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     // silently fires without the missing files instead of telling the user to
     // replace them.
     if (reEnabled && parsed.data.file_ids == null && existing.file_ids?.length) {
-      const stillOwned = await deps.filterOwnedFileIds(existing.file_ids, user.id);
-      if (stillOwned.length !== existing.file_ids.length) {
+      // Deduped before the count comparison: the ownership query returns one doc
+      // per unique id, so a legacy row holding the same id twice would otherwise
+      // read as a missing file. New payloads are deduped at the schema.
+      const storedIds = Array.from(new Set(existing.file_ids));
+      const stillOwned = await deps.filterOwnedFileIds(storedIds, user.id);
+      if (stillOwned.length !== storedIds.length) {
         res.status(400).json({
           error:
             'One or more attached files are no longer available. Replace the attachments before re-enabling.',
         });
         return;
       }
-      if (!(await retainFiles(existing.file_ids, user.id))) {
+      if (!(await retainFiles(storedIds, user.id))) {
         res.status(500).json({ error: 'Failed to retain schedule attachments' });
         return;
       }

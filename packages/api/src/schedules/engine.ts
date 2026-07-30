@@ -36,6 +36,8 @@ export type ScheduleEngine = {
   stop: () => void;
   /** Exposed for tests and the run-now handler: one full claim/fire pass. */
   runTick: () => Promise<number>;
+  /** Exposed for tests: one awaitable reconciliation pass (the tick loop's is fire-and-forget). */
+  reconcile: () => Promise<void>;
 };
 
 export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
@@ -241,6 +243,13 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             );
           }
         }
+        // Same rotation as the active-run pass above: stamp every row this pass
+        // looked at so persistent failures rotate to the back of the bounded
+        // window instead of starving the rows behind them. Successful replays
+        // left the query via bookkept:true; re-stamping them is harmless.
+        await deps.methods
+          .markRunsReconciled(unbookkept)
+          .catch((err) => logger.warn('[schedules] failed to stamp replayed runs:', err));
       });
 
       // Erase soft-deleted schedules once their active runs have drained. Delete
@@ -275,6 +284,22 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             scheduleId: schedule.id,
           });
           if (nextRunAt == null) {
+            // Uncomputable cadence is NOT transient (same policy as the claim path):
+            // skipping left the row enabled-but-unarmed forever — holding the owner's
+            // slot while never firing, and re-filling this bounded window until valid
+            // crash-left rows behind it could never be recovered. Fenced on both the
+            // claim token and revision so a concurrent edit that repairs the cadence
+            // wins over this observation of the broken one.
+            await deps.methods
+              .disableSchedule(
+                schedule.id,
+                'invalid_schedule',
+                schedule.claimToken,
+                schedule.configRevision,
+              )
+              .catch((err) => {
+                logger.warn(`[schedules] failed to disable unarmed ${schedule.id}:`, err);
+              });
             continue;
           }
           await deps.methods.armSchedule(schedule.id, nextRunAt).catch((err) => {
@@ -457,6 +482,7 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
       }
     },
     runTick,
+    reconcile,
   };
 
   // PRE-DRAIN: the default post-drain phase leaves this timer armed while the HTTP

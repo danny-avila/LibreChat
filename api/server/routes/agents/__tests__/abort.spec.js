@@ -779,6 +779,29 @@ describe('Agent Abort Endpoint', () => {
         expect(response.status).toBe(200);
       });
 
+      it('retries a failed stop-stamp resolution instead of swallowing it', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: false,
+          content: [],
+          jobData: { status: 'requires_action' },
+        });
+        mockMarkScheduledRunAbortPersisted
+          .mockRejectedValueOnce(new Error('transient mongo failure'))
+          .mockRejectedValueOnce(new Error('transient mongo failure'))
+          .mockResolvedValueOnce(undefined);
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: 'sched-conv' });
+
+        // A single swallowed write left the stamp unresolved: every subsequent Stop
+        // then answered 'in_progress' (a false success that retries nothing) while
+        // the owner barrier and reconciler stayed fenced for the stale window.
+        expect(mockMarkScheduledRunAbortPersisted).toHaveBeenCalledTimes(3);
+        expect(response.status).toBe(200);
+      });
+
       it('answers a duplicate Stop benignly while another attempt is in flight', async () => {
         mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
         mockRequestScheduledRunAbort.mockResolvedValueOnce('in_progress');
