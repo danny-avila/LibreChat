@@ -84,16 +84,17 @@ function CaptureSteersSetter() {
   return null;
 }
 
-function renderSteers(
-  steers: PendingSteer[],
-  options?: {
-    enableUserMsgMarkdown?: boolean;
-    appliedSteerIds?: string[];
-    defaultAction?: 'steer' | 'queue';
-    duringRunActive?: boolean;
-  },
-) {
-  return render(
+type RenderOptions = {
+  enableUserMsgMarkdown?: boolean;
+  appliedSteerIds?: string[];
+  defaultAction?: 'steer' | 'queue';
+  duringRunActive?: boolean;
+};
+
+/** Element builder shared by first render and rerenders — `initializeState`
+ *  only applies on mount, so a rerender just swaps the steering controls. */
+function steersElement(steers: PendingSteer[], options?: RenderOptions) {
+  return (
     <RecoilRoot
       initializeState={({ set }) => {
         set(store.pendingSteersByConvoId(CONVO_ID), steers);
@@ -111,8 +112,12 @@ function renderSteers(
         steering={steeringStub(options?.defaultAction, options?.duringRunActive)}
         onRestoreToComposer={mockRestoreToComposer}
       />
-    </RecoilRoot>,
+    </RecoilRoot>
   );
+}
+
+function renderSteers(steers: PendingSteer[], options?: RenderOptions) {
+  return render(steersElement(steers, options));
 }
 
 /** Opens a bubble's "…" menu and clicks one of its items, flushing the reclaim
@@ -789,5 +794,51 @@ describe('InFlightSteers — escalation while the run cannot accept a steer', ()
     });
     expect(mockCancelMutateAsync).not.toHaveBeenCalled();
     expect(mockRetrySteer).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Codex round 3: the entry-time disable cannot see a run that pauses AFTER
+ * the click, while the reclaim round-trip is in flight. The continuation
+ * reads the LIVE steering controls (latest-ref) and re-homes the words
+ * instead of resubmitting into a RUN_PAUSED rejection.
+ */
+describe('InFlightSteers — run pauses mid-reclaim', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCancelMutateAsync.mockReset();
+    mockCancelMutateAsync.mockResolvedValue({ removed: true });
+  });
+
+  it('re-homes without resubmitting when the run pauses mid-reclaim', async () => {
+    let resolveReclaim: (value: { removed: boolean }) => void = () => {};
+    mockCancelMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveReclaim = resolve;
+        }),
+    );
+    const steer: PendingSteer = {
+      steerId: 's1',
+      text: 'mid-pause',
+      status: 'pending',
+      createdAt: 1,
+    };
+    const view = renderSteers([steer]);
+    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
+    fireEvent.click(await screen.findByText('com_ui_interrupt_steer_now'));
+
+    view.rerender(steersElement([steer], { duringRunActive: false }));
+    await act(async () => {
+      resolveReclaim({ removed: true });
+    });
+
+    expect(mockRetrySteer).not.toHaveBeenCalled();
+    expect(mockQueueReclaimedSteer).toHaveBeenCalledWith(
+      expect.objectContaining({ steerId: 's1' }),
+    );
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_steer_run_paused_queued' }),
+    );
   });
 });
