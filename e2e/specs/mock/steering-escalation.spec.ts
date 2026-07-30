@@ -145,24 +145,19 @@ test.describe('escalating waiting messages to an interrupt', () => {
     const bubble = inFlightSteers(page).filter({ hasText: steerText });
     await expect(bubble).toBeVisible({ timeout: 10000 });
 
-    // Escalate from the bubble's overflow menu: ONE atomic in-place arm.
-    await bubble.getByRole('button', { name: 'More options' }).click();
+    // Escalate via the bubble's always-visible arrow control: ONE atomic
+    // in-place arm.
     const [armResponse] = await Promise.all([
       page.waitForResponse(isArmRequest, { timeout: 15000 }),
-      page.getByRole('menuitem', { name: 'Interrupt & steer now' }).click(),
+      bubble.getByTestId('steer-escalate-now').click(),
     ]);
     expect(armResponse.status()).toBe(200);
     expect(((await armResponse.json()) as { armed?: boolean }).armed).toBe(true);
 
     // Relabelled IN PLACE: still exactly one bubble with the same text, and
-    // an interrupting steer no longer offers escalation on reopen.
+    // an interrupting steer no longer offers its escalation control.
     await expect(inFlightSteers(page)).toHaveCount(1);
-    await bubble.getByRole('button', { name: 'More options' }).click();
-    await expect(page.getByRole('menuitem', { name: 'Cancel steering message' })).toBeVisible({
-      timeout: 5000,
-    });
-    await expect(page.getByRole('menuitem', { name: 'Interrupt & steer now' })).toHaveCount(0);
-    await page.keyboard.press('Escape');
+    await expect(bubble.getByTestId('steer-escalate-now')).toHaveCount(0);
 
     // The armed steer seals mid-stream and injects with no tool boundary.
     await expect(appliedSteerParts(page).filter({ hasText: steerText })).toHaveCount(1, {
@@ -196,7 +191,9 @@ test.describe('escalating waiting messages to an interrupt', () => {
     const row = queuedRows(page).filter({ hasText: queueText });
     await expect(row).toBeVisible({ timeout: 10000 });
 
+    // The toggle lives in the row menu's separated Preferences section.
     await row.getByRole('button', { name: 'More options' }).click();
+    await expect(page.getByText('Preferences', { exact: true })).toBeVisible({ timeout: 5000 });
     await page.getByRole('menuitem', { name: 'Always interrupt instead' }).click();
 
     // The toggle is live for the SAME run: plain Enter now routes the default
@@ -221,5 +218,47 @@ test.describe('escalating waiting messages to an interrupt', () => {
     await expect(page.getByRole('menuitem', { name: 'Wait for tool steps instead' })).toBeVisible({
       timeout: 5000,
     });
+  });
+
+  test('the dedicated shortcut escalates the newest waiting steer from the keyboard', async ({
+    page,
+  }) => {
+    test.setTimeout(150000);
+    const label = uniqueLabel('shortcut');
+    const steerText = `Shortcut-armed steer ${label}`;
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+    await establishConversation(page, `shortcut-setup-${label}`);
+
+    const run = await sendMessage(page, `E2E_SLOW_REPLY:${label}`);
+    expect(run.ok()).toBeTruthy();
+    await expect(messagesView(page).getByText('chunk-010')).toBeVisible({ timeout: 15000 });
+
+    await typeDuringRun(page, steerText);
+    const [steerResponse] = await Promise.all([
+      page.waitForResponse(isSteerRequest, { timeout: 15000 }),
+      messageInput(page).press('Enter'),
+    ]);
+    expect(steerResponse.status()).toBe(202);
+    await expect(inFlightSteers(page).filter({ hasText: steerText })).toBeVisible({
+      timeout: 10000,
+    });
+
+    // The dedicated command works from the composer (it is editing-allowed),
+    // pressing the newest waiting bubble's own arrow control.
+    await messageInput(page).click();
+    const [armResponse] = await Promise.all([
+      page.waitForResponse(isArmRequest, { timeout: 15000 }),
+      page.keyboard.press('ControlOrMeta+Shift+.'),
+    ]);
+    expect(armResponse.status()).toBe(200);
+    expect(((await armResponse.json()) as { armed?: boolean }).armed).toBe(true);
+
+    // And the armed steer seals mid-stream, same proof as the button path.
+    await expect(appliedSteerParts(page).filter({ hasText: steerText })).toHaveCount(1, {
+      timeout: 90000,
+    });
+    await expect(messagesView(page).getByText(SLOW_REPLY_LAST_CHUNK)).toHaveCount(0);
   });
 });

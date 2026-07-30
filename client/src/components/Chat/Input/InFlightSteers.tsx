@@ -7,7 +7,12 @@ import type { TFile, TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { PendingSteer } from '~/store/families';
 import type { MenuEntry } from './SteerMenu';
-import { RowMenu, useDefaultToggleEntry, useInterruptToggleEntry } from './SteerMenu';
+import {
+  RowMenu,
+  EscalateNowButton,
+  useDefaultToggleEntry,
+  useInterruptToggleEntry,
+} from './SteerMenu';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
 import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
@@ -145,6 +150,53 @@ const InFlightSteer = memo(function InFlightSteer({
   const setEscalating = useSetAtom(escalatingSteerFamily(conversationId));
 
   /**
+   * Escalate this waiting steer to an interrupt: ONE atomic server op flips
+   * `preempt` on the EXISTING queued item, so its FIFO position, id, and
+   * timestamp survive and there is no reclaim window to race. Every "too
+   * late" interleaving (drained, cancelled, run ended or replaced) is the
+   * same honest `armed: false`, and the chip is only relabelled on a
+   * confirmed durable arm. The escalating flag flips synchronously, before
+   * the request: the chip-derived gate cannot see this arm until the
+   * response lands, and the other escalation controls advertise "one
+   * interrupt at a time".
+   */
+  const escalate = useCallback(() => {
+    setEscalating(true);
+    void armSteer({ conversationId, steerId: steer.steerId })
+      .then(
+        (response) => {
+          if (response.armed === true) {
+            markSteerPreempt(steer.steerId);
+            return;
+          }
+          /* `armed: false` is deliberately ambiguous — injected, cancelled,
+           * re-homed, or run over — so the message only says the escalation
+           * lost, and the chip defers to the events for what happened. */
+          showToast({
+            message: localize(
+              response.code === 'PREEMPT_UNSUPPORTED'
+                ? 'com_ui_steer_preempt_unsupported'
+                : 'com_ui_steer_arm_lost_race',
+            ),
+            status: 'info',
+          });
+        },
+        () => {
+          showToast({ message: localize('com_ui_steer_arm_failed'), status: 'error' });
+        },
+      )
+      .finally(() => setEscalating(false));
+  }, [
+    armSteer,
+    conversationId,
+    steer.steerId,
+    setEscalating,
+    markSteerPreempt,
+    showToast,
+    localize,
+  ]);
+
+  /**
    * Takes the steer back off the server queue so its words can be re-homed.
    * The chip is left alone until the answer is known: only `reclaimed` proves
    * the words never entered the run, and the re-homing callers below own the
@@ -199,82 +251,6 @@ const InFlightSteer = memo(function InFlightSteer({
       },
     },
     {
-      key: 'queue',
-      label: localize('com_ui_convert_to_queue'),
-      icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
-      onClick: () => {
-        void reclaim().then((reclaimed) => {
-          if (reclaimed) {
-            steering.queueReclaimedSteer(steer);
-          }
-        });
-      },
-    },
-    /* Escalate a waiting steer to interrupt at the next safe token boundary.
-     * Reclaim first, same race rules as Edit: only `reclaimed` proves the
-     * words never entered the run, then `retrySteer` swaps this chip for a
-     * new preempting one. A run that ended mid-reclaim already queued the
-     * words — there is nothing left to interrupt. The escalation lock covers
-     * the reclaim window (no preempt chip exists yet to disable the other
-     * controls), and the fresh recheck before resubmitting catches an
-     * interrupt armed elsewhere meanwhile — those words re-home to the queue
-     * rather than breaking the one-interrupt invariant. Offered only while
-     * this steer is not already preempting. */
-    ...(preempting
-      ? []
-      : [
-          {
-            key: 'interrupt',
-            label: localize('com_ui_interrupt_steer_now'),
-            icon: <ZapOff className="h-4 w-4 text-amber-500" aria-hidden="true" />,
-            /* UX gate only — correctness lives in the server's atomic arm,
-             * which is fenced to this generation and refuses once the item
-             * left the queue. `!duringRunActive` covers answer mode, where
-             * `pausedOnApproval` stays false. */
-            disabled: interruptPending || steering.pausedOnApproval || !steering.duringRunActive,
-            /* One atomic server op: `preempt` flips on the EXISTING queued
-             * item, so its FIFO position, id, and timestamp survive and there
-             * is no reclaim window to race. Every "too late" interleaving
-             * (drained, cancelled, run ended or replaced) is the same honest
-             * `armed: false`, and the chip is only relabelled on a confirmed
-             * durable arm. */
-            onClick: () => {
-              /* Synchronously, before the request: the chip-derived gate
-               * cannot see this arm until the response lands, and the other
-               * escalation controls advertise "one interrupt at a time". */
-              setEscalating(true);
-              void armSteer({ conversationId, steerId: steer.steerId })
-                .then(
-                  (response) => {
-                    if (response.armed === true) {
-                      markSteerPreempt(steer.steerId);
-                      return;
-                    }
-                    /* `armed: false` is deliberately ambiguous — injected,
-                     * cancelled, re-homed, or run over — so the message only
-                     * says the escalation lost, and the chip defers to the
-                     * events for whatever actually happened. */
-                    showToast({
-                      message: localize(
-                        response.code === 'PREEMPT_UNSUPPORTED'
-                          ? 'com_ui_steer_preempt_unsupported'
-                          : 'com_ui_steer_arm_lost_race',
-                      ),
-                      status: 'info',
-                    });
-                  },
-                  () => {
-                    showToast({
-                      message: localize('com_ui_steer_arm_failed'),
-                      status: 'error',
-                    });
-                  },
-                )
-                .finally(() => setEscalating(false));
-            },
-          } satisfies MenuEntry,
-        ]),
-    {
       /* Non-destructive, but only when it is safe: cancel reliably first (the
        * optimistic hook removes the chip and restores it if the server would
        * still inject), then hand the words back to the composer ONLY on a
@@ -306,9 +282,20 @@ const InFlightSteer = memo(function InFlightSteer({
         });
       },
     },
-    toggleEntry,
-    interruptToggle,
+    {
+      key: 'queue',
+      label: localize('com_ui_convert_to_queue'),
+      icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
+      onClick: () => {
+        void reclaim().then((reclaimed) => {
+          if (reclaimed) {
+            steering.queueReclaimedSteer(steer);
+          }
+        });
+      },
+    },
   ];
+  const preferences: MenuEntry[] = [toggleEntry, interruptToggle];
 
   return (
     <div
@@ -416,8 +403,24 @@ const InFlightSteer = memo(function InFlightSteer({
            * controls on the queued rows). `sticky` keeps it in view while the
            * user scrolls through a tall, expanded steer (the stack scrolls once
            * it passes 35vh). */
-          <div data-testid="steer-controls" className="sticky top-2 flex shrink-0 items-center">
-            <RowMenu label={localize('com_ui_more_options')} entries={entries} />
+          <div
+            data-testid="steer-controls"
+            className="sticky top-2 flex shrink-0 items-center gap-1"
+          >
+            {!preempting && (
+              <EscalateNowButton
+                surface="bubble"
+                disabled={
+                  interruptPending || steering.pausedOnApproval || !steering.duringRunActive
+                }
+                onClick={escalate}
+              />
+            )}
+            <RowMenu
+              label={localize('com_ui_more_options')}
+              entries={entries}
+              preferences={preferences}
+            />
           </div>
         )}
       </div>
