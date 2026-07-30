@@ -55,6 +55,12 @@ export const BACKGROUND_STATUS_ATTACHMENT_TYPE = 'background_task_status';
 export const CHECK_BACKGROUND_TASK_NAME: string = Constants.CHECK_BACKGROUND_TASK;
 
 /**
+ * Prefix of the lazily-expanded MCP placeholder (`mcp_all<delim><server>`).
+ * Options recorded under it can never match a real expanded tool name.
+ */
+const MCP_ALL_PLACEHOLDER_PREFIX = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
+
+/**
  * Tools that must never be backgrounded — they either run through the SDK's
  * direct/host-special path (so the host `ON_TOOL_EXECUTE` interception never
  * sees them), depend on synchronous artifact/code-session continuity, or are
@@ -418,35 +424,74 @@ export function applyBackgroundToolCalls(params: {
 }
 
 /**
- * Builds `tool_options` marking each eligible tool as backgroundable. Ephemeral
- * and model-spec agents carry no `tool_options`, so the blanket spec/ephemeral
- * toggle is expanded per-tool here to reuse the same per-tool opt-in the saved
- * agent path uses. Returns undefined when disabled or nothing is eligible.
+ * Builds `tool_options` marking eligible tools as backgroundable. Ephemeral
+ * and model-spec agents carry no `tool_options`, so the spec/ephemeral toggle
+ * is expanded per-tool here to reuse the same per-tool opt-in the saved agent
+ * path uses. Returns undefined when disabled or nothing is eligible.
+ *
+ * A model spec's `runInBackground` selects the scope: `true` opts in every
+ * eligible tool, while a string array opts in ONLY the named ones (matched
+ * exactly against the spec's resolved tool ids). Selecting per tool matters
+ * more here than for intent labels — backgrounding changes execution
+ * semantics, so an admin may want it on one slow MCP call without letting the
+ * model detach every other tool in the spec. Names that are not eligible (see
+ * {@link EXCLUDED_BACKGROUND_TOOL_NAMES}) or not present in `tools` are logged
+ * and skipped; a silent no-op would leave a typo undiagnosable. The ephemeral
+ * toggle stays boolean — it has no per-tool UI to drive it.
  *
  * Note: MCP servers that expand lazily (via the `mcp_all` placeholder for
- * overlay/user-connection servers) are not known by name at this point, so
- * their tools are not marked; standard cached MCP servers push real names and
- * are covered.
+ * overlay/user-connection servers) are not known by name at this point.
+ * `applyBackgroundToolCalls` matches expanded names exactly, so an option
+ * recorded under the placeholder would silently never apply — those entries
+ * are skipped rather than synthesized dead. Standard cached MCP servers push
+ * real names and are covered.
  */
 export function synthesizeBackgroundToolOptions(
   tools: string[],
   sources: {
     ephemeralAgent?: { run_in_background?: boolean } | null;
-    modelSpec?: { runInBackground?: boolean } | null;
+    modelSpec?: { runInBackground?: boolean | string[] } | null;
   },
 ): AgentToolOptions | undefined {
+  const specSelection = sources.modelSpec?.runInBackground;
+  const selectedNames = Array.isArray(specSelection) ? specSelection : undefined;
+  const ephemeralEnabled = sources.ephemeralAgent?.run_in_background === true;
   const enabled =
-    sources.ephemeralAgent?.run_in_background === true ||
-    sources.modelSpec?.runInBackground === true;
+    ephemeralEnabled ||
+    specSelection === true ||
+    (selectedNames != null && selectedNames.length > 0);
   if (!enabled) {
     return undefined;
   }
+
+  /** An explicit list narrows the scope; the ephemeral/`true` paths do not. */
+  const narrowTo =
+    selectedNames != null && !ephemeralEnabled && specSelection !== true
+      ? new Set(selectedNames)
+      : undefined;
+
   const toolOptions: AgentToolOptions = {};
   for (const name of tools) {
+    if (name.startsWith(MCP_ALL_PLACEHOLDER_PREFIX)) {
+      continue;
+    }
+    if (narrowTo != null && !narrowTo.has(name)) {
+      continue;
+    }
     if (isBackgroundEligibleToolName(name)) {
       toolOptions[name] = { run_in_background: true };
     }
   }
+
+  if (narrowTo != null) {
+    const unmatched = [...narrowTo].filter((name) => toolOptions[name] == null);
+    if (unmatched.length > 0) {
+      logger.warn(
+        `[background] runInBackground named ${unmatched.length} tool(s) that are not eligible or not equipped on this spec: ${unmatched.join(', ')}`,
+      );
+    }
+  }
+
   return Object.keys(toolOptions).length > 0 ? toolOptions : undefined;
 }
 

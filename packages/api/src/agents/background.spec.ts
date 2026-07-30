@@ -1,3 +1,5 @@
+import { logger } from '@librechat/data-schemas';
+import { Constants } from 'librechat-data-provider';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import {
   isBackgroundEligibleToolName,
@@ -299,6 +301,59 @@ describe('synthesizeBackgroundToolOptions', () => {
         modelSpec: { runInBackground: false },
       }),
     ).toBeUndefined();
+  });
+
+  it('narrows to the named tools when the model spec lists them', () => {
+    const options = synthesizeBackgroundToolOptions(
+      ['slow_report_mcp_analytics', 'search_mcp_docs', 'execute_code'],
+      { modelSpec: { runInBackground: ['slow_report_mcp_analytics'] } },
+    );
+    expect(options).toEqual({ slow_report_mcp_analytics: { run_in_background: true } });
+  });
+
+  it('still enforces eligibility for explicitly named tools', () => {
+    /** Backgrounding these would silently drop attachments/citations or break
+     *  artifact continuity, so a list must not be able to force them on. */
+    const options = synthesizeBackgroundToolOptions(
+      ['search_mcp_docs', 'web_search', 'ask_user_question'],
+      { modelSpec: { runInBackground: ['search_mcp_docs', 'web_search', 'ask_user_question'] } },
+    );
+    expect(options).toEqual({ search_mcp_docs: { run_in_background: true } });
+  });
+
+  it('treats an empty list as disabled', () => {
+    expect(
+      synthesizeBackgroundToolOptions(['search_mcp_docs'], { modelSpec: { runInBackground: [] } }),
+    ).toBeUndefined();
+  });
+
+  it('warns about named tools the spec does not equip, rather than silently skipping', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const options = synthesizeBackgroundToolOptions(['search_mcp_docs'], {
+      modelSpec: { runInBackground: ['search_mcp_docs', 'typo_tool_name'] },
+    });
+    expect(options).toEqual({ search_mcp_docs: { run_in_background: true } });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('typo_tool_name'));
+    warn.mockRestore();
+  });
+
+  it('the ephemeral toggle stays global even when the spec narrows', () => {
+    const options = synthesizeBackgroundToolOptions(['search_mcp_docs', 'lookup_customer'], {
+      ephemeralAgent: { run_in_background: true },
+      modelSpec: { runInBackground: ['search_mcp_docs'] },
+    });
+    expect(options).toEqual({
+      search_mcp_docs: { run_in_background: true },
+      lookup_customer: { run_in_background: true },
+    });
+  });
+
+  it('skips lazily-expanded mcp_all placeholders (exact-name matching would never apply)', () => {
+    const placeholder = `${Constants.mcp_all}${Constants.mcp_delimiter}overlay_server`;
+    const options = synthesizeBackgroundToolOptions([placeholder, 'search_mcp_docs'], {
+      ephemeralAgent: { run_in_background: true },
+    });
+    expect(options).toEqual({ search_mcp_docs: { run_in_background: true } });
   });
 
   it('marks only eligible tools (excludes HITL/attachment built-ins; code tools are eligible)', () => {

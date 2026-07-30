@@ -56,11 +56,13 @@ export type TModelSpec = {
   /** Equip the spec's ephemeral agent with the `ask_user_question` HITL tool. */
   askUserQuestion?: boolean;
   /**
-   * Let the model dispatch this spec's eligible tool calls in the background
-   * (poll results via `check_background_task`). Requires the `run_in_background`
-   * agent capability to be enabled by the admin.
+   * Let the model dispatch tool calls in the background (poll results via
+   * `check_background_task`). `true` opts in every eligible tool; a string
+   * array opts in only the named tools, matched against the spec's resolved
+   * tool ids (e.g. `['slow_report_mcp_analytics']`). Requires the
+   * `run_in_background` agent capability to be enabled by the admin.
    */
-  runInBackground?: boolean;
+  runInBackground?: boolean | string[];
   /**
    * Inject the `intent` label param so each call streams a live status label.
    * `true` opts in every eligible tool; a string array opts in only the named
@@ -104,7 +106,7 @@ export const tModelSpecSchema = z.object({
   executeCode: z.boolean().optional(),
   memory: z.boolean().optional(),
   askUserQuestion: z.boolean().optional(),
-  runInBackground: z.boolean().optional(),
+  runInBackground: z.union([z.boolean(), z.array(z.string())]).optional(),
   describeIntent: z.union([z.boolean(), z.array(z.string())]).optional(),
   artifacts: z.union([z.string(), z.boolean()]).optional(),
   mcpServers: z.array(z.string()).optional(),
