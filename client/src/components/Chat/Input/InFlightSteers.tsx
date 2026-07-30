@@ -1,5 +1,5 @@
 import { memo, useId, useRef, useMemo, useState, useEffect, useCallback } from 'react';
-import { useSetAtom } from 'jotai';
+import { useSetAtom, useAtomValue } from 'jotai';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import { X, Zap, ZapOff, Clock, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
@@ -9,11 +9,11 @@ import type { PendingSteer } from '~/store/families';
 import type { MenuEntry } from './SteerMenu';
 import { RowMenu, useDefaultToggleEntry, useInterruptToggleEntry } from './SteerMenu';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
+import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { useSteerCancel, useSteerReclaim, useLocalize } from '~/hooks';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
-import { steerOverlayHeightFamily } from '~/store/steer';
 import { carriedSteerContext, cn } from '~/utils';
 import store from '~/store';
 
@@ -130,6 +130,20 @@ const InFlightSteer = memo(function InFlightSteer({
     [conversationId],
   );
 
+  /** Fresh read at resubmit time: an interrupt armed while this escalation's
+   *  reclaim was in flight (another bubble, a queued row, the composer chord)
+   *  means resubmitting would break the one-interrupt invariant. */
+  const hasUnresolvedInterrupt = useRecoilCallback(
+    ({ snapshot }) =>
+      () =>
+        snapshot
+          .getLoadable(store.pendingSteersByConvoId(conversationId))
+          .getValue()
+          .some((item) => item.preempt === true && item.status !== 'failed'),
+    [conversationId],
+  );
+  const setEscalating = useSetAtom(escalatingSteerFamily(conversationId));
+
   /**
    * Takes the steer back off the server queue so its words can be re-homed.
    * The chip is left alone until the answer is known: only `reclaimed` proves
@@ -200,37 +214,51 @@ const InFlightSteer = memo(function InFlightSteer({
      * Reclaim first, same race rules as Edit: only `reclaimed` proves the
      * words never entered the run, then `retrySteer` swaps this chip for a
      * new preempting one. A run that ended mid-reclaim already queued the
-     * words — there is nothing left to interrupt. Offered only while this
-     * steer is not already preempting; disabled while another interrupt is
-     * unresolved or the run is paused on approval. */
+     * words — there is nothing left to interrupt. The escalation lock covers
+     * the reclaim window (no preempt chip exists yet to disable the other
+     * controls), and the fresh recheck before resubmitting catches an
+     * interrupt armed elsewhere meanwhile — those words re-home to the queue
+     * rather than breaking the one-interrupt invariant. Offered only while
+     * this steer is not already preempting. */
     ...(preempting
       ? []
       : [
           {
             key: 'interrupt',
-            label: localize('com_ui_interrupt_now'),
+            label: localize('com_ui_interrupt_steer_now'),
             icon: <ZapOff className="h-4 w-4 text-amber-500" aria-hidden="true" />,
             disabled: interruptPending || steering.pausedOnApproval,
             onClick: () => {
-              void reclaim().then((reclaimed) => {
-                if (!reclaimed) {
-                  return;
-                }
-                if (hasSettled(steer.steerId)) {
-                  showToast({
-                    message: localize('com_ui_steer_run_ended_queued'),
-                    status: 'info',
-                  });
-                  return;
-                }
-                steering.retrySteer(
-                  steer.steerId,
-                  steer.text,
-                  steer.files,
-                  carriedSteerContext(steer),
-                  { preempt: true },
-                );
-              });
+              setEscalating(true);
+              void reclaim()
+                .then((reclaimed) => {
+                  if (!reclaimed) {
+                    return;
+                  }
+                  if (hasSettled(steer.steerId)) {
+                    showToast({
+                      message: localize('com_ui_steer_run_ended_queued'),
+                      status: 'info',
+                    });
+                    return;
+                  }
+                  if (hasUnresolvedInterrupt()) {
+                    steering.queueReclaimedSteer(steer);
+                    showToast({
+                      message: localize('com_ui_steer_interrupt_busy_queued'),
+                      status: 'info',
+                    });
+                    return;
+                  }
+                  steering.retrySteer(
+                    steer.steerId,
+                    steer.text,
+                    steer.files,
+                    carriedSteerContext(steer),
+                    { preempt: true },
+                  );
+                })
+                .finally(() => setEscalating(false));
             },
           } satisfies MenuEntry,
         ]),
@@ -415,10 +443,13 @@ const InFlightSteers = memo(function InFlightSteers({
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const inFlight = useMemo(() => steers.filter((steer) => steer.status !== 'failed'), [steers]);
   /** Mirrors `PendingSteerChips`: while one interrupt is unresolved, every
-   *  other escalation control disables rather than racing the same seal. */
+   *  other escalation control disables rather than racing the same seal. The
+   *  escalating flag covers the reclaim window, before a preempt chip exists
+   *  for the chip-derived check to see. */
+  const escalating = useAtomValue(escalatingSteerFamily(conversationId));
   const interruptPending = useMemo(
-    () => inFlight.some((steer) => steer.preempt === true),
-    [inFlight],
+    () => escalating || inFlight.some((steer) => steer.preempt === true),
+    [escalating, inFlight],
   );
   const setOverlayHeight = useSetAtom(steerOverlayHeightFamily(conversationId));
 
