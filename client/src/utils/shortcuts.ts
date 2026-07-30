@@ -209,6 +209,73 @@ export function resolveSubmitOverrideAction(
   return 'none';
 }
 
+export type ComposerKeyAction = ComposerEnterAction | 'block' | 'interrupt' | 'preempt' | 'other';
+
+export interface ComposerKeyContext {
+  isComposing: boolean;
+  isSubmitting: boolean;
+  allowSubmitWhileGenerating: boolean;
+  hasDuringRunModifier: boolean;
+  enterToSend: boolean;
+  submitOverride: ShortcutBinding | null | undefined;
+  /** `bindingHash`es of chords bound to global shortcuts that run while typing. */
+  yieldedChords: ReadonlySet<string>;
+}
+
+/**
+ * The composer's entire Enter decision table. Every verdict is terminal — no
+ * interpretation falls through into another, which is what previously let a
+ * chord that one branch declined reach a branch it never should have.
+ * `yieldedChords` belong to the document-level handler in
+ * `useKeyboardShortcuts`, which runs after the composer and does not check
+ * `defaultPrevented`, so the composer must not act on them at all. `block`
+ * means preventDefault with no action.
+ */
+export function resolveComposerKeyDown(
+  e: KeyboardEvent,
+  ctx: ComposerKeyContext,
+): ComposerKeyAction {
+  if (e.key !== 'Enter') {
+    return 'none';
+  }
+  if (ctx.isSubmitting && !ctx.allowSubmitWhileGenerating) {
+    return 'none';
+  }
+  const binding = bindingFromEvent(e);
+  if (binding != null && ctx.yieldedChords.has(bindingHash(binding))) {
+    return 'none';
+  }
+  const duringRun = ctx.isSubmitting && ctx.allowSubmitWhileGenerating && ctx.hasDuringRunModifier;
+  if (duringRun && !ctx.isComposing) {
+    if (e.altKey) {
+      return 'interrupt';
+    }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !bindingsMatch(binding, ctx.submitOverride)) {
+      return 'preempt';
+    }
+    if ((e.ctrlKey || e.metaKey) && ctx.enterToSend && ctx.submitOverride === undefined) {
+      return 'other';
+    }
+  }
+  if (ctx.submitOverride !== undefined) {
+    if (ctx.isComposing) {
+      return 'none';
+    }
+    return resolveSubmitOverrideAction(binding, ctx.submitOverride, ctx.enterToSend);
+  }
+  const isCtrlEnter = e.ctrlKey || e.metaKey;
+  if (!ctx.enterToSend && !isCtrlEnter && !ctx.isComposing) {
+    return 'newline';
+  }
+  if ((!e.shiftKey || isCtrlEnter) && !ctx.isComposing) {
+    return 'submit';
+  }
+  if (!e.shiftKey) {
+    return 'block';
+  }
+  return 'none';
+}
+
 export function isCancelKey(e: KeyboardEvent): boolean {
   return e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
 }

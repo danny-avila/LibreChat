@@ -278,6 +278,19 @@ export const shortcutDefinitions = {
 } as const satisfies Record<string, ShortcutDefinition>;
 
 export type ShortcutActionId = keyof typeof shortcutDefinitions;
+
+/**
+ * Shortcuts the document-level handler still runs while an input, textarea, or
+ * contenteditable has focus. The composer yields chords bound to these so only
+ * one handler acts on a keypress.
+ */
+export const EDITING_ALLOWED_SHORTCUTS: ReadonlySet<ShortcutActionId> = new Set([
+  'focusChat',
+  'focusSearch',
+  'showShortcuts',
+  'submitMessage',
+]);
+
 export type ShortcutAction = ShortcutDefinition & {
   id: ShortcutActionId;
   /** Returns `false` when the action was a no-op so the native key event is not prevented. */
@@ -982,13 +995,7 @@ export default function useKeyboardShortcuts() {
         return;
       }
 
-      const allowedWhileEditing: ShortcutActionId[] = [
-        'focusChat',
-        'focusSearch',
-        'showShortcuts',
-        'submitMessage',
-      ];
-      if (isEditing && !allowedWhileEditing.includes(matchedId)) {
+      if (isEditing && !EDITING_ALLOWED_SHORTCUTS.has(matchedId)) {
         return;
       }
 
