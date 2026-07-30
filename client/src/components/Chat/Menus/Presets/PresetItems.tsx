@@ -177,7 +177,7 @@ const PresetItems: FC<{
                                 'm-0 h-full rounded-md bg-transparent p-2 text-gray-400 hover:text-gray-700 focus:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 dark:focus:text-gray-200',
                                 defaultPreset?.presetId === presetId
                                   ? ''
-                                  : 'sm:invisible sm:group-focus-within:visible sm:group-hover:visible',
+                                  : 'sm:opacity-0 sm:transition-opacity sm:focus:opacity-100 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100',
                               )}
                               onClick={(e) => {
                                 e.preventDefault();
@@ -201,7 +201,7 @@ const PresetItems: FC<{
                           aria-label={localize('com_ui_edit')}
                           render={
                             <button
-                              className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-700 focus:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 dark:focus:text-gray-200 sm:invisible sm:group-focus-within:visible sm:group-hover:visible"
+                              className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-700 focus:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 dark:focus:text-gray-200 sm:opacity-0 sm:transition-opacity sm:focus:opacity-100 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -224,7 +224,7 @@ const PresetItems: FC<{
                           aria-label={localize('com_ui_delete')}
                           render={
                             <button
-                              className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-600 focus:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200 dark:focus:text-gray-200 sm:invisible sm:group-focus-within:visible sm:group-hover:visible"
+                              className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-600 focus:text-gray-600 dark:text-gray-400 dark:hover:text-gray-200 dark:focus:text-gray-200 sm:opacity-0 sm:transition-opacity sm:focus:opacity-100 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
