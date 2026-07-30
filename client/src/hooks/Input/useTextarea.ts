@@ -8,6 +8,7 @@ import type { KeyboardEvent } from 'react';
 import {
   parseBinding,
   isMacPlatform,
+  bindingsMatch,
   bindingFromEvent,
   resolveSubmitOverrideAction,
 } from '~/utils/shortcuts';
@@ -213,10 +214,15 @@ export default function useTextarea({
           return;
         }
         // Before the bare Ctrl/Cmd branch below, which would otherwise
-        // swallow the shifted chord. Yields to a rebound submit shortcut for
-        // the same reason that branch does: a user who bound submit to this
-        // chord must keep getting submit.
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && submitOverride === undefined) {
+        // swallow the shifted chord. Yields only to a submit shortcut rebound
+        // to THIS chord — unlike the default Ctrl/Cmd+Enter branch below, an
+        // unrelated rebinding (or an explicit unbind) leaves this chord free,
+        // so it must keep the meaning the hovercard advertises.
+        if (
+          (e.ctrlKey || e.metaKey) &&
+          e.shiftKey &&
+          !bindingsMatch(bindingFromEvent(e.nativeEvent), submitOverride)
+        ) {
           e.preventDefault();
           onDuringRunModifier('preempt');
           return;

@@ -145,6 +145,18 @@ export function bindingHash(binding: ShortcutBinding): string {
   return `${flags}|${binding.key}`;
 }
 
+/**
+ * Whether a pressed chord is the one a shortcut is bound to. Absent on either
+ * side means no match: an unset (`undefined`) or explicitly unbound (`null`)
+ * shortcut is not something a keypress can match.
+ */
+export function bindingsMatch(
+  a: ShortcutBinding | null | undefined,
+  b: ShortcutBinding | null | undefined,
+): boolean {
+  return a != null && b != null && bindingHash(a) === bindingHash(b);
+}
+
 export function hasModifier(binding: ShortcutBinding): boolean {
   return binding.meta || binding.ctrl || binding.alt;
 }
@@ -185,10 +197,7 @@ export function resolveSubmitOverrideAction(
   if (!eventBinding || eventBinding.key !== 'Enter') {
     return 'none';
   }
-  const matchesChord =
-    submitOverride != null &&
-    submitOverride.key === 'Enter' &&
-    bindingHash(eventBinding) === bindingHash(submitOverride);
+  const matchesChord = bindingsMatch(eventBinding, submitOverride);
   const isPlainEnter =
     !eventBinding.meta && !eventBinding.ctrl && !eventBinding.alt && !eventBinding.shift;
   if (matchesChord || (isPlainEnter && enterToSend)) {
