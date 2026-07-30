@@ -687,15 +687,19 @@ export default function useSteering({
    *  steer availability, not the default action — a queue-preferring user
    *  clicking send-now explicitly asked to inject into the live run. The
    *  item's attachments ride the steer; its quotes/skills travel as the
-   *  restore context so a degraded steer requeues/sends with them intact. */
+   *  restore context so a degraded steer requeues/sends with them intact.
+   *  `preempt` escalates the steer to interrupt at the next safe token
+   *  boundary; it only means something on the live-run path. */
   const sendQueuedNow = useCallback(
-    (item: QueuedMessage) => {
+    (item: QueuedMessage, opts?: { preempt?: boolean }) => {
       const taken = takeQueued(item.id) ?? item;
       if (duringRunActive && canSteer) {
-        submitSteer(taken.text, taken.files, {
-          quotes: taken.quotes,
-          manualSkills: taken.manualSkills,
-        });
+        submitSteer(
+          taken.text,
+          taken.files,
+          { quotes: taken.quotes, manualSkills: taken.manualSkills },
+          opts?.preempt === true ? { preempt: true } : undefined,
+        );
         return;
       }
       if (!isSubmitting) {

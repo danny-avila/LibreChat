@@ -7,12 +7,12 @@ import type { TFile, TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { PendingSteer } from '~/store/families';
 import type { MenuEntry } from './SteerMenu';
+import { RowMenu, useDefaultToggleEntry, useInterruptToggleEntry } from './SteerMenu';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { useSteerCancel, useSteerReclaim, useLocalize } from '~/hooks';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
-import { RowMenu, useDefaultToggleEntry } from './SteerMenu';
 import { steerOverlayHeightFamily } from '~/store/steer';
 import { carriedSteerContext, cn } from '~/utils';
 import store from '~/store';
@@ -64,11 +64,13 @@ const InFlightSteer = memo(function InFlightSteer({
   steer,
   steering,
   conversationId,
+  interruptPending,
   onRestoreToComposer,
 }: {
   steer: PendingSteer;
   steering: SteeringControls;
   conversationId: string;
+  interruptPending: boolean;
   onRestoreToComposer: RestoreToComposer;
 }) {
   const localize = useLocalize();
@@ -76,6 +78,7 @@ const InFlightSteer = memo(function InFlightSteer({
   const cancelSteer = useSteerCancel(conversationId);
   const reclaimSteer = useSteerReclaim(conversationId);
   const toggleEntry = useDefaultToggleEntry(steering);
+  const interruptToggle = useInterruptToggleEntry();
   const enableUserMsgMarkdown = useRecoilValue<boolean>(store.enableUserMsgMarkdown);
   const [selectedFile, setSelectedFile] = useState<Partial<TFile> | null>(null);
   const handlePreviewClose = useCallback((open: boolean) => {
@@ -193,6 +196,44 @@ const InFlightSteer = memo(function InFlightSteer({
         });
       },
     },
+    /* Escalate a waiting steer to interrupt at the next safe token boundary.
+     * Reclaim first, same race rules as Edit: only `reclaimed` proves the
+     * words never entered the run, then `retrySteer` swaps this chip for a
+     * new preempting one. A run that ended mid-reclaim already queued the
+     * words — there is nothing left to interrupt. Offered only while this
+     * steer is not already preempting; disabled while another interrupt is
+     * unresolved or the run is paused on approval. */
+    ...(preempting
+      ? []
+      : [
+          {
+            key: 'interrupt',
+            label: localize('com_ui_interrupt_now'),
+            icon: <ZapOff className="h-4 w-4 text-amber-500" aria-hidden="true" />,
+            disabled: interruptPending || steering.pausedOnApproval,
+            onClick: () => {
+              void reclaim().then((reclaimed) => {
+                if (!reclaimed) {
+                  return;
+                }
+                if (hasSettled(steer.steerId)) {
+                  showToast({
+                    message: localize('com_ui_steer_run_ended_queued'),
+                    status: 'info',
+                  });
+                  return;
+                }
+                steering.retrySteer(
+                  steer.steerId,
+                  steer.text,
+                  steer.files,
+                  carriedSteerContext(steer),
+                  { preempt: true },
+                );
+              });
+            },
+          } satisfies MenuEntry,
+        ]),
     {
       /* Non-destructive, but only when it is safe: cancel reliably first (the
        * optimistic hook removes the chip and restores it if the server would
@@ -226,6 +267,7 @@ const InFlightSteer = memo(function InFlightSteer({
       },
     },
     toggleEntry,
+    interruptToggle,
   ];
 
   return (
@@ -372,6 +414,12 @@ const InFlightSteers = memo(function InFlightSteers({
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const inFlight = useMemo(() => steers.filter((steer) => steer.status !== 'failed'), [steers]);
+  /** Mirrors `PendingSteerChips`: while one interrupt is unresolved, every
+   *  other escalation control disables rather than racing the same seal. */
+  const interruptPending = useMemo(
+    () => inFlight.some((steer) => steer.preempt === true),
+    [inFlight],
+  );
   const setOverlayHeight = useSetAtom(steerOverlayHeightFamily(conversationId));
 
   /** Steers append newest-last, so an overflowing stack would sit scrolled to
@@ -434,6 +482,7 @@ const InFlightSteers = memo(function InFlightSteers({
           steer={steer}
           steering={steering}
           conversationId={conversationId}
+          interruptPending={interruptPending}
           onRestoreToComposer={onRestoreToComposer}
         />
       ))}

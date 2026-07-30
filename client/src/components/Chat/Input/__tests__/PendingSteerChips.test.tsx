@@ -1,12 +1,13 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { render, screen, fireEvent } from '@testing-library/react';
+import type { PendingSteer, QueuedMessage } from '~/store/families';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
-import type { QueuedMessage } from '~/store/families';
 import PendingSteerChips from '../PendingSteerChips';
 import store from '~/store';
 
 const mockRemoveQueued = jest.fn();
+const mockSendQueuedNow = jest.fn();
 const mockRestoreToComposer = jest.fn(() => true);
 const mockEditToComposer = jest.fn();
 
@@ -16,27 +17,35 @@ jest.mock('~/hooks', () => ({
 
 const CONVO_ID = 'convo-q';
 
-const steeringStub = () =>
+const steeringStub = (overrides: Partial<SteeringControls> = {}) =>
   ({
     queueKey: CONVO_ID,
     defaultAction: 'steer',
     duringRunActive: false,
     canSteer: false,
+    pausedOnApproval: false,
     removeQueued: mockRemoveQueued,
-    sendQueuedNow: jest.fn(),
+    sendQueuedNow: mockSendQueuedNow,
     setDefaultAction: jest.fn(),
+    ...overrides,
   }) as unknown as SteeringControls;
 
-function renderChips(queued: QueuedMessage[]) {
+function renderChips(
+  queued: QueuedMessage[],
+  options?: { steering?: Partial<SteeringControls>; steers?: PendingSteer[] },
+) {
   return render(
     <RecoilRoot
       initializeState={({ set }) => {
         set(store.queuedMessagesByConvoId(CONVO_ID), queued);
+        if (options?.steers != null) {
+          set(store.pendingSteersByConvoId(CONVO_ID), options.steers);
+        }
       }}
     >
       <PendingSteerChips
         conversationId={CONVO_ID}
-        steering={steeringStub()}
+        steering={steeringStub(options?.steering)}
         onEditToComposer={mockEditToComposer}
         onRestoreToComposer={mockRestoreToComposer}
       />
@@ -81,5 +90,61 @@ describe('PendingSteerChips — queued trash', () => {
 
     expect(mockRestoreToComposer).toHaveBeenCalled();
     expect(mockRemoveQueued).toHaveBeenCalledWith('q2');
+  });
+});
+
+/**
+ * The queued row's escalation: interrupt & steer this one message now, at the
+ * next safe token boundary, instead of waiting for the run to end. Offered
+ * only while a live run can accept a steer; disabled while another interrupt
+ * is unresolved or the run is paused on approval, since a second preempt
+ * would race the same seal (or draw the server's 409).
+ */
+describe('PendingSteerChips — queued interrupt-now', () => {
+  const liveRun = { duringRunActive: true, canSteer: true };
+  const queuedMessage: QueuedMessage = { id: 'q1', text: 'urgent one', createdAt: 1 };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('escalates a queued message as an interrupt steer', () => {
+    renderChips([queuedMessage], { steering: liveRun });
+    fireEvent.click(screen.getByTestId('queued-interrupt-now'));
+
+    expect(mockSendQueuedNow).toHaveBeenCalledWith(expect.objectContaining({ id: 'q1' }), {
+      preempt: true,
+    });
+  });
+
+  it('offers no escalation outside a steerable run', () => {
+    renderChips([queuedMessage]);
+    expect(screen.queryByTestId('queued-interrupt-now')).toBeNull();
+  });
+
+  it('disables escalation while another interrupt is unresolved', () => {
+    renderChips([queuedMessage], {
+      steering: liveRun,
+      steers: [{ steerId: 'p1', text: 'sealing', status: 'pending', createdAt: 1, preempt: true }],
+    });
+    const button = screen.getByTestId('queued-interrupt-now');
+    expect(button).toBeDisabled();
+
+    fireEvent.click(button);
+    expect(mockSendQueuedNow).not.toHaveBeenCalled();
+  });
+
+  it('disables escalation while the run is paused on approval', () => {
+    renderChips([queuedMessage], { steering: { ...liveRun, pausedOnApproval: true } });
+    expect(screen.getByTestId('queued-interrupt-now')).toBeDisabled();
+  });
+
+  it('offers the always-interrupt preference in the row menu and flips it', async () => {
+    renderChips([queuedMessage], { steering: liveRun });
+    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
+    fireEvent.click(await screen.findByText('com_ui_always_interrupt'));
+
+    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
+    expect(await screen.findByText('com_ui_wait_for_tool_steps')).toBeInTheDocument();
   });
 });

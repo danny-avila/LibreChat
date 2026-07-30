@@ -12,6 +12,7 @@ const mockCancelMutateAsync = jest.fn();
 const mockShowToast = jest.fn();
 const mockQueueReclaimedSteer = jest.fn();
 const mockRemoveSteer = jest.fn();
+const mockRetrySteer = jest.fn();
 const mockSetDefaultAction = jest.fn();
 const mockRestoreToComposer = jest.fn();
 
@@ -67,7 +68,9 @@ const CONVO_ID = 'convo-in-flight';
 const steeringStub = (defaultAction: 'steer' | 'queue' = 'steer') =>
   ({
     defaultAction,
+    pausedOnApproval: false,
     removeSteer: mockRemoveSteer,
+    retrySteer: mockRetrySteer,
     setDefaultAction: mockSetDefaultAction,
     queueReclaimedSteer: mockQueueReclaimedSteer,
   }) as unknown as SteeringControls;
@@ -574,5 +577,77 @@ describe('InFlightSteers', () => {
     } finally {
       offsetHeight.mockRestore();
     }
+  });
+});
+
+/**
+ * The bubble's "Interrupt now" escalation: reclaim the waiting steer off the
+ * server queue, then resubmit it as a preempt via `retrySteer` — only a
+ * `reclaimed` outcome proves the words never entered the run, so anything
+ * else must not resubmit (the text would land twice).
+ */
+describe('InFlightSteers — interrupt-now escalation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCancelMutateAsync.mockResolvedValue({ removed: true });
+    mockRestoreToComposer.mockReturnValue(true);
+  });
+
+  it('escalates a waiting steer to an interrupt once reclaimed', async () => {
+    renderSteers([{ steerId: 's1', text: 'hold on', status: 'pending', createdAt: 1 }]);
+    await clickMenuItem('com_ui_interrupt_now');
+
+    expect(mockCancelMutateAsync).toHaveBeenCalled();
+    expect(mockRetrySteer).toHaveBeenCalledWith('s1', 'hold on', undefined, {}, { preempt: true });
+  });
+
+  it('does not offer escalation on a steer that is already interrupting', async () => {
+    renderSteers([
+      { steerId: 's1', text: 'already sealing', status: 'pending', createdAt: 1, preempt: true },
+    ]);
+    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
+    expect(await screen.findByText('com_ui_steer_cancel')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_interrupt_now')).toBeNull();
+  });
+
+  it('does not resubmit when the steer already entered the run', async () => {
+    mockCancelMutateAsync.mockResolvedValue({ removed: false });
+    renderSteers([{ steerId: 's1', text: 'too late', status: 'pending', createdAt: 1 }]);
+    await clickMenuItem('com_ui_interrupt_now');
+
+    expect(mockRetrySteer).not.toHaveBeenCalled();
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_steer_already_applied' }),
+    );
+  });
+
+  it('leaves the words queued when the run ended mid-reclaim', async () => {
+    // A terminal conversion already re-homed the chip; resubmitting would
+    // duplicate the text, so escalation stops at an informational toast.
+    renderSteers([{ steerId: 's1', text: 'run over', status: 'pending', createdAt: 1 }], {
+      appliedSteerIds: ['s1'],
+    });
+    await clickMenuItem('com_ui_interrupt_now');
+
+    expect(mockRetrySteer).not.toHaveBeenCalled();
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_steer_run_ended_queued' }),
+    );
+  });
+
+  it('disables escalation on every bubble while an interrupt is unresolved', async () => {
+    renderSteers([
+      { steerId: 's1', text: 'plain steer', status: 'pending', createdAt: 1 },
+      { steerId: 's2', text: 'sealing now', status: 'pending', createdAt: 2, preempt: true },
+    ]);
+    fireEvent.click(screen.getAllByLabelText('com_ui_more_options')[0]);
+    const item = await screen.findByText('com_ui_interrupt_now');
+    expect(item.closest('[role="menuitem"]')).toHaveAttribute('aria-disabled', 'true');
+
+    await act(async () => {
+      fireEvent.click(item);
+    });
+    expect(mockRetrySteer).not.toHaveBeenCalled();
+    expect(mockCancelMutateAsync).not.toHaveBeenCalled();
   });
 });

@@ -1,8 +1,12 @@
 import { useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { Zap, Clock, MoreHorizontal } from 'lucide-react';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import { Zap, ZapOff, Clock, MoreHorizontal } from 'lucide-react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
+import { isMacPlatform, resolveComposerKeyDown, bindingDisplayString } from '~/utils/shortcuts';
+import useComposerBindings from '~/hooks/Input/useComposerBindings';
 import { useLocalize } from '~/hooks';
+import store from '~/store';
 
 /** Shared row/bubble affordances for the during-run surfaces: the in-flight
  *  steer bubbles (`InFlightSteers`) and the queued/failed rows
@@ -21,6 +25,7 @@ export type MenuEntry = {
   label: string;
   icon: React.ReactNode;
   onClick: () => void;
+  disabled?: boolean;
 };
 
 /** Per-row "…" overflow menu (edit / mode toggle / conversions). */
@@ -36,6 +41,8 @@ export function RowMenu({ label, entries }: { label: string; entries: MenuEntry[
           <Ariakit.MenuItem
             key={entry.key}
             className={MENU_ITEM_CLASS}
+            disabled={entry.disabled === true}
+            accessibleWhenDisabled
             onClick={() => {
               entry.onClick();
               menu.hide();
@@ -74,4 +81,64 @@ export function useDefaultToggleEntry(steering: SteeringControls): MenuEntry {
       onClick: () => steering.setDefaultAction(next),
     };
   }, [steering, localize]);
+}
+
+/**
+ * The overflow item that flips whether a default steer interrupts generation
+ * (`steerInterruptsByDefault`). Worded as the mode you would switch to, like
+ * the queue/steer toggle above.
+ */
+export function useInterruptToggleEntry(): MenuEntry {
+  const localize = useLocalize();
+  const [interrupts, setInterrupts] = useRecoilState(store.steerInterruptsByDefault);
+  return useMemo(
+    () => ({
+      key: 'toggle-interrupt',
+      label: interrupts
+        ? localize('com_ui_wait_for_tool_steps')
+        : localize('com_ui_always_interrupt'),
+      icon: interrupts ? (
+        <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />
+      ) : (
+        <ZapOff className="h-4 w-4 text-amber-500" aria-hidden="true" />
+      ),
+      onClick: () => setInterrupts(!interrupts),
+    }),
+    [interrupts, setInterrupts, localize],
+  );
+}
+
+/**
+ * The interrupt chord for tooltips, present only while the chord still
+ * preempts: a chord rebound to a global shortcut (or claimed by a rebound
+ * submit) must not be advertised, and `resolveComposerKeyDown` is the one
+ * source of that answer.
+ */
+export function useInterruptChordHint(): string | undefined {
+  const enterToSend = useRecoilValue(store.enterToSend);
+  const { submitOverride, yieldedChords } = useComposerBindings();
+  return useMemo(() => {
+    const chord = {
+      meta: isMacPlatform,
+      ctrl: !isMacPlatform,
+      alt: false,
+      shift: true,
+      key: 'Enter',
+    };
+    const verdict = resolveComposerKeyDown(
+      { key: 'Enter', altKey: false, ctrlKey: chord.ctrl, metaKey: chord.meta, shiftKey: true },
+      {
+        isComposing: false,
+        isSubmitting: true,
+        allowSubmitWhileGenerating: true,
+        hasDuringRunModifier: true,
+        enterToSend,
+        submitOverride,
+        yieldedChords,
+      },
+    );
+    return verdict === 'preempt'
+      ? (bindingDisplayString(chord, isMacPlatform) ?? undefined)
+      : undefined;
+  }, [enterToSend, submitOverride, yieldedChords]);
 }

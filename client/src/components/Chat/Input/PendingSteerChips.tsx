@@ -1,12 +1,20 @@
 import { memo, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { X, Zap, Send, Clock, Pencil, Trash2, Paperclip, RotateCcw } from 'lucide-react';
+import * as Ariakit from '@ariakit/react';
+import { X, Zap, Send, Clock, Pencil, Trash2, ZapOff, Paperclip, RotateCcw } from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
 import type { RestoreToComposer } from './InFlightSteers';
 import type { MenuEntry } from './SteerMenu';
-import { RowMenu, useDefaultToggleEntry, ICON_BTN_CLASS, PRIMARY_BTN_CLASS } from './SteerMenu';
+import {
+  RowMenu,
+  ICON_BTN_CLASS,
+  PRIMARY_BTN_CLASS,
+  useDefaultToggleEntry,
+  useInterruptChordHint,
+  useInterruptToggleEntry,
+} from './SteerMenu';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -27,16 +35,52 @@ function AttachmentCount({ count, label }: { count: number; label: string }) {
   );
 }
 
+/**
+ * Escalate one message past the queue: interrupt & steer it now, at the next
+ * safe token boundary instead of the next tool step. Icon-only ZapOff, the
+ * interrupt glyph everywhere in this UI; the tooltip teaches the composer
+ * chord that does this in one step. Disabled while another interrupt is
+ * unresolved or the run is paused on approval.
+ */
+function InterruptNowButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+  const localize = useLocalize();
+  const chordHint = useInterruptChordHint();
+  const label = localize('com_ui_interrupt_now');
+  return (
+    <Ariakit.TooltipProvider placement="top" timeout={300}>
+      <Ariakit.TooltipAnchor
+        render={
+          <button
+            type="button"
+            aria-label={label}
+            data-testid="queued-interrupt-now"
+            disabled={disabled}
+            onClick={onClick}
+            className={cn(ICON_BTN_CLASS, 'disabled:cursor-not-allowed disabled:opacity-40')}
+          >
+            <ZapOff className="h-4 w-4 text-amber-500" aria-hidden="true" />
+          </button>
+        }
+      />
+      <Ariakit.Tooltip className="z-50 rounded-lg bg-surface-tertiary px-2 py-1 text-xs text-text-primary shadow-lg">
+        {chordHint == null ? label : `${label} · ${chordHint}`}
+      </Ariakit.Tooltip>
+    </Ariakit.TooltipProvider>
+  );
+}
+
 function QueuedRow({
   message,
   steering,
   conversationId,
+  interruptPending,
   onEditToComposer,
   onRestoreToComposer,
 }: {
   message: QueuedMessage;
   steering: SteeringControls;
   conversationId: string;
+  interruptPending: boolean;
   onEditToComposer: (
     text: string,
     files?: TMessage['files'],
@@ -46,6 +90,7 @@ function QueuedRow({
 }) {
   const localize = useLocalize();
   const toggleEntry = useDefaultToggleEntry(steering);
+  const interruptToggle = useInterruptToggleEntry();
   const fileCount = message.files?.length ?? 0;
   const canSteerNow = steering.duringRunActive && steering.canSteer;
   const showPrimary = canSteerNow || !steering.duringRunActive;
@@ -64,6 +109,7 @@ function QueuedRow({
       },
     },
     toggleEntry,
+    interruptToggle,
   ];
 
   return (
@@ -94,6 +140,12 @@ function QueuedRow({
             </>
           )}
         </button>
+      )}
+      {canSteerNow && (
+        <InterruptNowButton
+          disabled={steering.pausedOnApproval || interruptPending}
+          onClick={() => steering.sendQueuedNow(message, { preempt: true })}
+        />
       )}
       <button
         type="button"
@@ -134,6 +186,7 @@ function FailedSteerRow({
 }) {
   const localize = useLocalize();
   const toggleEntry = useDefaultToggleEntry(steering);
+  const interruptToggle = useInterruptToggleEntry();
 
   const entries: MenuEntry[] = [
     {
@@ -159,6 +212,7 @@ function FailedSteerRow({
         }),
     },
     toggleEntry,
+    interruptToggle,
   ];
 
   return (
@@ -230,6 +284,12 @@ function PendingSteerChips({
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const queued = useRecoilValue(store.queuedMessagesByConvoId(steering.queueKey));
   const failedSteers = useMemo(() => steers.filter((steer) => steer.status === 'failed'), [steers]);
+  /** Only one interrupt can be in flight: a second preempt while one is
+   *  unresolved would race the same seal, so escalation buttons disable. */
+  const interruptPending = useMemo(
+    () => steers.some((steer) => steer.preempt === true && steer.status !== 'failed'),
+    [steers],
+  );
 
   if (failedSteers.length === 0 && queued.length === 0) {
     return null;
@@ -256,6 +316,7 @@ function PendingSteerChips({
           message={message}
           steering={steering}
           conversationId={conversationId}
+          interruptPending={interruptPending}
           onEditToComposer={onEditToComposer}
           onRestoreToComposer={onRestoreToComposer}
         />
