@@ -764,6 +764,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       if (partialSavePromise) {
         await partialSavePromise;
       }
+      // Titles are BILLED work: recordCollectedUsage writes a balance upsert and a
+      // transaction row. An immediate-mode title still in flight (or just aborted and
+      // unwinding) must land before settlement, or an account-deletion drain that
+      // confirms on the settle has the title's usage writes recreate rows for the
+      // deleted account. The promise carries its own .catch, so it never rejects.
+      if (immediateTitlePromise) {
+        await immediateTitlePromise;
+      }
       if (stopAbort && scheduleId && scheduledFor) {
         return awaitStopAbortPersistence(scheduleId, new Date(scheduledFor)).catch((err) => {
           logger.warn('[ResumableAgentController] Stop-abort persistence barrier failed', err);
@@ -969,6 +977,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // in-flight user-message / conversation save, then tear down WITHOUT saving a
         // partial response, emitting a terminal event, or completing the job.
         if (client?.pendingApproval) {
+          // A disconnect-partial save launched while this segment streamed must land
+          // before the pause is recorded: the run's pause hand-off (and any deletion
+          // drain that settles a paused run) treats the recorded pause as "all of this
+          // segment's writes are durable". Never-rejecting by construction.
+          if (partialSavePromise) {
+            await partialSavePromise;
+          }
           if (response?.databasePromise) {
             try {
               await response.databasePromise;
@@ -1109,6 +1124,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           parentMessageId === Constants.NO_PARENT &&
           isNewConvo &&
           !wasAbortedBeforeComplete;
+        /** Whether a scheduled run already ran its deferred title pre-settlement,
+         *  so the post-settle tail must not start a second one. */
+        let scheduledTitleAwaited = false;
 
         // FINALIZATION owns the response record from here: stop any new
         // disconnect-partial save (a subscriber leaving mid-teardown would mark the
@@ -1287,6 +1305,22 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // instead of deleting the evidence.
           let scheduleOutcomeRecorded = true;
           if (scheduleId) {
+            // Deferred-mode titles normally start AFTER this settle, but a title is
+            // billed work (a balance upsert + a transaction insert), so a scheduled
+            // run must finish it BEFORE settlement — an account-deletion drain
+            // confirming on the settle would otherwise have the title's usage writes
+            // recreate rows for the deleted account. Immediate-mode titles are
+            // awaited inside awaitPendingPersistence below.
+            if (shouldGenerateTitle && titleTiming !== 'immediate') {
+              scheduledTitleAwaited = true;
+              await addTitle(req, {
+                text,
+                response: { ...response },
+                client,
+              }).catch((err) => {
+                logger.error('[ResumableAgentController] Error in title generation', err);
+              });
+            }
             await awaitPendingPersistence();
             scheduleOutcomeRecorded = await recordScheduleOutcome({
               scheduleId,
@@ -1391,7 +1425,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           } else if (client) {
             disposeClient(client);
           }
-        } else if (shouldGenerateTitle) {
+        } else if (shouldGenerateTitle && !scheduledTitleAwaited) {
           addTitle(req, {
             text,
             response: { ...response },

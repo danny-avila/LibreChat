@@ -1875,6 +1875,17 @@ describe('requestRunAbort (renewable, source-aware stamp)', () => {
     ).toBe(false);
   });
 
+  it('serializes concurrent stop attempts: the second answers in_progress', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await ScheduleRun.create(runData(schedule));
+
+    expect(await methods.requestRunAbort(schedule.id, scheduledFor, 'stop')).toBe(true);
+    // A second Stop while the first is unresolved must neither re-open the
+    // persistence marker nor be told to proceed — its lost-CAS resolution would
+    // release the settlement barrier while the winner is still persisting.
+    expect(await methods.requestRunAbort(schedule.id, scheduledFor, 'stop')).toBe('in_progress');
+  });
+
   it('marks abort persistence for the settlement barrier', async () => {
     const schedule = await methods.createSchedule(scheduleData());
     await ScheduleRun.create(runData(schedule));
@@ -1970,14 +1981,74 @@ describe('recordRunOutcome settles a mid-generation balance refusal as skipped_b
   });
 });
 
+describe('skip bookkeeping is crash-recoverable', () => {
+  const scheduledFor = new Date('2026-07-20T12:00:00Z');
+
+  it('marks skip rows bookkept only after the schedule-side writes land', async () => {
+    const schedule = await methods.createSchedule(scheduleData({ balanceSkipCount: 3 }));
+    await methods.recordSkippedRun({
+      scheduleId: schedule.id,
+      scheduledFor,
+      user: schedule.user,
+      status: 'skipped_overlap',
+    });
+    const run = await ScheduleRun.findOne({ scheduleId: schedule.id }).lean();
+    expect(run?.bookkept).toBe(true);
+    const row = await Schedule.findOne({ id: schedule.id }).lean();
+    expect(row?.lastRun?.status).toBe('skipped_overlap');
+    expect(row?.balanceSkipCount).toBe(0);
+  });
+
+  it('replays a half-applied overlap skip through the reconciler', async () => {
+    const schedule = await methods.createSchedule(scheduleData({ balanceSkipCount: 3 }));
+    // Simulate the crash: the row exists but no schedule-side write landed.
+    await ScheduleRun.create(
+      runData(schedule, {
+        status: 'skipped_overlap',
+        bookkept: false,
+        firedAt: new Date(Date.now() - 10 * 60_000),
+      }),
+    );
+    const rows = await methods.getUnbookkeptRuns(new Date(Date.now() - 60_000), 10);
+    expect(rows.map((run) => run.scheduleId)).toContain(schedule.id);
+
+    await methods.finalizeBookkeeping({
+      scheduleId: schedule.id,
+      scheduledFor: new Date('2026-07-20T12:00:00Z'),
+      status: 'skipped_overlap',
+      autoDisableAfterFailures: 5,
+    });
+    const row = await Schedule.findOne({ id: schedule.id }).lean();
+    // Without the replay, the missed reset left a stale balance streak that a later
+    // balance skip would push over the auto-disable threshold.
+    expect(row?.balanceSkipCount).toBe(0);
+    expect(row?.lastRun?.status).toBe('skipped_overlap');
+    const run = await ScheduleRun.findOne({ scheduleId: schedule.id }).lean();
+    expect(run?.bookkept).toBe(true);
+  });
+});
+
 describe('deleteUnarmedSchedule (guarded create rollback)', () => {
-  it('deletes an unarmed row and its runs', async () => {
+  it('erases a drained unarmed row and its settled runs', async () => {
     const schedule = await methods.createSchedule(scheduleData({ nextRunAt: undefined }));
-    await ScheduleRun.create(runData(schedule));
+    await ScheduleRun.create(runData(schedule, { status: 'success' }));
 
     expect(await methods.deleteUnarmedSchedule(schedule.id, schedule.user)).toBe('deleted');
     expect(await Schedule.findOne({ id: schedule.id }).lean()).toBeNull();
     expect(await ScheduleRun.findOne({ scheduleId: schedule.id }).lean()).toBeNull();
+  });
+
+  it('defers to the drain when a live manual run holds the row', async () => {
+    // An unarmed row is visible and Run Now-able: rollback must never hard-delete a
+    // live generation's evidence out from under it. The soft-claim hides the row and
+    // the ordinary erase-on-settle/sweep teardown erases it once the run settles.
+    const schedule = await methods.createSchedule(scheduleData({ nextRunAt: undefined }));
+    await ScheduleRun.create(runData(schedule, { status: 'started' }));
+
+    expect(await methods.deleteUnarmedSchedule(schedule.id, schedule.user)).toBe('draining');
+    const row = await Schedule.findOne({ id: schedule.id }).lean();
+    expect(row?.deleting).toBe(true);
+    expect(await ScheduleRun.findOne({ scheduleId: schedule.id }).lean()).not.toBeNull();
   });
 
   it('refuses to delete a row that has since been armed', async () => {

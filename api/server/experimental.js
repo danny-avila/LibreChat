@@ -196,8 +196,11 @@ if (cluster.isMaster) {
     });
 
   /** Track worker lifecycle */
+  const onlineWorkers = new Set();
+
   cluster.on('online', (worker) => {
-    activeWorkers++;
+    onlineWorkers.add(worker.id);
+    activeWorkers = onlineWorkers.size;
     const uptime = ((Date.now() - startTime) / 1000).toFixed(2);
     logger.info(
       `Worker ${worker.process.pid} is online (${activeWorkers}/${workers}) after ${uptime}s`,
@@ -220,16 +223,21 @@ if (cluster.isMaster) {
   });
 
   cluster.on('exit', (worker, code, signal) => {
-    activeWorkers--;
+    // Set-based accounting: a worker that dies BEFORE ever coming online must not
+    // decrement a count it never incremented — a bare counter skews low and, during
+    // shutdown, reads zero while a live worker is still draining.
+    onlineWorkers.delete(worker.id);
+    activeWorkers = onlineWorkers.size;
     listeningWorkers.delete(worker.id);
     // SHUTTING DOWN: worker exits are the drain completing, not failures. Respawning
     // here restarted workers the master had just asked to stop, and reassigning the
     // retention sweep handed a background job to a process about to be killed.
     if (shuttingDown) {
-      logger.info(
-        `Worker ${worker.process.pid} exited during shutdown (${activeWorkers} remaining)`,
-      );
-      if (activeWorkers <= 0) {
+      const remaining = Object.keys(cluster.workers ?? {}).length;
+      logger.info(`Worker ${worker.process.pid} exited during shutdown (${remaining} remaining)`);
+      // The cluster module's own registry is the authority on live children; the
+      // online set can't be (a forked-but-not-yet-online worker is still a process).
+      if (remaining === 0) {
         logger.info('All workers drained; master exiting');
         process.exit(0);
       }
@@ -256,7 +264,7 @@ if (cluster.isMaster) {
     for (const id in cluster.workers) {
       cluster.workers[id].kill();
     }
-    if (activeWorkers <= 0) {
+    if (Object.keys(cluster.workers ?? {}).length === 0) {
       process.exit(0);
     }
     // Workers run a 60-second graceful-shutdown coordinator (setupGracefulShutdown);

@@ -23,6 +23,13 @@ const DUPLICATE_KEY = 11000;
 const LEASE_SKEW_MARGIN_MS = 30_000;
 
 /**
+ * Age past which an unresolved interactive-stop attempt is presumed dead and its
+ * per-run serialization claim becomes takeable again. Mirrors the api layer's
+ * ABORT_OWNER_PRESUMED_ALIVE_MS — one presumption, two enforcement points.
+ */
+const ABORT_STAMP_STALE_MS = 30 * 60_000;
+
+/**
  * Upper bound on the per-schedule `countedFor` idempotency set. Far larger than
  * the number of a single schedule's occurrences that can be terminal (or awaiting
  * reconciliation) at once, so an occurrence's marker is never evicted before any
@@ -93,7 +100,7 @@ export interface RecordRunOutcomeParams {
   scheduledFor: Date;
   status: Extract<
     ScheduleRunStatus,
-    'success' | 'error' | 'requires_action' | 'interrupted' | 'skipped_balance'
+    'success' | 'error' | 'requires_action' | 'interrupted' | 'skipped_balance' | 'skipped_overlap'
   >;
   conversationId?: string;
   error?: string;
@@ -140,7 +147,7 @@ export type ScheduleMethods = {
     id: string,
     userId: string | Types.ObjectId,
     expectedConfigRevision?: number,
-  ) => Promise<'deleted' | 'kept' | 'missing'>;
+  ) => Promise<'deleted' | 'draining' | 'kept' | 'missing'>;
   getScheduleById: (id: string, userId?: string | Types.ObjectId) => Promise<ISchedule | null>;
   getSchedulesByUser: (userId: string | Types.ObjectId) => Promise<ISchedule[]>;
   countSchedulesByUser: (userId: string | Types.ObjectId) => Promise<number>;
@@ -175,7 +182,7 @@ export type ScheduleMethods = {
     scheduleId: string,
     scheduledFor: Date,
     source?: IScheduleRun['abortSource'],
-  ) => Promise<boolean>;
+  ) => Promise<boolean | 'in_progress'>;
   getScheduleRunAbortState: (
     scheduleId: string,
     scheduledFor: Date,
@@ -361,25 +368,45 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
    * concurrent PATCH that edited the row while leaving it unarmed (e.g. disabling
    * it) moved the revision, and deleting it would erase the owner's edit. 'kept'
    * tells the caller the row survived in some later state.
+   *
+   * The claim is a SOFT delete, never a hard one: an unarmed row is visible in the
+   * owner's list and Run Now-able, so a live manual generation can already hold its
+   * lease and an active run row — hard-deleting would erase a billed generation's
+   * evidence out from under it. The erase runs only once drained (no active run, no
+   * live lease); otherwise 'draining' hands the hidden row to the ordinary
+   * erase-on-settle / sweep teardown.
    */
   async function deleteUnarmedSchedule(
     id: string,
     userId: string | Types.ObjectId,
     expectedConfigRevision?: number,
-  ): Promise<'deleted' | 'kept' | 'missing'> {
-    const result = await Schedule().deleteOne({
-      id,
-      user: userId,
-      deleting: { $ne: true },
-      nextRunAt: { $exists: false },
-      ...(expectedConfigRevision != null ? { configRevision: expectedConfigRevision } : {}),
-    });
-    if (result.deletedCount > 0) {
-      await ScheduleRun().deleteMany({ scheduleId: id });
-      return 'deleted';
+  ): Promise<'deleted' | 'draining' | 'kept' | 'missing'> {
+    const claimed = await Schedule()
+      .findOneAndUpdate(
+        {
+          id,
+          user: userId,
+          deleting: { $ne: true },
+          nextRunAt: { $exists: false },
+          ...(expectedConfigRevision != null ? { configRevision: expectedConfigRevision } : {}),
+        },
+        { $set: { enabled: false, deleting: true, claimToken: randomUUID() } },
+        { new: true },
+      )
+      .select('_id')
+      .lean();
+    if (claimed == null) {
+      const still = await Schedule()
+        .findOne({ id, user: userId })
+        .select('deleting')
+        .lean<Pick<ISchedule, 'deleting'>>();
+      if (still == null) {
+        return 'missing';
+      }
+      return still.deleting === true ? 'draining' : 'kept';
     }
-    const still = await Schedule().findOne({ id, user: userId }).select('_id').lean();
-    return still == null ? 'missing' : 'kept';
+    const erased = await eraseScheduleIfDrained(id);
+    return erased ? 'deleted' : 'draining';
   }
 
   async function getScheduleById(
@@ -700,14 +727,40 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     scheduleId: string,
     scheduledFor: Date,
     source?: IScheduleRun['abortSource'],
-  ): Promise<boolean> {
+  ): Promise<boolean | 'in_progress'> {
     const now = new Date();
     if (source === 'stop') {
+      // SERIALIZED per run: only one unresolved fresh stop attempt may exist. A second
+      // Stop stamping over a live one would re-open the persistence marker, and its
+      // own lost-CAS resolution would then release the settlement barrier while the
+      // FIRST attempt (the terminal-CAS winner) was still pruning and saving. The
+      // guarded update is the arbiter; a loser answers 'in_progress' and must neither
+      // signal the abort nor resolve anything. A stale unresolved attempt (its route
+      // presumed dead) is claimable again.
+      const staleCutoff = new Date(now.getTime() - ABORT_STAMP_STALE_MS);
       const stamped = await ScheduleRun().updateOne(
-        { scheduleId, scheduledFor, status: { $in: ACTIVE_RUN_STATUSES } },
+        {
+          scheduleId,
+          scheduledFor,
+          status: { $in: ACTIVE_RUN_STATUSES },
+          $nor: [
+            {
+              abortSource: 'stop',
+              abortPersistedAt: { $exists: false },
+              abortRequestedAt: { $gt: staleCutoff },
+            },
+          ],
+        },
         { $set: { abortRequestedAt: now, abortSource: 'stop' }, $unset: { abortPersistedAt: 1 } },
       );
-      return (stamped.matchedCount ?? 0) > 0;
+      if ((stamped.matchedCount ?? 0) > 0) {
+        return true;
+      }
+      const holder = await ScheduleRun()
+        .findOne({ scheduleId, scheduledFor, status: { $in: ACTIVE_RUN_STATUSES } })
+        .select('_id')
+        .lean();
+      return holder != null ? 'in_progress' : false;
     }
     const claimed = await ScheduleRun().updateOne(
       {
@@ -984,6 +1037,40 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   }
 
   /**
+   * Overlap-skip bookkeeping, shared by the pre-fire skip (recordSkippedRun) and its
+   * crash-retry replay (finalizeBookkeeping): projects the skip onto the card and
+   * BREAKS the consecutive-balance-skip streak (an overlap is an intervening
+   * non-balance outcome). Both writes are idempotent and order-fenced, so replays
+   * are safe.
+   */
+  async function applyOverlapSkipBookkeeping(params: {
+    scheduleId: string;
+    scheduledFor: Date;
+    firedAt: Date;
+    rowRevision?: number;
+  }): Promise<void> {
+    const revisionFilter = params.rowRevision != null ? { configRevision: params.rowRevision } : {};
+    // Through the ORDERED projection: writing `lastRun` directly dropped the
+    // `scheduledFor` marker, after which the next projection read the marker as absent
+    // and let an older occurrence's outcome overwrite this newer skip.
+    await projectLastRun(
+      params.scheduleId,
+      { status: 'skipped_overlap', firedAt: params.firedAt },
+      params.scheduledFor,
+      revisionFilter,
+    );
+    // Same order fence as the terminal counters: these are consecutive streaks, so an
+    // older occurrence settling late must not reset or extend one a newer outcome owns.
+    const orderFilter = {
+      $or: [{ countersAsOf: { $exists: false } }, { countersAsOf: { $lte: params.scheduledFor } }],
+    };
+    await Schedule().updateOne(
+      { id: params.scheduleId, ...revisionFilter, ...orderFilter },
+      { $set: { balanceSkipCount: 0, countersAsOf: params.scheduledFor } },
+    );
+  }
+
+  /**
    * Terminal (or pause) transition for a run + lastRun/failure bookkeeping.
    * Matches a run row still in `started` OR `requires_action`. Crash-retryable:
    * the run row is marked `bookkept:false` at terminalization and only flipped
@@ -1108,7 +1195,11 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // rewriting lastRun/counters would mislabel a real run as a skip (and could
     // walk it toward auto-disable). The streak $inc is separately guarded per
     // occurrence by `countedFor`, so a genuine same-skip retry can't double-count.
-    const inserted = await insertScheduleRun({ ...data, firedAt });
+    // `bookkept: false` until the schedule-side writes land: a crash in between is
+    // replayed by the reconciler (getUnbookkeptRuns), exactly like a terminal run —
+    // a duplicate claim of this occurrence advances past the terminal row without
+    // re-running bookkeeping, so nothing else would ever repair a half-applied skip.
+    const inserted = await insertScheduleRun({ ...data, firedAt, bookkept: false });
     let rowRevision = inserted?.configRevision;
     if (inserted == null) {
       const existing = await ScheduleRun()
@@ -1132,29 +1223,17 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
         rowRevision,
         balanceSkipDisableThreshold,
       });
-      return;
+    } else {
+      await applyOverlapSkipBookkeeping({
+        scheduleId: data.scheduleId,
+        scheduledFor: data.scheduledFor,
+        firedAt,
+        rowRevision,
+      });
     }
-    const skipRevisionFilter = rowRevision != null ? { configRevision: rowRevision } : {};
-    // Surface the skip on the card (its chip reads schedule.lastRun). An overlap
-    // skip is an intervening non-balance outcome, so it BREAKS the balance-skip
-    // streak (the counter is for CONSECUTIVE balance skips).
-    // Through the ORDERED projection: writing `lastRun` directly dropped the
-    // `scheduledFor` marker, after which the next projection read the marker as absent
-    // and let an older occurrence's outcome overwrite this newer skip.
-    await projectLastRun(
-      data.scheduleId,
-      { status: data.status, firedAt },
-      data.scheduledFor,
-      skipRevisionFilter,
-    );
-    // Same order fence as the terminal counters: these are consecutive streaks, so an
-    // older occurrence settling late must not reset or extend one a newer outcome owns.
-    const skipOrderFilter = {
-      $or: [{ countersAsOf: { $exists: false } }, { countersAsOf: { $lte: data.scheduledFor } }],
-    };
-    await Schedule().updateOne(
-      { id: data.scheduleId, ...skipRevisionFilter, ...skipOrderFilter },
-      { $set: { balanceSkipCount: 0, countersAsOf: data.scheduledFor } },
+    await ScheduleRun().updateOne(
+      { scheduleId: data.scheduleId, scheduledFor: data.scheduledFor },
+      { $set: { bookkept: true } },
     );
   }
 
@@ -1220,11 +1299,14 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     );
   }
 
-  /** Terminal runs whose schedule bookkeeping never landed (crash between the two writes). */
+  /** Settled runs (terminal outcomes AND skips) whose schedule bookkeeping never
+   *  landed — a crash between the row write and the card/counter writes. */
   async function getUnbookkeptRuns(olderThan: Date, limit: number): Promise<IScheduleRun[]> {
     return ScheduleRun()
       .find({
-        status: { $in: ['success', 'error', 'interrupted', 'skipped_balance'] },
+        status: {
+          $in: ['success', 'error', 'interrupted', 'skipped_balance', 'skipped_overlap'],
+        },
         bookkept: false,
         firedAt: { $lt: olderThan },
       })
@@ -1249,6 +1331,13 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
         conversationId: params.conversationId,
         rowRevision: run?.configRevision,
         balanceSkipDisableThreshold: params.balanceSkipDisableThreshold,
+      });
+    } else if (params.status === 'skipped_overlap') {
+      await applyOverlapSkipBookkeeping({
+        scheduleId: params.scheduleId,
+        scheduledFor: params.scheduledFor,
+        firedAt: new Date(),
+        rowRevision: run?.configRevision,
       });
     } else {
       await applyTerminalBookkeeping({

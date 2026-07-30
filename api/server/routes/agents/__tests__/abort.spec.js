@@ -779,6 +779,22 @@ describe('Agent Abort Endpoint', () => {
         expect(response.status).toBe(200);
       });
 
+      it('answers a duplicate Stop benignly while another attempt is in flight', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        mockRequestScheduledRunAbort.mockResolvedValueOnce('in_progress');
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: 'sched-conv' });
+
+        // Acting would race the winner: an abort here could lose its CAS, and its
+        // resolution would release the settlement barrier while the winner is still
+        // persisting. The first Stop is already executing the user's intent.
+        expect(response.status).toBe(200);
+        expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
+        expect(mockMarkScheduledRunAbortPersisted).not.toHaveBeenCalled();
+      });
+
       it('does not renew the abort stamp for a job observed terminal', async () => {
         mockGenerationJobManager.getJob.mockResolvedValue({
           ...scheduledJob,

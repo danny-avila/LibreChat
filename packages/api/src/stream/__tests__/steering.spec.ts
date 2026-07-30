@@ -477,38 +477,50 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       });
       racingManager.initialize();
       const job = await racingManager.createJob(streamId, 'user-1');
-      const originalGetContentParts = jobStore.getContentParts.bind(jobStore);
-      let signalSnapshotStarted: (() => void) | undefined;
-      const snapshotStarted = new Promise<void>((resolve) => {
-        signalSnapshotStarted = resolve;
+      await racingManager.steering.enqueue(streamId, buildSteer('survives the losing abort'));
+      // Gate the abort between its fresh job READ and its terminal CAS, so a natural
+      // completion wins the transition in that window — the CAS now runs before any
+      // queue mutation, so this is the earliest interleaving a loser can exist in.
+      const originalGetJob = jobStore.getJob.bind(jobStore);
+      let signalReadStarted: (() => void) | undefined;
+      const readStarted = new Promise<void>((resolve) => {
+        signalReadStarted = resolve;
       });
-      let releaseSnapshot: (() => void) | undefined;
-      const snapshotGate = new Promise<void>((resolve) => {
-        releaseSnapshot = resolve;
+      let releaseRead: (() => void) | undefined;
+      const readGate = new Promise<void>((resolve) => {
+        releaseRead = resolve;
       });
-      jest.spyOn(jobStore, 'getContentParts').mockImplementationOnce(async (...args) => {
-        signalSnapshotStarted?.();
-        await snapshotGate;
-        return originalGetContentParts(...args);
+      jest.spyOn(jobStore, 'getJob').mockImplementationOnce(async (...args) => {
+        const result = await originalGetJob(...args);
+        signalReadStarted?.();
+        await readGate;
+        return result;
       });
+      const closeAndDrainSpy = jest.spyOn(jobStore, 'closeAndDrainSteers');
 
       try {
         const aborting = racingManager.abortJob(streamId);
-        await snapshotStarted;
+        await readStarted;
         await racingManager.completeJob(streamId, undefined, job.createdAt);
-        releaseSnapshot?.();
+        // completeJob's own backstop legitimately drains the queue; the assertion
+        // below is that the LOSING abort adds no drain of its own.
+        const drainsAfterCompletion = closeAndDrainSpy.mock.calls.length;
+        releaseRead?.();
 
         await expect(aborting).resolves.toMatchObject({
           success: false,
           finalEvent: null,
         });
+        // The loser must leave NO side effects: it must not have closed or drained
+        // the winner's steer queue (the completion path owns that disposal).
+        expect(closeAndDrainSpy.mock.calls.length).toBe(drainsAfterCompletion);
         await expect(jobStore.getJob(streamId)).resolves.toMatchObject({
           createdAt: job.createdAt,
           status: 'complete',
         });
         expect(emitDone).not.toHaveBeenCalled();
       } finally {
-        releaseSnapshot?.();
+        releaseRead?.();
         await racingManager.destroy();
       }
     });

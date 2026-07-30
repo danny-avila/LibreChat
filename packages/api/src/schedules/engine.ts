@@ -99,6 +99,27 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
                 error,
                 autoDisableAfterFailures: runLimits.autoDisableAfterFailures,
               });
+            // The clear runs AFTER finalize (the retained job is the only evidence if
+            // the finalize write fails), which means a clear that keeps failing has no
+            // natural retry: the now-terminal run never rescans, so nothing else would
+            // reap the retained job. Retry the transient case inline; the store's own
+            // aged-retained-job backstop bounds anything more persistent.
+            const clearRetainedJob = async () => {
+              for (let attempt = 1; attempt <= 2; attempt++) {
+                try {
+                  await deps.clearReconciledJob(run.conversationId as string, {
+                    scheduleId: run.scheduleId,
+                    scheduledFor: run.scheduledFor,
+                  });
+                  return;
+                } catch (clearError) {
+                  logger.warn(
+                    `[schedules] failed to clear retained job for ${run.scheduleId} (attempt ${attempt}/2):`,
+                    clearError,
+                  );
+                }
+              }
+            };
             if (jobStatus === 'running') {
               continue;
             }
@@ -122,18 +143,12 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
               // Finalize either a paused OR a still-started run as success so it
               // stops consuming capacity / blocking overlap.
               await finalize('success');
-              await deps.clearReconciledJob(run.conversationId as string, {
-                scheduleId: run.scheduleId,
-                scheduledFor: run.scheduledFor,
-              });
+              await clearRetainedJob();
               continue;
             }
             if (jobStatus === 'error') {
               await finalize('error', 'Run ended in error');
-              await deps.clearReconciledJob(run.conversationId as string, {
-                scheduleId: run.scheduleId,
-                scheduledFor: run.scheduledFor,
-              });
+              await clearRetainedJob();
               continue;
             }
             if (jobStatus === 'aborted') {
@@ -148,10 +163,7 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
                 continue;
               }
               await finalize('interrupted');
-              await deps.clearReconciledJob(run.conversationId as string, {
-                scheduleId: run.scheduleId,
-                scheduledFor: run.scheduledFor,
-              });
+              await clearRetainedJob();
               continue;
             }
             // A `started` run whose job is gone (jobStatus null) is an orphan. Every run
@@ -211,7 +223,12 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             await deps.methods.finalizeBookkeeping({
               scheduleId: run.scheduleId,
               scheduledFor: run.scheduledFor,
-              status: run.status as 'success' | 'error' | 'interrupted' | 'skipped_balance',
+              status: run.status as
+                | 'success'
+                | 'error'
+                | 'interrupted'
+                | 'skipped_balance'
+                | 'skipped_overlap',
               conversationId: run.conversationId,
               error: run.error,
               autoDisableAfterFailures: runLimits.autoDisableAfterFailures,
@@ -309,10 +326,13 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           return true;
         }
         const scheduledFor = schedule.nextRunAt ?? new Date();
-        // Use DB time, not this worker's clock, for the misfire cutoff: the claim
-        // wrote leaseUntil = $$NOW + LEASE_MS, so leaseUntil - LEASE_MS is Mongo's
-        // "now" at claim. A skewed worker would otherwise treat a just-claimed
-        // occurrence as stale and drop it (advance without firing).
+        // Use the CLAIM's clock for the misfire cutoff: the claim wrote
+        // leaseUntil = now + LEASE_MS from the claiming worker's clock, so
+        // leaseUntil - LEASE_MS is that worker's "now" at claim — usually this very
+        // process, making cutoff and claim self-consistent. (DocumentDB rules out the
+        // server-clock `$$NOW` CAS; skew between REPLICAS shifts fire timing by at
+        // most the skew and can never double-fire — the lease CAS and the unique
+        // occurrence index arbitrate that regardless of clocks.)
         const dbNow = schedule.leaseUntil ? schedule.leaseUntil.getTime() - LEASE_MS : Date.now();
         // Misfire skip-forward: an occurrence overdue past the grace window (the
         // engine was down/paused) is advanced to the next FUTURE occurrence
@@ -322,8 +342,8 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             cadence: schedule.cadence,
             timezone: schedule.timezone,
             scheduleId: schedule.id,
-            // DB claim time, not this worker's clock: a clock-behind worker would
-            // otherwise compute another DB-past occurrence and reclaim the same row.
+            // The claim's own clock (see dbNow above): a clock-behind worker would
+            // otherwise compute another already-due occurrence and reclaim the row.
             after: new Date(dbNow),
           });
           if (next == null) {
@@ -376,8 +396,8 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             cadence: schedule.cadence,
             timezone: schedule.timezone,
             scheduleId: schedule.id,
-            // DB claim time (see the misfire branch) so a skewed worker doesn't
-            // reschedule to a DB-past occurrence and reclaim the same row.
+            // The claim's clock (see the misfire branch) so a skewed worker doesn't
+            // reschedule to an already-due occurrence and reclaim the same row.
             after: new Date(dbNow),
           });
           if (next == null) {

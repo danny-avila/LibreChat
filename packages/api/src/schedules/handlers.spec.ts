@@ -625,3 +625,35 @@ describe('capacity pre-check vs concurrent same-key insert', () => {
     expect(deps.methods.createScheduleWithSlot).not.toHaveBeenCalled();
   });
 });
+
+describe('updateSchedule refuses field-less payloads', () => {
+  it('rejects {} before touching claim-token or revision fencing', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(deps).updateSchedule(
+      {
+        params: { id: 'sched-1' },
+        body: {},
+        user: { id: 'user-1', tenantId: 't1', role: 'USER' },
+      } as unknown as ServerRequest,
+      res,
+    );
+    // An empty update still rotates claimToken and bumps configRevision, fencing a
+    // legitimate in-flight occurrence for a request that changed nothing.
+    expect(captured.status).toBe(400);
+    expect(deps.methods.updateScheduleById).not.toHaveBeenCalled();
+  });
+});
+
+describe('late-create compensation with a live manual run', () => {
+  it('treats a draining rollback as compensated (the teardown owns it)', async () => {
+    const deps = makeCreateDeps();
+    (deps.methods.deleteUnarmedSchedule as jest.Mock).mockResolvedValue('draining');
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+    // Soft-claimed and draining: hidden, unclaimable, erased once its live manual
+    // run settles — never hard-deleted out from under that generation.
+    expect(deps.methods.markScheduleDeleting).not.toHaveBeenCalled();
+    expect(captured.status).toBe(410);
+  });
+});

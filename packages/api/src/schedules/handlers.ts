@@ -58,7 +58,10 @@ async function compensateLateCreate(
       logger.error(`[schedules] compensating delete failed for late create ${id}`, err);
       return null;
     });
-  if (rolled === 'deleted' || rolled === 'missing') {
+  // 'draining' is compensated too: the row is soft-claimed (hidden, unclaimable) and
+  // the ordinary erase-on-settle / sweep teardown finishes it once its live manual
+  // run — the reason it could not erase immediately — settles.
+  if (rolled === 'deleted' || rolled === 'missing' || rolled === 'draining') {
     return true;
   }
   const marked = await deps.methods.markScheduleDeleting(id, userId).catch((err) => {
@@ -563,6 +566,15 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     const parsed = updateSchedulePayloadSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid schedule payload', issues: parsed.error.issues });
+      return;
+    }
+    // A field-less PATCH is not a harmless no-op: updateScheduleById rotates the claim
+    // token and bumps the config revision on every write, so an empty update would
+    // fence a legitimate in-flight occurrence — its terminal bookkeeping revision-
+    // fences to a no-op, and a fire in the POST-to-controller window is refused at
+    // the admission boundary without ever running. Refuse before touching fencing.
+    if (Object.keys(parsed.data).length === 0) {
+      res.status(400).json({ error: 'Schedule update must include at least one field' });
       return;
     }
     const { id } = req.params as { id: string };

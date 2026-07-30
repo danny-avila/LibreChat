@@ -157,7 +157,7 @@ export interface SchedulesService {
   requestScheduledRunAbort: (
     scheduleId: string,
     scheduledFor: Date,
-  ) => Promise<'stamped' | 'no_active_run' | 'failed'>;
+  ) => Promise<'stamped' | 'no_active_run' | 'in_progress' | 'failed'>;
   /**
    * Stamped by the interactive Stop route once every write it makes (checkpoint prune,
    * partial-response save) has landed; releases the generation owner's settlement
@@ -468,11 +468,36 @@ export function createSchedulesService(
       if (job == null || !jobMatchesIdentity(job, identity)) {
         return false;
       }
-      // Already terminal — the run is no longer generating. For a per-schedule delete
-      // (preserve) leave the job as reconcile evidence; for account deletion
-      // (preserve:false) this may be a PRESERVED terminal job from a prior failed
-      // outcome write, and since its ScheduleRun rows are about to be hard-deleted no
-      // reconciler will ever clear it — delete it now so the job hash doesn't leak.
+      // Already terminal — but `aborted` is NOT proof the stop was ever DELIVERED:
+      // the first abort flips the job before its cross-replica publication, so a
+      // failed publish leaves a peer generation running against a job every retry
+      // reads as terminal. Trusting the status here returned "delivered" without
+      // republishing, and after the owner-death fence lapsed the deletion path could
+      // settle a run whose live generation then persisted post-cascade. RE-SIGNAL on
+      // every retry instead; delivery stays ownership-honest, and the caller's
+      // bounded drain confirms on the owner's settle once the signal actually lands.
+      if (job.status === 'aborted') {
+        const delivered = await GenerationJobManager.resignalAbort(
+          conversationId,
+          job.createdAt,
+        ).catch((err) => {
+          logger.warn('[schedules] failed to re-signal abort:', err);
+          return false;
+        });
+        if (options?.preserve === false && delivered) {
+          // Only provably-quiet evidence is disposable (account deletion hard-deletes
+          // the run rows, so nothing would ever clear this job later). Undelivered:
+          // keep it — the drain stays unconfirmed and a later pass re-signals.
+          await store.deleteJob(conversationId, job.createdAt);
+        }
+        return delivered;
+      }
+      // Finished naturally (`complete`/`error`): the generation persisted and stopped
+      // on its own — nothing to signal. For a per-schedule delete (preserve) leave the
+      // job as reconcile evidence; for account deletion (preserve:false) this may be a
+      // PRESERVED terminal job from a prior failed outcome write, and since its
+      // ScheduleRun rows are about to be hard-deleted no reconciler will ever clear
+      // it — delete it now so the job hash doesn't leak.
       if (job.status !== 'running' && job.status !== 'requires_action') {
         if (options?.preserve === false) {
           // Generation-fenced for the same reason as clearReconciledJob: a replacement
@@ -724,9 +749,12 @@ export function createSchedulesService(
   async function requestScheduledRunAbort(
     scheduleId: string,
     scheduledFor: Date,
-  ): Promise<'stamped' | 'no_active_run' | 'failed'> {
+  ): Promise<'stamped' | 'no_active_run' | 'in_progress' | 'failed'> {
     try {
       const stamped = await methods.requestRunAbort(scheduleId, scheduledFor, 'stop');
+      if (stamped === 'in_progress') {
+        return 'in_progress';
+      }
       return stamped ? 'stamped' : 'no_active_run';
     } catch (err) {
       logger.error('[schedules] failed to record interactive abort request:', err);

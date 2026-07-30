@@ -218,11 +218,14 @@ export async function fireSchedule(
   options?: { manual?: boolean; dbNow?: Date },
 ): Promise<FireResult> {
   const { methods } = deps;
-  // Compute the NEXT occurrence relative to DB time (the engine passes the claim
-  // time derived from leaseUntil), not this worker's clock: a clock-ahead worker
-  // would otherwise advance past valid future occurrences. Falls back to the
-  // process clock when no DB time is provided (e.g. manual run-now, which never
-  // reschedules and so ignores the result anyway).
+  // Compute the NEXT occurrence relative to the CLAIM's clock (the engine passes
+  // the claim time derived from leaseUntil), keeping the advance self-consistent
+  // with the claim that selected this occurrence. Falls back to the process clock
+  // when no claim time is provided (e.g. manual run-now, which never reschedules
+  // and so ignores the result anyway). Inter-replica skew shifts WHEN an occurrence
+  // fires by at most the skew; it can never fire one twice (lease CAS + the unique
+  // occurrence index) — see LEASE_SKEW_MARGIN_MS in data-schemas for the takeover
+  // margin that protects the only cross-worker clock comparison.
   const now = options?.dbNow ?? new Date();
   const nextRunAt = computeNextRunAt({
     cadence: schedule.cadence,

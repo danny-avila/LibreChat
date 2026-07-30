@@ -103,6 +103,19 @@ export class InMemoryJobStore implements IJobStore {
    */
   private staleJobTimeout = 1_200_000;
 
+  /**
+   * Backstop age (ms) for terminal jobs retained WITHOUT `completedAt` — the
+   * `preserveForReconcile` evidence the schedules reconciler normally deletes after
+   * settling their run. If that delete fails transiently AFTER the run terminalized,
+   * nothing ever rescans the run, so nothing else would reap the job; unbounded, it
+   * (and its content state) stays resident for the life of the process. The window
+   * sits far past every reconciler deadline (the 30-minute owner-death fence plus
+   * scan cadence) and matches the abandoned-pause sweep, so a job this old is
+   * unreachable evidence, never pending evidence. Redis mode needs no equivalent:
+   * its job keys carry TTLs.
+   */
+  private static readonly RETAINED_JOB_MAX_AGE_MS = 25 * 60 * 60_000;
+
   constructor(options?: { ttlAfterComplete?: number; maxJobs?: number; staleJobTimeout?: number }) {
     if (options?.ttlAfterComplete) {
       this.ttlAfterComplete = options.ttlAfterComplete;
@@ -225,7 +238,7 @@ export class InMemoryJobStore implements IJobStore {
     if (args.expectCreatedAt != null && job.createdAt !== args.expectCreatedAt) {
       return false;
     }
-    if (['complete', 'error', 'aborted'].includes(args.to)) {
+    if (['complete', 'error', 'aborted'].includes(args.to) && args.preserveSteerQueue !== true) {
       this.parkQueuedSteers(streamId, job, Date.now());
     }
     job.status = args.to;
@@ -341,6 +354,14 @@ export class InMemoryJobStore implements IJobStore {
       if (isFinished && job.completedAt) {
         // TTL of 0 means immediate cleanup, otherwise wait for TTL to expire
         if (this.ttlAfterComplete === 0 || now - job.completedAt > this.ttlAfterComplete) {
+          toDelete.push({ streamId, createdAt: job.createdAt });
+        }
+      } else if (isFinished) {
+        // Terminal WITHOUT completedAt: reconcile evidence whose consumer-side delete
+        // failed after the run settled (see RETAINED_JOB_MAX_AGE_MS). Bound it.
+        const basis = Math.max(job.lastActiveAt ?? 0, job.createdAt);
+        if (now - basis > InMemoryJobStore.RETAINED_JOB_MAX_AGE_MS) {
+          this.parkQueuedSteers(streamId, job, now);
           toDelete.push({ streamId, createdAt: job.createdAt });
         }
       } else if (job.status === 'requires_action' && isPendingActionStale(job)) {

@@ -24,6 +24,7 @@ jest.mock('../stream/GenerationJobManager', () => ({
     // loop is driven purely by getActiveRunsForUser (the run rows).
     getJobStore: () => mockJobStore,
     abortJob: jest.fn(),
+    resignalAbort: jest.fn(async () => false),
     isRedis: false,
   },
 }));
@@ -1064,5 +1065,69 @@ describe('deleteScheduleForOwner waits for the settle acknowledgement', () => {
     // ...but the run row leaving the active set is the durable acknowledgement, so
     // the delete converges instead of answering a spurious 503.
     await expect(service.deleteScheduleForOwner('s1', 'user-1')).resolves.toBe('deleted');
+  });
+});
+
+describe('abort retries re-signal instead of trusting terminal status', () => {
+  it('re-publishes the abort for an already-aborted job and reports honest delivery', async () => {
+    const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
+    mockJobStore = {
+      getJob: jest.fn(async () => ({
+        status: 'aborted',
+        createdAt: 7,
+        scheduleId: 's1',
+        scheduledFor: '2026-01-01T00:00:00.000Z',
+      })),
+    } as unknown as typeof mockJobStore;
+    const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
+    manager.resignalAbort = jest.fn(async () => false);
+
+    // The first abort flipped the job before its publication; a retry that trusts
+    // the terminal status returns "delivered" without republishing, and a failed
+    // publish then never redelivers. The retry must re-signal.
+    const delivered = await service.engineDeps.abortScheduledJob(
+      'c1',
+      { scheduleId: 's1', scheduledFor: '2026-01-01T00:00:00.000Z' },
+      { preserve: true },
+    );
+    expect(manager.resignalAbort).toHaveBeenCalledWith('c1', 7);
+    expect(delivered).toBe(false);
+  });
+
+  it('keeps the evidence when an undelivered re-signal would otherwise be deleted', async () => {
+    const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
+    const deleteJob = jest.fn(async () => true);
+    mockJobStore = {
+      getJob: jest.fn(async () => ({
+        status: 'aborted',
+        createdAt: 7,
+        scheduleId: 's1',
+        scheduledFor: '2026-01-01T00:00:00.000Z',
+      })),
+      deleteJob,
+    } as unknown as typeof mockJobStore;
+    const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
+    manager.resignalAbort = jest.fn(async () => false);
+
+    const delivered = await service.engineDeps.abortScheduledJob(
+      'c1',
+      { scheduleId: 's1', scheduledFor: '2026-01-01T00:00:00.000Z' },
+      { preserve: false },
+    );
+    expect(delivered).toBe(false);
+    // Undelivered means the peer generation may still be live; the retained job is
+    // the only evidence a later pass can re-signal from.
+    expect(deleteJob).not.toHaveBeenCalled();
+  });
+});
+
+describe('requestScheduledRunAbort maps stamp serialization', () => {
+  it("returns 'in_progress' when another stop attempt holds the stamp", async () => {
+    const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
+    const methods = service.engineDeps.methods as unknown as { requestRunAbort: jest.Mock };
+    methods.requestRunAbort = jest.fn(async () => 'in_progress');
+    await expect(
+      service.requestScheduledRunAbort('s1', new Date('2026-01-01T00:00:00.000Z')),
+    ).resolves.toBe('in_progress');
   });
 });

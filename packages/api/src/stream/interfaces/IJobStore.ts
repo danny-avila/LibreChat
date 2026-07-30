@@ -263,6 +263,14 @@ export interface JobStatusTransition {
    */
   expectActionId?: string;
   /**
+   * The in-memory store parks the steer queue on terminal transitions as a backstop
+   * for callers that never drain it. A caller that WINS this transition and then
+   * drains/reports the queue itself (abortJob surfaces leftovers on its result and
+   * final event) sets this so the backstop doesn't consume the queue first —
+   * mutating it before the CAS was the race this ordering exists to prevent.
+   */
+  preserveSteerQueue?: boolean;
+  /**
    * Additional guard: only fire if the job's creation epoch equals this value.
    * Prevents a stale owner from transitioning a replacement job that reuses
    * the same stream ID.

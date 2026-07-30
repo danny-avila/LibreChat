@@ -1439,6 +1439,39 @@ class GenerationJobManagerClass {
    * that the Redis chunk-log reconstruction dropped — reaches the LIVE client
    * too, not just the saved message. Pure/optional; identity when omitted.
    */
+  /**
+   * Re-signals an abort whose terminal CAS already landed. The first abort flips the
+   * job to `aborted` BEFORE its cross-replica publication, so a failed publish leaves
+   * a generation running against a job every retry reads as terminal — and a retry
+   * that trusts that status returns "delivered" without ever republishing. This is
+   * the retry's delivery path: emit the abort again (awaited), abort any local
+   * runtime, and report delivery on the same honest basis as abortJob — generation
+   * OWNERSHIP, never publish success. Callers confirm actual delivery by the run
+   * settling (the owner settles last), which their bounded drains already poll.
+   */
+  async resignalAbort(streamId: string, expectedCreatedAt?: number): Promise<boolean> {
+    const jobData = await this.jobStore.getJob(streamId);
+    if (
+      jobData == null ||
+      jobData.status !== 'aborted' ||
+      (expectedCreatedAt != null && jobData.createdAt !== expectedCreatedAt)
+    ) {
+      return false;
+    }
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime?.createdAt === jobData.createdAt) {
+      runtime.abortController.abort();
+    }
+    if (this.eventTransport.emitAbort) {
+      try {
+        await this.eventTransport.emitAbort(streamId, jobData.createdAt);
+      } catch (err) {
+        logger.error(`[GenerationJobManager] Failed to republish abort for ${streamId}:`, err);
+      }
+    }
+    return this.ownedJobs.get(streamId) === jobData.createdAt;
+  }
+
   async abortJob(
     streamId: string,
     options?: {
@@ -1520,6 +1553,35 @@ class GenerationJobManagerClass {
     }
 
     const runtime = observedRuntime?.createdAt === jobData.createdAt ? observedRuntime : undefined;
+
+    // Claim the terminal state BEFORE touching anything the run owns — the steer
+    // queue included. A natural completion or approval resolution racing this abort
+    // can win the CAS, and a loser that had already closed-and-drained the winner's
+    // queue (the previous ordering) stripped steers from a generation that then kept
+    // running. The loser must leave no side effects at all.
+    const finalized = await this.jobStore.transitionStatus(streamId, {
+      from: abortableStatus,
+      to: 'aborted',
+      expectCreatedAt: jobData.createdAt,
+      // The winner drains and reports the queue itself just below; without this the
+      // in-memory store's terminal backstop parks it first and the abort response
+      // loses its pendingSteers.
+      preserveSteerQueue: true,
+      // preserveForReconcile omits completedAt so the finished-job sweep can't reap the
+      // abort before the schedules reconciler observes it (see completeJob).
+      patch: { ...(options?.preserveForReconcile ? {} : { completedAt: Date.now() }) },
+    });
+    if (!finalized) {
+      await this.reconcileLostTerminalTransition(streamId, jobData.createdAt, runtime);
+      return {
+        success: false,
+        jobData,
+        content: [],
+        finalEvent: null,
+        text: '',
+        collectedUsage: [],
+      };
+    }
 
     /** Steers that never reached an injection boundary — reported on the abort
      *  final event (and the abort route's JSON) so the client can restore them
@@ -1608,30 +1670,6 @@ class GenerationJobManagerClass {
       earlyAbort: isEarlyAbort,
       ...(pendingSteers.length > 0 && { pendingSteers }),
     } satisfies t.FinalEvent as t.ServerSentEvent;
-
-    // Claim the terminal state before publishing anything client-visible. A
-    // natural completion or approval resolution racing this abort can win the
-    // CAS, in which case this stale abort must not signal or close that winner.
-    const finalized = await this.jobStore.transitionStatus(streamId, {
-      from: abortableStatus,
-      to: 'aborted',
-      expectCreatedAt: jobData.createdAt,
-      // preserveForReconcile omits completedAt so the finished-job sweep can't reap the
-      // abort before the schedules reconciler observes it (see completeJob).
-      patch: { ...(options?.preserveForReconcile ? {} : { completedAt: Date.now() }) },
-    });
-    if (!finalized) {
-      await this.reconcileLostTerminalTransition(streamId, jobData.createdAt, runtime);
-      return {
-        success: false,
-        jobData,
-        content: abortContent,
-        finalEvent: null,
-        text,
-        collectedUsage,
-        ...(pendingSteers.length > 0 && { pendingSteers }),
-      };
-    }
 
     // Signal only the generation whose terminal transition won above. The
     // transport tag prevents a delayed predecessor abort from reaching a

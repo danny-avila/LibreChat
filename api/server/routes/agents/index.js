@@ -398,6 +398,15 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
           .status(503)
           .json({ error: 'Could not record the stop request. Please retry.', aborted: null });
       }
+      // Another Stop attempt is mid-flight for this run (the per-run stamp is the
+      // serialization arbiter). Acting here would race the winner: aborting could
+      // lose its CAS and resolving would release the settlement barrier while the
+      // winner is still pruning and saving. The user's intent is already being
+      // executed, so answer as the duplicate it is.
+      if (stampResult === 'in_progress') {
+        logger.debug(`[AgentStream] Stop already in progress for ${jobStreamId}`);
+        return res.json({ success: true, aborted: jobStreamId });
+      }
       scheduledStopStamped = stampResult === 'stamped';
     }
     const resolveStopAttempt = async () => {
