@@ -348,6 +348,16 @@ describe('resolveComposerKeyDown', () => {
     expect(resolveComposerKeyDown(keydown({ altKey: true }), duringRun)).toBe('interrupt');
   });
 
+  it('submits when submit itself is rebound to Alt+Enter during a run', () => {
+    const ctx = { ...duringRun, submitOverride: makeBinding({ alt: true, key: 'Enter' }) };
+    expect(resolveComposerKeyDown(keydown({ altKey: true }), ctx)).toBe('submit');
+  });
+
+  it('still interrupts on Alt+Enter when submit is rebound elsewhere', () => {
+    const ctx = { ...duringRun, submitOverride: makeBinding({ ctrl: true, key: 'J' }) };
+    expect(resolveComposerKeyDown(keydown({ altKey: true }), ctx)).toBe('interrupt');
+  });
+
   it('routes Ctrl/Cmd+Enter to the alternate action during a run with default submit', () => {
     expect(resolveComposerKeyDown(keydown({ ctrlKey: true }), duringRun)).toBe('other');
     expect(

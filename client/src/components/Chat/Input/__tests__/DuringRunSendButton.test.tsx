@@ -3,6 +3,7 @@ import { RecoilRoot } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
+import type { ShortcutOverride } from '~/store/misc';
 import DuringRunSendButton from '../DuringRunSendButton';
 import store from '~/store';
 
@@ -55,10 +56,22 @@ function Harness({ steering }: { steering: SteeringControls }) {
   );
 }
 
-function openMenu(options: StubOptions & { enterInterrupts?: boolean } = {}) {
-  const { enterInterrupts = false, ...stub } = options;
+type MenuOptions = StubOptions & {
+  enterInterrupts?: boolean;
+  enterToSend?: boolean;
+  customShortcuts?: Record<string, ShortcutOverride>;
+};
+
+function openMenu(options: MenuOptions = {}) {
+  const { enterInterrupts = false, enterToSend = true, customShortcuts = {}, ...stub } = options;
   render(
-    <RecoilRoot initializeState={({ set }) => set(store.steerInterruptsByDefault, enterInterrupts)}>
+    <RecoilRoot
+      initializeState={({ set }) => {
+        set(store.steerInterruptsByDefault, enterInterrupts);
+        set(store.enterToSend, enterToSend);
+        set(store.customShortcuts, customShortcuts);
+      }}
+    >
       <Harness steering={steeringStub(stub)} />
     </RecoilRoot>,
   );
@@ -148,5 +161,58 @@ describe('DuringRunSendButton — Enter hint follows the interrupt preference', 
     expect(kbdFor('com_ui_interrupt_steer')).toBe('⏎');
     /** No key reaches the plain Steer row in this mode, so it advertises none. */
     expect(kbdFor('com_ui_steer')).toBeNull();
+  });
+});
+
+/**
+ * Hints come from the same decision table the composer executes
+ * (`resolveComposerKeyDown`), so a chord that no longer triggers a row is
+ * never advertised on it. Covers codex round 3: a chord rebound to an
+ * editing-allowed global shortcut is yielded to the document handler, and a
+ * submit rebound to Alt+Enter submits instead of interrupting.
+ */
+describe('DuringRunSendButton — hints follow the effective bindings', () => {
+  const kbdFor = (label: string) =>
+    screen.getByText(label).closest('button')?.querySelector('kbd')?.textContent ?? null;
+
+  test('defaults advertise every chord', () => {
+    openMenu({ canSteer: true });
+    expect(kbdFor('com_ui_steer')).toBe('⏎');
+    expect(kbdFor('com_ui_queue')).toBe('Ctrl ⏎');
+    expect(kbdFor('com_ui_interrupt_steer')).toBe('Ctrl ⇧ ⏎');
+    expect(kbdFor('com_ui_interrupt_send')).toBe('Alt ⏎');
+  });
+
+  test('drops a hint whose chord is rebound to a global shortcut', () => {
+    openMenu({
+      canSteer: true,
+      customShortcuts: {
+        focusSearch: { mac: 'Meta+Shift+Enter', other: 'Ctrl+Shift+Enter' },
+      },
+    });
+    expect(kbdFor('com_ui_interrupt_steer')).toBeNull();
+    expect(kbdFor('com_ui_interrupt_send')).toBe('Alt ⏎');
+    expect(kbdFor('com_ui_queue')).toBe('Ctrl ⏎');
+  });
+
+  test('drops the Interrupt & send hint when submit is rebound to its chord', () => {
+    openMenu({
+      canSteer: true,
+      customShortcuts: {
+        submitMessage: { mac: 'Alt+Enter', other: 'Alt+Enter' },
+      },
+    });
+    expect(kbdFor('com_ui_interrupt_send')).toBeNull();
+    expect(kbdFor('com_ui_steer')).toBe('⏎');
+    expect(kbdFor('com_ui_interrupt_steer')).toBe('Ctrl ⇧ ⏎');
+  });
+
+  test('moves the default-action hint to Ctrl+Enter when Enter-to-send is off', () => {
+    openMenu({ canSteer: true, enterToSend: false });
+    /** Plain Enter inserts a newline during a run in this mode; ⌘/Ctrl+Enter submits the default. */
+    expect(kbdFor('com_ui_steer')).toBe('Ctrl ⏎');
+    expect(kbdFor('com_ui_queue')).toBeNull();
+    expect(kbdFor('com_ui_interrupt_steer')).toBe('Ctrl ⇧ ⏎');
+    expect(kbdFor('com_ui_interrupt_send')).toBe('Alt ⏎');
   });
 });

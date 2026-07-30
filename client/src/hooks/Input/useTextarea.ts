@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import debounce from 'lodash/debounce';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilState } from 'recoil';
@@ -12,20 +12,15 @@ import {
   getEntity,
   checkIfScrollable,
 } from '~/utils';
-import {
-  parseBinding,
-  bindingHash,
-  isMacPlatform,
-  resolveComposerKeyDown,
-} from '~/utils/shortcuts';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
-import { EDITING_ALLOWED_SHORTCUTS } from '~/hooks/useKeyboardShortcuts';
 import { useLatestMessageMeta } from '~/hooks/Messages/useLatestMessage';
+import useComposerBindings from '~/hooks/Input/useComposerBindings';
 import useFileUploadRouter from '~/hooks/Files/useFileUploadRouter';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useUploadOptions from '~/hooks/Files/useUploadOptions';
 import { useInteractionHealthCheck } from '~/data-provider';
+import { resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useChatContext } from '~/Providers/ChatContext';
 import { useUploadModalContext } from '~/Providers';
 import { globalAudioId } from '~/common';
@@ -65,46 +60,7 @@ export default function useTextarea({
   const assistantMap = useAssistantsMapContext();
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
-  const customShortcuts = useRecoilValue(store.customShortcuts);
-
-  /**
-   * Effective `submitMessage` override: `undefined` when unset (default Ctrl/Cmd+Enter applies),
-   * `null` when explicitly unbound, otherwise the rebound chord. When present, the composer
-   * honors it instead of the hard-coded Ctrl/Cmd+Enter so the shortcut can be replaced or
-   * disabled in the main place it is used.
-   */
-  const submitOverride = useMemo(() => {
-    const override = customShortcuts['submitMessage'];
-    if (!override) {
-      return undefined;
-    }
-    return parseBinding(isMacPlatform ? override.mac : override.other);
-  }, [customShortcuts]);
-
-  /**
-   * Chords the user has bound to global shortcuts that still run while typing
-   * (`EDITING_ALLOWED_SHORTCUTS`). The document-level handler in
-   * `useKeyboardShortcuts` runs AFTER this one and does not check
-   * `defaultPrevented`, so the composer must leave these chords entirely to it
-   * — acting here too would fire both. `submitMessage` is excluded: its
-   * rebinding is resolved through `submitOverride` instead. No default binding
-   * uses an Enter chord besides submit, so this only ever yields to a
-   * deliberate rebinding.
-   */
-  const yieldedShortcutChords = useMemo(() => {
-    const editingAllowed: ReadonlySet<string> = EDITING_ALLOWED_SHORTCUTS;
-    const hashes = new Set<string>();
-    for (const [actionId, override] of Object.entries(customShortcuts ?? {})) {
-      if (actionId === 'submitMessage' || !editingAllowed.has(actionId)) {
-        continue;
-      }
-      const binding = parseBinding(isMacPlatform ? override?.mac : override?.other);
-      if (binding) {
-        hashes.add(bindingHash(binding));
-      }
-    }
-    return hashes;
-  }, [customShortcuts]);
+  const { submitOverride, yieldedChords } = useComposerBindings();
 
   const { index, conversation, isSubmitting, setFilesLoading } = useChatContext();
   const latestMessage = useLatestMessageMeta(index);
@@ -230,7 +186,7 @@ export default function useTextarea({
         hasDuringRunModifier: onDuringRunModifier != null,
         enterToSend,
         submitOverride,
-        yieldedChords: yieldedShortcutChords,
+        yieldedChords,
       });
 
       if (action === 'none') {
@@ -260,7 +216,7 @@ export default function useTextarea({
       isSubmitting,
       allowSubmitWhileGenerating,
       onDuringRunModifier,
-      yieldedShortcutChords,
+      yieldedChords,
       checkHealth,
       enterToSend,
       submitOverride,

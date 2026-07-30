@@ -1,12 +1,14 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { useWatch } from 'react-hook-form';
 import { SendIcon } from '@librechat/client';
 import { Zap, Clock, OctagonPause, ZapOff } from 'lucide-react';
 import type { Control } from 'react-hook-form';
+import type { ComposerKeyContext, KeyChordSource } from '~/utils/shortcuts';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
-import { isMacPlatform } from '~/utils/shortcuts';
+import { isMacPlatform, resolveComposerKeyDown } from '~/utils/shortcuts';
+import useComposerBindings from '~/hooks/Input/useComposerBindings';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -54,6 +56,8 @@ const DuringRunSendButton = React.memo(
   forwardRef((props: DuringRunSendButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
     const localize = useLocalize();
     const steerInterruptsByDefault = useRecoilValue(store.steerInterruptsByDefault);
+    const enterToSend = useRecoilValue(store.enterToSend);
+    const { submitOverride, yieldedChords } = useComposerBindings();
     const { steering } = props;
     const data = useWatch({ control: props.control });
     const content = data?.text?.trim();
@@ -61,6 +65,39 @@ const DuringRunSendButton = React.memo(
     const modEnter = isMacPlatform ? '⌘⏎' : 'Ctrl ⏎';
     const altEnter = isMacPlatform ? '⌥⏎' : 'Alt ⏎';
     const modShiftEnter = isMacPlatform ? '⌘⇧⏎' : 'Ctrl ⇧ ⏎';
+
+    /**
+     * What each canonical chord actually does right now, asked of the same
+     * decision table the composer executes. A hint only appears on a row its
+     * chord still triggers: a chord rebound to a global shortcut (or claimed
+     * by a rebound submit) is dropped rather than advertised on a row it no
+     * longer reaches, and with Enter-to-send off, plain Enter inserts a
+     * newline during a run, so ⌘/Ctrl+Enter carries the default action.
+     */
+    const verdicts = useMemo(() => {
+      const ctx: ComposerKeyContext = {
+        isComposing: false,
+        isSubmitting: true,
+        allowSubmitWhileGenerating: true,
+        hasDuringRunModifier: true,
+        enterToSend,
+        submitOverride,
+        yieldedChords,
+      };
+      const chord = (init: Partial<KeyChordSource>) =>
+        resolveComposerKeyDown(
+          { key: 'Enter', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, ...init },
+          ctx,
+        );
+      const mod = isMacPlatform ? { metaKey: true } : { ctrlKey: true };
+      return {
+        plainEnter: chord({}),
+        modEnter: chord(mod),
+        modShiftEnter: chord({ ...mod, shiftKey: true }),
+        altEnter: chord({ altKey: true }),
+      };
+    }, [enterToSend, submitOverride, yieldedChords]);
+
     /**
      * With the preference on, plain Enter routes through `submitDuringRun`,
      * which preempts. The hint has to follow it: leaving ⏎ on the ordinary
@@ -69,6 +106,20 @@ const DuringRunSendButton = React.memo(
      * this mode, so it shows none.
      */
     const enterInterrupts = primary === 'steer' && steerInterruptsByDefault;
+    /** The chord that submits the default action, if any still does. */
+    let submitHint: string | undefined;
+    if (verdicts.plainEnter === 'submit') {
+      submitHint = '⏎';
+    } else if (verdicts.modEnter === 'submit') {
+      submitHint = modEnter;
+    }
+    const alternateHint = verdicts.modEnter === 'other' ? modEnter : undefined;
+    let interruptSteerKbd: string | undefined;
+    if (enterInterrupts && submitHint != null) {
+      interruptSteerKbd = submitHint;
+    } else if (verdicts.modShiftEnter === 'preempt') {
+      interruptSteerKbd = modShiftEnter;
+    }
 
     const runAction = (action: (text: string) => boolean | void) => {
       const text = props.getText().trim();
@@ -80,9 +131,9 @@ const DuringRunSendButton = React.memo(
       }
     };
 
-    let steerKbd: string | undefined = modEnter;
+    let steerKbd: string | undefined = alternateHint;
     if (primary === 'steer') {
-      steerKbd = enterInterrupts ? undefined : '⏎';
+      steerKbd = enterInterrupts ? undefined : submitHint;
     }
 
     const steerRow: ActionRow = {
@@ -98,7 +149,7 @@ const DuringRunSendButton = React.memo(
     const queueRow: ActionRow = {
       key: 'queue',
       label: localize('com_ui_queue'),
-      kbd: primary === 'queue' ? '⏎' : modEnter,
+      kbd: primary === 'queue' ? submitHint : alternateHint,
       icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
       onClick: () => runAction((text) => steering.queueFromComposer(text)),
     };
@@ -106,7 +157,7 @@ const DuringRunSendButton = React.memo(
     const interruptSteerRow: ActionRow = {
       key: 'interrupt-steer',
       label: localize('com_ui_interrupt_steer'),
-      kbd: enterInterrupts ? '⏎' : modShiftEnter,
+      kbd: interruptSteerKbd,
       icon: <ZapOff className="h-4 w-4 text-amber-500" aria-hidden="true" />,
       // Matches the standalone button's gate, and deliberately NOT
       // `!canSteer` like the steer row above: `canSteer` is also false before
@@ -118,7 +169,7 @@ const DuringRunSendButton = React.memo(
     const interruptRow: ActionRow = {
       key: 'interrupt',
       label: localize('com_ui_interrupt_send'),
-      kbd: altEnter,
+      kbd: verdicts.altEnter === 'interrupt' ? altEnter : undefined,
       icon: <OctagonPause className="h-4 w-4 text-red-500" aria-hidden="true" />,
       onClick: () => runAction((text) => steering.interruptAndSend(text)),
     };

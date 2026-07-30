@@ -66,7 +66,13 @@ export function isModifierKey(key: string): boolean {
   return MODIFIER_KEYS.has(key);
 }
 
-export function bindingFromEvent(e: KeyboardEvent): ShortcutBinding | null {
+/** The event fields chord resolution reads, so callers can pass synthetic chords. */
+export type KeyChordSource = Pick<
+  KeyboardEvent,
+  'key' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'
+>;
+
+export function bindingFromEvent(e: KeyChordSource): ShortcutBinding | null {
   if (isModifierKey(e.key)) {
     return null;
   }
@@ -232,7 +238,7 @@ export interface ComposerKeyContext {
  * means preventDefault with no action.
  */
 export function resolveComposerKeyDown(
-  e: KeyboardEvent,
+  e: KeyChordSource,
   ctx: ComposerKeyContext,
 ): ComposerKeyAction {
   if (e.key !== 'Enter') {
@@ -247,7 +253,7 @@ export function resolveComposerKeyDown(
   }
   const duringRun = ctx.isSubmitting && ctx.allowSubmitWhileGenerating && ctx.hasDuringRunModifier;
   if (duringRun && !ctx.isComposing) {
-    if (e.altKey) {
+    if (e.altKey && !bindingsMatch(binding, ctx.submitOverride)) {
       return 'interrupt';
     }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && !bindingsMatch(binding, ctx.submitOverride)) {
