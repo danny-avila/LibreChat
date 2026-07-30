@@ -266,14 +266,32 @@ export async function handleSteerRequest(
    * Strictly AFTER a successful enqueue: an armed request whose steer never
    * made the durable queue could seal a generation with nothing to inject.
    *
-   * The 202 reports what was actually ARMED, not what was asked for: a
-   * cross-replica publish that failed or reached nobody leaves the owner
-   * without a poll, so the steer still injects at the next tool boundary but
-   * must not be labelled as interrupting.
+   * `preempt` in the 202 means "queued as an interrupt request", NOT "a seal
+   * is guaranteed" — it mirrors the durable `item.preempt` exactly. A route
+   * cannot synchronously know whether another replica will seal: proving that
+   * needs a correlated request/response over pub-sub, and even then the owner
+   * may finish before the arm lands. Reporting delivery instead made the
+   * response disagree with the durable flag, which `rearmQueuedPreempts`
+   * trusts on resume — the two must agree or a resumed owner honours an
+   * interrupt the client was told had degraded.
+   *
+   * The gates that ARE knowable stay: the owner's recorded capability and a
+   * successful enqueue. Everything past that degrades to the documented
+   * fallback of injecting at the next tool boundary.
    */
-  const preemptArmed = preemptCapable
-    ? await GenerationJobManager.requestPreempt(streamId, item.steerId, owner.createdAt)
-    : false;
+  if (preemptCapable) {
+    const armed = await GenerationJobManager.requestPreempt(
+      streamId,
+      item.steerId,
+      owner.createdAt,
+    );
+    if (!armed) {
+      logger.warn(
+        `[handleSteerRequest] Preempt arm not confirmed for ${streamId} steer=${item.steerId}; ` +
+          'the steer remains queued and will inject at the next boundary',
+      );
+    }
+  }
 
   /** Fire-and-forget: the persisted steer part references these uploads, so
    *  mark them used (parity with `updateFilesUsage` on normal sends) or the
@@ -297,7 +315,7 @@ export async function handleSteerRequest(
       steerId: item.steerId,
       position: depth,
       conversationId,
-      preempt: preemptArmed,
+      preempt: preemptCapable,
     },
   };
 }
@@ -341,11 +359,23 @@ export async function handleSteerCancel(
   /** A cancelled steer must also disarm any preempt request it carried —
    *  cancel is live UI, and a request left armed would seal an unrelated
    *  stretch of generation, drain nothing, and end the run mid-sentence. */
-  if (removed) {
-    /** Awaited: a dropped disarm leaves the owner armed for a steer that no
-     *  longer exists, which costs one sealed-and-empty boundary — a visibly
-     *  truncated answer, not just a stale label. */
-    await GenerationJobManager.noteSteersRemoved(streamId, [body.steerId], job.createdAt);
+  if (!removed) {
+    return { status: 200, body: { removed } };
   }
-  return { status: 200, body: { removed } };
+  /**
+   * Awaited: a dropped disarm leaves the owner armed for a steer that no
+   * longer exists, costing one sealed-and-empty boundary — a visibly
+   * truncated answer, not just a stale label.
+   *
+   * `removed` stays true regardless: the steer really did leave the queue,
+   * and reporting otherwise would make the client re-show a chip for a steer
+   * that can never arrive. `disarmed: false` surfaces the residual risk
+   * without lying about the removal.
+   */
+  const disarmed = await GenerationJobManager.noteSteersRemoved(
+    streamId,
+    [body.steerId],
+    job.createdAt,
+  );
+  return { status: 200, body: { removed, ...(disarmed === false && { disarmed: false }) } };
 }

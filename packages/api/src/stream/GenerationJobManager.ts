@@ -3288,9 +3288,9 @@ class GenerationJobManagerClass {
    * generating replica; without a fence identity the publish is skipped and
    * the empty-boundary path's self-clear bounds the damage to one seal.
    */
-  noteSteersRemoved(streamId: string, steerIds: string[], jobCreatedAt?: number): Promise<void> {
+  noteSteersRemoved(streamId: string, steerIds: string[], jobCreatedAt?: number): Promise<boolean> {
     if (steerIds.length === 0) {
-      return Promise.resolve();
+      return Promise.resolve(true);
     }
     const runtime = this.runtimeState.get(streamId);
     if (runtime != null && (jobCreatedAt == null || runtime.createdAt === jobCreatedAt)) {
@@ -3298,26 +3298,38 @@ class GenerationJobManagerClass {
     }
     const createdAt = jobCreatedAt ?? runtime?.createdAt;
     if (createdAt == null || this.eventTransport.emitPreempt == null) {
-      return Promise.resolve();
+      /** Nothing to publish: the local disarm above is the whole mechanism. */
+      return Promise.resolve(true);
     }
     /**
-     * Awaitable so a CANCEL can surface a failed disarm. A dropped clear is
+     * Awaitable so a CANCEL can react to a failed disarm. A dropped clear is
      * worse than a dropped arm: the owner keeps a level-triggered request for
      * a steer that no longer exists, seals its next chunk, drains nothing,
-     * and truncates an unrelated answer. The empty-boundary self-clear bounds
-     * that to a single seal, but the truncation still happened.
+     * and truncates an unrelated answer. Retried once — a transient publish
+     * error is the common case and the retry is cheap — then reported to the
+     * caller so it is not silently swallowed.
+     *
+     * Damage is bounded even if both attempts fail: the empty-boundary
+     * self-clear disarms the generation after that single seal.
      */
-    return Promise.resolve(
-      this.eventTransport.emitPreempt(streamId, { op: 'clear', createdAt, steerIds }),
-    ).then(
-      () => undefined,
-      (error: unknown) => {
-        logger.error(
-          `[GenerationJobManager] Failed to publish preempt clear for ${streamId}; ` +
-            'the owner may seal once before its empty boundary self-clears:',
-          error,
-        );
-      },
+    const publish = (): Promise<unknown> =>
+      Promise.resolve(
+        this.eventTransport.emitPreempt?.(streamId, { op: 'clear', createdAt, steerIds }),
+      );
+    return publish().then(
+      () => true,
+      () =>
+        publish().then(
+          () => true,
+          (error: unknown) => {
+            logger.error(
+              `[GenerationJobManager] Failed to publish preempt clear for ${streamId} after retry; ` +
+                'the owner may seal once before its empty boundary self-clears:',
+              error,
+            );
+            return false;
+          },
+        ),
     );
   }
 

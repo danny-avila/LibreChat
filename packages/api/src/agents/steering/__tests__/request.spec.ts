@@ -564,6 +564,28 @@ describe('preempt flag on the steer request', () => {
    * Cancel is live UI. Without this the request stays armed after its steer
    * is gone and seals an unrelated stretch of generation.
    */
+  /**
+   * Option A semantics: the 202's `preempt` mirrors the DURABLE queue flag,
+   * so the response and `SteerQueueItem.preempt` can never disagree — a
+   * resumed owner re-arming from the queue then honours exactly what the
+   * client was told.
+   */
+  it('the 202 flag and the durable queue item always agree', async () => {
+    const streamId = 'preempt-flag-agrees';
+    await createCapableJob(streamId);
+
+    const result = await handleSteerRequest(user, {
+      conversationId: streamId,
+      text: 'interrupt me',
+      preempt: true,
+    });
+    const queued = (await GenerationJobManager.steering.peek(streamId))[0];
+
+    expect(result.body.preempt).toBe(true);
+    expect(queued.preempt).toBe(true);
+    expect(result.body.preempt).toBe(queued.preempt === true);
+  });
+
   it('cancelling a preempt steer disarms the request', async () => {
     const streamId = 'preempt-req-cancel';
     await createCapableJob(streamId);
