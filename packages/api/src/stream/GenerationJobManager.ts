@@ -1740,10 +1740,35 @@ class GenerationJobManagerClass {
       runtime.finalEvent = abortFinalEvent;
     }
 
+    // Same bound as the abort publication above: everything between the won CAS
+    // and abortJob's return must terminate during a transport outage, or the Stop
+    // route behind this call never saves its partial or resolves its stop stamp.
     if (runtime?.createdEventPublication) {
-      await runtime.createdEventPublication;
+      try {
+        await withTimeout(
+          runtime.createdEventPublication,
+          ABORT_PUBLISH_TIMEOUT_MS,
+          `Created-event publication timed out during abort for ${streamId}`,
+        );
+      } catch (err) {
+        logger.error(
+          `[GenerationJobManager] Created-event wait failed during abort for ${streamId}:`,
+          err,
+        );
+      }
     }
-    await this.eventTransport.emitDone(streamId, abortFinalEvent, jobData.createdAt);
+    try {
+      await withTimeout(
+        Promise.resolve(this.eventTransport.emitDone(streamId, abortFinalEvent, jobData.createdAt)),
+        ABORT_PUBLISH_TIMEOUT_MS,
+        `Abort final-event publication timed out for ${streamId}`,
+      );
+    } catch (err) {
+      logger.error(
+        `[GenerationJobManager] Failed to publish abort final event for ${streamId}:`,
+        err,
+      );
+    }
     if (runtime?.startupTelemetry) {
       this.recordStartupEvent(runtime, abortFinalEvent);
     }

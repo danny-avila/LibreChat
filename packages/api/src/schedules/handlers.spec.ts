@@ -60,6 +60,9 @@ describe('toWireSchedule', () => {
       [
         'agent_id',
         'cadence',
+        // Public so the edit dialog can fence its PATCH on the revision it opened
+        // with (updateSchedulePayloadSchema.expectedConfigRevision).
+        'configRevision',
         'createdAt',
         'disabledReason',
         'enabled',
@@ -666,6 +669,72 @@ describe('updateSchedule refuses field-less payloads', () => {
     );
     // An empty update still rotates claimToken and bumps configRevision, fencing a
     // legitimate in-flight occurrence for a request that changed nothing.
+    expect(captured.status).toBe(400);
+    expect(deps.methods.updateScheduleById).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateSchedule client revision fence', () => {
+  const existingRow = () =>
+    ({
+      id: 'sched-1',
+      enabled: true,
+      agent_id: 'agent-1',
+      cadence: { frequency: 'daily', hour: 8, minute: 0 },
+      timezone: 'UTC',
+      nextRunAt: new Date('2026-07-31T09:00:00Z'),
+      configRevision: 7,
+    }) as unknown as ISchedule;
+
+  const makePatchReq = (body: Record<string, unknown>) =>
+    ({
+      params: { id: 'sched-1' },
+      body,
+      user: { id: 'user-1', tenantId: 't1', role: 'USER' },
+    }) as unknown as ServerRequest;
+
+  it('refuses a PATCH computed from a superseded revision', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue(existingRow());
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).updateSchedule(
+      makePatchReq({ name: 'renamed', expectedConfigRevision: 6 }),
+      res,
+    );
+
+    // The dialog rebuilds cadence whole from the snapshot it opened with, so the
+    // server's fresh-read fence alone cannot see that another tab edited the row.
+    expect(captured.status).toBe(409);
+    expect(deps.methods.updateScheduleById).not.toHaveBeenCalled();
+  });
+
+  it('applies the PATCH and strips the fence field when the revision matches', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue(existingRow());
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).updateSchedule(
+      makePatchReq({ name: 'renamed', expectedConfigRevision: 7 }),
+      res,
+    );
+
+    expect(captured.status ?? 200).toBe(200);
+    const [, , update] = (deps.methods.updateScheduleById as jest.Mock).mock.calls[0];
+    // The fence input is not a schedule field; writing it would corrupt the row.
+    expect(update).not.toHaveProperty('expectedConfigRevision');
+    expect(update).toHaveProperty('name', 'renamed');
+  });
+
+  it('still refuses a PATCH that carries only the fence field', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).updateSchedule(
+      makePatchReq({ expectedConfigRevision: 7 }),
+      res,
+    );
+
     expect(captured.status).toBe(400);
     expect(deps.methods.updateScheduleById).not.toHaveBeenCalled();
   });

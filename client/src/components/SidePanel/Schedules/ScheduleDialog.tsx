@@ -210,8 +210,12 @@ export default function ScheduleDialog({
       showToast({ message: localize('com_ui_schedule_updated'), status: 'success' });
       onOpenChange(false);
     },
-    onError: () => {
-      showToast({ message: localize('com_ui_error'), status: 'error' });
+    onError: (error) => {
+      const status = (error as { response?: { status?: number } } | undefined)?.response?.status;
+      showToast({
+        message: localize(status === 409 ? 'com_ui_schedule_conflict' : 'com_ui_error'),
+        status: 'error',
+      });
     },
   });
 
@@ -255,7 +259,15 @@ export default function ScheduleDialog({
       }
       updateSchedule.mutate({
         id: schedule.id,
-        payload,
+        // Fence on the revision this dialog opened with: cadence is rebuilt whole
+        // from that snapshot, so an edit from another tab would otherwise be
+        // silently overwritten — the server answers 409 instead.
+        payload: {
+          ...payload,
+          ...(schedule.configRevision != null
+            ? { expectedConfigRevision: schedule.configRevision }
+            : {}),
+        },
       });
       return;
     }

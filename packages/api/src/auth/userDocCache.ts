@@ -1,6 +1,10 @@
 import { createHash } from 'crypto';
 import { logger } from '@librechat/data-schemas';
-import { AUTH_USER_DOC_BY_ID_PREFIX, CacheKeys } from 'librechat-data-provider';
+import {
+  AUTH_USER_DOC_TOMBSTONE_PREFIX,
+  AUTH_USER_DOC_BY_ID_PREFIX,
+  CacheKeys,
+} from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import { cacheConfig } from '~/cache/cacheConfig';
 
@@ -104,6 +108,10 @@ export function buildAuthUserDocReverseIndexKey(userId: string): string {
   return `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
 }
 
+export function buildAuthUserDocTombstoneKey(userId: string): string {
+  return `${AUTH_USER_DOC_TOMBSTONE_PREFIX}:${userId}`;
+}
+
 function sanitizeUserForCache(user: Partial<IUser>): CachedAuthUser {
   const id = getUserId(user);
   const { _id: _ignored, ...rest } = user;
@@ -175,6 +183,16 @@ export async function setCachedAuthUserDoc(
     const userId = getUserId(sanitized);
     if (userId) {
       await rememberUserCacheKey(store, userId, cacheKey, AUTH_USER_DOC_CACHE_TTL_MS);
+      // Checked AFTER the writes above, never before: the deletion barrier writes
+      // its tombstone and then sweeps keys, so a fill whose Mongo read predates the
+      // barrier either lands before the sweep (swept) or observes the tombstone
+      // here and unwinds itself. A pre-write check leaves the sweep-then-write
+      // interleaving serving a deleted user's document for the full TTL.
+      const tombstoned = await store.get(buildAuthUserDocTombstoneKey(userId));
+      if (tombstoned != null) {
+        await store.delete(cacheKey);
+        await store.delete(buildAuthUserDocReverseIndexKey(userId));
+      }
     }
   } catch (error) {
     logger.warn('[authUserDocCache] Cache write failed', {

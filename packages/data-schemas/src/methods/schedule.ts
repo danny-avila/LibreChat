@@ -858,6 +858,10 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
         ...revisionFilter,
       },
       { $set: { lastRun: { ...lastRun, scheduledFor } } },
+      // Run-state bookkeeping, not a config edit: re-affirmed pauses would
+      // otherwise bump updatedAt (and reorder updated-time listings) every
+      // reconciliation pass for as long as an approval sits waiting.
+      { timestamps: false },
     );
   }
 
@@ -1114,9 +1118,16 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       // and the approval must not have the OLD config's pause stamped on it. Without
       // this the later terminal write (which IS fenced) could never replace the stale
       // status, so the card stuck on "Needs approval".
+      // The ROW's fire time, not the projection time: reconciliation re-affirms a
+      // long-lived pause every pass, and a fresh stamp per pass walked the card's
+      // timestamp forward for as long as the approval sat waiting.
       await projectLastRun(
         params.scheduleId,
-        { conversationId: params.conversationId, status: params.status, firedAt },
+        {
+          conversationId: params.conversationId,
+          status: params.status,
+          firedAt: paused.firedAt ?? firedAt,
+        },
         params.scheduledFor,
         paused.configRevision != null ? { configRevision: paused.configRevision } : {},
       );
@@ -1161,7 +1172,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       await applyBalanceSkipBookkeeping({
         scheduleId: params.scheduleId,
         scheduledFor: params.scheduledFor,
-        firedAt,
+        firedAt: settled.firedAt ?? firedAt,
         conversationId: params.conversationId,
         rowRevision: settled.configRevision,
         balanceSkipDisableThreshold: params.balanceSkipDisableThreshold,
@@ -1169,7 +1180,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     } else {
       await applyTerminalBookkeeping({
         ...params,
-        firedAt,
+        firedAt: settled.firedAt ?? firedAt,
         expectConfigRevision: settled.configRevision,
       });
     }

@@ -1037,7 +1037,31 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     // resumed generation usually surfaces its abort as a THROW out of
     // resumeCompletion, so this classification — not the pre-finalize signal check —
     // is the path most stops actually take.
-    if (job.abortController.signal.aborted || err?.message?.includes('abort')) {
+    //
+    // The signal is authoritative; an abort-SHAPED error alone is not. A genuine
+    // failure can mention 'abort' (driver errors like 'transaction aborted') with
+    // nothing having finalized the job, and returning here then left it `running`
+    // forever with no controller driving it. abortJob flips the job terminal BEFORE
+    // any signal fires, so a job still running under this generation is proof no
+    // abort finalized it — send that to the error path below instead.
+    const abortShaped = err?.name === 'AbortError' || err?.message?.includes('abort');
+    let wasAborted = job.abortController.signal.aborted;
+    if (!wasAborted && abortShaped) {
+      try {
+        const liveJob = await GenerationJobManager.getJobStore().getJob(streamId);
+        wasAborted = !(
+          liveJob &&
+          liveJob.createdAt === job.createdAt &&
+          liveJob.status === 'running'
+        );
+      } catch (readErr) {
+        logger.warn(
+          '[ResumeAgentController] Abort classification read failed; treating as failure',
+          readErr,
+        );
+      }
+    }
+    if (wasAborted) {
       logger.debug(`[ResumeAgentController] Resume aborted; settling the run: ${streamId}`);
       await settleAbortedScheduledResume(job, streamId, conversationId);
       return;

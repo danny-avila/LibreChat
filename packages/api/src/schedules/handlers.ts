@@ -180,6 +180,7 @@ export type WireSchedule = Pick<
   | 'lastRun'
   | 'runCount'
   | 'failureCount'
+  | 'configRevision'
   | 'createdAt'
   | 'updatedAt'
 >;
@@ -201,6 +202,7 @@ export function toWireSchedule(schedule: ISchedule): WireSchedule {
     lastRun: schedule.lastRun,
     runCount: schedule.runCount,
     failureCount: schedule.failureCount,
+    configRevision: schedule.configRevision,
     createdAt: schedule.createdAt,
     updatedAt: schedule.updatedAt,
   };
@@ -580,12 +582,16 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(400).json({ error: 'Invalid schedule payload', issues: parsed.error.issues });
       return;
     }
+    // The fence input is not a schedule field: strip it before the emptiness check
+    // and the update spread below, or it would count as an edit and be written to
+    // the row.
+    const { expectedConfigRevision, ...editedFields } = parsed.data;
     // A field-less PATCH is not a harmless no-op: updateScheduleById rotates the claim
     // token and bumps the config revision on every write, so an empty update would
     // fence a legitimate in-flight occurrence — its terminal bookkeeping revision-
     // fences to a no-op, and a fire in the POST-to-controller window is refused at
     // the admission boundary without ever running. Refuse before touching fencing.
-    if (Object.keys(parsed.data).length === 0) {
+    if (Object.keys(editedFields).length === 0) {
       res.status(400).json({ error: 'Schedule update must include at least one field' });
       return;
     }
@@ -597,6 +603,15 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     const existing = await deps.methods.getScheduleById(id, user.id);
     if (existing == null) {
       res.status(404).json({ error: 'Schedule not found' });
+      return;
+    }
+    // Client-side revision fence: the dialog rebuilds compound fields (cadence)
+    // from the snapshot it opened with, so an edit from another tab is invisible
+    // to the fresh-read fence below — the payload is internally consistent with a
+    // row that no longer exists. Refuse before any side effect (file holds) when
+    // the client says which revision it edited.
+    if (expectedConfigRevision != null && existing.configRevision !== expectedConfigRevision) {
+      res.status(409).json({ error: 'Schedule was modified concurrently. Please retry.' });
       return;
     }
     const limits = await deps.getLimits(user);
@@ -642,7 +657,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     // or a failed arm leaves exactly this state; re-arm on ANY edit rather than only a
     // cadence one, or a name/prompt edit would silently leave it dead.
     const needsArming = existing.nextRunAt == null;
-    const update: Partial<ISchedule> = { ...parsed.data } as Partial<ISchedule>;
+    const update: Partial<ISchedule> = { ...editedFields } as Partial<ISchedule>;
     if (enabled && (cadenceChanged || needsArming)) {
       const nextRunAt = computeNextRunAt({ cadence, timezone, scheduleId: existing.id });
       if (nextRunAt == null) {

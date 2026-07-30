@@ -5,6 +5,7 @@ import {
   AUTH_USER_DOC_CACHE_TTL_MS,
   buildAuthUserDocCacheKey,
   buildAuthUserDocReverseIndexKey,
+  buildAuthUserDocTombstoneKey,
   getAuthUserDocCacheMode,
   getCachedAuthUserDoc,
   invalidateCachedAuthUserDoc,
@@ -157,6 +158,26 @@ describe('auth user document cache helpers', () => {
       [cacheKey],
       AUTH_USER_DOC_CACHE_TTL_MS,
     );
+  });
+
+  it('unwinds its own write when the deletion tombstone is present', async () => {
+    const store = makeStore();
+    const userId = new Types.ObjectId();
+    const cacheKey = 'auth-user-doc:v1:tombstoned';
+    // The deletion barrier writes this BEFORE sweeping keys, so a fill whose Mongo
+    // read predates the barrier but whose cache write lands after the sweep must
+    // observe it here and delete its own entry — otherwise the deleted user's
+    // document is served for the full TTL while the destructive cascade runs.
+    store.values.set(buildAuthUserDocTombstoneKey(userId.toString()), Date.now());
+
+    await setCachedAuthUserDoc(store, cacheKey, {
+      _id: userId,
+      id: userId.toString(),
+      email: 'user@example.com',
+    });
+
+    expect(store.values.has(cacheKey)).toBe(false);
+    expect(store.values.has(buildAuthUserDocReverseIndexKey(userId.toString()))).toBe(false);
   });
 
   it('deduplicates reverse-index keys and caps the remembered set', async () => {

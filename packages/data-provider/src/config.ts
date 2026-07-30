@@ -2495,6 +2495,13 @@ export enum CacheKeys {
 export const AUTH_USER_DOC_BY_ID_PREFIX = 'auth-user-doc-byid';
 
 /**
+ * Deletion-barrier tombstone for the auth user-doc cache. Written BEFORE the
+ * barrier's key sweep so a cache fill racing the sweep (Mongo read pre-barrier,
+ * cache write post-sweep) observes it after writing and deletes its own entry.
+ */
+export const AUTH_USER_DOC_TOMBSTONE_PREFIX = 'auth-user-doc-tombstone';
+
+/**
  * Enum for violation types, used to identify, log, and cache violations.
  */
 export enum ViolationTypes {

@@ -1369,6 +1369,56 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
     });
 
+    it('finalizes a genuine failure whose message merely mentions abort', async () => {
+      const job = makeToolApprovalJob();
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      // The store still shows OUR generation running: proof no abort finalized the
+      // job (an actual abort flips it terminal BEFORE the signal fires). Taking the
+      // abort path here left the job `running` forever with no controller driving it.
+      mockJobStore.getJob.mockResolvedValue({ createdAt: 1000, status: 'running' });
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          resumeCompletion: jest.fn().mockRejectedValue(new Error('transaction aborted by server')),
+        }),
+        userMCPAuthMap: {},
+      });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockGenerationJobManager.emitError).toHaveBeenCalledWith(
+        CONVO_ID,
+        'transaction aborted by server',
+        1000,
+      );
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalled();
+    });
+
+    it('treats an abort-shaped throw as an abort when the job is already finalized', async () => {
+      const job = makeToolApprovalJob();
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      // abortJob deleted the job before the throw unwound: classification must not
+      // route this to the error path, whose outcome write would walk the failure
+      // streak for a user stop.
+      mockJobStore.getJob.mockResolvedValue(null);
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          resumeCompletion: jest.fn().mockRejectedValue(new Error('request aborted')),
+        }),
+        userMCPAuthMap: {},
+      });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockGenerationJobManager.emitError).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
+    });
+
     it('resume failure: emits an error, finalizes the job, and prunes the checkpoint', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       mockInitializeClient.mockResolvedValue({

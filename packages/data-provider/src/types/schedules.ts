@@ -58,7 +58,17 @@ export type TCreateSchedule = z.infer<typeof createSchedulePayloadSchema>;
 /** Idempotency is a property of the CREATE attempt, not of the schedule's config. */
 export const updateSchedulePayloadSchema = createSchedulePayloadSchema
   .omit({ clientRequestId: true })
-  .partial();
+  .partial()
+  .extend({
+    /**
+     * The configRevision the client's edit was computed from (captured when the
+     * dialog opened). The server fences the update on it, so a concurrent edit
+     * from another tab answers 409 instead of being silently overwritten by a
+     * payload rebuilt from a stale snapshot (cadence is sent whole, so the
+     * server-side fresh-read fence alone cannot detect this).
+     */
+    expectedConfigRevision: z.number().int().min(0).optional(),
+  });
 export type TUpdateSchedule = z.infer<typeof updateSchedulePayloadSchema>;
 
 export type TScheduleLastRun = {
@@ -84,6 +94,7 @@ export type TSchedule = {
   lastRun?: TScheduleLastRun;
   runCount: number;
   failureCount: number;
+  configRevision?: number;
   createdAt: string;
   updatedAt: string;
 };

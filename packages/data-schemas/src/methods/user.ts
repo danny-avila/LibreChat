@@ -1,5 +1,6 @@
 import mongoose, { FilterQuery } from 'mongoose';
 import {
+  AUTH_USER_DOC_TOMBSTONE_PREFIX,
   AUTH_USER_DOC_BY_ID_PREFIX,
   CacheKeys,
   type RefillIntervalUnit,
@@ -290,6 +291,10 @@ export function createUserMethods(
    * destructive cascade runs. Swallowing the fault there reports a barrier that was
    * never actually raised.
    */
+  /** Outlives any in-flight auth whose Mongo read predates the barrier; the cached
+   *  doc's own 5s TTL bounds the damage of anything that slips past this window. */
+  const AUTH_USER_DOC_TOMBSTONE_TTL_MS = 60_000;
+
   async function invalidateAuthUserDocCache(
     userId: string,
     options?: { required?: boolean },
@@ -307,6 +312,17 @@ export function createUserMethods(
       return;
     }
     try {
+      if (options?.required && cache.set) {
+        // Tombstone FIRST, sweep second. A fill racing this barrier (Mongo read
+        // pre-barrier, cache write post-sweep) re-caches the deleted user for its
+        // full TTL; fills check this key AFTER writing, so either the sweep below
+        // catches their entry or this tombstone makes them unwind it themselves.
+        await cache.set(
+          `${AUTH_USER_DOC_TOMBSTONE_PREFIX}:${userId}`,
+          Date.now(),
+          AUTH_USER_DOC_TOMBSTONE_TTL_MS,
+        );
+      }
       const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
       const cachedKeys = await cache.get(indexKey);
       if (Array.isArray(cachedKeys)) {

@@ -1673,6 +1673,7 @@
   "com_ui_saved": "Saved!",
   "com_ui_saving": "Saving...",
   "com_ui_schedule_am": "AM",
+  "com_ui_schedule_conflict": "This schedule was changed elsewhere. Reopen it to edit the latest version.",
   "com_ui_schedule_created": "Schedule created",
   "com_ui_schedule_daily": "Daily",
   "com_ui_schedule_day": "Day of week",

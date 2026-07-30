@@ -141,6 +141,21 @@ const openIdJwtLogin = (openIdConfig) => {
 
         if (user) {
           user.id = user._id.toString();
+          // A user whose account deletion has begun must not authenticate (or be
+          // re-cached): the destructive cascade is running, and a served pre-barrier
+          // document would let this request recreate data behind it. The racing-fill
+          // case (Mongo read BEFORE the barrier stamped this field) is closed by the
+          // cache-side tombstone check in setCachedAuthUserDoc.
+          if (user.deletionRequestedAt != null) {
+            if (authUserCacheStore && authUserCacheKey) {
+              await invalidateCachedAuthUserDoc(authUserCacheStore, {
+                userId: user.id,
+                cacheKey: authUserCacheKey,
+              });
+            }
+            done(null, false, { message: 'Account deletion in progress' });
+            return;
+          }
           /** Absent on the full doc means local user; null skips getUserPrincipals' fallback lookup */
           user.idOnTheSource ??= null;
 

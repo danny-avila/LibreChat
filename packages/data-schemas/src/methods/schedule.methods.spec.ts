@@ -381,6 +381,31 @@ describe('recordRunOutcome', () => {
     expect(updated.lastRun?.conversationId).toBe('convo-paused');
   });
 
+  it('re-affirmed pauses keep the ORIGINAL fire time and do not churn updatedAt', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const originalFiredAt = new Date('2026-07-20T12:00:02Z');
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor, firedAt: originalFiredAt }));
+    const pause = () =>
+      methods.recordRunOutcome({
+        scheduleId: schedule.id,
+        scheduledFor,
+        status: 'requires_action',
+        conversationId: 'convo-paused',
+        autoDisableAfterFailures: 3,
+      });
+
+    await pause();
+    const afterFirst = await getSchedule(schedule.id);
+    // Reconciliation re-affirms a long-lived pause every pass; a fresh stamp per
+    // pass walked the card's timestamp forward and reordered updated-time listings
+    // for as long as the approval sat waiting.
+    await pause();
+    const afterSecond = await getSchedule(schedule.id);
+
+    expect(afterSecond.lastRun?.firedAt?.toISOString()).toBe(originalFiredAt.toISOString());
+    expect(afterSecond.updatedAt?.toISOString()).toBe(afterFirst.updatedAt?.toISOString());
+  });
+
   it('does not write a pause card when no active run matches (spoof guard)', async () => {
     const schedule = await methods.createSchedule(scheduleData());
     // No run row for this occurrence: the card is written only after a matching active
@@ -1056,6 +1081,40 @@ describe('deletion barrier fails closed on cache invalidation', () => {
       name: 'B',
     });
     await expect(userMethods.markUserDeleting(user._id.toString())).resolves.toBeInstanceOf(Date);
+  });
+
+  it('writes the deletion tombstone BEFORE sweeping the cached keys', async () => {
+    process.env.AUTH_USER_CACHE_MODE = 'on';
+    const ops: string[] = [];
+    const tracking = createUserMethods(mongoose, {
+      getCache: () =>
+        ({
+          get: async () => undefined,
+          set: async (key: string) => {
+            ops.push(`set:${key}`);
+            return true;
+          },
+          delete: async (key: string) => {
+            ops.push(`delete:${key}`);
+            return true;
+          },
+        }) as never,
+    });
+    const user = await mongoose.models.User.create({
+      email: `barrier-tombstone-${Date.now()}@test.dev`,
+      name: 'B',
+    });
+
+    await tracking.markUserDeleting(user._id.toString());
+
+    // A fill racing this barrier checks the tombstone AFTER its own write. That
+    // only closes the race if the tombstone exists before the sweep begins: a
+    // sweep-first ordering leaves a window where the fill sees no tombstone and
+    // its entry was written after the sweep — surviving for the full TTL.
+    const tombstoneSet = ops.findIndex((op) => op.startsWith('set:auth-user-doc-tombstone:'));
+    const firstDelete = ops.findIndex((op) => op.startsWith('delete:'));
+    expect(tombstoneSet).toBeGreaterThanOrEqual(0);
+    expect(firstDelete).toBeGreaterThan(tombstoneSet);
   });
 });
 
