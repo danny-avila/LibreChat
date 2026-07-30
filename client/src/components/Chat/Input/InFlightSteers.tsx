@@ -1,5 +1,5 @@
 import { memo, useId, useRef, useMemo, useState, useEffect, useCallback } from 'react';
-import { useSetAtom, useAtomValue } from 'jotai';
+import { useSetAtom } from 'jotai';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import { X, Zap, ZapOff, Clock, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
@@ -9,11 +9,12 @@ import type { PendingSteer } from '~/store/families';
 import type { MenuEntry } from './SteerMenu';
 import { RowMenu, useDefaultToggleEntry, useInterruptToggleEntry } from './SteerMenu';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
-import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { useSteerCancel, useSteerReclaim, useLocalize } from '~/hooks';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
+import { steerOverlayHeightFamily } from '~/store/steer';
+import { useArmSteerMutation } from '~/data-provider';
 import { carriedSteerContext, cn } from '~/utils';
 import store from '~/store';
 
@@ -130,27 +131,17 @@ const InFlightSteer = memo(function InFlightSteer({
     [conversationId],
   );
 
-  /** Fresh read at resubmit time: an interrupt armed while this escalation's
-   *  reclaim was in flight (another bubble, a queued row, the composer chord)
-   *  means resubmitting would break the one-interrupt invariant. */
-  const hasUnresolvedInterrupt = useRecoilCallback(
-    ({ snapshot }) =>
-      () =>
-        snapshot
-          .getLoadable(store.pendingSteersByConvoId(conversationId))
-          .getValue()
-          .some((item) => item.preempt === true && item.status !== 'failed'),
+  /** Relabels the chip in place once the server confirms the durable arm —
+   *  same steerId, same position, only the `preempt` flag flips. */
+  const markSteerPreempt = useRecoilCallback(
+    ({ set }) =>
+      (steerId: string) =>
+        set(store.pendingSteersByConvoId(conversationId), (prev) =>
+          prev.map((item) => (item.steerId === steerId ? { ...item, preempt: true } : item)),
+        ),
     [conversationId],
   );
-  const setEscalating = useSetAtom(escalatingSteerFamily(conversationId));
-
-  /** Latest controls for the escalation's async continuation: the `.then`
-   *  closure otherwise holds the render's stale `steering`, blind to a run
-   *  that paused (approval, answer mode) while the reclaim was in flight. */
-  const steeringRef = useRef(steering);
-  useEffect(() => {
-    steeringRef.current = steering;
-  });
+  const { mutateAsync: armSteer } = useArmSteerMutation();
 
   /**
    * Takes the steer back off the server queue so its words can be re-homed.
@@ -235,54 +226,40 @@ const InFlightSteer = memo(function InFlightSteer({
             key: 'interrupt',
             label: localize('com_ui_interrupt_steer_now'),
             icon: <ZapOff className="h-4 w-4 text-amber-500" aria-hidden="true" />,
-            /* `!duringRunActive` also covers answer mode (`ask_user_question`),
-             * where `pausedOnApproval` stays false but a resubmit would bounce
-             * off RUN_PAUSED after the reclaim already gave up the boundary. */
+            /* UX gate only — correctness lives in the server's atomic arm,
+             * which is fenced to this generation and refuses once the item
+             * left the queue. `!duringRunActive` covers answer mode, where
+             * `pausedOnApproval` stays false. */
             disabled: interruptPending || steering.pausedOnApproval || !steering.duringRunActive,
+            /* One atomic server op: `preempt` flips on the EXISTING queued
+             * item, so its FIFO position, id, and timestamp survive and there
+             * is no reclaim window to race. Every "too late" interleaving
+             * (drained, cancelled, run ended or replaced) is the same honest
+             * `armed: false`, and the chip is only relabelled on a confirmed
+             * durable arm. */
             onClick: () => {
-              setEscalating(true);
-              void reclaim()
-                .then((reclaimed) => {
-                  if (!reclaimed) {
+              void armSteer({ conversationId, steerId: steer.steerId }).then(
+                (response) => {
+                  if (response.armed === true) {
+                    markSteerPreempt(steer.steerId);
                     return;
                   }
-                  if (hasSettled(steer.steerId)) {
-                    showToast({
-                      message: localize('com_ui_steer_run_ended_queued'),
-                      status: 'info',
-                    });
-                    return;
-                  }
-                  /* Live controls, not the render's: the run can pause (or an
-                   * interrupt can arm) while the reclaim is in flight, and the
-                   * boundary slot is already surrendered — re-home the words
-                   * rather than resubmit into a rejection. */
-                  const live = steeringRef.current;
-                  if (!live.duringRunActive || live.pausedOnApproval) {
-                    live.queueReclaimedSteer(steer);
-                    showToast({
-                      message: localize('com_ui_steer_run_paused_queued'),
-                      status: 'info',
-                    });
-                    return;
-                  }
-                  if (hasUnresolvedInterrupt()) {
-                    live.queueReclaimedSteer(steer);
-                    showToast({
-                      message: localize('com_ui_steer_interrupt_busy_queued'),
-                      status: 'info',
-                    });
-                    return;
-                  }
-                  live.retrySteer(
-                    steer.steerId,
-                    steer.text,
-                    steer.files,
-                    carriedSteerContext(steer),
-                    { preempt: true },
-                  );
-                })
-                .finally(() => setEscalating(false));
+                  showToast({
+                    message: localize(
+                      response.code === 'PREEMPT_UNSUPPORTED'
+                        ? 'com_ui_steer_preempt_unsupported'
+                        : 'com_ui_steer_already_applied',
+                    ),
+                    status: 'info',
+                  });
+                },
+                () => {
+                  showToast({
+                    message: localize('com_ui_steer_arm_failed'),
+                    status: 'error',
+                  });
+                },
+              );
             },
           } satisfies MenuEntry,
         ]),
@@ -467,13 +444,10 @@ const InFlightSteers = memo(function InFlightSteers({
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const inFlight = useMemo(() => steers.filter((steer) => steer.status !== 'failed'), [steers]);
   /** Mirrors `PendingSteerChips`: while one interrupt is unresolved, every
-   *  other escalation control disables rather than racing the same seal. The
-   *  escalating flag covers the reclaim window, before a preempt chip exists
-   *  for the chip-derived check to see. */
-  const escalating = useAtomValue(escalatingSteerFamily(conversationId));
+   *  other escalation control disables rather than arming a second seal. */
   const interruptPending = useMemo(
-    () => escalating || inFlight.some((steer) => steer.preempt === true),
-    [escalating, inFlight],
+    () => inFlight.some((steer) => steer.preempt === true),
+    [inFlight],
   );
   const setOverlayHeight = useSetAtom(steerOverlayHeightFamily(conversationId));
 

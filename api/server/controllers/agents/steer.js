@@ -1,4 +1,9 @@
-const { checkAccess, handleSteerRequest, handleSteerCancel } = require('@librechat/api');
+const {
+  checkAccess,
+  handleSteerRequest,
+  handleSteerCancel,
+  handleSteerArm,
+} = require('@librechat/api');
 const { logger, ResourceCapabilityMap } = require('@librechat/data-schemas');
 const {
   Permissions,
@@ -107,5 +112,25 @@ const SteerCancelController = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/agents/chat/steer/arm
+ *
+ * Escalates a still-queued steer to an interrupt in place (the durable item
+ * keeps its FIFO position). `armed: false` is not an error — the steer
+ * already injected, was cancelled, or the deployment cannot seal mid-stream.
+ * No agent-access check: arming injects nothing model-bound, so ownership
+ * checks suffice, exactly like cancel.
+ */
+const SteerArmController = async (req, res) => {
+  try {
+    const { status, body } = await handleSteerArm(req.user ?? {}, req.body ?? {});
+    return res.status(status).json(body);
+  } catch (error) {
+    logger.error('[SteerArmController] Failed to arm steer', error);
+    return res.status(500).json({ code: 'STEER_ARM_FAILED' });
+  }
+};
+
 module.exports = SteerController;
 module.exports.SteerCancelController = SteerCancelController;
+module.exports.SteerArmController = SteerArmController;

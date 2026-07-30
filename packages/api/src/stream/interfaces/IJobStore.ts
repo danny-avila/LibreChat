@@ -684,6 +684,16 @@ export interface IJobStore {
   removeSteer(streamId: string, steerId: string): Promise<boolean>;
 
   /**
+   * Atomically set `preempt: true` on ONE queued steer IN PLACE, preserving
+   * its FIFO position (the user escalated a waiting steer to an interrupt;
+   * the whole queue drains at the seal, so its order must not change).
+   * Guarded like {@link enqueueSteer}: refuses when the queue is closed or,
+   * with `expectedCreatedAt`, when the stream belongs to another generation.
+   * False when the steer is no longer queued — drained, cancelled, or fenced.
+   */
+  armSteer(streamId: string, steerId: string, expectedCreatedAt?: number): Promise<boolean>;
+
+  /**
    * Persist terminally-drained steers under their OWN bounded-TTL key so a
    * client with no live subscriber can recover them via the status route.
    * Deliberately independent of the job record — the default `completeJob`

@@ -1,5 +1,4 @@
 import { memo, useMemo } from 'react';
-import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { X, Zap, Send, Clock, Pencil, Trash2, ZapOff, Paperclip, RotateCcw } from 'lucide-react';
@@ -16,7 +15,6 @@ import {
   useInterruptChordHint,
   useInterruptToggleEntry,
 } from './SteerMenu';
-import { escalatingSteerFamily } from '~/store/steer';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -291,13 +289,10 @@ function PendingSteerChips({
   const queued = useRecoilValue(store.queuedMessagesByConvoId(steering.queueKey));
   const failedSteers = useMemo(() => steers.filter((steer) => steer.status === 'failed'), [steers]);
   /** Only one interrupt can be in flight: a second preempt while one is
-   *  unresolved would race the same seal, so escalation buttons disable. The
-   *  escalating flag covers a bubble escalation's reclaim window, before its
-   *  preempt chip exists for the chip-derived check to see. */
-  const escalating = useAtomValue(escalatingSteerFamily(conversationId));
+   *  unresolved would arm a second seal, so escalation buttons disable. */
   const interruptPending = useMemo(
-    () => escalating || steers.some((steer) => steer.preempt === true && steer.status !== 'failed'),
-    [escalating, steers],
+    () => steers.some((steer) => steer.preempt === true && steer.status !== 'failed'),
+    [steers],
   );
 
   if (failedSteers.length === 0 && queued.length === 0) {

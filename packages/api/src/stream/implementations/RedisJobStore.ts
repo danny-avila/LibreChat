@@ -391,6 +391,32 @@ const STEER_REMOVE_LUA =
   'return 1';
 
 /**
+ * Escalate ONE queued steer to an interrupt IN PLACE: decode the whole item,
+ * set `preempt`, and LSET it back at its index, so its FIFO position is
+ * untouched (the entire queue drains at the seal, in order). Guarded like
+ * {@link STEER_ENQUEUE_LUA}: a closed queue or a generation mismatch refuses,
+ * so a stale request can never arm a replacement run's steer.
+ *
+ *   KEYS: [job, steers]
+ *   ARGV: [steerIdFragment, expectedCreatedAt or ""]
+ *   Returns: 1 armed, 0 not found / closed / fenced
+ */
+const STEER_ARM_LUA =
+  'if ARGV[2] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[2] then return 0 end ' +
+  'if redis.call("HGET", KEYS[1], "steersClosed") == "1" then return 0 end ' +
+  'local items = redis.call("LRANGE", KEYS[2], 0, -1) ' +
+  'for i = 1, #items do ' +
+  'if string.find(items[i], ARGV[1], 1, true) then ' +
+  'local decoded, item = pcall(cjson.decode, items[i]) ' +
+  'if not decoded then return 0 end ' +
+  'item.preempt = true ' +
+  'redis.call("LSET", KEYS[2], i - 1, cjson.encode(item)) ' +
+  'return 1 ' +
+  'end ' +
+  'end ' +
+  'return 0';
+
+/**
  * Claim-on-read for parked steers: return AND delete in one atomic step so a
  * second reload cannot re-mint chips the user already dismissed. The owner
  * gate runs INSIDE the same step — a payload not containing the requester's
@@ -1877,6 +1903,18 @@ export class RedisJobStore implements IJobStore {
       `"steerId":"${steerId}"`,
     )) as number;
     return removed === 1;
+  }
+
+  async armSteer(streamId: string, steerId: string, expectedCreatedAt?: number): Promise<boolean> {
+    const armed = (await this.redis.eval(
+      STEER_ARM_LUA,
+      2,
+      KEYS.job(streamId),
+      KEYS.steers(streamId),
+      `"steerId":"${steerId}"`,
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+    )) as number;
+    return armed === 1;
   }
 
   async parkSteers(streamId: string, payload: string, expectedCreatedAt?: number): Promise<void> {

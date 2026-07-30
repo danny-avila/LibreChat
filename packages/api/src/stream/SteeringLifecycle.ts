@@ -150,6 +150,17 @@ export class SteeringLifecycle {
     return this.store.removeSteer(streamId, steerId);
   }
 
+  /**
+   * Escalate a still-queued steer to an interrupt IN PLACE — the durable
+   * `preempt` flag flips on the existing item, so its FIFO position survives
+   * (the whole queue drains at the seal, in order). Races with a drain,
+   * cancel, or replacement run settle inside the store's atomic update:
+   * `false` simply means the steer is no longer this generation's to arm.
+   */
+  arm(streamId: string, steerId: string, expectedCreatedAt?: number): Promise<boolean> {
+    return this.store.armSteer(streamId, steerId, expectedCreatedAt);
+  }
+
   /** Drop any queued steers (terminal cleanup backstop). */
   clear(streamId: string): Promise<void> {
     return this.store.clearSteers(streamId);
