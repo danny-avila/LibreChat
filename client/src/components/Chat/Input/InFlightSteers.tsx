@@ -1,5 +1,5 @@
 import { memo, useId, useRef, useMemo, useState, useEffect, useCallback } from 'react';
-import { useSetAtom } from 'jotai';
+import { useSetAtom, useAtomValue } from 'jotai';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import { X, Zap, ZapOff, Clock, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
@@ -9,11 +9,11 @@ import type { PendingSteer } from '~/store/families';
 import type { MenuEntry } from './SteerMenu';
 import { RowMenu, useDefaultToggleEntry, useInterruptToggleEntry } from './SteerMenu';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
+import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { useSteerCancel, useSteerReclaim, useLocalize } from '~/hooks';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
-import { steerOverlayHeightFamily } from '~/store/steer';
 import { useArmSteerMutation } from '~/data-provider';
 import { carriedSteerContext, cn } from '~/utils';
 import store from '~/store';
@@ -142,6 +142,7 @@ const InFlightSteer = memo(function InFlightSteer({
     [conversationId],
   );
   const { mutateAsync: armSteer } = useArmSteerMutation();
+  const setEscalating = useSetAtom(escalatingSteerFamily(conversationId));
 
   /**
    * Takes the steer back off the server queue so its words can be re-homed.
@@ -238,32 +239,38 @@ const InFlightSteer = memo(function InFlightSteer({
              * `armed: false`, and the chip is only relabelled on a confirmed
              * durable arm. */
             onClick: () => {
-              void armSteer({ conversationId, steerId: steer.steerId }).then(
-                (response) => {
-                  if (response.armed === true) {
-                    markSteerPreempt(steer.steerId);
-                    return;
-                  }
-                  /* `armed: false` is deliberately ambiguous — injected,
-                   * cancelled, re-homed, or run over — so the message only
-                   * says the escalation lost, and the chip defers to the
-                   * events for whatever actually happened. */
-                  showToast({
-                    message: localize(
-                      response.code === 'PREEMPT_UNSUPPORTED'
-                        ? 'com_ui_steer_preempt_unsupported'
-                        : 'com_ui_steer_arm_lost_race',
-                    ),
-                    status: 'info',
-                  });
-                },
-                () => {
-                  showToast({
-                    message: localize('com_ui_steer_arm_failed'),
-                    status: 'error',
-                  });
-                },
-              );
+              /* Synchronously, before the request: the chip-derived gate
+               * cannot see this arm until the response lands, and the other
+               * escalation controls advertise "one interrupt at a time". */
+              setEscalating(true);
+              void armSteer({ conversationId, steerId: steer.steerId })
+                .then(
+                  (response) => {
+                    if (response.armed === true) {
+                      markSteerPreempt(steer.steerId);
+                      return;
+                    }
+                    /* `armed: false` is deliberately ambiguous — injected,
+                     * cancelled, re-homed, or run over — so the message only
+                     * says the escalation lost, and the chip defers to the
+                     * events for whatever actually happened. */
+                    showToast({
+                      message: localize(
+                        response.code === 'PREEMPT_UNSUPPORTED'
+                          ? 'com_ui_steer_preempt_unsupported'
+                          : 'com_ui_steer_arm_lost_race',
+                      ),
+                      status: 'info',
+                    });
+                  },
+                  () => {
+                    showToast({
+                      message: localize('com_ui_steer_arm_failed'),
+                      status: 'error',
+                    });
+                  },
+                )
+                .finally(() => setEscalating(false));
             },
           } satisfies MenuEntry,
         ]),
@@ -448,10 +455,13 @@ const InFlightSteers = memo(function InFlightSteers({
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const inFlight = useMemo(() => steers.filter((steer) => steer.status !== 'failed'), [steers]);
   /** Mirrors `PendingSteerChips`: while one interrupt is unresolved, every
-   *  other escalation control disables rather than arming a second seal. */
+   *  other escalation control disables rather than arming a second seal. The
+   *  escalating flag covers an arm request's round trip, before its chip
+   *  relabels for the chip-derived check to see. */
+  const escalating = useAtomValue(escalatingSteerFamily(conversationId));
   const interruptPending = useMemo(
-    () => inFlight.some((steer) => steer.preempt === true),
-    [inFlight],
+    () => escalating || inFlight.some((steer) => steer.preempt === true),
+    [escalating, inFlight],
   );
   const setOverlayHeight = useSetAtom(steerOverlayHeightFamily(conversationId));
 
