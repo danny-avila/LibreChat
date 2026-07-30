@@ -65,9 +65,10 @@ jest.mock('~/components/Chat/Messages/Content/MarkdownLite', () => ({
 
 const CONVO_ID = 'convo-in-flight';
 
-const steeringStub = (defaultAction: 'steer' | 'queue' = 'steer') =>
+const steeringStub = (defaultAction: 'steer' | 'queue' = 'steer', duringRunActive = true) =>
   ({
     defaultAction,
+    duringRunActive,
     pausedOnApproval: false,
     removeSteer: mockRemoveSteer,
     retrySteer: mockRetrySteer,
@@ -89,6 +90,7 @@ function renderSteers(
     enableUserMsgMarkdown?: boolean;
     appliedSteerIds?: string[];
     defaultAction?: 'steer' | 'queue';
+    duringRunActive?: boolean;
   },
 ) {
   return render(
@@ -106,7 +108,7 @@ function renderSteers(
       <CaptureSteersSetter />
       <InFlightSteers
         conversationId={CONVO_ID}
-        steering={steeringStub(options?.defaultAction)}
+        steering={steeringStub(options?.defaultAction, options?.duringRunActive)}
         onRestoreToComposer={mockRestoreToComposer}
       />
     </RecoilRoot>,
@@ -758,5 +760,34 @@ describe('InFlightSteers — escalation races', () => {
     expect(mockShowToast).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'com_ui_steer_interrupt_busy_queued' }),
     );
+  });
+});
+
+/**
+ * Codex round 2: answer mode (`ask_user_question`) sets `duringRunActive`
+ * false while `pausedOnApproval` stays false (it only detects approval-bearing
+ * tool calls). Escalating there would cancel a healthy waiting steer and then
+ * bounce off RUN_PAUSED, so the entry disables like the queued-row control.
+ */
+describe('InFlightSteers — escalation while the run cannot accept a steer', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCancelMutateAsync.mockReset();
+    mockCancelMutateAsync.mockResolvedValue({ removed: true });
+  });
+
+  it('disables escalation in answer mode instead of cancelling a healthy steer', async () => {
+    renderSteers([{ steerId: 's1', text: 'waiting', status: 'pending', createdAt: 1 }], {
+      duringRunActive: false,
+    });
+    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
+    const item = await screen.findByText('com_ui_interrupt_steer_now');
+    expect(item.closest('[role="menuitem"]')).toHaveAttribute('aria-disabled', 'true');
+
+    await act(async () => {
+      fireEvent.click(item);
+    });
+    expect(mockCancelMutateAsync).not.toHaveBeenCalled();
+    expect(mockRetrySteer).not.toHaveBeenCalled();
   });
 });
