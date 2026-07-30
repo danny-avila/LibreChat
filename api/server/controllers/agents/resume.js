@@ -34,6 +34,13 @@ const { saveMessage, getConvo, getMessages } = require('~/models');
  */
 const MAX_ASK_ANSWER_LENGTH = 16_000;
 
+/**
+ * How long a resume waits on best-effort steering bookkeeping before answering
+ * anyway. The approval is already consumed by that point, so a stalled Redis
+ * must not strand the client behind a chip label and an arm.
+ */
+const STEER_RESUME_SETUP_TIMEOUT_MS = 1000;
+
 /** De-duplicate a merged attachment list by a stable artifact identity. */
 function mergeAttachments(existing, incoming) {
   const seen = new Set();
@@ -597,7 +604,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
    * back to `running`, so the steer route is accepting requests from here on
    * and every one of them reads this flag.
    */
-  await GenerationJobManager.updateMetadata(
+  const capabilityRefresh = GenerationJobManager.updateMetadata(
     streamId,
     { preemptCapable: isSteerPreemptSupported() },
     job.createdAt,
@@ -617,9 +624,40 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
    * runtime. Rebuild it from the queue so the resumed segment honours an
    * interrupt the user already had acknowledged.
    */
-  await GenerationJobManager.rearmQueuedPreempts(streamId, job.createdAt).catch((error) => {
-    logger.error('[ResumeAgentController] Failed to re-arm queued preempts', error);
-  });
+  const preemptRearm = GenerationJobManager.rearmQueuedPreempts(streamId, job.createdAt).catch(
+    (error) => {
+      logger.error('[ResumeAgentController] Failed to re-arm queued preempts', error);
+    },
+  );
+
+  /**
+   * BOUNDED, and the bound is the point. `.catch` only fires on rejection,
+   * but ioredis queues commands while a connection is down instead of
+   * rejecting, so either of these can simply never settle. That would block
+   * here — after `approvals.resolve` has already consumed the action and
+   * flipped the job to `running`, and before both `res.json` and the resume
+   * lifecycle's own try/finally. The client times out, its retry gets a 409
+   * because the action is spent, and neither the continuation nor the
+   * failed-resume cleanup ever runs.
+   *
+   * Both writes are steering bookkeeping — a chip label and an arm that the
+   * next tool boundary would honour anyway — so they finish in the background
+   * rather than holding a resume the user is waiting on.
+   */
+  let steeringSetupTimer;
+  await Promise.race([
+    Promise.all([capabilityRefresh, preemptRearm]),
+    new Promise((resolve) => {
+      steeringSetupTimer = setTimeout(() => {
+        logger.warn(
+          `[ResumeAgentController] Steering setup for ${streamId} still pending after ` +
+            `${STEER_RESUME_SETUP_TIMEOUT_MS}ms; continuing the resume without it`,
+        );
+        resolve();
+      }, STEER_RESUME_SETUP_TIMEOUT_MS);
+    }),
+  ]);
+  clearTimeout(steeringSetupTimer);
 
   // Seed the run-scoped MCP request-context store BEFORE the ACK: once `res.json`
   // finishes the response, a later `getMCPRequestContext(req, res)` (from tool loading)

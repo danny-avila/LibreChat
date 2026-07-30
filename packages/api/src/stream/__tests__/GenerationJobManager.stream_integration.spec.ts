@@ -2560,6 +2560,44 @@ describe('GenerationJobManager Integration Tests', () => {
       expect(live).toBe(1);
     }, 30000);
 
+    /**
+     * Redis parks leftover steers inside its terminal-transition Lua, which
+     * projects each item field by field — so a field added to SteerQueueItem
+     * is silently dropped there unless the projection is updated too. A steer
+     * recovered from `/chat/status` would come back without its interrupting
+     * label even though every non-Redis path preserves it.
+     */
+    test('the terminal-transition Lua keeps preempt on parked steers', async () => {
+      const owner = createReplica();
+      const streamId = `${testPrefix}-park-preempt-${Date.now()}`;
+
+      const job = await owner.createJob(streamId, 'user-1');
+      await owner.steering.enqueue(
+        streamId,
+        {
+          steerId: 'steer-parked-preempt',
+          text: 'interrupt me',
+          userId: 'user-1',
+          createdAt: Date.now(),
+          preempt: true,
+        },
+        job.createdAt,
+      );
+
+      const store = new RedisJobStore(ioredisClient!);
+      const moved = await store.transitionStatus(streamId, { from: 'running', to: 'complete' });
+      expect(moved).toBe(true);
+
+      const claimed = await store.claimParkedSteers(streamId, 'user-1');
+      expect(claimed).toBeDefined();
+      const parked = JSON.parse(claimed as string) as {
+        steers: Array<{ steerId: string; preempt?: boolean }>;
+      };
+      expect(parked.steers).toHaveLength(1);
+      expect(parked.steers[0].steerId).toBe('steer-parked-preempt');
+      expect(parked.steers[0].preempt).toBe(true);
+    }, 30000);
+
     test('a stale generation id from another replica cannot arm the live job', async () => {
       const owner = createReplica();
       const router = createReplica();
