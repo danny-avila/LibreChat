@@ -113,6 +113,9 @@ export default defineConfig(({ command }) => ({
           'assets/rum.*.js',
           'assets/locale-*.js',
           'assets/query-devtools*.js',
+          /** Lazily loaded and far above the precache size limit; fetched on demand
+           * instead, which also keeps the service worker install payload small. */
+          'assets/http-client.*.js',
         ],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         /** LibreChat mutates index.html per request for subpath and language support. */
