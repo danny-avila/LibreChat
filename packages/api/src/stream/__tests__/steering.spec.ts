@@ -1139,6 +1139,45 @@ describe('preempt request lifecycle (in-memory)', () => {
     expect(manager.getArmedPreemptIds(streamId, job.createdAt)).toEqual(['steer-live']);
   });
 
+  /**
+   * `approvals.resolve` reopens steering before reconciliation runs, so a
+   * steer enqueued on another replica can arm this one WHILE the queue read
+   * is in flight. Reading the queue first would see that arm as unbacked and
+   * tombstone a live interrupt the route already acknowledged — and the
+   * tombstone would block the re-arm, so it could never recover.
+   */
+  test('an arm that lands while the queue is being read is not tombstoned', async () => {
+    const streamId = 'preempt-rearm-race';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    const peek = manager.steering.peek.bind(manager.steering);
+    const spy = jest
+      .spyOn(manager.steering, 'peek')
+      .mockImplementation(async (id: string, expectedCreatedAt?: number) => {
+        const snapshot = await peek(id, expectedCreatedAt);
+        /** Another replica commits a steer and publishes its arm, both after
+         *  this snapshot was taken. */
+        await manager.steering.enqueue(streamId, {
+          steerId: 'steer-inflight',
+          text: 'interrupt me',
+          userId: 'user-1',
+          createdAt: Date.now(),
+          preempt: true,
+        });
+        manager.requestPreempt(streamId, 'steer-inflight', job.createdAt);
+        return snapshot;
+      });
+
+    try {
+      await manager.rearmQueuedPreempts(streamId, job.createdAt);
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(manager.getArmedPreemptIds(streamId, job.createdAt)).toContain('steer-inflight');
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+  });
+
   test('an orphan dropped at handover is tombstoned against a late arm', async () => {
     const streamId = 'preempt-rearm-orphan-tombstone';
     const job = await manager.createJob(streamId, 'user-1');

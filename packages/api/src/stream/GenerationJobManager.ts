@@ -3380,14 +3380,37 @@ class GenerationJobManagerClass {
    * come back a second time.
    */
   async rearmQueuedPreempts(streamId: string, jobCreatedAt: number): Promise<number> {
+    /**
+     * The armed set is snapshotted BEFORE the queue is read, and that order is
+     * the entire safety argument. `approvals.resolve` has already reopened
+     * steering by the time this runs, so a concurrent replica can enqueue a
+     * preempt steer and publish its arm while the `peek` is in flight. Reading
+     * the queue first would leave that arm present locally but missing from a
+     * snapshot taken before it existed, and this method would tombstone a live
+     * interrupt the route already acknowledged — unrecoverable, since the
+     * tombstone also blocks the re-arm.
+     *
+     * Taking the arms first makes that impossible without a lock or a second
+     * round trip: a steer is durably enqueued BEFORE its arm is published, so
+     * any id in this snapshot was already queued when it was armed, and the
+     * later `peek` is guaranteed to observe it unless it has since drained —
+     * which is precisely the orphan this reconciliation exists to drop.
+     */
+    const runtime = this.runtimeState.get(streamId);
+    const armedBeforeRead =
+      runtime?.preempt != null && runtime.createdAt === jobCreatedAt
+        ? [...runtime.preempt.ids]
+        : [];
+
     const queued = await this._steering.peek(streamId, jobCreatedAt);
     const backed = new Set(
       queued.filter((item) => item.preempt === true).map((item) => item.steerId),
     );
 
-    const runtime = this.runtimeState.get(streamId);
-    if (runtime?.preempt != null && runtime.createdAt === jobCreatedAt) {
-      const orphaned = [...runtime.preempt.ids].filter((id) => !backed.has(id));
+    /** The generation can be replaced across the read; only disarm the runtime
+     *  the snapshot was taken from. */
+    if (runtime != null && this.runtimeState.get(streamId) === runtime) {
+      const orphaned = armedBeforeRead.filter((id) => !backed.has(id));
       if (orphaned.length > 0) {
         logger.warn(
           `[GenerationJobManager] Dropping ${orphaned.length} preempt arm(s) with no queued steer ` +
