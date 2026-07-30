@@ -852,6 +852,7 @@
   "com_ui_api_keys_empty_text": "API keys let external applications run your agents through the OpenAI-compatible API. Create a key to get started.",
   "com_ui_api_keys_empty_title": "Connect your agents to external apps",
   "com_ui_api_keys_load_error": "Failed to load API keys",
+  "com_ui_agent_switch_restricted": "Switching agents during a chat is disabled.",
   "com_ui_approval_error": "Something went wrong submitting your decision. Please try again.",
   "com_ui_approval_expired": "This request expired or was already handled.",
   "com_ui_approve": "Approve",

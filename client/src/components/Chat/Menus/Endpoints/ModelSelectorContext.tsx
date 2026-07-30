@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
 import debounce from 'lodash/debounce';
-import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint, isEphemeralAgentId } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
 import {
@@ -62,8 +62,19 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     useModelSelectorChatContext();
   const localize = useLocalize();
   const { announcePolite } = useLiveAnnouncer();
+  const conversation = getConversation();
+  const isExisting = !!(conversation?.conversationId && conversation?.conversationId !== 'new');
+  const preventSwitching = startupConfig?.interface?.agents?.preventSwitching === true;
+  const isAgentDisabled = useMemo(() => {
+    const hasAgent = conversation && conversation.agent_id && !isEphemeralAgentId(conversation.agent_id);
+    return preventSwitching && isExisting && !hasAgent;
+  }, [conversation, preventSwitching, isExisting]);
+
   const modelSpecs = useMemo(() => {
-    const specs = startupConfig?.modelSpecs?.list ?? [];
+    let specs = startupConfig?.modelSpecs?.list ?? [];
+    if (isAgentDisabled) {
+      specs = specs.filter((spec) => spec.preset?.endpoint !== EModelEndpoint.agents);
+    }
     if (!agentsMap) {
       return specs;
     }
@@ -79,7 +90,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
       /** Keep non-agent modelSpecs */
       return true;
     });
-  }, [startupConfig, agentsMap]);
+  }, [startupConfig, agentsMap, isAgentDisabled]);
 
   const permissionLevel = useAgentDefaultPermissionLevel();
   const { data: agents = null } = useListAgentsQuery(
@@ -89,12 +100,19 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     },
   );
 
-  const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints({
+  const { mappedEndpoints: allMappedEndpoints, endpointRequiresUserKey } = useEndpoints({
     agents,
     assistantsMap,
     startupConfig,
     endpointsConfig,
   });
+
+  const mappedEndpoints = useMemo(() => {
+    if (isAgentDisabled) {
+      return allMappedEndpoints.filter((ep) => ep.value !== EModelEndpoint.agents);
+    }
+    return allMappedEndpoints;
+  }, [allMappedEndpoints, isAgentDisabled]);
 
   const getModelDisplayName = useCallback(
     (endpoint: Endpoint, model: string): string => {

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { TooltipAnchor } from '@librechat/client';
-import { getConfigDefaults } from 'librechat-data-provider';
+import { getConfigDefaults, isEphemeralAgentId } from 'librechat-data-provider';
 import type { ModelSelectorProps } from '~/common';
 import {
   renderModelSpecs,
@@ -10,7 +10,8 @@ import {
 } from './components';
 import { ModelSelectorProvider, useModelSelectorContext } from './ModelSelectorContext';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
-import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
+import { useGetStartupConfig } from '~/data-provider';
+import { ModelSelectorChatProvider, useModelSelectorChatContext } from './ModelSelectorChatContext';
 import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
@@ -22,6 +23,18 @@ function ModelSelectorContent() {
   const localize = useLocalize();
   const modelSelectorHint = useShortcutHint('openModelSelector', localize('com_ui_select_model'));
   const modelSelectorAriaKey = useShortcutAriaKey('openModelSelector');
+
+  const { data: startupConfig } = useGetStartupConfig();
+  const { getConversation } = useModelSelectorChatContext();
+  const conversation = getConversation();
+  const isExisting = !!(conversation?.conversationId && conversation?.conversationId !== 'new');
+  const preventSwitching = startupConfig?.interface?.agents?.preventSwitching === true;
+  const hasAgent = conversation && conversation.agent_id && !isEphemeralAgentId(conversation.agent_id);
+  const isLocked = preventSwitching && isExisting && hasAgent;
+
+  const tooltipDescription = isLocked
+    ? localize('com_ui_agent_switch_restricted') || 'Switching agents during a chat is disabled.'
+    : modelSelectorHint;
 
   const {
     // LibreChat
@@ -67,12 +80,13 @@ function ModelSelectorContent() {
   const trigger = (
     <TooltipAnchor
       aria-label={localize('com_ui_select_model')}
-      description={modelSelectorHint}
+      description={tooltipDescription}
       render={
         <button
           data-testid="model-selector-button"
           aria-keyshortcuts={modelSelectorAriaKey}
-          className="my-1 flex h-9 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
+          disabled={isLocked}
+          className="my-1 flex h-9 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt disabled:opacity-50 disabled:cursor-not-allowed"
           aria-label={localize('com_ui_select_model')}
         >
           {selectedIcon && React.isValidElement(selectedIcon) && (
