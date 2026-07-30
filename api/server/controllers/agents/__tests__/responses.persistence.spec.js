@@ -92,6 +92,7 @@ jest.mock('@librechat/api', () => ({
     usage: { promptTokens: 100, completionTokens: 50 },
   }),
   sendResponsesErrorResponse: (...args) => mockSendResponsesErrorResponse(...args),
+  stripActivityLabelParts: jest.fn((payload) => payload),
   createResponsesEventHandlers: jest.fn().mockReturnValue({
     handlers: {},
     closeOpenStreams: () => callOrder.push('closeOpenStreams'),
