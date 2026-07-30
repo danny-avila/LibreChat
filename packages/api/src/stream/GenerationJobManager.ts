@@ -3366,17 +3366,40 @@ class GenerationJobManagerClass {
    * item. A replica that never observed the original arm therefore starts
    * with an empty set and its poll stays false, so an interrupt the user
    * already had acknowledged would silently wait for an ordinary tool
-   * boundary. Re-arming from the queue is safe by construction: every item
-   * peeked here is still queued, so no drained steer can be resurrected.
+   * boundary.
+   *
+   * REPLACES the armed set rather than adding to it. A replica that only ever
+   * read this job still installed a facade runtime and subscribed, so it can
+   * have accepted an arm and then missed the best-effort clear that followed
+   * the drain. Promotion to owner makes that orphan live, and a union would
+   * keep it: the first resumed stream seals on a steer no longer in the
+   * queue, drains nothing, and truncates the resumed answer as
+   * `preempt_incomplete`. The durable queue is the only authority at a
+   * handover, so anything absent from it is disarmed and tombstoned here —
+   * tombstoned because an arm that outlived its steer must not be able to
+   * come back a second time.
    */
   async rearmQueuedPreempts(streamId: string, jobCreatedAt: number): Promise<number> {
     const queued = await this._steering.peek(streamId, jobCreatedAt);
-    let rearmed = 0;
-    for (const item of queued) {
-      if (item.preempt !== true) {
-        continue;
+    const backed = new Set(
+      queued.filter((item) => item.preempt === true).map((item) => item.steerId),
+    );
+
+    const runtime = this.runtimeState.get(streamId);
+    if (runtime?.preempt != null && runtime.createdAt === jobCreatedAt) {
+      const orphaned = [...runtime.preempt.ids].filter((id) => !backed.has(id));
+      if (orphaned.length > 0) {
+        logger.warn(
+          `[GenerationJobManager] Dropping ${orphaned.length} preempt arm(s) with no queued steer ` +
+            `while ownership of ${streamId} moves`,
+        );
+        this.clearPreemptIds(runtime, jobCreatedAt, orphaned);
       }
-      await this.requestPreempt(streamId, item.steerId, jobCreatedAt);
+    }
+
+    let rearmed = 0;
+    for (const steerId of backed) {
+      await this.requestPreempt(streamId, steerId, jobCreatedAt);
       rearmed += 1;
     }
     return rearmed;

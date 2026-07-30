@@ -1110,6 +1110,48 @@ describe('preempt request lifecycle (in-memory)', () => {
     expect(manager.getArmedPreemptIds(streamId, job.createdAt)).toEqual(['steer-preempt']);
   });
 
+  /**
+   * A replica that only READ this job still installed a facade runtime and
+   * subscribed, so it can hold an arm whose clear it later missed. Promotion
+   * to owner on HITL resume would make that orphan live: the first resumed
+   * stream seals on a steer that is no longer queued, drains nothing, and
+   * truncates the resumed answer. The durable queue is the authority at a
+   * handover, so an arm it does not back must be dropped, not merged.
+   */
+  test('rearmQueuedPreempts drops an armed id the durable queue no longer backs', async () => {
+    const streamId = 'preempt-rearm-orphan';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    /** Arm survived from before ownership moved; its steer is long drained. */
+    manager.requestPreempt(streamId, 'steer-orphan', job.createdAt);
+    await manager.steering.enqueue(streamId, {
+      steerId: 'steer-live',
+      text: 'interrupt me',
+      userId: 'user-1',
+      createdAt: Date.now(),
+      preempt: true,
+    });
+    expect(manager.getArmedPreemptIds(streamId, job.createdAt)).toContain('steer-orphan');
+
+    const rearmed = await manager.rearmQueuedPreempts(streamId, job.createdAt);
+
+    expect(rearmed).toBe(1);
+    expect(manager.getArmedPreemptIds(streamId, job.createdAt)).toEqual(['steer-live']);
+  });
+
+  test('an orphan dropped at handover is tombstoned against a late arm', async () => {
+    const streamId = 'preempt-rearm-orphan-tombstone';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    manager.requestPreempt(streamId, 'steer-orphan', job.createdAt);
+    await manager.rearmQueuedPreempts(streamId, job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+
+    /** A publish that was in flight while ownership moved must not revive it. */
+    manager.requestPreempt(streamId, 'steer-orphan', job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
   test('rearmQueuedPreempts refuses a stale generation and arms nothing', async () => {
     const streamId = 'preempt-rearm-stale';
     const job = await manager.createJob(streamId, 'user-1');

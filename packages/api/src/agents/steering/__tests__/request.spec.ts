@@ -497,6 +497,41 @@ describe('preempt flag on the steer request', () => {
   });
 
   /**
+   * The queue item is already durable by the time the arm is published, and
+   * the 202 reports capability rather than delivery — so waiting on a stalled
+   * Redis buys nothing and risks the caller timing out and retrying, which
+   * would mint a SECOND steer alongside the first and inject the same
+   * instruction twice. If this ever awaits again, this test times out.
+   */
+  it('does not hold the 202 behind a stalled preempt publish', async () => {
+    const streamId = 'preempt-req-stalled-publish';
+    await createCapableJob(streamId);
+
+    let release: (() => void) | undefined;
+    const neverSettles = new Promise<boolean>((resolve) => {
+      release = () => resolve(true);
+    });
+    const spy = jest.spyOn(GenerationJobManager, 'requestPreempt').mockReturnValue(neverSettles);
+
+    try {
+      const result = await handleSteerRequest(user, {
+        conversationId: streamId,
+        text: 'interrupt me',
+        preempt: true,
+      });
+
+      expect(result.status).toBe(202);
+      expect(result.body.preempt).toBe(true);
+      expect(spy).toHaveBeenCalledWith(streamId, expect.any(String), expect.any(Number));
+      /** Still durable, so the boundary drain will find it either way. */
+      expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBe(true);
+    } finally {
+      release?.();
+      spy.mockRestore();
+    }
+  });
+
+  /**
    * The mirror of the owner-incapable case below, and the direction a local
    * probe used to get wrong: during a rolling deploy the steer can land on an
    * un-upgraded replica while a capable replica owns the generation. The

@@ -287,17 +287,31 @@ export async function handleSteerRequest(
    * fallback of injecting at the next tool boundary.
    */
   if (preemptCapable) {
-    const armed = await GenerationJobManager.requestPreempt(
-      streamId,
-      item.steerId,
-      owner.createdAt,
+    /**
+     * NOT awaited. The answer no longer depends on it — the 202 reports
+     * `preemptCapable`, not delivery — so awaiting only exposes the caller to
+     * Redis latency after the queue item is already durable. A client that
+     * times out on a stalled publish and retries mints a SECOND steer while
+     * the first stays queued, injecting the same instruction twice; a lost
+     * publish merely takes the documented tool-boundary fallback. The
+     * asymmetry is the whole argument for detaching.
+     */
+    void GenerationJobManager.requestPreempt(streamId, item.steerId, owner.createdAt).then(
+      (armed) => {
+        if (!armed) {
+          logger.warn(
+            `[handleSteerRequest] Preempt arm not confirmed for ${streamId} steer=${item.steerId}; ` +
+              'the steer remains queued and will inject at the next boundary',
+          );
+        }
+      },
+      (error: unknown) => {
+        logger.error(
+          `[handleSteerRequest] Preempt arm failed for ${streamId} steer=${item.steerId}:`,
+          error,
+        );
+      },
     );
-    if (!armed) {
-      logger.warn(
-        `[handleSteerRequest] Preempt arm not confirmed for ${streamId} steer=${item.steerId}; ` +
-          'the steer remains queued and will inject at the next boundary',
-      );
-    }
   }
 
   /** Fire-and-forget: the persisted steer part references these uploads, so
