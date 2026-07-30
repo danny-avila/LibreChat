@@ -30,6 +30,7 @@ const {
   recordScheduleOutcome,
   clearScheduledJob,
   requestScheduledRunAbort,
+  markScheduledRunAbortPersisted,
 } = require('~/server/services/Schedules');
 const { saveMessage } = require('~/models');
 const responses = require('./responses');
@@ -364,14 +365,24 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
     // gets the question too, not just the saved message on reload.
     const abortedAskPayload = job.metadata?.pendingAction?.payload;
     const scheduleId = job.metadata?.scheduleId;
-    // Stamp the run abort-REQUESTED before signalling. abortJob flips the job to
-    // `aborted` (or removes it) the moment it wins its status CAS, while this handler
-    // still has to save the partial below and settle LAST. Without the stamp, an
+    // Stamp the run abort-REQUESTED (source 'stop') before signalling. abortJob flips
+    // the job to `aborted` (or removes it) the moment it wins its status CAS, while
+    // this handler still has to save the partial below. Without the stamp, an
     // account-deletion quiesce reading that post-abort state takes it as proof the
     // generation is done, confirms its drain, and destroys the user's data seconds
-    // before saveMessage writes a message back for the deleted account.
+    // before saveMessage writes a message back for the deleted account. The stamp is
+    // therefore LOAD-BEARING: if it cannot be made durable the abort must not proceed
+    // (nothing has been signalled yet, so refusing here is side-effect free).
     if (scheduleId && job.metadata?.scheduledFor) {
-      await requestScheduledRunAbort(scheduleId, new Date(job.metadata.scheduledFor));
+      const stamped = await requestScheduledRunAbort(
+        scheduleId,
+        new Date(job.metadata.scheduledFor),
+      );
+      if (!stamped) {
+        return res
+          .status(503)
+          .json({ error: 'Could not record the stop request. Please retry.', aborted: null });
+      }
     }
     const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
       transformAbortContent: (content) =>
@@ -498,17 +509,30 @@ router.post('/chat/abort', configMiddleware, async (req, res) => {
       }
     }
 
-    // SETTLE LAST. Recording the outcome is what releases the capacity slot and drops
-    // the run out of the active set — which is exactly the signal the account-deletion
-    // drain waits on. Settling before the partial response is persisted let the drain
-    // observe zero active runs, proceed to destroy the user's data, and only then have
-    // this handler write a message back for the deleted account. Every write this route
-    // makes now happens before the run is declared settled.
+    // EVERY write this route makes has now landed (checkpoint prune, partial save).
+    // Stamp that durably: the GENERATION OWNER's settlement barrier waits for this
+    // stamp (see awaitStopAbortPersistence), so the run cannot leave the active set —
+    // and no deletion drain can confirm — while this route was still persisting.
+    if (scheduleId && job.metadata?.scheduledFor && abortResult.success) {
+      await markScheduledRunAbortPersisted(scheduleId, new Date(job.metadata.scheduledFor)).catch(
+        (err) =>
+          logger.error(`[AgentStream] Failed to stamp abort persistence: ${jobStreamId}`, err),
+      );
+    }
+
+    // SETTLE ONLY A PAUSED RUN. A run caught `requires_action` at the abort CAS has no
+    // generation loop left to unwind — its pause already awaited every save — so this
+    // route is its only settler, and settling after the writes above keeps the
+    // settle-last discipline. A RUNNING abort instead settles in its generation
+    // owner's catch, which awaits its own pending saves plus this route's stamp; a
+    // route-side settle there could land while the owner's user-message save was still
+    // in flight — the drain-mid-write hazard again. If that owner is dead, the
+    // reconciler's aborted-branch finalizes the run once the abort fence lapses.
     //
     // Only after WINNING the abort: losing the CAS means a concurrent completion or
     // resume owns the run, and terminalizing it as `interrupted` would release its slot
     // and reduce the real outcome's write to a no-op against an already-terminal row.
-    if (scheduleId && abortResult.success) {
+    if (scheduleId && abortResult.success && abortResult.jobData?.status === 'requires_action') {
       const recorded = await recordScheduleOutcome({
         scheduleId,
         scheduledFor: job.metadata.scheduledFor,

@@ -343,6 +343,11 @@ export interface UsageMetadata {
 export interface AbortResult {
   /** Whether the abort was successful */
   success: boolean;
+  /** Whether a live generation, if one exists, actually received the stop signal:
+   *  true when the runtime is local or the cross-replica publish succeeded (or the
+   *  job was paused, with no generation loop to signal). False means a peer-replica
+   *  generation may still be producing — deletion drains must not confirm on it. */
+  signalDelivered?: boolean;
   /** The job data at time of abort */
   jobData: SerializableJobData | null;
   /** Aggregated content from the stream */
@@ -755,8 +760,10 @@ export interface IEventTransport {
    * Enables cross-replica abort: user aborts on Replica B,
    * generating Replica A receives signal and stops.
    * Optional - only implemented in Redis transport.
+   * An async implementation must REJECT on a failed publish so the caller can report
+   * the abort as undelivered instead of silently stranding a peer-replica generation.
    */
-  emitAbort?(streamId: string, generationId?: number): void;
+  emitAbort?(streamId: string, generationId?: number): void | Promise<void>;
 
   /**
    * Register callback for abort signals from any replica (Redis mode).

@@ -31,6 +31,13 @@ export interface ISchedule {
   slot?: number;
   /** Client-supplied idempotency key of the create that produced this row. */
   clientRequestId?: string;
+  /** Digest of the ORIGINAL create payload, stamped at insert and never edited.
+   *  Replay matching compares against this rather than mutable schedule state, so a
+   *  PATCH landing between the first attempt and its retry cannot fail the retry. */
+  clientRequestDigest?: string;
+  /** When an erasure sweep last attempted this soft-deleted row; orders the sweep
+   *  window so undrainable rows cannot starve the ones behind them. */
+  eraseAttemptedAt?: Date;
   lastRun?: {
     conversationId?: string;
     status: ScheduleRunStatus;
@@ -71,6 +78,14 @@ export interface IScheduleRun {
   capacitySlot?: number;
   /** When an abort was requested; capacity is held until settlement is confirmed. */
   abortRequestedAt?: Date;
+  /** Who requested the abort: the interactive Stop route ('stop', which persists a
+   *  partial response before the run may settle) or a deletion path ('deletion'). */
+  abortSource?: 'stop' | 'deletion';
+  /** Stamped by the interactive Stop route once every write it makes (checkpoint
+   *  prune, partial-response save) has landed; the generation owner defers its
+   *  terminal settlement until this appears so the run can never leave the active
+   *  set while the route is still persisting. */
+  abortPersistedAt?: Date;
   /** The schedule's configRevision at claim time. */
   configRevision?: number;
   /** When reconciliation last examined this row; orders the paused window so no row

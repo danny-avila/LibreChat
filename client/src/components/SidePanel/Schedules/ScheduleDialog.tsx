@@ -1,4 +1,5 @@
 import { useMemo, useRef } from 'react';
+import { v4 } from 'uuid';
 import { useTranslation } from 'react-i18next';
 import { useForm, Controller } from 'react-hook-form';
 import { PermissionBits, scheduleFrequencies } from 'librechat-data-provider';
@@ -183,12 +184,14 @@ export default function ScheduleDialog({
   );
 
   /** Idempotency key for the create being attempted. Held in a ref so every retry of
-   *  the same intent reuses it, and rotated only after one succeeds. */
-  const createRequestId = useRef(crypto.randomUUID());
+   *  the same intent reuses it, and rotated only after one succeeds. `uuid` rather
+   *  than `crypto.randomUUID`, which secure contexts gate — an HTTP/IP deployment
+   *  would throw here and never open the dialog. */
+  const createRequestId = useRef(v4());
 
   const createSchedule = useCreateScheduleMutation({
     onSuccess: () => {
-      createRequestId.current = crypto.randomUUID();
+      createRequestId.current = v4();
       showToast({ message: localize('com_ui_schedule_created'), status: 'success' });
       onOpenChange(false);
     },

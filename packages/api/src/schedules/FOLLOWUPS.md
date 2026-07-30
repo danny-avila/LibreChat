@@ -102,15 +102,15 @@ so an invalidation interleaving between them can miss the entry it never indexed
 by the entry's own TTL, and it cannot weaken the barrier itself (every barrier check
 reads Mongo directly, never the auth cache), but it belongs with the work above.
 
-## Balance: an insufficient (but positive) balance is classified as a schedule failure
+## Balance: mid-generation insufficiency is classified as `skipped_balance` (resolved)
 
 `isOutOfBalance` can only pre-skip a balance a fire has ALREADY exhausted; the true cost
 of a run is unknowable before its payload is built, so an owner whose credits sit between
-zero and the run's cost passes the pre-check and fails mid-generation. That failure is
-then recorded as a generic `error`, walking the schedule toward `too_many_failures`
-instead of `insufficient_balance` — the wrong reason, and it counts against a schedule
-that is not at fault.
+zero and the run's cost passes the pre-check and fails mid-generation (the loopback POST
+was accepted; `checkBalance` throws inside the generation).
 
-The pre-skip cannot be made exact, but the CLASSIFICATION can: the loopback generation
-returns a distinguishable balance violation, and the fire's definite-rejection branch
-could map it to `skipped_balance`. Deferred on priority, not because it is inherent.
+That refusal is structured (`{ type: 'token_balance', ... }`), so the controller's catch
+now settles the run as `skipped_balance` instead of `error`: `recordRunOutcome` takes the
+same guarded terminal transition but walks the consecutive-balance-skip streak (toward
+`insufficient_balance`) rather than the failure streak (toward `too_many_failures`). The
+pre-skip itself remains inexact by nature; only the classification was wrong.

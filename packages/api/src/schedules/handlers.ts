@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
+import { createHash, randomUUID } from 'node:crypto';
 import { createSchedulePayloadSchema, updateSchedulePayloadSchema } from 'librechat-data-provider';
 import type { TCreateSchedule, TUpdateSchedule } from 'librechat-data-provider';
 import type { ScheduleMethods, ISchedule } from '@librechat/data-schemas';
@@ -87,10 +87,41 @@ const FILE_RETAIN_ATTEMPTS = 3;
 const DEFERRED_ERASE_RETRY_LIMIT = 5;
 
 /**
- * Whether an existing row is the schedule this create attempt is asking for. Used only
- * when an idempotency key resolved to a row a PREVIOUS attempt committed: a genuine
- * retry sends identical content, so a mismatch means the key was reused for a different
- * intent rather than replayed.
+ * Digest of a create payload's FULL intent, stamped on the row at insert and never
+ * edited. Replay matching compares this immutable record instead of mutable schedule
+ * state, so a PATCH (or a policy auto-disable flipping `enabled`) landing between the
+ * first attempt and its retry cannot make a genuine replay read as key reuse.
+ */
+export function computeCreateDigest(payload: TCreateSchedule): string {
+  const canonical = JSON.stringify({
+    name: payload.name,
+    prompt: payload.prompt,
+    agent_id: payload.agent_id,
+    timezone: payload.timezone,
+    target: payload.target,
+    enabled: payload.enabled,
+    cadence: {
+      frequency: payload.cadence.frequency,
+      hour: payload.cadence.hour,
+      minute: payload.cadence.minute,
+      daysOfWeek: payload.cadence.daysOfWeek ?? null,
+    },
+    file_ids: payload.file_ids ?? null,
+  });
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
+function sameList<T>(left: T[] | undefined, right: T[] | undefined): boolean {
+  if (left == null || right == null) {
+    return (left?.length ?? 0) === (right?.length ?? 0);
+  }
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+/**
+ * Legacy replay matching for rows stamped before `clientRequestDigest` existed.
+ * Deliberately omits `enabled` — a policy auto-disable mutates it, and this
+ * comparison exists precisely because mutable state makes a poor replay record.
  */
 function matchesCreatedSchedule(existing: ISchedule, payload: TCreateSchedule): boolean {
   return (
@@ -98,10 +129,26 @@ function matchesCreatedSchedule(existing: ISchedule, payload: TCreateSchedule): 
     existing.prompt === payload.prompt &&
     existing.agent_id === payload.agent_id &&
     existing.timezone === payload.timezone &&
+    existing.target === payload.target &&
     existing.cadence?.frequency === payload.cadence.frequency &&
     existing.cadence?.hour === payload.cadence.hour &&
-    existing.cadence?.minute === payload.cadence.minute
+    existing.cadence?.minute === payload.cadence.minute &&
+    sameList(existing.cadence?.daysOfWeek, payload.cadence.daysOfWeek) &&
+    sameList(existing.file_ids, payload.file_ids)
   );
+}
+
+/** Whether an existing row is the schedule this create attempt is asking for: the
+ *  immutable digest when the row carries one, the legacy field comparison otherwise. */
+function matchesCreateIntent(
+  existing: ISchedule,
+  payload: TCreateSchedule,
+  digest: string,
+): boolean {
+  if (existing.clientRequestDigest != null) {
+    return existing.clientRequestDigest === digest;
+  }
+  return matchesCreatedSchedule(existing, payload);
 }
 
 /** Public projection of a schedule — an allowlist of the `TSchedule` fields, so internal
@@ -286,6 +333,72 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     if (!(await validatePayload(req, res, parsed.data, limits))) {
       return;
     }
+    const digest = computeCreateDigest(parsed.data);
+
+    /**
+     * Answers a retry with the row its FIRST attempt committed — an ESTABLISHED
+     * schedule this attempt must never reshape. Re-drives only the arm (guarded:
+     * only-if-still-unarmed, jitter derived from the EXISTING row's id, no claim-token
+     * rotation or revision bump, so an active run is never fenced off), and never
+     * compensates: rollback belongs exclusively to the attempt that inserted a row.
+     */
+    const respondToReplay = async (existing: ISchedule): Promise<void> => {
+      // A key identifies one create INTENT. Reusing it for different content is a
+      // client bug, and silently returning the first row would hide it behind a 201
+      // describing a schedule the caller did not ask for — so say so instead.
+      if (!matchesCreateIntent(existing, parsed.data, digest)) {
+        res.status(409).json({
+          error: 'clientRequestId was already used to create a different schedule',
+        });
+        return;
+      }
+      // The key stays claimed while its row drains (the unique index spans deleting
+      // rows), so a retry of a create whose schedule was since deleted resolves here.
+      if (existing.deleting === true) {
+        res.status(410).json({ error: 'Schedule no longer exists' });
+        return;
+      }
+      if (await deps.isUserDeleting(user.id)) {
+        res.status(410).json({ error: 'This account is being deleted' });
+        return;
+      }
+      if (existing.enabled && existing.nextRunAt == null) {
+        const next = computeNextRunAt({
+          cadence: existing.cadence,
+          timezone: existing.timezone,
+          scheduleId: existing.id,
+        });
+        if (next != null) {
+          try {
+            await deps.methods.armSchedule(existing.id, next);
+          } catch (armError) {
+            logger.error(`[schedules] replay arming failed for ${existing.id}`, armError);
+            res.status(500).json({ error: 'Failed to create schedule. Please retry.' });
+            return;
+          }
+        }
+      }
+      const fresh = await deps.methods.getScheduleById(existing.id, user.id);
+      if (fresh == null) {
+        res.status(410).json({ error: 'Schedule no longer exists' });
+        return;
+      }
+      logger.info(`[schedules] create retry resolved to ${existing.id} for user ${user.id}`);
+      res.status(201).json(toWireSchedule(fresh));
+    };
+
+    // Resolve a retry BEFORE the capacity pre-check: a retry whose first attempt
+    // already occupies the final slot is a replay of THAT row, not a request for a
+    // new one — refusing it as over-limit would deny the client the very row it is
+    // trying to confirm.
+    const replayed = await deps.methods.getScheduleByClientRequestId(
+      user.id,
+      parsed.data.clientRequestId,
+    );
+    if (replayed != null) {
+      await respondToReplay(replayed);
+      return;
+    }
     // Fail fast on an obvious over-limit BEFORE retaining attachments, so the common
     // case never clears an upload TTL it then can't use. The {user, slot} partial
     // unique index below is the atomic arbiter for the concurrent-create race.
@@ -327,29 +440,34 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
         id,
         user: user.id as never,
         tenantId: user.tenantId,
+        clientRequestDigest: digest,
       },
       limits.maxPerUser,
     );
     if (created === 'limit') {
+      // A CONCURRENT first attempt with this key can be what filled the last slot;
+      // resolve to it rather than refusing the retry for being at capacity.
+      const raced = await deps.methods.getScheduleByClientRequestId(
+        user.id,
+        parsed.data.clientRequestId,
+      );
+      if (raced != null) {
+        await respondToReplay(raced);
+        return;
+      }
       res.status(400).json({
         error: `Schedule limit reached (${limits.maxPerUser}). Delete a schedule to add another.`,
       });
       return;
     }
-    // A retry carrying the same clientRequestId resolves to the row its first attempt
-    // committed, so the arming below re-drives THAT row rather than adding a second
-    // recurring schedule. `id` must follow, or the compensation and 410 paths would act
-    // on the fresh uuid this attempt generated and never on the row that actually exists.
-    const scheduleId = created.id;
-    // A key identifies one create INTENT. Reusing it for different content is a client
-    // bug, and silently returning the first row would hide it behind a 201 describing a
-    // schedule the caller did not ask for — so say so instead.
-    if (scheduleId !== id && !matchesCreatedSchedule(created, parsed.data)) {
-      res.status(409).json({
-        error: 'clientRequestId was already used to create a different schedule',
-      });
+    if (created.id !== id) {
+      // The allocator hit the idempotency index: a concurrent attempt with this key
+      // committed first. That row is established — hand it to the replay path.
+      await respondToReplay(created);
       return;
     }
+    // FRESH insert (this attempt owns the row) from here down; compensation is safe.
+    //
     // POST-INSERT barrier re-check. The admission check at the top of this handler
     // shrinks the window to roughly one request, but cannot close it: account deletion
     // can raise the barrier after we passed that check and before this insert landed,
@@ -360,58 +478,57 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       // load-bearing for BILLING: the row is unarmed, and even once the reconciler's
       // sweep arms it, the fire path refuses it at the account-deletion barrier
       // (isOwnerDeleting). The residual is a retained row, not a billed generation.
-      if (!(await compensateLateCreate(deps, scheduleId, user.id))) {
+      if (!(await compensateLateCreate(deps, id, user.id))) {
         res.status(500).json({ error: 'Failed to roll back schedule creation' });
         return;
       }
       res.status(410).json({ error: 'This account is being deleted' });
       return;
     }
-    // ARM last. A null result means the row stopped being ours between the barrier
-    // re-check and here — the deletion cascade marked or erased it (updateScheduleById
-    // filters out deleting rows). Falling back to the pre-delete snapshot would answer
-    // 201 for a schedule that is already hidden and pending erasure.
-    //
-    // A THROWN (or ambiguously acknowledged) arming write must ROLL THE ROW BACK, not
-    // leave it: an unarmed row the reconciler later arms, plus a client retry that
-    // commits a second row, is one intended schedule becoming several recurring,
-    // billable ones. Compensation makes that retry recreate exactly one — but it is two
-    // writes that can THEMSELVES fail, which is why a `clientRequestId` is the real
-    // guarantee: with one, the retry collides on the idempotency index and re-arms the
-    // original row, so duplication is impossible even when every compensation write
-    // fails. Without one, compensation is the best available and its failure is
-    // reported, leaving an inert row that cannot fire until swept.
+    // ARM last, fenced on the revision stamped at insert: a PATCH racing this arm
+    // bumps configRevision, and this POST must not overwrite the nextRunAt that PATCH
+    // derived from newer config with one derived from the create payload.
     let armed = created;
     if (nextRunAt) {
       let updated: ISchedule | null;
       try {
-        updated = await deps.methods.updateScheduleById(scheduleId, user.id, { nextRunAt });
+        updated = await deps.methods.updateScheduleById(id, user.id, { nextRunAt }, undefined, {
+          expectedConfigRevision: created.configRevision ?? 0,
+        });
       } catch (armError) {
-        logger.error(
-          `[schedules] arming failed for ${scheduleId}; rolling back the create`,
-          armError,
-        );
-        const rolledBack = await compensateLateCreate(deps, scheduleId, user.id);
-        if (!rolledBack && parsed.data.clientRequestId == null) {
-          // Say what actually happened: a row may survive and later self-arm, and a
-          // blind retry could add a second one. A retry WITH an idempotency key is
-          // still safe, hence the distinct message.
-          res.status(500).json({
-            error:
-              'Failed to create schedule, and could not roll it back. Check your schedules before retrying.',
-          });
-          return;
+        // Roll back ONLY while the row is still unarmed. An ambiguously-committed arm
+        // — or a concurrent replay of this key that armed the row and already answered
+        // 201 — leaves an ARMED row that must survive; deleting it would erase a
+        // schedule another response has confirmed.
+        logger.error(`[schedules] arming failed for ${id}; rolling back the create`, armError);
+        const rolledBack = await deps.methods.deleteUnarmedSchedule(id, user.id).catch(() => null);
+        if (rolledBack === 'armed') {
+          const current = await deps.methods.getScheduleById(id, user.id);
+          if (current != null) {
+            res.status(201).json(toWireSchedule(current));
+            return;
+          }
         }
+        // A retry is always safe: the same key collides on the idempotency index and
+        // resolves to whatever this attempt left behind (or a clean re-insert).
         res.status(500).json({ error: 'Failed to create schedule. Please retry.' });
         return;
       }
       if (updated == null) {
+        // Either the row is gone (the deletion cascade claimed it), or a concurrent
+        // PATCH moved the revision — in which case ITS validation and arming govern,
+        // and this POST reports the row as that edit left it.
+        const current = await deps.methods.getScheduleById(id, user.id);
+        if (current != null) {
+          res.status(201).json(toWireSchedule(current));
+          return;
+        }
         res.status(410).json({ error: 'Schedule no longer exists' });
         return;
       }
       armed = updated;
     }
-    logger.info(`[schedules] created ${scheduleId} for user ${user.id}`);
+    logger.info(`[schedules] created ${id} for user ${user.id}`);
     res.status(201).json(toWireSchedule(armed));
   }
 

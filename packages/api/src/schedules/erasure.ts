@@ -11,7 +11,10 @@ export interface ScheduleErasureSweep {
 }
 
 export interface ScheduleErasureDeps {
-  methods: Pick<ScheduleMethods, 'getDeletingSchedules' | 'eraseScheduleIfDrained'>;
+  methods: Pick<
+    ScheduleMethods,
+    'getDeletingSchedules' | 'eraseScheduleIfDrained' | 'markEraseAttempted'
+  >;
 }
 
 /**
@@ -43,6 +46,11 @@ export function startScheduleErasureSweep(deps: ScheduleErasureDeps): ScheduleEr
             logger.warn(`[schedules] erasure sweep failed for ${schedule.id}:`, err);
           });
         }
+        // Rotate the window (never-attempted first) so a batch of undrainable rows
+        // cannot re-fill it every sweep and starve the rows behind them.
+        await deps.methods
+          .markEraseAttempted(deleting.map((schedule) => schedule.id))
+          .catch((err) => logger.warn('[schedules] failed to stamp erase attempts:', err));
       });
     } catch (err) {
       logger.error('[schedules] erasure sweep failed:', err);

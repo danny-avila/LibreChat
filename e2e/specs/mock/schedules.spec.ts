@@ -47,6 +47,7 @@ async function seedSchedule(page: Page, token: string, agentId: string): Promise
       timezone: 'America/New_York',
       target: 'new',
       enabled: true,
+      clientRequestId: uniqueName('e2e-intent'),
     },
   });
   expect(schedule.id).toBeTruthy();

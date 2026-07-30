@@ -33,6 +33,8 @@ module.exports = {
   fireScheduleNow: service.fireScheduleNow,
   recordScheduleOutcome: service.recordScheduleOutcome,
   requestScheduledRunAbort: service.requestScheduledRunAbort,
+  markScheduledRunAbortPersisted: service.markScheduledRunAbortPersisted,
+  awaitStopAbortPersistence: service.awaitStopAbortPersistence,
   isScheduleLive: service.isScheduleLive,
   deleteScheduleForOwner: service.deleteScheduleForOwner,
   quiesceUserSchedules: service.quiesceUserSchedules,

@@ -75,6 +75,7 @@ const scheduleBody = (agentId: string, over: Record<string, unknown> = {}) => ({
   timezone: 'America/New_York',
   target: 'new',
   enabled: true,
+  clientRequestId: uniqueName('e2e-intent'),
   ...over,
 });
 

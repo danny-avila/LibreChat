@@ -38,6 +38,41 @@ export interface ScheduleUserContext {
 export type ScheduleDeleteResult = 'not_found' | 'deleted' | 'draining' | 'unconfirmed';
 
 /**
+ * How long an abort's OWNER is presumed alive and obliged to settle the run itself.
+ *
+ * The rule this enforces: **job state is never persistence acknowledgement.** A job
+ * reads `aborted` — or vanishes, or carries `completedAt` — the moment `abortJob` wins
+ * its status CAS, which is BEFORE the owner unwinds and writes anything. Both owner
+ * paths deliberately settle LAST, after `saveMessage`, so the ONLY acknowledgement that
+ * all persistence-producing work finished is the owner's own terminal outcome write
+ * (i.e. the run row leaving the active set). Reading post-abort job state as "nothing is
+ * generating" confirms a drain mid-write: account deletion destroys the user's data and
+ * the owner then writes a message back for the deleted account.
+ *
+ * So while an abort is in flight, nothing but the owner settles — deletion drains
+ * defer (503 + Retry-After) and the reconciler leaves the row alone. Past the window
+ * the owner is presumed dead, and the reconciler's orphan handling takes over.
+ *
+ * Deliberately the reconciler's ORPHAN cutoff rather than a shorter local grace: that
+ * presumption already exists and is already the thing that would eventually clear the
+ * row. One rule, not two.
+ */
+export const ABORT_OWNER_PRESUMED_ALIVE_MS: number = 30 * 60_000;
+
+/**
+ * Whether an abort was requested for this run recently enough that its owner is still
+ * expected to persist and settle. `abortRequestedAt` is stamped BEFORE any abort is
+ * signalled (see `abortActiveRun` and the interactive abort route), which is what makes
+ * it usable as evidence that post-abort job state is not yet a settled generation.
+ */
+export function hasAbortInFlight(run: { abortRequestedAt?: Date }, now: number): boolean {
+  if (run.abortRequestedAt == null) {
+    return false;
+  }
+  return now - new Date(run.abortRequestedAt).getTime() < ABORT_OWNER_PRESUMED_ALIVE_MS;
+}
+
+/**
  * Renewable upload hold for schedule attachments (extendFilesTTL-shaped), replacing
  * the earlier permanent TTL removal, which leaked the upload forever when the schedule
  * was deleted before its first run, its file_ids were replaced, or creation failed.

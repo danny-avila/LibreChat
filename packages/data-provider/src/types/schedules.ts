@@ -44,8 +44,10 @@ export const createSchedulePayloadSchema = z.object({
    * the row and arms it in two writes, so a failure between them leaves the client
    * unable to tell whether anything persisted; retrying blind can produce two recurring
    * schedules. A retry carrying the same key resolves to the original row instead.
+   * REQUIRED: an optional key preserves the keyless duplicate path for any client
+   * that omits it, which is exactly the failure the key exists to close.
    */
-  clientRequestId: z.string().trim().min(1).max(128).optional(),
+  clientRequestId: z.string().trim().min(1).max(128),
 });
 export type TCreateSchedule = z.infer<typeof createSchedulePayloadSchema>;
 

@@ -6,7 +6,8 @@ import { computeNextRunAt, cadenceIntervalMinutes } from './cadence';
 
 export const SCHEDULE_FIRE_TOKEN_TTL = '60s';
 const FIRE_REQUEST_TIMEOUT_MS = 30_000;
-const BALANCE_SKIP_DISABLE_THRESHOLD = 5;
+/** Consecutive balance skips (pre-fire or mid-generation) before auto-disable. */
+export const BALANCE_SKIP_DISABLE_THRESHOLD: number = 5;
 
 export function buildFireClientRequestId(scheduleId: string, scheduledFor: Date): string {
   return `sched:${scheduleId}:${scheduledFor.toISOString()}`;

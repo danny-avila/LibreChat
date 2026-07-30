@@ -2,7 +2,7 @@ import type { ISchedule } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { SchedulesHandlersDeps } from './handlers';
 import type { ServerRequest } from '~/types';
-import { createSchedulesHandlers, toWireSchedule } from './handlers';
+import { createSchedulesHandlers, toWireSchedule, computeCreateDigest } from './handlers';
 
 /** A lean schedule doc carrying both public fields and internal bookkeeping. */
 function fullScheduleDoc(): ISchedule {
@@ -117,26 +117,38 @@ function makeRes() {
   return { res: res as unknown as Response, captured };
 }
 
+const CREATE_BODY = {
+  name: 'Digest',
+  prompt: 'Summarize',
+  agent_id: 'agent-1',
+  cadence: { frequency: 'daily' as const, hour: 8, minute: 0 },
+  timezone: 'America/New_York',
+  clientRequestId: 'intent-1',
+};
+
 function makeCreateReq(): ServerRequest {
   return {
-    body: {
-      name: 'Digest',
-      prompt: 'Summarize',
-      agent_id: 'agent-1',
-      cadence: { frequency: 'daily', hour: 8, minute: 0 },
-      timezone: 'America/New_York',
-    },
+    body: { ...CREATE_BODY },
     user: { id: 'user-1', tenantId: 't1', role: 'USER' },
   } as unknown as ServerRequest;
+}
+
+/** The digest a genuine retry of CREATE_BODY carries (zod defaults applied). */
+function createBodyDigest(): string {
+  return computeCreateDigest({ ...CREATE_BODY, target: 'new', enabled: true });
 }
 
 function makeCreateDeps(over: Partial<SchedulesHandlersDeps> = {}): SchedulesHandlersDeps {
   const methods = {
     countSchedulesByUser: jest.fn(async () => 0),
     createScheduleWithSlot: jest.fn(async (data: Partial<ISchedule>) => data as ISchedule),
+    getScheduleByClientRequestId: jest.fn(async () => null),
+    getScheduleById: jest.fn(async () => null),
     deleteScheduleById: jest.fn(async () => true),
+    deleteUnarmedSchedule: jest.fn(async () => 'deleted'),
     markScheduleDeleting: jest.fn(async () => ({ id: 'sched-1' }) as ISchedule),
     updateScheduleById: jest.fn(async () => ({ id: 'sched-1' }) as ISchedule),
+    armSchedule: jest.fn(async () => undefined),
   };
   return {
     methods: methods as unknown as SchedulesHandlersDeps['methods'],
@@ -219,11 +231,44 @@ describe('createSchedule late-create compensation', () => {
     expect(captured.status).toBe(201);
     const inserted = (deps.methods.createScheduleWithSlot as jest.Mock).mock.calls[0][0];
     expect(inserted.nextRunAt).toBeUndefined();
+    // Fenced on the revision stamped at insert, so a PATCH racing the arm cannot have
+    // its newer-config nextRunAt overwritten by one derived from the create payload.
     expect(deps.methods.updateScheduleById).toHaveBeenCalledWith(
       expect.any(String),
       'user-1',
       expect.objectContaining({ nextRunAt: expect.any(Date) }),
+      undefined,
+      { expectedConfigRevision: 0 },
     );
+  });
+
+  it('stamps the immutable create digest on the inserted row', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    const { res } = makeRes();
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    const inserted = (deps.methods.createScheduleWithSlot as jest.Mock).mock.calls[0][0];
+    expect(inserted.clientRequestDigest).toBe(createBodyDigest());
+  });
+
+  it('answers 201 with the current row when a concurrent PATCH wins the arming CAS', async () => {
+    const patched = {
+      ...CREATE_BODY,
+      id: 'sched-fresh',
+      target: 'new',
+      enabled: true,
+      nextRunAt: new Date('2026-07-22T12:00:00Z'),
+    } as unknown as ISchedule;
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    (deps.methods.updateScheduleById as jest.Mock).mockResolvedValue(null);
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue(patched);
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    // The revision moved: the PATCH's own arming governs, and this POST must not
+    // overwrite it — it reports the row as the edit left it.
+    expect(captured.status).toBe(201);
+    expect((captured.body as { nextRunAt?: Date }).nextRunAt).toEqual(patched.nextRunAt);
   });
 
   /**
@@ -243,10 +288,10 @@ describe('createSchedule late-create compensation', () => {
   });
 
   /**
-   * A thrown (or ambiguously acknowledged) arming write must roll the committed row
-   * back: the client retries the failed create with a fresh UUID, the retry commits a
-   * second row, and the reconciler's unarmed sweep later arms the FIRST as well — one
-   * intended schedule becomes several recurring, billable ones.
+   * A thrown arming write rolls the committed row back — but ONLY while it is still
+   * unarmed: an ambiguously-committed arm, or a concurrent replay of this key that
+   * armed the row and already answered 201, leaves an armed schedule that must
+   * survive. deleteUnarmedSchedule carries exactly that guard.
    */
   it('rolls back the committed row when the arming write throws', async () => {
     const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
@@ -255,16 +300,47 @@ describe('createSchedule late-create compensation', () => {
     await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
 
     expect(captured.status).toBe(500);
-    expect(deps.methods.deleteScheduleById).toHaveBeenCalledWith(expect.any(String), 'user-1');
+    expect(deps.methods.deleteUnarmedSchedule).toHaveBeenCalledWith(expect.any(String), 'user-1');
+    expect(deps.methods.deleteScheduleById).not.toHaveBeenCalled();
+  });
+
+  it('answers 201 instead of deleting when the ambiguous arm actually committed', async () => {
+    const armedRow = {
+      ...CREATE_BODY,
+      id: 'sched-fresh',
+      target: 'new',
+      enabled: true,
+      nextRunAt: new Date('2026-07-22T12:00:00Z'),
+    } as unknown as ISchedule;
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    (deps.methods.updateScheduleById as jest.Mock).mockRejectedValue(new Error('socket reset'));
+    (deps.methods.deleteUnarmedSchedule as jest.Mock).mockResolvedValue('armed');
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue(armedRow);
+    const { res, captured } = makeRes();
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    // The write landed before the error surfaced: the schedule exists exactly as
+    // requested, and deleting it would erase a row a concurrent replay may already
+    // have confirmed with its own 201.
+    expect(captured.status).toBe(201);
   });
 });
 
 describe('create idempotency', () => {
-  const withKey = (): ServerRequest => {
-    const req = makeCreateReq() as unknown as { body: Record<string, unknown> };
-    req.body.clientRequestId = 'intent-1';
-    return req as unknown as ServerRequest;
-  };
+  /** The row the FIRST attempt committed for CREATE_BODY, digest-less (legacy shape). */
+  const originalRow = (): ISchedule =>
+    ({
+      id: 'sched-original',
+      name: 'Digest',
+      prompt: 'Summarize',
+      agent_id: 'agent-1',
+      timezone: 'America/New_York',
+      target: 'new',
+      enabled: true,
+      cadence: { frequency: 'daily', hour: 8, minute: 0 },
+      clientRequestId: 'intent-1',
+      configRevision: 0,
+    }) as unknown as ISchedule;
 
   /**
    * The retry is the whole point: the first attempt committed a row and then failed to
@@ -273,35 +349,81 @@ describe('create idempotency', () => {
    */
   it('re-arms the row a previous attempt committed instead of creating another', async () => {
     const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
-    // A faithful replica of what the first attempt committed — a genuine retry sends
-    // identical content, which is exactly what distinguishes it from a reused key.
-    const original = {
-      id: 'sched-original',
-      name: 'Digest',
-      prompt: 'Summarize',
-      agent_id: 'agent-1',
-      timezone: 'America/New_York',
-      cadence: { frequency: 'daily', hour: 8, minute: 0 },
-    } as ISchedule;
-    (deps.methods.createScheduleWithSlot as jest.Mock).mockResolvedValue(original);
-    (deps.methods.updateScheduleById as jest.Mock).mockResolvedValue(original);
+    const original = originalRow();
+    (deps.methods.getScheduleByClientRequestId as jest.Mock).mockResolvedValue(original);
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue({
+      ...original,
+      nextRunAt: new Date('2026-07-22T12:00:00Z'),
+    });
     const { res, captured } = makeRes();
 
-    await createSchedulesHandlers(deps).createSchedule(withKey(), res);
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
 
     expect(captured.status ?? 201).toBe(201);
-    // Armed by the ORIGINAL id, not the uuid this attempt happened to generate.
-    expect(deps.methods.updateScheduleById).toHaveBeenCalledWith(
-      'sched-original',
-      'user-1',
-      expect.objectContaining({ nextRunAt: expect.any(Date) }),
-    );
+    // Nothing was inserted, and the arm is the GUARDED one keyed by the ORIGINAL row's
+    // id (same deterministic jitter as the first attempt) — never updateScheduleById,
+    // whose claim-token rotation would fence off an active run of this schedule and
+    // whose revision bump would break a concurrent PATCH's CAS.
+    expect(deps.methods.createScheduleWithSlot).not.toHaveBeenCalled();
+    expect(deps.methods.armSchedule).toHaveBeenCalledWith('sched-original', expect.any(Date));
+    expect(deps.methods.updateScheduleById).not.toHaveBeenCalled();
+  });
+
+  it('leaves an already-armed row completely untouched on replay', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    const armed = { ...originalRow(), nextRunAt: new Date('2026-07-22T12:00:00Z') };
+    (deps.methods.getScheduleByClientRequestId as jest.Mock).mockResolvedValue(armed);
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue(armed);
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    expect(captured.status ?? 201).toBe(201);
+    expect(deps.methods.armSchedule).not.toHaveBeenCalled();
+    expect(deps.methods.updateScheduleById).not.toHaveBeenCalled();
+    expect(deps.methods.deleteUnarmedSchedule).not.toHaveBeenCalled();
+    expect(deps.methods.deleteScheduleById).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A retry can arrive while the user sits AT their schedule cap — with the first
+   * attempt's row occupying the final slot. The key must resolve before any capacity
+   * refusal, or the client is denied the very row it is trying to confirm.
+   */
+  it('resolves a retry occupying the final slot before the capacity pre-check', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    (deps.methods.countSchedulesByUser as jest.Mock).mockResolvedValue(10);
+    const armed = { ...originalRow(), nextRunAt: new Date('2026-07-22T12:00:00Z') };
+    (deps.methods.getScheduleByClientRequestId as jest.Mock).mockResolvedValue(armed);
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue(armed);
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    expect(captured.status ?? 201).toBe(201);
+  });
+
+  it('resolves a concurrent retry that hits the allocator limit to the committed row', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    const armed = { ...originalRow(), nextRunAt: new Date('2026-07-22T12:00:00Z') };
+    // Absent at the pre-insert lookup, present after the allocator reports 'limit':
+    // the concurrent first attempt committed in between and took the last slot.
+    (deps.methods.getScheduleByClientRequestId as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(armed);
+    (deps.methods.createScheduleWithSlot as jest.Mock).mockResolvedValue('limit');
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue(armed);
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    expect(captured.status ?? 201).toBe(201);
   });
 
   it('refuses a key reused for a different schedule', async () => {
     const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
     // Same key, but the row it resolves to is a different intent entirely.
-    (deps.methods.createScheduleWithSlot as jest.Mock).mockResolvedValue({
+    (deps.methods.getScheduleByClientRequestId as jest.Mock).mockResolvedValue({
       id: 'sched-original',
       name: 'Something else',
       prompt: 'Different prompt',
@@ -309,26 +431,81 @@ describe('create idempotency', () => {
     } as ISchedule);
     const { res, captured } = makeRes();
 
-    await createSchedulesHandlers(deps).createSchedule(withKey(), res);
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
 
     // A 201 here would describe a schedule the caller never asked for.
     expect(captured.status).toBe(409);
+    expect(deps.methods.armSchedule).not.toHaveBeenCalled();
     expect(deps.methods.updateScheduleById).not.toHaveBeenCalled();
   });
 
-  it('warns distinctly when a keyless create cannot be rolled back', async () => {
+  /**
+   * The digest is the IMMUTABLE record of the create intent: a PATCH that reshaped the
+   * row between the first attempt and its retry must not make a genuine replay read as
+   * key reuse — the mutable row no longer matches, but the stamped digest still does.
+   */
+  it('matches a replay by digest even after a PATCH reshaped the row', async () => {
     const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
-    (deps.methods.updateScheduleById as jest.Mock).mockRejectedValue(new Error('mongo down'));
-    (deps.methods.deleteScheduleById as jest.Mock).mockRejectedValue(new Error('mongo down'));
-    (deps.methods.markScheduleDeleting as jest.Mock).mockRejectedValue(new Error('mongo down'));
+    const patched = {
+      ...originalRow(),
+      name: 'Renamed by a PATCH',
+      prompt: 'Edited prompt',
+      nextRunAt: new Date('2026-07-22T12:00:00Z'),
+      clientRequestDigest: createBodyDigest(),
+    };
+    (deps.methods.getScheduleByClientRequestId as jest.Mock).mockResolvedValue(patched);
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue(patched);
     const { res, captured } = makeRes();
 
-    // Without an idempotency key AND with both compensation writes failing, a row can
-    // survive, self-arm via the unarmed sweep, and a blind retry would add a second.
     await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
 
+    expect(captured.status ?? 201).toBe(201);
+  });
+
+  it('refuses by digest when the key was reused for different content', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    // Field-identical row (a legacy comparison would pass) whose stamped digest says
+    // the ORIGINAL create asked for something else — e.g. different attachments.
+    const differentIntent = {
+      ...originalRow(),
+      nextRunAt: new Date('2026-07-22T12:00:00Z'),
+      clientRequestDigest: 'not-this-request',
+    };
+    (deps.methods.getScheduleByClientRequestId as jest.Mock).mockResolvedValue(differentIntent);
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    expect(captured.status).toBe(409);
+  });
+
+  it('never compensates on the replay path, even when its arm fails', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    (deps.methods.getScheduleByClientRequestId as jest.Mock).mockResolvedValue(originalRow());
+    (deps.methods.armSchedule as jest.Mock).mockRejectedValue(new Error('mongo down'));
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    // The established row survives for the next retry; deleting it here is data loss.
     expect(captured.status).toBe(500);
-    expect((captured.body as { error: string }).error).toMatch(/could not roll it back/i);
+    expect(deps.methods.deleteScheduleById).not.toHaveBeenCalled();
+    expect(deps.methods.deleteUnarmedSchedule).not.toHaveBeenCalled();
+    expect(deps.methods.markScheduleDeleting).not.toHaveBeenCalled();
+  });
+
+  it('refuses a create without an idempotency key', async () => {
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    const req = makeCreateReq() as unknown as { body: Record<string, unknown> };
+    delete req.body.clientRequestId;
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).createSchedule(req as unknown as ServerRequest, res);
+
+    // Optional keys preserved the keyless duplicate path — the exact failure the key
+    // exists to close — so the payload schema requires one.
+    expect(captured.status).toBe(400);
+    expect(deps.methods.createScheduleWithSlot).not.toHaveBeenCalled();
   });
 });
 

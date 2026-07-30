@@ -30,8 +30,28 @@ const {
   recordScheduleOutcome,
   isScheduleLive,
   clearScheduledJob,
+  awaitStopAbortPersistence,
 } = require('~/server/services/Schedules');
 const { saveMessage, getMessages, getConvo } = require('~/models');
+
+/**
+ * Whether a generation error is the balance middleware's structured refusal
+ * (`checkBalance` throws `JSON.stringify({ type: 'token_balance', ... })`). A
+ * scheduled run failing on the OWNER's credits is not the schedule's fault: it must
+ * settle as `skipped_balance` (walking the insufficient_balance streak) rather than
+ * `error` (walking too_many_failures).
+ */
+function isBalanceViolationError(error) {
+  const message = error?.message;
+  if (typeof message !== 'string' || !message.startsWith('{')) {
+    return false;
+  }
+  try {
+    return JSON.parse(message)?.type === ViolationTypes.TOKEN_BALANCE;
+  } catch {
+    return false;
+  }
+}
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -509,6 +529,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     // Track if partial response was already saved to avoid duplicates
     let partialResponseSaved = false;
+    /** In-flight disconnect-partial save; scheduled-run settlement awaits it so the
+     *  run cannot leave the active set while this write is still pending. */
+    let partialSavePromise = null;
 
     /**
      * Listen for all subscribers leaving to save partial response.
@@ -559,7 +582,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           partialMessage.agent_id = req.body.agent_id;
         }
 
-        await saveMessage(
+        const save = saveMessage(
           {
             userId: req?.user?.id,
             isTemporary: req?.body?.isTemporary,
@@ -568,6 +591,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           partialMessage,
           { context: 'api/server/controllers/agents/request.js - partial response on disconnect' },
         );
+        // Settlement awaits completion, not success, so store a never-rejecting view.
+        partialSavePromise = save.catch(() => undefined);
+        await save;
 
         logger.debug(
           `[ResumableAgentController] Saved partial response for ${streamId}, content parts: ${persistableContent.length}`,
@@ -599,6 +625,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // consumes global capacity until the orphan sweep and the aborted evidence can
         // be reaped before the reconciler sees it. Mirror the liveness-abort path
         // (abortJob -> reconcile 'interrupted', not 'success').
+        // An interactive Stop can be what aborted this init: wait for the route's own
+        // writes (durable abortPersistedAt stamp) before settling, same barrier as the
+        // generation catch below.
+        await awaitStopAbortPersistence(scheduleId, new Date(scheduledFor)).catch((err) =>
+          logger.warn('[ResumableAgentController] Stop-abort persistence barrier failed', err),
+        );
         const recorded = await recordScheduleOutcome({
           scheduleId,
           scheduledFor,
@@ -661,12 +693,42 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
 
     let userMessage;
+    /** BaseClient's background user-message/conversation save (already caught inside
+     *  the client, so it never rejects). Scheduled-run settlement awaits it. */
+    let userMessagePromise;
 
     const getReqData = (data = {}) => {
       if (data.userMessage) {
         userMessage = data.userMessage;
       }
+      if (data.userMessagePromise) {
+        userMessagePromise = data.userMessagePromise;
+      }
       // conversationId is pre-generated, no need to update from callback
+    };
+
+    /**
+     * Barrier before a scheduled run's terminal settlement. Settlement is what drops
+     * the run out of the active set — the exact signal deletion drains wait on — so
+     * every write that could land after it must be flushed first: the background
+     * user-message/conversation save, any disconnect-partial save, and (for an
+     * interactive Stop) the abort route's checkpoint prune + partial-response save,
+     * awaited via the durable `abortPersistedAt` stamp. Without this, account
+     * deletion can observe zero active runs, destroy the user's data, and have one
+     * of these pending writes recreate messages for the deleted account.
+     */
+    const awaitPendingPersistence = async ({ stopAbort = false } = {}) => {
+      if (userMessagePromise) {
+        await userMessagePromise;
+      }
+      if (partialSavePromise) {
+        await partialSavePromise;
+      }
+      if (stopAbort && scheduleId && scheduledFor) {
+        await awaitStopAbortPersistence(scheduleId, new Date(scheduledFor)).catch((err) =>
+          logger.warn('[ResumableAgentController] Stop-abort persistence barrier failed', err),
+        );
+      }
     };
 
     let immediateTitlePromise = null;
@@ -1194,9 +1256,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
           await GenerationJobManager.emitDone(streamId, finalEvent, jobCreatedAt);
           // Record the abort BEFORE completeJob so the run doesn't linger as `started`
-          // (blocking run-now/overlap until the 30-minute orphan cutoff).
+          // (blocking run-now/overlap until the 30-minute orphan cutoff) — but AFTER
+          // every pending persistence write, including the Stop route's (settlement is
+          // what deletion drains confirm on).
           let abortOutcomeRecorded = true;
           if (scheduleId) {
+            await awaitPendingPersistence({ stopAbort: true });
             abortOutcomeRecorded = await recordScheduleOutcome({
               scheduleId,
               scheduledFor,
@@ -1274,12 +1339,27 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         let errorScheduleOutcomeRecorded = true;
         if (scheduleId) {
+          // SETTLE LAST: flush every pending persistence write (the background
+          // user-message/conversation save, a disconnect-partial save, and — for an
+          // interactive Stop — the abort route's own writes) before the outcome write
+          // drops this run out of the active set that deletion drains confirm on.
+          await awaitPendingPersistence({ stopAbort: wasAborted });
+          // The balance middleware's structured refusal is the OWNER's credits, not a
+          // schedule fault: settle as `skipped_balance` so it walks the
+          // insufficient_balance streak instead of too_many_failures.
+          const balanceRefusal = !wasAborted && isBalanceViolationError(error);
+          let outcomeStatus = 'error';
+          if (wasAborted) {
+            outcomeStatus = 'interrupted';
+          } else if (balanceRefusal) {
+            outcomeStatus = 'skipped_balance';
+          }
           errorScheduleOutcomeRecorded = await recordScheduleOutcome({
             scheduleId,
             scheduledFor,
-            status: wasAborted ? 'interrupted' : 'error',
+            status: outcomeStatus,
             conversationId: streamId,
-            error: wasAborted ? undefined : error.message,
+            error: outcomeStatus === 'error' ? error.message : undefined,
           });
         }
 

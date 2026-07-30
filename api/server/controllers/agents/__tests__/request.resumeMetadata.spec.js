@@ -173,6 +173,8 @@ jest.mock('~/server/services/Schedules', () => ({
   // request.js destructures this at import time; omitting it makes the pre-start
   // liveness re-check a call on undefined.
   isScheduleLive: jest.fn(() => Promise.resolve(true)),
+  clearScheduledJob: jest.fn(() => Promise.resolve()),
+  awaitStopAbortPersistence: jest.fn(() => Promise.resolve()),
 }));
 
 jest.mock('~/models', () => ({

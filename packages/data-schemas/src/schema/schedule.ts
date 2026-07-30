@@ -136,6 +136,17 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
     clientRequestId: {
       type: String,
     },
+    /** Digest of the original create payload, stamped at insert and never edited, so a
+     *  retry is matched against what was actually requested rather than a row a
+     *  concurrent PATCH may have already reshaped. */
+    clientRequestDigest: {
+      type: String,
+    },
+    /** Last erasure-sweep attempt; rotates the `deleting` window (see eraseAttemptedAt
+     *  ordering in getDeletingSchedules) so undrainable rows can't starve later ones. */
+    eraseAttemptedAt: {
+      type: Date,
+    },
     lastRun: {
       type: {
         conversationId: { type: String },
@@ -204,5 +215,8 @@ scheduleSchema.index(
   { user: 1, clientRequestId: 1 },
   { unique: true, partialFilterExpression: { clientRequestId: { $exists: true } } },
 );
+
+// Erasure sweeps read `deleting: true` ordered by last attempt (rotation).
+scheduleSchema.index({ deleting: 1, eraseAttemptedAt: 1 });
 
 export default scheduleSchema;

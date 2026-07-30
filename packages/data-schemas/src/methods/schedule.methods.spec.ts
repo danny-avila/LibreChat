@@ -1794,3 +1794,196 @@ describe('reconciliation rotates the paused window', () => {
     expect(second.some((run) => run.scheduledFor?.getTime() === queuedAt.getTime())).toBe(true);
   });
 });
+
+describe('requestRunAbort (classic-operator first-wins stamp)', () => {
+  it('stamps the first request with its source and preserves both on a later one', async () => {
+    const schedule = scheduleData();
+    await Schedule.create(schedule);
+    await ScheduleRun.create(runData(schedule));
+
+    expect(
+      await methods.requestRunAbort(schedule.id!, new Date('2026-07-20T12:00:00Z'), 'stop'),
+    ).toBe(true);
+    const first = await methods.getScheduleRunAbortState(
+      schedule.id!,
+      new Date('2026-07-20T12:00:00Z'),
+    );
+    expect(first?.abortRequestedAt).toBeInstanceOf(Date);
+    expect(first?.abortSource).toBe('stop');
+
+    // A racing deletion must not overwrite the stop's stamp: the settlement barrier
+    // reads the SOURCE to know the Stop route still has writes in flight.
+    expect(
+      await methods.requestRunAbort(schedule.id!, new Date('2026-07-20T12:00:00Z'), 'deletion'),
+    ).toBe(true);
+    const second = await methods.getScheduleRunAbortState(
+      schedule.id!,
+      new Date('2026-07-20T12:00:00Z'),
+    );
+    expect(second?.abortSource).toBe('stop');
+    expect(second?.abortRequestedAt?.getTime()).toBe(first?.abortRequestedAt?.getTime());
+  });
+
+  it('reports false when no active run holds the occurrence', async () => {
+    const schedule = scheduleData();
+    await Schedule.create(schedule);
+    await ScheduleRun.create(runData(schedule, { status: 'success' }));
+    expect(
+      await methods.requestRunAbort(schedule.id!, new Date('2026-07-20T12:00:00Z'), 'stop'),
+    ).toBe(false);
+  });
+
+  it('marks abort persistence for the settlement barrier', async () => {
+    const schedule = scheduleData();
+    await Schedule.create(schedule);
+    await ScheduleRun.create(runData(schedule));
+    await methods.requestRunAbort(schedule.id!, new Date('2026-07-20T12:00:00Z'), 'stop');
+    await methods.markRunAbortPersisted(schedule.id!, new Date('2026-07-20T12:00:00Z'));
+    const state = await methods.getScheduleRunAbortState(
+      schedule.id!,
+      new Date('2026-07-20T12:00:00Z'),
+    );
+    expect(state?.abortPersistedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe('recordRunOutcome settles a mid-generation balance refusal as skipped_balance', () => {
+  const scheduledFor = new Date('2026-07-20T12:00:00Z');
+
+  it('walks the balance streak instead of the failure streak and frees capacity', async () => {
+    const schedule = scheduleData();
+    await Schedule.create(schedule);
+    await ScheduleRun.create(runData(schedule, { capacitySlot: 0, conversationId: 'c1' }));
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id!,
+      scheduledFor,
+      status: 'skipped_balance',
+      conversationId: 'c1',
+      autoDisableAfterFailures: 5,
+      balanceSkipDisableThreshold: 5,
+    });
+
+    const run = await ScheduleRun.findOne({ scheduleId: schedule.id }).lean();
+    expect(run?.status).toBe('skipped_balance');
+    expect(run?.capacitySlot).toBeUndefined();
+    expect(run?.bookkept).toBe(true);
+
+    const row = await Schedule.findOne({ id: schedule.id }).lean();
+    expect(row?.balanceSkipCount).toBe(1);
+    expect(row?.failureCount).toBe(0);
+    expect(row?.enabled).toBe(true);
+    expect(row?.lastRun?.status).toBe('skipped_balance');
+  });
+
+  it('auto-disables with insufficient_balance at the threshold, not too_many_failures', async () => {
+    const schedule = scheduleData({ balanceSkipCount: 4 });
+    await Schedule.create(schedule);
+    await ScheduleRun.create(runData(schedule, { capacitySlot: 0 }));
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id!,
+      scheduledFor,
+      status: 'skipped_balance',
+      autoDisableAfterFailures: 5,
+      balanceSkipDisableThreshold: 5,
+    });
+
+    const row = await Schedule.findOne({ id: schedule.id }).lean();
+    expect(row?.enabled).toBe(false);
+    expect(row?.disabledReason).toBe('insufficient_balance');
+  });
+
+  it('is idempotent across the crash-retry replay (finalizeBookkeeping)', async () => {
+    const schedule = scheduleData();
+    await Schedule.create(schedule);
+    await ScheduleRun.create(runData(schedule, { capacitySlot: 0 }));
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id!,
+      scheduledFor,
+      status: 'skipped_balance',
+      autoDisableAfterFailures: 5,
+      balanceSkipDisableThreshold: 5,
+    });
+    await methods.finalizeBookkeeping({
+      scheduleId: schedule.id!,
+      scheduledFor,
+      status: 'skipped_balance',
+      autoDisableAfterFailures: 5,
+      balanceSkipDisableThreshold: 5,
+    });
+
+    const row = await Schedule.findOne({ id: schedule.id }).lean();
+    expect(row?.balanceSkipCount).toBe(1);
+  });
+
+  it('surfaces an unbookkept skipped_balance run to the reconciler', async () => {
+    const schedule = scheduleData();
+    await Schedule.create(schedule);
+    await ScheduleRun.create(
+      runData(schedule, {
+        status: 'skipped_balance',
+        bookkept: false,
+        firedAt: new Date(Date.now() - 10 * 60_000),
+      }),
+    );
+    const rows = await methods.getUnbookkeptRuns(new Date(Date.now() - 60_000), 10);
+    expect(rows.map((run) => run.scheduleId)).toContain(schedule.id);
+  });
+});
+
+describe('deleteUnarmedSchedule (guarded create rollback)', () => {
+  it('deletes an unarmed row and its runs', async () => {
+    const schedule = scheduleData({ nextRunAt: undefined });
+    const created = await Schedule.create(schedule);
+    await ScheduleRun.create(runData({ id: schedule.id!, user: created.user }));
+
+    expect(await methods.deleteUnarmedSchedule(schedule.id!, created.user)).toBe('deleted');
+    expect(await Schedule.findOne({ id: schedule.id }).lean()).toBeNull();
+    expect(await ScheduleRun.findOne({ scheduleId: schedule.id }).lean()).toBeNull();
+  });
+
+  it('refuses to delete a row that has since been armed', async () => {
+    const schedule = scheduleData();
+    const created = await Schedule.create(schedule);
+
+    // An ambiguously-committed arm (or a concurrent replay's arm) landed: the row is a
+    // live schedule another response may have confirmed, so the rollback must not
+    // erase it.
+    expect(await methods.deleteUnarmedSchedule(schedule.id!, created.user)).toBe('armed');
+    expect(await Schedule.findOne({ id: schedule.id }).lean()).not.toBeNull();
+  });
+
+  it('reports a missing row distinctly', async () => {
+    expect(await methods.deleteUnarmedSchedule('sched_gone', new mongoose.Types.ObjectId())).toBe(
+      'missing',
+    );
+  });
+});
+
+describe('erasure sweep rotation and idempotency-key lookup', () => {
+  it('rotates the deleting window so undrainable rows cannot starve later ones', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const first = scheduleData({ user, deleting: true, nextRunAt: undefined });
+    const second = scheduleData({ user, deleting: true, nextRunAt: undefined });
+    await Schedule.create(first);
+    await Schedule.create(second);
+
+    const window = await methods.getDeletingSchedules(1);
+    expect(window).toHaveLength(1);
+    await methods.markEraseAttempted(window.map((row) => row.id));
+
+    const rotated = await methods.getDeletingSchedules(1);
+    expect(rotated[0].id).not.toBe(window[0].id);
+  });
+
+  it('resolves an idempotency key even while its row is draining', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const schedule = scheduleData({ user, deleting: true, clientRequestId: 'intent-9' });
+    await Schedule.create(schedule);
+
+    const found = await methods.getScheduleByClientRequestId(user, 'intent-9');
+    expect(found?.id).toBe(schedule.id);
+  });
+});

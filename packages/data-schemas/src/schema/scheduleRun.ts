@@ -70,6 +70,16 @@ const scheduleRunSchema: Schema<IScheduleRunDocument> = new Schema(
     abortRequestedAt: {
       type: Date,
     },
+    /** Who requested the abort ('stop' = interactive route, 'deletion' = delete/quiesce). */
+    abortSource: {
+      type: String,
+      enum: ['stop', 'deletion'],
+    },
+    /** Stamped once the interactive Stop route has persisted everything it writes;
+     *  the generation owner defers settlement until this appears (bounded). */
+    abortPersistedAt: {
+      type: Date,
+    },
     /** When reconciliation last examined this row. Orders the paused window so a full
      *  batch of still-live pauses cannot starve an abandoned row behind them. */
     reconciledAt: {
@@ -111,5 +121,8 @@ scheduleRunSchema.index({ scheduleId: 1, firedAt: -1 });
 // Reconciliation sweeps by status; keeps `started` (capacity) fetch cheap and
 // prevents long-lived `requires_action` rows from starving the scan.
 scheduleRunSchema.index({ status: 1, firedAt: 1 });
+// The paused reconciliation window sorts on {reconciledAt, firedAt} within a status;
+// without this the round-robin rotation re-sorts the whole paused set every tick.
+scheduleRunSchema.index({ status: 1, reconciledAt: 1, firedAt: 1 });
 
 export default scheduleRunSchema;

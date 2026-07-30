@@ -80,11 +80,17 @@ export interface ClaimDueScheduleParams {
 export interface RecordRunOutcomeParams {
   scheduleId: string;
   scheduledFor: Date;
-  status: Extract<ScheduleRunStatus, 'success' | 'error' | 'requires_action' | 'interrupted'>;
+  status: Extract<
+    ScheduleRunStatus,
+    'success' | 'error' | 'requires_action' | 'interrupted' | 'skipped_balance'
+  >;
   conversationId?: string;
   error?: string;
   durationMs?: number;
   autoDisableAfterFailures: number;
+  /** Consecutive-balance-skip auto-disable threshold; required to settle a run as
+   *  `skipped_balance` (a mid-generation balance refusal), ignored otherwise. */
+  balanceSkipDisableThreshold?: number;
 }
 
 /** Result of claiming/leasing a schedule: the snapshot plus the fencing token to carry. */
@@ -119,6 +125,10 @@ export type ScheduleMethods = {
     options?: { expectedConfigRevision?: number },
   ) => Promise<ISchedule | null>;
   deleteScheduleById: (id: string, userId: string | Types.ObjectId) => Promise<boolean>;
+  deleteUnarmedSchedule: (
+    id: string,
+    userId: string | Types.ObjectId,
+  ) => Promise<'deleted' | 'armed' | 'missing'>;
   getScheduleById: (id: string, userId?: string | Types.ObjectId) => Promise<ISchedule | null>;
   getSchedulesByUser: (userId: string | Types.ObjectId) => Promise<ISchedule[]>;
   countSchedulesByUser: (userId: string | Types.ObjectId) => Promise<number>;
@@ -149,7 +159,19 @@ export type ScheduleMethods = {
   insertScheduleRun: (data: Partial<IScheduleRun>) => Promise<IScheduleRun | null>;
   reserveStartedRun: (data: Partial<IScheduleRun>) => Promise<StartedRunReservation>;
   getCapacityOccupancy: () => Promise<{ takenSlots: number[]; unslotted: number }>;
-  requestRunAbort: (scheduleId: string, scheduledFor: Date) => Promise<boolean>;
+  requestRunAbort: (
+    scheduleId: string,
+    scheduledFor: Date,
+    source?: IScheduleRun['abortSource'],
+  ) => Promise<boolean>;
+  getScheduleRunAbortState: (
+    scheduleId: string,
+    scheduledFor: Date,
+  ) => Promise<Pick<
+    IScheduleRun,
+    'status' | 'abortRequestedAt' | 'abortSource' | 'abortPersistedAt'
+  > | null>;
+  markRunAbortPersisted: (scheduleId: string, scheduledFor: Date) => Promise<void>;
   setRunFireDetails: (
     scheduleId: string,
     scheduledFor: Date,
@@ -167,6 +189,11 @@ export type ScheduleMethods = {
   getActiveRunsForUser: (userId: string | Types.ObjectId) => Promise<IScheduleRun[]>;
   disableUserSchedulesForDeletion: (userId: string | Types.ObjectId) => Promise<void>;
   getDeletingSchedules: (limit: number) => Promise<ISchedule[]>;
+  markEraseAttempted: (ids: string[]) => Promise<void>;
+  getScheduleByClientRequestId: (
+    userId: string | Types.ObjectId,
+    clientRequestId: string,
+  ) => Promise<ISchedule | null>;
   getDeletingScheduleIds: (userId: string | Types.ObjectId, limit: number) => Promise<string[]>;
   getUnarmedSchedules: (limit: number) => Promise<ISchedule[]>;
   armSchedule: (id: string, nextRunAt: Date) => Promise<void>;
@@ -314,6 +341,30 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     return false;
   }
 
+  /**
+   * Rolls back a fresh create whose arming write failed — but ONLY while the row is
+   * still unarmed. An ambiguously-committed arm, or a concurrent create-retry that
+   * armed the row and already answered 201, leaves an ARMED row this rollback must
+   * not erase; 'armed' tells the caller the schedule survived as requested.
+   */
+  async function deleteUnarmedSchedule(
+    id: string,
+    userId: string | Types.ObjectId,
+  ): Promise<'deleted' | 'armed' | 'missing'> {
+    const result = await Schedule().deleteOne({
+      id,
+      user: userId,
+      deleting: { $ne: true },
+      nextRunAt: { $exists: false },
+    });
+    if (result.deletedCount > 0) {
+      await ScheduleRun().deleteMany({ scheduleId: id });
+      return 'deleted';
+    }
+    const still = await Schedule().findOne({ id, user: userId }).select('_id').lean();
+    return still == null ? 'missing' : 'armed';
+  }
+
   async function getScheduleById(
     id: string,
     userId?: string | Types.ObjectId,
@@ -344,37 +395,38 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
    * is the sole multi-instance dispatch arbiter: exactly one caller wins each
    * due schedule regardless of replica count, with or without Redis. Stamps a
    * fresh `claimToken` the winner carries through every subsequent write.
+   *
+   * Due-ness and lease expiry compare against THIS worker's clock. DocumentDB
+   * supports neither pipeline-form updates nor `$$NOW` (see
+   * misc/documentdb/documentdb-compat.md), so the server-clock CAS is not
+   * expressible portably; the CAS itself still arbitrates every race, and the
+   * exposure is bounded by inter-replica clock skew (NTP-order) against a
+   * 5-minute lease and per-minute cadence granularity. `{ $lte }` matches
+   * neither missing nor null `nextRunAt`, so unarmed rows stay unclaimable;
+   * a missing `leaseUntil` is claimable via the `$or`.
    */
   async function claimDueSchedule(params: ClaimDueScheduleParams): Promise<ISchedule | null> {
-    // Compare due-ness and lease expiry against MongoDB's own clock (`$$NOW`), not
-    // each worker's process clock: all replicas race on the persisted nextRunAt /
-    // leaseUntil, so a skewed worker must not claim future occurrences early or set
-    // a mis-timed lease. `nextRunAt` existence is gated by the plain filter (a bare
-    // $expr $lte would match a missing field as null); a missing leaseUntil is
-    // treated as epoch so it's always claimable.
     const claimToken = randomUUID();
+    const now = new Date();
     return Schedule()
       .findOneAndUpdate(
         {
           enabled: true,
           deleting: { $ne: true },
-          nextRunAt: { $exists: true, $ne: null },
-          $expr: {
-            $and: [
-              { $lte: ['$nextRunAt', '$$NOW'] },
-              { $lt: [{ $ifNull: ['$leaseUntil', new Date(0)] }, '$$NOW'] },
-            ],
+          nextRunAt: { $lte: now },
+          $or: [
+            { leaseUntil: { $exists: false } },
+            { leaseUntil: null },
+            { leaseUntil: { $lt: now } },
+          ],
+        },
+        {
+          $set: {
+            leaseUntil: new Date(now.getTime() + params.leaseMs),
+            leaseBy: params.instanceId,
+            claimToken,
           },
         },
-        [
-          {
-            $set: {
-              leaseUntil: { $add: ['$$NOW', params.leaseMs] },
-              leaseBy: params.instanceId,
-              claimToken,
-            },
-          },
-        ],
         { new: true, sort: { nextRunAt: 1 } },
       )
       .lean<ISchedule>();
@@ -393,24 +445,29 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     userId: string | Types.ObjectId,
     leaseMs: number,
   ): Promise<ISchedule | null> {
-    // Compare/expire the lease against Mongo's `$$NOW` (same CAS shape as
-    // claimDueSchedule), not this worker's clock: a skewed replica must not read a
-    // Mongo-written automatic-fire lease as expired early and start a second run.
+    // Same worker-clock CAS shape as claimDueSchedule (DocumentDB rules out `$$NOW`
+    // and pipeline updates); the CAS still serializes concurrent run-now clicks, and
+    // clock skew only shifts WHEN an expired lease becomes re-acquirable.
     const claimToken = randomUUID();
     // A UNIQUE per-lease holder (not the constant 'manual'): the superseded-fire
     // cleanup releases by holder (leaseBy), so a stale run-now that stalled past its
     // lease must not match — and strip — the fresh lease a newer run-now acquired.
     // The claimToken already fences the lease, so reuse it as the holder discriminator.
     const leaseBy = `manual:${claimToken}`;
+    const now = new Date();
     return Schedule()
       .findOneAndUpdate(
         {
           id,
           user: userId,
           deleting: { $ne: true },
-          $expr: { $lt: [{ $ifNull: ['$leaseUntil', new Date(0)] }, '$$NOW'] },
+          $or: [
+            { leaseUntil: { $exists: false } },
+            { leaseUntil: null },
+            { leaseUntil: { $lt: now } },
+          ],
         },
-        [{ $set: { leaseUntil: { $add: ['$$NOW', leaseMs] }, leaseBy, claimToken } }],
+        { $set: { leaseUntil: new Date(now.getTime() + leaseMs), leaseBy, claimToken } },
         { new: true },
       )
       .lean<ISchedule>();
@@ -455,13 +512,15 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     claimToken: string,
     requireEnabled = true,
   ): Promise<boolean> {
+    // Worker clock (DocumentDB-portable): `$gt` matches neither a missing nor a null
+    // leaseUntil, so a released lease reads as invalid — the fail-closed direction.
     const row = await Schedule()
       .findOne({
         id,
         claimToken,
         deleting: { $ne: true },
         ...(requireEnabled ? { enabled: true } : {}),
-        $expr: { $gt: [{ $ifNull: ['$leaseUntil', new Date(0)] }, '$$NOW'] },
+        leaseUntil: { $gt: new Date() },
       })
       .select('_id')
       .lean();
@@ -600,13 +659,60 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
 
   /** Records that an abort was requested WITHOUT freeing the capacity slot: the run
    *  keeps counting against fireConcurrency until its generation owner confirms
-   *  settlement by writing a terminal outcome. */
-  async function requestRunAbort(scheduleId: string, scheduledFor: Date): Promise<boolean> {
-    const result = await ScheduleRun().updateOne(
-      { scheduleId, scheduledFor, status: { $in: ACTIVE_RUN_STATUSES } },
-      [{ $set: { abortRequestedAt: { $ifNull: ['$abortRequestedAt', '$$NOW'] } } }],
+   *  settlement by writing a terminal outcome. First writer wins the stamp (and its
+   *  `abortSource`); a later request leaves both untouched. Two classic-operator
+   *  statements instead of a `$ifNull` pipeline update (DocumentDB). */
+  async function requestRunAbort(
+    scheduleId: string,
+    scheduledFor: Date,
+    source?: IScheduleRun['abortSource'],
+  ): Promise<boolean> {
+    const stamped = await ScheduleRun().updateOne(
+      {
+        scheduleId,
+        scheduledFor,
+        status: { $in: ACTIVE_RUN_STATUSES },
+        abortRequestedAt: { $exists: false },
+      },
+      { $set: { abortRequestedAt: new Date(), ...(source ? { abortSource: source } : {}) } },
     );
-    return (result.matchedCount ?? 0) > 0;
+    if ((stamped.matchedCount ?? 0) > 0) {
+      return true;
+    }
+    const existing = await ScheduleRun()
+      .findOne({ scheduleId, scheduledFor, status: { $in: ACTIVE_RUN_STATUSES } })
+      .select('_id')
+      .lean();
+    return existing != null;
+  }
+
+  /** The abort-coordination view of a run row, for the generation owner's settlement
+   *  barrier (see abortPersistedAt). */
+  async function getScheduleRunAbortState(
+    scheduleId: string,
+    scheduledFor: Date,
+  ): Promise<Pick<
+    IScheduleRun,
+    'status' | 'abortRequestedAt' | 'abortSource' | 'abortPersistedAt'
+  > | null> {
+    return ScheduleRun()
+      .findOne({ scheduleId, scheduledFor })
+      .select('status abortRequestedAt abortSource abortPersistedAt')
+      .lean<Pick<
+        IScheduleRun,
+        'status' | 'abortRequestedAt' | 'abortSource' | 'abortPersistedAt'
+      > | null>();
+  }
+
+  /** Stamped by the interactive Stop route once ALL its writes (checkpoint prune,
+   *  partial-response save) have landed; releases the generation owner's settlement
+   *  barrier. Bookkeeping only: never touches `updatedAt`. */
+  async function markRunAbortPersisted(scheduleId: string, scheduledFor: Date): Promise<void> {
+    await ScheduleRun().updateOne(
+      { scheduleId, scheduledFor },
+      { $set: { abortPersistedAt: new Date() } },
+      { timestamps: false },
+    );
   }
 
   /** Count of in-flight scheduled runs (across all schedules) for the fire cap. */
@@ -765,11 +871,84 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   }
 
   /**
+   * Balance-skip streak bookkeeping, shared by the pre-fire skip (recordSkippedRun)
+   * and a mid-generation balance refusal settling a `started` row (recordRunOutcome
+   * with `skipped_balance`): projects the card, walks the consecutive-balance-skip
+   * streak (per-occurrence idempotent via `countedFor`, order-fenced via
+   * `countersAsOf`), and applies the insufficient_balance auto-disable policy.
+   */
+  async function applyBalanceSkipBookkeeping(params: {
+    scheduleId: string;
+    scheduledFor: Date;
+    firedAt: Date;
+    conversationId?: string;
+    rowRevision?: number;
+    balanceSkipDisableThreshold?: number;
+  }): Promise<void> {
+    const revisionFilter = params.rowRevision != null ? { configRevision: params.rowRevision } : {};
+    await projectLastRun(
+      params.scheduleId,
+      {
+        ...(params.conversationId ? { conversationId: params.conversationId } : {}),
+        status: 'skipped_balance',
+        firedAt: params.firedAt,
+      },
+      params.scheduledFor,
+      revisionFilter,
+    );
+    if (params.balanceSkipDisableThreshold == null) {
+      return;
+    }
+    // Same order fence as the terminal counters: these are consecutive streaks, so an
+    // older occurrence settling late must not reset or extend one a newer outcome owns.
+    const orderFilter = {
+      $or: [{ countersAsOf: { $exists: false } }, { countersAsOf: { $lte: params.scheduledFor } }],
+    };
+    // Per-occurrence guard: increment the streak at most once for this occurrence even
+    // across crash retries (same `countedFor` set the terminal counters use).
+    const schedule = await Schedule()
+      .findOneAndUpdate(
+        {
+          id: params.scheduleId,
+          countedFor: { $ne: params.scheduledFor },
+          ...revisionFilter,
+          ...orderFilter,
+        },
+        {
+          $inc: { balanceSkipCount: 1 },
+          $set: { countersAsOf: params.scheduledFor },
+          $push: { countedFor: { $each: [params.scheduledFor], $slice: -COUNTED_FOR_WINDOW } },
+        },
+        { new: true },
+      )
+      .lean<ISchedule>();
+    // Auto-disable is a POLICY re-evaluated on EVERY call (idempotent), NOT gated on
+    // the count guard — if a crash landed the $inc but not the disable, the replay's
+    // guarded update no-ops to null, so re-read and still disable at/over threshold.
+    const current =
+      schedule ?? (await Schedule().findOne({ id: params.scheduleId }).lean<ISchedule>());
+    if (current?.enabled && current.balanceSkipCount >= params.balanceSkipDisableThreshold) {
+      // Same read-then-write window as the failure policy: any non-balance outcome
+      // resets this streak, so the write must carry the count it decided on.
+      await disableSchedule(
+        params.scheduleId,
+        'insufficient_balance',
+        undefined,
+        params.rowRevision,
+        { balanceSkipCount: { $gte: params.balanceSkipDisableThreshold } },
+      );
+    }
+  }
+
+  /**
    * Terminal (or pause) transition for a run + lastRun/failure bookkeeping.
    * Matches a run row still in `started` OR `requires_action`. Crash-retryable:
    * the run row is marked `bookkept:false` at terminalization and only flipped
    * to `true` after bookkeeping lands, so a crash in between is re-applied by the
    * reconciler (`getUnbookkeptRuns`), while `countedFor` keeps it idempotent.
+   * A `skipped_balance` settlement (a mid-generation balance refusal) takes the same
+   * guarded row transition but walks the balance-skip streak instead of the failure
+   * streak — the owner's credits, not the schedule, are at fault.
    */
   async function recordRunOutcome(params: RecordRunOutcomeParams): Promise<void> {
     const firedAt = new Date();
@@ -848,11 +1027,22 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // passed in by each caller. Callers only say "this occurrence reached status X" and
     // structurally cannot forget a token — which is exactly how the reconcile and
     // balance-skip paths previously shipped unfenced.
-    await applyTerminalBookkeeping({
-      ...params,
-      firedAt,
-      expectConfigRevision: settled.configRevision,
-    });
+    if (params.status === 'skipped_balance') {
+      await applyBalanceSkipBookkeeping({
+        scheduleId: params.scheduleId,
+        scheduledFor: params.scheduledFor,
+        firedAt,
+        conversationId: params.conversationId,
+        rowRevision: settled.configRevision,
+        balanceSkipDisableThreshold: params.balanceSkipDisableThreshold,
+      });
+    } else {
+      await applyTerminalBookkeeping({
+        ...params,
+        firedAt,
+        expectConfigRevision: settled.configRevision,
+      });
+    }
     await ScheduleRun().updateOne(
       { scheduleId: params.scheduleId, scheduledFor: params.scheduledFor },
       { $set: { bookkept: true } },
@@ -891,6 +1081,16 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // never passed by the caller. A skip decided under an older owner config must not
     // stamp the card (or walk the balance streak toward auto-disable) on a schedule the
     // owner has since edited. Absent on either side disables the fence.
+    if (data.status === 'skipped_balance') {
+      await applyBalanceSkipBookkeeping({
+        scheduleId: data.scheduleId,
+        scheduledFor: data.scheduledFor,
+        firedAt,
+        rowRevision,
+        balanceSkipDisableThreshold,
+      });
+      return;
+    }
     const skipRevisionFilter = rowRevision != null ? { configRevision: rowRevision } : {};
     // Surface the skip on the card (its chip reads schedule.lastRun). An overlap
     // skip is an intervening non-balance outcome, so it BREAKS the balance-skip
@@ -909,47 +1109,10 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     const skipOrderFilter = {
       $or: [{ countersAsOf: { $exists: false } }, { countersAsOf: { $lte: data.scheduledFor } }],
     };
-    if (data.status !== 'skipped_balance') {
-      await Schedule().updateOne(
-        { id: data.scheduleId, ...skipRevisionFilter, ...skipOrderFilter },
-        { $set: { balanceSkipCount: 0, countersAsOf: data.scheduledFor } },
-      );
-    }
-    if (data.status !== 'skipped_balance' || balanceSkipDisableThreshold == null) {
-      return;
-    }
-    // Per-occurrence guard: increment the consecutive-balance-skip streak at most
-    // once for this occurrence even across crash retries (same `countedFor` set the
-    // terminal counters use; an occurrence is only ever skipped OR fired, never both).
-    const schedule = await Schedule()
-      .findOneAndUpdate(
-        {
-          id: data.scheduleId,
-          countedFor: { $ne: data.scheduledFor },
-          ...skipRevisionFilter,
-          ...skipOrderFilter,
-        },
-        {
-          $inc: { balanceSkipCount: 1 },
-          $set: { countersAsOf: data.scheduledFor },
-          $push: { countedFor: { $each: [data.scheduledFor], $slice: -COUNTED_FOR_WINDOW } },
-        },
-        { new: true },
-      )
-      .lean<ISchedule>();
-    // Auto-disable is a POLICY re-evaluated on EVERY call (idempotent), NOT gated on
-    // the count guard — mirroring applyTerminalBookkeeping. If a crash landed the
-    // $inc/$push but not the disable, the guarded update above no-ops to null on the
-    // replay, so re-read the current counter and still disable when at/over threshold.
-    const current =
-      schedule ?? (await Schedule().findOne({ id: data.scheduleId }).lean<ISchedule>());
-    if (current?.enabled && current.balanceSkipCount >= balanceSkipDisableThreshold) {
-      // Same read-then-write window as the failure policy: any non-balance outcome
-      // resets this streak, so the write must carry the count it decided on.
-      await disableSchedule(data.scheduleId, 'insufficient_balance', undefined, rowRevision, {
-        balanceSkipCount: { $gte: balanceSkipDisableThreshold },
-      });
-    }
+    await Schedule().updateOne(
+      { id: data.scheduleId, ...skipRevisionFilter, ...skipOrderFilter },
+      { $set: { balanceSkipCount: 0, countersAsOf: data.scheduledFor } },
+    );
   }
 
   async function setRunFireDetails(
@@ -1018,7 +1181,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   async function getUnbookkeptRuns(olderThan: Date, limit: number): Promise<IScheduleRun[]> {
     return ScheduleRun()
       .find({
-        status: { $in: ['success', 'error', 'interrupted'] },
+        status: { $in: ['success', 'error', 'interrupted', 'skipped_balance'] },
         bookkept: false,
         firedAt: { $lt: olderThan },
       })
@@ -1035,11 +1198,22 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       .findOne({ scheduleId: params.scheduleId, scheduledFor: params.scheduledFor })
       .select('configRevision')
       .lean<Pick<IScheduleRun, 'configRevision'>>();
-    await applyTerminalBookkeeping({
-      ...params,
-      firedAt: new Date(),
-      expectConfigRevision: run?.configRevision,
-    });
+    if (params.status === 'skipped_balance') {
+      await applyBalanceSkipBookkeeping({
+        scheduleId: params.scheduleId,
+        scheduledFor: params.scheduledFor,
+        firedAt: new Date(),
+        conversationId: params.conversationId,
+        rowRevision: run?.configRevision,
+        balanceSkipDisableThreshold: params.balanceSkipDisableThreshold,
+      });
+    } else {
+      await applyTerminalBookkeeping({
+        ...params,
+        firedAt: new Date(),
+        expectConfigRevision: run?.configRevision,
+      });
+    }
     await ScheduleRun().updateOne(
       { scheduleId: params.scheduleId, scheduledFor: params.scheduledFor },
       { $set: { bookkept: true } },
@@ -1153,9 +1327,39 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     );
   }
 
-  /** Soft-deleted schedules awaiting erasure (drained of active runs). */
+  /** Soft-deleted schedules awaiting erasure (drained of active runs). ROUND-ROBIN
+   *  on the last sweep attempt (never-attempted first): an unsorted window re-served
+   *  the same first rows every pass, so a batch of undrainable rows (live runs or
+   *  leases) starved every row behind it out of the sweep indefinitely. */
   async function getDeletingSchedules(limit: number): Promise<ISchedule[]> {
-    return Schedule().find({ deleting: true }).limit(limit).lean<ISchedule[]>();
+    return Schedule()
+      .find({ deleting: true })
+      .sort({ eraseAttemptedAt: 1 })
+      .limit(limit)
+      .lean<ISchedule[]>();
+  }
+
+  /** Stamps deleting rows as attempted so the erasure window rotates. Bookkeeping
+   *  only: never touches `updatedAt`. */
+  async function markEraseAttempted(ids: string[]): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+    await Schedule().updateMany(
+      { id: { $in: ids }, deleting: true },
+      { $set: { eraseAttemptedAt: new Date() } },
+      { timestamps: false },
+    );
+  }
+
+  /** Resolves the schedule a prior create attempt with this idempotency key committed,
+   *  including one already soft-deleted (a retry must see its key as claimed while the
+   *  row drains, mirroring the unique index, which deliberately spans deleting rows). */
+  async function getScheduleByClientRequestId(
+    userId: string | Types.ObjectId,
+    clientRequestId: string,
+  ): Promise<ISchedule | null> {
+    return Schedule().findOne({ user: userId, clientRequestId }).lean<ISchedule>();
   }
 
   /** Ids of an owner's soft-deleted schedules, for a lazy erase retry on a read path
@@ -1183,13 +1387,11 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
    * longer prove it owns. Returns whether it erased.
    */
   async function eraseScheduleIfDrained(id: string): Promise<boolean> {
-    // A live lease (leaseUntil > $$NOW) means a worker still holds the claim.
+    // A live lease (leaseUntil in the future) means a worker still holds the claim.
+    // Worker clock, DocumentDB-portable: `$gt` matches neither missing nor null, so a
+    // released lease reads as drained.
     const leased = await Schedule()
-      .findOne({
-        id,
-        deleting: true,
-        $expr: { $gt: [{ $ifNull: ['$leaseUntil', new Date(0)] }, '$$NOW'] },
-      })
+      .findOne({ id, deleting: true, leaseUntil: { $gt: new Date() } })
       .select('_id')
       .lean();
     if (leased != null) {
@@ -1223,6 +1425,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     createScheduleWithSlot,
     updateScheduleById,
     deleteScheduleById,
+    deleteUnarmedSchedule,
     getScheduleById,
     getSchedulesByUser,
     countSchedulesByUser,
@@ -1237,6 +1440,8 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     reserveStartedRun,
     getCapacityOccupancy,
     requestRunAbort,
+    getScheduleRunAbortState,
+    markRunAbortPersisted,
     setRunFireDetails,
     countActiveRuns,
     deleteScheduleRun,
@@ -1245,6 +1450,8 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     getActiveRunsForUser,
     disableUserSchedulesForDeletion,
     getDeletingSchedules,
+    markEraseAttempted,
+    getScheduleByClientRequestId,
     getDeletingScheduleIds,
     getUnarmedSchedules,
     armSchedule,

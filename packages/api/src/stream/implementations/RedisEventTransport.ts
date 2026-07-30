@@ -863,16 +863,17 @@ export class RedisEventTransport implements IEventTransport {
    * This enables cross-replica abort: when a user aborts on Replica B,
    * the generating Replica A receives the signal and stops.
    */
-  emitAbort(streamId: string, generationId?: number): void {
+  async emitAbort(streamId: string, generationId?: number): Promise<void> {
     const channel = CHANNELS.events(streamId);
     const message: PubSubMessage = {
       type: EventTypes.ABORT,
       ...(generationId != null && { generationId }),
     };
 
-    this.publisher.publish(channel, JSON.stringify(message)).catch((err) => {
-      logger.error(`[RedisEventTransport] Failed to publish abort:`, err);
-    });
+    // Awaited by the caller: a failed publish means the signal never reached the
+    // generating replica, and swallowing it here made abortJob report an abort as
+    // delivered that no process would ever act on.
+    await this.publisher.publish(channel, JSON.stringify(message));
   }
 
   /**

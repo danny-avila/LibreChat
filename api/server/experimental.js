@@ -25,6 +25,9 @@ const {
   preAuthTenantMiddleware,
   configureServerTimeouts,
   startScheduleErasureSweep,
+  GenerationJobManager,
+  registerShutdownTask,
+  setupGracefulShutdown,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -41,6 +44,7 @@ const {
   sweepOrphanedPreviews,
   getDeletingSchedules,
   eraseScheduleIfDrained,
+  markEraseAttempted,
 } = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
 const { configureGenerationStreams } = require('@librechat/api');
@@ -347,6 +351,18 @@ if (cluster.isMaster) {
     // so cross-worker aborts and orphan recovery could not work. Shared with
     // api/server/index.js so both topologies initialize identically.
     configureGenerationStreams();
+    // Same teardown discipline as api/server/index.js: stop active generations and
+    // close their SSE streams while the HTTP server drains, then release stream
+    // resources. Without this a killed worker leaves its Redis jobs `running` until
+    // an orphan sweep, and cross-worker subscribers hang on dead streams.
+    registerShutdownTask(
+      'generation job manager prepare',
+      () => GenerationJobManager.prepareForShutdown(),
+      { phase: 'pre-drain', priority: 100 },
+    );
+    registerShutdownTask('generation job manager', () => GenerationJobManager.destroy(), {
+      priority: 100,
+    });
     expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
     startExpiredFileSweepOnce();
     // Cleanup ONLY — never claims, leases, fires or reconciles a run, so it does not
@@ -355,7 +371,9 @@ if (cluster.isMaster) {
     // lease outlived the delete) would otherwise keep the user's prompt forever, hidden
     // from the very list they would use to retry. Idempotent and drain-checked, so
     // running it in every worker is safe.
-    startScheduleErasureSweep({ methods: { getDeletingSchedules, eraseScheduleIfDrained } });
+    startScheduleErasureSweep({
+      methods: { getDeletingSchedules, eraseScheduleIfDrained, markEraseAttempted },
+    });
     await performStartupChecks(appConfig);
     await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
 
@@ -536,6 +554,11 @@ if (cluster.isMaster) {
       headersTimeout: server.headersTimeout,
       requestTimeout: server.requestTimeout,
     });
+
+    // The master kills workers with SIGTERM on shutdown; without this the registered
+    // shutdown tasks (stream teardown above, erasure sweep) never run and the default
+    // signal handling drops the worker mid-request.
+    setupGracefulShutdown(server);
   };
 
   startServer().catch((err) => {

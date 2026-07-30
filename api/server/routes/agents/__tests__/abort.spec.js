@@ -27,7 +27,10 @@ const mockSaveMessage = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn(async () => undefined);
 const mockRecordScheduleOutcome = jest.fn(async () => true);
 const mockClearScheduledJob = jest.fn(async () => undefined);
-const mockRequestScheduledRunAbort = jest.fn(async () => undefined);
+// True by default: the stamp is load-bearing, and a falsy result makes the route
+// refuse the abort with a 503 before abortJob ever runs.
+const mockRequestScheduledRunAbort = jest.fn(async () => true);
+const mockMarkScheduledRunAbortPersisted = jest.fn(async () => undefined);
 
 jest.mock('~/server/services/Schedules', () => ({
   recordScheduleOutcome: (...args) => mockRecordScheduleOutcome(...args),
@@ -35,6 +38,7 @@ jest.mock('~/server/services/Schedules', () => ({
   // Omitting this made the handler throw before abortJob, so the assertions below
   // "passed" on a route that never ran.
   requestScheduledRunAbort: (...args) => mockRequestScheduledRunAbort(...args),
+  markScheduledRunAbortPersisted: (...args) => mockMarkScheduledRunAbortPersisted(...args),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -648,9 +652,30 @@ describe('Agent Abort Endpoint', () => {
         );
       });
 
-      it('records the interruption and clears the preserved job once the abort wins', async () => {
+      it('refuses the abort with a 503 when the stamp cannot be made durable', async () => {
         mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
-        mockGenerationJobManager.abortJob.mockResolvedValue({ success: true, content: [] });
+        mockRequestScheduledRunAbort.mockResolvedValueOnce(false);
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: 'sched-conv' });
+
+        // Without the stamp, a concurrent account-deletion quiesce reads the
+        // post-abort job state as a finished generation and confirms its drain
+        // mid-write. Nothing has been signalled yet, so refusing is side-effect free.
+        expect(response.status).toBe(503);
+        expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
+      });
+
+      it('records the interruption and clears the preserved job for a paused run', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        // Caught PAUSED at the abort CAS: no generation loop remains to settle it, so
+        // the route is its only settler.
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          content: [],
+          jobData: { status: 'requires_action' },
+        });
         mockRecordScheduleOutcome.mockResolvedValue(true);
 
         await request(app).post('/api/agents/chat/abort').send({ conversationId: 'sched-conv' });
@@ -671,19 +696,42 @@ describe('Agent Abort Endpoint', () => {
       });
 
       /**
-       * Recording the outcome releases the capacity slot and drops the run out of the
-       * active set — the exact signal the account-deletion drain waits on. Settling
-       * before the partial response is persisted lets the drain observe zero active
-       * runs, destroy the user's data, and only then have this handler write a message
-       * back for a deleted account.
+       * A RUNNING abort settles in its generation owner's catch — which awaits its own
+       * pending saves plus this route's durable persistence stamp. Settling here could
+       * drop the run out of the active set while the owner's user-message save was
+       * still in flight: the drain-mid-write hazard again, from the other side.
        */
-      it('settles the run only after the partial response is persisted', async () => {
+      it('does not settle a running abort; the generation owner does', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          content: [],
+          jobData: { status: 'running' },
+        });
+
+        await request(app).post('/api/agents/chat/abort').send({ conversationId: 'sched-conv' });
+
+        expect(mockRecordScheduleOutcome).not.toHaveBeenCalled();
+        expect(mockMarkScheduledRunAbortPersisted).toHaveBeenCalledWith(
+          'sched-1',
+          expect.any(Date),
+        );
+      });
+
+      /**
+       * The persistence stamp releases the generation owner's settlement barrier, so
+       * it must not appear before every write this route makes has landed — the owner
+       * would settle, the drain would confirm, and the partial save would write a
+       * message back for a deleted account.
+       */
+      it('stamps abort persistence only after the partial response is persisted', async () => {
         mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
         mockGenerationJobManager.abortJob.mockResolvedValue({
           success: true,
           content: [{ type: 'text', text: 'partial' }],
           text: 'partial',
           jobData: {
+            status: 'running',
             userMessage: { messageId: 'umsg-1' },
             responseMessageId: 'resp-1',
             conversationId: 'sched-conv',
@@ -693,15 +741,19 @@ describe('Agent Abort Endpoint', () => {
         await request(app).post('/api/agents/chat/abort').send({ conversationId: 'sched-conv' });
 
         expect(mockSaveMessage).toHaveBeenCalled();
-        expect(mockRecordScheduleOutcome).toHaveBeenCalled();
+        expect(mockMarkScheduledRunAbortPersisted).toHaveBeenCalled();
         expect(mockSaveMessage.mock.invocationCallOrder[0]).toBeLessThan(
-          mockRecordScheduleOutcome.mock.invocationCallOrder[0],
+          mockMarkScheduledRunAbortPersisted.mock.invocationCallOrder[0],
         );
       });
 
       it('keeps the preserved job when the outcome write exhausted its retries', async () => {
         mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
-        mockGenerationJobManager.abortJob.mockResolvedValue({ success: true, content: [] });
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          content: [],
+          jobData: { status: 'requires_action' },
+        });
         mockRecordScheduleOutcome.mockResolvedValue(false);
 
         await request(app).post('/api/agents/chat/abort').send({ conversationId: 'sched-conv' });

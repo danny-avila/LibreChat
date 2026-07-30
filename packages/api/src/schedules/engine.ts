@@ -1,9 +1,10 @@
 import { logger, runAsSystem } from '@librechat/data-schemas';
 import type { IScheduleRun } from '@librechat/data-schemas';
 import type { ScheduleEngineDeps, JobState } from './types';
+import { fireSchedule, BALANCE_SKIP_DISABLE_THRESHOLD } from './fire';
 import { registerShutdownTask } from '~/app/shutdown';
 import { computeNextRunAt } from './cadence';
-import { fireSchedule } from './fire';
+import { hasAbortInFlight } from './types';
 
 const TICK_MS = 30_000;
 const TICK_JITTER_MS = 2_000;
@@ -136,6 +137,16 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
               continue;
             }
             if (jobStatus === 'aborted') {
+              // ABORT FENCE, same rule as the deletion drains: a job flips `aborted`
+              // the moment abortJob wins its status CAS, BEFORE the generation owner
+              // has unwound and persisted (partial response, user message). Settling
+              // here would release the run mid-persistence — the exact drain-mid-write
+              // hazard the deletion paths defer on — so while the abort is in flight
+              // the owner's own outcome write is the only settlement. Past the window
+              // the owner is presumed dead and this backstop finalizes the run.
+              if (hasAbortInFlight(run, Date.now())) {
+                continue;
+              }
               await finalize('interrupted');
               await deps.clearReconciledJob(run.conversationId as string, {
                 scheduleId: run.scheduleId,
@@ -146,15 +157,23 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             // A `started` run whose job is gone (jobStatus null) is an orphan. Every run
             // records its conversationId up front, so getJobStatus above already
             // liveness-checked it: a live long-running fire reads as `running` and is left
-            // alone. v1 is single-process, so a null job genuinely means gone.
-            if (run.status === 'started' && jobStatus == null && ageMs > ORPHAN_RUN_AGE_MS) {
+            // alone. v1 is single-process, so a null job genuinely means gone. A fresh
+            // abort also DELETES the job (account-deletion quiesce), so absence carries
+            // the same abort fence as `aborted` above.
+            if (
+              run.status === 'started' &&
+              jobStatus == null &&
+              ageMs > ORPHAN_RUN_AGE_MS &&
+              !hasAbortInFlight(run, Date.now())
+            ) {
               await finalize('interrupted');
               continue;
             }
             if (
               run.status === 'requires_action' &&
               jobStatus == null &&
-              ageMs > ABANDONED_PAUSE_AGE_MS
+              ageMs > ABANDONED_PAUSE_AGE_MS &&
+              !hasAbortInFlight(run, Date.now())
             ) {
               await finalize('interrupted');
             }
@@ -192,10 +211,11 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
             await deps.methods.finalizeBookkeeping({
               scheduleId: run.scheduleId,
               scheduledFor: run.scheduledFor,
-              status: run.status as 'success' | 'error' | 'interrupted',
+              status: run.status as 'success' | 'error' | 'interrupted' | 'skipped_balance',
               conversationId: run.conversationId,
               error: run.error,
               autoDisableAfterFailures: runLimits.autoDisableAfterFailures,
+              balanceSkipDisableThreshold: BALANCE_SKIP_DISABLE_THRESHOLD,
             });
           } catch (rowError) {
             logger.error(
@@ -216,6 +236,11 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
         for (const schedule of deleting) {
           await deps.methods.eraseScheduleIfDrained(schedule.id).catch(() => undefined);
         }
+        // Rotate the window (never-attempted first) so a batch of undrainable rows
+        // cannot re-fill it every pass and starve the rows behind them.
+        await deps.methods
+          .markEraseAttempted(deleting.map((schedule) => schedule.id))
+          .catch((err) => logger.warn('[schedules] failed to stamp erase attempts:', err));
       });
 
       // Re-arm schedules that are enabled but carry no nextRunAt. Creation arms in a

@@ -874,3 +874,122 @@ describe('admission revision fence', () => {
     expect(await serviceWithSchedule({ configRevision: 4 }).isScheduleLive('sched-1')).toBe(true);
   });
 });
+
+describe('abort stamp is load-bearing (withheld abort on stamp failure)', () => {
+  it('withholds the abort and reports unconfirmed when the stamp cannot be made durable', async () => {
+    const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
+    const methods = service.engineDeps.methods as unknown as {
+      markScheduleDeleting: jest.Mock;
+      getActiveRunsForSchedule: jest.Mock;
+      eraseScheduleIfDrained: jest.Mock;
+      requestRunAbort: jest.Mock;
+    };
+    methods.markScheduleDeleting = jest.fn(async () => ({ id: 's1', user: 'user-1' }));
+    methods.getActiveRunsForSchedule = jest.fn(async () => [
+      {
+        scheduleId: 's1',
+        scheduledFor: new Date('2026-01-01T00:00:00.000Z'),
+        conversationId: 'c1',
+        status: 'started',
+      },
+    ]);
+    methods.eraseScheduleIfDrained = jest.fn(async () => true);
+    // The stamp is what makes concurrent drains and the reconciler defer to the
+    // owner's settle; signalling an abort without it re-opens the drain-mid-write
+    // window the stamp exists to close.
+    methods.requestRunAbort = jest.fn(async () => {
+      throw new Error('mongo down');
+    });
+    mockJobStore = {
+      getJob: jest.fn(async () => ({
+        status: 'running',
+        createdAt: 1,
+        scheduleId: 's1',
+        scheduledFor: '2026-01-01T00:00:00.000Z',
+      })),
+    } as unknown as typeof mockJobStore;
+    const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
+    manager.abortJob = jest.fn(async () => ({ success: true }));
+
+    await expect(service.deleteScheduleForOwner('s1', 'user-1')).resolves.toBe('unconfirmed');
+    expect(manager.abortJob).not.toHaveBeenCalled();
+  });
+
+  it('reports an abort whose cross-replica publish failed as not delivered', async () => {
+    const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
+    mockJobStore = {
+      getJob: jest.fn(async () => ({
+        status: 'running',
+        createdAt: 1,
+        scheduleId: 's1',
+        scheduledFor: '2026-01-01T00:00:00.000Z',
+      })),
+    } as unknown as typeof mockJobStore;
+    const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
+    // The terminal CAS landed but the peer replica never received the signal: the
+    // generation may still be producing, so delivery must read false.
+    manager.abortJob = jest.fn(async () => ({ success: true, signalDelivered: false }));
+
+    const delivered = await service.engineDeps.abortScheduledJob(
+      'c1',
+      { scheduleId: 's1', scheduledFor: '2026-01-01T00:00:00.000Z' },
+      { preserve: true },
+    );
+    expect(delivered).toBe(false);
+  });
+});
+
+describe('awaitStopAbortPersistence (generation-owner settlement barrier)', () => {
+  const scheduledFor = new Date('2026-01-01T00:00:00.000Z');
+
+  function serviceWithAbortState(states: Array<Record<string, unknown> | null>) {
+    const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
+    const methods = service.engineDeps.methods as unknown as {
+      getScheduleRunAbortState: jest.Mock;
+    };
+    const reads = jest.fn(async () => (states.length > 1 ? states.shift() : states[0]));
+    methods.getScheduleRunAbortState = reads;
+    return { service, reads };
+  }
+
+  it('returns immediately when no abort is stamped', async () => {
+    const { service, reads } = serviceWithAbortState([
+      { status: 'started', abortRequestedAt: undefined },
+    ]);
+    await service.awaitStopAbortPersistence('s1', scheduledFor);
+    expect(reads).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns immediately for a deletion-sourced abort (nothing persists after it)', async () => {
+    const { service, reads } = serviceWithAbortState([
+      { status: 'started', abortRequestedAt: new Date(), abortSource: 'deletion' },
+    ]);
+    await service.awaitStopAbortPersistence('s1', scheduledFor);
+    expect(reads).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for a fresh stop abort until the route stamps its persistence', async () => {
+    const pending = {
+      status: 'started',
+      abortRequestedAt: new Date(),
+      abortSource: 'stop',
+      abortPersistedAt: undefined,
+    };
+    const persisted = { ...pending, abortPersistedAt: new Date() };
+    const { service, reads } = serviceWithAbortState([pending, pending, persisted]);
+    await service.awaitStopAbortPersistence('s1', scheduledFor);
+    // Two pending reads, then the stamp releases the barrier.
+    expect(reads.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('does not wedge on an unreadable run row', async () => {
+    const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
+    const methods = service.engineDeps.methods as unknown as {
+      getScheduleRunAbortState: jest.Mock;
+    };
+    methods.getScheduleRunAbortState = jest.fn(async () => {
+      throw new Error('mongo down');
+    });
+    await expect(service.awaitStopAbortPersistence('s1', scheduledFor)).resolves.toBeUndefined();
+  });
+});

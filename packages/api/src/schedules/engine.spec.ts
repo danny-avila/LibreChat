@@ -55,8 +55,10 @@ function makeMethods(schedule: FireableSchedule) {
     scheduleExists: jest.fn(async () => true),
     deleteScheduleRun: jest.fn(async () => undefined),
     getRunsForReconciliation: jest.fn(async () => []),
+    markRunsReconciled: jest.fn(async () => undefined),
     getUnbookkeptRuns: jest.fn(async () => []),
     getDeletingSchedules: jest.fn(async () => []),
+    markEraseAttempted: jest.fn(async () => undefined),
     recordRunOutcome: jest.fn(async () => undefined),
     getUnarmedSchedules: jest.fn(async () => []),
     armSchedule: jest.fn(async () => undefined),
@@ -234,5 +236,73 @@ describe('reconciliation is isolated per row', () => {
     );
     expect(settled).toContain('poison');
     expect(settled).toContain('healthy');
+  });
+});
+
+describe('reconciliation abort fence', () => {
+  const scheduledFor = new Date(0);
+  const abortedRun = (abortAgeMs: number, status = 'started', jobGone = false) => ({
+    scheduleId: 'sched-1',
+    scheduledFor,
+    user: 'u1',
+    status,
+    conversationId: jobGone ? 'c1' : 'c1',
+    firedAt: new Date(Date.now() - 60 * 60_000),
+    abortRequestedAt: new Date(Date.now() - abortAgeMs),
+  });
+  const abortedJob = async () => ({
+    status: 'aborted',
+    scheduleId: 'sched-1',
+    scheduledFor: scheduledFor.toISOString(),
+  });
+
+  /**
+   * A job reads `aborted` the moment abortJob wins its status CAS — BEFORE the
+   * generation owner has unwound and persisted (partial response, user message).
+   * Settling here releases the run mid-persistence: an account-deletion drain then
+   * observes zero active runs and destroys data a pending save recreates. The owner's
+   * own outcome write is the only settlement while its abort is in flight.
+   */
+  it('defers an aborted job while its abort is in flight', async () => {
+    const methods = makeMethods(makeClaimedSchedule());
+    (methods.getRunsForReconciliation as jest.Mock).mockResolvedValue([abortedRun(60_000)]);
+    const clearReconciledJob = jest.fn(async () => undefined);
+    await tickOnce(makeDeps(methods, { getJobStatus: abortedJob, clearReconciledJob }));
+
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+    expect(clearReconciledJob).not.toHaveBeenCalled();
+  });
+
+  it('finalizes an aborted job once its owner is presumed dead', async () => {
+    const methods = makeMethods(makeClaimedSchedule());
+    (methods.getRunsForReconciliation as jest.Mock).mockResolvedValue([abortedRun(31 * 60_000)]);
+    const clearReconciledJob = jest.fn(async () => undefined);
+    await tickOnce(makeDeps(methods, { getJobStatus: abortedJob, clearReconciledJob }));
+
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ scheduleId: 'sched-1', status: 'interrupted' }),
+    );
+    expect(clearReconciledJob).toHaveBeenCalled();
+  });
+
+  /** Account-deletion quiesce DELETES the aborted job, so post-abort absence carries
+   *  the same fence: the orphan branch must not settle a run whose owner is still
+   *  unwinding its persistence. */
+  it('defers a vanished job while its abort is in flight', async () => {
+    const methods = makeMethods(makeClaimedSchedule());
+    (methods.getRunsForReconciliation as jest.Mock).mockResolvedValue([abortedRun(60_000)]);
+    await tickOnce(makeDeps(methods, { getJobStatus: async () => null }));
+
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
+  it('still reaps a vanished job once the abort fence lapses', async () => {
+    const methods = makeMethods(makeClaimedSchedule());
+    (methods.getRunsForReconciliation as jest.Mock).mockResolvedValue([abortedRun(31 * 60_000)]);
+    await tickOnce(makeDeps(methods, { getJobStatus: async () => null }));
+
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'interrupted' }),
+    );
   });
 });

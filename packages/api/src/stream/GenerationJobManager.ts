@@ -1455,9 +1455,21 @@ class GenerationJobManagerClass {
 
     // Signal only the generation whose terminal transition won above. The
     // transport tag prevents a delayed predecessor abort from reaching a
-    // same-stream replacement on another replica.
+    // same-stream replacement on another replica. AWAITED: with no local runtime the
+    // publication is the ONLY path to a live peer-replica generation, so a failed
+    // publish must surface as an undelivered signal (`signalDelivered: false`) — the
+    // terminal CAS has already landed, but the generating replica keeps producing
+    // until its own completion loses that CAS, and deletion drains must defer rather
+    // than read this abort as delivered. A paused job has no live generation loop to
+    // signal, so delivery is vacuously true for it.
+    let abortSignalDelivered = abortableStatus === 'requires_action' || runtime != null;
     if (this.eventTransport.emitAbort) {
-      this.eventTransport.emitAbort(streamId, jobData.createdAt);
+      try {
+        await this.eventTransport.emitAbort(streamId, jobData.createdAt);
+        abortSignalDelivered = true;
+      } catch (err) {
+        logger.error(`[GenerationJobManager] Failed to publish abort for ${streamId}:`, err);
+      }
     }
     if (runtime) {
       this.releaseAbortSubscription(runtime);
@@ -1499,6 +1511,10 @@ class GenerationJobManagerClass {
 
     return {
       success: true,
+      // Distinct from `success` (the terminal CAS): whether a live generation, if one
+      // exists, actually received the stop. Deletion drains gate on this; the
+      // interactive route's persistence keeps gating on `success` alone.
+      signalDelivered: abortSignalDelivered,
       jobData,
       content: abortContent,
       finalEvent: abortFinalEvent,
