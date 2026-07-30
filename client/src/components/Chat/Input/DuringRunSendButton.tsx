@@ -218,7 +218,8 @@ const DuringRunSendButton = React.memo(
             >
               {row.icon}
               {row.label}
-              {row.kbd != null && <Kbd>{row.kbd}</Kbd>}
+              {/* A disabled row's action refuses its chord too, so no hint. */}
+              {row.kbd != null && row.disabled !== true && <Kbd>{row.kbd}</Kbd>}
             </button>
           ))}
         </Ariakit.Hovercard>

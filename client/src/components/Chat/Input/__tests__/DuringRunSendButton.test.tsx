@@ -207,6 +207,15 @@ describe('DuringRunSendButton — hints follow the effective bindings', () => {
     expect(kbdFor('com_ui_interrupt_steer')).toBe('Ctrl ⇧ ⏎');
   });
 
+  test('a disabled row never advertises its chord', () => {
+    openMenu({ pausedOnApproval: true, canSteer: false });
+    /** Its action's own guard refuses the chord while paused on approval. */
+    expect(kbdFor('com_ui_interrupt_steer')).toBeNull();
+    /** The disabled Steer row drops its alternate-action hint the same way. */
+    expect(kbdFor('com_ui_steer')).toBeNull();
+    expect(kbdFor('com_ui_interrupt_send')).toBe('Alt ⏎');
+  });
+
   test('moves the default-action hint to Ctrl+Enter when Enter-to-send is off', () => {
     openMenu({ canSteer: true, enterToSend: false });
     /** Plain Enter inserts a newline during a run in this mode; ⌘/Ctrl+Enter submits the default. */
