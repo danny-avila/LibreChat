@@ -718,7 +718,15 @@ router.post(
         return res.status(500).json({ error: 'Failed to reinitialize MCP server for user' });
       }
 
-      const { success, message, oauthRequired, oauthUrl, connectionDeferred } = result;
+      const {
+        success,
+        message,
+        oauthRequired,
+        oauthUrl,
+        failureReason,
+        missingUserVars,
+        connectionDeferred,
+      } = result;
 
       if (oauthRequired) {
         const flowId = getOAuthFlowId(user.id, serverName);
@@ -731,6 +739,8 @@ router.post(
         oauthUrl,
         serverName,
         oauthRequired,
+        failureReason,
+        missingUserVars,
         connectionDeferred,
       });
     } catch (error) {

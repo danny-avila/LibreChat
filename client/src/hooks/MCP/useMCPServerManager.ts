@@ -27,6 +27,7 @@ import type { ConfigFieldDetail } from '~/common';
 import { useLocalize, useHasAccess, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
 import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';
 import { mcpServerInitStatesAtom, getServerInitState } from '~/store/mcp';
+import { getMCPReinitializeErrorMessage } from './errors';
 
 export interface MCPServerDefinition {
   serverName: string;
@@ -358,7 +359,7 @@ export function useMCPServerManager({
         });
         if (!response.success) {
           showToast({
-            message: localize('com_ui_mcp_init_failed', { 0: serverName }),
+            message: getMCPReinitializeErrorMessage(response, localize),
             status: 'error',
           });
           cleanupServerState(serverName);
