@@ -279,27 +279,29 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
   }
 
   /**
-   * Re-drives the deferred erase of the caller's soft-deleted schedules, off the
+   * Re-drives the FULL deletion of the caller's soft-deleted schedules, off the
    * response path.
    *
-   * A `deleting` row is erased by whichever actor observes it drained: the delete
-   * request itself, or the terminal outcome write (erase-on-settle). Both are
-   * best-effort single attempts, and the reconciler that would otherwise retry does not
-   * exist in the clustered entrypoint — so one transient failure, or a lease that
-   * outlived the delete, strands a hidden row holding the user's prompt indefinitely.
-   * The row is hidden from the list, so the owner cannot even retry it themselves.
+   * A `deleting` row is settled and erased by the delete request itself, or by the
+   * terminal outcome write (erase-on-settle). Both are best-effort, and the
+   * reconciler that would otherwise retry does not exist in the clustered
+   * entrypoint. Meanwhile the row is HIDDEN from the owner's list, so once a delete
+   * answers 503-unconfirmed there is no UI/API-list handle left to retry the drain
+   * with — the "please retry" the response asks for has nothing to click.
    *
-   * A read the owner performs anyway is the cheapest place to retry: bounded, scoped to
-   * their own rows, and a no-op when nothing is deleting (the erase re-checks drained-ness
-   * itself, so this can never race a live run).
+   * A read the owner performs anyway is therefore the re-driver: bounded, scoped to
+   * their own rows, a no-op when nothing is deleting. Re-driving the WHOLE delete
+   * (abort, settle, erase) rather than only the erase is what un-strands a row whose
+   * active run never settled; every step is idempotent and evidence-guarded, so
+   * repeated polls race harmlessly.
    */
-  function retryDeferredErases(userId: string): void {
+  function retryDeferredDeletions(userId: string): void {
     void deps.methods
       .getDeletingScheduleIds(userId, DEFERRED_ERASE_RETRY_LIMIT)
       .then((ids) =>
-        Promise.all(ids.map((id) => deps.methods.eraseScheduleIfDrained(id).catch(() => false))),
+        Promise.all(ids.map((id) => deps.deleteSchedule(id, userId).catch(() => 'unconfirmed'))),
       )
-      .catch((err) => logger.warn('[schedules] deferred erase retry failed', err));
+      .catch((err) => logger.warn('[schedules] deferred deletion retry failed', err));
   }
 
   async function listSchedules(req: ServerRequest, res: Response): Promise<void> {
@@ -307,7 +309,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       deps.methods.getSchedulesByUser(requestUser(req).id),
       deps.getLimits(requestUser(req)),
     ]);
-    retryDeferredErases(requestUser(req).id);
+    retryDeferredDeletions(requestUser(req).id);
     res.json({
       schedules: schedules.map(toWireSchedule),
       limits: { maxPerUser: limits.maxPerUser },
@@ -652,6 +654,26 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     if (parsed.data.file_ids?.length && !(await retainFiles(parsed.data.file_ids, user.id))) {
       res.status(500).json({ error: 'Failed to retain schedule attachments' });
       return;
+    }
+    // Re-enabling with STORED attachments: the bounded upload hold only renews while
+    // the schedule fires, so a schedule that sat disabled past the hold can have lost
+    // its uploads. Validate the effective list and renew its hold now, mirroring the
+    // stored-agent recheck above — otherwise the re-enable succeeds and the next run
+    // silently fires without the missing files instead of telling the user to
+    // replace them.
+    if (reEnabled && parsed.data.file_ids == null && existing.file_ids?.length) {
+      const stillOwned = await deps.filterOwnedFileIds(existing.file_ids, user.id);
+      if (stillOwned.length !== existing.file_ids.length) {
+        res.status(400).json({
+          error:
+            'One or more attached files are no longer available. Replace the attachments before re-enabling.',
+        });
+        return;
+      }
+      if (!(await retainFiles(existing.file_ids, user.id))) {
+        res.status(500).json({ error: 'Failed to retain schedule attachments' });
+        return;
+      }
     }
     // FENCED on the revision this edit was computed from. `nextRunAt` above is derived
     // from (cadence, timezone) resolved against the row read at the top of this handler,

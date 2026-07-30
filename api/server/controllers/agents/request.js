@@ -977,13 +977,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // in-flight user-message / conversation save, then tear down WITHOUT saving a
         // partial response, emitting a terminal event, or completing the job.
         if (client?.pendingApproval) {
-          // A disconnect-partial save launched while this segment streamed must land
-          // before the pause is recorded: the run's pause hand-off (and any deletion
-          // drain that settles a paused run) treats the recorded pause as "all of this
-          // segment's writes are durable". Never-rejecting by construction.
-          if (partialSavePromise) {
-            await partialSavePromise;
-          }
+          // Every write launched during this segment must land before the pause is
+          // recorded: a deletion drain treats a recorded pause as settleable and can
+          // cascade immediately after. That covers the disconnect-partial save, the
+          // background user-message save, AND the immediate-mode title — a title is
+          // billed work (balance upsert + transaction insert), and its aborted task
+          // unwinding through usage persistence after the cascade would recreate rows
+          // for a deleted account. All never-rejecting by construction.
+          await awaitPendingPersistence();
           if (response?.databasePromise) {
             try {
               await response.databasePromise;

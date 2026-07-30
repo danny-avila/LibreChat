@@ -1201,15 +1201,18 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     // re-running bookkeeping, so nothing else would ever repair a half-applied skip.
     const inserted = await insertScheduleRun({ ...data, firedAt, bookkept: false });
     let rowRevision = inserted?.configRevision;
+    let rowFiredAt = firedAt;
     if (inserted == null) {
       const existing = await ScheduleRun()
         .findOne({ scheduleId: data.scheduleId, scheduledFor: data.scheduledFor })
-        .select('status configRevision')
-        .lean<Pick<IScheduleRun, 'status' | 'configRevision'>>();
+        .select('status configRevision firedAt')
+        .lean<Pick<IScheduleRun, 'status' | 'configRevision' | 'firedAt'>>();
       if (existing == null || existing.status !== data.status) {
         return;
       }
       rowRevision = existing.configRevision;
+      // A retry re-projects the ORIGINAL occurrence, not the retry moment.
+      rowFiredAt = existing.firedAt ?? firedAt;
     }
     // Same single seam as recordRunOutcome: the config fence is DERIVED from the row,
     // never passed by the caller. A skip decided under an older owner config must not
@@ -1219,7 +1222,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       await applyBalanceSkipBookkeeping({
         scheduleId: data.scheduleId,
         scheduledFor: data.scheduledFor,
-        firedAt,
+        firedAt: rowFiredAt,
         rowRevision,
         balanceSkipDisableThreshold,
       });
@@ -1227,7 +1230,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       await applyOverlapSkipBookkeeping({
         scheduleId: data.scheduleId,
         scheduledFor: data.scheduledFor,
-        firedAt,
+        firedAt: rowFiredAt,
         rowRevision,
       });
     }
@@ -1319,15 +1322,19 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   async function finalizeBookkeeping(params: RecordRunOutcomeParams): Promise<void> {
     // Same single seam as recordRunOutcome: derive the config fence from the row, so the
     // crash-retry path cannot apply bookkeeping the inline path would have refused.
+    // The row's ORIGINAL firedAt is reused too: this replay runs minutes (or many
+    // retries) after the fact, and stamping the replay time onto lastRun would keep
+    // walking the card's timestamp forward every time the recovery path fires.
     const run = await ScheduleRun()
       .findOne({ scheduleId: params.scheduleId, scheduledFor: params.scheduledFor })
-      .select('configRevision')
-      .lean<Pick<IScheduleRun, 'configRevision'>>();
+      .select('configRevision firedAt')
+      .lean<Pick<IScheduleRun, 'configRevision' | 'firedAt'>>();
+    const firedAt = run?.firedAt ?? new Date();
     if (params.status === 'skipped_balance') {
       await applyBalanceSkipBookkeeping({
         scheduleId: params.scheduleId,
         scheduledFor: params.scheduledFor,
-        firedAt: new Date(),
+        firedAt,
         conversationId: params.conversationId,
         rowRevision: run?.configRevision,
         balanceSkipDisableThreshold: params.balanceSkipDisableThreshold,
@@ -1336,13 +1343,13 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       await applyOverlapSkipBookkeeping({
         scheduleId: params.scheduleId,
         scheduledFor: params.scheduledFor,
-        firedAt: new Date(),
+        firedAt,
         rowRevision: run?.configRevision,
       });
     } else {
       await applyTerminalBookkeeping({
         ...params,
-        firedAt: new Date(),
+        firedAt,
         expectConfigRevision: run?.configRevision,
       });
     }

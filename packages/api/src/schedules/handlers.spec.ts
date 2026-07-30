@@ -538,12 +538,13 @@ describe('create idempotency', () => {
   });
 });
 
-describe('deferred erase retry', () => {
-  it('re-drives the erase of the caller’s soft-deleted schedules on list', async () => {
-    const deps = makeCreateDeps();
+describe('deferred deletion retry', () => {
+  it('re-drives the full deletion of the caller’s soft-deleted schedules on list', async () => {
+    const deps = makeCreateDeps({
+      deleteSchedule: jest.fn(async () => 'deleted'),
+    } as Partial<SchedulesHandlersDeps>);
     (deps.methods.getSchedulesByUser as jest.Mock) = jest.fn(async () => []);
     (deps.methods.getDeletingScheduleIds as jest.Mock) = jest.fn(async () => ['stranded-1']);
-    (deps.methods.eraseScheduleIfDrained as jest.Mock) = jest.fn(async () => true);
     const { res } = makeRes();
 
     await createSchedulesHandlers(deps).listSchedules(
@@ -553,7 +554,28 @@ describe('deferred erase retry', () => {
     // Fire-and-forget, so let the microtask chain settle before asserting.
     await new Promise((resolve) => setImmediate(resolve));
 
-    expect(deps.methods.eraseScheduleIfDrained).toHaveBeenCalledWith('stranded-1');
+    // The service delete (abort + settle + erase), not a bare erase probe: a schedule
+    // stranded mid-drain with a still-active run needs the abort re-driven too.
+    expect(deps.deleteSchedule).toHaveBeenCalledWith('stranded-1', 'user-1');
+  });
+
+  it('keeps listing even when a stranded deletion re-drive rejects', async () => {
+    const deps = makeCreateDeps({
+      deleteSchedule: jest.fn(async () => {
+        throw new Error('still draining');
+      }),
+    } as Partial<SchedulesHandlersDeps>);
+    (deps.methods.getSchedulesByUser as jest.Mock) = jest.fn(async () => []);
+    (deps.methods.getDeletingScheduleIds as jest.Mock) = jest.fn(async () => ['stranded-1']);
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).listSchedules(
+      { user: { id: 'user-1' } } as unknown as ServerRequest,
+      res,
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(captured.body).toEqual(expect.objectContaining({ schedules: [] }));
   });
 });
 
@@ -642,6 +664,85 @@ describe('updateSchedule refuses field-less payloads', () => {
     // legitimate in-flight occurrence for a request that changed nothing.
     expect(captured.status).toBe(400);
     expect(deps.methods.updateScheduleById).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateSchedule re-enable attachment revalidation', () => {
+  const disabledWithFiles = () =>
+    ({
+      id: 'sched-1',
+      enabled: false,
+      agent_id: 'agent-1',
+      cadence: { type: 'daily', hour: 9, minute: 0 },
+      timezone: 'UTC',
+      nextRunAt: new Date('2026-07-31T09:00:00Z'),
+      configRevision: 3,
+      file_ids: ['file-a', 'file-b'],
+    }) as unknown as ISchedule;
+
+  const makeReEnableReq = () =>
+    ({
+      params: { id: 'sched-1' },
+      body: { enabled: true },
+      user: { id: 'user-1', tenantId: 't1', role: 'USER' },
+    }) as unknown as ServerRequest;
+
+  it('refuses re-enabling when a stored attachment is no longer owned', async () => {
+    const deps = makeCreateDeps({
+      isUserDeleting: jest.fn(async () => false),
+      filterOwnedFileIds: jest.fn(async () => ['file-a']),
+    } as Partial<SchedulesHandlersDeps>);
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue(disabledWithFiles());
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).updateSchedule(makeReEnableReq(), res);
+
+    // The bounded upload hold only renews while the schedule fires, so a long-
+    // disabled schedule can have lost its uploads; silently firing without them
+    // is worse than telling the owner to replace the attachments.
+    expect(captured.status).toBe(400);
+    expect(deps.methods.updateScheduleById).not.toHaveBeenCalled();
+  });
+
+  it('renews the retention hold on the stored attachments before committing', async () => {
+    const markFilesUsed = jest.fn(async () => undefined);
+    const deps = makeCreateDeps({
+      isUserDeleting: jest.fn(async () => false),
+      markFilesUsed,
+    } as Partial<SchedulesHandlersDeps>);
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue(disabledWithFiles());
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).updateSchedule(makeReEnableReq(), res);
+
+    expect(markFilesUsed).toHaveBeenCalledWith(['file-a', 'file-b'], 'user-1');
+    expect(captured.status ?? 200).toBe(200);
+    expect(deps.methods.updateScheduleById).toHaveBeenCalled();
+  });
+
+  it('skips the stored-attachment recheck when the edit replaces file_ids', async () => {
+    const filterOwnedFileIds = jest.fn(async (ids: string[]) => ids);
+    const deps = makeCreateDeps({
+      isUserDeleting: jest.fn(async () => false),
+      filterOwnedFileIds,
+    } as Partial<SchedulesHandlersDeps>);
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue(disabledWithFiles());
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).updateSchedule(
+      {
+        params: { id: 'sched-1' },
+        body: { enabled: true, file_ids: ['file-new'] },
+        user: { id: 'user-1', tenantId: 't1', role: 'USER' },
+      } as unknown as ServerRequest,
+      res,
+    );
+
+    // Supplied file_ids are validated by validatePayload; the stored list is
+    // about to be overwritten, so rechecking it would refuse a valid replacement.
+    expect(captured.status ?? 200).toBe(200);
+    expect(filterOwnedFileIds).toHaveBeenCalledTimes(1);
+    expect(filterOwnedFileIds).toHaveBeenCalledWith(['file-new'], 'user-1');
   });
 });
 

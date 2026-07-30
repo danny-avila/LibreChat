@@ -748,6 +748,28 @@ describe('recordRunOutcome idempotency + crash-retry (bookkeeping)', () => {
     // No longer surfaced as needing bookkeeping.
     expect(await methods.getUnbookkeptRuns(new Date(Date.now() + 1000), 100)).toHaveLength(0);
   });
+
+  it('replayed bookkeeping projects the ORIGINAL firedAt, not the replay time', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const originalFiredAt = new Date('2026-07-20T12:00:03Z');
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor, firedAt: originalFiredAt }));
+    await ScheduleRun.updateOne(
+      { scheduleId: schedule.id, scheduledFor },
+      { $set: { status: 'success', bookkept: false } },
+    );
+
+    // The reconciler replays minutes (or several retries) later — lastRun must
+    // still show when the run actually fired, not when recovery caught up.
+    await methods.finalizeBookkeeping({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'success',
+      autoDisableAfterFailures: 3,
+    });
+
+    const updated = await getSchedule(schedule.id);
+    expect(updated.lastRun?.firedAt?.toISOString()).toBe(originalFiredAt.toISOString());
+  });
 });
 
 describe('bookkeeping policy is crash-retryable / streak-correct', () => {
