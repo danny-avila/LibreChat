@@ -413,10 +413,9 @@ describe('loadAgent', () => {
       deps,
     );
 
-    // eligible tools opt in (MCP + code execution); excluded built-ins (web_search) do not
-    expect(result?.tool_options?.crm_lookup).toEqual({ run_in_background: true });
-    expect(result?.tool_options?.web_search).toBeUndefined();
-    expect(result?.tool_options?.execute_code).toEqual({ run_in_background: true });
+    // recorded as a wildcard policy; eligibility (e.g. excluding web_search)
+    // is enforced against the final definitions in applyBackgroundToolCalls
+    expect(result?.tool_options).toEqual({ '*': { run_in_background: true } });
   });
 
   test('synthesizes background tool_options from a model spec (runInBackground: true), and not without it', async () => {
@@ -456,8 +455,7 @@ describe('loadAgent', () => {
       },
       deps,
     );
-    expect(withFlag?.tool_options?.crm_lookup).toEqual({ run_in_background: true });
-    expect(withFlag?.tool_options?.web_search).toBeUndefined();
+    expect(withFlag?.tool_options).toEqual({ '*': { run_in_background: true } });
 
     const withoutFlag = await loadAgent(
       {

@@ -32,23 +32,28 @@ import {
 } from '@librechat/agents';
 import type { LCTool, LCToolRegistry, JsonSchemaType } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
+import type { CapabilityToolNames } from './selection';
+import {
+  resolveToolOption,
+  getSelectionNames,
+  warnUnmatchedSelectionNames,
+  synthesizeSelectionToolOptions,
+} from './selection';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
+import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from './tools';
 
 /** Argument carrying the model-authored label for a tool call. */
 export const INTENT_ARG = 'intent';
+
+/** Log prefix for selection diagnostics, phrased in the spec's own field name. */
+const INTENT_SELECTION_LABEL = '[intent] describeIntent';
 
 /**
  * Host-native tools that default INTO intent labels while the capability is
  * enabled (an explicit `describe_intent: false` opts one out). These are the
  * least legible calls in the UI today, and the convention only becomes a
  * convention if our own tools model it.
- *
- * `ask_user_question` is deliberately absent: its graph tool is rebuilt in
- * `run.ts` from its own Zod schema (which is also the HITL card's wire
- * shape), so definition-level injection never reaches the model. Its intent
- * support lands with the HITL slice, which threads the label into the
- * interrupt payload on purpose.
  */
 export const NATIVE_INTENT_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   Tools.web_search,
@@ -61,11 +66,20 @@ export const NATIVE_INTENT_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
 /**
  * Tools that never get the injected param: the background poll tool is host
  * machinery, and handoff tools run through the direct path where no card
- * renders a label. Intent labels are otherwise inert, so — unlike
- * background's correctness-driven list — nothing else is excluded.
+ * renders a label.
+ *
+ * `ask_user_question` is excluded because injection into its definition can
+ * never reach the model: `createRun` strips the definition and rebuilds the
+ * graph tool from its own Zod schema (also the HITL card's wire shape).
+ * Excluding it makes an explicit selection warn as ineligible instead of
+ * crediting a label that will be discarded. Its intent support lands with
+ * the HITL slice, which threads the label into the interrupt payload on
+ * purpose. Intent labels are otherwise inert, so — unlike background's
+ * correctness-driven list — nothing else is excluded.
  */
 const EXCLUDED_INTENT_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   String(Constants.CHECK_BACKGROUND_TASK),
+  ASK_USER_QUESTION_TOOL_NAME,
 ]);
 
 /** Whether a tool may carry an intent label. */
@@ -291,39 +305,36 @@ export function stripIntentFromToolRegistry(
 }
 
 /**
- * Whether a tool is opted into intent labels: an explicit per-tool
- * `describe_intent` wins; native host tools default on.
- */
-function isIntentOptedIn(name: string, toolOptions?: AgentToolOptions): boolean {
-  const explicit = toolOptions?.[name]?.describe_intent;
-  if (explicit != null) {
-    return explicit === true;
-  }
-  return NATIVE_INTENT_TOOL_NAMES.has(name);
-}
-
-/**
  * Injects the `intent` param into every opted-in, eligible tool definition,
  * mirroring the injection into the registry entry so a deferred tool
  * discovered later (tool_search reads the registry) arrives with the same
  * schema. Definitions that already declare `intent` (SDK-native tools) are
  * left alone and NOT counted as host-injected — their schema is their own —
- * unless the tool is explicitly opted OUT (`describe_intent: false`), in
- * which case the property is removed so the opt-out actually disables the
- * arg's token cost (the SDK tool bodies tolerate its absence).
+ * unless the tool is opted OUT, in which case the property is removed so the
+ * opt-out actually disables the arg's token cost (the SDK tool bodies
+ * tolerate its absence).
  *
- * Both saved agents and ephemeral/model-spec agents reach this with
- * `tool_options` populated, so the logic is written once.
+ * Opt-in resolves per FINAL definition via {@link resolveToolOption}
+ * (explicit name → capability marker projection → wildcard), with native
+ * host tools defaulting on when no policy speaks. Both saved agents and
+ * ephemeral/model-spec agents reach this with `tool_options` populated, so
+ * the logic is written once. When a narrowing selection is present, names
+ * that never took effect on any definition are warned about here — the one
+ * place the final definition set is known.
  */
 export function applyIntentLabels(params: {
   toolDefinitions: LCTool[] | undefined;
   toolRegistry: LCToolRegistry | undefined;
   toolOptions: AgentToolOptions | undefined;
+  /** Capability marker → registered definition names, from `initializeAgent`. */
+  capabilityToolNames?: CapabilityToolNames;
   /** Extra host-context exclusion, mirroring `applyBackgroundToolCalls`. */
   excludeTool?: (toolName: string) => boolean;
 }): { toolDefinitions: LCTool[]; intentToolNames: string[] } {
-  const { toolRegistry, toolOptions, excludeTool } = params;
+  const { toolRegistry, toolOptions, capabilityToolNames, excludeTool } = params;
   const defs = params.toolDefinitions ?? [];
+  const selectionNames = getSelectionNames(toolOptions, 'describe_intent');
+  const effectiveSources = new Set<string>();
 
   let changed = false;
   const intentToolNames: string[] = [];
@@ -334,7 +345,13 @@ export function applyIntentLabels(params: {
     }
   };
   const nextDefs = defs.map((def) => {
-    if (toolOptions?.[def.name]?.describe_intent === false) {
+    const resolved = resolveToolOption(
+      def.name,
+      'describe_intent',
+      toolOptions,
+      capabilityToolNames,
+    );
+    if (resolved?.value === false) {
       const stripped = removeIntentParam(def);
       if (stripped !== def) {
         changed = true;
@@ -342,7 +359,7 @@ export function applyIntentLabels(params: {
       }
       return stripped;
     }
-    if (!isIntentOptedIn(def.name, toolOptions)) {
+    if (resolved == null && !NATIVE_INTENT_TOOL_NAMES.has(def.name)) {
       return def;
     }
     if (!isIntentEligibleToolName(def.name) || excludeTool?.(def.name) === true) {
@@ -357,6 +374,11 @@ export function applyIntentLabels(params: {
       return def;
     }
     const injected = injectIntentParam(def);
+    /** The selection took effect whether the label was injected here or the
+     *  definition already carries its own (SDK-native) one. */
+    if (resolved != null) {
+      effectiveSources.add(resolved.source);
+    }
     if (injected === def) {
       return def;
     }
@@ -366,13 +388,13 @@ export function applyIntentLabels(params: {
     return injected;
   });
 
+  warnUnmatchedSelectionNames(selectionNames, effectiveSources, INTENT_SELECTION_LABEL);
+
   if (!changed) {
     return { toolDefinitions: defs, intentToolNames };
   }
   return { toolDefinitions: nextDefs, intentToolNames };
 }
-
-const MCP_ALL_PLACEHOLDER_PREFIX = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
 
 /**
  * Post-registration sanitize pass, run AFTER every tool registration step —
@@ -388,11 +410,16 @@ export function sanitizeIntentLabels(params: {
   toolRegistry: LCToolRegistry | undefined;
   toolOptions: AgentToolOptions | undefined;
   capabilityEnabled: boolean;
+  /** Capability marker → registered definition names, from `initializeAgent`. */
+  capabilityToolNames?: CapabilityToolNames;
 }): { toolDefinitions: LCTool[] } {
-  const { toolRegistry, toolOptions, capabilityEnabled } = params;
+  const { toolRegistry, toolOptions, capabilityEnabled, capabilityToolNames } = params;
   const defs = params.toolDefinitions ?? [];
   const shouldStrip = (name: string): boolean =>
-    capabilityEnabled ? toolOptions?.[name]?.describe_intent === false : true;
+    capabilityEnabled
+      ? resolveToolOption(name, 'describe_intent', toolOptions, capabilityToolNames)?.value ===
+        false
+      : true;
 
   let changed = false;
   const nextDefs = defs.map((def) => {
@@ -424,59 +451,33 @@ export function sanitizeIntentLabels(params: {
 }
 
 /**
- * Builds `tool_options` marking each eligible tool as intent-describing for
- * ephemeral and model-spec agents, which carry no per-tool options of their
- * own. Returns undefined when disabled or nothing is eligible.
+ * Records the intent selection for ephemeral and model-spec agents, which
+ * carry no per-tool options of their own. Returns undefined when disabled.
  *
- * Note: MCP servers that expand lazily (via the `mcp_all` placeholder for
- * overlay/user-connection servers) are not known by name at this point —
- * `applyIntentLabels` matches expanded tool names exactly, so an option
- * recorded under the placeholder would silently never apply. Those entries
- * are skipped rather than synthesized dead; standard cached MCP servers push
- * real names and are covered. Mirrors `synthesizeBackgroundToolOptions`.
+ * A model spec's `describeIntent` selects the scope: `true` opts in every
+ * eligible tool, while a string array opts in ONLY the named ones — a list
+ * is a SELECTION POLICY, not an additive filter, so everything unselected is
+ * opted out (natives and SDK-native labels alike), and an empty list is an
+ * explicit "none". Selecting per tool matters because the label costs schema
+ * tokens on every request, so an admin may want it on a handful of illegible
+ * calls rather than the whole toolset. The ephemeral toggle stays boolean
+ * and never narrows; it has no per-tool UI to drive a selection.
+ *
+ * The selection is recorded as policy (wildcard default + verbatim names)
+ * and resolved against the FINAL definition set in `applyIntentLabels` /
+ * `sanitizeIntentLabels`, so capability markers (`execute_code`, `memory`),
+ * spec fields that never reach `tools` (`skills`), and lazily-expanded MCP
+ * servers are all governed — and misspelled or unsupported names are
+ * diagnosed where the real definitions are known.
  */
-export function synthesizeIntentToolOptions(
-  tools: string[],
-  sources: {
-    ephemeralAgent?: { describe_intent?: boolean } | null;
-    modelSpec?: { describeIntent?: boolean } | null;
-  },
-): AgentToolOptions | undefined {
-  const enabled =
-    sources.ephemeralAgent?.describe_intent === true || sources.modelSpec?.describeIntent === true;
-  if (!enabled) {
-    return undefined;
-  }
-  const toolOptions: AgentToolOptions = {};
-  for (const name of tools) {
-    if (name.startsWith(MCP_ALL_PLACEHOLDER_PREFIX)) {
-      continue;
-    }
-    if (isIntentEligibleToolName(name)) {
-      toolOptions[name] = { describe_intent: true };
-    }
-  }
-  return Object.keys(toolOptions).length > 0 ? toolOptions : undefined;
-}
-
-/**
- * Deep-merges two synthesized `tool_options` maps per tool key, so the
- * ephemeral background and intent toggles compose instead of overwriting
- * each other's per-tool entries.
- */
-export function mergeSynthesizedToolOptions(
-  base: AgentToolOptions | undefined,
-  extra: AgentToolOptions | undefined,
-): AgentToolOptions | undefined {
-  if (!extra) {
-    return base;
-  }
-  if (!base) {
-    return extra;
-  }
-  const merged: AgentToolOptions = { ...base };
-  for (const [name, options] of Object.entries(extra)) {
-    merged[name] = { ...merged[name], ...options };
-  }
-  return merged;
+export function synthesizeIntentToolOptions(sources: {
+  ephemeralAgent?: { describe_intent?: boolean } | null;
+  modelSpec?: { describeIntent?: boolean | string[] } | null;
+}): AgentToolOptions | undefined {
+  return synthesizeSelectionToolOptions(
+    'describe_intent',
+    sources.modelSpec?.describeIntent,
+    sources.ephemeralAgent?.describe_intent === true,
+    INTENT_SELECTION_LABEL,
+  );
 }

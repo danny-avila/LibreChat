@@ -6,7 +6,7 @@
  */
 
 import { Providers } from '@librechat/agents';
-import { Constants, isActionTool, splitMCPToolKey } from 'librechat-data-provider';
+import { isActionTool, splitMCPToolKey } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { ToolDefinition } from './classification';
@@ -14,6 +14,7 @@ import { resolveJsonSchemaRefs, normalizeJsonSchema, sanitizeGeminiSchema } from
 import { buildToolClassification } from './classification';
 import { getToolDefinition } from './registry/definitions';
 import { toolkitExpansion } from './toolkits/mapping';
+import { isMCPAllPlaceholder } from '~/mcp/utils';
 
 export interface MCPServerTool {
   function?: {
@@ -120,8 +121,6 @@ export async function loadToolDefinitions(
   let actionToolDefs: ToolDefinition[] = [];
   const actionToolNames: string[] = [];
 
-  const mcpAllPattern = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
-
   for (const toolName of tools) {
     if (isActionTool(toolName)) {
       actionToolNames.push(toolName);
@@ -171,7 +170,7 @@ export async function loadToolDefinitions(
       continue;
     }
 
-    if (toolName.startsWith(mcpAllPattern)) {
+    if (isMCPAllPlaceholder(toolName)) {
       for (const [actualToolName, toolDef] of Object.entries(serverTools)) {
         if (toolDef?.function) {
           mcpToolDefs.push({

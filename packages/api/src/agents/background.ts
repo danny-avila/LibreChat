@@ -33,6 +33,13 @@ import { Constants as AgentConstants } from '@librechat/agents';
 import { Tools, Constants, imageGenTools } from 'librechat-data-provider';
 import type { LCTool, LCToolRegistry, JsonSchemaType } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
+import type { CapabilityToolNames } from './selection';
+import {
+  resolveToolOption,
+  getSelectionNames,
+  warnUnmatchedSelectionNames,
+  synthesizeSelectionToolOptions,
+} from './selection';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from './tools';
@@ -40,6 +47,9 @@ import { truncateMiddle } from '~/utils';
 
 /** Argument the model sets on a tool call to dispatch it in the background. */
 export const RUN_IN_BACKGROUND_ARG = 'run_in_background';
+
+/** Log prefix for selection diagnostics, phrased in the spec's own field name. */
+const BACKGROUND_SELECTION_LABEL = '[background] runInBackground';
 
 /**
  * `type` of the synthetic attachment emitted on a poll turn when a harvested
@@ -93,37 +103,6 @@ const EXCLUDED_BACKGROUND_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   'image_gen_oai',
   'image_edit_oai',
 ]);
-
-/**
- * The `execute_code` capability marker expands into the `bash_tool` definition
- * at load time (there is one code-execution tool path end-to-end), so a code
- * background opt-in keyed by EITHER name covers the pair. Synthesized
- * ephemeral/model-spec options and hand-edited agents typically carry only the
- * `execute_code` key; without this the actual runtime def (`bash_tool`) would
- * silently never receive the injected param.
- */
-function expandCodeToolOptions(toolOptions?: AgentToolOptions): AgentToolOptions | undefined {
-  if (!toolOptions) {
-    return toolOptions;
-  }
-  const codeOptIn =
-    toolOptions[AgentConstants.EXECUTE_CODE]?.run_in_background === true ||
-    toolOptions[AgentConstants.BASH_TOOL]?.run_in_background === true;
-  if (!codeOptIn) {
-    return toolOptions;
-  }
-  return {
-    ...toolOptions,
-    [AgentConstants.EXECUTE_CODE]: {
-      ...toolOptions[AgentConstants.EXECUTE_CODE],
-      run_in_background: true,
-    },
-    [AgentConstants.BASH_TOOL]: {
-      ...toolOptions[AgentConstants.BASH_TOOL],
-      run_in_background: true,
-    },
-  };
-}
 
 /**
  * Whether a tool may be dispatched in the background. Handoff tools
@@ -362,14 +341,21 @@ export function registerBackgroundTaskTool(params: {
  * Injects the `run_in_background` param into every opted-in, eligible tool and
  * registers the poll tool when at least one tool became backgroundable.
  *
- * Opt-in is per tool via `tool_options[name].run_in_background`. Both saved
- * agents and ephemeral/model-spec agents reach this with `tool_options`
- * populated, so the logic is written once.
+ * Opt-in resolves per FINAL definition via {@link resolveToolOption}
+ * (explicit name → capability marker projection → wildcard), so a saved
+ * agent's `execute_code` entry reaches `bash_tool` and a spec selection
+ * reaches lazily-registered definitions. Both saved agents and
+ * ephemeral/model-spec agents reach this with `tool_options` populated, so
+ * the logic is written once. When a narrowing selection is present, names
+ * that never took effect — including markers whose every runtime definition
+ * is background-excluded, like `memory` — are warned about here.
  */
 export function applyBackgroundToolCalls(params: {
   toolDefinitions: LCTool[] | undefined;
   toolRegistry: LCToolRegistry | undefined;
   toolOptions: AgentToolOptions | undefined;
+  /** Capability marker → registered definition names, from `initializeAgent`. */
+  capabilityToolNames?: CapabilityToolNames;
   /**
    * Extra host-context exclusion (e.g. tools of ephemeral request-scoped MCP
    * servers, whose connection dies at request end): a `true` return skips the
@@ -378,17 +364,27 @@ export function applyBackgroundToolCalls(params: {
    */
   excludeTool?: (toolName: string) => boolean;
 }): { toolDefinitions: LCTool[]; backgroundToolNames: string[] } {
-  const { toolRegistry, excludeTool } = params;
-  const toolOptions = expandCodeToolOptions(params.toolOptions);
+  const { toolRegistry, toolOptions, capabilityToolNames, excludeTool } = params;
   const defs = params.toolDefinitions ?? [];
   if (!toolOptions || !Object.values(toolOptions).some((o) => o?.run_in_background === true)) {
     return { toolDefinitions: defs, backgroundToolNames: [] };
   }
+  const selectionNames = getSelectionNames(toolOptions, 'run_in_background');
+  const effectiveSources = new Set<string>();
 
   const backgroundToolNames: string[] = [];
   const nextDefs = defs.map((def) => {
-    const optedIn = toolOptions[def.name]?.run_in_background === true;
-    if (!optedIn || !isBackgroundEligibleToolName(def.name) || excludeTool?.(def.name) === true) {
+    const resolved = resolveToolOption(
+      def.name,
+      'run_in_background',
+      toolOptions,
+      capabilityToolNames,
+    );
+    if (
+      resolved?.value !== true ||
+      !isBackgroundEligibleToolName(def.name) ||
+      excludeTool?.(def.name) === true
+    ) {
       return def;
     }
     if (!canInjectRunInBackgroundParam(def)) {
@@ -397,6 +393,7 @@ export function applyBackgroundToolCalls(params: {
       );
       return def;
     }
+    effectiveSources.add(resolved.source);
     backgroundToolNames.push(def.name);
     const injected = injectRunInBackgroundParam(def);
     if (injected === def) {
@@ -409,6 +406,8 @@ export function applyBackgroundToolCalls(params: {
     return injected;
   });
 
+  warnUnmatchedSelectionNames(selectionNames, effectiveSources, BACKGROUND_SELECTION_LABEL);
+
   if (backgroundToolNames.length === 0) {
     return { toolDefinitions: defs, backgroundToolNames: [] };
   }
@@ -418,36 +417,33 @@ export function applyBackgroundToolCalls(params: {
 }
 
 /**
- * Builds `tool_options` marking each eligible tool as backgroundable. Ephemeral
- * and model-spec agents carry no `tool_options`, so the blanket spec/ephemeral
- * toggle is expanded per-tool here to reuse the same per-tool opt-in the saved
- * agent path uses. Returns undefined when disabled or nothing is eligible.
+ * Records the background selection for ephemeral and model-spec agents, which
+ * carry no per-tool options of their own. Returns undefined when disabled.
  *
- * Note: MCP servers that expand lazily (via the `mcp_all` placeholder for
- * overlay/user-connection servers) are not known by name at this point, so
- * their tools are not marked; standard cached MCP servers push real names and
- * are covered.
+ * A model spec's `runInBackground` selects the scope: `true` opts in every
+ * eligible tool, while a string array opts in ONLY the named ones. Selecting
+ * per tool matters more here than for intent labels — backgrounding changes
+ * execution semantics, so an admin may want it on one slow MCP call without
+ * letting the model detach every other tool in the spec. The ephemeral toggle
+ * stays boolean and never narrows; it has no per-tool UI to drive it.
+ *
+ * The selection is recorded as policy (wildcard default + verbatim names)
+ * and resolved against the FINAL definition set in
+ * `applyBackgroundToolCalls`, so capability markers and lazily-expanded MCP
+ * servers are governed, and names that never take effect — a typo, or a
+ * marker like `memory` whose runtime definitions are all
+ * background-excluded — are diagnosed where the real definitions are known.
  */
-export function synthesizeBackgroundToolOptions(
-  tools: string[],
-  sources: {
-    ephemeralAgent?: { run_in_background?: boolean } | null;
-    modelSpec?: { runInBackground?: boolean } | null;
-  },
-): AgentToolOptions | undefined {
-  const enabled =
-    sources.ephemeralAgent?.run_in_background === true ||
-    sources.modelSpec?.runInBackground === true;
-  if (!enabled) {
-    return undefined;
-  }
-  const toolOptions: AgentToolOptions = {};
-  for (const name of tools) {
-    if (isBackgroundEligibleToolName(name)) {
-      toolOptions[name] = { run_in_background: true };
-    }
-  }
-  return Object.keys(toolOptions).length > 0 ? toolOptions : undefined;
+export function synthesizeBackgroundToolOptions(sources: {
+  ephemeralAgent?: { run_in_background?: boolean } | null;
+  modelSpec?: { runInBackground?: boolean | string[] } | null;
+}): AgentToolOptions | undefined {
+  return synthesizeSelectionToolOptions(
+    'run_in_background',
+    sources.modelSpec?.runInBackground,
+    sources.ephemeralAgent?.run_in_background === true,
+    BACKGROUND_SELECTION_LABEL,
+  );
 }
 
 export type BackgroundTaskStatus = 'running' | 'completed' | 'error';
