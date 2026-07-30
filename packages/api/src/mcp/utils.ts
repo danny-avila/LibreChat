@@ -6,13 +6,13 @@ export const mcpToolPattern: RegExp = new RegExp(`^.+${Constants.mcp_delimiter}.
 
 /**
  * Prefix of the lazily-expanded MCP placeholder `mcp_all<delim><server>`,
- * pushed into an ephemeral agent's `tools` for overlay/user-connection servers
- * whose tool names are not known until the definitions loader expands them.
+ * pushed into an agent's `tools` for overlay/user-connection servers whose
+ * tool names are not known until the definitions loader expands them.
  *
- * Anything that keys per-tool config by exact name must skip it: an entry
- * recorded under the placeholder can never match an expanded tool name, so it
- * is a silent no-op. Kept here rather than per-consumer so the two capability
- * synthesizers cannot drift apart on which names they ignore.
+ * The name is reserved by that convention: the definitions loader treats ANY
+ * matching entry as "expand every tool on this server", so a remote tool
+ * literally named `mcp_all` cannot be addressed individually anywhere in the
+ * pipeline. Kept here as the one definition of the prefix.
  */
 export const MCP_ALL_PLACEHOLDER_PREFIX: string = `${Constants.mcp_all}${Constants.mcp_delimiter}`;
 

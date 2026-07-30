@@ -1,5 +1,4 @@
 import { logger } from '@librechat/data-schemas';
-import { Constants } from 'librechat-data-provider';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import {
   INTENT_ARG,
@@ -15,9 +14,9 @@ import {
   applyIntentLabels,
   sanitizeIntentLabels,
   synthesizeIntentToolOptions,
-  mergeSynthesizedToolOptions,
 } from './intent';
 import { applyBackgroundToolCalls, CHECK_BACKGROUND_TASK_NAME } from './background';
+import { mergeSynthesizedToolOptions, TOOL_SELECTION_WILDCARD } from './selection';
 import { toolOptionsSchema } from './validation';
 
 const mcpDef = (name: string): LCTool =>
@@ -395,28 +394,47 @@ describe('stripIntentFromToolDefinitions / stripIntentFromToolRegistry', () => {
   });
 });
 
-describe('capability marker expansion', () => {
+describe('capability marker projection', () => {
   const memoryDefs = (): LCTool[] => [mcpDef('set_memory'), mcpDef('delete_memory')];
+  /** What `initializeAgent` records from the registrars' own reports. */
+  const MEMORY_MAP = new Map([['memory', ['set_memory', 'delete_memory']]]);
+  const CODE_MAP = new Map([
+    ['execute_code', ['read_file', 'bash_tool', 'create_file', 'edit_file']],
+  ]);
 
-  it('propagates a marker OPT-OUT to the names it expands into', () => {
+  it('projects a marker OPT-OUT onto the names its capability registered', () => {
     /** A spec's tools carry `memory`, but initialization registers
      *  set_memory/delete_memory — both default-on natives, so without
-     *  expansion a narrowing selection would leave them labelled. */
+     *  projection a marker opt-out would leave them labelled. */
     const { intentToolNames } = applyIntentLabels({
       toolDefinitions: memoryDefs(),
       toolRegistry: undefined,
       toolOptions: { memory: { describe_intent: false } },
+      capabilityToolNames: MEMORY_MAP,
     });
     expect(intentToolNames).toEqual([]);
   });
 
-  it('propagates a marker OPT-IN to the names it expands into', () => {
+  it('projects a marker OPT-IN onto the names its capability registered', () => {
     const { intentToolNames } = applyIntentLabels({
       toolDefinitions: [mcpDef('bash_tool')],
       toolRegistry: undefined,
       toolOptions: { execute_code: { describe_intent: true } },
+      capabilityToolNames: CODE_MAP,
     });
     expect(intentToolNames).toEqual(['bash_tool']);
+  });
+
+  it('covers file-authoring tools registered by the code capability', () => {
+    /** create_file/edit_file are default-on natives the code capability
+     *  registers, so a code opt-out must reach them, not just bash_tool. */
+    const { intentToolNames } = applyIntentLabels({
+      toolDefinitions: [mcpDef('create_file'), mcpDef('edit_file')],
+      toolRegistry: undefined,
+      toolOptions: { execute_code: { describe_intent: false } },
+      capabilityToolNames: CODE_MAP,
+    });
+    expect(intentToolNames).toEqual([]);
   });
 
   it('lets an explicit per-tool entry win over the marker', () => {
@@ -427,18 +445,39 @@ describe('capability marker expansion', () => {
         memory: { describe_intent: false },
         set_memory: { describe_intent: true },
       },
+      capabilityToolNames: MEMORY_MAP,
     });
     expect(intentToolNames).toEqual(['set_memory']);
   });
 
+  it('lets an opting-in marker win over an opting-out one for a shared tool', () => {
+    /** read_file registers under both code and skills; opting into skills
+     *  must not be vetoed by a code opt-out. */
+    const shared = new Map([
+      ['execute_code', ['read_file', 'bash_tool']],
+      ['skills', ['skill', 'read_file']],
+    ]);
+    const { intentToolNames } = applyIntentLabels({
+      toolDefinitions: [mcpDef('read_file')],
+      toolRegistry: undefined,
+      toolOptions: {
+        execute_code: { describe_intent: false },
+        skills: { describe_intent: true },
+      },
+      capabilityToolNames: shared,
+    });
+    expect(intentToolNames).toEqual(['read_file']);
+  });
+
   it('carries a marker opt-out through the capability-on sanitize pass', () => {
-    /** SDK-native labels persist unless sanitize sees an explicit false. */
+    /** SDK-native labels persist unless sanitize resolves an opt-out. */
     const nativeBash = sdkNativeDef('bash_tool');
     const { toolDefinitions } = sanitizeIntentLabels({
       toolDefinitions: [nativeBash],
       toolRegistry: undefined,
       toolOptions: { execute_code: { describe_intent: false } },
       capabilityEnabled: true,
+      capabilityToolNames: CODE_MAP,
     });
     expect(INTENT_ARG in (toolDefinitions[0].parameters as { properties: object }).properties).toBe(
       false,
@@ -534,104 +573,172 @@ describe('sanitizeIntentLabels', () => {
 
 describe('synthesizeIntentToolOptions', () => {
   it('returns undefined when neither the ephemeral toggle nor the model spec enables it', () => {
-    expect(synthesizeIntentToolOptions(['web_search'], {})).toBeUndefined();
+    expect(synthesizeIntentToolOptions({})).toBeUndefined();
     expect(
-      synthesizeIntentToolOptions(['web_search'], {
+      synthesizeIntentToolOptions({
         ephemeralAgent: { describe_intent: false },
         modelSpec: { describeIntent: false },
       }),
     ).toBeUndefined();
   });
 
-  it('marks only eligible tools', () => {
-    const options = synthesizeIntentToolOptions(
-      ['web_search', CHECK_BACKGROUND_TASK_NAME, 'lc_transfer_to_researcher'],
-      { ephemeralAgent: { describe_intent: true } },
+  it('records boolean/ephemeral modes as a wildcard opt-in (no name enumeration)', () => {
+    const expected = { [TOOL_SELECTION_WILDCARD]: { describe_intent: true } };
+    expect(synthesizeIntentToolOptions({ modelSpec: { describeIntent: true } })).toEqual(expected);
+    expect(synthesizeIntentToolOptions({ ephemeralAgent: { describe_intent: true } })).toEqual(
+      expected,
     );
-    expect(options).toEqual({ web_search: { describe_intent: true } });
   });
 
-  it('skips lazily-expanded mcp_all placeholders (exact-name matching would never apply)', () => {
-    const placeholder = `${Constants.mcp_all}${Constants.mcp_delimiter}overlay_server`;
-    const options = synthesizeIntentToolOptions([placeholder, 'web_search'], {
-      ephemeralAgent: { describe_intent: true },
-    });
-    expect(options).toEqual({ web_search: { describe_intent: true } });
-  });
-
-  it('narrows to the named tools when the model spec lists them', () => {
-    const options = synthesizeIntentToolOptions(
-      ['web_search', 'search_code_mcp_github', 'file_search'],
-      { modelSpec: { describeIntent: ['web_search', 'search_code_mcp_github'] } },
-    );
-    expect(options).toEqual({
+  it('records a list as a wildcard opt-out plus verbatim opt-ins', () => {
+    /** Names are recorded verbatim — markers, late-registered definitions,
+     *  and lazily-expanded MCP names all resolve at injection time, where the
+     *  final definitions exist. */
+    expect(
+      synthesizeIntentToolOptions({
+        modelSpec: { describeIntent: ['web_search', 'execute_code'] },
+      }),
+    ).toEqual({
+      [TOOL_SELECTION_WILDCARD]: { describe_intent: false },
       web_search: { describe_intent: true },
-      search_code_mcp_github: { describe_intent: true },
-      file_search: { describe_intent: false },
+      execute_code: { describe_intent: true },
     });
   });
 
-  it('still enforces eligibility for explicitly named tools', () => {
-    const options = synthesizeIntentToolOptions(['web_search', CHECK_BACKGROUND_TASK_NAME], {
-      modelSpec: { describeIntent: ['web_search', CHECK_BACKGROUND_TASK_NAME] },
+  it('treats an empty list as an explicit none', () => {
+    expect(synthesizeIntentToolOptions({ modelSpec: { describeIntent: [] } })).toEqual({
+      [TOOL_SELECTION_WILDCARD]: { describe_intent: false },
     });
-    expect(options).toEqual({ web_search: { describe_intent: true } });
-  });
-
-  it('opts unselected tools OUT explicitly, so defaults cannot survive narrowing', () => {
-    /** `set_memory` is default-on via NATIVE_INTENT_TOOL_NAMES and SDK-native
-     *  labels persist unless they see an explicit false, so omission alone
-     *  would leave both labelled despite the narrowing. */
-    const options = synthesizeIntentToolOptions(['web_search', 'set_memory', 'read_file'], {
-      modelSpec: { describeIntent: ['web_search'] },
-    });
-    expect(options).toEqual({
-      web_search: { describe_intent: true },
-      set_memory: { describe_intent: false },
-      read_file: { describe_intent: false },
-    });
-  });
-
-  it('treats an empty list as an explicit none, disabling default-on tools', () => {
-    const options = synthesizeIntentToolOptions(['web_search', 'set_memory'], {
-      modelSpec: { describeIntent: [] },
-    });
-    expect(options).toEqual({
-      web_search: { describe_intent: false },
-      set_memory: { describe_intent: false },
-    });
-  });
-
-  it('warns about named tools the spec does not equip, rather than silently skipping', () => {
-    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
-    const options = synthesizeIntentToolOptions(['web_search'], {
-      modelSpec: { describeIntent: ['web_search', 'typo_tool_name'] },
-    });
-    expect(options).toEqual({ web_search: { describe_intent: true } });
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('typo_tool_name'));
-    warn.mockRestore();
   });
 
   it('the ephemeral toggle stays global even when the spec narrows', () => {
     /** The ephemeral switch has no per-tool UI, so it must not be narrowed by
      *  a co-present spec list — otherwise enabling it would silently cover
      *  fewer tools than the user asked for. */
-    const options = synthesizeIntentToolOptions(['web_search', 'file_search'], {
-      ephemeralAgent: { describe_intent: true },
-      modelSpec: { describeIntent: ['web_search'] },
+    expect(
+      synthesizeIntentToolOptions({
+        ephemeralAgent: { describe_intent: true },
+        modelSpec: { describeIntent: ['web_search'] },
+      }),
+    ).toEqual({ [TOOL_SELECTION_WILDCARD]: { describe_intent: true } });
+  });
+});
+
+describe('selection policy at injection time', () => {
+  it('a narrowing selection opts out defaults and SDK-native labels alike', () => {
+    /** `describeIntent: []` with code enabled must reach EVERY definition the
+     *  capability registered — bash_tool/read_file (SDK-native labels) and
+     *  create_file/edit_file (default-on natives) — not just a legacy pair. */
+    const toolOptions = synthesizeIntentToolOptions({ modelSpec: { describeIntent: [] } });
+    const capabilityToolNames = new Map([
+      ['execute_code', ['read_file', 'bash_tool', 'create_file', 'edit_file']],
+    ]);
+    const applied = applyIntentLabels({
+      toolDefinitions: [
+        sdkNativeDef('bash_tool'),
+        sdkNativeDef('read_file'),
+        mcpDef('create_file'),
+        mcpDef('edit_file'),
+      ],
+      toolRegistry: undefined,
+      toolOptions,
+      capabilityToolNames,
     });
-    expect(options).toEqual({
-      web_search: { describe_intent: true },
-      file_search: { describe_intent: true },
+    expect(applied.intentToolNames).toEqual([]);
+    const { toolDefinitions } = sanitizeIntentLabels({
+      toolDefinitions: applied.toolDefinitions,
+      toolRegistry: undefined,
+      toolOptions,
+      capabilityEnabled: true,
+      capabilityToolNames,
     });
+    for (const def of toolDefinitions) {
+      expect(INTENT_ARG in (def.parameters as { properties: object }).properties).toBe(false);
+    }
   });
 
-  it('returns undefined when nothing is eligible', () => {
-    expect(
-      synthesizeIntentToolOptions([CHECK_BACKGROUND_TASK_NAME], {
-        modelSpec: { describeIntent: true },
-      }),
-    ).toBeUndefined();
+  it('a narrowing selection governs the late-registered skill definition', () => {
+    /** A spec's `skills` never reaches the `tools` array, so no load-time
+     *  enumeration could see it; the wildcard opt-out reaches the definition
+     *  in the post-catalog sanitize pass. */
+    const toolOptions = synthesizeIntentToolOptions({
+      modelSpec: { describeIntent: ['web_search'] },
+    });
+    const { toolDefinitions } = sanitizeIntentLabels({
+      toolDefinitions: [sdkNativeDef('skill')],
+      toolRegistry: undefined,
+      toolOptions,
+      capabilityEnabled: true,
+      capabilityToolNames: new Map([['skills', ['skill', 'read_file']]]),
+    });
+    expect(INTENT_ARG in (toolDefinitions[0].parameters as { properties: object }).properties).toBe(
+      false,
+    );
+  });
+
+  it('naming `skills` in the selection keeps the skill label', () => {
+    const toolOptions = synthesizeIntentToolOptions({ modelSpec: { describeIntent: ['skills'] } });
+    const { toolDefinitions } = sanitizeIntentLabels({
+      toolDefinitions: [sdkNativeDef('skill')],
+      toolRegistry: undefined,
+      toolOptions,
+      capabilityEnabled: true,
+      capabilityToolNames: new Map([['skills', ['skill', 'read_file']]]),
+    });
+    expect(INTENT_ARG in (toolDefinitions[0].parameters as { properties: object }).properties).toBe(
+      true,
+    );
+  });
+
+  it('a wildcard opt-in covers tools unknown at load time (lazy MCP expansion)', () => {
+    const toolOptions = synthesizeIntentToolOptions({ modelSpec: { describeIntent: true } });
+    const { intentToolNames } = applyIntentLabels({
+      toolDefinitions: [mcpDef('search_mcp_overlay_server')],
+      toolRegistry: undefined,
+      toolOptions,
+    });
+    expect(intentToolNames).toEqual(['search_mcp_overlay_server']);
+  });
+
+  it('still enforces eligibility for explicitly named tools, and diagnoses them', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const toolOptions = synthesizeIntentToolOptions({
+      modelSpec: { describeIntent: ['web_search', CHECK_BACKGROUND_TASK_NAME] },
+    });
+    const { intentToolNames } = applyIntentLabels({
+      toolDefinitions: [mcpDef('web_search'), mcpDef(CHECK_BACKGROUND_TASK_NAME)],
+      toolRegistry: undefined,
+      toolOptions,
+    });
+    expect(intentToolNames).toEqual(['web_search']);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(CHECK_BACKGROUND_TASK_NAME));
+    warn.mockRestore();
+  });
+
+  it('warns about selection names that never took effect, rather than silently skipping', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const toolOptions = synthesizeIntentToolOptions({
+      modelSpec: { describeIntent: ['web_search', 'typo_tool_name'] },
+    });
+    const { intentToolNames } = applyIntentLabels({
+      toolDefinitions: [mcpDef('web_search')],
+      toolRegistry: undefined,
+      toolOptions,
+    });
+    expect(intentToolNames).toEqual(['web_search']);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('typo_tool_name'));
+    warn.mockRestore();
+  });
+
+  it('does not warn about saved-agent options with no narrowing policy', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    applyIntentLabels({
+      toolDefinitions: [mcpDef('web_search')],
+      toolRegistry: undefined,
+      toolOptions: { stale_tool: { describe_intent: true } },
+    });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 
