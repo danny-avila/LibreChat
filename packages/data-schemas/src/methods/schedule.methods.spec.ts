@@ -1797,15 +1797,14 @@ describe('reconciliation rotates the paused window', () => {
 
 describe('requestRunAbort (classic-operator first-wins stamp)', () => {
   it('stamps the first request with its source and preserves both on a later one', async () => {
-    const schedule = scheduleData();
-    await Schedule.create(schedule);
+    const schedule = await methods.createSchedule(scheduleData());
     await ScheduleRun.create(runData(schedule));
 
     expect(
-      await methods.requestRunAbort(schedule.id!, new Date('2026-07-20T12:00:00Z'), 'stop'),
+      await methods.requestRunAbort(schedule.id, new Date('2026-07-20T12:00:00Z'), 'stop'),
     ).toBe(true);
     const first = await methods.getScheduleRunAbortState(
-      schedule.id!,
+      schedule.id,
       new Date('2026-07-20T12:00:00Z'),
     );
     expect(first?.abortRequestedAt).toBeInstanceOf(Date);
@@ -1814,10 +1813,10 @@ describe('requestRunAbort (classic-operator first-wins stamp)', () => {
     // A racing deletion must not overwrite the stop's stamp: the settlement barrier
     // reads the SOURCE to know the Stop route still has writes in flight.
     expect(
-      await methods.requestRunAbort(schedule.id!, new Date('2026-07-20T12:00:00Z'), 'deletion'),
+      await methods.requestRunAbort(schedule.id, new Date('2026-07-20T12:00:00Z'), 'deletion'),
     ).toBe(true);
     const second = await methods.getScheduleRunAbortState(
-      schedule.id!,
+      schedule.id,
       new Date('2026-07-20T12:00:00Z'),
     );
     expect(second?.abortSource).toBe('stop');
@@ -1825,22 +1824,20 @@ describe('requestRunAbort (classic-operator first-wins stamp)', () => {
   });
 
   it('reports false when no active run holds the occurrence', async () => {
-    const schedule = scheduleData();
-    await Schedule.create(schedule);
+    const schedule = await methods.createSchedule(scheduleData());
     await ScheduleRun.create(runData(schedule, { status: 'success' }));
     expect(
-      await methods.requestRunAbort(schedule.id!, new Date('2026-07-20T12:00:00Z'), 'stop'),
+      await methods.requestRunAbort(schedule.id, new Date('2026-07-20T12:00:00Z'), 'stop'),
     ).toBe(false);
   });
 
   it('marks abort persistence for the settlement barrier', async () => {
-    const schedule = scheduleData();
-    await Schedule.create(schedule);
+    const schedule = await methods.createSchedule(scheduleData());
     await ScheduleRun.create(runData(schedule));
-    await methods.requestRunAbort(schedule.id!, new Date('2026-07-20T12:00:00Z'), 'stop');
-    await methods.markRunAbortPersisted(schedule.id!, new Date('2026-07-20T12:00:00Z'));
+    await methods.requestRunAbort(schedule.id, new Date('2026-07-20T12:00:00Z'), 'stop');
+    await methods.markRunAbortPersisted(schedule.id, new Date('2026-07-20T12:00:00Z'));
     const state = await methods.getScheduleRunAbortState(
-      schedule.id!,
+      schedule.id,
       new Date('2026-07-20T12:00:00Z'),
     );
     expect(state?.abortPersistedAt).toBeInstanceOf(Date);
@@ -1851,12 +1848,11 @@ describe('recordRunOutcome settles a mid-generation balance refusal as skipped_b
   const scheduledFor = new Date('2026-07-20T12:00:00Z');
 
   it('walks the balance streak instead of the failure streak and frees capacity', async () => {
-    const schedule = scheduleData();
-    await Schedule.create(schedule);
+    const schedule = await methods.createSchedule(scheduleData());
     await ScheduleRun.create(runData(schedule, { capacitySlot: 0, conversationId: 'c1' }));
 
     await methods.recordRunOutcome({
-      scheduleId: schedule.id!,
+      scheduleId: schedule.id,
       scheduledFor,
       status: 'skipped_balance',
       conversationId: 'c1',
@@ -1877,12 +1873,11 @@ describe('recordRunOutcome settles a mid-generation balance refusal as skipped_b
   });
 
   it('auto-disables with insufficient_balance at the threshold, not too_many_failures', async () => {
-    const schedule = scheduleData({ balanceSkipCount: 4 });
-    await Schedule.create(schedule);
+    const schedule = await methods.createSchedule(scheduleData({ balanceSkipCount: 4 }));
     await ScheduleRun.create(runData(schedule, { capacitySlot: 0 }));
 
     await methods.recordRunOutcome({
-      scheduleId: schedule.id!,
+      scheduleId: schedule.id,
       scheduledFor,
       status: 'skipped_balance',
       autoDisableAfterFailures: 5,
@@ -1895,19 +1890,18 @@ describe('recordRunOutcome settles a mid-generation balance refusal as skipped_b
   });
 
   it('is idempotent across the crash-retry replay (finalizeBookkeeping)', async () => {
-    const schedule = scheduleData();
-    await Schedule.create(schedule);
+    const schedule = await methods.createSchedule(scheduleData());
     await ScheduleRun.create(runData(schedule, { capacitySlot: 0 }));
 
     await methods.recordRunOutcome({
-      scheduleId: schedule.id!,
+      scheduleId: schedule.id,
       scheduledFor,
       status: 'skipped_balance',
       autoDisableAfterFailures: 5,
       balanceSkipDisableThreshold: 5,
     });
     await methods.finalizeBookkeeping({
-      scheduleId: schedule.id!,
+      scheduleId: schedule.id,
       scheduledFor,
       status: 'skipped_balance',
       autoDisableAfterFailures: 5,
@@ -1919,8 +1913,7 @@ describe('recordRunOutcome settles a mid-generation balance refusal as skipped_b
   });
 
   it('surfaces an unbookkept skipped_balance run to the reconciler', async () => {
-    const schedule = scheduleData();
-    await Schedule.create(schedule);
+    const schedule = await methods.createSchedule(scheduleData());
     await ScheduleRun.create(
       runData(schedule, {
         status: 'skipped_balance',
@@ -1935,23 +1928,21 @@ describe('recordRunOutcome settles a mid-generation balance refusal as skipped_b
 
 describe('deleteUnarmedSchedule (guarded create rollback)', () => {
   it('deletes an unarmed row and its runs', async () => {
-    const schedule = scheduleData({ nextRunAt: undefined });
-    const created = await Schedule.create(schedule);
-    await ScheduleRun.create(runData({ id: schedule.id!, user: created.user }));
+    const schedule = await methods.createSchedule(scheduleData({ nextRunAt: undefined }));
+    await ScheduleRun.create(runData(schedule));
 
-    expect(await methods.deleteUnarmedSchedule(schedule.id!, created.user)).toBe('deleted');
+    expect(await methods.deleteUnarmedSchedule(schedule.id, schedule.user)).toBe('deleted');
     expect(await Schedule.findOne({ id: schedule.id }).lean()).toBeNull();
     expect(await ScheduleRun.findOne({ scheduleId: schedule.id }).lean()).toBeNull();
   });
 
   it('refuses to delete a row that has since been armed', async () => {
-    const schedule = scheduleData();
-    const created = await Schedule.create(schedule);
+    const schedule = await methods.createSchedule(scheduleData());
 
     // An ambiguously-committed arm (or a concurrent replay's arm) landed: the row is a
     // live schedule another response may have confirmed, so the rollback must not
     // erase it.
-    expect(await methods.deleteUnarmedSchedule(schedule.id!, created.user)).toBe('armed');
+    expect(await methods.deleteUnarmedSchedule(schedule.id, schedule.user)).toBe('armed');
     expect(await Schedule.findOne({ id: schedule.id }).lean()).not.toBeNull();
   });
 
