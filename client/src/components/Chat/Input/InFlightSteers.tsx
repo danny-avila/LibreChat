@@ -2,7 +2,7 @@ import { memo, useId, useRef, useMemo, useState, useEffect, useCallback } from '
 import { useSetAtom } from 'jotai';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
-import { X, Zap, Clock, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
+import { X, Zap, ZapOff, Clock, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { PendingSteer } from '~/store/families';
@@ -86,6 +86,7 @@ const InFlightSteer = memo(function InFlightSteer({
 
   const { images, others } = useMemo(() => splitFiles(steer.files), [steer.files]);
   const sending = steer.status === 'sending';
+  const preempting = steer.preempt === true;
 
   /** Long steers (several paragraphs) collapse to a preview so the stack stays
    *  scannable; the toggle is offered only once the content actually overflows
@@ -232,6 +233,7 @@ const InFlightSteer = memo(function InFlightSteer({
       role="listitem"
       data-testid="in-flight-steer"
       data-steer-status={steer.status}
+      data-steer-preempt={preempting ? 'true' : undefined}
       /* pointer-events-auto: the overlay container disables events so wheeling
        * over the gaps reaches the messages behind; each bubble re-enables them
        * for its own controls and internal scroll. */
@@ -270,8 +272,14 @@ const InFlightSteer = memo(function InFlightSteer({
             sending && 'opacity-70',
           )}
         >
-          <Zap className="mt-1 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden="true" />
-          <span className="sr-only">{localize('com_ui_steer_in_flight')}</span>
+          {preempting ? (
+            <ZapOff className="mt-1 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden="true" />
+          ) : (
+            <Zap className="mt-1 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden="true" />
+          )}
+          <span className="sr-only">
+            {localize(preempting ? 'com_ui_steer_in_flight_preempt' : 'com_ui_steer_in_flight')}
+          </span>
           <div className="flex min-w-0 flex-col items-start gap-1">
             <div
               ref={contentRef}

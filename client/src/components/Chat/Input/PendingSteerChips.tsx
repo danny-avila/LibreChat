@@ -176,10 +176,13 @@ function FailedSteerRow({
         type="button"
         className={PRIMARY_BTN_CLASS}
         onClick={() =>
-          steering.retrySteer(steer.steerId, steer.text, steer.files, {
-            quotes: steer.quotes,
-            manualSkills: steer.manualSkills,
-          })
+          steering.retrySteer(
+            steer.steerId,
+            steer.text,
+            steer.files,
+            { quotes: steer.quotes, manualSkills: steer.manualSkills },
+            { preempt: steer.preempt === true },
+          )
         }
       >
         <RotateCcw className="h-4 w-4" aria-hidden="true" />
