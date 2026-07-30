@@ -428,7 +428,8 @@ export interface InitializeAgentParams {
   /**
    * Whether the `run_in_background` capability is enabled for this run. When
    * true, tools the agent opted in via `tool_options[name].run_in_background`
-   * get a `run_in_background` schema param and the `check_background_task` poll
+   * (plus the background-native code pair, unless explicitly opted out) get a
+   * `run_in_background` schema param and the `check_background_task` poll
    * tool is registered.
    */
   backgroundToolsAvailable?: boolean;
@@ -1221,7 +1222,8 @@ export async function initializeAgent(
    * Inject the `run_in_background` param into eligible opted-in tools and
    * register the `check_background_task` poll tool. Runs after all built-in
    * tool registration so the full, final `toolDefinitions` set is considered.
-   * Opt-in is per-tool via `tool_options` for both saved and ephemeral agents.
+   * Opt-in is per-tool via `tool_options` for both saved and ephemeral agents;
+   * the code-execution pair is background-native and needs no opt-in.
    */
   let backgroundToolNames: string[] | undefined;
   if (params.backgroundToolsAvailable === true) {

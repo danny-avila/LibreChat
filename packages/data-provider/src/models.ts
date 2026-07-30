@@ -57,10 +57,15 @@ export type TModelSpec = {
   askUserQuestion?: boolean;
   /**
    * Let the model dispatch tool calls in the background (poll results via
-   * `check_background_task`). `true` opts in every eligible tool; a string
-   * array opts in only the named tools, matched against the spec's resolved
-   * tool ids (e.g. `['slow_report_mcp_analytics']`). Requires the
-   * `run_in_background` agent capability to be enabled by the admin.
+   * `check_background_task`). Code execution is background-NATIVE: when the
+   * admin enables the `run_in_background` agent capability, an
+   * `executeCode: true` spec backgrounds code with no flag here. `true` opts
+   * in every other eligible tool; a string array opts in only the named
+   * tools, matched against the spec's resolved tool ids (e.g.
+   * `['slow_report_mcp_analytics']`; `execute_code` and `bash_tool` both
+   * select the code pair). `false`, the empty list, or a list that omits the
+   * code pair explicitly opts it back out. Requires the `run_in_background`
+   * agent capability.
    */
   runInBackground?: boolean | string[];
   /**
