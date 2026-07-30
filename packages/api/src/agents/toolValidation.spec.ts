@@ -9,7 +9,7 @@ describe('getToolInputValidationDetails', () => {
     const validationError = parseToolInputValidationError(
       new Error(
         'Received tool input did not match expected schema\n' +
-          '✖ Option labels must be 120 characters or fewer. Shorten the label and retry.\n' +
+          '✖ Option labels must be 280 characters or fewer. Shorten the label and retry.\n' +
           '  → at options[0].label',
       ),
     );

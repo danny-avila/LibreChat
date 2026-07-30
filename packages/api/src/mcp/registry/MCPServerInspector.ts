@@ -10,6 +10,7 @@ import {
   isUserSourced,
 } from '~/mcp/utils';
 import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
+import { normalizeJsonSchema, resolveJsonSchemaRefs } from '~/mcp/zod';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
@@ -187,7 +188,13 @@ export class MCPServerInspector {
         ['function']: {
           name,
           description: tool.description,
-          parameters: tool.inputSchema as JsonSchemaType,
+          // Normalize before persisting: resolves `$ref`s and strips
+          // `$`-prefixed keywords (e.g. a spec-compliant `$schema`), which
+          // MongoDB rejects as field names and would otherwise crash storage
+          // of this `parameters` blob during server registration.
+          parameters: normalizeJsonSchema(
+            resolveJsonSchemaRefs(tool.inputSchema as Record<string, unknown>),
+          ) as JsonSchemaType,
         },
       };
     });

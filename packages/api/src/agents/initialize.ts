@@ -52,6 +52,7 @@ import {
 } from './tools';
 import { normalizeServerName, requiresEphemeralUserConnection, splitMCPToolKey } from '~/mcp/utils';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
+import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
@@ -265,6 +266,15 @@ export type InitializedAgent = Agent & {
    * opt-in and gate the `check_background_task` poll tool at execution time.
    */
   backgroundToolNames?: string[];
+  /**
+   * Names of this agent's tools that received the host-injected `intent`
+   * param (capability enabled AND opted in AND eligible). Threaded to the
+   * tool executor via `configurable` so the arg is stripped before invoking
+   * tools that don't declare it, and stripped from schemas a self-spawn
+   * child or PTC sandbox inherits. SDK-native intent schemas are the tools'
+   * own and are never listed here.
+   */
+  intentToolNames?: string[];
   /** Whether the inline memory tools (`set_memory`/`delete_memory`) were
    *  registered for this agent. Authoritative LibreChat-only signal of the
    *  inline memory opt-in for the execution path, since some contexts hold the
@@ -421,6 +431,13 @@ export interface InitializeAgentParams {
    * tool is registered.
    */
   backgroundToolsAvailable?: boolean;
+  /**
+   * Whether the `tool_intents` capability is enabled for this run. When true,
+   * tools opted in via `tool_options[name].describe_intent` (native host
+   * tools default on) get an `intent` string injected as the FIRST schema
+   * property, rendered by the client as the call's live status label.
+   */
+  toolIntentsAvailable?: boolean;
   /** Whether stateful code sessions are available (stateful_code_sessions capability enabled) */
   statefulSessionsAvailable?: boolean;
   /** Whether inline memory tools are available (memory capability enabled, memory
@@ -1170,6 +1187,8 @@ export async function initializeAgent(
     toolDefinitions = fileAuthoringResult.toolDefinitions;
   }
 
+  let intentToolNames: string[] | undefined;
+
   /**
    * Inject the `run_in_background` param into eligible opted-in tools and
    * register the `check_background_task` poll tool. Runs after all built-in
@@ -1307,6 +1326,37 @@ export async function initializeAgent(
     activeSkillNames = skillResult.activeSkillNames;
   }
 
+  /**
+   * Intent labels run LAST, after every registration step — the skill
+   * catalog above both appends its own definition and REPLACES upgraded ones
+   * (e.g. the skill-aware `read_file`), so an earlier injection would be
+   * clobbered. Injection PREPENDS while background's param APPENDS, so
+   * `intent` is the first schema property regardless of this ordering.
+   * The sanitize pass then enforces the flip side: with the capability off
+   * it strips SDK-native intent labels (a real admin kill switch); with it
+   * on it enforces explicit per-tool opt-outs on late-registered
+   * definitions. Both are marker-guarded — a tool's own `intent` business
+   * parameter is never touched.
+   */
+  if (params.toolIntentsAvailable === true) {
+    const intentResult = applyIntentLabels({
+      toolDefinitions,
+      toolRegistry,
+      toolOptions: agent.tool_options,
+    });
+    toolDefinitions = intentResult.toolDefinitions;
+    if (intentResult.intentToolNames.length > 0) {
+      intentToolNames = intentResult.intentToolNames;
+    }
+  }
+  const intentSanitized = sanitizeIntentLabels({
+    toolDefinitions,
+    toolRegistry,
+    toolOptions: agent.tool_options,
+    capabilityEnabled: params.toolIntentsAvailable === true,
+  });
+  toolDefinitions = intentSanitized.toolDefinitions;
+
   const hasFinalAgentTools =
     (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
   if (isGoogleToolCombinationProvider(agent.provider) && hasProviderTools && hasFinalAgentTools) {
@@ -1367,6 +1417,7 @@ export async function initializeAgent(
     toolDefinitions,
     hasDeferredTools,
     backgroundToolNames,
+    intentToolNames,
     actionsEnabled,
     baseContextTokens,
     memoryToolsRegistered: inlineMemoryRegistered,

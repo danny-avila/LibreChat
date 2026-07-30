@@ -754,6 +754,78 @@ describe('BaseClient', () => {
       );
     });
 
+    test('persists the generation-time Langfuse sampling decision for agent responses', async () => {
+      const previousSampleRate = process.env.LANGFUSE_SAMPLE_RATE;
+      process.env.LANGFUSE_SAMPLE_RATE = '0';
+      TestClient.options.endpoint = 'agents';
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
+
+      try {
+        const response = await TestClient.sendMessage('Hello, world!', { user: {} });
+
+        expect(response.langfuseSampled).toBe(false);
+        expect(response.langfuseDestinationIds).toEqual([]);
+        expect(saveSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            langfuseSampled: false,
+            langfuseDestinationIds: [],
+          }),
+          expect.any(Object),
+          expect.any(Object),
+        );
+      } finally {
+        if (previousSampleRate == null) {
+          delete process.env.LANGFUSE_SAMPLE_RATE;
+        } else {
+          process.env.LANGFUSE_SAMPLE_RATE = previousSampleRate;
+        }
+      }
+    });
+
+    test('persists no Langfuse destination when a sampled trace has no configured export', async () => {
+      const envKeys = [
+        'LANGFUSE_PUBLIC_KEY',
+        'LANGFUSE_SECRET_KEY',
+        'LANGFUSE_FANOUT_ENABLED',
+        'LANGFUSE_FANOUT_COLLECTOR_URL',
+        'TENANT_ISOLATION_STRICT',
+      ];
+      const previousEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+      const previousSampleRate = process.env.LANGFUSE_SAMPLE_RATE;
+      envKeys.forEach((key) => delete process.env[key]);
+      process.env.LANGFUSE_SAMPLE_RATE = '1';
+      TestClient.options.endpoint = 'agents';
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
+
+      try {
+        const response = await TestClient.sendMessage('Hello, world!', { user: {} });
+
+        expect(response.langfuseSampled).toBe(true);
+        expect(response.langfuseDestinationIds).toEqual([]);
+        expect(saveSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            langfuseSampled: true,
+            langfuseDestinationIds: [],
+          }),
+          expect.any(Object),
+          expect.any(Object),
+        );
+      } finally {
+        for (const [key, value] of Object.entries(previousEnv)) {
+          if (value == null) {
+            delete process.env[key];
+          } else {
+            process.env[key] = value;
+          }
+        }
+        if (previousSampleRate == null) {
+          delete process.env.LANGFUSE_SAMPLE_RATE;
+        } else {
+          process.env.LANGFUSE_SAMPLE_RATE = previousSampleRate;
+        }
+      }
+    });
+
     test('should handle existing conversation when getConvo retrieves one', async () => {
       const existingConvo = {
         conversationId: 'existing-convo-id',

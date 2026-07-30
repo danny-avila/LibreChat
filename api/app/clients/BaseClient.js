@@ -12,6 +12,9 @@ const {
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   encodeAndFormatDocuments,
+  getLangfuseTraceDestinationIds,
+  isLangfuseTraceSampled,
+  traceIdForMessage,
 } = require('@librechat/api');
 const {
   Constants,
@@ -712,12 +715,25 @@ class BaseClient {
       this.abortController.requestCompleted = true;
     }
 
+    const isAgentResponse = isAgentsEndpoint(this.options.endpoint);
+    const langfuseTraceId = isAgentResponse ? traceIdForMessage(responseMessageId) : undefined;
+    const langfuseSampled =
+      langfuseTraceId != null ? isLangfuseTraceSampled(langfuseTraceId) : undefined;
+
     /** @type {TMessage} */
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
+      ...(isAgentResponse && {
+        langfuseSampled,
+        langfuseDestinationIds: await getLangfuseTraceDestinationIds(
+          appConfig,
+          langfuseTraceId,
+          langfuseSampled,
+        ),
+      }),
       isEdited,
       model: this.getResponseModel(),
       sender: this.sender,
@@ -1171,6 +1187,8 @@ class BaseClient {
             !item.type ||
             item.type === ContentTypes.THINK ||
             item.type === ContentTypes.ERROR ||
+            // UI-only progress headers — never model input, never billed output
+            item.type === ContentTypes.ACTIVITY_LABEL ||
             item.type === ContentTypes.IMAGE_URL
           ) {
             continue;

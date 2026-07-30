@@ -289,18 +289,20 @@ export const graphEdgeSchema: z.ZodObject<
     .transform((v) => (v === '' ? undefined : v)),
 });
 
-/** Per-tool options schema (defer_loading, allowed_callers, run_in_background) */
+/** Per-tool options schema (defer_loading, allowed_callers, run_in_background, describe_intent) */
 export const toolOptionsSchema: z.ZodObject<
   {
     defer_loading: z.ZodOptional<z.ZodBoolean>;
     allowed_callers: z.ZodOptional<z.ZodArray<z.ZodEnum<['direct', 'code_execution']>, 'many'>>;
     run_in_background: z.ZodOptional<z.ZodBoolean>;
+    describe_intent: z.ZodOptional<z.ZodBoolean>;
   },
   'strip'
 > = z.object({
   defer_loading: z.boolean().optional(),
   allowed_callers: z.array(z.enum(['direct', 'code_execution'])).optional(),
   run_in_background: z.boolean().optional(),
+  describe_intent: z.boolean().optional(),
 });
 
 /** Agent tool options - map of tool_id to tool options */
@@ -312,6 +314,7 @@ export const agentToolOptionsSchema: z.ZodOptional<
         defer_loading: z.ZodOptional<z.ZodBoolean>;
         allowed_callers: z.ZodOptional<z.ZodArray<z.ZodEnum<['direct', 'code_execution']>, 'many'>>;
         run_in_background: z.ZodOptional<z.ZodBoolean>;
+        describe_intent: z.ZodOptional<z.ZodBoolean>;
       },
       'strip',
       z.ZodTypeAny,
@@ -319,11 +322,13 @@ export const agentToolOptionsSchema: z.ZodOptional<
         defer_loading?: boolean | undefined;
         allowed_callers?: ('direct' | 'code_execution')[] | undefined;
         run_in_background?: boolean | undefined;
+        describe_intent?: boolean | undefined;
       },
       {
         defer_loading?: boolean | undefined;
         allowed_callers?: ('direct' | 'code_execution')[] | undefined;
         run_in_background?: boolean | undefined;
+        describe_intent?: boolean | undefined;
       }
     >
   >
@@ -631,6 +636,7 @@ export const agentBaseSchema: z.ZodObject<
               z.ZodArray<z.ZodEnum<['direct', 'code_execution']>, 'many'>
             >;
             run_in_background: z.ZodOptional<z.ZodBoolean>;
+            describe_intent: z.ZodOptional<z.ZodBoolean>;
           },
           'strip',
           z.ZodTypeAny,
@@ -638,11 +644,13 @@ export const agentBaseSchema: z.ZodObject<
             defer_loading?: boolean | undefined;
             allowed_callers?: ('direct' | 'code_execution')[] | undefined;
             run_in_background?: boolean | undefined;
+            describe_intent?: boolean | undefined;
           },
           {
             defer_loading?: boolean | undefined;
             allowed_callers?: ('direct' | 'code_execution')[] | undefined;
             run_in_background?: boolean | undefined;
+            describe_intent?: boolean | undefined;
           }
         >
       >
@@ -981,6 +989,7 @@ export const agentCreateSchema: z.ZodObject<
               z.ZodArray<z.ZodEnum<['direct', 'code_execution']>, 'many'>
             >;
             run_in_background: z.ZodOptional<z.ZodBoolean>;
+            describe_intent: z.ZodOptional<z.ZodBoolean>;
           },
           'strip',
           z.ZodTypeAny,
@@ -988,11 +997,13 @@ export const agentCreateSchema: z.ZodObject<
             defer_loading?: boolean | undefined;
             allowed_callers?: ('direct' | 'code_execution')[] | undefined;
             run_in_background?: boolean | undefined;
+            describe_intent?: boolean | undefined;
           },
           {
             defer_loading?: boolean | undefined;
             allowed_callers?: ('direct' | 'code_execution')[] | undefined;
             run_in_background?: boolean | undefined;
+            describe_intent?: boolean | undefined;
           }
         >
       >
@@ -1296,6 +1307,7 @@ export const agentUpdateSchema: z.ZodObject<
               z.ZodArray<z.ZodEnum<['direct', 'code_execution']>, 'many'>
             >;
             run_in_background: z.ZodOptional<z.ZodBoolean>;
+            describe_intent: z.ZodOptional<z.ZodBoolean>;
           },
           'strip',
           z.ZodTypeAny,
@@ -1303,11 +1315,13 @@ export const agentUpdateSchema: z.ZodObject<
             defer_loading?: boolean | undefined;
             allowed_callers?: ('direct' | 'code_execution')[] | undefined;
             run_in_background?: boolean | undefined;
+            describe_intent?: boolean | undefined;
           },
           {
             defer_loading?: boolean | undefined;
             allowed_callers?: ('direct' | 'code_execution')[] | undefined;
             run_in_background?: boolean | undefined;
+            describe_intent?: boolean | undefined;
           }
         >
       >

@@ -38,6 +38,7 @@ import {
   synthesizeAppliedSteerEvents,
 } from './SteeringLifecycle';
 import { isPendingActionStale, isPendingActionExpired } from './interfaces/IJobStore';
+import { synthesizeActivityLabelGapEvents } from '~/agents/activityLabels/wiring';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
@@ -2258,6 +2259,20 @@ class GenerationJobManagerClass {
       // the queue shows gap activity, and synthesis sources from the FRESH
       // content view so an applied steer with no snapshot id still surfaces.
       const jobActive = liveJob?.status === 'running' || liveJob?.status === 'requires_action';
+      /** Shared by the steer and activity-label gap passes below: whichever
+       *  needs the fresh content view first pays for it, the other reuses it.
+       *  Both reconcile the same snapshot→subscribe window, so re-reading per
+       *  feature would bill two round trips for one question. */
+      let freshContent: t.ServerSentEvent[] | undefined;
+      let freshContentRead = false;
+      const readFreshContent = async (): Promise<unknown[] | undefined> => {
+        if (!freshContentRead) {
+          freshContentRead = true;
+          const contentResult = await this.jobStore.getContentParts(streamId, liveJob?.createdAt);
+          freshContent = contentResult?.content as t.ServerSentEvent[] | undefined;
+        }
+        return freshContent as unknown[] | undefined;
+      };
       if (resumeState != null && jobActive) {
         const snapshotSteers = resumeState.pendingSteers ?? [];
         const liveQueue = await this.jobStore.peekSteers(streamId, liveJob.createdAt);
@@ -2273,18 +2288,67 @@ class GenerationJobManagerClass {
           resumeState.pendingSteers = livePending.length > 0 ? livePending : undefined;
         }
         if (queueChanged || liveQueue.length > 0) {
-          const contentResult = await this.jobStore.getContentParts(streamId, liveJob.createdAt);
+          const content = await readFreshContent();
           if (options?.signal?.aborted || this.detachSubscriptionDuringShutdown(subscription)) {
             return cancelResumeSubscription();
           }
           const gapEvents = synthesizeAppliedSteerEvents(
             (resumeState.aggregatedContent ?? []) as SteerContentView,
             liveQueue,
-            (contentResult?.content ?? []) as SteerContentView,
+            (content ?? []) as SteerContentView,
             { conversationId: streamId, responseMessageId: resumeState.responseMessageId },
           );
           if (gapEvents.length > 0) {
             pendingEvents.push(...gapEvents);
+          }
+        }
+      }
+
+      /**
+       * Same snapshot→subscribe race for activity labels: the label publish is
+       * fire-and-forget, so a slot claimed (or filled) in the window is in
+       * neither the snapshot nor the chunk replay the client already applied.
+       * Compare the snapshot content view against a fresh read and re-emit any
+       * label whose text/pending state moved; the client applier is idempotent
+       * and refuses stale pending placeholders.
+       *
+       * Gated on the run's own flag, falling back to the snapshot when the
+       * flag is absent. Reconciling unconditionally would be simpler and would
+       * also close the residual window below, but it bills a content read to
+       * every resume of every run — including deployments with the feature
+       * off — which the steer pass deliberately avoids ("an unchanged empty
+       * queue skips the content re-read").
+       *
+       * The residual: if `markActivityLabels` lost its write AND the first
+       * label is claimed inside the gap, this is skipped. The flag is a
+       * SEPARATE write from the durable label append, so that is genuinely
+       * possible rather than implying a broken store — which is why the mark
+       * is retried at run setup instead of being fire-and-forget. When the
+       * steer pass above already fetched content, this check is free.
+       */
+      const snapshotHasActivityLabels =
+        resumeState?.aggregatedContent?.some(
+          (part) => (part as { type?: string } | null)?.type === 'activity_label',
+        ) === true;
+      if (
+        resumeState != null &&
+        jobActive &&
+        (liveJob?.activityLabels === true || snapshotHasActivityLabels)
+      ) {
+        const labelContent = await readFreshContent();
+        if (options?.signal?.aborted || this.detachSubscriptionDuringShutdown(subscription)) {
+          return cancelResumeSubscription();
+        }
+        if (labelContent != null) {
+          const labelGapEvents = synthesizeActivityLabelGapEvents(
+            (resumeState.aggregatedContent ?? []) as Parameters<
+              typeof synthesizeActivityLabelGapEvents
+            >[0],
+            labelContent as Parameters<typeof synthesizeActivityLabelGapEvents>[1],
+            { conversationId: streamId, responseMessageId: resumeState.responseMessageId },
+          );
+          if (labelGapEvents.length > 0) {
+            pendingEvents.push(...(labelGapEvents as t.ServerSentEvent[]));
           }
         }
       }
@@ -2349,6 +2413,21 @@ class GenerationJobManagerClass {
    * cross-replica reconnect can reconstruct content without them. The default
    * stays fire-and-forget — no added latency on the per-delta hot path.
    */
+  /**
+   * Flags a run as producing activity labels. Read back on resume so label
+   * gap-reconciliation can be skipped for runs without the feature WITHOUT
+   * inspecting content — the first label can be claimed inside the
+   * snapshot->subscribe window, so content is not a reliable signal.
+   * Best-effort: the flag is an optimization hint, never correctness.
+   */
+  async markActivityLabels(streamId: string): Promise<void> {
+    /** Deliberately REJECTS on failure. This flag gates resume gap
+     *  reconciliation, so the caller retries it; swallowing the error here
+     *  resolved successfully and made that retry unreachable, leaving the
+     *  flag absent after a transient write failure. */
+    await this.jobStore.updateJob(streamId, { activityLabels: true });
+  }
+
   async emitChunk(
     streamId: string,
     event: t.ServerSentEvent,
@@ -2362,7 +2441,6 @@ class GenerationJobManagerClass {
     ) {
       return;
     }
-
     const sequence = ++runtime.emissionSequence;
     let signalSnapshotReady!: () => void;
     const snapshotReady = new Promise<void>((resolve) => {

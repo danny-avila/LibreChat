@@ -63,6 +63,10 @@ jest.mock('~/utils', () => ({
     ['execute_code', 'bash_tool', 'run_tools_with_code', 'run_tools_with_bash'].includes(name)
       ? 'Code'
       : name,
+  /** Real implementations: the group header resolves its text through these,
+   *  so stubbing them out would hide the header logic under test. */
+  getActivityLabelPart: jest.requireActual('~/utils/activityLabels').getActivityLabelPart,
+  getActivityLabelText: jest.requireActual('~/utils/activityLabels').getActivityLabelText,
 }));
 
 jest.mock('../Parts', () => ({
@@ -197,6 +201,55 @@ describe('ToolCallGroup image hoisting', () => {
   it('does not reconcile layout for an initially collapsed completed group', () => {
     renderGroup(baseProps);
     expect(mockScheduleMessageContentLayoutReconcile).not.toHaveBeenCalled();
+  });
+
+  /** A settled label proves the batch finished — a void tool's legitimate
+   *  empty output must not keep its labeled group expanded forever. */
+  it('auto-collapses a labeled group whose only tool returned an empty output', () => {
+    const voidToolParts = [{ part: makePart('t1', '', 'update_settings'), idx: 0 }];
+    const labelPart = {
+      part: {
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: 'Updated the notification settings',
+        pending: false,
+      } as unknown as TMessageContentParts,
+      idx: 1,
+    };
+
+    renderGroup({
+      ...baseProps,
+      parts: voidToolParts,
+      lastContentIdx: 1,
+      labelPart,
+    });
+
+    expect(
+      screen.getByRole('button', { name: 'Updated the notification settings' }),
+    ).toBeInTheDocument();
+    /** Collapsed: bodies not mounted. */
+    expect(screen.queryByTestId('inner-0')).not.toBeInTheDocument();
+  });
+
+  it('keeps a pending-label group expanded while its tool has no output', () => {
+    const voidToolParts = [{ part: makePart('t1', '', 'update_settings'), idx: 0 }];
+    const labelPart = {
+      part: {
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: '',
+        pending: true,
+      } as unknown as TMessageContentParts,
+      idx: 1,
+    };
+
+    renderGroup({
+      ...baseProps,
+      parts: voidToolParts,
+      lastContentIdx: 1,
+      labelPart,
+      isSubmitting: true,
+    });
+
+    expect(screen.getByTestId('inner-0')).toBeInTheDocument();
   });
 
   it('does not render tool bodies for an initially collapsed large completed group', () => {

@@ -103,6 +103,12 @@ export interface DiscoverConnectedAgentsParams {
    * matching how the same agent behaves when run as the primary.
    */
   backgroundToolsAvailable?: InitializeAgentParams['backgroundToolsAvailable'];
+  /**
+   * Run-level `tool_intents` capability gate. Forwarded verbatim so a
+   * handoff/connected agent's opted-in tools get the injected `intent` param,
+   * matching how the same agent behaves when run as the primary.
+   */
+  toolIntentsAvailable?: InitializeAgentParams['toolIntentsAvailable'];
 }
 
 export interface DiscoverConnectedAgentsDeps {
@@ -173,6 +179,7 @@ export async function discoverConnectedAgents(
     defaultActiveOnShare,
     codeEnvAvailable,
     backgroundToolsAvailable,
+    toolIntentsAvailable,
     statefulSessionsAvailable,
     memoryAvailable,
   } = params;
@@ -279,6 +286,7 @@ export async function discoverConnectedAgents(
         defaultActiveOnShare,
         codeEnvAvailable,
         backgroundToolsAvailable,
+        toolIntentsAvailable,
         statefulSessionsAvailable,
         memoryAvailable,
       },

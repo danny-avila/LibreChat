@@ -1472,9 +1472,12 @@ export class RedisJobStore implements IJobStore {
     });
   }
 
-  /** Splice-inserts host-authored steer parts (from `on_steer_applied`
-   *  chunks) into an SDK-graph content view, ascending by recorded index so
-   *  each host-view position lands exactly where live clients saw it. */
+  /** Splice-inserts host-authored parts (steers from `on_steer_applied`,
+   *  activity labels from `on_activity_label` chunks) into an SDK-graph
+   *  content view, ascending by recorded index so each host-view position
+   *  lands exactly where live clients saw it. Label events fire twice per
+   *  slot (placeholder, then filled); chronological last-wins keeps the
+   *  resolved label. */
   private async overlayHostSteerParts(
     streamId: string,
     parts: Agents.MessageContentComplex[],
@@ -1485,23 +1488,34 @@ export class RedisJobStore implements IJobStore {
       return parts;
     }
     const steers: Array<{ index: number; part: Agents.MessageContentComplex }> = [];
+    const labelsByIndex = new Map<number, Agents.MessageContentComplex>();
     for (const chunk of chunks) {
       const event = chunk as { event?: string; data?: unknown };
-      if (event.event !== 'on_steer_applied') {
+      if (event.event === 'on_steer_applied') {
+        const steerData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+        if (typeof steerData.index === 'number' && steerData.part != null) {
+          steers.push({ index: steerData.index, part: steerData.part });
+        }
         continue;
       }
-      const steerData = event.data as { index?: number; part?: Agents.MessageContentComplex };
-      if (typeof steerData.index === 'number' && steerData.part != null) {
-        steers.push({ index: steerData.index, part: steerData.part });
+      if (event.event === 'on_activity_label') {
+        const labelData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+        if (typeof labelData.index === 'number' && labelData.part != null) {
+          labelsByIndex.set(labelData.index, labelData.part);
+        }
       }
     }
-    if (steers.length === 0) {
+    if (steers.length === 0 && labelsByIndex.size === 0) {
       return parts;
     }
-    steers.sort((a, b) => a.index - b.index);
+    const inserts = [
+      ...steers,
+      ...[...labelsByIndex.entries()].map(([index, part]) => ({ index, part })),
+    ];
+    inserts.sort((a, b) => a.index - b.index);
     const merged = [...parts];
-    for (const steer of steers) {
-      merged.splice(Math.min(steer.index, merged.length), 0, steer.part);
+    for (const insert of inserts) {
+      merged.splice(Math.min(insert.index, merged.length), 0, insert.part);
     }
     return merged;
   }
@@ -1663,6 +1677,17 @@ export class RedisJobStore implements IJobStore {
         const steerData = event.data as { index?: number; part?: Agents.MessageContentComplex };
         if (typeof steerData.index === 'number' && steerData.part != null) {
           contentParts[steerData.index] = steerData.part;
+        }
+        continue;
+      }
+
+      // Activity-label parts are host-authored like steers and claimed at a
+      // fixed index. The event fires twice per slot (counts placeholder,
+      // then resolved label); chronological replay makes the last write win.
+      if (event.event === 'on_activity_label') {
+        const labelData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+        if (typeof labelData.index === 'number' && labelData.part != null) {
+          contentParts[labelData.index] = labelData.part;
         }
         continue;
       }
@@ -2219,6 +2244,11 @@ export class RedisJobStore implements IJobStore {
       pendingAction: this.parsePendingAction(data.pendingAction),
       pendingActionId: data.pendingActionId || undefined,
       lastActiveAt: data.lastActiveAt ? parseInt(data.lastActiveAt, 10) : undefined,
+      /** `markActivityLabels` persists this, so it has to be read back:
+       *  without it every Redis reload leaves the flag undefined and resume
+       *  skips activity-label gap reconciliation, silently dropping a label
+       *  that resolved between the snapshot and subscriber attach. */
+      activityLabels: data.activityLabels != null ? data.activityLabels === '1' : undefined,
     };
   }
 
