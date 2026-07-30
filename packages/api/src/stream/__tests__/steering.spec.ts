@@ -56,6 +56,30 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       expect(await manager.steering.enqueue(streamId, buildSteer('two'))).toBe(2);
     });
 
+    /**
+     * The steer route decides capability against a job it read several awaits
+     * earlier. If the run is replaced in between, an unfenced enqueue puts the
+     * item on the REPLACEMENT queue while the preempt flag and the arm still
+     * name the previous epoch — so the arm is fenced out at the owner and the
+     * 202 promises an interrupt that cannot happen. Rejecting is the honest
+     * outcome: the run the caller was told about is gone.
+     */
+    test('refuses an item fenced to a generation that has been replaced', async () => {
+      const streamId = 'steer-enqueue-fenced';
+      const first = await manager.createJob(streamId, 'user-1');
+      const replacement = await manager.createJob(streamId, 'user-1');
+      expect(replacement.createdAt).not.toBe(first.createdAt);
+
+      expect(await manager.steering.enqueue(streamId, buildSteer('stale'), first.createdAt)).toBe(
+        STEER_ENQUEUE_NOT_RUNNING,
+      );
+      expect(await manager.steering.peek(streamId)).toEqual([]);
+
+      expect(
+        await manager.steering.enqueue(streamId, buildSteer('live'), replacement.createdAt),
+      ).toBe(1);
+    });
+
     test('rejects when the job does not exist', async () => {
       expect(await manager.steering.enqueue('nonexistent', buildSteer('x'))).toBe(
         STEER_ENQUEUE_NOT_RUNNING,

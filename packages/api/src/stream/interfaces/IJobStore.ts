@@ -651,7 +651,7 @@ export interface IJobStore {
    * {@link STEER_ENQUEUE_NOT_RUNNING} when the job is missing, not running,
    * or closed, or {@link STEER_ENQUEUE_QUEUE_FULL} at max depth.
    */
-  enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number>;
+  enqueueSteer(streamId: string, item: SteerQueueItem, expectedCreatedAt?: number): Promise<number>;
 
   /**
    * Atomically take ALL queued steers, FIFO. Empty array when none. With

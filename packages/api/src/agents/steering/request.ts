@@ -12,6 +12,13 @@ export const STEER_MAX_FILES = 10;
 
 const DEFAULT_STEER_MAX_LENGTH = 16000;
 
+/**
+ * How long a cancel waits for its disarm to publish before answering anyway.
+ * The steer is already durably removed by then, so this only buys the clear a
+ * head start; a stalled Redis must not hold the response open behind it.
+ */
+const STEER_DISARM_ACK_TIMEOUT_MS = 1000;
+
 /** Character cap for a single steer message (env-overridable). */
 export function getSteerMaxLength(): number {
   return parseInt(process.env.STEER_MAX_LENGTH ?? '', 10) || DEFAULT_STEER_MAX_LENGTH;
@@ -261,7 +268,17 @@ export async function handleSteerRequest(
     ...(queuedFiles && { files: queuedFiles }),
     ...(preemptCapable && { preempt: true }),
   };
-  const depth = await GenerationJobManager.steering.enqueue(streamId, item);
+  /**
+   * Fenced to the generation the capability decision was made against. The
+   * access checks, file resolution and owner re-read above are all awaits, so
+   * the run can be replaced before this line: without the fence the item
+   * lands on the REPLACEMENT queue while `preempt` and the arm below still
+   * describe the previous epoch, so the arm is fenced out at the owner and
+   * the 202 claims an interrupt that can never happen. Rejecting is honest —
+   * the run the caller was told about is gone, and `NO_ACTIVE_RUN` is what
+   * the client already handles by converting to a queued follow-up.
+   */
+  const depth = await GenerationJobManager.steering.enqueue(streamId, item, owner.createdAt);
   if (depth === STEER_ENQUEUE_NOT_RUNNING) {
     return { status: 404, body: { code: 'NO_ACTIVE_RUN' } };
   }
@@ -384,8 +401,19 @@ export async function handleSteerCancel(
     return { status: 200, body: { removed } };
   }
   /**
-   * Awaited so a failed disarm is retried and logged before the response,
-   * but its outcome is deliberately NOT reported to the client.
+   * Waited on so a failed disarm is retried and logged before the response,
+   * but BOUNDED, and its outcome is deliberately NOT reported to the client.
+   *
+   * The bound is the load-bearing part. ioredis queues commands while a
+   * connection is down rather than rejecting them, so an unbounded await here
+   * can hang for as long as the outage lasts — and the item is already
+   * durably cancelled at this point. A client that gives up then treats the
+   * cancel as failed and restores a chip for a steer that no longer exists
+   * and can never produce an applied event, which is strictly worse than the
+   * lost clear this wait was protecting against. Every successful cancel
+   * publishes, so ordinary steers are exposed to it too, not just preemptive
+   * ones. The publish keeps running with its retry and logging intact after
+   * the timeout — it is simply no longer in front of the response.
    *
    * A resolved publish is not proof the owner heard it — the delivery count
    * includes this replica's own facade subscription — so any `disarmed` flag
@@ -399,6 +427,20 @@ export async function handleSteerCancel(
    * queue, and inverting it would make the client re-show a chip for a steer
    * that can never arrive.
    */
-  await GenerationJobManager.noteSteersRemoved(streamId, [body.steerId], job.createdAt);
+  const disarm = GenerationJobManager.noteSteersRemoved(streamId, [body.steerId], job.createdAt);
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    disarm,
+    new Promise<void>((resolve) => {
+      settleTimer = setTimeout(() => {
+        logger.warn(
+          `[handleSteerCancel] Disarm publish for ${streamId} steer=${body.steerId} still pending ` +
+            `after ${STEER_DISARM_ACK_TIMEOUT_MS}ms; answering the cancel and letting it retry`,
+        );
+        resolve();
+      }, STEER_DISARM_ACK_TIMEOUT_MS);
+    }),
+  ]);
+  clearTimeout(settleTimer);
   return { status: 200, body: { removed } };
 }

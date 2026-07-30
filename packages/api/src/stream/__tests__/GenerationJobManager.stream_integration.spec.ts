@@ -9,6 +9,7 @@ import {
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
+import { STEER_ENQUEUE_NOT_RUNNING } from '~/stream/interfaces/IJobStore';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 import { RedisJobStore } from '~/stream/implementations/RedisJobStore';
 import { createStreamServices } from '~/stream/createStreamServices';
@@ -2519,6 +2520,45 @@ describe('GenerationJobManager Integration Tests', () => {
       );
       expect(owner.getArmedPreemptIds(streamId)).not.toContain('steer-x');
     }, 40000);
+
+    /**
+     * The in-memory store fences this in TypeScript; Redis fences it inside
+     * STEER_ENQUEUE_LUA, which only a real server can execute. That Lua path
+     * is where the `preemptCapable` P1 hid, so it gets its own coverage.
+     */
+    test('the enqueue Lua refuses an item fenced to a replaced generation', async () => {
+      const owner = createReplica();
+      const streamId = `${testPrefix}-enqueue-fenced-${Date.now()}`;
+
+      const first = await owner.createJob(streamId, 'user-1');
+      const replacement = await owner.createJob(streamId, 'user-1');
+      expect(replacement.createdAt).not.toBe(first.createdAt);
+
+      const stale = await owner.steering.enqueue(
+        streamId,
+        {
+          steerId: 'steer-stale-epoch',
+          text: 'belongs to the previous run',
+          userId: 'user-1',
+          createdAt: Date.now(),
+        },
+        first.createdAt,
+      );
+      expect(stale).toBe(STEER_ENQUEUE_NOT_RUNNING);
+      expect(await owner.steering.peek(streamId)).toEqual([]);
+
+      const live = await owner.steering.enqueue(
+        streamId,
+        {
+          steerId: 'steer-live-epoch',
+          text: 'belongs to the live run',
+          userId: 'user-1',
+          createdAt: Date.now(),
+        },
+        replacement.createdAt,
+      );
+      expect(live).toBe(1);
+    }, 30000);
 
     test('a stale generation id from another replica cannot arm the live job', async () => {
       const owner = createReplica();

@@ -102,8 +102,12 @@ export class SteeringLifecycle {
    * depth, or a rejection code ({@link STEER_ENQUEUE_NOT_RUNNING} /
    * {@link STEER_ENQUEUE_QUEUE_FULL}).
    */
-  async enqueue(streamId: string, item: SteerQueueItem): Promise<number> {
-    const depth = await this.store.enqueueSteer(streamId, item);
+  async enqueue(
+    streamId: string,
+    item: SteerQueueItem,
+    expectedCreatedAt?: number,
+  ): Promise<number> {
+    const depth = await this.store.enqueueSteer(streamId, item, expectedCreatedAt);
     if (depth > 0) {
       logger.debug(
         `[SteeringLifecycle] queued steer: ${streamId} steer=${item.steerId} depth=${depth}`,

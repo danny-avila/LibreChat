@@ -428,6 +428,38 @@ describe('handleSteerCancel (real in-memory job manager)', () => {
     expect(result).toEqual({ status: 200, body: { removed: false } });
   });
 
+  /**
+   * ioredis queues commands during an outage instead of rejecting, so an
+   * unbounded wait on the disarm publish can hang for the length of the
+   * outage — with the steer already durably cancelled. A client that gives up
+   * treats the cancel as failed and restores a chip for a steer that can
+   * never produce an applied event.
+   */
+  it('answers the cancel even when the disarm publish never settles', async () => {
+    const steerId = await queueSteer('cancel-stalled-disarm');
+    let release: (() => void) | undefined;
+    const spy = jest.spyOn(GenerationJobManager, 'noteSteersRemoved').mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        release = () => resolve(true);
+      }),
+    );
+
+    try {
+      const result = await handleSteerCancel(user, {
+        conversationId: 'cancel-stalled-disarm',
+        steerId,
+      });
+
+      expect(result).toEqual({ status: 200, body: { removed: true } });
+      expect(spy).toHaveBeenCalledWith('cancel-stalled-disarm', [steerId], expect.any(Number));
+      /** Durably gone regardless — the wait was only ever a head start. */
+      expect(await GenerationJobManager.steering.peek('cancel-stalled-disarm')).toEqual([]);
+    } finally {
+      release?.();
+      spy.mockRestore();
+    }
+  }, 10000);
+
   it('403s another user and leaves the steer queued', async () => {
     const steerId = await queueSteer('cancel-foreign');
     const result = await handleSteerCancel(

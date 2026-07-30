@@ -328,6 +328,7 @@ const RUNSTEPS_READ_LUA =
  *   Returns: new depth, -1 (not running / closed), or -2 (queue full)
  */
 const STEER_ENQUEUE_LUA =
+  'if ARGV[4] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[4] then return -1 end ' +
   'if redis.call("HGET", KEYS[1], "status") ~= "running" then return -1 end ' +
   'if redis.call("HGET", KEYS[1], "steersClosed") == "1" then return -1 end ' +
   'if redis.call("LLEN", KEYS[2]) >= tonumber(ARGV[3]) then return -2 end ' +
@@ -1802,7 +1803,11 @@ export class RedisJobStore implements IJobStore {
 
   // ===== Steering Queue Methods =====
 
-  async enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number> {
+  async enqueueSteer(
+    streamId: string,
+    item: SteerQueueItem,
+    expectedCreatedAt?: number,
+  ): Promise<number> {
     const result = await this.redis.eval(
       STEER_ENQUEUE_LUA,
       2,
@@ -1811,6 +1816,7 @@ export class RedisJobStore implements IJobStore {
       JSON.stringify(item),
       String(this.ttl.running),
       String(STEER_QUEUE_MAX_DEPTH),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
     );
     if (typeof result !== 'number') {
       return STEER_ENQUEUE_NOT_RUNNING;
