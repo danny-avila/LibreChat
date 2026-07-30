@@ -4,6 +4,8 @@ import { Button, FilterInput, OGDialogTrigger, TooltipAnchor } from '@librechat/
 import type { ConversationTagsResponse, TConversationTag } from 'librechat-data-provider';
 import { BookmarkContext, useBookmarkContext } from '~/Providers/BookmarkContext';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
+import BookmarkCardSkeleton from './BookmarkCardSkeleton';
+import { PanelContent } from '~/components/ui';
 import BookmarkList from './BookmarkList';
 import { useLocalize } from '~/hooks';
 
@@ -18,7 +20,7 @@ const removeDuplicates = (bookmarks: TConversationTag[]) => {
   });
 };
 
-const BookmarkTable = () => {
+const BookmarkTable = ({ isLoading = false }: { isLoading?: boolean }) => {
   const localize = useLocalize();
   const [rows, setRows] = useState<ConversationTagsResponse>([]);
   const [pageIndex, setPageIndex] = useState(0);
@@ -55,9 +57,13 @@ const BookmarkTable = () => {
 
   return (
     <BookmarkContext.Provider value={{ bookmarks }}>
-      <div role="region" aria-label={localize('com_ui_bookmarks')} className="space-y-2 px-3 pb-3">
-        {/* Header: Filter + Create Button */}
-        <div className="flex items-center gap-2">
+      <div
+        role="region"
+        aria-label={localize('com_ui_bookmarks')}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        {/* Sticky header: filter + create */}
+        <div className="flex shrink-0 items-center gap-2 px-3 pb-2">
           <FilterInput
             inputId="bookmarks-filter"
             label={localize('com_ui_bookmarks_filter')}
@@ -86,17 +92,23 @@ const BookmarkTable = () => {
           </BookmarkEditDialog>
         </div>
 
-        {/* Bookmark List */}
-        <BookmarkList
-          bookmarks={currentRows}
-          moveRow={moveRow}
-          isFiltered={searchQuery.length > 0}
-        />
+        {/* Only the list scrolls */}
+        <PanelContent
+          isLoading={isLoading}
+          skeleton={<BookmarkCardSkeleton />}
+          className="px-3 pb-3"
+        >
+          <BookmarkList
+            bookmarks={currentRows}
+            moveRow={moveRow}
+            isFiltered={searchQuery.length > 0}
+          />
+        </PanelContent>
 
         {/* Pagination */}
-        {filteredRows.length > pageSize && (
+        {!isLoading && filteredRows.length > pageSize && (
           <div
-            className="flex items-center justify-end gap-2"
+            className="flex shrink-0 items-center justify-end gap-2 px-3 pb-3"
             role="navigation"
             aria-label="Pagination"
           >
