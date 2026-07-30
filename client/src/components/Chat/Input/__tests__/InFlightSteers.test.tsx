@@ -1,10 +1,10 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
 import { getDefaultStore } from 'jotai';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { RecoilRoot, useSetRecoilState } from 'recoil';
+import { render, screen, within, fireEvent, act } from '@testing-library/react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import type { PendingSteer } from '~/store/families';
-import { steerOverlayHeightFamily } from '~/store/steer';
+import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
 import InFlightSteers from '../InFlightSteers';
 import store from '~/store';
 
@@ -75,6 +75,14 @@ const steeringStub = (defaultAction: 'steer' | 'queue' = 'steer') =>
     queueReclaimedSteer: mockQueueReclaimedSteer,
   }) as unknown as SteeringControls;
 
+/** Captured live setter so a test can arm an interrupt mid-reclaim, the way
+ *  the composer chord or a queued row would from outside this component. */
+let setLiveSteers: ((steers: PendingSteer[]) => void) | null = null;
+function CaptureSteersSetter() {
+  setLiveSteers = useSetRecoilState(store.pendingSteersByConvoId(CONVO_ID));
+  return null;
+}
+
 function renderSteers(
   steers: PendingSteer[],
   options?: {
@@ -95,6 +103,7 @@ function renderSteers(
         }
       }}
     >
+      <CaptureSteersSetter />
       <InFlightSteers
         conversationId={CONVO_ID}
         steering={steeringStub(options?.defaultAction)}
@@ -595,7 +604,7 @@ describe('InFlightSteers — interrupt-now escalation', () => {
 
   it('escalates a waiting steer to an interrupt once reclaimed', async () => {
     renderSteers([{ steerId: 's1', text: 'hold on', status: 'pending', createdAt: 1 }]);
-    await clickMenuItem('com_ui_interrupt_now');
+    await clickMenuItem('com_ui_interrupt_steer_now');
 
     expect(mockCancelMutateAsync).toHaveBeenCalled();
     expect(mockRetrySteer).toHaveBeenCalledWith('s1', 'hold on', undefined, {}, { preempt: true });
@@ -607,13 +616,13 @@ describe('InFlightSteers — interrupt-now escalation', () => {
     ]);
     fireEvent.click(screen.getByLabelText('com_ui_more_options'));
     expect(await screen.findByText('com_ui_steer_cancel')).toBeInTheDocument();
-    expect(screen.queryByText('com_ui_interrupt_now')).toBeNull();
+    expect(screen.queryByText('com_ui_interrupt_steer_now')).toBeNull();
   });
 
   it('does not resubmit when the steer already entered the run', async () => {
     mockCancelMutateAsync.mockResolvedValue({ removed: false });
     renderSteers([{ steerId: 's1', text: 'too late', status: 'pending', createdAt: 1 }]);
-    await clickMenuItem('com_ui_interrupt_now');
+    await clickMenuItem('com_ui_interrupt_steer_now');
 
     expect(mockRetrySteer).not.toHaveBeenCalled();
     expect(mockShowToast).toHaveBeenCalledWith(
@@ -627,7 +636,7 @@ describe('InFlightSteers — interrupt-now escalation', () => {
     renderSteers([{ steerId: 's1', text: 'run over', status: 'pending', createdAt: 1 }], {
       appliedSteerIds: ['s1'],
     });
-    await clickMenuItem('com_ui_interrupt_now');
+    await clickMenuItem('com_ui_interrupt_steer_now');
 
     expect(mockRetrySteer).not.toHaveBeenCalled();
     expect(mockShowToast).toHaveBeenCalledWith(
@@ -641,7 +650,7 @@ describe('InFlightSteers — interrupt-now escalation', () => {
       { steerId: 's2', text: 'sealing now', status: 'pending', createdAt: 2, preempt: true },
     ]);
     fireEvent.click(screen.getAllByLabelText('com_ui_more_options')[0]);
-    const item = await screen.findByText('com_ui_interrupt_now');
+    const item = await screen.findByText('com_ui_interrupt_steer_now');
     expect(item.closest('[role="menuitem"]')).toHaveAttribute('aria-disabled', 'true');
 
     await act(async () => {
@@ -649,5 +658,105 @@ describe('InFlightSteers — interrupt-now escalation', () => {
     });
     expect(mockRetrySteer).not.toHaveBeenCalled();
     expect(mockCancelMutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Codex round 1 on the escalation PR: the single-interrupt invariant has a
+ * window between clicking "Interrupt now" and the reclaim resolving, where no
+ * preempt chip exists for the chip-derived gate to see. The shared escalating
+ * flag covers the window, and a fresh recheck before resubmitting catches an
+ * interrupt armed elsewhere (composer chord, queued row) meanwhile.
+ */
+describe('InFlightSteers — escalation races', () => {
+  beforeEach(() => {
+    /** Full reset (not just clear): a leaked `mockImplementationOnce` from a
+     *  failed sibling would otherwise hijack this test's first reclaim. */
+    jest.clearAllMocks();
+    mockCancelMutateAsync.mockReset();
+    mockCancelMutateAsync.mockResolvedValue({ removed: true });
+    mockRestoreToComposer.mockReturnValue(true);
+    act(() => {
+      getDefaultStore().set(escalatingSteerFamily(CONVO_ID), false);
+    });
+  });
+
+  /** Every bubble's menu content is mounted (hidden) up front, so item lookups
+   *  must scope to the menu the clicked button controls. */
+  const menuFor = (button: HTMLElement) =>
+    document.getElementById(button.getAttribute('aria-controls') ?? '');
+
+  it('locks out a second escalation while the first reclaim is in flight', async () => {
+    let resolveReclaim: (value: { removed: boolean }) => void = () => {};
+    mockCancelMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveReclaim = resolve;
+        }),
+    );
+    renderSteers([
+      { steerId: 's1', text: 'first', status: 'pending', createdAt: 1 },
+      { steerId: 's2', text: 'second', status: 'pending', createdAt: 2 },
+    ]);
+    const menus = screen.getAllByLabelText('com_ui_more_options');
+    fireEvent.click(menus[0]);
+    const firstMenu = menuFor(menus[0]);
+    fireEvent.click(
+      await within(firstMenu as HTMLElement).findByText('com_ui_interrupt_steer_now'),
+    );
+
+    fireEvent.click(menus[1]);
+    const secondMenu = menuFor(menus[1]);
+    const secondItem = await within(secondMenu as HTMLElement).findByText(
+      'com_ui_interrupt_steer_now',
+    );
+    expect(secondItem.closest('[role="menuitem"]')).toHaveAttribute('aria-disabled', 'true');
+    await act(async () => {
+      fireEvent.click(secondItem);
+    });
+
+    await act(async () => {
+      resolveReclaim({ removed: true });
+    });
+    expect(mockCancelMutateAsync).toHaveBeenCalledTimes(1);
+    expect(mockRetrySteer).toHaveBeenCalledTimes(1);
+    expect(mockRetrySteer).toHaveBeenCalledWith('s1', 'first', undefined, {}, { preempt: true });
+  });
+
+  it('requeues instead of resubmitting when an interrupt appears mid-reclaim', async () => {
+    let resolveReclaim: (value: { removed: boolean }) => void = () => {};
+    mockCancelMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveReclaim = resolve;
+        }),
+    );
+    renderSteers([{ steerId: 's1', text: 'late to the seal', status: 'pending', createdAt: 1 }]);
+    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
+    fireEvent.click(await screen.findByText('com_ui_interrupt_steer_now'));
+
+    act(() => {
+      setLiveSteers?.([
+        { steerId: 's1', text: 'late to the seal', status: 'pending', createdAt: 1 },
+        {
+          steerId: 'p2',
+          text: 'composer interrupt',
+          status: 'sending',
+          createdAt: 2,
+          preempt: true,
+        },
+      ]);
+    });
+    await act(async () => {
+      resolveReclaim({ removed: true });
+    });
+
+    expect(mockRetrySteer).not.toHaveBeenCalled();
+    expect(mockQueueReclaimedSteer).toHaveBeenCalledWith(
+      expect.objectContaining({ steerId: 's1' }),
+    );
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_steer_interrupt_busy_queued' }),
+    );
   });
 });

@@ -11,3 +11,11 @@ import { atomFamily } from 'jotai/utils';
  * each holds a single number per visited conversation.
  */
 export const steerOverlayHeightFamily = atomFamily((_conversationId: string) => atom<number>(0));
+
+/**
+ * Set while an "Interrupt now" escalation is awaiting its reclaim round-trip.
+ * In that window no preempt chip exists yet, so the chip-derived
+ * single-interrupt gate cannot see the escalation; every other escalation
+ * control disables on this instead of racing the same seal.
+ */
+export const escalatingSteerFamily = atomFamily((_conversationId: string) => atom<boolean>(false));

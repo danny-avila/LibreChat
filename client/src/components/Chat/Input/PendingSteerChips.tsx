@@ -1,4 +1,5 @@
 import { memo, useMemo } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { X, Zap, Send, Clock, Pencil, Trash2, ZapOff, Paperclip, RotateCcw } from 'lucide-react';
@@ -15,6 +16,7 @@ import {
   useInterruptChordHint,
   useInterruptToggleEntry,
 } from './SteerMenu';
+import { escalatingSteerFamily } from '~/store/steer';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -45,7 +47,7 @@ function AttachmentCount({ count, label }: { count: number; label: string }) {
 function InterruptNowButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
   const localize = useLocalize();
   const chordHint = useInterruptChordHint();
-  const label = localize('com_ui_interrupt_now');
+  const label = localize('com_ui_interrupt_steer_now');
   return (
     <Ariakit.TooltipProvider placement="top" timeout={300}>
       <Ariakit.TooltipAnchor
@@ -94,6 +96,10 @@ function QueuedRow({
   const fileCount = message.files?.length ?? 0;
   const canSteerNow = steering.duringRunActive && steering.canSteer;
   const showPrimary = canSteerNow || !steering.duringRunActive;
+  /** `canSteer` is defined as false while paused on approval, but the
+   *  escalation control must stay visible-and-disabled there — hiding it
+   *  during the pause is exactly the discoverability gap this button fixes. */
+  const showEscalate = steering.duringRunActive && (steering.canSteer || steering.pausedOnApproval);
 
   const entries: MenuEntry[] = [
     {
@@ -141,7 +147,7 @@ function QueuedRow({
           )}
         </button>
       )}
-      {canSteerNow && (
+      {showEscalate && (
         <InterruptNowButton
           disabled={steering.pausedOnApproval || interruptPending}
           onClick={() => steering.sendQueuedNow(message, { preempt: true })}
@@ -285,10 +291,13 @@ function PendingSteerChips({
   const queued = useRecoilValue(store.queuedMessagesByConvoId(steering.queueKey));
   const failedSteers = useMemo(() => steers.filter((steer) => steer.status === 'failed'), [steers]);
   /** Only one interrupt can be in flight: a second preempt while one is
-   *  unresolved would race the same seal, so escalation buttons disable. */
+   *  unresolved would race the same seal, so escalation buttons disable. The
+   *  escalating flag covers a bubble escalation's reclaim window, before its
+   *  preempt chip exists for the chip-derived check to see. */
+  const escalating = useAtomValue(escalatingSteerFamily(conversationId));
   const interruptPending = useMemo(
-    () => steers.some((steer) => steer.preempt === true && steer.status !== 'failed'),
-    [steers],
+    () => escalating || steers.some((steer) => steer.preempt === true && steer.status !== 'failed'),
+    [escalating, steers],
   );
 
   if (failedSteers.length === 0 && queued.length === 0) {

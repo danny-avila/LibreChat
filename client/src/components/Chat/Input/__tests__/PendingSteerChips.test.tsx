@@ -1,8 +1,10 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { getDefaultStore } from 'jotai';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
+import { escalatingSteerFamily } from '~/store/steer';
 import PendingSteerChips from '../PendingSteerChips';
 import store from '~/store';
 
@@ -134,9 +136,33 @@ describe('PendingSteerChips — queued interrupt-now', () => {
     expect(mockSendQueuedNow).not.toHaveBeenCalled();
   });
 
-  it('disables escalation while the run is paused on approval', () => {
-    renderChips([queuedMessage], { steering: { ...liveRun, pausedOnApproval: true } });
-    expect(screen.getByTestId('queued-interrupt-now')).toBeDisabled();
+  it('stays visible but disabled while the run is paused on approval', () => {
+    /** The real hook invariant: `canSteer = hasRealConvoId && !pausedOnApproval`,
+     *  so a paused run always reads `canSteer: false`. The control must remain
+     *  discoverable-but-disabled there, not vanish with the primary. */
+    renderChips([queuedMessage], {
+      steering: { duringRunActive: true, canSteer: false, pausedOnApproval: true },
+    });
+    const button = screen.getByTestId('queued-interrupt-now');
+    expect(button).toBeDisabled();
+
+    fireEvent.click(button);
+    expect(mockSendQueuedNow).not.toHaveBeenCalled();
+  });
+
+  it('disables escalation while a bubble escalation is mid-reclaim', () => {
+    const jotai = getDefaultStore();
+    act(() => {
+      jotai.set(escalatingSteerFamily(CONVO_ID), true);
+    });
+    try {
+      renderChips([queuedMessage], { steering: liveRun });
+      expect(screen.getByTestId('queued-interrupt-now')).toBeDisabled();
+    } finally {
+      act(() => {
+        jotai.set(escalatingSteerFamily(CONVO_ID), false);
+      });
+    }
   });
 
   it('offers the always-interrupt preference in the row menu and flips it', async () => {
