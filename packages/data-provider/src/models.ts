@@ -62,11 +62,13 @@ export type TModelSpec = {
    */
   runInBackground?: boolean;
   /**
-   * Inject the `intent` label param into this spec's eligible tools so each
-   * call streams a live status label. Requires the `tool_intents` agent
-   * capability to be enabled by the admin.
+   * Inject the `intent` label param so each call streams a live status label.
+   * `true` opts in every eligible tool; a string array opts in only the named
+   * tools, matched against the spec's resolved tool ids (e.g.
+   * `['web_search', 'search_code_mcp_github']`). Requires the `tool_intents`
+   * agent capability to be enabled by the admin.
    */
-  describeIntent?: boolean;
+  describeIntent?: boolean | string[];
   artifacts?: string | boolean;
   mcpServers?: string[];
   skills?: boolean | string[];
@@ -103,7 +105,7 @@ export const tModelSpecSchema = z.object({
   memory: z.boolean().optional(),
   askUserQuestion: z.boolean().optional(),
   runInBackground: z.boolean().optional(),
-  describeIntent: z.boolean().optional(),
+  describeIntent: z.union([z.boolean(), z.array(z.string())]).optional(),
   artifacts: z.union([z.string(), z.boolean()]).optional(),
   mcpServers: z.array(z.string()).optional(),
   skills: z.union([z.boolean(), z.array(z.string())]).optional(),

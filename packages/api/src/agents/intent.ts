@@ -424,9 +424,18 @@ export function sanitizeIntentLabels(params: {
 }
 
 /**
- * Builds `tool_options` marking each eligible tool as intent-describing for
- * ephemeral and model-spec agents, which carry no per-tool options of their
- * own. Returns undefined when disabled or nothing is eligible.
+ * Builds `tool_options` marking tools as intent-describing for ephemeral and
+ * model-spec agents, which carry no per-tool options of their own. Returns
+ * undefined when disabled or nothing is eligible.
+ *
+ * A model spec's `describeIntent` selects the scope: `true` opts in every
+ * eligible tool, while a string array opts in ONLY the named ones (matched
+ * exactly against the spec's resolved tool ids). Selecting per tool matters
+ * because the label costs schema tokens on every request, so an admin may
+ * want it on a handful of illegible calls rather than the whole toolset.
+ * Names that are not eligible, or not present in `tools`, are logged and
+ * skipped — a silent no-op would leave a typo in a spec undiagnosable.
+ * The ephemeral toggle stays boolean; it has no per-tool UI to drive it.
  *
  * Note: MCP servers that expand lazily (via the `mcp_all` placeholder for
  * overlay/user-connection servers) are not known by name at this point —
@@ -439,23 +448,49 @@ export function synthesizeIntentToolOptions(
   tools: string[],
   sources: {
     ephemeralAgent?: { describe_intent?: boolean } | null;
-    modelSpec?: { describeIntent?: boolean } | null;
+    modelSpec?: { describeIntent?: boolean | string[] } | null;
   },
 ): AgentToolOptions | undefined {
+  const specSelection = sources.modelSpec?.describeIntent;
+  const selectedNames = Array.isArray(specSelection) ? specSelection : undefined;
   const enabled =
-    sources.ephemeralAgent?.describe_intent === true || sources.modelSpec?.describeIntent === true;
+    sources.ephemeralAgent?.describe_intent === true ||
+    specSelection === true ||
+    (selectedNames != null && selectedNames.length > 0);
   if (!enabled) {
     return undefined;
   }
+
+  /** An explicit list narrows the scope; the ephemeral/`true` paths do not. */
+  const narrowTo =
+    selectedNames != null &&
+    sources.ephemeralAgent?.describe_intent !== true &&
+    specSelection !== true
+      ? new Set(selectedNames)
+      : undefined;
+
   const toolOptions: AgentToolOptions = {};
   for (const name of tools) {
     if (name.startsWith(MCP_ALL_PLACEHOLDER_PREFIX)) {
+      continue;
+    }
+    if (narrowTo != null && !narrowTo.has(name)) {
       continue;
     }
     if (isIntentEligibleToolName(name)) {
       toolOptions[name] = { describe_intent: true };
     }
   }
+
+  if (narrowTo != null) {
+    const unmatched = [...narrowTo].filter((name) => toolOptions[name] == null);
+    if (unmatched.length > 0) {
+      logger.warn(
+        `[intent] describeIntent named ${unmatched.length} tool(s) that are not eligible or not equipped on this spec: ${unmatched.join(', ')}`,
+      );
+    }
+  }
+
   return Object.keys(toolOptions).length > 0 ? toolOptions : undefined;
 }
 

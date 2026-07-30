@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import {
@@ -494,6 +495,54 @@ describe('synthesizeIntentToolOptions', () => {
       ephemeralAgent: { describe_intent: true },
     });
     expect(options).toEqual({ web_search: { describe_intent: true } });
+  });
+
+  it('narrows to the named tools when the model spec lists them', () => {
+    const options = synthesizeIntentToolOptions(
+      ['web_search', 'search_code_mcp_github', 'file_search'],
+      { modelSpec: { describeIntent: ['web_search', 'search_code_mcp_github'] } },
+    );
+    expect(options).toEqual({
+      web_search: { describe_intent: true },
+      search_code_mcp_github: { describe_intent: true },
+    });
+  });
+
+  it('still enforces eligibility for explicitly named tools', () => {
+    const options = synthesizeIntentToolOptions(['web_search', CHECK_BACKGROUND_TASK_NAME], {
+      modelSpec: { describeIntent: ['web_search', CHECK_BACKGROUND_TASK_NAME] },
+    });
+    expect(options).toEqual({ web_search: { describe_intent: true } });
+  });
+
+  it('treats an empty list as disabled', () => {
+    expect(
+      synthesizeIntentToolOptions(['web_search'], { modelSpec: { describeIntent: [] } }),
+    ).toBeUndefined();
+  });
+
+  it('warns about named tools the spec does not equip, rather than silently skipping', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const options = synthesizeIntentToolOptions(['web_search'], {
+      modelSpec: { describeIntent: ['web_search', 'typo_tool_name'] },
+    });
+    expect(options).toEqual({ web_search: { describe_intent: true } });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('typo_tool_name'));
+    warn.mockRestore();
+  });
+
+  it('the ephemeral toggle stays global even when the spec narrows', () => {
+    /** The ephemeral switch has no per-tool UI, so it must not be narrowed by
+     *  a co-present spec list — otherwise enabling it would silently cover
+     *  fewer tools than the user asked for. */
+    const options = synthesizeIntentToolOptions(['web_search', 'file_search'], {
+      ephemeralAgent: { describe_intent: true },
+      modelSpec: { describeIntent: ['web_search'] },
+    });
+    expect(options).toEqual({
+      web_search: { describe_intent: true },
+      file_search: { describe_intent: true },
+    });
   });
 
   it('returns undefined when nothing is eligible', () => {
