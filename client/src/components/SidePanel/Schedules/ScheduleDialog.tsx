@@ -237,14 +237,25 @@ export default function ScheduleDialog({
           ? schedule.cadence.daysOfWeek
           : undefined;
       const cadence = buildCadence(values, preserveWeeklyDays);
+      // PATCH only the fields the user actually touched, like the cadence handling
+      // above: submitting the whole form snapshot silently overwrites fields another
+      // tab or session edited while this dialog sat open (the server's revision fence
+      // reads the CURRENT revision, so it cannot catch a stale full-form write).
+      const payload = {
+        ...(dirtyFields.name ? { name: values.name.trim() } : {}),
+        ...(dirtyFields.prompt ? { prompt: values.prompt.trim() } : {}),
+        ...(dirtyFields.agent_id ? { agent_id: values.agent_id } : {}),
+        ...(cadenceTouched ? { cadence } : {}),
+      };
+      // Nothing touched: a field-less PATCH is refused server-side (it would rotate
+      // the schedule's fencing for a request that changes nothing), so just close.
+      if (Object.keys(payload).length === 0) {
+        onOpenChange(false);
+        return;
+      }
       updateSchedule.mutate({
         id: schedule.id,
-        payload: {
-          name: values.name.trim(),
-          prompt: values.prompt.trim(),
-          agent_id: values.agent_id,
-          ...(cadenceTouched ? { cadence } : {}),
-        },
+        payload,
       });
       return;
     }
