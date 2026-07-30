@@ -661,10 +661,12 @@ class GenerationJobManagerClass {
    *
    * Never rejects. Every caller fires this without awaiting (see the
    * createJob registration for why), so a propagating subscription error
-   * would be an unhandled rejection — fatal under Node's default
-   * `--unhandled-rejections=throw`. A failed subscription is not worth a
-   * process: it degrades this generation's preemptive steers to the next
-   * tool boundary, which is the documented fallback.
+   * would surface as an unhandled rejection: an alarming stack trace in
+   * LibreChat's own server, which installs a global handler and keeps
+   * serving, and a dead process for any other consumer of this package,
+   * which under Node's default `--unhandled-rejections=throw` does not.
+   * Neither is warranted — a failed subscription degrades this generation's
+   * preemptive steers to the next tool boundary, the documented fallback.
    */
   private async registerPreemptSubscription(
     streamId: string,
