@@ -1,4 +1,5 @@
 import React, { forwardRef } from 'react';
+import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { useWatch } from 'react-hook-form';
 import { SendIcon } from '@librechat/client';
@@ -8,6 +9,7 @@ import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import { isMacPlatform } from '~/utils/shortcuts';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import store from '~/store';
 
 const ROW_CLASS =
   'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-text-primary hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy aria-disabled:cursor-not-allowed aria-disabled:opacity-50';
@@ -23,7 +25,7 @@ function Kbd({ children }: { children: React.ReactNode }) {
 type ActionRow = {
   key: string;
   label: string;
-  kbd: string;
+  kbd?: string;
   icon: React.ReactNode;
   disabled?: boolean;
   onClick: () => void;
@@ -51,6 +53,7 @@ type DuringRunSendButtonProps = {
 const DuringRunSendButton = React.memo(
   forwardRef((props: DuringRunSendButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
     const localize = useLocalize();
+    const steerInterruptsByDefault = useRecoilValue(store.steerInterruptsByDefault);
     const { steering } = props;
     const data = useWatch({ control: props.control });
     const content = data?.text?.trim();
@@ -58,6 +61,14 @@ const DuringRunSendButton = React.memo(
     const modEnter = isMacPlatform ? '⌘⏎' : 'Ctrl ⏎';
     const altEnter = isMacPlatform ? '⌥⏎' : 'Alt ⏎';
     const modShiftEnter = isMacPlatform ? '⌘⇧⏎' : 'Ctrl ⇧ ⏎';
+    /**
+     * With the preference on, plain Enter routes through `submitDuringRun`,
+     * which preempts. The hint has to follow it: leaving ⏎ on the ordinary
+     * Steer row would advertise a key that does something else, and that row
+     * deliberately stays non-preempting when CLICKED. No key reaches it in
+     * this mode, so it shows none.
+     */
+    const enterInterrupts = primary === 'steer' && steerInterruptsByDefault;
 
     const runAction = (action: (text: string) => boolean | void) => {
       const text = props.getText().trim();
@@ -69,10 +80,15 @@ const DuringRunSendButton = React.memo(
       }
     };
 
+    let steerKbd: string | undefined = modEnter;
+    if (primary === 'steer') {
+      steerKbd = enterInterrupts ? undefined : '⏎';
+    }
+
     const steerRow: ActionRow = {
       key: 'steer',
       label: localize('com_ui_steer'),
-      kbd: primary === 'steer' ? '⏎' : modEnter,
+      kbd: steerKbd,
       icon: <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />,
       // Gate on availability, not the default action — the row exists to
       // override a queue-preferring default with an explicit steer.
@@ -90,7 +106,7 @@ const DuringRunSendButton = React.memo(
     const interruptSteerRow: ActionRow = {
       key: 'interrupt-steer',
       label: localize('com_ui_interrupt_steer'),
-      kbd: modShiftEnter,
+      kbd: enterInterrupts ? '⏎' : modShiftEnter,
       icon: <ZapOff className="h-4 w-4 text-amber-500" aria-hidden="true" />,
       // Matches the standalone button's gate, and deliberately NOT
       // `!canSteer` like the steer row above: `canSteer` is also false before
@@ -151,7 +167,7 @@ const DuringRunSendButton = React.memo(
             >
               {row.icon}
               {row.label}
-              <Kbd>{row.kbd}</Kbd>
+              {row.kbd != null && <Kbd>{row.kbd}</Kbd>}
             </button>
           ))}
         </Ariakit.Hovercard>

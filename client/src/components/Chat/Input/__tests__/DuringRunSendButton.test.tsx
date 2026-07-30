@@ -1,8 +1,10 @@
 import React from 'react';
+import { RecoilRoot } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import DuringRunSendButton from '../DuringRunSendButton';
+import store from '~/store';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -53,8 +55,13 @@ function Harness({ steering }: { steering: SteeringControls }) {
   );
 }
 
-function openMenu(options: StubOptions) {
-  render(<Harness steering={steeringStub(options)} />);
+function openMenu(options: StubOptions & { enterInterrupts?: boolean } = {}) {
+  const { enterInterrupts = false, ...stub } = options;
+  render(
+    <RecoilRoot initializeState={({ set }) => set(store.steerInterruptsByDefault, enterInterrupts)}>
+      <Harness steering={steeringStub(stub)} />
+    </RecoilRoot>,
+  );
   expect(screen.getByText('com_ui_interrupt_steer')).toBeInTheDocument();
 }
 
@@ -117,5 +124,29 @@ describe('DuringRunSendButton — Interrupt & steer availability', () => {
       'aria-disabled',
       'false',
     );
+  });
+});
+
+/**
+ * With `steerInterruptsByDefault` on, plain Enter routes through
+ * `submitDuringRun` and PREEMPTS, while the ordinary Steer row deliberately
+ * stays non-preempting when clicked. The ⏎ hint therefore cannot sit on the
+ * Steer row — it would advertise a key that does something else.
+ */
+describe('DuringRunSendButton — Enter hint follows the interrupt preference', () => {
+  const kbdFor = (label: string) =>
+    screen.getByText(label).closest('button')?.querySelector('kbd')?.textContent ?? null;
+
+  test('Enter is advertised on Steer when the preference is off', () => {
+    openMenu({ canSteer: true, enterInterrupts: false });
+    expect(kbdFor('com_ui_steer')).toBe('⏎');
+    expect(kbdFor('com_ui_interrupt_steer')).not.toBe('⏎');
+  });
+
+  test('Enter moves to Interrupt & steer when the preference is on', () => {
+    openMenu({ canSteer: true, enterInterrupts: true });
+    expect(kbdFor('com_ui_interrupt_steer')).toBe('⏎');
+    /** No key reaches the plain Steer row in this mode, so it advertises none. */
+    expect(kbdFor('com_ui_steer')).toBeNull();
   });
 });

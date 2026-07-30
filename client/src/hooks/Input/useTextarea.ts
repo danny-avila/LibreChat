@@ -7,8 +7,8 @@ import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import {
   parseBinding,
+  bindingHash,
   isMacPlatform,
-  bindingsMatch,
   bindingFromEvent,
   resolveSubmitOverrideAction,
 } from '~/utils/shortcuts';
@@ -79,6 +79,27 @@ export default function useTextarea({
       return undefined;
     }
     return parseBinding(isMacPlatform ? override.mac : override.other);
+  }, [customShortcuts]);
+
+  /**
+   * Every chord the user has bound to a global shortcut, not just submit.
+   *
+   * This composer handler runs BEFORE the document-level one in
+   * `useKeyboardShortcuts`, and that one does not check `defaultPrevented` —
+   * so if the interrupt chord claimed a chord the user had bound to, say,
+   * `focusSearch` (allowed while typing), both would fire: the run would be
+   * interrupted AND the search would open. No default binding uses
+   * ⌘/Ctrl+⇧+⏎, so this only ever yields to a deliberate rebinding.
+   */
+  const boundShortcutChords = useMemo(() => {
+    const hashes = new Set<string>();
+    for (const override of Object.values(customShortcuts ?? {})) {
+      const binding = parseBinding(isMacPlatform ? override?.mac : override?.other);
+      if (binding) {
+        hashes.add(bindingHash(binding));
+      }
+    }
+    return hashes;
   }, [customShortcuts]);
 
   const { index, conversation, isSubmitting, filesLoading, setFilesLoading } = useChatContext();
@@ -218,10 +239,11 @@ export default function useTextarea({
         // to THIS chord — unlike the default Ctrl/Cmd+Enter branch below, an
         // unrelated rebinding (or an explicit unbind) leaves this chord free,
         // so it must keep the meaning the hovercard advertises.
+        const pressedChord = bindingFromEvent(e.nativeEvent);
         if (
           (e.ctrlKey || e.metaKey) &&
           e.shiftKey &&
-          !bindingsMatch(bindingFromEvent(e.nativeEvent), submitOverride)
+          (pressedChord == null || !boundShortcutChords.has(bindingHash(pressedChord)))
         ) {
           e.preventDefault();
           onDuringRunModifier('preempt');
@@ -299,6 +321,7 @@ export default function useTextarea({
       isSubmitting,
       allowSubmitWhileGenerating,
       onDuringRunModifier,
+      boundShortcutChords,
       checkHealth,
       filesLoading,
       enterToSend,
