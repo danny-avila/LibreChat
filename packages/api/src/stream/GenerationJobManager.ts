@@ -1554,61 +1554,12 @@ class GenerationJobManagerClass {
 
     const runtime = observedRuntime?.createdAt === jobData.createdAt ? observedRuntime : undefined;
 
-    // Claim the terminal state BEFORE touching anything the run owns — the steer
-    // queue included. A natural completion or approval resolution racing this abort
-    // can win the CAS, and a loser that had already closed-and-drained the winner's
-    // queue (the previous ordering) stripped steers from a generation that then kept
-    // running. The loser must leave no side effects at all.
-    const finalized = await this.jobStore.transitionStatus(streamId, {
-      from: abortableStatus,
-      to: 'aborted',
-      expectCreatedAt: jobData.createdAt,
-      // The winner drains and reports the queue itself just below; without this the
-      // in-memory store's terminal backstop parks it first and the abort response
-      // loses its pendingSteers.
-      preserveSteerQueue: true,
-      // preserveForReconcile omits completedAt so the finished-job sweep can't reap the
-      // abort before the schedules reconciler observes it (see completeJob).
-      patch: { ...(options?.preserveForReconcile ? {} : { completedAt: Date.now() }) },
-    });
-    if (!finalized) {
-      await this.reconcileLostTerminalTransition(streamId, jobData.createdAt, runtime);
-      return {
-        success: false,
-        jobData,
-        content: [],
-        finalEvent: null,
-        text: '',
-        collectedUsage: [],
-      };
-    }
-
-    /** Steers that never reached an injection boundary — reported on the abort
-     *  final event (and the abort route's JSON) so the client can restore them
-     *  as queued chips instead of silently dropping the user's words. The
-     *  close-and-drain rejects any steer POST racing this finalization, and
-     *  the createdAt guard keeps it off a replacement job's queue. Runs
-     *  BEFORE the content snapshot below: a drain hook that already popped a
-     *  steer and applied its part gets captured by the snapshot, so the text
-     *  surfaces either here (pendingSteers) or there (inline part) — an
-     *  encode still in flight across the abort remains inherently racy
-     *  cross-instance, but the window no longer includes completed applies. */
-    const pendingSteers = (
-      await this.jobStore.closeAndDrainSteers(streamId, jobData.createdAt)
-    ).map(toPendingSteer);
-    // No-subscriber recovery: the abort response/final are transient, so park
-    // the leftovers for /chat/status claim-on-read within the recovery TTL.
-    await this.steering.park(
-      streamId,
-      pendingSteers,
-      {
-        userId: jobData.userId,
-        tenantId: jobData.tenantId,
-      },
-      jobData.createdAt,
-    );
-
-    /** Content before clearing state */
+    /** Content SNAPSHOT before the terminal CAS — a pure read with no side effects,
+     *  taken here because the Redis terminal transition atomically re-TTLs/deletes
+     *  the chunk log the snapshot may reconstruct from; reading after the CAS can
+     *  find it already gone. A part applied in the snapshot->CAS window can be
+     *  missed — the same inherent cross-instance raciness the previous ordering had,
+     *  in a narrower window. */
     const result = await this.jobStore.getContentParts(streamId, jobData.createdAt);
     const content = result?.content ?? [];
     let abortContent = filterPersistableAbortContent(content);
@@ -1631,6 +1582,57 @@ class GenerationJobManagerClass {
     /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
     In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation */
     const isEarlyAbort = !shouldPersistAbortContent && jobData.createdEventEmitted !== true;
+
+    // Claim the terminal state BEFORE touching anything the run owns — the steer
+    // queue included. A natural completion or approval resolution racing this abort
+    // can win the CAS, and a loser that had already closed-and-drained the winner's
+    // queue (the previous ordering) stripped steers from a generation that then kept
+    // running. The loser must leave no side effects (the snapshot above is read-only).
+    const finalized = await this.jobStore.transitionStatus(streamId, {
+      from: abortableStatus,
+      to: 'aborted',
+      expectCreatedAt: jobData.createdAt,
+      // The winner drains and reports the queue itself just below; without this the
+      // in-memory store's terminal backstop parks it first and the abort response
+      // loses its pendingSteers.
+      preserveSteerQueue: true,
+      // preserveForReconcile omits completedAt so the finished-job sweep can't reap the
+      // abort before the schedules reconciler observes it (see completeJob).
+      patch: { ...(options?.preserveForReconcile ? {} : { completedAt: Date.now() }) },
+    });
+    if (!finalized) {
+      await this.reconcileLostTerminalTransition(streamId, jobData.createdAt, runtime);
+      return {
+        success: false,
+        jobData,
+        content: abortContent,
+        finalEvent: null,
+        text,
+        collectedUsage,
+      };
+    }
+
+    /** Steers that never reached an injection boundary — reported on the abort
+     *  final event (and the abort route's JSON) so the client can restore them
+     *  as queued chips instead of silently dropping the user's words. The
+     *  close-and-drain rejects any steer POST racing this finalization, and
+     *  the createdAt guard keeps it off a replacement job's queue. Runs only
+     *  after WINNING the terminal CAS: a losing abort must not close or drain
+     *  the winner's queue. */
+    const pendingSteers = (
+      await this.jobStore.closeAndDrainSteers(streamId, jobData.createdAt)
+    ).map(toPendingSteer);
+    // No-subscriber recovery: the abort response/final are transient, so park
+    // the leftovers for /chat/status claim-on-read within the recovery TTL.
+    await this.steering.park(
+      streamId,
+      pendingSteers,
+      {
+        userId: jobData.userId,
+        tenantId: jobData.tenantId,
+      },
+      jobData.createdAt,
+    );
 
     /** Final event for abort */
     const userMessageId = jobData.userMessage?.messageId;
