@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
+import SkillListSkeleton from '../lists/SkillListSkeleton';
 import { useListSkillsQuery } from '~/data-provider';
 import SkillListPanel from '../lists/SkillList';
+import { PanelContent } from '~/components/ui';
 import FilterSkills from './FilterSkills';
 import { useDebounce } from '~/hooks';
 import { cn } from '~/utils';
@@ -37,13 +39,16 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
       />
 
       {/* Only the list scrolls */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4">
+      <PanelContent
+        isLoading={listQuery.isLoading}
+        skeleton={<SkillListSkeleton />}
+        className="px-4"
+      >
         <SkillListPanel
           skills={skills as unknown as import('librechat-data-provider').TSkill[]}
-          isLoading={listQuery.isLoading}
           activeSkillId={activeSkillId}
         />
-      </div>
+      </PanelContent>
     </div>
   );
 }

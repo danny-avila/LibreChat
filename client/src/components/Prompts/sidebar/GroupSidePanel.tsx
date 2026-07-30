@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Button, Sidebar, Spinner, TooltipAnchor } from '@librechat/client';
 import type { PromptGroupListResponse } from 'librechat-data-provider';
+import PromptGroupSkeleton from '../lists/PromptGroupSkeleton';
 import { useLocalize, useNavScrolling } from '~/hooks';
 import { usePromptGroupsContext } from '~/Providers';
+import { PanelContent } from '~/components/ui';
 import List from '../lists/List';
 import { cn } from '~/utils';
 
@@ -68,21 +70,20 @@ export default function GroupSidePanel({
       <div className="relative flex min-h-0 flex-1 flex-col">
         {/* Sticky header: filter and toggles stay put while the list scrolls */}
         <div className="shrink-0 space-y-2 px-3 pb-2 pt-2 text-text-primary">{children}</div>
-        <div
+        <PanelContent
           ref={containerRef}
-          className="scrollbar-gutter-stable flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden pl-3 pr-1 text-text-primary"
+          isLoading={!!groupsQuery.isLoading}
+          skeleton={<PromptGroupSkeleton />}
+          className="scrollbar-gutter-stable flex flex-col gap-2 overflow-x-hidden pl-3 pr-1 text-text-primary"
         >
-          <List
-            groups={promptGroups}
-            isLoading={!!groupsQuery.isLoading}
-            isChatRoute={isChatRoute}
-          />
+          <List groups={promptGroups} isChatRoute={isChatRoute} />
+          {/* Appending the next page, so the loaded rows stay put */}
           {(isFetchingNextPage || showLoading) && (
             <div className="flex shrink-0 justify-center py-2">
               <Spinner className="size-4" aria-label={localize('com_ui_loading')} />
             </div>
           )}
-        </div>
+        </PanelContent>
       </div>
       {footer}
     </div>

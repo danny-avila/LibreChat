@@ -5,7 +5,6 @@ import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provid
 import {
   Button,
   Checkbox,
-  Spinner,
   Dropdown,
   FilterInput,
   TooltipAnchor,
@@ -19,9 +18,10 @@ import {
   useGetUserQuery,
 } from '~/data-provider';
 import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
+import { PanelFooter, PanelContent } from '~/components/ui';
+import MemoryCardSkeleton from './MemoryCardSkeleton';
 import MemoryCreateDialog from './MemoryCreateDialog';
 import MemoryUsageBadge from './MemoryUsageBadge';
-import { PanelFooter } from '~/components/ui';
 import AdminSettings from './AdminSettings';
 import MemoryList from './MemoryList';
 import { cn } from '~/utils';
@@ -133,14 +133,6 @@ export default function MemoryPanel() {
     });
   }, [memories, searchQuery, activePartition]);
 
-  if (isLoading) {
-    return (
-      <div className="flex h-full w-full items-center justify-center p-4">
-        <Spinner />
-      </div>
-    );
-  }
-
   if (!hasReadAccess) {
     return (
       <div className="flex h-full w-full items-center justify-center p-4">
@@ -247,13 +239,13 @@ export default function MemoryPanel() {
       </div>
 
       {/* Only the list scrolls */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+      <PanelContent isLoading={isLoading} skeleton={<MemoryCardSkeleton />} className="px-3 pb-3">
         <MemoryList
           memories={filteredMemories}
           hasUpdateAccess={hasUpdateAccess}
           isFiltered={searchQuery.length > 0}
         />
-      </div>
+      </PanelContent>
 
       {user?.role === SystemRoles.ADMIN && (
         <PanelFooter>

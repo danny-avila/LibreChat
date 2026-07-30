@@ -1,12 +1,13 @@
 import { useState, useRef, useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import { Button, Spinner, FilterInput, OGDialogTrigger, TooltipAnchor } from '@librechat/client';
+import { Button, FilterInput, OGDialogTrigger, TooltipAnchor } from '@librechat/client';
 import { useLocalize, useMCPServerManager, useHasAccess } from '~/hooks';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
+import { PanelFooter, PanelContent } from '~/components/ui';
+import MCPServerCardSkeleton from './MCPServerCardSkeleton';
 import MCPAdminSettings from './MCPAdminSettings';
 import MCPServerDialog from './MCPServerDialog';
-import { PanelFooter } from '~/components/ui';
 import MCPServerList from './MCPServerList';
 
 export default function MCPBuilderPanel() {
@@ -82,19 +83,17 @@ export default function MCPBuilderPanel() {
       </div>
 
       {/* Only the list scrolls */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-        {isLoading ? (
-          <div className="flex items-center justify-center p-8">
-            <Spinner className="size-6" aria-label={localize('com_ui_loading')} />
-          </div>
-        ) : (
-          <MCPServerList
-            servers={filteredServers}
-            getServerStatusIconProps={getServerStatusIconProps}
-            isFiltered={searchQuery.trim().length > 0}
-          />
-        )}
-      </div>
+      <PanelContent
+        isLoading={isLoading}
+        skeleton={<MCPServerCardSkeleton />}
+        className="px-3 pb-3"
+      >
+        <MCPServerList
+          servers={filteredServers}
+          getServerStatusIconProps={getServerStatusIconProps}
+          isFiltered={searchQuery.trim().length > 0}
+        />
+      </PanelContent>
 
       {/* Config Dialog for custom user vars */}
       {configDialogProps && <MCPConfigDialog {...configDialogProps} />}

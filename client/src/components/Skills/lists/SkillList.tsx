@@ -1,35 +1,23 @@
 import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import { Skeleton } from '@librechat/client';
 import type { TSkill } from 'librechat-data-provider';
-import { useLocalize } from '~/hooks';
 import SkillListItem from './SkillListItem';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 interface SkillListProps {
   skills: TSkill[];
-  isLoading: boolean;
   activeSkillId?: string;
 }
 
 /** Collapsible skill list. Active/inactive toggling lives in the detail view. */
-export default function SkillList({ skills, isLoading, activeSkillId }: SkillListProps) {
+export default function SkillList({ skills, activeSkillId }: SkillListProps) {
   const localize = useLocalize();
   const [searchParams] = useSearchParams();
   const activeFile = searchParams.get('file');
   const [sectionOpen, setSectionOpen] = useState(true);
   const [expandedSkillId, setExpandedSkillId] = useState<string | null>(activeSkillId ?? null);
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col gap-2 px-2 pt-2">
-        <Skeleton className="h-8 w-full rounded-lg" />
-        <Skeleton className="h-8 w-full rounded-lg" />
-        <Skeleton className="h-8 w-full rounded-lg" />
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col gap-px">

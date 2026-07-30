@@ -1,27 +1,18 @@
 import { FileText } from 'lucide-react';
-import { Skeleton } from '@librechat/client';
 import type { TPromptGroup } from 'librechat-data-provider';
 import ChatGroupItem from './ChatGroupItem';
 import { useLocalize } from '~/hooks';
 
 export default function List({
   groups = [],
-  isLoading,
   isChatRoute,
 }: {
   groups?: TPromptGroup[];
-  isLoading: boolean;
   isChatRoute?: boolean;
 }) {
   const localize = useLocalize();
 
   const renderContent = () => {
-    if (isLoading) {
-      return Array.from({ length: 3 }, (_, i) => (
-        <Skeleton key={i} className="mb-1.5 h-[72px] w-full rounded-xl" />
-      ));
-    }
-
     if (groups.length === 0) {
       return (
         <div className="my-2 flex flex-col items-center justify-center rounded-lg border border-border-medium bg-transparent p-6 text-center">
