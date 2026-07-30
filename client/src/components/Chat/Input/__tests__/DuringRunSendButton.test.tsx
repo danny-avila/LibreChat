@@ -1,11 +1,22 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import DuringRunSendButton from '../DuringRunSendButton';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
+}));
+
+/**
+ * Renders the hovercard eagerly. Ariakit's real show path depends on pointer
+ * geometry, which jsdom reports as zeros — driving it from a test asserts
+ * Ariakit's hover behavior rather than which rows this component disables.
+ */
+jest.mock('@ariakit/react', () => ({
+  HovercardProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  HovercardAnchor: ({ render }: { render: React.ReactElement }) => render,
+  Hovercard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
 const TEXT = 'stop, do not run that command';
@@ -42,25 +53,13 @@ function Harness({ steering }: { steering: SteeringControls }) {
   );
 }
 
-/** The rows only mount once the hovercard clears its show delay. */
-async function openMenu(options: StubOptions) {
+function openMenu(options: StubOptions) {
   render(<Harness steering={steeringStub(options)} />);
-  const anchor = screen.getByTestId('during-run-send-button');
-  fireEvent.mouseEnter(anchor);
-  fireEvent.mouseMove(anchor);
-  await act(async () => {
-    jest.advanceTimersByTime(500);
-  });
   expect(screen.getByText('com_ui_interrupt_steer')).toBeInTheDocument();
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.useFakeTimers();
-});
-
-afterEach(() => {
-  jest.useRealTimers();
 });
 
 describe('DuringRunSendButton — Interrupt & steer availability', () => {
@@ -69,8 +68,8 @@ describe('DuringRunSendButton — Interrupt & steer availability', () => {
    * approval, so a live row would silently do nothing at exactly the moment a
    * user is trying to stop a tool call.
    */
-  test('disables Interrupt & steer while the run is paused on tool approval', async () => {
-    await openMenu({ pausedOnApproval: true, canSteer: false });
+  test('disables Interrupt & steer while the run is paused on tool approval', () => {
+    openMenu({ pausedOnApproval: true, canSteer: false });
 
     const row = screen.getByText('com_ui_interrupt_steer').closest('button');
     expect(row).toHaveAttribute('aria-disabled', 'true');
@@ -86,8 +85,8 @@ describe('DuringRunSendButton — Interrupt & steer availability', () => {
    * `interruptSteer` deliberately falls back to interrupt & send — disabling
    * the row there would make it dead for the whole first turn.
    */
-  test('keeps Interrupt & steer live before a conversation exists', async () => {
-    await openMenu({ pausedOnApproval: false, canSteer: false });
+  test('keeps Interrupt & steer live before a conversation exists', () => {
+    openMenu({ pausedOnApproval: false, canSteer: false });
 
     const row = screen.getByText('com_ui_interrupt_steer').closest('button');
     expect(row).toHaveAttribute('aria-disabled', 'false');
@@ -97,8 +96,8 @@ describe('DuringRunSendButton — Interrupt & steer availability', () => {
     expect(mockOnConsumed).toHaveBeenCalled();
   });
 
-  test('the ordinary Steer row stays gated on canSteer', async () => {
-    await openMenu({ pausedOnApproval: false, canSteer: false });
+  test('the ordinary Steer row stays gated on canSteer', () => {
+    openMenu({ pausedOnApproval: false, canSteer: false });
 
     const row = screen.getByText('com_ui_steer').closest('button');
     expect(row).toHaveAttribute('aria-disabled', 'true');
@@ -107,8 +106,8 @@ describe('DuringRunSendButton — Interrupt & steer availability', () => {
     expect(mockSteerFromComposer).not.toHaveBeenCalled();
   });
 
-  test('both actions are available during a normal run', async () => {
-    await openMenu({ pausedOnApproval: false, canSteer: true });
+  test('both actions are available during a normal run', () => {
+    openMenu({ pausedOnApproval: false, canSteer: true });
 
     expect(screen.getByText('com_ui_interrupt_steer').closest('button')).toHaveAttribute(
       'aria-disabled',
