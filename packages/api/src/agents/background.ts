@@ -22,7 +22,10 @@
  * Opt-in mirrors `deferred_tools`: an admin capability
  * (`AgentCapabilities.run_in_background`) gates the feature, and a per-tool
  * `tool_options[name].run_in_background` flag turns it on for a given tool,
- * which injects a `run_in_background` boolean into that tool's schema.
+ * which injects a `run_in_background` boolean into that tool's schema. The
+ * code-execution pair (`execute_code`/`bash_tool`) is background-NATIVE:
+ * while the capability is enabled it defaults on without a per-tool flag, and
+ * an explicit `run_in_background: false` opts it out.
  *
  * @module packages/api/src/agents/background
  */
@@ -114,6 +117,20 @@ export function isBackgroundEligibleToolName(name: string): boolean {
   }
   return !name.startsWith(AgentConstants.LC_TRANSFER_TO_);
 }
+
+/**
+ * Tools that are background-NATIVE: they default INTO background dispatch
+ * while the capability is enabled, and an explicit `run_in_background: false`
+ * opts one out. Code executions are the paradigmatic slow, detachable call —
+ * they flow through the generic execute path and their completion is
+ * harvested onto the dispatch turn — so they carry the param without
+ * per-agent opt-in, the same way the SDK's coding tools carry `intent`
+ * natively. Mirrors `NATIVE_INTENT_TOOL_NAMES` in `intent.ts`.
+ */
+export const NATIVE_BACKGROUND_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
+  String(AgentConstants.EXECUTE_CODE),
+  String(AgentConstants.BASH_TOOL),
+]);
 
 /**
  * Coerces tool-call args to an object, parsing a stringified JSON object (some
@@ -344,11 +361,14 @@ export function registerBackgroundTaskTool(params: {
  * Opt-in resolves per FINAL definition via {@link resolveToolOption}
  * (explicit name → capability marker projection → wildcard), so a saved
  * agent's `execute_code` entry reaches `bash_tool` and a spec selection
- * reaches lazily-registered definitions. Both saved agents and
- * ephemeral/model-spec agents reach this with `tool_options` populated, so
- * the logic is written once. When a narrowing selection is present, names
- * that never took effect — including markers whose every runtime definition
- * is background-excluded, like `memory` — are warned about here.
+ * reaches lazily-registered definitions. When no policy speaks at all, the
+ * background-native code pair defaults IN — so this pass runs on every
+ * capability-enabled request, not just explicitly opted-in agents. Both
+ * saved agents and ephemeral/model-spec agents reach this with the same
+ * `tool_options` shape, so the logic is written once. When a narrowing
+ * selection is present, names that never took effect — including markers
+ * whose every runtime definition is background-excluded, like `memory` —
+ * are warned about here.
  */
 export function applyBackgroundToolCalls(params: {
   toolDefinitions: LCTool[] | undefined;
@@ -366,9 +386,6 @@ export function applyBackgroundToolCalls(params: {
 }): { toolDefinitions: LCTool[]; backgroundToolNames: string[] } {
   const { toolRegistry, toolOptions, capabilityToolNames, excludeTool } = params;
   const defs = params.toolDefinitions ?? [];
-  if (!toolOptions || !Object.values(toolOptions).some((o) => o?.run_in_background === true)) {
-    return { toolDefinitions: defs, backgroundToolNames: [] };
-  }
   const selectionNames = getSelectionNames(toolOptions, 'run_in_background');
   const effectiveSources = new Set<string>();
 
@@ -380,11 +397,8 @@ export function applyBackgroundToolCalls(params: {
       toolOptions,
       capabilityToolNames,
     );
-    if (
-      resolved?.value !== true ||
-      !isBackgroundEligibleToolName(def.name) ||
-      excludeTool?.(def.name) === true
-    ) {
+    const optedIn = resolved != null ? resolved.value : NATIVE_BACKGROUND_TOOL_NAMES.has(def.name);
+    if (!optedIn || !isBackgroundEligibleToolName(def.name) || excludeTool?.(def.name) === true) {
       return def;
     }
     if (!canInjectRunInBackgroundParam(def)) {
@@ -393,7 +407,9 @@ export function applyBackgroundToolCalls(params: {
       );
       return def;
     }
-    effectiveSources.add(resolved.source);
+    if (resolved != null) {
+      effectiveSources.add(resolved.source);
+    }
     backgroundToolNames.push(def.name);
     const injected = injectRunInBackgroundParam(def);
     if (injected === def) {
@@ -427,6 +443,13 @@ export function applyBackgroundToolCalls(params: {
  * letting the model detach every other tool in the spec. The ephemeral toggle
  * stays boolean and never narrows; it has no per-tool UI to drive it.
  *
+ * A spec's `runInBackground: false` is the boolean spelling of the empty
+ * list — an explicit "none" that also opts the background-native code pair
+ * out. Pre-native, `false` was behaviorally identical to omitting the field,
+ * so a config that wrote it must not silently flip to backgrounding code.
+ * The EPHEMERAL toggle's `false` stays no-policy — a badge default, not a
+ * decision — so the native default holds for ephemeral chats.
+ *
  * The selection is recorded as policy (wildcard default + verbatim names)
  * and resolved against the FINAL definition set in
  * `applyBackgroundToolCalls`, so capability markers and lazily-expanded MCP
@@ -438,9 +461,10 @@ export function synthesizeBackgroundToolOptions(sources: {
   ephemeralAgent?: { run_in_background?: boolean } | null;
   modelSpec?: { runInBackground?: boolean | string[] } | null;
 }): AgentToolOptions | undefined {
+  const specSelection = sources.modelSpec?.runInBackground;
   return synthesizeSelectionToolOptions(
     'run_in_background',
-    sources.modelSpec?.runInBackground,
+    specSelection === false ? [] : specSelection,
     sources.ephemeralAgent?.run_in_background === true,
     BACKGROUND_SELECTION_LABEL,
   );

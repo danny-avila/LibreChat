@@ -64,6 +64,36 @@ export function withBooleanOption(
   return updatedOptions;
 }
 
+/**
+ * Counterpart of {@link withBooleanOption} for flags whose ABSENCE means
+ * default-on (background-native code execution): enabling clears the entry so
+ * the native default applies; disabling persists an explicit `false`, which a
+ * missing key can no longer express.
+ */
+export function withNativeBooleanOptOut(
+  options: AgentToolOptions,
+  toolId: string,
+  key: BooleanToolOptionKey,
+  enabled: boolean,
+): AgentToolOptions {
+  const updatedOptions: AgentToolOptions = { ...options };
+  const currentToolOptions = updatedOptions[toolId];
+  if (!enabled) {
+    updatedOptions[toolId] = { ...currentToolOptions, [key]: false };
+    return updatedOptions;
+  }
+  if (!currentToolOptions || !(key in currentToolOptions)) {
+    return updatedOptions;
+  }
+  const { [key]: _omit, ...restOptions } = currentToolOptions;
+  if (Object.keys(restOptions).length === 0) {
+    delete updatedOptions[toolId];
+  } else {
+    updatedOptions[toolId] = restOptions;
+  }
+  return updatedOptions;
+}
+
 /** Read/toggle handlers for one boolean per-tool option key (single + bulk). */
 function useBooleanToolOption(
   key: BooleanToolOptionKey,

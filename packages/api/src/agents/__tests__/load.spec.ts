@@ -418,11 +418,11 @@ describe('loadAgent', () => {
     expect(result?.tool_options).toEqual({ '*': { run_in_background: true } });
   });
 
-  test('synthesizes background tool_options from a model spec (runInBackground: true), and not without it', async () => {
+  test('synthesizes background tool_options from a model spec: true opts in, false is an explicit opt-out, absent is no policy', async () => {
     const { EPHEMERAL_AGENT_ID } = Constants;
     mockGetMCPServerTools.mockResolvedValue({ crm_lookup: { name: 'crm_lookup' } });
 
-    const buildReq = (specName: string, runInBackground: boolean): LoadAgentParams['req'] =>
+    const buildReq = (specName: string, runInBackground?: boolean): LoadAgentParams['req'] =>
       ({
         user: { id: 'user123' },
         body: {},
@@ -459,6 +459,21 @@ describe('loadAgent', () => {
 
     const withoutFlag = await loadAgent(
       {
+        req: buildReq('bg-absent', undefined),
+        spec: 'bg-absent',
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+    expect(withoutFlag?.tool_options).toBeUndefined();
+
+    /** `false` must synthesize an explicit wildcard opt-out (not stay a
+     *  no-op): the background-native code pair would otherwise default on
+     *  against an admin's written `runInBackground: false`. */
+    const withFalse = await loadAgent(
+      {
         req: buildReq('bg-off', false),
         spec: 'bg-off',
         agent_id: EPHEMERAL_AGENT_ID as string,
@@ -467,7 +482,7 @@ describe('loadAgent', () => {
       },
       deps,
     );
-    expect(withoutFlag?.tool_options).toBeUndefined();
+    expect(withFalse?.tool_options).toEqual({ '*': { run_in_background: false } });
   });
 
   test('should enable full skill scope for ephemeral model spec with skills true', async () => {

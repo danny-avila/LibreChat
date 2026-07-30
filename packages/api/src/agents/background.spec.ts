@@ -293,14 +293,23 @@ describe('registerBackgroundTaskTool', () => {
 });
 
 describe('synthesizeBackgroundToolOptions', () => {
-  it('returns undefined when neither the ephemeral toggle nor the model spec enables it', () => {
+  it('returns undefined when neither the ephemeral toggle nor the model spec carries a policy', () => {
     expect(synthesizeBackgroundToolOptions({})).toBeUndefined();
+    /** The ephemeral toggle is a badge default, not a decision — its `false`
+     *  stays no-policy so the background-native code pair keeps its default. */
     expect(
       synthesizeBackgroundToolOptions({
         ephemeralAgent: { run_in_background: false },
-        modelSpec: { runInBackground: false },
       }),
     ).toBeUndefined();
+  });
+
+  it('records a spec runInBackground: false as an explicit "none", like the empty list', () => {
+    /** Pre-native, `false` and absent were behaviorally identical (off); a
+     *  config that wrote `false` must not silently flip to backgrounding code. */
+    expect(synthesizeBackgroundToolOptions({ modelSpec: { runInBackground: false } })).toEqual({
+      [TOOL_SELECTION_WILDCARD]: { run_in_background: false },
+    });
   });
 
   it('records boolean/ephemeral modes as a wildcard opt-in (no name enumeration)', () => {
@@ -400,6 +409,77 @@ describe('selection policy at injection time', () => {
       capabilityToolNames: new Map([['execute_code', ['read_file', 'bash_tool']]]),
     });
     expect(backgroundToolNames).toEqual(['bash_tool']);
+  });
+
+  it('backgrounds the code pair natively, with no tool_options at all', () => {
+    const defs = [mcpDef('bash_tool'), mcpDef('search_mcp_docs')];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: undefined,
+    });
+    expect(result.backgroundToolNames).toEqual(['bash_tool']);
+    const bashDef = result.toolDefinitions.find((d) => d.name === 'bash_tool');
+    expect(
+      (bashDef?.parameters as { properties: Record<string, unknown> }).properties[
+        RUN_IN_BACKGROUND_ARG
+      ],
+    ).toBeDefined();
+    const searchDef = result.toolDefinitions.find((d) => d.name === 'search_mcp_docs');
+    expect(
+      (searchDef?.parameters as { properties: Record<string, unknown> }).properties[
+        RUN_IN_BACKGROUND_ARG
+      ],
+    ).toBeUndefined();
+    expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(true);
+  });
+
+  it('an explicit false opts the native pair out — by definition name or by marker projection', () => {
+    const byName = applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('bash_tool')],
+      toolRegistry: new Map(),
+      toolOptions: { bash_tool: { run_in_background: false } },
+    });
+    expect(byName.backgroundToolNames).toEqual([]);
+
+    const registry: LCToolRegistry = new Map();
+    const byMarker = applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('bash_tool')],
+      toolRegistry: registry,
+      toolOptions: { execute_code: { run_in_background: false } },
+      capabilityToolNames: new Map([['execute_code', ['read_file', 'bash_tool']]]),
+    });
+    expect(byMarker.backgroundToolNames).toEqual([]);
+    expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(false);
+  });
+
+  it('a narrowing selection that omits the code pair opts it out via the wildcard', () => {
+    const options = synthesizeBackgroundToolOptions({
+      modelSpec: { runInBackground: ['slow_report_mcp_analytics'] },
+    });
+    const { backgroundToolNames } = applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('bash_tool'), mcpDef('slow_report_mcp_analytics')],
+      toolRegistry: undefined,
+      toolOptions: options,
+    });
+    expect(backgroundToolNames).toEqual(['slow_report_mcp_analytics']);
+  });
+
+  it('a selection can name the code pair by its runtime name (bash_tool)', () => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const options = synthesizeBackgroundToolOptions({
+      modelSpec: { runInBackground: ['bash_tool'] },
+    });
+    const { backgroundToolNames } = applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('bash_tool'), mcpDef('search_mcp_docs')],
+      toolRegistry: undefined,
+      toolOptions: options,
+      capabilityToolNames: new Map([['execute_code', ['read_file', 'bash_tool']]]),
+    });
+    expect(backgroundToolNames).toEqual(['bash_tool']);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('still enforces eligibility for explicitly named tools, and diagnoses them', () => {

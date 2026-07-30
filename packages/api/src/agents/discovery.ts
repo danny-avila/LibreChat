@@ -99,8 +99,9 @@ export interface DiscoverConnectedAgentsParams {
   /**
    * Run-level `run_in_background` capability gate. Forwarded verbatim so a
    * handoff/connected agent's own event-driven tools with
-   * `tool_options[tool].run_in_background` get the injected param + poll tool,
-   * matching how the same agent behaves when run as the primary.
+   * `tool_options[tool].run_in_background` (and its background-native code
+   * pair) get the injected param + poll tool, matching how the same agent
+   * behaves when run as the primary.
    */
   backgroundToolsAvailable?: InitializeAgentParams['backgroundToolsAvailable'];
   /**
