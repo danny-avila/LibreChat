@@ -244,11 +244,15 @@ const InFlightSteer = memo(function InFlightSteer({
                     markSteerPreempt(steer.steerId);
                     return;
                   }
+                  /* `armed: false` is deliberately ambiguous — injected,
+                   * cancelled, re-homed, or run over — so the message only
+                   * says the escalation lost, and the chip defers to the
+                   * events for whatever actually happened. */
                   showToast({
                     message: localize(
                       response.code === 'PREEMPT_UNSUPPORTED'
                         ? 'com_ui_steer_preempt_unsupported'
-                        : 'com_ui_steer_already_applied',
+                        : 'com_ui_steer_arm_lost_race',
                     ),
                     status: 'info',
                   });

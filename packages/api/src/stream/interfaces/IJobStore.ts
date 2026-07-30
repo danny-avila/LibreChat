@@ -215,6 +215,11 @@ export interface PreemptMessage {
   steerIds: string[];
 }
 
+/** {@link IJobStore.armSteer}: `armed` flipped the flag in place; `missing`
+ *  covers every left-the-queue interleaving (drained, cancelled, closed,
+ *  replaced generation); `incapable` means the live owner cannot seal. */
+export type SteerArmOutcome = 'armed' | 'missing' | 'incapable';
+
 /** Maximum steers a single run can have queued at once. */
 export const STEER_QUEUE_MAX_DEPTH = 10;
 
@@ -687,11 +692,15 @@ export interface IJobStore {
    * Atomically set `preempt: true` on ONE queued steer IN PLACE, preserving
    * its FIFO position (the user escalated a waiting steer to an interrupt;
    * the whole queue drains at the seal, so its order must not change).
-   * Guarded like {@link enqueueSteer}: refuses when the queue is closed or,
-   * with `expectedCreatedAt`, when the stream belongs to another generation.
-   * False when the steer is no longer queued — drained, cancelled, or fenced.
+   * Guarded like {@link enqueueSteer}: `missing` when the steer is no longer
+   * queued, the queue is closed, or (with `expectedCreatedAt`) the stream
+   * belongs to another generation. The owner's LIVE `preemptCapable` is part
+   * of the same atomic predicate — a HITL resume on a rolling deploy can
+   * rewrite it for the SAME generation, so a value read before the call is
+   * not trustworthy — and an incapable owner answers `incapable` with the
+   * item left unflagged.
    */
-  armSteer(streamId: string, steerId: string, expectedCreatedAt?: number): Promise<boolean>;
+  armSteer(streamId: string, steerId: string, expectedCreatedAt?: number): Promise<SteerArmOutcome>;
 
   /**
    * Persist terminally-drained steers under their OWN bounded-TTL key so a

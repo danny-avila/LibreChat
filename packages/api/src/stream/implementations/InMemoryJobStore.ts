@@ -3,6 +3,7 @@ import type { StandardGraph } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
 import type {
   SerializableJobData,
+  SteerArmOutcome,
   SteerQueueItem,
   UsageMetadata,
   IJobStore,
@@ -661,20 +662,27 @@ export class InMemoryJobStore implements IJobStore {
     return true;
   }
 
-  async armSteer(streamId: string, steerId: string, expectedCreatedAt?: number): Promise<boolean> {
+  async armSteer(
+    streamId: string,
+    steerId: string,
+    expectedCreatedAt?: number,
+  ): Promise<SteerArmOutcome> {
     const job = this.jobs.get(streamId);
     if (!job || this.closedSteerQueues.has(streamId)) {
-      return false;
+      return 'missing';
     }
     if (expectedCreatedAt != null && job.createdAt !== expectedCreatedAt) {
-      return false;
+      return 'missing';
     }
     const item = this.steerQueues.get(streamId)?.find((entry) => entry.steerId === steerId);
     if (item == null) {
-      return false;
+      return 'missing';
+    }
+    if (job.preemptCapable !== true) {
+      return 'incapable';
     }
     item.preempt = true;
-    return true;
+    return 'armed';
   }
 
   async parkSteers(streamId: string, payload: string, expectedCreatedAt?: number): Promise<void> {

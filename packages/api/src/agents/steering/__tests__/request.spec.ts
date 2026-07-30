@@ -823,6 +823,23 @@ describe('handleSteerArm (real in-memory job manager)', () => {
     expect(result.status).toBe(403);
   });
 
+  it('refuses when capability was rewritten for the same generation mid-flight', async () => {
+    /** A HITL resume on a rolling deploy rewrites `preemptCapable` for the
+     *  SAME createdAt, so the capability must live inside the atomic store
+     *  predicate — a value read before the arm is not trustworthy. */
+    const streamId = 'arm-capability-rewritten';
+    await createCapableJob(streamId);
+    const posted = await handleSteerRequest(user, { conversationId: streamId, text: 'waiting' });
+    await GenerationJobManager.updateMetadata(streamId, { preemptCapable: false });
+
+    const result = await handleSteerArm(user, {
+      conversationId: streamId,
+      steerId: posted.body.steerId as string,
+    });
+    expect(result).toEqual({ status: 200, body: { armed: false, code: 'PREEMPT_UNSUPPORTED' } });
+    expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBeUndefined();
+  });
+
   it("never arms another generation's steer", async () => {
     const streamId = 'arm-stale-generation';
     await createCapableJob(streamId);
@@ -834,7 +851,7 @@ describe('handleSteerArm (real in-memory job manager)', () => {
       posted.body.steerId as string,
       (live?.createdAt as number) + 999,
     );
-    expect(armed).toBe(false);
+    expect(armed).toBe('missing');
     expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBeUndefined();
   });
 });
