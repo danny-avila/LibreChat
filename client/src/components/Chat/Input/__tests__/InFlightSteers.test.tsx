@@ -1,10 +1,10 @@
 import React from 'react';
+import { RecoilRoot } from 'recoil';
 import { getDefaultStore } from 'jotai';
-import { RecoilRoot, useSetRecoilState } from 'recoil';
-import { render, screen, within, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import type { PendingSteer } from '~/store/families';
-import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
+import { steerOverlayHeightFamily } from '~/store/steer';
 import InFlightSteers from '../InFlightSteers';
 import store from '~/store';
 
@@ -13,6 +13,7 @@ const mockShowToast = jest.fn();
 const mockQueueReclaimedSteer = jest.fn();
 const mockRemoveSteer = jest.fn();
 const mockRetrySteer = jest.fn();
+const mockArmMutateAsync = jest.fn();
 const mockSetDefaultAction = jest.fn();
 const mockRestoreToComposer = jest.fn();
 
@@ -28,6 +29,7 @@ jest.mock('@librechat/client', () => ({
 
 jest.mock('~/data-provider', () => ({
   useCancelSteerMutation: () => ({ mutateAsync: mockCancelMutateAsync }),
+  useArmSteerMutation: () => ({ mutateAsync: mockArmMutateAsync }),
 }));
 
 jest.mock('~/components/Chat/Input/Files/FileContainer', () => ({
@@ -76,14 +78,6 @@ const steeringStub = (defaultAction: 'steer' | 'queue' = 'steer', duringRunActiv
     queueReclaimedSteer: mockQueueReclaimedSteer,
   }) as unknown as SteeringControls;
 
-/** Captured live setter so a test can arm an interrupt mid-reclaim, the way
- *  the composer chord or a queued row would from outside this component. */
-let setLiveSteers: ((steers: PendingSteer[]) => void) | null = null;
-function CaptureSteersSetter() {
-  setLiveSteers = useSetRecoilState(store.pendingSteersByConvoId(CONVO_ID));
-  return null;
-}
-
 type RenderOptions = {
   enableUserMsgMarkdown?: boolean;
   appliedSteerIds?: string[];
@@ -106,7 +100,6 @@ function steersElement(steers: PendingSteer[], options?: RenderOptions) {
         }
       }}
     >
-      <CaptureSteersSetter />
       <InFlightSteers
         conversationId={CONVO_ID}
         steering={steeringStub(options?.defaultAction, options?.duringRunActive)}
@@ -597,24 +590,38 @@ describe('InFlightSteers', () => {
 });
 
 /**
- * The bubble's "Interrupt now" escalation: reclaim the waiting steer off the
- * server queue, then resubmit it as a preempt via `retrySteer` — only a
- * `reclaimed` outcome proves the words never entered the run, so anything
- * else must not resubmit (the text would land twice).
+ * The bubble's "Interrupt now" escalation is ONE atomic server op: `preempt`
+ * flips on the existing queued item, so its FIFO position, id, and timestamp
+ * survive and no reclaim window exists to race. `armed: false` is the honest
+ * answer for every "too late" interleaving (drained, cancelled, run ended or
+ * replaced) and for a deployment that cannot seal mid-stream.
  */
 describe('InFlightSteers — interrupt-now escalation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCancelMutateAsync.mockResolvedValue({ removed: true });
+    mockArmMutateAsync.mockResolvedValue({ armed: true });
     mockRestoreToComposer.mockReturnValue(true);
   });
 
-  it('escalates a waiting steer to an interrupt once reclaimed', async () => {
+  it("arms the interrupt in place, keeping the steer's id and position", async () => {
     renderSteers([{ steerId: 's1', text: 'hold on', status: 'pending', createdAt: 1 }]);
     await clickMenuItem('com_ui_interrupt_steer_now');
 
-    expect(mockCancelMutateAsync).toHaveBeenCalled();
-    expect(mockRetrySteer).toHaveBeenCalledWith('s1', 'hold on', undefined, {}, { preempt: true });
+    expect(mockArmMutateAsync).toHaveBeenCalledWith({
+      conversationId: CONVO_ID,
+      steerId: 's1',
+    });
+    /** No cancel, no resubmission: the durable item never left the queue. */
+    expect(mockCancelMutateAsync).not.toHaveBeenCalled();
+    expect(mockRetrySteer).not.toHaveBeenCalled();
+    expect(screen.getByText('hold on')).toBeInTheDocument();
+
+    /** The chip relabelled in place: an interrupting steer offers no further
+     *  escalation, so the entry is gone on reopen. */
+    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
+    expect(await screen.findByText('com_ui_steer_cancel')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_interrupt_steer_now')).toBeNull();
   });
 
   it('does not offer escalation on a steer that is already interrupting', async () => {
@@ -626,8 +633,21 @@ describe('InFlightSteers — interrupt-now escalation', () => {
     expect(screen.queryByText('com_ui_interrupt_steer_now')).toBeNull();
   });
 
-  it('does not resubmit when the steer already entered the run', async () => {
-    mockCancelMutateAsync.mockResolvedValue({ removed: false });
+  it('keeps the chip an ordinary steer when the deployment cannot seal', async () => {
+    mockArmMutateAsync.mockResolvedValue({ armed: false, code: 'PREEMPT_UNSUPPORTED' });
+    renderSteers([{ steerId: 's1', text: 'no seal here', status: 'pending', createdAt: 1 }]);
+    await clickMenuItem('com_ui_interrupt_steer_now');
+
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_steer_preempt_unsupported' }),
+    );
+    /** Still an ordinary steer: escalation stays offered. */
+    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
+    expect(await screen.findByText('com_ui_interrupt_steer_now')).toBeInTheDocument();
+  });
+
+  it('defers to the events when the steer already left the queue', async () => {
+    mockArmMutateAsync.mockResolvedValue({ armed: false });
     renderSteers([{ steerId: 's1', text: 'too late', status: 'pending', createdAt: 1 }]);
     await clickMenuItem('com_ui_interrupt_steer_now');
 
@@ -637,18 +657,15 @@ describe('InFlightSteers — interrupt-now escalation', () => {
     );
   });
 
-  it('leaves the words queued when the run ended mid-reclaim', async () => {
-    // A terminal conversion already re-homed the chip; resubmitting would
-    // duplicate the text, so escalation stops at an informational toast.
-    renderSteers([{ steerId: 's1', text: 'run over', status: 'pending', createdAt: 1 }], {
-      appliedSteerIds: ['s1'],
-    });
+  it('reports an arm failure without touching the steer', async () => {
+    mockArmMutateAsync.mockRejectedValue(new Error('network'));
+    renderSteers([{ steerId: 's1', text: 'still queued', status: 'pending', createdAt: 1 }]);
     await clickMenuItem('com_ui_interrupt_steer_now');
 
-    expect(mockRetrySteer).not.toHaveBeenCalled();
     expect(mockShowToast).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'com_ui_steer_run_ended_queued' }),
+      expect.objectContaining({ message: 'com_ui_steer_arm_failed', status: 'error' }),
     );
+    expect(screen.getByText('still queued')).toBeInTheDocument();
   });
 
   it('disables escalation on every bubble while an interrupt is unresolved', async () => {
@@ -663,125 +680,23 @@ describe('InFlightSteers — interrupt-now escalation', () => {
     await act(async () => {
       fireEvent.click(item);
     });
-    expect(mockRetrySteer).not.toHaveBeenCalled();
-    expect(mockCancelMutateAsync).not.toHaveBeenCalled();
+    expect(mockArmMutateAsync).not.toHaveBeenCalled();
   });
 });
 
 /**
- * Codex round 1 on the escalation PR: the single-interrupt invariant has a
- * window between clicking "Interrupt now" and the reclaim resolving, where no
- * preempt chip exists for the chip-derived gate to see. The shared escalating
- * flag covers the window, and a fresh recheck before resubmitting catches an
- * interrupt armed elsewhere (composer chord, queued row) meanwhile.
- */
-describe('InFlightSteers — escalation races', () => {
-  beforeEach(() => {
-    /** Full reset (not just clear): a leaked `mockImplementationOnce` from a
-     *  failed sibling would otherwise hijack this test's first reclaim. */
-    jest.clearAllMocks();
-    mockCancelMutateAsync.mockReset();
-    mockCancelMutateAsync.mockResolvedValue({ removed: true });
-    mockRestoreToComposer.mockReturnValue(true);
-    act(() => {
-      getDefaultStore().set(escalatingSteerFamily(CONVO_ID), false);
-    });
-  });
-
-  /** Every bubble's menu content is mounted (hidden) up front, so item lookups
-   *  must scope to the menu the clicked button controls. */
-  const menuFor = (button: HTMLElement) =>
-    document.getElementById(button.getAttribute('aria-controls') ?? '');
-
-  it('locks out a second escalation while the first reclaim is in flight', async () => {
-    let resolveReclaim: (value: { removed: boolean }) => void = () => {};
-    mockCancelMutateAsync.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveReclaim = resolve;
-        }),
-    );
-    renderSteers([
-      { steerId: 's1', text: 'first', status: 'pending', createdAt: 1 },
-      { steerId: 's2', text: 'second', status: 'pending', createdAt: 2 },
-    ]);
-    const menus = screen.getAllByLabelText('com_ui_more_options');
-    fireEvent.click(menus[0]);
-    const firstMenu = menuFor(menus[0]);
-    fireEvent.click(
-      await within(firstMenu as HTMLElement).findByText('com_ui_interrupt_steer_now'),
-    );
-
-    fireEvent.click(menus[1]);
-    const secondMenu = menuFor(menus[1]);
-    const secondItem = await within(secondMenu as HTMLElement).findByText(
-      'com_ui_interrupt_steer_now',
-    );
-    expect(secondItem.closest('[role="menuitem"]')).toHaveAttribute('aria-disabled', 'true');
-    await act(async () => {
-      fireEvent.click(secondItem);
-    });
-
-    await act(async () => {
-      resolveReclaim({ removed: true });
-    });
-    expect(mockCancelMutateAsync).toHaveBeenCalledTimes(1);
-    expect(mockRetrySteer).toHaveBeenCalledTimes(1);
-    expect(mockRetrySteer).toHaveBeenCalledWith('s1', 'first', undefined, {}, { preempt: true });
-  });
-
-  it('requeues instead of resubmitting when an interrupt appears mid-reclaim', async () => {
-    let resolveReclaim: (value: { removed: boolean }) => void = () => {};
-    mockCancelMutateAsync.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveReclaim = resolve;
-        }),
-    );
-    renderSteers([{ steerId: 's1', text: 'late to the seal', status: 'pending', createdAt: 1 }]);
-    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
-    fireEvent.click(await screen.findByText('com_ui_interrupt_steer_now'));
-
-    act(() => {
-      setLiveSteers?.([
-        { steerId: 's1', text: 'late to the seal', status: 'pending', createdAt: 1 },
-        {
-          steerId: 'p2',
-          text: 'composer interrupt',
-          status: 'sending',
-          createdAt: 2,
-          preempt: true,
-        },
-      ]);
-    });
-    await act(async () => {
-      resolveReclaim({ removed: true });
-    });
-
-    expect(mockRetrySteer).not.toHaveBeenCalled();
-    expect(mockQueueReclaimedSteer).toHaveBeenCalledWith(
-      expect.objectContaining({ steerId: 's1' }),
-    );
-    expect(mockShowToast).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'com_ui_steer_interrupt_busy_queued' }),
-    );
-  });
-});
-
-/**
- * Codex round 2: answer mode (`ask_user_question`) sets `duringRunActive`
- * false while `pausedOnApproval` stays false (it only detects approval-bearing
- * tool calls). Escalating there would cancel a healthy waiting steer and then
- * bounce off RUN_PAUSED, so the entry disables like the queued-row control.
+ * Answer mode (`ask_user_question`) sets `duringRunActive` false while
+ * `pausedOnApproval` stays false (it only detects approval-bearing tool
+ * calls). The entry disables there as a UX gate; the server-side arm is the
+ * correctness backstop for states the client cannot see.
  */
 describe('InFlightSteers — escalation while the run cannot accept a steer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockCancelMutateAsync.mockReset();
-    mockCancelMutateAsync.mockResolvedValue({ removed: true });
+    mockArmMutateAsync.mockResolvedValue({ armed: true });
   });
 
-  it('disables escalation in answer mode instead of cancelling a healthy steer', async () => {
+  it('disables escalation in answer mode', async () => {
     renderSteers([{ steerId: 's1', text: 'waiting', status: 'pending', createdAt: 1 }], {
       duringRunActive: false,
     });
@@ -792,53 +707,6 @@ describe('InFlightSteers — escalation while the run cannot accept a steer', ()
     await act(async () => {
       fireEvent.click(item);
     });
-    expect(mockCancelMutateAsync).not.toHaveBeenCalled();
-    expect(mockRetrySteer).not.toHaveBeenCalled();
-  });
-});
-
-/**
- * Codex round 3: the entry-time disable cannot see a run that pauses AFTER
- * the click, while the reclaim round-trip is in flight. The continuation
- * reads the LIVE steering controls (latest-ref) and re-homes the words
- * instead of resubmitting into a RUN_PAUSED rejection.
- */
-describe('InFlightSteers — run pauses mid-reclaim', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockCancelMutateAsync.mockReset();
-    mockCancelMutateAsync.mockResolvedValue({ removed: true });
-  });
-
-  it('re-homes without resubmitting when the run pauses mid-reclaim', async () => {
-    let resolveReclaim: (value: { removed: boolean }) => void = () => {};
-    mockCancelMutateAsync.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveReclaim = resolve;
-        }),
-    );
-    const steer: PendingSteer = {
-      steerId: 's1',
-      text: 'mid-pause',
-      status: 'pending',
-      createdAt: 1,
-    };
-    const view = renderSteers([steer]);
-    fireEvent.click(screen.getByLabelText('com_ui_more_options'));
-    fireEvent.click(await screen.findByText('com_ui_interrupt_steer_now'));
-
-    view.rerender(steersElement([steer], { duringRunActive: false }));
-    await act(async () => {
-      resolveReclaim({ removed: true });
-    });
-
-    expect(mockRetrySteer).not.toHaveBeenCalled();
-    expect(mockQueueReclaimedSteer).toHaveBeenCalledWith(
-      expect.objectContaining({ steerId: 's1' }),
-    );
-    expect(mockShowToast).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'com_ui_steer_run_paused_queued' }),
-    );
+    expect(mockArmMutateAsync).not.toHaveBeenCalled();
   });
 });

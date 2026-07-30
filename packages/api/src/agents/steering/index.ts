@@ -9,6 +9,7 @@ export type { SteerDrainHookOptions, SteerMediaResult } from './runtime';
 export {
   handleSteerRequest,
   handleSteerCancel,
+  handleSteerArm,
   getSteerMaxLength,
   STEER_MAX_FILES,
 } from './request';

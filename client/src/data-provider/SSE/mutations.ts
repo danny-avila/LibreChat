@@ -217,3 +217,32 @@ export function useCancelSteerMutation() {
     mutationFn: cancelSteerMessage,
   });
 }
+
+export interface ArmSteerParams {
+  conversationId: string;
+  steerId: string;
+}
+
+export interface ArmSteerResponse {
+  armed?: boolean;
+  code?: string;
+}
+
+/**
+ * Escalates a still-queued steer to an interrupt IN PLACE: the server flips
+ * `preempt` on the existing item, so its FIFO position, id, and timestamp all
+ * survive. `armed: false` is not an error — the steer already injected, was
+ * cancelled, or the deployment cannot seal mid-stream (`PREEMPT_UNSUPPORTED`).
+ */
+export const armSteerMessage = async (params: ArmSteerParams): Promise<ArmSteerResponse> => {
+  return request.post(
+    `${apiBaseUrl()}/api/agents/chat/steer/arm`,
+    params,
+  ) as Promise<ArmSteerResponse>;
+};
+
+export function useArmSteerMutation() {
+  return useMutation({
+    mutationFn: armSteerMessage,
+  });
+}

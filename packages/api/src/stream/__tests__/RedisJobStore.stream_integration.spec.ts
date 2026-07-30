@@ -388,6 +388,92 @@ describe('RedisJobStore Integration Tests', () => {
     });
   });
 
+  describe('Steer queue arm (in-place escalation)', () => {
+    test('arms a queued steer in place, preserving FIFO order and every field', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+      const streamId = `arm-steer-${Date.now()}`;
+
+      try {
+        const job = await store.createJob(streamId, 'user-1', streamId);
+        await store.enqueueSteer(streamId, {
+          steerId: 'first',
+          text: 'earlier instruction',
+          userId: 'user-1',
+          createdAt: 1,
+          files: [{ file_id: 'f1' }] as never,
+        });
+        await store.enqueueSteer(streamId, {
+          steerId: 'second',
+          text: 'later instruction',
+          userId: 'user-1',
+          createdAt: 2,
+        });
+
+        await expect(store.armSteer(streamId, 'first', job.createdAt)).resolves.toBe(true);
+
+        const queue = await store.peekSteers(streamId);
+        expect(queue.map((item) => item.steerId)).toEqual(['first', 'second']);
+        /** Whole-item decode/patch/encode: nothing but the flag changes. */
+        expect(queue[0]).toMatchObject({
+          steerId: 'first',
+          text: 'earlier instruction',
+          userId: 'user-1',
+          createdAt: 1,
+          preempt: true,
+        });
+        expect(queue[0].files).toEqual([{ file_id: 'f1' }]);
+        expect(queue[1].preempt).toBeUndefined();
+      } finally {
+        await store.destroy();
+      }
+    });
+
+    test('refuses a missing steer, a stale generation, and a closed queue', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+      const streamId = `arm-steer-guards-${Date.now()}`;
+
+      try {
+        const job = await store.createJob(streamId, 'user-1', streamId);
+        await store.enqueueSteer(streamId, {
+          steerId: 'kept',
+          text: 'still waiting',
+          userId: 'user-1',
+          createdAt: 1,
+        });
+
+        await expect(store.armSteer(streamId, 'absent', job.createdAt)).resolves.toBe(false);
+        await expect(store.armSteer(streamId, 'kept', job.createdAt + 999)).resolves.toBe(false);
+        expect((await store.peekSteers(streamId))[0].preempt).toBeUndefined();
+
+        /** `enqueueSteer` refuses once closed, so plant a raw item directly to
+         *  exercise the closed guard with something findable in the list. */
+        await store.closeAndDrainSteers(streamId, job.createdAt);
+        await ioredisClient.rpush(
+          `stream:{${streamId}}:steers`,
+          JSON.stringify({
+            steerId: 'kept',
+            text: 'still waiting',
+            userId: 'user-1',
+            createdAt: 1,
+          }),
+        );
+        await expect(store.armSteer(streamId, 'kept', job.createdAt)).resolves.toBe(false);
+      } finally {
+        await store.destroy();
+      }
+    });
+  });
+
   describe('Requires Action Status Tracking', () => {
     test('should count requires_action jobs and remove them from the running set', async () => {
       if (!ioredisClient) {

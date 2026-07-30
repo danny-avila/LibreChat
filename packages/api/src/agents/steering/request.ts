@@ -456,3 +456,68 @@ export async function handleSteerCancel(
   clearTimeout(settleTimer);
   return { status: 200, body: { removed } };
 }
+
+/**
+ * Escalates a still-queued steer to an interrupt IN PLACE — one atomic flag
+ * flip on the existing item, so its FIFO position, id, and timestamp all
+ * survive and no reclaim window ever exists. `armed: false` is not an error:
+ * the steer already injected, was cancelled, or belongs to a run that ended
+ * (the client defers to the events it will receive). Mirrors the steer POST's
+ * preempt contract exactly: the durable flag is gated on the OWNER's recorded
+ * capability, the store op is fenced to the validated generation, and the
+ * volatile arm publish is fire-and-forget because the durable flag is the
+ * truth `rearmQueuedPreempts` trusts on resume and handover.
+ */
+export async function handleSteerArm(
+  user: SteerRequestUser,
+  body: SteerCancelBody,
+): Promise<SteerRequestResult> {
+  const conversationId = body.conversationId;
+  if (typeof conversationId !== 'string' || !conversationId || conversationId === 'new') {
+    return { status: 400, body: { code: 'INVALID_CONVERSATION' } };
+  }
+  if (typeof body.steerId !== 'string' || body.steerId.length === 0) {
+    return { status: 400, body: { code: 'INVALID_STEER_ID' } };
+  }
+
+  const streamId = conversationId;
+  const job = await GenerationJobManager.getJob(streamId);
+  if (!job) {
+    return { status: 200, body: { armed: false } };
+  }
+  if (job.metadata?.userId && job.metadata.userId !== user.id) {
+    logger.warn(`[handleSteerArm] Unauthorized arm attempt for ${streamId} by ${user.id}`);
+    return { status: 403, body: { code: 'UNAUTHORIZED' } };
+  }
+  if (hasTenantMismatch(job.metadata, user)) {
+    return { status: 403, body: { code: 'UNAUTHORIZED' } };
+  }
+  if (job.metadata?.preemptCapable !== true) {
+    /** Same honesty rule as the POST's echo: an owner that cannot seal must
+     *  not have its steer relabelled "interrupting". The steer stays queued
+     *  for the next tool boundary, which is the documented degradation. */
+    return { status: 200, body: { armed: false, code: 'PREEMPT_UNSUPPORTED' } };
+  }
+
+  const armed = await GenerationJobManager.steering.arm(streamId, body.steerId, job.createdAt);
+  if (!armed) {
+    return { status: 200, body: { armed: false } };
+  }
+  /** NOT awaited, exactly like the POST: the durable flag is already the
+   *  truth, a lost publish degrades to the tool-boundary fallback, and
+   *  resume/handover re-arm from the queue. */
+  void GenerationJobManager.requestPreempt(streamId, body.steerId, job.createdAt).then(
+    (confirmed) => {
+      if (!confirmed) {
+        logger.warn(
+          `[handleSteerArm] Preempt arm not confirmed for ${streamId} steer=${body.steerId}; ` +
+            'the steer remains queued and will inject at the next boundary',
+        );
+      }
+    },
+    (error) => {
+      logger.error(`[handleSteerArm] Preempt arm publish failed for ${streamId}:`, error);
+    },
+  );
+  return { status: 200, body: { armed: true } };
+}

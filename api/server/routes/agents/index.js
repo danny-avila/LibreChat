@@ -474,6 +474,19 @@ router.post(
   SteerController.SteerCancelController,
 );
 
+/**
+ * @route POST /chat/steer/arm
+ * @desc Escalate a still-queued steer to an interrupt in place (no new
+ * model-bound content, so no PII/moderation pass — just the shared limiters)
+ * @access Private
+ */
+router.post(
+  '/chat/steer/arm',
+  configMiddleware,
+  ...steerLimiters,
+  SteerController.SteerArmController,
+);
+
 router.use('/', v1);
 
 const chatRouter = express.Router();

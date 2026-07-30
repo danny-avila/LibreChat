@@ -1,10 +1,8 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { getDefaultStore } from 'jotai';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
-import { escalatingSteerFamily } from '~/store/steer';
 import PendingSteerChips from '../PendingSteerChips';
 import store from '~/store';
 
@@ -148,21 +146,6 @@ describe('PendingSteerChips — queued interrupt-now', () => {
 
     fireEvent.click(button);
     expect(mockSendQueuedNow).not.toHaveBeenCalled();
-  });
-
-  it('disables escalation while a bubble escalation is mid-reclaim', () => {
-    const jotai = getDefaultStore();
-    act(() => {
-      jotai.set(escalatingSteerFamily(CONVO_ID), true);
-    });
-    try {
-      renderChips([queuedMessage], { steering: liveRun });
-      expect(screen.getByTestId('queued-interrupt-now')).toBeDisabled();
-    } finally {
-      act(() => {
-        jotai.set(escalatingSteerFamily(CONVO_ID), false);
-      });
-    }
   });
 
   it('offers the always-interrupt preference in the row menu and flips it', async () => {

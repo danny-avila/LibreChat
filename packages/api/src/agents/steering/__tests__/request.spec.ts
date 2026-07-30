@@ -1,11 +1,11 @@
 import type { IMongoFile } from '@librechat/data-schemas';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
+import { handleSteerRequest, handleSteerCancel, handleSteerArm } from '../request';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { isSteeringSupported, isSteerPreemptSupported } from '../runtime';
 import { STEER_QUEUE_MAX_DEPTH } from '~/stream/interfaces/IJobStore';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
-import { handleSteerRequest, handleSteerCancel } from '../request';
 
 jest.mock('../runtime', () => ({
   ...jest.requireActual('../runtime'),
@@ -731,5 +731,110 @@ describe('preempt flag on the steer request', () => {
 
     expect(cancelled.body.removed).toBe(false);
     expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(true);
+  });
+});
+
+/**
+ * Escalation of a waiting steer is ONE atomic in-place flag flip — the item
+ * keeps its FIFO position, id, and timestamp, so the whole queue still drains
+ * in the user's instruction order at the seal, and no reclaim window exists.
+ */
+describe('handleSteerArm (real in-memory job manager)', () => {
+  function createCapableJob(streamId: string) {
+    return GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { preemptCapable: true },
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockIsSupported.mockReturnValue(true);
+    mockIsPreemptSupported.mockReturnValue(true);
+    GenerationJobManager.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    GenerationJobManager.initialize();
+  });
+
+  afterEach(async () => {
+    await GenerationJobManager.destroy();
+  });
+
+  it('400s on invalid input', async () => {
+    expect((await handleSteerArm(user, { steerId: 's1' })).status).toBe(400);
+    const badId = await handleSteerArm(user, { conversationId: 'c1', steerId: '' });
+    expect(badId.status).toBe(400);
+    expect(badId.body.code).toBe('INVALID_STEER_ID');
+  });
+
+  it('arms a queued steer in place: same item, same position, now preempting', async () => {
+    const streamId = 'arm-in-place';
+    await createCapableJob(streamId);
+    const first = await handleSteerRequest(user, { conversationId: streamId, text: 'first' });
+    const second = await handleSteerRequest(user, { conversationId: streamId, text: 'second' });
+    const firstId = first.body.steerId as string;
+
+    const armed = await handleSteerArm(user, { conversationId: streamId, steerId: firstId });
+    expect(armed).toEqual({ status: 200, body: { armed: true } });
+
+    /** FIFO preserved: the escalated steer still drains FIRST at the seal. */
+    const queue = await GenerationJobManager.steering.peek(streamId);
+    expect(queue.map((item) => item.steerId)).toEqual([firstId, second.body.steerId]);
+    expect(queue[0].preempt).toBe(true);
+    expect(queue[1].preempt).toBeUndefined();
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(true);
+  });
+
+  it('refuses to relabel when the owner cannot seal', async () => {
+    const streamId = 'arm-incapable';
+    await GenerationJobManager.createJob(streamId, user.id);
+    const posted = await handleSteerRequest(user, { conversationId: streamId, text: 'plain' });
+    const steerId = posted.body.steerId as string;
+
+    const result = await handleSteerArm(user, { conversationId: streamId, steerId });
+    expect(result).toEqual({ status: 200, body: { armed: false, code: 'PREEMPT_UNSUPPORTED' } });
+    expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBeUndefined();
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  it('reports armed:false when the steer already left the queue', async () => {
+    const streamId = 'arm-too-late';
+    await createCapableJob(streamId);
+    const posted = await handleSteerRequest(user, { conversationId: streamId, text: 'gone soon' });
+    const steerId = posted.body.steerId as string;
+    await GenerationJobManager.steering.cancel(streamId, steerId);
+
+    const result = await handleSteerArm(user, { conversationId: streamId, steerId });
+    expect(result).toEqual({ status: 200, body: { armed: false } });
+  });
+
+  it('treats a missing job as a lost race, not an error', async () => {
+    const result = await handleSteerArm(user, { conversationId: 'gone', steerId: 's1' });
+    expect(result).toEqual({ status: 200, body: { armed: false } });
+  });
+
+  it("403s another user's run", async () => {
+    const streamId = 'arm-foreign';
+    await GenerationJobManager.createJob(streamId, 'someone-else');
+    const result = await handleSteerArm(user, { conversationId: streamId, steerId: 'x' });
+    expect(result.status).toBe(403);
+  });
+
+  it("never arms another generation's steer", async () => {
+    const streamId = 'arm-stale-generation';
+    await createCapableJob(streamId);
+    const posted = await handleSteerRequest(user, { conversationId: streamId, text: 'target' });
+    const live = await GenerationJobManager.getJob(streamId);
+
+    const armed = await GenerationJobManager.steering.arm(
+      streamId,
+      posted.body.steerId as string,
+      (live?.createdAt as number) + 999,
+    );
+    expect(armed).toBe(false);
+    expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBeUndefined();
   });
 });

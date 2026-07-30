@@ -661,6 +661,22 @@ export class InMemoryJobStore implements IJobStore {
     return true;
   }
 
+  async armSteer(streamId: string, steerId: string, expectedCreatedAt?: number): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    if (!job || this.closedSteerQueues.has(streamId)) {
+      return false;
+    }
+    if (expectedCreatedAt != null && job.createdAt !== expectedCreatedAt) {
+      return false;
+    }
+    const item = this.steerQueues.get(streamId)?.find((entry) => entry.steerId === steerId);
+    if (item == null) {
+      return false;
+    }
+    item.preempt = true;
+    return true;
+  }
+
   async parkSteers(streamId: string, payload: string, expectedCreatedAt?: number): Promise<void> {
     if (expectedCreatedAt != null && this.jobs.get(streamId)?.createdAt !== expectedCreatedAt) {
       return;
