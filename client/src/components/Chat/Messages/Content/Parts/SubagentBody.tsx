@@ -214,7 +214,7 @@ export function SubagentPrompt({ prompt }: { prompt: string }): JSX.Element {
         onClick={() => setExpanded((prev) => !prev)}
         aria-controls={contentId}
         aria-expanded={expanded}
-        className="group/prompt flex w-full items-center gap-2.5 px-4 py-2.5 text-left transition-colors duration-150 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-heavy"
+        className="group/prompt flex w-full items-center gap-2.5 px-4 py-2.5 text-left transition-colors duration-150 hover:bg-surface-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-heavy"
       >
         <Quote size={13} className="shrink-0 text-text-tertiary" aria-hidden="true" />
         <span
@@ -225,7 +225,7 @@ export function SubagentPrompt({ prompt }: { prompt: string }): JSX.Element {
         </span>
         <span
           className={cn(
-            'min-w-0 flex-1 truncate text-xs text-text-tertiary transition-opacity duration-200',
+            'min-w-0 flex-1 truncate text-xs text-text-secondary transition-opacity duration-200',
             expanded ? 'opacity-0' : 'opacity-100',
           )}
         >
