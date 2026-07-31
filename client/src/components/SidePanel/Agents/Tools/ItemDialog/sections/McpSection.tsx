@@ -142,6 +142,40 @@ export default function McpSection({ item }: Props) {
     [serverName, serverToken, serverAllToken],
   );
 
+  /**
+   * Migrates legacy raw-keyed `tool_options` for THIS server to the current
+   * normalized ids the option toggles (defer / programmatic / background /
+   * intent) read and write — otherwise a persisted option shows disabled
+   * while the runtime heal keeps honoring it, and toggling the normalized
+   * control leaves the raw entry behind. An existing normalized entry wins
+   * over the legacy one on collision. Form state only; the user's next real
+   * edit persists it.
+   */
+  const formToolOptions = useWatch({ control, name: 'tool_options' });
+  useEffect(() => {
+    if (!formToolOptions) {
+      return;
+    }
+    const entries = Object.entries(formToolOptions);
+    if (!entries.some(([key]) => toCurrentToolId(key) !== key)) {
+      return;
+    }
+    const migrated: typeof formToolOptions = {};
+    for (const [key, options] of entries) {
+      if (toCurrentToolId(key) === key) {
+        migrated[key] = options;
+      }
+    }
+    for (const [key, options] of entries) {
+      const target = toCurrentToolId(key);
+      if (target === key) {
+        continue;
+      }
+      migrated[target] = { ...options, ...migrated[target] };
+    }
+    setValue('tool_options', migrated);
+  }, [formToolOptions, toCurrentToolId, setValue]);
+
   /** The `mcp_all` wildcard grants every server tool at runtime, so when the
    * server's tools ARE enumerable (e.g. it stopped being request-scoped), fold
    * the wildcard into the display as "all selected" — otherwise the dialog

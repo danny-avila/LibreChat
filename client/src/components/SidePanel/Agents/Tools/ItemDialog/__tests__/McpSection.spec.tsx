@@ -6,6 +6,7 @@ import McpSection from '../sections/McpSection';
 
 const mockSetValue = jest.fn();
 const mockGetValues = jest.fn((): string[] => []);
+const mockGetToolOptions = jest.fn((): Record<string, object> | undefined => undefined);
 const mockInitializeServer = jest.fn();
 const mockIsConnectionDeferred = jest.fn((): boolean => false);
 const mockToggleIntentAll = jest.fn();
@@ -19,7 +20,8 @@ const mockCapabilities = {
 
 jest.mock('react-hook-form', () => ({
   useFormContext: () => ({ control: {}, setValue: mockSetValue, getValues: mockGetValues }),
-  useWatch: () => mockGetValues(),
+  useWatch: ({ name }: { name: string }) =>
+    name === 'tool_options' ? mockGetToolOptions() : mockGetValues(),
 }));
 
 jest.mock('~/Providers', () => ({
@@ -155,6 +157,8 @@ describe('McpSection', () => {
     mockToggleIntentAll.mockClear();
     mockIsToolProgrammaticOnly.mockReset();
     mockIsToolProgrammaticOnly.mockReturnValue(false);
+    mockGetToolOptions.mockReset();
+    mockGetToolOptions.mockReturnValue(undefined);
     mockCapabilities.toolIntentsEnabled = false;
   });
 
@@ -365,6 +369,34 @@ describe('McpSection', () => {
       ['sys__server__sys_mcp_Connector: Company'],
       expect.objectContaining({ shouldDirty: true }),
     );
+  });
+
+  test('migrates legacy raw-keyed tool_options to the current normalized ids', () => {
+    /** Persisted options must be readable and clearable through the toggles,
+     *  which index by the normalized catalog id; an existing normalized entry
+     *  wins over the legacy one on collision. */
+    const specialItem: McpItem = {
+      ...item,
+      id: 'Connector: Company',
+      name: 'Connector: Company',
+      server: {
+        serverName: 'Connector: Company',
+        isConfigured: true,
+        tools: [{ tool_id: 'search_mcp_Connector__Company', name: 'Search' }],
+        metadata: { description: 'desc' },
+      } as never,
+      toolCount: 1,
+    };
+    mockGetToolOptions.mockReturnValue({
+      'search_mcp_Connector: Company': { run_in_background: true, defer_loading: true },
+      search_mcp_Connector__Company: { run_in_background: false },
+      other_tool: { describe_intent: true },
+    });
+    render(<McpSection item={specialItem} />);
+    expect(mockSetValue).toHaveBeenCalledWith('tool_options', {
+      other_tool: { describe_intent: true },
+      search_mcp_Connector__Company: { run_in_background: false, defer_loading: true },
+    });
   });
 
   test('shows the runtime-tools hint when attached via the wildcard', () => {

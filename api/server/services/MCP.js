@@ -198,6 +198,22 @@ async function resolveMcpServerContext(req) {
  * @param {{ id?: string, role?: string }} [user]
  * @returns {Promise<Record<string, import('@librechat/api').ParsedServerConfig>>}
  */
+/**
+ * Names of every MCP server the user can reach (operator config + user DB),
+ * for the legacy-key heal's collision detection in `initializeAgent`. Only
+ * consulted when a configured server name needs normalization.
+ * @param {string} [userId]
+ * @param {string} [role]
+ * @returns {Promise<string[]>}
+ */
+async function getAccessibleMcpServerNames(userId, role) {
+  const configs = await resolveAllMcpConfigs(
+    userId,
+    role != null ? { id: userId, role } : { id: userId },
+  );
+  return Object.keys(configs ?? {});
+}
+
 async function resolveAllMcpConfigs(userId, user) {
   const registry = getMCPServersRegistry();
   const appConfig = await getAppConfigForUser(userId, user);
@@ -1173,6 +1189,7 @@ module.exports = {
   resolveConfigServers,
   resolveMcpServerNames,
   resolveMcpServerContext,
+  getAccessibleMcpServerNames,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
   createOAuthStart,

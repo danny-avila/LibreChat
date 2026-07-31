@@ -6,6 +6,7 @@ const {
   refreshS3Url,
   splitMCPToolKey,
   buildServerNameAliases,
+  findShadowedServerNames,
   agentCreateSchema,
   agentUpdateSchema,
   refreshListAvatars,
@@ -235,6 +236,7 @@ const filterAuthorizedTools = async ({
   let mcpServerConfigs;
   /** normalized server name -> the raw key `mcpServerConfigs` is indexed by */
   let configNamesByNormalized = new Map();
+  let shadowedServerNames = new Set();
   let registryUnavailable = false;
   const existingToolSet = existingTools?.length ? new Set(existingTools) : null;
   const hasMCPTools = tools.some((tool) => tool?.includes(Constants.mcp_delimiter));
@@ -283,6 +285,7 @@ const filterAuthorizedTools = async ({
        *  or a tool could be authorized against one server and executed
        *  against another. */
       configNamesByNormalized = buildServerNameAliases(Object.keys(mcpServerConfigs));
+      shadowedServerNames = findShadowedServerNames(Object.keys(mcpServerConfigs));
     }
 
     /** Tool keys embed the normalized server name; the config is keyed by the raw name. */
@@ -306,6 +309,17 @@ const filterAuthorizedTools = async ({
     if (!Object.hasOwn(mcpServerConfigs, serverName)) {
       logger.warn(
         `[filterAuthorizedTools] Rejected MCP tool "${tool}" — server "${serverName}" not accessible to user ${userId}`,
+      );
+      continue;
+    }
+
+    /** A shadowed server's tools (including its `mcp_all` wildcard) produce
+     *  the SAME normalized function names as the winning server's — in-run
+     *  dispatch could execute either. Fail closed at authorization; this map
+     *  is the full accessible set, so DB-vs-config collisions are visible. */
+    if (shadowedServerNames.has(serverName)) {
+      logger.warn(
+        `[filterAuthorizedTools] Rejected MCP tool "${tool}" — server "${serverName}" is shadowed by a name collision; rename one server to use it`,
       );
       continue;
     }

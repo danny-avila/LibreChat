@@ -470,6 +470,15 @@ export interface InitializeAgentParams {
  * getConvoFiles not yet in data-schemas but included here for consistency
  */
 export interface InitializeAgentDbMethods extends EndpointDbMethods {
+  /**
+   * Names of every MCP server the user can reach (operator config + user DB).
+   * Consulted by the legacy-key heal ONLY when a configured name needs
+   * normalization: collision detection must see user-DB servers, or healing a
+   * raw key could produce a key that direct-first resolution routes to a
+   * different (DB) server. Optional — without it the heal falls back to the
+   * operator-config names.
+   */
+  getAccessibleMcpServerNames?: (userId?: string, role?: string) => Promise<string[]>;
   /** Update usage tracking for multiple files */
   updateFilesUsage: (
     files: Array<{ file_id: string }>,
@@ -651,7 +660,27 @@ export async function initializeAgent(
    * defer/programmatic classification, the background and intent passes —
    * reads `agent.tools` / `agent.tool_options` after this point.
    */
-  const mcpRawServerNames = Object.keys(req.config?.mcpConfig ?? {});
+  let mcpRawServerNames = Object.keys(req.config?.mcpConfig ?? {});
+  /**
+   * The heal only rewrites when a configured name needs normalization; in
+   * that case collision detection must see the FULL accessible set (user-DB
+   * servers included), or a raw key could be rewritten into a key that
+   * direct-first resolution routes to a different server. The lookup is
+   * skipped entirely for the common all-safe-names case.
+   */
+  if (
+    db.getAccessibleMcpServerNames != null &&
+    mcpRawServerNames.some((name) => normalizeServerName(name) !== name)
+  ) {
+    try {
+      mcpRawServerNames = await db.getAccessibleMcpServerNames(req.user?.id, req.user?.role);
+    } catch (error) {
+      logger.warn(
+        '[initializeAgent] Failed to resolve accessible MCP server names; healing against operator-config names only:',
+        error,
+      );
+    }
+  }
   const healedKeys = normalizeAgentToolKeys({
     tools: agent.tools ?? undefined,
     toolOptions: agent.tool_options,

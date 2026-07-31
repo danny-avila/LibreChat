@@ -409,6 +409,40 @@ describe('Tool Handlers', () => {
       );
     });
 
+    it('skips tools of a shadowed server (colliding normalized names) at execution', async () => {
+      /** Instances of a shadowed server get the SAME normalized names as the
+       *  winner's, so in-run dispatch could execute either — legacy raw keys
+       *  and mcp_all tokens bypass catalog filtering, so execution must also
+       *  fail closed. */
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://x.example/mcp',
+        source: 'yaml',
+      };
+      const { resolveMcpServerContext } = require('~/server/services/MCP');
+      resolveMcpServerContext.mockResolvedValueOnce({
+        configServers: {},
+        serverNames: ['Sales_Force', 'Sales_Force'],
+        rawServerNames: ['Sales Force', 'Sales:Force'],
+      });
+      mockGetServerConfig.mockResolvedValue(serverConfig);
+      mockCreateMCPTool.mockResolvedValue({ name: 'never' });
+
+      const result = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [`search${Constants.mcp_delimiter}Sales:Force`],
+        options: {
+          req: {
+            user: { id: fakeUser._id.toString(), role: 'USER' },
+            body: {},
+          },
+        },
+      });
+
+      expect(result.loadedTools).toEqual([]);
+      expect(mockCreateMCPTool).not.toHaveBeenCalled();
+    });
+
     it('keeps a server resolving under the parsed name as-is (direct identity wins)', async () => {
       /** A user-DB server named exactly like an operator server's normalized
        *  form must keep its own identity instead of being rerouted. */

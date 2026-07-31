@@ -69,7 +69,11 @@ const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/pro
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
-const { createMCPPermissionContext, resolveMcpServerContext } = require('~/server/services/MCP');
+const {
+  createMCPPermissionContext,
+  resolveMcpServerContext,
+  getAccessibleMcpServerNames,
+} = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
@@ -1881,4 +1885,7 @@ module.exports = {
   loadToolsForExecution,
   processRequiredActions,
   resolveAgentCapabilities,
+  /** Re-exported for controllers that already depend on (and mock) this
+   *  module, avoiding a fresh heavy `services/MCP` require chain there. */
+  getAccessibleMcpServerNames,
 };

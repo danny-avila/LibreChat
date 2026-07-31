@@ -8,6 +8,7 @@ const {
   loadWebSearchAuth,
   splitMCPToolKey,
   buildServerNameAliases,
+  findShadowedServerNames,
   buildInlineMemoryTool,
   getCodeApiAuthHeaders,
   buildImageToolContext,
@@ -301,6 +302,7 @@ const loadTools = async ({
     } = options.mcpServerContext ?? (await resolveMcpServerContext(options.req)));
   }
   const serverNameAliases = buildServerNameAliases(mcpRawServerNames);
+  const shadowedServers = findShadowedServerNames(mcpRawServerNames);
 
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
@@ -440,6 +442,16 @@ const loadTools = async ({
             serverName = aliasedName;
           }
         }
+      }
+      /** A shadowed server's instances (wildcard-expanded or single) get the
+       *  SAME normalized names as the winning server's — in-run dispatch
+       *  could execute either. Fail closed at execution too, since legacy
+       *  raw keys and `mcp_all` tokens bypass catalog filtering. */
+      if (serverName != null && shadowedServers.has(serverName)) {
+        logger.warn(
+          `[handleTools] Skipping MCP tool "${tool}": server "${serverName}" is shadowed by a name collision; rename one server to use it.`,
+        );
+        continue;
       }
       if (!serverConfig) {
         logger.warn(
