@@ -332,6 +332,23 @@ describe('deleteUserController', () => {
     expect(mockRes.send).toHaveBeenCalledWith({ message: 'User deleted' });
   });
 
+  it('refuses BEFORE the barrier when the deletion commitment cannot be recorded', async () => {
+    const db = require('~/models');
+    db.markUserDeletionCommitted.mockRejectedValue(new Error('mongo down'));
+    const userId = new mongoose.Types.ObjectId();
+    const req = { user: { id: userId.toString(), _id: userId, email: 'test@test.com' } };
+
+    await deleteUserController(req, mockRes);
+
+    // A barrier without a commitment is an unrecoverable lockout: authentication is
+    // refused behind the barrier while the sweep only consumes committed rows. The
+    // ordering guarantees a failed commit leaves the user fully functional.
+    expect(mockRes.status).toHaveBeenCalledWith(503);
+    expect(db.markUserDeleting).not.toHaveBeenCalled();
+    expect(db.deleteMessages).not.toHaveBeenCalled();
+    db.markUserDeletionCommitted.mockResolvedValue(undefined);
+  });
+
   it('should remove the user from all groups via $pullAll', async () => {
     const userId = new mongoose.Types.ObjectId();
     const userIdStr = userId.toString();

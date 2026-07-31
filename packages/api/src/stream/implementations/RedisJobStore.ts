@@ -517,6 +517,16 @@ const DEFAULT_TTL = {
    * `expiresAt` extends beyond this (see pauseTtlSeconds).
    */
   requiresAction: 86400,
+  /**
+   * Retained reconciliation evidence (25 hours, matching the in-memory store's
+   * backstop). A terminal job kept WITHOUT completedAt is the only durable record
+   * of a scheduled run whose Mongo outcome write exhausted its retries; the
+   * 20-minute running TTL expired it BEFORE the reconciler's 30-minute orphan
+   * cutoff could read it, so an extended Mongo outage recorded real successes and
+   * failures as `interrupted`. The reconciler deletes the job after projecting it;
+   * this TTL is only the leak guard.
+   */
+  retainedEvidence: 90000,
 };
 
 /**
@@ -553,6 +563,8 @@ export interface RedisJobStoreOptions {
   userJobsSetTtl?: number;
   /** Backstop TTL for a paused (requires_action) job in seconds (default: 86400 = 24 hours). */
   requiresActionTtl?: number;
+  /** Leak-guard TTL for terminal jobs retained as reconciliation evidence (default: 90000 = 25 hours). */
+  retainedEvidenceTtl?: number;
 }
 
 interface LocalCacheEntry<T> {
@@ -601,6 +613,7 @@ export class RedisJobStore implements IJobStore {
       runStepsAfterComplete: options?.runStepsAfterCompleteTtl ?? DEFAULT_TTL.runStepsAfterComplete,
       userJobsSet: options?.userJobsSetTtl ?? DEFAULT_TTL.userJobsSet,
       requiresAction: options?.requiresActionTtl ?? DEFAULT_TTL.requiresAction,
+      retainedEvidence: options?.retainedEvidenceTtl ?? DEFAULT_TTL.retainedEvidence,
     };
     // Detect cluster mode using ioredis's isCluster property
     this.isCluster = (redis as Cluster).isCluster === true;
@@ -796,7 +809,7 @@ export class RedisJobStore implements IJobStore {
     // outcome write exhausted its Mongo retries. Reaping it on the short completed TTL
     // would destroy that evidence well before the reconciler's minimum run age, leaving
     // the ScheduleRun `started` until the 30-minute orphan cutoff reports a success as
-    // interrupted. Hold it on the running TTL instead.
+    // interrupted. Hold it on the dedicated evidence TTL, which outlives that cutoff.
     const preserveTerminal = terminal && updates.completedAt == null;
     const observedJob = terminal ? await this.getJob(streamId) : null;
     const fields = Object.entries(serialized).flat();
@@ -809,7 +822,7 @@ export class RedisJobStore implements IJobStore {
       KEYS.steers(streamId),
       expectedCreatedAt != null ? String(expectedCreatedAt) : '',
       terminal ? '1' : '0',
-      String(preserveTerminal ? this.ttl.running : this.ttl.completed),
+      String(preserveTerminal ? this.ttl.retainedEvidence : this.ttl.completed),
       String(this.ttl.chunksAfterComplete),
       String(this.ttl.runStepsAfterComplete),
       ...fields,
@@ -1030,7 +1043,10 @@ export class RedisJobStore implements IJobStore {
     // see updateJob. Retained evidence has to outlive the short completed TTL or the
     // reconciler finds nothing and reports a finished scheduled run as interrupted.
     const preserveTerminal = terminal && patch?.completedAt == null;
-    let ttl = terminal && !preserveTerminal ? this.ttl.completed : this.ttl.running;
+    let ttl = this.ttl.running;
+    if (terminal) {
+      ttl = preserveTerminal ? this.ttl.retainedEvidence : this.ttl.completed;
+    }
     if (to === 'requires_action') {
       // A paused job must outlive its approval window, even when that window is
       // longer than the running TTL — otherwise Redis evicts it before a

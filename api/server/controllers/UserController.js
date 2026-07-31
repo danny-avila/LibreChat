@@ -351,6 +351,30 @@ const deleteUserController = async (req, res) => {
       }
     }
 
+    // COMMIT to automatic completion BEFORE the barrier goes up. Ordering is the
+    // whole guarantee: once the barrier is durable, authentication is refused, so a
+    // barrier without a commitment is an unrecoverable lockout (the sweep only
+    // consumes committed rows). Committed-without-barrier is inert — nothing
+    // consults the marker except the sweep, which requires the barrier too — so a
+    // failure HERE refuses cleanly while the user is still fully functional.
+    let committed = false;
+    for (let attempt = 1; attempt <= 3 && !committed; attempt++) {
+      try {
+        await db.markUserDeletionCommitted(user.id);
+        committed = true;
+      } catch (error) {
+        logger.error(
+          `[deleteUserController] Failed to commit deletion (attempt ${attempt}/3)`,
+          error,
+        );
+      }
+    }
+    if (!committed) {
+      return res.status(503).json({
+        message: 'Could not start account deletion. Please retry.',
+      });
+    }
+
     // Quiesce scheduled chats FIRST: mark all the user's schedules non-claimable
     // (so the engine can't fire a new occurrence mid-cascade) and abort any
     // in-flight loopback runs, so a scheduled generation can't persist messages
@@ -376,30 +400,6 @@ const deleteUserController = async (req, res) => {
       return res.status(503).json({
         message: 'Could not start account deletion. Please retry.',
       });
-    }
-
-    // COMMIT to automatic completion before anything can defer: the barrier refuses
-    // authentication, so if this request defers (or dies mid-cascade) the sweep is the
-    // only party that can ever finish — and it only consumes committed deletions (the
-    // CLI raises the same barrier but can refuse, and must never be auto-completed).
-    // Bounded retries because a swallowed failure here recreates the lockout.
-    let committed = false;
-    for (let attempt = 1; attempt <= 3 && !committed; attempt++) {
-      try {
-        await db.markUserDeletionCommitted(user.id);
-        committed = true;
-      } catch (error) {
-        logger.error(
-          `[deleteUserController] Failed to commit deletion (attempt ${attempt}/3)`,
-          error,
-        );
-      }
-    }
-    if (!committed) {
-      logger.error(
-        `[deleteUserController] Proceeding without a recorded deletion commitment for ${user.id}; ` +
-          'a deferred cascade would need this endpoint retried or operator intervention.',
-      );
     }
 
     const quiesced = await quiesceUserSchedules(user.id).catch((error) => {

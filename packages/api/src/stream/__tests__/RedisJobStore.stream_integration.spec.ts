@@ -1307,6 +1307,34 @@ describe('RedisJobStore Integration Tests', () => {
       await store.destroy();
     });
 
+    test('retained reconciliation evidence outlives the orphan cutoff', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `retained-evidence-${Date.now()}`;
+      const job = await store.createJob(streamId, 'user-1', streamId);
+      // Terminal WITHOUT completedAt = preserveForReconcile: this job is the only
+      // durable record of the run's outcome when the Mongo write exhausted retries.
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'complete',
+        expectCreatedAt: job.createdAt,
+        patch: {},
+      });
+
+      // The 20-minute running TTL expired the evidence BEFORE the reconciler's
+      // 30-minute orphan cutoff could read it; the dedicated TTL must outlive it.
+      const ttl = await ioredisClient.ttl(`stream:{${streamId}}:job`);
+      expect(ttl).toBeGreaterThan(30 * 60);
+
+      await store.destroy();
+    });
+
     test('should clean up stale jobs', async () => {
       if (!ioredisClient) {
         return;

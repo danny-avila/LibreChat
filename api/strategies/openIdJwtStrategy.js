@@ -121,7 +121,7 @@ const openIdJwtLogin = (openIdConfig) => {
             ? await getCachedAuthUserDoc(authUserCacheStore, authUserCacheKey)
             : undefined;
 
-        const servedCachedUser = authUserCacheMode === 'on' && cachedUser;
+        const servedCachedUser = authUserCacheMode === 'on' && cachedUser != null;
         const lookupResult = servedCachedUser
           ? { user: cachedUser, error: null, migration: false }
           : await findOpenIDUser({
@@ -182,7 +182,7 @@ const openIdJwtLogin = (openIdConfig) => {
           // barrier below, or a lookup that completed before markUserDeleting could
           // still authenticate after it (caching disabled, the migration/role-update
           // branch, or a fill whose tombstone read failed).
-          let deletionFenceConclusive = servedCachedUser === true;
+          let deletionFenceConclusive = servedCachedUser;
           if (authUserCacheStore && authUserCacheKey) {
             if (Object.keys(updateData).length > 0) {
               await invalidateCachedAuthUserDoc(authUserCacheStore, {

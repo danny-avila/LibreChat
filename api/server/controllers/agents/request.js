@@ -487,11 +487,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         logger.info(
           `[AgentController] Scheduled fire aborted before start; schedule ${scheduleId} no longer active`,
         );
+        // No conversationId: nothing has been persisted for this fire, and the
+        // schedule card links every non-empty lastRun.conversationId — a link here
+        // would send the owner to a chat that does not exist.
         const outcomeRecorded = await recordScheduleOutcome({
           scheduleId,
           scheduledFor,
           status: 'interrupted',
-          conversationId: streamId,
         });
         // Terminalize as ABORTED, not complete: if the outcome write failed a preserved
         // `complete` job would be mapped to `success` by the schedules reconciler,

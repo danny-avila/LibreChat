@@ -426,9 +426,14 @@ export function createUserMethods(
       { $set: { deletionCommittedAt: new Date() } },
       { timestamps: false },
     );
+    // Cached copies must not retain stale marker fields; best-effort like every
+    // non-barrier user mutation (the marker is not consulted at admission).
+    await invalidateAuthUserDocCache(userId);
   }
 
-  /** Rotation stamp for the deferred-deletion sweep window. Bookkeeping only. */
+  /** Rotation stamp for the deferred-deletion sweep window. Bookkeeping only, but it
+   *  still mutates user documents, so cached copies are dropped (best-effort — these
+   *  users are already refused at authentication behind the barrier). */
   async function markDeletionSweepAttempted(userIds: string[]): Promise<void> {
     if (userIds.length === 0) {
       return;
@@ -439,6 +444,7 @@ export function createUserMethods(
       { $set: { deletionSweepAt: new Date() } },
       { timestamps: false },
     );
+    await Promise.all(userIds.map((userId) => invalidateAuthUserDocCache(userId)));
   }
 
   /**
