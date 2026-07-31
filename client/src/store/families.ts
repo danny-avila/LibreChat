@@ -18,8 +18,8 @@ import type {
   TMessage,
   TPreset,
 } from 'librechat-data-provider';
-import type { TOptionSettings, ExtendedFile } from '~/common';
 import type { GenerationProtocolVersion } from '~/data-provider/SSE/protocol';
+import type { TOptionSettings, ExtendedFile } from '~/common';
 import {
   clearModelForNonEphemeralAgent,
   createChatSearchParams,

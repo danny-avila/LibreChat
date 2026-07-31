@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react';
-import type { Ref } from 'react';
 import { useRecoilState } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { Zap, ZapOff, Clock, ArrowUp, CircleHelp, MoreHorizontal } from 'lucide-react';
+import type { Ref } from 'react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import { useShortcutAriaKey, useShortcutDisplay } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize } from '~/hooks';

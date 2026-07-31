@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import type { ShortcutBinding } from '~/utils/shortcuts';
-import { bindingHash } from '~/utils/shortcuts';
 import type { ShortcutActionId } from '~/hooks/useKeyboardShortcuts';
+import type { ShortcutBinding } from '~/utils/shortcuts';
 import { EDITING_ALLOWED_SHORTCUTS, resolveShortcutBindings } from '~/hooks/useKeyboardShortcuts';
+import { bindingHash } from '~/utils/shortcuts';
 import store from '~/store';
 
 export type ComposerBindings = {

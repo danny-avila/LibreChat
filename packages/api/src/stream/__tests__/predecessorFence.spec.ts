@@ -1,7 +1,7 @@
-import { GenerationJobManagerClass } from '../GenerationJobManager';
 import { InMemoryEventTransport } from '../implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from '../implementations/InMemoryJobStore';
 import { JobPredecessorMismatchError } from '../interfaces/IJobStore';
+import { GenerationJobManagerClass } from '../GenerationJobManager';
 
 function createConditionalJob(
   store: InMemoryJobStore,

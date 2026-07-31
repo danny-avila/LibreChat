@@ -1,12 +1,12 @@
 import React from 'react';
-import { RecoilRoot, useRecoilValue } from 'recoil';
 import { getDefaultStore } from 'jotai';
+import { RecoilRoot, useRecoilValue } from 'recoil';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
+import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
-import InFlightSteers from '../InFlightSteers';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
+import InFlightSteers from '../InFlightSteers';
 import store from '~/store';
 
 const mockCancelMutateAsync = jest.fn();

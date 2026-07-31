@@ -1,12 +1,12 @@
 import type { SteerQueueItem, SteerReceipt } from '../interfaces/IJobStore';
-import { STEER_ENQUEUE_RECEIPT_FULL } from '../interfaces/IJobStore';
 import {
   GenerationJobManagerClass,
   TERMINAL_PUBLICATION_RECONNECT_ERROR,
 } from '../GenerationJobManager';
 import { InMemoryEventTransport } from '../implementations/InMemoryEventTransport';
-import { InMemoryJobStore } from '../implementations/InMemoryJobStore';
 import { registerChunkPublicationCapability } from '../internal/chunkPublication';
+import { InMemoryJobStore } from '../implementations/InMemoryJobStore';
+import { STEER_ENQUEUE_RECEIPT_FULL } from '../interfaces/IJobStore';
 
 type ReceiptEntry = { receipt: SteerReceipt; expiresAt: number };
 type ReceiptMap = Map<string, ReceiptEntry>;

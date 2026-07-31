@@ -1,8 +1,8 @@
 import Redis from 'ioredis';
 import { RedisEventTransport } from '../implementations/RedisEventTransport';
-import { RedisJobStore } from '../implementations/RedisJobStore';
-import { emitChunkWithReceipt } from '../internal/chunkPublication';
 import { JobPredecessorMismatchError } from '../interfaces/IJobStore';
+import { emitChunkWithReceipt } from '../internal/chunkPublication';
+import { RedisJobStore } from '../implementations/RedisJobStore';
 
 function createConditionalJob(
   store: RedisJobStore,

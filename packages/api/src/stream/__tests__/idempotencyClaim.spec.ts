@@ -1,16 +1,16 @@
-import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
-import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
-import {
-  GenerationJobManagerClass,
-  TERMINAL_PUBLICATION_RECONNECT_ERROR,
-} from '~/stream/GenerationJobManager';
-import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
 import {
   JobCreationSupersededError,
   type CreatedJobData,
   type IEventTransport,
 } from '~/stream/interfaces/IJobStore';
+import {
+  GenerationJobManagerClass,
+  TERMINAL_PUBLICATION_RECONNECT_ERROR,
+} from '~/stream/GenerationJobManager';
+import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { registerChunkPublicationCapability } from '~/stream/internal/chunkPublication';
+import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
+import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 
 jest.spyOn(console, 'log').mockImplementation();
 

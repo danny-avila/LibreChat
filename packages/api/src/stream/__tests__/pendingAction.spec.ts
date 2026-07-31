@@ -1,10 +1,10 @@
 import type { Agents } from 'librechat-data-provider';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
+import { PAUSE_PERSISTENCE_TIMEOUT_ERROR } from '~/stream/interfaces/IJobStore';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 import { ApprovalLifecycle } from '~/stream/ApprovalLifecycle';
-import { PAUSE_PERSISTENCE_TIMEOUT_ERROR } from '~/stream/interfaces/IJobStore';
 
 jest.spyOn(console, 'log').mockImplementation();
 

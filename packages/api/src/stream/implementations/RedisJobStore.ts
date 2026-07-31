@@ -23,6 +23,7 @@ import type {
   SteerReceiptInput,
   ParkedSteerClaim,
 } from '~/stream/interfaces/IJobStore';
+import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
   JobCreationSupersededError,
   JobPredecessorMismatchError,
@@ -33,7 +34,6 @@ import {
   isPendingActionStale,
 } from '~/stream/interfaces/IJobStore';
 import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
-import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import { RecoveredSteerPayloadMismatchError } from '~/stream/SteerRecovery';
 
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;

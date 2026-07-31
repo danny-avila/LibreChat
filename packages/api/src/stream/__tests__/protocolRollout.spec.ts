@@ -1,5 +1,5 @@
-import { InMemoryJobStore } from '../implementations/InMemoryJobStore';
 import type { SteerQueueItem, SteerReceiptInput } from '../interfaces/IJobStore';
+import { InMemoryJobStore } from '../implementations/InMemoryJobStore';
 
 function steer(id: string): SteerQueueItem {
   return {

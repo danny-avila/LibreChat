@@ -1,5 +1,5 @@
-import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import { randomUUID } from 'crypto';
+import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import {
   Constants,
   ContentTypes,
@@ -29,19 +29,11 @@ import type {
   IdempotencyClaimValue,
   SteerQueueItem,
 } from './interfaces/IJobStore';
-import { assertJobStoreV2 } from './jobStoreCapabilities';
-import type { RecoveredSteerPayload } from './SteerRecovery';
-import { isRecoveredSteerPayload, RecoveredSteerPayloadMismatchError } from './SteerRecovery';
 import type { AgentStartupTelemetry } from '~/agents/startup';
+import type { RecoveredSteerPayload } from './SteerRecovery';
 import type { SteerContentView } from './SteeringLifecycle';
 import type { GenerationJobStore } from '~/app/metrics';
 import type * as t from '~/types';
-import {
-  recordGenerationStreamResumePendingEvents,
-  recordGenerationStreamSubscription,
-  setGenerationJobsInFlight,
-  recordGenerationJob,
-} from '~/app/metrics';
 import {
   JobCreationSupersededError,
   JobPredecessorMismatchError,
@@ -50,6 +42,14 @@ import {
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   STEER_QUEUE_MAX_DEPTH,
 } from './interfaces/IJobStore';
+import {
+  recordGenerationStreamResumePendingEvents,
+  recordGenerationStreamSubscription,
+  setGenerationJobsInFlight,
+  recordGenerationJob,
+} from '~/app/metrics';
+import { isRecoveredSteerPayload, RecoveredSteerPayloadMismatchError } from './SteerRecovery';
+import { assertJobStoreV2 } from './jobStoreCapabilities';
 
 /**
  * Tombstone budget per generation. Twice the queue depth so a full queue's

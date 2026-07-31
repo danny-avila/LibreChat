@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import { apiBaseUrl, QueryKeys, request, dataService } from 'librechat-data-provider';
 import type { Agents, TConversation, TPendingSteer } from 'librechat-data-provider';
+import { generationProtocolHeaders, withGenerationProtocolQuery } from './protocol';
 import { isNotFoundError, updateConvoInAllQueries } from '~/utils';
 import { useGetStartupConfig } from '../Endpoints';
-import { generationProtocolHeaders, withGenerationProtocolQuery } from './protocol';
 
 export interface StreamStatusResponse {
   /** Exact protocol selected by the job. Missing/1 is always legacy. */

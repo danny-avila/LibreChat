@@ -31,8 +31,10 @@ import type {
   TSteerUpdatedEvent,
   TActivityLabelEvent,
 } from 'librechat-data-provider';
-import type { EventHandlerParams } from './useEventHandlers';
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
+import type { DrainAfterAbort, QueuedMessageOrigin } from '~/store/families';
+import type { GenerationProtocolVersion } from '~/data-provider';
+import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import {
   logger,
@@ -66,13 +68,11 @@ import {
   supportsGenerationProtocolV2,
   GENERATION_PROTOCOL_VERSION,
 } from '~/data-provider';
-import type { GenerationProtocolVersion } from '~/data-provider';
 import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useUsageHandler from './useUsageHandler';
 import store from '~/store';
-import type { DrainAfterAbort, QueuedMessageOrigin } from '~/store/families';
 
 type ChatHelpers = Pick<
   EventHandlerParams,

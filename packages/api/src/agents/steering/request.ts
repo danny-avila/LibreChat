@@ -2,12 +2,12 @@ import { createHash, randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import { SteerEvents } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
-import type { SteerFileFetcher } from './media';
 import type {
   GenerationProtocolVersion,
   SteerQueueItem,
   SteerReceipt,
 } from '~/stream/interfaces/IJobStore';
+import type { SteerFileFetcher } from './media';
 import {
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_ENQUEUE_QUEUE_FULL,

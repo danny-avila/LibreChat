@@ -1,9 +1,9 @@
 import Redis from 'ioredis';
-import { RedisJobStore } from '../implementations/RedisJobStore';
-import { RedisEventTransport } from '../implementations/RedisEventTransport';
-import { InMemoryEventTransport } from '../implementations/InMemoryEventTransport';
-import { GenerationJobManagerClass } from '../GenerationJobManager';
 import type { SteerQueueItem } from '../interfaces/IJobStore';
+import { InMemoryEventTransport } from '../implementations/InMemoryEventTransport';
+import { RedisEventTransport } from '../implementations/RedisEventTransport';
+import { GenerationJobManagerClass } from '../GenerationJobManager';
+import { RedisJobStore } from '../implementations/RedisJobStore';
 
 describe('Redis generation protocol rollout bridge', () => {
   const keyPrefix = `Protocol-Rollout-${process.pid}-${Date.now()}:`;

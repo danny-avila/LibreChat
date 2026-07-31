@@ -1,12 +1,12 @@
 import type { IJobStore } from '../interfaces/IJobStore';
-import { GenerationJobManagerClass } from '../GenerationJobManager';
-import { InMemoryJobStore } from '../implementations/InMemoryJobStore';
-import { InMemoryEventTransport } from '../implementations/InMemoryEventTransport';
 import {
   assertJobStoreV2,
   getMissingJobStoreV2Methods,
   JOB_STORE_V2_REQUIRED_METHODS,
 } from '../jobStoreCapabilities';
+import { InMemoryEventTransport } from '../implementations/InMemoryEventTransport';
+import { InMemoryJobStore } from '../implementations/InMemoryJobStore';
+import { GenerationJobManagerClass } from '../GenerationJobManager';
 
 /**
  * Deliberately implements only the public pre-v2 contract. In particular,

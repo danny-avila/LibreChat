@@ -21,6 +21,7 @@ import type {
   IdempotencyClaimResult,
   ParkedSteerClaim,
 } from '~/stream/interfaces/IJobStore';
+import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
   JobPredecessorMismatchError,
   STEER_ENQUEUE_NOT_RUNNING,
@@ -31,13 +32,12 @@ import {
   PAUSE_PERSISTENCE_TIMEOUT_MS,
   isPendingActionStale,
 } from '~/stream/interfaces/IJobStore';
-import { toPendingSteer } from '~/stream/SteeringLifecycle';
-import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
   isRecoveredSteerPayload,
   recoveredSteerPayloadMatches,
   RecoveredSteerPayloadMismatchError,
 } from '~/stream/SteerRecovery';
+import { toPendingSteer } from '~/stream/SteeringLifecycle';
 
 /** Recovery window for parked steers (mirrors Redis's completed-job TTL). */
 export const PARKED_STEERS_TTL_MS: number = 5 * 60 * 1000;

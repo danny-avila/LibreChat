@@ -14,12 +14,12 @@ import {
   useInterruptToggleEntry,
 } from './SteerMenu';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
+import { supportsGenerationProtocolV2, useArmSteerMutation } from '~/data-provider';
 import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { useSteerCancel, useSteerReclaim, useLocalize } from '~/hooks';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
-import { supportsGenerationProtocolV2, useArmSteerMutation } from '~/data-provider';
 import { carriedSteerContext, cn } from '~/utils';
 import store from '~/store';
 

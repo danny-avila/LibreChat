@@ -1,5 +1,5 @@
-import { InMemoryJobStore } from '../implementations/InMemoryJobStore';
 import type { SteerQueueItem } from '../interfaces/IJobStore';
+import { InMemoryJobStore } from '../implementations/InMemoryJobStore';
 
 type ParkedMap = Map<string, { payload: string; expiresAt: number }>;
 

@@ -2,12 +2,8 @@ import { useEffect, useRef } from 'react';
 import { useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, tMessageSchema, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation, TSubmission, Agents } from 'librechat-data-provider';
-import type { StreamStatusResponse } from '~/data-provider';
-import {
-  getGenerationProtocolVersion,
-  supportsGenerationProtocolV2,
-} from '~/data-provider/SSE/protocol';
 import type { GenerationProtocolVersion } from '~/data-provider/SSE/protocol';
+import type { StreamStatusResponse } from '~/data-provider';
 import {
   dedupeSteersById,
   appendAppliedSteerIds,
@@ -16,6 +12,10 @@ import {
   carriedSteerContext,
   getBranchSiblingIndexesForTarget,
 } from '~/utils';
+import {
+  getGenerationProtocolVersion,
+  supportsGenerationProtocolV2,
+} from '~/data-provider/SSE/protocol';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useStreamStatus } from '~/data-provider';
 import store from '~/store';
