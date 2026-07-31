@@ -1299,6 +1299,26 @@ export class MCPOAuthHandler {
   }
 
   /**
+   * Deletes an OAuth flow together with its state mapping, for teardown paths
+   * that don't already hold the flow (e.g. server uninstall). The mapping is
+   * deleted first on purpose: a crash between the two deletes then leaves an
+   * unresolvable flow that fails closed and expires, whereas flow-first would
+   * orphan the mapping, and its state would resolve against the next flow
+   * created under the same deterministic flowId.
+   */
+  static async deleteFlowAndStateMapping(
+    flowId: string,
+    flowManager: FlowStateManager<MCPOAuthTokens | null>,
+  ): Promise<void> {
+    const flowState = await flowManager.getFlowState(flowId, this.FLOW_TYPE);
+    const metadata = flowState?.metadata as MCPOAuthFlowMetadata | undefined;
+    if (typeof metadata?.state === 'string') {
+      await this.deleteStateMapping(metadata.state, flowManager);
+    }
+    await flowManager.deleteFlow(flowId, this.FLOW_TYPE);
+  }
+
+  /**
    * Gets the default redirect URI for a server
    */
   private static getDefaultRedirectUri(serverName?: string): string {

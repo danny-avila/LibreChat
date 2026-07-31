@@ -335,6 +335,17 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
     }
 
+    /**
+     * Flow ids are deterministic (userId:serverName), so a stale state mapping
+     * can resolve to a newer flow for the same server. The stored state is the
+     * only per-attempt nonce; a mismatch means this callback belongs to a
+     * superseded authorization attempt and must not consume the current flow.
+     */
+    if (flowState.state !== state) {
+      logger.error('[MCP OAuth] State mismatch for flow', { flowId, serverName });
+      return res.redirect(`${basePath}/oauth/error?error=invalid_state`);
+    }
+
     logger.debug('[MCP OAuth] Flow state details', {
       serverName: flowState.serverName,
       userId: flowState.userId,

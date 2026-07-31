@@ -457,7 +457,11 @@ const clearStoredMCPOAuthState = async (userId, serverName) => {
         }) === index,
     );
     const results = await Promise.allSettled(
-      flowDeletes.map(([flowId, type]) => flowManager.deleteFlow(flowId, type)),
+      flowDeletes.map(([flowId, type]) =>
+        type === 'mcp_oauth'
+          ? MCPOAuthHandler.deleteFlowAndStateMapping(flowId, flowManager)
+          : flowManager.deleteFlow(flowId, type),
+      ),
     );
     for (const result of results) {
       if (result.status === 'rejected') {

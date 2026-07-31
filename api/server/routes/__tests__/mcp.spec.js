@@ -719,6 +719,115 @@ describe('MCP Routes', () => {
       expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_state`);
     });
 
+    it('should redirect to error page when the state cannot be resolved to a flow ID', async () => {
+      MCPOAuthHandler.resolveStateToFlowId.mockResolvedValueOnce(null);
+
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .query({ code: 'test-auth-code', state: 'orphaned-state-value' });
+      const basePath = getBasePath();
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_state`);
+      expect(MCPOAuthHandler.completeOAuthFlow).not.toHaveBeenCalled();
+    });
+
+    it('should reject a stale-state callback without consuming the current flow', async () => {
+      const flowId = 'test-user-id:test-server';
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          createdAt: Date.now(),
+        }),
+        completeFlow: jest.fn().mockResolvedValue(true),
+        deleteFlow: jest.fn().mockResolvedValue(true),
+      };
+
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+      /** Orphaned mapping from a superseded attempt resolves the old state to the live flow id */
+      MCPOAuthHandler.resolveStateToFlowId.mockResolvedValueOnce(flowId);
+      MCPOAuthHandler.getFlowState.mockResolvedValue({
+        state: 'current-attempt-state',
+        serverName: 'test-server',
+        userId: 'test-user-id',
+        metadata: {},
+        clientInfo: {},
+        codeVerifier: 'current-verifier',
+      });
+
+      const csrfToken = generateTestCsrfToken(flowId);
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({ code: 'stale-auth-code', state: 'superseded-attempt-state' });
+      const basePath = getBasePath();
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe(`${basePath}/oauth/error?error=invalid_state`);
+      expect(MCPOAuthHandler.completeOAuthFlow).not.toHaveBeenCalled();
+      expect(MCPTokenStorage.storeTokens).not.toHaveBeenCalled();
+      expect(mockFlowManager.completeFlow).not.toHaveBeenCalled();
+    });
+
+    it('should let the current tab complete after a stale callback burned the CSRF cookie', async () => {
+      const flowId = 'test-user-id:test-server';
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          createdAt: Date.now(),
+        }),
+        completeFlow: jest.fn().mockResolvedValue(true),
+        deleteFlow: jest.fn().mockResolvedValue(true),
+      };
+
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+      MCPOAuthHandler.getFlowState.mockResolvedValue({
+        state: flowId,
+        serverName: 'test-server',
+        userId: 'test-user-id',
+        metadata: {},
+        clientInfo: {},
+        codeVerifier: 'current-verifier',
+      });
+      MCPOAuthHandler.completeOAuthFlow.mockResolvedValue({ access_token: 'test-token' });
+      MCPTokenStorage.storeTokens.mockResolvedValue();
+      mockRegistryInstance.getServerConfig.mockResolvedValue({});
+
+      const mockMcpManager = {
+        getUserConnection: jest.fn().mockResolvedValue({
+          fetchTools: jest.fn().mockResolvedValue([]),
+        }),
+      };
+      require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
+      require('~/config').getOAuthReconnectionManager.mockReturnValue({
+        clearReconnection: jest.fn(),
+      });
+      require('~/server/services/Config/mcp').updateMCPServerTools.mockResolvedValue();
+
+      MCPOAuthHandler.resolveStateToFlowId.mockResolvedValueOnce(flowId);
+      const csrfToken = generateTestCsrfToken(flowId);
+      const staleResponse = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({ code: 'stale-auth-code', state: 'superseded-attempt-state' });
+
+      const basePath = getBasePath();
+      expect(staleResponse.status).toBe(302);
+      expect(staleResponse.headers.location).toBe(`${basePath}/oauth/error?error=invalid_state`);
+      expect(MCPOAuthHandler.completeOAuthFlow).not.toHaveBeenCalled();
+
+      /** The stale callback consumed the CSRF cookie; the current tab recovers via the fresh PENDING flow */
+      const legitResponse = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .query({ code: 'current-auth-code', state: flowId });
+
+      expect(legitResponse.status).toBe(302);
+      expect(legitResponse.headers.location).toContain(`${basePath}/oauth/success`);
+      expect(MCPOAuthHandler.completeOAuthFlow).toHaveBeenCalledTimes(1);
+    });
+
     describe('CSRF fallback via active PENDING flow', () => {
       it('should proceed when a fresh PENDING flow exists and no cookies are present', async () => {
         const flowId = 'test-user-id:test-server';
@@ -731,6 +840,7 @@ describe('MCP Routes', () => {
           deleteFlow: jest.fn().mockResolvedValue(true),
         };
         const mockFlowState = {
+          state: 'test-user-id:test-server',
           serverName: 'test-server',
           userId: 'test-user-id',
           metadata: {},
@@ -778,6 +888,7 @@ describe('MCP Routes', () => {
           deleteFlow: jest.fn().mockResolvedValue(true),
         };
         const mockFlowState = {
+          state: 'test-user-id:test-server',
           serverName: 'test-server',
           userId: 'test-user-id',
           metadata: {},
@@ -841,6 +952,7 @@ describe('MCP Routes', () => {
           deleteFlow: jest.fn().mockResolvedValue(true),
         };
         const mockFlowState = {
+          state: 'test-user-id:test-server',
           serverName: 'test-server',
           userId: 'test-user-id',
           metadata: {},
@@ -908,6 +1020,7 @@ describe('MCP Routes', () => {
           deleteFlow: jest.fn().mockResolvedValue(true),
         };
         const mockFlowState = {
+          state: 'test-user-id:test-server',
           serverName: 'test-server',
           userId: 'test-user-id',
           metadata: {},
@@ -1030,6 +1143,7 @@ describe('MCP Routes', () => {
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
       const mockFlowState = {
+        state: 'test-user-id:test-server',
         serverName: 'test-server',
         userId: 'test-user-id',
         metadata: { toolFlowId: 'tool-flow-123' },
@@ -1120,6 +1234,7 @@ describe('MCP Routes', () => {
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
       const mockFlowState = {
+        state: 'test-user-id:test-server',
         serverName: 'test-server',
         userId: 'test-user-id',
         metadata: {
@@ -1194,6 +1309,7 @@ describe('MCP Routes', () => {
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
       const mockFlowState = {
+        state: 'test-user-id:test-server',
         serverName: 'test-server',
         userId: 'test-user-id',
         metadata: {},
@@ -1254,6 +1370,7 @@ describe('MCP Routes', () => {
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
       const mockFlowState = {
+        state: 'test-user-id:test-server',
         serverName: 'test-server',
         userId: 'test-user-id',
         metadata: { toolFlowId: 'tool-flow-123' },
@@ -1304,6 +1421,7 @@ describe('MCP Routes', () => {
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
       const mockFlowState = {
+        state: 'test-user-id:test-server',
         serverName: 'test-server',
         userId: 'test-user-id',
         metadata: { toolFlowId: 'tool-flow-123' },
@@ -1379,6 +1497,7 @@ describe('MCP Routes', () => {
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
       const mockFlowState = {
+        state: 'test-user-id:test-server',
         serverName: 'test-server',
         userId: 'system',
         metadata: { toolFlowId: 'tool-flow-123' },
@@ -1422,6 +1541,7 @@ describe('MCP Routes', () => {
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
       const mockFlowState = {
+        state: 'test-user-id:test-server',
         serverName: 'test-server',
         userId: 'test-user-id',
         metadata: { toolFlowId: 'tool-flow-123' },
@@ -1474,6 +1594,7 @@ describe('MCP Routes', () => {
         deleteFlow: jest.fn().mockResolvedValue(true),
       };
       const mockFlowState = {
+        state: 'test-user-id:test-server',
         serverName: 'test-server',
         userId: 'test-user-id',
         metadata: { toolFlowId: 'tool-flow-123' },
@@ -1526,6 +1647,7 @@ describe('MCP Routes', () => {
         client_secret: 'client_secret',
       };
       const flowState = {
+        state: 'test-user-id:test-server',
         serverName: 'test-server',
         userId: 'test-user-id',
         metadata: { toolFlowId: 'tool-flow-123', serverUrl: 'http://example.com' },
@@ -1601,6 +1723,7 @@ describe('MCP Routes', () => {
       });
 
       MCPOAuthHandler.getFlowState.mockResolvedValue({
+        state: 'test-user-id:test-server',
         status: 'COMPLETED',
         serverName: 'test-server',
         userId: 'test-user-id',
@@ -2465,6 +2588,7 @@ describe('MCP Routes', () => {
       };
       MCPOAuthHandler.getFlowState = jest.fn().mockResolvedValue({
         id: 'test-user-id:test-server',
+        state: 'test-user-id:test-server',
         userId: 'test-user-id',
         metadata: {
           serverUrl: 'https://example.com',
@@ -2527,6 +2651,7 @@ describe('MCP Routes', () => {
       };
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
       MCPOAuthHandler.getFlowState.mockResolvedValue({
+        state: 'test-user-id:test-server',
         serverName: 'test-server',
         userId: 'test-user-id',
         metadata: { serverUrl: 'https://example.com', oauth: {} },
@@ -2583,6 +2708,7 @@ describe('MCP Routes', () => {
 
       MCPOAuthHandler.resolveStateToFlowId.mockResolvedValue(flowId);
       MCPOAuthHandler.getFlowState.mockResolvedValue({
+        state: flowId,
         serverName: 'test-server',
         userId: 'user123',
         tenantId: 'tenant-abc',
