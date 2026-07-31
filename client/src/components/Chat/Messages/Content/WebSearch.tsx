@@ -7,6 +7,7 @@ import type {
   ValidSource,
   SearchResultData,
   PartMetadata,
+  AnswerBoxResult,
 } from 'librechat-data-provider';
 import { disclosureChevronClassName, toolPanelSpacingClassName } from './disclosure';
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
@@ -174,6 +175,22 @@ export default function WebSearch({
     return [];
   }, [searchResults, attachments, ownTurn]);
 
+  /** Direct-answer card shown at the top of the source list. Attachment-only:
+   *  answer boxes are provider extras (Serper) that never carry citations, so
+   *  the streaming path does not need them. */
+  const answerBox = useMemo((): AnswerBoxResult | undefined => {
+    if (!attachments) {
+      return undefined;
+    }
+    for (const att of attachments) {
+      const answer = att.type === Tools.web_search ? att[Tools.web_search]?.answerBox : undefined;
+      if (answer) {
+        return answer;
+      }
+    }
+    return undefined;
+  }, [attachments]);
+
   // Show favicons from the raw SERP results immediately rather than waiting for
   // each source to flip to `processed`; the agents scrape barrier would otherwise
   // freeze the stack on "Searching the web" for the slowest scrape's duration.
@@ -281,8 +298,23 @@ export default function WebSearch({
                     'mt-1.5 max-h-[280px] overflow-y-auto rounded-lg border border-border-light',
                   )}
                 >
+                  {answerBox && (answerBox.title || answerBox.snippet) && (
+                    <div className="border-b border-border-light px-3 py-2.5">
+                      {answerBox.title && (
+                        <div className="text-xs font-semibold text-text-primary">
+                          {answerBox.title}
+                        </div>
+                      )}
+                      {answerBox.snippet && (
+                        <div className="mt-0.5 text-xs leading-relaxed text-text-secondary">
+                          {answerBox.snippet}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {allSources.map((source, i) => {
                     const domain = getCleanDomain(source.link);
+                    const snippet = 'snippet' in source ? source.snippet : undefined;
                     return (
                       <a
                         key={source.link}
@@ -290,15 +322,33 @@ export default function WebSearch({
                         target="_blank"
                         rel="noopener noreferrer"
                         className={cn(
-                          'flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-surface-hover',
-                          i > 0 && 'border-t border-border-light',
+                          'flex gap-2.5 px-3 py-2 transition-colors hover:bg-surface-hover',
+                          snippet ? 'items-start' : 'items-center',
+                          (i > 0 || !!answerBox) && 'border-t border-border-light',
                         )}
                       >
-                        <FaviconImage domain={domain} className="size-4 shrink-0 rounded-sm" />
-                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-text-primary">
-                          {source.title || domain}
+                        <FaviconImage
+                          domain={domain}
+                          className={cn('size-4 shrink-0 rounded-sm', snippet && 'mt-0.5')}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-xs font-medium text-text-primary">
+                            {source.title || domain}
+                          </span>
+                          {snippet && (
+                            <span className="mt-0.5 line-clamp-2 block text-[11px] leading-relaxed text-text-secondary">
+                              {snippet}
+                            </span>
+                          )}
                         </span>
-                        <span className="shrink-0 text-[11px] text-text-secondary">{domain}</span>
+                        <span className="shrink-0 text-right">
+                          <span className="block text-[11px] text-text-secondary">{domain}</span>
+                          {source.date && (
+                            <span className="block text-[10px] text-text-secondary">
+                              {source.date}
+                            </span>
+                          )}
+                        </span>
                       </a>
                     );
                   })}
