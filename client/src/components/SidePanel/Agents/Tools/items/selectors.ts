@@ -1,4 +1,9 @@
-import { Constants, normalizeServerName } from 'librechat-data-provider';
+import {
+  Constants,
+  splitMCPToolKey,
+  normalizeServerName,
+  buildServerNameAliases,
+} from 'librechat-data-provider';
 import type { Action } from 'librechat-data-provider';
 import type { AgentItem, AgentItemKind } from './types';
 
@@ -90,27 +95,52 @@ export function mcpAllToken(serverName: string): string {
  * explicit remove must also strip, or a legacy token leaves the server
  * permanently selected.
  */
-export function matchesMcpServer(token: string, serverName: string): boolean {
+export function matchesMcpServer(
+  token: string,
+  serverName: string,
+  allServerNames?: readonly string[],
+): boolean {
   const prefixed = `${MCP_PREFIX}${serverName}`;
+  const normalized = normalizeServerName(serverName);
   if (
     token === mcpServerToken(serverName) ||
     token === serverName ||
     token === prefixed ||
-    token.endsWith(`_${prefixed}`)
+    (normalized !== serverName && token === `${MCP_PREFIX}${normalized}`)
   ) {
     return true;
   }
-  const normalized = normalizeServerName(serverName);
-  if (normalized === serverName) {
-    return false;
+  if (allServerNames?.length) {
+    /** Boundary-exact: resolve the token ONCE against every configured
+     *  server (longest match, both spellings) — a normalized name that
+     *  itself contains the delimiter (`foo mcp bar` → `foo_mcp_bar`) must
+     *  not ALSO suffix-match a server named `bar`, or both cards select
+     *  together and removing one strips the other's tool. */
+    const aliases = buildServerNameAliases(allServerNames);
+    const [, parsed] = splitMCPToolKey(token, [...allServerNames, ...aliases.keys()]);
+    if (parsed == null) {
+      return false;
+    }
+    return (aliases.get(parsed) ?? parsed) === serverName;
   }
-  const normalizedPrefixed = `${MCP_PREFIX}${normalized}`;
-  return token === normalizedPrefixed || token.endsWith(`_${normalizedPrefixed}`);
+  if (token.endsWith(`_${prefixed}`)) {
+    return true;
+  }
+  return normalized !== serverName && token.endsWith(`_${MCP_PREFIX}${normalized}`);
 }
 
-function isMcpSelected(item: AgentItem, form: FormSelection): boolean {
+/** All configured MCP server ids in a catalog, for boundary-exact matching. */
+export function mcpServerIds(catalog: AgentItem[]): string[] {
+  return catalog.filter((item) => item.kind === 'mcp').map((item) => item.id);
+}
+
+function isMcpSelected(
+  item: AgentItem,
+  form: FormSelection,
+  allServerNames: readonly string[],
+): boolean {
   if (item.kind !== 'mcp') return false;
-  return form.tools.some((t) => matchesMcpServer(t, item.id));
+  return form.tools.some((t) => matchesMcpServer(t, item.id, allServerNames));
 }
 
 function isSkillSelected(item: AgentItem, form: FormSelection): boolean {
@@ -128,10 +158,11 @@ export function deriveSelectedItems(
   catalog: AgentItem[],
   agentActions: Action[],
 ): AgentItem[] {
+  const allServerNames = mcpServerIds(catalog);
   const selected = catalog.filter((item) => {
     if (item.kind === 'builtin') return isBuiltinSelected(item, form);
     if (item.kind === 'tool') return isToolSelected(item, form);
-    if (item.kind === 'mcp') return isMcpSelected(item, form);
+    if (item.kind === 'mcp') return isMcpSelected(item, form, allServerNames);
     if (item.kind === 'skill') return isSkillSelected(item, form);
     if (item.kind === 'action') return isActionSelected(item, agentActions);
     return false;

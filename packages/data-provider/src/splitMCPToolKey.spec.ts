@@ -144,6 +144,17 @@ describe('buildServerNameAliases', () => {
     const aliases = buildServerNameAliases(['Sales Force', 'Sales:Force']);
     expect(aliases.get('Sales_Force')).toBe('Sales Force');
   });
+
+  it('an identity name owns its slot regardless of configuration order', () => {
+    /** A server literally named `Sales_Force` must never have its keys
+     *  rerouted to a special-character server that normalizes onto it. */
+    expect(buildServerNameAliases(['Sales Force', 'Sales_Force']).get('Sales_Force')).toBe(
+      'Sales_Force',
+    );
+    expect(buildServerNameAliases(['Sales_Force', 'Sales Force']).get('Sales_Force')).toBe(
+      'Sales_Force',
+    );
+  });
 });
 
 describe('normalizeMCPToolKey', () => {

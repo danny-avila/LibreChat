@@ -377,7 +377,11 @@ describe('Tool Handlers', () => {
         serverNames: ['Connector__Company'],
         rawServerNames: [rawServerName],
       });
-      mockGetServerConfig.mockResolvedValue(serverConfig);
+      /** Direct-first: the parsed (normalized) name is tried as-is and only
+       *  the raw alias resolves — mirroring a registry keyed by raw names. */
+      mockGetServerConfig.mockImplementation(async (name) =>
+        name === rawServerName ? serverConfig : null,
+      );
       mockCreateMCPTool.mockResolvedValue({ name: normalizedKey });
 
       const result = await loadTools({
@@ -401,6 +405,48 @@ describe('Tool Handlers', () => {
         expect.objectContaining({
           toolKey: normalizedKey,
           serverName: rawServerName,
+        }),
+      );
+    });
+
+    it('keeps a server resolving under the parsed name as-is (direct identity wins)', async () => {
+      /** A user-DB server named exactly like an operator server's normalized
+       *  form must keep its own identity instead of being rerouted. */
+      const dbServerName = 'Connector__Company';
+      const toolKey = `search${Constants.mcp_delimiter}${dbServerName}`;
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://db.example.com/mcp',
+        source: 'user',
+      };
+
+      const { resolveMcpServerContext } = require('~/server/services/MCP');
+      resolveMcpServerContext.mockResolvedValueOnce({
+        configServers: {},
+        serverNames: ['Connector__Company'],
+        rawServerNames: ['Connector: Company'],
+      });
+      mockGetServerConfig.mockImplementation(async (name) =>
+        name === dbServerName ? serverConfig : null,
+      );
+      mockCreateMCPTool.mockResolvedValue({ name: toolKey });
+
+      const result = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [toolKey],
+        options: {
+          req: {
+            user: { id: fakeUser._id.toString(), role: 'USER' },
+            body: {},
+          },
+        },
+      });
+
+      expect(result.loadedTools).toEqual([{ name: toolKey }]);
+      expect(mockCreateMCPTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolKey,
+          serverName: dbServerName,
         }),
       );
     });

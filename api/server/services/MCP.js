@@ -187,7 +187,7 @@ async function resolveMcpServerContext(req) {
       '[resolveMcpServerContext] Failed to resolve MCP servers, degrading to empty:',
       error,
     );
-    return { configServers: {}, serverNames: [] };
+    return { configServers: {}, serverNames: [], rawServerNames: [] };
   }
 }
 
@@ -722,18 +722,30 @@ async function createMCPTool({
       ? [normalizeServerName(resolvedServerName)]
       : Object.keys(configServers ?? {}).map(normalizeServerName),
   );
-  /** Config, registry, cache, and auth lookups below are keyed by the RAW
-   *  config name, so a parsed (normalized) name must resolve back to it. */
-  const parsedRawServerName =
-    parsedServerName != null && resolvedServerName == null
-      ? (buildServerNameAliases(Object.keys(configServers ?? {})).get(parsedServerName) ??
-        parsedServerName)
-      : parsedServerName;
-  const serverName = resolvedServerName ?? parsedRawServerName;
+  let serverName = resolvedServerName ?? parsedServerName;
   const toolName = parsedToolName;
 
-  const serverConfig =
+  let serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
+  /** DIRECT-FIRST alias fallback: only when the parsed name resolves to no
+   *  server is it treated as the normalized spelling of a raw config name —
+   *  a user-DB server named like an operator server's normalized form must
+   *  keep its own identity. */
+  if (!serverConfig && resolvedServerName == null && parsedServerName != null) {
+    const aliasedName = buildServerNameAliases(Object.keys(configServers ?? {})).get(
+      parsedServerName,
+    );
+    if (aliasedName != null && aliasedName !== parsedServerName) {
+      serverConfig = await getMCPServersRegistry().getServerConfig(
+        aliasedName,
+        user?.id,
+        configServers,
+      );
+      if (serverConfig) {
+        serverName = aliasedName;
+      }
+    }
+  }
   const requestScopedTools = serverConfig ? requiresEphemeralUserConnection(serverConfig) : false;
   const useMissingToolCache = !requestScopedTools;
 

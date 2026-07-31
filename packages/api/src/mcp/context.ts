@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { normalizeServerName } from 'librechat-data-provider';
+import { normalizeServerName, buildServerNameAliases } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
 
@@ -36,8 +36,23 @@ export async function resolveMCPServerContext({
 }: ResolveMCPServerContextParams): Promise<MCPServerContext> {
   const rawServerNames = Object.keys(mcpConfig);
   warnOnNormalizedNameCollisions(rawServerNames);
+  /**
+   * The name lists derive from the config snapshot alone and must survive a
+   * transient lazy-init failure: without them, normalized tool keys cannot
+   * resolve back to raw config names and every MCP tool silently drops for
+   * the request — a strictly worse degradation than missing overlay configs.
+   */
+  let configServers: Record<string, ParsedServerConfig> = {};
+  try {
+    configServers = await ensureConfigServers(mcpConfig);
+  } catch (error) {
+    logger.warn(
+      '[resolveMCPServerContext] Config server initialization failed; continuing with name lists only:',
+      error,
+    );
+  }
   return {
-    configServers: await ensureConfigServers(mcpConfig),
+    configServers,
     serverNames: rawServerNames.map(normalizeServerName),
     rawServerNames,
   };
@@ -54,24 +69,23 @@ const warnedCollisions = new Set<string>();
  * different server's tool than the one the agent selected.
  */
 function warnOnNormalizedNameCollisions(rawServerNames: readonly string[]): void {
-  const firstByNormalized = new Map<string, string>();
+  const aliases = buildServerNameAliases(rawServerNames);
   for (const raw of rawServerNames) {
+    if (!raw) {
+      continue;
+    }
     const normalized = normalizeServerName(raw);
-    const first = firstByNormalized.get(normalized);
-    if (first == null) {
-      firstByNormalized.set(normalized, raw);
+    const winner = aliases.get(normalized);
+    if (winner == null || winner === raw) {
       continue;
     }
-    if (first === raw) {
-      continue;
-    }
-    const signature = `${first}::${raw}`;
+    const signature = `${winner}::${raw}`;
     if (warnedCollisions.has(signature)) {
       continue;
     }
     warnedCollisions.add(signature);
     logger.warn(
-      `[MCP] Server names "${first}" and "${raw}" normalize to the same tool-key segment "${normalized}"; their tool keys are ambiguous and lookups resolve to "${first}". Rename one server to disambiguate.`,
+      `[MCP] Server names "${winner}" and "${raw}" normalize to the same tool-key segment "${normalized}"; their tool keys are ambiguous and lookups resolve to "${winner}". Rename one server to disambiguate.`,
     );
   }
 }

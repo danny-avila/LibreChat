@@ -416,17 +416,31 @@ const loadTools = async ({
         ...mcpServerNames,
         ...serverNameAliases.values(),
       ]);
-      const serverName =
-        parsedServerName != null
-          ? (serverNameAliases.get(parsedServerName) ?? parsedServerName)
-          : parsedServerName;
       if (toolName === Constants.mcp_server) {
         /** Placeholder used for UI purposes */
         continue;
       }
-      const serverConfig = serverName
+      /** DIRECT-FIRST: a server resolving under the parsed name as-is wins
+       *  (a user-DB server may be named exactly like an operator server's
+       *  normalized form); only when nothing resolves is the parsed name
+       *  treated as a normalized spelling of a raw config name. */
+      let serverName = parsedServerName;
+      let serverConfig = serverName
         ? await getMCPServersRegistry().getServerConfig(serverName, user, configServers)
         : null;
+      if (!serverConfig && serverName != null) {
+        const aliasedName = serverNameAliases.get(serverName);
+        if (aliasedName != null && aliasedName !== serverName) {
+          serverConfig = await getMCPServersRegistry().getServerConfig(
+            aliasedName,
+            user,
+            configServers,
+          );
+          if (serverConfig) {
+            serverName = aliasedName;
+          }
+        }
+      }
       if (!serverConfig) {
         logger.warn(
           `MCP server "${serverName}" for "${toolName}" tool is not configured${agent?.id != null && agent.id ? ` but attached to "${agent.id}"` : ''}`,

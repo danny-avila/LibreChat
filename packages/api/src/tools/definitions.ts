@@ -125,6 +125,8 @@ export async function loadToolDefinitions(
   }
 
   const mcpServerToolsCache = new Map<string, MCPServerTools>();
+  /** Parsed key segment → the RAW server name it resolved to (direct-first). */
+  const resolvedServerNames = new Map<string, string>();
   const mcpToolDefs: ToolDefinition[] = [];
   const builtInToolDefs: ToolDefinition[] = [];
   let actionToolDefs: ToolDefinition[] = [];
@@ -167,23 +169,37 @@ export async function loadToolDefinitions(
     }
 
     /** Keys carry the normalized server name (raw in pre-normalization data),
-     *  so both spellings resolve the boundary; the RAW name is what config
-     *  lookups need and what definition metadata (`serverName`, and
-     *  `mcpRawServerName` downstream) must carry — server instructions and
-     *  other config-keyed consumers read it raw. */
+     *  so both spellings resolve the boundary. Resolution is DIRECT-FIRST: a
+     *  server that resolves under the parsed name as-is wins (a user-DB
+     *  server may be named exactly like an operator server's normalized
+     *  form), and only when that yields nothing is the parsed name treated
+     *  as a normalized spelling of a raw config name. The resolved RAW name
+     *  feeds config lookups and definition metadata (`serverName`, then
+     *  `mcpRawServerName`) — server instructions are keyed by it. */
     const [, parsedServerName] = splitMCPToolKey(toolName, [
       ...(mcpServerNames ?? []),
       ...(rawServerNames ?? []),
     ]);
-    const resolved = parsedServerName ?? toolName;
-    const serverName = serverNameAliases.get(resolved) ?? resolved;
+    const parsed = parsedServerName ?? toolName;
 
-    if (!mcpServerToolsCache.has(serverName)) {
-      const serverTools = await getOrFetchMCPServerTools(userId, serverName);
-      mcpServerToolsCache.set(serverName, serverTools || {});
+    if (!mcpServerToolsCache.has(parsed)) {
+      let resolvedName = parsed;
+      let fetched = await getOrFetchMCPServerTools(userId, parsed);
+      if (!fetched) {
+        const aliased = serverNameAliases.get(parsed);
+        if (aliased != null && aliased !== parsed) {
+          fetched = await getOrFetchMCPServerTools(userId, aliased);
+          if (fetched) {
+            resolvedName = aliased;
+          }
+        }
+      }
+      mcpServerToolsCache.set(parsed, fetched || {});
+      resolvedServerNames.set(parsed, resolvedName);
     }
 
-    const serverTools = mcpServerToolsCache.get(serverName);
+    const serverName = resolvedServerNames.get(parsed) ?? parsed;
+    const serverTools = mcpServerToolsCache.get(parsed);
     if (!serverTools) {
       continue;
     }

@@ -34,11 +34,18 @@ jest.mock('@librechat/api', () => ({
   buildOAuthToolCallName: jest.fn((name) => name),
   /** Mirrors the real resolver so these tests still exercise the wrapper's own
    *  plumbing - loading the request config and degrading on failure - rather than
-   *  the resolution logic, which is unit-tested in packages/api. */
-  resolveMCPServerContext: jest.fn(async ({ mcpConfig, ensureConfigServers }) => ({
-    configServers: await ensureConfigServers(mcpConfig),
-    serverNames: Object.keys(mcpConfig),
-  })),
+   *  the resolution logic, which is unit-tested in packages/api. Like the real
+   *  resolver, a lazy-init failure keeps the name lists. */
+  resolveMCPServerContext: jest.fn(async ({ mcpConfig, ensureConfigServers }) => {
+    const rawServerNames = Object.keys(mcpConfig);
+    let configServers = {};
+    try {
+      configServers = await ensureConfigServers(mcpConfig);
+    } catch {
+      /* tolerated: name lists derive from the config snapshot alone */
+    }
+    return { configServers, serverNames: rawServerNames, rawServerNames };
+  }),
 }));
 
 jest.mock('~/cache', () => ({ getLogStores: jest.fn() }));
@@ -134,16 +141,23 @@ describe('resolveMcpServerContext', () => {
 
     const result = await resolveMcpServerContext({ user: { id: 'u1' } });
 
-    expect(result).toEqual({ configServers: {}, serverNames: [] });
+    expect(result).toEqual({ configServers: {}, serverNames: [], rawServerNames: [] });
   });
 
-  it('degrades to empty when ensureConfigServers throws', async () => {
+  it('keeps the name lists when only ensureConfigServers throws', async () => {
+    /** The name lists derive from the config snapshot alone; losing them
+     *  would leave normalized tool keys unresolvable for the whole request —
+     *  a strictly worse degradation than missing overlay configs. */
     getAppConfig.mockResolvedValue({ mcpConfig: { srv: {} } });
     mockRegistry.ensureConfigServers.mockRejectedValue(new Error('inspect failed'));
 
     const result = await resolveMcpServerContext({ user: { id: 'u1' } });
 
-    expect(result).toEqual({ configServers: {}, serverNames: [] });
+    expect(result).toEqual({
+      configServers: {},
+      serverNames: ['srv'],
+      rawServerNames: ['srv'],
+    });
   });
 });
 

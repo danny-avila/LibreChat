@@ -635,7 +635,8 @@ describe('definitions.ts', () => {
       it('resolves normalized keys to the RAW server for lookups and definition metadata', async () => {
         /** Config lookups and `serverName` metadata (server instructions are
          *  keyed by raw config names) must carry the raw name even though the
-         *  key embeds the normalized form. */
+         *  key embeds the normalized form. Resolution is direct-first, so the
+         *  raw alias is consulted only after the parsed name yields nothing. */
         const mockServerTools = {
           search_mcp_Connector__Company: {
             function: {
@@ -646,7 +647,9 @@ describe('definitions.ts', () => {
           },
         };
 
-        mockGetOrFetchMCPServerTools.mockResolvedValue(mockServerTools);
+        mockGetOrFetchMCPServerTools.mockImplementation(async (_userId: string, name: string) =>
+          name === 'Connector: Company' ? mockServerTools : null,
+        );
 
         const params: LoadToolDefinitionsParams = {
           userId: 'user-123',
@@ -668,6 +671,44 @@ describe('definitions.ts', () => {
         const toolDef = result.toolDefinitions[0];
         expect(toolDef.name).toBe('search_mcp_Connector__Company');
         expect((toolDef as { serverName?: string }).serverName).toBe('Connector: Company');
+      });
+
+      it('prefers a server resolving under the parsed name as-is over the raw alias', async () => {
+        /** A user-DB server may be named exactly like an operator server's
+         *  normalized form; its tools must keep its own identity instead of
+         *  being rerouted to the operator server. */
+        const dbServerTools = {
+          search_mcp_Connector__Company: {
+            function: {
+              name: 'search_mcp_Connector__Company',
+              description: 'DB server tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        };
+
+        mockGetOrFetchMCPServerTools.mockImplementation(async (_userId: string, name: string) =>
+          name === 'Connector__Company' ? dbServerTools : null,
+        );
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['search_mcp_Connector__Company'],
+          mcpServerNames: ['Connector__Company'],
+          rawServerNames: ['Connector: Company'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        expect(mockGetOrFetchMCPServerTools).toHaveBeenCalledWith('user-123', 'Connector__Company');
+        const toolDef = result.toolDefinitions[0];
+        expect((toolDef as { serverName?: string }).serverName).toBe('Connector__Company');
       });
 
       it('should convert empty MCP tool descriptions to undefined', async () => {

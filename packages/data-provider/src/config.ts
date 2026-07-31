@@ -2887,6 +2887,14 @@ export function normalizeServerName(serverName: string): string {
  */
 export function buildServerNameAliases(rawServerNames: readonly string[]): Map<string, string> {
   const aliases = new Map<string, string>();
+  /** Identity entries claim their slot FIRST regardless of configuration
+   *  order: a server literally named `foo` must never have its keys rerouted
+   *  to a `foo!` whose normalized form collides with it. */
+  for (const raw of rawServerNames) {
+    if (raw && normalizeServerName(raw) === raw) {
+      aliases.set(raw, raw);
+    }
+  }
   for (const raw of rawServerNames) {
     if (!raw) {
       continue;

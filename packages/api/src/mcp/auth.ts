@@ -57,7 +57,14 @@ export async function getUserMCPAuthMap({
         }
         const [, mcpServer] = splitMCPToolKey(toolName, candidates);
         if (!mcpServer) continue;
-        uniqueMcpServers.add(`${Constants.mcp_prefix}${aliases.get(mcpServer) ?? mcpServer}`);
+        uniqueMcpServers.add(`${Constants.mcp_prefix}${mcpServer}`);
+        /** A normalized match could equally belong to a user-DB server named
+         *  exactly like it, so fetch auth under BOTH spellings — consumers
+         *  read by their own server name and pick theirs. */
+        const aliasedRaw = aliases.get(mcpServer);
+        if (aliasedRaw != null && aliasedRaw !== mcpServer) {
+          uniqueMcpServers.add(`${Constants.mcp_prefix}${aliasedRaw}`);
+        }
       }
     } else if (toolInstances != null && toolInstances.length) {
       for (const tool of toolInstances) {

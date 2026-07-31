@@ -88,12 +88,15 @@ describe('findShadowedServerNames', () => {
     expect(findShadowedServerNames(['Sales Force', 'Sales_Force2']).size).toBe(0);
   });
 
-  it('flags a raw name colliding with an already-normalized name in either order', () => {
+  it('an identity name always wins over a colliding raw name, in either order', () => {
+    /** A server literally named `Sales_Force` owns that key segment; the
+     *  special-character `Sales Force` is the shadowed one regardless of
+     *  configuration order — mirroring `buildServerNameAliases` routing. */
     expect(findShadowedServerNames(['Sales_Force', 'Sales Force'])).toEqual(
       new Set(['Sales Force']),
     );
     expect(findShadowedServerNames(['Sales Force', 'Sales_Force'])).toEqual(
-      new Set(['Sales_Force']),
+      new Set(['Sales Force']),
     );
   });
 });

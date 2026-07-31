@@ -319,6 +319,54 @@ describe('McpSection', () => {
     ]);
   });
 
+  test('legacy raw-keyed form ids show as selected for a special-character server', () => {
+    /** Tool ids in the catalog now embed the normalized server name; an agent
+     *  saved before that convention must still show its tools checked. */
+    const specialItem: McpItem = {
+      ...item,
+      id: 'Connector: Company',
+      name: 'Connector: Company',
+      server: {
+        serverName: 'Connector: Company',
+        isConfigured: true,
+        tools: [{ tool_id: 'search_mcp_Connector__Company', name: 'Search' }],
+        metadata: { description: 'desc' },
+      } as never,
+      toolCount: 1,
+    };
+    mockGetValues.mockReturnValue(['search_mcp_Connector: Company']);
+    render(<McpSection item={specialItem} />);
+    expect(screen.getByTestId('tool-search_mcp_Connector__Company')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  test('selection updates REPLACE legacy raw-keyed ids instead of letting them survive', () => {
+    const specialItem: McpItem = {
+      ...item,
+      id: 'Connector: Company',
+      name: 'Connector: Company',
+      server: {
+        serverName: 'Connector: Company',
+        isConfigured: true,
+        tools: [{ tool_id: 'search_mcp_Connector__Company', name: 'Search' }],
+        metadata: { description: 'desc' },
+      } as never,
+      toolCount: 1,
+    };
+    mockGetValues.mockReturnValue(['search_mcp_Connector: Company']);
+    render(<McpSection item={specialItem} />);
+    /** Deselecting the (legacy-selected) tool must drop the raw id rather
+     *  than leave it behind for the runtime heal to keep active. */
+    fireEvent.click(screen.getByTestId('tool-search_mcp_Connector__Company'));
+    expect(mockSetValue).toHaveBeenCalledWith(
+      'tools',
+      ['sys__server__sys_mcp_Connector: Company'],
+      expect.objectContaining({ shouldDirty: true }),
+    );
+  });
+
   test('shows the runtime-tools hint when attached via the wildcard', () => {
     mockGetValues.mockReturnValue(['sys__all__sys_mcp_srv']);
     const empty: McpItem = {

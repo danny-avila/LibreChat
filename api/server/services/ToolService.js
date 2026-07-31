@@ -29,7 +29,6 @@ const {
   buildMCPAuthRunStepCompletedEvent,
   isFileAuthoringToolDefinition,
   ASK_USER_QUESTION_TOOL_NAME,
-  buildServerNameAliases,
 } = require('@librechat/api');
 const {
   Time,
@@ -618,9 +617,6 @@ async function loadToolDefinitionsWrapper({
   } = hasFilteredMCPTools
     ? await resolveMcpServerContext(req)
     : { configServers: {}, serverNames: [], rawServerNames: [] };
-  /** Tool keys carry normalized server names; the registry, config maps, tool
-   *  cache, and auth rows are keyed raw — resolve parsed names through this. */
-  const serverNameAliases = buildServerNameAliases(mcpRawServerNames);
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
@@ -746,11 +742,10 @@ async function loadToolDefinitionsWrapper({
     return cachedOAuthStart;
   };
 
-  const getOrFetchMCPServerTools = async (userId, parsedServerName) => {
-    /** The caller parsed this name out of a tool key, so it arrives in the
-     *  normalized form keys carry; every lookup below (config, registry,
-     *  cache, auth, reinit) is keyed by the raw config name. */
-    const serverName = serverNameAliases.get(parsedServerName) ?? parsedServerName;
+  /** Name-preserving: the definitions loader resolves normalized-vs-raw
+   *  spellings itself (direct identity first, alias fallback), so this
+   *  closure must look up EXACTLY the name it is given. */
+  const getOrFetchMCPServerTools = async (userId, serverName) => {
     const addPendingOAuthServer = async () => {
       const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
         flowManager,

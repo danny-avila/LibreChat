@@ -1,4 +1,9 @@
-import { Constants, normalizeServerName, normalizeMCPToolKey } from 'librechat-data-provider';
+import {
+  Constants,
+  normalizeServerName,
+  normalizeMCPToolKey,
+  buildServerNameAliases,
+} from 'librechat-data-provider';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
 import type { RequestBody } from '~/types';
@@ -36,19 +41,13 @@ const MCP_SERVER_TOKEN_PREFIX: string = `${Constants.mcp_server}${Constants.mcp_
  * against the first server's configuration.
  */
 export function findShadowedServerNames(rawServerNames: readonly string[]): Set<string> {
+  /** Derived from `buildServerNameAliases` so shadow detection can never
+   *  diverge from the tie-break routing actually uses (identity entries
+   *  first, then configuration order). */
+  const aliases = buildServerNameAliases(rawServerNames);
   const shadowed = new Set<string>();
-  const firstByNormalized = new Map<string, string>();
   for (const raw of rawServerNames) {
-    if (!raw) {
-      continue;
-    }
-    const normalized = normalizeServerName(raw);
-    const first = firstByNormalized.get(normalized);
-    if (first == null) {
-      firstByNormalized.set(normalized, raw);
-      continue;
-    }
-    if (first !== raw) {
+    if (raw && aliases.get(normalizeServerName(raw)) !== raw) {
       shadowed.add(raw);
     }
   }

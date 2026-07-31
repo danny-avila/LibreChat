@@ -100,11 +100,11 @@ describe('getUserMCPAuthMap', () => {
       );
     });
 
-    it('keys the map by the RAW config name for normalized and legacy-raw keys alike', async () => {
-      /** Model-facing keys embed `normalizeServerName(server)`, while plugin
-       *  auth rows are stored under the raw config name; legacy agent
-       *  documents may still carry raw-keyed entries. Both spellings must
-       *  resolve to the same raw-keyed plugin key. */
+    it('fetches auth under both spellings for normalized keys, raw-only for legacy keys', async () => {
+      /** Plugin auth rows are stored under the raw config name, but a
+       *  normalized match could equally belong to a user-DB server named
+       *  exactly like it — fetch the superset and let consumers read by
+       *  their own server name. Legacy raw keys resolve directly. */
       mockGetPluginAuthMap.mockResolvedValue({});
 
       await getUserMCPAuthMap({
@@ -115,7 +115,9 @@ describe('getUserMCPAuthMap', () => {
       });
 
       expect(mockGetPluginAuthMap).toHaveBeenCalledWith(
-        expect.objectContaining({ pluginKeys: ['mcp_Connector: Company'] }),
+        expect.objectContaining({
+          pluginKeys: expect.arrayContaining(['mcp_Connector__Company', 'mcp_Connector: Company']),
+        }),
       );
     });
   });
