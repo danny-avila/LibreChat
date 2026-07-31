@@ -160,6 +160,21 @@ describe('normalizeAgentToolKeys', () => {
     expect(result.tools).toBeUndefined();
     expect(result.toolOptions).toBeUndefined();
   });
+
+  it('never heals a SHADOWED server key into the first server’s key', () => {
+    /** Rewriting `search__Sales:Force` would produce exactly the key of the
+     *  earlier `Sales Force` server — the persisted tool would silently
+     *  execute the wrong server's action. Left raw, it fails visibly. */
+    const result = normalizeAgentToolKeys({
+      tools: ['search_mcp_Sales:Force', 'search_mcp_Connector: Company'],
+      toolOptions: { 'search_mcp_Sales:Force': { run_in_background: true } },
+      rawServerNames: ['Sales Force', 'Sales:Force', 'Connector: Company'],
+    });
+    expect(result.tools).toEqual(['search_mcp_Sales:Force', 'search_mcp_Connector__Company']);
+    expect(result.toolOptions).toEqual({
+      'search_mcp_Sales:Force': { run_in_background: true },
+    });
+  });
 });
 
 describe('buildOAuthToolCallName', () => {

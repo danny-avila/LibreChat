@@ -5,7 +5,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   refreshS3Url,
   splitMCPToolKey,
-  normalizeServerName,
+  buildServerNameAliases,
   agentCreateSchema,
   agentUpdateSchema,
   refreshListAvatars,
@@ -278,9 +278,11 @@ const filterAuthorizedTools = async ({
         mcpServerConfigs = {};
         registryUnavailable = true;
       }
-      configNamesByNormalized = new Map(
-        Object.keys(mcpServerConfigs).map((name) => [normalizeServerName(name), name]),
-      );
+      /** Shared first-wins construction — authorization must resolve a
+       *  colliding normalized key to the SAME server execution routes to,
+       *  or a tool could be authorized against one server and executed
+       *  against another. */
+      configNamesByNormalized = buildServerNameAliases(Object.keys(mcpServerConfigs));
     }
 
     /** Tool keys embed the normalized server name; the config is keyed by the raw name. */

@@ -75,7 +75,17 @@ export function normalizeAgentToolKeys(params: {
   rawServerNames: readonly string[];
 }): { tools: string[] | undefined; toolOptions: AgentToolOptions | undefined } {
   const { tools, toolOptions, rawServerNames } = params;
-  const rewritableNames = rawServerNames.filter((name) => normalizeServerName(name) !== name);
+  /**
+   * A SHADOWED server (its normalized form claimed by an earlier different
+   * name) must NOT be healed: rewriting its raw key would produce the first
+   * server's key exactly, silently executing the wrong server's action. Left
+   * raw, the key fails to match the (normalized-keyed) tool map and the tool
+   * errors visibly — broken beats misrouted.
+   */
+  const shadowed = findShadowedServerNames(rawServerNames);
+  const rewritableNames = rawServerNames.filter(
+    (name) => normalizeServerName(name) !== name && !shadowed.has(name),
+  );
   if (rewritableNames.length === 0) {
     return { tools, toolOptions };
   }
