@@ -164,6 +164,35 @@ describe('normalizeAgentToolKeys', () => {
     expect(result.toolOptions).toBeUndefined();
   });
 
+  it('the CURRENT (normalized) entry wins when both spellings carry options', () => {
+    /** A client can write the new spelling before cleaning up the legacy
+     *  entry; object insertion order must not let stale legacy settings
+     *  clobber it. */
+    const rawLater = normalizeAgentToolKeys({
+      tools: undefined,
+      toolOptions: {
+        search_mcp_Connector__Company: { run_in_background: false },
+        'search_mcp_Connector: Company': { run_in_background: true, defer_loading: true },
+      },
+      rawServerNames: ['Connector: Company'],
+    });
+    expect(rawLater.toolOptions).toEqual({
+      search_mcp_Connector__Company: { run_in_background: false, defer_loading: true },
+    });
+
+    const rawFirst = normalizeAgentToolKeys({
+      tools: undefined,
+      toolOptions: {
+        'search_mcp_Connector: Company': { run_in_background: true, defer_loading: true },
+        search_mcp_Connector__Company: { run_in_background: false },
+      },
+      rawServerNames: ['Connector: Company'],
+    });
+    expect(rawFirst.toolOptions).toEqual({
+      search_mcp_Connector__Company: { run_in_background: false, defer_loading: true },
+    });
+  });
+
   it('never heals a SHADOWED server key into the first server’s key', () => {
     /** Rewriting `search__Sales:Force` would produce exactly the key of the
      *  earlier `Sales Force` server — the persisted tool would silently

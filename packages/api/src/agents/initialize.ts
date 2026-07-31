@@ -396,6 +396,10 @@ export interface InitializeAgentParams {
     model: string | null;
     tool_options: AgentToolOptions | undefined;
     tool_resources: AgentToolResources | undefined;
+    /** Full accessible MCP server names (operator + user DB) when the heal
+     *  already fetched them — lets execution-side collision guards see
+     *  cross-tier shadowing without another registry round-trip. */
+    accessibleMcpServerNames?: readonly string[];
   }) => Promise<{
     /** Full tool instances (only present when definitionsOnly=false) */
     tools?: GenericTool[];
@@ -660,34 +664,57 @@ export async function initializeAgent(
    * defer/programmatic classification, the background and intent passes —
    * reads `agent.tools` / `agent.tool_options` after this point.
    */
-  let mcpRawServerNames = Object.keys(req.config?.mcpConfig ?? {});
+  const configRawServerNames = Object.keys(req.config?.mcpConfig ?? {});
+  const configNeedsNormalization = configRawServerNames.some(
+    (name) => normalizeServerName(name) !== name,
+  );
   /**
-   * The heal only rewrites when a configured name needs normalization; in
-   * that case collision detection must see the FULL accessible set (user-DB
-   * servers included), or a raw key could be rewritten into a key that
-   * direct-first resolution routes to a different server. The lookup is
-   * skipped entirely for the common all-safe-names case.
+   * Rewriting legacy keys requires a COMPLETE collision audit: the normalized
+   * form of an operator name may belong to a user-DB server, and healing into
+   * that key would route the tool to the wrong server. The audit therefore
+   * uses the full accessible set — fetched lazily, once, and ONLY when a
+   * configured name actually needs normalization AND the caller has
+   * delimiter-bearing keys to heal (a non-MCP agent never pays the lookup).
+   * When the audit cannot complete (no dep, or a transient failure), healing
+   * is SKIPPED entirely: un-healed raw keys still resolve through the
+   * direct-first candidates, so skipping is safe while rewriting is not.
    */
-  if (
-    db.getAccessibleMcpServerNames != null &&
-    mcpRawServerNames.some((name) => normalizeServerName(name) !== name)
-  ) {
-    try {
-      mcpRawServerNames = await db.getAccessibleMcpServerNames(req.user?.id, req.user?.role);
-    } catch (error) {
-      logger.warn(
-        '[initializeAgent] Failed to resolve accessible MCP server names; healing against operator-config names only:',
-        error,
-      );
+  let healNamesPromise: Promise<readonly string[] | null> | undefined;
+  const resolveHealNames = (): Promise<readonly string[] | null> => {
+    if (!configNeedsNormalization) {
+      return Promise.resolve(configRawServerNames);
+    }
+    if (db.getAccessibleMcpServerNames == null) {
+      return Promise.resolve(null);
+    }
+    healNamesPromise ??= db
+      .getAccessibleMcpServerNames(req.user?.id, req.user?.role)
+      .catch((error): null => {
+        logger.warn(
+          '[initializeAgent] Failed to resolve accessible MCP server names; skipping legacy-key healing (collision audit unavailable):',
+          error,
+        );
+        return null;
+      });
+    return healNamesPromise;
+  };
+  const hasMCPKeyCandidates =
+    (agent.tools ?? []).some(
+      (tool) => typeof tool === 'string' && tool.includes(Constants.mcp_delimiter),
+    ) || Object.keys(agent.tool_options ?? {}).some((key) => key.includes(Constants.mcp_delimiter));
+  let mcpHealNames: readonly string[] | null = configRawServerNames;
+  if (hasMCPKeyCandidates) {
+    mcpHealNames = await resolveHealNames();
+    if (mcpHealNames != null) {
+      const healedKeys = normalizeAgentToolKeys({
+        tools: agent.tools ?? undefined,
+        toolOptions: agent.tool_options,
+        rawServerNames: mcpHealNames,
+      });
+      agent.tools = healedKeys.tools;
+      agent.tool_options = healedKeys.toolOptions;
     }
   }
-  const healedKeys = normalizeAgentToolKeys({
-    tools: agent.tools ?? undefined,
-    toolOptions: agent.tool_options,
-    rawServerNames: mcpRawServerNames,
-  });
-  agent.tools = healedKeys.tools;
-  agent.tool_options = healedKeys.toolOptions;
 
   if (
     isAgentsEndpoint(endpointOption?.endpoint) &&
@@ -965,20 +992,28 @@ export async function initializeAgent(
     /** Skill `allowed-tools` are legacy-heal candidates too: a raw MCP key
      *  declared before the normalized-key convention would neither dedupe
      *  against the healed agent tools nor match the normalized-keyed tool
-     *  map, silently dropping the skill-contributed tool. */
-    const primesForUnion = [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])].map(
-      (prime) =>
-        prime.allowedTools?.length
-          ? {
-              ...prime,
-              allowedTools: normalizeAgentToolKeys({
-                tools: prime.allowedTools,
-                toolOptions: undefined,
-                rawServerNames: mcpRawServerNames,
-              }).tools,
-            }
-          : prime,
+     *  map, silently dropping the skill-contributed tool. Same lazy audit
+     *  and skip-on-unavailable semantics as the agent-key heal. */
+    const combinedPrimes = [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])];
+    const primesNeedHeal = combinedPrimes.some((prime) =>
+      prime.allowedTools?.some((name) => name.includes(Constants.mcp_delimiter)),
     );
+    const primeHealNames = primesNeedHeal ? await resolveHealNames() : null;
+    const primesForUnion =
+      primeHealNames != null
+        ? combinedPrimes.map((prime) =>
+            prime.allowedTools?.length
+              ? {
+                  ...prime,
+                  allowedTools: normalizeAgentToolKeys({
+                    tools: prime.allowedTools,
+                    toolOptions: undefined,
+                    rawServerNames: primeHealNames,
+                  }).tools,
+                }
+              : prime,
+          )
+        : combinedPrimes;
     if (primesForUnion.length > 0) {
       const union = unionPrimeAllowedTools({
         primes: primesForUnion,
@@ -1020,6 +1055,7 @@ export async function initializeAgent(
       model: agent.model,
       tool_options: agent.tool_options,
       tool_resources,
+      accessibleMcpServerNames: mcpHealNames ?? undefined,
     });
 
   let loadToolsResult;

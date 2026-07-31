@@ -118,7 +118,13 @@ export function normalizeAgentToolKeys(params: {
       if (rewritten !== key) {
         optionsChanged = true;
       }
-      nextOptions[rewritten] = options;
+      /** When both spellings carry options, the CURRENT (normalized) entry
+       *  wins regardless of object insertion order — a legacy entry must not
+       *  clobber settings a client already wrote under the new spelling. */
+      nextOptions[rewritten] =
+        rewritten !== key
+          ? { ...options, ...nextOptions[rewritten] }
+          : { ...nextOptions[key], ...options };
     }
   }
 

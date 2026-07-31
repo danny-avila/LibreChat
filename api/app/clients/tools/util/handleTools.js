@@ -7,6 +7,7 @@ const {
   mcpToolPattern,
   loadWebSearchAuth,
   splitMCPToolKey,
+  normalizeServerName,
   buildServerNameAliases,
   findShadowedServerNames,
   buildInlineMemoryTool,
@@ -49,6 +50,7 @@ const {
   createMCPTools,
   createMCPPermissionContext,
   resolveMcpServerContext,
+  getAccessibleMcpServerNames,
 } = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -301,8 +303,34 @@ const loadTools = async ({
       rawServerNames: mcpRawServerNames = [],
     } = options.mcpServerContext ?? (await resolveMcpServerContext(options.req)));
   }
-  const serverNameAliases = buildServerNameAliases(mcpRawServerNames);
-  const shadowedServers = findShadowedServerNames(mcpRawServerNames);
+  /**
+   * Collision guards need the FULL accessible set (operator + user DB): a
+   * cross-tier collision (DB `foo` vs operator `foo!`) is invisible to the
+   * operator-config names alone. The caller's heal may have already fetched
+   * it (threaded via `mcpServerContext.accessibleServerNames`); otherwise it
+   * is fetched here ONLY when a configured name actually needs normalizing —
+   * safe-name deployments never pay the lookup.
+   */
+  let accessibleServerNames = options.mcpServerContext?.accessibleServerNames;
+  if (
+    !accessibleServerNames?.length &&
+    typeof getAccessibleMcpServerNames === 'function' &&
+    mcpRawServerNames.some((name) => normalizeServerName(name) !== name)
+  ) {
+    try {
+      accessibleServerNames = await getAccessibleMcpServerNames(user, options.req?.user?.role);
+    } catch (error) {
+      logger.warn(
+        '[handleTools] Failed to resolve accessible MCP server names; collision guards use operator-config names only:',
+        error,
+      );
+    }
+  }
+  const collisionAuditNames = accessibleServerNames?.length
+    ? accessibleServerNames
+    : mcpRawServerNames;
+  const serverNameAliases = buildServerNameAliases(collisionAuditNames);
+  const shadowedServers = findShadowedServerNames(collisionAuditNames);
 
   for (const tool of tools) {
     if (tool === Tools.execute_code) {

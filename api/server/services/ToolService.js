@@ -1125,6 +1125,7 @@ async function loadAgentTools({
   streamId = null,
   jobCreatedAt,
   definitionsOnly = true,
+  accessibleMcpServerNames,
 }) {
   if (definitionsOnly) {
     return loadToolDefinitionsWrapper({
@@ -1203,10 +1204,16 @@ async function loadAgentTools({
     webSearchCallbacks = createOnSearchResults(res, streamId, jobCreatedAt);
   }
 
-  /** Resolved once and threaded into `loadTools` so the request app config is read once. */
-  const mcpServerContext = _agentTools?.some((t) => t.includes(Constants.mcp_delimiter))
+  /** Resolved once and threaded into `loadTools` so the request app config is
+   *  read once. The accessible set (operator + user DB), when the caller's
+   *  heal already fetched it, rides along so execution-side collision guards
+   *  see cross-tier shadowing without another registry round-trip. */
+  let mcpServerContext = _agentTools?.some((t) => t.includes(Constants.mcp_delimiter))
     ? await resolveMcpServerContext(req)
     : undefined;
+  if (mcpServerContext && accessibleMcpServerNames?.length) {
+    mcpServerContext = { ...mcpServerContext, accessibleServerNames: accessibleMcpServerNames };
+  }
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;

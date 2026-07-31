@@ -92,6 +92,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
     provider,
     tool_options,
     tool_resources,
+    accessibleMcpServerNames,
   }) {
     const agent = { id: agentId, tools, provider, model, tool_options };
     try {
@@ -104,6 +105,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
         jobCreatedAt,
         tool_resources,
         definitionsOnly,
+        accessibleMcpServerNames,
       });
     } catch (error) {
       logger.error('Error loading tools for agent ' + agentId, error);

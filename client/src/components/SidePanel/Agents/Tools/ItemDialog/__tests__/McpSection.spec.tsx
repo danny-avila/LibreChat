@@ -7,6 +7,7 @@ import McpSection from '../sections/McpSection';
 const mockSetValue = jest.fn();
 const mockGetValues = jest.fn((): string[] => []);
 const mockGetToolOptions = jest.fn((): Record<string, object> | undefined => undefined);
+const mockMcpServersMap = jest.fn((): Map<string, object> => new Map());
 const mockInitializeServer = jest.fn();
 const mockIsConnectionDeferred = jest.fn((): boolean => false);
 const mockToggleIntentAll = jest.fn();
@@ -25,7 +26,7 @@ jest.mock('react-hook-form', () => ({
 }));
 
 jest.mock('~/Providers', () => ({
-  useAgentPanelContext: () => ({ mcpServersMap: new Map() }),
+  useAgentPanelContext: () => ({ mcpServersMap: mockMcpServersMap() }),
 }));
 
 jest.mock('~/components/ui', () => ({
@@ -159,6 +160,8 @@ describe('McpSection', () => {
     mockIsToolProgrammaticOnly.mockReturnValue(false);
     mockGetToolOptions.mockReset();
     mockGetToolOptions.mockReturnValue(undefined);
+    mockMcpServersMap.mockReset();
+    mockMcpServersMap.mockReturnValue(new Map());
     mockCapabilities.toolIntentsEnabled = false;
   });
 
@@ -397,6 +400,35 @@ describe('McpSection', () => {
       other_tool: { describe_intent: true },
       search_mcp_Connector__Company: { run_in_background: false, defer_loading: true },
     });
+  });
+
+  test('never migrates entries that belong to a LONGER server sharing this suffix', () => {
+    /** With servers `!bar` and `foo_mcp_!bar`, the longer server's legacy key
+     *  also suffix-ends with `_mcp_!bar` — opening the shorter server's dialog
+     *  must not reassign or corrupt the longer server's persisted settings. */
+    mockMcpServersMap.mockReturnValue(
+      new Map<string, object>([
+        ['!bar', {}],
+        ['foo_mcp_!bar', {}],
+      ]),
+    );
+    const shortServer: McpItem = {
+      ...item,
+      id: '!bar',
+      name: '!bar',
+      server: {
+        serverName: '!bar',
+        isConfigured: true,
+        tools: [{ tool_id: 'search_mcp_bar', name: 'Search' }],
+        metadata: { description: 'desc' },
+      } as never,
+      toolCount: 1,
+    };
+    mockGetToolOptions.mockReturnValue({
+      'search_mcp_foo_mcp_!bar': { run_in_background: true },
+    });
+    render(<McpSection item={shortServer} />);
+    expect(mockSetValue).not.toHaveBeenCalledWith('tool_options', expect.anything());
   });
 
   test('shows the runtime-tools hint when attached via the wildcard', () => {

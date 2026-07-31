@@ -10,6 +10,7 @@ const mockGetMCPServerTools = jest.fn();
 const mockCreateMCPTool = jest.fn();
 const mockCreateMCPTools = jest.fn();
 const mockGetServerConfig = jest.fn();
+const mockGetAccessibleMcpServerNames = jest.fn(async () => []);
 
 jest.mock('~/server/services/PluginService', () => mockPluginService);
 
@@ -43,6 +44,7 @@ jest.mock('~/server/services/MCP', () => ({
   })),
   resolveConfigServers: jest.fn().mockResolvedValue({}),
   resolveMcpServerContext: jest.fn(async () => ({ configServers: {}, serverNames: [] })),
+  getAccessibleMcpServerNames: (...args) => mockGetAccessibleMcpServerNames(...args),
 }));
 
 jest.mock('~/config', () => ({
@@ -431,6 +433,41 @@ describe('Tool Handlers', () => {
       const result = await loadTools({
         user: fakeUser._id.toString(),
         tools: [`search${Constants.mcp_delimiter}Sales:Force`],
+        options: {
+          req: {
+            user: { id: fakeUser._id.toString(), role: 'USER' },
+            body: {},
+          },
+        },
+      });
+
+      expect(result.loadedTools).toEqual([]);
+      expect(mockCreateMCPTool).not.toHaveBeenCalled();
+    });
+
+    it('detects CROSS-TIER collisions via the accessible-server set at execution', async () => {
+      /** A user-DB server `foo` shadowing operator `foo!` is invisible to the
+       *  operator-config names — the guard must consult the full accessible
+       *  set so the operator server's legacy raw key fails closed instead of
+       *  joining the run under the same normalized name as the DB server. */
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://x.example/mcp',
+        source: 'yaml',
+      };
+      const { resolveMcpServerContext } = require('~/server/services/MCP');
+      resolveMcpServerContext.mockResolvedValueOnce({
+        configServers: {},
+        serverNames: ['foo'],
+        rawServerNames: ['foo!'],
+      });
+      mockGetAccessibleMcpServerNames.mockResolvedValueOnce(['foo', 'foo!']);
+      mockGetServerConfig.mockResolvedValue(serverConfig);
+      mockCreateMCPTool.mockResolvedValue({ name: 'never' });
+
+      const result = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [`search${Constants.mcp_delimiter}foo!`],
         options: {
           req: {
             user: { id: fakeUser._id.toString(), role: 'USER' },

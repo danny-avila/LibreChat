@@ -2,7 +2,12 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Clock, Code2, Captions, Zap } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { Button, Spinner, Checkbox, Skeleton } from '@librechat/client';
-import { Constants, normalizeServerName } from 'librechat-data-provider';
+import {
+  Constants,
+  splitMCPToolKey,
+  normalizeServerName,
+  buildServerNameAliases,
+} from 'librechat-data-provider';
 import type { MouseEvent } from 'react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { McpItem } from '../../items/types';
@@ -137,9 +142,20 @@ export default function McpSection({ item }: Props) {
       ) {
         return entry;
       }
+      /** Boundary-exact: this raw suffix could equally terminate a LONGER
+       *  configured server name — resolve the entry once against every
+       *  configured server (both spellings, longest match) and rewrite only
+       *  when it truly belongs to THIS server, or the migration could
+       *  reassign another server's persisted settings. */
+      const allServerNames = Array.from(mcpServersMap.keys());
+      const aliases = buildServerNameAliases(allServerNames);
+      const [, parsed] = splitMCPToolKey(entry, [...allServerNames, ...aliases.keys()]);
+      if (parsed == null || (aliases.get(parsed) ?? parsed) !== serverName) {
+        return entry;
+      }
       return `${entry.slice(0, entry.length - serverName.length)}${normalizedName}`;
     },
-    [serverName, serverToken, serverAllToken],
+    [serverName, serverToken, serverAllToken, mcpServersMap],
   );
 
   /**
