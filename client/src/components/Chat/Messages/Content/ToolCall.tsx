@@ -1,7 +1,6 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
-import { TriangleAlert } from 'lucide-react';
 import {
   Constants,
   dataService,
@@ -12,12 +11,14 @@ import {
 import type { TAttachment } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
+import { cn, getToolDisplayLabel, logger } from '~/utils';
+import { toolPanelSpacingClassName } from './disclosure';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { useToolCallIntent } from './Parts/intent';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
-import { logger } from '~/utils';
+import { ToolAuthWarning } from './auth';
 import store from '~/store';
 
 export default function ToolCall({
@@ -109,6 +110,10 @@ export default function ToolCall({
   }, [name, parsedAuthUrl, mcpServerNames]);
 
   const toolIconType = useMemo(() => getToolIconType(name), [name]);
+  const displayFunctionName = useMemo(
+    () => getToolDisplayLabel(function_name, localize, mcpServerNames),
+    [function_name, localize, mcpServerNames],
+  );
   const mcpIconMap = useMCPIconMap();
   const mcpIconUrl = isMCPToolCall ? mcpIconMap.get(mcpServerName) : undefined;
 
@@ -201,12 +206,12 @@ export default function ToolCall({
       return intent;
     }
     if (isMCPToolCall === true) {
-      return localize('com_assistants_completed_function', { 0: function_name });
+      return localize('com_assistants_completed_function', { 0: displayFunctionName });
     }
     if (domain != null && domain && domain.length !== Constants.ENCODED_DOMAIN_LENGTH) {
       return localize('com_assistants_completed_action', { 0: domain });
     }
-    return localize('com_assistants_completed_function', { 0: function_name });
+    return localize('com_assistants_completed_function', { 0: displayFunctionName });
   };
 
   if (!isLast && (!function_name || function_name.length === 0) && !output) {
@@ -222,15 +227,15 @@ export default function ToolCall({
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {(() => {
           if (progress < 1 && !showCancelled) {
-            return function_name
-              ? localize('com_assistants_running_var', { 0: function_name })
+            return displayFunctionName
+              ? localize('com_assistants_running_var', { 0: displayFunctionName })
               : localize('com_assistants_running_action');
           }
           return getFinishedText();
         })()}
       </span>
       <div
-        className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5"
+        className="relative my-1 flex h-5 shrink-0 items-center gap-2.5"
         data-testid="tool-call"
         data-tool-call-id={toolCallId}
       >
@@ -239,8 +244,8 @@ export default function ToolCall({
           onClick={handleToggleInfo}
           inProgressText={
             intent ??
-            (function_name
-              ? localize('com_assistants_running_var', { 0: function_name })
+            (displayFunctionName
+              ? localize('com_assistants_running_var', { 0: displayFunctionName })
               : localize('com_assistants_running_action'))
           }
           authText={
@@ -264,7 +269,12 @@ export default function ToolCall({
       <div style={expandStyle} data-tool-call-output-id={toolCallId}>
         <div className="overflow-hidden" ref={expandRef}>
           {hasInfo && (
-            <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
+            <div
+              className={cn(
+                toolPanelSpacingClassName,
+                'overflow-hidden rounded-lg border border-border-light bg-surface-secondary',
+              )}
+            >
               <ToolCallInfo input={args ?? ''} output={output} attachments={attachments} />
             </div>
           )}
@@ -282,10 +292,7 @@ export default function ToolCall({
               {localize('com_ui_sign_in_to_domain', { 0: authDomain })}
             </Button>
           </div>
-          <p className="flex items-center text-xs text-text-warning">
-            <TriangleAlert className="mr-1.5 inline-block h-4 w-4" aria-hidden="true" />
-            {localize('com_assistants_allow_sites_you_trust')}
-          </p>
+          <ToolAuthWarning />
         </div>
       )}
       {!hideAttachments && attachments && attachments.length > 0 && (

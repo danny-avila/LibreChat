@@ -2,6 +2,7 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { Tools, Constants } from 'librechat-data-provider';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { ToolAuthWarningContext } from '../auth';
 import ToolCall from '../ToolCall';
 
 // Mock dependencies
@@ -19,6 +20,7 @@ jest.mock('~/hooks', () => ({
       com_assistants_allow_sites_you_trust: 'Only allow sites you trust',
       com_ui_via_server: `via ${values?.[0]}`,
       com_ui_tool_failed: 'failed',
+      com_ui_tool_name_set_memory: 'Save Memory',
     };
     return translations[key] || key;
   },
@@ -100,6 +102,8 @@ jest.mock('~/utils', () => ({
     error: jest.fn(),
   },
   cn: (...classes: any[]) => classes.filter(Boolean).join(' '),
+  getToolDisplayLabel: (name: string, localize: (key: string) => string) =>
+    name === 'set_memory' ? localize('com_ui_tool_name_set_memory') : name,
 }));
 
 describe('ToolCall', () => {
@@ -151,6 +155,21 @@ describe('ToolCall', () => {
       renderWithRecoil(<ToolCall {...mockProps} />);
       expect(screen.getAllByText('Completed testFunction').length).toBeGreaterThan(0);
     });
+  });
+
+  it('uses a friendly label for the set_memory tool', () => {
+    renderWithRecoil(<ToolCall {...mockProps} name="set_memory" />);
+
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Completed Save Memory');
+    expect(screen.queryByText(/set_memory/)).not.toBeInTheDocument();
+  });
+
+  it('keeps expanded tool content close to its header', () => {
+    renderWithRecoil(<ToolCall {...mockProps} />);
+
+    fireEvent.click(screen.getByTestId('progress-text'));
+
+    expect(screen.getByTestId('tool-call-info').parentElement).toHaveClass('mb-2', 'mt-0');
   });
 
   describe('attachments prop passing', () => {
@@ -433,6 +452,42 @@ describe('ToolCall', () => {
 
   describe('MCP OAuth detection', () => {
     const d = Constants.mcp_delimiter;
+
+    it('shows the trust warning for an ungrouped authentication call', () => {
+      renderWithRecoil(
+        <ToolCall
+          {...mockProps}
+          initialProgress={0.5}
+          isSubmitting={true}
+          output=""
+          auth="https://auth.example.com"
+        />,
+      );
+
+      expect(
+        screen.getByRole('button', { name: 'Sign in to auth.example.com' }),
+      ).toBeInTheDocument();
+      expect(screen.getByText('Only allow sites you trust')).toBeInTheDocument();
+    });
+
+    it('keeps the sign-in action while a group suppresses the repeated warning', () => {
+      renderWithRecoil(
+        <ToolAuthWarningContext.Provider value>
+          <ToolCall
+            {...mockProps}
+            initialProgress={0.5}
+            isSubmitting={true}
+            output=""
+            auth="https://auth.example.com"
+          />
+        </ToolAuthWarningContext.Provider>,
+      );
+
+      expect(
+        screen.getByRole('button', { name: 'Sign in to auth.example.com' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText('Only allow sites you trust')).not.toBeInTheDocument();
+    });
 
     it('should detect MCP OAuth from delimiter in tool-call name', () => {
       renderWithRecoil(
