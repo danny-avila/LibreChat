@@ -1,22 +1,31 @@
-import { memo, useCallback, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 import { MicOff } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
 import { useToastContext, TooltipAnchor, ListeningIcon, Spinner } from '@librechat/client';
 import { useLocalize, useSpeechToText, useGetAudioSettings } from '~/hooks';
 import { globalAudioId, type TAskFunction } from '~/common';
 import { useChatFormContext } from '~/Providers';
 import { cn } from '~/utils';
+import store from '~/store';
 
 const isExternalSTT = (speechToTextEndpoint: string) => speechToTextEndpoint === 'external';
+
+/** Pause between the assistant finishing and the microphone re-arming in
+ * conversation mode. Long enough for playback to settle and for the user to
+ * register that it is their turn; short enough not to feel broken. */
+const REARM_DELAY_MS = 2000;
 export default memo(function AudioRecorder({
   disabled,
   ask,
   methods,
   isSubmitting,
+  index = 0,
 }: {
   disabled: boolean;
   ask: TAskFunction;
   methods: ReturnType<typeof useChatFormContext>;
   isSubmitting: boolean;
+  index?: number;
 }) {
   const { setValue, reset, getValues } = methods;
   const localize = useLocalize();
@@ -26,6 +35,24 @@ export default memo(function AudioRecorder({
   const existingTextRef = useRef<string>('');
   const isSubmittingRef = useRef(isSubmitting);
   isSubmittingRef.current = isSubmitting;
+
+  /** Conversation mode: re-arm the microphone once the assistant stops speaking.
+   *
+   * Only when the turn was started by voice - typing a message and then
+   * listening to the reply should not silently switch the microphone on. */
+  const conversationMode = useRecoilValue(store.conversationMode);
+  const isPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
+  const textToSpeech = useRecoilValue(store.textToSpeech);
+  const automaticPlayback = useRecoilValue(store.automaticPlayback);
+  const voiceTurnRef = useRef(false);
+  const wasPlayingRef = useRef(false);
+  const wasSubmittingRef = useRef(false);
+
+  /** Whether the assistant is going to speak this reply. Determines WHICH
+   * event ends the assistant's turn: playback finishing, or generation
+   * finishing. Without automatic playback there is no audio to wait for, so
+   * waiting for it would mean never re-arming at all. */
+  const willSpeak = textToSpeech && automaticPlayback;
 
   const onTranscriptionComplete = useCallback(
     (text: string) => {
@@ -51,6 +78,9 @@ export default memo(function AudioRecorder({
         if (submitted === false) {
           return;
         }
+        /** This turn began with speech, so conversation mode may re-arm the
+         * microphone when the reply finishes playing. */
+        voiceTurnRef.current = true;
         reset({ text: '' });
         existingTextRef.current = '';
       }
@@ -79,6 +109,61 @@ export default memo(function AudioRecorder({
     setText,
     onTranscriptionComplete,
   );
+
+  /** Re-arm the microphone when the assistant finishes speaking.
+   *
+   * Gated on all three of:
+   *   - the Conversation mode toggle being on (Settings -> Speech)
+   *   - the turn having been started by voice, not typed
+   *   - playback having actually transitioned from playing to stopped
+   *
+   * The transition matters: this atom is false before playback begins as well
+   * as after it ends, so acting on the value alone would start recording the
+   * moment the component mounts. */
+  useEffect(() => {
+    const stoppedPlaying = wasPlayingRef.current && !isPlaying;
+    const stoppedGenerating = wasSubmittingRef.current && !isSubmitting;
+    wasPlayingRef.current = isPlaying;
+    wasSubmittingRef.current = isSubmitting;
+
+    /** The assistant's turn ends when it stops SPEAKING if it speaks, and when
+     * it stops WRITING if it does not. Supporting only the first means voice
+     * input with a text-only reply never re-arms - a perfectly reasonable way
+     * to use this, and quieter than being spoken to. */
+    const turnEnded = willSpeak ? stoppedPlaying : stoppedGenerating;
+
+    if (!conversationMode || !turnEnded) {
+      return;
+    }
+    if (!voiceTurnRef.current) {
+      return;
+    }
+    voiceTurnRef.current = false;
+
+    /** Wait before listening again. After speech this stops the microphone
+     * catching the tail of the assistant's own audio and the room's reverb,
+     * which gets transcribed as something the user never said. After a written
+     * reply there is no audio to avoid, but the pause still gives the user a
+     * moment to read before being listened to. */
+    const timer = setTimeout(() => {
+      if (disabled || isSubmittingRef.current || isListening === true) {
+        return;
+      }
+      existingTextRef.current = getValues('text') || '';
+      startRecording();
+    }, REARM_DELAY_MS);
+
+    return () => clearTimeout(timer);
+  }, [
+    isPlaying,
+    isSubmitting,
+    willSpeak,
+    conversationMode,
+    disabled,
+    isListening,
+    startRecording,
+    getValues,
+  ]);
 
   const handleStartRecording = async () => {
     existingTextRef.current = getValues('text') || '';

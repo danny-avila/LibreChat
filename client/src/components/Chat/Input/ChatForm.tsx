@@ -659,6 +659,7 @@ const ChatForm = memo(function ChatForm({
                     ask={submitMessage}
                     disabled={disableInputs || isNotAppendable}
                     isSubmitting={isSubmitting}
+                    index={index}
                   />
                 )}
                 <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
