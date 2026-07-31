@@ -37,7 +37,7 @@ export default function PendingSkillCall({
     <div className={TOOL_ROW_CLASSES}>
       <div className="progress-text-wrapper text-token-text-secondary relative -mt-[0.75px] h-5 w-full leading-5">
         <div
-          className="progress-text-content absolute left-0 top-0 max-w-full overflow-visible whitespace-nowrap"
+          className="progress-text-content absolute left-0 right-0 top-0 max-w-full overflow-visible whitespace-nowrap"
           style={{ opacity: 1, transform: 'none' }}
         >
           <div className="inline-flex w-full items-center gap-2">

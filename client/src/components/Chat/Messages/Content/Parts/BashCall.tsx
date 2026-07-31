@@ -7,6 +7,7 @@ import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import parseJsonField, { areToolCallArgsComplete } from './parseJsonField';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import LangIcon from '~/components/Messages/Content/LangIcon';
+import { toolPanelSpacingClassName } from '../disclosure';
 import { sandboxStartingByToolCallId } from '~/store';
 import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
@@ -156,7 +157,12 @@ export default function BashCall({
       </div>
       <div style={expandStyle}>
         <div className="overflow-hidden" ref={expandRef}>
-          <div className="my-2 overflow-hidden rounded-lg border border-border-light">
+          <div
+            className={cn(
+              toolPanelSpacingClassName,
+              'overflow-hidden rounded-lg border border-border-light',
+            )}
+          >
             {command && (
               <div
                 ref={commandPaneRef}

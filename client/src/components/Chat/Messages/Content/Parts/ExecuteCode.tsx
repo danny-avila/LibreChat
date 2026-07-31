@@ -4,6 +4,7 @@ import { SquareTerminal } from 'lucide-react';
 import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { parseBackgroundHandle, splitBackgroundAttachments } from './handle';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
+import { toolPanelSpacingClassName } from '../disclosure';
 import { sandboxStartingByToolCallId } from '~/store';
 import useLazyHighlight from './useLazyHighlight';
 import useToolCallState from './useToolCallState';
@@ -168,7 +169,12 @@ export default function ExecuteCode({
       </div>
       <div style={expandStyle}>
         <div className="overflow-hidden" ref={expandRef}>
-          <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
+          <div
+            className={cn(
+              toolPanelSpacingClassName,
+              'overflow-hidden rounded-lg border border-border-light bg-surface-secondary',
+            )}
+          >
             {code && <CodeWindowHeader language={lang} code={code} />}
             {code && (
               <pre
