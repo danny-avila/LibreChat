@@ -1,3 +1,4 @@
+import { RE2JS } from 're2js';
 import { logger } from '@librechat/data-schemas';
 import type {
   NextFunction,
@@ -8,12 +9,20 @@ import type {
 import type { MessageFilterPiiConfig } from 'librechat-data-provider';
 import { getReferencedQuotes, mergeQuotedText } from '../utils/quotes';
 
-type CompiledPattern = { id: string; label: string; pattern: RegExp };
+type CompiledPattern = { id: string; label: string; pattern: RE2JS };
 
 const STARTER_PATTERNS: CompiledPattern[] = [
-  { id: 'sk_prefix', label: 'sk- prefix token', pattern: /\b(sk-)[a-zA-Z0-9_-]+/g },
-  { id: 'bearer_header', label: 'Bearer token', pattern: /\b(Bearer )[^\s"']+/gi },
-  { id: 'api_key_header', label: 'api-key header', pattern: /\b(api-key:?\s+)[^\s"']+/gi },
+  { id: 'sk_prefix', label: 'sk- prefix token', pattern: RE2JS.compile('\\b(sk-)[a-zA-Z0-9_-]+') },
+  {
+    id: 'bearer_header',
+    label: 'Bearer token',
+    pattern: RE2JS.compile('\\b(Bearer )[^\\s"\']+', RE2JS.CASE_INSENSITIVE),
+  },
+  {
+    id: 'api_key_header',
+    label: 'api-key header',
+    pattern: RE2JS.compile('\\b(api-key:?\\s+)[^\\s"\']+', RE2JS.CASE_INSENSITIVE),
+  },
 ];
 
 const STARTER_BY_ID = new Map(STARTER_PATTERNS.map((p) => [p.id, p]));
@@ -43,10 +52,10 @@ function compile(config: MessageFilterPiiConfig): CompiledPattern[] {
   const custom: CompiledPattern[] = [];
   for (const p of config.customPatterns ?? []) {
     try {
-      custom.push({ id: p.id, label: p.label, pattern: new RegExp(p.regex, 'g') });
+      custom.push({ id: p.id, label: p.label, pattern: RE2JS.compile(p.regex) });
     } catch (err) {
       logger.warn(
-        `[messageFilter.pii] dropping invalid customPattern ${JSON.stringify(p.id)}: ${(err as Error).message}`,
+        `[messageFilter.pii] dropping invalid or unsupported customPattern ${JSON.stringify(p.id)}: ${(err as Error).message}`,
       );
     }
   }
@@ -57,7 +66,6 @@ function compile(config: MessageFilterPiiConfig): CompiledPattern[] {
 
 function findMatch(text: string, patterns: CompiledPattern[]): CompiledPattern | null {
   for (const p of patterns) {
-    p.pattern.lastIndex = 0;
     if (p.pattern.test(text)) {
       return p;
     }

@@ -246,6 +246,45 @@ describe('messageFilterPii middleware', () => {
     expect(matching.nextCalls).toBe(0);
     expect(matching.capturedRes.status).toBe(400);
   });
+
+  it('evaluates a catastrophic-backtracking customPattern in bounded time', () => {
+    // `(a+)+$` against a long non-terminating run is exponential on a backtracking
+    // engine (native RegExp takes tens of seconds at ~32 chars); the linear-time
+    // engine returns immediately, so this must not hang.
+    const config = {
+      starterPatterns: [],
+      customPatterns: [{ id: 'evil', label: 'Evil', regex: '(a+)+$' }],
+    } as unknown as MessageFilterPiiConfig;
+    const adversarial = 'a'.repeat(60) + '!';
+    const start = process.hrtime.bigint();
+    const { nextCalls } = runMiddleware(config, { text: adversarial });
+    const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
+    expect(nextCalls).toBe(1);
+    expect(elapsedMs).toBeLessThan(1000);
+  });
+
+  it('still matches a catastrophic-shaped pattern against matching input', () => {
+    const config = {
+      starterPatterns: [],
+      customPatterns: [{ id: 'evil', label: 'Evil', regex: '(a+)+$' }],
+    } as unknown as MessageFilterPiiConfig;
+    const { capturedRes, nextCalls } = runMiddleware(config, { text: 'a'.repeat(20) });
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('drops a customPattern using engine-unsupported syntax and keeps others active', () => {
+    const config = {
+      starterPatterns: [],
+      customPatterns: [
+        { id: 'backref', label: 'Backref', regex: '(a)\\1' },
+        { id: 'org', label: 'Org token', regex: '\\bORG-[A-Z0-9]{6,}' },
+      ],
+    } as unknown as MessageFilterPiiConfig;
+    const matching = runMiddleware(config, { text: 'token ORG-DEADBEEF here' });
+    expect(matching.nextCalls).toBe(0);
+    expect(matching.capturedRes.status).toBe(400);
+  });
 });
 
 describe('findPiiMatchInMessages', () => {
