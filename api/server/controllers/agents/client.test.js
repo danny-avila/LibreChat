@@ -13,6 +13,7 @@ const mockFormatAgentMessages = jest.fn(() => ({
 
 const { Providers } = require('@librechat/agents');
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
+const { GenerationJobManager, createStreamServices } = require('@librechat/api');
 const AgentClient = require('./client');
 const { resolveConfigServers } = require('~/server/services/MCP');
 
@@ -42,6 +43,7 @@ jest.mock('@librechat/api', () => ({
   countTokens: jest.fn((text) => Math.ceil(String(text ?? '').length / 4)),
   createTokenCounter: jest.fn(() => jest.fn(() => 0)),
   deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
+  decrementPendingRequest: jest.fn(async () => {}),
   initializeAgent: jest.fn(),
   isHITLEnabled: (...args) => mockIsHITLEnabled(...args),
   createMemoryProcessor: jest.fn(),
@@ -54,6 +56,63 @@ jest.mock('@librechat/api', () => ({
   loadAgent: jest.fn(),
   maybePrewarmCodeSandbox: jest.fn(),
 }));
+
+describe('AgentClient - interrupt discovery persistence', () => {
+  beforeEach(async () => {
+    await GenerationJobManager.destroy();
+    GenerationJobManager.configure({ ...createStreamServices(), cleanupOnComplete: false });
+    GenerationJobManager.initialize();
+  });
+
+  afterEach(async () => {
+    await GenerationJobManager.destroy();
+  });
+
+  it('makes the run discovery snapshot durable when the run pauses', async () => {
+    const streamId = 'conversation-discovered-pause';
+    const job = await GenerationJobManager.createJob(streamId, 'user-123', streamId);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = streamId;
+    client.responseMessageId = 'response-discovered-pause';
+    client.jobCreatedAt = job.createdAt;
+
+    await client.handleRunInterrupt(
+      {
+        getInterrupt: () => ({
+          interruptId: 'ask-interrupt',
+          threadId: streamId,
+          payload: {
+            type: 'ask_user_question',
+            question: { question: 'Proceed?' },
+          },
+        }),
+        getDiscoveredTools: () => ['save_issue_mcp_linear'],
+        getRunMessages: () => [],
+      },
+      streamId,
+    );
+
+    const paused = await GenerationJobManager.getJob(streamId);
+    expect(paused?.status).toBe('requires_action');
+    expect(paused?.metadata.discoveredTools).toEqual(['save_issue_mcp_linear']);
+  });
+});
 
 jest.mock('~/server/services/Config', () => ({
   getMCPServerTools: jest.fn(),

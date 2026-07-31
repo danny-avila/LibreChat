@@ -36,7 +36,7 @@ const {
   buildPendingAction,
   toClientPendingAction,
   computeAgentRequestFingerprint,
-  extractDiscoveredToolsFromHistory,
+  getRunDiscoveredTools,
   captureResumeModelParameters,
   pickResumeContext,
   getApprovalTtlMs,
@@ -2123,40 +2123,28 @@ class AgentClient extends BaseClient {
       }
     }
 
-    const paused = await GenerationJobManager.approvals.pause(streamId, pendingAction);
-    if (!paused) {
-      logger.debug(
-        `[AgentClient] Interrupt fired but job ${streamId} was not running; not pausing`,
-      );
-      return;
-    }
-
-    // Capture deferred tools discovered (via tool_search) earlier in THIS turn so resume
-    // can replay them into createRun. The resumed graph is rebuilt with `messages: []`
-    // (state comes from the checkpoint), so the in-turn tool_search results that mark a
-    // deferred tool discovered aren't present there — without this the paused deferred
-    // tool would be missing from the rebuilt schema-only toolMap and resume would fail
-    // with "unknown tool". Inert for non-deferred turns (the set comes back empty).
+    // Snapshot deferred-tool discovery before exposing the pause. Tool-search results
+    // may live only in the interrupted SDK graph, so they must be committed atomically
+    // with requires_action for an immediate/cross-replica resume to retain the schemas.
+    let discoveredTools = [];
     try {
-      const runMessages =
-        typeof run.getRunMessages === 'function' ? run.getRunMessages() : undefined;
-      if (Array.isArray(runMessages) && runMessages.length > 0) {
-        const discovered = extractDiscoveredToolsFromHistory(runMessages);
-        if (discovered.size > 0) {
-          await GenerationJobManager.updateMetadata(
-            streamId,
-            {
-              discoveredTools: Array.from(discovered),
-            },
-            this.jobCreatedAt,
-          );
-        }
-      }
+      discoveredTools = getRunDiscoveredTools(run);
     } catch (err) {
       logger.warn(
         `[AgentClient] Failed to capture discovered tools for resume on ${streamId}`,
         err?.message ?? err,
       );
+    }
+
+    const paused = await GenerationJobManager.approvals.pause(streamId, pendingAction, {
+      expectedCreatedAt: this.jobCreatedAt,
+      ...(discoveredTools.length > 0 ? { discoveredTools } : {}),
+    });
+    if (!paused) {
+      logger.debug(
+        `[AgentClient] Interrupt fired but job ${streamId} was not running; not pausing`,
+      );
+      return;
     }
 
     this.pendingApproval = pendingAction;
@@ -2838,9 +2826,8 @@ class AgentClient extends BaseClient {
         // batches keep claiming slots and generating group headers.
         activityLabel: this.buildActivityLabelWiring(streamId, abortController.signal),
         // Replay deferred tools discovered before the pause. With `messages: []` the
-        // discovery scan finds nothing, so a deferred tool the paused call targets
-        // would be absent from the rebuilt toolMap; these names (captured at pause)
-        // force it back in. Undefined/empty for non-deferred turns — a harmless no-op.
+        // discovery scan finds nothing, so these names restore the schemas to the
+        // rebuilt model binding. Undefined/empty for non-deferred turns is a no-op.
         discoveredToolNames,
         initialSessions,
         runId: this.responseMessageId,

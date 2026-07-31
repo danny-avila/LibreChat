@@ -1885,9 +1885,8 @@ describe('toolOutputReferences gating', () => {
 // durable checkpoint), so the in-turn `tool_search` results that mark a deferred
 // tool discovered aren't on the critical path. createRun's `discoveredToolNames`
 // input replays those names — captured at pause — so the paused deferred tool is
-// promoted back into `toolDefinitions` (and `defer_loading` flipped) and is present
-// in the rebuilt schema-only toolMap. Without it, the approved tool would be missing
-// and resume would fail with "unknown tool".
+// promoted back into `toolDefinitions` (and `defer_loading` flipped) and its schema
+// is restored to the rebuilt model binding.
 // ---------------------------------------------------------------------------
 describe('createRun deferred-tool replay (HITL resume)', () => {
   /** Agent whose discoverable `deep_tool` lives ONLY in the registry (deferred). */

@@ -59,6 +59,40 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       }
     });
 
+    test('persists discovered tools in the same transition that makes the pause visible', async () => {
+      const streamId = 'stream-pause-discoveries';
+      await manager.createJob(streamId, 'user-1');
+
+      const action = buildAction(streamId);
+      expect(
+        await manager.approvals.pause(streamId, action, {
+          discoveredTools: ['save_issue_mcp_linear'],
+        }),
+      ).toBe(true);
+
+      const paused = await manager.getJob(streamId);
+      expect(paused?.status).toBe('requires_action');
+      expect(paused?.metadata.discoveredTools).toEqual(['save_issue_mcp_linear']);
+    });
+
+    test('does not write a stale pause or discoveries onto a replacement job', async () => {
+      const streamId = 'stream-pause-replaced';
+      const original = await manager.createJob(streamId, 'user-1');
+      const replacement = await manager.createJob(streamId, 'user-1');
+
+      expect(
+        await manager.approvals.pause(streamId, buildAction(streamId), {
+          discoveredTools: ['stale_tool'],
+          expectedCreatedAt: original.createdAt,
+        }),
+      ).toBe(false);
+
+      const liveJob = await manager.getJob(streamId);
+      expect(liveJob?.createdAt).toBe(replacement.createdAt);
+      expect(liveJob?.status).toBe('running');
+      expect(liveJob?.metadata.discoveredTools).toBeUndefined();
+    });
+
     test('returns false when the job is already terminal', async () => {
       const streamId = 'stream-pause-dead';
       await manager.createJob(streamId, 'user-1');
