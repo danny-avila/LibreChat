@@ -157,6 +157,110 @@ describe('RedisEventTransport', () => {
     transport.destroy();
   });
 
+  it('ignores sequenced events while only internal abort listeners are attached', async () => {
+    jest.useFakeTimers();
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'abort-only-sequenced-events';
+    const onAbort = jest.fn();
+    const onPreempt = jest.fn();
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    try {
+      await transport.onAbort(streamId, onAbort);
+      await transport.onPreempt(streamId, onPreempt);
+      const messageHandler = getMessageHandler(mockSubscriber);
+
+      deliverSequencedMessage(messageHandler, streamId, {
+        type: 'chunk',
+        seq: 16_119,
+        data: { index: 0 },
+      });
+      deliverSequencedMessage(messageHandler, streamId, {
+        type: 'done',
+        seq: 16_120,
+        data: { final: true },
+      });
+      deliverSequencedMessage(messageHandler, streamId, {
+        type: 'error',
+        seq: 16_121,
+        error: 'remote error',
+      });
+      await jest.advanceTimersByTimeAsync(1_000);
+
+      messageHandler(
+        `stream:{${streamId}}:events`,
+        JSON.stringify({ type: 'abort', generationId: 9 }),
+      );
+      const preempt = { op: 'arm', createdAt: 10, steerIds: ['steer-1'] };
+      messageHandler(`stream:{${streamId}}:events`, JSON.stringify({ type: 'preempt', preempt }));
+
+      expect(onAbort).toHaveBeenCalledWith(9);
+      expect(onPreempt).toHaveBeenCalledWith(preempt);
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining(`Stream ${streamId}:`));
+    } finally {
+      warn.mockRestore();
+      transport.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('synchronizes a resumed subscriber after ignoring detached stream traffic', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'abort-only-then-sse';
+    const messageHandler = getMessageHandler(mockSubscriber);
+
+    await transport.onAbort(streamId, () => undefined);
+    const initial: object[] = [];
+    const initialSubscription = transport.subscribe(streamId, {
+      onChunk: (event) => initial.push(event as object),
+    });
+    await initialSubscription.ready;
+    deliverSequencedMessage(messageHandler, streamId, {
+      type: 'chunk',
+      seq: 0,
+      data: { index: 0 },
+    });
+    initialSubscription.unsubscribe();
+
+    deliverSequencedMessage(messageHandler, streamId, {
+      type: 'chunk',
+      seq: 41,
+      data: { ignored: true },
+    });
+
+    mockPublisher.get.mockResolvedValueOnce('42');
+    const received: object[] = [];
+    const subscription = transport.subscribe(
+      streamId,
+      { onChunk: (event) => received.push(event as object) },
+      { deferSequenceDelivery: true },
+    );
+    await subscription.ready;
+    await transport.syncReorderBuffer(streamId);
+
+    deliverSequencedMessage(messageHandler, streamId, {
+      type: 'chunk',
+      seq: 42,
+      data: { index: 42 },
+    });
+
+    expect(initial).toEqual([{ index: 0 }]);
+    expect(received).toEqual([{ index: 42 }]);
+
+    subscription.unsubscribe();
+    transport.destroy();
+  });
+
   it('releases each generation abort subscription after successful completion', async () => {
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();
