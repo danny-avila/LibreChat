@@ -7,6 +7,11 @@ export interface MCPServerContext {
   configServers: Record<string, ParsedServerConfig>;
   /** Every configured server, in the normalized form tool keys are built from. */
   serverNames: string[];
+  /** Every configured server under its raw config name — the form the
+   *  registry, config maps, tool cache, and plugin-auth rows are keyed by.
+   *  Consumers that parse a (normalized) server out of a tool key resolve
+   *  back to these via `buildServerNameAliases`. */
+  rawServerNames: string[];
 }
 
 export interface ResolveMCPServerContextParams {
@@ -28,8 +33,10 @@ export async function resolveMCPServerContext({
   mcpConfig,
   ensureConfigServers,
 }: ResolveMCPServerContextParams): Promise<MCPServerContext> {
+  const rawServerNames = Object.keys(mcpConfig);
   return {
     configServers: await ensureConfigServers(mcpConfig),
-    serverNames: Object.keys(mcpConfig).map(normalizeServerName),
+    serverNames: rawServerNames.map(normalizeServerName),
+    rawServerNames,
   };
 }

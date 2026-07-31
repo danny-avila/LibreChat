@@ -7,6 +7,7 @@ const {
   mcpToolPattern,
   loadWebSearchAuth,
   splitMCPToolKey,
+  buildServerNameAliases,
   buildInlineMemoryTool,
   getCodeApiAuthHeaders,
   buildImageToolContext,
@@ -288,12 +289,18 @@ const loadTools = async ({
   let configServers;
   /** All configured names, in the normalized form tool keys carry */
   let mcpServerNames = [];
+  /** All configured names in raw config form, for normalized→raw resolution */
+  let mcpRawServerNames = [];
   if (hasMCPTools && canUseMCP) {
     /** Reuse the caller's context when it already resolved one, so the chat
      *  startup path reads the request app config once. */
-    ({ configServers, serverNames: mcpServerNames } =
-      options.mcpServerContext ?? (await resolveMcpServerContext(options.req)));
+    ({
+      configServers,
+      serverNames: mcpServerNames,
+      rawServerNames: mcpRawServerNames = [],
+    } = options.mcpServerContext ?? (await resolveMcpServerContext(options.req)));
   }
+  const serverNameAliases = buildServerNameAliases(mcpRawServerNames);
 
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
@@ -402,7 +409,17 @@ const loadTools = async ({
         continue;
       }
 
-      const [toolName, serverName] = splitMCPToolKey(tool, mcpServerNames);
+      /** Keys carry the normalized server name (raw in pre-normalization data),
+       *  so both spellings resolve the boundary; everything downstream — the
+       *  registry, config maps, cache, and auth rows — is keyed by the RAW name. */
+      const [toolName, parsedServerName] = splitMCPToolKey(tool, [
+        ...mcpServerNames,
+        ...serverNameAliases.values(),
+      ]);
+      const serverName =
+        parsedServerName != null
+          ? (serverNameAliases.get(parsedServerName) ?? parsedServerName)
+          : parsedServerName;
       if (toolName === Constants.mcp_server) {
         /** Placeholder used for UI purposes */
         continue;

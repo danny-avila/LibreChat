@@ -8,6 +8,7 @@ const {
   isMCPDomainAllowed,
   splitMCPToolKey,
   normalizeServerName,
+  buildServerNameAliases,
   resolveMCPServerContext,
   normalizeJsonSchema,
   GenerationJobManager,
@@ -657,7 +658,9 @@ async function createMCPTools({
       jobCreatedAt,
       availableTools: result.availableTools,
       serverName,
-      toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
+      /** Model-facing key: matches the normalized `availableTools` keys and
+       *  the instance name `createToolInstance` will assign. */
+      toolKey: `${tool.name}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`,
       requestBody,
       requestScopedConnections,
       config: serverConfig,
@@ -719,7 +722,14 @@ async function createMCPTool({
       ? [normalizeServerName(resolvedServerName)]
       : Object.keys(configServers ?? {}).map(normalizeServerName),
   );
-  const serverName = resolvedServerName ?? parsedServerName;
+  /** Config, registry, cache, and auth lookups below are keyed by the RAW
+   *  config name, so a parsed (normalized) name must resolve back to it. */
+  const parsedRawServerName =
+    parsedServerName != null && resolvedServerName == null
+      ? (buildServerNameAliases(Object.keys(configServers ?? {})).get(parsedServerName) ??
+        parsedServerName)
+      : parsedServerName;
+  const serverName = resolvedServerName ?? parsedRawServerName;
   const toolName = parsedToolName;
 
   const serverConfig =

@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { Constants } from 'librechat-data-provider';
+import { Constants, normalizeServerName } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/agents';
 import type { LCAvailableTools, LCFunctionTool, ParsedServerConfig } from './types';
 import { requiresEphemeralUserConnection } from './utils';
@@ -88,8 +88,14 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         return serverTools;
       }
 
+      /** Cache keys are MODEL-FACING: they become builder tool ids, agent.tools
+       *  entries, tool_options keys, and definition names, and must equal the
+       *  runtime instance name (`createToolInstance` in MCP.js), which embeds
+       *  `normalizeServerName(serverName)`. The cache STORE itself stays keyed
+       *  by the raw config name. */
+      const keyServerName = normalizeServerName(serverName);
       for (const tool of tools) {
-        const name = `${tool.name}${mcpDelimiter}${serverName}`;
+        const name = `${tool.name}${mcpDelimiter}${keyServerName}`;
         const entry: LCFunctionTool = {
           type: 'function',
           ['function']: {

@@ -29,6 +29,7 @@ const {
   buildMCPAuthRunStepCompletedEvent,
   isFileAuthoringToolDefinition,
   ASK_USER_QUESTION_TOOL_NAME,
+  buildServerNameAliases,
 } = require('@librechat/api');
 const {
   Time,
@@ -610,9 +611,16 @@ async function loadToolDefinitionsWrapper({
   /** Only MCP tool keys need the server context; a purely non-MCP agent should not
    *  pay an app-config lookup on startup. */
   const hasFilteredMCPTools = filteredTools.some((t) => t.includes(Constants.mcp_delimiter));
-  const { configServers, serverNames: mcpServerNames } = hasFilteredMCPTools
+  const {
+    configServers,
+    serverNames: mcpServerNames,
+    rawServerNames: mcpRawServerNames = [],
+  } = hasFilteredMCPTools
     ? await resolveMcpServerContext(req)
-    : { configServers: {}, serverNames: [] };
+    : { configServers: {}, serverNames: [], rawServerNames: [] };
+  /** Tool keys carry normalized server names; the registry, config maps, tool
+   *  cache, and auth rows are keyed raw — resolve parsed names through this. */
+  const serverNameAliases = buildServerNameAliases(mcpRawServerNames);
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
@@ -620,7 +628,7 @@ async function loadToolDefinitionsWrapper({
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: filteredTools,
       userId: req.user.id,
-      serverNames: mcpServerNames,
+      serverNames: mcpRawServerNames,
       findPluginAuthsByKeys,
     });
   }
@@ -738,7 +746,11 @@ async function loadToolDefinitionsWrapper({
     return cachedOAuthStart;
   };
 
-  const getOrFetchMCPServerTools = async (userId, serverName) => {
+  const getOrFetchMCPServerTools = async (userId, parsedServerName) => {
+    /** The caller parsed this name out of a tool key, so it arrives in the
+     *  normalized form keys carry; every lookup below (config, registry,
+     *  cache, auth, reinit) is keyed by the raw config name. */
+    const serverName = serverNameAliases.get(parsedServerName) ?? parsedServerName;
     const addPendingOAuthServer = async () => {
       const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
         flowManager,
@@ -1201,7 +1213,7 @@ async function loadAgentTools({
     userMCPAuthMap = await getUserMCPAuthMap({
       tools: _agentTools,
       userId: req.user.id,
-      serverNames: mcpServerContext.serverNames,
+      serverNames: mcpServerContext.rawServerNames ?? mcpServerContext.serverNames,
       findPluginAuthsByKeys,
     });
   }

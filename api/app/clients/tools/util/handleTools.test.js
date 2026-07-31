@@ -358,6 +358,96 @@ describe('Tool Handlers', () => {
       );
     });
 
+    it('resolves normalized tool keys back to the raw server for config lookups', async () => {
+      /** Model-facing keys embed `normalizeServerName(server)`, while the
+       *  registry/config/cache are keyed by the raw config name — a
+       *  special-character server must still resolve its config and receive
+       *  the normalized key as the toolKey. */
+      const rawServerName = 'Connector: Company';
+      const normalizedKey = `search${Constants.mcp_delimiter}Connector__Company`;
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/mcp',
+        source: 'yaml',
+      };
+
+      const { resolveMcpServerContext } = require('~/server/services/MCP');
+      resolveMcpServerContext.mockResolvedValueOnce({
+        configServers: { [rawServerName]: serverConfig },
+        serverNames: ['Connector__Company'],
+        rawServerNames: [rawServerName],
+      });
+      mockGetServerConfig.mockResolvedValue(serverConfig);
+      mockCreateMCPTool.mockResolvedValue({ name: normalizedKey });
+
+      const result = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [normalizedKey],
+        options: {
+          req: {
+            user: { id: fakeUser._id.toString(), role: 'USER' },
+            body: {},
+          },
+        },
+      });
+
+      expect(result.loadedTools).toEqual([{ name: normalizedKey }]);
+      expect(mockGetServerConfig).toHaveBeenCalledWith(
+        rawServerName,
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(mockCreateMCPTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolKey: normalizedKey,
+          serverName: rawServerName,
+        }),
+      );
+    });
+
+    it('still resolves legacy raw-keyed tools for a special-character server', async () => {
+      const rawServerName = 'Connector: Company';
+      const legacyKey = `search${Constants.mcp_delimiter}${rawServerName}`;
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/mcp',
+        source: 'yaml',
+      };
+
+      const { resolveMcpServerContext } = require('~/server/services/MCP');
+      resolveMcpServerContext.mockResolvedValueOnce({
+        configServers: { [rawServerName]: serverConfig },
+        serverNames: ['Connector__Company'],
+        rawServerNames: [rawServerName],
+      });
+      mockGetServerConfig.mockResolvedValue(serverConfig);
+      mockCreateMCPTool.mockResolvedValue({ name: 'loaded-mcp-tool' });
+
+      const result = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [legacyKey],
+        options: {
+          req: {
+            user: { id: fakeUser._id.toString(), role: 'USER' },
+            body: {},
+          },
+        },
+      });
+
+      expect(result.loadedTools).toEqual([{ name: 'loaded-mcp-tool' }]);
+      expect(mockGetServerConfig).toHaveBeenCalledWith(
+        rawServerName,
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(mockCreateMCPTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolKey: legacyKey,
+          serverName: rawServerName,
+        }),
+      );
+    });
+
     it('resolves an MCP tool whose raw name itself contains the delimiter substring', async () => {
       // Regression test for https://github.com/danny-avila/LibreChat/issues/14440:
       // gateways that prefix aggregated tool names by server (e.g. LiteLLM's

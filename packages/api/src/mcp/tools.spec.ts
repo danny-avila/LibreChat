@@ -46,6 +46,31 @@ describe('createMCPToolCacheService', () => {
       expect(deps.setCachedTools).not.toHaveBeenCalled();
     });
 
+    it('builds MODEL-FACING keys with the normalized server name, store keyed raw', async () => {
+      /** Tool keys become builder tool ids, agent.tools entries, tool_options
+       *  keys, and definition names, and must equal the runtime instance name,
+       *  which embeds `normalizeServerName(serverName)`. */
+      const deps = createMockDeps();
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+      const tools: MCPToolInput[] = [
+        { name: 'search', description: 'Search', inputSchema: { type: 'object', properties: {} } },
+      ];
+
+      const result = await updateMCPServerTools({
+        userId: 'u1',
+        serverName: 'Connector: Company',
+        tools,
+      });
+
+      const expectedKey = `search${Constants.mcp_delimiter}Connector__Company`;
+      expect(result[expectedKey]).toBeDefined();
+      expect(result[expectedKey]['function'].name).toBe(expectedKey);
+      expect(deps.setCachedTools).toHaveBeenCalledWith(result, {
+        userId: 'u1',
+        serverName: 'Connector: Company',
+      });
+    });
+
     it('constructs tool names with mcp_delimiter and caches them', async () => {
       const deps = createMockDeps();
       const { updateMCPServerTools } = createMCPToolCacheService(deps);

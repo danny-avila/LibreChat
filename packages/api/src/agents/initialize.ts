@@ -41,6 +41,12 @@ import {
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
 import {
+  normalizeServerName,
+  requiresEphemeralUserConnection,
+  splitMCPToolKey,
+  normalizeAgentToolKeys,
+} from '~/mcp/utils';
+import {
   optionalChainWithEmptyCheck,
   extractLibreChatParams,
   getModelMaxTokens,
@@ -51,7 +57,6 @@ import {
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
-import { normalizeServerName, requiresEphemeralUserConnection, splitMCPToolKey } from '~/mcp/utils';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { applyBackgroundToolCalls } from './background';
@@ -636,6 +641,23 @@ export async function initializeAgent(
   if (!db) {
     throw new Error('initializeAgent requires db methods to be passed');
   }
+
+  /**
+   * Heal legacy MCP tool keys ONCE, before anything reads them: model-facing
+   * keys embed the normalized server name (cache keys, definition names,
+   * runtime instance names), so an agent document persisted with raw-named
+   * keys would neither load those tools nor have any of its per-tool
+   * `tool_options` honored. Every downstream consumer — the tool loader, the
+   * defer/programmatic classification, the background and intent passes —
+   * reads `agent.tools` / `agent.tool_options` after this point.
+   */
+  const healedKeys = normalizeAgentToolKeys({
+    tools: agent.tools ?? undefined,
+    toolOptions: agent.tool_options,
+    rawServerNames: Object.keys(req.config?.mcpConfig ?? {}),
+  });
+  agent.tools = healedKeys.tools;
+  agent.tool_options = healedKeys.toolOptions;
 
   if (
     isAgentsEndpoint(endpointOption?.endpoint) &&

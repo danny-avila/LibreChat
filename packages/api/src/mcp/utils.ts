@@ -1,4 +1,5 @@
-import { Constants, normalizeServerName } from 'librechat-data-provider';
+import { Constants, normalizeServerName, normalizeMCPToolKey } from 'librechat-data-provider';
+import type { AgentToolOptions } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
 import type { RequestBody } from '~/types';
 
@@ -19,6 +20,74 @@ export const MCP_ALL_PLACEHOLDER_PREFIX: string = `${Constants.mcp_all}${Constan
 /** Whether a tool entry is the lazily-expanded `mcp_all` placeholder. */
 export function isMCPAllPlaceholder(toolName: string): boolean {
   return toolName.startsWith(MCP_ALL_PLACEHOLDER_PREFIX);
+}
+
+/** Server-pin token (`sys__server__sys<delim><server>`) that keeps a server
+ *  attached to an agent independent of its tool selection. */
+const MCP_SERVER_TOKEN_PREFIX: string = `${Constants.mcp_server}${Constants.mcp_delimiter}`;
+
+/**
+ * Heals legacy persisted agent data whose MCP tool keys embed a RAW server
+ * name: model-facing keys carry `normalizeServerName(server)` (matching cache
+ * keys, definition names, and runtime instance names), so an agent document
+ * saved before that convention — or through the old raw-keyed cache — would
+ * neither load its tools nor have its `tool_options` (defer / programmatic /
+ * background / intent) honored for a server whose name needs normalizing.
+ *
+ * Placeholder and server-pin tokens are left untouched: they are
+ * config-identity references consumed against raw config names (the client's
+ * selectors, the definitions loader's expansion), never model-facing names.
+ * Returns the same references when nothing needs rewriting, so the common
+ * path (every server name already normalized) allocates nothing.
+ */
+export function normalizeAgentToolKeys(params: {
+  tools: string[] | undefined;
+  toolOptions: AgentToolOptions | undefined;
+  rawServerNames: readonly string[];
+}): { tools: string[] | undefined; toolOptions: AgentToolOptions | undefined } {
+  const { tools, toolOptions, rawServerNames } = params;
+  const rewritableNames = rawServerNames.filter((name) => normalizeServerName(name) !== name);
+  if (rewritableNames.length === 0) {
+    return { tools, toolOptions };
+  }
+
+  const rewriteKey = (key: string): string => {
+    if (
+      !key.includes(Constants.mcp_delimiter) ||
+      isMCPAllPlaceholder(key) ||
+      key.startsWith(MCP_SERVER_TOKEN_PREFIX)
+    ) {
+      return key;
+    }
+    return normalizeMCPToolKey(key, rewritableNames);
+  };
+
+  let toolsChanged = false;
+  const nextTools = tools?.map((key) => {
+    const rewritten = rewriteKey(key);
+    if (rewritten !== key) {
+      toolsChanged = true;
+    }
+    return rewritten;
+  });
+
+  let optionsChanged = false;
+  let nextOptions: AgentToolOptions | undefined;
+  if (toolOptions) {
+    nextOptions = {};
+    for (const [key, options] of Object.entries(toolOptions)) {
+      const rewritten = rewriteKey(key);
+      if (rewritten !== key) {
+        optionsChanged = true;
+      }
+      nextOptions[rewritten] = options;
+    }
+  }
+
+  return {
+    tools: toolsChanged ? nextTools : tools,
+    toolOptions: optionsChanged ? nextOptions : toolOptions,
+  };
 }
 
 const RUNTIME_CONTEXT_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:USER|OPENID|GRAPH|BODY)_[^}]+\}\}/;
@@ -426,4 +495,9 @@ export function generateServerNameFromTitle(title: string): string {
   return slug || 'mcp-server'; // Fallback if empty
 }
 
-export { splitMCPToolKey, normalizeServerName } from 'librechat-data-provider';
+export {
+  splitMCPToolKey,
+  normalizeServerName,
+  normalizeMCPToolKey,
+  buildServerNameAliases,
+} from 'librechat-data-provider';

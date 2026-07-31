@@ -2,6 +2,7 @@ import type { ParsedServerConfig } from '~/mcp/types';
 import {
   buildOAuthToolCallName,
   normalizeServerName,
+  normalizeAgentToolKeys,
   splitMCPToolKey,
   redactAllServerSecrets,
   redactServerSecrets,
@@ -72,6 +73,70 @@ describe('splitMCPToolKey', () => {
 
   it('should handle a raw tool name with multiple delimiter occurrences by always taking the last segment as the server name', () => {
     expect(splitMCPToolKey('a_mcp_b_mcp_c_mcp_server')).toEqual(['a_mcp_b_mcp_c', 'server']);
+  });
+});
+
+describe('normalizeAgentToolKeys', () => {
+  const rawServerNames = ['plain', 'Connector: Company'];
+
+  it('rewrites legacy raw-keyed tools and tool_options to the normalized form', () => {
+    const { tools, toolOptions } = normalizeAgentToolKeys({
+      tools: ['web_search', 'search_mcp_plain', 'search_mcp_Connector: Company'],
+      toolOptions: {
+        'search_mcp_Connector: Company': { run_in_background: true, describe_intent: true },
+        search_mcp_plain: { defer_loading: true },
+      },
+      rawServerNames,
+    });
+    expect(tools).toEqual(['web_search', 'search_mcp_plain', 'search_mcp_Connector__Company']);
+    expect(toolOptions).toEqual({
+      search_mcp_Connector__Company: { run_in_background: true, describe_intent: true },
+      search_mcp_plain: { defer_loading: true },
+    });
+  });
+
+  it('returns the same references when no configured name needs rewriting (fast path)', () => {
+    const tools = ['search_mcp_plain'];
+    const toolOptions = { search_mcp_plain: { defer_loading: true } };
+    const result = normalizeAgentToolKeys({
+      tools,
+      toolOptions,
+      rawServerNames: ['plain', 'safe-name.v2'],
+    });
+    expect(result.tools).toBe(tools);
+    expect(result.toolOptions).toBe(toolOptions);
+  });
+
+  it('returns the same references when keys are already normalized', () => {
+    const tools = ['search_mcp_Connector__Company'];
+    const toolOptions = { search_mcp_Connector__Company: { describe_intent: true } };
+    const result = normalizeAgentToolKeys({ tools, toolOptions, rawServerNames });
+    expect(result.tools).toBe(tools);
+    expect(result.toolOptions).toBe(toolOptions);
+  });
+
+  it('leaves placeholder and server-pin tokens untouched (config-identity references)', () => {
+    const tools = [
+      'sys__all__sys_mcp_Connector: Company',
+      'sys__server__sys_mcp_Connector: Company',
+      'search_mcp_Connector: Company',
+    ];
+    const result = normalizeAgentToolKeys({ tools, toolOptions: undefined, rawServerNames });
+    expect(result.tools).toEqual([
+      'sys__all__sys_mcp_Connector: Company',
+      'sys__server__sys_mcp_Connector: Company',
+      'search_mcp_Connector__Company',
+    ]);
+  });
+
+  it('handles undefined tools and options', () => {
+    const result = normalizeAgentToolKeys({
+      tools: undefined,
+      toolOptions: undefined,
+      rawServerNames,
+    });
+    expect(result.tools).toBeUndefined();
+    expect(result.toolOptions).toBeUndefined();
   });
 });
 

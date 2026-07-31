@@ -11,6 +11,7 @@ const {
   isUserSourced,
   MCPErrorCodes,
   splitMCPToolKey,
+  normalizeServerName,
   redactServerSecrets,
   redactAllServerSecrets,
   isMCPDomainNotAllowedError,
@@ -178,7 +179,10 @@ const getMCPTools = async (req, res) => {
               continue;
             }
 
-            const [toolName] = splitMCPToolKey(toolKey, [serverName]);
+            const [toolName] = splitMCPToolKey(toolKey, [
+              serverName,
+              normalizeServerName(serverName),
+            ]);
             server.tools.push({
               name: toolName,
               pluginKey: toolKey,
