@@ -1102,16 +1102,10 @@ export class RedisEventTransport implements IEventTransport {
     });
 
     try {
-      const receivers = await this.publishAbort(streamId, generationId, abortRequestId);
-      if (receivers === 0) {
-        let acknowledged = false;
-        try {
-          acknowledged = await this.hasDurableAbortAck(streamId, generationId);
-        } catch (error) {
-          logger.error(`[RedisEventTransport] Failed to recheck generation abort proof:`, error);
-        }
-        this.settleAbortAck(streamId, state, abortRequestId, acknowledged);
-      }
+      // Redis Cluster may report zero receivers on the publishing node while a
+      // subscriber on another node is still processing the abort. Only the
+      // correlated acknowledgement (or its durable proof) can settle this.
+      await this.publishAbort(streamId, generationId, abortRequestId);
     } catch (error) {
       this.settleAbortAck(streamId, state, abortRequestId, false);
       throw error;

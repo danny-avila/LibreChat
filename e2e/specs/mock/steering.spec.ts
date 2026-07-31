@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page, Response } from '@playwright/test';
+import type { CancelSteerParams } from '../../../client/src/data-provider/SSE/mutations';
 import {
   MOCK_ENDPOINTS,
   MOCK_REPLY_TEXT,
@@ -39,6 +40,10 @@ type PersistedMessage = {
   content?: unknown[];
   unfinished?: boolean;
   isCreatedByUser?: boolean;
+};
+
+type CancelSteerWirePayload = CancelSteerParams & {
+  generationProtocolVersion: 2;
 };
 
 function isSteerRequest(response: Response) {
@@ -468,9 +473,9 @@ test.describe('mid-run steering and queuing', () => {
       }),
     );
 
-    let cancelBody: Record<string, unknown> | undefined;
+    let cancelBody: CancelSteerWirePayload | undefined;
     await page.route('**/api/agents/chat/steer/cancel**', async (route) => {
-      cancelBody = route.request().postDataJSON() as Record<string, unknown>;
+      cancelBody = route.request().postDataJSON() as CancelSteerWirePayload;
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

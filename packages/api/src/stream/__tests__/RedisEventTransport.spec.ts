@@ -974,20 +974,72 @@ describe('RedisEventTransport', () => {
   });
 
   it('rejects a confirmed abort with no generation-owner acknowledgement', async () => {
+    jest.useFakeTimers();
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();
     const transport = new RedisEventTransport(
       mockPublisher as unknown as Redis,
       mockSubscriber as unknown as Redis,
     );
-    mockPublisher.publish.mockResolvedValueOnce(0);
+    let resolveAbortPublished!: () => void;
+    const abortPublished = new Promise<void>((resolve) => {
+      resolveAbortPublished = resolve;
+    });
+    mockPublisher.publish.mockImplementationOnce(async () => {
+      resolveAbortPublished();
+      return 0;
+    });
     mockPublisher.eval.mockResolvedValueOnce(0);
 
-    await expect(transport.emitAbortConfirmed('zero-listener', 1234)).resolves.toBe(false);
-    await expect(
-      transport.emitReplacedDoneConfirmed('zero-listener', { final: true }, 1234, 'attempt'),
-    ).resolves.toBeUndefined();
+    try {
+      const confirmation = transport.emitAbortConfirmed('zero-listener', 1234);
+      await abortPublished;
+      await jest.advanceTimersByTimeAsync(3000);
+      await expect(confirmation).resolves.toBe(false);
+      await expect(
+        transport.emitReplacedDoneConfirmed('zero-listener', { final: true }, 1234, 'attempt'),
+      ).resolves.toBeUndefined();
+    } finally {
+      transport.destroy();
+      jest.useRealTimers();
+    }
+  });
 
+  it('waits for a delayed owner acknowledgement when cluster publish reports zero local receivers', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'cluster-zero-local-receivers';
+    const channel = `stream:{${streamId}}:events`;
+    const messageHandler = getMessageHandler(mockSubscriber);
+    let resolveAbortPublished!: (message: { abortRequestId: string }) => void;
+    const abortPublished = new Promise<{ abortRequestId: string }>((resolve) => {
+      resolveAbortPublished = resolve;
+    });
+    mockPublisher.publish.mockImplementation(async (_channel: string, payload: string) => {
+      const message = JSON.parse(payload) as { type: string; abortRequestId: string };
+      if (message.type === 'abort') {
+        resolveAbortPublished(message);
+      }
+      return 0;
+    });
+
+    const confirmation = transport.emitAbortConfirmed(streamId, 1234);
+    const abortMessage = await abortPublished;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    messageHandler(
+      channel,
+      JSON.stringify({
+        type: 'abort_ack',
+        generationId: 1234,
+        abortRequestId: abortMessage.abortRequestId,
+      }),
+    );
+
+    await expect(confirmation).resolves.toBe(true);
     transport.destroy();
   });
 

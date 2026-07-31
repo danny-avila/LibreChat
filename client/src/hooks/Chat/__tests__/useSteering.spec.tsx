@@ -3,6 +3,7 @@ import { act, renderHook } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
 import { Constants, ContentTypes, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
+import type { QueuedMessage } from '~/store/families';
 import useSteering from '../useSteering';
 import store from '~/store';
 
@@ -1508,17 +1509,25 @@ describe('useSteering', () => {
       expect(mockMutate).not.toHaveBeenCalled();
     });
 
-    it('atomically discards a recovered queue source before removing its row', async () => {
+    it('atomically discards a recovered source and downgrades its row in place', async () => {
       mockCancelSteer.mockResolvedValueOnce({ removed: true, generationProtocolVersion: 2 });
-      const recovered = {
+      const before: QueuedMessage = { id: 'queued-before', text: 'before', createdAt: 0 };
+      const recovered: QueuedMessage = {
         id: 'queued-leftover',
         text: 'edit this next',
         createdAt: 1,
+        clientRequestId: 'recovery-attempt',
         recoverySteerId: 'server-leftover',
         recoveryClientSteerId: 'client-leftover',
+        expectedPredecessorCreatedAt: 41,
+        files: [{ file_id: 'file-1', filepath: '/uploads/file-1.txt', type: 'text/plain' }],
+        quotes: ['keep quote'],
+        manualSkills: ['keep skill'],
+        priority: true,
       };
+      const after: QueuedMessage = { id: 'queued-after', text: 'after', createdAt: 2 };
       const { result } = setupWithState({}, ({ set }) => {
-        set(store.queuedMessagesByConvoId(CONVO_ID), [recovered]);
+        set(store.queuedMessagesByConvoId(CONVO_ID), [before, recovered, after]);
       });
 
       let discarded = false;
@@ -1532,7 +1541,20 @@ describe('useSteering', () => {
         steerId: 'server-leftover',
         clientSteerId: 'client-leftover',
       });
-      expect(result.current.queue).toEqual([]);
+      expect(result.current.queue).toEqual([
+        before,
+        {
+          id: 'queued-leftover',
+          text: 'edit this next',
+          createdAt: 1,
+          expectedPredecessorCreatedAt: 41,
+          files: [{ file_id: 'file-1', filepath: '/uploads/file-1.txt', type: 'text/plain' }],
+          quotes: ['keep quote'],
+          manualSkills: ['keep skill'],
+          priority: true,
+        },
+        after,
+      ]);
     });
 
     it('keeps a recovered queue row when its parked source cannot be discarded', async () => {

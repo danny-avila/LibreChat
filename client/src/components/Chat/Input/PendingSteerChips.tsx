@@ -1,6 +1,7 @@
 import { memo, useMemo, useRef, useState, useCallback } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import { useToastContext } from '@librechat/client';
 import { X, Zap, Send, Clock, Pencil, Trash2, Paperclip, RotateCcw } from 'lucide-react';
 import type { TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
@@ -56,6 +57,7 @@ function QueuedRow({
   onRestoreToComposer: RestoreToComposer;
 }) {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const toggleEntry = useDefaultToggleEntry(steering);
   const interruptToggle = useInterruptToggleEntry();
   const fileCount = message.files?.length ?? 0;
@@ -66,7 +68,7 @@ function QueuedRow({
    * cancel that source by receipt; local-only rows settle synchronously through
    * the same control. The ref closes the pre-render double-click window. */
   const afterDiscard = useCallback(
-    (action: () => void) => {
+    (action: () => boolean) => {
       if (actionPendingRef.current) {
         return;
       }
@@ -85,7 +87,10 @@ function QueuedRow({
           setActionPending(false);
           return;
         }
-        action();
+        if (!action()) {
+          actionPendingRef.current = false;
+          setActionPending(false);
+        }
       })();
     },
     [message, steering],
@@ -107,13 +112,31 @@ function QueuedRow({
       label: localize('com_ui_edit_message'),
       icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
       disabled: actionPending,
-      onClick: () =>
-        afterDiscard(() => {
+      onClick: () => {
+        const context = { quotes: message.quotes, manualSkills: message.manualSkills };
+        if (!isRecovered) {
+          steering.removeQueued(message.id);
           onEditToComposer(message.text, message.files, {
             quotes: message.quotes,
             manualSkills: message.manualSkills,
           });
-        }),
+          return;
+        }
+        afterDiscard(() => {
+          const restored = onRestoreToComposer(
+            message.text,
+            message.files,
+            context,
+            conversationId,
+          );
+          if (!restored) {
+            showToast({ message: localize('com_ui_steer_edit_queued'), status: 'info' });
+            return false;
+          }
+          steering.removeQueued(message.id);
+          return true;
+        });
+      },
     },
   ];
   const preferences: MenuEntry[] = [toggleEntry, interruptToggle];
@@ -160,8 +183,8 @@ function QueuedRow({
         type="button"
         aria-label={localize('com_ui_remove_queued')}
         disabled={actionPending}
-        onClick={() =>
-          afterDiscard(() => {
+        onClick={() => {
+          const remove = () => {
             /* Same safety net as the in-flight cancel: once removal is safely
              * settled, return the words to the composer when it is free (the
              * gated restore refuses rather than clobber a draft). */
@@ -171,8 +194,15 @@ function QueuedRow({
               { quotes: message.quotes, manualSkills: message.manualSkills },
               conversationId,
             );
-          })
-        }
+            steering.removeQueued(message.id);
+            return true;
+          };
+          if (!isRecovered) {
+            remove();
+            return;
+          }
+          afterDiscard(remove);
+        }}
         className={ICON_BTN_CLASS}
       >
         <Trash2 className="h-4 w-4" aria-hidden="true" />

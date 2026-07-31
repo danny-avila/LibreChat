@@ -643,17 +643,45 @@ export default function useSteering({
     [queueKey],
   );
 
-  /** Remove a queued row without leaving its terminal recovery source behind.
-   * Ordinary rows are client-only and can disappear immediately. A v2
-   * leftover first uses its durable receipt to atomically discard the parked
-   * server copy; only a confirmed result lets Edit/Remove re-home the words.
-   * This is the same idempotent cancel endpoint used by waiting steer chips,
-   * but it deliberately omits the active epoch: the receipt belongs to the
+  /** Once a parked source is discarded it must never be retried as a recovery
+   * attempt. Downgrade the row in place so a guarded Edit that finds a newer
+   * draft can leave the same words, context, identity, and queue position as
+   * an ordinary local follow-up. */
+  const downgradeQueuedRecovery = useRecoilCallback(
+    ({ snapshot, set }) =>
+      (id: string): boolean => {
+        const queue = snapshot.getLoadable(store.queuedMessagesByConvoId(queueKey)).getValue();
+        let found = false;
+        const next = queue.map((item) => {
+          if (item.id !== id) {
+            return item;
+          }
+          found = true;
+          const {
+            clientRequestId: _clientRequestId,
+            recoverySteerId: _recoverySteerId,
+            recoveryClientSteerId: _recoveryClientSteerId,
+            ...ordinary
+          } = item;
+          return ordinary;
+        });
+        if (found) {
+          set(store.queuedMessagesByConvoId(queueKey), next);
+        }
+        return found;
+      },
+    [queueKey],
+  );
+
+  /** Settle a queued row's terminal recovery source before an Edit/Remove.
+   * Ordinary rows have no server copy. A v2 leftover first uses its durable
+   * receipt to atomically discard the parked copy, then becomes an ordinary
+   * local row; the caller decides whether the live composer can consume it.
+   * The cancel deliberately omits the active epoch: the receipt belongs to the
    * terminal source generation, not whichever run now occupies the chat. */
   const discardQueued = useCallback(
     async (item: QueuedMessage): Promise<boolean> => {
       if (item.recoverySteerId == null) {
-        removeQueued(item.id);
         return true;
       }
       if (item.recoveryClientSteerId == null || !hasRealConvoId) {
@@ -670,14 +698,13 @@ export default function useSteering({
           showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
           return false;
         }
-        removeQueued(item.id);
-        return true;
+        return downgradeQueuedRecovery(item.id);
       } catch {
         showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
         return false;
       }
     },
-    [cancelSteer, conversationId, hasRealConvoId, localize, removeQueued, showToast],
+    [cancelSteer, conversationId, downgradeQueuedRecovery, hasRealConvoId, localize, showToast],
   );
 
   /** Capture-then-remove, including the item's neighbours, so any refused send

@@ -1,7 +1,7 @@
 import React from 'react';
 import { getDefaultStore } from 'jotai';
-import { RecoilRoot, useRecoilValue } from 'recoil';
 import userEvent from '@testing-library/user-event';
+import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
@@ -10,20 +10,32 @@ import PendingSteerChips from '../PendingSteerChips';
 import store from '~/store';
 
 const mockRemoveQueued = jest.fn();
-const mockDiscardQueued = jest.fn(async (message: QueuedMessage) => {
-  mockRemoveQueued(message.id);
-  return true;
-});
+const mockDiscardQueued = jest.fn(async (_message: QueuedMessage) => true);
 const mockSendQueuedNow = jest.fn();
 const mockRetrySteer = jest.fn();
 const mockRestoreToComposer = jest.fn(() => true);
 const mockEditToComposer = jest.fn();
+const mockShowToast = jest.fn();
+
+jest.mock('@librechat/client', () => ({
+  useToastContext: () => ({ showToast: mockShowToast }),
+}));
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));
 
 const CONVO_ID = 'convo-q';
+let updateQueueForTest:
+  | ((updater: (current: QueuedMessage[]) => QueuedMessage[]) => void)
+  | undefined;
+
+function QueueState() {
+  const queue = useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID));
+  const setQueue = useSetRecoilState(store.queuedMessagesByConvoId(CONVO_ID));
+  updateQueueForTest = (updater) => setQueue(updater);
+  return <output data-testid="queue-state">{JSON.stringify(queue)}</output>;
+}
 
 function PreferenceState() {
   const defaultAction = useRecoilValue(store.duringRunDefaultAction);
@@ -78,6 +90,7 @@ function renderChips(
         onRestoreToComposer={mockRestoreToComposer}
       />
       <PreferenceState />
+      <QueueState />
     </RecoilRoot>,
   );
 }
@@ -224,6 +237,7 @@ describe('PendingSteerChips — queued trash', () => {
       { quotes: undefined, manualSkills: undefined },
       CONVO_ID,
     );
+    expect(mockRemoveQueued).toHaveBeenCalledWith('q-recovered');
   });
 
   it('offers Edit for a recovered row and leaves it untouched when discard is refused', async () => {
@@ -242,11 +256,13 @@ describe('PendingSteerChips — queued trash', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'com_ui_edit_message' }));
 
     await waitFor(() => expect(mockDiscardQueued).toHaveBeenCalledWith(recovered));
+    expect(mockRestoreToComposer).not.toHaveBeenCalled();
     expect(mockEditToComposer).not.toHaveBeenCalled();
+    expect(mockRemoveQueued).not.toHaveBeenCalled();
     expect(screen.getByText('safe to edit only after discard')).toBeInTheDocument();
   });
 
-  it('restores a recovered row to the composer only after Edit confirms discard', async () => {
+  it('uses the guarded composer restore only after recovered Edit confirms discard', async () => {
     const user = userEvent.setup();
     let confirmDiscard: ((discarded: boolean) => void) | undefined;
     mockDiscardQueued.mockImplementationOnce(
@@ -273,9 +289,83 @@ describe('PendingSteerChips — queued trash', () => {
     await act(async () => {
       confirmDiscard?.(true);
     });
-    expect(mockEditToComposer).toHaveBeenCalledWith('edit recovered words', undefined, {
+    expect(mockRestoreToComposer).toHaveBeenCalledWith(
+      'edit recovered words',
+      undefined,
+      { quotes: ['kept quote'], manualSkills: ['kept skill'] },
+      CONVO_ID,
+    );
+    expect(mockEditToComposer).not.toHaveBeenCalled();
+    expect(mockRemoveQueued).toHaveBeenCalledWith('q-recovered-edit');
+  });
+
+  it('keeps a safely discarded Edit queued when live composer state changes during cancel', async () => {
+    const user = userEvent.setup();
+    let confirmDiscard: (() => void) | undefined;
+    const recovered = {
+      id: 'q-recovered-race',
+      text: 'preserve after async race',
+      createdAt: 1,
+      clientRequestId: 'recovery-attempt',
+      recoverySteerId: 'server-source',
+      recoveryClientSteerId: 'client-source',
       quotes: ['kept quote'],
-      manualSkills: ['kept skill'],
+    };
+    mockDiscardQueued.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          confirmDiscard = () => {
+            updateQueueForTest?.((current) =>
+              current.map((item) => {
+                if (item.id !== recovered.id) {
+                  return item;
+                }
+                const {
+                  clientRequestId: _clientRequestId,
+                  recoverySteerId: _recoverySteerId,
+                  recoveryClientSteerId: _recoveryClientSteerId,
+                  ...ordinary
+                } = item;
+                return ordinary;
+              }),
+            );
+            resolve(true);
+          };
+        }),
+    );
+    renderChips([recovered]);
+
+    await user.click(screen.getByLabelText('com_ui_more_options'));
+    await user.click(await screen.findByRole('menuitem', { name: 'com_ui_edit_message' }));
+    expect(mockDiscardQueued).toHaveBeenCalledWith(recovered);
+    expect(mockRestoreToComposer).not.toHaveBeenCalled();
+
+    // The live guard can change while the durable cancel request is pending.
+    mockRestoreToComposer.mockReturnValueOnce(false);
+    await act(async () => {
+      confirmDiscard?.();
+    });
+
+    expect(mockRestoreToComposer).toHaveBeenCalledWith(
+      'preserve after async race',
+      undefined,
+      { quotes: ['kept quote'], manualSkills: undefined },
+      CONVO_ID,
+    );
+    expect(mockEditToComposer).not.toHaveBeenCalled();
+    expect(mockRemoveQueued).not.toHaveBeenCalled();
+    expect(screen.getByText('preserve after async race')).toBeInTheDocument();
+    expect(JSON.parse(screen.getByTestId('queue-state').textContent ?? 'null')).toEqual([
+      {
+        id: 'q-recovered-race',
+        text: 'preserve after async race',
+        createdAt: 1,
+        quotes: ['kept quote'],
+      },
+    ]);
+    expect(mockShowToast).toHaveBeenCalledWith({
+      message: 'com_ui_steer_edit_queued',
+      status: 'info',
     });
   });
 });
