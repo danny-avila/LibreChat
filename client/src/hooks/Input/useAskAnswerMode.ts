@@ -9,18 +9,18 @@ import {
   findLiveAskUserQuestion,
   splitOtherOption,
 } from '~/utils/approval';
+import { getAskAnswerDraftId, morphTransition } from '~/utils';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { useOptionalChatFormContext } from '~/Providers';
-import { getAskAnswerDraftId } from '~/utils';
 import store from '~/store';
 
-/** Dismissed action ids — recoil so every consumer reacts. */
-const dismissedAskActionsAtom = atom<string[]>({
-  key: 'askAnswerModeDismissedActions',
-  default: [],
-});
-
-/** Collapsed action ids: popover chrome hidden, answer mode still live. */
+/**
+ * Action ids the user moved into the chat: the popover is hidden AND the
+ * composer is released (answer mode off), so the chat card is the question's
+ * only surface until the card's chevron moves it back. One state for one
+ * user-visible concept — a hidden popover whose composer stayed armed was
+ * indistinguishable from one whose composer did not.
+ */
 const collapsedAskActionsAtom = atom<string[]>({
   key: 'askAnswerModeCollapsedActions',
   default: [],
@@ -51,11 +51,10 @@ const askAnswerCheckedAtom = atom<number[]>({
  * conversation draft is stashed on entry and restored once the question
  * resolves.
  *
- * Two ways out short of answering: `collapse` hides the popover chrome but
- * KEEPS the pause live (the question renders in the chat card, which still
- * answers it), while the × `dismiss` exits answer mode entirely. `Skip`
- * resumes the run with a canned decline notice. Collapsing always returns the
- * composer to normal chat — see `composerLocked`.
+ * One way out short of answering: `collapse` (the popover's chevron, or
+ * Escape) moves the question to the chat card AND releases the composer, so
+ * the user can type a normal message; the card's chevron moves it back.
+ * `Skip` resumes the run with a canned decline notice.
  *
  * `handleComposerKeyDown` only steers selection from the EMPTY composer and
  * reports whether it consumed the key.
@@ -71,7 +70,6 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     select: findLiveAskUserQuestion,
   });
   const liveAsk = enabled ? (liveAskData ?? null) : null;
-  const [dismissedIds, setDismissedIds] = useRecoilState(dismissedAskActionsAtom);
   const [collapsedIds, setCollapsedIds] = useRecoilState(collapsedAskActionsAtom);
   const [selected, setSelected] = useRecoilState(askAnswerSelectionAtom);
   const [checked, setChecked] = useRecoilState(askAnswerCheckedAtom);
@@ -111,7 +109,6 @@ export default function useAskAnswerMode(conversationId?: string | null) {
    *  no-op so a double-click or a stray Skip can't race a second resume. */
   const status = liveAsk != null ? getAskStatus(liveAsk.actionId) : 'idle';
   const locked = status === 'submitting' || status === 'submitted' || status === 'expired';
-  const dismissed = liveAsk != null && dismissedIds.includes(liveAsk.actionId);
   /**
    * An EXPIRED question can no longer be answered, so it drops out of answer
    * mode entirely: the popover closes, the composer reverts to a normal
@@ -127,22 +124,17 @@ export default function useAskAnswerMode(conversationId?: string | null) {
    * submit whose store write couldn't run) holds the popover open over an
    * answered question with every option greyed out.
    */
-  const active = liveAsk != null && !dismissed && status !== 'expired' && status !== 'submitted';
-  const collapsed = active && collapsedIds.includes(liveAsk.actionId);
-  /** The popover renders only while expanded; collapse keeps `active` but
-   *  hands the question display to the chat card. */
-  const popoverVisible = active && !collapsed;
-  const batchMode = (liveAsk?.questions?.length ?? 0) > 0;
+  const answerable = liveAsk != null && status !== 'expired' && status !== 'submitted';
+  /** Moved to the chat: the card owns the question and the composer is free. */
+  const collapsed = answerable && collapsedIds.includes(liveAsk.actionId);
   /**
-   * Which role the composer plays for this pause. A single question is
-   * answered IN the composer, so it stays live for as long as the pause does.
-   * A batch is answered in its own card, so the composer has nothing to
-   * contribute and locks — but ONLY while the popover is up. Collapsing has to
-   * hand the composer back, because every other way out is gone once the
-   * popover closes: the stop button hides behind `composerAnswers` and Escape
-   * would reach a disabled textarea. Staying locked past collapse left no way
-   * to type, send, or stop the run short of reloading the page.
+   * Answer mode: the popover is up AND the composer is the free-form answer
+   * box. The two are deliberately the same condition — the composer's answer
+   * role is only discoverable while the popover explains it.
    */
+  const active = answerable && !collapsed;
+  const popoverVisible = active;
+  const batchMode = (liveAsk?.questions?.length ?? 0) > 0;
   const composerAnswers = active && !batchMode;
   const composerLocked = popoverVisible && batchMode;
   const multiSelect = !batchMode && liveAsk != null && liveAsk.question.multiSelect === true;
@@ -164,36 +156,38 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     setChecked([]);
   }, [liveAsk?.actionId, setSelected, setChecked]);
 
-  const dismiss = useCallback(() => {
-    if (liveAsk) {
-      setDismissedIds((prev) =>
-        prev.includes(liveAsk.actionId) ? prev : [...prev, liveAsk.actionId],
-      );
-    }
-  }, [liveAsk, setDismissedIds]);
-
+  /** Popover ⇄ chat-card handoffs run inside a view transition: both
+   *  surfaces carry the same `view-transition-name`, so the browser morphs
+   *  one into the other instead of swapping. Both are user-event driven,
+   *  which morphTransition's synchronous flush requires. */
   const collapse = useCallback(() => {
     if (liveAsk) {
-      setCollapsedIds((prev) =>
-        prev.includes(liveAsk.actionId) ? prev : [...prev, liveAsk.actionId],
+      morphTransition(() =>
+        setCollapsedIds((prev) =>
+          prev.includes(liveAsk.actionId) ? prev : [...prev, liveAsk.actionId],
+        ),
       );
     }
   }, [liveAsk, setCollapsedIds]);
 
   const expand = useCallback(() => {
     if (liveAsk) {
-      setCollapsedIds((prev) => prev.filter((id) => id !== liveAsk.actionId));
+      morphTransition(() =>
+        setCollapsedIds((prev) => prev.filter((id) => id !== liveAsk.actionId)),
+      );
     }
   }, [liveAsk, setCollapsedIds]);
 
+  /** Pure check toggle: the keyboard highlight is steered only by the
+   *  composer's digit/arrow shortcuts, so a mouse toggle never leaves a
+   *  row painted `selected` after it is unchecked. */
   const toggleChecked = useCallback(
     (index: number) => {
-      setSelected(index);
       setChecked((prev) =>
         prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index],
       );
     },
-    [setSelected, setChecked],
+    [setChecked],
   );
 
   const canSubmit =
@@ -203,8 +197,8 @@ export default function useAskAnswerMode(conversationId?: string | null) {
 
   /**
    * Shared answer dispatch: sends the run's resume and clears the phase.
-   * Gated on the live pause (NOT `active` — the chat card must still answer a
-   * dismissed question) and on `locked` (no duplicate resumes while one is in
+   * Gated on the live pause (NOT `active`, because the chat card must still
+   * answer a collapsed question) and on `locked` (no duplicate resumes while one is in
    * flight).
    *
    * The selection/composer cleanup runs ONLY after the resume is accepted (in
@@ -339,8 +333,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
 
   /**
    * Explicitly decline: resumes the run with a canned notice so the model
-   * knows the user chose not to answer. A client-side dismiss alone would
-   * leave the run paused until expiry — a hung turn.
+   * knows the user chose not to answer.
    */
   const skip = useCallback((): boolean => {
     if (!active) {
@@ -389,7 +382,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
        */
       if (options.length === 0 || !popoverVisible) {
         if (e.key === 'Escape') {
-          dismiss();
+          collapse();
           return true;
         }
         return false;
@@ -398,6 +391,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       if (!Number.isNaN(digit) && digit >= 1 && digit <= Math.min(options.length, 9)) {
         e.preventDefault();
         if (multiSelect) {
+          setSelected(digit - 1);
           toggleChecked(digit - 1);
         } else {
           setSelected(digit - 1);
@@ -420,7 +414,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
         return true;
       }
       if (e.key === 'Escape') {
-        dismiss();
+        collapse();
         return true;
       }
       return false;
@@ -436,7 +430,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
       submit,
       submitText,
       toggleChecked,
-      dismiss,
+      collapse,
       setSelected,
     ],
   );
@@ -475,8 +469,6 @@ export default function useAskAnswerMode(conversationId?: string | null) {
     batchMode,
     liveAsk,
     options,
-    dismissed,
-    dismiss,
     collapsed,
     collapse,
     expand,

@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef } from 'react';
 import { useWatch } from 'react-hook-form';
 import { Button, TooltipAnchor } from '@librechat/client';
-import { ChevronDown, CornerDownLeft, TriangleAlert, X } from 'lucide-react';
+import { ChevronDown, CornerDownLeft, TriangleAlert } from 'lucide-react';
 import AskUserQuestions from '~/components/Chat/Messages/Content/AskUserQuestions';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskOptions from '~/components/Chat/ask/options';
@@ -43,7 +43,7 @@ function AskUserQuestionPopoverContent({
 
 function AskUserQuestionsPopoverPanel({ ask }: { ask: ReturnType<typeof useAskAnswerMode> }) {
   const localize = useLocalize();
-  const { liveAsk, collapse, dismiss } = ask;
+  const { liveAsk, collapse } = ask;
   const questions = liveAsk?.questions;
   if (liveAsk == null || questions == null || questions.length === 0) {
     return null;
@@ -59,24 +59,20 @@ function AskUserQuestionsPopoverPanel({ ask }: { ask: ReturnType<typeof useAskAn
               { 0: questions.length },
             )}
           </p>
-          <div className="flex items-center">
-            <button
-              type="button"
-              aria-label={localize('com_ui_collapse')}
-              className="rounded p-1 text-text-secondary hover:bg-surface-hover"
-              onClick={collapse}
-            >
-              <ChevronDown className="h-4 w-4" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              aria-label={localize('com_ui_close')}
-              className="rounded p-1 text-text-secondary hover:bg-surface-hover"
-              onClick={dismiss}
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </div>
+          <TooltipAnchor
+            description={localize('com_ui_ask_move_to_chat')}
+            side="top"
+            render={
+              <button
+                type="button"
+                aria-label={localize('com_ui_ask_move_to_chat')}
+                className="rounded-md p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+                onClick={collapse}
+              >
+                <ChevronDown className="size-4" aria-hidden="true" />
+              </button>
+            }
+          />
         </div>
         <AskUserQuestions actionId={liveAsk.actionId} questions={questions} />
       </div>
