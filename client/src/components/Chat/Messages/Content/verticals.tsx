@@ -6,11 +6,32 @@ import type {
   PlaceResult,
   ShoppingResult,
 } from 'librechat-data-provider';
+import { isMacPlatform } from '~/utils/shortcuts';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 const MAX_VERTICAL_ITEMS = 8;
 const MAX_PLACES = 5;
+
+/** Platform-native map link: Apple devices open Apple Maps, everything else
+ *  Google Maps. Both are keyless https links that fall back to a web map when
+ *  the native app is unavailable, so a misdetected platform still works. */
+export function mapLink(place: PlaceResult): string {
+  const query = [place.name, place.address].filter(Boolean).join(', ');
+  const coords =
+    place.latitude != null && place.longitude != null ? `${place.latitude},${place.longitude}` : '';
+  if (isMacPlatform) {
+    const params = new URLSearchParams();
+    if (query) {
+      params.set('q', query);
+    }
+    if (coords) {
+      params.set('ll', coords);
+    }
+    return `https://maps.apple.com/?${params.toString()}`;
+  }
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query || coords)}`;
+}
 
 export interface SearchVerticalData {
   images: ImageResult[];
@@ -135,25 +156,29 @@ function PlaceList({ places, label }: { places: PlaceResult[]; label: string }) 
       {places.slice(0, MAX_PLACES).map((place, i) => (
         <li
           key={place.identifier || place.name || i}
-          className={cn(
-            'flex items-center gap-2.5 px-3 py-2',
-            i > 0 && 'border-t border-border-light',
-          )}
+          className={cn(i > 0 && 'border-t border-border-light')}
         >
-          <MapPin className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-xs font-medium text-text-primary">
-              {place.name}
-            </span>
-            {(place.category || place.address) && (
-              <span className="block truncate text-[11px] text-text-secondary">
-                {[place.category, place.address].filter(Boolean).join(' · ')}
+          <a
+            href={mapLink(place)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2.5 px-3 py-2 no-underline transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+          >
+            <MapPin className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-medium text-text-primary">
+                {place.name}
               </span>
-            )}
-          </span>
-          <span className="shrink-0">
-            <RatingBadge rating={place.rating} ratingCount={place.ratingCount} />
-          </span>
+              {(place.category || place.address) && (
+                <span className="block truncate text-[11px] text-text-secondary">
+                  {[place.category, place.address].filter(Boolean).join(' · ')}
+                </span>
+              )}
+            </span>
+            <span className="shrink-0">
+              <RatingBadge rating={place.rating} ratingCount={place.ratingCount} />
+            </span>
+          </a>
         </li>
       ))}
     </ul>

@@ -403,6 +403,11 @@ describe('WebSearch', () => {
       expect(screen.getByText('4.7')).toBeInTheDocument();
 
       expect(screen.getByText('Blue Bottle Coffee')).toBeInTheDocument();
+      const placeLink = screen.getByText('Blue Bottle Coffee').closest('a');
+      expect(placeLink?.getAttribute('href')).toContain('google.com/maps');
+      expect(placeLink?.getAttribute('href')).toContain(
+        encodeURIComponent('Blue Bottle Coffee, 300 S Broadway'),
+      );
       expect(screen.getByText('Coffee shop \u00b7 300 S Broadway')).toBeInTheDocument();
       expect(screen.getByText('4.6')).toBeInTheDocument();
       expect(screen.getByText('(812)')).toBeInTheDocument();
