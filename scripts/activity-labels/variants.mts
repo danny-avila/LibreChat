@@ -14,9 +14,14 @@
  * is impossible; the sentence table below is asserted against it so composed
  * variants can never silently diverge from what production actually sends.
  */
-const path = require('path');
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
-const ROOT = path.resolve(__dirname, '..', '..');
+import type { Variant } from './types.mts';
+
+const require = createRequire(import.meta.url);
+const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
 /**
  * The shipped instruction, read from the BUILT package so a variant can never
@@ -26,15 +31,19 @@ const ROOT = path.resolve(__dirname, '..', '..');
  * another checkout's build — useful for grading one branch's instruction from
  * a worktree that has not been built.
  */
-function loadShippedInstruction() {
+interface ActivityInstructionModule {
+  ACTIVITY_INSTRUCTION?: string;
+}
+
+function loadShippedInstruction(): string {
   const candidates = [
     process.env.LABEL_EVAL_DIST,
     '@librechat/api',
-    path.join(ROOT, 'packages/api/dist/index.cjs'),
-  ].filter(Boolean);
+    join(ROOT, 'packages/api/dist/index.cjs'),
+  ].filter((candidate): candidate is string => candidate != null);
   for (const candidate of candidates) {
     try {
-      const { ACTIVITY_INSTRUCTION } = require(candidate);
+      const { ACTIVITY_INSTRUCTION } = require(candidate) as ActivityInstructionModule;
       if (typeof ACTIVITY_INSTRUCTION === 'string' && ACTIVITY_INSTRUCTION.length > 0) {
         return ACTIVITY_INSTRUCTION;
       }
@@ -47,7 +56,7 @@ function loadShippedInstruction() {
       'Build it first (from the repo root):\n' +
       '  npm run build:data-provider && npm run build:data-schemas && npm run build:api\n' +
       'Or point at an existing build:\n' +
-      '  LABEL_EVAL_DIST=/path/to/packages/api/dist/index.cjs node scripts/activity-labels/run.js',
+      '  LABEL_EVAL_DIST=/path/to/packages/api/dist/index.cjs node scripts/activity-labels/run.mts',
   );
 }
 
@@ -106,7 +115,7 @@ if (
   SHIPPED_ORDER.join(' ') !== ACTIVITY_INSTRUCTION
 ) {
   console.warn(
-    'WARN: variants.js sentence table has drifted from ACTIVITY_INSTRUCTION — composed variants are stale',
+    'WARN: variants.mts sentence table has drifted from ACTIVITY_INSTRUCTION — composed variants are stale',
   );
 }
 
@@ -121,7 +130,7 @@ const CONTINUITY_TIGHT =
 const FORMAT_HARD =
   'Write 4 to 9 words, sentence case, no trailing punctuation, no quotes or markdown; when a batch found many things, keep only the most load-bearing one or two.';
 
-const variants = [
+export const variants: Variant[] = [
   {
     name: 'baseline',
     usePreviousLabels: SHIPPED_ORDER.join(' ') === ACTIVITY_INSTRUCTION,
@@ -235,5 +244,3 @@ const variants = [
     ].join(' '),
   },
 ];
-
-module.exports = { variants };

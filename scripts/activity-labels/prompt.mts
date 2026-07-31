@@ -12,12 +12,14 @@
  * unless a variant opts in. This is the P1 continuity hypothesis — it lets
  * the harness measure the fix before any SDK field exists.
  */
+import type { EvalStep, SerializableValue, ToolEntry } from './types.mts';
+
 const INPUT_CONTEXT_LIMIT = 200;
 const MAX_THINKING_EXCERPTS = 4;
 const MAX_PROMPT_ENTRIES = 12;
 const MAX_PREVIOUS_LABELS = 3;
 
-function truncateForLabel(value, maxLength) {
+export function truncateForLabel(value: string, maxLength: number): string {
   if (value.length <= maxLength) {
     return value;
   }
@@ -26,7 +28,7 @@ function truncateForLabel(value, maxLength) {
 
 const ABORT_SERIALIZATION = Symbol('abort-label-serialization');
 
-function serializeForLabel(value, limit) {
+export function serializeForLabel(value: SerializableValue | undefined, limit: number): string {
   if (value == null) {
     return '';
   }
@@ -36,7 +38,7 @@ function serializeForLabel(value, limit) {
   let budget = limit * 4;
   try {
     return (
-      JSON.stringify(value, (_key, nested) => {
+      JSON.stringify(value, (_key: string, nested: SerializableValue) => {
         if (budget <= 0) {
           throw ABORT_SERIALIZATION;
         }
@@ -59,7 +61,10 @@ function serializeForLabel(value, limit) {
 
 /** `cap` of Infinity models the unbounded-history alternative — testing
  *  whether the whole run's story beats a recency window. */
-function previousHeadersSection(previousLabels, cap = MAX_PREVIOUS_LABELS) {
+function previousHeadersSection(
+  previousLabels: readonly string[],
+  cap = MAX_PREVIOUS_LABELS,
+): string | null {
   const kept = previousLabels.filter(Boolean);
   const recent = Number.isFinite(cap) ? kept.slice(-cap) : kept;
   if (recent.length === 0) {
@@ -71,14 +76,23 @@ function previousHeadersSection(previousLabels, cap = MAX_PREVIOUS_LABELS) {
   );
 }
 
-function buildActivityLabelPrompt({
+interface BuildPromptOptions {
+  entries: readonly ToolEntry[];
+  charLimit: number;
+  thinkingExcerpts?: readonly string[];
+  lastAssistantText?: string;
+  previousLabels?: readonly string[] | null;
+  previousLabelCap?: number;
+}
+
+export function buildActivityLabelPrompt({
   entries,
   charLimit,
   thinkingExcerpts,
   lastAssistantText,
   previousLabels,
   previousLabelCap,
-}) {
+}: BuildPromptOptions): string {
   const clip = truncateForLabel;
   const sections = [];
   if (previousLabels != null) {
@@ -128,11 +142,23 @@ function buildActivityLabelPrompt({
  * prompt (byte-exact from Langfuse); the continuity section, when a variant
  * opts in, is prepended — the same position the built path gives it.
  */
-function renderStepPrompt(step, { charLimit, previousLabels, previousLabelCap }) {
+interface RenderPromptOptions {
+  charLimit: number;
+  previousLabels: readonly string[] | null;
+  previousLabelCap?: number;
+}
+
+export function renderStepPrompt(
+  step: EvalStep,
+  { charLimit, previousLabels, previousLabelCap }: RenderPromptOptions,
+): string {
   if (step.verbatim != null) {
     const section =
       previousLabels != null ? previousHeadersSection(previousLabels, previousLabelCap) : null;
     return section != null ? `${section}\n\n${step.verbatim}` : step.verbatim;
+  }
+  if (step.payload == null) {
+    throw new Error('corpus step must define either verbatim or payload');
   }
   return buildActivityLabelPrompt({
     ...step.payload,
@@ -142,10 +168,4 @@ function renderStepPrompt(step, { charLimit, previousLabels, previousLabelCap })
   });
 }
 
-module.exports = {
-  buildActivityLabelPrompt,
-  renderStepPrompt,
-  truncateForLabel,
-  serializeForLabel,
-  MAX_PREVIOUS_LABELS,
-};
+export { MAX_PREVIOUS_LABELS };

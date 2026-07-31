@@ -4,7 +4,9 @@
  * cross-batch redundancy via content-word overlap); commit-log READABILITY
  * still needs the human pass over results/latest.md.
  */
-const STOPWORDS = new Set([
+import type { ToolEntry } from './types.mts';
+
+const STOPWORDS = new Set<string>([
   'the',
   'a',
   'an',
@@ -37,7 +39,7 @@ const STOPWORDS = new Set([
   'via',
 ]);
 
-function words(label) {
+export function words(label: string): string[] {
   return label.trim().split(/\s+/).filter(Boolean);
 }
 
@@ -45,7 +47,7 @@ const SUFFIXES = ['ations', 'ation', 'ence', 'ance', 'ings', 'ing', 'ed', 'es', 
 
 /** Crude suffix stemmer so persists/persistence/persisted collide — enough
  *  for overlap detection; linguistic correctness is not the goal. */
-function stem(word) {
+export function stem(word: string): string {
   if (word.length < 5) {
     return word;
   }
@@ -57,7 +59,7 @@ function stem(word) {
   return word;
 }
 
-function contentWords(label) {
+export function contentWords(label: string): string[] {
   return words(label.toLowerCase().replace(/[^a-z0-9/._-]+/g, ' '))
     .filter((word) => !STOPWORDS.has(word))
     .map(stem);
@@ -65,11 +67,11 @@ function contentWords(label) {
 
 /** Payload tokens carry the informative delta between template-shaped
  *  labels: numbers, versions, paths, filenames. */
-function isPayload(word) {
+function isPayload(word: string): boolean {
   return /\d/.test(word) || word.includes('/') || word.includes('.');
 }
 
-function jaccard(a, b) {
+export function jaccard(a: readonly string[], b: readonly string[]): number {
   const setA = new Set(a);
   const setB = new Set(b);
   if (setA.size === 0 || setB.size === 0) {
@@ -95,8 +97,23 @@ const DUP_THRESHOLD = 0.5;
  *   regardless of whether the variant saw them — redundancy is measured
  *   uniformly so continuity variants can be compared against blind ones.
  */
-function checkLabel(label, { entries = [], previousLabels = [] } = {}) {
-  const flags = [];
+interface CheckLabelOptions {
+  entries?: readonly ToolEntry[];
+  previousLabels?: readonly string[];
+}
+
+interface CheckLabelResult {
+  flags: string[];
+  wordCount: number;
+  firstWord: string;
+  maxOverlap: number;
+}
+
+export function checkLabel(
+  label: string,
+  { entries = [], previousLabels = [] }: CheckLabelOptions = {},
+): CheckLabelResult {
+  const flags: string[] = [];
   const wordList = words(label);
   if (wordList.length < 4 || wordList.length > 9) {
     flags.push(`len:${wordList.length}`);
@@ -115,7 +132,7 @@ function checkLabel(label, { entries = [], previousLabels = [] } = {}) {
   }
   const lower = label.toLowerCase();
   for (const entry of entries) {
-    const name = String(entry.toolName ?? '').toLowerCase();
+    const name = entry.toolName.toLowerCase();
     if (name.length > 3 && (lower.includes(name) || lower.includes(name.replace(/_/g, ' ')))) {
       flags.push(`tool-echo:${entry.toolName}`);
       break;
@@ -131,7 +148,7 @@ function checkLabel(label, { entries = [], previousLabels = [] } = {}) {
    *  fib(1)→fib(2). Often fine, arguably better than synonym churn). */
   const own = contentWords(label);
   let maxOverlap = 0;
-  let worst = null;
+  let worst: string[] | null = null;
   for (const previous of previousLabels) {
     const other = contentWords(previous);
     const overlap = jaccard(own, other);
@@ -152,5 +169,3 @@ function checkLabel(label, { entries = [], previousLabels = [] } = {}) {
   }
   return { flags, wordCount: wordList.length, firstWord: wordList[0] ?? '', maxOverlap };
 }
-
-module.exports = { checkLabel, contentWords, jaccard, words, stem };

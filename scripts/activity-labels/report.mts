@@ -1,28 +1,56 @@
 /** Aggregation + markdown rendering, shared by the live runner and the
  *  offline rescorer so metric fixes never require re-spending on the API. */
-const FLAG_TYPES = [
-  'len',
-  'punct',
-  'quote',
-  'md',
-  'opener',
-  'tool-echo',
-  'count-echo',
-  'restate',
-  'template',
-];
+import type { Aggregate, ErrorRecord, EvalCase, EvalRecord, FlagType } from './types.mts';
+import { FLAG_TYPES } from './types.mts';
 
-const PRICES = { 'claude-haiku-4-5': { input: 1, output: 5 } };
-
-function flagType(flag) {
-  return flag.split(':')[0];
+interface Price {
+  input: number;
+  output: number;
 }
 
-function aggregate(records, model) {
-  const byVariant = new Map();
+interface AggregateState {
+  steps: number;
+  errors: number;
+  flagCounts: Partial<Record<FlagType, number>>;
+  firstWords: Record<string, number>;
+  totalWords: number;
+  latencies: number[];
+  inputTokens: number;
+  outputTokens: number;
+}
+
+interface MarkdownReportOptions {
+  records: readonly EvalRecord[];
+  aggregates: readonly Aggregate[];
+  runCases: readonly EvalCase[];
+  variantNames: readonly string[];
+  model: string;
+  samples: number;
+}
+
+const PRICES: Readonly<Record<string, Price>> = {
+  'claude-haiku-4-5': { input: 1, output: 5 },
+};
+const FLAG_TYPE_SET = new Set<string>(FLAG_TYPES);
+
+function flagType(flag: string): FlagType {
+  const type = flag.split(':')[0] ?? '';
+  if (!FLAG_TYPE_SET.has(type)) {
+    throw new Error(`unknown flag type: ${type}`);
+  }
+  return type as FlagType;
+}
+
+function isErrorRecord(record: EvalRecord): record is ErrorRecord {
+  return 'error' in record;
+}
+
+export function aggregate(records: readonly EvalRecord[], model: string): Aggregate[] {
+  const byVariant = new Map<string, AggregateState>();
   for (const record of records) {
-    if (!byVariant.has(record.variant)) {
-      byVariant.set(record.variant, {
+    let agg = byVariant.get(record.variant);
+    if (agg == null) {
+      agg = {
         steps: 0,
         errors: 0,
         flagCounts: {},
@@ -31,10 +59,10 @@ function aggregate(records, model) {
         latencies: [],
         inputTokens: 0,
         outputTokens: 0,
-      });
+      };
+      byVariant.set(record.variant, agg);
     }
-    const agg = byVariant.get(record.variant);
-    if (record.error) {
+    if (isErrorRecord(record)) {
       agg.errors += 1;
       continue;
     }
@@ -52,7 +80,7 @@ function aggregate(records, model) {
   const price = PRICES[model];
   return [...byVariant.entries()].map(([name, agg]) => {
     const sortedFirst = Object.entries(agg.firstWords).sort((a, b) => b[1] - a[1]);
-    const topOpener = sortedFirst[0] ?? ['—', 0];
+    const topOpener: [string, number] = sortedFirst[0] ?? ['—', 0];
     return {
       variant: name,
       steps: agg.steps,
@@ -73,8 +101,15 @@ function aggregate(records, model) {
   });
 }
 
-function markdownReport({ records, aggregates, runCases, variantNames, model, samples }) {
-  const lines = [];
+export function markdownReport({
+  records,
+  aggregates,
+  runCases,
+  variantNames,
+  model,
+  samples,
+}: MarkdownReportOptions): string {
+  const lines: string[] = [];
   lines.push(`# Activity-label eval — ${new Date().toISOString()}`);
   lines.push('');
   lines.push(`model: \`${model}\` · samples: ${samples} · cases: ${runCases.length}`);
@@ -100,7 +135,9 @@ function markdownReport({ records, aggregates, runCases, variantNames, model, sa
     lines.push('');
     lines.push(`*${testCase.notes}*`);
     lines.push('');
-    const sampleList = [...new Set(records.map((r) => r.sample))].sort();
+    const sampleList = [...new Set(records.map((record) => record.sample))].sort(
+      (first, second) => first - second,
+    );
     const header = ['step'];
     if (samples > 1) {
       header.push('s');
@@ -131,7 +168,7 @@ function markdownReport({ records, aggregates, runCases, variantNames, model, sa
           );
           if (!record) {
             row.push('');
-          } else if (record.error) {
+          } else if (isErrorRecord(record)) {
             row.push(`⛔ ${record.error}`);
           } else {
             const flagNote = record.flags.length > 0 ? ` ⚠${record.flags.join(' ⚠')}` : '';
@@ -144,5 +181,3 @@ function markdownReport({ records, aggregates, runCases, variantNames, model, sa
   }
   return lines.join('\n') + '\n';
 }
-
-module.exports = { aggregate, markdownReport, FLAG_TYPES };
