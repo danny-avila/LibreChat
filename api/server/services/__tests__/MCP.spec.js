@@ -258,6 +258,8 @@ describe('healMcpToolNames', () => {
      *  string on every edit; the controllers' exact lookup would silently
      *  drop the tool. */
     getAppConfig.mockResolvedValue({ mcpConfig: { 'Connector: Company': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ 'Connector: Company': {} });
     const canonicalKey = `search${Constants.mcp_delimiter}Connector__Company`;
     const toolDefinitions = { [canonicalKey]: { type: 'function' } };
 
@@ -274,6 +276,8 @@ describe('healMcpToolNames', () => {
     /** With `foo` and `foo!` both configured, rewriting `search_mcp_foo!`
      *  would land on the WINNER server's key. */
     getAppConfig.mockResolvedValue({ mcpConfig: { foo: {}, 'foo!': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ foo: {}, 'foo!': {} });
     const toolDefinitions = { [`search${Constants.mcp_delimiter}foo`]: { type: 'function' } };
 
     const healed = await healMcpToolNames({
@@ -295,6 +299,62 @@ describe('healMcpToolNames', () => {
 
     expect(healed).toEqual([key, 'web_search']);
     expect(getAppConfig).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on a CROSS-TIER shadow (user-DB server owns the normalized slot)', async () => {
+    /** Operator config alone shows `foo!` unshadowed, but a user-DB server
+     *  named `foo` owns the normalized slot — rewriting would bind the
+     *  saved assistant to the DB server's tool at execution. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'foo!': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({
+      foo: { name: 'foo' },
+      'foo!': { name: 'foo!' },
+    });
+    const toolDefinitions = { [`search${Constants.mcp_delimiter}foo`]: { type: 'function' } };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`search${Constants.mcp_delimiter}foo!`],
+      toolDefinitions,
+    });
+
+    expect(healed).toEqual([`search${Constants.mcp_delimiter}foo!`]);
+  });
+
+  it('skips healing entirely when the collision audit cannot complete', async () => {
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'Connector: Company': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockRejectedValue(new Error('redis down'));
+    const canonicalKey = `search${Constants.mcp_delimiter}Connector__Company`;
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`search${Constants.mcp_delimiter}Connector: Company`],
+      toolDefinitions: { [canonicalKey]: { type: 'function' } },
+    });
+
+    expect(healed).toEqual([`search${Constants.mcp_delimiter}Connector: Company`]);
+  });
+
+  it('dedupes when the payload carries both spellings of the same tool', async () => {
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'Connector: Company': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ 'Connector: Company': {} });
+    const canonicalKey = `search${Constants.mcp_delimiter}Connector__Company`;
+    const toolDefinitions = { [canonicalKey]: { type: 'function' } };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [
+        `search${Constants.mcp_delimiter}Connector: Company`,
+        canonicalKey,
+        'code_interpreter',
+      ],
+      toolDefinitions,
+    });
+
+    expect(healed).toEqual([canonicalKey, 'code_interpreter']);
   });
 });
 

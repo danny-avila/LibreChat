@@ -224,9 +224,13 @@ async function getAccessibleMcpServerNames(userId, role) {
  * on every edit — the controllers' exact-only lookup would then silently
  * drop the tool from the assistant. SHADOWED raw names (normalized slot
  * claimed by another configured server) stay raw and fail closed, mirroring
- * the runtime heal. Config names are read only when a delimiter-bearing
- * name actually misses the cache; failures propagate (write path) rather
- * than silently dropping the tool.
+ * the runtime heal, with the shadow set built from the FULL accessible
+ * audit (cross-tier collisions included) and healing skipped outright when
+ * that audit cannot complete. Config names are read only when a
+ * delimiter-bearing name actually misses the cache; config-read failures
+ * propagate (write path) rather than silently dropping the tool. Healed
+ * string entries dedupe order-preserving so a payload carrying both
+ * spellings can't submit duplicate function names.
  * @param {object} params
  * @param {ServerRequest} params.req
  * @param {Array<string | object>} [params.tools]
@@ -245,26 +249,52 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
     return list;
   }
   const rawServerNames = await resolveMcpConfigNames(req);
-  const shadowed = findShadowedServerNames(rawServerNames);
-  return list.map((tool) => {
-    if (
-      typeof tool !== 'string' ||
-      !tool.includes(Constants.mcp_delimiter) ||
-      toolDefinitions[tool] != null
-    ) {
-      return tool;
-    }
-    const [, parsedServerName] = splitMCPToolKey(tool, rawServerNames);
-    if (
-      parsedServerName == null ||
-      !rawServerNames.includes(parsedServerName) ||
-      shadowed.has(parsedServerName)
-    ) {
-      return tool;
-    }
-    const healed = normalizeMCPToolKey(tool, rawServerNames);
-    return toolDefinitions[healed] != null ? healed : tool;
+  /** Cross-tier shadowing (DB `foo` vs operator `foo!`) is invisible to
+   *  operator names alone — the shadow set must come from the FULL
+   *  accessible audit. Every rewrite candidate here is normalization-
+   *  sensitive by construction, so an incomplete audit skips healing
+   *  entirely (the raw key stays raw and fails closed). */
+  const audit = await resolveCollisionAuditNames({
+    rawServerNames,
+    userId: req.user?.id,
+    role: req.user?.role,
   });
+  if (!audit.complete) {
+    return list;
+  }
+  const shadowed = findShadowedServerNames(audit.names);
+  const seen = new Set();
+  const healedList = [];
+  for (const tool of list) {
+    let healedTool = tool;
+    if (
+      typeof tool === 'string' &&
+      tool.includes(Constants.mcp_delimiter) &&
+      toolDefinitions[tool] == null
+    ) {
+      const [, parsedServerName] = splitMCPToolKey(tool, rawServerNames);
+      if (
+        parsedServerName != null &&
+        rawServerNames.includes(parsedServerName) &&
+        !shadowed.has(parsedServerName)
+      ) {
+        const healed = normalizeMCPToolKey(tool, rawServerNames);
+        if (toolDefinitions[healed] != null) {
+          healedTool = healed;
+        }
+      }
+    }
+    /** A payload carrying both spellings collapses to one entry after the
+     *  heal — duplicate function names make providers reject the save. */
+    if (typeof healedTool === 'string') {
+      if (seen.has(healedTool)) {
+        continue;
+      }
+      seen.add(healedTool);
+    }
+    healedList.push(healedTool);
+  }
+  return healedList;
 }
 
 /**
