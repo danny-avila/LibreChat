@@ -161,6 +161,12 @@ describe('BashCall intent label', () => {
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Running command');
   });
 
+  it('ignores a non-string intent in complete SERIALIZED args (no String() coercion)', () => {
+    renderBashCall('{"intent":{"topic":"billing"},"command":"sleep 10"}');
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Running command');
+    expect(screen.queryByText(/object Object/)).not.toBeInTheDocument();
+  });
+
   it('ignores an intent that is not the FIRST args key (label contract is first-position)', () => {
     renderBashCall('{"command":"sleep 10","intent":"billing_inquiry"}');
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Running command');

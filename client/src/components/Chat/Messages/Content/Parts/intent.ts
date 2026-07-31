@@ -57,6 +57,19 @@ export function useToolCallIntent(args?: string | Record<string, unknown>): stri
       const value = args.intent;
       return typeof value === 'string' ? boundIntentLabel(value) : undefined;
     }
-    return boundIntentLabel(parseJsonField(args, 'intent'));
+    try {
+      /** Complete serialized args need the same non-string guard as object
+       *  args — `parseJsonField` would coerce `{"intent":{...}}` into
+       *  "[object Object]" via String(). */
+      const parsed = JSON.parse(args) as unknown;
+      if (parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const value = (parsed as Record<string, unknown>).intent;
+        return typeof value === 'string' ? boundIntentLabel(value) : undefined;
+      }
+      return undefined;
+    } catch {
+      /** Partial stream: the regex fallback only matches string values. */
+      return boundIntentLabel(parseJsonField(args, 'intent'));
+    }
   }, [args]);
 }

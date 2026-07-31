@@ -429,7 +429,7 @@ export default function RetrievalCall({
           if (cancelled) {
             return localize('com_ui_cancelled');
           }
-          return localize('com_ui_retrieved_files');
+          return intent ?? localize('com_ui_retrieved_files');
         })()}
       </span>
       <div className="relative my-1 flex h-5 shrink-0 items-center gap-2.5">

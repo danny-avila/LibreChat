@@ -225,7 +225,7 @@ export default function OpenAIImageGen({
           if (cancelled) {
             return localize('com_ui_cancelled');
           }
-          return localize('com_ui_image_created');
+          return intent ?? localize('com_ui_image_created');
         })()}
       </span>
       <div className="relative my-1 flex h-5 shrink-0 items-center gap-2">

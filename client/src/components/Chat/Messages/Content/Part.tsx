@@ -223,7 +223,7 @@ const Part = memo(function Part({
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
               toolName={toolCall.name}
-              args={typeof toolCall.args === 'string' ? toolCall.args : ''}
+              args={toolCall.args ?? ''}
               output={toolCall.output ?? ''}
               attachments={attachments}
               hideAttachments={hideAttachments}

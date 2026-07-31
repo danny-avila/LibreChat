@@ -162,10 +162,10 @@ export default function WebSearch({
   }, [searchResults, complete, finalizing, ownTurn]);
 
   const showSources = streamingSources.length > 0;
-  const progressText = useMemo(() => {
-    if (intent != null) {
-      return intent;
-    }
+  /** Stable phase text: the live region must not re-announce the growing
+   *  intent on every delta, so it always gets this value while streaming;
+   *  the settled intent is announced once via the completed branch. */
+  const genericProgressText = useMemo(() => {
     let text: ProgressKeys =
       ownTurn !== '0' ? 'com_ui_web_searching_again' : 'com_ui_web_searching';
     if (showSources) {
@@ -175,7 +175,8 @@ export default function WebSearch({
       text = 'com_ui_web_search_reading';
     }
     return localize(text);
-  }, [intent, ownTurn, localize, showSources, finalizing]);
+  }, [ownTurn, localize, showSources, finalizing]);
+  const progressText = intent ?? genericProgressText;
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const sourceCount = allSources.length;
@@ -280,7 +281,7 @@ export default function WebSearch({
   return (
     <div className="my-1 flex items-center gap-2.5">
       <span className="sr-only" aria-live="polite" aria-atomic="true">
-        {progressText}
+        {genericProgressText}
       </span>
       {showSources && <StackedFavicons sources={streamingSources} start={-5} />}
       <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
