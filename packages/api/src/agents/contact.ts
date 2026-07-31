@@ -13,8 +13,6 @@ export interface AgentOwnerContactSource {
   username?: string | null;
 }
 
-const EMAIL_LIKE = /^[^\s@]+@[^\s@]+$/;
-
 const normalizeContactValue = (value?: string | null): string | undefined => {
   if (typeof value !== 'string') {
     return undefined;
@@ -23,11 +21,12 @@ const normalizeContactValue = (value?: string | null): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
-/** Auth strategies fall back to the account email for name/username, so
- * email-shaped values must not be used as a public display name. */
+/** Auth strategies fall back to the account email for name/username, and legal
+ * email forms include quoted local parts with whitespace, so any '@'-containing
+ * value is treated as email-derived and never used as a public display name. */
 const normalizeDisplayName = (value?: string | null): string | undefined => {
   const normalized = normalizeContactValue(value);
-  if (normalized == null || EMAIL_LIKE.test(normalized)) {
+  if (normalized == null || normalized.includes('@')) {
     return undefined;
   }
   return normalized;

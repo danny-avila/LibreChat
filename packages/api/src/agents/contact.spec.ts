@@ -57,6 +57,15 @@ describe('resolveAgentOwnerContact', () => {
     expect(result).toBeUndefined();
   });
 
+  it('skips emails with quoted local parts containing whitespace', () => {
+    const result = resolveAgentOwnerContact(
+      {},
+      { name: '"given family"@example.com', username: 'owner.user' },
+    );
+
+    expect(result).toEqual({ name: 'owner.user' });
+  });
+
   it('falls back to username for owner display name', () => {
     const result = resolveAgentOwnerContact({}, { username: 'owner.user' });
 
