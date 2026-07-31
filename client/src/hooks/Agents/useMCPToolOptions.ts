@@ -4,7 +4,7 @@ import type { AgentToolOptions, AllowedCaller, AgentToolType } from 'librechat-d
 import type { UseFormGetValues, UseFormSetValue } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 
-type BooleanToolOptionKey = 'defer_loading' | 'run_in_background';
+type BooleanToolOptionKey = 'defer_loading' | 'run_in_background' | 'describe_intent';
 
 interface BooleanOptionHandlers {
   isSet: (toolId: string) => boolean;
@@ -24,15 +24,19 @@ interface UseMCPToolOptionsReturn {
   isToolDeferred: (toolId: string) => boolean;
   isToolProgrammatic: (toolId: string) => boolean;
   isToolBackground: (toolId: string) => boolean;
+  isToolIntent: (toolId: string) => boolean;
   toggleToolDefer: (toolId: string) => void;
   toggleToolProgrammatic: (toolId: string) => void;
   toggleToolBackground: (toolId: string) => void;
+  toggleToolIntent: (toolId: string) => void;
   areAllToolsDeferred: (tools: AgentToolType[]) => boolean;
   areAllToolsProgrammatic: (tools: AgentToolType[]) => boolean;
   areAllToolsBackground: (tools: AgentToolType[]) => boolean;
+  areAllToolsIntent: (tools: AgentToolType[]) => boolean;
   toggleDeferAll: (tools: AgentToolType[]) => void;
   toggleProgrammaticAll: (tools: AgentToolType[]) => void;
   toggleBackgroundAll: (tools: AgentToolType[]) => void;
+  toggleIntentAll: (tools: AgentToolType[]) => void;
 }
 
 /**
@@ -146,6 +150,7 @@ export default function useMCPToolOptions(): UseMCPToolOptionsReturn {
 
   const defer = useBooleanToolOption('defer_loading', formContext);
   const background = useBooleanToolOption('run_in_background', formContext);
+  const intent = useBooleanToolOption('describe_intent', formContext);
 
   /** `allowed_callers` is array-valued, so the programmatic family stays bespoke. */
   const isToolProgrammatic = useCallback(
@@ -240,14 +245,18 @@ export default function useMCPToolOptions(): UseMCPToolOptionsReturn {
     isToolDeferred: defer.isSet,
     isToolProgrammatic,
     isToolBackground: background.isSet,
+    isToolIntent: intent.isSet,
     toggleToolDefer: defer.toggle,
     toggleToolProgrammatic,
     toggleToolBackground: background.toggle,
+    toggleToolIntent: intent.toggle,
     areAllToolsDeferred: defer.areAllSet,
     areAllToolsProgrammatic,
     areAllToolsBackground: background.areAllSet,
+    areAllToolsIntent: intent.areAllSet,
     toggleDeferAll: defer.toggleAll,
     toggleProgrammaticAll,
     toggleBackgroundAll: background.toggleAll,
+    toggleIntentAll: intent.toggleAll,
   };
 }

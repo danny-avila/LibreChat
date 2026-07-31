@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Clock, Code2, Info, Zap } from 'lucide-react';
+import { Check, Clock, Code2, Captions, Info, Zap } from 'lucide-react';
 import type { AgentToolType } from 'librechat-data-provider';
 import OptionToggle from './OptionToggle';
 import { useLocalize } from '~/hooks';
@@ -11,13 +11,16 @@ interface MCPToolItemProps {
   isDeferred: boolean;
   isProgrammatic: boolean;
   isBackground: boolean;
+  isIntent: boolean;
   deferredToolsEnabled: boolean;
   programmaticToolsEnabled: boolean;
   backgroundToolsEnabled: boolean;
+  toolIntentsEnabled: boolean;
   onToggleSelect: () => void;
   onToggleDefer: () => void;
   onToggleProgrammatic: () => void;
   onToggleBackground: () => void;
+  onToggleIntent: () => void;
 }
 
 const iconButton =
@@ -33,9 +36,12 @@ export default function MCPToolItem({
   onToggleProgrammatic,
   isBackground,
   onToggleBackground,
+  isIntent,
+  onToggleIntent,
   deferredToolsEnabled,
   programmaticToolsEnabled,
   backgroundToolsEnabled,
+  toolIntentsEnabled,
 }: MCPToolItemProps) {
   const localize = useLocalize();
   const [expanded, setExpanded] = useState(false);
@@ -98,6 +104,16 @@ export default function MCPToolItem({
               tooltip={localize('com_ui_mcp_click_to_background')}
               activeClass="text-sky-500"
               onToggle={onToggleBackground}
+            />
+          )}
+          {toolIntentsEnabled && (
+            <OptionToggle
+              icon={Captions}
+              pressed={isIntent}
+              label={localize('com_ui_mcp_intent')}
+              tooltip={localize('com_ui_mcp_click_to_intent')}
+              activeClass="text-teal-500"
+              onToggle={onToggleIntent}
             />
           )}
           <button
