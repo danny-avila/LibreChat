@@ -3,6 +3,7 @@ import {
   buildOAuthToolCallName,
   normalizeServerName,
   normalizeAgentToolKeys,
+  findShadowedServerNames,
   splitMCPToolKey,
   redactAllServerSecrets,
   redactServerSecrets,
@@ -73,6 +74,27 @@ describe('splitMCPToolKey', () => {
 
   it('should handle a raw tool name with multiple delimiter occurrences by always taking the last segment as the server name', () => {
     expect(splitMCPToolKey('a_mcp_b_mcp_c_mcp_server')).toEqual(['a_mcp_b_mcp_c', 'server']);
+  });
+});
+
+describe('findShadowedServerNames', () => {
+  it('flags later names whose normalized form an earlier different name claimed', () => {
+    const shadowed = findShadowedServerNames(['Sales Force', 'Sales:Force', 'other']);
+    expect(shadowed).toEqual(new Set(['Sales:Force']));
+  });
+
+  it('does not flag exact duplicates or safe distinct names', () => {
+    expect(findShadowedServerNames(['srv', 'srv', 'other']).size).toBe(0);
+    expect(findShadowedServerNames(['Sales Force', 'Sales_Force2']).size).toBe(0);
+  });
+
+  it('flags a raw name colliding with an already-normalized name in either order', () => {
+    expect(findShadowedServerNames(['Sales_Force', 'Sales Force'])).toEqual(
+      new Set(['Sales Force']),
+    );
+    expect(findShadowedServerNames(['Sales Force', 'Sales_Force'])).toEqual(
+      new Set(['Sales_Force']),
+    );
   });
 });
 

@@ -27,6 +27,35 @@ export function isMCPAllPlaceholder(toolName: string): boolean {
 const MCP_SERVER_TOKEN_PREFIX: string = `${Constants.mcp_server}${Constants.mcp_delimiter}`;
 
 /**
+ * Later-configured server names whose normalized form is already claimed by an
+ * earlier different name. Such a pair produces IDENTICAL model-facing tool
+ * keys, so tool selection and execution cannot tell the servers apart —
+ * `buildServerNameAliases` deterministically routes to the first name, and
+ * the shadowed later server must be EXCLUDED from tool exposure entirely:
+ * offering its tools would let a user select a tool that silently executes
+ * against the first server's configuration.
+ */
+export function findShadowedServerNames(rawServerNames: readonly string[]): Set<string> {
+  const shadowed = new Set<string>();
+  const firstByNormalized = new Map<string, string>();
+  for (const raw of rawServerNames) {
+    if (!raw) {
+      continue;
+    }
+    const normalized = normalizeServerName(raw);
+    const first = firstByNormalized.get(normalized);
+    if (first == null) {
+      firstByNormalized.set(normalized, raw);
+      continue;
+    }
+    if (first !== raw) {
+      shadowed.add(raw);
+    }
+  }
+  return shadowed;
+}
+
+/**
  * Heals legacy persisted agent data whose MCP tool keys embed a RAW server
  * name: model-facing keys carry `normalizeServerName(server)` (matching cache
  * keys, definition names, and runtime instance names), so an agent document
