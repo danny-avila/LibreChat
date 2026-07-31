@@ -18,6 +18,7 @@ import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
 import { cn, getToolDisplayLabel, getActivityLabelPart, getActivityLabelText } from '~/utils';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
+import SearchVerticals from './verticals';
 import store from '~/store';
 
 interface ToolMeta {
@@ -566,7 +567,10 @@ export default function ToolCallGroup({
         )}
       </div>
       {groupAttachments && groupAttachments.length > 0 && (
-        <AttachmentGroup attachments={groupAttachments} />
+        <>
+          <SearchVerticals attachments={groupAttachments} />
+          <AttachmentGroup attachments={groupAttachments} />
+        </>
       )}
     </div>
   );
