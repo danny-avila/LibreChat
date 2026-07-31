@@ -1361,7 +1361,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
               transform: 'translateY(-50%)',
               zIndex: 999,
             }}
-            className="pointer-events-none max-w-[280px] rounded-md border border-border-medium bg-surface-secondary px-3 py-2 text-text-secondary shadow-lg"
+            className="pointer-events-none max-w-[280px] rounded-xl border border-border-light bg-surface-secondary px-3 py-2 text-text-secondary shadow-lg"
           >
             <p className="line-clamp-3 text-xs">{tipText}</p>
           </div>,
