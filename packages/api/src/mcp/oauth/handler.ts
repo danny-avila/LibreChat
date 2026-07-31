@@ -1301,16 +1301,15 @@ export class MCPOAuthHandler {
 
   /**
    * Deletes an OAuth flow together with its state mapping, for teardown paths
-   * that don't already hold the flow (e.g. server uninstall). The mapping is
-   * deleted first on purpose, and the flow is left in place when the mapping
-   * delete hits a storage error: an unresolvable flow fails closed and the
-   * next replacement retries both deletes, whereas deleting the flow past a
-   * failed mapping delete would orphan the mapping, and its state would
-   * resolve against the next flow created under the same deterministic flowId.
-   * The inverse partial failure is compensated too: when the flow delete
-   * fails, the mapping is restored so the surviving flow's stored
-   * authorization URL remains resolvable instead of dead-ending every
-   * callback in invalid_state until the flow goes stale.
+   * that don't already hold the flow (e.g. server uninstall). The flow is
+   * deleted first on purpose: it is what makes a provider callback
+   * completable, and teardown runs after the server's tokens were removed, so
+   * a surviving callback-capable flow could recreate credentials the user
+   * just revoked. A failure between the two deletes leaves at worst an
+   * orphaned mapping, which the callback's stored-state equality gates reduce
+   * to a clean invalid_state. Both deletes are attempted regardless of the
+   * other's outcome; any reported storage failure is surfaced as a rejection
+   * for the caller's best-effort logging.
    */
   static async deleteFlowAndStateMapping(
     flowId: string,
@@ -1320,22 +1319,12 @@ export class MCPOAuthHandler {
     const metadata = flowState?.metadata as MCPOAuthFlowMetadata | undefined;
     const state = typeof metadata?.state === 'string' ? metadata.state : null;
 
-    if (state) {
-      const mappingDeleted = await this.deleteStateMapping(state, flowManager);
-      if (!mappingDeleted) {
-        throw new Error(
-          `Failed to delete OAuth state mapping for flow ${flowId}; leaving the flow in place`,
-        );
-      }
-    }
-
     const flowDeleted = await flowManager.deleteFlow(flowId, this.FLOW_TYPE);
-    if (!flowDeleted) {
-      if (state) {
-        await this.storeStateMapping(state, flowId, flowManager);
-      }
+    const mappingDeleted = state ? await this.deleteStateMapping(state, flowManager) : true;
+
+    if (!flowDeleted || !mappingDeleted) {
       throw new Error(
-        `Failed to delete OAuth flow ${flowId}; restored its state mapping so the surviving flow stays resolvable`,
+        `Failed to fully delete OAuth flow ${flowId} (flow deleted: ${flowDeleted}, state mapping deleted: ${mappingDeleted})`,
       );
     }
   }

@@ -594,7 +594,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
       expect(await MCPOAuthHandler.resolveStateToFlowId(otherState, flowManager)).toBe(otherFlowId);
     });
 
-    it('deletes the state mapping before the flow', async () => {
+    it('deletes the flow before the state mapping', async () => {
       const flowManager = createFlowManager();
       const flowId = 'user1:test-server';
       const state = 'ordered-state-ghi789';
@@ -611,10 +611,10 @@ describe('MCP OAuth Race Condition Fixes', () => {
 
       await MCPOAuthHandler.deleteFlowAndStateMapping(flowId, flowManager);
 
-      expect(calls).toEqual([`mcp_oauth_state:${state}`, `mcp_oauth:${flowId}`]);
+      expect(calls).toEqual([`mcp_oauth:${flowId}`, `mcp_oauth_state:${state}`]);
     });
 
-    it('leaves the flow in place when the mapping delete hits a storage error', async () => {
+    it('still deletes the flow and rejects when the mapping delete hits a storage error', async () => {
       const flowManager = createFlowManager();
       const flowId = 'user1:test-server';
       const state = 'failing-state-jkl012';
@@ -631,13 +631,14 @@ describe('MCP OAuth Race Condition Fixes', () => {
       });
 
       await expect(MCPOAuthHandler.deleteFlowAndStateMapping(flowId, flowManager)).rejects.toThrow(
-        'Failed to delete OAuth state mapping',
+        'Failed to fully delete OAuth flow',
       );
 
-      expect(await flowManager.getFlowState(flowId, 'mcp_oauth')).toBeTruthy();
+      /** The callback-capable flow must not survive token deletion */
+      expect(await flowManager.getFlowState(flowId, 'mcp_oauth')).toBeFalsy();
     });
 
-    it('restores the mapping when the flow delete hits a storage error', async () => {
+    it('still deletes the mapping and rejects when the flow delete hits a storage error', async () => {
       const flowManager = createFlowManager();
       const flowId = 'user1:test-server';
       const state = 'restore-state-mno345';
@@ -654,10 +655,11 @@ describe('MCP OAuth Race Condition Fixes', () => {
       });
 
       await expect(MCPOAuthHandler.deleteFlowAndStateMapping(flowId, flowManager)).rejects.toThrow(
-        'Failed to delete OAuth flow',
+        'Failed to fully delete OAuth flow',
       );
 
-      expect(await MCPOAuthHandler.resolveStateToFlowId(state, flowManager)).toBe(flowId);
+      /** The surviving flow must not stay callback-capable: its state no longer resolves */
+      expect(await MCPOAuthHandler.resolveStateToFlowId(state, flowManager)).toBeNull();
       expect(await flowManager.getFlowState(flowId, 'mcp_oauth')).toBeTruthy();
     });
 
