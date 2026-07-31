@@ -39,6 +39,24 @@ describe('resolveAgentOwnerContact', () => {
     expect(result).not.toHaveProperty('email');
   });
 
+  it('skips email-shaped owner names from auth-strategy fallbacks', () => {
+    const result = resolveAgentOwnerContact(
+      {},
+      { name: 'owner.private@example.com', username: 'owner.user' },
+    );
+
+    expect(result).toEqual({ name: 'owner.user' });
+  });
+
+  it('omits owner contact when every display-name candidate is email-shaped', () => {
+    const result = resolveAgentOwnerContact(
+      { authorName: 'owner.private@example.com' },
+      { name: 'owner.private@example.com', username: 'owner.private@example.com' },
+    );
+
+    expect(result).toBeUndefined();
+  });
+
   it('falls back to username for owner display name', () => {
     const result = resolveAgentOwnerContact({}, { username: 'owner.user' });
 

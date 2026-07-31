@@ -607,6 +607,28 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(response.owner_contact).not.toHaveProperty('email');
     });
 
+    test('should omit owner_contact when the owner name and username are the account email', async () => {
+      const email = 'sso.owner@example.com';
+      const owner = await createOwner({ name: email, username: email, email });
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'SSO Owner Agent',
+        description: 'Owner has email-shaped name from SSO fallback',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: owner._id,
+      });
+      await grantAgentOwner({ agent, owner });
+
+      mockReq.params = { id: agent.id };
+
+      await getAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.owner_contact).toBeUndefined();
+    });
+
     test('should not return owner_contact when support_contact is present', async () => {
       const owner = await createOwner({
         name: 'Primary Owner',

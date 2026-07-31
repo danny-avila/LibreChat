@@ -13,12 +13,24 @@ export interface AgentOwnerContactSource {
   username?: string | null;
 }
 
+const EMAIL_LIKE = /^[^\s@]+@[^\s@]+$/;
+
 const normalizeContactValue = (value?: string | null): string | undefined => {
   if (typeof value !== 'string') {
     return undefined;
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+};
+
+/** Auth strategies fall back to the account email for name/username, so
+ * email-shaped values must not be used as a public display name. */
+const normalizeDisplayName = (value?: string | null): string | undefined => {
+  const normalized = normalizeContactValue(value);
+  if (normalized == null || EMAIL_LIKE.test(normalized)) {
+    return undefined;
+  }
+  return normalized;
 };
 
 export const hasSupportContact = (agent: AgentContactSource): boolean => {
@@ -31,8 +43,8 @@ export const hasSupportContact = (agent: AgentContactSource): boolean => {
 
 /**
  * Resolves a display-only owner contact for agents without an explicit support contact.
- * Never includes the owner's account email; emails are only exposed when the owner
- * opts in by configuring `support_contact`.
+ * Never includes the owner's account email, nor email-shaped display names; emails are
+ * only exposed when the owner opts in by configuring `support_contact`.
  */
 export function resolveAgentOwnerContact(
   agent: AgentContactSource,
@@ -43,9 +55,9 @@ export function resolveAgentOwnerContact(
   }
 
   const name =
-    normalizeContactValue(owner.name) ??
-    normalizeContactValue(owner.username) ??
-    normalizeContactValue(agent.authorName);
+    normalizeDisplayName(owner.name) ??
+    normalizeDisplayName(owner.username) ??
+    normalizeDisplayName(agent.authorName);
 
   if (!name) {
     return undefined;
