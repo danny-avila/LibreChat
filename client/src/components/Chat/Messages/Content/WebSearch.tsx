@@ -253,7 +253,7 @@ export default function WebSearch({
               <div
                 className={cn(
                   toolPanelSpacingClassName,
-                  'max-h-[280px] overflow-y-auto rounded-lg border border-border-light',
+                  'mt-1.5 max-h-[280px] overflow-y-auto rounded-lg border border-border-light',
                 )}
               >
                 {allSources.map((source, i) => {
