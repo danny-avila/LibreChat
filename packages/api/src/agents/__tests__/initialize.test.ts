@@ -33,7 +33,7 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Providers } from '@librechat/agents';
-import { EModelEndpoint, EToolResources, Tools } from 'librechat-data-provider';
+import { Constants, EModelEndpoint, EToolResources, Tools } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Agent } from 'librechat-data-provider';
 import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
@@ -2221,5 +2221,37 @@ describe('initializeAgent — run-scoped MCP tool definitions', () => {
     );
 
     expect(result.mcpAvailableTools).toEqual(mcpAvailableTools);
+  });
+
+  it('retains the resolved collision audit on the initialized agent', async () => {
+    /** Deferred/event-driven execution reuses this snapshot instead of
+     *  repeating the merged-registry read — a transient failure there
+     *  would fail-closed a tool the turn already advertised. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    const rawServerName = 'Connector: Company';
+    const accessibleNames = [rawServerName, 'plain_server'];
+    (req as { config: { mcpConfig?: Record<string, unknown> } }).config = {
+      mcpConfig: { [rawServerName]: {} },
+    };
+    agent.tools = [`search${Constants.mcp_delimiter}${rawServerName}`];
+    const getAccessibleMcpServerNames = jest.fn(async () => accessibleNames);
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      { ...db, getAccessibleMcpServerNames },
+    );
+
+    expect(result.accessibleMcpServerNames).toEqual(accessibleNames);
+    expect(loadTools).toHaveBeenCalledWith(
+      expect.objectContaining({ accessibleMcpServerNames: accessibleNames }),
+    );
   });
 });

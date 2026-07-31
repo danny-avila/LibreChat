@@ -822,8 +822,19 @@ async function createMCPTool({
     }
   }
 
+  /** Legacy keys persisted pre-normalization (assistants, direct tool
+   *  calls) carry the RAW server name, while `availableTools` is keyed by
+   *  the canonical normalized key — look up both spellings. */
+  const canonicalToolKey =
+    serverName != null
+      ? `${toolName}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`
+      : toolKey;
+  const findToolDefinition = (tools) =>
+    tools?.[toolKey]?.function ??
+    (canonicalToolKey !== toolKey ? tools?.[canonicalToolKey]?.function : undefined);
+
   /** @type {LCTool | undefined} */
-  let toolDefinition = availableTools?.[toolKey]?.function;
+  let toolDefinition = findToolDefinition(availableTools);
   if (!toolDefinition) {
     const cachedAt = useMissingToolCache ? missingToolCache.get(toolKey) : undefined;
     if (cachedAt && Date.now() - cachedAt < MISSING_TOOL_TTL_MS) {
@@ -853,7 +864,7 @@ async function createMCPTool({
     if (result?.availableTools) {
       onAvailableTools?.(result.availableTools);
     }
-    toolDefinition = result?.availableTools?.[toolKey]?.function;
+    toolDefinition = findToolDefinition(result?.availableTools);
 
     if (!toolDefinition && useMissingToolCache) {
       missingToolCache.set(toolKey, Date.now());

@@ -735,6 +735,7 @@ const createResponse = async (req, res) => {
             userMCPAuthMap: ctx.userMCPAuthMap,
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,
+            accessibleMcpServerNames: ctx.accessibleMcpServerNames,
           });
           return enrichLoadedToolsWithAgentContext({
             result,
@@ -917,6 +918,7 @@ const createResponse = async (req, res) => {
             userMCPAuthMap: ctx.userMCPAuthMap,
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,
+            accessibleMcpServerNames: ctx.accessibleMcpServerNames,
           });
           return enrichLoadedToolsWithAgentContext({
             result,

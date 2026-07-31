@@ -24,13 +24,13 @@ jest.mock('~/server/services/Config', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  /** Pure helpers (normalizeServerName, splitMCPToolKey, schema utils, ...)
+   *  stay REAL so key-normalization paths are exercised, not mirrored. */
+  ...jest.requireActual('@librechat/api'),
   sendEvent: jest.fn(),
   MCPOAuthHandler: jest.fn(),
   isMCPDomainAllowed: jest.fn(),
-  normalizeServerName: jest.fn((name) => name),
-  normalizeJsonSchema: jest.fn((schema) => schema),
   GenerationJobManager: jest.fn(),
-  resolveJsonSchemaRefs: jest.fn((schema) => schema),
   buildOAuthToolCallName: jest.fn((name) => name),
   /** Mirrors the real resolver so these tests still exercise the wrapper's own
    *  plumbing - loading the request config and degrading on failure - rather than
@@ -67,8 +67,12 @@ jest.mock('~/server/services/Tools/mcp', () => ({
   reinitMCPServer: jest.fn(),
 }));
 
+const { Constants } = require('librechat-data-provider');
+
 const { getAppConfig } = require('~/server/services/Config');
+const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const {
+  createMCPTool,
   resolveConfigServers,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
@@ -239,5 +243,53 @@ describe('resolveAllMcpConfigs', () => {
     getAppConfig.mockRejectedValue(new Error('mongo down'));
 
     await expect(resolveAllMcpConfigs('u1', { id: 'u1' })).rejects.toThrow('mongo down');
+  });
+});
+
+describe('createMCPTool', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const rawServerName = 'Connector: Company';
+  const legacyToolKey = `search${Constants.mcp_delimiter}${rawServerName}`;
+  const canonicalToolKey = `search${Constants.mcp_delimiter}Connector__Company`;
+  const toolFunction = {
+    name: canonicalToolKey,
+    description: 'Search the company connector',
+    parameters: { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] },
+  };
+
+  it('resolves a legacy raw-spelled key against the normalized availableTools index', async () => {
+    /** Assistants and direct tool calls persisted pre-normalization bypass
+     *  the agent-boundary heal and arrive with RAW keys; `availableTools`
+     *  is keyed canonically, so the lookup must cover both spellings
+     *  instead of stubbing the tool as unavailable. */
+    const toolInstance = await createMCPTool({
+      user: { id: 'user-1' },
+      toolKey: legacyToolKey,
+      serverName: rawServerName,
+      availableTools: { [canonicalToolKey]: { type: 'function', function: toolFunction } },
+      config: { type: 'stdio', command: 'node' },
+      provider: 'openAI',
+    });
+
+    expect(toolInstance).toBeDefined();
+    expect(toolInstance.name).toBe(canonicalToolKey);
+    expect(toolInstance.description).toBe(toolFunction.description);
+    expect(reinitMCPServer).not.toHaveBeenCalled();
+  });
+
+  it('still resolves the canonical key directly', async () => {
+    const toolInstance = await createMCPTool({
+      user: { id: 'user-1' },
+      toolKey: canonicalToolKey,
+      serverName: rawServerName,
+      availableTools: { [canonicalToolKey]: { type: 'function', function: toolFunction } },
+      config: { type: 'stdio', command: 'node' },
+      provider: 'openAI',
+    });
+
+    expect(toolInstance).toBeDefined();
+    expect(toolInstance.name).toBe(canonicalToolKey);
+    expect(reinitMCPServer).not.toHaveBeenCalled();
   });
 });

@@ -289,6 +289,14 @@ export type InitializedAgent = Agent & {
   memoryToolsRegistered?: boolean;
   /** Whether the actions capability is enabled (resolved during tool loading) */
   actionsEnabled?: boolean;
+  /**
+   * The COMPLETE accessible-server audit this initialization resolved (via
+   * the agent-key or skill-prime heal). Retained so deferred/event-driven
+   * execution reuses the same snapshot instead of repeating the merged
+   * registry read — a transient failure there would fail-closed a tool the
+   * turn already advertised from the successful first audit.
+   */
+  accessibleMcpServerNames?: readonly string[];
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars?: number;
   /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
@@ -1567,6 +1575,7 @@ export async function initializeAgent(
     backgroundToolNames,
     intentToolNames,
     actionsEnabled,
+    accessibleMcpServerNames: resolvedAuditNames,
     baseContextTokens,
     memoryToolsRegistered: inlineMemoryRegistered,
     codeEnvAvailable: effectiveCodeEnvAvailable,

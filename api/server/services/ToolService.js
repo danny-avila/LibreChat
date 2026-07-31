@@ -1565,6 +1565,7 @@ async function loadAgentTools({
  * @param {string|null} [params.streamId] - Stream ID for web search callbacks
  * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted tool events
  * @param {boolean} [params.actionsEnabled] - Whether the actions capability is enabled
+ * @param {readonly string[]} [params.accessibleMcpServerNames] - COMPLETE accessible-server audit resolved at initialization
  * @returns {Promise<{ loadedTools: Array, configurable: Object }>}
  */
 async function loadToolsForExecution({
@@ -1583,6 +1584,7 @@ async function loadToolsForExecution({
   streamId = null,
   jobCreatedAt,
   actionsEnabled,
+  accessibleMcpServerNames,
 }) {
   const appConfig = req.config;
   const allLoadedTools = [];
@@ -1763,6 +1765,10 @@ async function loadToolsForExecution({
         uploadImageBuffer,
         returnMetadata: true,
         mcpAvailableTools,
+        /** Initialization's COMPLETE audit snapshot — reused so a transient
+         *  registry failure at execution can't fail-closed a tool the same
+         *  turn already advertised. */
+        accessibleMcpServerNames,
         requestScopedConnections: mcpRequestScopedConnections,
         [Tools.web_search]: webSearchCallbacks,
       },

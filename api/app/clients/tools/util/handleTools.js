@@ -315,7 +315,11 @@ const loadTools = async ({
   const collisionAudit = hasMCPTools
     ? await resolveCollisionAuditNames({
         rawServerNames: mcpRawServerNames,
-        accessibleServerNames: options.mcpServerContext?.accessibleServerNames,
+        /** Load-time callers thread the audit inside `mcpServerContext`;
+         *  deferred execution threads initialization's snapshot as a bare
+         *  `accessibleMcpServerNames` (it resolves no server context). */
+        accessibleServerNames:
+          options.mcpServerContext?.accessibleServerNames ?? options.accessibleMcpServerNames,
         userId: user,
         role: options.req?.user?.role,
       })

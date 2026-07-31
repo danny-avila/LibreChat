@@ -285,6 +285,7 @@ const initializeClient = async ({ req, res, signal, endpointOption, jobCreatedAt
         userMCPAuthMap: ctx.userMCPAuthMap,
         tool_resources: ctx.tool_resources,
         actionsEnabled: ctx.actionsEnabled,
+        accessibleMcpServerNames: ctx.accessibleMcpServerNames,
         jobCreatedAt,
       });
 

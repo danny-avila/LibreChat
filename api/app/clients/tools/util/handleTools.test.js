@@ -496,6 +496,83 @@ describe('Tool Handlers', () => {
       expect(mockCreateMCPTool).not.toHaveBeenCalled();
     });
 
+    it('reuses the initialization audit snapshot threaded as bare execution options', async () => {
+      /** Deferred execution threads initialization's COMPLETE audit as
+       *  `options.accessibleMcpServerNames` (no server context is resolved
+       *  there) — a transient registry failure at execution must not
+       *  fail-closed a tool the same turn already advertised. */
+      const rawServerName = 'Connector: Company';
+      const normalizedKey = `search${Constants.mcp_delimiter}Connector__Company`;
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/mcp',
+        source: 'yaml',
+      };
+      const { resolveMcpServerContext } = require('~/server/services/MCP');
+      resolveMcpServerContext.mockResolvedValueOnce({
+        configServers: { [rawServerName]: serverConfig },
+        serverNames: ['Connector__Company'],
+        rawServerNames: [rawServerName],
+      });
+      mockGetAccessibleMcpServerNames.mockImplementation(async () => {
+        throw new Error('registry down');
+      });
+      mockGetServerConfig.mockImplementation(async (name) =>
+        name === rawServerName ? serverConfig : null,
+      );
+      mockCreateMCPTool.mockResolvedValue({ name: normalizedKey });
+
+      try {
+        const result = await loadTools({
+          user: fakeUser._id.toString(),
+          tools: [normalizedKey],
+          options: {
+            accessibleMcpServerNames: [rawServerName],
+            req: {
+              user: { id: fakeUser._id.toString(), role: 'USER' },
+              body: {},
+            },
+          },
+        });
+
+        expect(result.loadedTools).toEqual([{ name: normalizedKey }]);
+        expect(mockGetAccessibleMcpServerNames).not.toHaveBeenCalled();
+      } finally {
+        mockGetAccessibleMcpServerNames.mockImplementation(async () => []);
+      }
+    });
+
+    it('detects cross-tier collisions from the execution-threaded audit snapshot', async () => {
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://x.example/mcp',
+        source: 'yaml',
+      };
+      const { resolveMcpServerContext } = require('~/server/services/MCP');
+      resolveMcpServerContext.mockResolvedValueOnce({
+        configServers: {},
+        serverNames: ['foo'],
+        rawServerNames: ['foo!'],
+      });
+      mockGetServerConfig.mockResolvedValue(serverConfig);
+      mockCreateMCPTool.mockResolvedValue({ name: 'never' });
+
+      const result = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [`search${Constants.mcp_delimiter}foo!`],
+        options: {
+          accessibleMcpServerNames: ['foo', 'foo!'],
+          req: {
+            user: { id: fakeUser._id.toString(), role: 'USER' },
+            body: {},
+          },
+        },
+      });
+
+      expect(result.loadedTools).toEqual([]);
+      expect(mockCreateMCPTool).not.toHaveBeenCalled();
+    });
+
     it('keeps a server resolving under the parsed name as-is (direct identity wins)', async () => {
       /** A user-DB server named exactly like an operator server's normalized
        *  form must keep its own identity instead of being rerouted. */
