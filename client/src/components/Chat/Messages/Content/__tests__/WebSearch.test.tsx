@@ -284,6 +284,39 @@ describe('WebSearch', () => {
       expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
+    it('renders snippets, dates, and the answer box in the source list', () => {
+      const attachment = {
+        type: Tools.web_search,
+        [Tools.web_search]: {
+          turn: 0,
+          organic: [
+            {
+              link: 'https://example.com/context',
+              title: 'Context windows explained',
+              snippet: 'How context windows change what assistants can do.',
+              date: 'Jun 12, 2026',
+            },
+          ],
+          answerBox: {
+            title: 'What is a context window?',
+            snippet: 'The amount of text a model can consider at once.',
+          },
+        },
+      } as unknown as TAttachment;
+
+      renderWebSearch({ attachments: [attachment] });
+
+      expect(screen.getByText('What is a context window?')).toBeInTheDocument();
+      expect(
+        screen.getByText('The amount of text a model can consider at once.'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText('How context windows change what assistants can do.'),
+      ).toBeInTheDocument();
+      expect(screen.getByText('Jun 12, 2026')).toBeInTheDocument();
+      expect(screen.getByText('example.com')).toBeInTheDocument();
+    });
+
     it('uses standard tool-row spacing and reveals its chevron on hover or focus', () => {
       const searchResults = makeSearchResults({
         0: { organic: [makeSource('https://example.com', 'Example')] },
