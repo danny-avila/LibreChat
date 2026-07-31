@@ -136,7 +136,9 @@ export function EscalateNowButton({
           }
         />
         <Ariakit.Tooltip className="z-50 rounded-lg bg-surface-tertiary px-2 py-1 text-xs text-text-primary shadow-lg">
-          {chord ? `${label} · ${chord}` : label}
+          {/* A disabled control's shortcut does nothing right now, so the
+           *  chord is only advertised while the escalation is live. */}
+          {chord && !disabled ? `${label} · ${chord}` : label}
         </Ariakit.Tooltip>
       </Ariakit.TooltipProvider>
     </>
