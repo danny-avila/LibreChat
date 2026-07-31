@@ -88,7 +88,7 @@ describe('SSE stream tenant isolation', () => {
       checkpointIds: ['checkpoint-a'],
     });
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
-    mockSaveMessage.mockResolvedValue(undefined);
+    mockSaveMessage.mockResolvedValue({ persisted: true });
     mockGenerationJobManager.getActiveJobIdsForUser.mockResolvedValue([]);
     mockGenerationJobManager.steering.claim.mockResolvedValue([]);
     mockGenerationJobManager.steering.claimDetailed.mockResolvedValue({
@@ -976,7 +976,19 @@ describe('SSE stream tenant isolation', () => {
       expect(mockCaptureAgentCheckpointGeneration).toHaveBeenCalledWith('stream-123', undefined, {
         throwOnError: true,
       });
-      expect(mockSaveMessage).toHaveBeenCalledTimes(1);
+      expect(mockSaveMessage).toHaveBeenCalledTimes(2);
+      expect(mockSaveMessage).toHaveBeenNthCalledWith(
+        1,
+        expect.any(Object),
+        expect.objectContaining({ messageId: 'user-1', isCreatedByUser: true }),
+        expect.any(Object),
+      );
+      expect(mockSaveMessage).toHaveBeenNthCalledWith(
+        2,
+        expect.any(Object),
+        expect.objectContaining({ messageId: 'response-1', isCreatedByUser: false }),
+        expect.any(Object),
+      );
       expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
         'stream-123',
         undefined,
@@ -989,8 +1001,11 @@ describe('SSE stream tenant isolation', () => {
       expect(mockDeleteAgentCheckpoint.mock.invocationCallOrder[0]).toBeLessThan(
         publishFinal.mock.invocationCallOrder[0],
       );
-      expect(mockSaveMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(mockSaveMessage.mock.invocationCallOrder[1]).toBeLessThan(
         mockDeleteAgentCheckpoint.mock.invocationCallOrder[0],
+      );
+      expect(mockSaveMessage.mock.invocationCallOrder[0]).toBeLessThan(
+        mockSaveMessage.mock.invocationCallOrder[1],
       );
       expect(res.body.pendingSteers).toEqual([{ steerId: 'steer-1', text: 'next' }]);
     });
@@ -1096,7 +1111,9 @@ describe('SSE stream tenant isolation', () => {
         status: 'requires_action',
         createdAt: 1000,
       });
-      mockSaveMessage.mockRejectedValue(new Error('message store unavailable'));
+      mockSaveMessage
+        .mockResolvedValueOnce({ messageId: 'user-1' })
+        .mockRejectedValueOnce(new Error('message store unavailable'));
       mockGenerationJobManager.abortJob.mockImplementation(async (_streamId, options) => {
         const abortResult = {
           success: true,
@@ -1128,7 +1145,7 @@ describe('SSE stream tenant isolation', () => {
         });
 
       expect(res.status).toBe(200);
-      expect(mockSaveMessage).toHaveBeenCalledTimes(1);
+      expect(mockSaveMessage).toHaveBeenCalledTimes(2);
       expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
         'stream-123',
         undefined,
