@@ -8,6 +8,7 @@ const GENERATED_CREDS_KEY = crypto.randomBytes(32).toString('hex');
 const GENERATED_CREDS_IV = crypto.randomBytes(16).toString('hex');
 const GENERATED_JWT_SECRET = crypto.randomBytes(32).toString('hex');
 const GENERATED_JWT_REFRESH_SECRET = crypto.randomBytes(32).toString('hex');
+const DEFAULT_REDIS_URI = 'redis://127.0.0.1:6379';
 const PASSTHROUGH_ENV_KEYS = [
   'APPDATA',
   'CI',
@@ -71,6 +72,26 @@ function getPassthroughEnv(): Record<string, string> {
   return env;
 }
 
+function getStreamStoreEnv(): Record<string, string> {
+  const streamStore = process.env.E2E_STREAM_STORE ?? 'memory';
+  if (streamStore === 'memory') {
+    return {
+      E2E_REQUIRE_REDIS_STREAMS: 'false',
+      USE_REDIS: 'false',
+      USE_REDIS_STREAMS: 'false',
+    };
+  }
+  if (streamStore === 'redis') {
+    return {
+      E2E_REQUIRE_REDIS_STREAMS: 'true',
+      USE_REDIS: 'true',
+      USE_REDIS_STREAMS: 'true',
+      REDIS_URI: process.env.REDIS_URI ?? DEFAULT_REDIS_URI,
+    };
+  }
+  throw new Error(`Unsupported E2E_STREAM_STORE "${streamStore}"`);
+}
+
 export function getBaseE2EEnv(): Record<string, string> {
   const baseURL = getE2EBaseURL();
   const { host, port } = getE2EServerAddress(baseURL);
@@ -96,6 +117,7 @@ export function getBaseE2EEnv(): Record<string, string> {
     SESSION_EXPIRY: process.env.SESSION_EXPIRY ?? '3600000',
     ALLOW_REGISTRATION: 'true',
     REFRESH_TOKEN_EXPIRY: process.env.REFRESH_TOKEN_EXPIRY ?? '3600000',
+    ...getStreamStoreEnv(),
   };
 }
 

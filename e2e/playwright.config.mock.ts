@@ -118,7 +118,7 @@ export default defineConfig({
   globalTeardown: require.resolve('./setup/global-teardown.mock'),
   testDir: 'specs/mock/',
   outputDir: 'specs/.test-results',
-  fullyParallel: false,
+  fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: 1,

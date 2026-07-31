@@ -26,6 +26,7 @@ const ASSERT_AGENT_CONTEXT_MARKER = 'E2E_ASSERT_AGENT_CONTEXT:';
 const ASSERT_QUOTE_MARKER = 'E2E_ASSERT_QUOTE:';
 const REPLY_MARKER = 'E2E_REPLY:';
 const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
+const ORDERED_REPLY_MARKER = 'E2E_ORDERED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
 const SLOW_COUNTED_REPLY_MARKER = 'E2E_SLOW_COUNTED_REPLY:';
 const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
@@ -57,6 +58,8 @@ const STEER_LATE_FINAL_TEXT = 'E2E steer late reply done';
 const ACTIVITY_FINAL_TEXT = 'E2E activity reply done';
 const STEER_TOOL_NAME_PREFIX = 'remember_fact';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
+const ORDERED_CHUNK_DELAY_MS = 2;
+const ORDERED_REPLY_PIECES = 64;
 const SLOW_REPLY_CHUNKS = 160;
 const RESUME_ICON_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_RESUME_ICON_CHUNK_DELAY_MS) || 60;
 const RESUME_ICON_REPLY_CHUNKS = 240;
@@ -399,6 +402,18 @@ function replyResponses(text) {
     countedReplies.set(countedName, count);
     return {
       responses: [`E2E counted reply ${countedName} #${count}`],
+    };
+  }
+
+  const orderedName = getMarkerValue(text, ORDERED_REPLY_MARKER);
+  if (orderedName) {
+    const pieces = Array.from(
+      { length: ORDERED_REPLY_PIECES },
+      (_, index) => `piece-${String(index).padStart(3, '0')}`,
+    ).join(' ');
+    return {
+      responses: [`E2E ordered reply ${orderedName} ${pieces}`],
+      sleep: ORDERED_CHUNK_DELAY_MS,
     };
   }
 
