@@ -181,6 +181,14 @@ describe('BashCall intent label', () => {
     expect(text.endsWith('…')).toBe(true);
   });
 
+  it('never splits a surrogate pair at the truncation boundary', () => {
+    const straddling = `${'x'.repeat(254)}😀 and more text to exceed the bound`;
+    renderBashCall({ intent: straddling, command: 'sleep 10' });
+    const text = screen.getByTestId('progress-text').textContent ?? '';
+    expect(text.endsWith('x…')).toBe(true);
+    expect(text).not.toContain('�');
+  });
+
   it('decodes unicode escapes in a streaming intent (no literal \\uXXXX flash)', () => {
     renderBashCall('{"intent":"Checking caf\\u00e9 menu da');
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Checking café menu da');

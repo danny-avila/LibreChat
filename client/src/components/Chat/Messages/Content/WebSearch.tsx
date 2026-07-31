@@ -111,8 +111,12 @@ export default function WebSearch({
   const effectiveProgress = hasResults && !isSubmitting ? 1 : progress;
   const cancelled = (!isSubmitting && effectiveProgress < 1) || error === true;
 
-  const complete = !isLast && effectiveProgress === 1;
   const finalizing = isSubmitting && isLast && effectiveProgress === 1;
+  /** A search that is the message's FINAL part stays "finalizing" only while
+   *  the submission is live — afterwards it must settle like any other call,
+   *  or the completed label (and its settled intent announcement) never
+   *  renders and the card shimmers forever. */
+  const complete = effectiveProgress === 1 && !finalizing && (!isLast || !isSubmitting);
 
   const ownTurn = useMemo((): string => {
     if (!attachments) {

@@ -41,7 +41,7 @@ const SIMPLE_ESCAPES: Record<string, string> = {
  * dropped rather than shown, since the next delta completes them; unknown
  * escapes elsewhere are preserved literally.
  */
-function unescapeJsonString(value: string): string {
+export function unescapeJsonString(value: string): string {
   let out = '';
   for (let i = 0; i < value.length; i++) {
     const ch = value[i];
