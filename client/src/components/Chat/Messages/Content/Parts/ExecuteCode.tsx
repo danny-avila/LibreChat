@@ -9,6 +9,7 @@ import useLazyHighlight from './useLazyHighlight';
 import useToolCallState from './useToolCallState';
 import CodeWindowHeader from './CodeWindowHeader';
 import { AttachmentGroup } from './Attachment';
+import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
@@ -74,6 +75,9 @@ export default function ExecuteCode({
 }) {
   const localize = useLocalize();
   const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
+  /** Model-authored live label, streamed as the first args key; persists as
+   *  the settled label (completion is a UI state, not a tense change). */
+  const intent = useToolCallIntent(args);
   const sandboxStarting = useRecoilValue(sandboxStartingByToolCallId(toolCallId ?? ''));
 
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
@@ -106,12 +110,13 @@ export default function ExecuteCode({
           progress={progress}
           onClick={toggleCode}
           inProgressText={
-            sandboxStarting ? localize('com_ui_sandbox_starting') : localize('com_ui_analyzing')
+            intent ??
+            (sandboxStarting ? localize('com_ui_sandbox_starting') : localize('com_ui_analyzing'))
           }
           finishedText={
             cancelled
               ? localize('com_ui_cancelled')
-              : (backgroundFinishedText ?? localize('com_ui_analyzing_finished'))
+              : (backgroundFinishedText ?? intent ?? localize('com_ui_analyzing_finished'))
           }
           errorSuffix={
             (hasError && !cancelled) || backgroundFailed

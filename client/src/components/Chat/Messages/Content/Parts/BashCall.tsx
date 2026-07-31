@@ -12,6 +12,7 @@ import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
 import { ERROR_PATTERNS } from './ExecuteCode';
 import { AttachmentGroup } from './Attachment';
+import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -75,7 +76,15 @@ export default function BashCall({
     timerRef.current = setTimeout(() => setIsCopied(false), 3000);
   }, [command]);
 
+  /** The model-authored `intent` streams as the FIRST args key, so it is the
+   *  live label from the earliest delta — before the command exists and while
+   *  it runs. It persists as the settled label too (completion is a UI state,
+   *  not a tense change); the generic texts are the no-intent fallback. */
+  const intent = useToolCallIntent(args);
   const inProgressText = (() => {
+    if (intent != null) {
+      return intent;
+    }
     if (isWritingCommand) {
       return localize('com_ui_writing_command');
     }
@@ -95,7 +104,7 @@ export default function BashCall({
           finishedText={
             cancelled
               ? localize('com_ui_cancelled')
-              : (backgroundFinishedText ?? localize('com_ui_command_finished'))
+              : (backgroundFinishedText ?? intent ?? localize('com_ui_command_finished'))
           }
           errorSuffix={
             (hasError && !cancelled) || backgroundFailed

@@ -18,6 +18,7 @@ import { subagentProgressByToolCallId } from '~/store';
 import { useAgentsMapContext } from '~/Providers';
 import { useMCPServerNames } from '~/hooks/MCP';
 import { AttachmentGroup } from './Attachment';
+import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import Reasoning from './Reasoning';
 import Text from './Text';
@@ -252,9 +253,13 @@ export default function SubagentCall({
   /** Base verb-only label ("Running agent" / "Ran agent"). The agent name
    *  is rendered separately as a muted sub-label so "agent" stays a
    *  constant visual anchor regardless of name length. */
+  /** Model-authored live label (subagent carries `intent` natively); wins
+   *  over the generic verb, never over error/cancellation framing. */
+  const intent = useToolCallIntent(args);
   const getHeaderText = () => {
     if (hasError) return localize('com_ui_subagent_errored');
     if (cancelled) return localize('com_ui_subagent_cancelled');
+    if (intent != null) return intent;
     if (running) return localize('com_ui_subagent_running');
     return localize('com_ui_subagent_complete');
   };

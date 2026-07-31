@@ -223,7 +223,7 @@ const Part = memo(function Part({
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
               toolName={toolCall.name}
-              args={typeof toolCall.args === 'string' ? toolCall.args : ''}
+              args={toolCall.args ?? ''}
               output={toolCall.output ?? ''}
               attachments={attachments}
               hideAttachments={hideAttachments}
@@ -318,6 +318,7 @@ const Part = memo(function Part({
         } else if (toolCall.name === Tools.web_search) {
           return (
             <WebSearch
+              args={toolCall.args}
               output={toolCall.output ?? ''}
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
@@ -331,6 +332,7 @@ const Part = memo(function Part({
             <RetrievalCall
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
+              args={toolCall.args}
               output={toolCall.output ?? undefined}
               attachments={attachments}
               onExpand={onToolExpand}
