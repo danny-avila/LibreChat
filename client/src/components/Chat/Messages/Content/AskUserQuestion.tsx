@@ -34,9 +34,9 @@ export default function AskUserQuestion({
   /**
    * The composer popover is the primary answer surface — while it's VISIBLE
    * for this pause, rendering the card too duplicates the question. The card
-   * takes over when the popover is collapsed (answer mode stays live; the
-   * chevron re-expands it) or dismissed (and in contexts without a
-   * ChatContext, where the popover can't exist).
+   * takes over once the question is moved to the chat (the popover's chevron,
+   * which also releases the composer; this card's chevron moves it back), and
+   * in contexts without a ChatContext, where the popover can't exist.
    */
   const conversationId = useContext(ChatContext)?.conversation?.conversationId;
   const answerMode = useAskAnswerMode(conversationId);
@@ -89,7 +89,7 @@ export default function AskUserQuestion({
   };
 
   /** `answerMode.skip()` is gated on answer mode being ACTIVE, which a
-   *  dismissed (×'d) question is not — and that is precisely when this card
+   *  question moved to the chat is not — and that is precisely when this card
    *  is the only surface left. Decline through the answer path instead,
    *  which is gated on the live pause rather than on answer mode. */
   const handleSkip = () => {
