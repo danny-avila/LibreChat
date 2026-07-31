@@ -697,6 +697,10 @@ export async function initializeAgent(
     }
     healNamesPromise ??= db
       .getAccessibleMcpServerNames(req.user?.id, req.user?.role)
+      /** The merged registry read tolerates config-server init failures and
+       *  can silently omit config-only servers; the snapshot-derived config
+       *  names restore them so the audit stays genuinely complete. */
+      .then((names): readonly string[] => [...new Set([...names, ...configRawServerNames])])
       .catch((error): null => {
         logger.warn(
           '[initializeAgent] Failed to resolve accessible MCP server names; skipping legacy-key healing (collision audit unavailable):',

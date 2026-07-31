@@ -402,6 +402,37 @@ describe('McpSection', () => {
     });
   });
 
+  test('never migrates keys of a SHADOWED server (normalized slot claimed by another)', () => {
+    /** With servers `foo` and `foo!`, rewriting `search_mcp_foo!` would land
+     *  on `search_mcp_foo` — the WINNER server's key — so saving would apply
+     *  the shadowed server's defer/background/intent settings to the other
+     *  server's tool. The runtime heal leaves shadowed keys raw; the form
+     *  migration must fail closed the same way. */
+    mockMcpServersMap.mockReturnValue(
+      new Map<string, object>([
+        ['foo', {}],
+        ['foo!', {}],
+      ]),
+    );
+    const shadowedServer: McpItem = {
+      ...item,
+      id: 'foo!',
+      name: 'foo!',
+      server: {
+        serverName: 'foo!',
+        isConfigured: true,
+        tools: [{ tool_id: 'search_mcp_foo', name: 'Search' }],
+        metadata: { description: 'desc' },
+      } as never,
+      toolCount: 1,
+    };
+    mockGetToolOptions.mockReturnValue({
+      'search_mcp_foo!': { run_in_background: true },
+    });
+    render(<McpSection item={shadowedServer} />);
+    expect(mockSetValue).not.toHaveBeenCalledWith('tool_options', expect.anything());
+  });
+
   test('never migrates entries that belong to a LONGER server sharing this suffix', () => {
     /** With servers `!bar` and `foo_mcp_!bar`, the longer server's legacy key
      *  also suffix-ends with `_mcp_!bar` — opening the shorter server's dialog

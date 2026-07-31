@@ -147,8 +147,17 @@ export default function McpSection({ item }: Props) {
        *  configured server (both spellings, longest match) and rewrite only
        *  when it truly belongs to THIS server, or the migration could
        *  reassign another server's persisted settings. */
-      const allServerNames = Array.from(mcpServersMap.keys());
+      /** Include THIS server even when a stale catalog map omits it, so a
+       *  missing entry doesn't misread as a collision. */
+      const allServerNames = Array.from(new Set([...mcpServersMap.keys(), serverName]));
       const aliases = buildServerNameAliases(allServerNames);
+      /** A SHADOWED server (its normalized slot claimed by another catalog
+       *  name) keeps legacy keys raw — the runtime heal fails closed the
+       *  same way; rewriting here would move this server's persisted
+       *  options onto the winning server's key. */
+      if (aliases.get(normalizedName) !== serverName) {
+        return entry;
+      }
       const [, parsed] = splitMCPToolKey(entry, [...allServerNames, ...aliases.keys()]);
       if (parsed == null || (aliases.get(parsed) ?? parsed) !== serverName) {
         return entry;

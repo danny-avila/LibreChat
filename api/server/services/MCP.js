@@ -238,7 +238,11 @@ async function resolveCollisionAuditNames({ rawServerNames, accessibleServerName
   }
   try {
     const names = await getAccessibleMcpServerNames(userId, role);
-    return { names, complete: true };
+    /** `resolveAllMcpConfigs` tolerates `ensureConfigServers` failures, so
+     *  the merged read can silently omit config-only servers. The caller's
+     *  raw config names come from the app-config snapshot (registry-
+     *  independent), so the union keeps `complete: true` honest. */
+    return { names: [...new Set([...names, ...rawServerNames])], complete: true };
   } catch (error) {
     logger.warn(
       '[MCP] Collision audit unavailable; normalization-sensitive references fail closed:',

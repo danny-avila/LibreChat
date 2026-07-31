@@ -77,6 +77,7 @@ const {
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
   resolveMcpServerContext,
+  resolveCollisionAuditNames,
 } = require('../MCP');
 
 describe('resolveConfigServers', () => {
@@ -243,6 +244,45 @@ describe('resolveAllMcpConfigs', () => {
     getAppConfig.mockRejectedValue(new Error('mongo down'));
 
     await expect(resolveAllMcpConfigs('u1', { id: 'u1' })).rejects.toThrow('mongo down');
+  });
+});
+
+describe('resolveCollisionAuditNames', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('restores config names the tolerant merged read silently dropped', async () => {
+    /** `resolveAllMcpConfigs` swallows `ensureConfigServers` failures, so a
+     *  transient init error can omit a config-only server from the merged
+     *  map — the audit would then miss the `foo` / `foo!` collision while
+     *  still claiming completeness. The snapshot-derived raw names must be
+     *  unioned back in. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'foo!': {} } });
+    mockRegistry.ensureConfigServers.mockRejectedValue(new Error('init failed'));
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ foo: { name: 'foo' } });
+
+    const audit = await resolveCollisionAuditNames({
+      rawServerNames: ['foo!'],
+      userId: 'u1',
+      role: 'user',
+    });
+
+    expect(audit.complete).toBe(true);
+    expect([...audit.names].sort()).toEqual(['foo', 'foo!']);
+  });
+
+  it('reports incomplete when the merged read itself fails', async () => {
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'foo!': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockRejectedValue(new Error('redis down'));
+
+    const audit = await resolveCollisionAuditNames({
+      rawServerNames: ['foo!'],
+      userId: 'u1',
+      role: 'user',
+    });
+
+    expect(audit.complete).toBe(false);
+    expect(audit.names).toEqual(['foo!']);
   });
 });
 
