@@ -301,8 +301,9 @@ const REPLACEMENT_RECEIPT_ACK_LUA =
  *   Returns: [previousUserId | "", previousTenantId | "", createdAt, "",
  *             replacedCreatedAt | "", replacedStatus | "", replacedConversationId | ""]
  *   Predecessor mismatch returns the latest retained epoch in the replaced
- *   position plus an eighth active flag ("1" | "0"). Job-only metadata is
- *   empty when that epoch has outlived its hash.
+ *   position plus an eighth active flag and ninth verified flag ("1" | "0").
+ *   Job-only metadata is empty when that epoch has outlived its hash. When all
+ *   evidence expired, the finite expected epoch is echoed with verified=false.
  */
 const JOB_CREATE_LUA =
   'if ARGV[8] ~= "" then local claimRaw = redis.call("GET", KEYS[10]) ' +
@@ -338,10 +339,10 @@ const JOB_CREATE_LUA =
   'if retainedEpoch and (not previousCreatedAt or retainedEpoch > previousCreatedAt) then ' +
   'previousCreatedAt = retainedEpoch observedCreatedAt = retainedEpochRaw ' +
   'observedStatus = nil observedConversationId = nil observedActive = false end ' +
-  'if ARGV[12] ~= "" and observedCreatedAt and observedCreatedAt ~= ARGV[12] then ' +
+  'if ARGV[12] ~= "" and (not observedCreatedAt or observedCreatedAt ~= ARGV[12]) then ' +
   'return { previousUserId or "", previousTenantId or "", "0", "predecessor_mismatch", ' +
-  'observedCreatedAt, observedStatus or "", observedConversationId or "", ' +
-  'observedActive and "1" or "0" } end ' +
+  'observedCreatedAt or ARGV[12], observedStatus or "", observedConversationId or "", ' +
+  'observedActive and "1" or "0", observedCreatedAt and "1" or "0" } end ' +
   'local createdAt = tonumber(ARGV[2]) ' +
   'if not isSafeEpoch(createdAt) then return { "", "", "0", "generation_epoch_corrupt" } end ' +
   'if previousCreatedAt and previousCreatedAt >= MAX_SAFE_EPOCH then ' +
@@ -1184,18 +1185,31 @@ const CLAIM_PARKED_LUA =
   'or (item.recoveringCreatedAt and (type(item.recoveringCreatedAt) ~= "number" or item.recoveringCreatedAt < 0)) then return "" end end ' +
   'if parked.userId ~= ARGV[1] then return "" end ' +
   'if parked.tenantId and parked.tenantId ~= ARGV[2] then return "" end ' +
-  'local protocol = parked.generationProtocolVersion == 2 and ARGV[3] == "2" and 2 or 1 ' +
-  'parked.generationProtocolVersion = protocol ' +
-  'if protocol == 1 then redis.call("DEL", KEYS[1]) ' +
-  'return { cjson.encode(parked), "1" } end ' +
   'local createdAt = redis.call("HGET", KEYS[2], "createdAt") ' +
   'local status = redis.call("HGET", KEYS[2], "status") ' +
-  'local active = createdAt and (status == "running" or status == "requires_action") ' +
-  'local visible = {} for i = 1, #parked.steers do local item = parked.steers[i] ' +
-  'if not active or tostring(item.recoveringCreatedAt or "") ~= createdAt then ' +
-  'item.recoveringCreatedAt = nil visible[#visible + 1] = item end end ' +
+  'local recoveredSteerId = redis.call("HGET", KEYS[2], "recoveredSteerId") ' +
+  'local jobTenantId = redis.call("HGET", KEYS[2], "tenantId") ' +
+  'local activeRecovery = createdAt and (status == "running" or status == "requires_action") ' +
+  'and redis.call("HGET", KEYS[2], "generationProtocolVersion") == "2" ' +
+  'and recoveredSteerId and recoveredSteerId ~= "" ' +
+  'and redis.call("HGET", KEYS[2], "userId") == ARGV[1] ' +
+  'and (not jobTenantId or jobTenantId == ARGV[2]) ' +
+  'local visible = {} local leased = {} for i = 1, #parked.steers do local item = parked.steers[i] ' +
+  'if activeRecovery and item.steerId == recoveredSteerId ' +
+  'and tostring(item.recoveringCreatedAt or "") == createdAt then leased[#leased + 1] = item ' +
+  'else item.recoveringCreatedAt = nil visible[#visible + 1] = item end end ' +
+  'local protocol = parked.generationProtocolVersion == 2 and ARGV[3] == "2" and 2 or 1 ' +
+  'if protocol == 1 and #leased == 0 then parked.generationProtocolVersion = 1 ' +
+  'parked.steers = visible redis.call("DEL", KEYS[1]) ' +
+  'return { cjson.encode(parked), "1" } end ' +
   'if #visible == 0 then return "" end parked.steers = visible ' +
-  'return { cjson.encode(parked), "2" }';
+  'if protocol == 1 then local ttl = redis.call("PTTL", KEYS[1]) ' +
+  'local retained = { userId = parked.userId, generationProtocolVersion = 2, steers = leased } ' +
+  'if parked.tenantId then retained.tenantId = parked.tenantId end ' +
+  'redis.call("SET", KEYS[1], cjson.encode(retained)) ' +
+  'if ttl > 0 then redis.call("PEXPIRE", KEYS[1], ttl) end ' +
+  'parked.generationProtocolVersion = 1 end ' +
+  'return { cjson.encode(parked), tostring(protocol) }';
 
 /** Commit a leased recovery only after its ordinary user message is durable. */
 const CONSUME_PARKED_STEER_LUA =
@@ -1756,6 +1770,7 @@ export class RedisJobStore implements IJobStoreV2 {
           previousOwner[7] === '1' ||
           currentStatus === 'running' ||
           currentStatus === 'requires_action',
+        verified: previousOwner[8] !== '0',
         ...(currentStatus !== undefined && { status: currentStatus }),
         ...(currentConversationId !== undefined && { conversationId: currentConversationId }),
       });

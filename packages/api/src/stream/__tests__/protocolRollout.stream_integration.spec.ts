@@ -113,6 +113,59 @@ describe('Redis generation protocol rollout bridge', () => {
     ).toBeUndefined();
   });
 
+  test('requested v1 preserves a source leased to an active v2 recovery', async () => {
+    const streamId = 'redis-protocol-park-active-v2-lease';
+    const job = await store.createJob(streamId, 'user-1', undefined, undefined, {
+      generationProtocolVersion: 2,
+    });
+    const leased = { steerId: 'redis-leased-v2', text: 'leased words', createdAt: 1 };
+    const legacy = { steerId: 'redis-visible-v1', text: 'legacy words', createdAt: 2 };
+    await store.parkSteers(
+      streamId,
+      JSON.stringify({ userId: 'user-1', steers: [leased, legacy] }),
+      job.createdAt,
+    );
+    const recovery = await store.createJob(
+      streamId,
+      'user-1',
+      undefined,
+      undefined,
+      { generationProtocolVersion: 2 },
+      leased.steerId,
+      undefined,
+      undefined,
+      undefined,
+      { text: leased.text, fileIds: [] },
+    );
+
+    const downgraded = await store.claimParkedSteersDetailed(streamId, 'user-1', undefined, 1);
+    expect(downgraded?.generationProtocolVersion).toBe(1);
+    expect(JSON.parse(downgraded!.payload)).toEqual({
+      userId: 'user-1',
+      generationProtocolVersion: 1,
+      steers: [legacy],
+    });
+    await expect(
+      store.claimParkedSteersDetailed(streamId, 'user-1', undefined, 2),
+    ).resolves.toBeUndefined();
+    await expect(redis.exists(`stream:{${streamId}}:parked`)).resolves.toBe(1);
+
+    await expect(
+      store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'error',
+        expectCreatedAt: recovery.createdAt,
+        patch: { error: 'recovery failed', completedAt: Date.now() },
+      }),
+    ).resolves.toBe(true);
+    const exposed = await store.claimParkedSteersDetailed(streamId, 'user-1', undefined, 2);
+    expect(JSON.parse(exposed!.payload)).toEqual({
+      userId: 'user-1',
+      generationProtocolVersion: 2,
+      steers: [leased],
+    });
+  });
+
   test('cannot lease a legacy parked item into a v2 generation', async () => {
     const streamId = 'redis-protocol-v1-source';
     const job = await store.createJob(streamId, 'user-1', undefined, undefined, {

@@ -189,12 +189,19 @@ export type ReplacedGeneration = Pick<
   'createdAt' | 'status' | 'conversationId'
 >;
 
-/** Latest generation epoch observed by a conditional create. A retained epoch
+/** Latest generation epoch checked by a conditional create. A retained epoch
  * can outlive its job hash, so inactive mismatches intentionally omit job-only
- * metadata while still telling the caller which generation won the race. */
+ * metadata while still telling the caller which generation won the race.
+ * When all predecessor evidence has expired, `createdAt` safely echoes the
+ * caller's finite expected epoch and `verified` is false; the create is still
+ * rejected, but response consumers can preserve the queued turn without
+ * mistaking that fallback for an observed generation. */
 export type GenerationPredecessorState = Pick<SerializableJobData, 'createdAt'> &
   Partial<Pick<SerializableJobData, 'status' | 'conversationId'>> & {
     active: boolean;
+    /** False only when neither the job nor its retained epoch was observable.
+     * Missing values are compatible with pre-marker mismatch producers. */
+    verified?: boolean;
   };
 
 export interface CreatedJobData extends SerializableJobData {

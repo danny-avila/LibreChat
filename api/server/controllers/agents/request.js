@@ -1829,16 +1829,25 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         if (error?.code === 'GENERATION_PREDECESSOR_MISMATCH') {
           const currentJob = error.currentJob;
           const currentStatus = currentJob?.status;
+          const predecessorVerified =
+            currentJob != null &&
+            Number.isSafeInteger(currentJob.createdAt) &&
+            currentJob.createdAt >= 0 &&
+            currentJob.verified !== false;
           sendGenerationJson(
             res,
             409,
             {
               status: 'predecessor_mismatch',
               code: 'GENERATION_PREDECESSOR_MISMATCH',
-              error: 'A newer generation became current before this request could start.',
+              error:
+                predecessorVerified
+                  ? 'A newer generation became current before this request could start.'
+                  : 'The prior generation could not be verified. Please retry.',
               streamId,
               conversationId: currentJob?.conversationId ?? conversationId,
               generationCreatedAt: currentJob?.createdAt,
+              predecessorVerified,
               active:
                 typeof currentJob?.active === 'boolean'
                   ? currentJob.active

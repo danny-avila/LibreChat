@@ -1,5 +1,5 @@
 import { InMemoryEventTransport } from '../implementations/InMemoryEventTransport';
-import { InMemoryJobStore } from '../implementations/InMemoryJobStore';
+import { InMemoryJobStore, PARKED_STEERS_TTL_MS } from '../implementations/InMemoryJobStore';
 import { JobPredecessorMismatchError } from '../interfaces/IJobStore';
 import { GenerationJobManagerClass } from '../GenerationJobManager';
 
@@ -84,6 +84,7 @@ describe('generation predecessor create fence', () => {
         currentJob: {
           createdAt: predecessor.createdAt,
           active: true,
+          verified: true,
           status: 'running',
           conversationId: streamId,
         },
@@ -122,6 +123,35 @@ describe('generation predecessor create fence', () => {
     }
   });
 
+  test('expired predecessor evidence rejects conditionally without creating state', async () => {
+    const store = new InMemoryJobStore();
+    const streamId = 'predecessor-fence-expired-evidence';
+    const base = Date.now();
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(base);
+    try {
+      const predecessor = await store.createJob(streamId, 'owner-1', streamId, undefined, {
+        generationProtocolVersion: 2,
+      });
+      await expect(store.deleteJob(streamId, predecessor.createdAt)).resolves.toBe(true);
+      nowSpy.mockReturnValue(base + PARKED_STEERS_TTL_MS + 1);
+
+      await expect(
+        createConditionalJob(store, streamId, predecessor.createdAt),
+      ).rejects.toMatchObject({
+        code: 'GENERATION_PREDECESSOR_MISMATCH',
+        currentJob: {
+          createdAt: predecessor.createdAt,
+          active: false,
+          verified: false,
+        },
+      });
+      await expect(store.getJob(streamId)).resolves.toBeNull();
+    } finally {
+      nowSpy.mockRestore();
+      await store.destroy();
+    }
+  });
+
   test('a retained intervening epoch rejects a delayed create after its job disappeared', async () => {
     const store = new InMemoryJobStore();
     const streamId = 'predecessor-fence-retained-intervening';
@@ -143,6 +173,7 @@ describe('generation predecessor create fence', () => {
         currentJob: {
           createdAt: intervening.createdAt,
           active: false,
+          verified: true,
         },
       });
       await expect(store.getJob(streamId)).resolves.toBeNull();

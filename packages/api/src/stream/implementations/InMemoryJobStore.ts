@@ -334,14 +334,14 @@ export class InMemoryJobStore implements IJobStoreV2 {
       const currentCreatedAt = current?.createdAt ?? this.getRetainedGenerationEpoch(streamId);
       if (
         expectedPredecessorCreatedAt == null ||
-        currentCreatedAt == null ||
         currentCreatedAt === expectedPredecessorCreatedAt
       ) {
         return;
       }
       throw new JobPredecessorMismatchError({
-        createdAt: currentCreatedAt,
+        createdAt: currentCreatedAt ?? expectedPredecessorCreatedAt,
         active: current?.status === 'running' || current?.status === 'requires_action',
+        verified: currentCreatedAt != null,
         ...(current !== undefined && { status: current.status }),
         ...(current?.conversationId !== undefined && { conversationId: current.conversationId }),
       });
@@ -1968,7 +1968,11 @@ export class InMemoryJobStore implements IJobStoreV2 {
       userId?: string;
       tenantId?: string;
       generationProtocolVersion?: unknown;
-      steers?: Array<{ clientSteerId?: string; recoveringCreatedAt?: number }>;
+      steers?: Array<
+        ReturnType<typeof toPendingSteer> & {
+          recoveringCreatedAt?: number;
+        }
+      >;
     };
     try {
       parsed = JSON.parse(parked.payload) as typeof parsed;
@@ -1989,27 +1993,52 @@ export class InMemoryJobStore implements IJobStoreV2 {
     ) {
       return undefined;
     }
+    const job = this.jobs.get(streamId);
+    const activeRecovery =
+      job?.generationProtocolVersion === 2 &&
+      (job.status === 'running' || job.status === 'requires_action') &&
+      typeof job.recoveredSteerId === 'string' &&
+      job.recoveredSteerId.length > 0 &&
+      job.userId === ownerUserId &&
+      (job.tenantId == null || job.tenantId === ownerTenantId);
+    const leased: NonNullable<typeof parsed.steers> = [];
+    const visible: NonNullable<typeof parsed.steers> = [];
+    for (const item of parsed.steers) {
+      if (
+        activeRecovery &&
+        item.steerId === job.recoveredSteerId &&
+        item.recoveringCreatedAt === job.createdAt
+      ) {
+        leased.push(item);
+        continue;
+      }
+      const { recoveringCreatedAt: _recoveringCreatedAt, ...visibleItem } = item;
+      visible.push(visibleItem);
+    }
     const generationProtocolVersion =
       parsed.generationProtocolVersion === 2 && requestedProtocolVersion === 2 ? 2 : 1;
-    if (generationProtocolVersion === 1) {
-      // Preserve the legacy GETDEL contract. A v1 client copies these words
-      // into its ordinary local queue and there is no server-side lease.
+    if (generationProtocolVersion === 1 && leased.length === 0) {
+      // Preserve the legacy GETDEL contract when no v2 recovery owns a source.
       this.parkedSteers.delete(streamId);
       return {
         generationProtocolVersion,
         payload: JSON.stringify({
           ...parsed,
           generationProtocolVersion,
+          steers: visible,
         }),
       };
     }
-    const job = this.jobs.get(streamId);
-    const hideLease = job?.status === 'running' || job?.status === 'requires_action';
-    const visible = parsed.steers.filter(
-      (item) => !(hideLease && item.recoveringCreatedAt === job?.createdAt),
-    );
     if (visible.length === 0) {
       return undefined;
+    }
+    if (generationProtocolVersion === 1) {
+      parked.payload = JSON.stringify({
+        userId: parsed.userId,
+        ...(parsed.tenantId != null && { tenantId: parsed.tenantId }),
+        generationProtocolVersion: 2,
+        steers: leased,
+      });
     }
     return {
       generationProtocolVersion,
@@ -2017,7 +2046,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
         userId: parsed.userId,
         ...(parsed.tenantId != null && { tenantId: parsed.tenantId }),
         generationProtocolVersion,
-        steers: visible.map(({ recoveringCreatedAt: _recoveringCreatedAt, ...item }) => item),
+        steers: visible,
       }),
     };
   }

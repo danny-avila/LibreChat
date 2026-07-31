@@ -80,6 +80,7 @@ describe('Redis generation predecessor create fence', () => {
       currentJob: {
         createdAt: predecessor.createdAt,
         active: true,
+        verified: true,
         status: 'running',
         conversationId: streamId,
       },
@@ -139,6 +140,29 @@ describe('Redis generation predecessor create fence', () => {
     expect(replacement.replacedJob).toBeUndefined();
   });
 
+  test('missing predecessor evidence rejects conditionally without recreating state', async () => {
+    const streamId = 'redis-predecessor-fence-expired-evidence';
+    const predecessor = await store.createJob(streamId, 'owner-1', streamId, undefined, {
+      generationProtocolVersion: 2,
+    });
+    await expect(store.deleteJob(streamId, predecessor.createdAt)).resolves.toBe(true);
+    const retainedEpochKey = `stream:{${streamId}}:generation-epoch`;
+    await expect(redis.del(retainedEpochKey)).resolves.toBe(1);
+
+    await expect(
+      createConditionalJob(store, streamId, predecessor.createdAt, 'redis-expired-attempt'),
+    ).rejects.toMatchObject({
+      code: 'GENERATION_PREDECESSOR_MISMATCH',
+      currentJob: {
+        createdAt: predecessor.createdAt,
+        active: false,
+        verified: false,
+      },
+    });
+    await expect(store.getJob(streamId)).resolves.toBeNull();
+    await expect(redis.get(retainedEpochKey)).resolves.toBeNull();
+  });
+
   test('a retained intervening epoch rejects a delayed create after its job disappeared', async () => {
     const streamId = 'redis-predecessor-fence-retained-intervening';
     const predecessor = await store.createJob(streamId, 'owner-1', streamId, undefined, {
@@ -165,6 +189,7 @@ describe('Redis generation predecessor create fence', () => {
       currentJob: {
         createdAt: intervening.createdAt,
         active: false,
+        verified: true,
       },
     });
     await expect(store.getJob(streamId)).resolves.toBeNull();

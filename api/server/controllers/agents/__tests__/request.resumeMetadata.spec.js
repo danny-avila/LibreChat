@@ -1795,6 +1795,7 @@ describe('ResumableAgentController resume metadata', () => {
       createdAt: 2000,
       status: 'running',
       conversationId: 'conversation-123',
+      verified: true,
     };
     mockGenerationJobManager.createJob.mockRejectedValue(mismatch);
     const req = {
@@ -1829,6 +1830,7 @@ describe('ResumableAgentController resume metadata', () => {
       streamId: 'conversation-123',
       conversationId: 'conversation-123',
       generationCreatedAt: 2000,
+      predecessorVerified: true,
       active: true,
       generationProtocolVersion: 2,
     });
@@ -1840,6 +1842,57 @@ describe('ResumableAgentController resume metadata', () => {
       expect.objectContaining(DEFAULT_OWNED_CLAIM),
     );
     expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
+  });
+
+  it('returns a finite fail-closed mismatch when predecessor evidence expired', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ generationProtocolVersion: 2 }),
+    );
+    const mismatch = new Error('predecessor evidence expired');
+    mismatch.code = 'GENERATION_PREDECESSOR_MISMATCH';
+    mismatch.currentJob = {
+      createdAt: 1000,
+      active: false,
+      verified: false,
+    };
+    mockGenerationJobManager.createJob.mockRejectedValue(mismatch);
+    const req = {
+      user: { id: 'user-123' },
+      headers: { 'x-librechat-generation-protocol': '2' },
+      body: {
+        text: 'Queued follow-up C',
+        messageId: 'queued-message-c',
+        clientRequestId: 'queued-attempt-c',
+        expectedPredecessorCreatedAt: 1000,
+        conversationId: 'conversation-123',
+        generationProtocolVersion: 2,
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      status: 'predecessor_mismatch',
+      code: 'GENERATION_PREDECESSOR_MISMATCH',
+      error: 'The prior generation could not be verified. Please retry.',
+      streamId: 'conversation-123',
+      conversationId: 'conversation-123',
+      generationCreatedAt: 1000,
+      predecessorVerified: false,
+      active: false,
+      generationProtocolVersion: 2,
+    });
+    expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
+    expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
+      'user-123',
+      'queued-attempt-c',
+      'conversation-123',
+      expect.objectContaining(DEFAULT_OWNED_CLAIM),
+    );
   });
 
   it('does not consume a recovered steer when client initialization fails before persistence', async () => {
