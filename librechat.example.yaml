@@ -895,8 +895,8 @@ endpoints:
 #     # enable all starters (sk_prefix, bearer_header, api_key_header).
 #     starterPatterns: [sk_prefix, bearer_header, api_key_header]
 #     # (optional) Operator-defined patterns. Each entry needs id,
-#     # label, and a JavaScript-flavor regex; the regex is validated
-#     # at config load time.
+#     # label, and a regex in RE2 syntax (backreferences and lookaround
+#     # are not supported); the regex is validated at config load time.
 #     customPatterns:
 #       - id: anthropic_api_key
 #         label: Anthropic API key

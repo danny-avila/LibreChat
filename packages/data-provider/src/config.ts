@@ -1882,6 +1882,12 @@ const messageFilterPiiCustomPatternSchema = z.object({
     .min(1)
     .refine(
       (value) => {
+        // The server runs these patterns through a linear-time engine (RE2), which does not
+        // support backreferences or lookaround. Reject those at config load with actionable
+        // feedback instead of letting the runtime silently drop the pattern after upgrade.
+        if (/\\[1-9]/.test(value) || /\(\?<?[=!]/.test(value)) {
+          return false;
+        }
         try {
           new RegExp(value, 'g');
           return true;
@@ -1889,7 +1895,7 @@ const messageFilterPiiCustomPatternSchema = z.object({
           return false;
         }
       },
-      { message: 'Invalid regex' },
+      { message: 'Unsupported regex: backreferences and lookaround are not supported' },
     ),
 });
 
