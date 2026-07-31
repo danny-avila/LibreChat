@@ -225,8 +225,8 @@ export function SubagentPrompt({ prompt }: { prompt: string }): JSX.Element {
         </span>
         <span
           className={cn(
-            'min-w-0 flex-1 truncate text-xs text-text-secondary transition-opacity duration-200',
-            expanded ? 'opacity-0' : 'opacity-100',
+            'min-w-0 flex-1 truncate text-xs text-text-secondary transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none',
+            expanded ? 'translate-y-2 opacity-0' : 'translate-y-0 opacity-100',
           )}
         >
           {preview}
@@ -242,7 +242,12 @@ export function SubagentPrompt({ prompt }: { prompt: string }): JSX.Element {
       </button>
       <div id={contentId} style={expandStyle} aria-hidden={!expanded || undefined}>
         <div className="overflow-hidden" ref={expandRef}>
-          <div className="max-h-64 overflow-y-auto px-4 pb-4 pt-0.5">
+          <div
+            className={cn(
+              'max-h-64 overflow-y-auto px-4 pb-4 pt-0.5 transition-transform duration-300 ease-out motion-reduce:transition-none',
+              expanded ? 'translate-y-0' : '-translate-y-2',
+            )}
+          >
             <div className="markdown prose prose-sm message-content light dark:prose-invert w-full max-w-none break-words text-text-primary dark:text-gray-100">
               <MarkdownLite content={prompt} codeExecution={false} />
             </div>
