@@ -614,6 +614,29 @@ describe('MCP OAuth Race Condition Fixes', () => {
       expect(calls).toEqual([`mcp_oauth_state:${state}`, `mcp_oauth:${flowId}`]);
     });
 
+    it('leaves the flow in place when the mapping delete hits a storage error', async () => {
+      const flowManager = createFlowManager();
+      const flowId = 'user1:test-server';
+      const state = 'failing-state-jkl012';
+
+      await flowManager.initFlow(flowId, 'mcp_oauth', { state });
+      await MCPOAuthHandler.storeStateMapping(state, flowId, flowManager);
+
+      const realDeleteFlow = flowManager.deleteFlow.bind(flowManager);
+      jest.spyOn(flowManager, 'deleteFlow').mockImplementation(async (id, type) => {
+        if (type === 'mcp_oauth_state') {
+          return false;
+        }
+        return realDeleteFlow(id, type);
+      });
+
+      await expect(MCPOAuthHandler.deleteFlowAndStateMapping(flowId, flowManager)).rejects.toThrow(
+        'Failed to delete OAuth state mapping',
+      );
+
+      expect(await flowManager.getFlowState(flowId, 'mcp_oauth')).toBeTruthy();
+    });
+
     it('still deletes the flow when metadata carries no state', async () => {
       const flowManager = createFlowManager();
       const flowId = 'user1:stateless-server';

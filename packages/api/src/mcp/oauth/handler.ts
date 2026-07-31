@@ -1290,21 +1290,23 @@ export class MCPOAuthHandler {
   /**
    * Deletes an orphaned state mapping when a flow is replaced.
    * Prevents old authorization URLs from resolving after a flow restart.
+   * Returns `false` when the underlying store rejected the delete.
    */
   static async deleteStateMapping(
     state: string,
     flowManager: FlowStateManager<MCPOAuthTokens | null>,
-  ): Promise<void> {
-    await flowManager.deleteFlow(state, this.STATE_MAP_TYPE);
+  ): Promise<boolean> {
+    return flowManager.deleteFlow(state, this.STATE_MAP_TYPE);
   }
 
   /**
    * Deletes an OAuth flow together with its state mapping, for teardown paths
    * that don't already hold the flow (e.g. server uninstall). The mapping is
-   * deleted first on purpose: a crash between the two deletes then leaves an
-   * unresolvable flow that fails closed and expires, whereas flow-first would
-   * orphan the mapping, and its state would resolve against the next flow
-   * created under the same deterministic flowId.
+   * deleted first on purpose, and the flow is left in place when the mapping
+   * delete hits a storage error: an unresolvable flow fails closed and the
+   * next replacement retries both deletes, whereas deleting the flow past a
+   * failed mapping delete would orphan the mapping, and its state would
+   * resolve against the next flow created under the same deterministic flowId.
    */
   static async deleteFlowAndStateMapping(
     flowId: string,
@@ -1313,7 +1315,12 @@ export class MCPOAuthHandler {
     const flowState = await flowManager.getFlowState(flowId, this.FLOW_TYPE);
     const metadata = flowState?.metadata as MCPOAuthFlowMetadata | undefined;
     if (typeof metadata?.state === 'string') {
-      await this.deleteStateMapping(metadata.state, flowManager);
+      const mappingDeleted = await this.deleteStateMapping(metadata.state, flowManager);
+      if (!mappingDeleted) {
+        throw new Error(
+          `Failed to delete OAuth state mapping for flow ${flowId}; leaving the flow in place`,
+        );
+      }
     }
     await flowManager.deleteFlow(flowId, this.FLOW_TYPE);
   }
