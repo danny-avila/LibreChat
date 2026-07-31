@@ -98,6 +98,11 @@ export interface SerializableJobData {
    */
   preemptCapable?: boolean;
 
+  /** Explicitly false until the provider-owning replica has installed its
+   * generation-fenced abort subscription. Missing is conservative legacy
+   * evidence and must be treated like true by replacement handoff. */
+  providerAbortReady?: boolean;
+
   /** Whether the user-message created event has been emitted */
   createdEventEmitted?: boolean;
 
@@ -186,7 +191,7 @@ export interface SerializableJobData {
  * reconstruct it without exposing it through normal job serialization. */
 export type ReplacedGeneration = Pick<
   SerializableJobData,
-  'createdAt' | 'status' | 'conversationId'
+  'createdAt' | 'status' | 'conversationId' | 'providerAbortReady'
 >;
 
 /** Latest generation epoch checked by a conditional create. A retained epoch
@@ -1234,9 +1239,9 @@ export interface IEventTransport {
    */
   emitAbort?(streamId: string, generationId?: number): void;
 
-  /** Awaitable abort publication used when a caller must retain a durable
-   * retry receipt unless the cross-replica signal was accepted by Redis. */
-  emitAbortConfirmed?(streamId: string, generationId?: number): Promise<void | number>;
+  /** Awaitable, generation-correlated abort handoff. Resolves true only after
+   * the replica owning that generation processes the abort. */
+  emitAbortConfirmed?(streamId: string, generationId: number): Promise<boolean>;
 
   /** Publish a predecessor DONE only while the current job's opaque creation
    * attempt still carries that predecessor in its durable receipt chain. */
@@ -1257,7 +1262,8 @@ export interface IEventTransport {
    */
   onAbort?(
     streamId: string,
-    callback: (generationId?: number) => void,
+    /** Return true only when this replica owns and stopped the tagged generation. */
+    callback: (generationId?: number) => void | boolean,
   ): void | (() => void) | Promise<void | (() => void)>;
 
   /**

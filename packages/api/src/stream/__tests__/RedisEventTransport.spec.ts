@@ -703,7 +703,7 @@ describe('RedisEventTransport', () => {
     await manager.destroy();
   });
 
-  it('releases a registration that loses initialization without detaching its replacement', async () => {
+  it('resubscribes a replacement after an unexposed registration loses initialization', async () => {
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();
     let signalSubscriptionStarted: (() => void) | undefined;
@@ -740,7 +740,8 @@ describe('RedisEventTransport', () => {
     );
     const replacement = await replacementCreation;
 
-    expect(mockSubscriber.unsubscribe).not.toHaveBeenCalled();
+    expect(mockSubscriber.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(mockSubscriber.subscribe).toHaveBeenCalledTimes(2);
 
     getMessageHandler(mockSubscriber)(
       `stream:{${streamId}}:events`,
@@ -748,7 +749,7 @@ describe('RedisEventTransport', () => {
     );
 
     expect(replacement.abortController.signal.aborted).toBe(true);
-    expect(mockSubscriber.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(mockSubscriber.unsubscribe).toHaveBeenCalledTimes(2);
 
     await manager.destroy();
   });
@@ -972,7 +973,7 @@ describe('RedisEventTransport', () => {
     transport.destroy();
   });
 
-  it('accepts zero-listener confirmed abort and replacement publication results', async () => {
+  it('rejects a confirmed abort with no generation-owner acknowledgement', async () => {
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();
     const transport = new RedisEventTransport(
@@ -982,10 +983,63 @@ describe('RedisEventTransport', () => {
     mockPublisher.publish.mockResolvedValueOnce(0);
     mockPublisher.eval.mockResolvedValueOnce(0);
 
-    await expect(transport.emitAbortConfirmed('zero-listener', 1234)).resolves.toBe(0);
+    await expect(transport.emitAbortConfirmed('zero-listener', 1234)).resolves.toBe(false);
     await expect(
       transport.emitReplacedDoneConfirmed('zero-listener', { final: true }, 1234, 'attempt'),
     ).resolves.toBeUndefined();
+
+    transport.destroy();
+  });
+
+  it('correlates an abort acknowledgement to its request and generation', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'generation-correlated-abort-ack';
+    const channel = `stream:{${streamId}}:events`;
+    const messageHandler = getMessageHandler(mockSubscriber);
+    let resolveAbortMessage!: (message: { abortRequestId: string }) => void;
+    const abortPublished = new Promise<{ abortRequestId: string }>((resolve) => {
+      resolveAbortMessage = resolve;
+    });
+    mockPublisher.publish.mockImplementation(async (_channel: string, payload: string) => {
+      const message = JSON.parse(payload) as { type: string; abortRequestId: string };
+      if (message.type === 'abort') {
+        resolveAbortMessage(message);
+      }
+      return 4;
+    });
+
+    const confirmation = transport.emitAbortConfirmed(streamId, 1234);
+    const abortMessage = await abortPublished;
+    let settled = false;
+    void confirmation.then(() => {
+      settled = true;
+    });
+
+    messageHandler(
+      channel,
+      JSON.stringify({
+        type: 'abort_ack',
+        generationId: 5678,
+        abortRequestId: abortMessage.abortRequestId,
+      }),
+    );
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    messageHandler(
+      channel,
+      JSON.stringify({
+        type: 'abort_ack',
+        generationId: 1234,
+        abortRequestId: abortMessage.abortRequestId,
+      }),
+    );
+    await expect(confirmation).resolves.toBe(true);
 
     transport.destroy();
   });

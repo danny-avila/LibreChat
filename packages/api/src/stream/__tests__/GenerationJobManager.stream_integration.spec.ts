@@ -2431,12 +2431,18 @@ describe('GenerationJobManager Integration Tests', () => {
    * duplicates a dedicated subscriber connection per call. Separate OS
    * processes would exercise the same objects over the same Redis.
    */
-  describeRedis('Cross-Replica Preempt (Redis, two manager instances)', () => {
+  describeRedis('Cross-Replica Runtime Signals (Redis, multiple manager instances)', () => {
     const replicas: GenerationJobManagerClass[] = [];
 
-    function createReplica(): GenerationJobManagerClass {
+    function createReplica(redisSubscriber?: Redis | Cluster): GenerationJobManagerClass {
       const manager = new GenerationJobManagerClass();
-      manager.configure(createStreamServices({ useRedis: true, redisClient: ioredisClient! }));
+      manager.configure(
+        createStreamServices({
+          useRedis: true,
+          redisClient: ioredisClient!,
+          redisSubscriber,
+        }),
+      );
       manager.initialize();
       replicas.push(manager);
       return manager;
@@ -2478,6 +2484,61 @@ describe('GenerationJobManager Integration Tests', () => {
       }
       throw new Error(`Timed out waiting for ${what}`);
     }
+
+    test('a replacement waits for the exact generation owner to acknowledge abort', async () => {
+      const owner = createReplica();
+      const router = createReplica();
+      const streamId = `${testPrefix}-replacement-owner-ack-${Date.now()}`;
+
+      const predecessor = await owner.createJob(streamId, 'user-1', streamId, {
+        initialMetadata: { generationProtocolVersion: 2 },
+      });
+      const replacement = await router.createJob(streamId, 'user-1', streamId, {
+        initialMetadata: { generationProtocolVersion: 2 },
+      });
+
+      expect(predecessor.abortController.signal.aborted).toBe(true);
+      expect(replacement.abortController.signal.aborted).toBe(false);
+      expect(await router.getJobStore().getJob(streamId)).toMatchObject({
+        createdAt: replacement.createdAt,
+        status: 'running',
+      });
+    }, 40000);
+
+    test('a bystander subscriber cannot acknowledge for a disconnected generation owner', async () => {
+      const ownerSubscriber = (ioredisClient as Redis).duplicate();
+      const owner = createReplica(ownerSubscriber);
+      const bystander = createReplica();
+      const router = createReplica();
+      const streamId = `${testPrefix}-replacement-bystander-ack-${Date.now()}`;
+
+      const predecessor = await owner.createJob(streamId, 'user-1', streamId, {
+        initialMetadata: { generationProtocolVersion: 2 },
+      });
+      const bystanderJob = await bystander.getJob(streamId);
+      const bystanderSubscription = await bystander.subscribe(streamId, () => undefined);
+      expect(bystanderJob?.createdAt).toBe(predecessor.createdAt);
+      expect(bystanderSubscription).not.toBeNull();
+
+      ownerSubscriber.disconnect();
+
+      await expect(
+        router.createJob(streamId, 'user-1', streamId, {
+          initialMetadata: { generationProtocolVersion: 2 },
+        }),
+      ).rejects.toThrow('predecessor handoff could not be confirmed');
+
+      expect(predecessor.abortController.signal.aborted).toBe(false);
+      expect(bystanderJob?.abortController.signal.aborted).toBe(true);
+      expect(await router.getJobStore().getJob(streamId)).toMatchObject({
+        status: 'error',
+        error: 'Generation predecessor handoff could not be confirmed',
+        replacedJobs: [
+          expect.objectContaining({ createdAt: predecessor.createdAt, status: 'running' }),
+        ],
+      });
+      bystanderSubscription?.unsubscribe();
+    }, 40000);
 
     test('a steer routed to a non-owning replica arms the owner and flips its poll', async () => {
       const owner = createReplica();

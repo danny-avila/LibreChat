@@ -278,7 +278,8 @@ describe('Redis generation protocol rollout bridge', () => {
   });
 
   test('recovers a lost create reply, repairs membership, and stops the exact raced predecessor', async () => {
-    const abortHandlers = new Map<string, Set<(generationId?: number) => void>>();
+    const abortHandlers = new Map<string, Set<(generationId?: number) => void | boolean>>();
+    const acknowledgedAborts = new Map<string, Set<number>>();
     const eventTransport = Object.assign(new InMemoryEventTransport(), {
       emitAbort(streamId: string, generationId?: number) {
         for (const handler of abortHandlers.get(streamId) ?? []) {
@@ -293,6 +294,21 @@ describe('Redis generation protocol rollout bridge', () => {
         }
         handlers.add(handler);
         return () => handlers?.delete(handler);
+      },
+      async emitAbortConfirmed(streamId: string, generationId: number) {
+        let acknowledged = acknowledgedAborts.get(streamId)?.has(generationId) === true;
+        for (const handler of abortHandlers.get(streamId) ?? []) {
+          acknowledged = handler(generationId) === true || acknowledged;
+        }
+        if (acknowledged) {
+          let generations = acknowledgedAborts.get(streamId);
+          if (generations == null) {
+            generations = new Set();
+            acknowledgedAborts.set(streamId, generations);
+          }
+          generations.add(generationId);
+        }
+        return acknowledged;
       },
     });
     const ownerStore = new RedisJobStore(redis);
@@ -393,7 +409,8 @@ describe('Redis generation protocol rollout bridge', () => {
   });
 
   test('a superseded lost-reply helper delivers but does not acknowledge the crashed successor chain', async () => {
-    const abortHandlers = new Map<string, Set<(generationId?: number) => void>>();
+    const abortHandlers = new Map<string, Set<(generationId?: number) => void | boolean>>();
+    const acknowledgedAborts = new Map<string, Set<number>>();
     const eventTransport = Object.assign(new InMemoryEventTransport(), {
       emitAbort(streamId: string, generationId?: number) {
         for (const handler of abortHandlers.get(streamId) ?? []) {
@@ -408,6 +425,21 @@ describe('Redis generation protocol rollout bridge', () => {
         }
         handlers.add(handler);
         return () => handlers?.delete(handler);
+      },
+      async emitAbortConfirmed(streamId: string, generationId: number) {
+        let acknowledged = acknowledgedAborts.get(streamId)?.has(generationId) === true;
+        for (const handler of abortHandlers.get(streamId) ?? []) {
+          acknowledged = handler(generationId) === true || acknowledged;
+        }
+        if (acknowledged) {
+          let generations = acknowledgedAborts.get(streamId);
+          if (generations == null) {
+            generations = new Set();
+            acknowledgedAborts.set(streamId, generations);
+          }
+          generations.add(generationId);
+        }
+        return acknowledged;
       },
     });
     const ownerStore = new RedisJobStore(redis);
@@ -476,6 +508,7 @@ describe('Redis generation protocol rollout bridge', () => {
       const activePredecessor = await owner.createJob(streamId, userId, streamId, {
         initialMetadata: { generationProtocolVersion: 2 },
       });
+      expect(await ownerStore.getJob(streamId)).toMatchObject({ providerAbortReady: true });
       injectLostCreateReply = true;
 
       await expect(
@@ -485,6 +518,7 @@ describe('Redis generation protocol rollout bridge', () => {
       ).rejects.toThrow('simulated lost C create reply');
 
       expect(crashedSuccessor).toBeDefined();
+      expect(crashedSuccessor).toMatchObject({ providerAbortReady: false });
       expect(activePredecessor.abortController.signal.aborted).toBe(true);
       expect(doneEvents).toContainEqual({
         event: expect.objectContaining({
@@ -498,7 +532,7 @@ describe('Redis generation protocol rollout bridge', () => {
       const retainedChain = JSON.parse((await redis.hget(jobKey, '__replacedGenerations'))!);
       expect(retainedChain).toEqual([
         expect.objectContaining({ createdAt: activePredecessor.createdAt, status: 'running' }),
-        expect.objectContaining({ status: 'running' }),
+        expect.objectContaining({ status: 'running', providerAbortReady: false }),
       ]);
       expect(await crashedStore.getJob(streamId)).toMatchObject({
         createdAt: crashedSuccessor!.createdAt,
@@ -564,6 +598,16 @@ describe('Redis generation protocol rollout bridge', () => {
           __replacedGenerations: JSON.stringify([{ createdAt, status: 'complete' }]),
           __replacedCreatedAt: String(createdAt),
           __replacedStatus: 'complete',
+        }),
+      },
+      {
+        name: 'invalid provider abort readiness',
+        fields: () => ({
+          __replacedGenerations: JSON.stringify([
+            { createdAt: 1, status: 'running', providerAbortReady: 'yes' },
+          ]),
+          __replacedCreatedAt: '1',
+          __replacedStatus: 'running',
         }),
       },
       {
@@ -685,7 +729,7 @@ describe('Redis generation protocol rollout bridge', () => {
         patch: { completedAt: Date.now() },
       }),
     ).toBe(true);
-    const replacement = await store.createJob(
+    await store.createJob(
       streamId,
       'transport-user',
       streamId,
@@ -731,7 +775,6 @@ describe('Redis generation protocol rollout bridge', () => {
       await expect(transport.emitError(streamId, 'stale', first.createdAt)).rejects.toThrow(
         'fenced by a replacement',
       );
-      await expect(transport.emitAbortConfirmed(streamId, replacement.createdAt)).resolves.toBe(0);
     } finally {
       transport.destroy();
     }

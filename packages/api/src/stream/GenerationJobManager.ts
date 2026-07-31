@@ -972,15 +972,18 @@ class GenerationJobManagerClass {
       const currentRuntime = this.runtimeState.get(streamId);
       if (
         currentRuntime !== runtime ||
-        (generationId != null && currentRuntime.createdAt !== generationId) ||
-        currentRuntime.abortController.signal.aborted
+        (generationId != null && currentRuntime.createdAt !== generationId)
       ) {
-        return;
+        return false;
       }
 
-      logger.debug(`[GenerationJobManager] Received cross-replica abort for ${streamId}`);
-      currentRuntime.abortController.abort();
-      this.releaseAbortSubscription(currentRuntime);
+      const ownsProvider = this.ownedJobs.get(streamId) === currentRuntime.createdAt;
+      if (!currentRuntime.abortController.signal.aborted) {
+        logger.debug(`[GenerationJobManager] Received cross-replica abort for ${streamId}`);
+        currentRuntime.abortController.abort();
+        this.releaseAbortSubscription(currentRuntime);
+      }
+      return ownsProvider;
     });
 
     if (typeof unsubscribe === 'function') {
@@ -1278,8 +1281,10 @@ class GenerationJobManagerClass {
       },
     } satisfies t.FinalEvent;
     const localPredecessor = this.runtimeState.get(streamId);
-    const stoppedExactLocalProvider =
-      stopProvider && localPredecessor?.createdAt === predecessorCreatedAt;
+    const ownsExactLocalProvider =
+      localPredecessor?.createdAt === predecessorCreatedAt &&
+      this.ownedJobs.get(streamId) === predecessorCreatedAt;
+    const stoppedExactLocalProvider = stopProvider && ownsExactLocalProvider;
     if (localPredecessor?.createdAt === predecessorCreatedAt) {
       localPredecessor.finalEvent = reconcileEvent;
       if (stopProvider) {
@@ -1301,18 +1306,22 @@ class GenerationJobManagerClass {
     // generation-tagged and serve different consumers; this ordering keeps a
     // remote owner from emitting a last post-handoff chunk.
     let delivered = true;
-    if (stopProvider) {
+    // The in-memory store is process-local: if no exact local runtime owns the
+    // epoch, there cannot be a provider on another replica. Redis deployments
+    // need the explicit owner acknowledgement below.
+    const providerStopConfirmed = stoppedExactLocalProvider || !this._isRedis;
+    if (stopProvider && !providerStopConfirmed) {
       try {
         if (this.eventTransport.emitAbortConfirmed != null) {
-          const receivers = await this.eventTransport.emitAbortConfirmed(
+          const ownerAcknowledged = await this.eventTransport.emitAbortConfirmed(
             streamId,
             predecessorCreatedAt,
           );
-          if (receivers === 0 && !stoppedExactLocalProvider) {
-            throw new Error('No generation owner received the replacement abort');
+          if (!ownerAcknowledged) {
+            throw new Error('Generation owner did not acknowledge the replacement abort');
           }
         } else {
-          this.eventTransport.emitAbort?.(streamId, predecessorCreatedAt);
+          throw new Error('Event transport cannot confirm generation-owner aborts');
         }
       } catch (err) {
         delivered = false;
@@ -1399,7 +1408,11 @@ class GenerationJobManagerClass {
     const acknowledged: number[] = [];
     let allReceiptsDelivered = true;
     for (const receipt of receipts) {
-      const wasActive = receipt.status === 'running' || receipt.status === 'requires_action';
+      // A paused run has already released provider ownership. If resume won
+      // before this atomic replacement, the receipt status is running and the
+      // resumed owner must acknowledge like any other live provider.
+      const hadRunningProvider =
+        receipt.status === 'running' && receipt.providerAbortReady !== false;
       if (
         await this.notifyReplacedGeneration(
           streamId,
@@ -1407,7 +1420,7 @@ class GenerationJobManagerClass {
           receipt.conversationId,
           fallbackConversationId,
           job.creationAttemptId,
-          wasActive,
+          hadRunningProvider,
         )
       ) {
         acknowledged.push(receipt.createdAt);
@@ -2087,6 +2100,11 @@ class GenerationJobManagerClass {
         // briefly unsubscribing the successor.
         this.releaseAbortSubscription(replacedRuntime, true);
       }
+      // This epoch is not exposed to its controller until the durable bit and
+      // owner listener agree. A replacement that wins before this write sees
+      // explicit false and can safely skip an acknowledgement because no
+      // provider could have started; a lost write reply is confirmed below.
+      await this.jobStore.updateJob(streamId, { providerAbortReady: true }, runtime.createdAt);
       /**
        * NOT awaited, unlike abort. Abort must be deliverable before the job
        * is exposed — a missed abort strands a run. A missed preempt only
@@ -2106,7 +2124,8 @@ class GenerationJobManagerClass {
         this.runtimeState.get(streamId) !== runtime ||
         !confirmedJobData ||
         confirmedJobData.createdAt !== runtime.createdAt ||
-        confirmedJobData.status !== 'running'
+        confirmedJobData.status !== 'running' ||
+        confirmedJobData.providerAbortReady !== true
       ) {
         throw new Error('Generation job was replaced during initialization');
       }

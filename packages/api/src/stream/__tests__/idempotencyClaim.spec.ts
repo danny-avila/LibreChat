@@ -684,11 +684,11 @@ describe('GenerationJobManager start-generation claim', () => {
     );
   });
 
-  it('fails closed and retains the receipt when no remote owner receives the abort', async () => {
+  it('fails closed and retains the receipt when no remote owner acknowledges the abort', async () => {
     await manager.destroy();
     store = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
     const transport = new InMemoryEventTransport() as InMemoryEventTransport & IEventTransport;
-    transport.emitAbortConfirmed = jest.fn().mockResolvedValue(0);
+    transport.emitAbortConfirmed = jest.fn().mockResolvedValue(false);
     transport.emitReplacedDoneConfirmed = jest.fn().mockResolvedValue(undefined);
     manager = new GenerationJobManagerClass();
     manager.configure({ jobStore: store, eventTransport: transport, isRedis: true });
@@ -708,6 +708,7 @@ describe('GenerationJobManager start-generation claim', () => {
       undefined,
       'remote-predecessor-attempt',
     );
+    await store.updateJob(streamId, { providerAbortReady: true }, predecessor.createdAt);
     const acknowledgeSpy = jest.spyOn(store, 'acknowledgeReplacedJobs');
 
     await expect(

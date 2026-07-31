@@ -299,7 +299,8 @@ const REPLACEMENT_RECEIPT_ACK_LUA =
  *          expectedPredecessorCreatedAt | "",
  *          ...hsetPairs]
  *   Returns: [previousUserId | "", previousTenantId | "", createdAt, "",
- *             replacedCreatedAt | "", replacedStatus | "", replacedConversationId | ""]
+ *             replacedCreatedAt | "", replacedStatus | "", replacedConversationId | "",
+ *             replacedProviderAbortReady | ""]
  *   Predecessor mismatch returns the latest retained epoch in the replaced
  *   position plus an eighth active flag and ninth verified flag ("1" | "0").
  *   Job-only metadata is empty when that epoch has outlived its hash. When all
@@ -320,6 +321,7 @@ const JOB_CREATE_LUA =
   'local replacedCreatedAt = redis.call("HGET", KEYS[1], "createdAt") ' +
   'local replacedStatus = redis.call("HGET", KEYS[1], "status") ' +
   'local replacedConversationId = redis.call("HGET", KEYS[1], "conversationId") ' +
+  'local replacedProviderAbortReady = redis.call("HGET", KEYS[1], "providerAbortReady") ' +
   'local replacedProtocol = redis.call("HGET", KEYS[1], "generationProtocolVersion") ' +
   'local MAX_SAFE_EPOCH = 9007199254740991 ' +
   'local function isSafeEpoch(value) return type(value) == "number" and value >= 0 ' +
@@ -374,6 +376,7 @@ const JOB_CREATE_LUA =
   'or item.createdAt <= lastReplacementEpoch ' +
   'or (previousJobExists == 1 and item.createdAt >= replacedEpoch) ' +
   'or (item.conversationId and type(item.conversationId) ~= "string") ' +
+  'or (item.providerAbortReady ~= nil and type(item.providerAbortReady) ~= "boolean") ' +
   'or replacementSeen[tostring(item.createdAt)] then ' +
   'return { "", "", "0", "replacement_receipt_corrupt" } end ' +
   'lastReplacementEpoch = item.createdAt replacementSeen[tostring(item.createdAt)] = true ' +
@@ -397,6 +400,7 @@ const JOB_CREATE_LUA =
   'if #replacementChain >= 32 then return { "", "", "0", "replacement_chain_full" } end ' +
   'local replaced = { createdAt = replacedEpoch, status = replacedStatus } ' +
   'if replacedConversationId then replaced.conversationId = replacedConversationId end ' +
+  'if replacedProviderAbortReady then replaced.providerAbortReady = replacedProviderAbortReady == "1" end ' +
   'replacementChain[#replacementChain + 1] = replaced replacementSeen[tostring(replacedEpoch)] = true end ' +
   'local recoveredSteerId = ARGV[5] local expectedRecovery = nil ' +
   'if recoveredSteerId ~= "" and ARGV[10] ~= "2" then return { "", "", "0", "recovery_payload_mismatch" } end ' +
@@ -499,7 +503,8 @@ const JOB_CREATE_LUA =
   'claim.startedAt = createdAt redis.call("SET", KEYS[10], cjson.encode(claim)) ' +
   'if claimTtl > 0 then redis.call("PEXPIRE", KEYS[10], claimTtl) end end ' +
   'return { previousUserId or "", previousTenantId or "", tostring(createdAt), "", ' +
-  'replacedCreatedAt or "", replacedStatus or "", replacedConversationId or "" }';
+  'replacedCreatedAt or "", replacedStatus or "", replacedConversationId or "", ' +
+  'replacedProviderAbortReady or "" }';
 
 /**
  * Epoch-guarded field update. Terminal writes reclaim same-slot content in the
@@ -1681,6 +1686,7 @@ export class RedisJobStore implements IJobStoreV2 {
       ...(conversationId !== undefined && { conversationId }),
       ...(idempotencyClientRequestId !== undefined && { idempotencyClientRequestId }),
       ...(recoveredSteerId !== undefined && { recoveredSteerId }),
+      providerAbortReady: false,
       syncSent: false,
     };
     if (creationAttemptId != null) {
@@ -1806,6 +1812,12 @@ export class RedisJobStore implements IJobStoreV2 {
       previousOwner[6] !== ''
         ? previousOwner[6]
         : undefined;
+    const replacedProviderAbortReady =
+      Array.isArray(previousOwner) &&
+      typeof previousOwner[7] === 'string' &&
+      previousOwner[7] !== ''
+        ? previousOwner[7] === '1'
+        : undefined;
     const replacedJob =
       replacedCreatedAt != null && Number.isFinite(replacedCreatedAt) && replacedStatus != null
         ? {
@@ -1816,6 +1828,12 @@ export class RedisJobStore implements IJobStoreV2 {
             }),
           }
         : undefined;
+    if (replacedJob != null && replacedProviderAbortReady != null) {
+      Object.defineProperty(replacedJob, 'providerAbortReady', {
+        value: replacedProviderAbortReady,
+        enumerable: false,
+      });
+    }
     const previousUserKeys =
       previousUserId !== ''
         ? [KEYS.userJobs(previousUserId, previousTenantId || undefined)]
@@ -3857,6 +3875,8 @@ export class RedisJobStore implements IJobStoreV2 {
        *  `preemptArmed: false` and silently degrade interrupt-steer to
        *  tool-boundary steering in EVERY Redis deployment. */
       preemptCapable: data.preemptCapable != null ? data.preemptCapable === '1' : undefined,
+      providerAbortReady:
+        data.providerAbortReady != null ? data.providerAbortReady === '1' : undefined,
       titleEvent: data.titleEvent || undefined,
       replayEvents: data.replayEvents || undefined,
       contextUsage: data.contextUsage || undefined,
@@ -3916,19 +3936,28 @@ export class RedisJobStore implements IJobStoreV2 {
           (candidate.createdAt as number) >= job.createdAt ||
           !validReplacementStatuses.has(candidate.status as string) ||
           (candidate.conversationId != null && typeof candidate.conversationId !== 'string') ||
+          (candidate.providerAbortReady != null &&
+            typeof candidate.providerAbortReady !== 'boolean') ||
           seen.has(candidate.createdAt as number)
         ) {
           throw new Error('Invalid generation replacement receipt');
         }
         seen.add(candidate.createdAt as number);
         previousEpoch = candidate.createdAt as number;
-        replacedJobs.push({
+        const receipt: ReplacedGeneration = {
           createdAt: candidate.createdAt as number,
           status: candidate.status as JobStatus,
           ...(candidate.conversationId != null && {
             conversationId: candidate.conversationId as string,
           }),
-        });
+        };
+        if (candidate.providerAbortReady != null) {
+          Object.defineProperty(receipt, 'providerAbortReady', {
+            value: candidate.providerAbortReady,
+            enumerable: false,
+          });
+        }
+        replacedJobs.push(receipt);
       }
       const scalarEpoch = scalarEpochRaw != null ? Number(scalarEpochRaw) : undefined;
       const latest = replacedJobs[replacedJobs.length - 1];

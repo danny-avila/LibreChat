@@ -454,13 +454,20 @@ export class InMemoryJobStore implements IJobStoreV2 {
       addReplacedJob(inherited);
     }
     if (previousJob != null) {
-      addReplacedJob({
+      const replaced: ReplacedGeneration = {
         createdAt: previousJob.createdAt,
         status: previousJob.status,
         ...(previousJob.conversationId !== undefined && {
           conversationId: previousJob.conversationId,
         }),
-      });
+      };
+      if (previousJob.providerAbortReady != null) {
+        Object.defineProperty(replaced, 'providerAbortReady', {
+          value: previousJob.providerAbortReady,
+          enumerable: false,
+        });
+      }
+      addReplacedJob(replaced);
     }
     this.lastGenerationEpoch = createdAt;
     const job: CreatedJobData = {
@@ -477,6 +484,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
       ...(conversationId !== undefined && { conversationId }),
       ...(idempotencyClientRequestId !== undefined && { idempotencyClientRequestId }),
       ...(recoveredSteerId !== undefined && { recoveredSteerId }),
+      providerAbortReady: false,
       syncSent: false,
     };
     if (creationAttemptId != null) {
@@ -488,13 +496,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
     if (previousJob != null) {
       Object.defineProperty(job, 'replacedJob', {
-        value: {
-          createdAt: previousJob.createdAt,
-          status: previousJob.status,
-          ...(previousJob.conversationId !== undefined && {
-            conversationId: previousJob.conversationId,
-          }),
-        },
+        value: replacedJobs[replacedJobs.length - 1],
         enumerable: false,
         configurable: true,
       });
