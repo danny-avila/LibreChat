@@ -663,6 +663,26 @@ describe('MCP OAuth Race Condition Fixes', () => {
       expect(await flowManager.getFlowState(flowId, 'mcp_oauth')).toBeTruthy();
     });
 
+    it('still deletes the flow and rejects when the metadata read hits a storage error', async () => {
+      const flowManager = createFlowManager();
+      const flowId = 'user1:test-server';
+      const state = 'unreadable-state-pqr678';
+
+      await flowManager.initFlow(flowId, 'mcp_oauth', { state });
+      await MCPOAuthHandler.storeStateMapping(state, flowId, flowManager);
+
+      jest
+        .spyOn(flowManager, 'getFlowState')
+        .mockRejectedValueOnce(new Error('read connection lost'));
+
+      await expect(MCPOAuthHandler.deleteFlowAndStateMapping(flowId, flowManager)).rejects.toThrow(
+        'Failed to fully delete OAuth flow',
+      );
+
+      /** The callback-capable flow must not survive token deletion */
+      expect(await flowManager.getFlowState(flowId, 'mcp_oauth')).toBeFalsy();
+    });
+
     it('still deletes the flow when metadata carries no state', async () => {
       const flowManager = createFlowManager();
       const flowId = 'user1:stateless-server';
