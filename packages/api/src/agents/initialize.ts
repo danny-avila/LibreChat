@@ -651,10 +651,11 @@ export async function initializeAgent(
    * defer/programmatic classification, the background and intent passes —
    * reads `agent.tools` / `agent.tool_options` after this point.
    */
+  const mcpRawServerNames = Object.keys(req.config?.mcpConfig ?? {});
   const healedKeys = normalizeAgentToolKeys({
     tools: agent.tools ?? undefined,
     toolOptions: agent.tool_options,
-    rawServerNames: Object.keys(req.config?.mcpConfig ?? {}),
+    rawServerNames: mcpRawServerNames,
   });
   agent.tools = healedKeys.tools;
   agent.tool_options = healedKeys.toolOptions;
@@ -932,7 +933,23 @@ export async function initializeAgent(
       alwaysApplySkillPrimes = alwaysApplySkillPrimes.slice(0, budgetForAlwaysApply);
     }
 
-    const primesForUnion = [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])];
+    /** Skill `allowed-tools` are legacy-heal candidates too: a raw MCP key
+     *  declared before the normalized-key convention would neither dedupe
+     *  against the healed agent tools nor match the normalized-keyed tool
+     *  map, silently dropping the skill-contributed tool. */
+    const primesForUnion = [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])].map(
+      (prime) =>
+        prime.allowedTools?.length
+          ? {
+              ...prime,
+              allowedTools: normalizeAgentToolKeys({
+                tools: prime.allowedTools,
+                toolOptions: undefined,
+                rawServerNames: mcpRawServerNames,
+              }).tools,
+            }
+          : prime,
+    );
     if (primesForUnion.length > 0) {
       const union = unionPrimeAllowedTools({
         primes: primesForUnion,

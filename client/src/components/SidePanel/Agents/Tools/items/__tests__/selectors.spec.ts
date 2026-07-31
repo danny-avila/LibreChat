@@ -223,6 +223,17 @@ describe('matchesMcpServer', () => {
     expect(matchesMcpServer('mcp_github_extra', 'github_extra')).toBe(true);
     expect(matchesMcpServer('search_mcp_github_extra', 'github_extra')).toBe(true);
   });
+
+  test('matches normalized-spelling tool ids for a special-character server', () => {
+    /** Model-facing tool ids embed `normalizeServerName(server)`, while the
+     *  marketplace/server cards are keyed raw — both spellings must count as
+     *  attached or a selected server renders as an unselected orphan. */
+    expect(matchesMcpServer('search_mcp_Connector__Company', 'Connector: Company')).toBe(true);
+    expect(matchesMcpServer('search_mcp_Connector: Company', 'Connector: Company')).toBe(true);
+    expect(matchesMcpServer('mcp_Connector__Company', 'Connector: Company')).toBe(true);
+    expect(matchesMcpServer('search_mcp_Connector__Company', 'Connector__Company')).toBe(true);
+    expect(matchesMcpServer('search_mcp_Connector__Other', 'Connector: Company')).toBe(false);
+  });
 });
 
 describe('selection — ask_user_question builtin rides agent.tools', () => {

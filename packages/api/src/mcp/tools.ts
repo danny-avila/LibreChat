@@ -170,6 +170,44 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     }
   }
 
+  /**
+   * Heals cache entries written before keys embedded the normalized server
+   * name. The definitions-only loader treats the returned map as
+   * authoritative — a per-key miss does NOT trigger a reconnect the way the
+   * instance path does — so a stale raw-keyed entry would make the server's
+   * tools vanish for up to the cache TTL after rollout. Rewriting at read
+   * time covers every consumer without a coordinated invalidation; safe
+   * server names (the common case) return the map untouched.
+   */
+  function normalizeCachedToolKeys(
+    tools: LCAvailableTools | null,
+    serverName: string,
+  ): LCAvailableTools | null {
+    if (!tools) {
+      return tools;
+    }
+    const normalized = normalizeServerName(serverName);
+    if (normalized === serverName) {
+      return tools;
+    }
+    const legacySuffix = `${Constants.mcp_delimiter}${serverName}`;
+    let changed = false;
+    const next: LCAvailableTools = {};
+    for (const [key, entry] of Object.entries(tools)) {
+      if (!key.endsWith(legacySuffix)) {
+        next[key] = entry;
+        continue;
+      }
+      const rebuiltKey = `${key.slice(0, key.length - serverName.length)}${normalized}`;
+      next[rebuiltKey] = {
+        ...entry,
+        ['function']: { ...entry['function'], name: rebuiltKey },
+      };
+      changed = true;
+    }
+    return changed ? next : tools;
+  }
+
   async function getMCPServerTools(
     userId: string,
     serverName: string,
@@ -179,7 +217,8 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       return null;
     }
     try {
-      return (await getCachedTools({ userId, serverName })) ?? null;
+      const cached = (await getCachedTools({ userId, serverName })) ?? null;
+      return normalizeCachedToolKeys(cached, serverName);
     } catch (error) {
       logger.error(`[getMCPServerTools] Error fetching cached tools for ${serverName}:`, error);
       return null;
