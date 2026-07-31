@@ -1,5 +1,6 @@
 import { RE2JS } from 're2js';
 import { logger } from '@librechat/data-schemas';
+import { setMessageFilterRegexValidator } from 'librechat-data-provider';
 import type {
   NextFunction,
   RequestHandler,
@@ -8,6 +9,23 @@ import type {
 } from 'express';
 import type { MessageFilterPiiConfig } from 'librechat-data-provider';
 import { getReferencedQuotes, mergeQuotedText } from '../utils/quotes';
+
+/**
+ * Wire the messageFilter PII config validator to the linear-time engine (RE2) so a custom
+ * pattern the runtime cannot compile is rejected at config load rather than silently dropped at
+ * request time. Call once at server startup, before config is parsed; browser builds keep the
+ * native default and pull in no engine.
+ */
+export function configureMessageFilterRegexValidator(): void {
+  setMessageFilterRegexValidator((pattern) => {
+    try {
+      RE2JS.compile(pattern);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
 
 type CompiledPattern = { id: string; label: string; pattern: RE2JS };
 

@@ -1,10 +1,15 @@
+import { messageFilterPiiSchema, setMessageFilterRegexValidator } from 'librechat-data-provider';
 import type { MessageFilterPiiConfig } from 'librechat-data-provider';
 import type { Request, Response, NextFunction } from 'express';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
-import { createMessageFilterPii, findPiiMatchInMessages } from './messageFilterPii';
+import {
+  createMessageFilterPii,
+  findPiiMatchInMessages,
+  configureMessageFilterRegexValidator,
+} from './messageFilterPii';
 
 type CapturedResponse = { status?: number; body?: unknown };
 
@@ -364,5 +369,32 @@ describe('findPiiMatchInMessages', () => {
       customPatterns: [{ id: 'org', label: 'Org token', regex: '\\bORG-[A-Z0-9]{6,}' }],
     });
     expect(hit).toEqual({ id: 'org', label: 'Org token' });
+  });
+});
+
+describe('configureMessageFilterRegexValidator (RE2 config-load validation)', () => {
+  afterAll(() => {
+    setMessageFilterRegexValidator((value) => {
+      try {
+        new RegExp(value, 'g');
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  });
+
+  it('rejects RE2-incompatible custom patterns at config parse once wired', () => {
+    configureMessageFilterRegexValidator();
+    const reject = (regex: string) =>
+      messageFilterPiiSchema.safeParse({ customPatterns: [{ id: 'a', label: 'A', regex }] })
+        .success;
+    // lookahead, numeric + named backreference, control escape: all valid JS, unsupported by RE2
+    expect(reject('(?=x)y')).toBe(false);
+    expect(reject('(a)\\1')).toBe(false);
+    expect(reject('(?<n>x)\\k<n>')).toBe(false);
+    expect(reject('token-\\cA+')).toBe(false);
+    // a normal RE2-compatible pattern still passes
+    expect(reject('\\bORG-[A-Z0-9]{6,}')).toBe(true);
   });
 });
