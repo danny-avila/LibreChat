@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import { clearRedisTestPrefix, createRedisTestClient, type RedisTestClient } from './helpers/redis';
 import { RedisEventTransport } from '../implementations/RedisEventTransport';
 import { JobPredecessorMismatchError } from '../interfaces/IJobStore';
 import { emitChunkWithReceipt } from '../internal/chunkPublication';
@@ -28,15 +28,11 @@ function createConditionalJob(
 
 describe('Redis generation predecessor create fence', () => {
   const keyPrefix = `Predecessor-Fence-${process.pid}-${Date.now()}:`;
-  let redis: Redis;
+  let redis: RedisTestClient;
   let store: RedisJobStore;
 
   beforeAll(async () => {
-    redis = new Redis(process.env.REDIS_URI ?? 'redis://127.0.0.1:6379', {
-      keyPrefix,
-      lazyConnect: true,
-      maxRetriesPerRequest: 2,
-    });
+    redis = createRedisTestClient(keyPrefix);
     await redis.connect();
     store = new RedisJobStore(redis, {
       chunksAfterCompleteTtl: 300,
@@ -46,8 +42,7 @@ describe('Redis generation predecessor create fence', () => {
   });
 
   afterEach(async () => {
-    const physicalKeys = await redis.keys(`${keyPrefix}*`);
-    await Promise.all(physicalKeys.map((key) => redis.del(key.slice(keyPrefix.length))));
+    await clearRedisTestPrefix(redis, keyPrefix);
   });
 
   afterAll(async () => {

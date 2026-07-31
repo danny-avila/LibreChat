@@ -1,5 +1,5 @@
-import Redis from 'ioredis';
 import type { SteerQueueItem } from '../interfaces/IJobStore';
+import { clearRedisTestPrefix, createRedisTestClient, type RedisTestClient } from './helpers/redis';
 import { InMemoryEventTransport } from '../implementations/InMemoryEventTransport';
 import { RedisEventTransport } from '../implementations/RedisEventTransport';
 import { GenerationJobManagerClass } from '../GenerationJobManager';
@@ -8,28 +8,19 @@ import { RedisJobStore } from '../implementations/RedisJobStore';
 describe('Redis generation protocol rollout bridge', () => {
   const keyPrefix = `Protocol-Rollout-${process.pid}-${Date.now()}:`;
   const originalProtocol = process.env.GENERATION_PROTOCOL_VERSION;
-  let redis: Redis;
+  let redis: RedisTestClient;
   let store: RedisJobStore;
 
   beforeAll(async () => {
     delete process.env.GENERATION_PROTOCOL_VERSION;
-    redis = new Redis(process.env.REDIS_URI ?? 'redis://127.0.0.1:6379', {
-      keyPrefix,
-      lazyConnect: true,
-      maxRetriesPerRequest: 2,
-    });
+    redis = createRedisTestClient(keyPrefix);
     await redis.connect();
     store = new RedisJobStore(redis);
     await store.initialize();
   });
 
   afterEach(async () => {
-    const physicalKeys = await redis.keys('*');
-    await Promise.all(
-      physicalKeys.map((key) =>
-        redis.del(key.startsWith(keyPrefix) ? key.slice(keyPrefix.length) : key),
-      ),
-    );
+    await clearRedisTestPrefix(redis, keyPrefix);
   });
 
   afterAll(async () => {
@@ -654,7 +645,7 @@ describe('Redis generation protocol rollout bridge', () => {
       undefined,
       'transport-attempt-b',
     );
-    const subscriber = redis.duplicate({ lazyConnect: true });
+    const subscriber = redis.duplicate();
     const transport = new RedisEventTransport(redis, subscriber);
     try {
       await expect(
