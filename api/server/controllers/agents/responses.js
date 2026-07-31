@@ -629,7 +629,11 @@ const createResponse = async (req, res) => {
     const allMessages = [...previousMessages, ...inputMessages];
 
     const toolSet = buildToolSet(primaryConfig);
-    const formatted = formatAgentMessages(allMessages, {}, toolSet);
+    const formatted = formatAgentMessages(allMessages, {}, toolSet, undefined, {
+      provider: primaryConfig.provider,
+      model: primaryConfig.model || agent.model_parameters?.model,
+      useResponsesApi: primaryConfig.model_parameters?.useResponsesApi === true,
+    });
     const formattedMessages = formatted.messages;
     const initialSummary = formatted.summary;
     let indexTokenCountMap = formatted.indexTokenCountMap;

@@ -1170,6 +1170,15 @@ export async function createRun({
       },
       modelParameters,
     ) as t.RunLLMConfig;
+    if (
+      (provider === Providers.OPENAI || provider === Providers.AZURE) &&
+      (llmConfig as OpenAIClientOptions).useResponsesApi === true &&
+      typeof agent.id === 'string' &&
+      agent.id !== '' &&
+      (llmConfig as OpenAIClientOptions).promptCacheKey == null
+    ) {
+      (llmConfig as OpenAIClientOptions).promptCacheKey = agent.id;
+    }
 
     const joinInstructionMap = (map?: Record<string, unknown>) =>
       Object.values(map ?? {})
