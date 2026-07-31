@@ -107,7 +107,12 @@ describe('GenerationJobManager startup telemetry', () => {
     });
     expect(job.metadata.tenantId).toBeUndefined();
     expect(job.metadata.pendingAction).toBeUndefined();
-    expect(updateJob).not.toHaveBeenCalled();
+    expect(updateJob).toHaveBeenCalledTimes(1);
+    expect(updateJob).toHaveBeenCalledWith(
+      'stream-initial-metadata',
+      { providerAbortReady: true },
+      job.createdAt,
+    );
 
     await manager.destroy();
   });

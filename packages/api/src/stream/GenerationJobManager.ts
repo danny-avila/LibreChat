@@ -1375,13 +1375,14 @@ class GenerationJobManagerClass {
     // generation-tagged and serve different consumers; this ordering keeps a
     // remote owner from emitting a last post-handoff chunk.
     let delivered = true;
-    // The in-memory store is process-local: if no exact local runtime owns the
-    // epoch, there cannot be a provider on another replica. Redis deployments
-    // need the explicit owner acknowledgement below.
-    const providerStopConfirmed = stoppedExactLocalProvider || !this._isRedis;
-    if (stopProvider && !providerStopConfirmed) {
+    if (stopProvider && !stoppedExactLocalProvider) {
       try {
-        if (this.eventTransport.emitAbortConfirmed != null) {
+        if (!this._isRedis) {
+          // Multiple managers can share an in-memory transport in one process.
+          // Best-effort delivery stops an exact predecessor owned by another
+          // manager; only Redis handoffs require the durable owner proof below.
+          this.eventTransport.emitAbort?.(streamId, predecessorCreatedAt);
+        } else if (this.eventTransport.emitAbortConfirmed != null) {
           const ownerAcknowledged = await this.eventTransport.emitAbortConfirmed(
             streamId,
             predecessorCreatedAt,
