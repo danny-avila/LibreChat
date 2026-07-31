@@ -24,6 +24,7 @@ function setup(overrides: Partial<React.ComponentProps<typeof MCPToolItem>> = {}
     isProgrammatic: false,
     isBackground: false,
     isIntent: false,
+    intentDisabled: false,
     deferredToolsEnabled: false,
     programmaticToolsEnabled: false,
     backgroundToolsEnabled: false,
@@ -128,5 +129,13 @@ describe('MCPToolItem', () => {
       'aria-pressed',
       'true',
     );
+  });
+
+  test('intent button is inert for programmatic-only tools (label can never render)', () => {
+    const props = setup({ toolIntentsEnabled: true, intentDisabled: true });
+    const intentButton = screen.getByRole('button', { name: 'com_ui_mcp_intent' });
+    expect(intentButton).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(intentButton);
+    expect(props.onToggleIntent).not.toHaveBeenCalled();
   });
 });

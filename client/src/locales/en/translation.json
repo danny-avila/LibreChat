@@ -1356,6 +1356,7 @@
   "com_ui_mcp_initialized_success": "MCP server '{{0}}' initialized successfully",
   "com_ui_mcp_intent": "Intent label",
   "com_ui_mcp_intent_all": "Enable intent labels for all",
+  "com_ui_mcp_intent_programmatic": "Intent labels don't apply to programmatic-only tools: calls made from code render no tool card, so there is nowhere to show the label.",
   "com_ui_mcp_invalid_url": "Please enter a valid URL",
   "com_ui_mcp_missing_custom_user_vars": "MCP server '{{0}}' requires variables [{{1}}] which are not set",
   "com_ui_mcp_no_description": "No description available",

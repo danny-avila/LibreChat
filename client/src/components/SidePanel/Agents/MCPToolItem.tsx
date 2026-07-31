@@ -12,6 +12,9 @@ interface MCPToolItemProps {
   isProgrammatic: boolean;
   isBackground: boolean;
   isIntent: boolean;
+  /** Intent labels never reach a programmatic-only tool (no card renders for
+   *  calls made from code), so the toggle is shown inert with an explanation. */
+  intentDisabled: boolean;
   deferredToolsEnabled: boolean;
   programmaticToolsEnabled: boolean;
   backgroundToolsEnabled: boolean;
@@ -37,6 +40,7 @@ export default function MCPToolItem({
   isBackground,
   onToggleBackground,
   isIntent,
+  intentDisabled,
   onToggleIntent,
   deferredToolsEnabled,
   programmaticToolsEnabled,
@@ -110,8 +114,11 @@ export default function MCPToolItem({
             <OptionToggle
               icon={Captions}
               pressed={isIntent}
+              disabled={intentDisabled}
               label={localize('com_ui_mcp_intent')}
-              tooltip={localize('com_ui_mcp_click_to_intent')}
+              tooltip={localize(
+                intentDisabled ? 'com_ui_mcp_intent_programmatic' : 'com_ui_mcp_click_to_intent',
+              )}
               activeClass="text-teal-500"
               onToggle={onToggleIntent}
             />

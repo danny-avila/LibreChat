@@ -683,6 +683,27 @@ describe('useMCPToolOptions', () => {
     });
   });
 
+  describe('isToolProgrammaticOnly', () => {
+    it('mirrors the backend canInjectIntentParam gate exactly', () => {
+      (useWatch as jest.Mock).mockReturnValue({
+        codeOnly: { allowed_callers: ['code_execution'] },
+        both: { allowed_callers: ['direct', 'code_execution'] },
+        directOnly: { allowed_callers: ['direct'] },
+        empty: { allowed_callers: [] },
+        unset: { defer_loading: true },
+      });
+
+      const { result } = renderHook(() => useMCPToolOptions());
+
+      expect(result.current.isToolProgrammaticOnly('codeOnly')).toBe(true);
+      expect(result.current.isToolProgrammaticOnly('both')).toBe(false);
+      expect(result.current.isToolProgrammaticOnly('directOnly')).toBe(false);
+      expect(result.current.isToolProgrammaticOnly('empty')).toBe(false);
+      expect(result.current.isToolProgrammaticOnly('unset')).toBe(false);
+      expect(result.current.isToolProgrammaticOnly('missing')).toBe(false);
+    });
+  });
+
   describe('formToolOptions', () => {
     it('should return undefined when useWatch returns undefined', () => {
       (useWatch as jest.Mock).mockReturnValue(undefined);

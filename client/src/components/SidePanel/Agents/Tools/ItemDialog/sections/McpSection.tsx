@@ -87,6 +87,7 @@ export default function McpSection({ item }: Props) {
     isToolProgrammatic,
     isToolBackground,
     isToolIntent,
+    isToolProgrammaticOnly,
     toggleToolDefer,
     toggleToolProgrammatic,
     toggleToolBackground,
@@ -162,7 +163,11 @@ export default function McpSection({ item }: Props) {
   const allDeferred = areAllToolsDeferred(tools);
   const allProgrammatic = areAllToolsProgrammatic(tools);
   const allBackground = areAllToolsBackground(tools);
-  const allIntent = areAllToolsIntent(tools);
+  /** Programmatic-only tools can never carry an intent label (the backend's
+   *  `canInjectIntentParam` skips non-direct tools), so both the bulk toggle
+   *  and its all-state only consider tools the label can actually reach. */
+  const intentEligibleTools = tools.filter((tool) => !isToolProgrammaticOnly(tool.tool_id));
+  const allIntent = areAllToolsIntent(intentEligibleTools);
   const statusIconProps = getServerStatusIconProps(serverName);
   const configDialogProps = getConfigDialogProps();
   const connectionState = statusIconProps?.serverStatus?.connectionState;
@@ -353,9 +358,10 @@ export default function McpSection({ item }: Props) {
                   icon={Captions}
                   size="md"
                   pressed={allIntent}
+                  disabled={intentEligibleTools.length === 0}
                   label={localize(allIntent ? 'com_ui_mcp_unintent_all' : 'com_ui_mcp_intent_all')}
                   activeClass="text-teal-600 dark:text-teal-500"
-                  onToggle={() => toggleIntentAll(tools)}
+                  onToggle={() => toggleIntentAll(intentEligibleTools)}
                 />
               )}
               {(deferredToolsEnabled ||
@@ -398,7 +404,12 @@ export default function McpSection({ item }: Props) {
                   isDeferred={deferredToolsEnabled && isToolDeferred(tool.tool_id)}
                   isProgrammatic={programmaticToolsEnabled && isToolProgrammatic(tool.tool_id)}
                   isBackground={backgroundToolsEnabled && isToolBackground(tool.tool_id)}
-                  isIntent={toolIntentsEnabled && isToolIntent(tool.tool_id)}
+                  isIntent={
+                    toolIntentsEnabled &&
+                    isToolIntent(tool.tool_id) &&
+                    !isToolProgrammaticOnly(tool.tool_id)
+                  }
+                  intentDisabled={isToolProgrammaticOnly(tool.tool_id)}
                   deferredToolsEnabled={deferredToolsEnabled}
                   programmaticToolsEnabled={programmaticToolsEnabled}
                   backgroundToolsEnabled={backgroundToolsEnabled}

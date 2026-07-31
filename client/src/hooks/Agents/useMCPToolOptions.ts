@@ -25,6 +25,7 @@ interface UseMCPToolOptionsReturn {
   isToolProgrammatic: (toolId: string) => boolean;
   isToolBackground: (toolId: string) => boolean;
   isToolIntent: (toolId: string) => boolean;
+  isToolProgrammaticOnly: (toolId: string) => boolean;
   toggleToolDefer: (toolId: string) => void;
   toggleToolProgrammatic: (toolId: string) => void;
   toggleToolBackground: (toolId: string) => void;
@@ -159,6 +160,20 @@ export default function useMCPToolOptions(): UseMCPToolOptionsReturn {
     [formToolOptions],
   );
 
+  /**
+   * Whether the tool can NEVER be called directly (`allowed_callers` set and
+   * missing `direct`) — mirrors the backend's `canInjectIntentParam` gate: no
+   * card renders for such calls, so intent labels are guaranteed inert and
+   * the intent toggle must not present a setting runtime will ignore.
+   */
+  const isToolProgrammaticOnly = useCallback(
+    (toolId: string): boolean => {
+      const callers = formToolOptions?.[toolId]?.allowed_callers;
+      return callers != null && callers.length > 0 && !callers.includes('direct');
+    },
+    [formToolOptions],
+  );
+
   const toggleToolProgrammatic = useCallback(
     (toolId: string) => {
       const currentOptions = getValues('tool_options') || {};
@@ -246,6 +261,7 @@ export default function useMCPToolOptions(): UseMCPToolOptionsReturn {
     isToolProgrammatic,
     isToolBackground: background.isSet,
     isToolIntent: intent.isSet,
+    isToolProgrammaticOnly,
     toggleToolDefer: defer.toggle,
     toggleToolProgrammatic,
     toggleToolBackground: background.toggle,

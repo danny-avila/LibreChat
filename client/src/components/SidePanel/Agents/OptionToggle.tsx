@@ -12,11 +12,18 @@ interface OptionToggleProps {
   activeClass: string;
   onToggle: () => void;
   size?: 'sm' | 'md';
+  /**
+   * Renders the toggle inert (dimmed, non-interactive) while keeping it
+   * visible with its tooltip, so the user can learn WHY the option is
+   * unavailable instead of it silently disappearing.
+   */
+  disabled?: boolean;
 }
 
 /**
- * Icon toggle for a per-tool option (defer / programmatic / background), shared
- * between the per-tool row (`sm`) and the section-header bulk action (`md`).
+ * Icon toggle for a per-tool option (defer / programmatic / background /
+ * intent), shared between the per-tool row (`sm`) and the section-header bulk
+ * action (`md`).
  */
 export default function OptionToggle({
   icon: Icon,
@@ -26,6 +33,7 @@ export default function OptionToggle({
   activeClass,
   onToggle,
   size = 'sm',
+  disabled = false,
 }: OptionToggleProps) {
   return (
     <TooltipAnchor
@@ -34,13 +42,19 @@ export default function OptionToggle({
       render={
         <button
           type="button"
-          onClick={onToggle}
+          onClick={disabled ? undefined : onToggle}
           aria-pressed={pressed}
           aria-label={label}
+          aria-disabled={disabled || undefined}
           className={cn(
-            'flex items-center justify-center rounded-md transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+            'flex items-center justify-center rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
             size === 'sm' ? 'size-6' : 'size-7',
-            pressed ? activeClass : 'text-text-secondary hover:text-text-primary',
+            disabled
+              ? 'cursor-not-allowed text-text-tertiary opacity-60'
+              : cn(
+                  'hover:bg-surface-hover',
+                  pressed ? activeClass : 'text-text-secondary hover:text-text-primary',
+                ),
           )}
         >
           <Icon className="size-4" aria-hidden="true" />

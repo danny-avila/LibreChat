@@ -9,6 +9,7 @@ const mockGetValues = jest.fn((): string[] => []);
 const mockInitializeServer = jest.fn();
 const mockIsConnectionDeferred = jest.fn((): boolean => false);
 const mockToggleIntentAll = jest.fn();
+const mockIsToolProgrammaticOnly = jest.fn((_toolId: string): boolean => false);
 const mockCapabilities = {
   deferredToolsEnabled: false,
   programmaticToolsEnabled: false,
@@ -50,6 +51,7 @@ jest.mock('~/hooks', () => ({
     isToolProgrammatic: () => false,
     isToolBackground: () => false,
     isToolIntent: () => false,
+    isToolProgrammaticOnly: mockIsToolProgrammaticOnly,
     toggleToolDefer: jest.fn(),
     toggleToolProgrammatic: jest.fn(),
     toggleToolBackground: jest.fn(),
@@ -151,6 +153,8 @@ describe('McpSection', () => {
     mockIsConnectionDeferred.mockReset();
     mockIsConnectionDeferred.mockReturnValue(false);
     mockToggleIntentAll.mockClear();
+    mockIsToolProgrammaticOnly.mockReset();
+    mockIsToolProgrammaticOnly.mockReturnValue(false);
     mockCapabilities.toolIntentsEnabled = false;
   });
 
@@ -303,6 +307,16 @@ describe('McpSection', () => {
     render(<McpSection item={item} />);
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_mcp_intent_all' }));
     expect(mockToggleIntentAll).toHaveBeenCalledWith(item.server.tools);
+  });
+
+  test('bulk intent skips programmatic-only tools (label can never reach them)', () => {
+    mockCapabilities.toolIntentsEnabled = true;
+    mockIsToolProgrammaticOnly.mockImplementation((toolId: string) => toolId === 'mcp:srv:a');
+    render(<McpSection item={item} />);
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_mcp_intent_all' }));
+    expect(mockToggleIntentAll).toHaveBeenCalledWith([
+      expect.objectContaining({ tool_id: 'mcp:srv:b' }),
+    ]);
   });
 
   test('shows the runtime-tools hint when attached via the wildcard', () => {
