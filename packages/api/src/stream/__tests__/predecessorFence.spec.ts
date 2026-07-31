@@ -1,5 +1,5 @@
-import { InMemoryEventTransport } from '../implementations/InMemoryEventTransport';
 import { InMemoryJobStore, PARKED_STEERS_TTL_MS } from '../implementations/InMemoryJobStore';
+import { InMemoryEventTransport } from '../implementations/InMemoryEventTransport';
 import { JobPredecessorMismatchError } from '../interfaces/IJobStore';
 import { GenerationJobManagerClass } from '../GenerationJobManager';
 

@@ -434,6 +434,70 @@ test.describe('mid-run steering and queuing', () => {
     await expect(queuedRows(page)).toHaveCount(0);
   });
 
+  test('recovered queued follow-up exposes Edit and Remove and discards its parked source before editing', async ({
+    page,
+  }) => {
+    test.setTimeout(60000);
+    const label = uniqueLabel('recovered-controls');
+    const recoveredText = `Recovered follow-up ${label}`;
+    const serverSteerId = `server-${label}`;
+    const clientSteerId = `client-${label}`;
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+    await establishConversation(page, `recovered-controls-setup-${label}`);
+
+    const conversationId = new URL(page.url()).pathname.split('/').pop();
+    expect(conversationId).toBeTruthy();
+    await page.route(`**/api/agents/chat/status/${conversationId}**`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          active: false,
+          generationProtocolVersion: 2,
+          unrecoveredSteers: [
+            {
+              steerId: serverSteerId,
+              clientSteerId,
+              text: recoveredText,
+              createdAt: Date.now(),
+            },
+          ],
+        }),
+      }),
+    );
+
+    let cancelBody: Record<string, unknown> | undefined;
+    await page.route('**/api/agents/chat/steer/cancel**', async (route) => {
+      cancelBody = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ removed: true, generationProtocolVersion: 2 }),
+      });
+    });
+
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 });
+    const row = queuedRows(page).filter({ hasText: recoveredText });
+    await expect(row).toBeVisible({ timeout: 15000 });
+    await expect(row.getByRole('button', { name: 'Remove message', exact: true })).toBeVisible();
+
+    await row.getByRole('button', { name: 'More options', exact: true }).click();
+    const edit = page.getByRole('menuitem', { name: 'Edit message', exact: true });
+    await expect(edit).toBeVisible();
+    await edit.click();
+
+    await expect(row).toHaveCount(0, { timeout: 10000 });
+    await expect(messageInput(page)).toHaveValue(recoveredText);
+    expect(cancelBody).toEqual({
+      conversationId,
+      steerId: serverSteerId,
+      clientSteerId,
+      generationProtocolVersion: 2,
+    });
+  });
+
   test('queues with Cmd/Ctrl+Enter during a run and auto-sends after clean completion', async ({
     page,
   }) => {
