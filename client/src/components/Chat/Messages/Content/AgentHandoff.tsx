@@ -5,6 +5,7 @@ import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { MouseEvent } from 'react';
 import MessageIcon from '~/components/Share/MessageIcon';
+import { toolPanelSpacingClassName } from './disclosure';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { useAgentsMapContext } from '~/Providers';
 import { cn } from '~/utils';
@@ -64,7 +65,7 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
     : localize('com_ui_copy_to_clipboard');
 
   return (
-    <div className="my-1.5">
+    <div className="my-2">
       <button
         type="button"
         className={cn(
@@ -104,7 +105,12 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
       <div style={expandStyle}>
         <div className="overflow-hidden" ref={expandRef}>
           {hasInfo && (
-            <div className="group/handoff my-2 ml-8 rounded-xl border border-border-light bg-surface-secondary p-4 text-xs">
+            <div
+              className={cn(
+                toolPanelSpacingClassName,
+                'group/handoff ml-8 rounded-xl border border-border-light bg-surface-secondary p-4 text-xs',
+              )}
+            >
               <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="text-[10px] font-medium uppercase tracking-wide text-text-secondary">
                   {localize('com_ui_handoff_instructions')}

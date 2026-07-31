@@ -5,17 +5,18 @@ import * as Popover from '@radix-ui/react-popover';
 import { isReportableRunStepDuration } from 'librechat-data-provider';
 import type { ToolCallPhase } from '~/utils/toolCallPhase';
 import { cn, getRunStepDurationLabels } from '~/utils';
+import { disclosureChevronClassName } from './disclosure';
 import CancelledIcon from './CancelledIcon';
 import { useLocalize } from '~/hooks';
 
 const wrapperClass =
   'progress-text-wrapper text-token-text-secondary relative -mt-[0.75px] h-5 w-full leading-5';
 
-/** `max-w-full` caps the absolutely-positioned line at the message column;
- *  the label span truncates itself, so overflow stays visible for the
+/** `right-0` and `max-w-full` cap the absolutely-positioned line at the message
+ *  column; the label span truncates itself, so overflow stays visible for the
  *  button's focus ring. */
 const contentClass =
-  'progress-text-content absolute left-0 top-0 max-w-full overflow-visible whitespace-nowrap';
+  'progress-text-content absolute left-0 right-0 top-0 max-w-full overflow-visible whitespace-nowrap';
 
 const Wrapper = ({ popover, children }: { popover: boolean; children: React.ReactNode }) => {
   if (popover) {
@@ -103,7 +104,7 @@ export default function ProgressText({
         type="button"
         variant="ghost"
         className={cn(
-          'h-auto w-full justify-start gap-2 rounded-none p-0 hover:bg-transparent hover:text-inherit disabled:opacity-100',
+          'group/disclosure inline-flex h-auto w-full items-center justify-start gap-2 rounded-none p-0 hover:bg-transparent hover:text-inherit disabled:opacity-100',
           hasInput
             ? 'focus-visible:ring-border-heavy focus-visible:ring-offset-0'
             : 'pointer-events-none',
@@ -146,7 +147,8 @@ export default function ProgressText({
         {hasInput && (
           <ChevronDown
             className={cn(
-              'size-4 shrink-0 translate-y-[1px] transition-transform duration-200 ease-out',
+              disclosureChevronClassName,
+              'size-4 translate-y-[1px]',
               isExpanded && 'rotate-180',
             )}
             aria-hidden="true"
