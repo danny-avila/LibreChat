@@ -27,7 +27,7 @@ const INTENT_SCAN_CHARS = 2048;
  * first-key `intent` (`{"intent":{...}}`) never matches the opening quote,
  * so schema-invalid calls keep their generic label without any JSON.parse.
  */
-const INTENT_PREFIX_REGEX = /^\s*\{\s*"intent"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|\\?$)/;
+const INTENT_PREFIX_REGEX = /^\s*\{\s*"intent"\s*:\s*"((?:[^"\\]|\\.)*)(")?/;
 
 function boundIntentLabel(label: string): string | undefined {
   const singleLine = label.replace(/\s+/g, ' ').trim();
@@ -80,6 +80,9 @@ export function useToolCallIntent(args?: string | Record<string, unknown>): stri
     if (!match) {
       return undefined;
     }
-    return boundIntentLabel(unescapeJsonString(match[1]));
+    /** A captured closing quote means the value is settled: decode it
+     *  without the stream-edge hold-backs, so a value genuinely ending in
+     *  a lone high surrogate matches its JSON.parse rendering. */
+    return boundIntentLabel(unescapeJsonString(match[1], match[2] !== '"'));
   }, [args]);
 }

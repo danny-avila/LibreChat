@@ -193,6 +193,12 @@ describe('BashCall intent label', () => {
     renderBashCall('{"intent":"Checking caf\\u00e9 menu da');
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Checking café menu da');
   });
+
+  it('keeps a terminal lone high surrogate once the value is settled (matches JSON.parse)', () => {
+    renderBashCall('{"intent":"odd \\ud83d","command":"sleep 10"}');
+    const text = screen.getByTestId('progress-text').textContent ?? '';
+    expect(text).toBe('odd \ud83d');
+  });
 });
 
 describe('BashCall backgrounded calls', () => {

@@ -39,9 +39,12 @@ const SIMPLE_ESCAPES: Record<string, string> = {
  * the object becomes valid JSON. Stream-boundary incompletions (a dangling
  * `\`, a partial `\uXX`, or the high half of a split surrogate pair) are
  * dropped rather than shown, since the next delta completes them; unknown
- * escapes elsewhere are preserved literally.
+ * escapes elsewhere are preserved literally. Callers that KNOW the value is
+ * settled (its closing quote was present) pass `streaming: false` so a value
+ * genuinely ending in a lone high surrogate keeps its final code unit,
+ * matching `JSON.parse`.
  */
-export function unescapeJsonString(value: string): string {
+export function unescapeJsonString(value: string, streaming = true): string {
   let out = '';
   for (let i = 0; i < value.length; i++) {
     const ch = value[i];
@@ -60,7 +63,7 @@ export function unescapeJsonString(value: string): string {
     }
     const hex = value.slice(i + 1, i + 5);
     if (!/^[0-9a-fA-F]{4}$/.test(hex)) {
-      if (i + 5 > value.length) {
+      if (streaming && i + 5 > value.length) {
         return out;
       }
       out += '\\u';
@@ -68,7 +71,7 @@ export function unescapeJsonString(value: string): string {
     }
     i += 4;
     const code = parseInt(hex, 16);
-    if (code >= 0xd800 && code <= 0xdbff) {
+    if (streaming && code >= 0xd800 && code <= 0xdbff) {
       /** Hold back a high surrogate while its low half could still be
        *  streaming in — the remainder being any proper prefix of `\uXXXX`
        *  (including the empty string). A complete following escape decodes
