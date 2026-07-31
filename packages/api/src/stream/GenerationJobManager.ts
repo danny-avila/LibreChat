@@ -27,6 +27,7 @@ import type {
   IJobStoreV2,
   IdempotencyClaimResult,
   IdempotencyClaimValue,
+  PreemptMessage,
   SteerQueueItem,
 } from './interfaces/IJobStore';
 import type { AgentStartupTelemetry } from '~/agents/startup';
@@ -1077,6 +1078,68 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * Pub/sub delivery is not durable: an ARM can sit in a subscriber buffer
+   * until after the steer drained and a handover reconciliation observed an
+   * empty queue. Re-check the generation-fenced queue on receipt so that late
+   * message cannot resurrect an interrupt with no payload behind it.
+   *
+   * The durable revision, rather than the publication's revision, is used for
+   * a still-preempting item. This preserves liveness when an older duplicate
+   * arrives after a later explicit arm, while `preempt: false` advances the
+   * local floor and keeps a pre-downgrade publication from re-arming it.
+   */
+  private async validateAndArmPreemptMessage(
+    streamId: string,
+    runtime: RuntimeJobState,
+    msg: PreemptMessage,
+  ): Promise<void> {
+    const queued = await this._steering.peek(streamId, msg.createdAt);
+    const currentRuntime = this.runtimeState.get(streamId);
+    if (currentRuntime !== runtime || currentRuntime.createdAt !== msg.createdAt) {
+      return;
+    }
+
+    const queuedById = new Map(queued.map((item) => [item.steerId, item]));
+    const backedIds: string[] = [];
+    const backedRevisions: Record<string, number> = {};
+    const removedIds: string[] = [];
+    const downgraded: SteerQueueItem[] = [];
+
+    for (const steerId of msg.steerIds) {
+      const item = queuedById.get(steerId);
+      if (item == null) {
+        removedIds.push(steerId);
+        continue;
+      }
+      if (item.preempt !== true) {
+        downgraded.push(item);
+        continue;
+      }
+
+      const durableRevision = item.preemptRevision ?? 0;
+      const publishedRevision = msg.revisions?.[steerId] ?? 0;
+      if (publishedRevision > durableRevision) {
+        /** The publication cannot be backed by this authoritative snapshot. */
+        continue;
+      }
+      backedIds.push(steerId);
+      backedRevisions[steerId] = durableRevision;
+    }
+
+    if (removedIds.length > 0) {
+      this.clearPreemptIds(currentRuntime, msg.createdAt, removedIds);
+    }
+    if (downgraded.length > 0) {
+      this.downgradePreemptIds(currentRuntime, msg.createdAt, downgraded);
+    }
+    if (backedIds.length > 0) {
+      /** A local drain/CLEAR during the queue read has already tombstoned the
+       * id, and `armPreemptIds` re-checks that state synchronously here. */
+      this.armPreemptIds(currentRuntime, msg.createdAt, backedIds, backedRevisions);
+    }
+  }
+
+  /**
    * Mirrors {@link registerAbortSubscription} for cooperative preempts. The
    * same double fence applies — runtime object identity plus the generation
    * `createdAt` carried by every {@link PreemptMessage} — so a stale
@@ -1113,7 +1176,13 @@ class GenerationJobManagerClass {
           return;
         }
 
-        this.armPreemptIds(currentRuntime, msg.createdAt, msg.steerIds, msg.revisions);
+        void this.validateAndArmPreemptMessage(streamId, runtime, msg).catch((error) => {
+          logger.error(
+            `[GenerationJobManager] Failed to validate preempt arm for ${streamId}; ` +
+              'the queued steer will apply at the next tool boundary:',
+            error,
+          );
+        });
       });
 
       if (typeof unsubscribe === 'function') {

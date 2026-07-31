@@ -2565,15 +2565,37 @@ describe('GenerationJobManager Integration Tests', () => {
        */
       expect(seenByRouter?.metadata?.preemptCapable).toBe(true);
 
+      const enqueued = await router.steering.enqueueVersioned(
+        streamId,
+        {
+          steerId: 'steer-x',
+          text: 'interrupt me',
+          userId: 'user-1',
+          createdAt: Date.now(),
+        },
+        true,
+        job.createdAt,
+      );
+      if (typeof enqueued === 'number') {
+        throw new Error(`Unexpected enqueue rejection: ${enqueued}`);
+      }
+
       /** The whole point: the owner's level-triggered poll flips from a
        *  request that was accepted on a different replica. */
       await publishUntil(
-        () => router.requestPreempt(streamId, 'steer-x', job.createdAt),
+        () =>
+          router.requestPreempt(
+            streamId,
+            enqueued.item.steerId,
+            job.createdAt,
+            enqueued.item.preemptRevision ?? 0,
+          ),
         () => owner.isPreemptRequested(streamId),
         'the owner to arm',
       );
       expect(owner.getArmedPreemptIds(streamId)).toContain('steer-x');
 
+      expect(await router.steering.cancel(streamId, 'steer-x', job.createdAt)).toBe(true);
       await publishUntil(
         () => router.noteSteersRemoved(streamId, ['steer-x'], job.createdAt),
         () => !owner.isPreemptRequested(streamId),

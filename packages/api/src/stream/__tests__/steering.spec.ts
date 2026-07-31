@@ -1,7 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import { SteerEvents } from 'librechat-data-provider';
 import type { TPendingSteer, Agents } from 'librechat-data-provider';
-import type { SteerQueueItem, IEventTransport } from '~/stream/interfaces/IJobStore';
+import type {
+  SteerQueueItem,
+  IEventTransport,
+  PreemptMessage,
+} from '~/stream/interfaces/IJobStore';
 import type { ResumeState, ServerSentEvent } from '~/types';
 import {
   STEER_ENQUEUE_NOT_RUNNING,
@@ -976,6 +980,40 @@ describe('emitChunk durability (Redis-mode chunk log)', () => {
 describe('preempt request lifecycle (in-memory)', () => {
   let manager: GenerationJobManagerClass;
 
+  function createControlledPreemptManager(): {
+    controlled: GenerationJobManagerClass;
+    deliver: (message: PreemptMessage) => void;
+  } {
+    let listener: ((message: PreemptMessage) => void) | undefined;
+    const eventTransport: IEventTransport = Object.assign(new InMemoryEventTransport(), {
+      onPreempt: (_streamId: string, callback: (message: PreemptMessage) => void) => {
+        listener = callback;
+        return () => {
+          if (listener === callback) {
+            listener = undefined;
+          }
+        };
+      },
+    });
+    const controlled = new GenerationJobManagerClass();
+    controlled.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport,
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    controlled.initialize();
+    return {
+      controlled,
+      deliver: (message) => {
+        if (listener == null) {
+          throw new Error('Preempt listener is not registered');
+        }
+        listener(message);
+      },
+    };
+  }
+
   beforeEach(() => {
     manager = new GenerationJobManagerClass();
     manager.configure({
@@ -1331,6 +1369,103 @@ describe('preempt request lifecycle (in-memory)', () => {
     /** A publish that was in flight while ownership moved must not revive it. */
     manager.requestPreempt(streamId, 'steer-orphan', job.createdAt);
     expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('a delayed arm stays disarmed after its steer drained and reconciliation saw empty', async () => {
+    const { controlled, deliver } = createControlledPreemptManager();
+    const streamId = 'preempt-delayed-after-reconcile';
+    try {
+      const job = await controlled.createJob(streamId, 'user-1', undefined, {
+        initialMetadata: { preemptCapable: true },
+      });
+      const enqueued = await controlled.steering.enqueueVersioned(
+        streamId,
+        {
+          steerId: 'steer-delayed',
+          text: 'interrupt me',
+          userId: 'user-1',
+          createdAt: Date.now(),
+        },
+        true,
+        job.createdAt,
+      );
+      if (typeof enqueued === 'number') {
+        throw new Error(`Unexpected enqueue rejection: ${enqueued}`);
+      }
+
+      /** Simulate a remote drain whose CLEAR was lost, then ownership
+       * reconciliation completing before the buffered ARM is delivered. */
+      await controlled.steering.drain(streamId, job.createdAt);
+      expect(await controlled.rearmQueuedPreempts(streamId, job.createdAt)).toBe(0);
+
+      deliver({
+        op: 'arm',
+        createdAt: job.createdAt,
+        steerIds: [enqueued.item.steerId],
+        revisions: { [enqueued.item.steerId]: enqueued.item.preemptRevision ?? 0 },
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(controlled.getArmedPreemptIds(streamId, job.createdAt)).toEqual([]);
+      expect(controlled.isPreemptRequested(streamId)).toBe(false);
+    } finally {
+      await controlled.destroy();
+    }
+  });
+
+  test('a drain between arm validation and local arming leaves a tombstone', async () => {
+    const { controlled, deliver } = createControlledPreemptManager();
+    const streamId = 'preempt-drain-during-validation';
+    const peek = controlled.steering.peek.bind(controlled.steering);
+    let drainedDuringValidation = false;
+    const peekSpy = jest
+      .spyOn(controlled.steering, 'peek')
+      .mockImplementation(async (id: string, expectedCreatedAt?: number) => {
+        const snapshot = await peek(id, expectedCreatedAt);
+        const drained = await controlled.steering.drain(id, expectedCreatedAt);
+        drainedDuringValidation = drained.length > 0;
+        await controlled.noteSteersRemoved(
+          id,
+          drained.map((item) => item.steerId),
+          expectedCreatedAt,
+        );
+        return snapshot;
+      });
+
+    try {
+      const job = await controlled.createJob(streamId, 'user-1', undefined, {
+        initialMetadata: { preemptCapable: true },
+      });
+      const enqueued = await controlled.steering.enqueueVersioned(
+        streamId,
+        {
+          steerId: 'steer-validation-race',
+          text: 'interrupt me',
+          userId: 'user-1',
+          createdAt: Date.now(),
+        },
+        true,
+        job.createdAt,
+      );
+      if (typeof enqueued === 'number') {
+        throw new Error(`Unexpected enqueue rejection: ${enqueued}`);
+      }
+
+      deliver({
+        op: 'arm',
+        createdAt: job.createdAt,
+        steerIds: [enqueued.item.steerId],
+        revisions: { [enqueued.item.steerId]: enqueued.item.preemptRevision ?? 0 },
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(drainedDuringValidation).toBe(true);
+      expect(controlled.getArmedPreemptIds(streamId, job.createdAt)).toEqual([]);
+      expect(controlled.isPreemptRequested(streamId)).toBe(false);
+    } finally {
+      peekSpy.mockRestore();
+      await controlled.destroy();
+    }
   });
 
   test('rearmQueuedPreempts refuses a stale generation and arms nothing', async () => {
