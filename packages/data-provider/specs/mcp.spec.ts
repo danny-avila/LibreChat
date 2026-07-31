@@ -7,6 +7,114 @@ import {
 } from '../src/mcp';
 
 describe('MCPOptionsSchema', () => {
+  describe('customUserVars predefined values', () => {
+    const withVars = (customUserVars: unknown) =>
+      MCPOptionsSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        customUserVars,
+      });
+
+    it('should accept a list of plain string values', () => {
+      const result = withVars({
+        REGION: {
+          title: 'Region',
+          description: 'Target region',
+          values: ['eu-west-1', 'us-east-1'],
+        },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('should accept value/label objects alongside plain strings', () => {
+      const result = withVars({
+        REGION: {
+          title: 'Region',
+          description: 'Target region',
+          values: ['eu-west-1', { value: 'us-east-1', label: 'US East (N. Virginia)' }],
+        },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject an empty values list', () => {
+      const result = withVars({
+        REGION: { title: 'Region', description: 'Target region', values: [] },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject an object value missing its label', () => {
+      const result = withVars({
+        REGION: { title: 'Region', description: 'Target region', values: [{ value: 'eu-west-1' }] },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should accept multiple when values are declared', () => {
+      const result = withVars({
+        SCOPES: {
+          title: 'Scopes',
+          description: 'Granted scopes',
+          values: ['read', 'write'],
+          multiple: true,
+        },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject multiple without values', () => {
+      const result = withVars({
+        SCOPES: { title: 'Scopes', description: 'Granted scopes', multiple: true },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject duplicate values', () => {
+      const result = withVars({
+        REGION: {
+          title: 'Region',
+          description: 'Target region',
+          values: ['eu-west-1', { value: 'eu-west-1', label: 'Ireland' }],
+        },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject a value containing the separator when multiple is set', () => {
+      const result = withVars({
+        SCOPES: {
+          title: 'Scopes',
+          description: 'Granted scopes',
+          values: ['read,write', 'admin'],
+          multiple: true,
+        },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should accept a value containing a comma on a single select', () => {
+      const result = withVars({
+        FILTER: { title: 'Filter', description: 'Comma list', values: ['a,b', 'c'] },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject values padded with whitespace', () => {
+      const result = withVars({
+        REGION: { title: 'Region', description: 'Target region', values: [' eu-west-1'] },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should still accept free-text vars without values', () => {
+      const result = withVars({
+        TOKEN: { title: 'Token', description: 'API token' },
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
   describe('OBO transport support', () => {
     it('should accept obo on SSE transport', () => {
       const result = MCPOptionsSchema.safeParse({

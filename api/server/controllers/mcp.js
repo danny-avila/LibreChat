@@ -166,6 +166,8 @@ const getMCPTools = async (req, res) => {
               label: value.title || key,
               description: value.description || '',
               sensitive: value.sensitive,
+              values: value.values,
+              multiple: value.multiple,
             }));
             server.authenticated = false;
           }

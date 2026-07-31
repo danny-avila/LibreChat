@@ -2214,9 +2214,50 @@ describe('MCP Routes', () => {
           API_KEY: true,
           SECRET_TOKEN: false,
         },
+        authValues: {},
       });
 
       expect(getUserPluginAuthValue).toHaveBeenCalledTimes(2);
+    });
+
+    it('should disclose the stored value of non-sensitive vars with predefined values', async () => {
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        customUserVars: {
+          REGION: {
+            title: 'Region',
+            description: 'Target region',
+            sensitive: false,
+            values: ['eu-west-1', 'us-east-1'],
+          },
+        },
+      });
+      require('~/config').getMCPManager.mockReturnValue({});
+      getUserPluginAuthValue.mockResolvedValueOnce('eu-west-1');
+
+      const response = await request(app).get('/api/mcp/test-server/auth-values');
+
+      expect(response.status).toBe(200);
+      expect(response.body.authValues).toEqual({ REGION: 'eu-west-1' });
+    });
+
+    it('should not disclose values of sensitive vars or vars without predefined values', async () => {
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        customUserVars: {
+          SECRET_REGION: {
+            title: 'Secret Region',
+            description: 'Masked region',
+            values: ['eu-west-1'],
+          },
+          FREE_TEXT: { title: 'Free text', description: 'Anything', sensitive: false },
+        },
+      });
+      require('~/config').getMCPManager.mockReturnValue({});
+      getUserPluginAuthValue.mockResolvedValue('eu-west-1');
+
+      const response = await request(app).get('/api/mcp/test-server/auth-values');
+
+      expect(response.status).toBe(200);
+      expect(response.body.authValues).toEqual({});
     });
 
     it('should return 404 when server is not found in configuration', async () => {
@@ -2253,6 +2294,7 @@ describe('MCP Routes', () => {
         authValueFlags: {
           API_KEY: false,
         },
+        authValues: {},
       });
     });
 
@@ -2285,6 +2327,7 @@ describe('MCP Routes', () => {
         success: true,
         serverName: 'test-server',
         authValueFlags: {},
+        authValues: {},
       });
     });
 

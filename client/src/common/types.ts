@@ -13,12 +13,8 @@ export function isEphemeralAgent(agentId: string | null | undefined): boolean {
   return isEphemeralAgentId(agentId);
 }
 
-export interface ConfigFieldDetail {
-  title: string;
-  description: string;
-  /** Whether the field holds a secret and should be masked (defaults to masked when omitted). */
-  sensitive?: boolean;
-}
+/** A single `customUserVars` entry as the config dialog consumes it. */
+export type ConfigFieldDetail = t.MCPCustomUserVar;
 
 export type CodeBarProps = {
   lang: string;

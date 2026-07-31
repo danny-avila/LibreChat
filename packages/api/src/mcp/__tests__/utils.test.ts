@@ -9,6 +9,7 @@ import {
   isInvalidClientMessage,
   isClientRejectionMessage,
   getMissingCustomUserVars,
+  validateCustomUserVarValues,
   hasCustomUserVars,
   hasRuntimeUrlPlaceholders,
   hasRuntimeBodyPlaceholders,
@@ -827,5 +828,111 @@ describe('getMissingCustomUserVars', () => {
     expect(
       getMissingCustomUserVars(config, { THINGY_TOKEN: 'abc123', UNRELATED: 'value' }),
     ).toEqual([]);
+  });
+});
+
+describe('validateCustomUserVarValues', () => {
+  const invalidOf = (
+    config: Pick<ParsedServerConfig, 'customUserVars'>,
+    provided?: Record<string, string> | null,
+  ) => validateCustomUserVarValues(config, provided).invalid;
+
+  const config: Pick<ParsedServerConfig, 'customUserVars'> = {
+    customUserVars: {
+      THINGY_TOKEN: { title: 'Token', description: 'API token' },
+      THINGY_REGION: {
+        title: 'Region',
+        description: 'Target region',
+        sensitive: false,
+        values: ['eu-west-1', { value: 'us-east-1', label: 'US East (N. Virginia)' }],
+      },
+      THINGY_SCOPES: {
+        title: 'Scopes',
+        description: 'Granted scopes',
+        sensitive: false,
+        values: ['read', 'write', 'admin'],
+        multiple: true,
+      },
+    },
+  };
+
+  it('returns an empty array when the server declares no customUserVars', () => {
+    expect(invalidOf({}, { ANYTHING: 'value' })).toEqual([]);
+  });
+
+  it('accepts a declared value, in either string or object form', () => {
+    expect(invalidOf(config, { THINGY_REGION: 'eu-west-1' })).toEqual([]);
+    expect(invalidOf(config, { THINGY_REGION: 'us-east-1' })).toEqual([]);
+  });
+
+  it('rejects a value outside the declared list', () => {
+    expect(invalidOf(config, { THINGY_REGION: 'ap-south-1' })).toEqual(['THINGY_REGION']);
+  });
+
+  it('accepts every segment of a comma-joined multiple value, trimming whitespace', () => {
+    expect(invalidOf(config, { THINGY_SCOPES: 'read,write' })).toEqual([]);
+    expect(invalidOf(config, { THINGY_SCOPES: 'read , admin' })).toEqual([]);
+  });
+
+  it('rejects a multiple value with any undeclared segment', () => {
+    expect(invalidOf(config, { THINGY_SCOPES: 'read,delete' })).toEqual(['THINGY_SCOPES']);
+  });
+
+  it('rejects a comma-joined value on a single-select field', () => {
+    expect(invalidOf(config, { THINGY_REGION: 'eu-west-1,us-east-1' })).toEqual(['THINGY_REGION']);
+  });
+
+  it('treats empty and whitespace-only values as unset rather than invalid', () => {
+    expect(invalidOf(config, { THINGY_REGION: '' })).toEqual([]);
+    expect(invalidOf(config, { THINGY_SCOPES: '  ' })).toEqual([]);
+  });
+
+  it('never constrains variables without declared values', () => {
+    expect(invalidOf(config, { THINGY_TOKEN: 'any-free-text' })).toEqual([]);
+  });
+
+  it('ignores provided values for variables the server does not declare', () => {
+    expect(invalidOf(config, { UNRELATED: 'value' })).toEqual([]);
+  });
+
+  it('reports every offending variable', () => {
+    expect(
+      invalidOf(config, {
+        THINGY_REGION: 'ap-south-1',
+        THINGY_SCOPES: 'delete',
+      }),
+    ).toEqual(['THINGY_REGION', 'THINGY_SCOPES']);
+  });
+
+  it('persists exactly what it validated: a padded value is canonicalized', () => {
+    const result = validateCustomUserVarValues(config, { THINGY_REGION: '  eu-west-1  ' });
+    expect(result.invalid).toEqual([]);
+    expect(result.normalized.THINGY_REGION).toBe('eu-west-1');
+  });
+
+  it('canonicalizes a padded multiple value into its stored form', () => {
+    const result = validateCustomUserVarValues(config, { THINGY_SCOPES: ' read , admin ' });
+    expect(result.invalid).toEqual([]);
+    expect(result.normalized.THINGY_SCOPES).toBe('read,admin');
+  });
+
+  it('passes free-text variables through untouched, whitespace included', () => {
+    const result = validateCustomUserVarValues(config, { THINGY_TOKEN: '  abc123  ' });
+    expect(result.normalized.THINGY_TOKEN).toBe('  abc123  ');
+  });
+
+  it('keeps values for variables the server does not declare', () => {
+    const result = validateCustomUserVarValues(config, { UNRELATED: ' value ' });
+    expect(result.normalized).toEqual({ UNRELATED: ' value ' });
+  });
+
+  it('leaves a rejected value unchanged in the normalized map', () => {
+    const result = validateCustomUserVarValues(config, { THINGY_REGION: ' ap-south-1 ' });
+    expect(result.invalid).toEqual(['THINGY_REGION']);
+    expect(result.normalized.THINGY_REGION).toBe(' ap-south-1 ');
+  });
+
+  it('returns an empty map when no values are provided', () => {
+    expect(validateCustomUserVarValues(config, null)).toEqual({ invalid: [], normalized: {} });
   });
 });

@@ -609,6 +609,8 @@ export function useMCPServerManager({
                   label: config.title,
                   description: config.description,
                   sensitive: config.sensitive,
+                  values: config.values,
+                  multiple: config.multiple,
                 }))
               : []),
           authenticated: serverData?.authenticated ?? false,
@@ -660,6 +662,8 @@ export function useMCPServerManager({
           title: field.label || field.authField,
           description: field.description,
           sensitive: field.sensitive,
+          values: field.values,
+          multiple: field.multiple,
         };
       });
     }

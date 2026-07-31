@@ -865,12 +865,19 @@ router.get('/:serverName/auth-values', requireJwtAuth, checkMCPUsePermissions, a
 
     const pluginKey = `${Constants.mcp_prefix}${serverName}`;
     const authValueFlags = {};
+    const authValues = {};
 
     if (serverConfig.customUserVars && typeof serverConfig.customUserVars === 'object') {
-      for (const varName of Object.keys(serverConfig.customUserVars)) {
+      for (const [varName, varConfig] of Object.entries(serverConfig.customUserVars)) {
         try {
           const value = await getUserPluginAuthValue(user.id, varName, false, pluginKey);
           authValueFlags[varName] = !!(value && value.length > 0);
+          /* Disclosing the stored value is limited to selects that the admin
+           * explicitly marked as non-secret, so the UI can preselect the current
+           * choice. Secrets never leave the backend. */
+          if (authValueFlags[varName] && varConfig?.sensitive === false && varConfig?.values) {
+            authValues[varName] = value;
+          }
         } catch (err) {
           logger.error(
             `[MCP Auth Value Flags] Error checking ${varName} for user ${user.id}:`,
@@ -885,6 +892,7 @@ router.get('/:serverName/auth-values', requireJwtAuth, checkMCPUsePermissions, a
       success: true,
       serverName,
       authValueFlags,
+      authValues,
     });
   } catch (error) {
     logger.error(
