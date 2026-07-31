@@ -3,6 +3,7 @@ import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './typ
 import type { SearchResultData } from './types/web';
 import type { TFile } from './types/files';
 import { TFeedback, feedbackSchema } from './feedback';
+import { MCPCustomUserVarValueSchema } from './vars';
 import { Tools } from './types/assistants';
 
 export const isUUID = z.string().uuid();
@@ -740,6 +741,10 @@ export const tPluginAuthConfigSchema = z.object({
   optional: z.boolean().optional(),
   /** Whether the field holds a secret and should be masked in the UI (defaults to masked when omitted). */
   sensitive: z.boolean().optional(),
+  /** Predefined choices; when set, the field renders as a select instead of a text input. */
+  values: z.array(MCPCustomUserVarValueSchema).optional(),
+  /** Allows selecting several `values`, stored as a comma-joined string. */
+  multiple: z.boolean().optional(),
 });
 
 export type TPluginAuthConfig = z.infer<typeof tPluginAuthConfigSchema>;

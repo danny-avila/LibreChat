@@ -9,6 +9,7 @@ const {
   normalizeHttpError,
   extractWebSearchEnvVars,
   deleteAgentCheckpoints,
+  validateCustomUserVarValues,
   deleteAllSharedLinksWithCleanup,
 } = require('@librechat/api');
 const {
@@ -197,11 +198,66 @@ const deleteUserMcpServers = async (userId) => {
   }
 };
 
+/**
+ * Enforces the strict select contract of `customUserVars` declaring predefined
+ * `values`. The UI only offers declared values, but this endpoint is reachable
+ * directly, so out-of-list input is rejected before anything is written.
+ *
+ * Throws when the server config cannot be resolved: `values` also scopes what a
+ * user can reach (a directory for a stdio server, a host for a remote one), and
+ * accepting unvalidated input on a transient registry failure would widen that
+ * scope beyond what the admin declared.
+ * @returns {Promise<import('@librechat/api').CustomUserVarValidation>}
+ */
+const validateMCPVarValues = async (userId, appConfig, pluginKey, auth) => {
+  const serverName = pluginKey.replace(Constants.mcp_prefix, '');
+  if (!serverName) {
+    return { invalid: [], normalized: auth };
+  }
+  const registry = getMCPServersRegistry();
+  const configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});
+  const serverConfig = await registry.getServerConfig(serverName, userId, configServers);
+  if (!serverConfig) {
+    return { invalid: [], normalized: auth };
+  }
+  return validateCustomUserVarValues(serverConfig, auth);
+};
+
 const updateUserPluginsController = async (req, res) => {
   const appConfig = req.config ?? (await getAppConfig(getAppConfigOptionsFromUser(req.user)));
   const { user } = req;
   const { pluginKey, action, auth, isEntityTool } = req.body;
+  /** Values to persist: identical to `auth` unless MCP select fields were canonicalized */
+  let authToStore = auth;
   try {
+    if (action === 'install' && auth != null && pluginKey?.startsWith(Constants.mcp_prefix)) {
+      /** @type {import('@librechat/api').CustomUserVarValidation} */
+      let validation;
+      try {
+        validation = await validateMCPVarValues(user.id, appConfig, pluginKey, auth);
+      } catch (error) {
+        logger.error(
+          `[updateUserPluginsController] Could not resolve ${pluginKey} to validate variable values; refusing the update:`,
+          error,
+        );
+        return res.status(503).json({
+          message: 'Could not validate variable values right now. Please try again.',
+        });
+      }
+
+      if (validation.invalid.length > 0) {
+        logger.warn(
+          `[updateUserPluginsController] Rejected out-of-list value(s) for ${pluginKey}: ${validation.invalid.join(
+            ', ',
+          )}`,
+        );
+        return res.status(400).json({
+          message: `Invalid value for variable(s): ${validation.invalid.join(', ')}`,
+        });
+      }
+      authToStore = validation.normalized;
+    }
+
     if (!isEntityTool) {
       await db.updateUserPlugins(user._id, user.plugins, pluginKey, action);
     }
@@ -211,7 +267,8 @@ const updateUserPluginsController = async (req, res) => {
     }
 
     let keys = Object.keys(auth);
-    const values = Object.values(auth); // Used in 'install' block
+    /** Insertion order matches `keys`: `normalized` only rewrites existing entries */
+    const values = Object.values(authToStore); // Used in 'install' block
 
     const isMCPTool = pluginKey.startsWith('mcp_') || pluginKey.includes(Constants.mcp_delimiter);
 

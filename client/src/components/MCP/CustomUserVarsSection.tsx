@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Label, Input, Button, SecretInput } from '@librechat/client';
+import type { MCPCustomUserVar } from 'librechat-data-provider';
 import type { Control, FieldErrors } from 'react-hook-form';
 import { useMCPAuthValuesQuery } from '~/data-provider/Tools/queries';
 import {
@@ -8,13 +9,13 @@ import {
   CONFIG_HTML_CLASS_ATTR,
   createConfigHtmlSanitizer,
 } from '~/utils/configHtml';
+import CustomUserVarSelect from './CustomUserVarSelect';
 import { useLocalize } from '~/hooks';
 
-export interface CustomUserVarConfig {
-  title: string;
+/** Same shape as a `customUserVars` entry, with the description left optional
+ * because callers build it from `TPluginAuthConfig`, where it may be absent. */
+export interface CustomUserVarConfig extends Omit<MCPCustomUserVar, 'description'> {
   description?: string;
-  /** Whether the field holds a secret and should be masked (defaults to masked when omitted). */
-  sensitive?: boolean;
 }
 
 interface CustomUserVarsSectionProps {
@@ -49,10 +50,12 @@ function AuthField({ name, config, hasValue, control, errors, autoFocus }: AuthF
     return sanitize(config.description);
   }, [config.description, sanitize]);
 
+  const labelId = `${name}-label`;
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label htmlFor={name} className="text-sm font-medium">
+        <Label id={labelId} htmlFor={name} className="text-sm font-medium">
           {config.title} <span className="sr-only">({statusText})</span>
         </Label>
         <div aria-hidden="true">
@@ -74,6 +77,21 @@ function AuthField({ name, config, hasValue, control, errors, autoFocus }: AuthF
         control={control}
         defaultValue=""
         render={({ field }) => {
+          if (config.values && config.values.length > 0) {
+            return (
+              <CustomUserVarSelect
+                id={name}
+                labelId={labelId}
+                values={config.values}
+                multiple={config.multiple}
+                value={field.value}
+                onChange={field.onChange}
+                // eslint-disable-next-line jsx-a11y/no-autofocus -- See AuthField autoFocus comment for more details
+                autoFocus={autoFocus}
+                placeholder={localize('com_ui_mcp_select_var', { 0: config.title })}
+              />
+            );
+          }
           const placeholder = hasValue
             ? localize('com_ui_mcp_update_var', { 0: config.title })
             : localize('com_ui_mcp_enter_var', { 0: config.title });
@@ -122,20 +140,33 @@ export default function CustomUserVarsSection({
     enabled: !!serverName,
   });
 
+  const emptyValues = useMemo(() => {
+    const initial: Record<string, string> = {};
+    Object.keys(fields).forEach((key) => {
+      initial[key] = '';
+    });
+    return initial;
+  }, [fields]);
+
   const {
     reset,
     control,
     handleSubmit,
     formState: { errors },
-  } = useForm<Record<string, string>>({
-    defaultValues: useMemo(() => {
-      const initial: Record<string, string> = {};
-      Object.keys(fields).forEach((key) => {
-        initial[key] = '';
-      });
-      return initial;
-    }, [fields]),
-  });
+  } = useForm<Record<string, string>>({ defaultValues: emptyValues });
+
+  /* Only non-secret selects are disclosed by the endpoint, and they arrive after
+   * the first render; apply them once so the current choice is preselected
+   * without overwriting edits made while the query was in flight. */
+  const disclosedValues = authValuesData?.authValues;
+  const disclosedServerRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (disclosedValues == null || disclosedServerRef.current === serverName) {
+      return;
+    }
+    disclosedServerRef.current = serverName;
+    reset({ ...emptyValues, ...disclosedValues });
+  }, [disclosedValues, emptyValues, reset, serverName]);
 
   const onFormSubmit = (data: Record<string, string>) => {
     onSave(data);
@@ -143,7 +174,9 @@ export default function CustomUserVarsSection({
 
   const handleRevokeClick = () => {
     onRevoke();
-    reset();
+    /* Explicitly clear rather than `reset()`: preselecting disclosed values makes
+     * them the form's defaults, so a bare reset would restore the revoked choice. */
+    reset(emptyValues);
   };
 
   if (!fields || Object.keys(fields).length === 0) {

@@ -1,4 +1,10 @@
-import { Constants, normalizeServerName } from 'librechat-data-provider';
+import {
+  Constants,
+  normalizeServerName,
+  getMCPCustomUserVarValues,
+  splitMCPCustomUserVarValue,
+  canonicalizeMCPCustomUserVarValue,
+} from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
 import type { RequestBody } from '~/types';
 
@@ -232,6 +238,61 @@ export function getMissingCustomUserVars(
     const value = providedVars?.[key];
     return value == null || (typeof value === 'string' && value.trim() === '');
   });
+}
+
+export interface CustomUserVarValidation {
+  /** Names of variables whose submitted value is not covered by declared `values` */
+  invalid: string[];
+  /** The submitted values, with select fields replaced by their canonical form */
+  normalized: Record<string, string>;
+}
+
+/**
+ * Enforces the strict select contract of `customUserVars` declaring predefined
+ * `values`, and returns the values to persist. Blank submissions are treated as
+ * "unset" rather than invalid, matching `getMissingCustomUserVars`; variables
+ * without declared `values` accept free text and are passed through untouched.
+ *
+ * The canonical form matters: the submitted value is trimmed (and re-joined for
+ * `multiple`) so what is persisted is exactly what was validated. Otherwise a
+ * padded value would pass the allowlist check and then be substituted verbatim
+ * into `url`/`args`/`env` placeholders.
+ *
+ * Used server-side before credentials are written: the UI only offers declared
+ * values, but the save endpoint is reachable directly.
+ */
+export function validateCustomUserVarValues(
+  config: Pick<ParsedServerConfig, 'customUserVars'>,
+  providedVars?: Record<string, string> | null,
+): CustomUserVarValidation {
+  const normalized: Record<string, string> = { ...(providedVars ?? {}) };
+  const invalid: string[] = [];
+  if (!hasCustomUserVars(config) || providedVars == null) {
+    return { invalid, normalized };
+  }
+
+  for (const [key, varConfig] of Object.entries(config.customUserVars ?? {})) {
+    const accepted = getMCPCustomUserVarValues(varConfig?.values);
+    if (accepted.length === 0) {
+      continue;
+    }
+    const provided = providedVars[key];
+    if (provided == null || provided.trim() === '') {
+      continue;
+    }
+
+    const canonical = canonicalizeMCPCustomUserVarValue(provided, varConfig?.multiple);
+    const selections =
+      varConfig?.multiple === true ? splitMCPCustomUserVarValue(canonical) : [canonical];
+    const acceptedSet = new Set(accepted);
+    if (selections.some((selection) => !acceptedSet.has(selection))) {
+      invalid.push(key);
+      continue;
+    }
+    normalized[key] = canonical;
+  }
+
+  return { invalid, normalized };
 }
 
 /**

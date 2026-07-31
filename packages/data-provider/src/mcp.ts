@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import { TokenExchangeMethodEnum } from './types/agents';
+import {
+  mcpCustomUserVarSeparator,
+  getMCPCustomUserVarValues,
+  MCPCustomUserVarValueSchema,
+} from './vars';
 import { extractEnvVariable } from './utils';
 
 const validateOAuthClientCredentials = (
@@ -154,6 +159,60 @@ const OboOptionsSchema = z.object({
   scopes: z.string().min(1),
 });
 
+export const MCPCustomUserVarSchema = z
+  .object({
+    title: z.string(),
+    description: z.string(),
+    /**
+     * Whether the field holds a secret and should be masked in the UI.
+     * Defaults to masked when omitted; set to `false` for non-secret setup
+     * values (e.g. username, project key, base URL) to render as plain text.
+     */
+    sensitive: z.boolean().optional(),
+    /**
+     * Predefined choices. When set, the field renders as a select and only
+     * these values are accepted when the user saves their variables.
+     */
+    values: z.array(MCPCustomUserVarValueSchema).min(1).optional(),
+    /** Allows selecting several `values`, stored as a comma-joined string. */
+    multiple: z.boolean().optional(),
+  })
+  .superRefine((config, ctx) => {
+    if (config.multiple === true && config.values == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '`multiple` requires `values` to be defined',
+        path: ['multiple'],
+      });
+    }
+
+    const values = getMCPCustomUserVarValues(config.values);
+    if (new Set(values).size !== values.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '`values` must not contain duplicates',
+        path: ['values'],
+      });
+    }
+
+    /* Multi-selections are stored comma-joined, so a value containing the
+     * separator could not be split back into the selection the user made. */
+    if (config.multiple === true) {
+      const offending = values.filter((value) => value.includes(mcpCustomUserVarSeparator));
+      if (offending.length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `\`values\` cannot contain '${mcpCustomUserVarSeparator}' when \`multiple\` is set: ${offending.join(
+            ' ',
+          )}`,
+          path: ['values'],
+        });
+      }
+    }
+  });
+
+export type MCPCustomUserVar = z.infer<typeof MCPCustomUserVarSchema>;
+
 const BaseOptionsSchema = z.object({
   /** Display name for the MCP server - only letters, numbers, and spaces allowed */
   title: z
@@ -213,21 +272,7 @@ const BaseOptionsSchema = z.object({
       custom_header: z.string().optional(),
     })
     .optional(),
-  customUserVars: z
-    .record(
-      z.string(),
-      z.object({
-        title: z.string(),
-        description: z.string(),
-        /**
-         * Whether the field holds a secret and should be masked in the UI.
-         * Defaults to masked when omitted; set to `false` for non-secret setup
-         * values (e.g. username, project key, base URL) to render as plain text.
-         */
-        sensitive: z.boolean().optional(),
-      }),
-    )
-    .optional(),
+  customUserVars: z.record(z.string(), MCPCustomUserVarSchema).optional(),
 });
 
 const ProxyUrlSchema = z

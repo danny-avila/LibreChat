@@ -220,6 +220,12 @@ export interface MCPAuthValuesResponse {
   success: boolean;
   serverName: string;
   authValueFlags: Record<string, boolean>;
+  /**
+   * Current values, exposed only for variables that declare predefined `values`
+   * and are explicitly `sensitive: false`, so the UI can preselect them.
+   * Secrets are never included.
+   */
+  authValues: Record<string, string>;
 }
 
 /**
