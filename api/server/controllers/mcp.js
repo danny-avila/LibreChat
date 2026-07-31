@@ -382,9 +382,12 @@ const createMCPServerController = async (req, res) => {
         .json({ message: 'Forbidden: Insufficient permissions to configure OBO' });
     }
     /** Reserve both spellings: a generated slug must not collide with a raw
-     *  config name OR the normalized form its tool keys actually carry. */
+     *  config name OR the normalized form its tool keys actually carry
+     *  (deduped — the spellings coincide for safe names). */
     const configNames = await resolveMcpConfigNames(req);
-    const reservedServerNames = [...configNames, ...configNames.map(normalizeServerName)];
+    const reservedServerNames = [
+      ...new Set([...configNames, ...configNames.map(normalizeServerName)]),
+    ];
     const result = await getMCPServersRegistry().addServer(
       'temp_server_name',
       validation.data,
