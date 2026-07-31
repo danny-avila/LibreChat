@@ -3,6 +3,8 @@ import { FilePenLine, FilePlus2 } from 'lucide-react';
 import type { TAttachment } from 'librechat-data-provider';
 import parseJsonField, { parseJsonFieldOccurrences } from './parseJsonField';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
+import { toolPanelSpacingClassName } from '../disclosure';
+import DiffView, { parseUnifiedDiff } from './DiffView';
 import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
 import CodeWindowHeader from './CodeWindowHeader';
@@ -128,11 +130,14 @@ export default function FileAuthoringCall({
    *  or skill SKILL.md updates). The host-authored summary always opens with
    *  `Created`/`Updated`, so key the finished label off it for truthfulness. */
   const overwrote = isCreate && output.startsWith('Updated ');
-  const filePath = useMemo(() => parseJsonField(args, 'file_path'), [args]);
+  const filePath = useMemo(
+    () => parseJsonField(args, 'path') || parseJsonField(args, 'file_path'),
+    [args],
+  );
   const intent = useToolCallIntent(args);
   const authoredContent = useMemo(() => parseJsonField(args, 'content'), [args]);
   const editArgsPreview = useMemo(() => buildEditArgsPreview(args), [args]);
-  const fileName = filePath.split('/').pop() || filePath;
+  const fileName = filePath.split('/').pop() || filePath || localize('com_ui_file').toLowerCase();
   const fileLang = useMemo(() => langFromPath(filePath), [filePath]);
   const argsPreview = isCreate ? authoredContent : editArgsPreview;
   const outputIsDiff = hasDiff(output);
@@ -141,16 +146,18 @@ export default function FileAuthoringCall({
   const showOutputSection = !!output && preview !== output;
   const previewIsDiff = outputIsDiff || (!isCreate && !!editArgsPreview && preview !== output);
   let previewLang = 'plaintext';
-  if (previewIsDiff) {
-    previewLang = 'diff';
-  } else if (isCreate && authoredContent && preview === authoredContent) {
+  if (isCreate && authoredContent && preview === authoredContent) {
     previewLang = fileLang;
   }
+  const parsedDiff = useMemo(
+    () => (previewIsDiff && preview ? parseUnifiedDiff(preview) : null),
+    [previewIsDiff, preview],
+  );
 
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError } =
     useToolCallState(initialProgress, isSubmitting, output, !!filePath || !!preview, onExpand);
 
-  const highlighted = useLazyHighlight(preview || undefined, previewLang);
+  const highlighted = useLazyHighlight(!parsedDiff && preview ? preview : undefined, previewLang);
   const Icon = isCreate && !overwrote ? FilePlus2 : FilePenLine;
   let finishedKey: 'com_ui_created_file' | 'com_ui_updated_file' | 'com_ui_edited_file' =
     'com_ui_edited_file';
@@ -160,7 +167,7 @@ export default function FileAuthoringCall({
 
   return (
     <>
-      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+      <div className="relative my-1 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
           onClick={toggleCode}
@@ -193,18 +200,35 @@ export default function FileAuthoringCall({
       <div style={expandStyle}>
         <div className="overflow-hidden" ref={expandRef}>
           {!!preview && (
-            <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
-              <CodeWindowHeader language={previewIsDiff ? 'diff' : fileName} code={preview} />
-              <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
-                <code className={`hljs language-${previewLang} !whitespace-pre`}>
-                  {highlighted ?? preview}
-                </code>
-              </pre>
+            <div
+              className={cn(
+                toolPanelSpacingClassName,
+                'overflow-hidden rounded-lg border border-border-light bg-surface-secondary',
+              )}
+            >
+              <CodeWindowHeader
+                language={fileName}
+                code={preview}
+                diffStats={
+                  parsedDiff
+                    ? { additions: parsedDiff.additions, deletions: parsedDiff.deletions }
+                    : undefined
+                }
+              />
+              {parsedDiff ? (
+                <DiffView parsed={parsedDiff} />
+              ) : (
+                <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
+                  <code className={`hljs language-${previewLang} !whitespace-pre`}>
+                    {highlighted ?? preview}
+                  </code>
+                </pre>
+              )}
               {showOutputSection && (
                 <pre
                   className={cn(
-                    'max-h-[300px] overflow-auto whitespace-pre-wrap break-words border-t border-border-light px-3 py-2.5 font-mono text-xs',
-                    hasError ? 'text-status-error' : 'text-text-primary',
+                    'max-h-[300px] overflow-auto whitespace-pre-wrap break-words border-t border-border-light px-3 py-2 font-mono text-xs',
+                    hasError ? 'text-status-error' : 'text-text-secondary',
                   )}
                 >
                   {output}

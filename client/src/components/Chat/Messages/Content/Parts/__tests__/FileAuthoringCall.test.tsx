@@ -146,9 +146,8 @@ describe('FileAuthoringCall', () => {
       />,
     );
 
-    const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
-    expect(preview).toHaveTextContent('-old line');
-    expect(preview).toHaveTextContent('+new line');
+    expect(screen.getByText('old line').closest('div')).toHaveClass('bg-red-500/10');
+    expect(screen.getByText('new line').closest('div')).toHaveClass('bg-green-500/10');
     expect(screen.queryByText(/--- old_text/)).not.toBeInTheDocument();
   });
 
@@ -167,9 +166,8 @@ describe('FileAuthoringCall', () => {
       />,
     );
 
-    const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
-    expect(preview).toHaveTextContent('-missing text');
-    expect(preview).toHaveTextContent('+replacement');
+    expect(screen.getByText('missing text').closest('div')).toHaveClass('bg-red-500/10');
+    expect(screen.getByText('replacement').closest('div')).toHaveClass('bg-green-500/10');
     expect(screen.getByText(/matched 0 locations/)).toBeInTheDocument();
   });
 
@@ -189,12 +187,14 @@ describe('FileAuthoringCall', () => {
     );
 
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Editing SKILL.md');
-    expect(screen.getByTestId('code-window-header')).toHaveAttribute('data-language', 'diff');
-    const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
-    expect(preview).toHaveTextContent('--- old_text');
-    expect(preview).toHaveTextContent('+++ new_text');
-    expect(preview).toHaveTextContent('-description: Old behavior');
-    expect(preview).toHaveTextContent('+description: New behavior');
+    expect(screen.getByTestId('code-window-header')).toHaveAttribute('data-language', 'SKILL.md');
+    expect(screen.queryByText(/--- old_text/)).not.toBeInTheDocument();
+    expect(screen.getByText('description: Old behavior').closest('div')).toHaveClass(
+      'bg-red-500/10',
+    );
+    expect(screen.getByText('description: New behavior').closest('div')).toHaveClass(
+      'bg-green-500/10',
+    );
   });
 
   it('streams create_file content from partial JSON string args during run_step_delta', () => {
@@ -226,9 +226,10 @@ describe('FileAuthoringCall', () => {
       />,
     );
 
-    const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
-    expect(preview).toHaveTextContent('-description: Old behavior');
-    expect(preview).toHaveTextContent('+description: New beh');
+    expect(screen.getByText('description: Old behavior').closest('div')).toHaveClass(
+      'bg-red-500/10',
+    );
+    expect(screen.getByText('description: New beh').closest('div')).toHaveClass('bg-green-500/10');
   });
 
   it('streams batched edit_file previews from a partial edits array', () => {
@@ -246,13 +247,12 @@ describe('FileAuthoringCall', () => {
       />,
     );
 
-    const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
-    expect(preview).toHaveTextContent('--- old_text 1');
-    expect(preview).toHaveTextContent('-first old');
-    expect(preview).toHaveTextContent('+first new');
-    expect(preview).toHaveTextContent('--- old_text 2');
-    expect(preview).toHaveTextContent('-second old');
-    expect(preview).toHaveTextContent('+second n');
+    const diff = screen.getByTestId('diff-view');
+    expect(screen.getByText('first old').closest('div')).toHaveClass('bg-red-500/10');
+    expect(screen.getByText('first new').closest('div')).toHaveClass('bg-green-500/10');
+    expect(screen.getByText('second old').closest('div')).toHaveClass('bg-red-500/10');
+    expect(screen.getByText('second n').closest('div')).toHaveClass('bg-green-500/10');
+    expect(diff).toBeInTheDocument();
   });
 
   it('shows batched edit_file replacements from edits args while the call is in progress', () => {
@@ -272,10 +272,7 @@ describe('FileAuthoringCall', () => {
       />,
     );
 
-    const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
-    expect(preview).toHaveTextContent('--- old_text 1');
-    expect(preview).toHaveTextContent('+++ new_text 2');
-    expect(preview).toHaveTextContent('-first old');
-    expect(preview).toHaveTextContent('+second new');
+    expect(screen.getByText('first old').closest('div')).toHaveClass('bg-red-500/10');
+    expect(screen.getByText('second new').closest('div')).toHaveClass('bg-green-500/10');
   });
 });
