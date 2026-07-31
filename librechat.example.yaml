@@ -894,9 +894,12 @@ endpoints:
 #     # (optional) Pick a subset of the starter catalog by id; omit to
 #     # enable all starters (sk_prefix, bearer_header, api_key_header).
 #     starterPatterns: [sk_prefix, bearer_header, api_key_header]
-#     # (optional) Operator-defined patterns. Each entry needs id,
-#     # label, and a regex in RE2 syntax (backreferences and lookaround
-#     # are not supported); the regex is validated at config load time.
+#     # (optional) Operator-defined patterns. Each entry needs id, label,
+#     # and a regex in RE2 syntax and semantics (RE2 is a linear-time engine
+#     # with no catastrophic backtracking; a few escapes such as \p, \A, and
+#     # \s differ from JavaScript). Backreferences and lookaround are not
+#     # supported; the regex is validated against the RE2 engine at config
+#     # load time and a pattern it cannot compile is rejected.
 #     customPatterns:
 #       - id: anthropic_api_key
 #         label: Anthropic API key

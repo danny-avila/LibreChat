@@ -29,17 +29,22 @@ export function configureMessageFilterRegexValidator(): void {
 
 type CompiledPattern = { id: string; label: string; pattern: RE2JS };
 
+const WHITESPACE = '\\s\\p{Zs}\\x0B\\x{2028}\\x{2029}\\x{FEFF}';
+
 const STARTER_PATTERNS: CompiledPattern[] = [
   { id: 'sk_prefix', label: 'sk- prefix token', pattern: RE2JS.compile('\\b(sk-)[a-zA-Z0-9_-]+') },
   {
     id: 'bearer_header',
     label: 'Bearer token',
-    pattern: RE2JS.compile('\\b(Bearer )[^\\s\\p{Zs}"\']+', RE2JS.CASE_INSENSITIVE),
+    pattern: RE2JS.compile(`\\b(Bearer )[^${WHITESPACE}"']+`, RE2JS.CASE_INSENSITIVE),
   },
   {
     id: 'api_key_header',
     label: 'api-key header',
-    pattern: RE2JS.compile('\\b(api-key:?[\\s\\p{Zs}]+)[^\\s\\p{Zs}"\']+', RE2JS.CASE_INSENSITIVE),
+    pattern: RE2JS.compile(
+      `\\b(api-key:?[${WHITESPACE}]+)[^${WHITESPACE}"']+`,
+      RE2JS.CASE_INSENSITIVE,
+    ),
   },
 ];
 

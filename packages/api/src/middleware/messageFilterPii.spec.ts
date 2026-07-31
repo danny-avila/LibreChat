@@ -94,9 +94,15 @@ describe('messageFilterPii middleware', () => {
     expect(capturedRes.status).toBe(400);
   });
 
-  it('rejects an api-key header separated by non-ASCII whitespace', () => {
-    const nbsp = String.fromCharCode(0x00a0);
-    const { capturedRes, nextCalls } = runMiddleware({}, { text: `api-key:${nbsp}foo123bar` });
+  it.each([
+    ['U+00A0 no-break space', 0x00a0],
+    ['U+000B vertical tab', 0x000b],
+    ['U+2028 line separator', 0x2028],
+    ['U+2029 paragraph separator', 0x2029],
+    ['U+FEFF zero-width no-break space', 0xfeff],
+  ])('rejects an api-key header separated by %s', (_label, code) => {
+    const ws = String.fromCharCode(code);
+    const { capturedRes, nextCalls } = runMiddleware({}, { text: `api-key:${ws}foo123bar` });
     expect(nextCalls).toBe(0);
     expect(capturedRes.status).toBe(400);
   });
