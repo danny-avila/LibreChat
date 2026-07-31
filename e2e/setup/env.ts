@@ -8,7 +8,8 @@ const GENERATED_CREDS_KEY = crypto.randomBytes(32).toString('hex');
 const GENERATED_CREDS_IV = crypto.randomBytes(16).toString('hex');
 const GENERATED_JWT_SECRET = crypto.randomBytes(32).toString('hex');
 const GENERATED_JWT_REFRESH_SECRET = crypto.randomBytes(32).toString('hex');
-const DEFAULT_REDIS_URI = 'redis://127.0.0.1:6379';
+const DEFAULT_REDIS_URI = 'redis://127.0.0.1:6379/15';
+const DEFAULT_REDIS_KEY_PREFIX = 'LibreChatE2E';
 const PASSTHROUGH_ENV_KEYS = [
   'APPDATA',
   'CI',
@@ -79,6 +80,8 @@ function getStreamStoreEnv(): Record<string, string> {
       E2E_REQUIRE_REDIS_STREAMS: 'false',
       USE_REDIS: 'false',
       USE_REDIS_STREAMS: 'false',
+      REDIS_KEY_PREFIX: '',
+      REDIS_KEY_PREFIX_VAR: '',
     };
   }
   if (streamStore === 'redis') {
@@ -87,6 +90,8 @@ function getStreamStoreEnv(): Record<string, string> {
       USE_REDIS: 'true',
       USE_REDIS_STREAMS: 'true',
       REDIS_URI: process.env.REDIS_URI ?? DEFAULT_REDIS_URI,
+      REDIS_KEY_PREFIX: process.env.E2E_REDIS_KEY_PREFIX ?? DEFAULT_REDIS_KEY_PREFIX,
+      REDIS_KEY_PREFIX_VAR: '',
     };
   }
   throw new Error(`Unsupported E2E_STREAM_STORE "${streamStore}"`);
