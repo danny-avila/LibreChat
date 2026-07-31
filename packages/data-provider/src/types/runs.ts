@@ -77,6 +77,8 @@ export enum ApprovalEvents {
  */
 export enum SteerEvents {
   ON_STEER_APPLIED = 'on_steer_applied',
+  /** Durable capability correction for queued steers after HITL handover. */
+  ON_STEER_UPDATED = 'on_steer_updated',
 }
 
 /**
@@ -115,28 +117,47 @@ export type TActivityLabelEvent = {
 /** A steer message queued server-side but not yet injected into the run. */
 export type TPendingSteer = {
   steerId: string;
+  /** Correlates a server steer with its optimistic chip when terminal delivery
+   *  races ahead of the POST response. */
+  clientSteerId?: string;
   text: string;
   createdAt?: number;
   files?: Partial<TFile>[];
   /** The steer asked to interrupt generation at the next safe boundary —
    *  kept on parked/replayed chips so the "interrupting" label survives. */
   preempt?: boolean;
+  /** Monotonic server revision for last-writer-wins interrupt labels. */
+  preemptRevision?: number;
 };
 
 /** Payload of the `on_steer_applied` SSE event. */
 export type TSteerAppliedEvent = {
   steerId: string;
+  /** Correlates the applied event with the optimistic chip before the POST settles. */
+  clientSteerId?: string;
   /** Absolute content index the steer part was injected at. */
   index: number;
   part: {
     type: ContentTypes.STEER;
     [ContentTypes.STEER]: string;
     steerId?: string;
+    clientSteerId?: string;
     createdAt?: number;
     files?: Partial<TFile>[];
   };
   responseMessageId?: string;
   conversationId?: string;
+};
+
+/** A queued steer's interrupt label changed without moving its FIFO slot. */
+export type TSteerUpdatedEvent = {
+  conversationId: string;
+  steers: Array<{
+    steerId: string;
+    clientSteerId?: string;
+    preempt: boolean;
+    preemptRevision: number;
+  }>;
 };
 
 /** Mirrors TokenBudgetBreakdown from @librechat/agents (data-provider cannot import it). */

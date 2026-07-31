@@ -163,7 +163,7 @@ const DuringRunSendButton = React.memo(
       // `!canSteer` like the steer row above: `canSteer` is also false before
       // a conversation exists, where `interruptSteer` falls back to interrupt
       // & send and this row must stay live for the whole first turn.
-      disabled: steering.pausedOnApproval,
+      disabled: steering.pausedOnApproval || !steering.canControlGeneration,
       onClick: () => runAction((text) => steering.interruptSteer(text)),
     };
     const interruptRow: ActionRow = {
@@ -171,6 +171,7 @@ const DuringRunSendButton = React.memo(
       label: localize('com_ui_interrupt_send'),
       kbd: verdicts.altEnter === 'interrupt' ? altEnter : undefined,
       icon: <OctagonPause className="h-4 w-4 text-red-500" aria-hidden="true" />,
+      disabled: !steering.canControlGeneration,
       onClick: () => runAction((text) => steering.interruptAndSend(text)),
     };
     const rows = primary === 'steer' ? [steerRow, queueRow] : [queueRow, steerRow];

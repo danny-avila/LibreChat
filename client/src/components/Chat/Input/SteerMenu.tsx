@@ -1,10 +1,10 @@
-import { useMemo } from 'react';
+import { Fragment, useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react';
+import type { Ref } from 'react';
 import { useRecoilState } from 'recoil';
 import * as Ariakit from '@ariakit/react';
-import { InfoHoverCard, ESide } from '@librechat/client';
-import { Zap, ZapOff, Clock, ArrowUp, MoreHorizontal } from 'lucide-react';
+import { Zap, ZapOff, Clock, ArrowUp, CircleHelp, MoreHorizontal } from 'lucide-react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
-import { useShortcutDisplay } from '~/hooks/useKeyboardShortcuts';
+import { useShortcutAriaKey, useShortcutDisplay } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -20,6 +20,53 @@ const MENU_CLASS =
   'z-50 min-w-[13rem] rounded-xl border border-border-light bg-surface-secondary p-1.5 text-text-primary shadow-lg outline-none';
 const MENU_ITEM_CLASS =
   'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-text-primary data-[active-item]:bg-surface-tertiary aria-disabled:cursor-not-allowed aria-disabled:opacity-50';
+const ESCALATION_MESSAGE_LABEL_MAX_LENGTH = 80;
+
+const activeEscalateListeners = new Set<() => void>();
+let hoveredEscalateTarget: string | null = null;
+let focusedEscalateTarget: string | null = null;
+
+function getActiveEscalateTarget() {
+  return focusedEscalateTarget ?? hoveredEscalateTarget;
+}
+
+function subscribeToActiveEscalateTarget(listener: () => void) {
+  activeEscalateListeners.add(listener);
+  return () => activeEscalateListeners.delete(listener);
+}
+
+function updateActiveEscalateTarget(kind: 'hover' | 'focus', targetId: string, active: boolean) {
+  const previous = getActiveEscalateTarget();
+  if (kind === 'hover') {
+    if (active) {
+      hoveredEscalateTarget = targetId;
+    } else if (hoveredEscalateTarget === targetId) {
+      hoveredEscalateTarget = null;
+    }
+  } else {
+    if (active) {
+      focusedEscalateTarget = targetId;
+    } else if (focusedEscalateTarget === targetId) {
+      focusedEscalateTarget = null;
+    }
+  }
+  if (previous !== getActiveEscalateTarget()) {
+    activeEscalateListeners.forEach((listener) => listener());
+  }
+}
+
+function clearActiveEscalateTarget(targetId: string) {
+  const previous = getActiveEscalateTarget();
+  if (hoveredEscalateTarget === targetId) {
+    hoveredEscalateTarget = null;
+  }
+  if (focusedEscalateTarget === targetId) {
+    focusedEscalateTarget = null;
+  }
+  if (previous !== getActiveEscalateTarget()) {
+    activeEscalateListeners.forEach((listener) => listener());
+  }
+}
 
 export type MenuEntry = {
   key: string;
@@ -27,7 +74,7 @@ export type MenuEntry = {
   icon: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
-  /** Localized description shown as the standard info hovercard. */
+  /** Localized description announced on the action and exposed by a help disclosure. */
   info?: string;
 };
 
@@ -40,36 +87,82 @@ export function RowMenu({
   label,
   entries,
   preferences,
+  buttonRef,
 }: {
   label: string;
   entries: MenuEntry[];
   preferences?: MenuEntry[];
+  buttonRef?: Ref<HTMLButtonElement>;
 }) {
   const localize = useLocalize();
   const menu = Ariakit.useMenuStore({ placement: 'top-end' });
-  const renderEntry = (entry: MenuEntry) => (
-    <Ariakit.MenuItem
-      key={entry.key}
-      className={MENU_ITEM_CLASS}
-      disabled={entry.disabled === true}
-      accessibleWhenDisabled
-      onClick={() => {
-        entry.onClick();
-        menu.hide();
-      }}
-    >
-      {entry.icon}
-      {entry.label}
-      {entry.info != null && (
-        <span className="ml-auto flex items-center" onClick={(event) => event.stopPropagation()}>
-          <InfoHoverCard side={ESide.Top} text={entry.info} />
-        </span>
-      )}
-    </Ariakit.MenuItem>
-  );
+  const descriptionPrefix = useId();
+  const preferencesLabelId = `${descriptionPrefix}-preferences`;
+  const [expandedInfoKey, setExpandedInfoKey] = useState<string | null>(null);
+  const renderEntry = (entry: MenuEntry) => {
+    const descriptionId = entry.info == null ? undefined : `${descriptionPrefix}-${entry.key}`;
+    const infoExpanded = entry.info != null && expandedInfoKey === entry.key;
+    const action = (
+      <Ariakit.MenuItem
+        className={MENU_ITEM_CLASS}
+        disabled={entry.disabled === true}
+        accessibleWhenDisabled
+        aria-describedby={descriptionId}
+        onClick={() => {
+          entry.onClick();
+          setExpandedInfoKey(null);
+          menu.hide();
+        }}
+      >
+        {entry.icon}
+        {entry.label}
+      </Ariakit.MenuItem>
+    );
+
+    if (entry.info == null || descriptionId == null) {
+      return <Fragment key={entry.key}>{action}</Fragment>;
+    }
+
+    return (
+      <div key={entry.key} role="none">
+        <div role="none" className="flex items-center gap-0.5">
+          <div role="none" className="min-w-0 flex-1">
+            {action}
+          </div>
+          <Ariakit.MenuItem
+            aria-label={`${localize('com_ui_more_info')}: ${entry.label}`}
+            aria-expanded={infoExpanded}
+            aria-controls={descriptionId}
+            hideOnClick={false}
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy data-[active-item]:bg-surface-tertiary"
+            onClick={() =>
+              setExpandedInfoKey((current) => (current === entry.key ? null : entry.key))
+            }
+          >
+            <CircleHelp className="h-3.5 w-3.5" aria-hidden="true" />
+          </Ariakit.MenuItem>
+        </div>
+        <div
+          id={descriptionId}
+          className={cn(
+            infoExpanded
+              ? 'mx-2 mb-1 rounded-lg bg-surface-tertiary px-2 py-1.5 text-xs leading-relaxed text-text-secondary'
+              : 'sr-only',
+          )}
+        >
+          {entry.info}
+        </div>
+      </div>
+    );
+  };
   return (
     <>
-      <Ariakit.MenuButton store={menu} aria-label={label} className={ICON_BTN_CLASS}>
+      <Ariakit.MenuButton
+        ref={buttonRef}
+        store={menu}
+        aria-label={label}
+        className={ICON_BTN_CLASS}
+      >
         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
       </Ariakit.MenuButton>
       <Ariakit.Menu store={menu} portal gutter={6} className={MENU_CLASS}>
@@ -77,10 +170,15 @@ export function RowMenu({
         {preferences != null && preferences.length > 0 && (
           <>
             <div role="separator" className="mx-2 my-1 border-t border-border-light" />
-            <div className="px-2 pb-0.5 pt-1 text-[11px] font-medium uppercase tracking-wide text-text-secondary">
-              {localize('com_ui_preferences')}
+            <div role="group" aria-labelledby={preferencesLabelId}>
+              <div
+                id={preferencesLabelId}
+                className="px-2 pb-0.5 pt-1 text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+              >
+                {localize('com_ui_preferences')}
+              </div>
+              {preferences.map(renderEntry)}
             </div>
-            {preferences.map(renderEntry)}
           </>
         )}
       </Ariakit.Menu>
@@ -91,22 +189,50 @@ export function RowMenu({
 /**
  * The always-visible escalation control on a waiting message: interrupt &
  * steer it now, at the next safe token boundary. The tooltip teaches this
- * action's OWN shortcut (registry-aware, so a rebinding shows correctly);
- * the shortcut handler clicks whichever of these buttons is newest, so the
- * two can never diverge.
+ * action's OWN shortcut (registry-aware, so a rebinding shows correctly).
+ * Hover/focus marks this exact button as the active shortcut target; without
+ * an active row the shortcut retains its newest-waiting-message fallback.
  */
 export function EscalateNowButton({
   surface,
   disabled,
+  messageText,
   onClick,
 }: {
   surface: 'bubble' | 'queued';
   disabled: boolean;
-  onClick: () => void;
+  messageText: string;
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
   const localize = useLocalize();
   const chord = useShortcutDisplay('escalateSteer');
+  const ariaKey = useShortcutAriaKey('escalateSteer');
+  const targetId = useId();
+  const activeTarget = useSyncExternalStore(
+    subscribeToActiveEscalateTarget,
+    getActiveEscalateTarget,
+    () => null,
+  );
+  const isActive = !disabled && activeTarget === targetId;
   const label = localize('com_ui_interrupt_steer_now');
+  const normalizedMessageLabel = messageText.trim().replace(/\s+/g, ' ');
+  const messageCharacters = Array.from(normalizedMessageLabel);
+  const messageLabel =
+    messageCharacters.length > ESCALATION_MESSAGE_LABEL_MAX_LENGTH
+      ? `${messageCharacters
+          .slice(0, ESCALATION_MESSAGE_LABEL_MAX_LENGTH - 1)
+          .join('')
+          .trimEnd()}…`
+      : normalizedMessageLabel;
+  const accessibleLabel = messageLabel.length > 0 ? `${label}: ${messageLabel}` : label;
+
+  useEffect(() => {
+    if (disabled) {
+      clearActiveEscalateTarget(targetId);
+    }
+    return () => clearActiveEscalateTarget(targetId);
+  }, [disabled, targetId]);
+
   return (
     <>
       {/* Thin divider binds the arrow to the message on its left, so it can
@@ -119,10 +245,18 @@ export function EscalateNowButton({
           render={
             <button
               type="button"
-              aria-label={label}
+              aria-label={accessibleLabel}
+              aria-keyshortcuts={isActive ? ariaKey : undefined}
               data-escalate-steer={surface}
+              data-escalate-steer-active={isActive ? 'true' : undefined}
               data-testid={surface === 'queued' ? 'queued-interrupt-now' : 'steer-escalate-now'}
               disabled={disabled}
+              onPointerEnter={() =>
+                !disabled && updateActiveEscalateTarget('hover', targetId, true)
+              }
+              onPointerLeave={() => updateActiveEscalateTarget('hover', targetId, false)}
+              onFocus={() => !disabled && updateActiveEscalateTarget('focus', targetId, true)}
+              onBlur={() => updateActiveEscalateTarget('focus', targetId, false)}
               onClick={onClick}
               className={cn(
                 'flex size-6 shrink-0 items-center justify-center rounded-full',
@@ -136,9 +270,7 @@ export function EscalateNowButton({
           }
         />
         <Ariakit.Tooltip className="z-50 rounded-lg bg-surface-tertiary px-2 py-1 text-xs text-text-primary shadow-lg">
-          {/* A disabled control's shortcut does nothing right now, so the
-           *  chord is only advertised while the escalation is live. */}
-          {chord && !disabled ? `${label} · ${chord}` : label}
+          {chord && isActive ? `${label} · ${chord}` : label}
         </Ariakit.Tooltip>
       </Ariakit.TooltipProvider>
     </>
@@ -180,20 +312,35 @@ export function useDefaultToggleEntry(steering: SteeringControls): MenuEntry {
 export function useInterruptToggleEntry(): MenuEntry {
   const localize = useLocalize();
   const [interrupts, setInterrupts] = useRecoilState(store.steerInterruptsByDefault);
+  const [defaultAction, setDefaultAction] = useRecoilState(store.duringRunDefaultAction);
+  const interruptsByDefault = defaultAction === 'steer' && interrupts;
   return useMemo(
     () => ({
       key: 'toggle-interrupt',
-      label: interrupts
+      label: interruptsByDefault
         ? localize('com_ui_wait_for_tool_steps')
         : localize('com_ui_always_interrupt'),
-      icon: interrupts ? (
+      icon: interruptsByDefault ? (
         <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />
       ) : (
         <ZapOff className="h-4 w-4 text-amber-500" aria-hidden="true" />
       ),
-      info: localize('com_ui_steer_interrupts_default_info'),
-      onClick: () => setInterrupts(!interrupts),
+      info: localize(
+        !interruptsByDefault && defaultAction === 'queue'
+          ? 'com_ui_steer_interrupts_enable_info'
+          : 'com_ui_steer_interrupts_default_info',
+      ),
+      onClick: () => {
+        if (interruptsByDefault) {
+          setInterrupts(false);
+          return;
+        }
+        if (defaultAction === 'queue') {
+          setDefaultAction('steer');
+        }
+        setInterrupts(true);
+      },
     }),
-    [interrupts, setInterrupts, localize],
+    [defaultAction, interruptsByDefault, localize, setDefaultAction, setInterrupts],
   );
 }

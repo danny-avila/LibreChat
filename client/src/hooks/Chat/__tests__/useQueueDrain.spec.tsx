@@ -3,7 +3,7 @@ import { Constants } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
-import type { RunEnd, QueuedMessage } from '~/store/families';
+import type { DrainAfterAbort, RunEnd, QueuedMessage } from '~/store/families';
 import useQueueDrain from '../useQueueDrain';
 import store from '~/store';
 
@@ -26,7 +26,7 @@ function setup(
     setIsSubmitting?: (value: boolean) => void;
     setQueue?: (value: { id: string; text: string; createdAt: number }[]) => void;
     setNewConvoQueue?: (value: { id: string; text: string; createdAt: number }[]) => void;
-    setInterruptFlag?: (value: boolean) => void;
+    setInterruptFlag?: (value: DrainAfterAbort | false) => void;
     queueRef?: { current: { id: string; text: string; createdAt: number }[] };
   } = {};
 
@@ -59,7 +59,12 @@ function setup(
   return { ask, setters };
 }
 
-const emptyOverrides = { overrideFiles: [], overrideQuotes: [], overrideManualSkills: [] };
+const emptyOverrides = expect.objectContaining({
+  overrideFiles: [],
+  overrideQuotes: [],
+  overrideManualSkills: [],
+  overrideQueuedMessageOrigin: expect.any(Object),
+});
 
 const queuedMessage = (id: string, text: string) => ({ id, text, createdAt: Date.now() });
 
@@ -67,6 +72,7 @@ const runEnd = (overrides: Partial<RunEnd> = {}): RunEnd => ({
   conversationId: CONVO_ID,
   outcome: 'completed',
   endedAt: Date.now(),
+  generationCreatedAt: 41,
   ...overrides,
 });
 
@@ -84,7 +90,7 @@ describe('useQueueDrain', () => {
     });
 
     act(() => {
-      setters.setRunEnd!(runEnd());
+      setters.setRunEnd!(runEnd({ generationCreatedAt: 1234 }));
     });
 
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
@@ -131,7 +137,12 @@ describe('useQueueDrain', () => {
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
     expect(ask).toHaveBeenCalledWith(
       { text: 'with media' },
-      { overrideFiles: files, overrideQuotes: [], overrideManualSkills: [] },
+      expect.objectContaining({
+        overrideFiles: files,
+        overrideQuotes: [],
+        overrideManualSkills: [],
+        overrideQueuedMessageOrigin: expect.any(Object),
+      }),
     );
   });
 
@@ -319,7 +330,39 @@ describe('useQueueDrain', () => {
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
     expect(ask).toHaveBeenCalledWith(
       { text: 'with context' },
-      { overrideFiles: [], overrideQuotes: ['quoted excerpt'], overrideManualSkills: ['skill-1'] },
+      expect.objectContaining({
+        overrideFiles: [],
+        overrideQuotes: ['quoted excerpt'],
+        overrideManualSkills: ['skill-1'],
+        overrideQueuedMessageOrigin: expect.any(Object),
+      }),
+    );
+  });
+
+  it('keeps the recovery user row stable while forwarding its per-attempt identity', async () => {
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        {
+          ...queuedMessage('source-steer', 'recover once'),
+          clientRequestId: 'attempt-uuid',
+          recoverySteerId: 'source-steer',
+        },
+      ]);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd({ generationCreatedAt: 1234 }));
+    });
+
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask).toHaveBeenCalledWith(
+      { text: 'recover once', overrideUserMessageId: 'source-steer' },
+      expect.objectContaining({
+        overrideClientRequestId: 'attempt-uuid',
+        overrideRecoverySteerId: 'source-steer',
+        overrideExpectedPredecessorCreatedAt: 1234,
+        overrideQueuedMessageOrigin: expect.any(Object),
+      }),
     );
   });
 
@@ -342,7 +385,10 @@ describe('useQueueDrain', () => {
   it('drains on abort when the interrupt & send flag is armed, then disarms', async () => {
     const { ask, setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q1', 'interrupt text')]);
-      set(store.drainAfterAbortByIndex(INDEX), true);
+      set(store.drainAfterAbortByIndex(INDEX), {
+        conversationId: CONVO_ID,
+        generationCreatedAt: 41,
+      });
     });
 
     act(() => {
@@ -359,6 +405,116 @@ describe('useQueueDrain', () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 25));
     expect(ask).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let a different generation consume an interrupt arm', async () => {
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q1', 'epoch owner')]);
+      set(store.drainAfterAbortByIndex(INDEX), {
+        conversationId: CONVO_ID,
+        generationCreatedAt: 41,
+      });
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd({ outcome: 'aborted', generationCreatedAt: 42 }));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(ask).not.toHaveBeenCalled();
+
+    act(() => {
+      setters.setRunEnd!(runEnd({ outcome: 'aborted', generationCreatedAt: 41 }));
+    });
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask).toHaveBeenCalledWith({ text: 'epoch owner' }, emptyOverrides);
+  });
+
+  it('parks a foreign epoch while another conversation submits and preserves the next end', async () => {
+    const CONVO_A = 'convo-a';
+    const CONVO_B = 'convo-b';
+    const ask = jest.fn();
+    let setRunEnd: ((value: RunEnd | null) => void) | undefined;
+    let setIsSubmitting: ((value: boolean) => void) | undefined;
+
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <RecoilRoot
+          initializeState={({ set }) => {
+            set(store.isSubmittingFamily(INDEX), true);
+            set(store.queuedMessagesByConvoId(CONVO_A), [queuedMessage('qa', 'send for A')]);
+            set(store.queuedMessagesByConvoId(CONVO_B), [queuedMessage('qb', 'send for B')]);
+            set(store.drainAfterAbortByIndex(INDEX), {
+              conversationId: CONVO_A,
+              generationCreatedAt: 11,
+            });
+          }}
+        >
+          {children}
+        </RecoilRoot>
+      </QueryClientProvider>
+    );
+    const { result, rerender } = renderHook(
+      ({ activeConversationId }: { activeConversationId: string }) => {
+        setRunEnd = useSetRecoilState(store.runEndByIndex(INDEX));
+        setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(INDEX));
+        useQueueDrain(INDEX, activeConversationId, ask);
+        return {
+          indexEnd: useRecoilValue(store.runEndByIndex(INDEX)),
+          parkedA: useRecoilValue(store.pendingRunEndByConvoId(CONVO_A)),
+        };
+      },
+      { wrapper, initialProps: { activeConversationId: CONVO_B } },
+    );
+
+    /** Both terminal callbacks land before React can park the first one. The
+     * pane carrier must retain B behind A instead of replacing A. */
+    act(() => {
+      setRunEnd?.({
+        conversationId: CONVO_A,
+        outcome: 'aborted',
+        endedAt: 1,
+        generationCreatedAt: 11,
+      });
+      setRunEnd?.({
+        conversationId: CONVO_B,
+        outcome: 'completed',
+        endedAt: 2,
+        generationCreatedAt: 22,
+      });
+    });
+
+    await waitFor(() =>
+      expect(result.current.parkedA).toMatchObject({
+        conversationId: CONVO_A,
+        generationCreatedAt: 11,
+        interruptArmed: true,
+      }),
+    );
+    expect(result.current.indexEnd).toMatchObject({
+      conversationId: CONVO_B,
+      generationCreatedAt: 22,
+    });
+    expect(ask).not.toHaveBeenCalled();
+
+    act(() => setIsSubmitting?.(false));
+    await waitFor(() =>
+      expect(ask).toHaveBeenCalledWith(
+        { text: 'send for B' },
+        expect.objectContaining({ overrideExpectedPredecessorCreatedAt: 22 }),
+      ),
+    );
+
+    rerender({ activeConversationId: CONVO_A });
+    await waitFor(() =>
+      expect(ask).toHaveBeenCalledWith(
+        { text: 'send for A' },
+        expect.objectContaining({ overrideExpectedPredecessorCreatedAt: 11 }),
+      ),
+    );
+    expect(ask).toHaveBeenCalledTimes(2);
   });
 
   it('waits for isSubmitting to flip false before draining', async () => {
@@ -396,6 +552,34 @@ describe('useQueueDrain', () => {
     );
   });
 
+  it('keeps an interrupt queued after URL resolution ahead of pre-migration follow-ups', async () => {
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [
+        { id: 'ordinary-before-url', text: 'ordinary follow-up', createdAt: 1 },
+      ]);
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { id: 'interrupt-after-url', text: 'interrupt next', createdAt: 2, priority: true },
+      ]);
+      set(store.drainAfterAbortByIndex(INDEX), {
+        conversationId: CONVO_ID,
+        generationCreatedAt: 41,
+      });
+    });
+
+    act(() => {
+      setters.setRunEnd!(
+        runEnd({
+          outcome: 'aborted',
+          startedAsNewConvo: true,
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(ask).toHaveBeenCalledWith({ text: 'interrupt next' }, emptyOverrides),
+    );
+  });
+
   describe('early-aborted first turn (NEW_CONVO-keyed signal)', () => {
     const OPTIMISTIC_ID = 'optimistic-stream-id';
 
@@ -403,7 +587,7 @@ describe('useQueueDrain', () => {
       const ask = jest.fn();
       const setters: {
         setRunEnd?: (value: RunEnd | null) => void;
-        setInterruptFlag?: (value: boolean) => void;
+        setInterruptFlag?: (value: DrainAfterAbort | false) => void;
       } = {};
       const state: {
         newConvoQueue?: QueuedMessage[];
@@ -465,12 +649,16 @@ describe('useQueueDrain', () => {
         set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [
           queuedMessage('q1', 'interrupted first turn'),
         ]);
-        set(store.drainAfterAbortByIndex(INDEX), true);
+        set(store.drainAfterAbortByIndex(INDEX), {
+          conversationId: String(Constants.NEW_CONVO),
+          generationCreatedAt: 41,
+        });
         set(store.runEndByIndex(INDEX), {
           conversationId: Constants.NEW_CONVO as string,
           outcome: 'aborted',
           startedAsNewConvo: false,
           endedAt: Date.now(),
+          generationCreatedAt: 41,
         });
       });
 

@@ -27,7 +27,8 @@ const InterruptSteerButton = React.memo((props: InterruptSteerButtonProps) => {
   const { steering } = props;
   const label = localize('com_ui_interrupt_steer_button');
   /** Pre-empts the server's 409: a paused run cannot accept a steer. */
-  const disabled = props.disabled === true || steering.pausedOnApproval;
+  const disabled =
+    props.disabled === true || steering.pausedOnApproval || !steering.canControlGeneration;
 
   const onClick = () => {
     const text = props.getText().trim();

@@ -849,6 +849,19 @@ class BaseClient {
       responseMessage.contextMeta = this.contextMeta;
     }
 
+    /** Resumable generation controllers must win the generation's terminal
+     * CAS before this outcome-defining `unfinished:false` write can begin.
+     * The hook is deliberately narrow: ordinary clients omit it, and `false`
+     * means another terminal owner (for example Stop) already won, so this
+     * stale completion must return without writing the response row. */
+    if (typeof opts.beforeResponsePersistence === 'function') {
+      const ownsTerminalPersistence = await opts.beforeResponsePersistence(responseMessage);
+      if (ownsTerminalPersistence === false) {
+        responseMessage.databasePromise = Promise.resolve({ persistenceSkipped: true });
+        return responseMessage;
+      }
+    }
+
     responseMessage.databasePromise = this.saveMessageToDatabase(
       responseMessage,
       saveOptions,

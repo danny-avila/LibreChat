@@ -28,6 +28,7 @@ const REPLY_MARKER = 'E2E_REPLY:';
 const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const ORDERED_REPLY_MARKER = 'E2E_ORDERED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
+const EMPTY_SLOW_REPLY_MARKER = 'E2E_EMPTY_SLOW_REPLY:';
 const SLOW_COUNTED_REPLY_MARKER = 'E2E_SLOW_COUNTED_REPLY:';
 const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
 const STEER_SPLIT_REPLY_MARKER = 'E2E_STEER_SPLIT_REPLY:';
@@ -56,12 +57,14 @@ const QUOTE_ASSERTION_FINAL_TEXT = 'E2E quote assertion passed';
 const STEER_TOOL_FINAL_TEXT = 'E2E steer tool reply done';
 const STEER_SPLIT_FINAL_TEXT = 'E2E steer split reply done';
 const STEER_LATE_FINAL_TEXT = 'E2E steer late reply done';
+const SLOW_REPLY_CONTINUATION_TEXT = 'E2E slow reply continued';
 const ACTIVITY_FINAL_TEXT = 'E2E activity reply done';
 const STEER_TOOL_NAME_PREFIX = 'remember_fact';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
 const ORDERED_CHUNK_DELAY_MS = 2;
 const ORDERED_REPLY_PIECES = 64;
 const SLOW_REPLY_CHUNKS = 160;
+const EMPTY_SLOW_REPLY_CHUNKS = 600;
 const RESUME_ICON_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_RESUME_ICON_CHUNK_DELAY_MS) || 60;
 const RESUME_ICON_REPLY_CHUNKS = 240;
 const CREATE_FILE_TOOL_NAME = 'create_file';
@@ -424,12 +427,16 @@ function replyResponses(text) {
 
   const slowName = getMarkerValue(text, SLOW_REPLY_MARKER);
   if (slowName) {
-    const chunks = Array.from(
-      { length: SLOW_REPLY_CHUNKS },
-      (_, index) => `chunk-${String(index).padStart(3, '0')}`,
-    ).join(' ');
+    return slowReplyResponses(slowName);
+  }
+
+  /** Keep a generation live after `created` without producing any content
+   * that the abort persistence filter accepts. The browser regression waits
+   * for the user row, then interrupts this whitespace-only stream. */
+  const emptySlowName = getMarkerValue(text, EMPTY_SLOW_REPLY_MARKER);
+  if (emptySlowName) {
     return {
-      responses: [`E2E slow reply ${slowName} ${chunks}`],
+      responses: [' '.repeat(EMPTY_SLOW_REPLY_CHUNKS)],
       sleep: SLOW_CHUNK_DELAY_MS,
     };
   }
@@ -920,6 +927,29 @@ function steerEchoSuffix(messages) {
     .filter((message) => message?.additional_kwargs?.source === 'steer')
     .map((message) => getContentText(message.content));
   return `[steers-seen=${steerTexts.length}] ${steerTexts.join(' | ')}`.trim();
+}
+
+/**
+ * Pure-text stream used by the no-tool preemption specs. A cooperative seal
+ * self-loops through the same model instance, so a distinct second response
+ * proves both that generation resumed and that the injected steer reached the
+ * model. Without a seal, only the slow first response is ever requested.
+ */
+function slowReplyResponses(label) {
+  let invocation = 0;
+  return {
+    responses: [''],
+    sleep: SLOW_CHUNK_DELAY_MS,
+    resolveInvocation: async (messages) => {
+      invocation += 1;
+      if (invocation === 1) {
+        return { response: `E2E slow reply ${label} ${slowChunkPayload()}` };
+      }
+      return {
+        response: `${SLOW_REPLY_CONTINUATION_TEXT} ${label} ${steerEchoSuffix(messages)}`,
+      };
+    },
+  };
 }
 
 /** Slow word-chunk payload shared by the steer scenarios. */

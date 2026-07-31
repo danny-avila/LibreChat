@@ -26,22 +26,30 @@ const TEXT = 'stop, do not run that command';
 
 const mockInterruptSteer = jest.fn(() => true);
 const mockSteerFromComposer = jest.fn(() => true);
+const mockQueueFromComposer = jest.fn(() => true);
+const mockInterruptAndSend = jest.fn(() => true);
 const mockOnConsumed = jest.fn();
 
 type StubOptions = {
   pausedOnApproval?: boolean;
   canSteer?: boolean;
+  canControlGeneration?: boolean;
 };
 
-const steeringStub = ({ pausedOnApproval = false, canSteer = true }: StubOptions) =>
+const steeringStub = ({
+  pausedOnApproval = false,
+  canSteer = true,
+  canControlGeneration = true,
+}: StubOptions) =>
   ({
     effectiveAction: canSteer ? 'steer' : 'queue',
     canSteer,
+    canControlGeneration,
     pausedOnApproval,
     interruptSteer: mockInterruptSteer,
     steerFromComposer: mockSteerFromComposer,
-    queueFromComposer: jest.fn(() => true),
-    interruptAndSend: jest.fn(() => true),
+    queueFromComposer: mockQueueFromComposer,
+    interruptAndSend: mockInterruptAndSend,
   }) as unknown as SteeringControls;
 
 function Harness({ steering }: { steering: SteeringControls }) {
@@ -124,6 +132,31 @@ describe('DuringRunSendButton — Interrupt & steer availability', () => {
 
     fireEvent.click(row as HTMLButtonElement);
     expect(mockSteerFromComposer).not.toHaveBeenCalled();
+  });
+
+  test('keeps Queue live but disables every generation mutation before the epoch arrives', () => {
+    openMenu({ canSteer: false, canControlGeneration: false });
+
+    expect(screen.getByText('com_ui_steer').closest('button')).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(screen.getByText('com_ui_interrupt_steer').closest('button')).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(screen.getByText('com_ui_interrupt_send').closest('button')).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+
+    const queue = screen.getByText('com_ui_queue').closest('button') as HTMLButtonElement;
+    expect(queue).toHaveAttribute('aria-disabled', 'false');
+    fireEvent.click(queue);
+    expect(mockQueueFromComposer).toHaveBeenCalledWith(TEXT);
+    expect(mockOnConsumed).toHaveBeenCalled();
+    expect(mockInterruptSteer).not.toHaveBeenCalled();
+    expect(mockInterruptAndSend).not.toHaveBeenCalled();
   });
 
   test('both actions are available during a normal run', () => {

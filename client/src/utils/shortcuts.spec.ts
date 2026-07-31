@@ -75,6 +75,16 @@ describe('bindingFromEvent', () => {
       makeBinding({ meta: true, shift: true, key: 'Backspace' }),
     );
   });
+
+  it('uses the physical punctuation key on non-US keyboard layouts', () => {
+    const event = new KeyboardEvent('keydown', {
+      key: ':',
+      code: 'Period',
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    expect(bindingFromEvent(event)).toEqual(makeBinding({ ctrl: true, shift: true, key: '.' }));
+  });
 });
 
 describe('parseBinding', () => {

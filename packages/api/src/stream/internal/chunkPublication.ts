@@ -2,7 +2,9 @@ import type { IEventTransport } from '../interfaces/IJobStore';
 
 /**
  * Internal publication result used to fence same-replica replay against Redis Pub/Sub.
- * `number` is the zero-based Redis sequence and `false` means publication failed.
+ * `number` is the zero-based Redis sequence, `false` is an authoritative
+ * generation/status fence, and `void` carries no ownership proof (including
+ * unsequenced transports and operational publication failure).
  */
 export type ChunkPublicationReceipt = number | false | void;
 

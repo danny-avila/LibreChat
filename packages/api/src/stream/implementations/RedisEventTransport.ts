@@ -95,7 +95,8 @@ interface PreemptRegistration {
  *     sequenceTtlSeconds,
  *     expectCreatedAt | "",
  *     allowRetainedEpoch ("0" | "1"),
- *     generationEpochGraceTtl
+ *     generationEpochGraceTtl,
+ *     requireActiveJob ("0" | "1")
  *   ]
  *   RETURNS: the 0-indexed seq assigned to this event, or -1 when the generation guard fails
  *
@@ -118,6 +119,10 @@ const PUBLISH_SEQ_LUA =
   'if retainedEpoch ~= ARGV[5] then return -1 end ' +
   'end ' +
   'end ' +
+  'if ARGV[8] == "1" then ' +
+  'local currentStatus = redis.call("HGET", KEYS[2], "status") ' +
+  'if currentStatus ~= "running" and currentStatus ~= "requires_action" then return -1 end ' +
+  'end ' +
   'local val = redis.call("INCR", KEYS[1]) ' +
   'local ttl = tonumber(ARGV[4]) ' +
   'local seqTtl = redis.call("TTL", KEYS[1]) ' +
@@ -129,6 +134,25 @@ const PUBLISH_SEQ_LUA =
   'local seq = val - 1 ' +
   'redis.call("PUBLISH", ARGV[1], ARGV[2] .. string.format("%d", seq) .. ARGV[3]) ' +
   'return seq';
+
+/** A normal generation guard correctly rejects events from an old epoch once
+ * its replacement exists. Replacement handoff is the one exception: the
+ * current create attempt must still carry the old epoch in its durable receipt
+ * chain. This script verifies that proof, assigns the shared sequence, and
+ * publishes the old-generation DONE in one same-slot decision. */
+const PUBLISH_REPLACED_DONE_LUA =
+  'if redis.call("HGET", KEYS[2], "__creationAttemptId") ~= ARGV[6] then return -1 end ' +
+  'local authorized = false local raw = redis.call("HGET", KEYS[2], "__replacedGenerations") ' +
+  'if raw then local ok, receipts = pcall(cjson.decode, raw) if not ok or type(receipts) ~= "table" then return -1 end ' +
+  'for i = 1, #receipts do local receipt = receipts[i] ' +
+  'if type(receipt) == "table" and tostring(receipt.createdAt or "") == ARGV[5] then authorized = true break end end ' +
+  'else authorized = redis.call("HGET", KEYS[2], "__replacedCreatedAt") == ARGV[5] end ' +
+  'if not authorized then return -1 end ' +
+  'local val = redis.call("INCR", KEYS[1]) local ttl = tonumber(ARGV[4]) ' +
+  'local seqTtl = redis.call("TTL", KEYS[1]) if seqTtl < math.floor(ttl / 2) then ' +
+  'local jobTtl = redis.call("TTL", KEYS[2]) if jobTtl > ttl then ttl = jobTtl end ' +
+  'redis.call("EXPIRE", KEYS[1], ttl) end local seq = val - 1 ' +
+  'redis.call("PUBLISH", ARGV[1], ARGV[2] .. string.format("%d", seq) .. ARGV[3]) return seq';
 
 /** Max time (ms) to wait for out-of-order messages before force-flushing */
 const REORDER_TIMEOUT_MS = 500;
@@ -241,6 +265,7 @@ export class RedisEventTransport implements IEventTransport {
     message: Omit<PubSubMessage, 'seq'>,
     expectedGenerationId?: number,
     allowRetainedEpoch = false,
+    requireActiveJob = false,
   ): Promise<number> {
     const [prefix, suffix] = RedisEventTransport.buildPayloadParts(message);
     const seq = await this.publisher.eval(
@@ -256,6 +281,7 @@ export class RedisEventTransport implements IEventTransport {
       expectedGenerationId != null ? String(expectedGenerationId) : '',
       allowRetainedEpoch ? '1' : '0',
       String(GENERATION_EPOCH_GRACE_TTL_SECONDS),
+      requireActiveJob ? '1' : '0',
     );
     return seq as number;
   }
@@ -264,7 +290,7 @@ export class RedisEventTransport implements IEventTransport {
     streamId: string,
     event: unknown,
     generationId?: number,
-  ): Promise<number | false> {
+  ): Promise<number | false | void> {
     return this.publishWithSequence(
       streamId,
       {
@@ -273,11 +299,16 @@ export class RedisEventTransport implements IEventTransport {
         ...(generationId != null && { generationId }),
       },
       generationId,
+      false,
+      generationId != null,
     )
       .then((sequence) => (sequence === -1 ? false : sequence))
       .catch((err) => {
         logger.error(`[RedisEventTransport] Failed to publish chunk:`, err);
-        return false;
+        /** `false` is reserved for an authoritative generation/status fence.
+         * An operational publication failure has no such ownership proof and
+         * remains replayable from the durable/local buffer. */
+        return undefined;
       });
   }
 
@@ -778,7 +809,7 @@ export class RedisEventTransport implements IEventTransport {
    */
   async emitDone(streamId: string, event: unknown, generationId?: number): Promise<void> {
     try {
-      await this.publishWithSequence(
+      const sequence = await this.publishWithSequence(
         streamId,
         {
           type: EventTypes.DONE,
@@ -788,9 +819,40 @@ export class RedisEventTransport implements IEventTransport {
         generationId,
         true,
       );
+      if (sequence === -1) {
+        throw new Error('Generation DONE publication was fenced by a replacement');
+      }
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish done:`, err);
       throw err;
+    }
+  }
+
+  async emitReplacedDoneConfirmed(
+    streamId: string,
+    event: unknown,
+    replacedGenerationId: number,
+    creationAttemptId: string,
+  ): Promise<void> {
+    const [prefix, suffix] = RedisEventTransport.buildPayloadParts({
+      type: EventTypes.DONE,
+      data: event,
+      generationId: replacedGenerationId,
+    });
+    const result = await this.publisher.eval(
+      PUBLISH_REPLACED_DONE_LUA,
+      2,
+      KEYS.sequence(streamId),
+      KEYS.job(streamId),
+      CHANNELS.events(streamId),
+      prefix,
+      suffix,
+      String(RedisEventTransport.SEQUENCE_TTL_SECONDS),
+      String(replacedGenerationId),
+      creationAttemptId,
+    );
+    if (result === -1) {
+      throw new Error('Generation replacement DONE receipt is no longer current');
     }
   }
 
@@ -800,7 +862,7 @@ export class RedisEventTransport implements IEventTransport {
    */
   async emitError(streamId: string, error: string, generationId?: number): Promise<void> {
     try {
-      await this.publishWithSequence(
+      const sequence = await this.publishWithSequence(
         streamId,
         {
           type: EventTypes.ERROR,
@@ -810,6 +872,9 @@ export class RedisEventTransport implements IEventTransport {
         generationId,
         true,
       );
+      if (sequence === -1) {
+        throw new Error('Generation error publication was fenced by a replacement');
+      }
     } catch (err) {
       logger.error(`[RedisEventTransport] Failed to publish error:`, err);
       throw err;
@@ -891,15 +956,21 @@ export class RedisEventTransport implements IEventTransport {
    * the generating Replica A receives the signal and stops.
    */
   emitAbort(streamId: string, generationId?: number): void {
+    void this.emitAbortConfirmed(streamId, generationId).catch((err) => {
+      logger.error(`[RedisEventTransport] Failed to publish abort:`, err);
+    });
+  }
+
+  /** Awaitable variant for replacement handoff receipts. Ordinary abort sites
+   * keep the fire-and-log wrapper above; callers that may clear a durable
+   * predecessor receipt await this method and observe publication failure. */
+  async emitAbortConfirmed(streamId: string, generationId?: number): Promise<number> {
     const channel = CHANNELS.events(streamId);
     const message: PubSubMessage = {
       type: EventTypes.ABORT,
       ...(generationId != null && { generationId }),
     };
-
-    this.publisher.publish(channel, JSON.stringify(message)).catch((err) => {
-      logger.error(`[RedisEventTransport] Failed to publish abort:`, err);
-    });
+    return this.publisher.publish(channel, JSON.stringify(message));
   }
 
   /**

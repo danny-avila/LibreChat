@@ -848,10 +848,12 @@ describe('RedisEventTransport', () => {
     await expect(emitChunkWithReceipt(transport, 'stream-1', { text: 'World' }, 777)).resolves.toBe(
       1,
     );
+    expect(mockPublisher.eval.mock.calls[0][12]).toBe('0');
     const guardedPublish = mockPublisher.eval.mock.calls[1];
     expect(guardedPublish[0]).toContain('local currentCreatedAt = redis.call("HGET", KEYS[2]');
     expect(guardedPublish[9]).toBe('777');
     expect(guardedPublish[10]).toBe('0');
+    expect(guardedPublish[12]).toBe('1');
     expect(JSON.parse(`${guardedPublish[6]}1${guardedPublish[7]}`)).toMatchObject({
       type: 'chunk',
       data: { text: 'World' },
@@ -864,9 +866,9 @@ describe('RedisEventTransport', () => {
     ).resolves.toBe(false);
     mockPublisher.eval.mockRejectedValue(new Error('publish failed'));
     await expect(transport.emitChunk('failed-stream', { text: 'Hello' })).resolves.toBeUndefined();
-    await expect(emitChunkWithReceipt(transport, 'failed-stream', { text: 'Hello' })).resolves.toBe(
-      false,
-    );
+    await expect(
+      emitChunkWithReceipt(transport, 'failed-stream', { text: 'Hello' }),
+    ).resolves.toBeUndefined();
 
     transport.destroy();
   });
@@ -895,12 +897,95 @@ describe('RedisEventTransport', () => {
     expect(donePublish[9]).toBe('777');
     expect(donePublish[10]).toBe('1');
     expect(donePublish[11]).toBe('300');
+    expect(donePublish[12]).toBe('0');
     expect(errorPublish[9]).toBe('777');
     expect(errorPublish[10]).toBe('1');
     expect(errorPublish[11]).toBe('300');
+    expect(errorPublish[12]).toBe('0');
     expect(chunkPublish[9]).toBe('777');
     expect(chunkPublish[10]).toBe('0');
     expect(chunkPublish[11]).toBe('300');
+    expect(chunkPublish[12]).toBe('1');
+    expect(chunkPublish[0]).toContain('if ARGV[8] == "1" then');
+    expect(chunkPublish[0]).toContain('currentStatus ~= "running"');
+
+    transport.destroy();
+  });
+
+  it('publishes a receipt-authorized replacement DONE for an old epoch', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    mockPublisher.eval.mockResolvedValueOnce(0);
+
+    await expect(
+      transport.emitReplacedDoneConfirmed(
+        'replacement-done',
+        { final: true, reconcile: true },
+        1234,
+        'current-create-attempt',
+      ),
+    ).resolves.toBeUndefined();
+
+    const publish = mockPublisher.eval.mock.calls[0];
+    expect(publish[0]).toContain('HGET", KEYS[2], "__creationAttemptId"');
+    expect(publish[0]).toContain('__replacedGenerations');
+    expect(publish[0]).toContain('redis.call("PUBLISH"');
+    expect(publish[1]).toBe(2);
+    expect(publish[2]).toBe('stream:{replacement-done}:seq');
+    expect(publish[3]).toBe('stream:{replacement-done}:job');
+    expect(publish[8]).toBe('1234');
+    expect(publish[9]).toBe('current-create-attempt');
+    expect(JSON.parse(`${publish[5]}0${publish[6]}`)).toMatchObject({
+      type: 'done',
+      generationId: 1234,
+      data: { final: true, reconcile: true },
+    });
+
+    transport.destroy();
+  });
+
+  it('rejects stale replacement receipts and ordinary fenced terminal events', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+
+    mockPublisher.eval.mockResolvedValueOnce(-1);
+    await expect(
+      transport.emitReplacedDoneConfirmed('stale-replacement', { final: true }, 1234, 'wrong'),
+    ).rejects.toThrow('replacement DONE receipt is no longer current');
+    mockPublisher.eval.mockResolvedValueOnce(-1);
+    await expect(transport.emitDone('stale-done', { final: true }, 1234)).rejects.toThrow(
+      'DONE publication was fenced',
+    );
+    mockPublisher.eval.mockResolvedValueOnce(-1);
+    await expect(transport.emitError('stale-error', 'failed', 1234)).rejects.toThrow(
+      'error publication was fenced',
+    );
+
+    transport.destroy();
+  });
+
+  it('accepts zero-listener confirmed abort and replacement publication results', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    mockPublisher.publish.mockResolvedValueOnce(0);
+    mockPublisher.eval.mockResolvedValueOnce(0);
+
+    await expect(transport.emitAbortConfirmed('zero-listener', 1234)).resolves.toBe(0);
+    await expect(
+      transport.emitReplacedDoneConfirmed('zero-listener', { final: true }, 1234, 'attempt'),
+    ).resolves.toBeUndefined();
 
     transport.destroy();
   });

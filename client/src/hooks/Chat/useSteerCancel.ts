@@ -1,7 +1,8 @@
 import { useCallback } from 'react';
-import { useRecoilCallback } from 'recoil';
+import { useRecoilCallback, useRecoilValue } from 'recoil';
 import type { PendingSteer } from '~/store/families';
 import { useCancelSteerMutation } from '~/data-provider';
+import { appendAppliedSteerIds } from '~/utils';
 import store from '~/store';
 
 /**
@@ -24,29 +25,74 @@ export type SteerCancelOutcome = 'reclaimed' | 'applied' | 'failed';
  */
 export function useSteerReclaim(conversationId: string) {
   const cancelMutation = useCancelSteerMutation();
+  const activeGenerationCreatedAt = useRecoilValue(
+    store.activeGenerationCreatedAtByConvoId(conversationId),
+  );
+  /** A confirmed reclaim is a terminal settlement too. Tombstone both ids so
+   * a final payload captured before the server discard cannot requeue it, and
+   * remove a recovered queue copy if the opposite ordering already occurred. */
+  const settleReclaimed = useRecoilCallback(
+    ({ set }) =>
+      (steer: PendingSteer) => {
+        const ids = [steer.steerId, ...(steer.clientSteerId ? [steer.clientSteerId] : [])];
+        const settled = new Set(ids);
+        set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
+          appendAppliedSteerIds(prev, ids),
+        );
+        set(store.pendingSteersByConvoId(conversationId), (prev) =>
+          prev.filter(
+            (item) =>
+              !settled.has(item.steerId) &&
+              (item.clientSteerId == null || !settled.has(item.clientSteerId)),
+          ),
+        );
+        set(store.queuedMessagesByConvoId(conversationId), (prev) =>
+          prev.filter(
+            (item) =>
+              !settled.has(item.id) &&
+              (item.recoverySteerId == null || !settled.has(item.recoverySteerId)) &&
+              (item.recoveryClientSteerId == null || !settled.has(item.recoveryClientSteerId)),
+          ),
+        );
+      },
+    [conversationId],
+  );
 
   return useCallback(
     async (steer: PendingSteer): Promise<SteerCancelOutcome> => {
       try {
+        const generationCreatedAt =
+          steer.generationCreatedAt ?? activeGenerationCreatedAt ?? undefined;
+        if (generationCreatedAt == null) {
+          return 'failed';
+        }
         const { removed } = await cancelMutation.mutateAsync({
           conversationId,
           steerId: steer.steerId,
+          ...(steer.clientSteerId && { clientSteerId: steer.clientSteerId }),
+          generationCreatedAt,
         });
-        return removed === true ? 'reclaimed' : 'applied';
+        if (removed === true) {
+          settleReclaimed(steer);
+          return 'reclaimed';
+        }
+        return 'applied';
       } catch {
         return 'failed';
       }
     },
-    [conversationId, cancelMutation],
+    [conversationId, cancelMutation, settleReclaimed, activeGenerationCreatedAt],
   );
 }
 
 /**
- * Cancels a steer still waiting on its injection boundary. Optimistic: the
- * entry leaves the chip stack immediately; `removed: false` needs no handling
- * (the steer already injected or the run ended — the events own the outcome).
- * Only a failed POST restores the entry, since the server would still inject
- * the supposedly-cancelled words.
+ * Cancels a steer still waiting on its injection boundary. The chip stays
+ * visible until the request settles so capability/update events can still
+ * patch its current server revision while cancel is in flight. Only a
+ * confirmed reclaim removes it here. `removed:false` is ambiguous in the v1
+ * protocol (already injected OR terminal conversion won), so the event path
+ * must decide whether to remove or recover that entry without discarding its
+ * client-only files/quotes/skills first.
  */
 export default function useSteerCancel(conversationId: string) {
   const reclaim = useSteerReclaim(conversationId);
@@ -60,35 +106,14 @@ export default function useSteerCancel(conversationId: string) {
       },
     [conversationId],
   );
-  const restoreEntry = useRecoilCallback(
-    ({ snapshot, set }) =>
-      (entry: PendingSteer) => {
-        /* A steer that settled while the POST was in flight — applied on the
-         * server, or converted to a queued follow-up at run end — must NOT come
-         * back. The next run (a queue drain auto-sends one) would render this
-         * stale entry as an in-flight bubble beside its own queued copy. */
-        const settled = snapshot
-          .getLoadable(store.appliedSteerIdsByConvoId(conversationId))
-          .getValue();
-        if (settled.includes(entry.steerId)) {
-          return;
-        }
-        set(store.pendingSteersByConvoId(conversationId), (prev) =>
-          prev.some((item) => item.steerId === entry.steerId) ? prev : [...prev, entry],
-        );
-      },
-    [conversationId],
-  );
-
   return useCallback(
     async (steer: PendingSteer): Promise<SteerCancelOutcome> => {
-      removeEntry(steer.steerId);
       const outcome = await reclaim(steer);
-      if (outcome === 'failed') {
-        restoreEntry(steer);
+      if (outcome === 'reclaimed') {
+        removeEntry(steer.steerId);
       }
       return outcome;
     },
-    [reclaim, removeEntry, restoreEntry],
+    [reclaim, removeEntry],
   );
 }

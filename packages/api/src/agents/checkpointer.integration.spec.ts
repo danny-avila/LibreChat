@@ -10,6 +10,7 @@ import {
   deleteAgentCheckpoints,
   LazyMongoSaver,
   CheckpointTooLargeError,
+  LIBRECHAT_CHECKPOINT_NAMESPACE_KEY,
   __resetCheckpointerForTests,
 } from './checkpointer';
 
@@ -24,14 +25,16 @@ import {
 const MONGO_CFG = { type: 'mongo' as const, ttl: 3600 };
 
 /** Minimal LangGraph put() args for an empty checkpoint under a thread. */
-function putArgs(threadId: string) {
-  const config = { configurable: { thread_id: threadId, checkpoint_ns: '' } };
+function putArgs(threadId: string, checkpointNamespace = '') {
+  const config = {
+    configurable: { thread_id: threadId, checkpoint_ns: checkpointNamespace },
+  };
   const metadata = { source: 'input' as const, step: -1, writes: null, parents: {} };
   return { config, checkpoint: emptyCheckpoint(), metadata };
 }
 
-const readConfig = (threadId: string) => ({
-  configurable: { thread_id: threadId, checkpoint_ns: '' },
+const readConfig = (threadId: string, checkpointNamespace = '') => ({
+  configurable: { thread_id: threadId, checkpoint_ns: checkpointNamespace },
 });
 
 /**
@@ -39,10 +42,20 @@ const readConfig = (threadId: string) => ({
  * `INTERRUPT` channel for the checkpoint id, then `put` of that checkpoint. The lazy saver
  * persists only checkpoints seeded this way (a bare `put` is a clean exit → discarded).
  */
-async function seedInterruptCheckpoint(saver: MongoDBSaver, threadId: string) {
-  const { config, checkpoint, metadata } = putArgs(threadId);
+async function seedInterruptCheckpoint(
+  saver: MongoDBSaver,
+  threadId: string,
+  checkpointNamespace = '',
+) {
+  const { config, checkpoint, metadata } = putArgs(threadId, checkpointNamespace);
   await saver.putWrites(
-    { configurable: { thread_id: threadId, checkpoint_ns: '', checkpoint_id: checkpoint.id } },
+    {
+      configurable: {
+        thread_id: threadId,
+        checkpoint_ns: checkpointNamespace,
+        checkpoint_id: checkpoint.id,
+      },
+    },
     [[INTERRUPT, 'approve?']],
     'task-1',
   );
@@ -108,6 +121,72 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
     expect(await saver!.getTuple(readConfig(threadId))).toBeUndefined();
   });
 
+  it('captured legacy cleanup prunes nested graph checkpoints and writes without a thread-wide delete', async () => {
+    const { StateGraph, START, END, interrupt, Annotation } = await import('@langchain/langgraph');
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+    const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
+
+    const State = Annotation.Root({
+      origin: Annotation,
+      approved: Annotation,
+    });
+    const child = new StateGraph(State)
+      .addNode('child-gate', (state: { origin?: string }) => ({
+        approved: interrupt(`approve-${state.origin}`),
+      }))
+      .addEdge(START, 'child-gate')
+      .addEdge('child-gate', END)
+      .compile();
+    const graph = new StateGraph(State)
+      .addNode('child', child)
+      .addEdge(START, 'child')
+      .addEdge('child', END)
+      .compile({ checkpointer: saver as never });
+    const config = {
+      configurable: { thread_id: threadId, checkpoint_ns: '' },
+      durability: 'exit' as const,
+    };
+
+    await graph.invoke({ origin: 'legacy', approved: null }, config);
+
+    const db = mongoose.connection.db!;
+    const storedNamespaces = await db
+      .collection('agent_checkpoints')
+      .distinct('checkpoint_ns', { thread_id: threadId });
+    expect(storedNamespaces).toContain('');
+    expect(storedNamespaces.some((namespace) => namespace.startsWith('child:'))).toBe(true);
+    expect(
+      await db.collection('agent_checkpoint_writes').countDocuments({ thread_id: threadId }),
+    ).toBeGreaterThan(0);
+
+    const generation = await captureAgentCheckpointGeneration(threadId, MONGO_CFG, {
+      throwOnError: true,
+    });
+    const replacement = await seedInterruptCheckpoint(saver!, threadId, '2000');
+    await expect(
+      deleteAgentCheckpoint(threadId, MONGO_CFG, undefined, {
+        throwOnError: true,
+        checkpointNamespace: '',
+      }),
+    ).rejects.toThrow('requires a captured checkpoint generation');
+    await deleteAgentCheckpoint(threadId, MONGO_CFG, generation, { throwOnError: true });
+
+    expect(await db.collection('agent_checkpoints').countDocuments({ thread_id: threadId })).toBe(
+      1,
+    );
+    expect(
+      await db
+        .collection('agent_checkpoints')
+        .countDocuments({ thread_id: threadId, checkpoint_ns: { $ne: '2000' } }),
+    ).toBe(0);
+    expect(
+      await db.collection('agent_checkpoint_writes').countDocuments({ thread_id: threadId }),
+    ).toBe(1);
+    expect(await saver!.getTuple(readConfig(threadId, '2000'))).toMatchObject({
+      checkpoint: { id: replacement.id },
+    });
+  });
+
   it('prunes only the targeted thread, leaving other conversations intact', async () => {
     const saver = await getAgentCheckpointer(MONGO_CFG);
     const threadA = `convo-${new mongoose.Types.ObjectId().toString()}`;
@@ -153,6 +232,110 @@ describe('checkpointer (mongodb-memory-server integration)', () => {
         .db!.collection('agent_checkpoint_writes')
         .countDocuments({ thread_id: threadId, checkpoint_id: resumed.id }),
     ).toBe(0);
+  });
+
+  it('isolates a fresh generation from a predecessor checkpoint written after replacement', async () => {
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+    const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
+    const predecessorNamespace = '1000';
+    const replacementNamespace = '2000';
+
+    await seedInterruptCheckpoint(saver!, threadId, predecessorNamespace);
+    // Fresh B prunes only its own namespace before graph construction. A is
+    // still running remotely and writes another interrupt after that barrier.
+    await deleteAgentCheckpoint(threadId, MONGO_CFG, undefined, {
+      checkpointNamespace: replacementNamespace,
+    });
+    const latePredecessor = await seedInterruptCheckpoint(saver!, threadId, predecessorNamespace);
+
+    expect(await saver!.getTuple(readConfig(threadId, replacementNamespace))).toBeUndefined();
+    const replacement = await seedInterruptCheckpoint(saver!, threadId, replacementNamespace);
+    expect(await saver!.getTuple(readConfig(threadId, replacementNamespace))).toMatchObject({
+      checkpoint: { id: replacement.id },
+    });
+    expect(await saver!.getTuple(readConfig(threadId, predecessorNamespace))).toMatchObject({
+      checkpoint: { id: latePredecessor.id },
+    });
+  });
+
+  it('adapts LangGraph root namespaces and prevents a late predecessor pause from hydrating into its replacement', async () => {
+    const { StateGraph, START, END, interrupt, Annotation, Command } = await import(
+      '@langchain/langgraph'
+    );
+    const saver = await getAgentCheckpointer(MONGO_CFG);
+    const threadId = `convo-${new mongoose.Types.ObjectId().toString()}`;
+
+    const State = Annotation.Root({
+      origin: Annotation,
+      approved: Annotation,
+    });
+    const graph = new StateGraph(State)
+      .addNode('gate', (state: { origin?: string }) => ({
+        approved: interrupt(`approve-${state.origin}`),
+      }))
+      .addEdge(START, 'gate')
+      .addEdge('gate', END)
+      .compile({ checkpointer: saver as never });
+
+    const scopedConfig = (generation: string, graphNamespace = '') => ({
+      configurable: {
+        thread_id: threadId,
+        checkpoint_ns: graphNamespace,
+        [LIBRECHAT_CHECKPOINT_NAMESPACE_KEY]: generation,
+      },
+      durability: 'exit' as const,
+    });
+    // Deliberately nonempty on the initial root calls: PregelLoop.initialize
+    // resets these to ''. The ordinary client wiring uses the normalized
+    // configs below on both fresh and resume calls.
+    const replacementStartConfig = scopedConfig('generation-b', 'caller-root-generation-b');
+    const predecessorStartConfig = scopedConfig('generation-a', 'caller-root-generation-a');
+    const replacementConfig = scopedConfig('generation-b');
+    const predecessorConfig = scopedConfig('generation-a');
+
+    // B has started and paused. A's remote owner then lands a late pause on
+    // the same conversation thread; physical namespaces must keep it out of B.
+    await graph.invoke({ origin: 'B', approved: null }, replacementStartConfig);
+    await graph.invoke({ origin: 'A', approved: null }, predecessorStartConfig);
+
+    const storedNamespaces = await mongoose.connection
+      .db!.collection('agent_checkpoints')
+      .distinct('checkpoint_ns', { thread_id: threadId });
+    expect(new Set(storedNamespaces)).toEqual(new Set(['generation-a', 'generation-b']));
+    expect(storedNamespaces).not.toContain('');
+    expect(storedNamespaces).not.toContain('caller-root-generation-a');
+    expect(storedNamespaces).not.toContain('caller-root-generation-b');
+
+    const replacementState = await graph.getState(replacementConfig);
+    expect(replacementState.values).toMatchObject({ origin: 'B' });
+    const listedReplacementCheckpoints = [];
+    for await (const tuple of saver!.list(replacementConfig)) {
+      listedReplacementCheckpoints.push(tuple);
+    }
+    expect(listedReplacementCheckpoints.length).toBeGreaterThan(0);
+    expect(
+      listedReplacementCheckpoints.every(
+        (tuple) =>
+          tuple.config.configurable?.checkpoint_ns === '' &&
+          tuple.config.configurable?.[LIBRECHAT_CHECKPOINT_NAMESPACE_KEY] === 'generation-b',
+      ),
+    ).toBe(true);
+    const replacementResult = await graph.invoke(
+      new Command({ resume: 'YES-B' }),
+      replacementConfig,
+    );
+    expect(replacementResult).toMatchObject({ origin: 'B', approved: 'YES-B' });
+
+    // Terminal B cleanup removes its whole namespace, including any write
+    // committed after an earlier snapshot, while late A remains resumable.
+    await deleteAgentCheckpoint(threadId, MONGO_CFG, undefined, {
+      checkpointNamespace: 'generation-b',
+    });
+    expect(await graph.getState(replacementConfig)).toMatchObject({ next: [] });
+    expect(await graph.getState(predecessorConfig)).toMatchObject({
+      values: expect.objectContaining({ origin: 'A' }),
+      next: expect.arrayContaining(['gate']),
+    });
   });
 
   it('deleteAgentCheckpoint is a no-op for an undefined threadId', async () => {

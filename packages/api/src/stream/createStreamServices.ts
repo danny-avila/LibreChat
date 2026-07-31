@@ -1,6 +1,6 @@
 import type { Redis, Cluster } from 'ioredis';
 import { logger } from '@librechat/data-schemas';
-import type { IJobStore, IEventTransport } from './interfaces/IJobStore';
+import type { IJobStoreV2, IEventTransport } from './interfaces/IJobStore';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { RedisJobStore } from './implementations/RedisJobStore';
@@ -42,7 +42,7 @@ export interface StreamServicesConfig {
  * Stream services result
  */
 export interface StreamServices {
-  jobStore: IJobStore;
+  jobStore: IJobStoreV2;
   eventTransport: IEventTransport;
   isRedis: boolean;
 }

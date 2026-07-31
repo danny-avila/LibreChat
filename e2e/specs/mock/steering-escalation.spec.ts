@@ -12,6 +12,7 @@ import {
 
 /** Last chunk streamed by the fake model's slow replies (160 chunks, 0-indexed). */
 const SLOW_REPLY_LAST_CHUNK = 'chunk-159';
+const SLOW_REPLY_CONTINUATION_TEXT = 'E2E slow reply continued';
 
 const uniqueLabel = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
@@ -53,6 +54,16 @@ async function typeDuringRun(page: Page, text: string) {
   await input.click();
   await input.fill(text);
   await expect(duringRunSendButton(page)).toBeVisible({ timeout: 5000 });
+}
+
+/** Proves the post-seal model invocation both ran and received the steer. */
+async function expectModelContinuation(page: Page, label: string, steerText: string) {
+  await expect(messagesView(page).getByText(`[steers-seen=1] ${steerText}`)).toBeVisible({
+    timeout: 30000,
+  });
+  await expect(
+    messagesView(page).getByText(`${SLOW_REPLY_CONTINUATION_TEXT} ${label}`),
+  ).toBeVisible({ timeout: 30000 });
 }
 
 /**
@@ -112,6 +123,7 @@ test.describe('escalating waiting messages to an interrupt', () => {
     // Sealed, not run to completion, and the pre-seal text survives.
     await expect(messagesView(page).getByText(SLOW_REPLY_LAST_CHUNK)).toHaveCount(0);
     await expect(messagesView(page).getByText('chunk-010')).toBeVisible();
+    await expectModelContinuation(page, label, queueText);
 
     // Stayed INSIDE the response: no auto-sent follow-up pair.
     await expect(messageTurns(page)).toHaveCount(4);
@@ -166,6 +178,7 @@ test.describe('escalating waiting messages to an interrupt', () => {
     await expect(inFlightSteers(page)).toHaveCount(0);
     await expect(messagesView(page).getByText(SLOW_REPLY_LAST_CHUNK)).toHaveCount(0);
     await expect(messagesView(page).getByText('chunk-010')).toBeVisible();
+    await expectModelContinuation(page, label, steerText);
     await expect(messageTurns(page)).toHaveCount(4);
   });
 
@@ -196,6 +209,15 @@ test.describe('escalating waiting messages to an interrupt', () => {
     await expect(page.getByText('Preferences', { exact: true })).toBeVisible({ timeout: 5000 });
     await page.getByRole('menuitem', { name: 'Always interrupt instead' }).click();
 
+    // Verify the preference flips while this row is guaranteed to remain
+    // parked. After the interrupt is submitted the run may seal and auto-drain
+    // the row before another locator action can observe it.
+    await row.getByRole('button', { name: 'More options' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Wait for tool steps instead' })).toBeVisible({
+      timeout: 5000,
+    });
+    await page.keyboard.press('Escape');
+
     // The toggle is live for the SAME run: plain Enter now routes the default
     // steer through the preempt path (the 202 carries the armed flag).
     await typeDuringRun(page, steerText);
@@ -211,13 +233,7 @@ test.describe('escalating waiting messages to an interrupt', () => {
       timeout: 90000,
     });
     await expect(messagesView(page).getByText(SLOW_REPLY_LAST_CHUNK)).toHaveCount(0);
-
-    // The menu now offers the way back (label flipped), on the queued row
-    // that is still waiting for run end.
-    await row.getByRole('button', { name: 'More options' }).click();
-    await expect(page.getByRole('menuitem', { name: 'Wait for tool steps instead' })).toBeVisible({
-      timeout: 5000,
-    });
+    await expectModelContinuation(page, label, steerText);
   });
 
   test('the dedicated shortcut escalates the newest waiting steer from the keyboard', async ({
@@ -247,10 +263,23 @@ test.describe('escalating waiting messages to an interrupt', () => {
 
     // The dedicated command works from the composer (it is editing-allowed),
     // pressing the newest waiting bubble's own arrow control.
+    const escalationButton = inFlightSteers(page)
+      .filter({ hasText: steerText })
+      .getByTestId('steer-escalate-now');
+    await escalationButton.focus();
+    await expect(escalationButton).toHaveAttribute(
+      'aria-keyshortcuts',
+      /^(Meta|Control)\+Shift\+\.$/,
+    );
+    const resolvedAriaKey = await escalationButton.getAttribute('aria-keyshortcuts');
+    expect(resolvedAriaKey).toBeTruthy();
     await messageInput(page).click();
     const [armResponse] = await Promise.all([
       page.waitForResponse(isArmRequest, { timeout: 15000 }),
-      page.keyboard.press('ControlOrMeta+Shift+.'),
+      // Follow the browser-visible binding rather than Playwright's
+      // host-platform ControlOrMeta mapping: the emulated UA may differ from
+      // the machine running the test.
+      page.keyboard.press(resolvedAriaKey as string),
     ]);
     expect(armResponse.status()).toBe(200);
     expect(((await armResponse.json()) as { armed?: boolean }).armed).toBe(true);
@@ -260,5 +289,6 @@ test.describe('escalating waiting messages to an interrupt', () => {
       timeout: 90000,
     });
     await expect(messagesView(page).getByText(SLOW_REPLY_LAST_CHUNK)).toHaveCount(0);
+    await expectModelContinuation(page, label, steerText);
   });
 });
