@@ -8,7 +8,9 @@ const {
   isMCPDomainAllowed,
   splitMCPToolKey,
   normalizeServerName,
+  normalizeMCPToolKey,
   buildServerNameAliases,
+  findShadowedServerNames,
   resolveMCPServerContext,
   normalizeJsonSchema,
   GenerationJobManager,
@@ -212,6 +214,57 @@ async function getAccessibleMcpServerNames(userId, role) {
     role != null ? { id: userId, role } : { id: userId },
   );
   return Object.keys(configs ?? {});
+}
+
+/**
+ * Heals legacy raw-keyed MCP tool names in an assistant payload to the
+ * current normalized cache keys. Cached tool definitions are keyed
+ * `${toolName}${mcp_delimiter}${normalizeServerName(server)}`, while an
+ * assistant saved before that convention resubmits the raw-suffixed string
+ * on every edit — the controllers' exact-only lookup would then silently
+ * drop the tool from the assistant. SHADOWED raw names (normalized slot
+ * claimed by another configured server) stay raw and fail closed, mirroring
+ * the runtime heal. Config names are read only when a delimiter-bearing
+ * name actually misses the cache; failures propagate (write path) rather
+ * than silently dropping the tool.
+ * @param {object} params
+ * @param {ServerRequest} params.req
+ * @param {Array<string | object>} [params.tools]
+ * @param {Record<string, unknown>} params.toolDefinitions
+ * @returns {Promise<Array<string | object>>}
+ */
+async function healMcpToolNames({ req, tools, toolDefinitions }) {
+  const list = tools ?? [];
+  const needsHeal = list.some(
+    (tool) =>
+      typeof tool === 'string' &&
+      tool.includes(Constants.mcp_delimiter) &&
+      toolDefinitions[tool] == null,
+  );
+  if (!needsHeal) {
+    return list;
+  }
+  const rawServerNames = await resolveMcpConfigNames(req);
+  const shadowed = findShadowedServerNames(rawServerNames);
+  return list.map((tool) => {
+    if (
+      typeof tool !== 'string' ||
+      !tool.includes(Constants.mcp_delimiter) ||
+      toolDefinitions[tool] != null
+    ) {
+      return tool;
+    }
+    const [, parsedServerName] = splitMCPToolKey(tool, rawServerNames);
+    if (
+      parsedServerName == null ||
+      !rawServerNames.includes(parsedServerName) ||
+      shadowed.has(parsedServerName)
+    ) {
+      return tool;
+    }
+    const healed = normalizeMCPToolKey(tool, rawServerNames);
+    return toolDefinitions[healed] != null ? healed : tool;
+  });
 }
 
 /**
@@ -1240,6 +1293,7 @@ module.exports = {
   resolveMcpServerNames,
   resolveMcpServerContext,
   getAccessibleMcpServerNames,
+  healMcpToolNames,
   resolveCollisionAuditNames,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,

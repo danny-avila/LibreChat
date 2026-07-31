@@ -73,6 +73,7 @@ const { getAppConfig } = require('~/server/services/Config');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const {
   createMCPTool,
+  healMcpToolNames,
   resolveConfigServers,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
@@ -244,6 +245,56 @@ describe('resolveAllMcpConfigs', () => {
     getAppConfig.mockRejectedValue(new Error('mongo down'));
 
     await expect(resolveAllMcpConfigs('u1', { id: 'u1' })).rejects.toThrow('mongo down');
+  });
+});
+
+describe('healMcpToolNames', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const req = { user: { id: 'u1', role: 'user' } };
+
+  it('heals a legacy raw-keyed assistant tool to the normalized cache key', async () => {
+    /** Assistant docs saved pre-normalization resubmit the raw-suffixed
+     *  string on every edit; the controllers' exact lookup would silently
+     *  drop the tool. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'Connector: Company': {} } });
+    const canonicalKey = `search${Constants.mcp_delimiter}Connector__Company`;
+    const toolDefinitions = { [canonicalKey]: { type: 'function' } };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`search${Constants.mcp_delimiter}Connector: Company`, 'code_interpreter'],
+      toolDefinitions,
+    });
+
+    expect(healed).toEqual([canonicalKey, 'code_interpreter']);
+  });
+
+  it('leaves a SHADOWED raw name untouched (fail closed like the runtime heal)', async () => {
+    /** With `foo` and `foo!` both configured, rewriting `search_mcp_foo!`
+     *  would land on the WINNER server's key. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { foo: {}, 'foo!': {} } });
+    const toolDefinitions = { [`search${Constants.mcp_delimiter}foo`]: { type: 'function' } };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`search${Constants.mcp_delimiter}foo!`],
+      toolDefinitions,
+    });
+
+    expect(healed).toEqual([`search${Constants.mcp_delimiter}foo!`]);
+  });
+
+  it('skips the config read entirely when every delimiter-bearing name resolves', async () => {
+    const key = `search${Constants.mcp_delimiter}srv`;
+    const healed = await healMcpToolNames({
+      req,
+      tools: [key, 'web_search'],
+      toolDefinitions: { [key]: { type: 'function' } },
+    });
+
+    expect(healed).toEqual([key, 'web_search']);
+    expect(getAppConfig).not.toHaveBeenCalled();
   });
 });
 
