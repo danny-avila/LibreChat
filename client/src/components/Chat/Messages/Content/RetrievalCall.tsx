@@ -303,10 +303,10 @@ function FileHeader({
         <TooltipAnchor
           description={localize('com_ui_relevance')}
           side="top"
-          className="flex items-center"
+          className="flex cursor-help items-center"
         >
           <span
-            className="shrink-0 rounded bg-surface-tertiary px-1.5 py-0.5 text-[11px] tabular-nums leading-none text-text-secondary"
+            className="shrink-0 cursor-help rounded bg-surface-tertiary px-1.5 py-0.5 text-[11px] tabular-nums leading-none text-text-secondary"
             aria-label={`${localize('com_ui_relevance')}: ${Math.round(relevance * 100)}%`}
           >
             {Math.round(relevance * 100)}%
