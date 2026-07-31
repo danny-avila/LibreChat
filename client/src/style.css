@@ -2676,3 +2676,17 @@ html[data-input-modality='keyboard']
 .sharepoint-picker-bg {
   background-color: rgb(var(--surface-dialog));
 }
+
+/* ask_user_question popover <-> chat-card morph (view transition) */
+::view-transition-group(ask-question),
+::view-transition-old(ask-question),
+::view-transition-new(ask-question) {
+  animation-duration: 280ms;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0.22, 1);
+}
+
+/* The composer keeps its own snapshot group stacked above the morphing
+   question card, so the card travels behind the ChatForm, not over it. */
+::view-transition-group(chat-form) {
+  z-index: 2;
+}
