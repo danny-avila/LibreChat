@@ -7,9 +7,14 @@ import type { useChatFormContext } from '~/Providers';
 import store from '~/store';
 
 export interface ComposerRestore {
-  /** Chip "Edit message": replaces the draft outright. The caller has already
-   *  decided this is wanted, so nothing is guarded. */
-  editToComposer: (text: string, files?: TMessage['files'], context?: QueuedMessageContext) => void;
+  /** Chip "Edit message": replaces the draft outright, since the caller has
+   *  already decided that is wanted. Returns whether the composer took the
+   *  words — only a paused question, which owns the box, refuses. */
+  editToComposer: (
+    text: string,
+    files?: TMessage['files'],
+    context?: QueuedMessageContext,
+  ) => boolean;
   /** The same restore for a steer whose reclaim was a round-trip, guarded
    *  against everything that can change while it is in flight. Returns whether
    *  the words were taken, so a refusal can be re-homed rather than dropped. */
@@ -68,11 +73,25 @@ export default function useComposerRestore({
     [conversationId],
   );
 
+  /** Read at call time rather than captured, so both the synchronous edit below
+   *  and the round-trip restore further down see the pause that started while
+   *  they were in flight. */
+  const liveAnswerModeRef = useRef(answerModeActive);
+  liveAnswerModeRef.current = answerModeActive;
+
   /** The text replaces the composer draft and the chip's attachments merge back
    *  into the composer file map (already uploaded, so they restore as completed
-   *  entries — same shape as draft recovery). */
+   *  entries — same shape as draft recovery).
+   *
+   *  A paused `ask_user_question` is the one thing that refuses: `onSubmit`
+   *  hands the composer's text to `answerMode.submitText` before any send
+   *  routing, so a queued message dropped in here would leave the box on
+   *  screen looking like a draft and answer the tool on the next Enter. */
   const editToComposer = useCallback(
-    (text: string, chipFiles?: TMessage['files'], context?: QueuedMessageContext) => {
+    (text: string, chipFiles?: TMessage['files'], context?: QueuedMessageContext): boolean => {
+      if (liveAnswerModeRef.current) {
+        return false;
+      }
       methods.setValue('text', text, { shouldDirty: true });
       if (chipFiles != null && chipFiles.length > 0) {
         setFiles((prev) => {
@@ -98,6 +117,7 @@ export default function useComposerRestore({
       }
       restoreComposerContext(context);
       textAreaRef.current?.focus();
+      return true;
     },
     [methods, setFiles, restoreComposerContext, textAreaRef],
   );
@@ -111,9 +131,6 @@ export default function useComposerRestore({
   /** Same reason: attachments staged after the click must be seen. */
   const liveFilesRef = useRef(files);
   liveFilesRef.current = files;
-  /** Same reason: the run can pause on `ask_user_question` mid-reclaim. */
-  const liveAnswerModeRef = useRef(answerModeActive);
-  liveAnswerModeRef.current = answerModeActive;
   /** A reclaim can resolve after the composer unmounts (left the route, closed
    *  the pane). Its refs still hold the origin chat, so the restore would pass
    *  its checks and write into a dead form — reporting success and making the
@@ -160,12 +177,6 @@ export default function useComposerRestore({
       if (originConversationId !== liveConversationId) {
         return false;
       }
-      /** Answer mode owns the composer: `onSubmit` hands its text to
-       *  `answerMode.submitText` before any send/steer routing, so restoring
-       *  here would turn the steer into the tool's answer on the next Enter. */
-      if (liveAnswerModeRef.current) {
-        return false;
-      }
       if (
         (methods.getValues('text') ?? '').trim().length > 0 ||
         (liveFilesRef.current?.size ?? 0) > 0 ||
@@ -173,8 +184,10 @@ export default function useComposerRestore({
       ) {
         return false;
       }
-      editToComposer(text, steerFiles, context);
-      return true;
+      /** The answer-mode refusal lives in `editToComposer`: a question can pause
+       *  the run mid-reclaim, and restoring into the answer box would turn the
+       *  steer into the tool's answer on the next Enter. */
+      return editToComposer(text, steerFiles, context);
     },
     [methods, editToComposer, hasStagedContext],
   );

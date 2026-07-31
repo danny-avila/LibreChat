@@ -352,6 +352,29 @@ describe('useAttachItems', () => {
       expect(mockHandleFileChange).toHaveBeenLastCalledWith(expect.anything(), undefined);
     });
 
+    /* A custom endpoint's own NAME is what identifies its provider; the
+       resolved `endpointType` flattens every one of them to `custom`. Handing
+       the palette the type in place of the name cost an OpenRouter endpoint the
+       video and audio it takes. */
+    it('reads the provider from a custom endpoint name, not its resolved type', () => {
+      const acceptFor = (endpoint: string) => {
+        const { result } = renderAttach({ endpoint, endpointType: EModelEndpoint.custom });
+        const input = document.createElement('input');
+        const accepts: string[] = [];
+        input.click = () => accepts.push(input.accept);
+        Object.defineProperty(result.current.inputRef, 'current', { value: input, writable: true });
+        act(() => {
+          result.current.entries.find((entry) => entry.id === 'local:provider')?.onSelect();
+        });
+        return accepts[0];
+      };
+
+      expect(acceptFor('OpenRouter')).toContain('video/');
+      expect(acceptFor('OpenRouter')).toContain('audio/');
+      /* The type on its own is a document-and-image provider and nothing more. */
+      expect(acceptFor(EModelEndpoint.custom)).not.toContain('video/');
+    });
+
     it('scopes the picker to what the destination can send', () => {
       const { result } = renderAttach({ endpointType: EModelEndpoint.bedrock });
       const input = document.createElement('input');

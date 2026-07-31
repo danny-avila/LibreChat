@@ -210,6 +210,135 @@ describe('useSteerRecovery', () => {
       expect(queue).toEqual([]);
     });
 
+    /* Navigating to another chat swaps the conversation held in the index slot,
+       so the run this steer belongs to is in no slot at all. Absence is not an
+       ending: the server is still injecting the accepted steer, and reading the
+       empty scan as "run over" queued the same words a second time. */
+    it('leaves the ack pending when the user has navigated to another chat', async () => {
+      let settle: (value: unknown) => void = () => undefined;
+      mockMutateAsync.mockReturnValue(new Promise((resolve) => (settle = resolve)));
+
+      let recovery: ReturnType<typeof useSteerRecovery> | undefined;
+      let navigateAway: (() => void) | undefined;
+      let chips: unknown[] = [];
+      let queue: unknown[] = [];
+      const Tree = () => {
+        recovery = useSteerRecovery(CONVO_ID);
+        chips = useRecoilValue(store.pendingSteersByConvoId(CONVO_ID));
+        queue = useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID));
+        const setConvo = useSetRecoilState(store.conversationByIndex(0));
+        navigateAway = () => setConvo({ conversationId: 'a-different-chat' } as never);
+        return null;
+      };
+
+      render(
+        <RecoilRoot
+          initializeState={(snapshot) => {
+            seedRun(snapshot, true);
+            snapshot.set(store.pendingSteersByConvoId(CONVO_ID), [
+              { steerId: 'local-nav', text: 'still running', status: 'failed', createdAt: 2 },
+            ]);
+          }}
+        >
+          <Tree />
+        </RecoilRoot>,
+      );
+
+      act(() => {
+        recovery?.retry('local-nav');
+      });
+      act(() => navigateAway?.());
+      await act(async () => {
+        settle({ steerId: 'srv-nav', status: 'queued', position: 1, conversationId: CONVO_ID });
+      });
+
+      expect(chips).toEqual([expect.objectContaining({ steerId: 'srv-nav', status: 'pending' })]);
+      expect(queue).toEqual([]);
+    });
+
+    /* An interrupt-steer that failed has to retry AS an interrupt: resent as an
+       ordinary steer it lands at the run's next tool step instead of sealing the
+       stream, which is not the action the chip says it is. */
+    it('resubmits a failed interrupt-steer as an interrupt', async () => {
+      mockMutateAsync.mockResolvedValue({
+        steerId: 'srv-preempt',
+        status: 'queued',
+        position: 1,
+        conversationId: CONVO_ID,
+        preempt: true,
+      });
+      const { result } = setup(({ set }) => {
+        set(store.pendingSteersByConvoId(CONVO_ID), [
+          {
+            steerId: 'local-preempt',
+            text: 'stop and read this',
+            status: 'failed',
+            createdAt: 6,
+            preempt: true,
+          },
+        ]);
+      });
+      act(() => {
+        result.current.recovery.retry('local-preempt');
+      });
+      await flush();
+      expect(mockMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'stop and read this', preempt: true }),
+      );
+      expect(result.current.chips).toEqual([
+        expect.objectContaining({ steerId: 'srv-preempt', preempt: true }),
+      ]);
+    });
+
+    it('leaves an ordinary steer non-preempting on retry', async () => {
+      mockMutateAsync.mockResolvedValue({
+        steerId: 'srv-plain',
+        status: 'queued',
+        position: 1,
+        conversationId: CONVO_ID,
+      });
+      const { result } = setup(({ set }) => {
+        set(store.pendingSteersByConvoId(CONVO_ID), [
+          { steerId: 'local-plain', text: 'just a steer', status: 'failed', createdAt: 6 },
+        ]);
+      });
+      act(() => {
+        result.current.recovery.retry('local-plain');
+      });
+      await flush();
+      expect(mockMutateAsync).toHaveBeenCalledWith(expect.not.objectContaining({ preempt: true }));
+    });
+
+    /* Capability degradation is a relabel, never an error: a server without the
+       seal still queues the steer and echoes `preempt: false`. */
+    it('follows the server down to an ordinary steer when the seal was not armed', async () => {
+      mockMutateAsync.mockResolvedValue({
+        steerId: 'srv-degraded',
+        status: 'queued',
+        position: 1,
+        conversationId: CONVO_ID,
+        preempt: false,
+      });
+      const { result } = setup(({ set }) => {
+        set(store.pendingSteersByConvoId(CONVO_ID), [
+          {
+            steerId: 'local-degraded',
+            text: 'seal it',
+            status: 'failed',
+            createdAt: 6,
+            preempt: true,
+          },
+        ]);
+      });
+      act(() => {
+        result.current.recovery.retry('local-degraded');
+      });
+      await flush();
+      expect(result.current.chips).toEqual([
+        expect.objectContaining({ steerId: 'srv-degraded', status: 'pending', preempt: false }),
+      ]);
+    });
+
     /* The picks the message was written with have to survive the retry, or the
        words are re-sent without the quotes and skills they referred to. */
     it('carries the quotes and skills the steer was written with', async () => {

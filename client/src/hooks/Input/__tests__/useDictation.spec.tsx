@@ -52,7 +52,11 @@ jest.mock('../../useLocalize', () => ({
 
 const ask = jest.fn(() => true) as unknown as jest.Mock & TAskFunction;
 
-function setup({ autoSendText = -1, draft = '' }: { autoSendText?: number; draft?: string } = {}) {
+function setup({
+  autoSendText = -1,
+  draft = '',
+  isSubmitting = false,
+}: { autoSendText?: number; draft?: string; isSubmitting?: boolean } = {}) {
   let text = draft;
   const methods = {
     setValue: jest.fn((_name: string, value: string) => {
@@ -73,7 +77,7 @@ function setup({ autoSendText = -1, draft = '' }: { autoSendText?: number; draft
       useDictation({
         ask: ask as unknown as TAskFunction,
         methods: methods as never,
-        isSubmitting: false,
+        isSubmitting,
       }),
     { wrapper },
   );
@@ -199,5 +203,92 @@ describe('useDictation', () => {
 
     expect(ask).not.toHaveBeenCalled();
     expect(currentText()).toBe('my unsent draft');
+  });
+
+  /* A run in flight has nothing to send into, so the take is refused outright.
+     `ChatForm` reports a paused `ask_user_question` as NOT submitting for
+     exactly this reason: the run is still open, but the composer has become the
+     answer box and speech has to reach it the way typing does. */
+  it('refuses a take while a turn is in flight', async () => {
+    const { result, rerender, currentText } = setup({ draft: '', isSubmitting: true });
+    act(() => result.current.start());
+    mockIsListening = true;
+    act(() => rerender());
+
+    act(() => mockSetTextCallback('answer the question'));
+    act(() => result.current.stopAndSend());
+    await settle(rerender);
+
+    expect(ask).not.toHaveBeenCalled();
+    expect(currentText()).toBe('answer the question');
+  });
+
+  it('sends the take when the composer is free to submit', async () => {
+    const { result, rerender } = setup({ draft: '', isSubmitting: false });
+    act(() => result.current.start());
+    mockIsListening = true;
+    act(() => rerender());
+
+    act(() => mockSetTextCallback('answer the question'));
+    act(() => result.current.stopAndSend());
+    await settle(rerender);
+
+    expect(ask).toHaveBeenCalledWith({ text: 'answer the question' });
+  });
+
+  /* The armed send reads whatever the transcript left in the composer. A take
+     that produced nothing leaves the draft that was there BEFORE recording, and
+     sending that is the user's own unfinished words going out as if dictated. */
+  describe('a take that produced nothing', () => {
+    it('stands the armed send down when the transcription fails', async () => {
+      mockSpeechEndpoint = 'external';
+      const { result, rerender, currentText } = setup({ draft: 'half a thought' });
+      act(() => result.current.start());
+      mockIsListening = true;
+      mockIsLoading = true;
+      act(() => rerender());
+
+      act(() => result.current.stopAndSend());
+      /* The request fails: the engine toasts, clears its loading flag, and
+         never reports a transcript. */
+      mockIsLoading = false;
+      await settle(rerender);
+
+      expect(ask).not.toHaveBeenCalled();
+      expect(currentText()).toBe('half a thought');
+    });
+
+    it('stands it down for a take too short to reach the engine', async () => {
+      const { result, rerender, currentText } = setup({ draft: 'half a thought' });
+      act(() => result.current.start());
+      mockIsListening = true;
+      act(() => rerender());
+
+      act(() => result.current.stopAndSend());
+      await settle(rerender);
+
+      expect(ask).not.toHaveBeenCalled();
+      expect(currentText()).toBe('half a thought');
+    });
+
+    /* The gate is per take, not for good. */
+    it('sends the next take that does produce words', async () => {
+      const { result, rerender } = setup({ draft: 'half a thought' });
+      act(() => result.current.start());
+      mockIsListening = true;
+      act(() => rerender());
+      act(() => result.current.stopAndSend());
+      await settle(rerender);
+      expect(ask).not.toHaveBeenCalled();
+
+      act(() => result.current.start());
+      mockIsListening = true;
+      act(() => rerender());
+      act(() => mockSetTextCallback('this time it heard me'));
+      act(() => result.current.stopAndSend());
+      await settle(rerender);
+
+      expect(ask).toHaveBeenCalledWith({ text: 'half a thought this time it heard me' });
+    });
   });
 });

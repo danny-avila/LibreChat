@@ -15,11 +15,14 @@ const baseState: ComposerHintState = {
   enterToSend: true,
 };
 
-const hint = (overrides: Partial<ComposerHintState>, isMac = true) =>
-  composeHint({ ...baseState, ...overrides }, localize, isMac).text;
+/** What `useShortcutDisplay('stopGenerating')` resolves to by default on a Mac. */
+const STOP = '⌘ ⇧ X';
+
+const hint = (overrides: Partial<ComposerHintState>, isMac = true, stop = STOP) =>
+  composeHint({ ...baseState, ...overrides }, localize, isMac, stop).text;
 
 const kindOf = (overrides: Partial<ComposerHintState>) =>
-  composeHint({ ...baseState, ...overrides }, localize, true).kind;
+  composeHint({ ...baseState, ...overrides }, localize, true, STOP).kind;
 
 describe('composeHint', () => {
   it('shows discovery affordances on an untouched composer', () => {
@@ -30,8 +33,18 @@ describe('composeHint', () => {
     expect(hint({ hasText: true })).toBe('com_ui_composer_hint_typing');
   });
 
-  it('offers stop while generating with an empty composer', () => {
-    expect(hint({ isSubmitting: true })).toBe('com_ui_composer_hint_stop');
+  /* The line used to read "Esc to stop", which no handler anywhere implements:
+     stopping is bound to the `stopGenerating` shortcut, and the user can rebind
+     it. Naming a key the composer does not answer to is worse than naming none. */
+  it('names the live stop binding while generating with an empty composer', () => {
+    expect(hint({ isSubmitting: true })).toBe('⌘ ⇧ X com_ui_composer_hint_stop');
+    expect(hint({ isSubmitting: true }, false, 'Ctrl+Shift+X')).toBe(
+      'Ctrl+Shift+X com_ui_composer_hint_stop',
+    );
+  });
+
+  it('names no key at all once the binding is cleared', () => {
+    expect(hint({ isSubmitting: true }, true, '')).toBe('com_ui_composer_hint_running');
   });
 
   describe('during a run with text', () => {
@@ -64,7 +77,7 @@ describe('composeHint', () => {
 
     it('falls back to stop when the modifiers have no text to act on', () => {
       expect(hint({ duringRunActive: true, hasText: false, isSubmitting: true })).toBe(
-        'com_ui_composer_hint_stop',
+        '⌘ ⇧ X com_ui_composer_hint_stop',
       );
     });
   });
