@@ -44,7 +44,23 @@ jest.mock('~/server/services/MCP', () => ({
   })),
   resolveConfigServers: jest.fn().mockResolvedValue({}),
   resolveMcpServerContext: jest.fn(async () => ({ configServers: {}, serverNames: [] })),
-  getAccessibleMcpServerNames: (...args) => mockGetAccessibleMcpServerNames(...args),
+  /** Mirrors the real resolver: threaded set wins, then the accessible fetch
+   *  (union with raw so operator-only fixtures keep working), incomplete on
+   *  failure. The pure sensitivity predicate is the REAL @librechat/api one. */
+  resolveCollisionAuditNames: jest.fn(async ({ rawServerNames, accessibleServerNames }) => {
+    if (accessibleServerNames?.length) {
+      return { names: accessibleServerNames, complete: true };
+    }
+    try {
+      const fetched = await mockGetAccessibleMcpServerNames();
+      return {
+        names: fetched?.length ? fetched : rawServerNames,
+        complete: true,
+      };
+    } catch {
+      return { names: rawServerNames, complete: false };
+    }
+  }),
 }));
 
 jest.mock('~/config', () => ({

@@ -29,6 +29,10 @@ const {
   buildMCPAuthRunStepCompletedEvent,
   isFileAuthoringToolDefinition,
   ASK_USER_QUESTION_TOOL_NAME,
+  splitMCPToolKey,
+  buildServerNameAliases,
+  findShadowedServerNames,
+  isNormalizationSensitiveName,
 } = require('@librechat/api');
 const {
   Time,
@@ -73,6 +77,7 @@ const {
   createMCPPermissionContext,
   resolveMcpServerContext,
   getAccessibleMcpServerNames,
+  resolveCollisionAuditNames,
 } = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
@@ -552,6 +557,7 @@ async function loadToolDefinitionsWrapper({
   streamId = null,
   jobCreatedAt,
   tool_resources,
+  accessibleMcpServerNames,
 }) {
   if (!agent.tools || agent.tools.length === 0) {
     return { toolDefinitions: [] };
@@ -621,6 +627,50 @@ async function loadToolDefinitionsWrapper({
   } = hasFilteredMCPTools
     ? await resolveMcpServerContext(req)
     : { configServers: {}, serverNames: [], rawServerNames: [] };
+
+  /**
+   * Shadowed servers must not emit definitions: their normalized function
+   * names equal the winning server's, and the default execution path later
+   * resolves those names directly — selecting a shadowed server's definition
+   * could execute another server's action. Audited against the full
+   * accessible set (threaded from the caller's heal, or fetched only when a
+   * configured name needs normalization); normalization-sensitive references
+   * fail closed when the audit is incomplete.
+   */
+  let defsFilteredTools = filteredTools;
+  if (hasFilteredMCPTools) {
+    const collisionAudit = await resolveCollisionAuditNames({
+      rawServerNames: mcpRawServerNames,
+      accessibleServerNames: accessibleMcpServerNames,
+      userId: req.user.id,
+      role: req.user?.role,
+    });
+    const defsShadowedServers = findShadowedServerNames(collisionAudit.names);
+    if (defsShadowedServers.size > 0 || !collisionAudit.complete) {
+      const defsAliases = buildServerNameAliases(collisionAudit.names);
+      const boundaryCandidates = [...collisionAudit.names, ...defsAliases.keys()];
+      defsFilteredTools = filteredTools.filter((tool) => {
+        if (!tool.includes(Constants.mcp_delimiter)) {
+          return true;
+        }
+        const [, parsed] = splitMCPToolKey(tool, boundaryCandidates);
+        const serverName = parsed != null ? (defsAliases.get(parsed) ?? parsed) : parsed;
+        if (serverName == null) {
+          return true;
+        }
+        if (
+          defsShadowedServers.has(serverName) ||
+          (!collisionAudit.complete && isNormalizationSensitiveName(serverName, mcpRawServerNames))
+        ) {
+          logger.warn(
+            `[Tool Definitions] Skipping MCP tool "${tool}": server "${serverName}" is shadowed by a name collision (or the collision audit is unavailable); rename one server or retry.`,
+          );
+          return false;
+        }
+        return true;
+      });
+    }
+  }
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
@@ -897,7 +947,7 @@ async function loadToolDefinitionsWrapper({
     {
       userId: req.user.id,
       agentId: agent.id,
-      tools: filteredTools,
+      tools: defsFilteredTools,
       toolOptions: agent.tool_options,
       deferredToolsEnabled,
       programmaticToolsEnabled,
@@ -981,7 +1031,7 @@ async function loadToolDefinitionsWrapper({
         {
           userId: req.user.id,
           agentId: agent.id,
-          tools: filteredTools,
+          tools: defsFilteredTools,
           toolOptions: agent.tool_options,
           deferredToolsEnabled,
           programmaticToolsEnabled,
@@ -1135,6 +1185,7 @@ async function loadAgentTools({
       streamId,
       jobCreatedAt,
       tool_resources,
+      accessibleMcpServerNames,
     });
   }
 

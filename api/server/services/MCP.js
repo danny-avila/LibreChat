@@ -214,6 +214,40 @@ async function getAccessibleMcpServerNames(userId, role) {
   return Object.keys(configs ?? {});
 }
 
+/**
+ * Resolves the name set MCP collision guards audit against. Prefers the
+ * caller-threaded accessible set; self-fetches only when a configured name
+ * needs normalization (safe-name deployments never pay the lookup); reports
+ * `complete: false` when the full set was needed but unavailable — callers
+ * must then fail closed for normalization-sensitive references instead of
+ * auditing against operator names alone.
+ * @param {object} params
+ * @param {readonly string[]} params.rawServerNames
+ * @param {readonly string[]} [params.accessibleServerNames]
+ * @param {string} [params.userId]
+ * @param {string} [params.role]
+ * @returns {Promise<{ names: readonly string[], complete: boolean }>}
+ */
+async function resolveCollisionAuditNames({ rawServerNames, accessibleServerNames, userId, role }) {
+  if (accessibleServerNames?.length) {
+    return { names: accessibleServerNames, complete: true };
+  }
+  const needsFullAudit = rawServerNames.some((name) => normalizeServerName(name) !== name);
+  if (!needsFullAudit) {
+    return { names: rawServerNames, complete: true };
+  }
+  try {
+    const names = await getAccessibleMcpServerNames(userId, role);
+    return { names, complete: true };
+  } catch (error) {
+    logger.warn(
+      '[MCP] Collision audit unavailable; normalization-sensitive references fail closed:',
+      error,
+    );
+    return { names: rawServerNames, complete: false };
+  }
+}
+
 async function resolveAllMcpConfigs(userId, user) {
   const registry = getMCPServersRegistry();
   const appConfig = await getAppConfigForUser(userId, user);
@@ -1190,6 +1224,7 @@ module.exports = {
   resolveMcpServerNames,
   resolveMcpServerContext,
   getAccessibleMcpServerNames,
+  resolveCollisionAuditNames,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
   createOAuthStart,

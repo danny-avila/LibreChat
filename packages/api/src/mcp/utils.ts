@@ -40,6 +40,24 @@ const MCP_SERVER_TOKEN_PREFIX: string = `${Constants.mcp_server}${Constants.mcp_
  * offering its tools would let a user select a tool that silently executes
  * against the first server's configuration.
  */
+/**
+ * Whether a resolved server name is normalization-sensitive — its own name
+ * needs normalizing, or it EQUALS the normalized form of some configured
+ * special-character name. Under an incomplete collision audit these are the
+ * references whose routing cannot be proven unambiguous, so they fail closed.
+ */
+export function isNormalizationSensitiveName(
+  serverName: string,
+  rawServerNames: readonly string[],
+): boolean {
+  if (normalizeServerName(serverName) !== serverName) {
+    return true;
+  }
+  return rawServerNames.some(
+    (raw) => raw !== serverName && normalizeServerName(raw) === serverName,
+  );
+}
+
 export function findShadowedServerNames(rawServerNames: readonly string[]): Set<string> {
   /** Derived from `buildServerNameAliases` so shadow detection can never
    *  diverge from the tie-break routing actually uses (identity entries
@@ -101,13 +119,26 @@ export function normalizeAgentToolKeys(params: {
   };
 
   let toolsChanged = false;
-  const nextTools = tools?.map((key) => {
+  let nextTools = tools?.map((key) => {
     const rewritten = rewriteKey(key);
     if (rewritten !== key) {
       toolsChanged = true;
     }
     return rewritten;
   });
+  /** A document carrying BOTH spellings converges on one key after healing —
+   *  collapse duplicates (order-preserving) so the loaders never build two
+   *  instances with the same function name. */
+  if (toolsChanged && nextTools) {
+    const seen = new Set<string>();
+    nextTools = nextTools.filter((key) => {
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  }
 
   let optionsChanged = false;
   let nextOptions: AgentToolOptions | undefined;
