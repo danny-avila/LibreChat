@@ -49,6 +49,12 @@ const staticCache = require('./utils/staticCache');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const { RE2JS } = require('re2js');
+const { setFileConfigRegexCompiler } = require('librechat-data-provider');
+
+/** Compile admin-configured file-config MIME patterns with a linear-time engine so a
+ *  catastrophic-backtracking pattern cannot ReDoS the event loop when tested on upload. */
+setFileConfigRegexCompiler((pattern) => RE2JS.compile(pattern));
 
 /** Reject messageFilter PII patterns the RE2 runtime engine cannot compile, at config load. */
 configureMessageFilterRegexValidator();
