@@ -68,6 +68,11 @@ export default function useDictation({
    *  auto-send callback can reach the same transcript, and whichever gets
    *  there first is the one that spends it. */
   const spentRef = useRef(false);
+  /** Whether this take produced any words at all. A transcription that fails,
+   *  or a take too short to reach the engine, reports nothing back and leaves
+   *  the composer holding the draft that was there before recording — which an
+   *  armed stop-and-send would then send as if it had been dictated. */
+  const heardRef = useRef(false);
 
   const submit = useCallback(
     (text: string) => {
@@ -101,6 +106,10 @@ export default function useDictation({
     (text: string) => {
       const mode = modeRef.current;
 
+      if (text) {
+        heardRef.current = true;
+      }
+
       if (mode === 'cancel') {
         /* The draft stays on the ref until a take is actually spent: an
            external transcription already in flight cannot be recalled, and
@@ -133,6 +142,9 @@ export default function useDictation({
     (text: string) => {
       if (modeRef.current === 'cancel') {
         return;
+      }
+      if (text) {
+        heardRef.current = true;
       }
       setValue('text', existingTextRef.current ? `${existingTextRef.current} ${text}` : text, {
         shouldValidate: true,
@@ -190,12 +202,19 @@ export default function useDictation({
       return;
     }
     setPendingSend(false);
+    /* Nothing was heard: the request failed, or the take never reached the
+       engine. The engines report that themselves, so the send simply stands
+       down rather than sending the pre-recording draft in its place. */
+    if (!heardRef.current) {
+      return;
+    }
     submit(getValues('text') || '');
   }, [pendingSend, active, isLoading, settling, submit, getValues]);
 
   const start = useCallback(() => {
     modeRef.current = 'compose';
     spentRef.current = false;
+    heardRef.current = false;
     setPendingSend(false);
     existingTextRef.current = getValues('text') || '';
     startRecording();
