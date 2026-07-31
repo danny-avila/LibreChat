@@ -7,6 +7,7 @@ import {
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   STEER_ENQUEUE_RECEIPT_FULL,
 } from '../interfaces/IJobStore';
+import { clearRedisTestPrefix } from './helpers/redis';
 
 /** Suppress winston Console transport output (survives jest.resetModules) */
 jest.spyOn(console, 'log').mockImplementation();
@@ -70,26 +71,9 @@ describe('RedisJobStore Integration Tests', () => {
       return;
     }
 
-    // Clean up all test keys (delete individually for cluster compatibility)
     try {
-      const keys = await ioredisClient.keys(`${testPrefix}*`);
-      // Also clean up stream keys which use hash tags
-      const streamKeys = await ioredisClient.keys(`stream:*`);
-      const allKeys = [...new Set([...keys, ...streamKeys])];
-      /** IORedis applies `keyPrefix` to command arguments but returns physical,
-       * already-prefixed names from KEYS. Passing those names straight back to
-       * DEL prefixes them a second time and silently leaves every test key
-       * behind, contaminating later integration runs. Convert to logical names
-       * before deletion so DEL targets the keys KEYS actually returned. */
       const keyPrefix = String(ioredisClient.options.keyPrefix ?? '');
-      // Delete individually to avoid CROSSSLOT errors in cluster mode
-      await Promise.all(
-        allKeys.map((key) =>
-          ioredisClient!.del(
-            keyPrefix !== '' && key.startsWith(keyPrefix) ? key.slice(keyPrefix.length) : key,
-          ),
-        ),
-      );
+      await clearRedisTestPrefix(ioredisClient, keyPrefix);
     } catch (error) {
       console.warn('Error cleaning up test keys:', error);
     }
