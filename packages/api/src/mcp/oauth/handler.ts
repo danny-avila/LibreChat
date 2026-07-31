@@ -1307,6 +1307,10 @@ export class MCPOAuthHandler {
    * next replacement retries both deletes, whereas deleting the flow past a
    * failed mapping delete would orphan the mapping, and its state would
    * resolve against the next flow created under the same deterministic flowId.
+   * The inverse partial failure is compensated too: when the flow delete
+   * fails, the mapping is restored so the surviving flow's stored
+   * authorization URL remains resolvable instead of dead-ending every
+   * callback in invalid_state until the flow goes stale.
    */
   static async deleteFlowAndStateMapping(
     flowId: string,
@@ -1314,15 +1318,26 @@ export class MCPOAuthHandler {
   ): Promise<void> {
     const flowState = await flowManager.getFlowState(flowId, this.FLOW_TYPE);
     const metadata = flowState?.metadata as MCPOAuthFlowMetadata | undefined;
-    if (typeof metadata?.state === 'string') {
-      const mappingDeleted = await this.deleteStateMapping(metadata.state, flowManager);
+    const state = typeof metadata?.state === 'string' ? metadata.state : null;
+
+    if (state) {
+      const mappingDeleted = await this.deleteStateMapping(state, flowManager);
       if (!mappingDeleted) {
         throw new Error(
           `Failed to delete OAuth state mapping for flow ${flowId}; leaving the flow in place`,
         );
       }
     }
-    await flowManager.deleteFlow(flowId, this.FLOW_TYPE);
+
+    const flowDeleted = await flowManager.deleteFlow(flowId, this.FLOW_TYPE);
+    if (!flowDeleted) {
+      if (state) {
+        await this.storeStateMapping(state, flowId, flowManager);
+      }
+      throw new Error(
+        `Failed to delete OAuth flow ${flowId}; restored its state mapping so the surviving flow stays resolvable`,
+      );
+    }
   }
 
   /**
