@@ -4,6 +4,7 @@ import { Lightbulb, ChevronDown } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
 import type { MouseEvent, FocusEvent } from 'react';
 import { ThinkingContent, ThinkingButton, FloatingThinkingBar, useInViewport } from './Thinking';
+import { disclosureChevronClassName } from '~/components/Chat/Messages/Content/disclosure';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { showThinkingAtom } from '~/store/showThinking';
@@ -227,6 +228,7 @@ Reasoning.displayName = 'Reasoning';
 type ReasoningCompactProps = {
   reasoning: string;
   label: string;
+  isAfterTool?: boolean;
   /** True while this is the reasoning part currently streaming. Drives the
    *  collapsed grok-style live peek. */
   isStreaming?: boolean;
@@ -240,7 +242,7 @@ type ReasoningCompactProps = {
  * a floating collapse + copy bar inside the rounded content panel.
  */
 export const ReasoningCompact = memo(
-  ({ reasoning, label, isStreaming = false }: ReasoningCompactProps) => {
+  ({ reasoning, label, isAfterTool = false, isStreaming = false }: ReasoningCompactProps) => {
     const contentId = useId();
     const localize = useLocalize();
     const fontSize = useAtomValue(fontSizeAtom);
@@ -284,25 +286,26 @@ export const ReasoningCompact = memo(
     return (
       <div
         ref={containerRef}
-        className="group/reasoning-compact"
+        className={cn('group/reasoning-compact mb-1', isAfterTool ? 'mt-0' : 'mt-1')}
         onMouseEnter={revealBar}
         onMouseLeave={hideBar}
         onFocus={revealBar}
         onBlur={handleBlur}
       >
-        <div ref={headerRef} className="relative my-1.5 flex h-5 shrink-0 items-center gap-1.5">
+        <div ref={headerRef} className="relative flex h-5 shrink-0 items-center gap-1.5">
           <button
             type="button"
             onClick={handleToggle}
             aria-expanded={isExpanded}
             aria-controls={contentId}
-            className="inline-flex min-w-0 flex-1 items-center gap-2 text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+            className="group/disclosure inline-flex min-w-0 flex-1 items-center gap-2 text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
           >
             <Lightbulb className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
             <span className="tool-status-text font-medium">{label}</span>
             <ChevronDown
               className={cn(
-                'size-4 shrink-0 translate-y-[1px] text-text-secondary transition-transform duration-200 ease-out',
+                disclosureChevronClassName,
+                'size-4 translate-y-[1px]',
                 isExpanded && 'rotate-180',
               )}
               aria-hidden="true"

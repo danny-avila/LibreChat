@@ -3,6 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { Tools } from 'librechat-data-provider';
 import { Globe, ChevronDown } from 'lucide-react';
 import type { TAttachment, ValidSource, SearchResultData } from 'librechat-data-provider';
+import { disclosureChevronClassName, toolPanelSpacingClassName } from './disclosure';
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import { StackedFavicons } from '~/components/Web/Sources';
 import { useLocalize, useExpandCollapse } from '~/hooks';
@@ -212,14 +213,14 @@ export default function WebSearch({
     const completedText = intent ?? localize('com_ui_web_searched');
 
     return (
-      <div className="mb-2">
+      <div className="my-1">
         <span className="sr-only" aria-live="polite" aria-atomic="true">
           {completedText}
         </span>
         <button
           type="button"
           className={cn(
-            'tool-status-text group flex items-center gap-2 rounded-full py-1 transition-colors',
+            'tool-status-text group/disclosure flex h-5 items-center gap-2 rounded-full',
             hasSourceData
               ? 'text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy'
               : 'pointer-events-none text-text-secondary',
@@ -241,10 +242,7 @@ export default function WebSearch({
           <span className="min-w-0 truncate font-medium">{completedText}</span>
           {hasSourceData && (
             <ChevronDown
-              className={cn(
-                'size-3.5 shrink-0 text-text-secondary transition-transform duration-200',
-                showSourceList && 'rotate-180',
-              )}
+              className={cn(disclosureChevronClassName, 'size-3.5', showSourceList && 'rotate-180')}
               aria-hidden="true"
             />
           )}
@@ -252,7 +250,12 @@ export default function WebSearch({
         {hasSourceData && (
           <div style={sourceExpandStyle}>
             <div className="overflow-hidden" ref={sourceExpandRef}>
-              <div className="my-2 max-h-[280px] overflow-y-auto rounded-lg border border-border-light">
+              <div
+                className={cn(
+                  toolPanelSpacingClassName,
+                  'max-h-[280px] overflow-y-auto rounded-lg border border-border-light',
+                )}
+              >
                 {allSources.map((source, i) => {
                   const domain = getCleanDomain(source.link);
                   return (
@@ -283,7 +286,7 @@ export default function WebSearch({
   }
 
   return (
-    <div className="my-1 flex items-center gap-2.5">
+    <div className="relative my-1 flex h-5 shrink-0 items-center gap-2.5">
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {genericProgressText}
       </span>

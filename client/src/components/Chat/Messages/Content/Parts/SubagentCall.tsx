@@ -172,7 +172,7 @@ export default function SubagentCall({
   }, [toolCallId, isSelected, openSubagentRun, closeSubagentRun]);
 
   return (
-    <div className="my-1.5">
+    <div className="my-2">
       <button
         type="button"
         onClick={handleClick}

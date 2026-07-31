@@ -55,7 +55,9 @@ jest.mock('~/components/Web/Sources', () => ({
 
 jest.mock('lucide-react', () => ({
   Globe: () => <span data-testid="globe-icon" />,
-  ChevronDown: () => <span data-testid="chevron-icon" />,
+  ChevronDown: ({ className }: { className?: string }) => (
+    <span data-testid="chevron-icon" className={className} />
+  ),
 }));
 
 function makeSource(link: string, title: string): ValidSource {
@@ -280,6 +282,27 @@ describe('WebSearch', () => {
 
       const matches = screen.getAllByText('Searched the web');
       expect(matches.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('uses standard tool-row spacing and reveals its chevron on hover or focus', () => {
+      const searchResults = makeSearchResults({
+        0: { organic: [makeSource('https://example.com', 'Example')] },
+      });
+
+      renderWebSearch({ searchResults });
+
+      const button = screen.getByRole('button', { name: /Searched the web/ });
+      expect(button.parentElement).toHaveClass('my-1');
+      expect(button).not.toHaveClass('py-1');
+      expect(button).not.toHaveClass('transition-colors');
+      const chevron = screen.getByTestId('chevron-icon');
+      expect(chevron).toHaveClass(
+        'opacity-0',
+        'group-hover/disclosure:opacity-100',
+        'group-focus-within/disclosure:opacity-100',
+      );
+      expect(chevron).toHaveClass('transition-transform');
+      expect(chevron.className).not.toContain('transition-opacity');
     });
 
     it('renders searching state during streaming', () => {

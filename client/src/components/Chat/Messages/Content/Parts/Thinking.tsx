@@ -97,14 +97,14 @@ export const ThinkingButton = memo(
     }, [content]);
 
     return (
-      <div className="group/thinking flex w-full items-center justify-between gap-2">
+      <div className="group/thinking relative flex w-full items-center">
         <button
           type="button"
           onClick={onClick}
           aria-expanded={isExpanded}
           aria-controls={contentId}
           className={cn(
-            'group/button flex flex-1 items-center justify-start rounded-lg leading-[18px]',
+            'group/button flex flex-1 items-center justify-start rounded-lg pr-10 leading-[18px]',
             fontSize,
           )}
         >
@@ -131,7 +131,7 @@ export const ThinkingButton = memo(
             label={localize('com_ui_copy_thoughts_to_clipboard')}
             copiedLabel={localize('com_ui_copied_to_clipboard')}
             className={cn(
-              'opacity-0 transition-opacity',
+              'absolute right-0 top-1/2 -translate-y-1/2 opacity-0 transition-opacity',
               'group-focus-within/thinking-container:opacity-100 group-hover/thinking-container:opacity-100',
               'focus-visible:opacity-100',
             )}

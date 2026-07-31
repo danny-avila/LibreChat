@@ -51,7 +51,7 @@ export default function CodeAnalyze({
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {progress < 1 ? localize('com_ui_analyzing') : localize('com_ui_analyzing_finished')}
       </span>
-      <div className="my-1 flex items-center gap-2.5">
+      <div className="relative my-1 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
           onClick={handleToggleCode}
