@@ -5,6 +5,14 @@ import type { GenericTool } from '@librechat/agents';
 import { getPluginAuthMap } from '~/agents/auth';
 import { splitMCPToolKey } from './utils';
 
+/** Reads one server's customUserVars from a `getUserMCPAuthMap` result */
+export function getServerCustomUserVars(
+  userMCPAuthMap: Record<string, Record<string, string>> | undefined,
+  serverName: string,
+): Record<string, string> | undefined {
+  return userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+}
+
 export async function getUserMCPAuthMap({
   userId,
   tools,

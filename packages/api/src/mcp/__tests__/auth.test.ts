@@ -1,7 +1,7 @@
 import type { PluginAuthMethods } from '@librechat/data-schemas';
 import type { GenericTool } from '@librechat/agents';
+import { getUserMCPAuthMap, getServerCustomUserVars } from '../auth';
 import { getPluginAuthMap } from '~/agents/auth';
-import { getUserMCPAuthMap } from '../auth';
 
 jest.mock('~/agents/auth', () => ({
   getPluginAuthMap: jest.fn(),
@@ -299,5 +299,22 @@ describe('getUserMCPAuthMap', () => {
 
       expect(result).toEqual(mockCustomUserVars);
     });
+  });
+});
+
+describe('getServerCustomUserVars', () => {
+  it('reads a server entry by its mcp_-prefixed key', () => {
+    const authMap = {
+      'mcp_my-server': { API_KEY: 'sk-123' },
+      'mcp_other-server': { TOKEN: 'abc' },
+    };
+    expect(getServerCustomUserVars(authMap, 'my-server')).toEqual({ API_KEY: 'sk-123' });
+  });
+
+  it('returns undefined for a missing server or map', () => {
+    expect(
+      getServerCustomUserVars({ 'mcp_my-server': { API_KEY: 'sk-123' } }, 'absent'),
+    ).toBeUndefined();
+    expect(getServerCustomUserVars(undefined, 'my-server')).toBeUndefined();
   });
 });

@@ -16,6 +16,7 @@ const {
   PENDING_STALE_MS,
   mcpConfig: mcpSettings,
   getUserMCPAuthMap,
+  getServerCustomUserVars,
   validateOAuthCsrf,
   OAUTH_CSRF_COOKIE,
   setOAuthCsrfCookie,
@@ -483,7 +484,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
               );
             }
           }
-          const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+          const customUserVars = getServerCustomUserVars(userMCPAuthMap, serverName);
 
           const userConnection = await mcpManager.getUserConnection({
             user,
