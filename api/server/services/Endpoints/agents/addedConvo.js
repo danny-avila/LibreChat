@@ -82,6 +82,7 @@ const processAddedConvo = async ({
   defaultActiveOnShare,
   codeEnvAvailable,
   backgroundToolsAvailable,
+  toolIntentsAvailable,
   statefulSessionsAvailable,
   memoryAvailable,
 }) => {
@@ -180,6 +181,7 @@ const processAddedConvo = async ({
         }),
         codeEnvAvailable,
         backgroundToolsAvailable,
+        toolIntentsAvailable,
         statefulSessionsAvailable,
         memoryAvailable,
         skillStates,

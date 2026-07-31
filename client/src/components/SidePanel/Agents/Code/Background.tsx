@@ -11,11 +11,11 @@ import {
 } from '@librechat/client';
 import type { AgentForm } from '~/common';
 import { useAgentCapabilities, useGetAgentsConfig, useLocalize } from '~/hooks';
-import { withBooleanOption } from '~/hooks/Agents/useMCPToolOptions';
+import { withNativeBooleanOptOut } from '~/hooks/Agents/useMCPToolOptions';
 import { ESide } from '~/common';
 
-/** Tools sharing the code-execution sandbox; the single builder toggle opts
- *  the whole pair into background dispatch. */
+/** Tools sharing the code-execution sandbox; background-native, so the single
+ *  builder toggle persists (or clears) the pair's explicit opt-out. */
 const CODE_BACKGROUND_TOOL_IDS: string[] = [Tools.execute_code, Tools.bash_tool];
 
 export default function Background() {
@@ -24,17 +24,19 @@ export default function Background() {
   const { backgroundToolsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
   const { control, getValues, setValue } = useFormContext<AgentForm>();
   const toolOptions = useWatch({ control, name: 'tool_options' });
-  /** Either key enables the pair at runtime (the backend expands the code
-   *  opt-in across both), so the switch must reflect either. */
-  const enabled = CODE_BACKGROUND_TOOL_IDS.some(
-    (toolId) => toolOptions?.[toolId]?.run_in_background === true,
-  );
+  /** The pair is background-NATIVE: no entry means on. Mirrors the server's
+   *  resolution precedence for the runtime def — its own `bash_tool` key
+   *  first, then the `execute_code` capability marker, then the native
+   *  default (`resolveToolOption` in packages/api). */
+  const enabled =
+    (toolOptions?.[Tools.bash_tool]?.run_in_background ??
+      toolOptions?.[Tools.execute_code]?.run_in_background) !== false;
 
   const handleChange = useCallback(
     (value: boolean) => {
       let updated = getValues('tool_options') || {};
       for (const toolId of CODE_BACKGROUND_TOOL_IDS) {
-        updated = withBooleanOption(updated, toolId, 'run_in_background', value);
+        updated = withNativeBooleanOptOut(updated, toolId, 'run_in_background', value);
       }
       setValue('tool_options', updated, { shouldDirty: true });
     },

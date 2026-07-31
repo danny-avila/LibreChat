@@ -3,6 +3,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { BaseInitializeParams, InitializeResultBase } from '~/types';
+import { resolveCustomEndpointSecrets } from '~/admin/secrets';
 import { initializeAnthropic } from '../anthropic/initialize';
 import { initializeBedrock } from '../bedrock/initialize';
 import { initializeCustom } from '../custom/initialize';
@@ -191,7 +192,7 @@ export function getProviderConfig({
           `Provider ${provider} is ambiguous: multiple custom endpoints match case-insensitively (${names}). Rename one or use the exact-case provider value.`,
         );
       }
-      customEndpointConfig = matches[0];
+      customEndpointConfig = matches[0] && resolveCustomEndpointSecrets(matches[0]);
     }
     if (!customEndpointConfig) {
       throw new Error(`Provider ${provider} not supported`);

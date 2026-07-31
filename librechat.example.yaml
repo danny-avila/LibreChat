@@ -428,6 +428,9 @@ endpoints:
   #     maxCatalogSkills: 20
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
+  #   # Off-by-default capabilities you can add to the list above:
+  #   # - "run_in_background": opted-in tools gain a `run_in_background` param so the model can dispatch them detached and poll via `check_background_task`.
+  #   # - "tool_intents": opted-in tools (native tools by default) gain an `intent` param — one model-written sentence per call, streamed into the tool-call arguments. Backend groundwork today: the chat UI renders it as each call's live status label in an upcoming release; opt tools in per agent via `tool_options[tool].describe_intent`.
 
   # (optional) Custom request headers for the built-in OpenAI / Google endpoints.
   # Forwarded on every request to the provider (or an AI gateway / reverse proxy
@@ -545,6 +548,14 @@ endpoints:
         fetch: false
       titleConvo: true
       titleModel: 'claude-sonnet-4-5'
+      # Agent activity groups: collapse each block of reasoning + tool calls
+      # under a generated one-line header. Same shape as the title options.
+      activityLabel: true
+      activityModel: 'claude-3-5-haiku'
+      # activityEndpoint: 'anthropic'   # run labels on another endpoint's credentials
+      # activityPrompt: 'Write a 5-9 word past-tense label...'
+      # activityMaxPerRun: 20           # cost cap per response
+      # activityCharLimit: 600          # per-entry prompt truncation
       modelDisplayLabel: 'Claude (Compatible)'
 
     # Groq Example

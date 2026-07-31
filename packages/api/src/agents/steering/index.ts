@@ -1,4 +1,10 @@
-export { createSteerDrainHook, isSteeringSupported } from './runtime';
+export {
+  createSteerDrainHook,
+  createSteerPreemptBoundaryHook,
+  createSteerPreemptPoll,
+  isSteeringSupported,
+  isSteerPreemptSupported,
+} from './runtime';
 export type { SteerDrainHookOptions, SteerMediaResult } from './runtime';
 export {
   handleSteerRequest,

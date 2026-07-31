@@ -1,5 +1,11 @@
 import { memo, useMemo } from 'react';
+import { ContentTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, SearchResultData, TAttachment } from 'librechat-data-provider';
+import {
+  getActivityLabelPart,
+  getActivityLabelText,
+  lastVisibleContentIdx,
+} from '~/utils/activityLabels';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
 import { SearchContext } from '~/Providers';
@@ -159,7 +165,17 @@ export const ParallelColumns = memo(function ParallelColumns({
 }: ParallelColumnsProps) {
   return (
     <div className={cn('flex w-full flex-col gap-3 md:flex-row', 'sibling-content-group')}>
-      {columns.map(({ agentId, parts: columnParts }, colIdx) => {
+      {columns.map(({ agentId, parts: allColumnParts }, colIdx) => {
+        /** Lanes render raw parts, so an activity label cannot become a
+         *  collapsible header here (tracked separately). An UNFILLED one has
+         *  nothing to render at all, and every batch now publishes its
+         *  reservation immediately — so drop empty labels rather than emit a
+         *  blank line into the column while generation is pending. */
+        const columnParts = allColumnParts.filter(
+          ({ part }) =>
+            part?.type !== ContentTypes.ACTIVITY_LABEL ||
+            getActivityLabelText(getActivityLabelPart(part)).length > 0,
+        );
         // Show loading cursor if column has no content parts yet (empty array from placeholder)
         const showLoadingCursor = isSubmitting && columnParts.length === 0;
 
@@ -231,7 +247,10 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
     [content],
   );
 
-  const lastContentIdx = (content?.length ?? 0) - 1;
+  /** Same walk-back as `ContentParts`: a trailing BLANK label reservation is
+   *  filtered out of every lane, so counting it as last would leave NO
+   *  rendered part with the last-part cursor until the label fills. */
+  const lastContentIdx = lastVisibleContentIdx(content);
 
   // Split sequential parts into before/after parallel sections
   const { before, after } = useMemo(() => {

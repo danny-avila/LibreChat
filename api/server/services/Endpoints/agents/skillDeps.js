@@ -280,6 +280,7 @@ function buildAgentToolContext({ agent, config }) {
     endpointTokenConfig: config.endpointTokenConfig,
     toolRegistry: config.toolRegistry,
     backgroundToolNames: config.backgroundToolNames,
+    intentToolNames: config.intentToolNames,
     mcpAvailableTools: config.mcpAvailableTools,
     requestScopedConnections: config.requestScopedConnections,
     userMCPAuthMap: config.userMCPAuthMap,

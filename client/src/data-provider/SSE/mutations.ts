@@ -148,6 +148,13 @@ export interface SteerMessageParams {
   text: string;
   /** Attachment refs steered with the message (already uploaded). */
   files?: TMessage['files'];
+  /**
+   * Ask the server to seal the live model stream at the next provider-safe
+   * boundary rather than waiting for a tool step. Never a rejection reason:
+   * a server or SDK without the capability still queues the steer and echoes
+   * `preempt: false`, which relabels the chip instead of erroring.
+   */
+  preempt?: boolean;
 }
 
 /** Successful steer ACK: the server queued the message for mid-run injection. */
@@ -156,11 +163,14 @@ export interface SteerMessageResponse {
   steerId: string;
   position: number;
   conversationId: string;
+  /** Whether the seal request was actually armed; see {@link SteerMessageParams.preempt}. */
+  preempt?: boolean;
 }
 
 /**
  * Queue a mid-run steering message against the conversation's active run.
- * The server injects it at the next tool-batch boundary and streams an
+ * The server injects it at the next tool-batch boundary — or, when `preempt`
+ * is armed, at the next provider-safe token boundary — and streams an
  * `on_steer_applied` event over the existing SSE; this only fires the POST.
  * Rejections carry a `code` the caller degrades on (NO_ACTIVE_RUN → normal
  * send, RUN_PAUSED / STEER_UNSUPPORTED → client-side queue).

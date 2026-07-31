@@ -81,6 +81,7 @@ const JOB_CAS_LUA =
   'if decoded and type(item) == "table" then ' +
   'local projected = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
   'if item.files then projected.files = item.files end ' +
+  'if item.preempt then projected.preempt = item.preempt end ' +
   'steers[#steers + 1] = projected ' +
   'end ' +
   'end ' +
@@ -214,6 +215,7 @@ const STALE_JOB_DELETE_LUA =
   'if decoded and type(item) == "table" then ' +
   'local projected = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
   'if item.files then projected.files = item.files end ' +
+  'if item.preempt then projected.preempt = item.preempt end ' +
   'steers[#steers + 1] = projected ' +
   'end ' +
   'end ' +
@@ -328,6 +330,7 @@ const RUNSTEPS_READ_LUA =
  *   Returns: new depth, -1 (not running / closed), or -2 (queue full)
  */
 const STEER_ENQUEUE_LUA =
+  'if ARGV[4] ~= "" and redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[4] then return -1 end ' +
   'if redis.call("HGET", KEYS[1], "status") ~= "running" then return -1 end ' +
   'if redis.call("HGET", KEYS[1], "steersClosed") == "1" then return -1 end ' +
   'if redis.call("LLEN", KEYS[2]) >= tonumber(ARGV[3]) then return -2 end ' +
@@ -1472,9 +1475,12 @@ export class RedisJobStore implements IJobStore {
     });
   }
 
-  /** Splice-inserts host-authored steer parts (from `on_steer_applied`
-   *  chunks) into an SDK-graph content view, ascending by recorded index so
-   *  each host-view position lands exactly where live clients saw it. */
+  /** Splice-inserts host-authored parts (steers from `on_steer_applied`,
+   *  activity labels from `on_activity_label` chunks) into an SDK-graph
+   *  content view, ascending by recorded index so each host-view position
+   *  lands exactly where live clients saw it. Label events fire twice per
+   *  slot (placeholder, then filled); chronological last-wins keeps the
+   *  resolved label. */
   private async overlayHostSteerParts(
     streamId: string,
     parts: Agents.MessageContentComplex[],
@@ -1485,23 +1491,34 @@ export class RedisJobStore implements IJobStore {
       return parts;
     }
     const steers: Array<{ index: number; part: Agents.MessageContentComplex }> = [];
+    const labelsByIndex = new Map<number, Agents.MessageContentComplex>();
     for (const chunk of chunks) {
       const event = chunk as { event?: string; data?: unknown };
-      if (event.event !== 'on_steer_applied') {
+      if (event.event === 'on_steer_applied') {
+        const steerData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+        if (typeof steerData.index === 'number' && steerData.part != null) {
+          steers.push({ index: steerData.index, part: steerData.part });
+        }
         continue;
       }
-      const steerData = event.data as { index?: number; part?: Agents.MessageContentComplex };
-      if (typeof steerData.index === 'number' && steerData.part != null) {
-        steers.push({ index: steerData.index, part: steerData.part });
+      if (event.event === 'on_activity_label') {
+        const labelData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+        if (typeof labelData.index === 'number' && labelData.part != null) {
+          labelsByIndex.set(labelData.index, labelData.part);
+        }
       }
     }
-    if (steers.length === 0) {
+    if (steers.length === 0 && labelsByIndex.size === 0) {
       return parts;
     }
-    steers.sort((a, b) => a.index - b.index);
+    const inserts = [
+      ...steers,
+      ...[...labelsByIndex.entries()].map(([index, part]) => ({ index, part })),
+    ];
+    inserts.sort((a, b) => a.index - b.index);
     const merged = [...parts];
-    for (const steer of steers) {
-      merged.splice(Math.min(steer.index, merged.length), 0, steer.part);
+    for (const insert of inserts) {
+      merged.splice(Math.min(insert.index, merged.length), 0, insert.part);
     }
     return merged;
   }
@@ -1667,6 +1684,17 @@ export class RedisJobStore implements IJobStore {
         continue;
       }
 
+      // Activity-label parts are host-authored like steers and claimed at a
+      // fixed index. The event fires twice per slot (counts placeholder,
+      // then resolved label); chronological replay makes the last write win.
+      if (event.event === 'on_activity_label') {
+        const labelData = event.data as { index?: number; part?: Agents.MessageContentComplex };
+        if (typeof labelData.index === 'number' && labelData.part != null) {
+          contentParts[labelData.index] = labelData.part;
+        }
+        continue;
+      }
+
       if (!validEvents.has(event.event)) {
         continue;
       }
@@ -1777,7 +1805,11 @@ export class RedisJobStore implements IJobStore {
 
   // ===== Steering Queue Methods =====
 
-  async enqueueSteer(streamId: string, item: SteerQueueItem): Promise<number> {
+  async enqueueSteer(
+    streamId: string,
+    item: SteerQueueItem,
+    expectedCreatedAt?: number,
+  ): Promise<number> {
     const result = await this.redis.eval(
       STEER_ENQUEUE_LUA,
       2,
@@ -1786,6 +1818,7 @@ export class RedisJobStore implements IJobStore {
       JSON.stringify(item),
       String(this.ttl.running),
       String(STEER_QUEUE_MAX_DEPTH),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
     );
     if (typeof result !== 'number') {
       return STEER_ENQUEUE_NOT_RUNNING;
@@ -2212,6 +2245,12 @@ export class RedisJobStore implements IJobStore {
       isTemporary: data.isTemporary != null ? data.isTemporary === '1' : undefined,
       // Deferred tools discovered before a HITL pause; replayed into createRun on resume.
       discoveredTools: data.discoveredTools ? JSON.parse(data.discoveredTools) : undefined,
+      /** The owning replica's seal capability. `serializeJob` writes every
+       *  boolean generically, but this mapper is explicit — omitting it here
+       *  drops the flag on every read, so the steer route would compute
+       *  `preemptArmed: false` and silently degrade interrupt-steer to
+       *  tool-boundary steering in EVERY Redis deployment. */
+      preemptCapable: data.preemptCapable != null ? data.preemptCapable === '1' : undefined,
       titleEvent: data.titleEvent || undefined,
       replayEvents: data.replayEvents || undefined,
       contextUsage: data.contextUsage || undefined,
@@ -2219,6 +2258,11 @@ export class RedisJobStore implements IJobStore {
       pendingAction: this.parsePendingAction(data.pendingAction),
       pendingActionId: data.pendingActionId || undefined,
       lastActiveAt: data.lastActiveAt ? parseInt(data.lastActiveAt, 10) : undefined,
+      /** `markActivityLabels` persists this, so it has to be read back:
+       *  without it every Redis reload leaves the flag undefined and resume
+       *  skips activity-label gap reconciliation, silently dropping a label
+       *  that resolved between the snapshot and subscriber attach. */
+      activityLabels: data.activityLabels != null ? data.activityLabels === '1' : undefined,
     };
   }
 

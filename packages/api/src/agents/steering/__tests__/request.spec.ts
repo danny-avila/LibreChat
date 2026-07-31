@@ -2,25 +2,28 @@ import type { IMongoFile } from '@librechat/data-schemas';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
+import { isSteeringSupported, isSteerPreemptSupported } from '../runtime';
 import { STEER_QUEUE_MAX_DEPTH } from '~/stream/interfaces/IJobStore';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import { handleSteerRequest, handleSteerCancel } from '../request';
-import { isSteeringSupported } from '../runtime';
 
 jest.mock('../runtime', () => ({
   ...jest.requireActual('../runtime'),
   isSteeringSupported: jest.fn(() => true),
+  isSteerPreemptSupported: jest.fn(() => true),
 }));
 
 jest.spyOn(console, 'log').mockImplementation();
 
 const mockIsSupported = isSteeringSupported as jest.Mock;
+const mockIsPreemptSupported = isSteerPreemptSupported as jest.Mock;
 const user = { id: 'user-1' };
 
 describe('handleSteerRequest (real in-memory job manager)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsSupported.mockReturnValue(true);
+    mockIsPreemptSupported.mockReturnValue(true);
     GenerationJobManager.configure({
       jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
       eventTransport: new InMemoryEventTransport(),
@@ -425,6 +428,38 @@ describe('handleSteerCancel (real in-memory job manager)', () => {
     expect(result).toEqual({ status: 200, body: { removed: false } });
   });
 
+  /**
+   * ioredis queues commands during an outage instead of rejecting, so an
+   * unbounded wait on the disarm publish can hang for the length of the
+   * outage — with the steer already durably cancelled. A client that gives up
+   * treats the cancel as failed and restores a chip for a steer that can
+   * never produce an applied event.
+   */
+  it('answers the cancel even when the disarm publish never settles', async () => {
+    const steerId = await queueSteer('cancel-stalled-disarm');
+    let release: (() => void) | undefined;
+    const spy = jest.spyOn(GenerationJobManager, 'noteSteersRemoved').mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        release = () => resolve(true);
+      }),
+    );
+
+    try {
+      const result = await handleSteerCancel(user, {
+        conversationId: 'cancel-stalled-disarm',
+        steerId,
+      });
+
+      expect(result).toEqual({ status: 200, body: { removed: true } });
+      expect(spy).toHaveBeenCalledWith('cancel-stalled-disarm', [steerId], expect.any(Number));
+      /** Durably gone regardless — the wait was only ever a head start. */
+      expect(await GenerationJobManager.steering.peek('cancel-stalled-disarm')).toEqual([]);
+    } finally {
+      release?.();
+      spy.mockRestore();
+    }
+  }, 10000);
+
   it('403s another user and leaves the steer queued', async () => {
     const steerId = await queueSteer('cancel-foreign');
     const result = await handleSteerCancel(
@@ -433,5 +468,268 @@ describe('handleSteerCancel (real in-memory job manager)', () => {
     );
     expect(result.status).toBe(403);
     expect((await GenerationJobManager.steering.peek('cancel-foreign')).length).toBe(1);
+  });
+});
+
+describe('preempt flag on the steer request', () => {
+  /** The owning replica records its own seal capability at createJob; the
+   *  route honours that rather than probing its own SDK. */
+  function createCapableJob(streamId: string) {
+    return GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { preemptCapable: true },
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockIsSupported.mockReturnValue(true);
+    mockIsPreemptSupported.mockReturnValue(true);
+    GenerationJobManager.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    GenerationJobManager.initialize();
+  });
+
+  afterEach(async () => {
+    await GenerationJobManager.destroy();
+  });
+
+  it('arms the request, marks the queued item, and echoes preempt: true', async () => {
+    const streamId = 'preempt-req-armed';
+    await createCapableJob(streamId);
+
+    const result = await handleSteerRequest(user, {
+      conversationId: streamId,
+      text: 'stop and do this instead',
+      preempt: true,
+    });
+
+    expect(result.status).toBe(202);
+    expect(result.body.preempt).toBe(true);
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(true);
+    expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBe(true);
+  });
+
+  it('omits the flag for an ordinary steer and never arms', async () => {
+    const streamId = 'preempt-req-plain';
+    await GenerationJobManager.createJob(streamId, user.id);
+
+    const result = await handleSteerRequest(user, {
+      conversationId: streamId,
+      text: 'ordinary steer',
+    });
+
+    expect(result.status).toBe(202);
+    expect(result.body.preempt).toBe(false);
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(false);
+    expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBeUndefined();
+  });
+
+  /**
+   * The guard ladder — ownership, tenant, paused-state, agent ACL — runs
+   * against the job read at the top. The owner re-read happens several awaits
+   * later and can cross a replacement, so a different generation there is a
+   * run this request was never authorized against. Accepting into it would
+   * carry the wrong agent's metadata.
+   */
+  it('refuses when the run is replaced between the guards and the owner re-read', async () => {
+    const streamId = 'preempt-req-replaced-midflight';
+    const original = await createCapableJob(streamId);
+    const originalSnapshot = await GenerationJobManager.getJob(streamId);
+    /** The run is genuinely replaced, so the owner re-read returns a REAL
+     *  live generation — an enqueue fenced to it would succeed. */
+    const replacement = await createCapableJob(streamId);
+    expect(replacement.createdAt).not.toBe(original.createdAt);
+
+    const realGetJob = GenerationJobManager.getJob.bind(GenerationJobManager);
+    let calls = 0;
+    const spy = jest
+      .spyOn(GenerationJobManager, 'getJob')
+      .mockImplementation(async (id: string) => {
+        calls += 1;
+        /** The guard ladder ran before the replacement; the owner re-read after. */
+        return calls === 1 ? originalSnapshot : realGetJob(id);
+      });
+
+    try {
+      const result = await handleSteerRequest(user, {
+        conversationId: streamId,
+        text: 'interrupt me',
+        preempt: true,
+      });
+
+      expect(result.status).toBe(404);
+      expect(result.body.code).toBe('NO_ACTIVE_RUN');
+      /** Nothing reached the replacement's queue. */
+      expect(await GenerationJobManager.steering.peek(streamId)).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  /**
+   * The queue item is already durable by the time the arm is published, and
+   * the 202 reports capability rather than delivery — so waiting on a stalled
+   * Redis buys nothing and risks the caller timing out and retrying, which
+   * would mint a SECOND steer alongside the first and inject the same
+   * instruction twice. If this ever awaits again, this test times out.
+   */
+  it('does not hold the 202 behind a stalled preempt publish', async () => {
+    const streamId = 'preempt-req-stalled-publish';
+    await createCapableJob(streamId);
+
+    let release: (() => void) | undefined;
+    const neverSettles = new Promise<boolean>((resolve) => {
+      release = () => resolve(true);
+    });
+    const spy = jest.spyOn(GenerationJobManager, 'requestPreempt').mockReturnValue(neverSettles);
+
+    try {
+      const result = await handleSteerRequest(user, {
+        conversationId: streamId,
+        text: 'interrupt me',
+        preempt: true,
+      });
+
+      expect(result.status).toBe(202);
+      expect(result.body.preempt).toBe(true);
+      expect(spy).toHaveBeenCalledWith(streamId, expect.any(String), expect.any(Number));
+      /** Still durable, so the boundary drain will find it either way. */
+      expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBe(true);
+    } finally {
+      release?.();
+      spy.mockRestore();
+    }
+  });
+
+  /**
+   * The mirror of the owner-incapable case below, and the direction a local
+   * probe used to get wrong: during a rolling deploy the steer can land on an
+   * un-upgraded replica while a capable replica owns the generation. The
+   * route never seals — it enqueues and publishes an arm — so its own SDK is
+   * irrelevant and dropping the interrupt here would lose it for no reason.
+   */
+  it('honours a capable OWNER even when the routing replica cannot seal', async () => {
+    mockIsPreemptSupported.mockReturnValue(false);
+    const streamId = 'preempt-req-old-router';
+    await createCapableJob(streamId);
+
+    const result = await handleSteerRequest(user, {
+      conversationId: streamId,
+      text: 'interrupt me',
+      preempt: true,
+    });
+
+    expect(result.status).toBe(202);
+    expect(result.body.preempt).toBe(true);
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(true);
+    expect((await GenerationJobManager.steering.peek(streamId))[0].preempt).toBe(true);
+  });
+
+  /**
+   * Rolling deploy: the route replica can seal but the replica that OWNS the
+   * generation cannot. Labelling it "interrupting" would lie.
+   */
+  it('degrades when the OWNING replica recorded no seal capability', async () => {
+    const streamId = 'preempt-req-old-owner';
+    await GenerationJobManager.createJob(streamId, user.id);
+
+    const result = await handleSteerRequest(user, {
+      conversationId: streamId,
+      text: 'interrupt me',
+      preempt: true,
+    });
+
+    expect(result.status).toBe(202);
+    expect(result.body.preempt).toBe(false);
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  it('does not arm when the enqueue itself is rejected', async () => {
+    const streamId = 'preempt-req-full';
+    await createCapableJob(streamId);
+    for (let i = 0; i < STEER_QUEUE_MAX_DEPTH; i++) {
+      await GenerationJobManager.steering.enqueue(streamId, {
+        steerId: `filler-${i}`,
+        text: `filler ${i}`,
+        userId: user.id,
+        createdAt: Date.now(),
+      });
+    }
+
+    const result = await handleSteerRequest(user, {
+      conversationId: streamId,
+      text: 'too late',
+      preempt: true,
+    });
+
+    expect(result.status).toBe(429);
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  /**
+   * Cancel is live UI. Without this the request stays armed after its steer
+   * is gone and seals an unrelated stretch of generation.
+   */
+  /**
+   * Option A semantics: the 202's `preempt` mirrors the DURABLE queue flag,
+   * so the response and `SteerQueueItem.preempt` can never disagree — a
+   * resumed owner re-arming from the queue then honours exactly what the
+   * client was told.
+   */
+  it('the 202 flag and the durable queue item always agree', async () => {
+    const streamId = 'preempt-flag-agrees';
+    await createCapableJob(streamId);
+
+    const result = await handleSteerRequest(user, {
+      conversationId: streamId,
+      text: 'interrupt me',
+      preempt: true,
+    });
+    const queued = (await GenerationJobManager.steering.peek(streamId))[0];
+
+    expect(result.body.preempt).toBe(true);
+    expect(queued.preempt).toBe(true);
+    expect(result.body.preempt).toBe(queued.preempt === true);
+  });
+
+  it('cancelling a preempt steer disarms the request', async () => {
+    const streamId = 'preempt-req-cancel';
+    await createCapableJob(streamId);
+    const queued = await handleSteerRequest(user, {
+      conversationId: streamId,
+      text: 'never mind',
+      preempt: true,
+    });
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(true);
+
+    const cancelled = await handleSteerCancel(user, {
+      conversationId: streamId,
+      steerId: queued.body.steerId,
+    });
+
+    expect(cancelled.body.removed).toBe(true);
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  it('a lost cancel race leaves the surviving request armed', async () => {
+    const streamId = 'preempt-req-cancel-miss';
+    await createCapableJob(streamId);
+    await handleSteerRequest(user, {
+      conversationId: streamId,
+      text: 'still queued',
+      preempt: true,
+    });
+
+    const cancelled = await handleSteerCancel(user, {
+      conversationId: streamId,
+      steerId: 'never-existed',
+    });
+
+    expect(cancelled.body.removed).toBe(false);
+    expect(GenerationJobManager.isPreemptRequested(streamId)).toBe(true);
   });
 });

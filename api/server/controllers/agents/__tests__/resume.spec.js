@@ -50,6 +50,10 @@ const mockGenerationJobManager = {
   getJobStore: jest.fn(() => mockJobStore),
   getResumeState: jest.fn(),
   setContentParts: jest.fn(),
+  /** Resume moves ownership: the new owner records its own seal capability
+   *  and rebuilds armed interrupts from the durable queue. */
+  updateMetadata: jest.fn().mockResolvedValue(undefined),
+  rearmQueuedPreempts: jest.fn().mockResolvedValue(0),
   emitChunk: jest.fn(),
   emitDone: jest.fn(),
   emitError: jest.fn(),
@@ -260,6 +264,40 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await settled;
       expect(capturedInit.conversationCreatedAt).toBe('2020-01-02T03:04:05.000Z');
     });
+
+    /**
+     * `approvals.resolve` has already consumed the action and flipped the job
+     * to running by the time steering bookkeeping runs. ioredis queues rather
+     * than rejects during an outage, so `.catch` never fires and an unbounded
+     * await would strand the client: its retry gets a 409 for a spent action,
+     * and neither the continuation nor the failed-resume cleanup runs.
+     */
+    it('answers the resume even when steering bookkeeping never settles', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      let releaseRearm;
+      let releaseMetadata;
+      mockGenerationJobManager.rearmQueuedPreempts.mockReturnValue(
+        new Promise((resolve) => {
+          releaseRearm = () => resolve(0);
+        }),
+      );
+      mockGenerationJobManager.updateMetadata.mockReturnValue(
+        new Promise((resolve) => {
+          releaseMetadata = () => resolve(undefined);
+        }),
+      );
+
+      try {
+        const res = await post(approveBody());
+        expect(res.status).toBe(200);
+        expect(res.body.status).toBe('resuming');
+      } finally {
+        releaseRearm?.();
+        releaseMetadata?.();
+        mockGenerationJobManager.rearmQueuedPreempts.mockResolvedValue(0);
+        mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
+      }
+    }, 15000);
 
     it('leaves conversationCreatedAt unset when the convo lookup yields nothing', async () => {
       mockGetConvo.mockResolvedValue(null);

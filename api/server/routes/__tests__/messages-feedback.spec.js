@@ -83,6 +83,8 @@ describe('PUT /:conversationId/:messageId/feedback', () => {
         messageId,
         conversationId: 'conversation-1',
         endpoint: 'openAI',
+        langfuseSampled: true,
+        langfuseDestinationIds: ['destination-1'],
         feedback,
       }),
     );
@@ -115,6 +117,8 @@ describe('PUT /:conversationId/:messageId/feedback', () => {
     );
     expect(sendFeedbackScore).toHaveBeenCalledWith(
       expect.objectContaining({
+        sampled: true,
+        destinationIds: ['destination-1'],
         feedback: {
           rating: 'thumbsDown',
           tag: 'inaccurate',

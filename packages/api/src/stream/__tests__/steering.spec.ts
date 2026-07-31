@@ -1,6 +1,7 @@
+import { logger } from '@librechat/data-schemas';
 import { SteerEvents } from 'librechat-data-provider';
 import type { TPendingSteer, Agents } from 'librechat-data-provider';
-import type { SteerQueueItem } from '~/stream/interfaces/IJobStore';
+import type { SteerQueueItem, IEventTransport } from '~/stream/interfaces/IJobStore';
 import type { ResumeState, ServerSentEvent } from '~/types';
 import {
   STEER_ENQUEUE_NOT_RUNNING,
@@ -53,6 +54,30 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
 
       expect(await manager.steering.enqueue(streamId, buildSteer('one'))).toBe(1);
       expect(await manager.steering.enqueue(streamId, buildSteer('two'))).toBe(2);
+    });
+
+    /**
+     * The steer route decides capability against a job it read several awaits
+     * earlier. If the run is replaced in between, an unfenced enqueue puts the
+     * item on the REPLACEMENT queue while the preempt flag and the arm still
+     * name the previous epoch — so the arm is fenced out at the owner and the
+     * 202 promises an interrupt that cannot happen. Rejecting is the honest
+     * outcome: the run the caller was told about is gone.
+     */
+    test('refuses an item fenced to a generation that has been replaced', async () => {
+      const streamId = 'steer-enqueue-fenced';
+      const first = await manager.createJob(streamId, 'user-1');
+      const replacement = await manager.createJob(streamId, 'user-1');
+      expect(replacement.createdAt).not.toBe(first.createdAt);
+
+      expect(await manager.steering.enqueue(streamId, buildSteer('stale'), first.createdAt)).toBe(
+        STEER_ENQUEUE_NOT_RUNNING,
+      );
+      expect(await manager.steering.peek(streamId)).toEqual([]);
+
+      expect(
+        await manager.steering.enqueue(streamId, buildSteer('live'), replacement.createdAt),
+      ).toBe(1);
     });
 
     test('rejects when the job does not exist', async () => {
@@ -836,6 +861,463 @@ describe('emitChunk durability (Redis-mode chunk log)', () => {
       resolveAppend?.();
       now.mockRestore();
       await redisModeManager.destroy();
+    }
+  });
+});
+
+describe('preempt request lifecycle (in-memory)', () => {
+  let manager: GenerationJobManagerClass;
+
+  beforeEach(() => {
+    manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    manager.initialize();
+  });
+
+  afterEach(async () => {
+    await manager.destroy();
+  });
+
+  test('requestPreempt without a runtime is a no-op and the poll stays false', () => {
+    manager.requestPreempt('preempt-no-runtime', 'steer-1', Date.now());
+    expect(manager.isPreemptRequested('preempt-no-runtime')).toBe(false);
+  });
+
+  test('arms against the live generation and stays armed until cleared', async () => {
+    const streamId = 'preempt-arm';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+
+    manager.noteSteersRemoved(streamId, ['steer-1'], job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('refuses to arm when jobCreatedAt does not match the live generation', async () => {
+    const streamId = 'preempt-stale-arm';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt - 1);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('clears only the removed steerIds', async () => {
+    const streamId = 'preempt-partial-clear';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+    manager.requestPreempt(streamId, 'steer-2', job.createdAt);
+    manager.noteSteersRemoved(streamId, ['steer-1'], job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+    manager.noteSteersRemoved(streamId, ['steer-2'], job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('caps armed requests at STEER_QUEUE_MAX_DEPTH', async () => {
+    const streamId = 'preempt-cap';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    for (let i = 0; i < STEER_QUEUE_MAX_DEPTH + 5; i++) {
+      manager.requestPreempt(streamId, `steer-${i}`, job.createdAt);
+    }
+    for (let i = 0; i < STEER_QUEUE_MAX_DEPTH; i++) {
+      manager.noteSteersRemoved(streamId, [`steer-${i}`], job.createdAt);
+    }
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('arming never changes job status', async () => {
+    const streamId = 'preempt-status';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+    expect((await manager.getJob(streamId))?.status).toBe('running');
+  });
+
+  test('a failing preempt subscription degrades the job instead of crashing the process', async () => {
+    const transport: IEventTransport = new InMemoryEventTransport();
+    transport.onPreempt = jest.fn().mockRejectedValue(new Error('SUBSCRIBE failed'));
+
+    /**
+     * The registration is deliberately detached, so a rejection propagating out
+     * of it would be unhandled — fatal under Node's default settings.
+     */
+    const unhandled: unknown[] = [];
+    const collect = (reason: unknown): number => unhandled.push(reason);
+    process.on('unhandledRejection', collect);
+    const logged = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+
+    const degraded = new GenerationJobManagerClass();
+    degraded.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: transport,
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    degraded.initialize();
+
+    try {
+      const streamId = 'preempt-subscribe-fails';
+      const job = await degraded.createJob(streamId, 'user-1');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(unhandled).toEqual([]);
+      expect(job.status).toBe('running');
+      expect(logged).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to subscribe to preempts'),
+        expect.any(Error),
+      );
+
+      /** Same-replica arming is runtime state, so it survives the lost channel. */
+      degraded.requestPreempt(streamId, 'steer-1', job.createdAt);
+      expect(degraded.isPreemptRequested(streamId)).toBe(true);
+    } finally {
+      process.off('unhandledRejection', collect);
+      logged.mockRestore();
+      await degraded.destroy();
+    }
+  });
+
+  test('abortJob retires the armed set with the runtime', async () => {
+    const streamId = 'preempt-abort';
+    const job = await manager.createJob(streamId, 'user-1');
+    await manager.steering.enqueue(streamId, {
+      steerId: 'steer-1',
+      text: 'interrupt me',
+      userId: 'user-1',
+      createdAt: Date.now(),
+      preempt: true,
+    });
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+
+    await manager.abortJob(streamId);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('completeJob retires the armed set', async () => {
+    const streamId = 'preempt-complete';
+    const job = await manager.createJob(streamId, 'user-1');
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+
+    await manager.completeJob(streamId, undefined, job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('toPendingSteer keeps the preempt label for parked/replayed chips', () => {
+    const item: SteerQueueItem = {
+      steerId: 'steer-1',
+      text: 'interrupt me',
+      userId: 'user-1',
+      createdAt: Date.now(),
+      preempt: true,
+    };
+    expect(toPendingSteer(item).preempt).toBe(true);
+    expect(toPendingSteer({ ...item, preempt: undefined }).preempt).toBeUndefined();
+  });
+
+  test('a late arm cannot resurrect an already-cleared steer', async () => {
+    const streamId = 'preempt-late-arm';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    /** The generating replica drained + cleared before this replica's arm. */
+    manager.noteSteersRemoved(streamId, ['steer-1'], job.createdAt);
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('the tombstone is per-steer, not a blanket disarm', async () => {
+    const streamId = 'preempt-tombstone-scope';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    manager.noteSteersRemoved(streamId, ['steer-1'], job.createdAt);
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+    manager.requestPreempt(streamId, 'steer-2', job.createdAt);
+
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+    manager.noteSteersRemoved(streamId, ['steer-2'], job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('clearPreemptRequests disarms the ids it is given', async () => {
+    const streamId = 'preempt-clear-all';
+    const job = await manager.createJob(streamId, 'user-1');
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+    manager.requestPreempt(streamId, 'steer-2', job.createdAt);
+
+    const armed = manager.getArmedPreemptIds(streamId, job.createdAt);
+    expect(armed.sort()).toEqual(['steer-1', 'steer-2']);
+    manager.clearPreemptRequests(streamId, armed, job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  /**
+   * A steer can enqueue and arm while a drain is in flight. The empty-boundary
+   * disarm must not wipe it — its queue item is live and uninjected.
+   */
+  test('clearPreemptRequests spares an arm that landed after the snapshot', async () => {
+    const streamId = 'preempt-clear-scoped';
+    const job = await manager.createJob(streamId, 'user-1');
+    manager.requestPreempt(streamId, 'steer-old', job.createdAt);
+
+    const snapshot = manager.getArmedPreemptIds(streamId, job.createdAt);
+    manager.requestPreempt(streamId, 'steer-new', job.createdAt);
+    manager.clearPreemptRequests(streamId, snapshot, job.createdAt);
+
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+  });
+
+  test('clearPreemptRequests refuses a stale generation', async () => {
+    const streamId = 'preempt-clear-stale';
+    const job = await manager.createJob(streamId, 'user-1');
+    manager.requestPreempt(streamId, 'steer-1', job.createdAt);
+
+    manager.clearPreemptRequests(streamId, ['steer-1'], job.createdAt - 1);
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+  });
+
+  /**
+   * Every drained or cancelled steer is tombstoned, not just preempting ones,
+   * so a refusing cap would stop recording after a long generation and let the
+   * late-arm race resurface. Eviction keeps the newest removals authoritative.
+   */
+  test('tombstones evict oldest-first instead of refusing new removals', async () => {
+    const streamId = 'preempt-tombstone-evict';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    for (let i = 0; i < STEER_QUEUE_MAX_DEPTH * 2 + 5; i++) {
+      manager.noteSteersRemoved(streamId, [`bulk-${i}`], job.createdAt);
+    }
+    /** The most recent removal must still be remembered. */
+    const recent = `bulk-${STEER_QUEUE_MAX_DEPTH * 2 + 4}`;
+    manager.requestPreempt(streamId, recent, job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  /**
+   * An arm lives only in the owning replica's runtime; the steer's `preempt`
+   * flag is durable. A resume landing on another replica must rebuild the
+   * armed set from the queue or the acknowledged interrupt silently waits for
+   * an ordinary tool boundary.
+   */
+  test('rearmQueuedPreempts rebuilds the armed set from the durable queue', async () => {
+    const streamId = 'preempt-rearm';
+    const job = await manager.createJob(streamId, 'user-1');
+    await manager.steering.enqueue(streamId, {
+      steerId: 'steer-preempt',
+      text: 'interrupt me',
+      userId: 'user-1',
+      createdAt: Date.now(),
+      preempt: true,
+    });
+    await manager.steering.enqueue(streamId, {
+      steerId: 'steer-plain',
+      text: 'ordinary steer',
+      userId: 'user-1',
+      createdAt: Date.now(),
+    });
+
+    /** Fresh owner: nothing armed locally yet. */
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+
+    const rearmed = await manager.rearmQueuedPreempts(streamId, job.createdAt);
+
+    expect(rearmed).toBe(1);
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+    expect(manager.getArmedPreemptIds(streamId, job.createdAt)).toEqual(['steer-preempt']);
+  });
+
+  /**
+   * A replica that only READ this job still installed a facade runtime and
+   * subscribed, so it can hold an arm whose clear it later missed. Promotion
+   * to owner on HITL resume would make that orphan live: the first resumed
+   * stream seals on a steer that is no longer queued, drains nothing, and
+   * truncates the resumed answer. The durable queue is the authority at a
+   * handover, so an arm it does not back must be dropped, not merged.
+   */
+  test('rearmQueuedPreempts drops an armed id the durable queue no longer backs', async () => {
+    const streamId = 'preempt-rearm-orphan';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    /** Arm survived from before ownership moved; its steer is long drained. */
+    manager.requestPreempt(streamId, 'steer-orphan', job.createdAt);
+    await manager.steering.enqueue(streamId, {
+      steerId: 'steer-live',
+      text: 'interrupt me',
+      userId: 'user-1',
+      createdAt: Date.now(),
+      preempt: true,
+    });
+    expect(manager.getArmedPreemptIds(streamId, job.createdAt)).toContain('steer-orphan');
+
+    const rearmed = await manager.rearmQueuedPreempts(streamId, job.createdAt);
+
+    expect(rearmed).toBe(1);
+    expect(manager.getArmedPreemptIds(streamId, job.createdAt)).toEqual(['steer-live']);
+  });
+
+  /**
+   * `approvals.resolve` reopens steering before reconciliation runs, so a
+   * steer enqueued on another replica can arm this one WHILE the queue read
+   * is in flight. Reading the queue first would see that arm as unbacked and
+   * tombstone a live interrupt the route already acknowledged — and the
+   * tombstone would block the re-arm, so it could never recover.
+   */
+  test('an arm that lands while the queue is being read is not tombstoned', async () => {
+    const streamId = 'preempt-rearm-race';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    const peek = manager.steering.peek.bind(manager.steering);
+    const spy = jest
+      .spyOn(manager.steering, 'peek')
+      .mockImplementation(async (id: string, expectedCreatedAt?: number) => {
+        const snapshot = await peek(id, expectedCreatedAt);
+        /** Another replica commits a steer and publishes its arm, both after
+         *  this snapshot was taken. */
+        await manager.steering.enqueue(streamId, {
+          steerId: 'steer-inflight',
+          text: 'interrupt me',
+          userId: 'user-1',
+          createdAt: Date.now(),
+          preempt: true,
+        });
+        manager.requestPreempt(streamId, 'steer-inflight', job.createdAt);
+        return snapshot;
+      });
+
+    try {
+      await manager.rearmQueuedPreempts(streamId, job.createdAt);
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(manager.getArmedPreemptIds(streamId, job.createdAt)).toContain('steer-inflight');
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+  });
+
+  test('an orphan dropped at handover is tombstoned against a late arm', async () => {
+    const streamId = 'preempt-rearm-orphan-tombstone';
+    const job = await manager.createJob(streamId, 'user-1');
+
+    manager.requestPreempt(streamId, 'steer-orphan', job.createdAt);
+    await manager.rearmQueuedPreempts(streamId, job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+
+    /** A publish that was in flight while ownership moved must not revive it. */
+    manager.requestPreempt(streamId, 'steer-orphan', job.createdAt);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('rearmQueuedPreempts refuses a stale generation and arms nothing', async () => {
+    const streamId = 'preempt-rearm-stale';
+    const job = await manager.createJob(streamId, 'user-1');
+    await manager.steering.enqueue(streamId, {
+      steerId: 'steer-preempt',
+      text: 'interrupt me',
+      userId: 'user-1',
+      createdAt: Date.now(),
+      preempt: true,
+    });
+
+    expect(await manager.rearmQueuedPreempts(streamId, job.createdAt - 1)).toBe(0);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  /**
+   * A non-owning replica can only publish. The subscriber count is NOT proof
+   * of owner receipt — this replica's own facade subscription is counted too
+   * — so a successful publish is reported as armed and only a rejected one
+   * is reported as unarmed. See the acknowledgement-semantics note on #14518.
+   */
+  test('a successful cross-replica publish reports armed', async () => {
+    const streamId = 'preempt-published';
+    const published = new GenerationJobManagerClass();
+    published.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: Object.assign(new InMemoryEventTransport(), {
+        emitPreempt: async () => 0,
+      }),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    published.initialize();
+    try {
+      expect(await published.requestPreempt(streamId, 'steer-1', Date.now())).toBe(true);
+    } finally {
+      await published.destroy();
+    }
+  });
+
+  /**
+   * A facade runtime exists on any replica that merely READ the job, so
+   * ownership must come from `ownedJobs` — arming a facade satisfies nothing
+   * while reporting success.
+   */
+  test('a facade runtime on a non-owning replica does not count as armed locally', async () => {
+    const streamId = 'preempt-facade';
+    const facade = new GenerationJobManagerClass();
+    facade.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    facade.initialize();
+    try {
+      /** No transport publish and no ownership: nothing can arm. */
+      expect(await facade.requestPreempt(streamId, 'steer-1', Date.now())).toBe(false);
+      expect(facade.isPreemptRequested(streamId)).toBe(false);
+    } finally {
+      await facade.destroy();
+    }
+  });
+
+  /**
+   * The steer drained at an ordinary boundary while the request was still in
+   * flight, so its id is tombstoned and no arm is accepted — the 202 must not
+   * claim an interrupt that cannot happen.
+   */
+  test('reports not-armed when the id was already tombstoned', async () => {
+    const streamId = 'preempt-tombstoned-arm';
+    const job = await manager.createJob(streamId, 'user-1');
+    await manager.noteSteersRemoved(streamId, ['steer-late'], job.createdAt);
+
+    expect(await manager.requestPreempt(streamId, 'steer-late', job.createdAt)).toBe(false);
+    expect(manager.isPreemptRequested(streamId)).toBe(false);
+  });
+
+  test('reports armed when this replica owns the generation', async () => {
+    const streamId = 'preempt-owned-here';
+    const job = await manager.createJob(streamId, 'user-1');
+    expect(await manager.requestPreempt(streamId, 'steer-1', job.createdAt)).toBe(true);
+    expect(manager.isPreemptRequested(streamId)).toBe(true);
+  });
+
+  test('a failed publish does not throw out of requestPreempt', async () => {
+    const streamId = 'preempt-publish-throws';
+    const failing = new GenerationJobManagerClass();
+    failing.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60000 }),
+      eventTransport: Object.assign(new InMemoryEventTransport(), {
+        emitPreempt: async () => {
+          throw new Error('redis down');
+        },
+      }),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+    failing.initialize();
+    try {
+      expect(await failing.requestPreempt(streamId, 'steer-1', Date.now())).toBe(false);
+    } finally {
+      await failing.destroy();
     }
   });
 });

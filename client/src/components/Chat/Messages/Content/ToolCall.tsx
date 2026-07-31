@@ -13,6 +13,7 @@ import type { TAttachment } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
+import { useToolCallIntent } from './Parts/intent';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
@@ -187,9 +188,17 @@ export default function ToolCall({
     return undefined;
   }, [isMCPToolCall, mcpServerName, domain, localize]);
 
+  /** Model-authored live label, streamed as the first args key (injected by
+   *  the `tool_intents` capability); persists as the settled label —
+   *  completion is a UI state, not a tense change. */
+  const intent = useToolCallIntent(_args);
+
   const getFinishedText = () => {
     if (cancelled) {
       return localize('com_ui_cancelled');
+    }
+    if (intent != null) {
+      return intent;
     }
     if (isMCPToolCall === true) {
       return localize('com_assistants_completed_function', { 0: function_name });
@@ -206,6 +215,10 @@ export default function ToolCall({
 
   return (
     <>
+      {/* The live region gets a STABLE in-progress value: the streaming
+          intent grows on every delta, and an atomic polite region would
+          re-announce the whole sentence each time. The settled intent is
+          announced once via getFinishedText. */}
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {(() => {
           if (progress < 1 && !showCancelled) {
@@ -225,9 +238,10 @@ export default function ToolCall({
           progress={progress}
           onClick={handleToggleInfo}
           inProgressText={
-            function_name
+            intent ??
+            (function_name
               ? localize('com_assistants_running_var', { 0: function_name })
-              : localize('com_assistants_running_action')
+              : localize('com_assistants_running_action'))
           }
           authText={
             !showCancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined

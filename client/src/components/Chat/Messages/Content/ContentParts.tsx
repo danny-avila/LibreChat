@@ -11,6 +11,7 @@ import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { EditTextPart, EmptyText, AgentUpdate } from './Parts';
+import { lastVisibleContentIdx } from '~/utils/activityLabels';
 import { MessageContext, SearchContext } from '~/Providers';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import ApprovalProvider from './ApprovalContext';
@@ -31,11 +32,24 @@ const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string =
   if (!firstPart) {
     return 'empty';
   }
-  const toolCallId = getToolCallId(firstPart.part);
-  if (toolCallId) {
-    return `tool:${toolCallId}`;
+  /** Keyed on the first TOOL CALL, not the first part. An activity label
+   *  absorbs the block's leading THINK part when its text lands, so keying on
+   *  `parts[0]` would flip the key mid-run — remounting the group and losing
+   *  whatever the user had expanded. The tool calls themselves do not move. */
+  let firstToolIdx: number | undefined;
+  for (const { part, idx } of parts) {
+    const toolCallId = getToolCallId(part);
+    if (toolCallId) {
+      return `tool:${toolCallId}`;
+    }
+    if (firstToolIdx === undefined && part?.type === ContentTypes.TOOL_CALL) {
+      firstToolIdx = idx;
+    }
   }
-  return `fallback:${fallbackScope}:${firstPart.idx}`;
+  /** Same reasoning for id-less tool calls: anchor to the first TOOL entry's
+   *  index rather than the block's first part, which shifts when reasoning is
+   *  absorbed. Only a block with no tool call at all falls back to `parts[0]`. */
+  return `fallback:${fallbackScope}:${firstToolIdx ?? firstPart.idx}`;
 };
 
 type PartWithContextProps = {
@@ -422,7 +436,10 @@ const ContentParts = memo(function ContentParts({
 
   const safeContent = content ?? [];
   const showEmptyCursor = safeContent.length === 0 && effectiveIsSubmitting;
-  const lastContentIdx = safeContent.length - 1;
+  /** Skips trailing BLANK label reservations — they render nothing, and
+   *  counting one as last would strip the streaming cursor from the last
+   *  VISIBLE part until the next delta. */
+  const lastContentIdx = lastVisibleContentIdx(safeContent);
 
   // Parallel content: use dedicated renderer with columns (TMessageContentParts includes ContentMetadata)
   const hasParallelContent = safeContent.some((part) => part?.groupId != null);
@@ -474,12 +491,20 @@ const ContentParts = memo(function ContentParts({
               key={`tool-group-${groupId}`}
               parts={group.parts}
               isSubmitting={effectiveIsSubmitting}
-              isLast={group.parts.some((p) => p.idx === lastContentIdx)}
+              /** The label part is CONSUMED into the header, not listed in
+               *  `parts` — a filled label at the content tail must still
+               *  mark its group as last or nothing holds the streaming
+               *  cursor until the next delta. */
+              isLast={
+                group.parts.some((p) => p.idx === lastContentIdx) ||
+                group.labelPart?.idx === lastContentIdx
+              }
               renderPart={renderGroupedPart}
               lastContentIdx={lastContentIdx}
               groupAttachments={group.groupAttachments}
               initialExpansionState={toolGroupExpansionRef.current.get(groupId)}
               onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
+              labelPart={group.labelPart}
             />,
           );
           return nodes;

@@ -66,7 +66,13 @@ export function isModifierKey(key: string): boolean {
   return MODIFIER_KEYS.has(key);
 }
 
-export function bindingFromEvent(e: KeyboardEvent): ShortcutBinding | null {
+/** The event fields chord resolution reads, so callers can pass synthetic chords. */
+export type KeyChordSource = Pick<
+  KeyboardEvent,
+  'key' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'
+>;
+
+export function bindingFromEvent(e: KeyChordSource): ShortcutBinding | null {
   if (isModifierKey(e.key)) {
     return null;
   }
@@ -145,6 +151,18 @@ export function bindingHash(binding: ShortcutBinding): string {
   return `${flags}|${binding.key}`;
 }
 
+/**
+ * Whether a pressed chord is the one a shortcut is bound to. Absent on either
+ * side means no match: an unset (`undefined`) or explicitly unbound (`null`)
+ * shortcut is not something a keypress can match.
+ */
+export function bindingsMatch(
+  a: ShortcutBinding | null | undefined,
+  b: ShortcutBinding | null | undefined,
+): boolean {
+  return a != null && b != null && bindingHash(a) === bindingHash(b);
+}
+
 export function hasModifier(binding: ShortcutBinding): boolean {
   return binding.meta || binding.ctrl || binding.alt;
 }
@@ -185,10 +203,7 @@ export function resolveSubmitOverrideAction(
   if (!eventBinding || eventBinding.key !== 'Enter') {
     return 'none';
   }
-  const matchesChord =
-    submitOverride != null &&
-    submitOverride.key === 'Enter' &&
-    bindingHash(eventBinding) === bindingHash(submitOverride);
+  const matchesChord = bindingsMatch(eventBinding, submitOverride);
   const isPlainEnter =
     !eventBinding.meta && !eventBinding.ctrl && !eventBinding.alt && !eventBinding.shift;
   if (matchesChord || (isPlainEnter && enterToSend)) {
@@ -196,6 +211,73 @@ export function resolveSubmitOverrideAction(
   }
   if (!eventBinding.shift) {
     return 'newline';
+  }
+  return 'none';
+}
+
+export type ComposerKeyAction = ComposerEnterAction | 'block' | 'interrupt' | 'preempt' | 'other';
+
+export interface ComposerKeyContext {
+  isComposing: boolean;
+  isSubmitting: boolean;
+  allowSubmitWhileGenerating: boolean;
+  hasDuringRunModifier: boolean;
+  enterToSend: boolean;
+  submitOverride: ShortcutBinding | null | undefined;
+  /** `bindingHash`es of chords bound to global shortcuts that run while typing. */
+  yieldedChords: ReadonlySet<string>;
+}
+
+/**
+ * The composer's entire Enter decision table. Every verdict is terminal — no
+ * interpretation falls through into another, which is what previously let a
+ * chord that one branch declined reach a branch it never should have.
+ * `yieldedChords` belong to the document-level handler in
+ * `useKeyboardShortcuts`, which runs after the composer and does not check
+ * `defaultPrevented`, so the composer must not act on them at all. `block`
+ * means preventDefault with no action.
+ */
+export function resolveComposerKeyDown(
+  e: KeyChordSource,
+  ctx: ComposerKeyContext,
+): ComposerKeyAction {
+  if (e.key !== 'Enter') {
+    return 'none';
+  }
+  if (ctx.isSubmitting && !ctx.allowSubmitWhileGenerating) {
+    return 'none';
+  }
+  const binding = bindingFromEvent(e);
+  if (binding != null && ctx.yieldedChords.has(bindingHash(binding))) {
+    return 'none';
+  }
+  const duringRun = ctx.isSubmitting && ctx.allowSubmitWhileGenerating && ctx.hasDuringRunModifier;
+  if (duringRun && !ctx.isComposing) {
+    if (e.altKey && !bindingsMatch(binding, ctx.submitOverride)) {
+      return 'interrupt';
+    }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && !bindingsMatch(binding, ctx.submitOverride)) {
+      return 'preempt';
+    }
+    if ((e.ctrlKey || e.metaKey) && ctx.enterToSend && ctx.submitOverride === undefined) {
+      return 'other';
+    }
+  }
+  if (ctx.submitOverride !== undefined) {
+    if (ctx.isComposing) {
+      return 'none';
+    }
+    return resolveSubmitOverrideAction(binding, ctx.submitOverride, ctx.enterToSend);
+  }
+  const isCtrlEnter = e.ctrlKey || e.metaKey;
+  if (!ctx.enterToSend && !isCtrlEnter && !ctx.isComposing) {
+    return 'newline';
+  }
+  if ((!e.shiftKey || isCtrlEnter) && !ctx.isComposing) {
+    return 'submit';
+  }
+  if (!e.shiftKey) {
+    return 'block';
   }
   return 'none';
 }
