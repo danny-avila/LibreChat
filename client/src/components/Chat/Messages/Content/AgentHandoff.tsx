@@ -1,9 +1,10 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState, useCallback } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { MouseEvent } from 'react';
+import { unescapeJsonString } from './Parts/parseJsonField';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { toolPanelSpacingClassName } from './disclosure';
 import { useLocalize, useExpandCollapse } from '~/hooks';
@@ -15,12 +16,86 @@ interface AgentHandoffProps {
   args: string | Record<string, unknown>;
 }
 
+interface HandoffField {
+  key?: string;
+  value: string;
+}
+
+const PARTIAL_STRING_FIELD = /^\s*\{\s*"([^"\\]+)"\s*:\s*"((?:[^"\\]|\\.)*)/s;
+
+function formatValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  if (value == null) {
+    return '';
+  }
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return '';
+  }
+}
+
+function fieldsFromRecord(record: Record<string, unknown>): HandoffField[] {
+  return Object.entries(record).reduce<HandoffField[]>((fields, [key, rawValue]) => {
+    const value = formatValue(rawValue);
+    if (value) {
+      fields.push({ key, value });
+    }
+    return fields;
+  }, []);
+}
+
+function parseHandoffFields(args: string | Record<string, unknown>): HandoffField[] {
+  if (typeof args !== 'string') {
+    return fieldsFromRecord(args);
+  }
+
+  const trimmed = args.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      return fieldsFromRecord(parsed as Record<string, unknown>);
+    }
+    const value = formatValue(parsed);
+    return value ? [{ value }] : [];
+  } catch {
+    const partialField = trimmed.match(PARTIAL_STRING_FIELD);
+    if (partialField) {
+      const value = unescapeJsonString(partialField[2]);
+      return value ? [{ key: partialField[1], value }] : [];
+    }
+    return trimmed.startsWith('{') ? [] : [{ value: trimmed }];
+  }
+}
+
+function fieldLabel(key: string): string {
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : key;
+}
+
 const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) => {
   const localize = useLocalize();
   const agentsMap = useAgentsMapContext();
   const [showInfo, setShowInfo] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const contentId = useId();
+  const headingId = `${contentId}-heading`;
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(showInfo);
+
+  useEffect(() => () => clearTimeout(copiedTimerRef.current), []);
 
   const targetAgentId = useMemo(() => {
     if (typeof name !== 'string' || !name.startsWith(Constants.LC_TRANSFER_TO_)) {
@@ -36,28 +111,34 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
     return agentsMap[targetAgentId];
   }, [agentsMap, targetAgentId]);
 
-  const args = useMemo(() => {
-    if (typeof _args === 'string') {
-      return _args;
-    }
-    try {
-      return JSON.stringify(_args, null, 2);
-    } catch {
-      return '';
-    }
-  }, [_args]) as string;
-
-  const hasInfo = useMemo(() => (args?.trim()?.length ?? 0) > 2, [args]);
+  const fields = useMemo(() => parseHandoffFields(_args), [_args]);
+  const copyText = useMemo(
+    () =>
+      fields.length === 1
+        ? fields[0].value
+        : fields
+            .map(({ key, value }) => `${key ? `${fieldLabel(key)}\n` : ''}${value}`)
+            .join('\n\n'),
+    [fields],
+  );
+  const hasInfo = fields.length > 0;
   const agentName = targetAgent?.name || localize('com_ui_agent');
 
   const handleCopy = useCallback(
     (e: MouseEvent<HTMLButtonElement>) => {
       e.stopPropagation();
-      navigator.clipboard.writeText(args);
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
+      navigator.clipboard.writeText(copyText).then(
+        () => {
+          clearTimeout(copiedTimerRef.current);
+          setIsCopied(true);
+          copiedTimerRef.current = setTimeout(() => setIsCopied(false), 2000);
+        },
+        () => {
+          setIsCopied(false);
+        },
+      );
     },
-    [args],
+    [copyText],
   );
 
   const copyLabel = isCopied
@@ -77,6 +158,7 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
         disabled={!hasInfo}
         onClick={hasInfo ? () => setShowInfo(!showInfo) : undefined}
         aria-expanded={hasInfo ? showInfo : undefined}
+        aria-controls={hasInfo ? contentId : undefined}
         aria-label={`${localize('com_ui_transferred_to')} ${agentName}`}
       >
         <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full ring-1 ring-border-light">
@@ -102,17 +184,21 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
           />
         )}
       </button>
-      <div style={expandStyle}>
+      <div id={contentId} style={expandStyle} aria-hidden={!showInfo || undefined}>
         <div className="overflow-hidden" ref={expandRef}>
           {hasInfo && (
-            <div
+            <section
+              aria-labelledby={headingId}
               className={cn(
                 toolPanelSpacingClassName,
-                'group/handoff ml-8 rounded-xl border border-border-light bg-surface-secondary p-4 text-xs',
+                'group/handoff ml-8 max-w-3xl border-l-2 border-border-medium py-1 pl-4 pr-1',
               )}
             >
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-[10px] font-medium uppercase tracking-wide text-text-secondary">
+              <div className="mb-1.5 flex min-h-5 items-center justify-between gap-2">
+                <span
+                  id={headingId}
+                  className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary"
+                >
                   {localize('com_ui_handoff_instructions')}
                 </span>
                 <TooltipAnchor
@@ -124,7 +210,7 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
                       aria-label={copyLabel}
                       className={cn(
                         'flex shrink-0 items-center justify-center rounded-lg p-1 text-text-tertiary transition-opacity duration-150',
-                        'opacity-0 group-focus-within/handoff:opacity-100 group-hover/handoff:opacity-100',
+                        'opacity-60 group-focus-within/handoff:opacity-100 group-hover/handoff:opacity-100',
                         'hover:bg-surface-hover hover:text-text-primary',
                         'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
                       )}
@@ -138,10 +224,27 @@ const AgentHandoff: React.FC<AgentHandoffProps> = ({ name, args: _args = '' }) =
                   }
                 />
               </div>
-              <pre className="overflow-x-auto whitespace-pre-wrap leading-relaxed text-text-primary">
-                {args}
-              </pre>
-            </div>
+              {fields.length === 1 ? (
+                <p className="whitespace-pre-wrap break-words text-sm leading-6 text-text-primary">
+                  {fields[0].value}
+                </p>
+              ) : (
+                <dl className="space-y-3">
+                  {fields.map(({ key, value }, index) => (
+                    <div key={`${key ?? 'field'}-${index}`}>
+                      {key && (
+                        <dt className="mb-0.5 text-xs font-medium text-text-secondary">
+                          {fieldLabel(key)}
+                        </dt>
+                      )}
+                      <dd className="whitespace-pre-wrap break-words text-sm leading-6 text-text-primary">
+                        {value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </section>
           )}
         </div>
       </div>
