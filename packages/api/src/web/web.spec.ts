@@ -576,10 +576,48 @@ describe('web.ts', () => {
       expect(result.authResult.scraperProvider).toBeUndefined();
     });
 
-    it('should not scrape with Keenable for another search provider', async () => {
+    it('should scrape with Keenable for another search provider when a key is supplied', async () => {
+      // SearXNG stays the search provider while the user submits a Keenable key
+      // for the scraper. The dialog cannot pin `scraperProvider`, so a supplied
+      // Keenable value is the only signal that Keenable was chosen here.
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'SEARXNG_INSTANCE_URL') {
+            result[field] = 'https://searx.example.com';
+          }
+          if (field === 'KEENABLE_API_KEY') {
+            result[field] = 'user-keenable-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const scraperOnlyConfig = {
+        searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        keenableApiKey: '${KEENABLE_API_KEY}',
+        searchProvider: 'searxng' as SearchProviders,
+        rerankerType: 'none' as RerankerTypes,
+        safeSearch: SafeSearchTypes.MODERATE,
+      } as TWebSearchConfig;
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig: scraperOnlyConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.searchProvider).toBe('searxng' as SearchProviders);
+      expect(result.authResult.scraperProvider).toBe('keenable' as ScraperProviders);
+      expect(result.authResult.keenableApiKey).toBe('user-keenable-key');
+      expect(result.authenticated).toBe(true);
+    });
+
+    it('should not scrape with Keenable for another search provider without a Keenable value', async () => {
       // SearXNG authenticates as the provider (it is not also a scraper); with no
-      // scraper key configured the scrapers category must stay unauthenticated
-      // rather than fall back to Keenable.
+      // scraper key configured and no Keenable value the scrapers category must
+      // stay unauthenticated rather than fall back to Keenable.
       mockLoadAuthValues.mockImplementation(({ authFields }) => {
         const result: Record<string, string> = {};
         authFields.forEach((field: string) => {

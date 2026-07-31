@@ -883,6 +883,17 @@ endpoints:
 #   searchProvider: keenable
 #   scraperProvider: firecrawl
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
+#
+# The reverse (someone else's search, Keenable as the scraper) needs the scraper
+# pinned here, because the API-key dialog submits credentials and cannot pin a
+# provider — and Keenable's key is optional, so choosing it there with no key
+# submits nothing at all. Pin it, or supply a KEENABLE_API_KEY, and Keenable is
+# used as the scraper:
+# webSearch:
+#   searchProvider: searxng
+#   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
+#   scraperProvider: keenable
+#   rerankerType: none
 
 # Memory configuration for user memories
 # memory:

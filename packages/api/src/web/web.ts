@@ -334,19 +334,25 @@ export async function loadWebSearchAuth({
     }
 
     /**
-     * Same for the scraper, and additionally gated on Keenable being the
-     * resolved search provider (providers are checked first). Keenable reads
-     * pages through its own keyless fetch endpoint, so this is what completes a
-     * fully keyless stack; it never silently scrapes for another provider.
+     * Same for the scraper. Reached only when no keyed scraper authenticated, so
+     * the alternative is web search staying disabled entirely. Two triggers:
+     * Keenable being the resolved search provider (providers are checked first),
+     * which is what completes a fully keyless stack, or a Keenable value actually
+     * being present, which is how the API-key dialog expresses "scrape with
+     * Keenable" for a deployment whose search runs on someone else. With neither,
+     * it stays unauthenticated rather than silently scraping for a provider that
+     * was never told to use Keenable.
      */
-    if (
-      category === SearchCategories.SCRAPERS &&
-      !specificService &&
-      authResult.searchProvider === SearchProviders.KEENABLE
-    ) {
+    if (category === SearchCategories.SCRAPERS && !specificService) {
       const keenableUserProvided = await resolveKeenableAuth();
-      authResult.scraperProvider = ScraperProviders.KEENABLE;
-      return [true, keenableUserProvided];
+      if (
+        authResult.searchProvider === SearchProviders.KEENABLE ||
+        authResult.keenableApiKey ||
+        authResult.keenableApiUrl
+      ) {
+        authResult.scraperProvider = ScraperProviders.KEENABLE;
+        return [true, keenableUserProvided];
+      }
     }
 
     return [false, isUserProvided];
