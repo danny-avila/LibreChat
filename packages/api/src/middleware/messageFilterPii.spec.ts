@@ -89,6 +89,13 @@ describe('messageFilterPii middleware', () => {
     expect(capturedRes.status).toBe(400);
   });
 
+  it('rejects an api-key header separated by non-ASCII whitespace', () => {
+    const nbsp = String.fromCharCode(0x00a0);
+    const { capturedRes, nextCalls } = runMiddleware({}, { text: `api-key:${nbsp}foo123bar` });
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
   const SK = 'sk-proj-FAKE1234567890ABCDEF';
 
   it('rejects a resume ask-user answer containing a blocked token', () => {

@@ -16,12 +16,12 @@ const STARTER_PATTERNS: CompiledPattern[] = [
   {
     id: 'bearer_header',
     label: 'Bearer token',
-    pattern: RE2JS.compile('\\b(Bearer )[^\\s"\']+', RE2JS.CASE_INSENSITIVE),
+    pattern: RE2JS.compile('\\b(Bearer )[^\\s\\p{Zs}"\']+', RE2JS.CASE_INSENSITIVE),
   },
   {
     id: 'api_key_header',
     label: 'api-key header',
-    pattern: RE2JS.compile('\\b(api-key:?\\s+)[^\\s"\']+', RE2JS.CASE_INSENSITIVE),
+    pattern: RE2JS.compile('\\b(api-key:?[\\s\\p{Zs}]+)[^\\s\\p{Zs}"\']+', RE2JS.CASE_INSENSITIVE),
   },
 ];
 
