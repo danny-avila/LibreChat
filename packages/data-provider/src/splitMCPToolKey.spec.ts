@@ -136,6 +136,14 @@ describe('buildServerNameAliases', () => {
   it('skips empty names', () => {
     expect(buildServerNameAliases(['', 'srv']).size).toBe(1);
   });
+
+  it('resolves normalized-name collisions to the FIRST configured name deterministically', () => {
+    /** `Sales Force` and `Sales:Force` both normalize to `Sales_Force`; their
+     *  tool keys are inherently ambiguous, so routing must at least be stable
+     *  (the collision itself is warned about at context resolution). */
+    const aliases = buildServerNameAliases(['Sales Force', 'Sales:Force']);
+    expect(aliases.get('Sales_Force')).toBe('Sales Force');
+  });
 });
 
 describe('normalizeMCPToolKey', () => {

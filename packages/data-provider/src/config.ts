@@ -2879,6 +2879,11 @@ export function normalizeServerName(serverName: string): string {
  * name — any consumer that parses a server out of a tool key must resolve it
  * through this map before those lookups. Identity entries are included so
  * `aliases.get(name) ?? name` works uniformly.
+ *
+ * When two configured names normalize to the same value their tool keys are
+ * inherently ambiguous; the FIRST configured name wins deterministically here,
+ * and `resolveMCPServerContext` warns about the collision so the operator can
+ * rename one server.
  */
 export function buildServerNameAliases(rawServerNames: readonly string[]): Map<string, string> {
   const aliases = new Map<string, string>();
@@ -2886,7 +2891,10 @@ export function buildServerNameAliases(rawServerNames: readonly string[]): Map<s
     if (!raw) {
       continue;
     }
-    aliases.set(normalizeServerName(raw), raw);
+    const normalized = normalizeServerName(raw);
+    if (!aliases.has(normalized)) {
+      aliases.set(normalized, raw);
+    }
   }
   return aliases;
 }

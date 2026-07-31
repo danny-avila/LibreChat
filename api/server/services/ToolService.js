@@ -905,6 +905,7 @@ async function loadToolDefinitionsWrapper({
       codeExecutionEnabled,
       provider: agent.provider,
       mcpServerNames,
+      rawServerNames: mcpRawServerNames,
     },
     {
       isBuiltInTool,
@@ -988,6 +989,7 @@ async function loadToolDefinitionsWrapper({
           codeExecutionEnabled,
           provider: agent.provider,
           mcpServerNames,
+          rawServerNames: mcpRawServerNames,
         },
         {
           isBuiltInTool,

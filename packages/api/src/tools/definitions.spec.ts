@@ -632,6 +632,44 @@ describe('definitions.ts', () => {
         expect((toolDef as { serverName?: string }).serverName).toBe('my-server');
       });
 
+      it('resolves normalized keys to the RAW server for lookups and definition metadata', async () => {
+        /** Config lookups and `serverName` metadata (server instructions are
+         *  keyed by raw config names) must carry the raw name even though the
+         *  key embeds the normalized form. */
+        const mockServerTools = {
+          search_mcp_Connector__Company: {
+            function: {
+              name: 'search_mcp_Connector__Company',
+              description: 'Search',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        };
+
+        mockGetOrFetchMCPServerTools.mockResolvedValue(mockServerTools);
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['search_mcp_Connector__Company'],
+          mcpServerNames: ['Connector__Company'],
+          rawServerNames: ['Connector: Company'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        expect(mockGetOrFetchMCPServerTools).toHaveBeenCalledWith('user-123', 'Connector: Company');
+        expect(result.toolDefinitions).toHaveLength(1);
+        const toolDef = result.toolDefinitions[0];
+        expect(toolDef.name).toBe('search_mcp_Connector__Company');
+        expect((toolDef as { serverName?: string }).serverName).toBe('Connector: Company');
+      });
+
       it('should convert empty MCP tool descriptions to undefined', async () => {
         const mockServerTools = {
           no_desc_tool_mcp_asana: {

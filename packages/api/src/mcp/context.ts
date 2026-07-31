@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import { normalizeServerName } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
@@ -34,9 +35,43 @@ export async function resolveMCPServerContext({
   ensureConfigServers,
 }: ResolveMCPServerContextParams): Promise<MCPServerContext> {
   const rawServerNames = Object.keys(mcpConfig);
+  warnOnNormalizedNameCollisions(rawServerNames);
   return {
     configServers: await ensureConfigServers(mcpConfig),
     serverNames: rawServerNames.map(normalizeServerName),
     rawServerNames,
   };
+}
+
+const warnedCollisions = new Set<string>();
+
+/**
+ * Two configured names that normalize to the same value produce IDENTICAL
+ * model-facing tool keys, so tool selection and config resolution cannot tell
+ * the servers apart — `buildServerNameAliases` deterministically routes to the
+ * first configured name. Surfaced once per colliding pair per process so the
+ * operator can rename one server; silently last-wins routing could execute a
+ * different server's tool than the one the agent selected.
+ */
+function warnOnNormalizedNameCollisions(rawServerNames: readonly string[]): void {
+  const firstByNormalized = new Map<string, string>();
+  for (const raw of rawServerNames) {
+    const normalized = normalizeServerName(raw);
+    const first = firstByNormalized.get(normalized);
+    if (first == null) {
+      firstByNormalized.set(normalized, raw);
+      continue;
+    }
+    if (first === raw) {
+      continue;
+    }
+    const signature = `${first}::${raw}`;
+    if (warnedCollisions.has(signature)) {
+      continue;
+    }
+    warnedCollisions.add(signature);
+    logger.warn(
+      `[MCP] Server names "${first}" and "${raw}" normalize to the same tool-key segment "${normalized}"; their tool keys are ambiguous and lookups resolve to "${first}". Rename one server to disambiguate.`,
+    );
+  }
 }

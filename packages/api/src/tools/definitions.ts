@@ -6,7 +6,7 @@
  */
 
 import { Providers } from '@librechat/agents';
-import { isActionTool, splitMCPToolKey } from 'librechat-data-provider';
+import { isActionTool, splitMCPToolKey, buildServerNameAliases } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { ToolDefinition } from './classification';
@@ -45,6 +45,13 @@ export interface LoadToolDefinitionsParams {
   provider?: Providers;
   /** Configured server names, used to resolve the tool-key boundary exactly */
   mcpServerNames?: readonly string[];
+  /**
+   * Configured server names in raw config form. A parsed (normalized) server
+   * name resolves back to its raw name for config lookups AND for the
+   * `serverName`/`mcpRawServerName` metadata stored on definitions — server
+   * instructions and other config-keyed consumers read that field raw.
+   */
+  rawServerNames?: readonly string[];
 }
 
 export interface ActionToolDefinition {
@@ -91,8 +98,10 @@ export async function loadToolDefinitions(
     codeExecutionEnabled = false,
     provider,
     mcpServerNames,
+    rawServerNames,
   } = params;
   const { getOrFetchMCPServerTools, isBuiltInTool, getActionToolDefinitions } = deps;
+  const serverNameAliases = buildServerNameAliases(rawServerNames ?? []);
 
   const isGoogle = provider === Providers.GOOGLE || provider === Providers.VERTEXAI;
 
@@ -157,8 +166,17 @@ export async function loadToolDefinitions(
       continue;
     }
 
-    const [, parsedServerName] = splitMCPToolKey(toolName, mcpServerNames);
-    const serverName = parsedServerName ?? toolName;
+    /** Keys carry the normalized server name (raw in pre-normalization data),
+     *  so both spellings resolve the boundary; the RAW name is what config
+     *  lookups need and what definition metadata (`serverName`, and
+     *  `mcpRawServerName` downstream) must carry — server instructions and
+     *  other config-keyed consumers read it raw. */
+    const [, parsedServerName] = splitMCPToolKey(toolName, [
+      ...(mcpServerNames ?? []),
+      ...(rawServerNames ?? []),
+    ]);
+    const resolved = parsedServerName ?? toolName;
+    const serverName = serverNameAliases.get(resolved) ?? resolved;
 
     if (!mcpServerToolsCache.has(serverName)) {
       const serverTools = await getOrFetchMCPServerTools(userId, serverName);
