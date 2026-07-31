@@ -1883,9 +1883,9 @@ const messageFilterPiiCustomPatternSchema = z.object({
     .refine(
       (value) => {
         // The server runs these patterns through a linear-time engine (RE2), which does not
-        // support backreferences or lookaround. Reject those at config load with actionable
-        // feedback instead of letting the runtime silently drop the pattern after upgrade.
-        if (/\\[1-9]/.test(value) || /\(\?<?[=!]/.test(value)) {
+        // support backreferences (numeric `\1` or named `\k<name>`) or lookaround. Reject those
+        // at config load with actionable feedback instead of silently dropping them at runtime.
+        if (/\\[1-9]/.test(value) || /\\k[<']/.test(value) || /\(\?<?[=!]/.test(value)) {
           return false;
         }
         try {
