@@ -766,11 +766,12 @@ async function createMCPTool({
   /** `loadTools` already resolved the server for this key; parsing is the fallback. */
   const [parsedToolName, parsedServerName] = splitMCPToolKey(
     toolKey,
-    /** Tool keys embed the normalized server name, so the candidate list must be
-     *  normalized too or a name needing normalization never matches. */
+    /** Current keys embed the NORMALIZED server name, legacy persisted keys
+     *  the RAW one — the candidate list needs both spellings or a raw name
+     *  that contains the delimiter mis-splits under the generic fallback. */
     resolvedServerName
-      ? [normalizeServerName(resolvedServerName)]
-      : Object.keys(configServers ?? {}).map(normalizeServerName),
+      ? [resolvedServerName, normalizeServerName(resolvedServerName)]
+      : Object.keys(configServers ?? {}).flatMap((name) => [name, normalizeServerName(name)]),
   );
   let serverName = resolvedServerName ?? parsedServerName;
   const toolName = parsedToolName;

@@ -278,6 +278,35 @@ describe('createMCPTool', () => {
     expect(reinitMCPServer).not.toHaveBeenCalled();
   });
 
+  it('parses a legacy key whose raw server name contains the delimiter', async () => {
+    /** A raw name like `foo_mcp_bar!` defeats the generic last-delimiter
+     *  split (`toolName` would become `search_mcp_foo`), so the boundary
+     *  candidates must include the RAW resolved name — not only its
+     *  normalized form — for the canonical rebuild to hit the index. */
+    const delimiterRawName = 'foo_mcp_bar!';
+    const legacyKey = `search${Constants.mcp_delimiter}${delimiterRawName}`;
+    /** `normalizeServerName` strips the trailing underscore the `!` leaves. */
+    const canonicalKey = `search${Constants.mcp_delimiter}foo_mcp_bar`;
+    const delimiterToolFunction = {
+      name: canonicalKey,
+      description: 'Search the delimiter-named server',
+      parameters: { type: 'object', properties: {} },
+    };
+
+    const toolInstance = await createMCPTool({
+      user: { id: 'user-1' },
+      toolKey: legacyKey,
+      serverName: delimiterRawName,
+      availableTools: { [canonicalKey]: { type: 'function', function: delimiterToolFunction } },
+      config: { type: 'stdio', command: 'node' },
+      provider: 'openAI',
+    });
+
+    expect(toolInstance).toBeDefined();
+    expect(toolInstance.name).toBe(canonicalKey);
+    expect(reinitMCPServer).not.toHaveBeenCalled();
+  });
+
   it('still resolves the canonical key directly', async () => {
     const toolInstance = await createMCPTool({
       user: { id: 'user-1' },
